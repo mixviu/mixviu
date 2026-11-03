@@ -1,0 +1,30 @@
+# Runtime state, logs, receipts
+/_var/
+# Lab specimens and fixtures (may hold personal data or real captures)
+/_lab/
+# Mesh-private values: hosts, addresses, operator paths
+/_etc/*.local.conf.mix
+*.local.*
+
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+id_*
+*_ed25519
+*_rsa
+secrets.*
+*.secret
+*.secrets
+
+# Captures of real traffic and mail
+*.pcap
+*.pcapng
+*.eml
+*.mbox
+
+# Build output (Rust builds run on CBC, never locally)
+/target/
