@@ -1,0 +1,12 @@
+mixviu
+Copyright (c) 2026 Mark Constable <mc@mixos.dev>
+Licensed MIT OR Apache-2.0 (LICENSE-MIT, LICENSE-APACHE).
+
+Incorporated and third-party code and assets are listed here as each component
+enters the tree. Per-file licensing is recorded in REUSE.toml.
+
+Code moved from markc/mixos keeps its attribution there and carries it here
+when it lands. In particular, viud (ex compd) incorporates code from y5 /
+Nourish, https://github.com/y5-snowies/nourish, Copyright (c) 2026 Yarden
+Apelker, licensed MIT OR Apache-2.0; its copyright line joins LICENSE-MIT and
+its REUSE annotation joins REUSE.toml in the same commit as that code.

@@ -8,8 +8,14 @@ This repository holds the `viu` and `viud` engines (decision D1-a). `mix`,
 
 Code, public docs and settled decisions only. Plans, briefs, journals, lab
 captures and anything about the maintainer's machines live in a private
-hub outside this repo (the maintainer's `~/.viu`; agents with access should
-read its `AGENTS.md` and the plan there first, as the plan wins over every doc).
+hub outside this repo; agents with access should read its `AGENTS.md` and
+the plan there first, as the plan wins over every doc.
+
+## Licence
+
+`MIT OR Apache-2.0`, as in `markc/mixos`. Code moved from mixos brings its
+attribution with it: the commit that adds it also updates `NOTICE`,
+`LICENSE-MIT` and `REUSE.toml` (viud carries the y5 / Nourish notice).
 
 Write everything here as public, because it will be:
 
