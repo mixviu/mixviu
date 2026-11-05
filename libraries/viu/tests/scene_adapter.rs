@@ -120,7 +120,7 @@ fn menu_paths_drive_native_popups_and_refuse_disabled_or_leaf_targets() {
         json!({"menu":"View","path":["Theme","Dark"]})] {
         assert!(viu::rich::menu_targets(&menus,"menu",&args).is_err());
     }
-    let source = scene(json!({"root":{"widget":"control","definition":{
+    let source = scene(json!({"root":{"widget":"column","children":["menu"]},"menu":{"widget":"control","definition":{
         "id":"menu","kind":"menubar","label":"","initial":menus
     }}}));
     let mut view = SceneView::with_model(&source,json!({"values":{"menu":menus}})).unwrap();
