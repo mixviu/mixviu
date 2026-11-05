@@ -212,7 +212,7 @@ fn dp_action($s,$contract,$id,$params)
 end
 fn dp_intent($s,$contract,$a)
   $id=$a.id;$value=$a.value;$action=$a.action
-  if $id=="menu" then return dp_action($s,$contract,$value.command,{})
+  if $id=="menu" or $id=="toolbar" then return dp_action($s,$contract,$value.command,{})
   elif $id=="form" then
     if $action=="edit" then
       $s.form.field=$value
@@ -221,8 +221,8 @@ fn dp_intent($s,$contract,$a)
     elif $action=="answer" then return dp_handle_answer($s,$contract,$value.choice) end
   elif $id=="panes" then $s.split=clamp($value,0.2,0.8);return $s
   elif $id=="root" then
-    if $value.child=="places" then $s.places_width=clamp($value.fraction,0.1,0.4)
-    elif $value.child=="properties-pane" then $s.properties_width=clamp($value.fraction,0.1,0.4)
+    if $value.child=="places-pane" then $s.places_width=clamp($value.fraction,0.1,0.3)
+    elif $value.child=="properties-pane" then $s.properties_width=clamp($value.fraction,0.1,0.3)
     else raise("INVALID_ARGUMENT","Unknown resizable sidebar") end
     return $s
   elif $id=="places" then

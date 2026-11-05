@@ -63,9 +63,11 @@ impl Jobs {
     }
     /// Native clients enter exactly the same bounded admission path as Mix.
     /// The returned receipt resolves when the owner has admitted or refused it.
-    pub fn submit(&self,spec:Value)->Result<oneshot::Receiver<(i32,Value)>,String>{
-        let (reply,response)=oneshot::channel();
-        self.tx.try_send(Start{spec,reply}).map_err(|_|"job admission queue is full or closed".to_owned())?;
+    pub fn submit(&self, spec: Value) -> Result<oneshot::Receiver<(i32, Value)>, String> {
+        let (reply, response) = oneshot::channel();
+        self.tx
+            .try_send(Start { spec, reply })
+            .map_err(|_| "job admission queue is full or closed".to_owned())?;
         (self.wake)();
         Ok(response)
     }

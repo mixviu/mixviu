@@ -3,6 +3,14 @@
 //! supplies its chosen mode, accent and metrics; this module owns egui wiring.
 use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, TextStyle};
 use serde_json::Value;
+#[derive(Clone)]
+pub struct ResolvedAppearance {
+    pub style:egui::Style,
+    pub colours:std::collections::BTreeMap<String,Color32>,
+}
+pub fn colour(ctx:&egui::Context,name:&str)->Option<Color32>{
+    ctx.data(|d|d.get_temp::<std::sync::Arc<std::collections::BTreeMap<String,Color32>>>(egui::Id::new("viu-design-colours")))?.get(name).copied()
+}
 pub fn install(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
@@ -61,16 +69,18 @@ pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {
 
 /// Resolve before committing a scene update so a bad design leaves the live
 /// model, geometry and style intact.
-pub fn resolve(description: &Value) -> Result<egui::Style, String> {
+pub fn resolve(description: &Value) -> Result<ResolvedAppearance, String> {
     crate::design_style::resolve(description)
 }
 
-pub fn install_style(ctx: &egui::Context, description: &Value, style: egui::Style) {
+pub fn install_style(ctx: &egui::Context, description: &Value, appearance: ResolvedAppearance) {
     let theme = if description["mode"] == "light" {
         egui::Theme::Light
     } else {
         egui::Theme::Dark
     };
+    let style=appearance.style.clone();
+    ctx.data_mut(|d|d.insert_temp(egui::Id::new("viu-design-colours"),std::sync::Arc::new(appearance.colours)));
     ctx.set_theme(theme);
     ctx.set_style_of(egui::Theme::Light, style.clone());
     ctx.set_style_of(egui::Theme::Dark, style);

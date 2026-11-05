@@ -28,8 +28,8 @@ struct App {
     scene: String,
     contract: Value,
     app_dir: PathBuf,
-    effect_next:u64,
-    effect_admissions:BTreeMap<String,tokio::sync::oneshot::Receiver<(i32,Value)>>,
+    effect_next: u64,
+    effect_admissions: BTreeMap<String, tokio::sync::oneshot::Receiver<(i32, Value)>>,
     capture: viu::capture::Capture,
     capture_reply: Option<(u64, u64, u64, Reply)>,
     close_after_idle: bool,
@@ -432,40 +432,67 @@ impl App {
                 self.error = e;
             }
         }
-        let effects:Vec<_>=self.native.as_mut().map(|n|n.effects.drain(..).collect()).unwrap_or_default();
-        let effect_changed=!effects.is_empty();
+        let effects: Vec<_> = self
+            .native
+            .as_mut()
+            .map(|n| n.effects.drain(..).collect())
+            .unwrap_or_default();
+        let effect_changed = !effects.is_empty();
         for effect in effects {
-            self.effect_next+=1;
-            let id=format!("native-effect-{}",self.effect_next);
-            let path=self.app_dir.join("effect-job.mix");
+            self.effect_next += 1;
+            let id = format!("native-effect-{}", self.effect_next);
+            let path = self.app_dir.join("effect-job.mix");
             let admission=std::fs::read_to_string(&path).map_err(|e|e.to_string()).and_then(|source|self.jobs.submit(json!({"id":id,"owner":0,"path":path,"source":source,"command":"job.run","args":effect})));
             match admission {
-                Ok(receipt)=>{self.effect_admissions.insert(id,receipt);}
-                Err(error)=>self.native.as_mut().unwrap().effect_result(10,&json!({"message":error})),
+                Ok(receipt) => {
+                    self.effect_admissions.insert(id, receipt);
+                }
+                Err(error) => self
+                    .native
+                    .as_mut()
+                    .unwrap()
+                    .effect_result(10, &json!({"message":error})),
             }
         }
         for done in self.jobs.poll() {
             if self.runtime.is_some() {
                 self.notices.push_back(viu::native_bus::Notice{command:"dopus.job.completed".into(),args:json!({"tag":done.tag,"rc":done.rc,"body":done.body,"elapsed_us":done.elapsed_us}),headers:BTreeMap::new()});
-            }else if let Some(native)=self.native.as_mut(){
-                native.effect_result(done.rc,&done.body);
-                let model=native.model();
-                if let Err(error)=self.publish(model,ctx){self.error=error;}
+            } else if let Some(native) = self.native.as_mut() {
+                native.effect_result(done.rc, &done.body);
+                let model = native.model();
+                if let Err(error) = self.publish(model, ctx) {
+                    self.error = error;
+                }
             }
         }
-        let mut retired=Vec::new();
-        for (id,receipt) in &mut self.effect_admissions {
-            match receipt.try_recv(){
-                Ok((rc,body))=>{if rc>=10{self.native.as_mut().unwrap().effect_result(rc as u8,&body);}retired.push(id.clone());}
-                Err(tokio::sync::oneshot::error::TryRecvError::Closed)=>{self.native.as_mut().unwrap().effect_result(20,&json!({"message":"Effect admission closed"}));retired.push(id.clone());}
-                Err(tokio::sync::oneshot::error::TryRecvError::Empty)=>{}
+        let mut retired = Vec::new();
+        for (id, receipt) in &mut self.effect_admissions {
+            match receipt.try_recv() {
+                Ok((rc, body)) => {
+                    if rc >= 10 {
+                        self.native.as_mut().unwrap().effect_result(rc as u8, &body);
+                    }
+                    retired.push(id.clone());
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    self.native
+                        .as_mut()
+                        .unwrap()
+                        .effect_result(20, &json!({"message":"Effect admission closed"}));
+                    retired.push(id.clone());
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
             }
         }
-        let effect_changed=effect_changed||!retired.is_empty();
-        for id in retired {self.effect_admissions.remove(&id);}
+        let effect_changed = effect_changed || !retired.is_empty();
+        for id in retired {
+            self.effect_admissions.remove(&id);
+        }
         if effect_changed {
-            let model=self.native.as_ref().unwrap().model();
-            if let Err(error)=self.publish(model,ctx){self.error=error;}
+            let model = self.native.as_ref().unwrap().model();
+            if let Err(error) = self.publish(model, ctx) {
+                self.error = error;
+            }
         }
         while self.notices.len() < 64 {
             let Ok(notice) = self.bus.notices.try_recv() else {
@@ -521,6 +548,7 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
+        ui.painter().rect_filled(ui.max_rect(),0.0,viu::appearance::colour(ctx,"dock").unwrap_or(ui.visuals().panel_fill));
         let events = if let Some(view) = &mut self.view {
             view.show(ui)
         } else {
@@ -747,8 +775,8 @@ fn main() -> eframe::Result {
                 scene,
                 contract,
                 app_dir,
-                effect_next:0,
-                effect_admissions:BTreeMap::new(),
+                effect_next: 0,
+                effect_admissions: BTreeMap::new(),
                 capture,
                 capture_reply: None,
                 close_after_idle: false,

@@ -42,6 +42,22 @@ fn dp_menus($state,$contract)
   end
   return $out
 end
+fn dp_toolbar_item($state,$contract,$item)
+  if $item.children!=nil then
+    $children=[]
+    for $child in $item.children push($children,dp_toolbar_item($state,$contract,$child)) end
+    $item.children=$children
+  else
+    $command=dp_command($state,$contract,$item.id)
+    $item.enabled=$command.enabled;$item.checked=$command.checked;$item.shortcut=$command.shortcut
+  end
+  return $item
+end
+fn dp_toolbar($state,$contract)
+  $out=[]
+  for $item in $contract.toolbar push($out,dp_toolbar_item($state,$contract,$item)) end
+  return $out
+end
 fn dp_kind($path,$st)
   if $st.is_symlink then return "Symbolic link"
   elif $st.is_dir then return "Folder" end
@@ -63,7 +79,7 @@ end
 fn dp_project($state,$contract)
   $context=map($contract.context,fn($id)=dp_command($state,$contract,$id))
   $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
-  $values={menu:dp_menus($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
+  $values={menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
   $panes=[]
   for $i=0 to 1
     $p=$state.panes[$i]
@@ -88,6 +104,6 @@ fn dp_project($state,$contract)
   end
   $values.places={key:"places",revision:0,active:false,columns:[{id:"name",label:"Places"}],rows:$place_rows,context:[],background_context:[]}
   $values.preview=if $state.preview_slots==nil then {phase:"none"} else $state.preview_slots[$state.active].value end
-  $layout={form:{edge:"top",size:0},menu:{edge:"top",size:28},status:{edge:"bottom",size:24},places:{edge:"left",fraction:$state.places_width,resizable:true,minimum:0.1,maximum:0.4},"properties-pane":{edge:"right",fraction:$state.properties_width,resizable:true,minimum:0.1,maximum:0.4,minimum_window_width:700},panes:{edge:"fill"}}
+  $layout={form:{edge:"top",size:0},topbar:{edge:"top",size:38},"status-pane":{edge:"bottom",size:30},"places-pane":{edge:"left",fraction:$state.places_width,resizable:true,minimum:0.1,maximum:0.3,minimum_window_width:640},"properties-pane":{edge:"right",fraction:$state.properties_width,resizable:true,minimum:0.1,maximum:0.3,minimum_window_width:640},"center-pane":{edge:"fill"}}
   return {values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
 end

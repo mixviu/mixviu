@@ -263,8 +263,7 @@ impl SceneView {
                         }
                     }
                     "row" | "column" => {
-                        let background =
-                            color(text(node, "background")).unwrap_or(Color32::TRANSPARENT);
+                        let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let frame = egui::Frame::new()
                             .fill(background)
                             .inner_margin(num(node, "padding").unwrap_or(0.0))

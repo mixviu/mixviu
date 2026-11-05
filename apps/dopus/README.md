@@ -23,9 +23,16 @@ Bus surface. Semantic intents use `dopus.intent`; native input uses the
 `dopus.ui.*` commands. Application GPU readback and compositor captures are
 separate endpoints, neither proving physical presentation.
 
-The first native pilot exercised real selection, byte-equal file copying and
-previews in all three versions. Complete command/feature coverage, common
-appearance, external open/mail integration, macros and chooser integration,
+The native pilots exercised real selection, byte-equal file copying and
+previews in all three versions. The two Viu clients also produced byte-identical
+application GPU captures. Shared appearance resolves the original design-token
+source, including all twelve schemes. File-open and mail use an in-process Mix
+effect job; mail launches only after an explicit absent-service reply, and only
+an explicit BUSY compose refusal permits attachment fallback. Both independent
+controllers use this common edge integration.
+
+Complete command/feature coverage, appearance matching, native effect delivery,
+macros and chooser integration,
 stress/lifecycle measurements and independent whole-specimen reviews remain
 in progress. The final comparison report must retain failures and measured
 limits. A pilot screenshot or a passing scoped test is not full-port acceptance.

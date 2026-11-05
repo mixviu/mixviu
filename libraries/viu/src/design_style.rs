@@ -19,7 +19,7 @@ fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
         blend(a.a(), b.a()),
     )
 }
-pub fn resolve(value: &Value) -> Result<egui::Style, String> {
+pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, String> {
     let mut context = DesignContext::default();
     context.scheme = Scheme::from_name(value["scheme"].as_str().unwrap_or("studio"))
         .ok_or("unknown design scheme")?;
@@ -113,7 +113,8 @@ pub fn resolve(value: &Value) -> Result<egui::Style, String> {
         style.animation_time = 0.0;
         style.scroll_animation = egui::style::ScrollAnimation::none();
     }
-    Ok(style)
+    let colours=dictionary.chrome.as_ref().map(|c|c.iter().map(|(name,value)|(name.to_owned(),colour(value))).collect()).unwrap_or_default();
+    Ok(crate::appearance::ResolvedAppearance{style,colours})
 }
 fn pair_visuals(dictionary: &design::ResolvedDictionary, t: &ResolvedStyle, mode: Mode) -> Visuals {
     let mut v = if mode == Mode::Dark {
@@ -382,7 +383,7 @@ mod tests {
                     "default", "plain", "pro", "studio", "classic", "breeze", "adwaita",
                 ] {
                     let style = resolve(&json!({"scheme":scheme.name(),"mode":mode,"style":style}))
-                        .unwrap();
+                        .unwrap().style;
                     assert!(style.text_styles[&TextStyle::Body].size > 0.0);
                     assert!(style.spacing.interact_size.is_finite());
                 }
@@ -412,7 +413,7 @@ mod tests {
         else {
             panic!("default design");
         };
-        let style = resolve(&json!({})).unwrap();
+        let style = resolve(&json!({})).unwrap().style;
         let roles = compiled.candidate.dictionary().chrome.as_ref().unwrap();
         assert_eq!(
             style.visuals.panel_fill,

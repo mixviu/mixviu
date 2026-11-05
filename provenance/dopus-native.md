@@ -40,3 +40,16 @@ exclusive PNG encoder contract from the original toolkit drive, with one
 pending readback, a deadline and token fencing. These are native renderer
 facilities; application control and file-manager policy remain in the drivers.
 The existing png0.18.1 lock entry is reused without a registry upgrade.
+# Shared design compiler and native edge primitives
+
+The retained reference's headless `design` compiler and its seven test fixtures
+are imported coherently, with hashes in `dopus-native.json`. Viu's adapted
+style/chrome projection consumes its resolved tokens; application settings and
+compositor authority are excluded. The original toolkit adapter source hashes
+remain recorded beside the adaptation hash.
+
+Embedded Mix also exposes bounded optional text reads and durable replacement
+through the existing `config::atomic` primitives. The application owns config
+schema, migration and poison-pill decisions. These bindings refuse linked or
+special files and distinguish absence from other read failures. The optional
+read is deliberately stricter than the reference's path-following config read.
