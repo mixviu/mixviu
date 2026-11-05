@@ -411,8 +411,8 @@ impl Widgets {
                     text = text.strong();
                 }
                 if widget.properties["emphasis"] == true {
-                    let font=egui::TextStyle::Body.resolve(ui.style());
-                    text=text.font(crate::fonts::emphasis(ui.ctx(),font));
+                    let font = egui::TextStyle::Body.resolve(ui.style());
+                    text = text.font(crate::fonts::emphasis(ui.ctx(), font));
                 }
                 if widget.properties["weak"] == true {
                     text = text.weak();
@@ -431,9 +431,13 @@ impl Widgets {
                         whole(&colour[3]).unwrap_or(255) as u8,
                     ));
                 }
-                let mut label=egui::Label::new(text);
-                if widget.properties["truncate"]==true {label=label.truncate();}
-                if widget.properties["align"]=="center" {label=label.halign(egui::Align::Center);}
+                let mut label = egui::Label::new(text);
+                if widget.properties["truncate"] == true {
+                    label = label.truncate();
+                }
+                if widget.properties["align"] == "center" {
+                    label = label.halign(egui::Align::Center);
+                }
                 ui.add(label)
             }
             "button" => {

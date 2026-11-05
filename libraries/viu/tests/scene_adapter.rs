@@ -112,29 +112,53 @@ fn applying_a_model_does_not_claim_that_native_controls_have_drawn_it() {
 
 #[test]
 fn host_slots_reuse_scene_composition_without_consuming_the_fallback_dock_edge() {
-    let source=scene(json!({"root":{"widget":"dock","children":["header","body"],"placements":{"header":{"edge":"top","size":20},"body":{"edge":"fill"}}},"header":{"widget":"column","window_slot":"host.header","children":["heading","only"]},"heading":{"widget":"text","text":"Header"},"only":{"widget":"text","text":"Attached","slot_only":"host.header"},"body":{"widget":"text","text":"Body"}}));
-    let mut view=SceneView::new(&source).unwrap();
-    let ctx=egui::Context::default();
-    let pass=|view:&mut SceneView,reserve:f32|{
-        let mut out=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.0,300.0))),..Default::default()},|ui|{
-            if reserve>0.0 {ui.allocate_space(egui::vec2(400.0,reserve));}
-            view.show(ui);
-        });out.textures_delta.clear();
+    let source = scene(
+        json!({"root":{"widget":"dock","children":["header","body"],"placements":{"header":{"edge":"top","size":20},"body":{"edge":"fill"}}},"header":{"widget":"column","window_slot":"host.header","children":["heading","only"]},"heading":{"widget":"text","text":"Header"},"only":{"widget":"text","text":"Attached","slot_only":"host.header"},"body":{"widget":"text","text":"Body"}}),
+    );
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = egui::Context::default();
+    let pass = |view: &mut SceneView, reserve: f32| {
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(400.0, 300.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                if reserve > 0.0 {
+                    ui.allocate_space(egui::vec2(400.0, reserve));
+                }
+                view.show(ui);
+            },
+        );
+        out.textures_delta.clear();
     };
-    pass(&mut view,0.0);
+    pass(&mut view, 0.0);
     assert!(!view.geometry.contains_key("only"));
-    assert!((view.geometry["body"].min.y-20.0).abs()<0.1);
-    assert!(view.set_slots(std::collections::BTreeMap::from([("unknown".into(),egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(20.0,20.0)))])).is_err());
-    view.set_slots(std::collections::BTreeMap::from([("host.header".into(),egui::Rect::from_min_size(egui::pos2(100.0,0.0),egui::vec2(250.0,40.0)))])).unwrap();
+    assert!((view.geometry["body"].min.y - 20.0).abs() < 0.1);
+    assert!(
+        view.set_slots(std::collections::BTreeMap::from([(
+            "unknown".into(),
+            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(20.0, 20.0))
+        )]))
+        .is_err()
+    );
+    view.set_slots(std::collections::BTreeMap::from([(
+        "host.header".into(),
+        egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(250.0, 40.0)),
+    )]))
+    .unwrap();
     assert!(!view.current_revision_drawn());
-    pass(&mut view,40.0);
+    pass(&mut view, 40.0);
     assert!(view.geometry.contains_key("only"));
-    assert!((view.geometry["heading"].min.x-100.0).abs()<0.1);
-    assert!((view.geometry["body"].min.y-40.0).abs()<0.1);
+    assert!((view.geometry["heading"].min.x - 100.0).abs() < 0.1);
+    assert!((view.geometry["body"].min.y - 40.0).abs() < 0.1);
     view.set_slots(std::collections::BTreeMap::new()).unwrap();
-    pass(&mut view,0.0);
+    pass(&mut view, 0.0);
     assert!(!view.geometry.contains_key("only"));
-    assert!((view.geometry["body"].min.y-20.0).abs()<0.1);
+    assert!((view.geometry["body"].min.y - 20.0).abs() < 0.1);
 }
 
 #[test]

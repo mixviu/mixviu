@@ -37,7 +37,7 @@ pub struct SceneView {
     widgets: Widgets,
     focus_error: Option<String>,
     shown_revision: Option<u64>,
-    slots: BTreeMap<String,egui::Rect>,
+    slots: BTreeMap<String, egui::Rect>,
 }
 
 impl SceneView {
@@ -73,14 +73,25 @@ impl SceneView {
     pub fn model(&self) -> &Value {
         &self.tree.model
     }
-    pub fn has_slot(&self,name:&str)->bool {
-        self.tree.nodes.values().any(|node|node.ports.get("window_slot").and_then(Value::as_str)==Some(name))
+    pub fn has_slot(&self, name: &str) -> bool {
+        self.tree
+            .nodes
+            .values()
+            .any(|node| node.ports.get("window_slot").and_then(Value::as_str) == Some(name))
     }
     /// Host geometry for scene-declared slots. An attached dock child draws
     /// there instead of consuming its ordinary edge; no app layout is inferred.
-    pub fn set_slots(&mut self,slots:BTreeMap<String,egui::Rect>)->Result<(),String>{
-        if slots.iter().any(|(name,rect)|!self.has_slot(name)||!rect.is_finite()||!rect.is_positive()) {return Err("invalid or undeclared scene slot".into());}
-        if self.slots!=slots{self.slots=slots;self.shown_revision=None;}
+    pub fn set_slots(&mut self, slots: BTreeMap<String, egui::Rect>) -> Result<(), String> {
+        if slots
+            .iter()
+            .any(|(name, rect)| !self.has_slot(name) || !rect.is_finite() || !rect.is_positive())
+        {
+            return Err("invalid or undeclared scene slot".into());
+        }
+        if self.slots != slots {
+            self.slots = slots;
+            self.shown_revision = None;
+        }
         Ok(())
     }
     /// Shared control admission uses the currently rendered definition/model.
@@ -257,7 +268,14 @@ impl SceneView {
         if node.ports.get("hidden").and_then(Value::as_bool) == Some(true) {
             return;
         }
-        if node.ports.get("slot_only").and_then(Value::as_str).is_some_and(|name|!self.slots.contains_key(name)){return;}
+        if node
+            .ports
+            .get("slot_only")
+            .and_then(Value::as_str)
+            .is_some_and(|name| !self.slots.contains_key(name))
+        {
+            return;
+        }
         let key = route.map_or_else(
             || id.to_owned(),
             |(_, _, item)| format!("{}#{id}", item["id"].as_str().unwrap_or("")),
@@ -568,8 +586,14 @@ impl SceneView {
             {
                 continue;
             }
-            if let Some(rect)=nodes.get(child).and_then(|node|node.ports.get("window_slot")).and_then(Value::as_str).and_then(|slot|self.slots.get(slot)).copied(){
-                self.child_rect(ui,child,rect,nodes,route,depth,events);
+            if let Some(rect) = nodes
+                .get(child)
+                .and_then(|node| node.ports.get("window_slot"))
+                .and_then(Value::as_str)
+                .and_then(|slot| self.slots.get(slot))
+                .copied()
+            {
+                self.child_rect(ui, child, rect, nodes, route, depth, events);
                 continue;
             }
             let placement = &placements[child];
@@ -703,16 +727,34 @@ impl Event {
 }
 
 fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
-    let mut slots=std::collections::BTreeSet::new();
-    for node in tree.nodes.values(){
-        if let Some(slot)=node.ports.get("window_slot") {
-            let name=slot.as_str().filter(|name|!name.is_empty()&&name.len()<=128).ok_or("invalid scene slot name")?;
-            if !slots.insert(name){return Err("duplicate scene slot declaration".into());}
+    let mut slots = std::collections::BTreeSet::new();
+    for node in tree.nodes.values() {
+        if let Some(slot) = node.ports.get("window_slot") {
+            let name = slot
+                .as_str()
+                .filter(|name| !name.is_empty() && name.len() <= 128)
+                .ok_or("invalid scene slot name")?;
+            if !slots.insert(name) {
+                return Err("duplicate scene slot declaration".into());
+            }
         }
     }
     for (id, node) in &tree.nodes {
-        if node.ports.get("slot_only").is_some_and(|slot|slot.as_str().is_none_or(|name|!slots.contains(name))){return Err("slot-only node requires a declared scene slot".into());}
-        if node.ports.contains_key("window_slot") && !tree.nodes.values().any(|parent|parent.family=="dock"&&children(parent).any(|child|child==id)) {return Err("scene slots must attach a dock child".into());}
+        if node
+            .ports
+            .get("slot_only")
+            .is_some_and(|slot| slot.as_str().is_none_or(|name| !slots.contains(name)))
+        {
+            return Err("slot-only node requires a declared scene slot".into());
+        }
+        if node.ports.contains_key("window_slot")
+            && !tree
+                .nodes
+                .values()
+                .any(|parent| parent.family == "dock" && children(parent).any(|child| child == id))
+        {
+            return Err("scene slots must attach a dock child".into());
+        }
         match node.family.as_str() {
             "split" => {
                 if children(node).count() != 2

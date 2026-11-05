@@ -263,6 +263,10 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     // and canonical resolved documents. A window is edge metadata, not a
     // flex child.
     if f != "window" {
+        // Optional Viu host geometry slots. No defaults: existing resolved
+        // scenes retain their canonical form and ordinary dock placement.
+        ports.push(p("window_slot", "string", false, None));
+        ports.push(p("slot_only", "string", false, None));
         if f != "text" {
             ports.push(p("hidden", "bool", false, None));
         }
