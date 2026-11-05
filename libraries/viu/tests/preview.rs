@@ -21,7 +21,8 @@ fn cache_preview_decodes_off_thread_and_retires_its_texture_when_removed() {
             assert!(widgets.widget(ui, &image, &json!({})).is_empty());
             widgets.finish_frame().unwrap();
         });
-        output.textures_delta.clear();drop(output);
+        output.textures_delta.clear();
+        drop(output);
         if widgets.image_states()["preview"]["phase"] == "ready" {
             break;
         }

@@ -69,7 +69,8 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         assert!(view.show(ui).is_empty());
     });
-    output.textures_delta.clear();drop(output);
+    output.textures_delta.clear();
+    drop(output);
     assert!(view.geometry.contains_key("left-tree"));
     let seq = runtime
         .event(
@@ -94,6 +95,7 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
         )
         .unwrap();
     let started = wait(&runtime, &mut jobs, seq);
+    assert_eq!(started.0.reply.as_ref().map(|r|r.rc),Some(0),"{:?}",started.0.reply);
     assert_eq!(started.0.model.unwrap()["busy"], true);
     let mut done = started.1;
     let end = Instant::now() + Duration::from_secs(8);
