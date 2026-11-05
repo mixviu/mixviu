@@ -798,7 +798,11 @@ impl eframe::App for App {
             viu::appearance::colour(ctx, "dock").unwrap_or(ui.visuals().panel_fill),
         );
         self.window_frame
-            .show(ui, &self.title, &self.session.snapshot["state"]["values"]);
+            .show_with_header(ui, &self.title, &self.session.snapshot["state"]["values"],self.view.as_ref().is_some_and(|view|view.has_slot("window.header")));
+        if let Some(view)=self.view.as_mut(){
+            let slots=self.window_frame.geometry.get("window.header").map(|rect|BTreeMap::from([("window.header".into(),*rect)])).unwrap_or_default();
+            if let Err(error)=view.set_slots(slots){self.error=error;}
+        }
         let events = if let Some(view) = &mut self.view {
             view.show(ui)
         } else {

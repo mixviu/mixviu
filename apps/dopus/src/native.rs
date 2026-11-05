@@ -987,7 +987,7 @@ impl Native {
     pub fn model(&self) -> Value {
         let core = self.core();
         let config = core.config_snapshot();
-        let mut values = json!({"menu":self.menus(),"toolbar":self.toolbar(),"status":self.info,"properties":self.properties(),"form":self.form});
+        let mut values = json!({"caption-title":dopus_core::sanitise_display_path(&core.pane(core.active()).path),"menu":self.menus(),"toolbar":self.toolbar(),"status":self.info,"properties":self.properties(),"form":self.form});
         let mut panes = Vec::new();
         let context = self.contract["context"]
             .as_array()

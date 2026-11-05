@@ -93,7 +93,7 @@ end
 fn dp_project($state,$contract,$cache)
   $context=map($contract.context,fn($id)=dp_command($state,$contract,$id))
   $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
-  $values={menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
+  $values={"caption-title":$dp.dp_display($state.panes[$state.active].path),menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
   $panes=[]
   for $i=0 to 1
     $p=$state.panes[$i]

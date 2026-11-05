@@ -39,6 +39,9 @@ pub struct WindowFrame {
 }
 impl WindowFrame {
     pub fn show(&mut self, ui: &mut Ui, title: &str, settings: &Value) {
+        self.show_with_header(ui,title,settings,false);
+    }
+    pub fn show_with_header(&mut self, ui:&mut Ui,title:&str,settings:&Value,header:bool){
         self.geometry.clear();
         self.close_requested = false;
         let requested = settings["window.decorations"].as_str().unwrap_or("auto");
@@ -84,6 +87,7 @@ impl WindowFrame {
             ),
         );
         self.geometry.insert("window.title".into(), drag);
+        if header{self.geometry.insert("window.header".into(),drag);}
         let response = ui.interact(
             drag,
             ui.scope_id().with("viu-window-drag"),
@@ -100,13 +104,13 @@ impl WindowFrame {
             egui::FontId::new(metrics.title_size, egui::FontFamily::Proportional),
         );
         let title = crate::elide::fit(ui, title, &font, (drag.width() - 24.0).max(0.0));
-        ui.painter_at(drag).text(
+        if !header {ui.painter_at(drag).text(
             drag.center(),
             egui::Align2::CENTER_CENTER,
             title,
             font,
             ui.visuals().text_color(),
-        );
+        );}
         let names = if left {
             ["close", "minimize", "maximize"]
         } else {
