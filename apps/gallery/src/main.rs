@@ -268,6 +268,7 @@ impl eframe::App for Gallery {
         }
         ui.heading("Viu Widget Gallery");
         ui.small("Same widgets · same inputs · independent Rust / Mix controllers");
+        ui.small(format!("{} actions · {} activations · {}",self.model["serial"],self.model["activations"],self.model["last"].as_str().unwrap_or("Loading")));
         ui.separator();
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);

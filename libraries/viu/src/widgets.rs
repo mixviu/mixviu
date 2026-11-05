@@ -125,15 +125,18 @@ impl Widgets {
     ) -> Vec<Intent> {
         self.geometry.clear();
         let mut intents = Vec::new();
+        let width = ((ui.available_width() - 12.0) / 2.0).max(200.0);
         egui::Grid::new("viu-widget-gallery")
             .num_columns(2)
+            .min_col_width(width)
+            .max_col_width(width)
             .spacing([12.0, 5.0])
             .show(ui, |ui| {
-                let width = ((ui.available_width() - 12.0) / 2.0).max(200.0);
                 for (index, widget) in definitions.iter().enumerate() {
                     let response = ui
                         .push_id(&widget.id, |ui| {
-                            ui.set_width(width);
+                            ui.set_min_width(width);
+                            ui.set_max_width(width);
                             ui.vertical(|ui| {
                                 ui.label(
                                     egui::RichText::new(format!(
@@ -308,9 +311,9 @@ impl Widgets {
                 if widget.kind == "table" {
                     let reversed = model["sorted"][id].as_bool().unwrap_or(false);
                     let header = ui.button(if reversed {
-                        "Name ↓                         Size"
+                        "Name v                         Size"
                     } else {
-                        "Name ↑                         Size"
+                        "Name ^                         Size"
                     });
                     self.remember(ui, &format!("{id}.sort"), &header);
                     if header.clicked() {
@@ -324,9 +327,9 @@ impl Widgets {
                 let expanded = model["expanded"][id].as_bool().unwrap_or(true);
                 if widget.kind == "tree" {
                     let header = ui.button(if expanded {
-                        "▾ Example folder"
+                        "v Example folder"
                     } else {
-                        "▸ Example folder"
+                        "> Example folder"
                     });
                     self.remember(ui, &format!("{id}.expand"), &header);
                     if header.clicked() {
@@ -394,9 +397,9 @@ impl Widgets {
                 let r = ui.selectable_label(
                     open,
                     if open {
-                        "▾ Details: reusable Viu content"
+                        "v Details: reusable Viu content"
                     } else {
-                        "▸ Details"
+                        "> Details"
                     },
                 );
                 if r.clicked() {
