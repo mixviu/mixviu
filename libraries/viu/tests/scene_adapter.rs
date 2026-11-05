@@ -90,16 +90,20 @@ fn unsupported_scene_content_refuses_at_load() {
 
 #[test]
 fn applying_a_model_does_not_claim_that_native_controls_have_drawn_it() {
-    let source=scene(json!({"root":{"widget":"text","text":"= $model.label"}}));
-    let mut view=SceneView::with_model(&source,json!({"label":"Before"})).unwrap();
-    let ctx=egui::Context::default();
+    let source = scene(json!({"root":{"widget":"text","text":"= $model.label"}}));
+    let mut view = SceneView::with_model(&source, json!({"label":"Before"})).unwrap();
+    let ctx = egui::Context::default();
     assert!(!view.current_revision_drawn());
-    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
     output.textures_delta.clear();
     assert!(view.current_revision_drawn());
     view.apply_model(json!({"label":"After"})).unwrap();
     assert!(!view.current_revision_drawn());
-    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
     output.textures_delta.clear();
     assert!(view.current_revision_drawn());
     assert!(view.apply_model(json!([])).is_err());

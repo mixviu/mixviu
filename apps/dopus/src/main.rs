@@ -720,7 +720,10 @@ impl eframe::App for App {
             } else if self.input_wait
                 && self.inflight.is_empty()
                 && !self.panel.pending()
-                && !self.view.as_ref().is_some_and(|v| v.focus_pending() || !v.current_revision_drawn())
+                && !self
+                    .view
+                    .as_ref()
+                    .is_some_and(|v| v.focus_pending() || !v.current_revision_drawn())
             {
                 self.input_wait = false;
                 let mut answer = self.state();
