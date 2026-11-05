@@ -47,6 +47,7 @@ impl Client {
             return;
         }
         self.last_sequence = done.sequence;
+        if !done.behaviour_available { self.behaviour_ready = false; }
         eprintln!(
             "VIU completion generation={} sequence={} callback_us={} error={:?}",
             done.generation,
@@ -55,9 +56,6 @@ impl Client {
             done.error
         );
         if let Some(error) = done.error {
-            if error.starts_with("behaviour_unavailable:") || error.contains("deadline exceeded") {
-                self.behaviour_ready = false;
-            }
             self.error = error;
             if done.sequence == 0 {
                 self.pending_view = None;

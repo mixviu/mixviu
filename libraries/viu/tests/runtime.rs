@@ -120,15 +120,33 @@ fn drop_cancels_sleeping_behaviour_and_reaps_worker() {
 #[test]
 fn typed_and_legacy_bodies_preserve_nested_model_and_publication_snapshot() {
     for body in ["$payload", "json_encode($payload)"] {
-        let source = format!(r#"$ctx=viu_context()
+        let source = format!(
+            r#"$ctx=viu_context()
 $payload={{generation:$ctx.generation,value:{{items:[{{id:"a",cells:["line\nnext","é"]}}], flag:true, empty:nil}}}}
 send "viu-local" "scenes.model" body={body}
 $payload.value.items[0].id="mutated after publication"
-"#);
+"#
+        );
         let (mut runtime, wakes) = runtime(2);
         runtime.load(program(&source)).unwrap();
         let done = next(&runtime, &wakes);
         assert!(done.error.is_none(), "{:?}", done.error);
-        assert_eq!(done.model, Some(json!({"items":[{"id":"a","cells":["line\nnext","é"]}],"flag":true,"empty":null})));
+        assert_eq!(
+            done.model,
+            Some(json!({"items":[{"id":"a","cells":["line\nnext","é"]}],"flag":true,"empty":null}))
+        );
     }
+}
+
+#[test]
+fn application_error_text_cannot_retire_a_live_generation() {
+    let (mut runtime, wakes) = runtime(2);
+    runtime.load(program(&(INIT.to_owned() + "\non named; raise(\"APP\",\"upstream deadline exceeded\"); end"))).unwrap();
+    assert!(next(&runtime, &wakes).error.is_none());
+    runtime.event("named".into(), json!({})).unwrap();
+    let failed = next(&runtime, &wakes);
+    assert!(failed.error.unwrap().contains("deadline exceeded"));
+    assert!(failed.behaviour_available);
+    runtime.event("bump".into(), json!({})).unwrap();
+    assert_eq!(next(&runtime, &wakes).model, Some(json!({"n":1})));
 }

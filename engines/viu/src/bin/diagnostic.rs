@@ -98,9 +98,16 @@ fn main() {
   send "viu-local" "scenes.model" body=$encoded
   $p3 = monotonic()
   eprint(json_encode({slice_us:($p1-$p0)*1000000,prepare_us:($p2-$p1)*1000000,send_us:($p3-$p2)*1000000}))"#)
-    } else { BEHAVIOUR.into() };
-    let source = if string_body { source } else {
-        source.replace("json_encode({generation:$ctx.generation,value:$model})", "{generation:$ctx.generation,value:$model}")
+    } else {
+        BEHAVIOUR.into()
+    };
+    let source = if string_body {
+        source
+    } else {
+        source.replace(
+            "json_encode({generation:$ctx.generation,value:$model})",
+            "{generation:$ctx.generation,value:$model}",
+        )
     };
     let started = Instant::now();
     let (tx, rx) = mpsc::channel();
@@ -150,7 +157,10 @@ fn main() {
             runtime.event("intent".into(), args.clone()).unwrap();
             let done = next(&runtime, &rx);
             if profile && iteration >= 4 {
-                stages.push(serde_json::from_str::<Value>(done.stderr.trim()).expect("profile stage receipt"));
+                stages.push(
+                    serde_json::from_str::<Value>(done.stderr.trim())
+                        .expect("profile stage receipt"),
+                );
             }
             let actual = done.model.unwrap();
             draw(&ctx_mix, &mut mix_view, actual.clone());

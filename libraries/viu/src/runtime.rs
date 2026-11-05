@@ -65,6 +65,22 @@ pub struct Completion {
     pub elapsed: Duration,
     pub stdout: String,
     pub stderr: String,
+    pub behaviour_available: bool,
+}
+
+enum RunFailure {
+    Evaluation(String),
+    Deadline,
+    OwnerDropped,
+}
+impl RunFailure {
+    fn message(self) -> String {
+        match self {
+            Self::Evaluation(message) => message,
+            Self::Deadline => "behaviour deadline exceeded; reload required".into(),
+            Self::OwnerDropped => "owner dropped".into(),
+        }
+    }
 }
 
 enum Request {
@@ -145,8 +161,8 @@ impl Runtime {
                                     Ok(())
                                 }))
                             }
-                            Some(_) => Err("stale_generation: superseded behaviour".into()),
-                            None => Err("behaviour_unavailable: load failed or callback deadline expired; reload required".into()),
+                            Some(_) => Err(RunFailure::Evaluation("stale_generation: superseded behaviour".into())),
+                            None => Err(RunFailure::Evaluation("behaviour_unavailable: load failed or callback deadline expired; reload required".into())),
                         };
                         (generation, sequence, outcome)
                     }
@@ -156,13 +172,13 @@ impl Runtime {
                     Some((_, _, local, out, err)) => (local.model.borrow_mut().take(), String::from_utf8_lossy(&out.take()).into_owned(), String::from_utf8_lossy(&err.take()).into_owned(), local.error.borrow_mut().take()),
                     None => (None, String::new(), String::new(), None),
                 };
-                let result = result.and_then(|_| fault.map_or(Ok(()), Err));
+                let result = result.and_then(|_| fault.map_or(Ok(()), |error| Err(RunFailure::Evaluation(error))));
                 // Failed callbacks never publish a partial model to the UI.
                 if result.is_err() { model = None; }
-                if (sequence == 0 && result.is_err()) || result.as_ref().is_err_and(|e| e.contains("deadline exceeded")) {
+                if (sequence == 0 && result.is_err()) || matches!(&result, Err(RunFailure::Deadline)) {
                     if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                 }
-                let completion = Completion { generation, sequence, model, error: result.err(), elapsed: start.elapsed(), stdout, stderr };
+                let completion = Completion { generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some() };
                 if results.send(completion).is_err() { break; }
                 wake();
             }
@@ -199,9 +215,20 @@ impl Runtime {
         self.submit_event(command, args, false)
     }
 
-    fn submit_event(&mut self, command: String, args: Json, is_request: bool) -> Result<u64, Refusal> {
+    fn submit_event(
+        &mut self,
+        command: String,
+        args: Json,
+        is_request: bool,
+    ) -> Result<u64, Refusal> {
         let sequence = self.sequence.checked_add(1).expect("sequence overflow");
-        self.enqueue(Request::Event(self.generation, sequence, command, args, is_request))?;
+        self.enqueue(Request::Event(
+            self.generation,
+            sequence,
+            command,
+            args,
+            is_request,
+        ))?;
         self.sequence = sequence;
         Ok(sequence)
     }
@@ -244,14 +271,14 @@ impl Drop for Runtime {
 async fn bounded<T>(
     stop: &AtomicBool,
     future: impl std::future::Future<Output = MixResult<T>>,
-) -> Result<T, String> {
+) -> Result<T, RunFailure> {
     tokio::pin!(future);
     // Event-driven callback execution with a deadline; this timer belongs only
     // to active behaviour, and causes no idle client wakes.
     tokio::select! {
-        result = &mut future => result.map_err(|e| e.to_string()),
-        _ = async { loop { tokio::time::sleep(Duration::from_millis(10)).await; if stop.load(Ordering::Acquire) { break; } } } => Err("owner dropped".into()),
-        _ = tokio::time::sleep(Duration::from_secs(20)) => Err("behaviour deadline exceeded".into()),
+        result = &mut future => result.map_err(|e| RunFailure::Evaluation(e.to_string())),
+        _ = async { loop { tokio::time::sleep(Duration::from_millis(10)).await; if stop.load(Ordering::Acquire) { break; } } } => Err(RunFailure::OwnerDropped),
+        _ = tokio::time::sleep(Duration::from_secs(20)) => Err(RunFailure::Deadline),
     }
 }
 
@@ -329,7 +356,8 @@ impl BusHandler for Local {
                         if !body["value"].is_object() {
                             return Err(failure("model must be a map"));
                         }
-                        *self.model.borrow_mut() = body.as_object_mut().and_then(|m| m.remove("value"));
+                        *self.model.borrow_mut() =
+                            body.as_object_mut().and_then(|m| m.remove("value"));
                     }
                     json!({"ok":true})
                 }

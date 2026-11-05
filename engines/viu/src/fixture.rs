@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Explicit in-process safe backend fixture. Never reaches audio or a broker.
+//! Its 150% safety ceiling mirrors fixture-audio.mix; application clamping
+//! remains in Mix and is checked separately from this backend refusal guard.
 use mix::evaluator::{BusFuture, IncomingEvent};
 use mix::{BusHandler, MixResult, value::Value};
 use serde_json::{Value as Json, json};

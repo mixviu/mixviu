@@ -139,9 +139,19 @@ fn native_widget_input_runs_existing_mix_callbacks_and_readback() {
         .unwrap();
     assert_eq!(view.model()["out"]["level_text"], "75%");
     for open in [true, false, true] {
-        runtime.notify("scenes.changed".into(), json!({"scenes":[{"name":"volume","open":open}]})).unwrap();
+        runtime
+            .notify(
+                "scenes.changed".into(),
+                json!({"scenes":[{"name":"volume","open":open}]}),
+            )
+            .unwrap();
         let done = ready(&runtime, &wakes);
-        if open { assert!(done.model.is_some(), "every popup reopen must refresh, not just the first"); }
+        if open {
+            assert!(
+                done.model.is_some(),
+                "every popup reopen must refresh, not just the first"
+            );
+        }
     }
 }
 
