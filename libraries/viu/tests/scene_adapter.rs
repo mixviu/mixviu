@@ -132,6 +132,7 @@ fn menu_paths_drive_native_popups_and_refuse_disabled_or_leaf_targets() {
         raw.events.append(&mut input.now);
         let mut out = ctx.run_ui(raw,|ui| { view.show(ui); });
         out.textures_delta.clear();
+        eprintln!("menu frame {frame}: {} geometry={:?}", viu::rich::menu_snapshot(&menus,"menu",&view.geometry), view.geometry.keys().collect::<Vec<_>>());
         if frame == 0 {
             input.queue("menu.open",&json!({"menu":"View","path":["Theme"]}),&mut view).unwrap();
         } else if let Some(next) = input.later.pop_front() {
