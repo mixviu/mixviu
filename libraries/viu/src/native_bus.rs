@@ -107,9 +107,12 @@ impl Endpoint {
         let client = self.client.clone();
         Box::new(move || Rc::new(Bridge { client }))
     }
-    pub fn backend_maker(&self)->crate::runtime::BackendMaker{
-        let shared=self.client.clone();
-        Arc::new(move||{let client=shared.clone();Box::new(move||Rc::new(Bridge{client}))})
+    pub fn backend_maker(&self) -> crate::runtime::BackendMaker {
+        let shared = self.client.clone();
+        Arc::new(move || {
+            let client = shared.clone();
+            Box::new(move || Rc::new(Bridge { client }))
+        })
     }
     pub fn client(&self) -> Option<Arc<SupervisedClient>> {
         self.client

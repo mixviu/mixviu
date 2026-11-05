@@ -29,7 +29,7 @@ pub struct Jobs {
     running: BTreeMap<String, Running>,
     limit: usize,
     wake: Wake,
-    native_backend:Option<crate::runtime::BackendMaker>,
+    native_backend: Option<crate::runtime::BackendMaker>,
 }
 impl Jobs {
     pub fn new(limit: usize, wake: Wake) -> Self {
@@ -41,10 +41,12 @@ impl Jobs {
             running: BTreeMap::new(),
             limit,
             wake,
-            native_backend:None,
+            native_backend: None,
         }
     }
-    pub fn set_native_backend(&mut self,maker:crate::runtime::BackendMaker){self.native_backend=Some(maker);}
+    pub fn set_native_backend(&mut self, maker: crate::runtime::BackendMaker) {
+        self.native_backend = Some(maker);
+    }
     pub fn backend(&self, base: Option<BackendFactory>) -> BackendFactory {
         let tx = self.tx.clone();
         let wake = self.wake.clone();
@@ -62,9 +64,10 @@ impl Jobs {
     pub fn poll(&mut self) -> Vec<ResultMessage> {
         while let Ok(start) = self.rx.try_recv() {
             let id = start.spec["id"].as_str().unwrap_or("");
-            if start.spec["cancel"]==true{
-                let removed=self.running.remove(id).is_some();
-                let _=start.reply.send((0,json!({"cancelled":removed,"id":id})));continue;
+            if start.spec["cancel"] == true {
+                let removed = self.running.remove(id).is_some();
+                let _ = start.reply.send((0, json!({"cancelled":removed,"id":id})));
+                continue;
             }
             let path = start.spec["path"].as_str();
             let source = start.spec["source"].as_str();
@@ -81,7 +84,11 @@ impl Jobs {
                 let _ = start.reply.send((10, json!({"error_code":"BUSY"})));
                 continue;
             }
-            let mut runtime = Runtime::new(2, self.wake.clone(), self.native_backend.as_ref().map(|f|f()));
+            let mut runtime = Runtime::new(
+                2,
+                self.wake.clone(),
+                self.native_backend.as_ref().map(|f| f()),
+            );
             let program = Program {
                 path: PathBuf::from(path.unwrap()),
                 source: source.unwrap().into(),
@@ -175,10 +182,14 @@ impl BusHandler for Backend {
         args: &'a MixValue,
     ) -> BusFuture<'a, MixResult<(i32, MixValue, MixValue)>> {
         Box::pin(async move {
-            if target == "viu-local" && ["jobs.start","jobs.cancel"].contains(&command) {
+            if target == "viu-local" && ["jobs.start", "jobs.cancel"].contains(&command) {
                 let mut spec = to_json(args)?;
-                if !spec.is_object(){return Err(error("job arguments must be an object"));}
-                if command=="jobs.cancel"{spec["cancel"]=json!(true);}
+                if !spec.is_object() {
+                    return Err(error("job arguments must be an object"));
+                }
+                if command == "jobs.cancel" {
+                    spec["cancel"] = json!(true);
+                }
                 let (reply, response) = oneshot::channel();
                 if self.tx.try_send(Start { spec, reply }).is_err() {
                     let result = from_json(json!({"error_code":"BUSY"}))?;

@@ -17,7 +17,7 @@ use serde_json::{Value as Json, json};
 
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
 pub type BackendFactory = Box<dyn FnOnce() -> Rc<dyn BusHandler> + Send>;
-pub type BackendMaker=Arc<dyn Fn()->BackendFactory+Send+Sync>;
+pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 
 /// Per-request log retention has a fixed ceiling, including a noisy script.
 #[derive(Clone, Default)]

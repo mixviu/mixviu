@@ -66,10 +66,10 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
     .unwrap();
     let ctx = egui::Context::default();
     viu::appearance::install(&ctx);
-    let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         assert!(view.show(ui).is_empty());
     });
-    drop(output);
+    output.textures_delta.clear();drop(output);
     assert!(view.geometry.contains_key("left-tree"));
     let seq = runtime
         .event(

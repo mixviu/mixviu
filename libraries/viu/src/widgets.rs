@@ -106,7 +106,7 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
-            "image-view"=>return crate::image_view::validate(value),
+            "image-view" => return crate::image_view::validate(value),
             "tree-table" => return crate::tree_table::validate(value),
             "icon" => {
                 value["name"]
@@ -289,10 +289,12 @@ pub struct Widgets {
     pub geometry: BTreeMap<String, Rect>,
     pub focus: Option<String>,
     pub text_input_active: bool,
-    images:crate::image_view::Images,
+    images: crate::image_view::Images,
 }
 impl Widgets {
-    pub fn image_states(&self)->Value{self.images.states()}
+    pub fn image_states(&self) -> Value {
+        self.images.states()
+    }
     /// Begin exactly once before drawing an application frame. Geometry is
     /// retained after finish_frame for automation until the next begin_frame.
     pub fn begin_frame(&mut self) {
@@ -351,7 +353,7 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
-            "image-view"=>self.images.draw(ui,id,value),
+            "image-view" => self.images.draw(ui, id, value),
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" => {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)

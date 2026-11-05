@@ -72,7 +72,7 @@ pub struct Decoder<K> {
     /// The thread's name.
     name: String,
     started: bool,
-    thread:Option<std::thread::JoinHandle<()>>,
+    thread: Option<std::thread::JoinHandle<()>>,
     /// The next request's identity.
     next: u64,
     /// Requests asked for and not yet taken, by key and identity: a decode
@@ -99,7 +99,7 @@ impl<K: Clone + PartialEq + Send + 'static> Decoder<K> {
             rx,
             name: name.to_owned(),
             started: false,
-            thread:None,
+            thread: None,
             next: 0,
             asked: Vec::new(),
             done: Vec::new(),
@@ -119,7 +119,9 @@ impl<K: Clone + PartialEq + Send + 'static> Decoder<K> {
         if self.outstanding(key) {
             return true;
         }
-        if self.asked.len()+self.done.len()>=16{return false;}
+        if self.asked.len() + self.done.len() >= 16 {
+            return false;
+        }
         if !self.start() {
             return false;
         }
@@ -155,11 +157,11 @@ impl<K: Clone + PartialEq + Send + 'static> Decoder<K> {
         let mut inbox = self.shared.inbox.lock().unwrap_or_else(|e| e.into_inner());
         inbox.requests.clear();
     }
-    pub fn retain(&mut self,keys:&[K]){
-        self.asked.retain(|(key,_)|keys.contains(key));
-        self.done.retain(|(key,_)|keys.contains(key));
-        let mut inbox=self.shared.inbox.lock().unwrap_or_else(|e|e.into_inner());
-        inbox.requests.retain(|(_,key,_,_)|keys.contains(key));
+    pub fn retain(&mut self, keys: &[K]) {
+        self.asked.retain(|(key, _)| keys.contains(key));
+        self.done.retain(|(key, _)| keys.contains(key));
+        let mut inbox = self.shared.inbox.lock().unwrap_or_else(|e| e.into_inner());
+        inbox.requests.retain(|(_, key, _, _)| keys.contains(key));
     }
 
     /// The decode of `key`, once it is done.
@@ -204,7 +206,7 @@ impl<K: Clone + PartialEq + Send + 'static> Decoder<K> {
         let spawned = std::thread::Builder::new()
             .name(self.name.clone())
             .spawn(move || decode_requests(&shared, &tx));
-        self.thread=spawned.ok();
+        self.thread = spawned.ok();
         self.started = self.thread.is_some();
         self.started
     }
@@ -217,7 +219,9 @@ impl<K> Drop for Decoder<K> {
         inbox.requests.clear();
         drop(inbox);
         self.shared.ready.notify_all();
-        if let Some(thread)=self.thread.take(){let _=thread.join();}
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 
@@ -250,14 +254,24 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
     #[test]
-    fn outstanding_decodes_refuse_at_capacity_and_drop_joins_the_worker(){
-        let dir=tempfile::tempdir().unwrap();let path=dir.path().join("cached.png");
-        std::fs::write(&path,thumbs::png::blank()).unwrap();let ctx=egui::Context::default();
-        let mut decoder=Decoder::new("bounded-decoder");let weak=Arc::downgrade(&decoder.shared);
-        for key in 0..16{assert!(decoder.ask(&key,&path,&ctx));}
-        assert!(!decoder.ask(&16,&path,&ctx));
-        decoder.withdraw_all();assert!(decoder.ask(&17,&path,&ctx));
-        drop(decoder);assert!(weak.upgrade().is_none(),"decoder thread must release its owner before Drop returns");
+    fn outstanding_decodes_refuse_at_capacity_and_drop_joins_the_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cached.png");
+        std::fs::write(&path, thumbs::png::blank()).unwrap();
+        let ctx = egui::Context::default();
+        let mut decoder = Decoder::new("bounded-decoder");
+        let weak = Arc::downgrade(&decoder.shared);
+        for key in 0..16 {
+            assert!(decoder.ask(&key, &path, &ctx));
+        }
+        assert!(!decoder.ask(&16, &path, &ctx));
+        decoder.withdraw_all();
+        assert!(decoder.ask(&17, &path, &ctx));
+        drop(decoder);
+        assert!(
+            weak.upgrade().is_none(),
+            "decoder thread must release its owner before Drop returns"
+        );
     }
 
     /// A PNG signature and IHDR claiming `w`x`h`, with no image data.
