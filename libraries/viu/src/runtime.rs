@@ -94,7 +94,7 @@ impl RunFailure {
 
 enum Request {
     Load(u64, Program),
-    Event(u64, u64, String, Json, bool),
+    Event(u64, u64, String, Json, bool, BTreeMap<String,String>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -155,14 +155,13 @@ impl Runtime {
                         current = Some((generation, eval, local, stdout, stderr));
                         (generation, 0, outcome.map(|_| ()))
                     }
-                    Request::Event(generation, sequence, command, args, is_request) => {
+                    Request::Event(generation, sequence, command, args, is_request, mut headers) => {
                         let outcome = match current.as_mut() {
                             Some((active, eval, ..)) if *active == generation => {
-                                let event = IncomingEvent { generation, command, headers: BTreeMap::from([
-                                    ("from".into(), "viu-client".into()),
-                                    ("type".into(), if is_request { "request" } else { "event" }.into()),
-                                    ("id".into(), sequence.to_string()),
-                                ]), body: args.to_string() };
+                                headers.entry("from".into()).or_insert_with(||"viu-client".into());
+                                headers.insert("type".into(),if is_request{"request"}else{"event"}.into());
+                                headers.insert("id".into(),sequence.to_string());
+                                let event = IncomingEvent { generation, command, headers, body: args.to_string() };
                                 let tasks = tokio::task::LocalSet::new();
                                 rt.block_on(bounded(&worker_stop, async {
                                     tasks.run_until(eval.dispatch_event(event)).await?;
@@ -215,13 +214,21 @@ impl Runtime {
     }
 
     pub fn event(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
-        self.submit_event(command, args, true)
+        self.submit_event(command, args, true,BTreeMap::new())
+    }
+    /// Preserve broker-stamped caller and topic metadata. Request correlation
+    /// remains local to the mailbox; the native owner retains the wire reply.
+    pub fn event_with_headers(&mut self,command:String,args:Json,headers:BTreeMap<String,String>)->Result<u64,Refusal>{
+        self.submit_event(command,args,true,headers)
     }
 
     /// Native Bus topic delivery has no reply obligation. It uses the same
     /// ordered mailbox and generation fences as UI requests.
     pub fn notify(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
-        self.submit_event(command, args, false)
+        self.submit_event(command, args, false,BTreeMap::new())
+    }
+    pub fn notify_with_headers(&mut self,command:String,args:Json,headers:BTreeMap<String,String>)->Result<u64,Refusal>{
+        self.submit_event(command,args,false,headers)
     }
 
     fn submit_event(
@@ -229,6 +236,7 @@ impl Runtime {
         command: String,
         args: Json,
         is_request: bool,
+        headers:BTreeMap<String,String>,
     ) -> Result<u64, Refusal> {
         let sequence = self.sequence.checked_add(1).expect("sequence overflow");
         self.enqueue(Request::Event(
@@ -237,6 +245,7 @@ impl Runtime {
             command,
             args,
             is_request,
+            headers,
         ))?;
         self.sequence = sequence;
         Ok(sequence)
@@ -331,6 +340,12 @@ fn failure(message: &str) -> MixError {
 }
 
 impl BusHandler for Local {
+    fn send_with_reply<'a>(&'a self,target:&'a str,command:&'a str,args:&'a Value)->BusFuture<'a,MixResult<(i32,Value,Value)>>{
+        Box::pin(async move{
+            if target!="viu-local"{return match &self.backend{Some(backend)=>backend.send_with_reply(target,command,args).await,None=>Err(failure("no native Bus backend configured"))};}
+            let(rc,result)=self.send(target,command,args).await?;Ok((rc,result.clone(),result))
+        })
+    }
     fn send<'a>(
         &'a self,
         target: &'a str,
@@ -404,6 +419,12 @@ impl BusHandler for Local {
     fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> {
         Box::pin(async { None })
     }
+    fn subscribe_topic<'a>(&'a self,topic:&'a str)->BusFuture<'a,MixResult<()>>{
+        Box::pin(async move{match &self.backend{Some(backend)=>backend.subscribe_topic(topic).await,None=>Err(failure("no native Bus backend configured"))}})
+    }
+    fn unsubscribe_topic<'a>(&'a self,topic:&'a str)->BusFuture<'a,MixResult<()>>{
+        Box::pin(async move{match &self.backend{Some(backend)=>backend.unsubscribe_topic(topic).await,None=>Err(failure("no native Bus backend configured"))}})
+    }
     fn reply<'a>(
         &'a self,
         _: &'a str,
@@ -413,9 +434,11 @@ impl BusHandler for Local {
         body: &'a str,
     ) -> BusFuture<'a, MixResult<()>> {
         Box::pin(async move {
-            if self.reply.borrow().is_some() {return Err(failure("callback already replied"));}
-            let body=serde_json::from_str(body).unwrap_or_else(|_|Json::String(body.into()));
-            *self.reply.borrow_mut()=Some(Reply{rc,body});
+            if self.reply.borrow().is_some() {
+                return Err(failure("callback already replied"));
+            }
+            let body = serde_json::from_str(body).unwrap_or_else(|_| Json::String(body.into()));
+            *self.reply.borrow_mut() = Some(Reply { rc, body });
             Ok(())
         })
     }

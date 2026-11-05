@@ -24,7 +24,7 @@ fn frame(
             }
         })
         .unwrap_or_default();
-    events.insert(0,egui::Event::ModifiersChanged(modifiers));
+    events.insert(0, egui::Event::ModifiersChanged(modifiers));
     let input = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,

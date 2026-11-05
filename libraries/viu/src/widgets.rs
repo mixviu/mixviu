@@ -194,7 +194,7 @@ impl Widget {
         {
             self.validate(value)?;
         }
-        if ["expand", "sort"].contains(&action) && !value.is_boolean() {
+        if self.kind!="tree-table" && ["expand", "sort"].contains(&action) && !value.is_boolean() {
             return Err("expand/sort requires bool".into());
         }
         if action == "activate"

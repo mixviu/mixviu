@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 icons = { path = "../icons" }
+bus = { path = "../bus", features = ["native"] }
 egui_extras = { version = "=0.37.0", default-features = false, features = ["svg"] }
 mix = { path = "../mix", features = ["regex", "tokio-sleep", "json", "datetime"] }
 thumbs.workspace = true
