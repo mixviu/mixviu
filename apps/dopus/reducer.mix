@@ -175,8 +175,8 @@ fn dp_action($s,$contract,$id,$params)
   elif $id=="location.focus" then $s.focus={id:if $i==0 then "left-location" else "right-location" end,selection:[0,len($s.locations[$i])]}
   elif $id=="view.toggle-places" then $s.places_open=not $s.places_open
   elif $id=="view.toggle-properties" then $s.properties_open=not $s.properties_open
-  elif $id=="view.refresh" then $s.panes[$i]=$dp.dp_refresh($p)
-  elif $id=="view.toggle-hidden" then $p.show_hidden=not $p.show_hidden;$s.panes[$i]=$dp.dp_refresh($p)
+  elif $id=="view.refresh" then $s.panes[$i]=$dp.dp_relist($p)
+  elif $id=="view.toggle-hidden" then $p.show_hidden=not $p.show_hidden;$s.panes[$i]=$dp.dp_relist($p)
   elif $id=="view.toggle-previews" then $s.panes[$i].previews=not $p.previews
   elif starts_with($id,"view.sort-") then
     $key=slice($id,len("view.sort-"));$p.ascending=if $p.sort==$key then not $p.ascending else true end;$p.sort=$key;$s.panes[$i]=$dp.dp_refresh($p)

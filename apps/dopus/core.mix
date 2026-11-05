@@ -111,6 +111,13 @@ end
 fn dp_pane($config)
   return dp_refresh({path:dp_path($config.path),show_hidden:$config.show_hidden ?? false,previews:$config.previews ?? true,sort:$config.sort ?? "name",ascending:$config.ascending ?? true,selected:nil,selected_paths:[],anchor:nil,expanded:{},back:[],forward:[],entries:[],root_entries:[],revision:0,generation:1,summary:"",error:nil})
 end
+-- A root relisting starts a new generation and clears selection/expansion,
+-- matching the original controller. Sorting/expansion use dp_refresh instead.
+fn dp_relist($pane)
+  $pane.selected=nil;$pane.selected_paths=[];$pane.anchor=nil;$pane.expanded={}
+  $pane.generation=$pane.generation+1
+  return dp_refresh($pane)
+end
 fn dp_navigate($pane,$path)
   $path=dp_path($path)
   if is_file($path) then $path=dirname($path) end
