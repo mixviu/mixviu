@@ -144,13 +144,24 @@ fn tree_table_admission_is_based_on_current_row_and_column_identity() {
     let mut bad = table(3);
     bad["rows"][1]["key"] = json!("item-0");
     assert!(w.validate(&bad).is_err());
+    for selection in [json!(["absent"]), json!(["item-0","item-0"]), json!(false)] {
+        let mut bad = table(3);
+        bad["selected_keys"] = selection;
+        assert!(w.validate(&bad).is_err());
+    }
+    let mut bad = table(3);
+    bad["focused_key"] = json!("absent");
+    assert!(w.validate(&bad).is_err());
 }
 
 #[test]
 fn native_drag_to_a_folder_in_the_same_table_reaches_the_folder_before_background() {
     let ctx = egui::Context::default();
     let mut widgets = Widgets::default();
-    let w = Widget::new("items", "tree-table", "", table(3)).with_properties(json!({"height":320}));
+    let mut value = table(3);
+    value["selected_keys"] = json!(["item-1","item-2"]);
+    value["focused_key"] = json!("item-1");
+    let w = Widget::new("items", "tree-table", "", value).with_properties(json!({"height":320}));
     frame(&ctx, &mut widgets, &w, vec![]);
     let start = widgets.geometry["items.row.1"].center();
     let end = widgets.geometry["items.row.0"].center();
@@ -192,7 +203,7 @@ fn native_drag_to_a_folder_in_the_same_table_reaches_the_folder_before_backgroun
     assert!(
         events.iter().any(|e| e.action == "drop"
             && e.value["destination"] == "item-0"
-            && e.value["keys"] == json!(["item-1"])),
+            && e.value["keys"] == json!(["item-1","item-2"])),
         "{events:?}"
     );
     assert_eq!(events.iter().filter(|e| e.action == "drop").count(), 1);

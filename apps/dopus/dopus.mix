@@ -21,6 +21,7 @@ fn dp_publish($state,$contract)
   if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
 end
 on dopus.initialise
+  $projection.dp_reset_rows()
   $state=$app.dp_initialise($event.args)
   $state.owner=viu_context().generation
   $state=$app.dp_update_previews($state)

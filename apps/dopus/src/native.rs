@@ -963,10 +963,10 @@ impl Native {
         for i in 0..2 {
             let p = core.pane(pane(i));
             let side = if i == 0 { "left" } else { "right" };
-            let rows=core.visible_rows(pane(i)).iter().map(|r|{let e=&r.entry;let expanded=p.expanded.contains(&e.path);json!({"key":e.path,"cells":[dopus_core::sanitise_display_text(&e.name),if e.is_dir{dopus_core::format_child_count(e.child_count)}else{e.size.map(dopus_core::format_size).unwrap_or_else(||"—".into())},date(e.modified)],"depth":r.depth,"branch":e.is_dir,"expanded":expanded,"selected":p.selected_paths.contains(&e.path),"focused":p.selected.as_ref()==Some(&e.path),"icon":icon(&e.path,e.is_dir,expanded)})}).collect::<Vec<_>>();
+            let rows=core.visible_rows(pane(i)).iter().map(|r|{let e=&r.entry;let expanded=p.expanded.contains(&e.path);json!({"key":e.path,"cells":[dopus_core::sanitise_display_text(&e.name),if e.is_dir{dopus_core::format_child_count(e.child_count)}else{e.size.map(dopus_core::format_size).unwrap_or_else(||"—".into())},date(e.modified)],"depth":r.depth,"branch":e.is_dir,"expanded":expanded,"selected":false,"focused":false,"icon":icon(&e.path,e.is_dir,expanded)})}).collect::<Vec<_>>();
             values[format!("{side}-location")] = json!(self.locations[i]);
             values[format!("{side}-summary")] = json!(p.footer_summary());
-            values[format!("{side}-tree")] = json!({"key":p.path,"revision":p.listing_revision,"active":core.active()==pane(i),"columns":self.contract["columns"],"sort":p.sort,"ascending":p.ascending,"rows":rows,"context":context,"background_context":background});
+            values[format!("{side}-tree")] = json!({"key":p.path,"revision":p.listing_revision,"active":core.active()==pane(i),"columns":self.contract["columns"],"sort":p.sort,"ascending":p.ascending,"rows":rows,"selected_keys":p.selected_paths,"focused_key":p.selected,"context":context,"background_context":background});
             let mut expanded = p.expanded.iter().collect::<Vec<_>>();
             expanded.sort();
             panes.push(json!({"path":p.path,"generation":p.generation,"show_hidden":p.show_hidden,"previews":p.previews,"sort":p.sort,"ascending":p.ascending,"selected":p.selected,"selected_paths":core.selected_paths(pane(i)),"expanded":expanded,"summary":p.footer_summary(),"rows":rows.len(),"error":null}));

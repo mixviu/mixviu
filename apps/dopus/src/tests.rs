@@ -105,6 +105,20 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
         selected["panes"][0]["selected"],
         json!(left.join("one.txt"))
     );
+    let rows = selected["values"]["left-tree"]["rows"].clone();
+    assert_eq!(selected["values"]["left-tree"]["selected_keys"], json!([left.join("one.txt")]));
+    let seq = runtime.event("dopus.call".into(), json!({"command":"dopus.execute","args":{"id":"selection.first"}})).unwrap();
+    let first_selected = wait(&runtime, &mut jobs, seq).0.model.unwrap();
+    assert_eq!(first_selected["values"]["left-tree"]["rows"], rows);
+    assert_eq!(first_selected["values"]["left-tree"]["focused_key"], json!(left.join("Folder")));
+    std::fs::write(left.join("new.txt"), "new listing").unwrap();
+    let seq = runtime.event("dopus.call".into(), json!({"command":"dopus.execute","args":{"id":"view.refresh"}})).unwrap();
+    let refreshed = wait(&runtime, &mut jobs, seq).0.model.unwrap();
+    assert_eq!(refreshed["panes"][0]["rows"], 3);
+    assert_ne!(refreshed["values"]["left-tree"]["rows"], rows);
+    assert_eq!(refreshed["values"]["left-tree"]["selected_keys"], json!([]));
+    let seq = runtime.event("dopus.call".into(), json!({"command":"dopus.execute","args":{"id":"selection.last"}})).unwrap();
+    wait(&runtime, &mut jobs, seq);
     let seq=runtime.event("dopus.call".into(),json!({"command":"dopus.intent","args":{"id":"left-tree","action":"select","value":{"key":"/not-a-row"}}})).unwrap();
     let refused = wait(&runtime, &mut jobs, seq).0;
     assert_eq!(refused.reply.unwrap().rc, 10);

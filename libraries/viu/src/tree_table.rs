@@ -72,7 +72,32 @@ pub fn validate(value: &Value) -> Result<(), String> {
             }
         }
     }
+    if let Some(selected) = value.get("selected_keys") {
+        let selected = selected.as_array().ok_or("selected_keys must be an array")?;
+        let mut seen = BTreeSet::new();
+        for key in selected {
+            let key = key.as_str().ok_or("selection key must be text")?;
+            if !keys.contains(key) || !seen.insert(key) {
+                return Err("unknown or duplicate selection key".into());
+            }
+        }
+    }
+    if let Some(focused) = value.get("focused_key") {
+        if !focused.is_null() && focused.as_str().is_none_or(|key| !keys.contains(key)) {
+            return Err("unknown focus key".into());
+        }
+    }
     Ok(())
+}
+
+fn selected(value: &Value, row: &Value) -> bool {
+    value.get("selected_keys").map_or(row["selected"] == true, |keys| {
+        keys.as_array().is_some_and(|keys| keys.contains(&row["key"]))
+    })
+}
+
+fn focused(value: &Value, row: &Value) -> bool {
+    value.get("focused_key").map_or(row["focused"] == true, |key| key == &row["key"])
 }
 
 pub fn validate_properties(properties: &Value) -> Result<(), String> {
@@ -354,12 +379,12 @@ pub(crate) fn draw(
                 let (rect,response)=ui.allocate_exact_size(vec2(available,row_h),Sense::click_and_drag());
                 geometry.insert(format!("{id}.row.{index}"),rect);
                 geometry.insert(format!("{id}.key.{key}"),rect);
-                response.widget_info(||egui::WidgetInfo::selected(egui::Role::Button,true,row["selected"]==true,row["cells"][0].as_str().unwrap_or("")));
-                let selected=row["selected"]==true;
-                let colour=if selected{ui.visuals().selection.stroke.color}else{ui.visuals().text_color()};
+                response.widget_info(||egui::WidgetInfo::selected(egui::Role::Button,true,selected(value,row),row["cells"][0].as_str().unwrap_or("")));
+                let is_selected=selected(value,row);
+                let colour=if is_selected{ui.visuals().selection.stroke.color}else{ui.visuals().text_color()};
                 let painter=ui.painter_at(rect);
-                if selected||response.hovered(){painter.rect_filled(rect,2.0,if selected{ui.visuals().selection.bg_fill}else{ui.visuals().widgets.hovered.weak_bg_fill});}
-                if row["focused"]==true&&value["active"]==true{painter.rect_stroke(rect.shrink(0.5),2.0,egui::Stroke::new(1.0,ui.visuals().selection.stroke.color.gamma_multiply(0.6)),egui::StrokeKind::Inside);}
+                if is_selected||response.hovered(){painter.rect_filled(rect,2.0,if is_selected{ui.visuals().selection.bg_fill}else{ui.visuals().widgets.hovered.weak_bg_fill});}
+                if focused(value,row)&&value["active"]==true{painter.rect_stroke(rect.shrink(0.5),2.0,egui::Stroke::new(1.0,ui.visuals().selection.stroke.color.gamma_multiply(0.6)),egui::StrokeKind::Inside);}
                 let mut tx=rect.left()+4.0+number(row,"depth",0.0)*14.0;
                 let chevron=Rect::from_center_size(pos2(tx+8.0,rect.center().y),vec2(16.0,16.0));
                 let mut toggled=false;
@@ -371,7 +396,7 @@ pub(crate) fn draw(
                 }
                 tx+=18.0;
                 let icon_rect=Rect::from_center_size(pos2(tx+8.0,rect.center().y),vec2(16.0,16.0));
-                icon(ui,text(row,"icon"),icon_rect,if selected{colour}else if row["branch"]==true{ui.visuals().hyperlink_color}else{ui.visuals().weak_text_color()});
+                icon(ui,text(row,"icon"),icon_rect,if is_selected{colour}else if row["branch"]==true{ui.visuals().hyperlink_color}else{ui.visuals().weak_text_color()});
                 tx+=22.0;
                 let mut cx=rect.left();
                 for i in 0..visible {
@@ -386,7 +411,7 @@ pub(crate) fn draw(
                         painter.with_clip_rect(cell.intersect(ui.clip_rect())).text(pos2(tx,rect.center().y),Align2::LEFT_CENTER,text,font,colour);
                     } else {
                         let right_align=text_value(&columns[i],"align")=="right";
-                        painter.with_clip_rect(cell.intersect(ui.clip_rect())).text(pos2(if right_align{right-6.0}else{cx+6.0},rect.center().y),if right_align{Align2::RIGHT_CENTER}else{Align2::LEFT_CENTER},text,font,if selected{colour}else{ui.visuals().weak_text_color()});
+                        painter.with_clip_rect(cell.intersect(ui.clip_rect())).text(pos2(if right_align{right-6.0}else{cx+6.0},rect.center().y),if right_align{Align2::RIGHT_CENTER}else{Align2::LEFT_CENTER},text,font,if is_selected{colour}else{ui.visuals().weak_text_color()});
                     }
                     cx=right;
                 }
@@ -395,7 +420,7 @@ pub(crate) fn draw(
                 if !toggled&&response.double_clicked(){emit(events,id,"activate",json!({"key":key}));}
                 if response.secondary_clicked(){emit(events,id,"context",json!({"key":key}));}
                 if response.drag_started(){
-                    let keys=if selected{rows.iter().filter(|r|r["selected"]==true).map(|r|text_value(r,"key").to_owned()).collect()}else{vec![key.to_owned()]};
+                    let keys=if is_selected{rows.iter().filter(|r|selected(value,r)).map(|r|text_value(r,"key").to_owned()).collect()}else{vec![key.to_owned()]};
                     response.dnd_set_drag_payload(DragRows{source:id.clone(),keys,label:row["cells"][0].as_str().unwrap_or("").into()});
                 }
                 if row["branch"]==true {drop_target(ui,&response,key,id,events);}
