@@ -61,6 +61,14 @@ impl Jobs {
     pub fn pending(&self) -> usize {
         self.running.len()
     }
+    /// Native clients enter exactly the same bounded admission path as Mix.
+    /// The returned receipt resolves when the owner has admitted or refused it.
+    pub fn submit(&self,spec:Value)->Result<oneshot::Receiver<(i32,Value)>,String>{
+        let (reply,response)=oneshot::channel();
+        self.tx.try_send(Start{spec,reply}).map_err(|_|"job admission queue is full or closed".to_owned())?;
+        (self.wake)();
+        Ok(response)
+    }
     pub fn poll(&mut self) -> Vec<ResultMessage> {
         while let Ok(start) = self.rx.try_recv() {
             let id = start.spec["id"].as_str().unwrap_or("");

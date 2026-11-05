@@ -43,9 +43,11 @@ fn optional_read_and_atomic_replace_preserve_absence_and_refuse_linked_files() {
     let dir = tempfile::tempdir().unwrap();
     let outside = dir.path().join("outside");
     std::fs::write(&outside, "keep").unwrap();
-    std::os::unix::fs::symlink(&outside,dir.path().join("linked")).unwrap();
-    let (mut runtime,wakes)=runtime(4);
-    runtime.load(program(r#"
+    std::os::unix::fs::symlink(&outside, dir.path().join("linked")).unwrap();
+    let (mut runtime, wakes) = runtime(4);
+    runtime
+        .load(program(
+            r#"
 on read
   try reply(0,json_encode(viu_read_optional($event.args.path)))
   catch $message reply(10,json_encode({error:$message})) end
@@ -54,20 +56,42 @@ on write
   try viu_atomic_replace($event.args.path,$event.args.text);reply(0,"{}")
   catch $message reply(10,json_encode({error:$message})) end
 end
-"#)).unwrap();
-    assert!(next(&runtime,&wakes).error.is_none());
-    runtime.event("read".into(),json!({"path":dir.path().join("missing")})).unwrap();
-    assert_eq!(next(&runtime,&wakes).reply.unwrap().body,json!({"found":false}));
-    runtime.event("write".into(),json!({"path":dir.path().join("new"),"text":"whole"})).unwrap();
-    assert_eq!(next(&runtime,&wakes).reply.unwrap().rc,0);
-    runtime.event("read".into(),json!({"path":dir.path().join("new")})).unwrap();
-    assert_eq!(next(&runtime,&wakes).reply.unwrap().body,json!({"found":true,"text":"whole"}));
-    for command in ["read","write"] {
-        runtime.event(command.into(),json!({"path":dir.path().join("linked"),"text":"bad"})).unwrap();
-        let result=next(&runtime,&wakes);
-        assert!(result.error.is_none(),"{:?}",result.error);
-        assert_eq!(result.reply.unwrap().rc,10);
-        assert_eq!(std::fs::read_to_string(&outside).unwrap(),"keep");
+"#,
+        ))
+        .unwrap();
+    assert!(next(&runtime, &wakes).error.is_none());
+    runtime
+        .event("read".into(), json!({"path":dir.path().join("missing")}))
+        .unwrap();
+    assert_eq!(
+        next(&runtime, &wakes).reply.unwrap().body,
+        json!({"found":false})
+    );
+    runtime
+        .event(
+            "write".into(),
+            json!({"path":dir.path().join("new"),"text":"whole"}),
+        )
+        .unwrap();
+    assert_eq!(next(&runtime, &wakes).reply.unwrap().rc, 0);
+    runtime
+        .event("read".into(), json!({"path":dir.path().join("new")}))
+        .unwrap();
+    assert_eq!(
+        next(&runtime, &wakes).reply.unwrap().body,
+        json!({"found":true,"text":"whole"})
+    );
+    for command in ["read", "write"] {
+        runtime
+            .event(
+                command.into(),
+                json!({"path":dir.path().join("linked"),"text":"bad"}),
+            )
+            .unwrap();
+        let result = next(&runtime, &wakes);
+        assert!(result.error.is_none(), "{:?}", result.error);
+        assert_eq!(result.reply.unwrap().rc, 10);
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep");
     }
 }
 

@@ -40,13 +40,8 @@ on dopus.call
         end
       elif $name=="dopus.dialog.answer" then
         if $a.text!=nil and type($a.text)!="string" then raise("INVALID_ARGUMENT","Dialog text must be text") end
-        if $candidate.reservation.kind=="drop" and contains(["copy","move"],$a.choice) then
-          $operation=$candidate.reservation.operation;$operation.kind=$a.choice
-          $candidate=$app.dp_start_operation($candidate,$operation);$candidate.form=$app.dp_closed_form();$candidate.reservation=nil
-        else
-          if $a.text!=nil then $candidate.form.field=$a.text end
-          $candidate=$app.dp_handle_answer($candidate,$contract,$a.choice)
-        end
+        if $a.text!=nil then $candidate.form.field=$a.text end
+        $candidate=$app.dp_handle_answer($candidate,$contract,$a.choice)
       elif $name=="dopus.quit" or $name=="dopus.persist" then $candidate=$app.dp_persist($candidate)
       else raise("UNKNOWN_COMMAND",$name) end
       $candidate.serial=$candidate.serial+1
@@ -60,7 +55,10 @@ on dopus.call
 end
 on dopus.job.completed
   if $state!=nil and $event.args.tag.owner==viu_context().generation then
-    if $state.job==$event.args.tag.id then
+    if $state.effect_jobs[$event.args.tag.id]==true then
+      $state.effect_jobs=delete($state.effect_jobs,$event.args.tag.id)
+      $state.info=$event.args.body.message ?? if $event.args.rc==0 then "Completed" else "Application effect failed" end
+    elif $state.job==$event.args.tag.id then
       $state.busy=false;$state.job=nil
       $result=$event.args.body
       $state.info=if $event.args.rc==0 then "Select a file or folder" else $result.message ?? "Operation failed" end

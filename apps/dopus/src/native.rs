@@ -25,6 +25,8 @@ pub struct Native {
     form: Value,
     form_kind: String,
     token: u64,
+    form_instance:u64,
+    form_queue:VecDeque<(Value,String,u64,Option<Value>)>,
     drop_request: Option<Value>,
     locations: [String; 2],
     pub serial: u64,
@@ -95,6 +97,8 @@ impl Native {
             relay: Some(relay),
             contract,
             appearance: json!({"mode":"dark","scheme":"studio","style":"default"}),
+            form_instance:0,
+            form_queue:VecDeque::new(),
             form: closed(),
             form_kind: String::new(),
             token: 0,
@@ -112,6 +116,18 @@ impl Native {
     fn core_mut(&mut self) -> &mut DopusCore {
         self.core.as_mut().unwrap()
     }
+    fn enqueue_form(&mut self,kind:&str,token:u64,mut form:Value,drop_request:Option<Value>)->Result<(),String>{
+        if self.form_queue.len()>=16{return Err("Dialog queue is full".into());}
+        self.form_instance+=1;
+        form["instance"]=json!(self.form_instance);
+        if self.form["open"]==true {self.form_queue.push_back((form,kind.into(),token,drop_request));}
+        else{self.form=form;self.form_kind=kind.into();self.token=token;self.drop_request=drop_request;}
+        Ok(())
+    }
+    fn advance_form(&mut self){
+        if let Some((form,kind,token,drop_request))=self.form_queue.pop_front(){self.form=form;self.form_kind=kind;self.token=token;self.drop_request=drop_request;}
+        else{self.form=closed();self.form_kind.clear();self.token=0;self.drop_request=None;}
+    }
     fn absorb(&mut self, events: Vec<CoreEvent>) {
         for event in events {
             match event {
@@ -120,18 +136,16 @@ impl Native {
                     kind,
                     initial,
                 } => {
-                    self.token = token;
-                    self.form_kind = match kind {
+                    let form_kind = match kind {
                         PromptKind::NewFolder => "mkdir",
                         PromptKind::Rename => "rename",
-                    }
-                    .into();
-                    self.form = json!({"open":true,"title":if kind==PromptKind::NewFolder{"New folder"}else{"Rename"},"body":"","field":initial,"instance":token,"error":"","choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"OK","enabled":true,"default":true}]});
+                    };
+                    let form = json!({"open":true,"title":if kind==PromptKind::NewFolder{"New folder"}else{"Rename"},"body":"","field":initial,"error":"","choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"OK","enabled":true,"default":true}]});
+                    if let Err(error)=self.enqueue_form(form_kind,token,form,None){self.core_mut().prompt_text(token,None);self.info=error;}
                 }
                 CoreEvent::ConfirmRequested { token, message } => {
-                    self.token = token;
-                    self.form_kind = "delete".into();
-                    self.form = json!({"open":true,"title":"Delete permanently","body":message,"field":null,"instance":token,"error":"","choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"Delete","enabled":true,"default":true}]});
+                    let form = json!({"open":true,"title":"Delete permanently","body":message,"field":null,"error":"","choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"Delete","enabled":true,"default":true}]});
+                    if let Err(error)=self.enqueue_form("delete",token,form,None){self.core_mut().confirm(token,ConfirmAnswer::No);self.info=error;}
                 }
                 CoreEvent::Status { kind, text, .. } => {
                     self.info = if kind == dopus_core::StatusKind::Message {
@@ -217,6 +231,9 @@ impl Native {
     }
     pub fn actions(&self) -> Value {
         json!({"actions":self.contract["actions"].as_array().unwrap().iter().map(|a|self.command(a["id"].as_str().unwrap())).collect::<Vec<_>>()})
+    }
+    pub fn effect_result(&mut self,rc:u8,body:&Value){
+        self.info=body["message"].as_str().unwrap_or(if rc==0{"Completed"}else{"Application effect failed"}).to_owned();
     }
     fn search_choices(&self) -> Value {
         let query = self.form["field"].as_str().unwrap_or("").to_lowercase();
@@ -358,8 +375,6 @@ impl Native {
             }
             id if id.starts_with("theme.scheme-") => self.appearance["scheme"] = json!(&id[13..]),
             "help.about" | "help.shortcuts" => {
-                self.form_kind = "message".into();
-                self.token += 1;
                 let body = if id == "help.about" {
                     "Dopus — Rust behaviour with shared native Viu widgets.\nLab comparison implementation.".into()
                 } else {
@@ -383,15 +398,14 @@ impl Native {
                         .collect::<Vec<_>>()
                         .join("\n")
                 };
-                self.form = json!({"open":true,"title":if id=="help.about"{"About Dopus"}else{"Keyboard shortcuts"},"body":body,"field":null,"instance":self.token,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"OK","enabled":true,"default":true}]});
+                let form = json!({"open":true,"title":if id=="help.about"{"About Dopus"}else{"Keyboard shortcuts"},"body":body,"field":null,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"OK","enabled":true,"default":true}]});
+                self.enqueue_form("message",0,form,None)?;
             }
             "search" => {
                 if self.form["open"] == true {
                     return Err("Answer the current dialog first".into());
                 }
-                self.token += 1;
-                self.form_kind = "search".into();
-                self.form = json!({"open":true,"title":"Search commands","body":"","field":"","instance":self.token,"choice_layout":"list","choices":[]});
+                self.enqueue_form("search",0,json!({"open":true,"title":"Search commands","body":"","field":"","choice_layout":"list","choices":[]}),None)?;
                 self.form["choices"] = self.search_choices();
             }
             "app.quit" => {
@@ -428,8 +442,7 @@ impl Native {
             {
                 return Err("Command is not available".into());
             }
-            self.form = closed();
-            self.form_kind.clear();
+            self.advance_form();
             return self.action(choice, &json!({}));
         }
         if choice != "cancel" && self.form_kind == "drop" {
@@ -455,8 +468,9 @@ impl Native {
             } else {
                 PaneId::Left
             };
-            self.core_mut()
-                .transfer_paths(source_pane, sources, destination, action)?;
+            if let Err(error)=self.core_mut().transfer_paths(source_pane, sources, destination, action){
+                self.advance_form();self.info=error.clone();return Err(error);
+            }
         } else if self.form_kind == "delete" {
             let token = self.token;
             self.core_mut().confirm(
@@ -485,8 +499,7 @@ impl Native {
         } else if choice != "cancel" && choice != "ok" {
             return Err("Unknown choice".into());
         }
-        self.form = closed();
-        self.drop_request = None;
+        self.advance_form();
         let events = self.core_mut().tick(Instant::now());
         self.absorb(events);
         Ok(json!({"ok":true}))
@@ -697,11 +710,9 @@ impl Native {
                     if self.form["open"] == true {
                         return Err("Answer the current dialog first".into());
                     }
-                    self.drop_request = Some(v.clone());
-                    self.drop_request.as_mut().unwrap()["keys"] = json!(sources);
-                    self.form_kind = "drop".into();
-                    self.token += 1;
-                    self.form = json!({"open":true,"title":"Transfer items","body":"Move or copy the dragged items?","field":null,"instance":self.token,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"move","label":"Move","enabled":true},{"id":"copy","label":"Copy","enabled":true}]});
+                    let mut request=v.clone();request["keys"]=json!(sources);
+                    let form = json!({"open":true,"title":"Transfer items","body":"Move or copy the dragged items?","field":null,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"move","label":"Move","enabled":true},{"id":"copy","label":"Copy","enabled":true}]});
+                    self.enqueue_form("drop",0,form,Some(request))?;
                 }
                 _ => return Err("Unknown tree action".into()),
             }

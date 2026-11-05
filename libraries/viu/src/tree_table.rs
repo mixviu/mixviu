@@ -178,14 +178,18 @@ struct WidthCache {
     key: WidthKey,
     widths: Vec<f32>,
 }
-fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale:f32) -> Vec<f32> {
+fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale: f32) -> Vec<f32> {
     let columns = value["columns"].as_array().expect("validated columns");
     let rows = value["rows"].as_array().expect("validated rows");
     let key = WidthKey {
         revision: value["revision"].clone(),
         columns: value["columns"].clone(),
         rows: rows.len(),
-        body: {let mut font=TextStyle::Body.resolve(ui.style());font.size*=metadata_scale;font},
+        body: {
+            let mut font = TextStyle::Body.resolve(ui.style());
+            font.size *= metadata_scale;
+            font
+        },
         small: TextStyle::Small.resolve(ui.style()),
     };
     let cache_id = Id::unique((ui.ctx().viewport_id(), id, "column-widths"));
@@ -304,7 +308,7 @@ pub(crate) fn draw(
     let id = &widget.id;
     let rows = value["rows"].as_array().expect("validated rows");
     let columns = value["columns"].as_array().expect("validated columns");
-    let metadata_scale=number(&widget.properties,"metadata_scale",1.0);
+    let metadata_scale = number(&widget.properties, "metadata_scale", 1.0);
     let mut measured = widths(ui, id, value, metadata_scale);
     let available = ui.available_width();
     let name_min = number(&widget.properties, "name_min", 140.0);

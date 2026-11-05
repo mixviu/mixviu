@@ -5147,6 +5147,7 @@ name = "viu"
 version = "0.1.0"
 dependencies = [
  "bus",
+ "config",
  "design",
  "egui",
  "egui_extras",
