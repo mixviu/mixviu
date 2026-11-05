@@ -39,6 +39,35 @@ fn next(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> Completion {
 const INIT: &str = "$ctx = viu_context(); $n = 0; on bump; $n = $n + 1; send \"viu-local\" \"scenes.model\" body=json_encode({generation: $ctx.generation, value: {n:$n}}); reply(0, \"{}\"); end";
 
 #[test]
+fn application_replies_preserve_refusal_body_without_poisoning_next_request() {
+    let (mut runtime,wakes)=runtime(4);
+    runtime.load(program(r#"
+$ctx=viu_context()
+on refuse
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:{status:"Invalid name"}}
+  reply(10,json_encode({error_code:"INVALID_NAME",details:{kept:true}}))
+end
+on inspect
+  reply(0,json_encode({rows:["one","two"],ok:true}))
+end
+on fault
+  reply(0,"{}")
+  raise("FAULT","after staged reply")
+end
+"#)).unwrap();
+    assert!(next(&runtime,&wakes).error.is_none());
+    runtime.event("refuse".into(),json!({})).unwrap();
+    let refused=next(&runtime,&wakes);
+    assert!(refused.error.is_none());assert!(refused.behaviour_available);
+    assert_eq!(refused.model.unwrap(),json!({"status":"Invalid name"}));
+    let reply=refused.reply.unwrap();assert_eq!(reply.rc,10);assert_eq!(reply.body["error_code"],"INVALID_NAME");
+    runtime.event("inspect".into(),json!({})).unwrap();
+    let reply=next(&runtime,&wakes).reply.unwrap();assert_eq!(reply.rc,0);assert_eq!(reply.body,json!({"rows":["one","two"],"ok":true}));
+    runtime.event("fault".into(),json!({})).unwrap();
+    let fault=next(&runtime,&wakes);assert!(fault.error.is_some());assert!(fault.reply.is_none());
+}
+
+#[test]
 fn real_evaluator_distinct_callbacks_wake_and_order() {
     let (mut runtime, wakes) = runtime(4);
     runtime.load(program(INIT)).unwrap();

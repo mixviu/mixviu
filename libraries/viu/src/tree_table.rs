@@ -157,7 +157,7 @@ fn widths(ui: &Ui, id: &str, value: &Value) -> Vec<f32> {
         body: TextStyle::Body.resolve(ui.style()),
         small: TextStyle::Small.resolve(ui.style()),
     };
-    let cache_id = Id::unique((ui.ctx().viewport_id(),id, "column-widths"));
+    let cache_id = Id::unique((ui.ctx().viewport_id(), id, "column-widths"));
     if let Some(cache) = ui.data(|d| d.get_temp::<WidthCache>(cache_id)) {
         if cache.key == key {
             return cache.widths;
@@ -363,7 +363,7 @@ pub fn draw(
     });
     if let Some(payload) = egui::DragAndDrop::payload::<DragRows>(ui.ctx()) {
         if let Some(pos) = ui.ctx().pointer_hover_pos() {
-            egui::Area::new(Id::unique((ui.ctx().viewport_id(),id, "drag-label")))
+            egui::Area::new(Id::unique((ui.ctx().viewport_id(), id, "drag-label")))
                 .order(egui::Order::Tooltip)
                 .fixed_pos(pos + vec2(12.0, 12.0))
                 .interactable(false)

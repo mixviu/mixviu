@@ -158,9 +158,16 @@ fn menu(
                 .as_str()
                 .and_then(crate::icons::Icon::from_name)
             {
-                egui::Button::image_and_text(crate::icons::image(icon,16.0,ui.visuals().text_color()),label(item))
-            }else{egui::Button::new(label(item))};
-            if let Some(shortcut) = item["shortcut"].as_str() {button=button.shortcut_text(shortcut);}
+                egui::Button::image_and_text(
+                    crate::icons::image(icon, 16.0, ui.visuals().text_color()),
+                    label(item),
+                )
+            } else {
+                egui::Button::new(label(item))
+            };
+            if let Some(shortcut) = item["shortcut"].as_str() {
+                button = button.shortcut_text(shortcut);
+            }
             let response = ui.add_enabled(item["enabled"] == true, button);
             geometry.insert(format!("{id}.command.{}", text(item, "id")), response.rect);
             if response.clicked() {
@@ -244,55 +251,62 @@ pub fn draw(
         }
         "dialog-form" => {
             let mut field = value["field"].as_str().map(str::to_owned);
-            let modal = egui::Modal::new(egui::Id::unique((ui.ctx().viewport_id(),id, "modal"))).show(ui.ctx(), |ui| {
-                ui.set_min_width(320.0);
-                ui.set_max_width(520.0);
-                ui.heading(text(value, "title"));
-                if !text(value, "body").is_empty() {
-                    ui.add(egui::Label::new(text(value, "body")).wrap());
-                }
-                if let Some(text) = field.as_mut() {
-                    let response = ui.add(
-                        egui::TextEdit::singleline(text)
-                            .id(egui::Id::unique((ui.ctx().viewport_id(),id, "field")))
-                            .desired_width(ui.available_width()),
-                    );
-                    geometry.insert(format!("{id}.field"), response.rect);
-                    let marker =
-                        egui::Id::unique((ui.ctx().viewport_id(),id, "modal-focused", value["instance"].to_string()));
-                    if !ui
-                        .ctx()
-                        .data(|d| d.get_temp::<bool>(marker).unwrap_or(false))
-                    {
-                        response.request_focus();
-                        ui.ctx().data_mut(|d| d.insert_temp(marker, true));
+            let modal = egui::Modal::new(egui::Id::unique((ui.ctx().viewport_id(), id, "modal")))
+                .show(ui.ctx(), |ui| {
+                    ui.set_min_width(320.0);
+                    ui.set_max_width(520.0);
+                    ui.heading(text(value, "title"));
+                    if !text(value, "body").is_empty() {
+                        ui.add(egui::Label::new(text(value, "body")).wrap());
                     }
-                    if response.changed() {
-                        emit(events, id, "edit", json!(text));
-                    }
-                }
-                if !text(value, "error").is_empty() {
-                    ui.colored_label(ui.visuals().error_fg_color, text(value, "error"));
-                }
-                ui.horizontal(|ui| {
-                    for choice in value["choices"].as_array().into_iter().flatten() {
-                        let response = ui.add_enabled(
-                            choice["enabled"] == true,
-                            egui::Button::new(text(choice, "label")),
+                    if let Some(text) = field.as_mut() {
+                        let response = ui.add(
+                            egui::TextEdit::singleline(text)
+                                .id(egui::Id::unique((ui.ctx().viewport_id(), id, "field")))
+                                .desired_width(ui.available_width()),
                         );
-                        geometry
-                            .insert(format!("{id}.choice.{}", text(choice, "id")), response.rect);
-                        if response.clicked() {
-                            emit(
-                                events,
-                                id,
-                                "answer",
-                                json!({"choice":choice["id"],"field":field}),
-                            );
+                        geometry.insert(format!("{id}.field"), response.rect);
+                        let marker = egui::Id::unique((
+                            ui.ctx().viewport_id(),
+                            id,
+                            "modal-focused",
+                            value["instance"].to_string(),
+                        ));
+                        if !ui
+                            .ctx()
+                            .data(|d| d.get_temp::<bool>(marker).unwrap_or(false))
+                        {
+                            response.request_focus();
+                            ui.ctx().data_mut(|d| d.insert_temp(marker, true));
+                        }
+                        if response.changed() {
+                            emit(events, id, "edit", json!(text));
                         }
                     }
+                    if !text(value, "error").is_empty() {
+                        ui.colored_label(ui.visuals().error_fg_color, text(value, "error"));
+                    }
+                    ui.horizontal(|ui| {
+                        for choice in value["choices"].as_array().into_iter().flatten() {
+                            let response = ui.add_enabled(
+                                choice["enabled"] == true,
+                                egui::Button::new(text(choice, "label")),
+                            );
+                            geometry.insert(
+                                format!("{id}.choice.{}", text(choice, "id")),
+                                response.rect,
+                            );
+                            if response.clicked() {
+                                emit(
+                                    events,
+                                    id,
+                                    "answer",
+                                    json!({"choice":choice["id"],"field":field}),
+                                );
+                            }
+                        }
+                    });
                 });
-            });
             if modal.should_close() {
                 if let Some(cancel) = value["choices"]
                     .as_array()

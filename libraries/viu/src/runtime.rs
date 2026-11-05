@@ -57,6 +57,12 @@ pub struct Program {
 }
 
 #[derive(Debug)]
+pub struct Reply {
+    pub rc: u8,
+    pub body: Json,
+}
+
+#[derive(Debug)]
 pub struct Completion {
     pub generation: u64,
     pub sequence: u64,
@@ -66,6 +72,9 @@ pub struct Completion {
     pub stdout: String,
     pub stderr: String,
     pub behaviour_available: bool,
+    /// The callback's explicit application reply. A refusal is a normal
+    /// response, distinct from an evaluator/handler failure in `error`.
+    pub reply: Option<Reply>,
 }
 
 enum RunFailure {
@@ -128,7 +137,7 @@ impl Runtime {
                     Request::Load(generation, program) => {
                         if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                         // A fresh evaluator never retains old closures or module state.
-                        let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), backend: backend.clone() });
+                        let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), backend: backend.clone() });
                         let stdout = SharedBuf::new();
                         let stderr = SharedBuf::new();
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
@@ -168,17 +177,17 @@ impl Runtime {
                     }
                 };
                 if worker_stop.load(Ordering::Acquire) { break; }
-                let (mut model, stdout, stderr, fault) = match current.as_ref() {
-                    Some((_, _, local, out, err)) => (local.model.borrow_mut().take(), String::from_utf8_lossy(&out.take()).into_owned(), String::from_utf8_lossy(&err.take()).into_owned(), local.error.borrow_mut().take()),
-                    None => (None, String::new(), String::new(), None),
+                let (mut model, stdout, stderr, fault, mut reply) = match current.as_ref() {
+                    Some((_, _, local, out, err)) => (local.model.borrow_mut().take(), String::from_utf8_lossy(&out.take()).into_owned(), String::from_utf8_lossy(&err.take()).into_owned(), local.error.borrow_mut().take(),local.reply.borrow_mut().take()),
+                    None => (None, String::new(), String::new(), None,None),
                 };
                 let result = result.and_then(|_| fault.map_or(Ok(()), |error| Err(RunFailure::Evaluation(error))));
                 // Failed callbacks never publish a partial model to the UI.
-                if result.is_err() { model = None; }
+                if result.is_err() { model = None; reply=None; }
                 if (sequence == 0 && result.is_err()) || matches!(&result, Err(RunFailure::Deadline)) {
                     if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                 }
-                let completion = Completion { generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some() };
+                let completion = Completion { generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply };
                 if results.send(completion).is_err() { break; }
                 wake();
             }
@@ -294,6 +303,7 @@ struct Local {
     generation: u64,
     model: RefCell<Option<Json>>,
     error: RefCell<Option<String>>,
+    reply: RefCell<Option<Reply>>,
     backend: Option<Rc<dyn BusHandler>>,
 }
 
@@ -403,9 +413,9 @@ impl BusHandler for Local {
         body: &'a str,
     ) -> BusFuture<'a, MixResult<()>> {
         Box::pin(async move {
-            if rc != 0 && self.error.borrow().is_none() {
-                *self.error.borrow_mut() = Some(body.into());
-            }
+            if self.reply.borrow().is_some() {return Err(failure("callback already replied"));}
+            let body=serde_json::from_str(body).unwrap_or_else(|_|Json::String(body.into()));
+            *self.reply.borrow_mut()=Some(Reply{rc,body});
             Ok(())
         })
     }

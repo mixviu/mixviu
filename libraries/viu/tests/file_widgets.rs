@@ -12,7 +12,7 @@ fn frame(
     ctx: &egui::Context,
     widgets: &mut Widgets,
     w: &Widget,
-    events: Vec<egui::Event>,
+    mut events: Vec<egui::Event>,
 ) -> Vec<viu::widgets::Intent> {
     let modifiers = events
         .iter()
@@ -24,13 +24,13 @@ fn frame(
             }
         })
         .unwrap_or_default();
+    events.insert(0,egui::Event::ModifiersChanged(modifiers));
     let input = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
             egui::vec2(700.0, 400.0),
         )),
         events,
-        modifiers,
         ..Default::default()
     };
     let mut intents = Vec::new();

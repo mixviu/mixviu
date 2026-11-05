@@ -347,7 +347,7 @@ impl SceneView {
         };
         let response = ui.interact(
             grip,
-            egui::Id::unique((ui.ctx().viewport_id(),key, "divider")),
+            egui::Id::unique((ui.ctx().viewport_id(), key, "divider")),
             Sense::click_and_drag(),
         );
         self.geometry.insert(format!("{key}.divider"), grip);
@@ -478,8 +478,11 @@ impl SceneView {
                         egui::pos2(rect.right(), rect.top() + 3.0),
                     ),
                 };
-                let response =
-                    ui.interact(line, egui::Id::unique((ui.ctx().viewport_id(),key, child, "resize")), Sense::drag());
+                let response = ui.interact(
+                    line,
+                    egui::Id::unique((ui.ctx().viewport_id(), key, child, "resize")),
+                    Sense::drag(),
+                );
                 self.geometry.insert(format!("{child}.divider"), line);
                 if response.hovered() || response.dragged() {
                     ui.ctx().set_cursor_icon(if horizontal {
