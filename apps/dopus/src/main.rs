@@ -672,11 +672,11 @@ impl eframe::App for App {
             }
         }
         if let Some(view) = &mut self.view {
-            if let Some(id) = self.model["focus"].as_str() {
+            if !self.model["focus"].is_null() {
                 let serial = self.model["serial"].as_u64().unwrap_or(0);
-                let mark = (serial, id.to_owned());
+                let mark = (serial, self.model["focus"].to_string());
                 if self.focus_serial.as_ref() != Some(&mark) {
-                    if view.request_focus(id).is_ok() {
+                    if view.request_focus_value(&self.model["focus"]).is_ok() {
                         self.focus_serial = Some(mark);
                         ctx.request_repaint();
                     }

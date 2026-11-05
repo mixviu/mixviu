@@ -44,6 +44,7 @@ struct Window {
     input_error: Option<String>,
     created: std::time::Instant,
     mapped: bool,
+    applied_focus:Option<Value>,
 }
 impl Window {
     fn new(
@@ -100,6 +101,7 @@ impl Window {
             input_error: None,
             created: std::time::Instant::now(),
             mapped: false,
+            applied_focus:None,
         })
     }
     fn state(&self) -> Value {
@@ -156,12 +158,6 @@ impl Window {
                 self.model = model;
                 if let Some(style) = style {
                     viu::appearance::install_style(ctx, &self.model["appearance"], style);
-                }
-                if let Some(id) = self.model["focus"].as_str() {
-                    if let Some(view) = &mut self.view {
-                        let _ = view.request_focus(id);
-                        ctx.request_repaint_of(viewport(&self.id));
-                    }
                 }
             }
         }
@@ -266,6 +262,14 @@ impl Window {
             }
         } else {
             ui.label("Loading chooser…");
+        }
+        if let Some(view)=&mut self.view{
+            if let Some(error)=view.take_focus_error(){self.error=error.clone();if self.input_wait{self.input_error=Some(error);}}
+            let focus=&self.model["focus"];
+            if focus.is_null(){self.applied_focus=None;}
+            else if self.applied_focus.as_ref()!=Some(focus)&&view.request_focus_value(focus).is_ok(){
+                self.applied_focus=Some(focus.clone());ctx.request_repaint();
+            }
         }
         if self.ready
             && self.model["values"]["form"]["open"] != true

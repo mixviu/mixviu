@@ -10,10 +10,10 @@ citizen: files
  places:{widget:"control",on_intent:"chooser.intent",definition:{id:"places",kind:"tree-table",label:"",initial:{key:"places",columns:[{id:"name",label:"Places"}],rows:[]}}},
  form:{widget:"control",on_intent:"chooser.intent",definition:{id:"form",kind:"dialog-form",label:"",initial:{open:false,title:"",body:"",field:null,choices:[]}}},
  toolbar:{widget:"control",on_intent:"chooser.intent",definition:{id:"toolbar",kind:"command-bar",label:"",initial:[]}},
- location:{widget:"control",on_intent:"chooser.intent",definition:{id:"location",kind:"field",label:"Location",initial:"",properties:{fill:true}}},
+ location:{widget:"control",on_intent:"chooser.intent",definition:{id:"location",kind:"field",label:"Location",initial:"",properties:{fill:true,cancel_on_escape:true,notify_blur:true}}},
  footer:{widget:"control",on_intent:"chooser.intent",definition:{id:"footer",kind:"command-bar",label:"",initial:[]}},
  status:{widget:"control",definition:{id:"status",kind:"label",label:"",initial:""}},
- name:{widget:"control",on_intent:"chooser.intent",hidden:"= $model.save_hidden",definition:{id:"name",kind:"field",label:"Name",initial:"",properties:{fill:true}}},
+ name:{widget:"control",on_intent:"chooser.intent",hidden:"= $model.save_hidden",definition:{id:"name",kind:"field",label:"Name",initial:"",properties:{fill:true,cancel_on_escape:true}}},
  options:{widget:"control",on_intent:"chooser.intent",hidden:"= $model.options_hidden",definition:{id:"options",kind:"command-bar",label:"",initial:[]}},
  files:{widget:"control",on_intent:"chooser.intent",definition:{id:"files",kind:"tree-table",label:"",initial:{key:"files",columns:[{id:"name",label:"Name"},{id:"size",label:"Size"}],rows:[]}}}
 }

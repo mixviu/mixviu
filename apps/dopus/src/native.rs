@@ -30,7 +30,7 @@ pub struct Native {
     drop_request: Option<Value>,
     locations: [String; 2],
     pub serial: u64,
-    pub focus: Option<String>,
+    pub focus: Option<Value>,
     info: String,
     pub effects: VecDeque<Value>,
 }
@@ -394,10 +394,7 @@ impl Native {
                 .core_mut()
                 .navigate(p, PathBuf::from(string(params, "path")?)),
             "location.focus" => {
-                self.focus = Some(format!(
-                    "{}-location",
-                    if i == 0 { "left" } else { "right" }
-                ))
+                self.focus=Some(json!({"id":format!("{}-location",if i==0{"left"}else{"right"}),"selection":[0,self.locations[i].chars().count()]}));
             }
             "view.toggle-places" => self.core_mut().toggle_sidebar(Sidebar::Places),
             "view.toggle-properties" => self.core_mut().toggle_sidebar(Sidebar::Properties),
@@ -584,6 +581,7 @@ impl Native {
         Ok(json!({"ok":true}))
     }
     pub fn intent(&mut self, a: &Value) -> Result<Value, String> {
+        self.focus=None;
         let id = string(a, "id")?;
         let action = string(a, "action")?;
         let v = &a["value"];
@@ -648,6 +646,10 @@ impl Native {
         };
         self.core_mut().set_active_pane(p);
         if id.ends_with("-location") {
+            if matches!(action,"cancel"|"blur"){
+                self.locations[p.index()]=self.core().pane(p).path.to_string_lossy().into_owned();
+                return Ok(json!({"ok":true}));
+            }
             let path = v
                 .as_str()
                 .filter(|s| s.len() <= 4096)
@@ -815,6 +817,7 @@ impl Native {
         Ok(json!({"ok":true}))
     }
     pub fn call(&mut self, command: &str, args: &Value) -> Result<Value, String> {
+        self.focus=None;
         match command {
             "dopus.execute" => self.action(string(args, "id")?, &args["params"]),
             "dopus.intent" => self.intent(args),

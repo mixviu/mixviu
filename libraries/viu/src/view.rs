@@ -130,8 +130,29 @@ impl SceneView {
         if !self.geometry.contains_key(id) {
             return Err("focus target not visible".into());
         }
-        self.widgets.focus = Some(id.into());
+        self.widgets.request_focus(id,None)?;
         Ok(())
+    }
+    /// Renderer-neutral character selection. The application chooses the
+    /// range; it carries no filename, path or other application interpretation.
+    pub fn request_focus_value(&mut self,value:&Value)->Result<(),String>{
+        if let Some(id)=value.as_str(){return self.request_focus(id);}
+        let object=value.as_object().ok_or("focus requires an ID or object")?;
+        if object.keys().any(|key|!matches!(key.as_str(),"id"|"selection")){return Err("unknown focus option".into());}
+        let id=value["id"].as_str().ok_or("focus requires an ID")?;
+        let selection=if let Some(selection)=value.get("selection"){
+            let range=selection.as_array().filter(|r|r.len()==2).ok_or("selection requires two character offsets")?;
+            let start=range[0].as_u64().ok_or("selection start must be an integer")?;
+            let end=range[1].as_u64().ok_or("selection end must be an integer")?;
+            if start>end||end>1_048_576{return Err("invalid selection range".into());}
+            let node=self.tree.nodes.get(id).ok_or("unknown focus target")?;
+            let kind=node.ports.get("definition").and_then(|v|v["kind"].as_str());
+            if !matches!(kind,Some("field"|"multiline")){return Err("selection target must be a text field".into());}
+            let widget=Widget::decode(node.ports.get("definition").ok_or("text field definition missing")?)?;
+            let len=widget.value(&self.tree.model).as_str().map(|s|s.chars().count()).unwrap_or(0);
+            Some([(start as usize).min(len),(end as usize).min(len)])
+        }else{None};
+        self.request_focus(id)?;self.widgets.request_focus(id,selection)?;Ok(())
     }
     pub fn take_focus_error(&mut self) -> Option<String> {
         self.focus_error.take()

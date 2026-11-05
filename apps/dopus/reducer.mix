@@ -172,7 +172,7 @@ fn dp_action($s,$contract,$id,$params)
   elif $id=="nav.back" or $id=="nav.forward" then $s.panes[$i]=$dp.dp_history($p,$id=="nav.back");$s.locations[$i]=$s.panes[$i].path
   elif $id=="nav.parent" then return dp_go($s,$i,dirname($p.path))
   elif $id=="nav.home" then return dp_go($s,$i,env("HOME","/"))
-  elif $id=="location.focus" then $s.focus=if $i==0 then "left-location" else "right-location" end
+  elif $id=="location.focus" then $s.focus={id:if $i==0 then "left-location" else "right-location" end,selection:[0,len($s.locations[$i])]}
   elif $id=="view.toggle-places" then $s.places_open=not $s.places_open
   elif $id=="view.toggle-properties" then $s.properties_open=not $s.properties_open
   elif $id=="view.refresh" then $s.panes[$i]=$dp.dp_refresh($p)
@@ -234,6 +234,7 @@ fn dp_intent($s,$contract,$a)
   if $i<0 then raise("NOT_FOUND","Unknown widget") end
   $s.active=$i
   if ends_with($id,"-location") then
+    if contains(["cancel","blur"],$action) then $s.locations[$i]=$s.panes[$i].path;return $s end
     if type($value)!="string" or len($value)>4096 then raise("INVALID_ARGUMENT","Location must be text") end
     if $action=="set" then $s.locations[$i]=$value;return $s
     elif $action=="submit" then return dp_go($s,$i,$value) end
