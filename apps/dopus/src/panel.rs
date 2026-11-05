@@ -189,7 +189,10 @@ mod tests {
         assert_eq!(answer(&mut panel, "run-target", Value::Null).0, 0);
         assert_eq!(answer(&mut panel, "run-on", json!("forbidden-app")).0, 10);
         assert_eq!(answer(&mut panel, "back", Value::Null).0, 0);
-        assert_eq!(answer(&mut panel, &format!("select:{}", entry.id), Value::Null).0, 0);
+        assert_eq!(
+            answer(&mut panel, &format!("select:{}", entry.id), Value::Null).0,
+            0
+        );
         assert_eq!(
             call(
                 &mut panel,
@@ -208,7 +211,12 @@ mod tests {
         assert_eq!(answer(&mut panel, "move-other", Value::Null).0, 0);
         assert_eq!(answer(&mut panel, "move-to", json!("email")).0, 0);
         assert!(!moved.path.exists());
-        assert!(dir.path().join("user/email").join(moved.path.file_name().unwrap()).is_file());
+        assert!(
+            dir.path()
+                .join("user/email")
+                .join(moved.path.file_name().unwrap())
+                .is_file()
+        );
         assert_eq!(answer(&mut panel, "close", Value::Null).0, 0);
         assert_eq!(panel.form["open"], false);
         assert!(

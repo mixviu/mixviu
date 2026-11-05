@@ -303,7 +303,12 @@ impl App {
                 let _ = reply.send((0, json!({"ok":true,"mode":self.mode,"ready":self.ready()})));
             }
             "dopus.state" | "dopus.ui.tree" => {
-                let _ = reply.send((0, self.state()));
+                // Optional observation avoids copying the entire rendered row
+                // model over the Bus when checking a controller outcome.
+                let state = if command == "dopus.state" && args["compact"] == true {
+                    json!({"ready":self.ready(),"mode":self.mode,"model":{"panes":self.model["panes"],"active":self.model["active"],"busy":self.model["busy"],"serial":self.model["serial"],"appearance":self.model["appearance"]},"error":self.error,"last_service_us":self.last_service_us,"endpoint":"compact applied-model observation; physical presentation unmeasured"})
+                } else { self.state() };
+                let _ = reply.send((0, state));
             }
             "dopus.describe" | "app.describe" => {
                 let _=reply.send((0,json!({"schema":"viu.dopus.v1","mode":self.mode,"actions":self.contract["actions"],"commands":commands(),"shared_scene":true,"shared_widgets":true,"original_core":self.mode=="rust","limits":{"bus":32,"behaviour":32,"jobs":4,"job_admission":8},"features":{"macros":"native session and shared Mix panel","chooser":"--choose-service provides the native files.choose contract with shared Viu controls","external_effects":"native open process admission and mail Bus delivery"},"boundaries":["external application completion is not measured","physical presentation is not measured"]})));

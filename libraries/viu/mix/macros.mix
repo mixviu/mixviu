@@ -53,7 +53,7 @@ fn macro_answer($s,$choice)
   if $choice=="run-on" then macro_rpc("run",{id:$s.id,target:$s.form.field});return macro_output($s) end
   if $choice=="copy" then macro_rpc("copy",{id:$s.id});return macro_detail($s) end
   if $choice=="move-global" or $choice=="move-app" then
-    macro_rpc("move",{id:$s.id,tier:if $choice=="move-global" then "user-global" else "user-app" end});return macro_detail($s)
+    macro_rpc("move",{id:$s.id,tier:if $choice=="move-global" then "user-global" else "user-app" end});$s.id=nil;return macro_catalogue($s)
   end
   if $choice=="move-other" then return macro_form($s,"destination","Move to another app","Destination app ID. The macro leaves this app's catalogue.","",[{id:"back",label:"Cancel",enabled:true,cancel:true},{id:"move-to",label:"Move",enabled:true,default:true}]) end
   if $choice=="move-to" then macro_rpc("move",{id:$s.id,tier:"user-app",destination:$s.form.field});$s.id=nil;return macro_catalogue($s) end
