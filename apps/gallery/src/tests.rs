@@ -78,6 +78,25 @@ fn invalid_actions_and_values_are_refused() {
     }
 }
 #[test]
+fn automated_double_click_activates_native_row_across_frames() {
+    let ctx=egui::Context::default();let mut widgets=Widgets::default();
+    let definition=Widget::new("items","list","Items",json!(0)).with_properties(json!({"dataset":"items","row_count":2,"context_action":"Select"}));
+    let model=json!({"values":{"items":0},"datasets":{"items":[["One"],["Two"]]}});
+    let mut draw=|events:Vec<egui::Event>,time:f64| {
+        let mut intents=Vec::new();
+        let mut output=ctx.run_ui(egui::RawInput{time:Some(time),events,screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.0,300.0))),..Default::default()},|ui|{intents=widgets.widget(ui,&definition,&model);});
+        output.textures_delta.clear();
+        (intents,widgets.geometry.get("items.1").copied())
+    };
+    let (_,rect)=draw(Vec::new(),0.0);let pos=rect.unwrap().center();
+    draw(vec![egui::Event::PointerMoved(pos)],0.02);
+    let mut activations=Vec::new();
+    for (i,events) in click_frames(pos,egui::PointerButton::Primary,egui::Modifiers::NONE,true).into_iter().enumerate(){
+        let (intents,_)=draw(events,0.04+i as f64*0.02);activations.extend(intents.into_iter().filter(|e|e.action=="activate"));
+    }
+    assert_eq!(activations.len(),1);assert_eq!(activations[0].value,json!(1));
+}
+#[test]
 fn shared_widgets_accept_non_gallery_content() {
     let choice = Widget::new("destination", "combo", "Destination", json!("Archive"))
         .with_properties(json!({"choices":["Inbox","Archive"]}));

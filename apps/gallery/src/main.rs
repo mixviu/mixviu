@@ -176,16 +176,9 @@ impl Gallery {
                             "right" => egui::PointerButton::Secondary,
                             _ => return Err("button must be left or right".into()),
                         };
-                        for _ in 0..if body["double"] == true { 2 } else { 1 } {
-                            for pressed in [true, false] {
-                                self.input.push(egui::Event::PointerButton {
-                                    pos: rect.center(),
-                                    button,
-                                    pressed,
-                                    modifiers,
-                                });
-                            }
-                        }
+                        let mut frames=click_frames(rect.center(),button,modifiers,body["double"]==true);
+                        self.input.extend(frames.pop_front().unwrap());
+                        self.later_input.extend(frames);
                     } else if command == "gallery.ui.drag" {
                         let fraction = body["fraction"]
                             .as_f64()
@@ -314,6 +307,9 @@ impl eframe::App for Gallery {
                 .and_then(|_| std::fs::rename(temporary, path));
         }
     }
+}
+fn click_frames(pos:egui::Pos2,button:egui::PointerButton,modifiers:egui::Modifiers,double:bool)->std::collections::VecDeque<Vec<egui::Event>> {
+    (0..if double{2}else{1}).map(|_|[true,false].into_iter().map(|pressed|egui::Event::PointerButton{pos,button,pressed,modifiers}).collect()).collect()
 }
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().collect();
