@@ -4,6 +4,7 @@
 $dp=require("core.mix")
 $view=require("presentation.mix")
 $ops=require("operations.mix")
+$configuration=require("config.mix")
 fn dp_drop_allowed($sources,$destination,$busy)
   if $busy or len($sources)==0 then return false end
   $destination=realpath($destination)
@@ -24,28 +25,15 @@ end
 fn dp_initialise($a)
   $config_path=path_join($a.profile,"config.conf.mix")
   $home=env("HOME","/")
-  $config={schema_version:2,left:{path:$home},right:{path:$home},active_pane:"left",split_ratio:0.5,places:{open:true,width:0.16},properties:{open:true,width:0.22},bookmarks:[],remote_previews:false}
-  $save=true;$warning=""
-  if exists($config_path) then
-    try
-      $candidate=load_data($config_path)
-      if not contains([1,2],$candidate.schema_version) then raise("CONFIG_SCHEMA","Unsupported configuration schema") end
-      for $side in ["left","right"]
-        if type($candidate[$side].path)!="string" then raise("CONFIG_SHAPE","Invalid pane configuration") end
-        for $key in ["show_hidden","ascending","previews"] if $candidate[$side][$key]!=nil and type($candidate[$side][$key])!="bool" then raise("CONFIG_SHAPE","Invalid pane flag") end end
-        if $candidate[$side].sort!=nil and not contains(["name","size","modified"],$candidate[$side].sort) then raise("CONFIG_SHAPE","Invalid pane sort") end
-      end
-      $config=$candidate
-      if $config.schema_version==1 then $config.places={open:true,width:0.16};$config.properties={open:true,width:0.22} end
-    catch $message $save=false;$warning="Configuration retained: "..$message end
-  end
+  $loaded=$configuration.dp_load_config($config_path)
+  $config=$loaded.value;$save=$loaded.save_allowed;$warning=$loaded.warning
   $panes=[$dp.dp_pane($config.left),$dp.dp_pane($config.right)]
   $places=[]
   for $place in [{name:"Home",path:$home},{name:"Filesystem",path:"/"},{name:"Desktop",path:$home.."/Desktop"},{name:"Documents",path:$home.."/Documents"},{name:"Downloads",path:$home.."/Downloads"},{name:"Music",path:$home.."/Music"},{name:"Pictures",path:$home.."/Pictures"},{name:"Videos",path:$home.."/Videos"}]
     if $place.path=="/" or $place.name=="Home" or is_dir($place.path) then push($places,$place) end
   end
   $places=concat($places,$config.bookmarks ?? [])
-  return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.16,0.1,0.4),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.4),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"studio",style:"default"},busy:false,job:nil,form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Select a file or folder" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
+  return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.15,0.1,0.3),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.3),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"studio",style:"default"},busy:false,job:nil,form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Select a file or folder" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
 end
 fn dp_update_previews($s)
   if $s.preview_slots==nil then $s.preview_slots=[{key:nil,job:nil,value:{phase:"none"}},{key:nil,job:nil,value:{phase:"none"}}] end
@@ -76,10 +64,7 @@ end
 fn dp_persist($s)
   if $s.save_allowed then
     mkdir(dirname($s.config_path))
-    $temporary=$s.config_path..".viu-tmp"
-    if $dp.dp_present($temporary) then raise("CONFIG_CONFLICT","Temporary config already exists") end
-    write_file($temporary,data_encode(dp_config($s),true))
-    rename($temporary,$s.config_path)
+    viu_atomic_replace($s.config_path,data_encode(dp_config($s),true))
   end
   return $s
 end

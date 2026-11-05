@@ -178,14 +178,14 @@ struct WidthCache {
     key: WidthKey,
     widths: Vec<f32>,
 }
-fn widths(ui: &Ui, id: &str, value: &Value) -> Vec<f32> {
+fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale:f32) -> Vec<f32> {
     let columns = value["columns"].as_array().expect("validated columns");
     let rows = value["rows"].as_array().expect("validated rows");
     let key = WidthKey {
         revision: value["revision"].clone(),
         columns: value["columns"].clone(),
         rows: rows.len(),
-        body: TextStyle::Body.resolve(ui.style()),
+        body: {let mut font=TextStyle::Body.resolve(ui.style());font.size*=metadata_scale;font},
         small: TextStyle::Small.resolve(ui.style()),
     };
     let cache_id = Id::unique((ui.ctx().viewport_id(), id, "column-widths"));
@@ -304,7 +304,8 @@ pub(crate) fn draw(
     let id = &widget.id;
     let rows = value["rows"].as_array().expect("validated rows");
     let columns = value["columns"].as_array().expect("validated columns");
-    let mut measured = widths(ui, id, value);
+    let metadata_scale=number(&widget.properties,"metadata_scale",1.0);
+    let mut measured = widths(ui, id, value, metadata_scale);
     let available = ui.available_width();
     let name_min = number(&widget.properties, "name_min", 140.0);
     let mut visible = columns.len();
@@ -372,7 +373,8 @@ pub(crate) fn draw(
                 for i in 0..visible {
                     let right=cx+measured[i];
                     let cell=Rect::from_min_max(pos2(cx,rect.top()),pos2(right,rect.bottom()));
-                    let font=TextStyle::Body.resolve(ui.style());
+                    let mut font=TextStyle::Body.resolve(ui.style());
+                    if i>0 {font.size*=metadata_scale;}
                     let text=row["cells"][i].as_str().unwrap_or("");
                     if i==0 {
                         let width=(right-tx-4.0).max(0.0);

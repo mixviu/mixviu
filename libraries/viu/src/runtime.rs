@@ -149,6 +149,8 @@ impl Runtime {
                         eval.set_bus_handler(local.clone());
                         eval.set_serve_runtime(local.clone());
                         eval.register("viu_thumbnail",crate::native_primitives::thumbnail(worker_stop.clone()));
+                        eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
+                        eval.register("viu_read_optional",crate::native_primitives::read_optional());
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "loader": "viu-local", "host": "viu-local"

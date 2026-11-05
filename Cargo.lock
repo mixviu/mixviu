@@ -802,6 +802,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 
 [[package]]
+name = "design"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "strict",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5138,6 +5147,7 @@ name = "viu"
 version = "0.1.0"
 dependencies = [
  "bus",
+ "design",
  "egui",
  "egui_extras",
  "icons",
