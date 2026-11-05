@@ -6,26 +6,30 @@ $projection=require("presentation.mix")
 $core=require("core.mix")
 $contract=json_parse(read_file(dirname(script_path()).."/contract.json"))
 $state=nil
+$row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
 $dopus_profile=env("DOPUS_PROFILE","")=="1"
-fn dp_publish($state,$contract)
+fn dp_publish($state,$contract,$cache)
   if $dopus_profile then
     $start=monotonic()
-    $model=$projection.dp_project($state,$contract)
+    $cache=$projection.dp_prepare_rows($state,$cache)
+    $model=$projection.dp_project($state,$contract,$cache)
     $projected=monotonic()
     send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$model}
     $published=monotonic()
     print(json_encode({profile:"dopus",phase:"publication",serial:$state.serial,project_us:($projected-$start)*1000000,publish_us:($published-$projected)*1000000}))
   else
-    send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$projection.dp_project($state,$contract)}
+    $cache=$projection.dp_prepare_rows($state,$cache)
+    send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$projection.dp_project($state,$contract,$cache)}
   end
   if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
+  return $cache
 end
 on dopus.initialise
-  $projection.dp_reset_rows()
+  $row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
   $state=$app.dp_initialise($event.args)
   $state.owner=viu_context().generation
   $state=$app.dp_update_previews($state)
-  dp_publish($state,$contract)
+  $row_cache=dp_publish($state,$contract,$row_cache)
   reply(0,json_encode({ready:true}))
 end
 on dopus.call
@@ -67,7 +71,7 @@ on dopus.call
       $profile_reduced=if $dopus_profile then monotonic() else 0 end
       $state=$app.dp_update_previews($candidate)
       $profile_prepared=if $dopus_profile then monotonic() else 0 end
-      dp_publish($state,$contract)
+      $row_cache=dp_publish($state,$contract,$row_cache)
       if $dopus_profile then print(json_encode({profile:"dopus",phase:"callback",serial:$state.serial,command:$name,action:$a.id,reduce_us:($profile_reduced-$profile_start)*1000000,preview_us:($profile_prepared-$profile_reduced)*1000000})) end
       reply(if $state.reply.error_code!=nil then 10 else 0 end,json_encode($state.reply))
     catch $message,$error
@@ -94,6 +98,6 @@ on dopus.job.completed
       end
     end
     $state=$app.dp_update_previews($state)
-    dp_publish($state,$contract)
+    $row_cache=dp_publish($state,$contract,$row_cache)
   end
 end

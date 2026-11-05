@@ -3,25 +3,23 @@
 -- App-owned projection into reusable Viu controls. Shared data is deliberately
 -- consumed by both language drivers; no native file-manager reducer is called.
 $dp=require("core.mix")
-$dp_row_stamps=[nil,nil]
-$dp_rows_left=[]
-$dp_rows_right=[]
-fn dp_reset_rows()
-  global $dp_row_stamps,$dp_rows_left,$dp_rows_right
-  $dp_row_stamps=[nil,nil];$dp_rows_left=[];$dp_rows_right=[]
-end
-fn dp_rows($pane,$slot)
-  global $dp_row_stamps,$dp_rows_left,$dp_rows_right
-  $stamp={path:$pane.path,revision:$pane.revision}
-  if deep_eq($dp_row_stamps[$slot],$stamp) then return if $slot==0 then $dp_rows_left else $dp_rows_right end end
+fn dp_rows($pane)
   $rows=[]
   for $r in $pane.entries
     $r.expanded=$pane.expanded[$r.path] ?? false
     push($rows,{key:$r.path,cells:[$r.name,if $r.dir then $dp.dp_count($r.child_count) else $dp.dp_size($r.size) end,$dp.dp_date($r.modified)],depth:$r.depth,branch:$r.dir,expanded:$r.expanded,selected:false,focused:false,icon:dp_icon($r)})
   end
-  if $slot==0 then $dp_rows_left=$rows else $dp_rows_right=$rows end
-  $dp_row_stamps[$slot]=$stamp
   return $rows
+end
+fn dp_prepare_rows($state,$cache)
+  for $i=0 to 1
+    $pane=$state.panes[$i]
+    $stamp={path:$pane.path,revision:$pane.revision}
+    if not deep_eq($cache[$i].stamp,$stamp) then
+      $cache[$i]={stamp:$stamp,rows:dp_rows($pane)}
+    end
+  end
+  return $cache
 end
 fn dp_icon($row)
   if $row.dir then return if $row.expanded ?? false then "folder-open" else "folder" end end
@@ -92,7 +90,7 @@ fn dp_properties($pane)
   push($fields,{label:"Path",value:$dp.dp_display($path)})
   return $fields
 end
-fn dp_project($state,$contract)
+fn dp_project($state,$contract,$cache)
   $context=map($contract.context,fn($id)=dp_command($state,$contract,$id))
   $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
   $values={menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
@@ -100,7 +98,7 @@ fn dp_project($state,$contract)
   for $i=0 to 1
     $p=$state.panes[$i]
     $side=if $i==0 then "left" else "right" end
-    $rows=dp_rows($p,$i)
+    $rows=$cache[$i].rows
     $values[$side.."-location"]=$state.locations[$i]
     $values[$side.."-summary"]=$p.summary
     $values[$side.."-tree"]={key:$p.path,revision:$p.revision,active:$state.active==$i,columns:$contract.columns,sort:$p.sort,ascending:$p.ascending,rows:$rows,selected_keys:$p.selected_paths,focused_key:$p.selected,context:$context,background_context:$background}
