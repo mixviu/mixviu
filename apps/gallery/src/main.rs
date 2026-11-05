@@ -104,8 +104,8 @@ impl Gallery {
                 let _ = reply.send((0, self.state()));
             }
             "gallery.describe" => {
-                let widgets=self.definitions().iter().map(|w|json!({"definition":w.encode(),"actions":controller::actions(w),"ui_actions":["focus","hover","click","key","text","scroll"]})).collect::<Vec<_>>();
-                let _=reply.send((0,json!({"schema":"viu.gallery.v1","mode":self.mode,"widgets":widgets,"execute":{"id":"widget ID","action":"set|activate|submit|accept|cancel|reset","value":"typed widget value"},"ui":{"focus":"{id}","hover":"{id}","click":"{id,button?,double?}","key":"{key,ctrl?,shift?,alt?}","text":"{text}","scroll":"{id,delta}"},"endpoint":"state/model applied; not physical presentation"})));
+                let widgets=self.definitions().iter().map(|w|json!({"definition":w.encode(),"actions":controller::actions(w),"commands":controller::actions(w).iter().map(|action|format!("gallery.widget.{}.{action}",w.id)).collect::<Vec<_>>(),"ui_actions":["focus","hover","click","key","text","scroll","drag"]})).collect::<Vec<_>>();
+                let _=reply.send((0,json!({"schema":"viu.gallery.v1","mode":self.mode,"widgets":widgets,"execute":{"id":"widget ID","action":"set|activate|submit|accept|cancel|expand|sort|reset","value":"typed widget value"},"ui":{"focus":"{id}","hover":"{id}","click":"{id,button?,double?}","key":"{key,ctrl?,shift?,alt?}","text":"{text}","scroll":"{id,delta}","drag":"{id,fraction:0..1}"},"endpoint":"state/model applied; not physical presentation"})));
             }
             "gallery.execute" => self.execute(body, Some(reply)),
             "gallery.quit" => {
@@ -268,7 +268,12 @@ impl eframe::App for Gallery {
         }
         ui.heading("Viu Widget Gallery");
         ui.small("Same widgets · same inputs · independent Rust / Mix controllers");
-        ui.small(format!("{} actions · {} activations · {}",self.model["serial"],self.model["activations"],self.model["last"].as_str().unwrap_or("Loading")));
+        ui.small(format!(
+            "{} actions · {} activations · {}",
+            self.model["serial"],
+            self.model["activations"],
+            self.model["last"].as_str().unwrap_or("Loading")
+        ));
         ui.separator();
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
