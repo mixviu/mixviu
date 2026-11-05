@@ -25,9 +25,13 @@ impl Input {
         let mut now = vec![egui::Event::ModifiersChanged(modifiers)];
         match command {
             "focus" => {
-                if let Some(selection)=a.get("selection"){
-                    view.request_focus_value(&serde_json::json!({"id":a["id"],"selection":selection}))?;
-                }else{view.request_focus(a["id"].as_str().ok_or("id required")?)?;}
+                if let Some(selection) = a.get("selection") {
+                    view.request_focus_value(
+                        &serde_json::json!({"id":a["id"],"selection":selection}),
+                    )?;
+                } else {
+                    view.request_focus(a["id"].as_str().ok_or("id required")?)?;
+                }
             }
             "key" => {
                 let key = a["key"]

@@ -44,7 +44,7 @@ struct Window {
     input_error: Option<String>,
     created: std::time::Instant,
     mapped: bool,
-    applied_focus:Option<Value>,
+    applied_focus: Option<Value>,
 }
 impl Window {
     fn new(
@@ -101,7 +101,7 @@ impl Window {
             input_error: None,
             created: std::time::Instant::now(),
             mapped: false,
-            applied_focus:None,
+            applied_focus: None,
         })
     }
     fn state(&self) -> Value {
@@ -263,12 +263,21 @@ impl Window {
         } else {
             ui.label("Loading chooser…");
         }
-        if let Some(view)=&mut self.view{
-            if let Some(error)=view.take_focus_error(){self.error=error.clone();if self.input_wait{self.input_error=Some(error);}}
-            let focus=&self.model["focus"];
-            if focus.is_null(){self.applied_focus=None;}
-            else if self.applied_focus.as_ref()!=Some(focus)&&view.request_focus_value(focus).is_ok(){
-                self.applied_focus=Some(focus.clone());ctx.request_repaint();
+        if let Some(view) = &mut self.view {
+            if let Some(error) = view.take_focus_error() {
+                self.error = error.clone();
+                if self.input_wait {
+                    self.input_error = Some(error);
+                }
+            }
+            let focus = &self.model["focus"];
+            if focus.is_null() {
+                self.applied_focus = None;
+            } else if self.applied_focus.as_ref() != Some(focus)
+                && view.request_focus_value(focus).is_ok()
+            {
+                self.applied_focus = Some(focus.clone());
+                ctx.request_repaint();
             }
         }
         if self.ready
@@ -290,6 +299,7 @@ impl Window {
                 && self.pending.is_empty()
                 && self.effect.is_none()
                 && !self.engine_pending
+                && !self.view.as_ref().is_some_and(|v|v.focus_pending())
             {
                 self.input_wait = false;
                 let mut state = self.state();

@@ -174,8 +174,12 @@ impl Widget {
         }
         if ["field", "multiline"].contains(&self.kind.as_str()) {
             actions.push("submit");
-            if self.properties["cancel_on_escape"]==true{actions.push("cancel");}
-            if self.properties["notify_blur"]==true{actions.push("blur");}
+            if self.properties["cancel_on_escape"] == true {
+                actions.push("cancel");
+            }
+            if self.properties["notify_blur"] == true {
+                actions.push("blur");
+            }
         }
         if self.kind == "dialog" {
             actions.extend(["accept", "cancel"]);
@@ -192,6 +196,7 @@ impl Widget {
         if !self.actions().contains(&action) {
             return Err("unsupported widget action".into());
         }
+        if matches!(self.kind.as_str(),"field"|"multiline")&&action=="cancel"&&!value.is_null(){return Err("text-field cancel takes no value".into());}
         if ["set", "submit", "blur"].contains(&action)
             || (action == "activate"
                 && ["list", "table", "tree", "toolbar"].contains(&self.kind.as_str()))
@@ -234,7 +239,13 @@ impl Widget {
             return Err("invalid widget definition".into());
         }
         self.validate(self.value(model))?;
-        if ["field","multiline"].contains(&self.kind.as_str())&&["cancel_on_escape","notify_blur"].iter().any(|key|self.properties.get(*key).is_some_and(|v|!v.is_boolean())){return Err("text-field event options must be bool".into());}
+        if ["field", "multiline"].contains(&self.kind.as_str())
+            && ["cancel_on_escape", "notify_blur"]
+                .iter()
+                .any(|key| self.properties.get(*key).is_some_and(|v| !v.is_boolean()))
+        {
+            return Err("text-field event options must be bool".into());
+        }
         if self.kind == "tree-table" {
             crate::tree_table::validate_properties(&self.properties)?;
         }
@@ -292,14 +303,18 @@ pub struct Widgets {
     pub geometry: BTreeMap<String, Rect>,
     pub focus: Option<String>,
     pub text_input_active: bool,
-    focus_selection:Option<[usize;2]>,
-    focus_error:Option<String>,
+    focus_selection: Option<[usize; 2]>,
+    focus_error: Option<String>,
     images: crate::image_view::Images,
 }
 impl Widgets {
-    pub fn request_focus(&mut self,id:&str,selection:Option<[usize;2]>)->Result<(),String>{
-        if selection.is_some_and(|[start,end]|start>end||end>1_048_576){return Err("invalid selection range".into());}
-        self.focus=Some(id.into());self.focus_selection=selection;Ok(())
+    pub fn request_focus(&mut self, id: &str, selection: Option<[usize; 2]>) -> Result<(), String> {
+        if selection.is_some_and(|[start, end]| start > end || end > 1_048_576) {
+            return Err("invalid selection range".into());
+        }
+        self.focus = Some(id.into());
+        self.focus_selection = selection;
+        Ok(())
     }
     pub fn image_states(&self) -> Value {
         self.images.states()
@@ -309,7 +324,7 @@ impl Widgets {
     pub fn begin_frame(&mut self) {
         self.geometry.clear();
         self.text_input_active = false;
-        self.focus_error=None;
+        self.focus_error = None;
         self.images.begin();
     }
     /// Draw one shared widget within an application-owned layout. Both Rust
@@ -333,21 +348,28 @@ impl Widgets {
     pub fn finish_frame(&mut self) -> Result<(), String> {
         self.images.finish();
         if let Some(id) = self.focus.take() {
-            self.focus_selection=None;
+            self.focus_selection = None;
             Err(format!("focus target not drawn: {id}"))
         } else {
-            self.focus_error.take().map_or(Ok(()),Err)
+            self.focus_error.take().map_or(Ok(()), Err)
         }
     }
     fn remember(&mut self, ui: &egui::Ui, id: &str, response: &egui::Response) {
         self.geometry.insert(id.into(), response.rect);
         if self.focus.as_deref() == Some(id) {
             response.request_focus();
-            if let Some([start,end])=self.focus_selection.take(){
-                if let Some(mut state)=egui::TextEdit::load_state(ui.ctx(),response.id){
-                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(start),egui::text::CCursor::new(end))));
-                    state.store(ui.ctx(),response.id);
-                }else{self.focus_error=Some("focus selection requires a text edit".into());}
+            if let Some([start, end]) = self.focus_selection.take() {
+                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                    state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::two(
+                            egui::text::CCursor::new(start),
+                            egui::text::CCursor::new(end),
+                        )));
+                    state.store(ui.ctx(), response.id);
+                } else {
+                    self.focus_error = Some("focus selection requires a text edit".into());
+                }
             }
             self.focus = None;
         }
@@ -415,7 +437,13 @@ impl Widgets {
             }
             "field" | "multiline" => {
                 let mut text = value.as_str().unwrap_or_default().to_owned();
-                if self.focus.as_deref()==Some(id){if let Some(range)=&mut self.focus_selection{let len=text.chars().count();range[0]=range[0].min(len);range[1]=range[1].min(len);}}
+                if self.focus.as_deref() == Some(id) {
+                    if let Some(range) = &mut self.focus_selection {
+                        let len = text.chars().count();
+                        range[0] = range[0].min(len);
+                        range[1] = range[1].min(len);
+                    }
+                }
                 let edit = if widget.kind == "field" {
                     egui::TextEdit::singleline(&mut text)
                 } else {
@@ -431,18 +459,30 @@ impl Widgets {
                 if r.changed() {
                     // Preserve native edit-before-submit/cancel ordering when
                     // a single input pass contains both text and a key.
-                    events.push(Intent::set(id,json!(text)));
+                    events.push(Intent::set(id, json!(text)));
                 }
-                if widget.properties["cancel_on_escape"]==true&&(r.has_focus()||r.lost_focus())&&ui.input(|i|i.key_pressed(egui::Key::Escape)){
-                    r.surrender_focus();events.push(Intent{id:id.clone(),action:"cancel".into(),value:Value::Null});
-                }else if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                if widget.properties["cancel_on_escape"] == true
+                    && (r.has_focus() || r.lost_focus())
+                    && ui.input(|i| i.key_pressed(egui::Key::Escape))
+                {
+                    r.surrender_focus();
+                    events.push(Intent {
+                        id: id.clone(),
+                        action: "cancel".into(),
+                        value: Value::Null,
+                    });
+                } else if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     events.push(Intent {
                         id: id.clone(),
                         action: "submit".into(),
                         value: json!(text),
                     });
-                }else if r.lost_focus()&&widget.properties["notify_blur"]==true{
-                    events.push(Intent{id:id.clone(),action:"blur".into(),value:json!(text)});
+                } else if r.lost_focus() && widget.properties["notify_blur"] == true {
+                    events.push(Intent {
+                        id: id.clone(),
+                        action: "blur".into(),
+                        value: json!(text),
+                    });
                 }
                 r
             }

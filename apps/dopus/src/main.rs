@@ -707,7 +707,7 @@ impl eframe::App for App {
             if let Some(next) = self.input.later.pop_front() {
                 self.input.now = next;
                 ctx.request_repaint();
-            } else if self.input_wait && self.inflight.is_empty() && !self.panel.pending() {
+            } else if self.input_wait && self.inflight.is_empty() && !self.panel.pending() && !self.view.as_ref().is_some_and(|v|v.focus_pending()) {
                 self.input_wait = false;
                 let mut answer = self.state();
                 let rc = if let Some(error) = self.input_error.take() {
