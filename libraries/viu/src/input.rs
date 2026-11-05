@@ -8,6 +8,7 @@ use std::collections::VecDeque;
 pub struct Input {
     pub now: Vec<egui::Event>,
     pub later: VecDeque<Vec<egui::Event>>,
+    menu_path: VecDeque<String>,
 }
 fn finite_point(x: f64, y: f64) -> Result<egui::Pos2, String> {
     let point = egui::pos2(x as f32, y as f32);
@@ -30,6 +31,14 @@ impl Input {
         };
         let mut now = vec![egui::Event::ModifiersChanged(modifiers)];
         match command {
+            "menu.open" => {
+                let targets = crate::rich::menu_targets(&view.model()["values"]["menu"], "menu", a)?;
+                let mut targets: VecDeque<_> = targets.into();
+                let first = targets.pop_front().ok_or("menu path is empty")?;
+                self.queue("click", &serde_json::json!({"id":first}), view)?;
+                self.menu_path = targets;
+                return Ok(());
+            }
             "focus" => {
                 if let Some(selection) = a.get("selection") {
                     view.request_focus_value(
@@ -162,6 +171,19 @@ impl Input {
         }
         self.now = now;
         Ok(())
+    }
+    /// Resolve each submenu against the geometry drawn after the preceding
+    /// native click. No command intent is synthesised by this driver.
+    pub fn advance_menu(&mut self, view: &mut SceneView) -> Option<Result<(), String>> {
+        if !self.now.is_empty() || !self.later.is_empty() {
+            return None;
+        }
+        let target = self.menu_path.pop_front()?;
+        let result = self.queue("click", &serde_json::json!({"id":target}), view);
+        if result.is_err() {
+            self.menu_path.clear();
+        }
+        Some(result)
     }
 }
 

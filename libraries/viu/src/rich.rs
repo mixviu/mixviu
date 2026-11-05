@@ -104,6 +104,52 @@ fn find<'a>(value: &'a Value, id: &str) -> Option<&'a Value> {
     }
     None
 }
+/// Resolve an application-owned menu path to native geometry identities.
+/// Both labels and stable IDs are accepted; disabled/leaf/ambiguous paths
+/// refuse before any input is queued.
+pub fn menu_targets(value: &Value, id: &str, args: &Value) -> Result<Vec<String>, String> {
+    validate("menubar", value)?;
+    let root = args["menu"].as_str().ok_or("menu label or ID required")?;
+    let mut names = vec![root];
+    if let Some(path) = args.get("path") {
+        for entry in path.as_array().ok_or("menu path must be an array")? {
+            names.push(entry.as_str().ok_or("menu path entries must be strings")?);
+        }
+    }
+    if names.len() > 8 {
+        return Err("menu path exceeds eight levels".into());
+    }
+    let mut level = value;
+    let mut targets = Vec::new();
+    for (depth, name) in names.into_iter().enumerate() {
+        let matches: Vec<_> = level.as_array().into_iter().flatten()
+            .filter(|item| text(item,"id") == name || text(item,"label") == name).collect();
+        if matches.len() != 1 || matches[0]["enabled"] != true || !matches[0]["children"].is_array() {
+            return Err("unknown, disabled, ambiguous or leaf menu path".into());
+        }
+        let item = matches[0];
+        targets.push(format!("{id}.{}.{}", if depth == 0 { "menu" } else { "command" }, text(item,"id")));
+        level = &item["children"];
+    }
+    Ok(targets)
+}
+
+pub fn menu_snapshot(value: &Value, id: &str, geometry: &BTreeMap<String, Rect>) -> Value {
+    fn descend(value: &Value, id: &str, geometry: &BTreeMap<String, Rect>, path: &mut Vec<String>) {
+        for item in value.as_array().into_iter().flatten() {
+            if let Some(children) = item["children"].as_array() {
+                if children.iter().any(|child| geometry.contains_key(&format!("{id}.command.{}", text(child,"id")))) {
+                    path.push(text(item,"label").into());
+                    descend(&item["children"],id,geometry,path);
+                    break;
+                }
+            }
+        }
+    }
+    let mut path = Vec::new();
+    descend(value,id,geometry,&mut path);
+    json!({"open":!path.is_empty(),"path":path})
+}
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
     validate(kind, current)?;
     match action {

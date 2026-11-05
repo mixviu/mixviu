@@ -111,6 +111,45 @@ fn applying_a_model_does_not_claim_that_native_controls_have_drawn_it() {
 }
 
 #[test]
+fn menu_paths_drive_native_popups_and_refuse_disabled_or_leaf_targets() {
+    let menus = json!([{"id":"View","label":"View","enabled":true,"children":[
+        {"id":"Theme","label":"Theme","enabled":true,"children":[
+            {"id":"Dark","label":"Dark","enabled":true}]},
+        {"id":"Off","label":"Off","enabled":false,"children":[]}]}]);
+    for args in [json!({"menu":"missing"}), json!({"menu":"View","path":["Off"]}),
+        json!({"menu":"View","path":["Theme","Dark"]})] {
+        assert!(viu::rich::menu_targets(&menus,"menu",&args).is_err());
+    }
+    let source = scene(json!({"root":{"widget":"control","definition":{
+        "id":"menu","kind":"menubar","label":"","initial":menus
+    }}}));
+    let mut view = SceneView::with_model(&source,json!({"values":{"menu":menus}})).unwrap();
+    let ctx = egui::Context::default();
+    let mut input = viu::input::Input::default();
+    for frame in 0..12 {
+        let mut raw = egui::RawInput { screen_rect:Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,egui::vec2(600.0,400.0))),time:Some(frame as f64 * 0.05),..Default::default() };
+        raw.events.append(&mut input.now);
+        let mut out = ctx.run_ui(raw,|ui| { view.show(ui); });
+        out.textures_delta.clear();
+        if frame == 0 {
+            input.queue("menu.open",&json!({"menu":"View","path":["Theme"]}),&mut view).unwrap();
+        } else if let Some(next) = input.later.pop_front() {
+            input.now = next;
+        } else if let Some(result) = input.advance_menu(&mut view) {
+            result.unwrap();
+        }
+    }
+    let snapshot = viu::rich::menu_snapshot(&menus,"menu",&view.geometry);
+    assert_eq!(snapshot["path"],json!(["View","Theme"]));
+    assert!(view.geometry.contains_key("menu.command.Dark"));
+    egui::Popup::close_all(&ctx);
+    let mut out = ctx.run_ui(egui::RawInput::default(),|ui| { view.show(ui); });
+    out.textures_delta.clear();
+    assert_eq!(viu::rich::menu_snapshot(&menus,"menu",&view.geometry)["open"],false);
+}
+
+#[test]
 fn host_slots_reuse_scene_composition_without_consuming_the_fallback_dock_edge() {
     let source = scene(
         json!({"root":{"widget":"dock","children":["header","body"],"placements":{"header":{"edge":"top","size":20},"body":{"edge":"fill"}}},"header":{"widget":"column","window_slot":"host.header","children":["heading","only"]},"heading":{"widget":"text","text":"Header"},"only":{"widget":"text","text":"Attached","slot_only":"host.header"},"body":{"widget":"text","text":"Body"}}),
