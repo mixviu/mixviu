@@ -36,7 +36,7 @@ impl Gallery {
             .as_array()
             .into_iter()
             .flatten()
-            .map(|v| Widget::decode(v).expect("validated composition"))
+            .filter_map(|v| Widget::decode(v).ok())
             .collect()
     }
     fn state(&self) -> Value {
@@ -51,7 +51,13 @@ impl Gallery {
                 )
             })
             .collect();
-        json!({"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len()})
+        json!({"ready":self.ready(),"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len()})
+    }
+    fn ready(&self)->bool { self.model["widgets"].as_array().is_some_and(|w|!w.is_empty()) }
+    fn publish(&mut self,model:Value)->Result<(),String> {
+        controller::validate_model(&model)?;
+        self.model=model;
+        Ok(())
     }
     fn execute(&mut self, body: Value, reply: Option<tokio::sync::oneshot::Sender<(u8, Value)>>) {
         if let Err(error) = controller::validate(&self.definitions(), &body) {
@@ -90,6 +96,10 @@ impl Gallery {
             body,
             reply,
         } = request;
+        if !self.ready() && !["gallery.state","gallery.quit"].contains(&command.as_str()) {
+            let _=reply.send((10,json!({"error_code":"NOT_READY"})));
+            return;
+        }
         if let Some(suffix) = command.strip_prefix("gallery.widget.") {
             if let Some((id, action)) = suffix.split_once('.') {
                 self.execute(
@@ -228,12 +238,12 @@ impl Gallery {
         loop {
             let done = self.runtime.as_ref().and_then(Runtime::try_completion);
             let Some(done) = done else { break };
+            if !self.runtime.as_ref().is_some_and(|r|r.accepts(&done)) { continue; }
             self.inflight.remove(&done.sequence);
             if let Some(error) = done.error {
                 self.error = error;
             } else if let Some(model) = done.model {
-                self.model = model;
-                self.error.clear();
+                match self.publish(model) { Ok(())=>self.error.clear(),Err(error)=>self.error=error }
             }
             if let Some(reply) = self.pending.remove(&done.sequence) {
                 let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, self.state()));
@@ -284,6 +294,11 @@ impl eframe::App for Gallery {
             .auto_shrink([false, false])
             .show(ui, |ui| self.widgets.show(ui, &definitions, &self.model))
             .inner;
+        if let Err(error)=self.widgets.finish_frame() {
+            for reply in self.input_replies.drain(..) {
+                let _=reply.send((10,json!({"error_code":"FOCUS_TARGET_UNAVAILABLE","error":error})));
+            }
+        }
         for event in events {
             self.execute(event.encode(), None);
             ui.ctx().request_repaint();
@@ -361,6 +376,7 @@ fn main() -> eframe::Result {
         },
         Box::new(move |cc| {
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
+            viu::icons::install(&cc.egui_ctx);
             let ctx = cc.egui_ctx.clone();
             let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || ctx.request_repaint());
             let bus = NativeBus::start(

@@ -18,6 +18,11 @@ fn call_gallery($language,$command,$body)
   return $value
 end
 fn sample_value($kind,$action,$round)
+  if $kind=="toolbar" then return "save" end
+  if $kind=="icon" then
+    if $action=="activate" then return "copy" end
+    return {name:"copy",size:16+($round%3)*8,colour:[80,180,230],enabled:true,selected:$round%2==1}
+  end
   if $action=="expand" or $action=="sort" then return $round%2==1 end
   if contains(["checkbox","toggle","collapse","dialog"],$kind) then return $round%2==1 end
   if contains(["slider","number","progress","split"],$kind) then return ($round*17)%101 end

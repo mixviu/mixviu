@@ -25,18 +25,22 @@ $widgets = [
  {id:"canvas",kind:"canvas",label:"Canvas",initial:"Ready"},
  {id:"link",kind:"link",label:"Local link",initial:"Ready"},
  {id:"tooltip",kind:"tooltip",label:"Tooltip",initial:"Hover for help"},
- {id:"separator",kind:"separator",label:"Separator",initial:"Section boundary"}
+ {id:"separator",kind:"separator",label:"Separator",initial:"Section boundary"},
+ {id:"icon",kind:"icon",label:"Vector icon button",initial:{name:"copy",size:24,colour:[80,180,230],enabled:true,selected:false}},
+ {id:"toolbar",kind:"toolbar",label:"Icon toolbar",initial:"copy"}
 ]
 for $i=0 to len($widgets)-1
   $kind=$widgets[$i].kind
   $props={}
-  if $kind=="button" then $props={text:"Press me"}
+  if $kind=="button" then $props={text:"Press me",icon:"play"}
+  elif $kind=="icon" then $props={text:"Copy"}
+  elif $kind=="toolbar" then $props={items:[{id:"copy",icon:"copy",text:"Copy",enabled:true},{id:"save",icon:"save",text:"Save",enabled:true},{id:"trash",icon:"trash",text:"Trash",enabled:false}]}
   elif $kind=="checkbox" then $props={text:"Enabled"}
   elif $kind=="toggle" then $props={text:"Power"}
   elif $kind=="radio" or $kind=="combo" then $props={choices:["Alpha","Beta","Gamma"]}
   elif $kind=="tabs" then $props={choices:["Alpha","Beta","Gamma"],pages:{Alpha:"Alpha page content",Beta:"Beta page content",Gamma:"Gamma page content"}}
-  elif $kind=="menu" then $props={text:"Actions",choices:["Alpha","Beta","Gamma"]}
-  elif contains(["list","table","tree"],$kind) then $props={dataset:"examples",row_count:1000,columns:["Name","Size"],parent:"Example folder",context_action:"Choose item"}
+  elif $kind=="menu" then $props={text:"Actions",choices:["Alpha","Beta","Gamma"],choice_icons:{Alpha:"folder",Beta:"file",Gamma:"star"}}
+  elif contains(["list","table","tree"],$kind) then $props={dataset:"examples",row_count:1000,columns:["Name","Size"],parent:"Example folder",context_action:"Choose item",row_icon:"file-text",parent_icon:"folder-open",context_icon:"check"}
   elif $kind=="collapse" then $props={text:"Details",body:"Reusable Viu content"}
   elif $kind=="dialog" then $props={text:"Open confirmation…",title:"Gallery confirmation",body:"The same dialog in Rust and Mix."}
   elif $kind=="link" then $props={text:"Activate a safe local link"}
@@ -46,7 +50,7 @@ for $i=0 to len($widgets)-1
   $widgets[$i].properties=$props
 end
 $rows=json_parse(read_file(dirname(script_path()).."/rows.json"))
-$state = {widgets:$widgets,datasets:{examples:$rows},values:{},expanded:{tree:true},sorted:{table:false},serial:0,activations:0,last:"Ready"}
+$state = {widgets:$widgets,datasets:{examples:$rows},values:{},expanded:{tree:true},sorted:{table:false},serial:0,activations:0,last_activation:nil,last:"Ready"}
 for $widget in $widgets
   $state.values[$widget.id] = $widget.initial
 end
@@ -63,6 +67,7 @@ on gallery.execute
     end
     $state.serial = 0
     $state.activations = 0
+    $state.last_activation = nil
     $state.last = "Ready"
     $state.expanded = {tree:true}
     $state.sorted = {table:false}
@@ -78,6 +83,8 @@ on gallery.execute
       $state.activations = $state.activations + 1
     elif $a.action == "activate" then
       $state.activations = $state.activations + 1
+      $state.last_activation = {id:$a.id,value:$a.value}
+      if $a.id=="toolbar" then $state.values[$a.id]=$a.value end
     else
       raise("UNKNOWN_ACTION",to_string($a.action))
     end

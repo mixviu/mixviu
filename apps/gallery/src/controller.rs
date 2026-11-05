@@ -39,6 +39,8 @@ pub fn composition() -> Vec<Widget> {
             "Separator",
             json!("Section boundary"),
         ),
+        ("icon", "icon", "Vector icon button", json!({"name":"copy","size":24,"colour":[80,180,230],"enabled":true,"selected":false})),
+        ("toolbar", "toolbar", "Icon toolbar", json!("copy")),
     ]
     .into_iter()
     .map(|(id, kind, label, initial)| {
@@ -48,16 +50,18 @@ pub fn composition() -> Vec<Widget> {
 }
 fn properties(kind: &str) -> Value {
     match kind {
-        "button" => json!({"text":"Press me"}),
+        "button" => json!({"text":"Press me","icon":"play"}),
+        "icon" => json!({"text":"Copy"}),
+        "toolbar" => json!({"items":[{"id":"copy","icon":"copy","text":"Copy","enabled":true},{"id":"save","icon":"save","text":"Save","enabled":true},{"id":"trash","icon":"trash","text":"Trash","enabled":false}]}),
         "checkbox" => json!({"text":"Enabled"}),
         "toggle" => json!({"text":"Power"}),
         "radio" | "combo" => json!({"choices":["Alpha","Beta","Gamma"]}),
         "tabs" => {
             json!({"choices":["Alpha","Beta","Gamma"],"pages":{"Alpha":"Alpha page content","Beta":"Beta page content","Gamma":"Gamma page content"}})
         }
-        "menu" => json!({"text":"Actions","choices":["Alpha","Beta","Gamma"]}),
+        "menu" => json!({"text":"Actions","choices":["Alpha","Beta","Gamma"],"choice_icons":{"Alpha":"folder","Beta":"file","Gamma":"star"}}),
         "list" | "table" | "tree" => {
-            json!({"dataset":"examples","row_count":1000,"columns":["Name","Size"],"parent":"Example folder","context_action":"Choose item"})
+            json!({"dataset":"examples","row_count":1000,"columns":["Name","Size"],"parent":"Example folder","context_action":"Choose item","row_icon":"file-text","parent_icon":"folder-open","context_icon":"check"})
         }
         "collapse" => json!({"text":"Details","body":"Reusable Viu content"}),
         "dialog" => {
@@ -79,7 +83,7 @@ pub fn initial() -> Value {
         .collect();
     let rows: Value =
         serde_json::from_str(include_str!("../rows.json")).expect("captured gallery dataset");
-    json!({"widgets":widgets.iter().map(Widget::encode).collect::<Vec<_>>(),"datasets":{"examples":rows},"values":values,"expanded":{"tree":true},"sorted":{"table":false},"serial":0,"activations":0,"last":"Ready"})
+    json!({"widgets":widgets.iter().map(Widget::encode).collect::<Vec<_>>(),"datasets":{"examples":rows},"values":values,"expanded":{"tree":true},"sorted":{"table":false},"serial":0,"activations":0,"last_activation":null,"last":"Ready"})
 }
 pub fn apply(model: &mut Value, action: &Value) {
     if action["action"] == "reset" {
@@ -95,7 +99,11 @@ pub fn apply(model: &mut Value, action: &Value) {
             model["values"][id] = json!(false);
             model["activations"] = json!(model["activations"].as_u64().unwrap() + 1);
         }
-        "activate" => model["activations"] = json!(model["activations"].as_u64().unwrap() + 1),
+        "activate" => {
+            model["activations"] = json!(model["activations"].as_u64().unwrap() + 1);
+            model["last_activation"] = json!({"id":id,"value":action["value"]});
+            if id=="toolbar" { model["values"][id]=action["value"].clone(); }
+        },
         _ => unreachable!("validated action"),
     }
     model["serial"] = json!(model["serial"].as_u64().unwrap() + 1);
@@ -121,11 +129,13 @@ pub fn validate(widgets: &[Widget], body: &Value) -> Result<(), String> {
     if (action == "expand" || action == "sort") && !body["value"].is_boolean() {
         return Err("expand/sort requires bool value".into());
     }
+    if action=="activate" && widget.kind=="toolbar" { widget.validate(&body["value"])?; }
+    if action=="activate" && widget.kind=="icon" && body["value"].as_str().and_then(viu::icons::Icon::from_name).is_none() { return Err("activation requires an icon name".into()); }
     Ok(())
 }
 pub fn actions(w: &Widget) -> Vec<&'static str> {
     let mut actions = vec!["set"];
-    if ["button", "list", "table", "tree", "canvas", "link"].contains(&w.kind.as_str()) {
+    if ["button", "list", "table", "tree", "canvas", "link", "icon", "toolbar"].contains(&w.kind.as_str()) {
         actions.push("activate");
     }
     if ["field", "multiline"].contains(&w.kind.as_str()) {
@@ -141,4 +151,16 @@ pub fn actions(w: &Widget) -> Vec<&'static str> {
         actions.push("sort");
     }
     actions
+}
+
+/// Validate publications before replacing the last good composition/model.
+pub fn validate_model(model:&Value)->Result<(),String> {
+    let widgets=model["widgets"].as_array().filter(|w|!w.is_empty() && w.len()<=128).ok_or("expected 1..128 widgets")?;
+    let mut ids=std::collections::BTreeSet::new();
+    for value in widgets {
+        let widget=Widget::decode(value)?;
+        if !ids.insert(widget.id.clone()) { return Err("duplicate widget ID".into()); }
+        widget.validate(&model["values"][&widget.id])?;
+    }
+    Ok(())
 }

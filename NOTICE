@@ -20,3 +20,9 @@ provenance/runtime.md. No compositor engine has been copied.
 The paired gallery additionally imports the native Bus client and configuration
 source/test closure from the same revision (MIT OR Apache-2.0), recorded in
 provenance/gallery-native-bus.json. No replacement transport is implemented.
+
+The shared icon library imports the complete toolkit Lucide 1.54.0 SVG asset
+directory from that revision, including ISC/MIT licence text. See
+libraries/icons/assets/LICENSE-lucide.txt and provenance/icons.json. The
+catalogue and Viu renderer adapter are new project code. SVG loading uses
+egui_extras/resvg and their pure-Rust dependency closure recorded in Cargo.lock.

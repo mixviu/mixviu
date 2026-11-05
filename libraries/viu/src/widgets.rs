@@ -30,6 +30,8 @@ pub const KINDS: &[&str] = &[
     "link",
     "tooltip",
     "separator",
+    "icon",
+    "toolbar",
 ];
 
 #[derive(Clone, Debug)]
@@ -92,6 +94,11 @@ impl Widget {
     }
     pub fn validate(&self, value: &Value) -> Result<(), String> {
         let valid = match self.kind.as_str() {
+            "icon" => value["name"].as_str().and_then(crate::icons::Icon::from_name).is_some()
+                && value["size"].as_u64().is_some_and(|s| (8..=64).contains(&s))
+                && value["colour"].as_array().is_some_and(|c| c.len()==3 && c.iter().all(|v|v.as_u64().is_some_and(|n|n<=255)))
+                && value["enabled"].is_boolean() && value["selected"].is_boolean(),
+            "toolbar" => value.as_str().is_some_and(|v| self.properties["items"].as_array().is_some_and(|items|items.iter().any(|i|i["id"]==v && i["enabled"]==true))),
             "checkbox" | "toggle" | "collapse" | "dialog" => value.is_boolean(),
             "slider" | "number" | "progress" | "split" => value
                 .as_f64()
@@ -165,7 +172,7 @@ impl Widgets {
             .num_columns(2)
             .min_col_width(width)
             .max_col_width(width)
-            .spacing([12.0, 5.0])
+            .spacing([12.0, 3.0])
             .show(ui, |ui| {
                 for (index, widget) in definitions.iter().enumerate() {
                     let response = ui
@@ -197,6 +204,11 @@ impl Widgets {
             });
         intents
     }
+    /// Call once after drawing an application frame (including individual
+    /// `widget` calls). A disappeared target must not latch future replies.
+    pub fn finish_frame(&mut self) -> Result<(), String> {
+        if let Some(id)=self.focus.take() { Err(format!("focus target not drawn: {id}")) } else { Ok(()) }
+    }
     fn remember(&mut self, ui: &egui::Ui, id: &str, response: &egui::Response) {
         self.geometry.insert(id.into(), response.rect);
         if self.focus.as_deref() == Some(id) {
@@ -221,7 +233,7 @@ impl Widgets {
         let response = match widget.kind.as_str() {
             "label" => ui.label(value.as_str().unwrap_or_default()),
             "button" => {
-                let r = ui.button(widget.text("text"));
+                let r = icon_button(ui,widget.text("icon"),widget.text("text"),false);
                 if r.clicked() {
                     events.push(Intent {
                         id: id.clone(),
@@ -368,11 +380,12 @@ impl Widgets {
                 }
                 let expanded = model["expanded"][id].as_bool().unwrap_or(true);
                 if widget.kind == "tree" {
-                    let header = ui.button(format!(
+                    let caption = format!(
                         "{} {}",
                         if expanded { "v" } else { ">" },
                         widget.text("parent")
-                    ));
+                    );
+                    let header = icon_button(ui,widget.text("parent_icon"),&caption,false);
                     self.remember(ui, &format!("{id}.expand"), &header);
                     if header.clicked() {
                         events.push(Intent {
@@ -416,8 +429,11 @@ impl Widgets {
                                         ui.style().interact_selectable(&response, selected);
                                     ui.painter().rect_filled(rect, 2.0, visuals.bg_fill);
                                     let font = egui::FontId::proportional(13.0);
+                                    if let Some(icon)=crate::icons::Icon::from_name(widget.text("row_icon")) {
+                                        crate::icons::image(icon,16.0,visuals.text_color()).paint_at(ui,Rect::from_center_size(rect.left_center()+Vec2::new(12.0,0.0),Vec2::splat(16.0)));
+                                    }
                                     ui.painter().text(
-                                        rect.left_center() + Vec2::new(6.0, 0.0),
+                                        rect.left_center() + Vec2::new(if widget.text("row_icon").is_empty() {6.0} else {24.0}, 0.0),
                                         egui::Align2::LEFT_CENTER,
                                         name,
                                         font.clone(),
@@ -432,14 +448,11 @@ impl Widgets {
                                     );
                                     response
                                 } else {
-                                    ui.selectable_label(
-                                        value.as_u64() == Some(row as u64),
-                                        if widget.kind == "tree" {
+                                    icon_button(ui,widget.text("row_icon"),&if widget.kind == "tree" {
                                             format!("    · {name}")
                                         } else {
                                             name.to_owned()
-                                        },
-                                    )
+                                        },value.as_u64() == Some(row as u64))
                                 };
                                 self.remember(ui, &format!("{id}.{row}"), &r);
                                 if r.clicked() {
@@ -453,7 +466,7 @@ impl Widgets {
                                     });
                                 }
                                 r.context_menu(|ui| {
-                                    let choice = ui.button(widget.text("context_action"));
+                                    let choice = icon_button(ui,widget.text("context_icon"),widget.text("context_action"),false);
                                     self.remember(ui, &format!("{id}.{row}.choose"), &choice);
                                     if choice.clicked() {
                                         changed = Some(json!(row));
@@ -485,7 +498,7 @@ impl Widgets {
                     format!("{} · {}", widget.text("text"), value.as_str().unwrap_or("")),
                     |ui| {
                         for option in widget.choices() {
-                            let r = ui.button(option);
+                            let r = icon_button(ui,widget.properties["choice_icons"][option].as_str().unwrap_or(""),option,false);
                             self.remember(ui, &format!("{id}.{option}"), &r);
                             if r.clicked() {
                                 changed = Some(json!(option));
@@ -591,6 +604,25 @@ impl Widgets {
                 ui.small(value.as_str().unwrap_or("Section boundary"));
                 r
             }
+            "icon" => {
+                let icon=crate::icons::Icon::from_name(value["name"].as_str().unwrap_or(""));
+                if let Some(icon)=icon {
+                    let rgb=value["colour"].as_array().unwrap();
+                    let tint=Color32::from_rgb(rgb[0].as_u64().unwrap() as u8,rgb[1].as_u64().unwrap() as u8,rgb[2].as_u64().unwrap() as u8);
+                    let r=crate::icons::button(ui,icon,widget.text("text"),value["size"].as_u64().unwrap() as f32,Some(tint),value["enabled"]==true,value["selected"]==true);
+                    if r.clicked() { events.push(Intent{id:id.clone(),action:"activate".into(),value:value["name"].clone()}); }
+                    r.on_hover_text(value["name"].as_str().unwrap_or(""))
+                } else { ui.colored_label(Color32::RED,"Unknown icon") }
+            }
+            "toolbar" => ui.horizontal(|ui| {
+                for item in widget.properties["items"].as_array().into_iter().flatten() {
+                    if let Some(icon)=item["icon"].as_str().and_then(crate::icons::Icon::from_name) {
+                        let r=crate::icons::button(ui,icon,item["text"].as_str().unwrap_or(""),16.0,None,item["enabled"]==true,value==&item["id"]);
+                        self.remember(ui,&format!("{id}.{}",item["id"].as_str().unwrap_or("")),&r);
+                        if r.clicked() { events.push(Intent{id:id.clone(),action:"activate".into(),value:item["id"].clone()}); }
+                    }
+                }
+            }).response,
             _ => ui.colored_label(Color32::RED, "Unsupported widget"),
         };
         self.remember(ui, id, &response);
@@ -598,4 +630,10 @@ impl Widgets {
             events.push(Intent::set(id, value));
         }
     }
+}
+
+fn icon_button(ui:&mut egui::Ui,name:&str,text:&str,selected:bool)->egui::Response {
+    if let Some(icon)=crate::icons::Icon::from_name(name) {
+        crate::icons::button(ui,icon,text,16.0,None,true,selected)
+    } else { ui.add(egui::Button::new(text).selected(selected)) }
 }
