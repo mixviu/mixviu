@@ -212,7 +212,7 @@ fn reload_commits_scene_with_its_fresh_model_and_retains_last_good_on_error() {
 
 #[test]
 fn fields_route_native_text_and_enter_and_keep_edits_across_model_updates() {
-    let source = "---\nscene: 1\nname: fields\ncitizen: fields\nmodel: {path:\"\",status:\"ready\"}\n---\n```mix\nroot: {widget:\"column\",children:[\"path\"]}\npath: {widget:\"field\",value:\"= $model.path\",width:300,on_change:\"edit\",on_submit:\"open\"}\n```\n";
+    let source = "---\nscene: 1\nname: fields\ncitizen: fields\nmodel: {\"path\":\"\",\"status\":\"ready\"}\n---\n```mix\nroot: {widget:\"column\",children:[\"path\"]}\npath: {widget:\"field\",value:\"= $model.path\",width:300,on_change:\"edit\",on_submit:\"open\"}\n```\n";
     let mut view = SceneView::new(source).unwrap();
     let ctx = egui::Context::default();
     click(&ctx, &mut view, "path");
@@ -306,19 +306,6 @@ fn embedded_dopus_native_fields_and_rows_drive_real_file_operations() {
     view.apply_model(ready(&runtime, &wakes).model.unwrap())
         .unwrap();
     let ctx = egui::Context::default();
-    // Large logical viewport for the full two-pane scene in this CPU input oracle.
-    let _ = ctx.run_ui(
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1600.0, 1000.0),
-            )),
-            ..Default::default()
-        },
-        |ui| {
-            view.show(ui);
-        },
-    );
     let row = format!("{}#file_row", root.join("left/a.txt").display());
     for event in click(&ctx, &mut view, &row) {
         runtime.event(event.command, event.body).unwrap();
