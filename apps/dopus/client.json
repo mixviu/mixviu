@@ -1,0 +1,10 @@
+{
+  "behaviour": "dopus.mix",
+  "scene": "dopus-mix",
+  "citizen": "dopus-mix",
+  "title": "Dopus Mix — demo files",
+  "app_id": "mixviu.dopus.lab",
+  "caption": "Dopus Mix — changes affect demo files only",
+  "size": [1200, 680],
+  "backend": "none"
+}

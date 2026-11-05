@@ -18,6 +18,7 @@ struct Client {
     pending_view: Option<(u64, SceneView)>,
     behaviour_ready: bool,
     lifecycle_note: String,
+    caption: String,
 }
 impl Client {
     fn reload(&mut self, scene: &str, source: String) -> Result<(), String> {
@@ -102,7 +103,7 @@ impl eframe::App for Client {
         while let Some(done) = self.runtime.try_completion() {
             self.complete(done);
         }
-        ui.label("Quoin volume — safe audio fixture");
+        ui.label(&self.caption);
         if ui.button("Reload scene and behaviour").clicked() {
             let scene = self.program.path.parent().unwrap().join("scene.mix");
             let files = std::fs::read_to_string(scene).and_then(|scene| {
@@ -149,28 +150,77 @@ impl eframe::App for Client {
 }
 
 use eframe::egui;
+
+struct ClientConfig {
+    behaviour: String,
+    scene: String,
+    citizen: String,
+    title: String,
+    app_id: String,
+    caption: String,
+    size: [f32; 2],
+    audio_fixture: bool,
+}
+impl ClientConfig {
+    fn parse(source: Option<&str>) -> Result<Self, String> {
+        let Some(source) = source else {
+            return Ok(Self { behaviour: "viu.mix".into(), scene: "volume".into(),
+                citizen: "scene-volume".into(), title: "Viu — Quoin lab".into(),
+                app_id: "mixviu.quoin.lab".into(), caption: "Quoin volume — safe audio fixture".into(),
+                size: [440.0, 680.0], audio_fixture: true });
+        };
+        let value: serde_json::Value = serde_json::from_str(source).map_err(|e| e.to_string())?;
+        let string = |key: &str| -> Result<String, String> {
+            value[key].as_str().filter(|s| !s.is_empty()).map(str::to_owned)
+                .ok_or_else(|| format!("client.json requires nonempty string {key}"))
+        };
+        let backend = string("backend")?;
+        if backend != "none" && backend != "audio-fixture" {
+            return Err("unsupported client backend".into());
+        }
+        let behaviour = string("behaviour")?;
+        if !std::path::Path::new(&behaviour).components().all(|c| matches!(c, std::path::Component::Normal(_))) {
+            return Err("behaviour must be a relative application path".into());
+        }
+        let size = value["size"].as_array().filter(|s| s.len() == 2)
+            .ok_or("client.json size must contain width and height")?;
+        let dimension = |i: usize| -> Result<f32, String> {
+            let n = size[i].as_f64().ok_or("window dimensions must be numbers")? as f32;
+            if n.is_finite() && n > 0.0 { Ok(n) } else { Err("invalid window dimension".into()) }
+        };
+        Ok(Self { behaviour, scene: string("scene")?, citizen: string("citizen")?,
+            title: string("title")?, app_id: string("app_id")?, caption: string("caption")?,
+            size: [dimension(0)?, dimension(1)?], audio_fixture: backend == "audio-fixture" })
+    }
+}
 fn main() -> eframe::Result {
     let root = std::env::args_os()
         .nth(1)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("apps/quoin/volume"));
+    let config_source = match std::fs::read_to_string(root.join("client.json")) {
+        Ok(source) => Some(source),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => panic!("read client configuration: {error}"),
+    };
+    let config = ClientConfig::parse(config_source.as_deref()).expect("client configuration");
     let path = root
-        .join("viu.mix")
+        .join(&config.behaviour)
         .canonicalize()
-        .expect("volume behaviour path");
+        .expect("application behaviour path");
     let program = Program {
         source: std::fs::read_to_string(&path).expect("behaviour"),
         path,
-        scene: "volume".into(),
-        citizen: "scene-volume".into(),
+        scene: config.scene.clone(),
+        citizen: config.citizen.clone(),
     };
     let source = std::fs::read_to_string(root.join("scene.mix")).expect("scene");
     eframe::run_native(
-        "Viu — Quoin lab",
+        &config.title,
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
-                .with_inner_size([440.0, 680.0])
-                .with_app_id("mixviu.quoin.lab"),
+                .with_inner_size(config.size)
+                .with_app_id(&config.app_id),
             ..Default::default()
         },
         Box::new(move |cc| {
@@ -178,7 +228,7 @@ fn main() -> eframe::Result {
             let mut runtime = Runtime::new(
                 32,
                 Arc::new(move || ctx.request_repaint()),
-                Some(Box::new(|| fixture::AudioFixture::new())),
+                if config.audio_fixture { Some(Box::new(|| fixture::AudioFixture::new())) } else { None },
             );
             runtime.load(program.clone()).expect("initial load");
             Ok(Box::new(Client {
@@ -191,6 +241,7 @@ fn main() -> eframe::Result {
                 pending_view: None,
                 behaviour_ready: false,
                 lifecycle_note: String::new(),
+                caption: config.caption.clone(),
             }))
         }),
     )

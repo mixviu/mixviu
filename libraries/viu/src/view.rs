@@ -18,6 +18,7 @@ pub struct SceneView {
     lists: PreparedLists,
     pub revision: u64,
     pub geometry: BTreeMap<String, egui::Rect>,
+    fields: BTreeMap<String, (String, String)>,
 }
 
 impl SceneView {
@@ -30,6 +31,7 @@ impl SceneView {
             lists,
             revision: 0,
             geometry: BTreeMap::new(),
+            fields: BTreeMap::new(),
         })
     }
 
@@ -102,6 +104,31 @@ impl SceneView {
                     "button" => {
                         if ui.button(text(node, "label")).clicked() {
                             route_event(&self.tree.name, id, node, route, events);
+                        }
+                    }
+                    "field" => {
+                        let bound = text(node, "value").to_owned();
+                        let field = self.fields.entry(key.clone())
+                            .or_insert_with(|| (bound.clone(), bound.clone()));
+                        // Preserve an in-progress edit across unrelated model updates.
+                        // A changed authoritative binding replaces the edit buffer.
+                        if field.0 != bound {
+                            *field = (bound.clone(), bound);
+                        }
+                        let response = ui.add(egui::TextEdit::singleline(&mut field.1)
+                            .hint_text(text(node, "placeholder"))
+                            .desired_width(num(node, "width").unwrap_or(200.0)));
+                        for (triggered, port, kind) in [
+                            (response.changed(), "on_change", "change"),
+                            (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)), "on_submit", "submit"),
+                        ] {
+                            if triggered {
+                                if let Some(command) = node.ports.get(port).and_then(Value::as_str) {
+                                    events.push(Event { command: command.into(), body: json!({
+                                        "scene":self.tree.name, "node":id, "kind":kind, "value":field.1
+                                    }) });
+                                }
+                            }
                         }
                     }
                     "spacer" => {

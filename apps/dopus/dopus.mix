@@ -6,18 +6,13 @@ $dir = dirname(script_path())
 $root = env("DOPUS_DEMO_ROOT", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixviu/dopus-demo")
 $demo = require("demo.mix")
 $demo.prepare_demo($root)
-$host = env("DOPUS_SCENE_HOST", "shell")
+$ctx = viu_context()
 $s = $c.new_state($root, $root .. "/left", $root .. "/right")
 $new_name = ""
-fn host_call($command, $body)
-  send $host $command body=json_encode($body) timeout=10
-  if $rc != 0 then raise("SCENE_REFUSED", json_encode($result)) end
-  return $result
-end
 fn paint_state($state)
   $t = monotonic()
-  $m = $c.model($state)
-  host_call("shell.scene.patch", {scene: "dopus-mix", path: "model", value: $m})
+  send "viu-local" "scenes.model" body={name: $ctx.name, generation: $ctx.generation, value: $c.model($state)} timeout=5
+  if $rc != 0 then raise("MODEL_REFUSED", json_encode($result)) end
   return (monotonic() - $t) * 1000
 end
 fn event_args()
@@ -49,30 +44,7 @@ fn row_pick($state, $pane, $a)
   $modifiers = $a.modifiers ?? {}
   return safe_apply($state, "pick", {pane: $pane, index: $index, ctrl: $modifiers.ctrl ?? false, shift: $modifiers.shift ?? false})
 end
-host_call("shell.scene.load", {source: read_file($dir .. "/scene.mix")})
 paint_state($s)
-host_call("shell.dialog.show", {scene: "dopus-mix"})
-on @.open
-  host_call("shell.dialog.show", {scene: "dopus-mix"})
-  reply({shown: true})
-end
-on @.state
-  reply(json_encode($s))
-end
-on @.apply
-  $a = event_args()
-  try
-    $t = monotonic()
-    $s = $c.apply($s, $a.command, $a.params ?? {})
-    $core_ms = (monotonic() - $t) * 1000
-    $paint_ms = paint_state($s)
-    reply({serial: $s.serial, core_ms: $core_ms, paint_ms: $paint_ms})
-  catch $message, $error
-    $s.status = $error.code .. ": " .. $message
-    paint_state($s)
-    reply(10, {error_code: $error.code, message: $message})
-  end
-end
 on pick_left
   $s = row_pick($s, 0, event_args()); paint_state($s)
 end
