@@ -199,7 +199,8 @@ fn route_event(
     route: Option<(&str, &Node, &Value)>,
     events: &mut Vec<Event>,
 ) {
-    let (route_id, node, item) = route.map_or((id, node, None), |(id, node, item)| (id, node, Some(item)));
+    let (route_id, node, item) =
+        route.map_or((id, node, None), |(id, node, item)| (id, node, Some(item)));
     if let Some(command) = node.ports.get("on_click").and_then(Value::as_str) {
         let mut body = json!({"scene":scene,"node":route_id,"kind":"click"});
         if let Some(item) = item {

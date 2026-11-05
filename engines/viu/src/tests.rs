@@ -122,14 +122,20 @@ fn native_widget_input_runs_existing_mix_callbacks_and_readback() {
     assert_eq!(events[0].command, "vol_output_pick");
     assert_eq!(events[0].body["node"], "v_outs");
     assert_eq!(events[0].body["item"]["id"], "sink_1");
-    for event in events { runtime.event(event.command, event.body).unwrap(); }
-    view.apply_model(ready(&runtime, &wakes).model.unwrap()).unwrap();
+    for event in events {
+        runtime.event(event.command, event.body).unwrap();
+    }
+    view.apply_model(ready(&runtime, &wakes).model.unwrap())
+        .unwrap();
     let events = click(&ctx, &mut view, "v75#vo_seg");
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].command, "vol_out_set");
     assert_eq!(events[0].body["node"], "vo_bar");
-    assert_eq!(events[0].body["item"]["pct"], 75);
-    for event in events { runtime.event(event.command, event.body).unwrap(); }
-    view.apply_model(ready(&runtime, &wakes).model.unwrap()).unwrap();
+    assert_eq!(events[0].body["item"]["pct"].as_f64(), Some(75.0));
+    for event in events {
+        runtime.event(event.command, event.body).unwrap();
+    }
+    view.apply_model(ready(&runtime, &wakes).model.unwrap())
+        .unwrap();
     assert_eq!(view.model()["out"]["level_text"], "75%");
 }

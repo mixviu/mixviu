@@ -14,7 +14,9 @@ use viu::{
 
 #[cfg(test)]
 #[test]
-fn populated_diagnostic_preserves_equal_outputs_and_geometry() { main(); }
+fn populated_diagnostic_preserves_equal_outputs_and_geometry() {
+    main();
+}
 
 const BEHAVIOUR: &str = r#"
 $ctx = viu_context()
