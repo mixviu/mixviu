@@ -21,6 +21,8 @@ pub struct Native {
     rx: Option<mpsc::Receiver<CoreEvent>>,
     relay: Option<JoinHandle<()>>,
     contract: Value,
+    default_keys: Value,
+    appearance_choice: Value,
     pub appearance: Value,
     form: Value,
     form_kind: String,
@@ -95,7 +97,9 @@ impl Native {
             core: Some(core),
             rx: Some(rx),
             relay: Some(relay),
+            default_keys: contract["actions"].as_array().unwrap().iter().map(|a|(a["id"].as_str().unwrap().to_owned(),a["keys"].clone())).collect::<serde_json::Map<_,_>>().into(),
             contract,
+            appearance_choice: json!({}),
             appearance: json!({"mode":"dark","scheme":"studio","style":"default"}),
             form_instance: 0,
             form_queue: VecDeque::new(),
@@ -485,6 +489,10 @@ impl Native {
                 self.core_mut().flush_config();
             }
             _ => return Err("UNKNOWN_ACTION".into()),
+        }
+        if id.starts_with("theme.") {
+            let key=if id.starts_with("theme.scheme-"){Some("scheme")}else if id.starts_with("theme.style-"){Some("style")}else if id.starts_with("theme.mode-"){Some("mode")}else{None};
+            if let Some(key)=key {self.appearance_choice[key]=self.appearance[key].clone();}
         }
         for i in 0..2 {
             self.locations[i] = self
@@ -898,7 +906,23 @@ impl Native {
                 if args.get("style").is_some() {
                     answer["style"] = self.appearance["style"].clone();
                 }
+                for key in ["mode","scheme","style"] {
+                    if args.get(key).is_some() {self.appearance_choice[key]=self.appearance[key].clone();}
+                }
                 Ok(answer)
+            }
+            "dopus.session" => {
+                let mut appearance=json!({"mode":"dark","scheme":"studio","style":"default"});
+                for (key,value) in args["appearance"].as_object().ok_or("session appearance must be an object")? {appearance[key]=value.clone();}
+                for (key,value) in self.appearance_choice.as_object().unwrap(){appearance[key]=value.clone();}
+                viu::appearance::resolve(&appearance)?;
+                self.appearance=appearance;
+                for action in self.contract["actions"].as_array_mut().unwrap(){
+                    let id=action["id"].as_str().unwrap();
+                    action["keys"]=args["keymap"].get(id).unwrap_or(&self.default_keys[id]).clone();
+                }
+                self.serial+=1;
+                Ok(json!({"ok":true}))
             }
             "dopus.quit" | "dopus.persist" => {
                 self.core_mut().flush_config();

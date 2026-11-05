@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$session=require("session.mix")
+$state=nil
+fn session_read($state)
+  try
+    for $topic in $session.session_topics() subscribe($topic) end
+    send "settingsd" "settings.get" body={binding:$state.binding,view:"values"}
+    $state=$session.session_answer($state,$rc,$reply,if type($result)=="string" then $result else nil end)
+  catch $message
+    $state.changed=false;$state.error=$message;$state.retry=0.25
+  end
+  $appearance=$session.session_appearance($state.values,$state.app)
+  $keys=if $state.lost then $state.last_keys ?? {} else $session.session_keys($state.values,$state.app) end
+  $state.last_keys=$keys
+  send "viu-local" "scenes.model" body={generation:viu_context().generation,value:{state:$state,appearance:$appearance,keymap:$keys}}
+  return $state
+end
+on session.start
+  $state=$session.session_new($event.args.instance)
+  $state.app=$event.args.app
+  $state=session_read($state)
+end
+on session.read
+  if $state!=nil then $state=session_read($state) end
+end

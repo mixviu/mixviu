@@ -56,9 +56,16 @@ pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, S
         return Err("embedded native design did not compile".into());
     };
     let dictionary = compiled.candidate.dictionary();
-    let tokens = dictionary
+    let mut tokens = dictionary
         .style
         .ok_or("compiled design omitted style tokens")?;
+    if let Some(roundness)=value.get("roundness") {
+        tokens=design::geometry::round(tokens,design::geometry::Roundness::from_name(roundness.as_str().ok_or("roundness must be text")?).ok_or("unknown roundness")?);
+    }
+    if let Some(density)=value.get("density") {
+        let density=design::geometry::Density::from_name(density.as_str().ok_or("density must be text")?).ok_or("unknown density")?;
+        tokens=design::geometry::legacy_lengths(design::geometry::spacing(tokens,density),density);
+    }
     let mut style = egui::Style::default();
     style.visuals = pair_visuals(dictionary, &tokens, context.mode);
     if tokens.widgets == Widgets::Chrome {
@@ -121,6 +128,10 @@ pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, S
                 font.size *= ratio;
             }
         }
+    }
+    if let Some(scale)=value.get("text_scale") {
+        let scale=scale.as_f64().filter(|s|s.is_finite() && (0.5..=3.0).contains(s)).ok_or("invalid text scale")? as f32;
+        for font in style.text_styles.values_mut(){font.size*=scale;}
     }
     if value["reduced_motion"] == true {
         style.animation_time = 0.0;

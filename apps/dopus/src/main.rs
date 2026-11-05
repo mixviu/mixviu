@@ -25,12 +25,15 @@ struct App {
     native: Option<native::Native>,
     jobs: Jobs,
     bus: Endpoint,
+    session: viu::session::Session,
+    session_pending: Option<Value>,
     model: Value,
     base_model: Value,
     panel: panel::Panel,
     view: Option<SceneView>,
     scene: String,
     contract: Value,
+    default_contract: Value,
     app_dir: PathBuf,
     effect_next: u64,
     effect_admissions: BTreeMap<String, tokio::sync::oneshot::Receiver<(i32, Value)>>,
@@ -304,6 +307,9 @@ impl App {
             }
             "dopus.ping" => {
                 let _ = reply.send((0, json!({"ok":true,"mode":self.mode,"ready":self.ready()})));
+            }
+            "dopus.session.state" => {
+                let _=reply.send((0,json!({"snapshot":self.session.snapshot,"error":self.session.error})));
             }
             "dopus.state" | "dopus.ui.tree" => {
                 // Optional observation avoids copying the entire rendered row
@@ -613,8 +619,25 @@ impl App {
             let Ok(notice) = self.bus.notices.try_recv() else {
                 break;
             };
+            self.session.hint(&notice.command,&notice.args);
             self.notices.push_back(notice);
         }
+        if let Some(snapshot)=self.session.poll(){self.session_pending=Some(snapshot);}
+        if self.ready() {
+            if let Some(mut snapshot)=self.session_pending.take(){
+                if viu::appearance::resolve(&snapshot["appearance"]).is_err(){
+                    for key in ["scheme","mode","style","contrast","accent"] {snapshot["appearance"].as_object_mut().unwrap().remove(key);}
+                }
+                if viu::appearance::resolve(&snapshot["appearance"]).is_ok(){
+                    self.contract=self.default_contract.clone();
+                    for action in self.contract["actions"].as_array_mut().unwrap(){
+                        if let Some(keys)=snapshot["keymap"].get(action["id"].as_str().unwrap()){action["keys"]=keys.clone();}
+                    }
+                    self.call("dopus.session".into(),json!({"appearance":snapshot["appearance"],"keymap":snapshot["keymap"]}),BTreeMap::new(),None,ctx);
+                }else{self.error="Session appearance refused; previous look retained".into();}
+            }
+        }
+        if let Some(at)=self.session.deadline(){ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));}
         if let Some(runtime) = &mut self.runtime {
             while let Some(notice) = self.notices.front() {
                 if runtime
@@ -700,11 +723,7 @@ impl eframe::App for App {
         for event in events {
             self.call(event.command, event.body, BTreeMap::new(), None, ctx);
         }
-        for action in input::shortcuts(
-            ctx,
-            &self.contract,
-            shortcuts_blocked,
-        ) {
+        for action in input::shortcuts(ctx, &self.contract, shortcuts_blocked) {
             if let Some(key) = action["tree_navigation"].as_str() {
                 let side = if self.model["active"] == 0 {
                     "left"
@@ -792,6 +811,7 @@ fn commands() -> Vec<String> {
         "HELP",
         "app.describe",
         "dopus.ping",
+        "dopus.session.state",
         "dopus.describe",
         "dopus.info",
         "dopus.state",
@@ -917,6 +937,11 @@ fn main() -> eframe::Result {
                 wake.clone(),
             );
             let mut jobs = Jobs::new(4, wake.clone());
+            let session=viu::session::Session::new(
+                app_dir.join("../../libraries/viu/mix/session-runtime.mix"),"dopus",
+                std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap_or_else(|_|"host".into()).trim(),
+                wake.clone(),bus.backend(),
+            ).map_err(std::io::Error::other)?;
             jobs.set_native_backend(bus.backend_maker());
             let macro_session = macros::Session::with_roots(
                 "dopus",
@@ -980,11 +1005,14 @@ fn main() -> eframe::Result {
                 native,
                 jobs,
                 bus,
+                session,
+                session_pending: None,
                 model: json!({}),
                 base_model: json!({}),
                 panel,
                 view: None,
                 scene,
+                default_contract: contract.clone(),
                 contract,
                 app_dir,
                 effect_next: 0,

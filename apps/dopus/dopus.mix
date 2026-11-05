@@ -27,6 +27,9 @@ end
 on dopus.initialise
   $row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
   $state=$app.dp_initialise($event.args)
+  $state.appearance_choice={}
+  $state.default_keys={}
+  for $action in $contract.actions $state.default_keys[$action.id]=$action.keys end
   $state.owner=viu_context().generation
   $state=$app.dp_update_previews($state)
   $row_cache=dp_publish($state,$contract,$row_cache)
@@ -60,6 +63,16 @@ on dopus.call
         end
         $candidate.reply={scheme:$candidate.appearance.scheme,mode:$candidate.appearance.mode}
         if $a.style!=nil then $candidate.reply.style=$candidate.appearance.style end
+        for $key in ["mode","scheme","style"] if $a[$key]!=nil then $candidate.appearance_choice[$key]=$a[$key] end end
+      elif $name=="dopus.session" then
+        $appearance={mode:"dark",scheme:"studio",style:"default"}
+        for $key in keys($a.appearance) $appearance[$key]=$a.appearance[$key] end
+        for $key in keys($candidate.appearance_choice) $appearance[$key]=$candidate.appearance_choice[$key] end
+        $candidate.appearance=$appearance
+        for $i=0 to len($contract.actions)-1
+          $id=$contract.actions[$i].id
+          $contract.actions[$i].keys=$a.keymap[$id] ?? $candidate.default_keys[$id]
+        end
       elif $name=="dopus.dialog.answer" then
         if not deep_eq($a.instance,$candidate.form.instance) then raise("STALE_FORM","Read the current dialog instance before answering") end
         if $a.text!=nil and type($a.text)!="string" then raise("INVALID_ARGUMENT","Dialog text must be text") end
@@ -67,6 +80,11 @@ on dopus.call
         $candidate=$app.dp_handle_answer($candidate,$contract,$a.choice)
       elif $name=="dopus.quit" or $name=="dopus.persist" then $candidate=$app.dp_persist($candidate)
       else raise("UNKNOWN_COMMAND",$name) end
+      if $name=="dopus.execute" or $name=="dopus.intent" then
+        for $key in ["mode","scheme","style"]
+          if $candidate.appearance[$key]!=$state.appearance[$key] then $candidate.appearance_choice[$key]=$candidate.appearance[$key] end
+        end
+      end
       $candidate.serial=$candidate.serial+1
       $profile_reduced=if $dopus_profile then monotonic() else 0 end
       $state=$app.dp_update_previews($candidate)

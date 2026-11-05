@@ -1,0 +1,69 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Read-only native settings follower. Hints request reads; they carry no state.
+-- Revision strings stay decimal text, including values beyond f64 precision.
+fn session_topics()
+  return ["settingsd.desktop.look.default","settingsd.desktop.keys.default.keymaps","noded.props.changed","theme.changed"]
+end
+fn session_new($instance)
+  return {binding:{instance:$instance,profile:"default"},retargeted:false,incarnation:nil,revision:nil,lost:false,values:{},changed:false,failures:0,retry:nil,error:nil}
+end
+fn session_revision($value)
+  if type($value)!="string" or not re_match($value,"^(0|[1-9][0-9]*)$") then raise("SESSION_REVISION","Revision must be canonical decimal text") end
+  return $value
+end
+fn session_older($a,$b)
+  return len($a)<len($b) or (len($a)==len($b) and $a<$b)
+end
+fn session_answer($state,$rc,$body,$error)
+  $state.changed=false;$state.retry=nil;$state.error=nil
+  if $rc==10 and ($body==nil or $body=="") and ($error==nil or contains(lower($error),"not found")) then
+    $state.changed=not $state.lost;$state.lost=true;$state.values={};$state.failures=0
+    return $state
+  end
+  if $rc!=0 then
+    if type($body)=="map" and $body.status=="wrong_target" and not $state.retargeted and type($body.binding.instance)=="string" and $body.binding.instance!="" and $body.binding.profile==$state.binding.profile then
+      $state.binding.instance=$body.binding.instance;$state.retargeted=true;$state.retry=0
+    elif $rc>=20 or $rc<0 or $body==nil or $body=="" then
+      $state.failures=$state.failures+1;$state.retry=min(30,0.25*pow(2,min(16,$state.failures-1)))
+      $state.error="Transient settings read failure"
+    else $state.error="Settings read refused" end
+    return $state
+  end
+  if type($body)!="map" or type($body.incarnation)!="string" or type($body.values)!="map" then raise("SESSION_REPLY","Malformed settings values reply") end
+  $revision=session_revision($body.revision)
+  if $state.incarnation==$body.incarnation and $state.revision!=nil and (session_older($revision,$state.revision) or ($revision==$state.revision and not $state.lost)) then return $state end
+  $state.incarnation=$body.incarnation;$state.revision=$revision;$state.values=$body.values
+  $state.changed=true;$state.lost=false;$state.failures=0
+  return $state
+end
+fn session_appearance($values,$app)
+  $out={}
+  for $pair in [{key:"scheme",source:"appearance.scheme"},{key:"mode",source:"appearance.mode"},{key:"style",source:"appearance.style"},{key:"contrast",source:"appearance.contrast"},{key:"accent",source:"appearance.accent"},{key:"weight",source:"appearance.font_weight"},{key:"body",source:"appearance.font_size"},{key:"icon_stroke",source:"appearance.icon_stroke"},{key:"reduced_motion",source:"accessibility.reduced_motion"}]
+    if $values[$pair.source]!=nil then $out[$pair.key]=$values[$pair.source] end
+  end
+  if $out.mode=="auto" then $out.mode=if $values["state.appearance.daylight"]==true then "light" else "dark" end end
+  for $key in ["scheme","mode","contrast"]
+    $value=$values["apps."..$app.."."..$key]
+    if $value!=nil and not ($key=="contrast" and $out.contrast=="high") then $out[$key]=$value end
+  end
+  $out.text_scale=$values["apps."..$app..".text_scale"] ?? $values["accessibility.text_scale"] ?? 1
+  $out.density=$values["appearance.density"] ?? "comfortable"
+  $out.roundness=$values["appearance.roundness"] ?? "round"
+  -- Unsupported authored packages keep the file design, independently of UI.
+  if $values["appearance.source"]!=nil then
+    for $key in ["scheme","mode","style","contrast","accent"] $out=delete($out,$key) end
+  end
+  return $out
+end
+fn session_keys($values,$app)
+  $out={};$prefix="keymaps."..$app.."."
+  for $key in keys($values)
+    if starts_with($key,$prefix) then
+      $chords=$values[$key]
+      if type($chords)!="list" or len($chords)>8 or any($chords,fn($c)=type($c)!="string" or $c=="") then raise("SESSION_KEYS","Malformed key bindings") end
+      $out[slice($key,len($prefix))]=$chords
+    end
+  end
+  return $out
+end

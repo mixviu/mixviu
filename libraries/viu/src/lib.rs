@@ -15,6 +15,7 @@ pub mod native_bus;
 mod native_primitives;
 pub mod rich;
 pub mod runtime;
+pub mod session;
 pub mod templates;
 pub mod thumbnail;
 pub mod tree_table;
