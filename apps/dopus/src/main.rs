@@ -5,6 +5,8 @@ mod native;
 mod panel;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod raw_names_test;
 use eframe::egui;
 use serde_json::{Value, json};
 use std::{

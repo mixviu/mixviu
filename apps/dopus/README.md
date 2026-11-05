@@ -31,6 +31,16 @@ of the scene library's unchanged 256 KiB authored-document limit. Legacy list
 templates retain their 500-row limit; native virtual tree tables use their own
 row validation and still must fit the model and evaluator budgets.
 
+Opaque file identities use ordinary absolute text paths where UTF-8 is exact,
+and local percent-encoded `file:` URIs for other byte names. The reusable
+`viu_files` primitive preserves bytes; Mix still owns scanning visibility,
+tree recursion, navigation, selection and operation preflight/order. Run
+`core-test.mix` through the exact built client's `--macro` interpreter because
+the installed shell's ordinary `ls` returns display strings. No installed
+binary is selected as the new engine. Copy/rename retain native filesystem
+semantics; application preflight is not a filesystem transaction against
+concurrent external changes.
+
 The native pilots exercised real selection, byte-equal file copying and
 previews in all three versions. The two Viu clients also produced byte-identical
 application GPU captures. Shared appearance resolves the original design-token

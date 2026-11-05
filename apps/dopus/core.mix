@@ -3,10 +3,44 @@
 -- version: 0.1.0
 -- Application-owned file-manager state. No Rust Dopus controller is called.
 fn dp_display($text)
+  if type($text)=="string" and starts_with($text,"file://") then $text=viu_files("display-path",{path:$text}) end
   return re_replace(to_string($text), "\\p{Cc}", "�")
 end
+fn dp_parent($path)
+  return if starts_with($path,"file://") then viu_files("parent-token",{path:$path}) else dirname($path) end
+end
+fn dp_leaf($path)
+  return if starts_with($path,"file://") then viu_files("leaf",{path:$path}) else basename($path) end
+end
+fn dp_leaf_text($path)
+  return if starts_with($path,"file://") then viu_files("display-leaf",{path:$path}) else dp_display(basename($path)) end
+end
+fn dp_join($folder,$name)
+  return if starts_with($folder,"file://") or type($name)=="map" then viu_files("join-token",{folder:$folder,name:$name}) else path_join($folder,$name) end
+end
+fn dp_realpath($path)
+  return viu_files("canonical",{path:$path})
+end
+fn dp_stat($path,$follow)
+  return if starts_with($path,"file://") then viu_files("stat",{path:$path,follow:$follow}) else stat($path,{follow_symlinks:$follow}) end
+end
+fn dp_is_file($path)
+  try return dp_stat($path,true).is_file catch $error return false end
+end
+fn dp_is_dir($path)
+  try return dp_stat($path,true).is_dir catch $error return false end
+end
+fn dp_names($path)
+  return viu_files("names",{path:$path})
+end
+fn dp_contains_path($path,$parent)
+  if starts_with($path,"file://") or starts_with($parent,"file://") then
+    $path=viu_files("uri",{path:$path});$parent=viu_files("uri",{path:$parent})
+  end
+  return $path==$parent or starts_with($path,if ends_with($parent,"/") then $parent else $parent.."/" end)
+end
 fn dp_extension($path)
-  $parts=split(basename($path),".")
+  $parts=split(dp_leaf_text($path),".")
   return if len($parts)>1 then lower($parts[len($parts)-1]) else "" end
 end
 fn dp_size($bytes)
@@ -32,13 +66,14 @@ fn dp_filename($name)
 end
 fn dp_path($path)
   if type($path)!="string" or $path=="" then raise("INVALID_ARGUMENT","Path must be non-empty text") end
+  if starts_with($path,"file://") then return viu_files("token",{path:$path}) end
   if $path=='~' then $path=env("HOME","/")
   elif starts_with($path,'~/') then $path=path_join(env("HOME","/"),slice($path,2)) end
   if not starts_with($path,"/") then $path=path_join(cwd(),$path) end
   return $path
 end
 fn dp_lstat($path)
-  try return stat($path,{follow_symlinks:false}) catch $message return nil end
+  try return dp_stat($path,false) catch $message return nil end
 end
 fn dp_present($path)
   return dp_lstat($path)!=nil
@@ -71,14 +106,15 @@ fn dp_sort($rows,$key,$ascending)
 end
 fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth)
   $rows=[]
-  for $name in ls($path)
+  for $entry in dp_names($path)
+    $name=$entry.name
     if $hidden or not starts_with($name,".") then
-      $full=path_join($path,$name)
+      $full=$entry.path
       $st=dp_lstat($full)
       if $st!=nil then
         $count=nil
         if $st.is_dir then
-          try $count=len(filter(ls($full),fn($n)=$hidden or not starts_with($n,"."))) catch $message $count=nil end
+          try $count=len(filter(dp_names($full),fn($n)=$hidden or not starts_with($n.name,"."))) catch $message $count=nil end
         end
         push($rows,{path:$full,name:dp_display($name),dir:$st.is_dir,file:$st.is_file,symlink:$st.is_symlink,size:if $st.is_dir then nil else $st.size end,modified:$st.mtime,child_count:$count,depth:$depth})
       end
@@ -120,7 +156,7 @@ fn dp_relist($pane)
 end
 fn dp_navigate($pane,$path)
   $path=dp_path($path)
-  if is_file($path) then $path=dirname($path) end
+  if dp_is_file($path) then $path=dp_parent($path) end
   if $path!=$pane.path then $pane.back=push($pane.back,$pane.path);$pane.forward=[] end
   $pane.path=$path;$pane.selected=nil;$pane.selected_paths=[];$pane.anchor=nil;$pane.expanded={};$pane.generation=$pane.generation+1
   return dp_refresh($pane)
@@ -174,7 +210,7 @@ fn dp_expand($pane,$path)
 end
 fn dp_sources($pane)
   $ordered=filter(map($pane.entries,fn($r)=$r.path),fn($p)=contains($pane.selected_paths,$p))
-  return filter($ordered,fn($p)=not any($ordered,fn($parent)=$parent!=$p and starts_with($p,$parent.."/")))
+  return filter($ordered,fn($p)=not any($ordered,fn($parent)=$parent!=$p and dp_contains_path($p,$parent)))
 end
 fn dp_permissions($mode)
   $chars=[]

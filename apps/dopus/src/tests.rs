@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 use std::time::Duration;
-fn wait(
+pub(super) fn wait(
     runtime: &Runtime,
     jobs: &mut Jobs,
     sequence: u64,

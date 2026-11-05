@@ -101,6 +101,7 @@ pub fn run(path: PathBuf, arguments: Vec<String>) -> i32 {
             };
             mix::set_script_argv(arguments);
             let mut eval = Evaluator::default();
+            eval.register("viu_files",crate::file_data::binding());
             eval.set_entry_script(&path.to_string_lossy());
             eval.set_file(path.to_string_lossy().to_string());
             eval.set_capability_policy(Rc::new(MacroPolicy));

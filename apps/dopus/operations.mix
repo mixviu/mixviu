@@ -4,13 +4,19 @@
 -- Mix owns operation preflight, ordering, failure accounting and filesystem work.
 $dp=require("core.mix")
 fn dp_inside($path,$parent)
-  return $path==$parent or starts_with($path,if $parent=="/" then "/" else $parent.."/" end)
+  return $dp.dp_contains_path($path,$parent)
+end
+fn dp_rename_path($source,$target)
+  if starts_with($source,"file://") or starts_with($target,"file://") then viu_files("rename",{source:$source,target:$target}) else rename($source,$target) end
+end
+fn dp_make_dir($path)
+  if starts_with($path,"file://") then viu_files("mkdir",{path:$path}) else mkdir($path,{parents:false}) end
 end
 fn dp_source_root($path,$metadata)
   -- Do not follow a link when identifying a transfer source, including a
   -- dangling link. Its target bytes belong to the copied link, not the copy.
-  if $metadata.is_symlink then return path_join(realpath(dirname($path)),basename($path)) end
-  $root=realpath($path)
+  if $metadata.is_symlink then return $dp.dp_join($dp.dp_realpath($dp.dp_parent($path)),$dp.dp_leaf($path)) end
+  $root=$dp.dp_realpath($path)
   if $root==nil then raise("NOT_FOUND","Cannot resolve source: "..$dp.dp_display($path)) end
   return $root
 end
@@ -20,8 +26,8 @@ fn dp_preflight($kind,$sources,$destination)
   $prepared=[];$targets=[];$roots=[]
   $target_root=nil
   if $kind!="delete" then
-    if not is_dir($destination) then raise("NOT_FOUND","Destination is not a directory") end
-    $target_root=realpath($destination)
+    if not $dp.dp_is_dir($destination) then raise("NOT_FOUND","Destination is not a directory") end
+    $target_root=$dp.dp_realpath($destination)
   end
   for $source in $sources
     if type($source)!="string" then raise("INVALID_ARGUMENT","Source path must be text") end
@@ -32,9 +38,9 @@ fn dp_preflight($kind,$sources,$destination)
     push($roots,$root)
     $target=nil
     if $kind!="delete" then
-      $target=path_join($destination,basename($source))
+      $target=$dp.dp_join($destination,$dp.dp_leaf($source))
       if contains($targets,$target) or $dp.dp_present($target) then raise("CONFLICT","Destination already exists: "..$dp.dp_display($target)) end
-      if realpath(dirname($source))==$target_root then raise("CONFLICT","Source is already in the destination folder") end
+      if $dp.dp_realpath($dp.dp_parent($source))==$target_root then raise("CONFLICT","Source is already in the destination folder") end
       if $metadata.is_dir and dp_inside($target_root,$root) then raise("CONFLICT","Cannot transfer a folder into itself") end
       push($targets,$target)
     end
@@ -52,19 +58,22 @@ end
 fn dp_remove_entry($path)
   $metadata=$dp.dp_lstat($path)
   if $metadata==nil then raise("NOT_FOUND","Source is missing") end
-  if $metadata.is_dir and not $metadata.is_symlink then remove_dir($path)
-  elif $metadata.is_file or $metadata.is_symlink then remove($path)
+  if $metadata.is_dir and not $metadata.is_symlink then
+    if starts_with($path,"file://") then viu_files("remove-dir",{path:$path}) else remove_dir($path) end
+  elif $metadata.is_file or $metadata.is_symlink then
+    if starts_with($path,"file://") then viu_files("remove",{path:$path}) else remove($path) end
   else raise("UNAVAILABLE","Unsupported file type") end
 end
 fn dp_copy_to($source,$target)
   if $dp.dp_present($target) then raise("CONFLICT","Destination already exists: "..$dp.dp_display($target)) end
-  $metadata=stat($source,{follow_symlinks:false})
-  if $metadata.is_symlink then symlink(read_link($source),$target)
+  $metadata=$dp.dp_stat($source,false)
+  if $metadata.is_symlink then viu_files("symlink",{link:viu_files("read-link",{path:$source}),path:$target})
   elif $metadata.is_dir then
-    mkdir($target,{parents:false})
-    for $name in ls($source) dp_copy_to(path_join($source,$name),path_join($target,$name)) end
-    chmod($target,$metadata.perm)
-  elif $metadata.is_file then copy($source,$target)
+    dp_make_dir($target)
+    for $entry in $dp.dp_names($source) dp_copy_to($entry.path,$dp.dp_join($target,$entry.leaf)) end
+    if starts_with($target,"file://") then viu_files("chmod",{path:$target,mode:$metadata.perm}) else chmod($target,$metadata.perm) end
+  elif $metadata.is_file then
+    if starts_with($source,"file://") or starts_with($target,"file://") then viu_files("copy",{source:$source,target:$target}) else copy($source,$target) end
   else raise("UNAVAILABLE","Unsupported file type") end
 end
 fn dp_transfer_one($kind,$source,$target)
@@ -76,7 +85,7 @@ fn dp_transfer_one($kind,$source,$target)
       raise($error.code,$message)
     end
   elif $kind=="move" then
-    if stat(dirname($source)).dev==stat(dirname($target)).dev then rename($source,$target)
+    if $dp.dp_stat($dp.dp_parent($source),true).dev==$dp.dp_stat($dp.dp_parent($target),true).dev then dp_rename_path($source,$target)
     else dp_transfer_one("copy",$source,$target);dp_remove_entry($source) end
   else dp_remove_entry($source) end
 end
@@ -98,15 +107,15 @@ fn dp_execute_operation($request)
   $kind=$request.kind
   if contains(["copy","move","delete"],$kind) then return dp_batch($kind,$request.sources,$request.destination ?? nil)
   elif $kind=="mkdir" then
-    $target=path_join($request.destination,$dp.dp_filename($request.name))
+    $target=$dp.dp_join($request.destination,$dp.dp_filename($request.name))
     if $dp.dp_present($target) then raise("CONFLICT","Destination already exists") end
-    mkdir($target,{parents:false})
+    dp_make_dir($target)
     return {ok:true,kind:$kind,path:$target,message:"Created "..$dp.dp_display($target)}
   elif $kind=="rename" then
-    $target=path_join(dirname($request.source),$dp.dp_filename($request.name))
+    $target=$dp.dp_join($dp.dp_parent($request.source),$dp.dp_filename($request.name))
     if $dp.dp_present($target) then raise("CONFLICT","Destination already exists") end
     if $dp.dp_lstat($request.source)==nil then raise("NOT_FOUND","Source is missing") end
-    rename($request.source,$target)
+    dp_rename_path($request.source,$target)
     return {ok:true,kind:$kind,path:$target,message:"Renamed "..$dp.dp_display($request.source).." to "..$dp.dp_display($target)}
   end
   raise("INVALID_ARGUMENT","Unknown operation")

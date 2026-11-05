@@ -7,15 +7,15 @@ $ops=require("operations.mix")
 $configuration=require("config.mix")
 fn dp_drop_allowed($sources,$destination,$busy)
   if $busy or len($sources)==0 then return false end
-  $destination=realpath($destination)
+  $destination=$dp.dp_realpath($destination)
   if $destination==nil then return false end
   for $source in $sources
     $st=$dp.dp_lstat($source)
     if $st==nil then return false end
     if $st.is_dir and not $st.is_symlink then
-      $source=realpath($source)
-      if $source==nil or dirname($source)==$destination or $ops.dp_inside($destination,$source) then return false end
-    elif realpath(dirname($source))==$destination then return false end
+      $source=$dp.dp_realpath($source)
+      if $source==nil or $dp.dp_parent($source)==$destination or $ops.dp_inside($destination,$source) then return false end
+    elif $dp.dp_realpath($dp.dp_parent($source))==$destination then return false end
   end
   return true
 end
@@ -170,7 +170,7 @@ fn dp_action($s,$contract,$id,$params)
   $p=$s.panes[$i]
   if $id=="nav.switch-pane" then $s.active=1-$i
   elif $id=="nav.back" or $id=="nav.forward" then $s.panes[$i]=$dp.dp_history($p,$id=="nav.back");$s.locations[$i]=$s.panes[$i].path
-  elif $id=="nav.parent" then return dp_go($s,$i,dirname($p.path))
+  elif $id=="nav.parent" then return dp_go($s,$i,$dp.dp_parent($p.path))
   elif $id=="nav.home" then return dp_go($s,$i,env("HOME","/"))
   elif $id=="location.focus" then $s.focus={id:if $i==0 then "left-location" else "right-location" end,selection:[0,len($s.locations[$i])]}
   elif $id=="view.toggle-places" then $s.places_open=not $s.places_open
@@ -184,7 +184,7 @@ fn dp_action($s,$contract,$id,$params)
     $keys={next:"ArrowDown",previous:"ArrowUp",first:"Home",last:"End"}
     $s.panes[$i]=$dp.dp_select_key($p,$keys[slice($id,10)],$params.ctrl ?? false,$params.shift ?? false)
   elif $id=="file.new-folder" then return dp_form($s,"mkdir","New folder","", "New Folder",{kind:"mkdir",destination:$p.path})
-  elif $id=="file.rename" then return dp_form($s,"rename","Rename","",basename($p.selected),{kind:"rename",source:$p.selected})
+  elif $id=="file.rename" then return dp_form($s,"rename","Rename","",$dp.dp_leaf_text($p.selected),{kind:"rename",source:$p.selected})
   elif $id=="file.delete" then return dp_form($s,"delete","Delete permanently","Permanently delete the selected items?\n\n"..join(map($dp.dp_sources($p),fn($path)=$dp.dp_display($path)),"\n").."\n\nThis cannot be undone.",nil,{kind:"delete",sources:$dp.dp_sources($p)})
   elif $id=="file.copy-other-pane" or $id=="file.move-other-pane" then return dp_start_operation($s,{kind:if $id=="file.copy-other-pane" then "copy" else "move" end,sources:$dp.dp_sources($p),destination:$s.panes[1-$i].path})
   elif $id=="file.open" then
@@ -259,7 +259,7 @@ fn dp_intent($s,$contract,$a)
         if $row!=nil and (($value.key=="ArrowRight" and not $expanded) or ($value.key=="ArrowLeft" and $expanded)) then $s.panes[$i]=$dp.dp_expand($p,$p.selected) end
       else $s.panes[$i]=$dp.dp_select_key($s.panes[$i],$value.key,$value.ctrl ?? false,$value.shift ?? false) end
     elif $action=="drop" then
-      $sources=filter($value.keys,fn($path)=not any($value.keys,fn($parent)=$parent!=$path and starts_with($path,$parent.."/")))
+      $sources=filter($value.keys,fn($path)=not any($value.keys,fn($parent)=$parent!=$path and $dp.dp_contains_path($path,$parent)))
       if not dp_drop_allowed($sources,$value.destination,$s.busy) then raise("UNAVAILABLE","This destination cannot receive the dragged items") end
       if ($value.ctrl ?? false) or ($value.shift ?? false) then return dp_start_operation($s,{kind:if $value.ctrl ?? false then "copy" else "move" end,sources:$sources,destination:$value.destination}) end
       if $s.form.open then raise("BUSY","Answer the current dialog first") end

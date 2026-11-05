@@ -85,8 +85,8 @@ fn dp_properties($pane)
   $st=$dp.dp_lstat($path)
   if $st==nil then return [{label:"Unavailable",value:"Entry no longer exists"}] end
   $row=filter($pane.entries,fn($r)=$r.path==$path)[0]
-  $fields=[{label:"Name",value:$dp.dp_display(basename($path))},{label:"Kind",value:dp_kind($path,$st)},{label:"Size",value:if $st.is_dir then $dp.dp_count($row.child_count) else $dp.dp_size($st.size) end},{label:"Modified",value:$dp.dp_date($st.mtime)},{label:"Created",value:$dp.dp_date($st.btime)},{label:"Accessed",value:$dp.dp_date($st.atime)},{label:"Permissions",value:$dp.dp_permissions($st.perm)},{label:"Owner and group",value:$dp.dp_identity("/etc/passwd",$st.uid,2)..":"..$dp.dp_identity("/etc/group",$st.gid,2)}]
-  if $st.is_symlink then push($fields,{label:"Link target",value:$dp.dp_display(read_link($path))}) end
+  $fields=[{label:"Name",value:$dp.dp_leaf_text($path)},{label:"Kind",value:dp_kind($path,$st)},{label:"Size",value:if $st.is_dir then $dp.dp_count($row.child_count) else $dp.dp_size($st.size) end},{label:"Modified",value:$dp.dp_date($st.mtime)},{label:"Created",value:$dp.dp_date($st.btime)},{label:"Accessed",value:$dp.dp_date($st.atime)},{label:"Permissions",value:$dp.dp_permissions($st.perm)},{label:"Owner and group",value:$dp.dp_identity("/etc/passwd",$st.uid,2)..":"..$dp.dp_identity("/etc/group",$st.gid,2)}]
+  if $st.is_symlink then push($fields,{label:"Link target",value:$dp.dp_display(viu_files("display-link",{path:$path}))}) end
   push($fields,{label:"Path",value:$dp.dp_display($path)})
   return $fields
 end
