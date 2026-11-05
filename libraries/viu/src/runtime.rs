@@ -7,7 +7,7 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use mix::evaluator::{BusFuture, Evaluator, IncomingEvent, SharedBuf};
+use mix::evaluator::{BusFuture, Evaluator, IncomingEvent, SharedBuf, ServeRuntime, ReservedOutcome};
 use mix::{BusHandler, MixError, MixResult, value::Value};
 use serde_json::{Value as Json, json};
 
@@ -74,7 +74,7 @@ impl Runtime {
                 let (generation, sequence, result) = match request {
                     Request::Load(generation, program) => {
                         // A fresh evaluator never retains old closures or module state.
-                        let local = Rc::new(Local { generation, model: RefCell::new(None), backend: backend.clone() });
+                        let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), backend: backend.clone() });
                         let stdout = SharedBuf::new();
                         let stderr = SharedBuf::new();
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
@@ -83,6 +83,7 @@ impl Runtime {
                         eval.set_entry_script(&program.path.to_string_lossy());
                         eval.set_file(program.path.to_string_lossy().to_string());
                         eval.set_bus_handler(local.clone());
+                        eval.set_serve_runtime(local.clone());
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "loader": "viu-local", "host": "viu-local"
@@ -99,7 +100,12 @@ impl Runtime {
                                     ("type".into(), "request".into()),
                                     ("id".into(), sequence.to_string()),
                                 ]), body: args.to_string() };
-                                rt.block_on(bounded(&worker_stop, eval.dispatch_event(event)))
+                                let tasks = tokio::task::LocalSet::new();
+                                rt.block_on(tasks.run_until(bounded(&worker_stop, async {
+                                    eval.dispatch_event(event).await?;
+                                    while eval.class_c_task_count() != 0 { tokio::task::yield_now().await; }
+                                    Ok(())
+                                })))
                             }
                             _ => Err("stale generation".into()),
                         };
@@ -107,10 +113,11 @@ impl Runtime {
                     }
                 };
                 if worker_stop.load(Ordering::Acquire) { break; }
-                let (mut model, stdout, stderr) = match current.as_ref() {
-                    Some((_, _, local, out, err)) => (local.model.borrow_mut().take(), String::from_utf8_lossy(&out.take()).into_owned(), String::from_utf8_lossy(&err.take()).into_owned()),
-                    None => (None, String::new(), String::new()),
+                let (mut model, stdout, stderr, fault) = match current.as_ref() {
+                    Some((_, _, local, out, err)) => (local.model.borrow_mut().take(), String::from_utf8_lossy(&out.take()).into_owned(), String::from_utf8_lossy(&err.take()).into_owned(), local.error.borrow_mut().take()),
+                    None => (None, String::new(), String::new(), None),
                 };
+                let result = result.and_then(|_| fault.map_or(Ok(()), Err));
                 // Failed callbacks never publish a partial model to the UI.
                 if result.is_err() { model = None; }
                 if sequence == 0 && result.is_err() { current = None; }
@@ -185,7 +192,13 @@ pub fn to_json(value: &Value) -> MixResult<Json> {
 struct Local {
     generation: u64,
     model: RefCell<Option<Json>>,
+    error: RefCell<Option<String>>,
     backend: Option<Rc<dyn BusHandler>>,
+}
+
+impl ServeRuntime for Local {
+    fn handle_reserved(&self, _: &str, _: Option<&str>, _: &str, _: &[(&str, Option<&str>)], _: bool) -> Option<ReservedOutcome> { None }
+    fn record_handler_fault(&self, summary: &str) { *self.error.borrow_mut() = Some(summary.into()); }
 }
 
 fn failure(message: &str) -> MixError { MixError::RuntimeError { msg: message.into(), span: None } }
@@ -221,6 +234,6 @@ impl BusHandler for Local {
     }
     fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> { Box::pin(async { None }) }
     fn reply<'a>(&'a self, _: &'a str, _: &'a str, _: Option<&'a str>, rc: u8, body: &'a str) -> BusFuture<'a, MixResult<()>> {
-        Box::pin(async move { if rc == 0 { Ok(()) } else { Err(failure(body)) } })
+        Box::pin(async move { if rc != 0 { *self.error.borrow_mut() = Some(body.into()); } Ok(()) })
     }
 }

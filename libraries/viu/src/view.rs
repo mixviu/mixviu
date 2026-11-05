@@ -41,7 +41,8 @@ impl SceneView {
         let mut events = Vec::new();
         self.geometry.clear();
         let tree = self.tree.clone();
-        self.node(ui, "root", &tree.nodes, None, 0, &mut events);
+        let nodes = tree.nodes.into_iter().collect();
+        self.node(ui, "root", &nodes, None, 0, &mut events);
         events
     }
 
@@ -88,7 +89,7 @@ impl SceneView {
                         if node.family == "row" { ui.horizontal(|ui| draw(ui)); }
                         else { ui.vertical(|ui| draw(ui)); }
                     }).response;
-                    if route.is_some() || node.ports.contains_key("on_click") {
+                    if route.is_some_and(|(list, _)| text(list, "row") == id) || node.ports.contains_key("on_click") {
                         if ui.interact(response.rect, response.id.with("click"), Sense::click()).clicked() { route_event(&self.tree.name, id, node, route, events); }
                     }
                 }
