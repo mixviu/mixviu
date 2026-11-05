@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+mod chooser;
 mod input;
 mod native;
 mod panel;
-mod chooser;
 #[cfg(test)]
 mod tests;
 use eframe::egui;
@@ -856,7 +856,9 @@ fn main() -> eframe::Result {
         &std::fs::read_to_string(app_dir.join("contract.json")).expect("Dopus contract"),
     )
     .expect("Dopus contract data");
-    if args.iter().any(|a|a=="--choose-service"){return chooser::run(app_dir,&mode);}
+    if args.iter().any(|a| a == "--choose-service") {
+        return chooser::run(app_dir, &mode);
+    }
     let title = format!(
         "Dopus — {} / Viu",
         if mode == "rust" { "Rust" } else { "Mix" }

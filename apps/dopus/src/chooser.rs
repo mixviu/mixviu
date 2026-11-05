@@ -12,6 +12,7 @@ struct Window{
     id:String,title:String,ready:bool,worker:Runtime,view:Option<SceneView>,scene:String,model:Value,error:String,
     pending:BTreeSet<u64>,input:Input,requests:VecDeque<Request>,input_replies:Vec<Reply>,input_wait:bool,
     capture:viu::capture::Capture,capture_reply:Option<Reply>,effect:Option<Value>,seen_effect:u64,closed:bool,
+    engine_pending:bool,input_error:Option<String>,created:std::time::Instant,mapped:bool,
 }
 impl Window{
     fn new(open:&viu::chooser::Prepared,app_dir:&std::path::Path,home:&Value,ctx:&egui::Context)->Result<Self,String>{
@@ -21,7 +22,7 @@ impl Window{
         worker.load(Program{source:std::fs::read_to_string(&path).map_err(|e|e.to_string())?,path,scene:"chooser".into(),citizen:"files-window".into()}).map_err(|e|format!("{e:?}"))?;
         let sequence=worker.event("chooser.open".into(),json!({"id":id,"request":open.open.request.body().map_err(|e|e.message)?,"home":home})).map_err(|e|format!("{e:?}"))?;
         let captures=std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_default().join("viu-chooser-captures").join(&id);
-        Ok(Self{id,title:open.open.request.title.clone(),ready:open.ready,worker,view:None,scene:std::fs::read_to_string(app_dir.join("chooser.scene.mix")).map_err(|e|e.to_string())?,model:json!({}),error:String::new(),pending:BTreeSet::from([sequence]),input:Input::default(),requests:VecDeque::new(),input_replies:Vec::new(),input_wait:false,capture:viu::capture::Capture::new(captures,wake),capture_reply:None,effect:None,seen_effect:0,closed:false})
+        Ok(Self{id,title:open.open.request.title.clone(),ready:open.ready,worker,view:None,scene:std::fs::read_to_string(app_dir.join("chooser.scene.mix")).map_err(|e|e.to_string())?,model:json!({}),error:String::new(),pending:BTreeSet::from([sequence]),input:Input::default(),requests:VecDeque::new(),input_replies:Vec::new(),input_wait:false,capture:viu::capture::Capture::new(captures,wake),capture_reply:None,effect:None,seen_effect:0,closed:false,engine_pending:false,input_error:None,created:std::time::Instant::now(),mapped:false})
     }
     fn state(&self)->Value{
         let geometry:BTreeMap<_,_>=self.view.as_ref().into_iter().flat_map(|v|&v.geometry).map(|(id,r)|(id.clone(),json!({"min":[r.min.x,r.min.y],"max":[r.max.x,r.max.y]}))).collect();
@@ -34,7 +35,7 @@ impl Window{
         for result in self.worker.drain(){
             self.pending.remove(&result.sequence);
             if let Some(error)=result.error{return Err(error);}
-            if let Some(reply)=result.reply{if reply.rc>=10{self.error=reply.body.to_string();}}
+            if let Some(reply)=result.reply{if reply.rc>=10{self.error=reply.body.to_string();if self.input_wait{self.input_error=Some(self.error.clone());}}}
             if let Some(model)=result.model{
                 if let Some(view)=&mut self.view{view.apply_model(model.clone())?;}else{self.view=Some(SceneView::with_model(&self.scene,model.clone())?);}
                 let serial=model["effect"]["serial"].as_u64().unwrap_or(0);
@@ -45,6 +46,7 @@ impl Window{
         Ok(())
     }
     fn show(&mut self,ui:&mut egui::Ui){
+        self.mapped=true;
         let ctx=ui.ctx().clone();
         if let Some((_,result))=self.capture.poll(&ctx){if let Some(reply)=self.capture_reply.take(){let _=reply.send(match result{Ok(body)=>(0,body),Err(error)=>(20,json!({"error_code":"CAPTURE_FAILED","message":error}))});}}
         if ctx.input(|i|i.viewport().close_requested())&&!self.closed{self.closed=true;self.effect=Some(json!({"command":"cancel","body":{"request":self.id}}));}
@@ -64,7 +66,7 @@ impl Window{
                 let _=reply.send((10,json!({"error_code":"INVALID_ARGUMENT"})));continue;
             }
             match self.input.queue(suffix,&args,self.view.as_mut().unwrap()){
-                Ok(())=>{self.input_replies.push(reply);self.input_wait=true;ctx.request_repaint();},
+                Ok(())=>{self.input_replies.push(reply);self.input_wait=true;self.input_error=None;ctx.request_repaint();},
                 Err(error)=>{let _=reply.send((10,json!({"error_code":"INPUT_REFUSED","message":error})));}
             }
         }
@@ -77,7 +79,10 @@ impl Window{
         }else{ui.label("Loading chooser…");}
         if self.input.now.is_empty(){
             if let Some(next)=self.input.later.pop_front(){self.input.now=next;ctx.request_repaint();}
-            else if self.input_wait&&self.pending.is_empty()&&self.effect.is_none(){self.input_wait=false;let state=self.state();for reply in self.input_replies.drain(..){let _=reply.send((0,state.clone()));}}
+            else if self.input_wait&&self.pending.is_empty()&&self.effect.is_none()&&!self.engine_pending{
+                self.input_wait=false;let mut state=self.state();let rc=if let Some(error)=self.input_error.take(){state["message"]=json!(error);10}else{0};
+                for reply in self.input_replies.drain(..){let _=reply.send((rc,state.clone()));}
+            }
         }
     }
 }
@@ -146,6 +151,7 @@ impl eframe::App for Shell{
     fn logic(&mut self,ctx:&egui::Context,_:&mut eframe::Frame){
         while let Ok(request)=self.bus.requests.try_recv(){self.request(request);}
         for result in self.engine.drain(){
+            if !result.stdout.is_empty(){eprint!("{}",result.stdout);}if !result.stderr.is_empty(){eprint!("{}",result.stderr);}
             let Some(pending)=self.pending.remove(&result.sequence)else{if let Some(error)=result.error{self.error=error;}continue;};
             let answer=if let Some(error)=result.error{(20,json!({"error_code":"ENGINE_FAILED","message":error}))}else{result.reply.map(|r|(r.rc,r.body)).unwrap_or((20,json!({"error_code":"MISSING_REPLY"})))};
             match pending{
@@ -153,7 +159,13 @@ impl eframe::App for Shell{
                     if choose&&answer.0==0{if let Some(id)=answer.1["request"].as_str(){self.delivery.insert(id.into(),delivery);}}
                     let _=reply.send(answer);
                 },
-                Pending::Window(id)=>{if let Some(window)=self.windows.lock().unwrap().get(&id){window.lock().unwrap().call(json!({"command":"result","rc":answer.0,"body":answer.1}));}},
+                Pending::Window(id)=>{if let Some(window)=self.windows.lock().unwrap().get(&id){
+                    let mut window=window.lock().unwrap();window.engine_pending=false;
+                    if answer.0==0&&!self.service.prepared().contains_key(&id){
+                        let mut state=window.state();state["outcome"]=answer.1;
+                        for reply in window.input_replies.drain(..){let _=reply.send((0,state.clone()));}
+                    }else{window.call(json!({"command":"result","rc":answer.0,"body":answer.1}));}
+                }},
                 Pending::Internal=>{if answer.0!=0{self.error=answer.1.to_string();}},
             }
         }
@@ -164,11 +176,12 @@ impl eframe::App for Shell{
         for id in existing{if !prepared.contains_key(&id){self.windows.lock().unwrap().remove(&id);ctx.send_viewport_cmd_to(viewport(&id),egui::ViewportCommand::Close);}}
         for (id,open)in prepared{
             if !self.windows.lock().unwrap().contains_key(&id){
-                match Window::new(&open,&self.app_dir,&self.home,ctx){Ok(window)=>{self.windows.lock().unwrap().insert(id.clone(),Arc::new(Mutex::new(window)));},Err(error)=>{let _=self.engine_call("failed",json!({"request":id,"message":error}),"host".into(),Pending::Internal);continue;}}
+                match Window::new(&open,&self.app_dir,&self.home,ctx){Ok(window)=>{self.windows.lock().unwrap().insert(id.clone(),Arc::new(Mutex::new(window)));ctx.request_repaint_after(std::time::Duration::from_secs(5));},Err(error)=>{let _=self.engine_call("failed",json!({"request":id,"message":error}),"host".into(),Pending::Internal);continue;}}
             }
             let window=self.windows.lock().unwrap().get(&id).cloned().unwrap();let mut window=window.lock().unwrap();window.ready=open.ready;
+            if open.ready&&!window.mapped&&window.created.elapsed()>std::time::Duration::from_secs(5){let _=self.engine_call("failed",json!({"request":id,"message":"Native chooser window did not map within five seconds"}),"host".into(),Pending::Internal);continue;}
             if let Err(error)=window.poll(){let _=self.engine_call("failed",json!({"request":id,"message":error}),"host".into(),Pending::Internal);}
-            if let Some(effect)=window.effect.clone(){if self.engine_call(effect["command"].as_str().unwrap_or(""),effect["body"].clone(),"host".into(),Pending::Window(id.clone())).is_ok(){window.effect=None;}}
+            if let Some(effect)=window.effect.clone(){if self.engine_call(effect["command"].as_str().unwrap_or(""),effect["body"].clone(),"host".into(),Pending::Window(id.clone())).is_ok(){window.effect=None;window.engine_pending=true;}}
         }
         if self.quitting.is_some()&&self.pending.is_empty()&&self.service.prepared().is_empty(){let _=self.quitting.take().unwrap().send((0,json!({"quitting":true})));}
         if self.bus.close_requested.load(Ordering::Acquire){ctx.send_viewport_cmd(egui::ViewportCommand::Close);}

@@ -81,6 +81,14 @@ pub fn button(
 mod tests {
     use super::*;
     #[test]
+    fn themed_icon_uri_is_accepted_by_the_real_image_loader(){
+        let ctx=egui::Context::default();install(&ctx);install_style(&ctx,1.5,[255,255,255,255]);
+        let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{
+            let image=image_of(ui.ctx(),Icon::from_name("folder").unwrap(),16.0,Color32::WHITE);
+            assert!(image.load_for_size(ui.ctx(),Vec2::splat(16.0)).is_ok());
+        });output.textures_delta.clear();drop(output);
+    }
+    #[test]
     fn every_imported_svg_rasterises_at_two_scales() {
         for icon in Icon::ALL {
             for scale in [1.0, 2.5] {

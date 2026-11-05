@@ -178,3 +178,38 @@ fn native_queued_confirmations_keep_selection_and_core_tokens_across_other_forms
     assert!(!dir.path().join("b.txt").exists());
     assert!(native.answer("ok", None).is_err());
 }
+
+#[test]
+fn mix_chooser_renders_filters_choices_and_pins_replace_acceptance(){
+    let dir=tempfile::tempdir().unwrap();
+    let existing=dir.path().join("existing.txt");std::fs::write(&existing,"retained").unwrap();
+    std::fs::write(dir.path().join("ignore.png"),"png").unwrap();std::fs::create_dir(dir.path().join("folder")).unwrap();
+    let wake:viu::runtime::Wake=Arc::new(||{});
+    let service=viu::chooser::Service::new(7,dir.path().as_os_str().as_encoded_bytes().to_vec(),wake.clone()).unwrap();
+    let opened=service.command("choose",&json!({"mode":"save","current_folder":dir.path(),"current_name":"existing.txt","filters":[{"name":"Text","patterns":["*.txt"],"mime_types":[]}],"choices":[{"id":"encoding","label":"Encoding","options":[{"id":"utf8","label":"UTF-8"},{"id":"ascii","label":"ASCII"}],"default":"utf8"}]}),"test");
+    let id=opened["body"]["request"].as_str().unwrap();
+    let request=service.prepared()[id].open.request.body().unwrap();
+    service.command("ready",&json!({"request":id}),"host");
+    let app_dir=PathBuf::from(env!("CARGO_MANIFEST_DIR"));let path=app_dir.join("chooser.mix");
+    let mut worker=Runtime::new(8,wake.clone(),None);let mut jobs=Jobs::new(1,wake);
+    worker.load(Program{source:std::fs::read_to_string(&path).unwrap(),path,scene:"chooser".into(),citizen:"chooser-test".into()}).unwrap();
+    let seq=worker.event("chooser.open".into(),json!({"id":id,"request":request,"home":dir.path()})).unwrap();
+    let model=wait(&worker,&mut jobs,seq).0.model.unwrap();
+    assert_eq!(model["values"]["files"]["rows"].as_array().unwrap().len(),2);
+    let mut view=SceneView::with_model(&std::fs::read_to_string(app_dir.join("chooser.scene.mix")).unwrap(),model).unwrap();
+    let ctx=egui::Context::default();viu::appearance::install(&ctx);
+    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});output.textures_delta.clear();drop(output);
+    assert!(view.geometry.contains_key("files"));
+    let seq=worker.event("chooser.call".into(),json!({"command":"intent","id":"options","action":"command","value":{"command":"option:0:1"}})).unwrap();
+    let model=wait(&worker,&mut jobs,seq).0.model.unwrap();assert_eq!(model["choices"]["encoding"],"ascii");
+    let seq=worker.event("chooser.call".into(),json!({"command":"intent","id":"footer","action":"command","value":{"command":"accept"}})).unwrap();
+    let model=wait(&worker,&mut jobs,seq).0.model.unwrap();
+    let refusal=service.command("accept",&model["effect"]["body"],"test");assert_eq!(refusal["body"]["error_code"],"EXISTS");
+    let seq=worker.event("chooser.call".into(),json!({"command":"result","rc":10,"body":refusal["body"]})).unwrap();
+    let model=wait(&worker,&mut jobs,seq).0.model.unwrap();let form=&model["values"]["form"];assert_eq!(form["open"],true);
+    let seq=worker.event("chooser.call".into(),json!({"command":"intent","id":"form","action":"answer","value":{"choice":"replace","instance":form["instance"]}})).unwrap();
+    let model=wait(&worker,&mut jobs,seq).0.model.unwrap();
+    let accepted=service.command("accept",&model["effect"]["body"],"test");assert_eq!(accepted["rc"],0,"{accepted}");
+    assert_eq!(accepted["outcome"]["choices"]["encoding"],"ascii");
+    assert_eq!(std::fs::read_to_string(existing).unwrap(),"retained","A chooser authorises a path; it never writes the file");
+}
