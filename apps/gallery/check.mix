@@ -1,0 +1,56 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Native Bus parity/stress driver; inherits the caller's session environment.
+-- mix check.mix parity|stress [rounds] [receipt.json]
+$mode=args()[0] ?? "parity"
+$rounds=to_number(args()[1] ?? "5")
+if not contains(["parity","stress"],$mode) or $rounds<1 or $rounds>10000 or floor($rounds)!=$rounds then
+  raise("USAGE","parity|stress [integer rounds 1..10000] [receipt.json]")
+end
+fn call_gallery($language,$command,$body)
+  send "gallery-"..$language $command body=json_encode($body) timeout=15
+  $code=$rc
+  $value=$result
+  if type($value)=="string" then
+    try $value=json_parse($value) catch $message end
+  end
+  if $code!=0 then raise("GALLERY_REFUSAL",json_encode({language:$language,command:$command,rc:$code,value:$value})) end
+  return $value
+end
+fn sample_value($kind,$action,$round)
+  if $action=="expand" or $action=="sort" then return $round%2==1 end
+  if contains(["checkbox","toggle","collapse","dialog"],$kind) then return $round%2==1 end
+  if contains(["slider","number","progress","split"],$kind) then return ($round*17)%101 end
+  if contains(["radio","combo","tabs","menu"],$kind) then return ["Alpha","Beta","Gamma"][$round%3] end
+  if contains(["list","table","tree"],$kind) then return ($round*13)%1000 end
+  if $kind=="colour" then return [($round*29)%256,80,210] end
+  return "Round "..to_string($round)
+end
+$catalogue=call_gallery("rust","gallery.describe",{})
+$mix_catalogue=call_gallery("mix","gallery.describe",{})
+if not deep_eq($catalogue.widgets,$mix_catalogue.widgets) then raise("CATALOGUE_MISMATCH","Rust and Mix contracts differ") end
+for $language in ["rust","mix"] call_gallery($language,"gallery.execute",{action:"reset"}) end
+$receipts=[]
+for $round=1 to (if $mode=="parity" then 1 else $rounds end)
+  for $widget in $catalogue.widgets
+    $d=$widget.definition
+    for $action in $widget.actions
+      $command="gallery.widget."..$d.id.."."..$action
+      $body={value:sample_value($d.kind,$action,$round)}
+      $times={}
+      -- Alternate order to avoid always charging one path the earlier slot.
+      for $language in (if $round%2==1 then ["rust","mix"] else ["mix","rust"] end)
+        $started=monotonic()
+        call_gallery($language,$command,$body)
+        $times[$language]=(monotonic()-$started)*1000
+      end
+      $rust=call_gallery("rust","gallery.state",{})
+      $mix=call_gallery("mix","gallery.state",{})
+      if not deep_eq($rust.model,$mix.model) then raise("MODEL_MISMATCH",json_encode({command:$command,rust:$rust,mix:$mix})) end
+      push($receipts,{round:$round,command:$command,elapsed_ms:$times,serial:$rust.model.serial})
+    end
+  end
+end
+$receipt={schema:"viu.gallery.check.v1",mode:$mode,rounds:if $mode=="parity" then 1 else $rounds end,checks:$receipts,failures:0,endpoint:"native Bus request to applied model; includes UI scheduling/serialization; not physical presentation or an isolated interpreter benchmark",witness_note:"Run clients without VIU_GALLERY_WITNESS for timing. Visible popup state and system load affect scheduling."}
+if args()[2]!=nil then write_file(args()[2],json_encode($receipt)) end
+print(json_encode($receipt))

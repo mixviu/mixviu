@@ -82,3 +82,15 @@ Leave it unset for timing/resource measurements. Tests compare independently
 constructed definitions, every semantic action and reset between controllers,
 check refusal, and exercise all native widget renders. Rust verification uses
 the native build service, never local Cargo.
+
+With both galleries running on the current session Bus:
+
+```
+/opt/mixos/bin/mix /path/to/apps/gallery/check.mix parity
+/opt/mixos/bin/mix /path/to/apps/gallery/check.mix stress 20 /tmp/gallery-stress.json
+```
+
+The driver exercises every declared widget action, alternates language order
+between stress rounds and checks equal models after each pair. It records raw
+per-action round-trip samples. A refusal or mismatch stops the run with an
+error; an incomplete run cannot be counted as a passing timing sample.
