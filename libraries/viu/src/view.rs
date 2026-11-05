@@ -159,6 +159,7 @@ impl SceneView {
                             ui.horizontal(|ui| draw(ui));
                         } else {
                             egui::ScrollArea::vertical()
+                                .auto_shrink([true, num(node, "min_height").is_none()])
                                 .min_scrolled_height(num(node, "min_height").unwrap_or(64.0))
                                 .max_height(num(node, "max_height").unwrap_or(280.0))
                                 .id_salt(id)

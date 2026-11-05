@@ -323,8 +323,8 @@ fn embedded_dopus_native_fields_and_rows_drive_real_file_operations() {
         view.apply_model(ready(&runtime, &wakes).model.unwrap())
             .unwrap();
     }
-    assert!(view.geometry["list_left"].height() >= 280.0);
-    assert!(view.geometry["list_right"].height() >= 280.0);
+    assert!(view.geometry["list_left"].height() >= 280.0, "left viewport: {:?}", view.geometry["list_left"]);
+    assert!(view.geometry["list_right"].height() >= 280.0, "right viewport: {:?}", view.geometry["list_right"]);
     assert!(
         view.model()["left"]["heading"]
             .as_str()
