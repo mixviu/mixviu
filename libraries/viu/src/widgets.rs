@@ -38,6 +38,7 @@ pub struct Widget {
     pub kind: String,
     pub label: String,
     pub initial: Value,
+    pub properties: Value,
 }
 impl Widget {
     pub fn new(id: &str, kind: &str, label: &str, initial: Value) -> Self {
@@ -46,6 +47,7 @@ impl Widget {
             kind: kind.into(),
             label: label.into(),
             initial,
+            properties:json!({}),
         }
     }
     pub fn decode(value: &Value) -> Result<Self, String> {
@@ -54,12 +56,13 @@ impl Widget {
                 .as_str()
                 .ok_or_else(|| format!("widget missing {name}"))
         };
-        let widget = Self::new(
+        let mut widget = Self::new(
             field("id")?,
             field("kind")?,
             field("label")?,
             value["initial"].clone(),
         );
+        widget.properties=value.get("properties").cloned().unwrap_or_else(||json!({}));
         if !KINDS.contains(&widget.kind.as_str()) {
             return Err(format!("unsupported kind {}", widget.kind));
         }
@@ -67,8 +70,11 @@ impl Widget {
         Ok(widget)
     }
     pub fn encode(&self) -> Value {
-        json!({"id":self.id,"kind":self.kind,"label":self.label,"initial":self.initial})
+        json!({"id":self.id,"kind":self.kind,"label":self.label,"initial":self.initial,"properties":self.properties})
     }
+    pub fn with_properties(mut self,properties:Value)->Self {self.properties=properties;self}
+    fn choices(&self)->Vec<&str> {self.properties["choices"].as_array().into_iter().flatten().filter_map(Value::as_str).collect()}
+    fn text(&self,key:&str)->&str {self.properties[key].as_str().unwrap_or("")}
     pub fn validate(&self, value: &Value) -> Result<(), String> {
         let valid = match self.kind.as_str() {
             "checkbox" | "toggle" | "collapse" | "dialog" => value.is_boolean(),
@@ -77,8 +83,8 @@ impl Widget {
                 .is_some_and(|v| v.is_finite() && (0.0..=100.0).contains(&v)),
             "radio" | "combo" | "tabs" | "menu" => value
                 .as_str()
-                .is_some_and(|v| ["Alpha", "Beta", "Gamma"].contains(&v)),
-            "list" | "table" | "tree" => value.as_u64().is_some_and(|v| v < 1000),
+                .is_some_and(|v| self.choices().contains(&v)),
+            "list" | "table" | "tree" => value.as_u64().is_some_and(|v| v < self.properties["row_count"].as_u64().unwrap_or(0)),
             "colour" => value.as_array().is_some_and(|v| {
                 v.len() == 3 && v.iter().all(|c| c.as_u64().is_some_and(|c| c <= 255))
             }),
@@ -198,7 +204,7 @@ impl Widgets {
         let response = match widget.kind.as_str() {
             "label" => ui.label(value.as_str().unwrap_or_default()),
             "button" => {
-                let r = ui.button("Press me");
+                let r = ui.button(widget.text("text"));
                 if r.clicked() {
                     events.push(Intent {
                         id: id.clone(),
@@ -231,9 +237,9 @@ impl Widgets {
             "checkbox" | "toggle" => {
                 let mut checked = value.as_bool().unwrap_or(false);
                 let r = if widget.kind == "checkbox" {
-                    ui.checkbox(&mut checked, "Enabled")
+                    ui.checkbox(&mut checked, widget.text("text"))
                 } else {
-                    ui.toggle_value(&mut checked, "Power")
+                    ui.toggle_value(&mut checked, widget.text("text"))
                 };
                 if r.changed() || r.clicked() {
                     changed = Some(json!(checked));
@@ -243,7 +249,7 @@ impl Widgets {
             "radio" | "tabs" => {
                 let response = ui
                     .horizontal(|ui| {
-                        for option in ["Alpha", "Beta", "Gamma"] {
+                        for option in widget.choices() {
                             let r = if widget.kind == "radio" {
                                 ui.radio(value == option, option)
                             } else {
@@ -257,10 +263,7 @@ impl Widgets {
                     })
                     .response;
                 if widget.kind == "tabs" {
-                    ui.small(format!(
-                        "{} page content",
-                        value.as_str().unwrap_or("Alpha")
-                    ));
+                    ui.small(widget.properties["pages"][value.as_str().unwrap_or("")].as_str().unwrap_or(""));
                 }
                 response
             }
@@ -307,9 +310,9 @@ impl Widgets {
             ),
             "combo" => {
                 egui::ComboBox::from_id_salt(id)
-                    .selected_text(value.as_str().unwrap_or("Alpha"))
+                    .selected_text(value.as_str().unwrap_or(""))
                     .show_ui(ui, |ui| {
-                        for option in ["Alpha", "Beta", "Gamma"] {
+                        for option in widget.choices() {
                             let r = ui.selectable_label(value == option, option);
                             self.remember(ui, &format!("{id}.{option}"), &r);
                             if r.clicked() {
@@ -320,13 +323,11 @@ impl Widgets {
                     .response
             }
             "list" | "table" | "tree" => {
+                let source=widget.text("dataset");
+                let data=model["datasets"][source].as_array().map(Vec::as_slice).unwrap_or(&[]);
                 if widget.kind == "table" {
                     let reversed = model["sorted"][id].as_bool().unwrap_or(false);
-                    let header = ui.button(if reversed {
-                        "Name v                         Size"
-                    } else {
-                        "Name ^                         Size"
-                    });
+                    let header = ui.button(format!("{} {}                         {}",widget.properties["columns"][0].as_str().unwrap_or(""),if reversed{"v"}else{"^"},widget.properties["columns"][1].as_str().unwrap_or("")));
                     self.remember(ui, &format!("{id}.sort"), &header);
                     if header.clicked() {
                         events.push(Intent {
@@ -338,11 +339,7 @@ impl Widgets {
                 }
                 let expanded = model["expanded"][id].as_bool().unwrap_or(true);
                 if widget.kind == "tree" {
-                    let header = ui.button(if expanded {
-                        "v Example folder"
-                    } else {
-                        "> Example folder"
-                    });
+                    let header = ui.button(format!("{} {}",if expanded{"v"}else{">"},widget.text("parent")));
                     self.remember(ui, &format!("{id}.expand"), &header);
                     if header.clicked() {
                         events.push(Intent {
@@ -358,28 +355,31 @@ impl Widgets {
                     .auto_shrink([false, false])
                     .show_rows(
                         ui,
-                        16.0,
+                        ui.spacing().interact_size.y,
                         if widget.kind == "tree" && !expanded {
                             0
                         } else {
-                            1000
+                            data.len()
                         },
                         |ui, range| {
                             for row in range {
                                 let row = if widget.kind == "table" && model["sorted"][id] == true {
-                                    999 - row
+                                    data.len()-1-row
                                 } else {
                                     row
                                 };
-                                let text = match widget.kind.as_str() {
-                                    "table" => {
-                                        format!("Item {row:04}                 {} KiB", row + 1)
-                                    }
-                                    "tree" => format!("    · Item {row:04}"),
-                                    _ => format!("Item {row:04}"),
-                                };
-                                let r =
-                                    ui.selectable_label(value.as_u64() == Some(row as u64), text);
+                                let cells=&data[row];
+                                let name=cells[0].as_str().unwrap_or("");
+                                let r=if widget.kind=="table" {
+                                    let (rect,response)=ui.allocate_exact_size(Vec2::new(ui.available_width(),ui.spacing().interact_size.y),Sense::click());
+                                    let selected=value.as_u64()==Some(row as u64);
+                                    let visuals=ui.style().interact_selectable(&response,selected);
+                                    ui.painter().rect_filled(rect,2.0,visuals.bg_fill);
+                                    let font=egui::FontId::proportional(13.0);
+                                    ui.painter().text(rect.left_center()+Vec2::new(6.0,0.0),egui::Align2::LEFT_CENTER,name,font.clone(),visuals.text_color());
+                                    ui.painter().text(rect.right_center()-Vec2::new(6.0,0.0),egui::Align2::RIGHT_CENTER,cells[1].as_str().unwrap_or(""),font,visuals.text_color());
+                                    response
+                                }else{ui.selectable_label(value.as_u64()==Some(row as u64),if widget.kind=="tree"{format!("    · {name}")}else{name.to_owned()})};
                                 self.remember(ui, &format!("{id}.{row}"), &r);
                                 if r.clicked() {
                                     changed = Some(json!(row));
@@ -392,7 +392,7 @@ impl Widgets {
                                     });
                                 }
                                 r.context_menu(|ui| {
-                                    let choice = ui.button("Choose item");
+                                    let choice = ui.button(widget.text("context_action"));
                                     self.remember(ui, &format!("{id}.{row}.choose"), &choice);
                                     if choice.clicked() {
                                         changed = Some(json!(row));
@@ -406,14 +406,8 @@ impl Widgets {
             }
             "collapse" => {
                 let mut open = value.as_bool().unwrap_or(false);
-                let r = ui.selectable_label(
-                    open,
-                    if open {
-                        "v Details: reusable Viu content"
-                    } else {
-                        "> Details"
-                    },
-                );
+                let r = ui.selectable_label(open,format!("{} {}",if open{"v"}else{">"},widget.text("text")));
+                if open {ui.small(widget.text("body"));}
                 if r.clicked() {
                     open = !open;
                     changed = Some(json!(open));
@@ -422,9 +416,9 @@ impl Widgets {
             }
             "menu" => {
                 ui.menu_button(
-                    format!("Actions · {}", value.as_str().unwrap_or("Alpha")),
+                    format!("{} · {}",widget.text("text"), value.as_str().unwrap_or("")),
                     |ui| {
-                        for option in ["Alpha", "Beta", "Gamma"] {
+                        for option in widget.choices() {
                             let r = ui.button(option);
                             self.remember(ui, &format!("{id}.{option}"), &r);
                             if r.clicked() {
@@ -437,17 +431,17 @@ impl Widgets {
                 .response
             }
             "dialog" => {
-                let r = ui.button("Open confirmation…");
+                let r = ui.button(widget.text("text"));
                 if r.clicked() {
                     changed = Some(json!(true));
                 }
                 if value.as_bool() == Some(true) {
-                    egui::Window::new("Gallery confirmation")
+                    egui::Window::new(widget.text("title"))
                         .id(Id::unique(id))
                         .collapsible(false)
                         .resizable(false)
                         .show(ui.ctx(), |ui| {
-                            ui.label("The same dialog in Rust and Mix.");
+                            ui.label(widget.text("body"));
                             for choice in ["Accept", "Cancel"] {
                                 let r = ui.button(choice);
                                 self.remember(ui, &format!("{id}.{choice}"), &r);
@@ -481,12 +475,11 @@ impl Widgets {
                 );
                 ui.painter()
                     .rect_filled(rect, 3.0, Color32::from_rgb(32, 48, 64));
-                ui.painter().line_segment(
-                    [rect.left_bottom(), rect.right_top()],
-                    (2.0, Color32::LIGHT_BLUE),
-                );
-                ui.painter()
-                    .circle_filled(rect.center(), 7.0, Color32::GOLD);
+                for shape in widget.properties["shapes"].as_array().into_iter().flatten(){
+                    let point=|v:&Value|rect.min+Vec2::new(v[0].as_f64().unwrap_or(0.0) as f32*rect.width(),v[1].as_f64().unwrap_or(0.0) as f32*rect.height());
+                    if shape["kind"]=="line"{ui.painter().line_segment([point(&shape["from"]),point(&shape["to"])],(2.0,Color32::LIGHT_BLUE));}
+                    if shape["kind"]=="circle"{ui.painter().circle_filled(point(&shape["at"]),shape["radius"].as_f64().unwrap_or(1.0) as f32,Color32::GOLD);}
+                }
                 if r.clicked() {
                     events.push(Intent {
                         id: id.clone(),
@@ -497,7 +490,7 @@ impl Widgets {
                 r
             }
             "link" => {
-                let r = ui.link("Activate a safe local link");
+                let r = ui.link(widget.text("text"));
                 if r.clicked() {
                     events.push(Intent {
                         id: id.clone(),
@@ -509,7 +502,7 @@ impl Widgets {
             }
             "tooltip" => ui
                 .label(value.as_str().unwrap_or("Hover for help"))
-                .on_hover_text("Shared Viu tooltip; identical in both languages."),
+                .on_hover_text(widget.text("body")),
             "separator" => {
                 let r = ui.separator();
                 ui.small(value.as_str().unwrap_or("Section boundary"));

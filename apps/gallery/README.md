@@ -35,6 +35,10 @@ The local link records activation and does not open a browser.
 other layouts. Mix supplies equivalent definitions and typed values through
 the embedded runtime. Application controllers own values and actions; the
 shared library renders widgets and emits intents.
+Choices, captions, tab content, tree parent, context action and canvas shapes
+come from application-supplied `properties`. Lists read an application-selected
+`model.datasets` entry; the shared renderer generates no gallery rows. Both
+controllers load the same explicit `rows.json` fixture as their data control.
 
 ## Complete action catalogue
 

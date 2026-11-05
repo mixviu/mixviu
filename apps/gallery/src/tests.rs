@@ -78,6 +78,20 @@ fn invalid_actions_and_values_are_refused() {
     }
 }
 #[test]
+fn shared_widgets_accept_non_gallery_content() {
+    let choice=Widget::new("destination","combo","Destination",json!("Archive")).with_properties(json!({"choices":["Inbox","Archive"]}));
+    assert!(choice.validate(&json!("Inbox")).is_ok());
+    assert!(choice.validate(&json!("Gamma")).is_err());
+    assert_eq!(Widget::decode(&choice.encode()).unwrap().encode(),choice.encode());
+    let list=Widget::new("contacts","list","Contacts",json!(0)).with_properties(json!({"dataset":"people","row_count":2,"context_action":"Select contact"}));
+    let model=json!({"values":{"destination":"Archive","contacts":0},"datasets":{"people":[["Ada"],["Grace"]]}});
+    let ctx=egui::Context::default();let mut widgets=Widgets::default();
+    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{widgets.widget(ui,&choice,&model);widgets.widget(ui,&list,&model);});
+    output.textures_delta.clear();
+    assert!(widgets.geometry.contains_key("contacts.0"));
+    assert!(!widgets.geometry.contains_key("contacts.2"));
+}
+#[test]
 fn every_widget_renders_in_shared_native_path() {
     let ctx = egui::Context::default();
     let mut widgets = Widgets::default();

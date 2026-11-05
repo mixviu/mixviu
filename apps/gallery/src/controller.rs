@@ -41,8 +41,25 @@ pub fn composition() -> Vec<Widget> {
         ),
     ]
     .into_iter()
-    .map(|(id, kind, label, initial)| Widget::new(id, kind, label, initial))
+    .map(|(id, kind, label, initial)| Widget::new(id, kind, label, initial).with_properties(properties(kind)))
     .collect()
+}
+fn properties(kind:&str)->Value {
+    match kind {
+        "button"=>json!({"text":"Press me"}),
+        "checkbox"=>json!({"text":"Enabled"}),
+        "toggle"=>json!({"text":"Power"}),
+        "radio"|"combo"=>json!({"choices":["Alpha","Beta","Gamma"]}),
+        "tabs"=>json!({"choices":["Alpha","Beta","Gamma"],"pages":{"Alpha":"Alpha page content","Beta":"Beta page content","Gamma":"Gamma page content"}}),
+        "menu"=>json!({"text":"Actions","choices":["Alpha","Beta","Gamma"]}),
+        "list"|"table"|"tree"=>json!({"dataset":"examples","row_count":1000,"columns":["Name","Size"],"parent":"Example folder","context_action":"Choose item"}),
+        "collapse"=>json!({"text":"Details","body":"Reusable Viu content"}),
+        "dialog"=>json!({"text":"Open confirmation…","title":"Gallery confirmation","body":"The same dialog in Rust and Mix."}),
+        "link"=>json!({"text":"Activate a safe local link"}),
+        "tooltip"=>json!({"body":"Shared Viu tooltip; identical in both languages."}),
+        "canvas"=>json!({"shapes":[{"kind":"line","from":[0,1],"to":[1,0]},{"kind":"circle","at":[0.5,0.5],"radius":7}]}),
+        _=>json!({}),
+    }
 }
 pub fn initial() -> Value {
     let widgets = composition();
@@ -50,7 +67,8 @@ pub fn initial() -> Value {
         .iter()
         .map(|w| (w.id.clone(), w.initial.clone()))
         .collect();
-    json!({"widgets":widgets.iter().map(Widget::encode).collect::<Vec<_>>(),"values":values,"expanded":{"tree":true},"sorted":{"table":false},"serial":0,"activations":0,"last":"Ready"})
+    let rows:Value=serde_json::from_str(include_str!("../rows.json")).expect("captured gallery dataset");
+    json!({"widgets":widgets.iter().map(Widget::encode).collect::<Vec<_>>(),"datasets":{"examples":rows},"values":values,"expanded":{"tree":true},"sorted":{"table":false},"serial":0,"activations":0,"last":"Ready"})
 }
 pub fn apply(model: &mut Value, action: &Value) {
     if action["action"] == "reset" {

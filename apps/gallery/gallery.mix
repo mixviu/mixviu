@@ -27,7 +27,26 @@ $widgets = [
  {id:"tooltip",kind:"tooltip",label:"Tooltip",initial:"Hover for help"},
  {id:"separator",kind:"separator",label:"Separator",initial:"Section boundary"}
 ]
-$state = {widgets:$widgets,values:{},expanded:{tree:true},sorted:{table:false},serial:0,activations:0,last:"Ready"}
+for $i=0 to len($widgets)-1
+  $kind=$widgets[$i].kind
+  $props={}
+  if $kind=="button" then $props={text:"Press me"}
+  elif $kind=="checkbox" then $props={text:"Enabled"}
+  elif $kind=="toggle" then $props={text:"Power"}
+  elif $kind=="radio" or $kind=="combo" then $props={choices:["Alpha","Beta","Gamma"]}
+  elif $kind=="tabs" then $props={choices:["Alpha","Beta","Gamma"],pages:{Alpha:"Alpha page content",Beta:"Beta page content",Gamma:"Gamma page content"}}
+  elif $kind=="menu" then $props={text:"Actions",choices:["Alpha","Beta","Gamma"]}
+  elif contains(["list","table","tree"],$kind) then $props={dataset:"examples",row_count:1000,columns:["Name","Size"],parent:"Example folder",context_action:"Choose item"}
+  elif $kind=="collapse" then $props={text:"Details",body:"Reusable Viu content"}
+  elif $kind=="dialog" then $props={text:"Open confirmation…",title:"Gallery confirmation",body:"The same dialog in Rust and Mix."}
+  elif $kind=="link" then $props={text:"Activate a safe local link"}
+  elif $kind=="tooltip" then $props={body:"Shared Viu tooltip; identical in both languages."}
+  elif $kind=="canvas" then $props={shapes:[{kind:"line",from:[0,1],to:[1,0]},{kind:"circle",at:[0.5,0.5],radius:7}]}
+  end
+  $widgets[$i].properties=$props
+end
+$rows=json_parse(read_file(dirname(script_path()).."/rows.json"))
+$state = {widgets:$widgets,datasets:{examples:$rows},values:{},expanded:{tree:true},sorted:{table:false},serial:0,activations:0,last:"Ready"}
 for $widget in $widgets
   $state.values[$widget.id] = $widget.initial
 end
