@@ -265,7 +265,7 @@ fn drop_target(
 }
 fn icon(ui: &Ui, name: &str, rect: Rect, colour: egui::Color32) {
     if let Some(icon) = crate::icons::Icon::from_name(name) {
-        crate::icons::image(icon, rect.height(), colour).paint_at(ui, rect);
+        crate::icons::image_of(ui.ctx(),icon, rect.height(), colour).paint_at(ui, rect);
     }
 }
 fn context(

@@ -19,6 +19,13 @@ pub type Wake = Arc<dyn Fn() + Send + Sync>;
 pub type BackendFactory = Box<dyn FnOnce() -> Rc<dyn BusHandler> + Send>;
 pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 
+/// Caller-owned native facilities shared by its root and job evaluators.
+/// Supplying one does not create a Bus citizen, broker or global registry.
+#[derive(Clone,Default)]
+pub struct Services {
+    pub macros:Option<macros::Session>,
+}
+
 // Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
 // frames in debug can overflow the Rust default before Mix's depth guard runs.
 const EVALUATOR_STACK: usize = 64 * 1024 * 1024;
@@ -141,6 +148,9 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new(capacity: usize, wake: Wake, backend: Option<BackendFactory>) -> Self {
+        Self::with_services(capacity,wake,backend,Services::default())
+    }
+    pub fn with_services(capacity:usize,wake:Wake,backend:Option<BackendFactory>,services:Services)->Self{
         assert!(capacity > 0);
         let (tx, commands) = mpsc::sync_channel(capacity);
         // At most capacity queued requests, one in flight and one initial load.
@@ -175,6 +185,7 @@ impl Runtime {
                         eval.register("viu_thumbnail",crate::native_primitives::thumbnail(worker_stop.clone()));
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
+                        if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "loader": "viu-local", "host": "viu-local"

@@ -30,6 +30,7 @@ pub struct Jobs {
     limit: usize,
     wake: Wake,
     native_backend: Option<crate::runtime::BackendMaker>,
+    services:crate::runtime::Services,
 }
 impl Jobs {
     pub fn new(limit: usize, wake: Wake) -> Self {
@@ -42,11 +43,13 @@ impl Jobs {
             limit,
             wake,
             native_backend: None,
+            services:Default::default(),
         }
     }
     pub fn set_native_backend(&mut self, maker: crate::runtime::BackendMaker) {
         self.native_backend = Some(maker);
     }
+    pub fn set_services(&mut self,services:crate::runtime::Services){self.services=services;}
     pub fn backend(&self, base: Option<BackendFactory>) -> BackendFactory {
         let tx = self.tx.clone();
         let wake = self.wake.clone();
@@ -94,10 +97,11 @@ impl Jobs {
                 let _ = start.reply.send((10, json!({"error_code":"BUSY"})));
                 continue;
             }
-            let mut runtime = Runtime::new(
+            let mut runtime = Runtime::with_services(
                 2,
                 self.wake.clone(),
                 self.native_backend.as_ref().map(|f| f()),
+                self.services.clone(),
             );
             let program = Program {
                 path: PathBuf::from(path.unwrap()),

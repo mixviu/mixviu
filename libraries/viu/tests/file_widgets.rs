@@ -44,18 +44,28 @@ fn frame(
 }
 
 #[test]
-fn scene_container_gaps_do_not_change_the_shared_controls_internal_spacing(){
-    let ctx=egui::Context::default();
-    let mut style=(*ctx.style()).clone();style.spacing.item_spacing.y=9.0;
-    ctx.set_theme(egui::Theme::Dark);ctx.set_style_of(egui::Theme::Dark,style);
-    let widget=Widget::new("items","tree-table","",table(2)).with_properties(json!({"height":200,"row_height":20}));
-    let mut direct=Widgets::default();frame(&ctx,&mut direct,&widget,vec![]);
-    let direct_step=direct.geometry["items.row.1"].min.y-direct.geometry["items.row.0"].min.y;
-    let source=format!("---\nscene: 1\nname: spacing\ncitizen: test\n---\n```mix\n{}\n```\n",json!({"root":{"widget":"column","gap":0,"children":["items"]},"items":{"widget":"control","definition":widget.encode()}}));
-    let mut view=SceneView::new(&source).unwrap();
-    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});output.textures_delta.clear();
-    let scene_step=view.geometry["items.row.1"].min.y-view.geometry["items.row.0"].min.y;
-    assert_eq!(scene_step,direct_step);
+fn scene_container_gaps_do_not_change_the_shared_controls_internal_spacing() {
+    let ctx = egui::Context::default();
+    let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
+    style.spacing.item_spacing.y = 9.0;
+    ctx.set_theme(egui::Theme::Dark);
+    ctx.set_style_of(egui::Theme::Dark, style);
+    let widget = Widget::new("items", "tree-table", "", table(2))
+        .with_properties(json!({"height":200,"row_height":20}));
+    let mut direct = Widgets::default();
+    frame(&ctx, &mut direct, &widget, vec![]);
+    let direct_step = direct.geometry["items.row.1"].min.y - direct.geometry["items.row.0"].min.y;
+    let source = format!(
+        "---\nscene: 1\nname: spacing\ncitizen: test\n---\n```mix\n{}\n```\n",
+        json!({"root":{"widget":"column","gap":0,"children":["items"]},"items":{"widget":"control","definition":widget.encode()}})
+    );
+    let mut view = SceneView::new(&source).unwrap();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
+    output.textures_delta.clear();
+    let scene_step = view.geometry["items.row.1"].min.y - view.geometry["items.row.0"].min.y;
+    assert_eq!(scene_step, direct_step);
 }
 
 #[test]

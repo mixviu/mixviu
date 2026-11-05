@@ -20,6 +20,11 @@ fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     )
 }
 pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, String> {
+    if !value.is_object(){return Err("design context must be an object".into());}
+    for key in ["scheme","mode","style","contrast","accent"]{
+        if value.get(key).is_some_and(|v|!v.is_string()){return Err(format!("design {key} must be text"));}
+    }
+    if value.get("body").is_some_and(|v|!v.is_number())||value.get("reduced_motion").is_some_and(|v|!v.is_boolean()){return Err("invalid typography or motion choice".into());}
     let mut context = DesignContext::default();
     context.scheme = Scheme::from_name(value["scheme"].as_str().unwrap_or("studio"))
         .ok_or("unknown design scheme")?;
@@ -113,16 +118,25 @@ pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, S
         style.animation_time = 0.0;
         style.scroll_animation = egui::style::ScrollAnimation::none();
     }
-    let colours = dictionary
-        .chrome
-        .as_ref()
-        .map(|c| {
-            c.iter()
-                .map(|(name, value)| (name.to_owned(), colour(value)))
-                .collect()
-        })
-        .unwrap_or_default();
-    Ok(crate::appearance::ResolvedAppearance { style, colours })
+    let mut colours=palette_from_visuals(&style.visuals);
+    if tokens.widgets==Widgets::Chrome{
+        if let Some(chrome)=&dictionary.chrome{colours.extend(chrome.iter().map(|(name,value)|(name.to_owned(),colour(value))));}
+    }
+    let (mut body_weight,mut heading_weight)=if tokens.faces==design::family::style::Faces::Fixed{(400u16,600u16)}else{(design::active_typography(Some(typography),design::TypographyRole::Ui).weight,design::active_typography(Some(typography),design::TypographyRole::UiDisplay).weight)};
+    if let Some(weight)=value.get("weight"){
+        let weight=weight.as_u64().filter(|w|(100..=900).contains(w)&&w%100==0).ok_or("font weight must be 100..900 in steps of 100")? as u16;
+        let offset=i32::from(heading_weight)-i32::from(body_weight);body_weight=weight;heading_weight=(i32::from(weight)+offset).clamp(300,700) as u16;
+    }
+    if let Some(font)=style.text_styles.get_mut(&TextStyle::Heading){font.family=FontFamily::Name("viu-heading".into());}
+    let icon_stroke=value.get("icon_stroke").map(|v|v.as_f64().filter(|v|v.is_finite()&&(1.0..=3.0).contains(v)&&(*v*4.0).fract()==0.0).ok_or("icon stroke must be 1..3 in quarter steps")).transpose()?.unwrap_or_else(||dictionary.metrics.get("icon.stroke_width").filter(|m|m.kind==design::ResolvedMetricKind::Px&&m.value>0.0).map_or(1.5,|m|m.value)) as f32;
+    Ok(crate::appearance::ResolvedAppearance { style, colours,body_weight,heading_weight,icon_stroke,icon_mask:tokens.icon_mask.0 })
+}
+// The retained native chrome adapter reads roles back from pair visuals for
+// pair widgets. Using the dictionary's derived chrome palette here would give
+// hue schemes a different dock surface from the reference application.
+fn palette_from_visuals(v:&Visuals)->std::collections::BTreeMap<String,Color32>{
+    let w=&v.widgets;let text=v.text_color();
+    [("chrome",v.panel_fill),("canvas",v.extreme_bg_color),("canvas_dot",v.extreme_bg_color),("dock",v.faint_bg_color),("card",v.window_fill),("card_border",v.window_stroke.color),("tab_strip",v.faint_bg_color),("field",v.extreme_bg_color),("field_border",w.inactive.bg_stroke.color),("hover",w.hovered.weak_bg_fill),("pressed",w.active.weak_bg_fill),("row_selected",v.selection.bg_fill),("text",text),("text_dim",text),("text_faint",v.weak_text_color()),("icon",text),("accent",v.selection.bg_fill),("accent_soft",v.selection.bg_fill),("accent_border",v.selection.stroke.color),("accent_text",v.selection.stroke.color),("menu_highlight",w.hovered.weak_bg_fill),("menu_highlight_text",text),("separator",w.noninteractive.bg_stroke.color),("shadow",v.popup_shadow.color),("scrim",v.popup_shadow.color),("primary_bg",v.hyperlink_color),("primary_text",v.panel_fill),("danger",v.error_fg_color),("warning",v.warn_fg_color),("caption_close",v.error_fg_color),("caption_close_text",v.panel_fill)].into_iter().map(|(name,c)|(name.to_owned(),c)).collect()
 }
 fn pair_visuals(dictionary: &design::ResolvedDictionary, t: &ResolvedStyle, mode: Mode) -> Visuals {
     let mut v = if mode == Mode::Dark {
@@ -403,6 +417,7 @@ mod tests {
     #[test]
     fn bad_context_refuses_and_studio_projects_the_authored_chrome() {
         for value in [
+            json!(null),json!([]),json!({"scheme":1}),json!({"body":"large"}),json!({"weight":550}),json!({"icon_stroke":1.1}),
             json!({"scheme":"missing"}),
             json!({"mode":"missing"}),
             json!({"style":"missing"}),
@@ -436,5 +451,19 @@ mod tests {
             style.visuals.override_text_color,
             Some(colour(roles.get("text").unwrap()))
         );
+    }
+
+    #[test]
+    fn hue_dock_roles_follow_pair_visuals_and_fonts_follow_the_design(){
+        for mode in ["dark","light"]{
+            let appearance=resolve(&json!({"scheme":"ocean","mode":mode})).unwrap();
+            assert_eq!(appearance.colours["dock"],appearance.style.visuals.faint_bg_color);
+            assert_eq!(appearance.colours["chrome"],appearance.style.visuals.panel_fill);
+            assert_eq!(appearance.icon_stroke,1.5);
+            let ctx=egui::Context::default();
+            crate::appearance::install_style(&ctx,&json!({"mode":mode}),appearance);
+            let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{ui.heading("Heading");ui.label("A sanitised name �");ui.monospace("012345");});
+            output.textures_delta.clear();
+        }
     }
 }

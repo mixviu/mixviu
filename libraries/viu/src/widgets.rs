@@ -591,7 +591,7 @@ impl Widgets {
                                     if let Some(icon) =
                                         crate::icons::Icon::from_name(widget.text("row_icon"))
                                     {
-                                        crate::icons::image(icon, 16.0, visuals.text_color())
+                                        crate::icons::image_of(ui.ctx(),icon, 16.0, visuals.text_color())
                                             .paint_at(
                                                 ui,
                                                 Rect::from_center_size(

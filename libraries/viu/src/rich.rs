@@ -162,7 +162,7 @@ fn menu(
                 .and_then(crate::icons::Icon::from_name)
             {
                 egui::Button::image_and_text(
-                    crate::icons::image(icon, 16.0, ui.visuals().text_color()),
+                    crate::icons::image_of(ui.ctx(),icon, 16.0, ui.visuals().text_color()),
                     label(item),
                 )
             } else {

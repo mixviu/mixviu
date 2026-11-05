@@ -4,6 +4,7 @@ pub mod appearance;
 pub mod capture;
 mod design_style;
 pub mod elide;
+pub mod fonts;
 pub mod icons;
 pub mod image_view;
 pub mod jobs;

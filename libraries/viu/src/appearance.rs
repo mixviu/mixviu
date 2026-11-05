@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Shared application typography and palette adaptation. The application
 //! supplies its chosen mode, accent and metrics; this module owns egui wiring.
-use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, TextStyle};
+use egui::{Color32, FontFamily, FontId, TextStyle};
 use serde_json::Value;
 #[derive(Clone)]
 pub struct ResolvedAppearance {
     pub style: egui::Style,
     pub colours: std::collections::BTreeMap<String, Color32>,
+    pub body_weight:u16,
+    pub heading_weight:u16,
+    pub icon_stroke:f32,
+    pub icon_mask:[u8;4],
 }
 pub fn colour(ctx: &egui::Context, name: &str) -> Option<Color32> {
     ctx.data(|d| {
@@ -18,26 +22,7 @@ pub fn colour(ctx: &egui::Context, name: &str) -> Option<Color32> {
     .copied()
 }
 pub fn install(ctx: &egui::Context) {
-    let mut fonts = FontDefinitions::default();
-    fonts.font_data.insert(
-        "Inter".into(),
-        FontData::from_static(include_bytes!("../assets/fonts/Inter-Regular.ttf")).into(),
-    );
-    fonts.font_data.insert(
-        "JetBrains Mono".into(),
-        FontData::from_static(include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")).into(),
-    );
-    fonts
-        .families
-        .entry(FontFamily::Proportional)
-        .or_default()
-        .insert(0, "Inter".into());
-    fonts
-        .families
-        .entry(FontFamily::Monospace)
-        .or_default()
-        .insert(0, "JetBrains Mono".into());
-    ctx.set_fonts(fonts);
+    crate::fonts::install(ctx,400,600);
     crate::icons::install(ctx);
 }
 pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {
@@ -80,6 +65,8 @@ pub fn resolve(description: &Value) -> Result<ResolvedAppearance, String> {
 }
 
 pub fn install_style(ctx: &egui::Context, description: &Value, appearance: ResolvedAppearance) {
+    crate::fonts::install(ctx,appearance.body_weight,appearance.heading_weight);
+    crate::icons::install_style(ctx,appearance.icon_stroke,appearance.icon_mask);
     let theme = if description["mode"] == "light" {
         egui::Theme::Light
     } else {

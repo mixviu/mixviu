@@ -194,7 +194,8 @@ impl SceneView {
                     "control" => {
                         // Container gaps arrange children; they must not
                         // rewrite the native control's internal theme metrics.
-                        let spacing=ui.ctx().style().spacing.item_spacing;
+                        let theme=if ui.visuals().dark_mode{egui::Theme::Dark}else{egui::Theme::Light};
+                        let spacing=ui.ctx().style_of(theme).spacing.item_spacing;
                         ui.spacing_mut().item_spacing=spacing;
                         match Widget::decode(&node.ports["definition"]) {
                             Ok(widget)=> {
@@ -231,7 +232,7 @@ impl SceneView {
                         if let Some(icon)=text(node,"src").strip_prefix("icon:").and_then(crate::icons::Icon::from_name) {
                             let w=num(node,"w").or(num(node,"h")).unwrap_or(24.0);
                             let h=num(node,"h").unwrap_or(w);
-                            ui.add(crate::icons::image(icon,w,ui.visuals().text_color()).fit_to_exact_size(Vec2::new(w,h)));
+                            ui.add(crate::icons::image_of(ui.ctx(),icon,w,ui.visuals().text_color()).fit_to_exact_size(Vec2::new(w,h)));
                         }
                     }
                     "spacer" => {
