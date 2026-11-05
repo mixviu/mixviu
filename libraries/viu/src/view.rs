@@ -159,7 +159,8 @@ impl SceneView {
                             ui.horizontal(|ui| draw(ui));
                         } else {
                             egui::ScrollArea::vertical()
-                                .max_height(280.0)
+                                .min_scrolled_height(num(node, "min_height").unwrap_or(64.0))
+                                .max_height(num(node, "max_height").unwrap_or(280.0))
                                 .id_salt(id)
                                 .show(ui, |ui| draw(ui));
                         }
@@ -190,7 +191,11 @@ impl SceneView {
                                     }
                                 };
                                 if node.family == "row" {
-                                    ui.horizontal(|ui| draw(ui));
+                                    if text(node, "align") == "stretch" {
+                                        ui.horizontal_top(|ui| draw(ui));
+                                    } else {
+                                        ui.horizontal(|ui| draw(ui));
+                                    }
                                 } else {
                                     ui.vertical(|ui| draw(ui));
                                 }

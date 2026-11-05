@@ -18,8 +18,8 @@ file_size: {"align":"right","text":"{cells[1]}","widget":"text","width":70}
 heading_left: {"bold":true,"text":"= $model.left.heading","widget":"text"}
 heading_right: {"bold":true,"text":"= $model.right.heading","widget":"text"}
 hidden: {"label":"Hidden files","on_click":"hidden","widget":"button"}
-list_left: {"grow":1,"max_rows":16,"on_click":"pick_left","row":"file_row","row_height":24,"rows":"= $model.left.rows","widget":"list"}
-list_right: {"grow":1,"max_rows":16,"on_click":"pick_right","row":"file_row","row_height":24,"rows":"= $model.right.rows","widget":"list"}
+list_left: {"grow":1,"max_rows":16,"min_height":280,"max_height":280,"on_click":"pick_left","row":"file_row","row_height":24,"rows":"= $model.left.rows","widget":"list"}
+list_right: {"grow":1,"max_rows":16,"min_height":280,"max_height":280,"on_click":"pick_right","row":"file_row","row_height":24,"rows":"= $model.right.rows","widget":"list"}
 mkdir: {"label":"New folder","on_click":"mkdir","widget":"button"}
 move: {"label":"Move → other","on_click":"move","widget":"button"}
 name: {"on_change":"name_changed","placeholder":"New name","value":"","widget":"field","width":360}
