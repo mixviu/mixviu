@@ -2,7 +2,7 @@
 //! Client adaptation of scene-host routes and template preparation, using
 //! native egui primitives. This lab renderer covers volume's node families.
 use crate::templates::{PreparedLists, children, rows, text, validate_templates};
-use crate::widgets::{Widget,Widgets,Intent};
+use crate::widgets::{Intent, Widget, Widgets};
 use egui::{Color32, Sense, Vec2};
 use scene::{Node, ResolvedScene};
 use serde_json::{Value, json};
@@ -25,12 +25,16 @@ pub struct SceneView {
 
 impl SceneView {
     pub fn new(source: &str) -> Result<Self, String> {
-        Self::prepare(source,None)
+        Self::prepare(source, None)
     }
-    pub fn with_model(source:&str,model:Value)->Result<Self,String> { Self::prepare(source,Some(model)) }
-    fn prepare(source:&str,model:Option<Value>)->Result<Self,String> {
+    pub fn with_model(source: &str, model: Value) -> Result<Self, String> {
+        Self::prepare(source, Some(model))
+    }
+    fn prepare(source: &str, model: Option<Value>) -> Result<Self, String> {
         let mut document = scene::parse(source).map_err(|e| format!("{e:?}"))?;
-        if let Some(model)=model { document.model=Some(model); }
+        if let Some(model) = model {
+            document.model = Some(model);
+        }
         let tree = scene::resolve(&document).map_err(|e| format!("{e:?}"))?;
         let lists = validate_templates(&tree).map_err(|e| e.to_string())?;
         validate_controls(&tree)?;
@@ -71,16 +75,21 @@ impl SceneView {
         let tree = self.tree.clone();
         let nodes = tree.nodes.into_iter().collect();
         self.node(ui, "root", &nodes, None, 0, &mut events);
-        self.geometry.extend(self.widgets.geometry.iter().map(|(id,r)|(id.clone(),*r)));
-        self.focus_error=self.widgets.finish_frame().err();
+        self.geometry
+            .extend(self.widgets.geometry.iter().map(|(id, r)| (id.clone(), *r)));
+        self.focus_error = self.widgets.finish_frame().err();
         events
     }
-    pub fn request_focus(&mut self,id:&str)->Result<(),String> {
-        if !self.geometry.contains_key(id) { return Err("focus target not visible".into()); }
-        self.widgets.focus=Some(id.into());
+    pub fn request_focus(&mut self, id: &str) -> Result<(), String> {
+        if !self.geometry.contains_key(id) {
+            return Err("focus target not visible".into());
+        }
+        self.widgets.focus = Some(id.into());
         Ok(())
     }
-    pub fn take_focus_error(&mut self)->Option<String> { self.focus_error.take() }
+    pub fn take_focus_error(&mut self) -> Option<String> {
+        self.focus_error.take()
+    }
 
     fn node(
         &mut self,
@@ -246,30 +255,46 @@ impl SceneView {
                 }
             })
             .response;
-        if node.family!="control" { self.geometry.insert(key, response.rect); }
+        if node.family != "control" {
+            self.geometry.insert(key, response.rect);
+        }
     }
 }
 
 impl Event {
-    pub fn from_intent(command:&str,scene:&str,intent:Intent)->Self {
-        let mut body=intent.encode(); body["scene"]=json!(scene); body["node"]=json!(intent.id);
-        Self{command:command.into(),body}
+    pub fn from_intent(command: &str, scene: &str, intent: Intent) -> Self {
+        let mut body = intent.encode();
+        body["scene"] = json!(scene);
+        body["node"] = json!(intent.id);
+        Self {
+            command: command.into(),
+            body,
+        }
     }
 }
 
-fn validate_controls(tree:&ResolvedScene)->Result<(),String> {
-    for (id,node) in &tree.nodes {
+fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
+    for (id, node) in &tree.nodes {
         match node.family.as_str() {
             "control" => {
-                let widget=Widget::decode(&node.ports["definition"])?;
-                if &widget.id!=id { return Err(format!("control ID {} differs from node {id}",widget.id)); }
+                let widget = Widget::decode(&node.ports["definition"])?;
+                if &widget.id != id {
+                    return Err(format!("control ID {} differs from node {id}", widget.id));
+                }
                 widget.validate_model(&tree.model)?;
             }
             "image" => {
-                if text(node,"src").strip_prefix("icon:").and_then(crate::icons::Icon::from_name).is_none() { return Err(format!("image {id}: only known icon: sources supported")); }
+                if text(node, "src")
+                    .strip_prefix("icon:")
+                    .and_then(crate::icons::Icon::from_name)
+                    .is_none()
+                {
+                    return Err(format!("image {id}: only known icon: sources supported"));
+                }
             }
-            "text"|"button"|"field"|"toggle"|"row"|"column"|"list"|"spacer"|"grid"=>{},
-            family=>return Err(format!("unsupported scene content family {family}")),
+            "text" | "button" | "field" | "toggle" | "row" | "column" | "list" | "spacer"
+            | "grid" => {}
+            family => return Err(format!("unsupported scene content family {family}")),
         }
     }
     Ok(())

@@ -13,8 +13,8 @@ use std::{
 };
 use viu::{
     runtime::{Program, Runtime},
-    widgets::Widget,
     view::SceneView,
+    widgets::Widget,
 };
 
 struct Gallery {
@@ -27,7 +27,7 @@ struct Gallery {
     inflight: BTreeSet<u64>,
     input: Vec<egui::Event>,
     later_input: std::collections::VecDeque<Vec<egui::Event>>,
-    input_replies: Vec<(bool,tokio::sync::oneshot::Sender<(u8, Value)>)>,
+    input_replies: Vec<(bool, tokio::sync::oneshot::Sender<(u8, Value)>)>,
     witness: Option<PathBuf>,
     error: String,
     mode: String,
@@ -38,8 +38,15 @@ impl Gallery {
     }
     fn state(&self) -> Value {
         let geometry: serde_json::Map<String, Value> = self
-            .view.as_ref().into_iter().flat_map(|v|v.geometry.iter())
-            .filter(|(id,_)|self.definitions.iter().any(|w|id.as_str()==w.id || id.starts_with(&format!("{}.",w.id))))
+            .view
+            .as_ref()
+            .into_iter()
+            .flat_map(|v| v.geometry.iter())
+            .filter(|(id, _)| {
+                self.definitions
+                    .iter()
+                    .any(|w| id.as_str() == w.id || id.starts_with(&format!("{}.", w.id)))
+            })
             .map(|(id, r)| {
                 (
                     id.clone(),
@@ -56,20 +63,40 @@ impl Gallery {
     }
     fn publish(&mut self, model: Value) -> Result<(), String> {
         controller::validate_model(&model)?;
-        let definitions=model["widgets"].as_array().ok_or("missing widgets")?.iter().map(Widget::decode).collect::<Result<Vec<_>,_>>()?;
+        let definitions = model["widgets"]
+            .as_array()
+            .ok_or("missing widgets")?
+            .iter()
+            .map(Widget::decode)
+            .collect::<Result<Vec<_>, _>>()?;
         match &mut self.view {
-            Some(view)=>view.apply_model(model.clone())?,
-            None=>self.view=Some(SceneView::with_model(include_str!("../scene.mix"),model.clone())?),
+            Some(view) => view.apply_model(model.clone())?,
+            None => {
+                self.view = Some(SceneView::with_model(
+                    include_str!("../scene.mix"),
+                    model.clone(),
+                )?)
+            }
         }
-        self.definitions=definitions;
+        self.definitions = definitions;
         self.model = model;
         Ok(())
     }
     fn execute(&mut self, body: Value, reply: Option<tokio::sync::oneshot::Sender<(u8, Value)>>) {
-        let admission=controller::validate(&self.definitions, &body).and_then(|()| {
-            if body["action"]=="reset" { return Ok(()); }
-            let widget=self.definitions.iter().find(|w|Some(w.id.as_str())==body["id"].as_str()).ok_or("unknown widget")?;
-            widget.admit(&self.model,body["action"].as_str().unwrap_or(""),&body["value"])
+        let admission = controller::validate(&self.definitions, &body).and_then(|()| {
+            if body["action"] == "reset" {
+                return Ok(());
+            }
+            let widget = self
+                .definitions
+                .iter()
+                .find(|w| Some(w.id.as_str()) == body["id"].as_str())
+                .ok_or("unknown widget")?;
+            widget.admit(
+                &self.model,
+                body["action"].as_str().unwrap_or(""),
+                &body["value"],
+            )
         });
         if let Err(error) = admission {
             if let Some(reply) = reply {
@@ -95,12 +122,16 @@ impl Gallery {
                 }
             }
         } else {
-            let mut candidate=self.model.clone();
+            let mut candidate = self.model.clone();
             controller::apply(&mut candidate, &body);
-            let result=self.publish(candidate);
-            if let Err(error)=&result { self.error=error.clone(); } else { self.error.clear(); }
+            let result = self.publish(candidate);
+            if let Err(error) = &result {
+                self.error = error.clone();
+            } else {
+                self.error.clear();
+            }
             if let Some(reply) = reply {
-                let _ = reply.send((if result.is_ok() {0} else {10}, self.state()));
+                let _ = reply.send((if result.is_ok() { 0 } else { 10 }, self.state()));
             }
         }
     }
@@ -137,7 +168,8 @@ impl Gallery {
             }
             _ => match self.ui_command(&command, &body, ctx) {
                 Ok(()) => {
-                    self.input_replies.push((command=="gallery.ui.focus",reply));
+                    self.input_replies
+                        .push((command == "gallery.ui.focus", reply));
                     ctx.request_repaint();
                 }
                 Err(error) => {
@@ -186,10 +218,15 @@ impl Gallery {
             | "gallery.ui.drag" => {
                 let id = body["id"].as_str().ok_or("id required")?;
                 let rect = *self
-                    .view.as_ref().and_then(|v|v.geometry.get(id))
+                    .view
+                    .as_ref()
+                    .and_then(|v| v.geometry.get(id))
                     .ok_or("widget not currently visible; open its parent first")?;
                 if command == "gallery.ui.focus" {
-                    self.view.as_mut().ok_or("scene not ready")?.request_focus(id)?;
+                    self.view
+                        .as_mut()
+                        .ok_or("scene not ready")?
+                        .request_focus(id)?;
                 } else {
                     self.input.push(egui::Event::PointerMoved(rect.center()));
                     if command == "gallery.ui.click" {
@@ -252,7 +289,9 @@ impl Gallery {
             let Some(done) = done else { break };
             self.inflight.remove(&done.sequence);
             if !self.runtime.as_ref().is_some_and(|r| r.accepts(&done)) {
-                if let Some(reply)=self.pending.remove(&done.sequence) { let _=reply.send((10,json!({"error_code":"SUPERSEDED","generation":done.generation,"sequence":done.sequence}))); }
+                if let Some(reply) = self.pending.remove(&done.sequence) {
+                    let _=reply.send((10,json!({"error_code":"SUPERSEDED","generation":done.generation,"sequence":done.sequence})));
+                }
                 continue;
             }
             self.error.clear();
@@ -310,26 +349,33 @@ impl eframe::App for Gallery {
         let events = egui::ScrollArea::vertical()
             .id_salt("gallery-page")
             .auto_shrink([false, false])
-            .show(ui, |ui| self.view.as_mut().map(|v|v.show(ui)).unwrap_or_default())
+            .show(ui, |ui| {
+                self.view.as_mut().map(|v| v.show(ui)).unwrap_or_default()
+            })
             .inner;
         if let Some(error) = self.view.as_mut().and_then(SceneView::take_focus_error) {
-            let mut unaffected=Vec::new();
-            for (focus,reply) in self.input_replies.drain(..) {
-                if focus { let _=reply.send((10,json!({"error_code":"FOCUS_TARGET_UNAVAILABLE","error":error}))); }
-                else { unaffected.push((focus,reply)); }
+            let mut unaffected = Vec::new();
+            for (focus, reply) in self.input_replies.drain(..) {
+                if focus {
+                    let _ = reply.send((
+                        10,
+                        json!({"error_code":"FOCUS_TARGET_UNAVAILABLE","error":error}),
+                    ));
+                } else {
+                    unaffected.push((focus, reply));
+                }
             }
-            self.input_replies=unaffected;
+            self.input_replies = unaffected;
         }
         for event in events {
-            if event.command=="gallery.execute" { self.execute(event.body,None); }
+            if event.command == "gallery.execute" {
+                self.execute(event.body, None);
+            }
             ui.ctx().request_repaint();
         }
-        if self.input.is_empty()
-            && self.later_input.is_empty()
-            && self.inflight.is_empty()
-        {
+        if self.input.is_empty() && self.later_input.is_empty() && self.inflight.is_empty() {
             let state = self.state();
-            for (_,reply) in self.input_replies.drain(..) {
+            for (_, reply) in self.input_replies.drain(..) {
                 let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, state.clone()));
             }
         }
@@ -423,13 +469,24 @@ fn main() -> eframe::Result {
             } else {
                 None
             };
-            let model=if mode == "rust" {
-                    controller::initial()
-                } else {
-                    json!({})
-                };
-            let view=if mode=="rust" { Some(SceneView::with_model(include_str!("../scene.mix"),model.clone()).expect("gallery scene")) } else {None};
-            let definitions=if mode=="rust" {controller::composition()} else {Vec::new()};
+            let model = if mode == "rust" {
+                controller::initial()
+            } else {
+                json!({})
+            };
+            let view = if mode == "rust" {
+                Some(
+                    SceneView::with_model(include_str!("../scene.mix"), model.clone())
+                        .expect("gallery scene"),
+                )
+            } else {
+                None
+            };
+            let definitions = if mode == "rust" {
+                controller::composition()
+            } else {
+                Vec::new()
+            };
             Ok(Box::new(Gallery {
                 model,
                 view,

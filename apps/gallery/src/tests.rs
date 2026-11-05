@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
-use viu::widgets::Widgets;
 use std::time::Duration;
+use viu::widgets::Widgets;
 fn completion(runtime: &Runtime) -> viu::runtime::Completion {
     let start = std::time::Instant::now();
     loop {
@@ -157,7 +157,8 @@ fn shared_widgets_accept_non_gallery_content() {
 fn every_widget_renders_in_shared_native_path() {
     let ctx = egui::Context::default();
     viu::icons::install(&ctx);
-    let mut view=SceneView::with_model(include_str!("../scene.mix"),controller::initial()).unwrap();
+    let mut view =
+        SceneView::with_model(include_str!("../scene.mix"), controller::initial()).unwrap();
     let mut output = ctx.run_ui(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -224,22 +225,59 @@ fn disappeared_focus_is_refused_once_without_latching_next_frame() {
 
 #[test]
 fn reload_retires_inflight_request_and_replies_superseded() {
-    let path=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("gallery.mix");
-    let mut runtime=Runtime::new(8,Arc::new(||{}),None);
-    runtime.load(Program{source:"on gallery.execute async; sleep(0.1); reply(0,\"{}\"); end".into(),path:path.clone(),scene:"gallery".into(),citizen:"gallery-mix".into()}).unwrap();
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("gallery.mix");
+    let mut runtime = Runtime::new(8, Arc::new(|| {}), None);
+    runtime
+        .load(Program {
+            source: "on gallery.execute async; sleep(0.1); reply(0,\"{}\"); end".into(),
+            path: path.clone(),
+            scene: "gallery".into(),
+            citizen: "gallery-mix".into(),
+        })
+        .unwrap();
     completion(&runtime);
-    let model=controller::initial();
-    let mut gallery=Gallery{view:Some(SceneView::with_model(include_str!("../scene.mix"),model.clone()).unwrap()),model,definitions:controller::composition(),runtime:Some(runtime),bus:NativeBus::offline(),pending:BTreeMap::new(),inflight:BTreeSet::new(),input:Vec::new(),later_input:Default::default(),input_replies:Vec::new(),witness:None,error:String::new(),mode:"mix".into()};
-    let (reply,mut received)=tokio::sync::oneshot::channel();
-    gallery.execute(json!({"id":"label","action":"set","value":"old"}),Some(reply));
-    assert_eq!(gallery.inflight.len(),1);
+    let model = controller::initial();
+    let mut gallery = Gallery {
+        view: Some(SceneView::with_model(include_str!("../scene.mix"), model.clone()).unwrap()),
+        model,
+        definitions: controller::composition(),
+        runtime: Some(runtime),
+        bus: NativeBus::offline(),
+        pending: BTreeMap::new(),
+        inflight: BTreeSet::new(),
+        input: Vec::new(),
+        later_input: Default::default(),
+        input_replies: Vec::new(),
+        witness: None,
+        error: String::new(),
+        mode: "mix".into(),
+    };
+    let (reply, mut received) = tokio::sync::oneshot::channel();
+    gallery.execute(
+        json!({"id":"label","action":"set","value":"old"}),
+        Some(reply),
+    );
+    assert_eq!(gallery.inflight.len(), 1);
     std::thread::sleep(Duration::from_millis(20));
-    gallery.runtime.as_mut().unwrap().load(Program{source:include_str!("../gallery.mix").into(),path,scene:"gallery".into(),citizen:"gallery-mix".into()}).unwrap();
-    let start=std::time::Instant::now();
-    while !gallery.inflight.is_empty() && start.elapsed()<Duration::from_secs(5) { gallery.completions(); std::thread::sleep(Duration::from_millis(1)); }
+    gallery
+        .runtime
+        .as_mut()
+        .unwrap()
+        .load(Program {
+            source: include_str!("../gallery.mix").into(),
+            path,
+            scene: "gallery".into(),
+            citizen: "gallery-mix".into(),
+        })
+        .unwrap();
+    let start = std::time::Instant::now();
+    while !gallery.inflight.is_empty() && start.elapsed() < Duration::from_secs(5) {
+        gallery.completions();
+        std::thread::sleep(Duration::from_millis(1));
+    }
     assert!(gallery.inflight.is_empty());
     assert!(gallery.pending.is_empty());
-    let (rc,body)=received.try_recv().unwrap();
-    assert_eq!(rc,10);
-    assert_eq!(body["error_code"],"SUPERSEDED");
+    let (rc, body) = received.try_recv().unwrap();
+    assert_eq!(rc, 10);
+    assert_eq!(body["error_code"], "SUPERSEDED");
 }

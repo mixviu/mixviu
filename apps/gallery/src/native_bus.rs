@@ -18,9 +18,14 @@ pub struct NativeBus {
 }
 impl NativeBus {
     #[cfg(test)]
-    pub fn offline()->Self {
-        let (_,requests)=mpsc::sync_channel(1);
-        Self{requests,close_requested:Arc::new(AtomicBool::new(false)),stop:None,thread:None}
+    pub fn offline() -> Self {
+        let (_, requests) = mpsc::sync_channel(1);
+        Self {
+            requests,
+            close_requested: Arc::new(AtomicBool::new(false)),
+            stop: None,
+            thread: None,
+        }
     }
     pub fn start(name: String, url: String, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
         let (tx, requests) = mpsc::sync_channel(32);

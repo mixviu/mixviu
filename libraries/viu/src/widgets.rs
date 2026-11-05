@@ -102,8 +102,7 @@ impl Widget {
                     .as_str()
                     .and_then(crate::icons::Icon::from_name)
                     .is_some()
-                    && whole(&value["size"])
-                        .is_some_and(|s| (8..=64).contains(&s))
+                    && whole(&value["size"]).is_some_and(|s| (8..=64).contains(&s))
                     && value["colour"].as_array().is_some_and(|c| {
                         c.len() == 3 && c.iter().all(|v| whole(v).is_some_and(|n| n <= 255))
                     })
@@ -122,8 +121,9 @@ impl Widget {
             "radio" | "combo" | "tabs" | "menu" => {
                 value.as_str().is_some_and(|v| self.choices().contains(&v))
             }
-            "list" | "table" | "tree" => whole(value)
-                .is_some_and(|v| v < whole(&self.properties["row_count"]).unwrap_or(0)),
+            "list" | "table" | "tree" => {
+                whole(value).is_some_and(|v| v < whole(&self.properties["row_count"]).unwrap_or(0))
+            }
             "colour" => value.as_array().is_some_and(|v| {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
@@ -136,44 +136,95 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        let mut actions=vec!["set"];
-        if ["button","list","table","tree","canvas","link","icon","toolbar"].contains(&self.kind.as_str()) { actions.push("activate"); }
-        if ["field","multiline"].contains(&self.kind.as_str()) { actions.push("submit"); }
-        if self.kind=="dialog" { actions.extend(["accept","cancel"]); }
-        if self.kind=="tree" { actions.push("expand"); }
-        if self.kind=="table" { actions.push("sort"); }
+        let mut actions = vec!["set"];
+        if [
+            "button", "list", "table", "tree", "canvas", "link", "icon", "toolbar",
+        ]
+        .contains(&self.kind.as_str())
+        {
+            actions.push("activate");
+        }
+        if ["field", "multiline"].contains(&self.kind.as_str()) {
+            actions.push("submit");
+        }
+        if self.kind == "dialog" {
+            actions.extend(["accept", "cancel"]);
+        }
+        if self.kind == "tree" {
+            actions.push("expand");
+        }
+        if self.kind == "table" {
+            actions.push("sort");
+        }
         actions
     }
-    pub fn validate_action(&self,action:&str,value:&Value)->Result<(),String> {
-        if !self.actions().contains(&action) { return Err("unsupported widget action".into()); }
-        if ["set","submit"].contains(&action) || (action=="activate" && ["list","table","tree","toolbar"].contains(&self.kind.as_str())) { self.validate(value)?; }
-        if ["expand","sort"].contains(&action) && !value.is_boolean() { return Err("expand/sort requires bool".into()); }
-        if action=="activate" && self.kind=="icon" && value.as_str().and_then(crate::icons::Icon::from_name).is_none() { return Err("activation requires an icon name".into()); }
+    pub fn validate_action(&self, action: &str, value: &Value) -> Result<(), String> {
+        if !self.actions().contains(&action) {
+            return Err("unsupported widget action".into());
+        }
+        if ["set", "submit"].contains(&action)
+            || (action == "activate"
+                && ["list", "table", "tree", "toolbar"].contains(&self.kind.as_str()))
+        {
+            self.validate(value)?;
+        }
+        if ["expand", "sort"].contains(&action) && !value.is_boolean() {
+            return Err("expand/sort requires bool".into());
+        }
+        if action == "activate"
+            && self.kind == "icon"
+            && value
+                .as_str()
+                .and_then(crate::icons::Icon::from_name)
+                .is_none()
+        {
+            return Err("activation requires an icon name".into());
+        }
         Ok(())
     }
-    pub fn admit(&self,model:&Value,action:&str,value:&Value)->Result<(),String> {
-        self.validate_action(action,value)?;
-        if action=="activate" && self.kind=="icon" && self.value(model)["enabled"]!=true { return Err("DISABLED".into()); }
+    pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
+        self.validate_action(action, value)?;
+        if action == "activate" && self.kind == "icon" && self.value(model)["enabled"] != true {
+            return Err("DISABLED".into());
+        }
         Ok(())
     }
-    pub fn value<'a>(&'a self,model:&'a Value)->&'a Value {
+    pub fn value<'a>(&'a self, model: &'a Value) -> &'a Value {
         model["values"].get(&self.id).unwrap_or(&self.initial)
     }
-    pub fn validate_model(&self,model:&Value)->Result<(),String> {
-        if !KINDS.contains(&self.kind.as_str()) || !self.properties.is_object() { return Err("invalid widget definition".into()); }
+    pub fn validate_model(&self, model: &Value) -> Result<(), String> {
+        if !KINDS.contains(&self.kind.as_str()) || !self.properties.is_object() {
+            return Err("invalid widget definition".into());
+        }
         self.validate(self.value(model))?;
-        if ["list","table","tree"].contains(&self.kind.as_str()) {
-            let rows=model["datasets"][self.text("dataset")].as_array().ok_or("missing dataset")?;
-            if Some(rows.len() as u64)!=whole(&self.properties["row_count"]) { return Err("dataset length differs from row_count".into()); }
-            let columns=if self.kind=="table" {2} else {1};
-            if rows.iter().any(|r|r.as_array().is_none_or(|cells|cells.len()<columns || cells.iter().any(|c|!c.is_string()))) { return Err("dataset requires string cells".into()); }
+        if ["list", "table", "tree"].contains(&self.kind.as_str()) {
+            let rows = model["datasets"][self.text("dataset")]
+                .as_array()
+                .ok_or("missing dataset")?;
+            if Some(rows.len() as u64) != whole(&self.properties["row_count"]) {
+                return Err("dataset length differs from row_count".into());
+            }
+            let columns = if self.kind == "table" { 2 } else { 1 };
+            if rows.iter().any(|r| {
+                r.as_array().is_none_or(|cells| {
+                    cells.len() < columns || cells.iter().any(|c| !c.is_string())
+                })
+            }) {
+                return Err("dataset requires string cells".into());
+            }
         }
         Ok(())
     }
 }
 
-fn whole(v:&Value)->Option<u64> {
-    v.as_u64().or_else(||v.as_f64().filter(|n| n.is_finite() && *n>=0.0 && *n<=9_007_199_254_740_991.0 && n.fract()==0.0).map(|n|n as u64))
+fn whole(v: &Value) -> Option<u64> {
+    v.as_u64().or_else(|| {
+        v.as_f64()
+            .filter(|n| {
+                n.is_finite() && *n >= 0.0 && *n <= 9_007_199_254_740_991.0 && n.fract() == 0.0
+            })
+            .map(|n| n as u64)
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -203,13 +254,15 @@ pub struct Widgets {
 impl Widgets {
     /// Begin exactly once before drawing an application frame. Geometry is
     /// retained after finish_frame for automation until the next begin_frame.
-    pub fn begin_frame(&mut self) { self.geometry.clear(); }
+    pub fn begin_frame(&mut self) {
+        self.geometry.clear();
+    }
     /// Draw one shared widget within an application-owned layout. Both Rust
     /// and Mix adapters can use this entry point without the catalogue grid.
     pub fn widget(&mut self, ui: &mut egui::Ui, definition: &Widget, model: &Value) -> Vec<Intent> {
         let mut intents = Vec::new();
-        if let Err(error)=definition.validate_model(model) {
-            ui.colored_label(Color32::RED,error);
+        if let Err(error) = definition.validate_model(model) {
+            ui.colored_label(Color32::RED, error);
             return intents;
         }
         let value = model["values"]
@@ -252,13 +305,29 @@ impl Widgets {
         let mut changed = None;
         let response = match widget.kind.as_str() {
             "label" => {
-                let mut text=egui::RichText::new(value.as_str().unwrap_or_default());
-                if let Some(size)=widget.properties["size"].as_f64() { text=text.size(size as f32); }
-                if widget.properties["bold"]==true { text=text.strong(); }
-                if widget.properties["mono"]==true { text=text.monospace(); }
-                if let Some(colour)=widget.properties["colour"].as_array().filter(|c|c.len()==4) { text=text.color(Color32::from_rgba_unmultiplied(colour[0].as_u64().unwrap_or(255) as u8,colour[1].as_u64().unwrap_or(255) as u8,colour[2].as_u64().unwrap_or(255) as u8,colour[3].as_u64().unwrap_or(255) as u8)); }
+                let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
+                if let Some(size) = widget.properties["size"].as_f64() {
+                    text = text.size(size as f32);
+                }
+                if widget.properties["bold"] == true {
+                    text = text.strong();
+                }
+                if widget.properties["mono"] == true {
+                    text = text.monospace();
+                }
+                if let Some(colour) = widget.properties["colour"]
+                    .as_array()
+                    .filter(|c| c.len() == 4)
+                {
+                    text = text.color(Color32::from_rgba_unmultiplied(
+                        colour[0].as_u64().unwrap_or(255) as u8,
+                        colour[1].as_u64().unwrap_or(255) as u8,
+                        colour[2].as_u64().unwrap_or(255) as u8,
+                        colour[3].as_u64().unwrap_or(255) as u8,
+                    ));
+                }
                 ui.label(text)
-            },
+            }
             "button" => {
                 let r = icon_button(ui, widget.text("icon"), widget.text("text"), false);
                 if r.clicked() {
@@ -277,7 +346,12 @@ impl Widgets {
                 } else {
                     egui::TextEdit::multiline(&mut text).desired_rows(1)
                 };
-                let r = ui.add(edit.desired_width(ui.available_width()).hint_text(widget.text("placeholder")).password(widget.properties["password"]==true).id_salt(id));
+                let r = ui.add(
+                    edit.desired_width(ui.available_width())
+                        .hint_text(widget.text("placeholder"))
+                        .password(widget.properties["password"] == true)
+                        .id_salt(id),
+                );
                 if r.changed() {
                     changed = Some(json!(text));
                 }

@@ -131,9 +131,11 @@ pub fn validate(widgets: &[Widget], body: &Value) -> Result<(), String> {
         .find(|w| Some(w.id.as_str()) == body["id"].as_str())
         .ok_or("unknown widget")?;
     let action = body["action"].as_str().ok_or("action must be a string")?;
-    widget.validate_action(action,&body["value"])
+    widget.validate_action(action, &body["value"])
 }
-pub fn actions(w:&Widget)->Vec<&'static str> { w.actions() }
+pub fn actions(w: &Widget) -> Vec<&'static str> {
+    w.actions()
+}
 
 /// Validate publications before replacing the last good composition/model.
 pub fn validate_model(model: &Value) -> Result<(), String> {
