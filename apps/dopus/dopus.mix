@@ -46,7 +46,8 @@ fn row_pick($state, $pane, $a)
     $state.status = "STALE_ROW: refresh and select the row again"
     return $state
   end
-  return safe_apply($state, "pick", {pane: $pane, index: $index, ctrl: $a.modifiers.ctrl ?? false, shift: $a.modifiers.shift ?? false})
+  $modifiers = $a.modifiers ?? {}
+  return safe_apply($state, "pick", {pane: $pane, index: $index, ctrl: $modifiers.ctrl ?? false, shift: $modifiers.shift ?? false})
 end
 host_call("shell.scene.load", {source: read_file($dir .. "/scene.mix")})
 paint_state($s)
