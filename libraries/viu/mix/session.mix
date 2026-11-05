@@ -43,7 +43,7 @@ fn session_answer($state,$rc,$body,$error)
   return $state
 end
 fn session_appearance($values,$app)
-  $out={}
+  $out={scheme:"mixos",mode:"dark",style:"default",contrast:"normal",accent:"auto"}
   for $pair in [{key:"scheme",source:"appearance.scheme"},{key:"mode",source:"appearance.mode"},{key:"style",source:"appearance.style"},{key:"contrast",source:"appearance.contrast"},{key:"accent",source:"appearance.accent"},{key:"weight",source:"appearance.font_weight"},{key:"body",source:"appearance.font_size"},{key:"icon_stroke",source:"appearance.icon_stroke"},{key:"reduced_motion",source:"accessibility.reduced_motion"}]
     if $values[$pair.source]!=nil then $out[$pair.key]=$values[$pair.source] end
   end

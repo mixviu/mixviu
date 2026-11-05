@@ -217,11 +217,19 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
         model["appearance"]
     );
     let seq=runtime.event("dopus.call".into(),json!({"command":"dopus.session","args":{"appearance":{"scheme":"ocean","mode":"dark","density":"compact"},"keymap":{"nav.parent":["Ctrl+U"]}}})).unwrap();
-    let followed=wait(&runtime,&mut jobs,seq).0.model.unwrap();
-    assert_eq!(followed["appearance"]["scheme"],"forest");
-    assert_eq!(followed["appearance"]["mode"],"light");
-    assert_eq!(followed["appearance"]["density"],"compact");
-    assert_eq!(followed["actions"].as_array().unwrap().iter().find(|a|a["id"]=="nav.parent").unwrap()["keys"],json!(["Ctrl+U"]));
+    let followed = wait(&runtime, &mut jobs, seq).0.model.unwrap();
+    assert_eq!(followed["appearance"]["scheme"], "forest");
+    assert_eq!(followed["appearance"]["mode"], "light");
+    assert_eq!(followed["appearance"]["density"], "compact");
+    assert_eq!(
+        followed["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "nav.parent")
+            .unwrap()["keys"],
+        json!(["Ctrl+U"])
+    );
 }
 
 #[test]
