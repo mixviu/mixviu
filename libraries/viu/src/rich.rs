@@ -217,10 +217,12 @@ fn menu(
                     menu(ui, &item["children"], id, geometry, events)
                 })
             });
-            geometry.insert(
-                format!("{id}.command.{}", text(item, "id")),
-                shown.inner.response.rect,
-            );
+            if ui.is_visible() && !ui.is_sizing_pass() {
+                geometry.insert(
+                    format!("{id}.command.{}", text(item, "id")),
+                    shown.inner.response.rect,
+                );
+            }
         } else {
             let mut button = if let Some(icon) = item["icon"]
                 .as_str()
@@ -237,7 +239,9 @@ fn menu(
                 button = button.shortcut_text(shortcut);
             }
             let response = ui.add_enabled(item["enabled"] == true, button);
-            geometry.insert(format!("{id}.command.{}", text(item, "id")), response.rect);
+            if ui.is_visible() && !ui.is_sizing_pass() {
+                geometry.insert(format!("{id}.command.{}", text(item, "id")), response.rect);
+            }
             if response.clicked() {
                 emit(events, id, "command", json!({"command":item["id"]}));
                 ui.close();

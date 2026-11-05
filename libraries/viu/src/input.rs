@@ -9,6 +9,7 @@ pub struct Input {
     pub now: Vec<egui::Event>,
     pub later: VecDeque<Vec<egui::Event>>,
     menu_path: VecDeque<String>,
+    menu_wait_frames: u8,
 }
 fn finite_point(x: f64, y: f64) -> Result<egui::Pos2, String> {
     let point = egui::pos2(x as f32, y as f32);
@@ -37,6 +38,7 @@ impl Input {
                 let first = targets.pop_front().ok_or("menu path is empty")?;
                 self.queue("click", &serde_json::json!({"id":first}), view)?;
                 self.menu_path = targets;
+                self.menu_wait_frames = 0;
                 return Ok(());
             }
             "focus" => {
@@ -178,7 +180,13 @@ impl Input {
         if !self.now.is_empty() || !self.later.is_empty() {
             return None;
         }
-        let target = self.menu_path.pop_front()?;
+        let target = self.menu_path.front()?.clone();
+        if !view.geometry.contains_key(&target) && self.menu_wait_frames < 3 {
+            self.menu_wait_frames += 1;
+            return Some(Ok(()));
+        }
+        self.menu_wait_frames = 0;
+        self.menu_path.pop_front();
         let result = self.queue("click", &serde_json::json!({"id":target}), view);
         if result.is_err() {
             self.menu_path.clear();
