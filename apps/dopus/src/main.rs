@@ -306,7 +306,7 @@ impl App {
                 let _ = reply.send((0, self.state()));
             }
             "dopus.describe" | "app.describe" => {
-                let _=reply.send((0,json!({"schema":"viu.dopus.v1","mode":self.mode,"actions":self.contract["actions"],"commands":commands(),"shared_scene":true,"shared_widgets":true,"original_core":self.mode=="rust","limits":{"bus":32,"behaviour":32,"jobs":4,"job_admission":8},"unsupported":["macros","chooser service","external open/mail completion"]})));
+                let _=reply.send((0,json!({"schema":"viu.dopus.v1","mode":self.mode,"actions":self.contract["actions"],"commands":commands(),"shared_scene":true,"shared_widgets":true,"original_core":self.mode=="rust","limits":{"bus":32,"behaviour":32,"jobs":4,"job_admission":8},"features":{"macros":"native session and shared Mix panel","chooser":"--choose-service provides the native files.choose contract with shared Viu controls","external_effects":"native open process admission and mail Bus delivery"},"boundaries":["external application completion is not measured","physical presentation is not measured"]})));
             }
             "dopus.actions" => {
                 let actions = if let Some(native) = &self.native {
@@ -857,7 +857,7 @@ fn main() -> eframe::Result {
     )
     .expect("Dopus contract data");
     if args.iter().any(|a| a == "--choose-service") {
-        return chooser::run(app_dir,profile, &mode);
+        return chooser::run(app_dir, profile, &mode);
     }
     let title = format!(
         "Dopus — {} / Viu",

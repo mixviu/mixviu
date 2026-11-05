@@ -125,7 +125,7 @@ impl Window {
             Err(error) => self.error = format!("BUSY: {error:?}"),
         }
     }
-    fn poll(&mut self,ctx:&egui::Context) -> Result<(), String> {
+    fn poll(&mut self, ctx: &egui::Context) -> Result<(), String> {
         for result in self.worker.drain() {
             self.pending.remove(&result.sequence);
             if let Some(error) = result.error {
@@ -140,7 +140,9 @@ impl Window {
                 }
             }
             if let Some(model) = result.model {
-                let style=(self.model["appearance"]!=model["appearance"]).then(||viu::appearance::resolve(&model["appearance"])).transpose()?;
+                let style = (self.model["appearance"] != model["appearance"])
+                    .then(|| viu::appearance::resolve(&model["appearance"]))
+                    .transpose()?;
                 if let Some(view) = &mut self.view {
                     view.apply_model(model.clone())?;
                 } else {
@@ -152,8 +154,15 @@ impl Window {
                     self.effect = Some(model["effect"].clone());
                 }
                 self.model = model;
-                if let Some(style)=style{viu::appearance::install_style(ctx,&self.model["appearance"],style);}
-                if let Some(id)=self.model["focus"].as_str(){if let Some(view)=&mut self.view{let _=view.request_focus(id);ctx.request_repaint_of(viewport(&self.id));}}
+                if let Some(style) = style {
+                    viu::appearance::install_style(ctx, &self.model["appearance"], style);
+                }
+                if let Some(id) = self.model["focus"].as_str() {
+                    if let Some(view) = &mut self.view {
+                        let _ = view.request_focus(id);
+                        ctx.request_repaint_of(viewport(&self.id));
+                    }
+                }
             }
         }
         Ok(())
@@ -161,7 +170,11 @@ impl Window {
     fn show(&mut self, ui: &mut egui::Ui) {
         self.mapped = true;
         let ctx = ui.ctx().clone();
-        ui.painter().rect_filled(ui.max_rect(),0.0,viu::appearance::colour(&ctx,"dock").unwrap_or(ui.visuals().panel_fill));
+        ui.painter().rect_filled(
+            ui.max_rect(),
+            0.0,
+            viu::appearance::colour(&ctx, "dock").unwrap_or(ui.visuals().panel_fill),
+        );
         if let Some((_, result)) = self.capture.poll(&ctx) {
             if let Some(reply) = self.capture_reply.take() {
                 let _ = reply.send(match result {
@@ -254,11 +267,16 @@ impl Window {
         } else {
             ui.label("Loading chooser…");
         }
-        if self.ready&&self.model["values"]["form"]["open"]!=true&&!self.view.as_ref().is_some_and(|v|v.text_input_active()){
+        if self.ready
+            && self.model["values"]["form"]["open"] != true
+            && !self.view.as_ref().is_some_and(|v| v.text_input_active())
+        {
             let keys:Vec<_>=ctx.input(|input|input.events.iter().filter_map(|event|{
                 if let egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=event{Some(json!({"command":"key","key":key.name(),"ctrl":modifiers.ctrl,"shift":modifiers.shift,"alt":modifiers.alt}))}else{None}
             }).collect());
-            for key in keys{self.call(key);}
+            for key in keys {
+                self.call(key);
+            }
         }
         if self.input.now.is_empty() {
             if let Some(next) = self.input.later.pop_front() {
@@ -340,7 +358,7 @@ impl Shell {
             Err(_) => Err(pending),
         }
     }
-    fn request(&mut self, request: Request,ctx:&egui::Context) {
+    fn request(&mut self, request: Request, ctx: &egui::Context) {
         let command = request.command.clone();
         match command.as_str() {
             "HELP" | "app.describe" => {
@@ -391,7 +409,10 @@ impl Shell {
                     });
                 if let Some(window) = id.and_then(|id| windows.get_mut(&id)) {
                     let mut window = window.lock().unwrap();
-                    if command=="files.ui.tree"{let _=request.reply.send((0,window.state()));return;}
+                    if command == "files.ui.tree" {
+                        let _ = request.reply.send((0, window.state()));
+                        return;
+                    }
                     if window.requests.len() < 32 {
                         window.requests.push_back(request);
                         ctx.request_repaint_of(viewport(&window.id));
@@ -426,9 +447,11 @@ fn caller_key(request: &Request) -> String {
     }
 }
 impl eframe::App for Shell {
-    fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, _: &egui::Context, input: &mut egui::RawInput) {
         for (id, window) in self.windows.lock().unwrap().iter() {
-            if viewport(id) == ctx.viewport_id() {
+            // The Context still names the preceding pass here. RawInput is
+            // authoritative before egui enters the addressed child viewport.
+            if viewport(id) == input.viewport_id {
                 input.events.append(&mut window.lock().unwrap().input.now);
                 break;
             }
@@ -436,7 +459,7 @@ impl eframe::App for Shell {
     }
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         while let Ok(request) = self.bus.requests.try_recv() {
-            self.request(request,ctx);
+            self.request(request, ctx);
         }
         for result in self.engine.drain() {
             if !result.stdout.is_empty() {
@@ -525,7 +548,7 @@ impl eframe::App for Shell {
         }
         for (id, open) in prepared {
             if !self.windows.lock().unwrap().contains_key(&id) {
-                match Window::new(&open, &self.app_dir, &self.profile,&self.home, ctx) {
+                match Window::new(&open, &self.app_dir, &self.profile, &self.home, ctx) {
                     Ok(window) => {
                         self.windows
                             .lock()
@@ -546,7 +569,10 @@ impl eframe::App for Shell {
             }
             let window = self.windows.lock().unwrap().get(&id).cloned().unwrap();
             let mut window = window.lock().unwrap();
-            if window.ready!=open.ready{window.ready=open.ready;ctx.request_repaint_of(viewport(&id));}
+            if window.ready != open.ready {
+                window.ready = open.ready;
+                ctx.request_repaint_of(viewport(&id));
+            }
             if open.ready
                 && !window.mapped
                 && window.created.elapsed() > std::time::Duration::from_secs(5)
@@ -638,7 +664,7 @@ fn commands() -> Vec<String> {
     .map(str::to_owned)
     .collect()
 }
-pub fn run(app_dir: PathBuf, profile:PathBuf,mode: &str) -> eframe::Result {
+pub fn run(app_dir: PathBuf, profile: PathBuf, mode: &str) -> eframe::Result {
     let service_name = format!("files-{mode}");
     eframe::run_native(
         "Viu file chooser",
