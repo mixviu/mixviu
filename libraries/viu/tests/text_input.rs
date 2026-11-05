@@ -116,9 +116,11 @@ fn rejected_modal_submission_keeps_the_field_editable_without_an_extra_click() {
     draw(&ctx, &mut view, vec![]);
     draw(&ctx, &mut view, vec![]);
     let mut select = key(Key::A);
+    let modifiers = Modifiers {ctrl:true, command:true, ..Modifiers::NONE};
     for event in &mut select {
-        if let Event::Key{modifiers,..}=event { *modifiers=Modifiers::CTRL|Modifiers::COMMAND; }
+        if let Event::Key{modifiers:current,..}=event { *current=modifiers; }
     }
+    select.insert(0,Event::ModifiersChanged(modifiers));
     draw(&ctx, &mut view, select);
     let edited=draw(&ctx, &mut view, vec![Event::Text("repaired".into())]);
     assert!(edited.iter().any(|e|e.body["action"]=="edit"&&e.body["value"]=="repaired"),"{edited:?}");
