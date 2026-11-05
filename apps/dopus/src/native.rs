@@ -677,13 +677,18 @@ impl Native {
                     if action != "context" || !self.core().pane(p).selected_paths.contains(&path) {
                         self.core_mut().select_modified(
                             p,
-                            path,
+                            path.clone(),
                             v["ctrl"] == true,
                             v["shift"] == true,
                         );
                     }
                     if action == "activate" {
-                        self.core_mut().open_selection();
+                        let folder = self.core().visible_rows(p).iter().any(|r| r.entry.path == path && r.entry.is_dir);
+                        if folder {
+                            self.core_mut().toggle_expand(p, &path);
+                        } else {
+                            self.core_mut().open_selection();
+                        }
                     }
                 }
                 "expand" => {

@@ -59,6 +59,12 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
     let model = first.model.unwrap();
     assert_eq!(model["panes"][0]["rows"], 2);
     assert_eq!(model["panes"][0]["summary"], "1 folder, 1 file (3 B)");
+    let seq = runtime.event("dopus.call".into(), json!({"command":"dopus.intent","args":{"id":"left-tree","action":"activate","value":{"key":left.join("Folder")}}})).unwrap();
+    let expanded = wait(&runtime, &mut jobs, seq).0;
+    assert_eq!(expanded.reply.unwrap().rc, 0);
+    let expanded = expanded.model.unwrap();
+    assert_eq!(expanded["panes"][0]["path"], json!(left));
+    assert_eq!(expanded["panes"][0]["expanded"], json!([left.join("Folder")]));
     for pane in [json!(1), json!(0)] {
         let seq = runtime.event("dopus.call".into(), json!({"command":"dopus.execute","args":{"id":"location.focus","params":{"pane":pane}}})).unwrap();
         let changed = wait(&runtime, &mut jobs, seq).0;
@@ -204,6 +210,9 @@ fn native_queued_confirmations_keep_selection_and_core_tokens_across_other_forms
         assert!(native.action("location.focus", &json!({"pane":pane})).is_err());
         assert_eq!(native.model()["active"], 0);
     }
+    native.intent(&json!({"id":"left-tree","action":"activate","value":{"key":profile}})).unwrap();
+    assert_eq!(native.model()["panes"][0]["path"], json!(dir.path()));
+    assert_eq!(native.model()["panes"][0]["expanded"], json!([profile]));
     native.action("help.about", &json!({})).unwrap();
     for name in ["a.txt", "b.txt"] {
         native

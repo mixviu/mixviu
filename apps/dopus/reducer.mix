@@ -241,7 +241,11 @@ fn dp_intent($s,$contract,$a)
   elif ends_with($id,"-tree") then
     if $action=="select" then $s.panes[$i]=$dp.dp_pick($s.panes[$i],$value.key,$value.ctrl ?? false,$value.shift ?? false)
     elif $action=="expand" then $s.panes[$i]=$dp.dp_expand($s.panes[$i],$value.key)
-    elif $action=="activate" then $s.panes[$i]=$dp.dp_pick($s.panes[$i],$value.key,false,false);return dp_action($s,$contract,"file.open",{})
+    elif $action=="activate" then
+      $s.panes[$i]=$dp.dp_pick($s.panes[$i],$value.key,false,false)
+      $row=filter($s.panes[$i].entries,fn($row)=$row.path==$value.key)[0]
+      if $row!=nil and $row.dir then $s.panes[$i]=$dp.dp_expand($s.panes[$i],$value.key)
+      else return dp_action($s,$contract,"file.open",{}) end
     elif $action=="sort" then return dp_action($s,$contract,"view.sort-"..$value.column,{})
     elif $action=="command" then
       if $value.key!=nil and not contains($s.panes[$i].selected_paths,$value.key) then $s.panes[$i]=$dp.dp_pick($s.panes[$i],$value.key,false,false) end
