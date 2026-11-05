@@ -45,6 +45,7 @@ struct Window {
     created: std::time::Instant,
     mapped: bool,
     applied_focus: Option<Value>,
+    fatal: Option<String>,
 }
 impl Window {
     fn new(
@@ -102,6 +103,7 @@ impl Window {
             created: std::time::Instant::now(),
             mapped: false,
             applied_focus: None,
+            fatal: None,
         })
     }
     fn state(&self) -> Value {
@@ -128,6 +130,16 @@ impl Window {
         }
     }
     fn poll(&mut self, ctx: &egui::Context) -> Result<(), String> {
+        if let Some(error) = &self.fatal {
+            return Err(error.clone());
+        }
+        let result = self.poll_inner(ctx);
+        if let Err(error) = &result {
+            self.fatal = Some(error.clone());
+        }
+        result
+    }
+    fn poll_inner(&mut self, ctx: &egui::Context) -> Result<(), String> {
         for result in self.worker.drain() {
             self.pending.remove(&result.sequence);
             if let Some(error) = result.error {
@@ -565,6 +577,11 @@ impl eframe::App for Shell {
             }
         }
         for (id, open) in prepared {
+            // The engine accepts failure only after the choose reply has been
+            // delivered. Do not start a presenter which can fail before then.
+            if !open.ready {
+                continue;
+            }
             if !self.windows.lock().unwrap().contains_key(&id) {
                 match Window::new(&open, &self.app_dir, &self.profile, &self.home, ctx) {
                     Ok(window) => {

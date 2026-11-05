@@ -75,6 +75,11 @@ impl Panel {
         let mut failed = None;
         for result in self.worker.drain() {
             let reply = self.pending.remove(&result.sequence).flatten();
+            let action_error = reply.is_none().then(|| {
+                result.reply.as_ref().and_then(|reply| {
+                    (reply.rc >= 10).then(|| reply.body.to_string())
+                })
+            }).flatten();
             let error = result.error.or_else(|| {
                 (result.generation != self.worker.generation()).then(|| "STALE_GENERATION".into())
             });
@@ -96,6 +101,8 @@ impl Panel {
             }
             if error.is_some() {
                 failed = error;
+            } else if action_error.is_some() {
+                failed = action_error;
             }
         }
         if self.dirty.load(Ordering::Acquire)
@@ -189,6 +196,17 @@ mod tests {
         assert!(!entry.path.exists());
         assert_eq!(answer(&mut panel, "close", Value::Null).0, 0);
         assert_eq!(panel.form["open"], false);
+        assert!(panel.call(json!({"command":"answer","choice":"remove","instance":"expired"}), None).is_ok());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        loop {
+            let (_, error) = panel.poll();
+            if let Some(error) = error {
+                assert!(error.contains("STALE"), "{error}");
+                break;
+            }
+            assert!(std::time::Instant::now() < until, "UI refusal was not surfaced");
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
         session.shutdown().unwrap();
     }
 }

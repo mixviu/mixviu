@@ -461,7 +461,9 @@ impl Widgets {
                         .id_salt(id),
                 );
                 // The key which ends editing belongs to the field this frame.
-                self.text_input_active |= r.has_focus() || r.lost_focus();
+                self.text_input_active |= r.has_focus()
+                    || (r.lost_focus()
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)));
                 if r.changed() {
                     // Preserve native edit-before-submit/cancel ordering when
                     // a single input pass contains both text and a key.
