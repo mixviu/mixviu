@@ -23,6 +23,7 @@ pub struct Native {
     contract: Value,
     default_keys: Value,
     appearance_choice: Value,
+    appearance_session: Value,
     pub appearance: Value,
     form: Value,
     form_kind: String,
@@ -118,6 +119,7 @@ impl Native {
                 .into(),
             contract,
             appearance_choice: json!({}),
+            appearance_session: json!({"mode":"dark","scheme":"studio","style":"default"}),
             appearance: json!({"mode":"dark","scheme":"studio","style":"default"}),
             form_instance: 0,
             form_queue: VecDeque::new(),
@@ -272,6 +274,10 @@ impl Native {
             "view.toggle-previews" => p.previews,
             "view.toggle-places" => self.core().sidebar(Sidebar::Places).open,
             "view.toggle-properties" => self.core().sidebar(Sidebar::Properties).open,
+            "theme.scheme-session" | "theme.mode-session" | "theme.style-session" => {
+                let key = id.strip_prefix("theme.").unwrap().strip_suffix("-session").unwrap();
+                self.appearance_choice.get(key).is_none()
+            }
             id if id.starts_with("theme.scheme-") =>
                 self.appearance["scheme"].as_str() == Some(&id[13..]),
             id if id.starts_with("theme.style-") =>
@@ -454,6 +460,11 @@ impl Native {
                 self.effects
                     .push_back(json!({"kind":"mail","paths":paths_value(paths)}));
             }
+            "theme.scheme-session" | "theme.mode-session" | "theme.style-session" => {
+                let key = id.strip_prefix("theme.").unwrap().strip_suffix("-session").unwrap();
+                self.appearance_choice.as_object_mut().unwrap().remove(key);
+                self.appearance[key] = self.appearance_session[key].clone();
+            }
             "theme.mode-toggle" => {
                 self.appearance["mode"] = json!(if self.appearance["mode"] == "dark" {
                     "light"
@@ -504,7 +515,7 @@ impl Native {
             }
             _ => return Err("UNKNOWN_ACTION".into()),
         }
-        if id.starts_with("theme.") {
+        if id.starts_with("theme.") && !id.ends_with("-session") {
             let key = if id.starts_with("theme.scheme-") {
                 Some("scheme")
             } else if id.starts_with("theme.style-") {
@@ -926,6 +937,7 @@ impl Native {
                 {
                     appearance[key] = value.clone();
                 }
+                self.appearance_session = appearance.clone();
                 for (key, value) in self.appearance_choice.as_object().unwrap() {
                     appearance[key] = value.clone();
                 }

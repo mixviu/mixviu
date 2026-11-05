@@ -28,6 +28,7 @@ on dopus.initialise
   $row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
   $state=$app.dp_initialise($event.args)
   $state.appearance_choice={}
+  $state.appearance_session=$state.appearance
   $state.default_keys={}
   for $action in $contract.actions $state.default_keys[$action.id]=$action.keys end
   $state.owner=viu_context().generation
@@ -42,6 +43,7 @@ on dopus.call
       $profile_start=if $dopus_profile then monotonic() else 0 end
       $a=$event.args.args;$name=$event.args.command
       $candidate=$state;$candidate.focus=nil;$candidate.reply={ok:true}
+      $candidate.appearance_reset=nil
       if $name=="dopus.execute" then $candidate=$app.dp_action($candidate,$contract,$a.id,$a.params ?? {})
       elif $name=="dopus.intent" then $candidate=$app.dp_intent($candidate,$contract,$a)
       elif $name=="dopus.open" then
@@ -67,6 +69,7 @@ on dopus.call
       elif $name=="dopus.session" then
         $appearance={mode:"dark",scheme:"studio",style:"default"}
         for $key in keys($a.appearance) $appearance[$key]=$a.appearance[$key] end
+        $candidate.appearance_session=$appearance
         for $key in keys($candidate.appearance_choice) $appearance[$key]=$candidate.appearance_choice[$key] end
         $candidate.appearance=$appearance
         for $i=0 to len($contract.actions)-1
@@ -82,7 +85,7 @@ on dopus.call
       else raise("UNKNOWN_COMMAND",$name) end
       if $name=="dopus.execute" or $name=="dopus.intent" then
         for $key in ["mode","scheme","style"]
-          if $candidate.appearance[$key]!=$state.appearance[$key] then $candidate.appearance_choice[$key]=$candidate.appearance[$key] end
+          if $candidate.appearance_reset!=$key and $candidate.appearance[$key]!=$state.appearance[$key] then $candidate.appearance_choice[$key]=$candidate.appearance[$key] end
         end
       end
       $candidate.serial=$candidate.serial+1
