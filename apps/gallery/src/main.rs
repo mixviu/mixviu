@@ -4,13 +4,14 @@ mod native_bus;
 #[cfg(test)] mod tests;
 use eframe::egui;
 use serde_json::{Value,json};
-use std::{collections::BTreeMap,path::PathBuf,sync::Arc};
+use std::{collections::{BTreeMap,BTreeSet},path::PathBuf,sync::Arc};
 use viu::{runtime::{Program,Runtime},widgets::{Widget,Widgets}};
 use native_bus::{NativeBus,Request};
 
 struct Gallery {
     model:Value, widgets:Widgets, runtime:Option<Runtime>, bus:NativeBus,
     pending:BTreeMap<u64,tokio::sync::oneshot::Sender<(u8,Value)>>,
+    inflight:BTreeSet<u64>,
     input:Vec<egui::Event>, input_replies:Vec<tokio::sync::oneshot::Sender<(u8,Value)>>,
     witness:Option<PathBuf>, error:String, mode:String,
 }
@@ -24,7 +25,7 @@ impl Gallery {
         if let Err(error)=controller::validate(&self.definitions(),&body){if let Some(reply)=reply {let _=reply.send((10,json!({"error":error})));}else{self.error=error;}return;}
         if let Some(runtime)=&mut self.runtime {
             match runtime.event("gallery.execute".into(),body) {
-                Ok(sequence)=>{if let Some(reply)=reply {self.pending.insert(sequence,reply);}},
+                Ok(sequence)=>{self.inflight.insert(sequence);if let Some(reply)=reply {self.pending.insert(sequence,reply);}},
                 Err(e)=>{self.error=format!("{e:?}");if let Some(reply)=reply {let _=reply.send((10,json!({"error_code":"BUSY"})));}},
             }
         }else{
@@ -82,6 +83,7 @@ impl Gallery {
         loop {
             let done=self.runtime.as_ref().and_then(Runtime::try_completion);
             let Some(done)=done else {break};
+            self.inflight.remove(&done.sequence);
             if let Some(error)=done.error {self.error=error;}
             else if let Some(model)=done.model {self.model=model;self.error.clear();}
             if let Some(reply)=self.pending.remove(&done.sequence){let _=reply.send((if self.error.is_empty(){0}else{10},self.state()));}
@@ -94,10 +96,6 @@ impl eframe::App for Gallery {
         self.completions();
         // Requests admitted this frame inject raw input at the next frame boundary.
         // Reply only after that boundary and after resulting Mix callbacks settle.
-        if self.input.is_empty() && self.pending.is_empty() {
-            let state=self.state();
-            for reply in self.input_replies.drain(..){let _=reply.send((0,state.clone()));}
-        }
         for _ in 0..32 {match self.bus.requests.try_recv(){Ok(r)=>self.request(r,ui.ctx()),Err(_)=>break}}
         ui.heading("Viu Widget Gallery");
         ui.small("Same widgets · same inputs · independent Rust / Mix controllers");
@@ -106,6 +104,10 @@ impl eframe::App for Gallery {
         let definitions=self.definitions();
         let events=egui::ScrollArea::vertical().id_salt("gallery-page").auto_shrink([false,false]).show(ui,|ui|self.widgets.show(ui,&definitions,&self.model)).inner;
         for event in events {self.execute(event.encode(),None);ui.ctx().request_repaint();}
+        if self.input.is_empty() && self.inflight.is_empty() && self.widgets.focus.is_none() {
+            let state=self.state();
+            for reply in self.input_replies.drain(..){let _=reply.send((if self.error.is_empty(){0}else{10},state.clone()));}
+        }
         // The witness is explicit diagnostic I/O, enabled only by the caller.
         if let Some(path)=&self.witness {let temporary=path.with_extension("tmp");let _=std::fs::write(&temporary,self.state().to_string()).and_then(|_|std::fs::rename(temporary,path));}
     }
@@ -127,6 +129,6 @@ fn main()->eframe::Result {
             runtime.load(Program{source:std::fs::read_to_string(&path).expect("gallery Mix source"),path,scene:"gallery".into(),citizen:"gallery-mix".into()}).expect("gallery load");
             Some(runtime)
         }else{None};
-        Ok(Box::new(Gallery{model:if mode=="rust"{controller::initial()}else{json!({})},widgets:Widgets::default(),runtime,bus,pending:BTreeMap::new(),input:Vec::new(),input_replies:Vec::new(),witness:std::env::var_os("VIU_GALLERY_WITNESS").map(PathBuf::from),error:String::new(),mode}))
+        Ok(Box::new(Gallery{model:if mode=="rust"{controller::initial()}else{json!({})},widgets:Widgets::default(),runtime,bus,pending:BTreeMap::new(),inflight:BTreeSet::new(),input:Vec::new(),input_replies:Vec::new(),witness:std::env::var_os("VIU_GALLERY_WITNESS").map(PathBuf::from),error:String::new(),mode}))
     }))
 }

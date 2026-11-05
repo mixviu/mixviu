@@ -90,7 +90,7 @@ impl Widgets {
             response.request_focus();
             self.focus = None;
         }
-        if response.has_focus() { ui.ctx().data_mut(|d| d.insert_temp(Id::new("viu-focused-widget"),id.to_owned())); }
+        if response.has_focus() { ui.ctx().data_mut(|d| d.insert_temp(Id::unique("viu-focused-widget"),id.to_owned())); }
     }
     fn draw(&mut self, ui: &mut egui::Ui, widget: &Widget, value: &Value, events: &mut Vec<Intent>) {
         let id = &widget.id;
@@ -144,7 +144,7 @@ impl Widgets {
                 for option in ["Alpha","Beta","Gamma"] {let r=ui.selectable_label(value==option,option);self.remember(ui,&format!("{id}.{option}"),&r);if r.clicked(){changed=Some(json!(option));}}
             }).response,
             "list" | "table" | "tree" => {
-                egui::ScrollArea::vertical().id_salt(id).max_height(54.0).auto_shrink([false,false]).show_rows(ui,16.0,1000,|ui,range| {
+                let area=egui::ScrollArea::vertical().id_salt(id).max_height(54.0).auto_shrink([false,false]).show_rows(ui,16.0,1000,|ui,range| {
                     if let Some((target,row))=&self.scroll {if target==id {ui.scroll_to_rect(Rect::from_min_size(ui.min_rect().min+Vec2::new(0.0,*row as f32*19.0),Vec2::splat(1.0)),Some(egui::Align::Center));}}
                     for row in range {
                         let text=match widget.kind.as_str(){"table"=>format!("Item {row:04}                 {} KiB",row+1),"tree"=>format!("{}{} Item {row:04}",if row%4==0{""}else{"    "},if row%4==0{"▾"}else{"·"}),_=>format!("Item {row:04}")};
@@ -154,8 +154,8 @@ impl Widgets {
                         if r.double_clicked(){events.push(Intent{id:id.clone(),action:"activate".into(),value:json!(row)});}
                         r.context_menu(|ui|{if ui.button("Choose item").clicked(){changed=Some(json!(row));ui.close();}});
                     }
-                }).inner;
-                ui.allocate_response(Vec2::new(ui.available_width(),0.0),Sense::hover())
+                });
+                ui.interact(area.inner_rect,ui.id().with(id),Sense::hover())
             }
             "collapse" => {
                 let mut open=value.as_bool().unwrap_or(false);
@@ -168,7 +168,7 @@ impl Widgets {
             "dialog" => {
                 let r=ui.button("Open confirmation…");
                 if r.clicked(){changed=Some(json!(true));}
-                if value.as_bool()==Some(true){egui::Window::new("Gallery confirmation").id(Id::new(id)).collapsible(false).resizable(false).show(ui.ctx(),|ui|{
+                if value.as_bool()==Some(true){egui::Window::new("Gallery confirmation").id(Id::unique(id)).collapsible(false).resizable(false).show(ui.ctx(),|ui|{
                     ui.label("The same dialog in Rust and Mix.");
                     for choice in ["Accept","Cancel"] {let r=ui.button(choice);self.remember(ui,&format!("{id}.{choice}"),&r);if r.clicked(){events.push(Intent{id:id.clone(),action:choice.to_lowercase(),value:Value::Null});}}
                 });} r

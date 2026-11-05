@@ -35,7 +35,7 @@ fn invalid_actions_and_values_are_refused() {
 #[test]
 fn every_widget_renders_in_shared_native_path() {
     let ctx=egui::Context::default();let mut widgets=Widgets::default();
-    let output=ctx.run(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(740.0,1000.0))),..Default::default()},|ctx|{egui::CentralPanel::default().show(ctx,|ui|{widgets.show(ui,&controller::composition(),&controller::initial());});});
+    let output=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(740.0,1000.0))),..Default::default()},|ui|{widgets.show(ui,&controller::composition(),&controller::initial());});
     assert!(!output.shapes.is_empty());
     for widget in controller::composition(){assert!(widgets.geometry.contains_key(&widget.id),"{} geometry",widget.id);}
 }
