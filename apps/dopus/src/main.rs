@@ -527,6 +527,10 @@ impl App {
                 }
             }
             command if command.starts_with("dopus.ui.") => {
+                if self.input_wait {
+                    let _=reply.send((10,json!({"error_code":"BUSY","message":"Native input gesture is still pending"})));
+                    return;
+                }
                 let suffix = &command[9..];
                 let result = self
                     .view

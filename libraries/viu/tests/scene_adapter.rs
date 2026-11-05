@@ -147,16 +147,14 @@ fn menu_paths_drive_native_popups_and_refuse_disabled_or_leaf_targets() {
         out.textures_delta.clear();
         if frame == 0 {
             input
-                .queue(
-                    "menu.open",
-                    &json!({"path":["View","Theme"]}),
-                    &mut view,
-                )
+                .queue("menu.open", &json!({"path":["View","Theme"]}), &mut view)
                 .unwrap();
         } else if let Some(next) = input.later.pop_front() {
             input.now = next;
         } else if let Some(result) = input.advance_menu(&mut view) {
             result.unwrap();
+        } else {
+            assert_eq!(viu::rich::menu_snapshot(&menus, "menu", &view.geometry)["path"], json!(["View", "Theme"]), "Native input must not finish on a popup sizing pass");
         }
     }
     let snapshot = viu::rich::menu_snapshot(&menus, "menu", &view.geometry);

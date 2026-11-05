@@ -10,6 +10,7 @@ pub struct Input {
     pub later: VecDeque<Vec<egui::Event>>,
     menu_path: VecDeque<String>,
     menu_wait_frames: u8,
+    menu_depth: usize,
 }
 fn finite_point(x: f64, y: f64) -> Result<egui::Pos2, String> {
     let point = egui::pos2(x as f32, y as f32);
@@ -36,10 +37,12 @@ impl Input {
                 let targets =
                     crate::rich::menu_targets(&view.model()["values"]["menu"], "menu", a)?;
                 let mut targets: VecDeque<_> = targets.into();
+                let depth = targets.len();
                 let first = targets.pop_front().ok_or("menu path is empty")?;
                 self.queue("click", &serde_json::json!({"id":first}), view)?;
                 self.menu_path = targets;
                 self.menu_wait_frames = 0;
+                self.menu_depth = depth;
                 return Ok(());
             }
             "focus" => {
@@ -181,7 +184,22 @@ impl Input {
         if !self.now.is_empty() || !self.later.is_empty() {
             return None;
         }
-        let target = self.menu_path.front()?.clone();
+        let Some(target) = self.menu_path.front().cloned() else {
+            if self.menu_depth == 0 {
+                return None;
+            }
+            let snapshot = crate::rich::menu_snapshot(&view.model()["values"]["menu"], "menu", &view.geometry);
+            if snapshot["path"].as_array().is_some_and(|path| path.len() == self.menu_depth) {
+                self.menu_depth = 0;
+                return None;
+            }
+            self.menu_wait_frames += 1;
+            if self.menu_wait_frames <= 3 {
+                return Some(Ok(()));
+            }
+            self.menu_depth = 0;
+            return Some(Err("Native menu did not produce visible popup geometry".into()));
+        };
         if !view.geometry.contains_key(&target) && self.menu_wait_frames < 3 {
             self.menu_wait_frames += 1;
             return Some(Ok(()));
@@ -191,6 +209,7 @@ impl Input {
         let result = self.queue("click", &serde_json::json!({"id":target}), view);
         if result.is_err() {
             self.menu_path.clear();
+            self.menu_depth = 0;
         }
         Some(result)
     }
