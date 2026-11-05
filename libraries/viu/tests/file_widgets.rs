@@ -223,11 +223,30 @@ fn menus_and_forms_refuse_disabled_and_stale_choices() {
     let mut invalid = bar.initial.clone();
     invalid[0]["icon"] = json!("absent");
     assert!(bar.validate(&invalid).is_err());
-    let open=Widget::new("prompt","dialog-form","",json!({"open":true,"instance":2,"title":"Delete","body":"Pinned selection","field":null,"choices":[{"id":"ok","label":"Delete","enabled":true}]}));
-    for payload in [json!({"choice":"ok"}),json!({"choice":"ok","instance":1})]{assert!(open.admit(&json!({}),"answer",&payload).is_err());}
-    assert!(open.admit(&json!({}),"answer",&json!({"choice":"ok","instance":2})).is_ok());
-    let nested=Widget::new("commands","command-bar","",json!([{"id":"parent","label":"Parent","enabled":false,"children":[{"id":"child","label":"Child","enabled":true}]}]));
-    assert!(nested.admit(&json!({}),"command",&json!({"command":"child"})).is_err());
+    let open = Widget::new(
+        "prompt",
+        "dialog-form",
+        "",
+        json!({"open":true,"instance":2,"title":"Delete","body":"Pinned selection","field":null,"choices":[{"id":"ok","label":"Delete","enabled":true}]}),
+    );
+    for payload in [json!({"choice":"ok"}), json!({"choice":"ok","instance":1})] {
+        assert!(open.admit(&json!({}), "answer", &payload).is_err());
+    }
+    assert!(
+        open.admit(&json!({}), "answer", &json!({"choice":"ok","instance":2}))
+            .is_ok()
+    );
+    let nested = Widget::new(
+        "commands",
+        "command-bar",
+        "",
+        json!([{"id":"parent","label":"Parent","enabled":false,"children":[{"id":"child","label":"Child","enabled":true}]}]),
+    );
+    assert!(
+        nested
+            .admit(&json!({}), "command", &json!({"command":"child"}))
+            .is_err()
+    );
 }
 
 fn scene(nodes: Value) -> String {

@@ -71,11 +71,20 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             {
                 return Err("modal form field must be string or null".into());
             }
-            if value.get("max_field_bytes").is_some_and(|v|v.as_u64().is_none_or(|n|n==0||n>1_048_576))
-                ||value.get("multiline").is_some_and(|v|!v.is_boolean())
-                ||value.get("rows").is_some_and(|v|v.as_u64().is_none_or(|n|!(1..=40).contains(&n)))
-                ||value.get("width").is_some_and(|v|v.as_f64().is_none_or(|n|!n.is_finite()||!(320.0..=1200.0).contains(&n)))
-            {return Err("invalid bounded form editor options".into());}
+            if value
+                .get("max_field_bytes")
+                .is_some_and(|v| v.as_u64().is_none_or(|n| n == 0 || n > 1_048_576))
+                || value.get("multiline").is_some_and(|v| !v.is_boolean())
+                || value
+                    .get("rows")
+                    .is_some_and(|v| v.as_u64().is_none_or(|n| !(1..=40).contains(&n)))
+                || value.get("width").is_some_and(|v| {
+                    v.as_f64()
+                        .is_none_or(|n| !n.is_finite() || !(320.0..=1200.0).contains(&n))
+                })
+            {
+                return Err("invalid bounded form editor options".into());
+            }
             entries(&value["choices"], 0, &mut BTreeSet::new())
         }
         _ => Err("unknown rich control".into()),
@@ -107,7 +116,9 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
         }
         "answer" => {
             if current["open"] != true
-                || current.get("instance").is_some_and(|instance|payload.get("instance")!=Some(instance))
+                || current
+                    .get("instance")
+                    .is_some_and(|instance| payload.get("instance") != Some(instance))
                 || find(&current["choices"], text(payload, "choice"))
                     .is_none_or(|item| item["enabled"] != true)
             {
@@ -117,7 +128,9 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
         "edit" => {
             if current["open"] != true
                 || !current["field"].is_string()
-                || payload.as_str().is_none_or(|s| s.len() > current["max_field_bytes"].as_u64().unwrap_or(4096) as usize)
+                || payload.as_str().is_none_or(|s| {
+                    s.len() > current["max_field_bytes"].as_u64().unwrap_or(4096) as usize
+                })
             {
                 return Err("form is not editable".into());
             }
@@ -168,7 +181,7 @@ fn menu(
                 .and_then(crate::icons::Icon::from_name)
             {
                 egui::Button::image_and_text(
-                    crate::icons::image_of(ui.ctx(),icon, 16.0, ui.visuals().text_color()),
+                    crate::icons::image_of(ui.ctx(), icon, 16.0, ui.visuals().text_color()),
                     label(item),
                 )
             } else {
@@ -351,7 +364,12 @@ pub(crate) fn draw(
                         json!({"choice":cancel["id"],"field":field,"instance":value["instance"]}),
                     );
                 }
-            } else if ui.input(|i| (value["multiline"]!=true&&i.key_pressed(egui::Key::Enter))||(value["multiline"]==true&&i.modifiers.ctrl&&(i.key_pressed(egui::Key::Enter)||i.key_pressed(egui::Key::S)))) {
+            } else if ui.input(|i| {
+                (value["multiline"] != true && i.key_pressed(egui::Key::Enter))
+                    || (value["multiline"] == true
+                        && i.modifiers.ctrl
+                        && (i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::S)))
+            }) {
                 if let Some(default) = value["choices"]
                     .as_array()
                     .into_iter()

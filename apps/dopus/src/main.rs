@@ -75,8 +75,10 @@ impl App {
         json!({"ready":self.ready(),"mode":self.mode,"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len(),"jobs":self.jobs.pending(),"last_service_us":self.last_service_us,"model_age_us":self.last_model_at.elapsed().as_micros(),"endpoint":"model applied/native input consumed; physical presentation is not measured"})
     }
     fn publish(&mut self, mut model: Value, ctx: &egui::Context) -> Result<(), String> {
-        self.base_model=model.clone();
-        if self.panel.form["open"]==true {model["values"]["form"]=self.panel.form.clone();}
+        self.base_model = model.clone();
+        if self.panel.form["open"] == true {
+            model["values"]["form"] = self.panel.form.clone();
+        }
         let style = (self.model["appearance"] != model["appearance"])
             .then(|| viu::appearance::resolve(&model["appearance"]))
             .transpose()?;
@@ -124,25 +126,44 @@ impl App {
                 return;
             }
         }
-        let open_macros=(command=="dopus.execute"&&args["id"]=="help.macros")
-            ||(command=="dopus.intent"&&["menu","toolbar"].iter().any(|id|args["id"]==*id)&&args["value"]["command"]=="help.macros");
-        let panel_args=if open_macros{
-            if self.model["values"]["form"]["open"]==true||self.panel.active(){
-                if let Some(reply)=reply{let _=reply.send((10,json!({"error_code":"BUSY","message":"Answer the current dialog first"})));}
+        let open_macros = (command == "dopus.execute" && args["id"] == "help.macros")
+            || (command == "dopus.intent"
+                && ["menu", "toolbar"].iter().any(|id| args["id"] == *id)
+                && args["value"]["command"] == "help.macros");
+        let panel_args = if open_macros {
+            if self.model["values"]["form"]["open"] == true || self.panel.active() {
+                if let Some(reply) = reply {
+                    let _ = reply.send((
+                        10,
+                        json!({"error_code":"BUSY","message":"Answer the current dialog first"}),
+                    ));
+                }
                 return;
             }
             Some(json!({"command":"open"}))
-        }else if self.panel.active()&&command=="dopus.intent"&&args["id"]=="form"{
-            Some(if args["action"]=="edit"{json!({"command":"edit","value":args["value"]})}else{json!({"command":"answer","choice":args["value"]["choice"],"field":args["value"]["field"],"instance":args["value"]["instance"]})})
-        }else if self.panel.active()&&command=="dopus.dialog.answer"{
-            Some(json!({"command":"answer","choice":args["choice"],"field":args["text"],"instance":args["instance"]}))
-        }else{None};
-        if let Some(args)=panel_args{
-            if let Err((error,reply))=self.panel.call(args,reply){
-                if let Some(reply)=reply{let _=reply.send((10,json!({"error_code":"BUSY","message":error})));}
-                else{self.input_error=Some(error);}
+        } else if self.panel.active() && command == "dopus.intent" && args["id"] == "form" {
+            Some(if args["action"] == "edit" {
+                json!({"command":"edit","value":args["value"]})
+            } else {
+                json!({"command":"answer","choice":args["value"]["choice"],"field":args["value"]["field"],"instance":args["value"]["instance"]})
+            })
+        } else if self.panel.active() && command == "dopus.dialog.answer" {
+            Some(
+                json!({"command":"answer","choice":args["choice"],"field":args["text"],"instance":args["instance"]}),
+            )
+        } else {
+            None
+        };
+        if let Some(args) = panel_args {
+            if let Err((error, reply)) = self.panel.call(args, reply) {
+                if let Some(reply) = reply {
+                    let _ = reply.send((10, json!({"error_code":"BUSY","message":error})));
+                } else {
+                    self.input_error = Some(error);
+                }
             }
-            ctx.request_repaint();return;
+            ctx.request_repaint();
+            return;
         }
         let quit = command == "dopus.quit"
             || (command == "dopus.execute" && args["id"] == "app.quit")
@@ -195,11 +216,16 @@ impl App {
             let model = self.native.as_ref().unwrap().model();
             let applied = self.publish(model, ctx);
             let result = result.and_then(|body| applied.map(|_| body));
-            if result.as_ref().is_ok_and(|body|body["panel"]=="macros"){
-                if let Err((error,reply))=self.panel.call(json!({"command":"open"}),reply){
-                    if let Some(reply)=reply{let _=reply.send((10,json!({"error_code":"BUSY","message":error})));}else{self.error=error;}
+            if result.as_ref().is_ok_and(|body| body["panel"] == "macros") {
+                if let Err((error, reply)) = self.panel.call(json!({"command":"open"}), reply) {
+                    if let Some(reply) = reply {
+                        let _ = reply.send((10, json!({"error_code":"BUSY","message":error})));
+                    } else {
+                        self.error = error;
+                    }
                 }
-                ctx.request_repaint();return;
+                ctx.request_repaint();
+                return;
             }
             if human_close && result.is_ok() {
                 if let Some(flag) = &self.input_close {
@@ -395,9 +421,18 @@ impl App {
         }
     }
     fn completions(&mut self, ctx: &egui::Context) {
-        let (changed,error)=self.panel.poll();
-        if changed{if let Err(error)=self.publish(self.base_model.clone(),ctx){self.error=error;}}
-        if let Some(error)=error{self.error=error.clone();if self.input_wait{self.input_error=Some(error);}}
+        let (changed, error) = self.panel.poll();
+        if changed {
+            if let Err(error) = self.publish(self.base_model.clone(), ctx) {
+                self.error = error;
+            }
+        }
+        if let Some(error) = error {
+            self.error = error.clone();
+            if self.input_wait {
+                self.input_error = Some(error);
+            }
+        }
         if let Some((token, result)) = self.capture.poll(ctx) {
             if let Some((expected, serial, revision, reply)) = self.capture_reply.take() {
                 if expected == token {
@@ -463,11 +498,21 @@ impl App {
                     self.input_error = Some(error.clone());
                 }
             }
-            if error.is_none()&&result.reply.as_ref().is_some_and(|r|r.body["panel"]=="macros"){
-                if let Err((error,reply))=self.panel.call(json!({"command":"open"}),reply){
-                    if let Some(reply)=reply{let _=reply.send((10,json!({"error_code":"BUSY","message":error})));}else{self.error=error;}
+            if error.is_none()
+                && result
+                    .reply
+                    .as_ref()
+                    .is_some_and(|r| r.body["panel"] == "macros")
+            {
+                if let Err((error, reply)) = self.panel.call(json!({"command":"open"}), reply) {
+                    if let Some(reply) = reply {
+                        let _ = reply.send((10, json!({"error_code":"BUSY","message":error})));
+                    } else {
+                        self.error = error;
+                    }
                 }
-                ctx.request_repaint();continue;
+                ctx.request_repaint();
+                continue;
             }
             if let Some(reply) = reply {
                 let answer = if let Some(error) = &error {
@@ -861,7 +906,12 @@ fn main() -> eframe::Result {
             let services = viu::runtime::Services {
                 macros: Some(macro_session.clone()),
             };
-            let panel=panel::Panel::new(app_dir.join("../../libraries/viu/mix/macros.mix"),services.clone(),wake.clone()).map_err(std::io::Error::other)?;
+            let panel = panel::Panel::new(
+                app_dir.join("../../libraries/viu/mix/macros.mix"),
+                services.clone(),
+                wake.clone(),
+            )
+            .map_err(std::io::Error::other)?;
             jobs.set_services(services.clone());
             let capture = viu::capture::Capture::new(
                 std::env::var_os("XDG_RUNTIME_DIR")
