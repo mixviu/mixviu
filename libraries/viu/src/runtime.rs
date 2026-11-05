@@ -123,11 +123,11 @@ impl Runtime {
                                     ("id".into(), sequence.to_string()),
                                 ]), body: args.to_string() };
                                 let tasks = tokio::task::LocalSet::new();
-                                rt.block_on(tasks.run_until(bounded(&worker_stop, async {
-                                    eval.dispatch_event(event).await?;
-                                    while eval.class_c_task_count() != 0 { tokio::task::yield_now().await; }
+                                rt.block_on(bounded(&worker_stop, async {
+                                    tasks.run_until(eval.dispatch_event(event)).await?;
+                                    tasks.await;
                                     Ok(())
-                                })))
+                                }))
                             }
                             _ => Err("stale generation".into()),
                         };

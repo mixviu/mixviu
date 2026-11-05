@@ -23,5 +23,3 @@ mimedb = { path = "libraries/mimedb" }
 [patch.crates-io]
 eframe = { path = "vendor/eframe" }
 egui-wgpu = { path = "vendor/egui-wgpu" }
-calloop = { path = "vendor/calloop" }
-dirs-sys = { path = "vendor/dirs-sys" }

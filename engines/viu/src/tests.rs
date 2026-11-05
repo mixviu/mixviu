@@ -12,7 +12,8 @@ fn ready(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> Completion {
 }
 fn input(ctx: &egui::Context, view: &mut SceneView, events: Vec<egui::Event>) -> Vec<Event> {
     let mut result=Vec::new();
-    let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(440.0,1000.0))), events, ..Default::default() }, |ui| { result=view.show(ui); });
+    let mut output = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(440.0,1000.0))), events, ..Default::default() }, |ui| { result=view.show(ui); });
+    output.textures_delta.clear();
     result
 }
 fn click(ctx: &egui::Context, view: &mut SceneView, id: &str) -> Vec<Event> {
