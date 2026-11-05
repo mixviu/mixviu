@@ -307,10 +307,15 @@ impl BusHandler for Local {
                     None => Err(failure("no native Bus backend configured")),
                 };
             }
-            let args = to_json(args)?;
-            let body: Json = match args.get("body").and_then(Json::as_str) {
-                Some(s) => serde_json::from_str(s).map_err(|_| failure("invalid body"))?,
-                None => args,
+            // The native handler contract already carries typed Mix values.
+            // Encode only when crossing a wire; retain legacy JSON-string bodies.
+            let payload = match args {
+                Value::Map(map) => map.get("body").unwrap_or(args),
+                _ => args,
+            };
+            let mut body: Json = match payload {
+                Value::String(s) => serde_json::from_str(s).map_err(|_| failure("invalid body"))?,
+                value => to_json(value)?,
             };
             let result = match command {
                 "shell.scene.describe" => {
@@ -324,7 +329,7 @@ impl BusHandler for Local {
                         if !body["value"].is_object() {
                             return Err(failure("model must be a map"));
                         }
-                        *self.model.borrow_mut() = Some(body["value"].clone());
+                        *self.model.borrow_mut() = body.as_object_mut().and_then(|m| m.remove("value"));
                     }
                     json!({"ok":true})
                 }

@@ -116,3 +116,19 @@ fn drop_cancels_sleeping_behaviour_and_reaps_worker() {
     drop(runtime);
     assert!(start.elapsed() < Duration::from_secs(1));
 }
+
+#[test]
+fn typed_and_legacy_bodies_preserve_nested_model_and_publication_snapshot() {
+    for body in ["$payload", "json_encode($payload)"] {
+        let source = format!(r#"$ctx=viu_context()
+$payload={{generation:$ctx.generation,value:{{items:[{{id:"a",cells:["line\nnext","é"]}}], flag:true, empty:nil}}}}
+send "viu-local" "scenes.model" body={body}
+$payload.value.items[0].id="mutated after publication"
+"#);
+        let (mut runtime, wakes) = runtime(2);
+        runtime.load(program(&source)).unwrap();
+        let done = next(&runtime, &wakes);
+        assert!(done.error.is_none(), "{:?}", done.error);
+        assert_eq!(done.model, Some(json!({"items":[{"id":"a","cells":["line\nnext","é"]}],"flag":true,"empty":null})));
+    }
+}

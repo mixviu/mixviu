@@ -86,6 +86,7 @@ fn next(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> viu::runtime::Completi
 }
 fn main() {
     let profile = std::env::var_os("VIU_DIAGNOSTIC_PROFILE").is_some();
+    let string_body = std::env::var_os("VIU_DIAGNOSTIC_STRING_BODY").is_some();
     // Attribution run only: timer/log overhead is not baseline throughput.
     let source = if profile {
         BEHAVIOUR.replace(r#"  $model.visible = slice($model.rows, 0, 256)
@@ -96,8 +97,11 @@ fn main() {
   $p2 = monotonic()
   send "viu-local" "scenes.model" body=$encoded
   $p3 = monotonic()
-  eprint(json_encode({slice_us:($p1-$p0)*1000000,encode_us:($p2-$p1)*1000000,send_us:($p3-$p2)*1000000}))"#)
+  eprint(json_encode({slice_us:($p1-$p0)*1000000,prepare_us:($p2-$p1)*1000000,send_us:($p3-$p2)*1000000}))"#)
     } else { BEHAVIOUR.into() };
+    let source = if string_body { source } else {
+        source.replace("json_encode({generation:$ctx.generation,value:$model})", "{generation:$ctx.generation,value:$model}")
+    };
     let started = Instant::now();
     let (tx, rx) = mpsc::channel();
     let mut runtime = Runtime::new(
@@ -181,6 +185,6 @@ fn main() {
     assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
     println!(
         "{}",
-        json!({"profile_instrumented":profile,"boundary":"synthetic512-row controller with256 visible rows + JSON model + same egui scene binding/template/paint CPU; excludes GPU, broker, compositor and physical presentation","samples":31,"warmups":4,"startup_model_ready_us":startup_us,"idle_no_completion_ms":idle.elapsed().as_millis(),"resources":std::fs::read_to_string("/proc/self/status").unwrap_or_default(),"results":results})
+        json!({"profile_instrumented":profile,"publication":if string_body {"legacy JSON string"} else {"typed native handler"},"boundary":"synthetic512-row controller with256 visible rows + JSON model + same egui scene binding/template/paint CPU; excludes GPU, broker, compositor and physical presentation","samples":31,"warmups":4,"startup_model_ready_us":startup_us,"idle_no_completion_ms":idle.elapsed().as_millis(),"resources":std::fs::read_to_string("/proc/self/status").unwrap_or_default(),"results":results})
     );
 }

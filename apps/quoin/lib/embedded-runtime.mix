@@ -9,7 +9,11 @@ fn failure($code, $message)
 end
 
 fn call($target, $command, $args)
-  send $target $command body=json_encode($args) timeout=5
+  if $target == "viu-local" then
+    send $target $command body=$args timeout=5
+  else
+    send $target $command body=json_encode($args) timeout=5
+  end
   $code = $rc
   $body = $result
   if type($body) == "string" and $body != "" then
