@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 use viu::widgets::Widgets;
+use std::time::Duration;
 fn completion(runtime: &Runtime) -> viu::runtime::Completion {
     let start = std::time::Instant::now();
     loop {
