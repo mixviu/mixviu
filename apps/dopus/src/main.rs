@@ -686,9 +686,20 @@ fn commands() -> Vec<String> {
 }
 fn main() -> eframe::Result {
     let args = std::env::args().collect::<Vec<_>>();
-    if args.get(1).is_some_and(|a|a=="--macro"){
-        let Some(path)=args.get(2)else{eprintln!("usage: viu-dopus --macro SCRIPT [ARG...]");std::process::exit(2);};
-        std::process::exit(viu::macro_host::run(PathBuf::from(path),args[3..].to_vec()));
+    if args.get(1).is_some_and(|a| a == "--macro") {
+        let Some(path) = args.get(2) else {
+            eprintln!("usage: viu-dopus --macro SCRIPT [ARG...]");
+            std::process::exit(2);
+        };
+        std::process::exit(viu::macro_host::run(
+            PathBuf::from(path),
+            args[3..].to_vec(),
+        ));
+    }
+    // Keep the native runner's nested-interpreter argv form. It enters this
+    // artifact's own Mix library, just like the explicit --macro flag.
+    if let Some(path)=args.get(1).filter(|p|p.ends_with(".mix")&&std::path::Path::new(p).is_file()){
+        std::process::exit(viu::macro_host::run(PathBuf::from(path),args[2..].to_vec()));
     }
     let mode = args
         .get(1)

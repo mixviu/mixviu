@@ -359,7 +359,9 @@ mod tests {
     #[test]
     fn dropping_a_runner_requests_termination_and_the_manager_reaps() {
         let temp = tempfile::tempdir().unwrap();
-        let mix=crate::test_mix::select().expect("explicit CBC macro binary").expect("CBC binary");
+        let mix = crate::test_mix::select()
+            .expect("explicit CBC macro binary")
+            .expect("CBC binary");
         let roots = Roots {
             user: temp.path().join("user"),
             builtin: temp.path().join("builtin"),

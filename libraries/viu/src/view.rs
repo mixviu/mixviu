@@ -192,6 +192,10 @@ impl SceneView {
                             });
                     }
                     "control" => {
+                        // Container gaps arrange children; they must not
+                        // rewrite the native control's internal theme metrics.
+                        let spacing=ui.ctx().style().spacing.item_spacing;
+                        ui.spacing_mut().item_spacing=spacing;
                         match Widget::decode(&node.ports["definition"]) {
                             Ok(widget)=> {
                                 for intent in self.widgets.widget(ui,&widget,&self.tree.model) {

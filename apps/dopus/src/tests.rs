@@ -129,34 +129,52 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
 }
 
 #[test]
-fn native_queued_confirmations_keep_selection_and_core_tokens_across_other_forms(){
-    let dir=tempfile::tempdir().unwrap();
-    for name in ["a.txt","b.txt"]{std::fs::write(dir.path().join(name),name).unwrap();}
-    std::fs::create_dir(dir.path().join("profile")).unwrap();
-    let profile=dir.path().join("profile");
-    std::fs::write(profile.join("config.conf.mix"),json!({"left":{"path":dir.path(),"previews":false},"right":{"path":dir.path(),"previews":false}}).to_string()).unwrap();
-    let contract:Value=serde_json::from_str(&std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("contract.json")).unwrap()).unwrap();
-    let mut native=native::Native::new(&profile,contract,Arc::new(||{}));
-    let ctx=egui::Context::default();
-    let end=Instant::now()+Duration::from_secs(5);
-    while native.model()["ready"]!=true{native.poll(&ctx);assert!(Instant::now()<end);std::thread::sleep(Duration::from_millis(2));}
-    native.action("help.about",&json!({})).unwrap();
-    for name in ["a.txt","b.txt"]{
-        native.intent(&json!({"id":"left-tree","action":"select","value":{"key":dir.path().join(name)}})).unwrap();
-        native.action("file.delete",&json!({})).unwrap();
+fn native_queued_confirmations_keep_selection_and_core_tokens_across_other_forms() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["a.txt", "b.txt"] {
+        std::fs::write(dir.path().join(name), name).unwrap();
     }
-    assert_eq!(native.model()["values"]["form"]["title"],"About Dopus");
-    native.answer("ok",None).unwrap();
-    let first=native.model()["values"]["form"].clone();
+    std::fs::create_dir(dir.path().join("profile")).unwrap();
+    let profile = dir.path().join("profile");
+    std::fs::write(profile.join("config.conf.mix"),json!({"left":{"path":dir.path(),"previews":false},"right":{"path":dir.path(),"previews":false}}).to_string()).unwrap();
+    let contract: Value = serde_json::from_str(
+        &std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("contract.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let mut native = native::Native::new(&profile, contract, Arc::new(|| {}));
+    let ctx = egui::Context::default();
+    let end = Instant::now() + Duration::from_secs(5);
+    while native.model()["ready"] != true {
+        native.poll(&ctx);
+        assert!(Instant::now() < end);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    native.action("help.about", &json!({})).unwrap();
+    for name in ["a.txt", "b.txt"] {
+        native
+            .intent(
+                &json!({"id":"left-tree","action":"select","value":{"key":dir.path().join(name)}}),
+            )
+            .unwrap();
+        native.action("file.delete", &json!({})).unwrap();
+    }
+    assert_eq!(native.model()["values"]["form"]["title"], "About Dopus");
+    native.answer("ok", None).unwrap();
+    let first = native.model()["values"]["form"].clone();
     assert!(first["body"].as_str().unwrap().contains("a.txt"));
-    native.answer("cancel",None).unwrap();
-    let second=native.model()["values"]["form"].clone();
+    native.answer("cancel", None).unwrap();
+    let second = native.model()["values"]["form"].clone();
     assert!(second["body"].as_str().unwrap().contains("b.txt"));
-    assert_ne!(first["instance"],second["instance"]);
-    native.answer("ok",None).unwrap();
-    let end=Instant::now()+Duration::from_secs(5);
-    while native.model()["busy"]==true{native.poll(&ctx);assert!(Instant::now()<end);std::thread::sleep(Duration::from_millis(2));}
+    assert_ne!(first["instance"], second["instance"]);
+    native.answer("ok", None).unwrap();
+    let end = Instant::now() + Duration::from_secs(5);
+    while native.model()["busy"] == true {
+        native.poll(&ctx);
+        assert!(Instant::now() < end);
+        std::thread::sleep(Duration::from_millis(2));
+    }
     assert!(dir.path().join("a.txt").exists());
     assert!(!dir.path().join("b.txt").exists());
-    assert!(native.answer("ok",None).is_err());
+    assert!(native.answer("ok", None).is_err());
 }
