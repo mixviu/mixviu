@@ -1,5 +1,5 @@
 [workspace]
-members = ["libraries/expr", "libraries/strict", "libraries/scene"]
+members = ["libraries/expr", "libraries/strict", "libraries/scene", "libraries/mix", "libraries/paths", "libraries/mimedb", "libraries/viu", "engines/viu"]
 resolver = "3"
 
 [workspace.package]
@@ -11,3 +11,17 @@ repository = "https://github.com/mixviu/mixviu"
 
 [workspace.lints.clippy]
 mod_module_files = "deny"
+
+[workspace.dependencies]
+libc = "0.2"
+futures-util = "=0.3.34"
+notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
+mimedb = { path = "libraries/mimedb" }
+
+[patch.crates-io]
+eframe = { path = "vendor/eframe" }
+egui-wgpu = { path = "vendor/egui-wgpu" }
+calloop = { path = "vendor/calloop" }
+dirs-sys = { path = "vendor/dirs-sys" }

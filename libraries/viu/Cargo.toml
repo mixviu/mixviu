@@ -1,0 +1,14 @@
+[package]
+name = "viu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mix = { path = "../mix", features = ["regex"] }
+scene = { path = "../scene" }
+serde_json = "=1.0.151"
+tokio = { version = "=1.53.1", features = ["rt", "time", "macros", "sync"] }
+egui = { version = "=0.37.0", default-features = false, features = ["default_fonts"] }

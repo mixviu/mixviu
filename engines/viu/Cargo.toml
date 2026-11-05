@@ -1,0 +1,14 @@
+[package]
+name = "viu-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+viu = { path = "../../libraries/viu" }
+mix = { path = "../../libraries/mix" }
+serde_json = "=1.0.151"
+eframe = { version = "=0.37.0", default-features = false, features = ["default_fonts", "wayland", "wgpu_no_default_features"] }
+wgpu = { version = "30.0", default-features = false, features = ["std", "vulkan", "gles", "wgsl"] }
