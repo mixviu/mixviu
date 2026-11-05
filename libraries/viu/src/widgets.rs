@@ -320,10 +320,10 @@ impl Widgets {
                     .filter(|c| c.len() == 4)
                 {
                     text = text.color(Color32::from_rgba_unmultiplied(
-                        colour[0].as_u64().unwrap_or(255) as u8,
-                        colour[1].as_u64().unwrap_or(255) as u8,
-                        colour[2].as_u64().unwrap_or(255) as u8,
-                        colour[3].as_u64().unwrap_or(255) as u8,
+                        whole(&colour[0]).unwrap_or(255) as u8,
+                        whole(&colour[1]).unwrap_or(255) as u8,
+                        whole(&colour[2]).unwrap_or(255) as u8,
+                        whole(&colour[3]).unwrap_or(255) as u8,
                     ));
                 }
                 ui.label(text)

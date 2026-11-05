@@ -241,6 +241,7 @@ fn reload_retires_inflight_request_and_replies_superseded() {
         view: Some(SceneView::with_model(include_str!("../scene.mix"), model.clone()).unwrap()),
         model,
         definitions: controller::composition(),
+        scene_source: include_str!("../scene.mix").into(),
         runtime: Some(runtime),
         bus: NativeBus::offline(),
         pending: BTreeMap::new(),

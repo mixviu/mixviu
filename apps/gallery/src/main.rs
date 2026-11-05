@@ -21,6 +21,7 @@ struct Gallery {
     model: Value,
     view: Option<SceneView>,
     definitions: Vec<Widget>,
+    scene_source: String,
     runtime: Option<Runtime>,
     bus: NativeBus,
     pending: BTreeMap<u64, tokio::sync::oneshot::Sender<(u8, Value)>>,
@@ -73,7 +74,7 @@ impl Gallery {
             Some(view) => view.apply_model(model.clone())?,
             None => {
                 self.view = Some(SceneView::with_model(
-                    include_str!("../scene.mix"),
+                    &self.scene_source,
                     model.clone(),
                 )?)
             }
@@ -431,6 +432,7 @@ fn main() -> eframe::Result {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("apps/gallery/gallery.mix"));
     let service = format!("gallery-{mode}");
+    let scene_source=std::fs::read_to_string(path.with_file_name("scene.mix")).expect("gallery scene layout");
     let title = format!(
         "Viu Gallery — {}",
         if mode == "rust" { "Rust" } else { "Mix" }
@@ -476,7 +478,7 @@ fn main() -> eframe::Result {
             };
             let view = if mode == "rust" {
                 Some(
-                    SceneView::with_model(include_str!("../scene.mix"), model.clone())
+                    SceneView::with_model(&scene_source, model.clone())
                         .expect("gallery scene"),
                 )
             } else {
@@ -491,6 +493,7 @@ fn main() -> eframe::Result {
                 model,
                 view,
                 definitions,
+                scene_source,
                 runtime,
                 bus,
                 pending: BTreeMap::new(),

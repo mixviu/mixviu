@@ -118,7 +118,9 @@ impl SceneView {
                 if let Some(width) = num(node, "width").or(num(node, "min_width")) {
                     ui.set_width(width);
                 }
-                ui.spacing_mut().item_spacing = Vec2::splat(num(node, "gap").unwrap_or(4.0));
+                if node.family!="control" {
+                    ui.spacing_mut().item_spacing=Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0));
+                }
                 match node.family.as_str() {
                     "grid" => {
                         let columns=num(node,"columns").unwrap_or(2.0) as usize;
@@ -127,9 +129,10 @@ impl SceneView {
                         egui::Grid::new(text(node,"identity")).num_columns(columns).min_col_width(width).max_col_width(width)
                             .spacing([gap,num(node,"row_gap").unwrap_or(3.0)]).show(ui,|ui| {
                                 for (index,child) in children(node).enumerate() {
-                                    ui.scope(|ui| { ui.set_min_width(width); ui.set_max_width(width);
+                                    let cell=ui.scope(|ui| { ui.set_min_width(width); ui.set_max_width(width);
                                         self.node(ui,child,nodes,route,depth+1,events);
                                     });
+                                    self.geometry.insert(child.into(),cell.response.rect);
                                     if index%columns==columns-1 { ui.end_row(); }
                                 }
                             });
@@ -168,7 +171,9 @@ impl SceneView {
                     }
                     "image" => {
                         if let Some(icon)=text(node,"src").strip_prefix("icon:").and_then(crate::icons::Icon::from_name) {
-                            ui.add(crate::icons::image(icon,num(node,"w").or(num(node,"h")).unwrap_or(24.0),ui.visuals().text_color()));
+                            let w=num(node,"w").or(num(node,"h")).unwrap_or(24.0);
+                            let h=num(node,"h").unwrap_or(w);
+                            ui.add(crate::icons::image(icon,w,ui.visuals().text_color()).fit_to_exact_size(Vec2::new(w,h)));
                         }
                     }
                     "spacer" => {
