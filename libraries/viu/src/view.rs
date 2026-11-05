@@ -145,6 +145,9 @@ impl SceneView {
                                 if let Some(height) = num(node, "height") {
                                     ui.set_min_height(height);
                                 }
+                                if children(node).next().is_none() {
+                                    ui.allocate_space(Vec2::new(num(node,"min_width").or(num(node,"width")).unwrap_or(0.0),num(node,"height").unwrap_or(0.0)));
+                                }
                                 let mut draw = |ui: &mut egui::Ui| {
                                     for child in children(node) {
                                         self.node(ui, child, nodes, route, depth + 1, events);

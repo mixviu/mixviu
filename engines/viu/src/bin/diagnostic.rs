@@ -38,7 +38,7 @@ on intent
   reply(0, "{}")
 end
 "#;
-const SCENE: &str = "---\nscene: 1\nname: diagnostic\ncitizen: diagnostic\nmodel: {rows:[],selected:\"row_0\",offset:0}\n---\n```mix\nroot: {widget:\"column\",children:[\"selected\",\"list\"]}\nselected:{widget:\"text\",text:\"= $model.selected\"}\nlist:{widget:\"list\",rows:\"= $model.rows\",row:\"row\"}\nrow:{widget:\"row\",children:[\"text\"]}\ntext:{widget:\"text\",text:\"= $item.text\"}\n```\n";
+const SCENE: &str = "---\nscene: 1\nname: diagnostic\ncitizen: diagnostic\nmodel: {\"rows\":[],\"selected\":\"row_0\",\"offset\":0}\n---\n```mix\nroot: {widget:\"column\",children:[\"selected\",\"list\"]}\nselected:{widget:\"text\",text:\"= $model.selected\"}\nlist:{widget:\"list\",rows:\"= $model.rows\",row:\"row\"}\nrow:{widget:\"row\",children:[\"text\"]}\ntext:{widget:\"text\",text:\"= $item.text\"}\n```\n";
 fn native(model: &mut Value, args: &Value) {
     match args["kind"].as_str().unwrap() {
         "select" => model["selected"] = args["id"].clone(),

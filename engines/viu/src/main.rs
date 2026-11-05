@@ -71,7 +71,8 @@ impl eframe::App for Client {
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
         }
-        for event in self.view.show(ui) {
+        let events = egui::ScrollArea::vertical().id_salt("scene-root").show(ui, |ui| self.view.show(ui)).inner;
+        for event in events {
             eprintln!("VIU input command={} body={}", event.command, event.body);
             if let Err(refusal) = self.runtime.event(event.command, event.body) {
                 self.error = format!("Input refused: {refusal:?}");
