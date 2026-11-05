@@ -38793,6 +38793,7 @@ mod char_aware_tests {
     #[cfg(feature = "crypto")]
     #[test]
     fn broken_digests_carry_the_warning() {
+        #[cfg(feature = "crypto")]
         for &algo in super::DigestAlgo::ALL {
             let name = format!("hash_{}", algo.name());
             let name = name.as_str();

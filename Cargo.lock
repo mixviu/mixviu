@@ -5163,6 +5163,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "viu-dopus"
+version = "0.1.0"
+dependencies = [
+ "bus",
+ "dopus-core",
+ "eframe",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "viu",
+ "wgpu",
+]
+
+[[package]]
 name = "viu-gallery"
 version = "0.1.0"
 dependencies = [

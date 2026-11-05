@@ -279,8 +279,10 @@ impl Runtime {
         self.rx.as_ref()?.try_recv().ok()
     }
     pub fn drain(&self) -> Vec<Completion> {
-        let mut results=Vec::new();
-        while let Some(result)=self.try_completion(){results.push(result);}
+        let mut results = Vec::new();
+        while let Some(result) = self.try_completion() {
+            results.push(result);
+        }
         results
     }
     pub fn accepts(&self, completion: &Completion) -> bool {
