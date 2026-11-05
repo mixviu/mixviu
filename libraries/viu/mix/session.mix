@@ -13,7 +13,12 @@ fn session_revision($value)
   return $value
 end
 fn session_older($a,$b)
-  return len($a)<len($b) or (len($a)==len($b) and $a<$b)
+  if len($a)!=len($b) then return len($a)<len($b) end
+  for $i=0 to len($a)-1
+    $left=ord(slice($a,$i,$i+1));$right=ord(slice($b,$i,$i+1))
+    if $left!=$right then return $left<$right end
+  end
+  return false
 end
 fn session_answer($state,$rc,$body,$error)
   $state.changed=false;$state.retry=nil;$state.error=nil
@@ -22,7 +27,7 @@ fn session_answer($state,$rc,$body,$error)
     return $state
   end
   if $rc!=0 then
-    if type($body)=="map" and $body.status=="wrong_target" and not $state.retargeted and type($body.binding.instance)=="string" and $body.binding.instance!="" and $body.binding.profile==$state.binding.profile then
+    if type($body)=="map" and $body.status=="wrong_target" and not $state.retargeted and type($body.binding)=="map" and type($body.binding.instance)=="string" and $body.binding.instance!="" and $body.binding.profile==$state.binding.profile then
       $state.binding.instance=$body.binding.instance;$state.retargeted=true;$state.retry=0
     elif $rc>=20 or $rc<0 or $body==nil or $body=="" then
       $state.failures=$state.failures+1;$state.retry=min(30,0.25*pow(2,min(16,$state.failures-1)))

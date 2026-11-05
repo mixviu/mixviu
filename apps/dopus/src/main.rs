@@ -309,7 +309,10 @@ impl App {
                 let _ = reply.send((0, json!({"ok":true,"mode":self.mode,"ready":self.ready()})));
             }
             "dopus.session.state" => {
-                let _=reply.send((0,json!({"snapshot":self.session.snapshot,"error":self.session.error})));
+                let _ = reply.send((
+                    0,
+                    json!({"snapshot":self.session.snapshot,"error":self.session.error}),
+                ));
             }
             "dopus.state" | "dopus.ui.tree" => {
                 // Optional observation avoids copying the entire rendered row
@@ -619,25 +622,41 @@ impl App {
             let Ok(notice) = self.bus.notices.try_recv() else {
                 break;
             };
-            self.session.hint(&notice.command,&notice.args);
+            self.session.hint(&notice.command, &notice.args);
             self.notices.push_back(notice);
         }
-        if let Some(snapshot)=self.session.poll(){self.session_pending=Some(snapshot);}
+        if let Some(snapshot) = self.session.poll() {
+            self.session_pending = Some(snapshot);
+        }
         if self.ready() {
-            if let Some(mut snapshot)=self.session_pending.take(){
-                if viu::appearance::resolve(&snapshot["appearance"]).is_err(){
-                    for key in ["scheme","mode","style","contrast","accent"] {snapshot["appearance"].as_object_mut().unwrap().remove(key);}
-                }
-                if viu::appearance::resolve(&snapshot["appearance"]).is_ok(){
-                    self.contract=self.default_contract.clone();
-                    for action in self.contract["actions"].as_array_mut().unwrap(){
-                        if let Some(keys)=snapshot["keymap"].get(action["id"].as_str().unwrap()){action["keys"]=keys.clone();}
+            if let Some(mut snapshot) = self.session_pending.take() {
+                if viu::appearance::resolve(&snapshot["appearance"]).is_err() {
+                    for key in ["scheme", "mode", "style", "contrast", "accent"] {
+                        snapshot["appearance"].as_object_mut().unwrap().remove(key);
                     }
-                    self.call("dopus.session".into(),json!({"appearance":snapshot["appearance"],"keymap":snapshot["keymap"]}),BTreeMap::new(),None,ctx);
-                }else{self.error="Session appearance refused; previous look retained".into();}
+                }
+                if viu::appearance::resolve(&snapshot["appearance"]).is_ok() {
+                    self.contract = self.default_contract.clone();
+                    for action in self.contract["actions"].as_array_mut().unwrap() {
+                        if let Some(keys) = snapshot["keymap"].get(action["id"].as_str().unwrap()) {
+                            action["keys"] = keys.clone();
+                        }
+                    }
+                    self.call(
+                        "dopus.session".into(),
+                        json!({"appearance":snapshot["appearance"],"keymap":snapshot["keymap"]}),
+                        BTreeMap::new(),
+                        None,
+                        ctx,
+                    );
+                } else {
+                    self.error = "Session appearance refused; previous look retained".into();
+                }
             }
         }
-        if let Some(at)=self.session.deadline(){ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));}
+        if let Some(at) = self.session.deadline() {
+            ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
+        }
         if let Some(runtime) = &mut self.runtime {
             while let Some(notice) = self.notices.front() {
                 if runtime
@@ -937,11 +956,16 @@ fn main() -> eframe::Result {
                 wake.clone(),
             );
             let mut jobs = Jobs::new(4, wake.clone());
-            let session=viu::session::Session::new(
-                app_dir.join("../../libraries/viu/mix/session-runtime.mix"),"dopus",
-                std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap_or_else(|_|"host".into()).trim(),
-                wake.clone(),bus.backend(),
-            ).map_err(std::io::Error::other)?;
+            let session = viu::session::Session::new(
+                app_dir.join("../../libraries/viu/mix/session-runtime.mix"),
+                "dopus",
+                std::fs::read_to_string("/proc/sys/kernel/hostname")
+                    .unwrap_or_else(|_| "host".into())
+                    .trim(),
+                wake.clone(),
+                bus.backend(),
+            )
+            .map_err(std::io::Error::other)?;
             jobs.set_native_backend(bus.backend_maker());
             let macro_session = macros::Session::with_roots(
                 "dopus",

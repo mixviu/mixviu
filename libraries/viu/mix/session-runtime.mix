@@ -7,8 +7,10 @@ fn session_read($state)
     for $topic in $session.session_topics() subscribe($topic) end
     send "settingsd" "settings.get" body={binding:$state.binding,view:"values"}
     $state=$session.session_answer($state,$rc,$reply,if type($result)=="string" then $result else nil end)
-  catch $message
-    $state.changed=false;$state.error=$message;$state.retry=0.25
+  catch $message,$error
+    $state.changed=false;$state.error=$message
+    if starts_with($error.code,"SESSION_") then $state.retry=nil
+    else $state.failures=$state.failures+1;$state.retry=min(30,0.25*pow(2,min(16,$state.failures-1))) end
   end
   $appearance=$session.session_appearance($state.values,$state.app)
   $keys=if $state.lost then $state.last_keys ?? {} else $session.session_keys($state.values,$state.app) end

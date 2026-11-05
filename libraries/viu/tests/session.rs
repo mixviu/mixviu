@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use serde_json::json;
-use std::{sync::{Arc,mpsc},time::{Duration,Instant}};
-use viu::runtime::{Program,Runtime};
+use std::{
+    sync::{Arc, mpsc},
+    time::{Duration, Instant},
+};
+use viu::runtime::{Program, Runtime};
 
 #[test]
 fn mix_session_revisions_retarget_refusals_and_appearance_are_not_f64_state() {
-    let source=r#"
+    let source = r#"
 $s=require("session.mix")
 $state=$s.session_new("example")
 $state=$s.session_answer($state,10,{status:"wrong_target",binding:{instance:"real",profile:"default"}},nil)
@@ -28,27 +31,58 @@ on verify
   reply(0,json_encode({verified:true}))
 end
 "#;
-    let (tx,rx)=mpsc::channel();
-    let mut runtime=Runtime::new(2,Arc::new(move||{let _=tx.send(());}),None);
-    runtime.load(Program{path:std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mix/session-probe.mix"),source:source.into(),scene:"session-test".into(),citizen:"session-test".into()}).unwrap();
-    let seq=runtime.event("verify".into(),json!({})).unwrap();
-    let until=Instant::now()+Duration::from_secs(5);
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(
+        2,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+    );
+    runtime
+        .load(Program {
+            path: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("mix/session-probe.mix"),
+            source: source.into(),
+            scene: "session-test".into(),
+            citizen: "session-test".into(),
+        })
+        .unwrap();
+    let seq = runtime.event("verify".into(), json!({})).unwrap();
+    let until = Instant::now() + Duration::from_secs(5);
     loop {
-        for done in runtime.drain(){
-            assert!(done.error.is_none(),"{:?}",done.error);
-            if done.sequence==seq {assert_eq!(done.reply.unwrap().body,json!({"verified":true}));return;}
+        for done in runtime.drain() {
+            assert!(done.error.is_none(), "{:?}", done.error);
+            if done.sequence == seq {
+                assert_eq!(done.reply.unwrap().body, json!({"verified":true}));
+                return;
+            }
         }
-        assert!(Instant::now()<until);
-        let _=rx.recv_timeout(Duration::from_millis(20));
+        assert!(Instant::now() < until);
+        let _ = rx.recv_timeout(Duration::from_millis(20));
     }
 }
 
 #[test]
 fn shared_design_applies_session_density_roundness_and_text_scale_once() {
-    let ordinary=viu::appearance::resolve(&json!({})).unwrap().style;
-    let changed=viu::appearance::resolve(&json!({"roundness":"square","density":"compact","text_scale":1.5,"reduced_motion":true})).unwrap().style;
-    assert_eq!(changed.visuals.widgets.inactive.corner_radius,egui::CornerRadius::ZERO);
-    assert!((changed.spacing.interact_size.y-ordinary.spacing.interact_size.y*0.85).abs()<0.01);
-    assert!((changed.text_styles[&egui::TextStyle::Body].size-ordinary.text_styles[&egui::TextStyle::Body].size*1.5).abs()<0.01);
-    assert_eq!(changed.animation_time,0.0);
+    let ordinary = viu::appearance::resolve(&json!({})).unwrap().style;
+    let changed = viu::appearance::resolve(
+        &json!({"roundness":"square","density":"compact","text_scale":1.5,"reduced_motion":true}),
+    )
+    .unwrap()
+    .style;
+    assert_eq!(
+        changed.visuals.widgets.inactive.corner_radius,
+        egui::CornerRadius::ZERO
+    );
+    assert!(
+        (changed.spacing.interact_size.y - ordinary.spacing.interact_size.y * 0.85).abs() < 0.01
+    );
+    assert!(
+        (changed.text_styles[&egui::TextStyle::Body].size
+            - ordinary.text_styles[&egui::TextStyle::Body].size * 1.5)
+            .abs()
+            < 0.01
+    );
+    assert_eq!(changed.animation_time, 0.0);
 }
