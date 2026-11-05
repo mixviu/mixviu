@@ -110,6 +110,7 @@ impl Runtime {
                 let start = Instant::now();
                 let (generation, sequence, result) = match request {
                     Request::Load(generation, program) => {
+                        if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                         // A fresh evaluator never retains old closures or module state.
                         let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), backend: backend.clone() });
                         let stdout = SharedBuf::new();
@@ -157,7 +158,9 @@ impl Runtime {
                 let result = result.and_then(|_| fault.map_or(Ok(()), Err));
                 // Failed callbacks never publish a partial model to the UI.
                 if result.is_err() { model = None; }
-                if sequence == 0 && result.is_err() { current = None; }
+                if (sequence == 0 && result.is_err()) || result.as_ref().is_err_and(|e| e.contains("deadline exceeded")) {
+                    if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
+                }
                 let completion = Completion { generation, sequence, model, error: result.err(), elapsed: start.elapsed(), stdout, stderr };
                 if results.send(completion).is_err() { break; }
                 wake();

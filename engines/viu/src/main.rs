@@ -23,8 +23,16 @@ impl eframe::App for Client {
                 continue;
             }
             self.last_sequence = done.sequence;
-            eprintln!("VIU completion generation={} sequence={} callback_us={} error={:?}", done.generation, done.sequence, done.elapsed.as_micros(), done.error);
-            if done.error.is_none() { self.error.clear(); }
+            eprintln!(
+                "VIU completion generation={} sequence={} callback_us={} error={:?}",
+                done.generation,
+                done.sequence,
+                done.elapsed.as_micros(),
+                done.error
+            );
+            if done.error.is_none() {
+                self.error.clear();
+            }
             if let Some(error) = done.error {
                 self.error = error;
             }
@@ -37,10 +45,16 @@ impl eframe::App for Client {
         ui.label("Quoin volume — safe audio fixture");
         if ui.button("Reload scene and behaviour").clicked() {
             let scene = self.program.path.parent().unwrap().join("scene.mix");
-            match std::fs::read_to_string(scene).map_err(|e|e.to_string()).and_then(|source| SceneView::new(&source)) {
+            match std::fs::read_to_string(scene)
+                .map_err(|e| e.to_string())
+                .and_then(|source| SceneView::new(&source))
+            {
                 Ok(mut view) => {
-                    if let Err(error) = view.apply_model(self.view.model().clone()) { self.error = error; }
-                    else { self.view = view; }
+                    if let Err(error) = view.apply_model(self.view.model().clone()) {
+                        self.error = error;
+                    } else {
+                        self.view = view;
+                    }
                 }
                 Err(error) => self.error = error,
             }
@@ -58,7 +72,7 @@ impl eframe::App for Client {
             ui.colored_label(egui::Color32::RED, &self.error);
         }
         for event in self.view.show(ui) {
-            eprintln!("VIU input command={} body={}",event.command,event.body);
+            eprintln!("VIU input command={} body={}", event.command, event.body);
             if let Err(refusal) = self.runtime.event(event.command, event.body) {
                 self.error = format!("Input refused: {refusal:?}");
             }
@@ -67,7 +81,9 @@ impl eframe::App for Client {
             let geometry: serde_json::Map<String,serde_json::Value> = self.view.geometry.iter().map(|(key,rect)| (key.clone(),serde_json::json!({"min":[rect.min.x,rect.min.y],"max":[rect.max.x,rect.max.y]}))).collect();
             let receipt = serde_json::json!({"generation":self.runtime.generation(),"sequence":self.last_sequence,"revision":self.view.revision,"model":self.view.model(),"geometry":geometry,"error":self.error});
             let temporary = path.with_extension("tmp");
-            if std::fs::write(&temporary,receipt.to_string()).is_ok() { let _=std::fs::rename(temporary,path); }
+            if std::fs::write(&temporary, receipt.to_string()).is_ok() {
+                let _ = std::fs::rename(temporary, path);
+            }
         }
     }
 }
