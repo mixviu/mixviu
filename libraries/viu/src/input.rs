@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Native egui input automation; all targets come from the current SceneView
 //! geometry, and modifiers travel as native input events as well as payloads.
+use crate::view::SceneView;
 use serde_json::Value;
 use std::collections::VecDeque;
-use crate::view::SceneView;
 #[derive(Default)]
 pub struct Input {
     pub now: Vec<egui::Event>,
     pub later: VecDeque<Vec<egui::Event>>,
 }
 fn finite_point(x: f64, y: f64) -> Result<egui::Pos2, String> {
-    let point=egui::pos2(x as f32,y as f32);
-    if !point.is_finite() {return Err("Coordinates must fit finite native points".into());}
+    let point = egui::pos2(x as f32, y as f32);
+    if !point.is_finite() {
+        return Err("Coordinates must fit finite native points".into());
+    }
     Ok(point)
 }
 impl Input {
@@ -72,7 +74,7 @@ impl Input {
                 } else {
                     let x = a["x"].as_f64().ok_or("id or x/y required")?;
                     let y = a["y"].as_f64().ok_or("id or x/y required")?;
-                    finite_point(x,y)?
+                    finite_point(x, y)?
                 };
                 now.push(egui::Event::PointerMoved(start));
                 let button = match a["button"].as_str().unwrap_or("left") {
@@ -181,20 +183,22 @@ mod tests {
     #[test]
     fn malformed_gestures_do_not_queue_partial_native_input() {
         let mut view=SceneView::new("---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{root:{widget:\"text\",text:\"Input\"}}\n```\n").unwrap();
-        let mut input=Input::default();
-        for (command,args) in [
-            ("click",json!({"x":1e100,"y":0})),
-            ("drag",json!({"x":1,"y":2,"to_x":1e100,"to_y":0})),
-            ("drag",json!({"x":1,"y":2,"to_x":0})),
-            ("click",json!({"id":"missing"})),
+        let mut input = Input::default();
+        for (command, args) in [
+            ("click", json!({"x":1e100,"y":0})),
+            ("drag", json!({"x":1,"y":2,"to_x":1e100,"to_y":0})),
+            ("drag", json!({"x":1,"y":2,"to_x":0})),
+            ("click", json!({"id":"missing"})),
         ] {
-            assert!(input.queue(command,&args,&mut view).is_err());
-            assert!(input.now.is_empty()&&input.later.is_empty());
+            assert!(input.queue(command, &args, &mut view).is_err());
+            assert!(input.now.is_empty() && input.later.is_empty());
         }
-        input.queue("drag",&json!({"x":1,"y":2,"to_x":3,"to_y":4}),&mut view).unwrap();
-        assert_eq!(input.later.len(),3);
+        input
+            .queue("drag", &json!({"x":1,"y":2,"to_x":3,"to_y":4}), &mut view)
+            .unwrap();
+        assert_eq!(input.later.len(), 3);
         for key in egui::Key::ALL {
-            assert_eq!(egui::Key::from_name(key_name(*key)),Some(*key));
+            assert_eq!(egui::Key::from_name(key_name(*key)), Some(*key));
         }
     }
 }

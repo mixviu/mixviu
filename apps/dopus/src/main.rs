@@ -213,6 +213,9 @@ impl App {
         } else {
             let start = Instant::now();
             let result = self.native.as_mut().unwrap().call(&command, &args);
+            // Synchronous core commands accumulate prompt/status events.
+            // Drain them before publishing or acknowledging their UI result.
+            self.native.as_mut().unwrap().poll(ctx);
             self.last_service_us = start.elapsed().as_micros();
             let model = self.native.as_ref().unwrap().model();
             let applied = self.publish(model, ctx);
@@ -717,7 +720,7 @@ impl eframe::App for App {
             } else if self.input_wait
                 && self.inflight.is_empty()
                 && !self.panel.pending()
-                && !self.view.as_ref().is_some_and(|v| v.focus_pending())
+                && !self.view.as_ref().is_some_and(|v| v.focus_pending() || !v.current_revision_drawn())
             {
                 self.input_wait = false;
                 let mut answer = self.state();
@@ -732,6 +735,8 @@ impl eframe::App for App {
                     let _ = reply.send((rc, answer.clone()));
                 }
                 self.input_close = None;
+            } else if self.input_wait {
+                ctx.request_repaint();
             }
         }
         let answer = self.state();

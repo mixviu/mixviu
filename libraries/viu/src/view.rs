@@ -36,6 +36,7 @@ pub struct SceneView {
     pub geometry: BTreeMap<String, egui::Rect>,
     widgets: Widgets,
     focus_error: Option<String>,
+    shown_revision: Option<u64>,
 }
 
 impl SceneView {
@@ -63,6 +64,7 @@ impl SceneView {
             geometry: BTreeMap::new(),
             widgets: Widgets::default(),
             focus_error: None,
+            shown_revision: None,
         })
     }
 
@@ -143,7 +145,13 @@ impl SceneView {
         self.geometry
             .extend(self.widgets.geometry.iter().map(|(id, r)| (id.clone(), *r)));
         self.focus_error = self.widgets.finish_frame().err();
+        self.shown_revision = Some(self.revision);
         events
+    }
+    /// A model-ready endpoint precedes the native control pass. Hosts can
+    /// fence input replies on this without claiming GPU or physical display.
+    pub fn current_revision_drawn(&self) -> bool {
+        self.shown_revision == Some(self.revision)
     }
     pub fn request_focus(&mut self, id: &str) -> Result<(), String> {
         if !self.geometry.contains_key(id) {
