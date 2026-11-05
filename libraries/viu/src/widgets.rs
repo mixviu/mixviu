@@ -119,10 +119,14 @@ pub struct Widgets {
 impl Widgets {
     /// Draw one shared widget within an application-owned layout. Both Rust
     /// and Mix adapters can use this entry point without the catalogue grid.
-    pub fn widget(&mut self,ui:&mut egui::Ui,definition:&Widget,model:&Value)->Vec<Intent> {
-        let mut intents=Vec::new();
-        let value=model["values"].get(&definition.id).unwrap_or(&definition.initial);
-        ui.push_id(&definition.id,|ui|self.draw(ui,definition,value,model,&mut intents));
+    pub fn widget(&mut self, ui: &mut egui::Ui, definition: &Widget, model: &Value) -> Vec<Intent> {
+        let mut intents = Vec::new();
+        let value = model["values"]
+            .get(&definition.id)
+            .unwrap_or(&definition.initial);
+        ui.push_id(&definition.id, |ui| {
+            self.draw(ui, definition, value, model, &mut intents)
+        });
         intents
     }
     pub fn show(
