@@ -288,6 +288,11 @@ impl App {
             close_after_reply,
             ..
         } = r;
+        tracing::debug!(command, "Bus command received");
+        if let Some(answer)=viu::debug::request("dopus",&command,&args.to_string()) {
+            let _=reply.send(answer);
+            return;
+        }
         if let Some(suffix) = command.strip_prefix("dopus.macros.") {
             self.effect_next += 1;
             let id = format!("macro-rpc-{}", self.effect_next);
@@ -1018,6 +1023,9 @@ fn commands() -> Vec<String> {
         "dopus.ui.capture",
         "dopus.window",
         "dopus.window.state",
+        "dopus.debug",
+        "dopus.debug.set",
+        "dopus.debug.recent",
     ]
     .into_iter()
     .map(str::to_owned)
@@ -1029,7 +1037,11 @@ fn commands() -> Vec<String> {
     .collect()
 }
 fn main() -> eframe::Result {
-    let args = std::env::args().collect::<Vec<_>>();
+    let mut args = std::env::args().collect::<Vec<_>>();
+    if let Err(error)=viu::debug::init("warn", &mut args) {
+        eprintln!("viu-dopus: {error}");
+        std::process::exit(2);
+    }
     if args.get(1).is_some_and(|a| a == "--macro") {
         let Some(path) = args.get(2) else {
             eprintln!("usage: viu-dopus --macro SCRIPT [ARG...]");

@@ -3,6 +3,8 @@
 pub mod appearance;
 pub mod capture;
 pub mod chooser;
+pub mod debug;
+mod debug_recent;
 mod design_style;
 pub mod elide;
 pub mod file_data;
