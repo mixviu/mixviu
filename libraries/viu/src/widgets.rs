@@ -194,7 +194,8 @@ impl Widget {
         {
             self.validate(value)?;
         }
-        if self.kind!="tree-table" && ["expand", "sort"].contains(&action) && !value.is_boolean() {
+        if self.kind != "tree-table" && ["expand", "sort"].contains(&action) && !value.is_boolean()
+        {
             return Err("expand/sort requires bool".into());
         }
         if action == "activate"
@@ -229,6 +230,7 @@ impl Widget {
             return Err("invalid widget definition".into());
         }
         self.validate(self.value(model))?;
+        if self.kind=="tree-table"{crate::tree_table::validate_properties(&self.properties)?;}
         if ["list", "table", "tree"].contains(&self.kind.as_str()) {
             let rows = model["datasets"][self.text("dataset")]
                 .as_array()

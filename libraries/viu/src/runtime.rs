@@ -94,7 +94,7 @@ impl RunFailure {
 
 enum Request {
     Load(u64, Program),
-    Event(u64, u64, String, Json, bool, BTreeMap<String,String>),
+    Event(u64, u64, String, Json, bool, BTreeMap<String, String>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -214,21 +214,31 @@ impl Runtime {
     }
 
     pub fn event(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
-        self.submit_event(command, args, true,BTreeMap::new())
+        self.submit_event(command, args, true, BTreeMap::new())
     }
     /// Preserve broker-stamped caller and topic metadata. Request correlation
     /// remains local to the mailbox; the native owner retains the wire reply.
-    pub fn event_with_headers(&mut self,command:String,args:Json,headers:BTreeMap<String,String>)->Result<u64,Refusal>{
-        self.submit_event(command,args,true,headers)
+    pub fn event_with_headers(
+        &mut self,
+        command: String,
+        args: Json,
+        headers: BTreeMap<String, String>,
+    ) -> Result<u64, Refusal> {
+        self.submit_event(command, args, true, headers)
     }
 
     /// Native Bus topic delivery has no reply obligation. It uses the same
     /// ordered mailbox and generation fences as UI requests.
     pub fn notify(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
-        self.submit_event(command, args, false,BTreeMap::new())
+        self.submit_event(command, args, false, BTreeMap::new())
     }
-    pub fn notify_with_headers(&mut self,command:String,args:Json,headers:BTreeMap<String,String>)->Result<u64,Refusal>{
-        self.submit_event(command,args,false,headers)
+    pub fn notify_with_headers(
+        &mut self,
+        command: String,
+        args: Json,
+        headers: BTreeMap<String, String>,
+    ) -> Result<u64, Refusal> {
+        self.submit_event(command, args, false, headers)
     }
 
     fn submit_event(
@@ -236,7 +246,7 @@ impl Runtime {
         command: String,
         args: Json,
         is_request: bool,
-        headers:BTreeMap<String,String>,
+        headers: BTreeMap<String, String>,
     ) -> Result<u64, Refusal> {
         let sequence = self.sequence.checked_add(1).expect("sequence overflow");
         self.enqueue(Request::Event(
@@ -340,10 +350,21 @@ fn failure(message: &str) -> MixError {
 }
 
 impl BusHandler for Local {
-    fn send_with_reply<'a>(&'a self,target:&'a str,command:&'a str,args:&'a Value)->BusFuture<'a,MixResult<(i32,Value,Value)>>{
-        Box::pin(async move{
-            if target!="viu-local"{return match &self.backend{Some(backend)=>backend.send_with_reply(target,command,args).await,None=>Err(failure("no native Bus backend configured"))};}
-            let(rc,result)=self.send(target,command,args).await?;Ok((rc,result.clone(),result))
+    fn send_with_reply<'a>(
+        &'a self,
+        target: &'a str,
+        command: &'a str,
+        args: &'a Value,
+    ) -> BusFuture<'a, MixResult<(i32, Value, Value)>> {
+        Box::pin(async move {
+            if target != "viu-local" {
+                return match &self.backend {
+                    Some(backend) => backend.send_with_reply(target, command, args).await,
+                    None => Err(failure("no native Bus backend configured")),
+                };
+            }
+            let (rc, result) = self.send(target, command, args).await?;
+            Ok((rc, result.clone(), result))
         })
     }
     fn send<'a>(
@@ -419,11 +440,21 @@ impl BusHandler for Local {
     fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> {
         Box::pin(async { None })
     }
-    fn subscribe_topic<'a>(&'a self,topic:&'a str)->BusFuture<'a,MixResult<()>>{
-        Box::pin(async move{match &self.backend{Some(backend)=>backend.subscribe_topic(topic).await,None=>Err(failure("no native Bus backend configured"))}})
+    fn subscribe_topic<'a>(&'a self, topic: &'a str) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async move {
+            match &self.backend {
+                Some(backend) => backend.subscribe_topic(topic).await,
+                None => Err(failure("no native Bus backend configured")),
+            }
+        })
     }
-    fn unsubscribe_topic<'a>(&'a self,topic:&'a str)->BusFuture<'a,MixResult<()>>{
-        Box::pin(async move{match &self.backend{Some(backend)=>backend.unsubscribe_topic(topic).await,None=>Err(failure("no native Bus backend configured"))}})
+    fn unsubscribe_topic<'a>(&'a self, topic: &'a str) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async move {
+            match &self.backend {
+                Some(backend) => backend.unsubscribe_topic(topic).await,
+                None => Err(failure("no native Bus backend configured")),
+            }
+        })
     }
     fn reply<'a>(
         &'a self,

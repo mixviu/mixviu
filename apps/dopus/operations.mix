@@ -1,0 +1,113 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable
+-- version: 0.1.0
+-- Mix owns operation preflight, ordering, failure accounting and filesystem work.
+$dp=require("core.mix")
+fn dp_inside($path,$parent)
+  return $path==$parent or starts_with($path,if $parent=="/" then "/" else $parent.."/" end)
+end
+fn dp_source_root($path,$metadata)
+  -- Do not follow a link when identifying a transfer source, including a
+  -- dangling link. Its target bytes belong to the copied link, not the copy.
+  if $metadata.is_symlink then return path_join(realpath(dirname($path)),basename($path)) end
+  $root=realpath($path)
+  if $root==nil then raise("NOT_FOUND","Cannot resolve source: "..$dp.dp_display($path)) end
+  return $root
+end
+fn dp_preflight($kind,$sources,$destination)
+  if not contains(["copy","move","delete"],$kind) or type($sources)!="list" or len($sources)==0 then raise("INVALID_ARGUMENT","Operation requires sources") end
+  if len(unique($sources))!=len($sources) then raise("INVALID_ARGUMENT","Duplicate operation source") end
+  $prepared=[];$targets=[];$roots=[]
+  $target_root=nil
+  if $kind!="delete" then
+    if not is_dir($destination) then raise("NOT_FOUND","Destination is not a directory") end
+    $target_root=realpath($destination)
+  end
+  for $source in $sources
+    if type($source)!="string" then raise("INVALID_ARGUMENT","Source path must be text") end
+    $metadata=$dp.dp_lstat($source)
+    if $metadata==nil then raise("NOT_FOUND","Source is missing: "..$dp.dp_display($source)) end
+    if not ($metadata.is_file or $metadata.is_dir or $metadata.is_symlink) then raise("UNAVAILABLE","Unsupported file type: "..$dp.dp_display($source)) end
+    $root=dp_source_root($source,$metadata)
+    push($roots,$root)
+    $target=nil
+    if $kind!="delete" then
+      $target=path_join($destination,basename($source))
+      if contains($targets,$target) or $dp.dp_present($target) then raise("CONFLICT","Destination already exists: "..$dp.dp_display($target)) end
+      if realpath(dirname($source))==$target_root then raise("CONFLICT","Source is already in the destination folder") end
+      if $metadata.is_dir and dp_inside($target_root,$root) then raise("CONFLICT","Cannot transfer a folder into itself") end
+      push($targets,$target)
+    end
+    push($prepared,{source:$source,target:$target,metadata:$metadata})
+  end
+  if $kind=="move" or $kind=="delete" then
+    for $i=0 to len($roots)-1
+      for $j=0 to len($roots)-1
+        if $i!=$j and dp_inside($roots[$j],$roots[$i]) then raise("CONFLICT","Operation sources overlap") end
+      end
+    end
+  end
+  return $prepared
+end
+fn dp_remove_entry($path)
+  $metadata=$dp.dp_lstat($path)
+  if $metadata==nil then raise("NOT_FOUND","Source is missing") end
+  if $metadata.is_dir and not $metadata.is_symlink then remove_dir($path)
+  elif $metadata.is_file or $metadata.is_symlink then remove($path)
+  else raise("UNAVAILABLE","Unsupported file type") end
+end
+fn dp_copy_to($source,$target)
+  if $dp.dp_present($target) then raise("CONFLICT","Destination already exists: "..$dp.dp_display($target)) end
+  $metadata=stat($source,{follow_symlinks:false})
+  if $metadata.is_symlink then symlink(read_link($source),$target)
+  elif $metadata.is_dir then
+    mkdir($target,{parents:false})
+    for $name in ls($source) dp_copy_to(path_join($source,$name),path_join($target,$name)) end
+    chmod($target,$metadata.perm)
+  elif $metadata.is_file then copy($source,$target)
+  else raise("UNAVAILABLE","Unsupported file type") end
+end
+fn dp_transfer_one($kind,$source,$target)
+  if $kind!="delete" and $dp.dp_present($target) then raise("CONFLICT","Destination already exists: "..$dp.dp_display($target)) end
+  if $kind=="copy" then
+    try dp_copy_to($source,$target)
+    catch $message,$error
+      if $dp.dp_present($target) then dp_remove_entry($target) end
+      raise($error.code,$message)
+    end
+  elif $kind=="move" then
+    if stat(dirname($source)).dev==stat(dirname($target)).dev then rename($source,$target)
+    else dp_transfer_one("copy",$source,$target);dp_remove_entry($source) end
+  else dp_remove_entry($source) end
+end
+fn dp_batch($kind,$sources,$destination)
+  $prepared=dp_preflight($kind,$sources,$destination)
+  $completed=[]
+  for $i=0 to len($prepared)-1
+    $entry=$prepared[$i]
+    try
+      dp_transfer_one($kind,$entry.source,$entry.target)
+      push($completed,$entry.source)
+    catch $message,$error
+      return {ok:false,kind:$kind,error_code:$error.code,message:$dp.dp_display($message),completed:$completed,failed:$entry.source,unattempted:map(slice($prepared,$i+1),fn($e)=$e.source)}
+    end
+  end
+  return {ok:true,kind:$kind,completed:$completed,failed:nil,unattempted:[],destination:$destination}
+end
+fn dp_execute_operation($request)
+  $kind=$request.kind
+  if contains(["copy","move","delete"],$kind) then return dp_batch($kind,$request.sources,$request.destination ?? nil)
+  elif $kind=="mkdir" then
+    $target=path_join($request.destination,$dp.dp_filename($request.name))
+    if $dp.dp_present($target) then raise("CONFLICT","Destination already exists") end
+    mkdir($target,{parents:false})
+    return {ok:true,kind:$kind,path:$target,message:"Created "..$dp.dp_display($target)}
+  elif $kind=="rename" then
+    $target=path_join(dirname($request.source),$dp.dp_filename($request.name))
+    if $dp.dp_present($target) then raise("CONFLICT","Destination already exists") end
+    if $dp.dp_lstat($request.source)==nil then raise("NOT_FOUND","Source is missing") end
+    rename($request.source,$target)
+    return {ok:true,kind:$kind,path:$target,message:"Renamed "..$dp.dp_display($request.source).." to "..$dp.dp_display($target)}
+  end
+  raise("INVALID_ARGUMENT","Unknown operation")
+end

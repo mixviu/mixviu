@@ -68,10 +68,19 @@ end
     let reply = refused.reply.unwrap();
     assert_eq!(reply.rc, 10);
     assert_eq!(reply.body["error_code"], "INVALID_NAME");
-    runtime.event_with_headers("inspect".into(), json!({}),std::collections::BTreeMap::from([("from".into(),"caller-test".into())])).unwrap();
+    runtime
+        .event_with_headers(
+            "inspect".into(),
+            json!({}),
+            std::collections::BTreeMap::from([("from".into(), "caller-test".into())]),
+        )
+        .unwrap();
     let reply = next(&runtime, &wakes).reply.unwrap();
     assert_eq!(reply.rc, 0);
-    assert_eq!(reply.body, json!({"rows":["one","two"],"ok":true,"caller":"caller-test"}));
+    assert_eq!(
+        reply.body,
+        json!({"rows":["one","two"],"ok":true,"caller":"caller-test"})
+    );
     runtime.event("fault".into(), json!({})).unwrap();
     let fault = next(&runtime, &wakes);
     assert!(fault.error.is_some());

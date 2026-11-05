@@ -1,38 +1,61 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Bounded in-process adaptation of the existing native supervised Bus client.
 //! Applications supply their command descriptors and own all command policy.
-use ::bus::{CommandDescriptor,SupervisedClient,native_client::BoundedIncomingEvent};
-use mix::{BusHandler,MixError,MixResult,evaluator::BusFuture,value::Value as MixValue};
-use serde_json::{Value,json};
-use std::{collections::BTreeMap,rc::Rc,sync::{Arc,Mutex,mpsc,atomic::{AtomicBool,AtomicU64,Ordering}},thread::JoinHandle,time::Duration};
+use ::bus::{CommandDescriptor, SupervisedClient, native_client::BoundedIncomingEvent};
+use mix::{BusHandler, MixError, MixResult, evaluator::BusFuture, value::Value as MixValue};
+use serde_json::{Value, json};
+use std::{
+    collections::BTreeMap,
+    rc::Rc,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc,
+    },
+    thread::JoinHandle,
+    time::Duration,
+};
 use tokio::sync::oneshot;
 
 pub struct Request {
-    pub command:String,
-    pub args:Value,
-    pub headers:BTreeMap<String,String>,
-    pub reply:oneshot::Sender<(u8,Value)>,
+    pub command: String,
+    pub args: Value,
+    pub headers: BTreeMap<String, String>,
+    pub reply: oneshot::Sender<(u8, Value)>,
 }
-pub struct Notice {pub command:String,pub args:Value,pub headers:BTreeMap<String,String>}
-type SharedClient=Arc<Mutex<Option<Arc<SupervisedClient>>>>;
+pub struct Notice {
+    pub command: String,
+    pub args: Value,
+    pub headers: BTreeMap<String, String>,
+}
+type SharedClient = Arc<Mutex<Option<Arc<SupervisedClient>>>>;
 
 pub struct Endpoint {
-    pub requests:mpsc::Receiver<Request>,
-    pub notices:mpsc::Receiver<Notice>,
-    pub close_requested:Arc<AtomicBool>,
-    pub dropped_notices:Arc<AtomicU64>,
-    client:SharedClient,
-    stop:Option<oneshot::Sender<()>>,
-    thread:Option<JoinHandle<()>>,
+    pub requests: mpsc::Receiver<Request>,
+    pub notices: mpsc::Receiver<Notice>,
+    pub close_requested: Arc<AtomicBool>,
+    pub dropped_notices: Arc<AtomicU64>,
+    client: SharedClient,
+    stop: Option<oneshot::Sender<()>>,
+    thread: Option<JoinHandle<()>>,
 }
 impl Endpoint {
-    pub fn start(name:String,url:String,commands:Vec<CommandDescriptor>,quit_command:String,wake:crate::runtime::Wake)->Self {
-        let (tx,requests)=mpsc::sync_channel(32);
-        let (notice_tx,notices)=mpsc::sync_channel(32);
-        let close_requested=Arc::new(AtomicBool::new(false));let close=close_requested.clone();
-        let dropped_notices=Arc::new(AtomicU64::new(0));let dropped=dropped_notices.clone();
-        let client:SharedClient=Arc::new(Mutex::new(None));let shared=client.clone();
-        let (stop,mut stopped)=oneshot::channel();
+    pub fn start(
+        name: String,
+        url: String,
+        commands: Vec<CommandDescriptor>,
+        quit_command: String,
+        wake: crate::runtime::Wake,
+    ) -> Self {
+        let (tx, requests) = mpsc::sync_channel(32);
+        let (notice_tx, notices) = mpsc::sync_channel(32);
+        let close_requested = Arc::new(AtomicBool::new(false));
+        let close = close_requested.clone();
+        let dropped_notices = Arc::new(AtomicU64::new(0));
+        let dropped = dropped_notices.clone();
+        let client: SharedClient = Arc::new(Mutex::new(None));
+        let shared = client.clone();
+        let (stop, mut stopped) = oneshot::channel();
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
@@ -68,89 +91,283 @@ impl Endpoint {
                 native.close().await;
             });
         }).expect("start native Bus owner");
-        Self{requests,notices,close_requested,dropped_notices,client,stop:Some(stop),thread:Some(thread)}
+        Self {
+            requests,
+            notices,
+            close_requested,
+            dropped_notices,
+            client,
+            stop: Some(stop),
+            thread: Some(thread),
+        }
     }
     /// Construct on the Mix worker. It shares the existing native connection;
     /// it creates no broker, socket, dispatcher or secondary service identity.
-    pub fn backend(&self)->crate::runtime::BackendFactory{
-        let client=self.client.clone();Box::new(move||Rc::new(Bridge{client}))
+    pub fn backend(&self) -> crate::runtime::BackendFactory {
+        let client = self.client.clone();
+        Box::new(move || Rc::new(Bridge { client }))
     }
-    pub fn client(&self)->Option<Arc<SupervisedClient>>{self.client.lock().unwrap_or_else(|e|e.into_inner()).clone()}
+    pub fn client(&self) -> Option<Arc<SupervisedClient>> {
+        self.client
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
 }
-impl Drop for Endpoint{
-    fn drop(&mut self){if let Some(stop)=self.stop.take(){let _=stop.send(());}if let Some(thread)=self.thread.take(){let _=thread.join();}}
+impl Drop for Endpoint {
+    fn drop(&mut self) {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(());
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
-fn failure(error:impl ToString)->MixError{MixError::RuntimeError{msg:error.to_string(),span:None}}
-pub struct Bridge{client:SharedClient}
-impl Bridge{
-    fn native(&self)->MixResult<Arc<SupervisedClient>>{self.client.lock().unwrap_or_else(|e|e.into_inner()).clone().ok_or_else(||failure("native Bus not connected"))}
-    fn payload(command:&str,args:&MixValue)->MixResult<(BTreeMap<String,String>,String,bool)>{
-        let args=crate::runtime::to_json(args)?;
-        let mut headers=BTreeMap::new();
-        let header_route=args.get("body").is_some()||(command.contains(".props.")&&args.get("namespace").is_some());
-        let body=if header_route{
-            if let Some(map)=args.as_object(){for(key,value)in map{if key!="body"&&key!="timeout"&&!value.is_null(){headers.insert(key.clone(),value.as_str().map(str::to_owned).unwrap_or_else(||value.to_string()));}}}
-            match args.get("body"){None=>String::new(),Some(Value::String(body))=>body.clone(),Some(body)=>body.to_string()}
-        }else if args.is_null(){String::new()}else{args.to_string()};
-        Ok((headers,body,header_route))
-    }
-    async fn call_parts(&self,target:&str,command:&str,args:&MixValue)->MixResult<(i32,MixValue,MixValue)>{
-        let native=self.native()?;let(headers,body,header_route)=Self::payload(command,args)?;
-        let(rc,body,error)=native.call_with_headers_raw_within(target,command,&headers,&body,Duration::from_secs(10)).await.map_err(failure)?;
-        reply_parts(rc,body,error,header_route)
+fn failure(error: impl ToString) -> MixError {
+    MixError::RuntimeError {
+        msg: error.to_string(),
+        span: None,
     }
 }
-impl BusHandler for Bridge{
-    fn send<'a>(&'a self,target:&'a str,command:&'a str,args:&'a MixValue)->BusFuture<'a,MixResult<(i32,MixValue)>>{
-        Box::pin(async move{let(rc,result,_)=self.call_parts(target,command,args).await?;Ok((rc,result))})
+pub struct Bridge {
+    client: SharedClient,
+}
+impl Bridge {
+    fn native(&self) -> MixResult<Arc<SupervisedClient>> {
+        self.client
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .ok_or_else(|| failure("native Bus not connected"))
     }
-    fn send_with_reply<'a>(&'a self,target:&'a str,command:&'a str,args:&'a MixValue)->BusFuture<'a,MixResult<(i32,MixValue,MixValue)>>{
-        Box::pin(async move{self.call_parts(target,command,args).await})
+    fn payload(
+        command: &str,
+        args: &MixValue,
+    ) -> MixResult<(BTreeMap<String, String>, String, bool)> {
+        Self::payload_mode(command,args,false)
     }
-    fn emit<'a>(&'a self,target:&'a str,command:&'a str,args:&'a MixValue)->BusFuture<'a,MixResult<()>>{
-        Box::pin(async move{let native=self.native()?;let(mut headers,body,_)=Self::payload(command,args)?;headers.insert("type".into(),"event".into());native.send_with_headers(target,command,&headers,&body).await.map_err(failure)})
+    fn payload_mode(command:&str,args:&MixValue,all_headers:bool)->MixResult<(BTreeMap<String,String>,String,bool)>{
+        if let MixValue::Map(map)=args{
+            let route=all_headers||map.contains_key("body")||(command.contains(".props.")&&map.contains_key("namespace"));
+            if route&&map.values().any(|v|matches!(v,MixValue::Bytes(_)|MixValue::Buffer(_))){return Err(failure("native Bus headers/body do not accept bytes; encode them explicitly"));}
+        }
+        let args = crate::runtime::to_json(args)?;
+        let mut headers = BTreeMap::new();
+        let header_route = (all_headers&&args.is_object())||args.get("body").is_some()
+            || (command.contains(".props.") && args.get("namespace").is_some());
+        let body = if header_route {
+            if let Some(map) = args.as_object() {
+                for (key, value) in map {
+                    if key != "body" && key != "timeout" && !value.is_null() {
+                        headers.insert(
+                            key.clone(),
+                            value
+                                .as_str()
+                                .map(str::to_owned)
+                                .unwrap_or_else(|| value.to_string()),
+                        );
+                    }
+                }
+            }
+            match args.get("body") {
+                None => String::new(),
+                Some(Value::String(body)) => body.clone(),
+                Some(body) => body.to_string(),
+            }
+        } else if args.is_null() {
+            String::new()
+        } else {
+            args.to_string()
+        };
+        Ok((headers, body, header_route))
     }
-    fn port_exists<'a>(&'a self,target:&'a str)->BusFuture<'a,MixResult<bool>>{Box::pin(async move{Ok(self.native()?.list_services().await.map_err(failure)?.iter().any(|s|s==target))})}
-    fn next_incoming<'a>(&'a self)->BusFuture<'a,Option<mix::evaluator::IncomingEvent>>{Box::pin(async{None})}
-    fn subscribe_topic<'a>(&'a self,topic:&'a str)->BusFuture<'a,MixResult<()>>{Box::pin(async move{self.native()?.subscribe_topic(topic).await.map_err(failure)})}
-    fn unsubscribe_topic<'a>(&'a self,topic:&'a str)->BusFuture<'a,MixResult<()>>{Box::pin(async move{self.native()?.unsubscribe_topic(topic).await.map_err(failure)})}
+    async fn call_parts(
+        &self,
+        target: &str,
+        command: &str,
+        args: &MixValue,
+    ) -> MixResult<(i32, MixValue, MixValue)> {
+        let native = self.native()?;
+        let (headers, body, header_route) = Self::payload(command, args)?;
+        let (rc, body, error) = native
+            .call_with_headers_raw_within(target, command, &headers, &body, Duration::from_secs(10))
+            .await
+            .map_err(failure)?;
+        reply_parts(rc, body, error, header_route)
+    }
+}
+impl BusHandler for Bridge {
+    fn send<'a>(
+        &'a self,
+        target: &'a str,
+        command: &'a str,
+        args: &'a MixValue,
+    ) -> BusFuture<'a, MixResult<(i32, MixValue)>> {
+        Box::pin(async move {
+            let (rc, result, _) = self.call_parts(target, command, args).await?;
+            Ok((rc, result))
+        })
+    }
+    fn send_with_reply<'a>(
+        &'a self,
+        target: &'a str,
+        command: &'a str,
+        args: &'a MixValue,
+    ) -> BusFuture<'a, MixResult<(i32, MixValue, MixValue)>> {
+        Box::pin(async move { self.call_parts(target, command, args).await })
+    }
+    fn emit<'a>(
+        &'a self,
+        target: &'a str,
+        command: &'a str,
+        args: &'a MixValue,
+    ) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async move {
+            let native = self.native()?;
+            let (mut headers, body, _) = Self::payload_mode(command, args,true)?;
+            headers.insert("type".into(), "event".into());
+            native
+                .send_with_headers(target, command, &headers, &body)
+                .await
+                .map_err(failure)
+        })
+    }
+    fn port_exists<'a>(&'a self, target: &'a str) -> BusFuture<'a, MixResult<bool>> {
+        Box::pin(async move {
+            Ok(self
+                .native()?
+                .list_services()
+                .await
+                .map_err(failure)?
+                .iter()
+                .any(|s| s == target))
+        })
+    }
+    fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<mix::evaluator::IncomingEvent>> {
+        Box::pin(async { None })
+    }
+    fn subscribe_topic<'a>(&'a self, topic: &'a str) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async move { self.native()?.subscribe_topic(topic).await.map_err(failure) })
+    }
+    fn unsubscribe_topic<'a>(&'a self, topic: &'a str) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async move {
+            self.native()?
+                .unsubscribe_topic(topic)
+                .await
+                .map_err(failure)
+        })
+    }
 }
 
 // Keep Mix's established result/reply distinction and exact peer rc. Header
 // routing preserves structured refusals; JSON-body RPC preserves its message
 // result. Both retain every parsed field in $reply, including JSON strings.
-fn reply_parts(rc:u8,body:String,error:Option<String>,header_route:bool)->MixResult<(i32,MixValue,MixValue)>{
-    let parsed=serde_json::from_str::<Value>(&body).ok();
-    let reply=crate::runtime::from_json(parsed.clone().unwrap_or(Value::Null))?;
-    if rc<10{
-        let result=match parsed{Some(value)=>crate::runtime::from_json(value)?,None if body.is_empty()=>MixValue::Nil,None=>MixValue::String(body)};
-        return Ok((i32::from(rc),result,reply));
+fn reply_parts(
+    rc: u8,
+    body: String,
+    error: Option<String>,
+    header_route: bool,
+) -> MixResult<(i32, MixValue, MixValue)> {
+    let parsed = serde_json::from_str::<Value>(&body).ok();
+    let reply = crate::runtime::from_json(parsed.clone().unwrap_or(Value::Null))?;
+    if rc < 10 {
+        let result = match parsed {
+            Some(value) => crate::runtime::from_json(value)?,
+            None if body.is_empty() => MixValue::Nil,
+            None => MixValue::String(body),
+        };
+        return Ok((i32::from(rc), result, reply));
     }
-    if header_route&&parsed.as_ref().is_some_and(|v|v.get("error_code").is_some()){return Ok((i32::from(rc),reply.clone(),reply));}
-    let message=if header_route{
-        parsed.as_ref().and_then(|v|v.get("message").or_else(||v.get("error"))).and_then(Value::as_str).map(str::to_owned).or(error).unwrap_or_else(||if body.is_empty(){format!("rc={rc} (no error body)")}else{body})
-    }else{
-        error.unwrap_or_else(||parsed.as_ref().and_then(|v|v.get("error")).and_then(Value::as_str).map(str::to_owned).unwrap_or_else(||if body.trim().is_empty(){"unknown error".into()}else{body.trim().into()}))
+    if header_route
+        && parsed
+            .as_ref()
+            .is_some_and(|v| v.get("error_code").is_some())
+    {
+        return Ok((i32::from(rc), reply.clone(), reply));
+    }
+    let message = if header_route {
+        parsed
+            .as_ref()
+            .and_then(|v| v.get("message").or_else(|| v.get("error")))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or(error)
+            .unwrap_or_else(|| {
+                if body.is_empty() {
+                    format!("rc={rc} (no error body)")
+                } else {
+                    body
+                }
+            })
+    } else {
+        error.unwrap_or_else(|| {
+            parsed
+                .as_ref()
+                .and_then(|v| v.get("error"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    if body.trim().is_empty() {
+                        "unknown error".into()
+                    } else {
+                        body.trim().into()
+                    }
+                })
+        })
     };
-    Ok((i32::from(rc),MixValue::String(message),reply))
+    Ok((i32::from(rc), MixValue::String(message), reply))
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     use super::*;
     #[test]
-    fn native_reply_routes_preserve_structured_refusals_and_scalar_bodies(){
-        let body=json!({"error_code":"INVALID_NAME","message":"try another name","retry":true}).to_string();
-        let(rc,result,reply)=reply_parts(10,body.clone(),None,true).unwrap();assert_eq!(rc,10);assert_eq!(crate::runtime::to_json(&result).unwrap(),json!({"error_code":"INVALID_NAME","message":"try another name","retry":true}));assert_eq!(crate::runtime::to_json(&reply).unwrap()["retry"],true);
-        let(_,result,reply)=reply_parts(10,body.clone(),None,false).unwrap();assert_eq!(crate::runtime::to_json(&result).unwrap(),json!(body));assert_eq!(crate::runtime::to_json(&reply).unwrap()["error_code"],"INVALID_NAME");
-        let(rc,result,reply)=reply_parts(5,"warning text".into(),None,false).unwrap();assert_eq!(rc,5);assert_eq!(crate::runtime::to_json(&result).unwrap(),json!("warning text"));assert!(crate::runtime::to_json(&reply).unwrap().is_null());
-        let(_,_,reply)=reply_parts(0,"\"typed string\"".into(),None,false).unwrap();assert_eq!(crate::runtime::to_json(&reply).unwrap(),json!("typed string"));
+    fn native_reply_routes_preserve_structured_refusals_and_scalar_bodies() {
+        let body = json!({"error_code":"INVALID_NAME","message":"try another name","retry":true})
+            .to_string();
+        let (rc, result, reply) = reply_parts(10, body.clone(), None, true).unwrap();
+        assert_eq!(rc, 10);
+        assert_eq!(
+            crate::runtime::to_json(&result).unwrap(),
+            json!({"error_code":"INVALID_NAME","message":"try another name","retry":true})
+        );
+        assert_eq!(crate::runtime::to_json(&reply).unwrap()["retry"], true);
+        let (_, result, reply) = reply_parts(10, body.clone(), None, false).unwrap();
+        assert_eq!(crate::runtime::to_json(&result).unwrap(), json!(body));
+        assert_eq!(
+            crate::runtime::to_json(&reply).unwrap()["error_code"],
+            "INVALID_NAME"
+        );
+        let (rc, result, reply) = reply_parts(5, "warning text".into(), None, false).unwrap();
+        assert_eq!(rc, 5);
+        assert_eq!(
+            crate::runtime::to_json(&result).unwrap(),
+            json!("warning text")
+        );
+        assert!(crate::runtime::to_json(&reply).unwrap().is_null());
+        let (_, _, reply) = reply_parts(0, "\"typed string\"".into(), None, false).unwrap();
+        assert_eq!(
+            crate::runtime::to_json(&reply).unwrap(),
+            json!("typed string")
+        );
     }
     #[test]
-    fn native_props_namespace_routes_headers_and_flat_paths_keep_json(){
-        let args=crate::runtime::from_json(json!({"namespace":"sample","path":"test","value":3})).unwrap();
-        let(headers,body,route)=Bridge::payload("settings.props.set",&args).unwrap();assert!(route);assert!(body.is_empty());assert_eq!(headers["value"],"3");
-        let args=crate::runtime::from_json(json!({"path":"test"})).unwrap();let(headers,body,route)=Bridge::payload("settings.props.get",&args).unwrap();assert!(!route);assert!(headers.is_empty());assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["path"],"test");
+    fn native_props_namespace_routes_headers_and_flat_paths_keep_json() {
+        let args = crate::runtime::from_json(json!({"namespace":"sample","path":"test","value":3}))
+            .unwrap();
+        let (headers, body, route) = Bridge::payload("settings.props.set", &args).unwrap();
+        assert!(route);
+        assert!(body.is_empty());
+        assert_eq!(headers["value"], "3");
+        let args = crate::runtime::from_json(json!({"path":"test"})).unwrap();
+        let (headers, body, route) = Bridge::payload("settings.props.get", &args).unwrap();
+        assert!(!route);
+        assert!(headers.is_empty());
+        assert_eq!(
+            serde_json::from_str::<Value>(&body).unwrap()["path"],
+            "test"
+        );
     }
 }

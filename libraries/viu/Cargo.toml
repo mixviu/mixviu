@@ -10,7 +10,7 @@ repository.workspace = true
 icons = { path = "../icons" }
 bus = { path = "../bus", features = ["native"] }
 egui_extras = { version = "=0.37.0", default-features = false, features = ["svg"] }
-mix = { path = "../mix", features = ["regex", "tokio-sleep", "json", "datetime"] }
+mix = { path = "../mix", features = ["regex", "tokio-sleep", "json", "datetime", "mime"] }
 thumbs.workspace = true
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
 unicode-segmentation = "=1.13.3"

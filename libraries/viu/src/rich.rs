@@ -177,7 +177,7 @@ fn menu(
         }
     }
 }
-pub fn draw(
+pub(crate) fn draw(
     ui: &mut Ui,
     widget: &Widget,
     value: &Value,
