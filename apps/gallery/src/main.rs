@@ -315,7 +315,7 @@ fn click_frames(
     modifiers: egui::Modifiers,
     double: bool,
 ) -> std::collections::VecDeque<Vec<egui::Event>> {
-    (0..if double { 2 } else { 1 })
+    let mut frames: std::collections::VecDeque<_> = (0..if double { 2 } else { 1 })
         .map(|_| {
             [true, false]
                 .into_iter()
@@ -327,7 +327,13 @@ fn click_frames(
                 })
                 .collect()
         })
-        .collect()
+        .collect();
+    // Egui resolves the hovered widget from the preceding frame. A double
+    // click arriving from another control needs that hit-test frame first.
+    if double {
+        frames.push_front(vec![egui::Event::PointerMoved(pos)]);
+    }
+    frames
 }
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().collect();

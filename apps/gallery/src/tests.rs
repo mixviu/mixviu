@@ -105,7 +105,6 @@ fn automated_double_click_activates_native_row_across_frames() {
     };
     let (_, rect) = draw(Vec::new(), 0.0);
     let pos = rect.unwrap().center();
-    draw(vec![egui::Event::PointerMoved(pos)], 0.02);
     let mut activations = Vec::new();
     for (i, events) in click_frames(
         pos,
