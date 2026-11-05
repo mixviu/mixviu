@@ -24,7 +24,7 @@ pub struct Request {
     pub reply: oneshot::Sender<(u8, Value)>,
     /// An application can request close for this reply. The owner acts only
     /// after the successful response has actually crossed the native transport.
-    pub close_after_reply:Arc<AtomicBool>,
+    pub close_after_reply: Arc<AtomicBool>,
 }
 pub struct Notice {
     pub command: String,

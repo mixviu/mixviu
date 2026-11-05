@@ -92,7 +92,12 @@ pub fn validate_properties(properties: &Value) -> Result<(), String> {
 
 pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String> {
     validate(value)?;
-    if ["ctrl","shift"].iter().any(|key|payload.get(*key).is_some_and(|v|!v.is_boolean())){return Err("selection modifiers must be bool".into());}
+    if ["ctrl", "shift"]
+        .iter()
+        .any(|key| payload.get(*key).is_some_and(|v| !v.is_boolean()))
+    {
+        return Err("selection modifiers must be bool".into());
+    }
     let row = || {
         value["rows"]
             .as_array()
@@ -141,7 +146,9 @@ pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String>
             }
         }
         "command" => {
-            if payload["key"].is_string(){row()?;}
+            if payload["key"].is_string() {
+                row()?;
+            }
             if !value["context"]
                 .as_array()
                 .into_iter()
@@ -234,7 +241,13 @@ struct DragRows {
     keys: Vec<String>,
     label: String,
 }
-fn drop_target(ui:&Ui,response: &egui::Response, destination: &str, id: &str, events: &mut Vec<Intent>) {
+fn drop_target(
+    ui: &Ui,
+    response: &egui::Response,
+    destination: &str,
+    id: &str,
+    events: &mut Vec<Intent>,
+) {
     if let Some(payload) = response.dnd_release_payload::<DragRows>() {
         {
             emit(

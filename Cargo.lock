@@ -5143,6 +5143,7 @@ dependencies = [
  "icons",
  "image",
  "mix",
+ "png 0.18.1",
  "scene",
  "serde_json",
  "tempfile",

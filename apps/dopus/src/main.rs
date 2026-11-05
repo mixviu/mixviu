@@ -28,12 +28,12 @@ struct App {
     scene: String,
     contract: Value,
     app_dir: PathBuf,
-    capture:viu::capture::Capture,
-    capture_reply:Option<(u64,u64,u64,Reply)>,
-    close_after_idle:bool,
-    input_close:Option<Arc<std::sync::atomic::AtomicBool>>,
-    input_error:Option<String>,
-    ui_sequences:BTreeSet<u64>,
+    capture: viu::capture::Capture,
+    capture_reply: Option<(u64, u64, u64, Reply)>,
+    close_after_idle: bool,
+    input_close: Option<Arc<std::sync::atomic::AtomicBool>>,
+    input_error: Option<String>,
+    ui_sequences: BTreeSet<u64>,
     mode: String,
     pending: BTreeMap<u64, Reply>,
     inflight: BTreeSet<u64>,
@@ -68,24 +68,16 @@ impl App {
         json!({"ready":self.ready(),"mode":self.mode,"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len(),"jobs":self.jobs.pending(),"last_service_us":self.last_service_us,"model_age_us":self.last_model_at.elapsed().as_micros(),"endpoint":"model applied/native input consumed; physical presentation is not measured"})
     }
     fn publish(&mut self, model: Value, ctx: &egui::Context) -> Result<(), String> {
-        if self.model["appearance"] != model["appearance"] {
-            let accent = self.contract["schemes"]
-                .get(model["appearance"]["scheme"].as_str().unwrap_or("ocean"))
-                .unwrap_or(&self.contract["schemes"]["ocean"]);
-            viu::appearance::apply(
-                ctx,
-                &model["appearance"],
-                [
-                    accent[0].as_u64().unwrap_or(62) as u8,
-                    accent[1].as_u64().unwrap_or(148) as u8,
-                    accent[2].as_u64().unwrap_or(220) as u8,
-                ],
-            );
-        }
+        let style = (self.model["appearance"] != model["appearance"])
+            .then(|| viu::appearance::resolve(&model["appearance"]))
+            .transpose()?;
         if let Some(view) = &mut self.view {
             view.apply_model(model.clone())?;
         } else {
             self.view = Some(SceneView::with_model(&self.scene, model.clone())?);
+        }
+        if let Some(style) = style {
+            viu::appearance::install_style(ctx, &model["appearance"], style);
         }
         self.model = model;
         self.last_model_at = Instant::now();
@@ -99,17 +91,37 @@ impl App {
         reply: Option<Reply>,
         ctx: &egui::Context,
     ) {
-        if command=="dopus.intent"{
-            let admission=self.view.as_ref().ok_or("scene is not ready".into()).and_then(|v|v.admit_intent(args["id"].as_str().unwrap_or(""),args["action"].as_str().unwrap_or(""),&args["value"]));
-            if let Err(error)=admission{
-                if let Some(reply)=reply{let _=reply.send((10,json!({"error_code":"INVALID_INTENT","message":error})));}
-                else if self.input_wait{self.input_error=Some(error);}else{self.error=error;}
+        if command == "dopus.intent" {
+            let admission = self
+                .view
+                .as_ref()
+                .ok_or("scene is not ready".into())
+                .and_then(|v| {
+                    v.admit_intent(
+                        args["id"].as_str().unwrap_or(""),
+                        args["action"].as_str().unwrap_or(""),
+                        &args["value"],
+                    )
+                });
+            if let Err(error) = admission {
+                if let Some(reply) = reply {
+                    let _ =
+                        reply.send((10, json!({"error_code":"INVALID_INTENT","message":error})));
+                } else if self.input_wait {
+                    self.input_error = Some(error);
+                } else {
+                    self.error = error;
+                }
                 return;
             }
         }
-        let quit=command=="dopus.quit"||(command=="dopus.execute"&&args["id"]=="app.quit")||(command=="dopus.intent"&&["menu","toolbar"].iter().any(|id|args["id"]==*id)&&args["value"]["command"]=="app.quit");
-        let ui_call=reply.is_none()&&self.input_wait&&command!="dopus.persist";
-        let human_close=reply.is_none()&&quit;
+        let quit = command == "dopus.quit"
+            || (command == "dopus.execute" && args["id"] == "app.quit")
+            || (command == "dopus.intent"
+                && ["menu", "toolbar"].iter().any(|id| args["id"] == *id)
+                && args["value"]["command"] == "app.quit");
+        let ui_call = reply.is_none() && self.input_wait && command != "dopus.persist";
+        let human_close = reply.is_none() && quit;
         if !matches!(command.as_str(), "dopus.persist" | "dopus.quit") {
             self.save_at = Some(Instant::now() + std::time::Duration::from_millis(350));
         }
@@ -121,8 +133,16 @@ impl App {
             ) {
                 Ok(seq) => {
                     self.inflight.insert(seq);
-                    if ui_call{self.ui_sequences.insert(seq);}
-                    if human_close{if let Some(flag)=&self.input_close{flag.store(true,Ordering::Release);}else{self.close_after_idle=true;}}
+                    if ui_call {
+                        self.ui_sequences.insert(seq);
+                    }
+                    if human_close {
+                        if let Some(flag) = &self.input_close {
+                            flag.store(true, Ordering::Release);
+                        } else {
+                            self.close_after_idle = true;
+                        }
+                    }
                     if let Some(reply) = reply {
                         self.pending.insert(seq, reply);
                     }
@@ -133,7 +153,9 @@ impl App {
                             .send((10, json!({"error_code":"BUSY","message":format!("{e:?}")})));
                     } else {
                         self.error = format!("{e:?}");
-                        if ui_call{self.input_error=Some(self.error.clone());}
+                        if ui_call {
+                            self.input_error = Some(self.error.clone());
+                        }
                     }
                 }
             }
@@ -143,15 +165,24 @@ impl App {
             self.last_service_us = start.elapsed().as_micros();
             let model = self.native.as_ref().unwrap().model();
             let applied = self.publish(model, ctx);
-            let result = result.and_then(|body|applied.map(|_|body));
-            if human_close&&result.is_ok(){if let Some(flag)=&self.input_close{flag.store(true,Ordering::Release);}else{self.close_after_idle=true;}ctx.request_repaint();}
+            let result = result.and_then(|body| applied.map(|_| body));
+            if human_close && result.is_ok() {
+                if let Some(flag) = &self.input_close {
+                    flag.store(true, Ordering::Release);
+                } else {
+                    self.close_after_idle = true;
+                }
+                ctx.request_repaint();
+            }
             if let Some(reply) = reply {
                 let _ = reply.send(match result {
                     Ok(body) => (0, body),
                     Err(error) => (10, json!({"error_code":"REFUSED","message":error})),
                 });
             } else if let Err(error) = result {
-                if ui_call{self.input_error=Some(error.clone());}
+                if ui_call {
+                    self.input_error = Some(error.clone());
+                }
                 self.error = error;
             }
         }
@@ -164,7 +195,13 @@ impl App {
             reply,
             close_after_reply,
         } = r;
-        if (command=="dopus.execute"&&args["id"]=="app.quit")||(command=="dopus.intent"&&["menu","toolbar"].iter().any(|id|args["id"]==*id)&&args["value"]["command"]=="app.quit") {close_after_reply.store(true,Ordering::Release);}
+        if (command == "dopus.execute" && args["id"] == "app.quit")
+            || (command == "dopus.intent"
+                && ["menu", "toolbar"].iter().any(|id| args["id"] == *id)
+                && args["value"]["command"] == "app.quit")
+        {
+            close_after_reply.store(true, Ordering::Release);
+        }
         if !self.ready()
             && !matches!(
                 command.as_str(),
@@ -213,13 +250,28 @@ impl App {
             "dopus.dialog" => {
                 let _ = reply.send((0, self.model["values"]["form"].clone()));
             }
-            "dopus.ui.capture"=>{
-                if args.as_object().is_none_or(|m|m.keys().any(|k|k!="name"))||args.get("name").is_some_and(|v|!v.is_string()){
-                    let _=reply.send((10,json!({"error_code":"INVALID_ARGUMENT","message":"Only an optional plain PNG name is accepted"})));return;
+            "dopus.ui.capture" => {
+                if args
+                    .as_object()
+                    .is_none_or(|m| m.keys().any(|k| k != "name"))
+                    || args.get("name").is_some_and(|v| !v.is_string())
+                {
+                    let _=reply.send((10,json!({"error_code":"INVALID_ARGUMENT","message":"Only an optional plain PNG name is accepted"})));
+                    return;
                 }
-                match self.capture.request(ctx,args["name"].as_str()){
-                    Ok(token)=>self.capture_reply=Some((token,self.model["serial"].as_u64().unwrap_or(0),self.view.as_ref().map(|v|v.revision).unwrap_or(0),reply)),
-                    Err(error)=>{let _=reply.send((10,json!({"error_code":"CAPTURE_REFUSED","message":error})));}
+                match self.capture.request(ctx, args["name"].as_str()) {
+                    Ok(token) => {
+                        self.capture_reply = Some((
+                            token,
+                            self.model["serial"].as_u64().unwrap_or(0),
+                            self.view.as_ref().map(|v| v.revision).unwrap_or(0),
+                            reply,
+                        ))
+                    }
+                    Err(error) => {
+                        let _ = reply
+                            .send((10, json!({"error_code":"CAPTURE_REFUSED","message":error})));
+                    }
                 }
             }
             "dopus.show" => {
@@ -278,8 +330,8 @@ impl App {
                     Ok(()) => {
                         self.input_replies.push(reply);
                         self.input_wait = true;
-                        self.input_close=Some(close_after_reply.clone());
-                        self.input_error=None;
+                        self.input_close = Some(close_after_reply.clone());
+                        self.input_error = None;
                         ctx.request_repaint();
                     }
                     Err(error) => {
@@ -292,25 +344,39 @@ impl App {
         }
     }
     fn completions(&mut self, ctx: &egui::Context) {
-        if let Some((token,result))=self.capture.poll(ctx){
-            if let Some((expected,serial,revision,reply))=self.capture_reply.take(){
-                if expected==token{
-                    let answer=match result{Ok(mut body)=>{body["serial_at_request"]=json!(serial);body["serial_at_completion"]=self.model["serial"].clone();body["revision_at_request"]=json!(revision);body["revision_at_completion"]=json!(self.view.as_ref().map(|v|v.revision).unwrap_or(0));(0,body)},Err(error)=>(20,json!({"error_code":"CAPTURE_FAILED","message":error}))};
-                    let _=reply.send(answer);
-                }else{let _=reply.send((20,json!({"error_code":"STALE_CAPTURE"})));}
+        if let Some((token, result)) = self.capture.poll(ctx) {
+            if let Some((expected, serial, revision, reply)) = self.capture_reply.take() {
+                if expected == token {
+                    let answer = match result {
+                        Ok(mut body) => {
+                            body["serial_at_request"] = json!(serial);
+                            body["serial_at_completion"] = self.model["serial"].clone();
+                            body["revision_at_request"] = json!(revision);
+                            body["revision_at_completion"] =
+                                json!(self.view.as_ref().map(|v| v.revision).unwrap_or(0));
+                            (0, body)
+                        }
+                        Err(error) => (20, json!({"error_code":"CAPTURE_FAILED","message":error})),
+                    };
+                    let _ = reply.send(answer);
+                } else {
+                    let _ = reply.send((20, json!({"error_code":"STALE_CAPTURE"})));
+                }
             }
         }
         let results = self.runtime.as_mut().map(|r| r.drain()).unwrap_or_default();
         for result in results {
             let reply = self.pending.remove(&result.sequence);
             self.inflight.remove(&result.sequence);
-            let ui_request=self.ui_sequences.remove(&result.sequence);
+            let ui_request = self.ui_sequences.remove(&result.sequence);
             if self
                 .runtime
                 .as_ref()
                 .is_some_and(|r| r.generation() != result.generation)
             {
-                if ui_request{self.input_error=Some("STALE_GENERATION".into());}
+                if ui_request {
+                    self.input_error = Some("STALE_GENERATION".into());
+                }
                 if let Some(reply) = reply {
                     let _ = reply.send((10, json!({"error_code":"STALE_GENERATION"})));
                 }
@@ -324,16 +390,25 @@ impl App {
                 eprint!("{}", result.stderr);
             }
             let mut error = result.error;
-            if ui_request{
-                if let Some(error)=&error{self.input_error=Some(error.clone());}
-                else if let Some(reply)=&result.reply{if reply.rc>=10{self.input_error=Some(reply.body.to_string());}}
+            if ui_request {
+                if let Some(error) = &error {
+                    self.input_error = Some(error.clone());
+                } else if let Some(reply) = &result.reply {
+                    if reply.rc >= 10 {
+                        self.input_error = Some(reply.body.to_string());
+                    }
+                }
             }
             if let Some(model) = result.model {
                 if let Err(e) = self.publish(model, ctx) {
                     error = Some(e);
                 }
             }
-            if ui_request{if let Some(error)=&error{self.input_error=Some(error.clone());}}
+            if ui_request {
+                if let Some(error) = &error {
+                    self.input_error = Some(error.clone());
+                }
+            }
             if let Some(reply) = reply {
                 let answer = if let Some(error) = &error {
                     (20, json!({"error_code":"BEHAVIOUR_FAILED","message":error}))
@@ -398,14 +473,19 @@ impl eframe::App for App {
         let context = ui.ctx().clone();
         let ctx = &context;
         self.completions(ctx);
-        if ctx.input(|i|i.viewport().close_requested())&&!self.close_after_idle&&!self.bus.close_requested.load(Ordering::Acquire){
+        if ctx.input(|i| i.viewport().close_requested())
+            && !self.close_after_idle
+            && !self.bus.close_requested.load(Ordering::Acquire)
+        {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.call("dopus.quit".into(),json!({}),BTreeMap::new(),None,ctx);
+            self.call("dopus.quit".into(), json!({}), BTreeMap::new(), None, ctx);
         }
         while let Ok(request) = self.bus.requests.try_recv() {
             self.request(request, ctx);
         }
-        if self.bus.close_requested.load(Ordering::Acquire)||(self.close_after_idle&&self.inflight.is_empty()) {
+        if self.bus.close_requested.load(Ordering::Acquire)
+            || (self.close_after_idle && self.inflight.is_empty())
+        {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
@@ -415,8 +495,12 @@ impl eframe::App for App {
             ui.label("Loading Dopus…");
             Vec::new()
         };
-        if let Some(error)=self.view.as_mut().and_then(SceneView::take_focus_error){
-            if self.input_wait{self.input_error=Some(error);}else{self.error=error;}
+        if let Some(error) = self.view.as_mut().and_then(SceneView::take_focus_error) {
+            if self.input_wait {
+                self.input_error = Some(error);
+            } else {
+                self.error = error;
+            }
         }
         if let Some(view) = &mut self.view {
             if let Some(id) = self.model["focus"].as_str() {
@@ -457,11 +541,17 @@ impl eframe::App for App {
             } else if self.input_wait && self.inflight.is_empty() {
                 self.input_wait = false;
                 let mut answer = self.state();
-                let rc=if let Some(error)=self.input_error.take(){answer["error_code"]=json!("INPUT_ACTION_REFUSED");answer["message"]=json!(error);10}else{0};
+                let rc = if let Some(error) = self.input_error.take() {
+                    answer["error_code"] = json!("INPUT_ACTION_REFUSED");
+                    answer["message"] = json!(error);
+                    10
+                } else {
+                    0
+                };
                 for reply in self.input_replies.drain(..) {
                     let _ = reply.send((rc, answer.clone()));
                 }
-                self.input_close=None;
+                self.input_close = None;
             }
         }
         let answer = self.state();
@@ -584,7 +674,13 @@ fn main() -> eframe::Result {
             );
             let mut jobs = Jobs::new(4, wake.clone());
             jobs.set_native_backend(bus.backend_maker());
-            let capture=viu::capture::Capture::new(std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).map(|p|p.join(format!("viu-dopus-{mode}/captures"))).unwrap_or_default(),wake.clone());
+            let capture = viu::capture::Capture::new(
+                std::env::var_os("XDG_RUNTIME_DIR")
+                    .map(PathBuf::from)
+                    .map(|p| p.join(format!("viu-dopus-{mode}/captures")))
+                    .unwrap_or_default(),
+                wake.clone(),
+            );
             let mut runtime = None;
             let mut native = None;
             if mode == "mix" {
@@ -620,11 +716,11 @@ fn main() -> eframe::Result {
                 contract,
                 app_dir,
                 capture,
-                capture_reply:None,
-                close_after_idle:false,
-                input_close:None,
-                input_error:None,
-                ui_sequences:BTreeSet::new(),
+                capture_reply: None,
+                close_after_idle: false,
+                input_close: None,
+                input_error: None,
+                ui_sequences: BTreeSet::new(),
                 mode,
                 pending: BTreeMap::new(),
                 inflight: BTreeSet::new(),

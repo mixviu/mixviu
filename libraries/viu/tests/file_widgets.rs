@@ -122,18 +122,55 @@ fn tree_table_admission_is_based_on_current_row_and_column_identity() {
 }
 
 #[test]
-fn native_drag_to_a_folder_in_the_same_table_reaches_the_folder_before_background(){
-    let ctx=egui::Context::default();let mut widgets=Widgets::default();
-    let w=Widget::new("items","tree-table","",table(3)).with_properties(json!({"height":320}));
-    frame(&ctx,&mut widgets,&w,vec![]);
-    let start=widgets.geometry["items.row.1"].center();let end=widgets.geometry["items.row.0"].center();
-    frame(&ctx,&mut widgets,&w,vec![egui::Event::PointerMoved(start)]);
-    frame(&ctx,&mut widgets,&w,vec![egui::Event::PointerButton{pos:start,button:egui::PointerButton::Primary,pressed:true,modifiers:egui::Modifiers::NONE}]);
-    frame(&ctx,&mut widgets,&w,vec![egui::Event::PointerMoved(start+egui::vec2(12.0,0.0))]);
-    frame(&ctx,&mut widgets,&w,vec![egui::Event::PointerMoved(end)]);
-    let events=frame(&ctx,&mut widgets,&w,vec![egui::Event::PointerButton{pos:end,button:egui::PointerButton::Primary,pressed:false,modifiers:egui::Modifiers::NONE}]);
-    assert!(events.iter().any(|e|e.action=="drop"&&e.value["destination"]=="item-0"&&e.value["keys"]==json!(["item-1"])),"{events:?}");
-    assert_eq!(events.iter().filter(|e|e.action=="drop").count(),1);
+fn native_drag_to_a_folder_in_the_same_table_reaches_the_folder_before_background() {
+    let ctx = egui::Context::default();
+    let mut widgets = Widgets::default();
+    let w = Widget::new("items", "tree-table", "", table(3)).with_properties(json!({"height":320}));
+    frame(&ctx, &mut widgets, &w, vec![]);
+    let start = widgets.geometry["items.row.1"].center();
+    let end = widgets.geometry["items.row.0"].center();
+    frame(
+        &ctx,
+        &mut widgets,
+        &w,
+        vec![egui::Event::PointerMoved(start)],
+    );
+    frame(
+        &ctx,
+        &mut widgets,
+        &w,
+        vec![egui::Event::PointerButton {
+            pos: start,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        }],
+    );
+    frame(
+        &ctx,
+        &mut widgets,
+        &w,
+        vec![egui::Event::PointerMoved(start + egui::vec2(12.0, 0.0))],
+    );
+    frame(&ctx, &mut widgets, &w, vec![egui::Event::PointerMoved(end)]);
+    let events = frame(
+        &ctx,
+        &mut widgets,
+        &w,
+        vec![egui::Event::PointerButton {
+            pos: end,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+    );
+    assert!(
+        events.iter().any(|e| e.action == "drop"
+            && e.value["destination"] == "item-0"
+            && e.value["keys"] == json!(["item-1"])),
+        "{events:?}"
+    );
+    assert_eq!(events.iter().filter(|e| e.action == "drop").count(), 1);
 }
 
 #[test]
@@ -186,9 +223,12 @@ fn dock_and_split_validate_bounds_and_expose_live_divider_geometry() {
     out.textures_delta.clear();
     assert!(view.geometry["a"].center().x < view.geometry["body.divider"].center().x);
     assert!(view.geometry["b"].center().x > view.geometry["body.divider"].center().x);
-    assert!(view.admit_intent("body","set",&json!(0.5)).is_ok());
-    assert!(view.admit_intent("body","set",&json!(1.5)).is_err());
-    assert!(view.admit_intent("heading","set",&json!("policy")).is_err());
+    assert!(view.admit_intent("body", "set", &json!(0.5)).is_ok());
+    assert!(view.admit_intent("body", "set", &json!(1.5)).is_err());
+    assert!(
+        view.admit_intent("heading", "set", &json!("policy"))
+            .is_err()
+    );
     let mut bad = nodes.clone();
     bad["body"]["minimum"] = json!(0.9);
     bad["body"]["maximum"] = json!(0.1);

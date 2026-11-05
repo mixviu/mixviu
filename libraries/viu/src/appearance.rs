@@ -58,3 +58,20 @@ pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {
     ctx.set_theme(theme);
     ctx.set_style_of(theme, style);
 }
+
+/// Resolve before committing a scene update so a bad design leaves the live
+/// model, geometry and style intact.
+pub fn resolve(description: &Value) -> Result<egui::Style, String> {
+    crate::design_style::resolve(description)
+}
+
+pub fn install_style(ctx: &egui::Context, description: &Value, style: egui::Style) {
+    let theme = if description["mode"] == "light" {
+        egui::Theme::Light
+    } else {
+        egui::Theme::Dark
+    };
+    ctx.set_theme(theme);
+    ctx.set_style_of(egui::Theme::Light, style.clone());
+    ctx.set_style_of(egui::Theme::Dark, style);
+}

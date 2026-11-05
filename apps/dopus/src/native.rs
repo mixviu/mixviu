@@ -94,7 +94,7 @@ impl Native {
             rx: Some(rx),
             relay: Some(relay),
             contract,
-            appearance: json!({"mode":"dark","scheme":"ocean","style":"studio","body":14.666667}),
+            appearance: json!({"mode":"dark","scheme":"studio","style":"default"}),
             form: closed(),
             form_kind: String::new(),
             token: 0,
@@ -133,11 +133,13 @@ impl Native {
                     self.form_kind = "delete".into();
                     self.form = json!({"open":true,"title":"Delete permanently","body":message,"field":null,"instance":token,"error":"","choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"Delete","enabled":true,"default":true}]});
                 }
-                CoreEvent::Status {
-                    kind,
-                    text,
-                    ..
-                } => self.info = if kind==dopus_core::StatusKind::Message{text}else{self.core().info().into()},
+                CoreEvent::Status { kind, text, .. } => {
+                    self.info = if kind == dopus_core::StatusKind::Message {
+                        text
+                    } else {
+                        self.core().info().into()
+                    }
+                }
                 CoreEvent::OpenFile(path) => {
                     self.effects.push_back(json!({"kind":"open","path":path}))
                 }
@@ -216,11 +218,28 @@ impl Native {
     pub fn actions(&self) -> Value {
         json!({"actions":self.contract["actions"].as_array().unwrap().iter().map(|a|self.command(a["id"].as_str().unwrap())).collect::<Vec<_>>()})
     }
-    fn search_choices(&self)->Value{
-        let query=self.form["field"].as_str().unwrap_or("").to_lowercase();
-        let mut choices=self.contract["actions"].as_array().unwrap().iter().filter(|a|a["id"]!="search"&&(a["label"].as_str().unwrap_or("").to_lowercase().contains(&query)||a["id"].as_str().unwrap_or("").contains(&query))).map(|a|self.command(a["id"].as_str().unwrap())).collect::<Vec<_>>();
-        if let Some(first)=choices.first_mut(){first["default"]=json!(true);}
-        choices.push(json!({"id":"cancel","label":"Cancel","enabled":true,"cancel":true}));json!(choices)
+    fn search_choices(&self) -> Value {
+        let query = self.form["field"].as_str().unwrap_or("").to_lowercase();
+        let mut choices = self.contract["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| {
+                a["id"] != "search"
+                    && (a["label"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&query)
+                        || a["id"].as_str().unwrap_or("").contains(&query))
+            })
+            .map(|a| self.command(a["id"].as_str().unwrap()))
+            .collect::<Vec<_>>();
+        if let Some(first) = choices.first_mut() {
+            first["default"] = json!(true);
+        }
+        choices.push(json!({"id":"cancel","label":"Cancel","enabled":true,"cancel":true}));
+        json!(choices)
     }
     fn menus(&self) -> Value {
         let mut menus = self.contract["menus"].clone();
@@ -232,14 +251,36 @@ impl Native {
         menus
     }
     pub fn action(&mut self, id: &str, params: &Value) -> Result<Value, String> {
-        let empty=json!({});let params=if params.is_null(){&empty}else{params};
-        let fields=params.as_object().ok_or("Action params must be a map")?;
-        if fields.keys().any(|k|!["pane","ctrl","shift","path"].contains(&k.as_str())||(k=="path"&&id!="place.open")){return Err("Unknown action parameter".into());}
-        if ["ctrl","shift"].iter().any(|key|params.get(*key).is_some_and(|v|!v.is_null()&&!v.is_boolean())){return Err("Selection modifier must be bool".into());}
-        if id!="place.open"&&!self.contract["actions"].as_array().unwrap().iter().any(|a|a["id"]==id){return Err("UNKNOWN_ACTION".into());}
-        if id=="place.open"&&string(params,"path")?.is_empty(){return Err("Path must be non-empty text".into());}
-        let previous=self.core().active();
-        if let Some(target) = params.get("pane").filter(|v|!v.is_null()) {
+        let empty = json!({});
+        let params = if params.is_null() { &empty } else { params };
+        let fields = params.as_object().ok_or("Action params must be a map")?;
+        if fields.keys().any(|k| {
+            !["pane", "ctrl", "shift", "path"].contains(&k.as_str())
+                || (k == "path" && id != "place.open")
+        }) {
+            return Err("Unknown action parameter".into());
+        }
+        if ["ctrl", "shift"].iter().any(|key| {
+            params
+                .get(*key)
+                .is_some_and(|v| !v.is_null() && !v.is_boolean())
+        }) {
+            return Err("Selection modifier must be bool".into());
+        }
+        if id != "place.open"
+            && !self.contract["actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["id"] == id)
+        {
+            return Err("UNKNOWN_ACTION".into());
+        }
+        if id == "place.open" && string(params, "path")?.is_empty() {
+            return Err("Path must be non-empty text".into());
+        }
+        let previous = self.core().active();
+        if let Some(target) = params.get("pane").filter(|v| !v.is_null()) {
             let p = match target.as_str() {
                 Some("left") => PaneId::Left,
                 Some("right") => PaneId::Right,
@@ -345,10 +386,13 @@ impl Native {
                 self.form = json!({"open":true,"title":if id=="help.about"{"About Dopus"}else{"Keyboard shortcuts"},"body":body,"field":null,"instance":self.token,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"OK","enabled":true,"default":true}]});
             }
             "search" => {
-                if self.form["open"]==true{return Err("Answer the current dialog first".into());}
-                self.token+=1;self.form_kind="search".into();
-                self.form=json!({"open":true,"title":"Search commands","body":"","field":"","instance":self.token,"choice_layout":"list","choices":[]});
-                self.form["choices"]=self.search_choices();
+                if self.form["open"] == true {
+                    return Err("Answer the current dialog first".into());
+                }
+                self.token += 1;
+                self.form_kind = "search".into();
+                self.form = json!({"open":true,"title":"Search commands","body":"","field":"","instance":self.token,"choice_layout":"list","choices":[]});
+                self.form["choices"] = self.search_choices();
             }
             "app.quit" => {
                 self.core_mut().flush_config();
@@ -375,9 +419,18 @@ impl Native {
         if let Some(text) = text {
             self.form["field"] = json!(text);
         }
-        if choice!="cancel"&&self.form_kind=="search"{
-            if !self.form["choices"].as_array().unwrap().iter().any(|c|c["id"]==choice&&c["enabled"]==true){return Err("Command is not available".into());}
-            self.form=closed();self.form_kind.clear();return self.action(choice,&json!({}));
+        if choice != "cancel" && self.form_kind == "search" {
+            if !self.form["choices"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["id"] == choice && c["enabled"] == true)
+            {
+                return Err("Command is not available".into());
+            }
+            self.form = closed();
+            self.form_kind.clear();
+            return self.action(choice, &json!({}));
         }
         if choice != "cancel" && self.form_kind == "drop" {
             let action = match choice {
@@ -394,7 +447,14 @@ impl Native {
                 .map(PathBuf::from)
                 .collect();
             let destination = PathBuf::from(string(request, "destination")?);
-            let source_pane=if request["source"].as_str().is_some_and(|s|s.starts_with("right-")){PaneId::Right}else{PaneId::Left};
+            let source_pane = if request["source"]
+                .as_str()
+                .is_some_and(|s| s.starts_with("right-"))
+            {
+                PaneId::Right
+            } else {
+                PaneId::Left
+            };
             self.core_mut()
                 .transfer_paths(source_pane, sources, destination, action)?;
         } else if self.form_kind == "delete" {
@@ -442,7 +502,9 @@ impl Native {
             return match action {
                 "edit" => {
                     self.form["field"] = json!(v.as_str().ok_or("form edit must be text")?);
-                    if self.form_kind=="search"{self.form["choices"]=self.search_choices();}
+                    if self.form_kind == "search" {
+                        self.form["choices"] = self.search_choices();
+                    }
                     Ok(json!({"ok":true}))
                 }
                 "answer" => self.answer(string(v, "choice")?, None),
@@ -467,7 +529,9 @@ impl Native {
             return Ok(json!({"ok":true}));
         }
         if id == "places" {
-            if action=="activate-pane"{return Ok(json!({"ok":true}));}
+            if action == "activate-pane" {
+                return Ok(json!({"ok":true}));
+            }
             let index = string(v, "key")?
                 .strip_prefix("place.")
                 .and_then(|s| s.parse::<usize>().ok())
@@ -580,15 +644,61 @@ impl Native {
                     }
                 }
                 "drop" => {
-                    let keys=v["keys"].as_array().ok_or("drop sources required")?.iter().map(|p|p.as_str().map(PathBuf::from).ok_or("drop source must be text")).collect::<Result<Vec<_>,_>>()?;
-                    let sources=keys.iter().filter(|path|!keys.iter().any(|parent|parent!=*path&&path.starts_with(parent))).cloned().collect::<Vec<_>>();
-                    let destination=PathBuf::from(string(v,"destination")?);
-                    if !dopus_core::model::file_drop_actions_batch(&sources,&destination,self.core().availability().operation_running).contains(DropAction::Copy){return Err("This destination cannot receive the dragged items".into());}
-                    let source_pane=if v["source"].as_str().is_some_and(|s|s.starts_with("right-")){PaneId::Right}else{PaneId::Left};
-                    if v["ctrl"]==true||v["shift"]==true{self.core_mut().transfer_paths(source_pane,sources,destination,if v["ctrl"]==true{DropAction::Copy}else{DropAction::Move})?;return Ok(json!({"ok":true}));}
-                    if self.form["open"]==true{return Err("Answer the current dialog first".into());}
+                    let keys = v["keys"]
+                        .as_array()
+                        .ok_or("drop sources required")?
+                        .iter()
+                        .map(|p| {
+                            p.as_str()
+                                .map(PathBuf::from)
+                                .ok_or("drop source must be text")
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let sources = keys
+                        .iter()
+                        .filter(|path| {
+                            !keys
+                                .iter()
+                                .any(|parent| parent != *path && path.starts_with(parent))
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let destination = PathBuf::from(string(v, "destination")?);
+                    if !dopus_core::model::file_drop_actions_batch(
+                        &sources,
+                        &destination,
+                        self.core().availability().operation_running,
+                    )
+                    .contains(DropAction::Copy)
+                    {
+                        return Err("This destination cannot receive the dragged items".into());
+                    }
+                    let source_pane = if v["source"]
+                        .as_str()
+                        .is_some_and(|s| s.starts_with("right-"))
+                    {
+                        PaneId::Right
+                    } else {
+                        PaneId::Left
+                    };
+                    if v["ctrl"] == true || v["shift"] == true {
+                        self.core_mut().transfer_paths(
+                            source_pane,
+                            sources,
+                            destination,
+                            if v["ctrl"] == true {
+                                DropAction::Copy
+                            } else {
+                                DropAction::Move
+                            },
+                        )?;
+                        return Ok(json!({"ok":true}));
+                    }
+                    if self.form["open"] == true {
+                        return Err("Answer the current dialog first".into());
+                    }
                     self.drop_request = Some(v.clone());
-                    self.drop_request.as_mut().unwrap()["keys"]=json!(sources);
+                    self.drop_request.as_mut().unwrap()["keys"] = json!(sources);
                     self.form_kind = "drop".into();
                     self.token += 1;
                     self.form = json!({"open":true,"title":"Transfer items","body":"Move or copy the dragged items?","field":null,"instance":self.token,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"move","label":"Move","enabled":true},{"id":"copy","label":"Copy","enabled":true}]});
@@ -617,13 +727,20 @@ impl Native {
         match command {
             "dopus.execute" => self.action(string(args, "id")?, &args["params"]),
             "dopus.intent" => self.intent(args),
-            "dopus.dialog.answer" => {if args.get("text").is_some_and(|v|!v.is_string()){return Err("Dialog text must be text".into());}self.answer(string(args, "choice")?, args["text"].as_str())},
+            "dopus.dialog.answer" => {
+                if args.get("text").is_some_and(|v| !v.is_string()) {
+                    return Err("Dialog text must be text".into());
+                }
+                self.answer(string(args, "choice")?, args["text"].as_str())
+            }
             "dopus.open" => {
                 let paths = args["paths"]
                     .as_array()
                     .filter(|p| !p.is_empty())
                     .ok_or("paths must contain a location")?;
-                if paths.iter().any(|p|p.as_str().is_none_or(str::is_empty)){return Err("paths must contain non-empty text".into());}
+                if paths.iter().any(|p| p.as_str().is_none_or(str::is_empty)) {
+                    return Err("paths must contain non-empty text".into());
+                }
                 for (i, path) in paths.iter().take(2).enumerate() {
                     self.core_mut().navigate(
                         pane(i),
@@ -652,8 +769,12 @@ impl Native {
                         return Err("Unknown colour scheme".into());
                     }
                 }
-                if let Some(mode)=args.get("mode"){self.appearance["mode"]=mode.clone();}
-                if let Some(scheme)=args.get("scheme"){self.appearance["scheme"]=scheme.clone();}
+                if let Some(mode) = args.get("mode") {
+                    self.appearance["mode"] = mode.clone();
+                }
+                if let Some(scheme) = args.get("scheme") {
+                    self.appearance["scheme"] = scheme.clone();
+                }
                 Ok(self.appearance.clone())
             }
             "dopus.quit" | "dopus.persist" => {
@@ -669,11 +790,15 @@ impl Native {
                 json!([{"label":"Folder","value":path},{"label":"Contents","value":summary}])
             }
             Properties::Entry {
-                entry, metadata, count_pending
+                entry,
+                metadata,
+                count_pending,
             } => {
-                let metadata=match metadata{
-                    Some(Ok(metadata))=>metadata,
-                    value=>{return json!([{"label":"Name","value":dopus_core::sanitise_display_text(&entry.name)},if let Some(Err(error))=value{json!({"label":"Error","value":error})}else{json!({"label":"Kind","value":"…"})},{"label":"Path","value":dopus_core::sanitise_display_path(&entry.path)}]);}
+                let metadata = match metadata {
+                    Some(Ok(metadata)) => metadata,
+                    value => {
+                        return json!([{"label":"Name","value":dopus_core::sanitise_display_text(&entry.name)},if let Some(Err(error))=value{json!({"label":"Error","value":error})}else{json!({"label":"Kind","value":"…"})},{"label":"Path","value":dopus_core::sanitise_display_path(&entry.path)}]);
+                    }
                 };
                 let mut fields = vec![
                     json!({"label":"Name","value":dopus_core::sanitise_display_text(&entry.name)}),
@@ -688,7 +813,9 @@ impl Native {
                 if let Some(target) = metadata.symlink_target {
                     fields.push(json!({"label":"Link target","value":target}));
                 }
-                fields.push(json!({"label":"Path","value":dopus_core::sanitise_display_path(&entry.path)}));
+                fields.push(
+                    json!({"label":"Path","value":dopus_core::sanitise_display_path(&entry.path)}),
+                );
                 json!(fields)
             }
         }
