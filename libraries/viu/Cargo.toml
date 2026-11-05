@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-mix = { path = "../mix", features = ["regex"] }
+mix = { path = "../mix", features = ["regex", "tokio-sleep"] }
 scene = { path = "../scene" }
 serde_json = "=1.0.151"
 tokio = { version = "=1.53.1", features = ["rt", "time", "macros", "sync"] }

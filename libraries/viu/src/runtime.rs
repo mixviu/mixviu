@@ -234,6 +234,6 @@ impl BusHandler for Local {
     }
     fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> { Box::pin(async { None }) }
     fn reply<'a>(&'a self, _: &'a str, _: &'a str, _: Option<&'a str>, rc: u8, body: &'a str) -> BusFuture<'a, MixResult<()>> {
-        Box::pin(async move { if rc != 0 { *self.error.borrow_mut() = Some(body.into()); } Ok(()) })
+        Box::pin(async move { if rc != 0 && self.error.borrow().is_none() { *self.error.borrow_mut() = Some(body.into()); } Ok(()) })
     }
 }
