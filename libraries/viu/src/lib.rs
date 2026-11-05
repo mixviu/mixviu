@@ -3,8 +3,10 @@
 pub mod appearance;
 pub mod elide;
 pub mod icons;
+pub mod image_view;
 pub mod jobs;
 pub mod native_bus;
+mod native_primitives;
 pub mod rich;
 pub mod runtime;
 pub mod templates;

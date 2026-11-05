@@ -34,7 +34,7 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
     std::fs::create_dir(&right).unwrap();
     std::fs::write(left.join("one.txt"), "one").unwrap();
     std::fs::create_dir(left.join("Folder")).unwrap();
-    let config = json!({"schema_version":2,"left":{"path":left},"right":{"path":right},"bookmarks":[],"places":{"open":true,"width":0.15},"properties":{"open":true,"width":0.22},"split_ratio":0.5});
+    let config = json!({"schema_version":2,"left":{"path":left,"previews":false},"right":{"path":right,"previews":false},"bookmarks":[],"places":{"open":true,"width":0.15},"properties":{"open":true,"width":0.22},"split_ratio":0.5});
     std::fs::write(dir.path().join("config.conf.mix"), config.to_string()).unwrap();
     let app_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = app_dir.join("dopus.mix");

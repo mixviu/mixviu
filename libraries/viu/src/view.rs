@@ -99,6 +99,7 @@ impl SceneView {
     pub fn text_input_active(&self) -> bool {
         self.widgets.text_input_active
     }
+    pub fn image_states(&self)->Value{self.widgets.image_states()}
 
     fn node(
         &mut self,

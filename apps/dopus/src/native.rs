@@ -447,7 +447,7 @@ impl Native {
         if id == "root" {
             let sidebar = match string(v, "child")? {
                 "places" => Sidebar::Places,
-                "properties" => Sidebar::Properties,
+                "properties-pane" => Sidebar::Properties,
                 _ => return Err("Unknown sidebar".into()),
             };
             self.core_mut().set_sidebar_width(
@@ -457,17 +457,10 @@ impl Native {
             return Ok(json!({"ok":true}));
         }
         if id == "places" {
-            let path = string(v, "key")?;
-            if !self
-                .core()
-                .places()
-                .iter()
-                .any(|(_, p)| p == Path::new(path))
-            {
-                return Err("Unknown place".into());
-            }
+            let index=string(v,"key")?.strip_prefix("place.").and_then(|s|s.parse::<usize>().ok()).ok_or("Unknown place")?;
+            let path=self.core().places().get(index).ok_or("Unknown place")?.1.clone();
             let p = self.core().active();
-            self.core_mut().navigate(p, path.into());
+            self.core_mut().navigate(p, path);
             return Ok(json!({"ok":true}));
         }
         let p = if id.starts_with("left-") {
@@ -698,8 +691,13 @@ impl Native {
             expanded.sort();
             panes.push(json!({"path":p.path,"generation":p.generation,"show_hidden":p.show_hidden,"previews":p.previews,"sort":p.sort,"ascending":p.ascending,"selected":p.selected,"selected_paths":core.selected_paths(pane(i)),"expanded":expanded,"summary":p.footer_summary(),"rows":rows.len(),"error":null}));
         }
-        values["places"] = json!({"key":"places","revision":0,"active":false,"columns":[{"id":"name","label":"Places"}],"rows":core.places().iter().map(|(name,path)|json!({"key":path,"cells":[name],"depth":0,"branch":false,"expanded":false,"selected":core.pane(core.active()).path==*path,"focused":false,"icon":"folder"})).collect::<Vec<_>>(),"context":[],"background_context":[]});
-        json!({"values":values,"panes":panes,"active":core.active().index(),"split":config.split_ratio,"layout":{"form":{"edge":"top","size":0},"menu":{"edge":"top","size":28},"status":{"edge":"bottom","size":24},"places":{"edge":"left","fraction":config.places.width,"resizable":true,"minimum":0.1,"maximum":0.4},"properties":{"edge":"right","fraction":config.properties.width,"resizable":true,"minimum":0.1,"maximum":0.4,"minimum_window_width":700},"panes":{"edge":"fill"}},"places_hidden":!config.places.open,"properties_hidden":!config.properties.open,"appearance":self.appearance,"busy":core.availability().operation_running,"serial":self.serial,"focus":self.focus,"info":self.info,"ready":!core.pane(PaneId::Left).listing&&!core.pane(PaneId::Right).listing})
+        values["places"] = json!({"key":"places","revision":0,"active":false,"columns":[{"id":"name","label":"Places"}],"rows":core.places().iter().enumerate().map(|(i,(name,path))|json!({"key":format!("place.{i}"),"path":path,"cells":[name],"depth":0,"branch":false,"expanded":false,"selected":core.pane(core.active()).path==*path,"focused":false,"icon":match name.as_str(){"Home"=>"house","Filesystem"=>"hard-drive","Documents"=>"file-text","Downloads"=>"download","Music"=>"music","Pictures"=>"image","Videos"=>"film",_=>"folder"}})).collect::<Vec<_>>(),"context":[],"background_context":[]});
+        values["preview"]=match core.preview(core.active()){
+            Some(dopus_core::thumbs::Preview::Ready(path))=>json!({"phase":"ready","path":path}),
+            Some(dopus_core::thumbs::Preview::Pending)=>json!({"phase":"pending"}),
+            _=>json!({"phase":"none"})
+        };
+        json!({"values":values,"panes":panes,"active":core.active().index(),"split":config.split_ratio,"layout":{"form":{"edge":"top","size":0},"menu":{"edge":"top","size":28},"status":{"edge":"bottom","size":24},"places":{"edge":"left","fraction":config.places.width,"resizable":true,"minimum":0.1,"maximum":0.4},"properties-pane":{"edge":"right","fraction":config.properties.width,"resizable":true,"minimum":0.1,"maximum":0.4,"minimum_window_width":700},"panes":{"edge":"fill"}},"places_hidden":!config.places.open,"properties_hidden":!config.properties.open,"appearance":self.appearance,"busy":core.availability().operation_running,"serial":self.serial,"focus":self.focus,"info":self.info,"ready":!core.pane(PaneId::Left).listing&&!core.pane(PaneId::Right).listing})
     }
 }
 impl Drop for Native {

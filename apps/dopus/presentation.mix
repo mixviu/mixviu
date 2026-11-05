@@ -78,7 +78,14 @@ fn dp_project($state,$contract)
     for $path in keys($p.expanded) if $p.expanded[$path] then push($expanded,$path) end end
     push($panes,{path:$p.path,generation:$p.generation,show_hidden:$p.show_hidden,previews:$p.previews,sort:$p.sort,ascending:$p.ascending,selected:$p.selected,selected_paths:filter(map($p.entries,fn($r)=$r.path),fn($path)=contains($p.selected_paths,$path)),expanded:sort($expanded),summary:$p.summary,rows:len($p.entries),error:$p.error})
   end
-  $values.places={key:"places",revision:0,active:false,columns:[{id:"name",label:"Places"}],rows:map($state.places,fn($p)={key:$p.path,cells:[$p.name],depth:0,branch:false,expanded:false,selected:$state.panes[$state.active].path==$p.path,focused:false,icon:"folder"}),context:[],background_context:[]}
-  $layout={form:{edge:"top",size:0},menu:{edge:"top",size:28},status:{edge:"bottom",size:24},places:{edge:"left",fraction:$state.places_width,resizable:true,minimum:0.1,maximum:0.4},properties:{edge:"right",fraction:$state.properties_width,resizable:true,minimum:0.1,maximum:0.4,minimum_window_width:700},panes:{edge:"fill"}}
+  $place_rows=[]
+  $place_icons={Home:"house",Filesystem:"hard-drive",Documents:"file-text",Downloads:"download",Music:"music",Pictures:"image",Videos:"film"}
+  for $i=0 to len($state.places)-1
+    $p=$state.places[$i]
+    push($place_rows,{key:"place."..to_string($i),path:$p.path,cells:[$dp.dp_display($p.name)],depth:0,branch:false,expanded:false,selected:$state.panes[$state.active].path==$p.path,focused:false,icon:$place_icons[$p.name] ?? "folder"})
+  end
+  $values.places={key:"places",revision:0,active:false,columns:[{id:"name",label:"Places"}],rows:$place_rows,context:[],background_context:[]}
+  $values.preview=if $state.preview_slots==nil then {phase:"none"} else $state.preview_slots[$state.active].value end
+  $layout={form:{edge:"top",size:0},menu:{edge:"top",size:28},status:{edge:"bottom",size:24},places:{edge:"left",fraction:$state.places_width,resizable:true,minimum:0.1,maximum:0.4},"properties-pane":{edge:"right",fraction:$state.properties_width,resizable:true,minimum:0.1,maximum:0.4,minimum_window_width:700},panes:{edge:"fill"}}
   return {values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
 end

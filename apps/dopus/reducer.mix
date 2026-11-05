@@ -25,11 +25,33 @@ fn dp_initialise($a)
     catch $message $save=false;$warning="Configuration retained: "..$message end
   end
   $panes=[$dp.dp_pane($config.left),$dp.dp_pane($config.right)]
-  $places=$config.bookmarks ?? []
-  for $place in [{name:"Home",path:$home},{name:"Desktop",path:$home.."/Desktop"},{name:"Documents",path:$home.."/Documents"},{name:"Downloads",path:$home.."/Downloads"},{name:"Pictures",path:$home.."/Pictures"},{name:"Music",path:$home.."/Music"},{name:"Videos",path:$home.."/Videos"},{name:"Filesystem",path:"/"}]
+  $places=[]
+  for $place in [{name:"Home",path:$home},{name:"Filesystem",path:"/"},{name:"Desktop",path:$home.."/Desktop"},{name:"Documents",path:$home.."/Documents"},{name:"Downloads",path:$home.."/Downloads"},{name:"Music",path:$home.."/Music"},{name:"Pictures",path:$home.."/Pictures"},{name:"Videos",path:$home.."/Videos"}]
     if $place.path=="/" or $place.name=="Home" or is_dir($place.path) then push($places,$place) end
   end
+  $places=concat($places,$config.bookmarks ?? [])
   return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.16,0.1,0.4),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.4),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"ocean",style:"studio",body:14.666667},busy:false,job:nil,form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Ready" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
+end
+fn dp_update_previews($s)
+  if $s.preview_slots==nil then $s.preview_slots=[{key:nil,job:nil,value:{phase:"none"}},{key:nil,job:nil,value:{phase:"none"}}] end
+  for $i=0 to 1
+    $p=$s.panes[$i]
+    $row=filter($p.entries,fn($r)=$r.path==$p.selected and not $r.dir)[0]
+    $key=if $p.previews and $row!=nil then {path:$row.path,generation:$p.generation} else nil end
+    if not deep_eq($key,$s.preview_slots[$i].key) then
+      if $s.preview_slots[$i].job!=nil then send "viu-local" "jobs.cancel" id=$s.preview_slots[$i].job end
+      $s.preview_slots[$i]={key:$key,job:nil,value:{phase:"none"}}
+      if $key!=nil then
+        $s.next_token=$s.next_token+1
+        $id="preview-"..to_string($s.next_token)
+        $path=$s.app_dir.."/preview-job.mix"
+        send "viu-local" "jobs.start" id=$id owner=$s.owner path=$path source=read_file($path) command="job.run" args={path:$key.path,remote:$s.remote_previews}
+        if $rc==0 then $s.preview_slots[$i].job=$id;$s.preview_slots[$i].value={phase:"pending"}
+        else $s.preview_slots[$i].key=nil end
+      end
+    end
+  end
+  return $s
 end
 fn dp_config($s)
   $panes=[]
@@ -140,12 +162,14 @@ fn dp_intent($s,$contract,$a)
   elif $id=="panes" then $s.split=clamp($value,0.2,0.8);return $s
   elif $id=="root" then
     if $value.child=="places" then $s.places_width=clamp($value.fraction,0.1,0.4)
-    elif $value.child=="properties" then $s.properties_width=clamp($value.fraction,0.1,0.4)
+    elif $value.child=="properties-pane" then $s.properties_width=clamp($value.fraction,0.1,0.4)
     else raise("INVALID_ARGUMENT","Unknown resizable sidebar") end
     return $s
   elif $id=="places" then
-    if not any($s.places,fn($p)=$p.path==$value.key) then raise("NOT_FOUND","Unknown place") end
-    return dp_go($s,$s.active,$value.key)
+    for $i=0 to len($s.places)-1
+      if $value.key=="place."..to_string($i) then return dp_go($s,$s.active,$s.places[$i].path) end
+    end
+    raise("NOT_FOUND","Unknown place")
   end
   $i=if starts_with($id,"left-") then 0 elif starts_with($id,"right-") then 1 else -1 end
   if $i<0 then raise("NOT_FOUND","Unknown widget") end

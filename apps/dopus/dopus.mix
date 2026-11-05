@@ -13,6 +13,7 @@ end
 on dopus.initialise
   $state=$app.dp_initialise($event.args)
   $state.owner=viu_context().generation
+  $state=$app.dp_update_previews($state)
   dp_publish($state,$contract)
   reply(0,json_encode({ready:true}))
 end
@@ -48,7 +49,7 @@ on dopus.call
       elif $name=="dopus.quit" or $name=="dopus.persist" then $candidate=$app.dp_persist($candidate)
       else raise("UNKNOWN_COMMAND",$name) end
       $candidate.serial=$candidate.serial+1
-      $state=$candidate
+      $state=$app.dp_update_previews($candidate)
       dp_publish($state,$contract)
       reply(if $state.reply.error_code!=nil then 10 else 0 end,json_encode($state.reply))
     catch $message,$error
@@ -57,11 +58,21 @@ on dopus.call
   end
 end
 on dopus.job.completed
-  if $state!=nil and $state.job==$event.args.tag.id and $event.args.tag.owner==viu_context().generation then
-    $state.busy=false;$state.job=nil
-    $result=$event.args.body
-    $state.info=$result.message ?? if $event.args.rc==0 then "Operation completed" else "Operation failed" end
-    for $i=0 to 1 $state.panes[$i]=$core.dp_refresh($state.panes[$i]) end
+  if $state!=nil and $event.args.tag.owner==viu_context().generation then
+    if $state.job==$event.args.tag.id then
+      $state.busy=false;$state.job=nil
+      $result=$event.args.body
+      $state.info=$result.message ?? if $event.args.rc==0 then "Operation completed" else "Operation failed" end
+      for $i=0 to 1 $state.panes[$i]=$core.dp_refresh($state.panes[$i]) end
+    else
+      for $i=0 to 1
+        if $state.preview_slots[$i].job==$event.args.tag.id then
+          $state.preview_slots[$i].job=nil
+          $state.preview_slots[$i].value=if $event.args.rc==0 and $event.args.body.phase=="ready" then {phase:"ready",path:$event.args.body.path} else {phase:"none"} end
+        end
+      end
+    end
+    $state=$app.dp_update_previews($state)
     dp_publish($state,$contract)
   end
 end

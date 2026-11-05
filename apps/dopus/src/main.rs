@@ -344,8 +344,9 @@ impl eframe::App for App {
     fn raw_input_hook(&mut self, _: &egui::Context, input: &mut egui::RawInput) {
         input.events.append(&mut self.input.now);
     }
-    fn ui(&mut self, ui:&mut egui::Ui, _: &mut eframe::Frame) {
-        let context=ui.ctx().clone();let ctx=&context;
+    fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
+        let context = ui.ctx().clone();
+        let ctx = &context;
         self.completions(ctx);
         while let Ok(request) = self.bus.requests.try_recv() {
             self.request(request, ctx);
@@ -354,7 +355,12 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        let events=if let Some(view)=&mut self.view{view.show(ui)}else{ui.label("Loading Dopus…");Vec::new()};
+        let events = if let Some(view) = &mut self.view {
+            view.show(ui)
+        } else {
+            ui.label("Loading Dopus…");
+            Vec::new()
+        };
         if let Some(view) = &mut self.view {
             if let Some(id) = self.model["focus"].as_str() {
                 let serial = self.model["serial"].as_u64().unwrap_or(0);
@@ -516,7 +522,8 @@ fn main() -> eframe::Result {
                 "dopus.quit".into(),
                 wake.clone(),
             );
-            let jobs = Jobs::new(4, wake.clone());
+            let mut jobs = Jobs::new(4, wake.clone());
+            jobs.set_native_backend(bus.backend_maker());
             let mut runtime = None;
             let mut native = None;
             if mode == "mix" {

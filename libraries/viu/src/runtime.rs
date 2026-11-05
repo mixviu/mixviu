@@ -17,6 +17,7 @@ use serde_json::{Value as Json, json};
 
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
 pub type BackendFactory = Box<dyn FnOnce() -> Rc<dyn BusHandler> + Send>;
+pub type BackendMaker=Arc<dyn Fn()->BackendFactory+Send+Sync>;
 
 /// Per-request log retention has a fixed ceiling, including a noisy script.
 #[derive(Clone, Default)]
@@ -147,6 +148,7 @@ impl Runtime {
                         eval.set_file(program.path.to_string_lossy().to_string());
                         eval.set_bus_handler(local.clone());
                         eval.set_serve_runtime(local.clone());
+                        eval.register("viu_thumbnail",crate::native_primitives::thumbnail(worker_stop.clone()));
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "loader": "viu-local", "host": "viu-local"
