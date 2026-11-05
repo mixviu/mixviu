@@ -12,7 +12,8 @@ fn session_read($state)
     if starts_with($error.code,"SESSION_") then $state.retry=nil
     else $state.failures=$state.failures+1;$state.retry=min(30,0.25*pow(2,min(16,$state.failures-1))) end
   end
-  $appearance=$session.session_appearance($state.values,$state.app)
+  $appearance=if $state.lost then $state.last_ui ?? {} else $session.session_appearance($state.values,$state.app) end
+  if not $state.lost then $state.last_ui={text_scale:$appearance.text_scale,density:$appearance.density,reduced_motion:$appearance.reduced_motion ?? false} end
   $keys=if $state.lost then $state.last_keys ?? {} else $session.session_keys($state.values,$state.app) end
   $state.last_keys=$keys
   send "viu-local" "scenes.model" body={generation:viu_context().generation,value:{state:$state,appearance:$appearance,keymap:$keys}}
