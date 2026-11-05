@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Client adaptation of scene-host routes and template preparation, using
-//! native egui primitives. This lab renderer covers volume's node families.
+//! native egui primitives. Covers the Quoin and small Dopus specimen families,
+//! including editable text fields with change/submit callbacks.
 use crate::templates::{PreparedLists, children, rows, text, validate_templates};
 use egui::{Color32, RichText, Sense, Vec2};
 use scene::{Node, ResolvedScene};

@@ -11,6 +11,15 @@ Volume decisions, write guards, clamping, selection and readback remain Mix.
 The fixture implements two outputs, inputs and streams. It is backend test
 data, not evidence of production Bus or audio integration.
 
+The Dopus evaluation continuation also accepts `viu-client apps/dopus`.
+An optional `client.json` supplies the application entry point, scene/citizen,
+window metadata and backend (`none` or the labelled `audio-fixture`). Without
+that file, the original Quoin defaults apply. Dopus uses no audio backend.
+Its scene and filesystem controller remain Mix; the client supplies a normal
+Wayland window and the reusable renderer now supports text fields with
+change/submit callbacks. Draft field text survives unrelated model updates;
+a changed authoritative binding replaces it. Reload starts a fresh view.
+
 The evaluator is created on one worker thread. UI input uses a bounded ordered
 mailbox with `try_send`; accepted distinct operations are never coalesced.
 Full input is refused visibly. A caller may retry a refused operation but must
