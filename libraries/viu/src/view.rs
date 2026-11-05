@@ -96,7 +96,9 @@ impl SceneView {
     pub fn take_focus_error(&mut self) -> Option<String> {
         self.focus_error.take()
     }
-    pub fn text_input_active(&self)->bool { self.widgets.text_input_active }
+    pub fn text_input_active(&self) -> bool {
+        self.widgets.text_input_active
+    }
 
     fn node(
         &mut self,

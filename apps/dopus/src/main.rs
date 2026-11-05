@@ -30,7 +30,7 @@ struct App {
     app_dir: PathBuf,
     mode: String,
     pending: BTreeMap<u64, Reply>,
-    inflight:BTreeSet<u64>,
+    inflight: BTreeSet<u64>,
     input: input::Input,
     input_replies: Vec<Reply>,
     input_wait: bool,
@@ -93,7 +93,9 @@ impl App {
         reply: Option<Reply>,
         ctx: &egui::Context,
     ) {
-        if !matches!(command.as_str(),"dopus.persist"|"dopus.quit") { self.save_at = Some(Instant::now() + std::time::Duration::from_millis(350)); }
+        if !matches!(command.as_str(), "dopus.persist" | "dopus.quit") {
+            self.save_at = Some(Instant::now() + std::time::Duration::from_millis(350));
+        }
         if let Some(runtime) = &mut self.runtime {
             match runtime.event_with_headers(
                 "dopus.call".into(),
@@ -308,8 +310,10 @@ impl App {
                 self.notices.push_back(viu::native_bus::Notice{command:"dopus.job.completed".into(),args:json!({"tag":done.tag,"rc":done.rc,"body":done.body,"elapsed_us":done.elapsed_us}),headers:BTreeMap::new()});
             }
         }
-        while self.notices.len()<64 {
-            let Ok(notice)=self.bus.notices.try_recv() else {break;};
+        while self.notices.len() < 64 {
+            let Ok(notice) = self.bus.notices.try_recv() else {
+                break;
+            };
             self.notices.push_back(notice);
         }
         if let Some(runtime) = &mut self.runtime {
@@ -372,7 +376,12 @@ impl eframe::App for App {
         for event in events {
             self.call(event.command, event.body, BTreeMap::new(), None, ctx);
         }
-        for action in input::Input::shortcuts(ctx, &self.contract,self.model["values"]["form"]["open"]==true||self.view.as_ref().is_some_and(|v|v.text_input_active())) {
+        for action in input::Input::shortcuts(
+            ctx,
+            &self.contract,
+            self.model["values"]["form"]["open"] == true
+                || self.view.as_ref().is_some_and(|v| v.text_input_active()),
+        ) {
             if let Some(key) = action["tree_navigation"].as_str() {
                 let side = if self.model["active"] == 0 {
                     "left"
@@ -402,7 +411,13 @@ impl eframe::App for App {
         }
         if self.save_at.is_some_and(|t| t <= Instant::now()) {
             self.save_at = None;
-            self.call("dopus.persist".into(),json!({}),BTreeMap::new(),None,ctx);
+            self.call(
+                "dopus.persist".into(),
+                json!({}),
+                BTreeMap::new(),
+                None,
+                ctx,
+            );
         } else if let Some(at) = self.save_at {
             ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
         }
@@ -544,7 +559,7 @@ fn main() -> eframe::Result {
                 app_dir,
                 mode,
                 pending: BTreeMap::new(),
-                inflight:BTreeSet::new(),
+                inflight: BTreeSet::new(),
                 input: input::Input::default(),
                 input_replies: Vec::new(),
                 input_wait: false,

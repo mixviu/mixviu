@@ -293,7 +293,7 @@ impl Widgets {
     /// retained after finish_frame for automation until the next begin_frame.
     pub fn begin_frame(&mut self) {
         self.geometry.clear();
-        self.text_input_active=false;
+        self.text_input_active = false;
     }
     /// Draw one shared widget within an application-owned layout. Both Rust
     /// and Mix adapters can use this entry point without the catalogue grid.
@@ -397,7 +397,7 @@ impl Widgets {
                         .password(widget.properties["password"] == true)
                         .id_salt(id),
                 );
-                self.text_input_active|=r.has_focus();
+                self.text_input_active |= r.has_focus();
                 if r.changed() {
                     changed = Some(json!(text));
                 }

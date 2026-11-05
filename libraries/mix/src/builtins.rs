@@ -41204,14 +41204,14 @@ mod strict_write_and_bool_option_tests {
             );
         }
         let file_info = super::builtin_info_of("hash_file").unwrap();
-        let hint = file_info
+        let _hint = file_info
             .contract
             .arg_hint("algo")
             .expect("hash_file's algo argument declares a gate hint");
         #[cfg(feature = "crypto")]
         for &algo in super::DigestAlgo::ALL {
             assert!(
-                hint.contains(algo.name()),
+                _hint.contains(algo.name()),
                 "the algo gate hint must list '{}' (it is static text, not accepted_list())",
                 algo.name()
             );

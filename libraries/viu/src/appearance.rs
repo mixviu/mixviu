@@ -50,5 +50,7 @@ pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {
     style.spacing.interact_size.y = 24.0;
     style.visuals.selection.bg_fill = Color32::from_rgb(accent[0], accent[1], accent[2]);
     style.visuals.selection.stroke = egui::Stroke::new(1.0, Color32::WHITE);
-    ctx.set_style(style);
+    let theme=if description["mode"]=="light"{egui::Theme::Light}else{egui::Theme::Dark};
+    ctx.set_theme(theme);
+    ctx.set_style_of(theme,style);
 }
