@@ -176,7 +176,8 @@ impl Gallery {
                             "right" => egui::PointerButton::Secondary,
                             _ => return Err("button must be left or right".into()),
                         };
-                        let mut frames=click_frames(rect.center(),button,modifiers,body["double"]==true);
+                        let mut frames =
+                            click_frames(rect.center(), button, modifiers, body["double"] == true);
                         self.input.extend(frames.pop_front().unwrap());
                         self.later_input.extend(frames);
                     } else if command == "gallery.ui.drag" {
@@ -308,8 +309,25 @@ impl eframe::App for Gallery {
         }
     }
 }
-fn click_frames(pos:egui::Pos2,button:egui::PointerButton,modifiers:egui::Modifiers,double:bool)->std::collections::VecDeque<Vec<egui::Event>> {
-    (0..if double{2}else{1}).map(|_|[true,false].into_iter().map(|pressed|egui::Event::PointerButton{pos,button,pressed,modifiers}).collect()).collect()
+fn click_frames(
+    pos: egui::Pos2,
+    button: egui::PointerButton,
+    modifiers: egui::Modifiers,
+    double: bool,
+) -> std::collections::VecDeque<Vec<egui::Event>> {
+    (0..if double { 2 } else { 1 })
+        .map(|_| {
+            [true, false]
+                .into_iter()
+                .map(|pressed| egui::Event::PointerButton {
+                    pos,
+                    button,
+                    pressed,
+                    modifiers,
+                })
+                .collect()
+        })
+        .collect()
 }
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().collect();
