@@ -693,14 +693,17 @@ impl eframe::App for App {
                 }
             }
         }
+        // A synchronous controller can close a modal while consuming its
+        // Enter/Escape intent. Keep that frame's key inside the drawn modal.
+        let shortcuts_blocked = self.model["values"]["form"]["open"] == true
+            || self.view.as_ref().is_some_and(|v| v.text_input_active());
         for event in events {
             self.call(event.command, event.body, BTreeMap::new(), None, ctx);
         }
         for action in input::shortcuts(
             ctx,
             &self.contract,
-            self.model["values"]["form"]["open"] == true
-                || self.view.as_ref().is_some_and(|v| v.text_input_active()),
+            shortcuts_blocked,
         ) {
             if let Some(key) = action["tree_navigation"].as_str() {
                 let side = if self.model["active"] == 0 {
