@@ -1,48 +1,43 @@
 # mixviu
 
-The second build of [MixOS](https://github.com/markc/mixos): four engines,
-everything else Mix.
+A Mix-first desktop and application project, using native Rust foundations
+where required and benchmark evidence to justify specific performance fallbacks.
 
-MixOS grew a Rust crate for nearly every app and service. mixviu rebuilds it
-around four native binaries and moves the rest (apps, scenes, services,
-glue) into Mix, the MixOS shell and scripting language. A change to an app's
-behaviour should be a Mix edit, not a Rust rebuild.
+Application workflows and compound-widget composition start as Mix scenes and
+behaviours. Complexity alone does not decide their implementation language.
+The aim is near-native median performance with a much shorter feature-edit loop.
 
-## The four engines
+## Source layout
 
-| Binary | Role | Repository |
-|---|---|---|
-| `mix` | the shell: login shell, CLI, scripts, gates, Bus clients | [markc/mixos](https://github.com/markc/mixos) |
-| `mixd` | the server host: `mix` plus inbound servers and the native service personalities | [markc/mixos](https://github.com/markc/mixos) |
-| `viud` | the Wayland compositor only: KMS, seat, input, rendering, window policy | here |
-| `viu` | the app and shell runtime: scene evaluator, widgets, Mix behaviour host | here |
+| Directory | Holds |
+|---|---|
+| engines/ | Eventual mix, mixd, viu and viud hosts |
+| libraries/ | Shared native facilities |
+| apps/ | Mix-first shell/application bundles |
+| tools/ | Small reproducible Mix checks |
+| docs/ | Public architecture and development notes |
+| provenance/ | Source revision, hashes and import decisions |
 
-`mix` never accepts inbound connections; that is what `mixd` is for. `viud`
-does not link the Mix interpreter; app behaviour runs in `viu`. All four
-speak the MixOS Bus, whose wire format is frozen. This repository pins the
-Bus from `markc/mixos` by revision.
+The repository owns the eventual four-engine stack and its Mix applications.
+The Mix shell/server-host split is later work. The existing compositor can host
+early Viu experiments; a full system rewrite is not a prerequisite.
 
-## Status
+## Current state
 
-Early. The foundation work (baselines, captures of current behaviour to test
-against) is under way and no engine code has landed yet. `viud` arrives
-first, as the MixOS compositor (compd) moved and trimmed; `viu` follows,
-built and proven on the panel and monitor apps before the rest are ported.
+Workspace preparation only. The seed contains the existing scene parser,
+binding expressions and strict-data dependency closure, original library tests,
+and one Quoin volume specimen with its module-level helpers. No new widget
+fallback, interpreter split, Viu runtime or replacement desktop exists yet.
+Feature implementation is on hold.
 
-## Building
+The copied volume bundle requires a scene host and service facilities. It is
+an input specimen, not a standalone runnable application or installation.
 
-Rust, with gates and scripts in Mix, never Python or Bash. Repository rules
-for contributors and agents are in [AGENTS.md](AGENTS.md).
+Read [architecture](docs/architecture.md), [import scope](provenance/README.md),
+[checks](docs/development.md) and [repository rules](AGENTS.md).
 
 ## Licence
 
-mixviu is dual-licensed under the **MIT licence** or the **Apache License,
-Version 2.0**, at your option (`MIT OR Apache-2.0`):
-
-- [LICENSE-MIT](LICENSE-MIT)
-- [LICENSE-APACHE](LICENSE-APACHE)
-
-Unless you state otherwise, any contribution you submit for inclusion is
-dual-licensed the same way, without additional terms. [NOTICE](NOTICE) lists
-incorporated and third-party code, and per-file licensing is recorded in
-[REUSE.toml](REUSE.toml).
+MIT OR Apache-2.0. See [LICENSE-MIT](LICENSE-MIT),
+[LICENSE-APACHE](LICENSE-APACHE), [NOTICE](NOTICE) and [REUSE.toml](REUSE.toml).
+Imported source retains its attribution.

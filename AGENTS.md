@@ -1,39 +1,50 @@
-# mixviu: repository guide
+# mixviu source guide
 
-mixviu is the second build of MixOS: four engines, everything else Mix.
-This repository holds the `viu` and `viud` engines (decision D1-a). `mix`,
-`mixd`, the Bus and all Mix live in `markc/mixos`, with `bus` pinned by rev.
+mixviu is a Mix-first rebuild informed by measured MixOS experience. Mark's
+latest directions take precedence. This repository owns the eventual mix,
+mixd, viu and viud sources, shared libraries and Mix applications. Earlier
+desktop-only ownership is superseded. Mix/mixd separation is future work.
 
-## What belongs here
+## Current scope
 
-Code, public docs and settled decisions only. Plans, briefs, journals, lab
-captures and anything about the maintainer's machines live in a private
-hub outside this repo; agents with access should read its `AGENTS.md` and
-the plan there first, as the plan wins over every doc.
+Only a source seed and workspace preparation exist. Feature implementation is
+on hold. No runtime, shell replacement or app port is implemented or accepted
+by this import. Seed library checks are permitted; do not start engine work,
+install or deploy until Mark resumes implementation.
 
-## Licence
-
-`MIT OR Apache-2.0`, as in `markc/mixos`. Code moved from mixos brings its
-attribution with it: the commit that adds it also updates `NOTICE`,
-`LICENSE-MIT` and `REUSE.toml` (viud carries the y5 / Nourish notice).
-
-Write everything here as public, because it will be:
-
-- No keys, tokens, passwords, captures of real traffic or mail.
-- No mesh host names, addresses or operator home paths. Use RFC 5737
-  addresses, `example.*` domains and `/home/user`.
+Application/compound-widget composition and behaviour start in Mix. Do not
+assign future UI to Rust because it looks dense or complicated. A particular
+Rust rewrite needs repeatable representative benchmark failures, diagnosis,
+bounded repair and a scoped recorded decision. Existing native primitives are
+available; runtime wiring must not hide untested application policy in Rust.
 
 ## Layout
 
-Engine code goes at the top level as the plan's §2 layout describes (from
-stage 3a: `viu`, `viud`). Docs filenames are `YYYY-MM-DD-lower-case-title.md`.
+- engines/: eventual thin mix, mixd, viu, viud hosts; import as needed.
+- libraries/: reusable native code; currently scene, expr and strict only.
+- apps/: Mix-first shell/application bundles; currently a Quoin volume specimen.
+- tools/: small Mix checks; no copied deployment/orchestration framework.
+- docs/: public architecture, development and contracts.
+- provenance/: immutable source revisions, file hashes and adaptation notes.
+- Tests stay with their owning library/app. Add shared tests only when needed.
 
-## Names (D6)
+Private plans, journals, machine configuration and captures live in the
+maintainer's private hub. They never belong in this public tree. Use /home/user,
+example.* and RFC 5737 for public examples, and preserve all licences.
 
-The binaries are `mix` + `mixd` and `viu` + `viud`. The clashes with the Arch
-`viu` image viewer and Elixir's `mix` are accepted.
+## Work and checks
 
-## Builds
+Use Mix for scripts/automation and run_argv for external tools. Never Python,
+Bash or sh as a fallback. Probe unfamiliar Mix syntax against its live binary.
+Rust builds/tests/checks/fmt/clippy run only through the maintainer's native
+build service, never on developer desktops. Do not create local target trees.
 
-Rust builds never run on a developer desktop; they go through the
-maintainer's build workers. Gates and scripts are Mix, never Python or Bash.
+Preserve unrelated changes; use isolated worktrees for branch work. Inspect
+diffs, run relevant checks, commit and push scoped work. No force pushes or
+history resets. Prototype novel features, capture behaviour, obtain an
+independent whole-specimen survey and derive production code afterwards.
+
+Use native Bus and host facilities; do not add parallel brokers/transports.
+Future runtime imports require dependency/licence inspection and provenance.
+The existing source versions/schema names are retained intentionally; rename
+only when the owning compatibility contract and migration have been assessed.
