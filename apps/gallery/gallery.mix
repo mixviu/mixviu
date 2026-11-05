@@ -27,7 +27,7 @@ $widgets = [
  {id:"tooltip",kind:"tooltip",label:"Tooltip",initial:"Hover for help"},
  {id:"separator",kind:"separator",label:"Separator",initial:"Section boundary"}
 ]
-$state = {widgets:$widgets,values:{},serial:0,activations:0,last:"Ready"}
+$state = {widgets:$widgets,values:{},expanded:{tree:true},sorted:{table:false},serial:0,activations:0,last:"Ready"}
 for $widget in $widgets
   $state.values[$widget.id] = $widget.initial
 end
@@ -45,9 +45,15 @@ on gallery.execute
     $state.serial = 0
     $state.activations = 0
     $state.last = "Ready"
+    $state.expanded = {tree:true}
+    $state.sorted = {table:false}
   else
     if $a.action == "set" or $a.action == "submit" then
       $state.values[$a.id] = $a.value
+    elif $a.action == "expand" then
+      $state.expanded[$a.id] = $a.value
+    elif $a.action == "sort" then
+      $state.sorted[$a.id] = $a.value
     elif $a.action == "accept" or $a.action == "cancel" then
       $state.values[$a.id] = false
       $state.activations = $state.activations + 1
