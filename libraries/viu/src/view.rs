@@ -39,9 +39,10 @@ impl SceneView {
 
     pub fn apply_model(&mut self, model: Value) -> Result<(), String> {
         let set = scene::bindings::BindingSet::from_resolved(&self.tree);
-        let candidate = scene::bindings::reevaluate(&self.tree, &set, "model", &model)
-            .map_err(|e| format!("{e:?}"))?
-            .tree;
+        let evaluated = scene::bindings::reevaluate(&self.tree, &set, "model", &model)
+            .map_err(|e| format!("{e:?}"))?;
+        if !evaluated.diagnostics.is_empty() { return Err(format!("{:?}", evaluated.diagnostics)); }
+        let candidate = evaluated.tree;
         let lists = validate_templates(&candidate).map_err(|e| e.to_string())?;
         self.tree = candidate;
         self.lists = lists;

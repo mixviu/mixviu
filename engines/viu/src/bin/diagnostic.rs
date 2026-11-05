@@ -20,6 +20,7 @@ for $i = 0 to 511
 end
 $model = {rows: $rows, selected: "row_0", offset: 0}
 fn publish_model()
+  $model.visible = slice($model.rows, 0, 256)
   send "viu-local" "scenes.model" body=json_encode({generation:$ctx.generation,value:$model})
 end
 publish_model()
@@ -38,7 +39,7 @@ on intent
   reply(0, "{}")
 end
 "#;
-const SCENE: &str = "---\nscene: 1\nname: diagnostic\ncitizen: diagnostic\nmodel: {\"rows\":[],\"selected\":\"row_0\",\"offset\":0}\n---\n```mix\nroot: {widget:\"column\",children:[\"selected\",\"list\"]}\nselected:{widget:\"text\",text:\"= $model.selected\"}\nlist:{widget:\"list\",rows:\"= $model.rows\",row:\"row\",row_height:24}\nrow:{widget:\"row\",children:[\"text\"]}\ntext:{widget:\"text\",text:\"= $item.text\"}\n```\n";
+const SCENE: &str = "---\nscene: 1\nname: diagnostic\ncitizen: diagnostic\nmodel: {\"rows\":[],\"visible\":[],\"selected\":\"row_0\",\"offset\":0}\n---\n```mix\nroot: {widget:\"column\",children:[\"selected\",\"list\"]}\nselected:{widget:\"text\",text:\"= $model.selected\"}\nlist:{widget:\"list\",rows:\"= $model.visible\",row:\"row\",row_height:24}\nrow:{widget:\"row\",children:[\"text\"]}\ntext:{widget:\"text\",text:\"= $item.text\"}\n```\n";
 fn native(model: &mut Value, args: &Value) {
     match args["kind"].as_str().unwrap() {
         "select" => model["selected"] = args["id"].clone(),
@@ -49,6 +50,7 @@ fn native(model: &mut Value, args: &Value) {
             }
         }
     }
+    model["visible"] = json!(model["rows"].as_array().unwrap()[..256].to_vec());
 }
 fn draw(ctx: &egui::Context, view: &mut SceneView, model: Value) {
     view.apply_model(model).unwrap();
@@ -140,6 +142,7 @@ fn main() {
                 mix_view.geometry, rust_view.geometry,
                 "same widget geometry"
             );
+            assert!(mix_view.geometry.len()>256,"the list must actually draw populated row instances");
             if iteration >= 4 {
                 mix_wall.push(mix_ns);
                 rust_wall.push(rust_ns);
@@ -152,6 +155,6 @@ fn main() {
     assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
     println!(
         "{}",
-        json!({"boundary":"synthetic controller + JSON model + same egui scene binding/template/paint CPU; excludes GPU, broker, compositor and physical presentation","samples":31,"warmups":4,"startup_model_ready_us":startup_us,"idle_no_completion_ms":idle.elapsed().as_millis(),"resources":std::fs::read_to_string("/proc/self/status").unwrap_or_default(),"results":results})
+        json!({"boundary":"synthetic512-row controller with256 visible rows + JSON model + same egui scene binding/template/paint CPU; excludes GPU, broker, compositor and physical presentation","samples":31,"warmups":4,"startup_model_ready_us":startup_us,"idle_no_completion_ms":idle.elapsed().as_millis(),"resources":std::fs::read_to_string("/proc/self/status").unwrap_or_default(),"results":results})
     );
 }
