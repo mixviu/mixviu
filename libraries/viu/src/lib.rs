@@ -2,9 +2,11 @@
 //! Lab client scene runtime. The evaluator is created and retained on its worker.
 pub mod appearance;
 pub mod capture;
+pub mod chooser;
 mod design_style;
 pub mod elide;
 pub mod fonts;
+pub mod file_data;
 pub mod icons;
 pub mod image_view;
 pub mod jobs;

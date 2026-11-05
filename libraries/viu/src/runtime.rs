@@ -24,6 +24,7 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 #[derive(Clone, Default)]
 pub struct Services {
     pub macros: Option<macros::Session>,
+    pub chooser: Option<crate::chooser::Service>,
 }
 
 // Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
@@ -190,7 +191,9 @@ impl Runtime {
                         eval.register("viu_thumbnail",crate::native_primitives::thumbnail(worker_stop.clone()));
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
+                        eval.register("viu_files",crate::file_data::binding());
                         if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
+                        if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "loader": "viu-local", "host": "viu-local"

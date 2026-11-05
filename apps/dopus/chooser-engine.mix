@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+on engine.call
+  $a=$event.args
+  $answer=viu_chooser($a.command,$a.body,$a.caller ?? "host")
+  if $answer.outcome!=nil then
+    -- Exactly one publication attempt. The native engine retains the outcome
+    -- for result queries if transport delivery fails or is unknown.
+    try publish("files.chosen",json_encode($answer.outcome),{retain:false})
+    catch $message print("chooser publication: "..$message) end
+  end
+  send "viu-local" "scenes.model" body={generation:viu_context().generation,value:{answer:$answer}}
+  reply($answer.rc,json_encode($answer.body))
+end

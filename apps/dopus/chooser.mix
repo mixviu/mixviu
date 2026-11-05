@@ -1,0 +1,124 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- File chooser composition/behaviour; the retained native files engine owns
+-- request validation, exactly-once outcomes and acceptance checks.
+$s=nil
+fn ch_item($id,$label)
+  return {id:$id,label:$label,enabled:true}
+end
+fn ch_scan($s)
+  $s.rows=viu_files("scan",{folder:$s.folder,hidden:$s.hidden,filter:$s.request.current_filter})
+  $s.rows=sort_by($s.rows,fn($r)=lower($r.name))
+  $s.rows=concat(filter($s.rows,fn($r)=$r.dir),filter($s.rows,fn($r)=not $r.dir))
+  $s.selected=filter($s.selected,fn($p)=any($s.rows,fn($r)=$r.key==$p))
+  return $s
+end
+fn ch_go($s,$folder)
+  $s.folder=viu_files("uri",{path:$folder});$s.selected=[];return ch_scan($s)
+end
+fn ch_effect($s,$command,$body)
+  $s.serial=$s.serial+1;$s.effect={serial:$s.serial,command:$command,body:$body};return $s
+end
+fn ch_accept($s,$replace)
+  $paths=$s.selected
+  if $s.request.mode=="save" then $paths=[viu_files("join",{folder:$s.folder,name:$s.raw_name ?? $s.name})]
+  elif $s.request.mode=="save_files" then $paths=map($s.request.files,fn($n)=viu_files("join",{folder:$s.folder,name:$n}))
+  elif $s.request.directory and len($paths)==0 then $paths=[$s.folder] end
+  $s.pending={request:$s.id,paths:$paths,folder:$s.folder,choices:$s.choices,replace:$replace}
+  if $s.request.current_filter!=nil then $s.pending.current_filter=$s.request.current_filter end
+  return ch_effect($s,"accept",$s.pending)
+end
+fn ch_project($s)
+  $rows=[]
+  for $row in $s.rows
+    push($rows,{key:$row.key,path:$row.key,cells:[$row.name,if $row.dir then "Folder" else to_string($row.size).." B" end],depth:0,branch:false,expanded:false,selected:contains($s.selected,$row.key),focused:$s.anchor==$row.key,icon:if $row.dir then "folder" else "file" end})
+  end
+  $options=[]
+  if len($s.request.filters ?? [])>0 then
+    $filters=[]
+    for $i=0 to len($s.request.filters)-1
+      $f=$s.request.filters[$i];$item=ch_item("filter:"..to_string($i),$f.name);$item.checked=deep_eq($f,$s.request.current_filter);push($filters,$item)
+    end
+    push($options,{id:"filter",label:"Filter: "..if $s.request.current_filter==nil then "All" else $s.request.current_filter.name end,enabled:true,children:$filters})
+  end
+  for $i=0 to len($s.request.choices)-1
+    $c=$s.request.choices[$i];$items=[]
+    if len($c.options)==0 then
+      for $v in ["true","false"] $item=ch_item("choice:"..to_string($i)..":"..$v,$v);$item.checked=$s.choices[$c.id]==$v;push($items,$item) end
+    else
+      for $j=0 to len($c.options)-1
+        $o=$c.options[$j];$item=ch_item("option:"..to_string($i)..":"..to_string($j),$o.label);$item.checked=$s.choices[$c.id]==$o.id;push($items,$item)
+      end
+    end
+    push($options,{id:"choice-menu:"..to_string($i),label:$c.label,enabled:true,children:$items})
+  end
+  $hidden=ch_item("hidden","Hidden files");$hidden.checked=$s.hidden
+  $values={form:$s.form,location:$s.folder,name:$s.name,files:{key:$s.folder,columns:[{id:"name",label:"Name",min_width:250},{id:"size",label:"Size",min_width:80}],rows:$rows,active:true,context:[],background_context:[]},toolbar:[ch_item("parent","Parent folder"),ch_item("home","Home"),$hidden,ch_item("refresh","Refresh")],options:$options,footer:[ch_item("cancel","Cancel"),ch_item("accept",$s.request.accept_label)],status:$s.error}
+  return {values:$values,save_hidden:$s.request.mode!="save",options_hidden:len($options)==0,effect:$s.effect,ready:true,request:$s.id,folder:$s.folder,selected:$s.selected,choices:$s.choices,current_filter:$s.request.current_filter,name:$s.name,serial:$s.serial}
+end
+fn ch_publish($s)
+  send "viu-local" "scenes.model" body={generation:viu_context().generation,value:ch_project($s)}
+  if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
+end
+on chooser.open
+  try
+    $r=$event.args.request;$name=""
+    if $r.current_name!=nil then $name=viu_files("name",{name:$r.current_name}) end
+    $choices={};for $c in $r.choices $choices[$c.id]=$c.default end
+    $s={id:$event.args.id,request:$r,folder:$r.current_folder,home:$event.args.home,name:$name,raw_name:$r.current_name,hidden:false,rows:[],selected:[],anchor:nil,choices:$choices,error:"",form:{open:false,title:"",body:"",field:nil,choices:[]},pending:nil,serial:0,effect:nil}
+    $s=ch_scan($s);ch_publish($s);reply(0,json_encode({ready:true}))
+  catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on chooser.call
+  try
+    $a=$event.args;$candidate=$s;$candidate.effect=nil;$candidate.error=""
+    if $a.command=="result" then
+      if $a.rc!=0 then
+        if $a.body.error_code=="EXISTS" then
+          $candidate.form={open:true,title:"Replace existing files?",body:"The selected destination already exists. Replace it?",field:nil,instance:$candidate.serial,choices:[{id:"cancel",label:"Cancel",enabled:true,cancel:true},{id:"replace",label:"Replace",enabled:true,default:true}]}
+        else $candidate.error=$a.body.message ?? json_encode($a.body) end
+      end
+    elif $a.command=="intent" then
+      $id=$a.id;$action=$a.action;$v=$a.value
+      if $id=="location" then
+        if $action=="submit" then $candidate=ch_go($candidate,$v) end
+      elif $id=="name" then $candidate.name=$v;$candidate.raw_name=nil
+      elif $id=="form" then
+        if not deep_eq($v.instance,$candidate.form.instance) then raise("STALE_FORM","Replace confirmation has changed") end
+        if $v.choice=="replace" then $candidate.pending.replace=true;$candidate=ch_effect($candidate,"accept",$candidate.pending) end
+        $candidate.form.open=false
+      elif $id=="files" then
+        $row=filter($candidate.rows,fn($r)=$r.key==$v.key)[0]
+        if $row==nil then raise("INVALID_ARGUMENT","The row is no longer present") end
+        if $action=="activate" then
+          if $row.dir then $candidate=ch_go($candidate,$row.key)
+          else $candidate.selected=[$row.key];$candidate=ch_accept($candidate,false) end
+        elif $action=="select" then
+          if $candidate.request.multiple and $v.shift and $candidate.anchor!=nil then
+            $keys=map($candidate.rows,fn($r)=$r.key);$a=index_of($keys,$candidate.anchor);$b=index_of($keys,$row.key)
+            $candidate.selected=slice($keys,min($a,$b),max($a,$b)+1)
+          elif $candidate.request.multiple and $v.ctrl then
+            $candidate.selected=if contains($candidate.selected,$row.key) then filter($candidate.selected,fn($p)=$p!=$row.key) else concat($candidate.selected,[$row.key]) end
+            $candidate.anchor=$row.key
+          else $candidate.selected=[$row.key];$candidate.anchor=$row.key end
+          if not $row.dir and $candidate.request.mode=="save" then $candidate.name=$row.name;$candidate.raw_name=viu_files("leaf",{path:$row.key}) end
+        end
+      elif contains(["toolbar","footer","options"],$id) then
+        $c=$v.command
+        if $c=="parent" then $candidate=ch_go($candidate,viu_files("parent",{path:$candidate.folder}))
+        elif $c=="home" then $candidate=ch_go($candidate,$candidate.home)
+        elif $c=="refresh" then $candidate=ch_scan($candidate)
+        elif $c=="hidden" then $candidate.hidden=not $candidate.hidden;$candidate=ch_scan($candidate)
+        elif $c=="cancel" then $candidate=ch_effect($candidate,"cancel",{request:$candidate.id})
+        elif $c=="accept" then $candidate=ch_accept($candidate,false)
+        elif starts_with($c,"filter:") then $candidate.request.current_filter=$candidate.request.filters[to_number(slice($c,7))];$candidate=ch_scan($candidate)
+        elif starts_with($c,"choice:") then $parts=split($c,":");$candidate.choices[$candidate.request.choices[to_number($parts[1])].id]=$parts[2]
+        elif starts_with($c,"option:") then $parts=split($c,":");$choice=$candidate.request.choices[to_number($parts[1])];$candidate.choices[$choice.id]=$choice.options[to_number($parts[2])].id
+        else raise("UNKNOWN_ACTION",$c) end
+      end
+    else raise("UNKNOWN_COMMAND","Unknown chooser command") end
+    $s=$candidate;ch_publish($s);reply(0,json_encode({ok:true}))
+  catch $message,$error
+    $s.error=$message;ch_publish($s);reply(10,json_encode({error_code:$error.code,message:$message}))
+  end
+end

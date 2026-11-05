@@ -161,6 +161,7 @@ mod tests {
             path,
             Services {
                 macros: Some(session.clone()),
+                ..Default::default()
             },
             Arc::new(|| {}),
         )

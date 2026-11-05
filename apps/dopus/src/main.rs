@@ -2,6 +2,7 @@
 mod input;
 mod native;
 mod panel;
+mod chooser;
 #[cfg(test)]
 mod tests;
 use eframe::egui;
@@ -855,6 +856,7 @@ fn main() -> eframe::Result {
         &std::fs::read_to_string(app_dir.join("contract.json")).expect("Dopus contract"),
     )
     .expect("Dopus contract data");
+    if args.iter().any(|a|a=="--choose-service"){return chooser::run(app_dir,&mode);}
     let title = format!(
         "Dopus — {} / Viu",
         if mode == "rust" { "Rust" } else { "Mix" }
@@ -906,6 +908,7 @@ fn main() -> eframe::Result {
             );
             let services = viu::runtime::Services {
                 macros: Some(macro_session.clone()),
+                ..Default::default()
             };
             let panel = panel::Panel::new(
                 app_dir.join("../../libraries/viu/mix/macros.mix"),

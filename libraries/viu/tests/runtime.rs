@@ -92,6 +92,7 @@ fn caller_owned_macro_service_is_shared_without_an_installed_interpreter() {
         None,
         viu::runtime::Services {
             macros: Some(session.clone()),
+            ..Default::default()
         },
     );
     runtime

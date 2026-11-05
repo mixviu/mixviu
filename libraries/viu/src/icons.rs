@@ -35,17 +35,17 @@ pub fn image_of(ctx: &egui::Context, icon: Icon, size: f32, colour: Color32) -> 
     else {
         return image(icon, size, colour);
     };
-    let mask = format!(
-        "#{:02x}{:02x}{:02x}{:02x}",
+    let mask_key = format!(
+        "{:02x}{:02x}{:02x}{:02x}",
         mask[0], mask[1], mask[2], mask[3]
     );
     let bytes = icon
         .svg()
-        .replace("currentColor", &mask)
+        .replace("currentColor", &format!("#{mask_key}"))
         .replace("stroke-width=\"2\"", &format!("stroke-width=\"{stroke}\""));
     Image::new(ImageSource::Bytes {
         uri: Cow::Owned(format!(
-            "bytes://viu-lucide/{}@{stroke}@{mask}.svg",
+            "bytes://viu-lucide/{}@{stroke}@{mask_key}.svg",
             icon.name()
         )),
         bytes: bytes.into_bytes().into(),

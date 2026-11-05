@@ -9,7 +9,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
         mpsc,
     },
     thread::JoinHandle,
@@ -18,6 +18,7 @@ use std::{
 use tokio::sync::oneshot;
 
 pub struct Request {
+    pub from: String,
     pub command: String,
     pub args: Value,
     pub headers: BTreeMap<String, String>,
@@ -89,7 +90,7 @@ impl Endpoint {
                     let (reply,response)=oneshot::channel();
                     let close_after_reply=Arc::new(AtomicBool::new(false));
                     let delivery=Arc::new(AtomicU8::new(0));
-                    let request=Request{command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
+                    let request=Request{from:command.from.clone(),command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
                     let admitted=tx.try_send(request).is_ok();
                     if admitted{wake();}
                     let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;
@@ -136,9 +137,17 @@ impl Endpoint {
             .clone()
     }
 }
-struct Delivery{state:Arc<AtomicU8>,wake:crate::runtime::Wake}
-impl Drop for Delivery{
-    fn drop(&mut self){let _=self.state.compare_exchange(0,2,Ordering::AcqRel,Ordering::Acquire);(self.wake)();}
+struct Delivery {
+    state: Arc<AtomicU8>,
+    wake: crate::runtime::Wake,
+}
+impl Drop for Delivery {
+    fn drop(&mut self) {
+        let _ = self
+            .state
+            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire);
+        (self.wake)();
+    }
 }
 impl Drop for Endpoint {
     fn drop(&mut self) {

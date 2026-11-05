@@ -7,6 +7,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+files = { path = "../files" }
+mimedb.workspace = true
 macros = { path = "../macros" }
 config = { path = "../config" }
 design = { path = "../design" }

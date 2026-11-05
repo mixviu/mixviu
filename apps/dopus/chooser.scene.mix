@@ -1,0 +1,18 @@
+---
+scene: 1
+name: chooser
+citizen: files
+---
+```mix
+{
+ root:{widget:"dock",children:["form","toolbar","location","footer","status","name","options","files"],placements:{form:{edge:"top",size:0},toolbar:{edge:"top",size:34},location:{edge:"top",size:34},footer:{edge:"bottom",size:38},status:{edge:"bottom",size:24},name:{edge:"bottom",size:34},options:{edge:"bottom",size:34},files:{edge:"fill"}}},
+ form:{widget:"control",on_intent:"chooser.intent",definition:{id:"form",kind:"dialog-form",label:"",initial:{open:false,title:"",body:"",field:null,choices:[]}}},
+ toolbar:{widget:"control",on_intent:"chooser.intent",definition:{id:"toolbar",kind:"command-bar",label:"",initial:[]}},
+ location:{widget:"control",on_intent:"chooser.intent",definition:{id:"location",kind:"field",label:"Location",initial:"",properties:{fill:true}}},
+ footer:{widget:"control",on_intent:"chooser.intent",definition:{id:"footer",kind:"command-bar",label:"",initial:[]}},
+ status:{widget:"control",definition:{id:"status",kind:"label",label:"",initial:""}},
+ name:{widget:"control",on_intent:"chooser.intent",hidden:"= $model.save_hidden",definition:{id:"name",kind:"field",label:"Name",initial:"",properties:{fill:true}}},
+ options:{widget:"control",on_intent:"chooser.intent",hidden:"= $model.options_hidden",definition:{id:"options",kind:"command-bar",label:"",initial:[]}},
+ files:{widget:"control",on_intent:"chooser.intent",definition:{id:"files",kind:"tree-table",label:"",initial:{key:"files",columns:[{id:"name",label:"Name"},{id:"size",label:"Size"}],rows:[]}}}
+}
+```
