@@ -24,15 +24,10 @@ fn dp_closed_form()
 end
 fn dp_initialise($a)
   $config_path=path_join($a.profile,"config.conf.mix")
-  $home=env("HOME","/")
   $loaded=$configuration.dp_load_config($config_path)
   $config=$loaded.value;$save=$loaded.save_allowed;$warning=$loaded.warning
   $panes=[$dp.dp_pane($config.left),$dp.dp_pane($config.right)]
-  $places=[]
-  for $place in [{name:"Home",path:$home},{name:"Filesystem",path:"/"},{name:"Desktop",path:$home.."/Desktop"},{name:"Documents",path:$home.."/Documents"},{name:"Downloads",path:$home.."/Downloads"},{name:"Music",path:$home.."/Music"},{name:"Pictures",path:$home.."/Pictures"},{name:"Videos",path:$home.."/Videos"}]
-    if $place.path=="/" or $place.name=="Home" or is_dir($place.path) then push($places,$place) end
-  end
-  $places=concat($places,$config.bookmarks ?? [])
+  $places=$configuration.dp_places($config)
   return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.15,0.1,0.3),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.3),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"studio",style:"default"},busy:false,job:nil,effect_jobs:{},form_queue:[],form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Select a file or folder" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
 end
 fn dp_update_previews($s)

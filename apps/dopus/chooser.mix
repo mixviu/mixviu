@@ -3,6 +3,7 @@
 -- File chooser composition/behaviour; the retained native files engine owns
 -- request validation, exactly-once outcomes and acceptance checks.
 $s=nil
+$config=require("config.mix")
 fn ch_item($id,$label)
   return {id:$id,label:$label,enabled:true}
 end
@@ -11,10 +12,32 @@ fn ch_scan($s)
   $s.rows=sort_by($s.rows,fn($r)=lower($r.name))
   $s.rows=concat(filter($s.rows,fn($r)=$r.dir),filter($s.rows,fn($r)=not $r.dir))
   $s.selected=filter($s.selected,fn($p)=any($s.rows,fn($r)=$r.key==$p))
+  if not any($s.rows,fn($r)=$r.key==$s.anchor) then $s.anchor=nil end
+  if not any($s.rows,fn($r)=$r.key==$s.cursor) then $s.cursor=nil end
   return $s
 end
 fn ch_go($s,$folder)
-  $s.folder=viu_files("uri",{path:$folder});$s.selected=[];return ch_scan($s)
+  $s.folder=viu_files("uri",{path:$folder});$s.selected=[];$s.anchor=nil;$s.cursor=nil;return ch_scan($s)
+end
+fn ch_key($s,$a)
+  if $a.ctrl and $a.key=="L" then $s.focus="location";return $s end
+  if $a.ctrl and $a.key=="H" then $s.hidden=not $s.hidden;return ch_scan($s) end
+  if $a.key=="Escape" then return ch_effect($s,"cancel",{request:$s.id}) end
+  if $a.key=="Backspace" or ($a.alt and $a.key=="ArrowUp") then return ch_go($s,viu_files("parent",{path:$s.folder})) end
+  if $a.key=="Enter" then
+    $row=filter($s.rows,fn($r)=contains($s.selected,$r.key))[0]
+    if $row!=nil and $row.dir then return ch_go($s,$row.key) end
+    return ch_accept($s,false)
+  end
+  if contains(["ArrowUp","ArrowDown","Home","End"],$a.key) and len($s.rows)>0 then
+    $keys=map($s.rows,fn($r)=$r.key);$i=index_of($keys,$s.cursor ?? $s.anchor)
+    $i=if $a.key=="Home" then 0 elif $a.key=="End" then len($keys)-1 elif $i<0 then if $a.key=="ArrowUp" then len($keys)-1 else 0 end elif $a.key=="ArrowUp" then max(0,$i-1) else min(len($keys)-1,$i+1) end
+    if $a.shift and $s.anchor!=nil then
+      $first=index_of($keys,$s.anchor);$s.selected=slice($keys,min($first,$i),max($first,$i)+1)
+    else $s.selected=[$keys[$i]];$s.anchor=$keys[$i] end
+    $s.cursor=$keys[$i]
+  end
+  return $s
 end
 fn ch_effect($s,$command,$body)
   $s.serial=$s.serial+1;$s.effect={serial:$s.serial,command:$command,body:$body};return $s
@@ -31,7 +54,7 @@ end
 fn ch_project($s)
   $rows=[]
   for $row in $s.rows
-    push($rows,{key:$row.key,path:$row.key,cells:[$row.name,if $row.dir then "Folder" else to_string($row.size).." B" end],depth:0,branch:false,expanded:false,selected:contains($s.selected,$row.key),focused:$s.anchor==$row.key,icon:if $row.dir then "folder" else "file" end})
+    push($rows,{key:$row.key,path:$row.key,cells:[$row.name,if $row.dir then "Folder" else to_string($row.size).." B" end],depth:0,branch:false,expanded:false,selected:contains($s.selected,$row.key),focused:$s.cursor==$row.key,icon:if $row.dir then "folder" else "file" end})
   end
   $options=[]
   if len($s.request.filters ?? [])>0 then
@@ -53,8 +76,14 @@ fn ch_project($s)
     push($options,{id:"choice-menu:"..to_string($i),label:$c.label,enabled:true,children:$items})
   end
   $hidden=ch_item("hidden","Hidden files");$hidden.checked=$s.hidden
-  $values={form:$s.form,location:$s.folder,name:$s.name,files:{key:$s.folder,columns:[{id:"name",label:"Name",min_width:250},{id:"size",label:"Size",min_width:80}],rows:$rows,active:true,context:[],background_context:[]},toolbar:[ch_item("parent","Parent folder"),ch_item("home","Home"),$hidden,ch_item("refresh","Refresh")],options:$options,footer:[ch_item("cancel","Cancel"),ch_item("accept",$s.request.accept_label)],status:$s.error}
-  return {values:$values,save_hidden:$s.request.mode!="save",options_hidden:len($options)==0,effect:$s.effect,ready:true,request:$s.id,folder:$s.folder,selected:$s.selected,choices:$s.choices,current_filter:$s.request.current_filter,name:$s.name,serial:$s.serial}
+  $places=[]
+  for $i=0 to len($s.places)-1
+    $p=$s.places[$i];$selected=false
+    try $selected=$s.folder==viu_files("uri",{path:$p.path}) catch $message $selected=false end
+    push($places,{key:to_string($i),path:$p.path,cells:[$p.name],depth:0,branch:false,expanded:false,selected:$selected,focused:false,icon:"folder"})
+  end
+  $values={form:$s.form,places:{key:"places",columns:[{id:"name",label:"Places"}],rows:$places,active:false,context:[],background_context:[]},location:$s.folder,name:$s.name,files:{key:$s.folder,columns:[{id:"name",label:"Name",min_width:250},{id:"size",label:"Size",min_width:80}],rows:$rows,active:true,context:[],background_context:[]},toolbar:[ch_item("parent","Parent folder"),ch_item("home","Home"),$hidden,ch_item("refresh","Refresh")],options:$options,footer:[ch_item("cancel","Cancel"),ch_item("accept",$s.request.accept_label)],status:$s.error}
+  return {values:$values,focus:$s.focus,appearance:{scheme:"studio",mode:"dark",style:"default"},save_hidden:$s.request.mode!="save",options_hidden:len($options)==0,effect:$s.effect,ready:true,request:$s.id,folder:$s.folder,selected:$s.selected,choices:$s.choices,current_filter:$s.request.current_filter,name:$s.name,serial:$s.serial}
 end
 fn ch_publish($s)
   send "viu-local" "scenes.model" body={generation:viu_context().generation,value:ch_project($s)}
@@ -66,23 +95,32 @@ on chooser.open
     if $r.current_name!=nil then $name=viu_files("name",{name:$r.current_name}) end
     $choices={};for $c in $r.choices $choices[$c.id]=$c.default end
     $s={id:$event.args.id,request:$r,folder:$r.current_folder,home:$event.args.home,name:$name,raw_name:$r.current_name,hidden:false,rows:[],selected:[],anchor:nil,choices:$choices,error:"",form:{open:false,title:"",body:"",field:nil,choices:[]},pending:nil,serial:0,effect:nil}
+    $configuration=if $event.args.profile==nil then $config.dp_defaults() else $config.dp_load_config(path_join($event.args.profile,"config.conf.mix")).value end
+    $s.places=$config.dp_places($configuration)
     $s=ch_scan($s);ch_publish($s);reply(0,json_encode({ready:true}))
   catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on chooser.call
   try
-    $a=$event.args;$candidate=$s;$candidate.effect=nil;$candidate.error=""
+    $a=$event.args;$candidate=$s;$candidate.effect=nil;$candidate.error="";$candidate.focus=nil
     if $a.command=="result" then
       if $a.rc!=0 then
         if $a.body.error_code=="EXISTS" then
           $candidate.form={open:true,title:"Replace existing files?",body:"The selected destination already exists. Replace it?",field:nil,instance:$candidate.serial,choices:[{id:"cancel",label:"Cancel",enabled:true,cancel:true},{id:"replace",label:"Replace",enabled:true,default:true}]}
         else $candidate.error=$a.body.message ?? json_encode($a.body) end
       end
+    elif $a.command=="key" then $candidate=ch_key($candidate,$a)
     elif $a.command=="intent" then
       $id=$a.id;$action=$a.action;$v=$a.value
-      if $id=="location" then
+      if $id=="places" then
+        $i=to_number($v.key)
+        if $i<0 or $i>=len($candidate.places) then raise("INVALID_ARGUMENT","Unknown place") end
+        $candidate=ch_go($candidate,$candidate.places[$i].path)
+      elif $id=="location" then
         if $action=="submit" then $candidate=ch_go($candidate,$v) end
-      elif $id=="name" then $candidate.name=$v;$candidate.raw_name=nil
+      elif $id=="name" then
+        $candidate.name=$v;$candidate.raw_name=nil
+        if $action=="submit" then $candidate=ch_accept($candidate,false) end
       elif $id=="form" then
         if not deep_eq($v.instance,$candidate.form.instance) then raise("STALE_FORM","Replace confirmation has changed") end
         if $v.choice=="replace" then $candidate.pending.replace=true;$candidate=ch_effect($candidate,"accept",$candidate.pending) end
@@ -94,6 +132,7 @@ on chooser.call
           if $row.dir then $candidate=ch_go($candidate,$row.key)
           else $candidate.selected=[$row.key];$candidate=ch_accept($candidate,false) end
         elif $action=="select" then
+          $candidate.cursor=$row.key
           if $candidate.request.multiple and $v.shift and $candidate.anchor!=nil then
             $keys=map($candidate.rows,fn($r)=$r.key);$a=index_of($keys,$candidate.anchor);$b=index_of($keys,$row.key)
             $candidate.selected=slice($keys,min($a,$b),max($a,$b)+1)

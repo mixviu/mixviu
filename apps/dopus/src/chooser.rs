@@ -49,6 +49,7 @@ impl Window {
     fn new(
         open: &viu::chooser::Prepared,
         app_dir: &std::path::Path,
+        profile: &std::path::Path,
         home: &Value,
         ctx: &egui::Context,
     ) -> Result<Self, String> {
@@ -69,7 +70,7 @@ impl Window {
                 citizen: "files-window".into(),
             })
             .map_err(|e| format!("{e:?}"))?;
-        let sequence=worker.event("chooser.open".into(),json!({"id":id,"request":open.open.request.body().map_err(|e|e.message)?,"home":home})).map_err(|e|format!("{e:?}"))?;
+        let sequence=worker.event("chooser.open".into(),json!({"id":id,"request":open.open.request.body().map_err(|e|e.message)?,"home":home,"profile":profile})).map_err(|e|format!("{e:?}"))?;
         let captures = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_default()
@@ -124,7 +125,7 @@ impl Window {
             Err(error) => self.error = format!("BUSY: {error:?}"),
         }
     }
-    fn poll(&mut self) -> Result<(), String> {
+    fn poll(&mut self,ctx:&egui::Context) -> Result<(), String> {
         for result in self.worker.drain() {
             self.pending.remove(&result.sequence);
             if let Some(error) = result.error {
@@ -139,6 +140,7 @@ impl Window {
                 }
             }
             if let Some(model) = result.model {
+                let style=(self.model["appearance"]!=model["appearance"]).then(||viu::appearance::resolve(&model["appearance"])).transpose()?;
                 if let Some(view) = &mut self.view {
                     view.apply_model(model.clone())?;
                 } else {
@@ -150,6 +152,8 @@ impl Window {
                     self.effect = Some(model["effect"].clone());
                 }
                 self.model = model;
+                if let Some(style)=style{viu::appearance::install_style(ctx,&self.model["appearance"],style);}
+                if let Some(id)=self.model["focus"].as_str(){if let Some(view)=&mut self.view{let _=view.request_focus(id);ctx.request_repaint_of(viewport(&self.id));}}
             }
         }
         Ok(())
@@ -157,6 +161,7 @@ impl Window {
     fn show(&mut self, ui: &mut egui::Ui) {
         self.mapped = true;
         let ctx = ui.ctx().clone();
+        ui.painter().rect_filled(ui.max_rect(),0.0,viu::appearance::colour(&ctx,"dock").unwrap_or(ui.visuals().panel_fill));
         if let Some((_, result)) = self.capture.poll(&ctx) {
             if let Some(reply) = self.capture_reply.take() {
                 let _ = reply.send(match result {
@@ -249,6 +254,12 @@ impl Window {
         } else {
             ui.label("Loading chooser…");
         }
+        if self.ready&&self.model["values"]["form"]["open"]!=true&&!self.view.as_ref().is_some_and(|v|v.text_input_active()){
+            let keys:Vec<_>=ctx.input(|input|input.events.iter().filter_map(|event|{
+                if let egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=event{Some(json!({"command":"key","key":key.name(),"ctrl":modifiers.ctrl,"shift":modifiers.shift,"alt":modifiers.alt}))}else{None}
+            }).collect());
+            for key in keys{self.call(key);}
+        }
         if self.input.now.is_empty() {
             if let Some(next) = self.input.later.pop_front() {
                 self.input.now = next;
@@ -299,6 +310,7 @@ enum Pending {
 }
 struct Shell {
     app_dir: PathBuf,
+    profile: PathBuf,
     home: Value,
     bus: Endpoint,
     service: viu::chooser::Service,
@@ -513,7 +525,7 @@ impl eframe::App for Shell {
         }
         for (id, open) in prepared {
             if !self.windows.lock().unwrap().contains_key(&id) {
-                match Window::new(&open, &self.app_dir, &self.home, ctx) {
+                match Window::new(&open, &self.app_dir, &self.profile,&self.home, ctx) {
                     Ok(window) => {
                         self.windows
                             .lock()
@@ -542,7 +554,7 @@ impl eframe::App for Shell {
                 let _=self.engine_call("failed",json!({"request":id,"message":"Native chooser window did not map within five seconds"}),"host".into(),Pending::Internal);
                 continue;
             }
-            if let Err(error) = window.poll() {
+            if let Err(error) = window.poll(ctx) {
                 let _ = self.engine_call(
                     "failed",
                     json!({"request":id,"message":error}),
@@ -626,7 +638,7 @@ fn commands() -> Vec<String> {
     .map(str::to_owned)
     .collect()
 }
-pub fn run(app_dir: PathBuf, mode: &str) -> eframe::Result {
+pub fn run(app_dir: PathBuf, profile:PathBuf,mode: &str) -> eframe::Result {
     let service_name = format!("files-{mode}");
     eframe::run_native(
         "Viu file chooser",
@@ -698,6 +710,7 @@ pub fn run(app_dir: PathBuf, mode: &str) -> eframe::Result {
                 .map_err(|e| std::io::Error::other(format!("{e:?}")))?;
             Ok(Box::new(Shell {
                 app_dir,
+                profile,
                 home: json!(home),
                 bus,
                 service,

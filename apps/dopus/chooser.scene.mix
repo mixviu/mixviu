@@ -5,7 +5,9 @@ citizen: files
 ---
 ```mix
 {
- root:{widget:"dock",children:["form","toolbar","location","footer","status","name","options","files"],placements:{form:{edge:"top",size:0},toolbar:{edge:"top",size:34},location:{edge:"top",size:34},footer:{edge:"bottom",size:38},status:{edge:"bottom",size:24},name:{edge:"bottom",size:34},options:{edge:"bottom",size:34},files:{edge:"fill"}}},
+ root:{widget:"column",children:["content"],padding:8,background:"design.dock"},
+ content:{widget:"dock",children:["form","toolbar","location","footer","status","name","options","places","files"],placements:{form:{edge:"top",size:0},toolbar:{edge:"top",size:34},location:{edge:"top",size:34},footer:{edge:"bottom",size:38},status:{edge:"bottom",size:24},name:{edge:"bottom",size:34},options:{edge:"bottom",size:34},places:{edge:"left",size:150},files:{edge:"fill"}}},
+ places:{widget:"control",on_intent:"chooser.intent",definition:{id:"places",kind:"tree-table",label:"",initial:{key:"places",columns:[{id:"name",label:"Places"}],rows:[]}}},
  form:{widget:"control",on_intent:"chooser.intent",definition:{id:"form",kind:"dialog-form",label:"",initial:{open:false,title:"",body:"",field:null,choices:[]}}},
  toolbar:{widget:"control",on_intent:"chooser.intent",definition:{id:"toolbar",kind:"command-bar",label:"",initial:[]}},
  location:{widget:"control",on_intent:"chooser.intent",definition:{id:"location",kind:"field",label:"Location",initial:"",properties:{fill:true}}},

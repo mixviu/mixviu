@@ -68,3 +68,11 @@ end
 fn dp_config_has($map,$key)
   return contains(keys($map),$key)
 end
+
+fn dp_places($config)
+  $home=env("HOME","/");$places=[]
+  for $place in [{name:"Home",path:$home},{name:"Filesystem",path:"/"},{name:"Desktop",path:$home.."/Desktop"},{name:"Documents",path:$home.."/Documents"},{name:"Downloads",path:$home.."/Downloads"},{name:"Music",path:$home.."/Music"},{name:"Pictures",path:$home.."/Pictures"},{name:"Videos",path:$home.."/Videos"}]
+    if $place.path=="/" or $place.name=="Home" or is_dir($place.path) then push($places,$place) end
+  end
+  return concat($places,$config.bookmarks ?? [])
+end
