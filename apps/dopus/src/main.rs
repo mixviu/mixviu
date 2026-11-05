@@ -289,8 +289,8 @@ impl App {
             ..
         } = r;
         tracing::debug!(command, "Bus command received");
-        if let Some(answer)=viu::debug::request("dopus",&command,&args.to_string()) {
-            let _=reply.send(answer);
+        if let Some(answer) = viu::debug::request("dopus", &command, &args.to_string()) {
+            let _ = reply.send(answer);
             return;
         }
         if let Some(suffix) = command.strip_prefix("dopus.macros.") {
@@ -1038,7 +1038,7 @@ fn commands() -> Vec<String> {
 }
 fn main() -> eframe::Result {
     let mut args = std::env::args().collect::<Vec<_>>();
-    if let Err(error)=viu::debug::init("warn", &mut args) {
+    if let Err(error) = viu::debug::init("warn", &mut args) {
         eprintln!("viu-dopus: {error}");
         std::process::exit(2);
     }
