@@ -1,6 +1,3 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Minimal coherent native source closure; corpus/database modules not imported.
-pub mod atomic;
+//! Minimal renderer-neutral chooser contract; filesystem writes use config::atomic.
 pub mod chooser;
-pub mod error;
-pub use error::{FilesError, Result};

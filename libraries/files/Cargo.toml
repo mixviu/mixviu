@@ -6,17 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Imported atomic writes and renderer-neutral file chooser contracts"
+description = "Imported renderer-neutral file chooser contracts"
 
 [dependencies]
 glob.workspace = true
-uuid = { version = "=1.24.1", features = ["v4"] }
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
-
-[target.'cfg(target_os = "linux")'.dependencies]
-libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

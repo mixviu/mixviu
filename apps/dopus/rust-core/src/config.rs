@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use ::config::{from_conf_mix_str, to_conf_mix_string};
-use files::atomic::write_atomic;
+use ::config::atomic::replace as write_atomic;
 
 pub const CURRENT_SCHEMA: u32 = 2;
 

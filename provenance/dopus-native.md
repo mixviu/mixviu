@@ -10,11 +10,14 @@ The original renderer-free Dopus core belongs to the explicitly requested
 Rust comparator. The Mix application independently owns its navigation,
 selection and filesystem behaviour. It does not call that core as its policy.
 
-The minimal `files` closure consists of atomic writes, chooser data contracts
-and their error module; corpus, database, indexing and transport modules are
-excluded. The unavailable optional SQLite conversion is removed from the
-error module. Its new manifest declares only required dependencies, including
-Linux libc for no-clobber rename. The native thumbnail library retains all
+The minimal `files` closure consists of chooser data contracts and their tests;
+corpus, database, indexing and transport modules are excluded. The initial
+atomic/error candidates were removed after closure inspection: their unused
+streaming-transfer API required additional BLAKE3 machinery. Dopus config now
+uses the existing tested config::atomic::replace primitive, with its stronger
+directory/symlink checks. Original import hashes remain recorded as removed;
+the reference source remains preserved. Its manifest declares only required
+dependencies. The native thumbnail library retains all
 of its coherent worker/cache/discovery/PNG modules and tests. Manifest paths,
 workspace versions and explicit pins are adapted to this repository.
 
