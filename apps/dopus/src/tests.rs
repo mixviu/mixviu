@@ -59,6 +59,18 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
     let model = first.model.unwrap();
     assert_eq!(model["panes"][0]["rows"], 2);
     assert_eq!(model["panes"][0]["summary"], "1 folder, 1 file (3 B)");
+    for pane in [json!(1), json!(0)] {
+        let seq = runtime.event("dopus.call".into(), json!({"command":"dopus.execute","args":{"id":"location.focus","params":{"pane":pane}}})).unwrap();
+        let changed = wait(&runtime, &mut jobs, seq).0;
+        assert_eq!(changed.reply.unwrap().rc, 0);
+        assert_eq!(changed.model.unwrap()["active"], pane);
+    }
+    for pane in [json!(2), json!(true), json!(-1)] {
+        let seq = runtime.event("dopus.call".into(), json!({"command":"dopus.execute","args":{"id":"location.focus","params":{"pane":pane}}})).unwrap();
+        let refused = wait(&runtime, &mut jobs, seq).0;
+        assert_eq!(refused.reply.unwrap().rc, 10);
+        assert!(refused.model.is_none());
+    }
     let mut view = SceneView::with_model(
         &std::fs::read_to_string(app_dir.join("scene.mix")).unwrap(),
         model,
@@ -183,6 +195,14 @@ fn native_queued_confirmations_keep_selection_and_core_tokens_across_other_forms
         native.poll(&ctx);
         assert!(Instant::now() < end);
         std::thread::sleep(Duration::from_millis(2));
+    }
+    for pane in [json!(1), json!(0)] {
+        native.action("location.focus", &json!({"pane":pane})).unwrap();
+        assert_eq!(native.model()["active"], pane);
+    }
+    for pane in [json!(2), json!(true), json!(-1)] {
+        assert!(native.action("location.focus", &json!({"pane":pane})).is_err());
+        assert_eq!(native.model()["active"], 0);
     }
     native.action("help.about", &json!({})).unwrap();
     for name in ["a.txt", "b.txt"] {

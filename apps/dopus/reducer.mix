@@ -160,8 +160,8 @@ fn dp_action($s,$contract,$id,$params)
   for $key in ["ctrl","shift"] if $params[$key]!=nil and type($params[$key])!="bool" then raise("INVALID_ARGUMENT","Selection modifier must be bool") end end
   $i=$s.active
   if $params.pane!=nil then
-    if not contains(["left","right","active"],$params.pane) then raise("INVALID_ARGUMENT","Unknown pane") end
-    $i=if $params.pane=="left" then 0 elif $params.pane=="right" then 1 else $s.active end
+    if not contains(["left","right","active",0,1],$params.pane) then raise("INVALID_ARGUMENT","Unknown pane") end
+    $i=if $params.pane=="left" or $params.pane==0 then 0 elif $params.pane=="right" or $params.pane==1 then 1 else $s.active end
     $s.active=$i
   end
   if $id=="place.open" then return dp_go($s,$i,$params.path) end

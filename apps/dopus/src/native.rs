@@ -369,10 +369,10 @@ impl Native {
         }
         let previous = self.core().active();
         if let Some(target) = params.get("pane").filter(|v| !v.is_null()) {
-            let p = match target.as_str() {
-                Some("left") => PaneId::Left,
-                Some("right") => PaneId::Right,
-                Some("active") => self.core().active(),
+            let p = match (target.as_str(), target.as_u64()) {
+                (Some("left"), _) | (_, Some(0)) => PaneId::Left,
+                (Some("right"), _) | (_, Some(1)) => PaneId::Right,
+                (Some("active"), _) => self.core().active(),
                 _ => return Err("Unknown pane".into()),
             };
             self.core_mut().set_active_pane(p);
