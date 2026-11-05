@@ -154,7 +154,11 @@ fn menu_paths_drive_native_popups_and_refuse_disabled_or_leaf_targets() {
         } else if let Some(result) = input.advance_menu(&mut view) {
             result.unwrap();
         } else {
-            assert_eq!(viu::rich::menu_snapshot(&menus, "menu", &view.geometry)["path"], json!(["View", "Theme"]), "Native input must not finish on a popup sizing pass");
+            assert_eq!(
+                viu::rich::menu_snapshot(&menus, "menu", &view.geometry)["path"],
+                json!(["View", "Theme"]),
+                "Native input must not finish on a popup sizing pass"
+            );
         }
     }
     let snapshot = viu::rich::menu_snapshot(&menus, "menu", &view.geometry);

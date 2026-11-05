@@ -188,8 +188,12 @@ impl Input {
             if self.menu_depth == 0 {
                 return None;
             }
-            let snapshot = crate::rich::menu_snapshot(&view.model()["values"]["menu"], "menu", &view.geometry);
-            if snapshot["path"].as_array().is_some_and(|path| path.len() == self.menu_depth) {
+            let snapshot =
+                crate::rich::menu_snapshot(&view.model()["values"]["menu"], "menu", &view.geometry);
+            if snapshot["path"]
+                .as_array()
+                .is_some_and(|path| path.len() == self.menu_depth)
+            {
                 self.menu_depth = 0;
                 return None;
             }
@@ -198,7 +202,9 @@ impl Input {
                 return Some(Ok(()));
             }
             self.menu_depth = 0;
-            return Some(Err("Native menu did not produce visible popup geometry".into()));
+            return Some(Err(
+                "Native menu did not produce visible popup geometry".into()
+            ));
         };
         if !view.geometry.contains_key(&target) && self.menu_wait_frames < 3 {
             self.menu_wait_frames += 1;
