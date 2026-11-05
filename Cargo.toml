@@ -1,5 +1,5 @@
 [workspace]
-members = ["libraries/expr", "libraries/strict", "libraries/scene", "libraries/mix", "libraries/paths", "libraries/mimedb", "libraries/viu", "libraries/icons", "libraries/bus", "libraries/config", "engines/viu", "apps/gallery"]
+members = ["libraries/expr", "libraries/strict", "libraries/scene", "libraries/mix", "libraries/paths", "libraries/mimedb", "libraries/viu", "libraries/icons", "libraries/bus", "libraries/config", "libraries/files", "libraries/thumbs", "apps/dopus/rust-core", "engines/viu", "apps/gallery"]
 resolver = "3"
 
 [workspace.package]
@@ -14,6 +14,10 @@ mod_module_files = "deny"
 
 [workspace.dependencies]
 config = { path = "libraries/config" }
+files = { path = "libraries/files" }
+thumbs = { path = "libraries/thumbs" }
+glob = "=0.3.3"
+chrono = "=0.4.45"
 anyhow = "1"
 serde = { version = "=1.0.229", features = ["derive", "rc"] }
 serde_json = "=1.0.151"
