@@ -21,5 +21,6 @@ pub mod thumbnail;
 pub mod tree_table;
 pub mod view;
 pub mod widgets;
+pub mod window_frame;
 
 pub mod input;

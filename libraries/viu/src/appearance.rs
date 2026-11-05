@@ -11,6 +11,7 @@ pub struct ResolvedAppearance {
     pub heading_weight: u16,
     pub icon_stroke: f32,
     pub icon_mask: [u8; 4],
+    pub frame: crate::window_frame::Metrics,
 }
 pub fn colour(ctx: &egui::Context, name: &str) -> Option<Color32> {
     ctx.data(|d| {
@@ -74,6 +75,7 @@ pub fn install_style(ctx: &egui::Context, description: &Value, appearance: Resol
     };
     let style = appearance.style.clone();
     ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::unique("viu-window-metrics"),appearance.frame);
         d.insert_temp(
             egui::Id::unique("viu-design-colours"),
             std::sync::Arc::new(appearance.colours),

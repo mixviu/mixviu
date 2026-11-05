@@ -205,6 +205,14 @@ pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, S
         heading_weight,
         icon_stroke,
         icon_mask: tokens.icon_mask.0,
+        frame: crate::window_frame::Metrics {
+            height: tokens.title_bar_height as f32,
+            caption_width: tokens.caption_width as f32,
+            caption_glyph: tokens.caption_glyph as f32,
+            title_size: tokens.title_size as f32,
+            resize_edge: tokens.resize_edge as f32,
+            resize_corner: tokens.resize_corner as f32,
+        },
     })
 }
 // The retained native chrome adapter reads roles back from pair visuals for

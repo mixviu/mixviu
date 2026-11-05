@@ -58,6 +58,8 @@ struct App {
     last_model_at: Instant,
     save_at: Option<Instant>,
     focus_serial: Option<(u64, String)>,
+    title: String,
+    window_frame: viu::window_frame::WindowFrame,
 }
 impl App {
     fn ready(&self) -> bool {
@@ -95,6 +97,11 @@ impl App {
             viu::appearance::install_style(ctx, &model["appearance"], style);
         }
         self.model = model;
+        if let Some(path)=self.model["panes"][self.model["active"].as_u64().unwrap_or(0) as usize]["path"].as_str(){
+            let path=path.chars().map(|c|if c.is_control(){'�'}else{c}).collect::<String>();
+            let title=format!("{path} — Dopus {} / Viu",if self.mode=="mix"{"Mix"}else{"Rust"});
+            if title!=self.title {ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));self.title=title;}
+        }
         self.last_model_at = Instant::now();
         Ok(())
     }
@@ -710,12 +717,15 @@ impl eframe::App for App {
             0.0,
             viu::appearance::colour(ctx, "dock").unwrap_or(ui.visuals().panel_fill),
         );
+        self.window_frame.show(ui,&self.title,&self.session.snapshot["state"]["values"]);
         let events = if let Some(view) = &mut self.view {
             view.show(ui)
         } else {
             ui.label("Loading Dopus…");
             Vec::new()
         };
+        self.window_frame.edges(ui);
+        if let Some(view)=self.view.as_mut(){view.geometry.extend(self.window_frame.geometry.clone());}
         if let Some(error) = self.view.as_mut().and_then(SceneView::take_focus_error) {
             if self.input_wait {
                 self.input_error = Some(error);
@@ -742,6 +752,7 @@ impl eframe::App for App {
         for event in events {
             self.call(event.command, event.body, BTreeMap::new(), None, ctx);
         }
+        if self.window_frame.close_requested {self.call("dopus.quit".into(),json!({}),BTreeMap::new(),None,ctx);}
         for action in input::shortcuts(ctx, &self.contract, shortcuts_blocked) {
             if let Some(key) = action["tree_navigation"].as_str() {
                 let side = if self.model["active"] == 0 {
@@ -1062,6 +1073,8 @@ fn main() -> eframe::Result {
                 last_model_at: Instant::now(),
                 save_at: None,
                 focus_serial: None,
+                title: String::new(),
+                window_frame: viu::window_frame::WindowFrame::default(),
             };
             if let Some(native) = &app.native {
                 app.publish(native.model(), &cc.egui_ctx)
