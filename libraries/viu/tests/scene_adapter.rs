@@ -118,8 +118,8 @@ fn menu_paths_drive_native_popups_and_refuse_disabled_or_leaf_targets() {
         {"id":"Off","label":"Off","enabled":false,"children":[]}]}]);
     for args in [
         json!({"menu":"missing"}),
-        json!({"menu":"View","path":["Off"]}),
-        json!({"menu":"View","path":["Theme","Dark"]}),
+        json!({"path":["View","Off"]}),
+        json!({"path":["View","Theme","Dark"]}),
     ] {
         assert!(viu::rich::menu_targets(&menus, "menu", &args).is_err());
     }
@@ -149,7 +149,7 @@ fn menu_paths_drive_native_popups_and_refuse_disabled_or_leaf_targets() {
             input
                 .queue(
                     "menu.open",
-                    &json!({"menu":"View","path":["Theme"]}),
+                    &json!({"path":["View","Theme"]}),
                     &mut view,
                 )
                 .unwrap();

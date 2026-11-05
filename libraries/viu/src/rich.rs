@@ -109,14 +109,15 @@ fn find<'a>(value: &'a Value, id: &str) -> Option<&'a Value> {
 /// refuse before any input is queued.
 pub fn menu_targets(value: &Value, id: &str, args: &Value) -> Result<Vec<String>, String> {
     validate("menubar", value)?;
-    let root = args["menu"].as_str().ok_or("menu label or ID required")?;
-    let mut names = vec![root];
+    let mut names = Vec::new();
     if let Some(path) = args.get("path") {
         for entry in path.as_array().ok_or("menu path must be an array")? {
             names.push(entry.as_str().ok_or("menu path entries must be strings")?);
         }
+    } else {
+        names.push(args["menu"].as_str().ok_or("menu label or ID required")?);
     }
-    if names.len() > 8 {
+    if names.is_empty() || names.len() > 8 {
         return Err("menu path exceeds eight levels".into());
     }
     let mut level = value;
