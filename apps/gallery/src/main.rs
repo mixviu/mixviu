@@ -110,7 +110,6 @@ impl Gallery {
             "gallery.execute" => self.execute(body, Some(reply)),
             "gallery.quit" => {
                 let _ = reply.send((0, json!({"ok":true})));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             _ => match self.ui_command(&command, &body, ctx) {
                 Ok(()) => {
@@ -257,6 +256,7 @@ impl eframe::App for Gallery {
         }
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if self.bus.close_requested.load(std::sync::atomic::Ordering::Acquire){ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);}
         self.completions();
         // Requests admitted this frame inject raw input at the next frame boundary.
         // Reply only after that boundary and after resulting Mix callbacks settle.

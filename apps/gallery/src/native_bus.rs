@@ -3,6 +3,7 @@
 use bus::{SupervisedClient, native_client::BoundedIncomingEvent};
 use serde_json::{Value, json};
 use std::sync::{Arc, mpsc};
+use std::sync::atomic::{AtomicBool,Ordering};
 use tokio::sync::oneshot;
 pub struct Request {
     pub command: String,
@@ -11,12 +12,15 @@ pub struct Request {
 }
 pub struct NativeBus {
     pub requests: mpsc::Receiver<Request>,
+    pub close_requested:Arc<AtomicBool>,
     stop: Option<oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl NativeBus {
     pub fn start(name: String, url: String, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
         let (tx, requests) = mpsc::sync_channel(32);
+        let close_requested=Arc::new(AtomicBool::new(false));
+        let close=close_requested.clone();
         let (stop, mut stopped) = oneshot::channel();
         let thread=std::thread::Builder::new().name("gallery-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
@@ -35,13 +39,17 @@ impl NativeBus {
                         Ok(())=>{wake();tokio::select!{_=&mut stopped=>break,r=tokio::time::timeout(std::time::Duration::from_secs(10),response)=>match r{Ok(Ok(answer))=>answer,_=>(20,json!({"error":"gallery owner did not complete request"}))}}},
                         Err(_)=>(10,json!({"error_code":"BUSY"})),
                     };
-                    let _=client.respond(&command,answer.0,&answer.1.to_string()).await;
+                    let sent=client.respond(&command,answer.0,&answer.1.to_string()).await;
+                    // The reply must enter the native transport before the UI
+                    // can drop its Bus owner and close this connection.
+                    if command.command=="gallery.quit"&&answer.0==0&&sent.is_ok(){close.store(true,Ordering::Release);wake();}
                 }
                 client.close().await;
             });
         }).unwrap();
         Self {
             requests,
+            close_requested,
             stop: Some(stop),
             thread: Some(thread),
         }
