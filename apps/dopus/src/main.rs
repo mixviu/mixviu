@@ -686,6 +686,10 @@ fn commands() -> Vec<String> {
 }
 fn main() -> eframe::Result {
     let args = std::env::args().collect::<Vec<_>>();
+    if args.get(1).is_some_and(|a|a=="--macro"){
+        let Some(path)=args.get(2)else{eprintln!("usage: viu-dopus --macro SCRIPT [ARG...]");std::process::exit(2);};
+        std::process::exit(viu::macro_host::run(PathBuf::from(path),args[3..].to_vec()));
+    }
     let mode = args
         .get(1)
         .filter(|s| ["rust", "mix"].contains(&s.as_str()))

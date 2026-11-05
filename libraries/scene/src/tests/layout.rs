@@ -93,13 +93,24 @@ fn describe_advertises_exact_layout_vocabulary_without_new_defaults() {
 }
 
 #[test]
-fn column_surface_ports_match_the_existing_frame_renderer_without_new_defaults(){
-    let ports=describe("column").unwrap();
-    for name in ["height","radius","background"]{assert!(ports.iter().find(|p|p.path==name).unwrap().default.is_none());}
-    let scene=document(r#"{root:{widget:"column",background:"design.dock",padding:8,height:120,radius:2,children:[]}}"#);
-    assert!(!lint(&scene).iter().any(|d|d.severity==Severity::Error));
-    let bad=document(r#"{root:{widget:"column",background:1,children:[]}}"#);
-    assert!(lint(&bad).iter().any(|d|d.severity==Severity::Error));
+fn column_surface_ports_match_the_existing_frame_renderer_without_new_defaults() {
+    let ports = describe("column").unwrap();
+    for name in ["height", "radius", "background"] {
+        assert!(
+            ports
+                .iter()
+                .find(|p| p.path == name)
+                .unwrap()
+                .default
+                .is_none()
+        );
+    }
+    let scene = document(
+        r#"{root:{widget:"column",background:"design.dock",padding:8,height:120,radius:2,children:[]}}"#,
+    );
+    assert!(!lint(&scene).iter().any(|d| d.severity == Severity::Error));
+    let bad = document(r#"{root:{widget:"column",background:1,children:[]}}"#);
+    assert!(lint(&bad).iter().any(|d| d.severity == Severity::Error));
 }
 
 #[test]

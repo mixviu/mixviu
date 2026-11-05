@@ -6,6 +6,7 @@ mod design_style;
 pub mod elide;
 pub mod icons;
 pub mod image_view;
+pub mod macro_host;
 pub mod jobs;
 pub mod native_bus;
 mod native_primitives;

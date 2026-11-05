@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+macros = { path = "../../libraries/macros" }
 viu = { path = "../../libraries/viu" }
 dopus-core = { path = "rust-core" }
 bus = { path = "../../libraries/bus", features = ["native"] }
