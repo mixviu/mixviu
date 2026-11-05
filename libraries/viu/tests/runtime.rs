@@ -39,6 +39,36 @@ fn next(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> Completion {
 const INIT: &str = "$ctx = viu_context(); $n = 0; on bump; $n = $n + 1; send \"viu-local\" \"scenes.model\" body=json_encode({generation: $ctx.generation, value: {n:$n}}); reply(0, \"{}\"); end";
 
 #[test]
+fn embedded_workers_refuse_global_environment_and_directory_mutation_but_keep_argv(){
+    let (mut runtime,wakes)=runtime(4);
+    runtime.load(program(r#"
+on export-host
+  try export VIU_TEST_HOST_ENV="bad";reply(0,"{}") catch $message reply(10,json_encode({message:$message})) end
+end
+on chdir-host
+  try chdir("/");reply(0,"{}") catch $message reply(10,json_encode({message:$message})) end
+end
+on native-argv
+  $child=run_argv(["true"],{timeout:1})
+  reply(0,json_encode({ok:$child.ok}))
+end
+"#)).unwrap();
+    assert!(next(&runtime,&wakes).error.is_none());
+    let cwd=std::env::current_dir().unwrap();
+    let before=std::env::var_os("VIU_TEST_HOST_ENV");
+    for event in ["export-host","chdir-host"] {
+        runtime.event(event.into(),json!({})).unwrap();
+        let done=next(&runtime,&wakes);
+        assert!(done.error.is_none(),"{:?}",done.error);
+        assert_eq!(done.reply.unwrap().rc,10);
+    }
+    assert_eq!(std::env::current_dir().unwrap(),cwd);
+    assert_eq!(std::env::var_os("VIU_TEST_HOST_ENV"),before);
+    runtime.event("native-argv".into(),json!({})).unwrap();
+    assert_eq!(next(&runtime,&wakes).reply.unwrap().body,json!({"ok":true}));
+}
+
+#[test]
 fn optional_read_and_atomic_replace_preserve_absence_and_refuse_linked_files() {
     let dir = tempfile::tempdir().unwrap();
     let outside = dir.path().join("outside");

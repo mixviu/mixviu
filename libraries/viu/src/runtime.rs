@@ -19,6 +19,19 @@ pub type Wake = Arc<dyn Fn() + Send + Sync>;
 pub type BackendFactory = Box<dyn FnOnce() -> Rc<dyn BusHandler> + Send>;
 pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 
+// Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
+// frames in debug can overflow the Rust default before Mix's depth guard runs.
+const EVALUATOR_STACK:usize=64*1024*1024;
+struct WorkerPolicy;
+impl mix::evaluator::CapabilityPolicy for WorkerPolicy{
+    fn check_builtin(&self,name:&str)->Result<(),String>{
+        if ["chdir","exit"].contains(&name){Err(format!("{name} mutates the embedded host; use explicit process cwd/lifetime"))}else{Ok(())}
+    }
+    fn check_class(&self,class:mix::builtins::CapabilityClass)->Result<(),String>{
+        if class==mix::builtins::CapabilityClass::Process{Err("embedded workers refuse export and shell syntax; use native argv functions with explicit options".into())}else{Ok(())}
+    }
+}
+
 /// Per-request log retention has a fixed ceiling, including a noisy script.
 #[derive(Clone, Default)]
 struct SharedBuf(Rc<RefCell<(Vec<u8>, bool)>>);
@@ -126,7 +139,7 @@ impl Runtime {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_interrupt = interrupt.clone();
         let worker_stop = stop.clone();
-        let thread = std::thread::Builder::new().name("viu-mix".into()).spawn(move || {
+        let thread = std::thread::Builder::new().name("viu-mix".into()).stack_size(EVALUATOR_STACK).spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
             let backend = backend.map(|make| make());
             let mut current: Option<(u64, Evaluator, Rc<Local>, SharedBuf, SharedBuf)> = None;
@@ -142,6 +155,7 @@ impl Runtime {
                         let stdout = SharedBuf::new();
                         let stderr = SharedBuf::new();
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
+                        eval.set_capability_policy(Rc::new(WorkerPolicy));
                         eval.set_interrupt_flag(worker_interrupt.clone());
                         eval.set_limits(mix::EvalLimits { time_limit: Some(Duration::from_secs(20)), max_string_len: Some(1_048_576), max_list_len: Some(65_536), max_map_len: Some(65_536), ..Default::default() });
                         eval.set_entry_script(&program.path.to_string_lossy());

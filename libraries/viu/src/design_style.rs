@@ -113,8 +113,16 @@ pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, S
         style.animation_time = 0.0;
         style.scroll_animation = egui::style::ScrollAnimation::none();
     }
-    let colours=dictionary.chrome.as_ref().map(|c|c.iter().map(|(name,value)|(name.to_owned(),colour(value))).collect()).unwrap_or_default();
-    Ok(crate::appearance::ResolvedAppearance{style,colours})
+    let colours = dictionary
+        .chrome
+        .as_ref()
+        .map(|c| {
+            c.iter()
+                .map(|(name, value)| (name.to_owned(), colour(value)))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(crate::appearance::ResolvedAppearance { style, colours })
 }
 fn pair_visuals(dictionary: &design::ResolvedDictionary, t: &ResolvedStyle, mode: Mode) -> Visuals {
     let mut v = if mode == Mode::Dark {
@@ -383,7 +391,8 @@ mod tests {
                     "default", "plain", "pro", "studio", "classic", "breeze", "adwaita",
                 ] {
                     let style = resolve(&json!({"scheme":scheme.name(),"mode":mode,"style":style}))
-                        .unwrap().style;
+                        .unwrap()
+                        .style;
                     assert!(style.text_styles[&TextStyle::Body].size > 0.0);
                     assert!(style.spacing.interact_size.is_finite());
                 }

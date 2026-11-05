@@ -366,7 +366,9 @@ impl Widgets {
                 if widget.properties["bold"] == true {
                     text = text.strong();
                 }
-                if widget.properties["weak"] == true {text=text.weak();}
+                if widget.properties["weak"] == true {
+                    text = text.weak();
+                }
                 if widget.properties["mono"] == true {
                     text = text.monospace();
                 }

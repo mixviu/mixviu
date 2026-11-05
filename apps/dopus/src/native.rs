@@ -304,12 +304,34 @@ impl Native {
         }
         menus
     }
-    fn toolbar_item(&self,mut item:Value)->Value{
-        if let Some(children)=item["children"].as_array(){item["children"]=json!(children.iter().cloned().map(|v|self.toolbar_item(v)).collect::<Vec<_>>());}
-        else{let command=self.command(item["id"].as_str().unwrap_or(""));for key in ["enabled","checked","shortcut"]{item[key]=command[key].clone();}}
+    fn toolbar_item(&self, mut item: Value) -> Value {
+        if let Some(children) = item["children"].as_array() {
+            item["children"] = json!(
+                children
+                    .iter()
+                    .cloned()
+                    .map(|v| self.toolbar_item(v))
+                    .collect::<Vec<_>>()
+            );
+        } else {
+            let command = self.command(item["id"].as_str().unwrap_or(""));
+            for key in ["enabled", "checked", "shortcut"] {
+                item[key] = command[key].clone();
+            }
+        }
         item
     }
-    fn toolbar(&self)->Value{json!(self.contract["toolbar"].as_array().into_iter().flatten().cloned().map(|item|self.toolbar_item(item)).collect::<Vec<_>>())}
+    fn toolbar(&self) -> Value {
+        json!(
+            self.contract["toolbar"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .cloned()
+                .map(|item| self.toolbar_item(item))
+                .collect::<Vec<_>>()
+        )
+    }
     pub fn action(&mut self, id: &str, params: &Value) -> Result<Value, String> {
         let empty = json!({});
         let params = if params.is_null() { &empty } else { params };
@@ -556,7 +578,7 @@ impl Native {
         let id = string(a, "id")?;
         let action = string(a, "action")?;
         let v = &a["value"];
-        if id == "menu" || id=="toolbar" {
+        if id == "menu" || id == "toolbar" {
             return self.action(string(v, "command")?, &json!({}));
         }
         if id == "form" {

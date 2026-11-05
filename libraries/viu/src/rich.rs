@@ -78,7 +78,9 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
 }
 fn find<'a>(value: &'a Value, id: &str) -> Option<&'a Value> {
     for item in value.as_array().into_iter().flatten() {
-        if item["enabled"]!=true {continue;}
+        if item["enabled"] != true {
+            continue;
+        }
         if text(item, "id") == id {
             return Some(item);
         }
@@ -218,7 +220,11 @@ pub(crate) fn draw(
                         crate::icons::button(
                             ui,
                             icon,
-                            if item["icon_only"]==true{""}else{text(item,"label")},
+                            if item["icon_only"] == true {
+                                ""
+                            } else {
+                                text(item, "label")
+                            },
                             16.0,
                             None,
                             item["enabled"] == true,
@@ -227,11 +233,12 @@ pub(crate) fn draw(
                     } else {
                         ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
                     };
-                    let response=response.on_hover_text(text(item,"label"));
+                    let response = response.on_hover_text(text(item, "label"));
                     geometry.insert(format!("{id}.command.{}", text(item, "id")), response.rect);
-                    if item.get("children").is_some(){
-                        egui::Popup::menu(&response).show(|ui|menu(ui,&item["children"],id,geometry,events));
-                    }else if response.clicked() {
+                    if item.get("children").is_some() {
+                        egui::Popup::menu(&response)
+                            .show(|ui| menu(ui, &item["children"], id, geometry, events));
+                    } else if response.clicked() {
                         emit(events, id, "command", json!({"command":item["id"]}));
                     }
                 }

@@ -548,7 +548,11 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        ui.painter().rect_filled(ui.max_rect(),0.0,viu::appearance::colour(ctx,"dock").unwrap_or(ui.visuals().panel_fill));
+        ui.painter().rect_filled(
+            ui.max_rect(),
+            0.0,
+            viu::appearance::colour(ctx, "dock").unwrap_or(ui.visuals().panel_fill),
+        );
         let events = if let Some(view) = &mut self.view {
             view.show(ui)
         } else {
