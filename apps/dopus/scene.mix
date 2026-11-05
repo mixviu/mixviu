@@ -1,0 +1,47 @@
+---
+scene: 1
+name: dopus-mix
+citizen: dopus-mix
+window: {"chrome":true,"h":680,"kind":"dialog","title":"Dopus Mix — demo files","w":1200}
+model: {}
+---
+```mix
+back: {"label":"Back","on_click":"back","widget":"button"}
+columns_left: {"children":["sort_name_left","sort_size_left","sort_modified_left"],"gap":5,"widget":"row"}
+columns_right: {"children":["sort_name_right","sort_size_right","sort_modified_right"],"gap":5,"widget":"row"}
+copy: {"label":"Copy → other","on_click":"copy","widget":"button"}
+expand: {"label":"Expand/collapse","on_click":"expand","widget":"button"}
+file_modified: {"elide":true,"text":"{cells[2]}","widget":"text","width":90}
+file_name: {"elide":true,"grow":1,"min_width":160,"text":"{cells[0]}","widget":"text"}
+file_row: {"background":"= $item.background","children":["file_name","file_size","file_modified"],"gap":8,"height":24,"hover":"#29313e","padding":2,"widget":"row"}
+file_size: {"align":"right","text":"{cells[1]}","widget":"text","width":70}
+heading_left: {"bold":true,"text":"= $model.left.heading","widget":"text"}
+heading_right: {"bold":true,"text":"= $model.right.heading","widget":"text"}
+hidden: {"label":"Hidden files","on_click":"hidden","widget":"button"}
+list_left: {"grow":1,"max_rows":16,"on_click":"pick_left","row":"file_row","row_height":24,"rows":"= $model.left.rows","widget":"list"}
+list_right: {"grow":1,"max_rows":16,"on_click":"pick_right","row":"file_row","row_height":24,"rows":"= $model.right.rows","widget":"list"}
+mkdir: {"label":"New folder","on_click":"mkdir","widget":"button"}
+move: {"label":"Move → other","on_click":"move","widget":"button"}
+name: {"on_change":"name_changed","placeholder":"New name","value":"","widget":"field","width":360}
+open: {"label":"Open folder","on_click":"open_selected","widget":"button"}
+operations: {"children":["name","mkdir","rename","copy","move"],"gap":8,"widget":"row"}
+pane_left: {"basis":0,"children":["heading_left","path_left","columns_left","list_left"],"gap":5,"grow":1,"min_width":400,"widget":"column"}
+pane_right: {"basis":0,"children":["heading_right","path_right","columns_right","list_right"],"gap":5,"grow":1,"min_width":400,"widget":"column"}
+panes: {"align":"stretch","children":["pane_left","pane_right"],"gap":12,"grow":1,"min_height":300,"widget":"row"}
+parent: {"label":"Parent","on_click":"parent","widget":"button"}
+path_left: {"on_submit":"path_left","value":"= $model.left.path","widget":"field","width":550}
+path_right: {"on_submit":"path_right","value":"= $model.right.path","widget":"field","width":550}
+refresh: {"label":"Refresh","on_click":"refresh","widget":"button"}
+rename: {"label":"Rename","on_click":"rename","widget":"button"}
+root: {"children":["toolbar","panes","operations","status"],"fill":true,"gap":8,"padding":12,"widget":"column"}
+sort_modified_left: {"label":"modified","on_click":"sort_modified_left","widget":"button"}
+sort_modified_right: {"label":"modified","on_click":"sort_modified_right","widget":"button"}
+sort_name_left: {"label":"name","on_click":"sort_name_left","widget":"button"}
+sort_name_right: {"label":"name","on_click":"sort_name_right","widget":"button"}
+sort_size_left: {"label":"size","on_click":"sort_size_left","widget":"button"}
+sort_size_right: {"label":"size","on_click":"sort_size_right","widget":"button"}
+status: {"mono":true,"text":"= $model.status","widget":"text"}
+switch: {"label":"Switch pane","on_click":"switch","widget":"button"}
+title: {"bold":true,"text":"Dopus Mix · demo files","widget":"text","width":220}
+toolbar: {"children":["title","switch","parent","back","expand","open","hidden","refresh"],"gap":6,"widget":"row"}
+```

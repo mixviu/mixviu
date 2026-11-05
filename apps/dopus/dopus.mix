@@ -1,0 +1,140 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable
+-- version: 0.1.0
+$c = require("core.mix")
+$dir = dirname(script_path())
+$root = env("DOPUS_DEMO_ROOT", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixviu/dopus-demo")
+$demo = require("demo.mix")
+$demo.prepare_demo($root)
+$host = env("DOPUS_SCENE_HOST", "shell")
+$s = $c.new_state($root, $root .. "/left", $root .. "/right")
+$new_name = ""
+fn host_call($command, $body)
+  send $host $command body=json_encode($body) timeout=10
+  if $rc != 0 then raise("SCENE_REFUSED", json_encode($result)) end
+  return $result
+end
+fn paint_state($state)
+  $t = monotonic()
+  $m = $c.model($state)
+  host_call("shell.scene.patch", {scene: "dopus-mix", path: "model", value: $m})
+  return (monotonic() - $t) * 1000
+end
+fn event_args()
+  $a = $event.args ?? {}
+  if type($event.body) == "string" and $event.body != "" then
+    try $a = json_parse($event.body) catch $e end
+  end
+  return $a
+end
+fn safe_apply($state, $command, $params)
+  try
+    return $c.apply($state, $command, $params)
+  catch $message, $error
+    $state.status = $error.code .. ": " .. $message
+    return $state
+  end
+end
+fn row_pick($state, $pane, $a)
+  if type($a.item) != "map" or type($a.item.id) != "string" then
+    $state.status = "INVALID_ROW: select a listed file"
+    return $state
+  end
+  $ids = map($state.panes[$pane].entries, fn($r) = $r.id)
+  $index = index_of($ids, $a.item.id)
+  if $index < 0 then
+    $state.status = "STALE_ROW: refresh and select the row again"
+    return $state
+  end
+  return safe_apply($state, "pick", {pane: $pane, index: $index, ctrl: $a.modifiers.ctrl ?? false, shift: $a.modifiers.shift ?? false})
+end
+host_call("shell.scene.load", {source: read_file($dir .. "/scene.mix")})
+paint_state($s)
+host_call("shell.dialog.show", {scene: "dopus-mix"})
+on @.open
+  host_call("shell.dialog.show", {scene: "dopus-mix"})
+  reply({shown: true})
+end
+on @.state
+  reply(json_encode($s))
+end
+on @.apply
+  $a = event_args()
+  try
+    $t = monotonic()
+    $s = $c.apply($s, $a.command, $a.params ?? {})
+    $core_ms = (monotonic() - $t) * 1000
+    $paint_ms = paint_state($s)
+    reply({serial: $s.serial, core_ms: $core_ms, paint_ms: $paint_ms})
+  catch $message, $error
+    $s.status = $error.code .. ": " .. $message
+    paint_state($s)
+    reply(10, {error_code: $error.code, message: $message})
+  end
+end
+on pick_left
+  $s = row_pick($s, 0, event_args()); paint_state($s)
+end
+on pick_right
+  $s = row_pick($s, 1, event_args()); paint_state($s)
+end
+on path_left
+  $s = safe_apply($s, "open", {pane: 0, path: event_args().value}); paint_state($s)
+end
+on path_right
+  $s = safe_apply($s, "open", {pane: 1, path: event_args().value}); paint_state($s)
+end
+on name_changed
+  $new_name = event_args().value
+end
+on switch
+  $s = safe_apply($s, "switch", {}); paint_state($s)
+end
+on parent
+  $s = safe_apply($s, "parent", {}); paint_state($s)
+end
+on back
+  $s = safe_apply($s, "back", {}); paint_state($s)
+end
+on hidden
+  $s = safe_apply($s, "hidden", {}); paint_state($s)
+end
+on refresh
+  $s = safe_apply($s, "refresh", {}); paint_state($s)
+end
+on expand
+  $s = safe_apply($s, "expand", {}); paint_state($s)
+end
+on open_selected
+  $s = safe_apply($s, "open", {path: $s.panes[$s.active].focus}); paint_state($s)
+end
+on mkdir
+  $s = safe_apply($s, "mkdir", {name: $new_name}); paint_state($s)
+end
+on rename
+  $s = safe_apply($s, "rename", {name: $new_name}); paint_state($s)
+end
+on copy
+  $s = safe_apply($s, "copy", {}); paint_state($s)
+end
+on move
+  $s = safe_apply($s, "move", {}); paint_state($s)
+end
+on sort_name_left
+  $s = safe_apply($s, "sort", {pane: 0, key: "name"}); paint_state($s)
+end
+on sort_size_left
+  $s = safe_apply($s, "sort", {pane: 0, key: "size"}); paint_state($s)
+end
+on sort_modified_left
+  $s = safe_apply($s, "sort", {pane: 0, key: "modified"}); paint_state($s)
+end
+on sort_name_right
+  $s = safe_apply($s, "sort", {pane: 1, key: "name"}); paint_state($s)
+end
+on sort_size_right
+  $s = safe_apply($s, "sort", {pane: 1, key: "size"}); paint_state($s)
+end
+on sort_modified_right
+  $s = safe_apply($s, "sort", {pane: 1, key: "modified"}); paint_state($s)
+end

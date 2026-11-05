@@ -1,0 +1,197 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable
+-- version: 0.1.0
+-- Lab-only twin-pane state machine. Operates only inside a disposable root.
+fn confined($root, $path)
+  $real = realpath($path)
+  if $real == nil or not ($real == $root or starts_with($real, $root .. "/")) then
+    raise("OUTSIDE_FIXTURE", $path)
+  end
+  return $real
+end
+fn valid_name($name)
+  if type($name) != "string" or $name == "" or $name == "." or $name == ".." or contains($name, "/") then
+    raise("INVALID_NAME", to_string($name))
+  end
+  return $name
+end
+fn scan_dir($root, $path, $depth, $expanded, $hidden, $key, $ascending)
+  confined($root, $path)
+  $rows = []
+  for $name in ls($path)
+    if $hidden or not starts_with($name, ".") then
+      $full = $path .. "/" .. $name
+      $st = stat($full, {follow_symlinks: false})
+      push($rows, {id: $full, name: $name, size: $st.size, modified: $st.mtime, dir: $st.is_dir, symlink: $st.is_symlink, depth: $depth})
+    end
+  end
+  $rows = sort_by($rows, fn($r) = if $key == "name" then lower($r.name) elif $key == "size" then $r.size else $r.modified end)
+  if not $ascending then $rows = reverse($rows) end
+  -- Dopus keeps directories ahead of files regardless of ascending order.
+  $rows = concat(filter($rows, fn($r) = $r.dir), filter($rows, fn($r) = not $r.dir))
+  $out = []
+  for $row in $rows
+    push($out, $row)
+    if $row.dir and ($expanded[$row.id] ?? false) and $depth < 16 then
+      $out = concat($out, scan_dir($root, $row.id, $depth + 1, $expanded, $hidden, $key, $ascending))
+    end
+  end
+  if len($out) > 200 then raise("ROW_LIMIT", "Evaluation listing exceeds 200 rows; use a smaller folder") end
+  return $out
+end
+fn refresh_pane($root, $p)
+  $p.entries = scan_dir($root, $p.path, 0, $p.expanded, $p.show_hidden, $p.sort, $p.ascending)
+  $ids = map($p.entries, fn($r) = $r.id)
+  $p.selection = filter($p.selection, fn($id) = contains($ids, $id))
+  if not contains($ids, $p.focus) then $p.focus = nil end
+  return $p
+end
+fn new_state($root, $left, $right)
+  $root = realpath($root)
+  if $root == nil then raise("NO_FIXTURE", "fixture root missing") end
+  $panes = []
+  for $path in [$left, $right]
+    $path = confined($root, $path)
+    push($panes, refresh_pane($root, {path: $path, sort: "name", ascending: true, show_hidden: false, selection: [], focus: nil, anchor: nil, expanded: {}, back: [], forward: [], entries: []}))
+  end
+  return {root: $root, active: 0, panes: $panes, serial: 0, status: "Ready"}
+end
+fn navigate($root, $p, $path)
+  $path = confined($root, $path)
+  if not is_dir($path) then $path = dirname($path) end
+  if $p.path != $path then
+    $p.back = push($p.back, $p.path)
+    $p.forward = []
+  end
+  $p.path = $path
+  $p.selection = []
+  $p.focus = nil
+  $p.anchor = nil
+  $p.expanded = {}
+  return refresh_pane($root, $p)
+end
+fn pick($p, $index, $ctrl, $shift)
+  if length($p.entries) == 0 then return $p end
+  $index = max(0, min(length($p.entries) - 1, $index))
+  $id = $p.entries[$index].id
+  if $shift and $p.anchor != nil then
+    $anchor = 0
+    for $i = 0 to length($p.entries) - 1
+      if $p.entries[$i].id == $p.anchor then $anchor = $i end
+    end
+    $p.selection = map(slice($p.entries, min($anchor, $index), max($anchor, $index) + 1), fn($r) = $r.id)
+  elif $ctrl then
+    if contains($p.selection, $id) then $p.selection = filter($p.selection, fn($x) = $x != $id)
+    else $p.selection = push($p.selection, $id) end
+    $p.anchor = $id
+  else
+    $p.selection = [$id]
+    $p.anchor = $id
+  end
+  $p.focus = $id
+  return $p
+end
+fn apply($state, $command, $a)
+  $s = $state
+  $n = $a.pane ?? $s.active
+  if type($n) == "string" then $n = if $n == "left" then 0 elif $n == "right" then 1 else -1 end end
+  if $n != 0 and $n != 1 then raise("INVALID_PANE", to_string($n)) end
+  $p = $s.panes[$n]
+  if $command == "open" then
+    $p = navigate($s.root, $p, $a.path)
+  elif $command == "switch" then
+    $s.active = 1 - $s.active
+  elif $command == "activate" then
+    $s.active = $n
+  elif $command == "parent" then
+    if $p.path == $s.root then raise("DEMO_ROOT", "Already at the demo root") end
+    $p = navigate($s.root, $p, dirname($p.path))
+  elif $command == "back" or $command == "forward" then
+    $from = if $command == "back" then $p.back else $p.forward end
+    if length($from) > 0 then
+      $path = $from[length($from) - 1]
+      $from = slice($from, 0, length($from) - 1)
+      if $command == "back" then $p.back = $from; $p.forward = push($p.forward, $p.path)
+      else $p.forward = $from; $p.back = push($p.back, $p.path) end
+      $p.path = $path; $p.selection = []; $p.focus = nil; $p.expanded = {}
+      $p = refresh_pane($s.root, $p)
+    end
+  elif $command == "sort" then
+    if not contains(["name", "size", "modified"], $a.key) then raise("INVALID_SORT", to_string($a.key)) end
+    $p.ascending = if $p.sort == $a.key then not $p.ascending else true end
+    $p.sort = $a.key
+    $p = refresh_pane($s.root, $p)
+  elif $command == "hidden" then
+    $p.show_hidden = not $p.show_hidden
+    $p = refresh_pane($s.root, $p)
+  elif $command == "refresh" then
+    $p = refresh_pane($s.root, $p)
+  elif $command == "expand" then
+    $id = confined($s.root, $a.path ?? $p.focus)
+    if not is_dir($id) then raise("NOT_DIRECTORY", $id) end
+    $p.expanded[$id] = not ($p.expanded[$id] ?? false)
+    $p = refresh_pane($s.root, $p)
+  elif $command == "pick" then
+    $s.active = $n
+    $p = pick($p, $a.index, $a.ctrl ?? false, $a.shift ?? false)
+  elif $command == "key" then
+    $index = -1
+    for $i = 0 to length($p.entries) - 1
+      if $p.entries[$i].id == $p.focus then $index = $i end
+    end
+    if $a.key == "ArrowDown" then $index = $index + 1
+    elif $a.key == "ArrowUp" then $index = max(0, $index - 1)
+    elif $a.key == "Home" then $index = 0
+    elif $a.key == "End" then $index = length($p.entries) - 1
+    else raise("UNSUPPORTED_KEY", $a.key) end
+    $p = pick($p, $index, $a.ctrl ?? false, $a.shift ?? false)
+  elif $command == "mkdir" then
+    $dst = $p.path .. "/" .. valid_name($a.name)
+    if exists($dst) then raise("DEST_EXISTS", $dst) end
+    mkdir($dst, {parents: false})
+    $p = refresh_pane($s.root, $p)
+  elif $command == "rename" then
+    if length($p.selection) != 1 then raise("SELECT_ONE", "rename needs one selection") end
+    if stat($p.selection[0], {follow_symlinks: false}).is_symlink then raise("SYMLINK_REFUSED", $p.selection[0]) end
+    $src = confined($s.root, $p.selection[0])
+    $dst = dirname($src) .. "/" .. valid_name($a.name)
+    if exists($dst) then raise("DEST_EXISTS", $dst) end
+    rename($src, $dst)
+    $p.selection = [$dst]
+    $p = refresh_pane($s.root, $p)
+  elif $command == "copy" or $command == "move" then
+    $target = confined($s.root, $a.target ?? $s.panes[1 - $n].path)
+    if not is_dir($target) then raise("NOT_DIRECTORY", $target) end
+    for $src in $p.selection
+      if stat($src, {follow_symlinks: false}).is_symlink then raise("SYMLINK_REFUSED", $src) end
+      $src = confined($s.root, $src)
+      $dst = $target .. "/" .. basename($src)
+      if exists($dst) then raise("DEST_EXISTS", $dst) end
+      if starts_with($dst, $src .. "/") then raise("RECURSIVE_COPY", $dst) end
+      if $command == "move" then rename($src, $dst)
+      elif is_dir($src) then copy_tree($src, $dst)
+      else copy($src, $dst) end
+    end
+    $p = refresh_pane($s.root, $p)
+    $s.panes[1 - $n] = refresh_pane($s.root, $s.panes[1 - $n])
+  else
+    raise("UNKNOWN_COMMAND", $command)
+  end
+  $s.panes[$n] = $p
+  $s.serial = $s.serial + 1
+  $s.status = $command .. " · " .. to_string($s.serial)
+  return $s
+end
+fn model($s)
+  $out = {status: $s.status, active: $s.active}
+  for $n = 0 to 1
+    $p = $s.panes[$n]
+    $rows = []
+    for $r in $p.entries
+      $selected = contains($p.selection, $r.id)
+      push($rows, {id: $r.id, cells: [repeat("  ", $r.depth) .. (if $r.dir then (if $p.expanded[$r.id] ?? false then "▾ " else "▸ " end) else "  " end) .. $r.name, (if $r.dir then "<DIR>" else to_string($r.size) end), to_string($r.modified)], selected: $selected, background: if $selected then "#284766" else "#15181e" end, focused: $p.focus == $r.id, depth: $r.depth, dir: $r.dir})
+    end
+    $out[if $n == 0 then "left" else "right" end] = {path: $p.path, rows: $rows, heading: (if $s.active == $n then "● " else "○ " end) .. to_string(length($p.entries)) .. " entries · " .. to_string(length($p.selection)) .. " selected", background: if $s.active == $n then "#202632" else "#15181e" end}
+  end
+  return $out
+end

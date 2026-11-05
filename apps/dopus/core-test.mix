@@ -1,0 +1,68 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable
+-- version: 0.1.0
+$c = require("core.mix")
+$root = "/var/tmp/mixviu-dopus-test-" .. uuid()
+mkdir($root .. "/left/sub", {parents: true})
+mkdir($root .. "/right")
+write_file($root .. "/left/a.txt", "alpha")
+write_file($root .. "/left/b.txt", "beta beta")
+write_file($root .. "/left/.hidden", "hidden")
+write_file($root .. "/left/sub/child.txt", "child")
+$s = $c.new_state($root, $root .. "/left", $root .. "/right")
+$passed = 0
+fn expect($name, $yes)
+  if not $yes then raise("TEST_FAILED", $name) end
+  print("PASS " .. $name)
+  return 1
+end
+fn row_index($s, $pane, $name)
+  for $i = 0 to length($s.panes[$pane].entries) - 1
+    if $s.panes[$pane].entries[$i].name == $name then return $i end
+  end
+  raise("NO_ROW", $name)
+end
+$passed = $passed + expect("two panes and directory-first listing", length($s.panes) == 2 and length($s.panes[0].entries) == 3 and $s.panes[0].entries[0].dir)
+$s = $c.apply($s, "hidden", {pane: 0})
+$passed = $passed + expect("hidden setting is pane local", length($s.panes[0].entries) == 4 and not $s.panes[1].show_hidden)
+$s = $c.apply($s, "expand", {pane: 0, path: $root .. "/left/sub"})
+$passed = $passed + expect("expanded folder adds child at depth one", $s.panes[0].entries[1].name == "child.txt" and $s.panes[0].entries[1].depth == 1)
+$s = $c.apply($s, "expand", {pane: 0, path: $root .. "/left/sub"})
+$s = $c.apply($s, "pick", {pane: 0, index: row_index($s, 0, "a.txt")})
+$s = $c.apply($s, "pick", {pane: 0, index: row_index($s, 0, "b.txt"), ctrl: true})
+$passed = $passed + expect("ctrl extends selection", length($s.panes[0].selection) == 2)
+$s = $c.apply($s, "pick", {pane: 0, index: row_index($s, 0, "a.txt"), ctrl: true})
+$passed = $passed + expect("ctrl toggles selection off", length($s.panes[0].selection) == 1 and ends_with($s.panes[0].selection[0], "/b.txt"))
+$s = $c.apply($s, "key", {pane: 0, key: "Home"})
+$s = $c.apply($s, "key", {pane: 0, key: "End", shift: true})
+$passed = $passed + expect("shift range selects all visible rows", length($s.panes[0].selection) == 4)
+$s = $c.apply($s, "pick", {pane: 0, index: row_index($s, 0, "a.txt")})
+$s = $c.apply($s, "rename", {pane: 0, name: "renamed.txt"})
+$passed = $passed + expect("rename preserves contents and updates selection", read_file($root .. "/left/renamed.txt") == "alpha" and ends_with($s.panes[0].selection[0], "/renamed.txt"))
+$s = $c.apply($s, "copy", {pane: 0})
+$passed = $passed + expect("copy goes to other pane", read_file($root .. "/right/renamed.txt") == "alpha" and is_file($root .. "/left/renamed.txt"))
+$refused = false
+try $s = $c.apply($s, "copy", {pane: 0}) catch $message, $error $refused = $error.code == "DEST_EXISTS" end
+$passed = $passed + expect("copy refuses replacement", $refused and read_file($root .. "/right/renamed.txt") == "alpha")
+$s = $c.apply($s, "pick", {pane: 0, index: row_index($s, 0, "b.txt")})
+$s = $c.apply($s, "move", {pane: 0})
+$passed = $passed + expect("move transfers contents", not exists($root .. "/left/b.txt") and read_file($root .. "/right/b.txt") == "beta beta")
+$s = $c.apply($s, "mkdir", {pane: 1, name: "created"})
+$passed = $passed + expect("new folder targets explicit pane", is_dir($root .. "/right/created") and not exists($root .. "/left/created"))
+$s = $c.apply($s, "open", {pane: 0, path: $root .. "/left/sub"})
+$s = $c.apply($s, "back", {pane: 0})
+$passed = $passed + expect("navigation back restores path", $s.panes[0].path == $root .. "/left")
+$s = $c.apply($s, "forward", {pane: 0})
+$passed = $passed + expect("navigation forward restores path", $s.panes[0].path == $root .. "/left/sub")
+$refused = false
+try $s = $c.apply($s, "open", {pane: 0, path: "/etc"}) catch $message, $error $refused = $error.code == "OUTSIDE_FIXTURE" end
+$passed = $passed + expect("fixture escape refused", $refused)
+$refused = false
+try $s = $c.apply($s, "mkdir", {pane: 1, name: "../escape"}) catch $message, $error $refused = $error.code == "INVALID_NAME" end
+$passed = $passed + expect("invalid name refused", $refused)
+$s = $c.apply($s, "sort", {pane: 1, key: "size"})
+$s = $c.apply($s, "sort", {pane: 1, key: "size"})
+$passed = $passed + expect("repeated sort reverses only target pane", not $s.panes[1].ascending and $s.panes[0].sort == "name")
+$m = $c.model($s)
+$passed = $passed + expect("model contains both panes", length($m.left.rows) == 1 and length($m.right.rows) == 3)
+print(json_encode({passed: $passed, root: $root}))

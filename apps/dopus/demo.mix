@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable
+-- version: 0.1.0
+-- Initialise once. Existing files are never reset on relaunch.
+fn prepare_demo($root)
+  if is_dir($root) then return end
+  mkdir($root .. "/left/Documents", {parents: true})
+  mkdir($root .. "/left/Photos")
+  mkdir($root .. "/right/Inbox", {parents: true})
+  write_file($root .. "/left/Welcome.txt", "Dopus Mix evaluation\nSelect a file, then Copy or Move to the other pane.\nType a new name before New folder or Rename.\nChanges affect these demo files only.\n")
+  write_file($root .. "/left/Documents/Notes.txt", "Nested folder navigation and expansion example.\n")
+  write_file($root .. "/left/.hidden-example", "Use Hidden files to show this entry.\n")
+  write_file($root .. "/right/Readme.txt", "This pane receives copied or moved demo files.\n")
+  for $i = 1 to 24
+    write_file($root .. "/left/Example-" .. to_string($i) .. ".txt", repeat("Example " .. to_string($i) .. "\n", $i))
+  end
+end

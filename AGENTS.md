@@ -12,6 +12,11 @@ the first bounded client-runtime/Quoin specimen. Prototype code stays on the
 lab branch for an independent whole-specimen survey; do not merge it into main.
 No production install, engine migration or desktop replacement is authorised.
 
+Mark subsequently authorised hands-on evaluation of the Quoin specimen and
+requested a Dopus Mix example adapted from the comparison work. This branch
+adds that bounded example for the existing scene host; it remains lab code,
+with no main merge or production promotion. See apps/dopus/README.md.
+
 Application/compound-widget composition and behaviour start in Mix. Do not
 assign future UI to Rust because it looks dense or complicated. A particular
 Rust rewrite needs repeatable representative benchmark failures, diagnosis,
