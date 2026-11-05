@@ -68,13 +68,34 @@ fn native_text_selection_edits_unicode_stems_and_escape_releases_focus() {
     view.apply_model(json!({"values":{"name":value}})).unwrap();
     let escaped = draw(&ctx, &mut view, key(Key::Escape));
     assert!(escaped.iter().any(|e| e.body["action"] == "cancel"));
+    assert!(view.text_input_active());
     draw(&ctx, &mut view, vec![]);
     assert!(!view.text_input_active());
     assert!(view.admit_intent("name", "cancel", &Value::Null).is_ok());
-    view.request_focus("name").unwrap();draw(&ctx,&mut view,vec![]);draw(&ctx,&mut view,vec![]);
-    let outside=egui::pos2(500.0,350.0);
-    let blur=draw(&ctx,&mut view,vec![Event::PointerMoved(outside),Event::PointerButton{pos:outside,button:egui::PointerButton::Primary,pressed:true,modifiers:Modifiers::NONE},Event::PointerButton{pos:outside,button:egui::PointerButton::Primary,pressed:false,modifiers:Modifiers::NONE}]);
-    assert!(blur.iter().any(|event|event.body["action"]=="blur"));
+    view.request_focus("name").unwrap();
+    draw(&ctx, &mut view, vec![]);
+    draw(&ctx, &mut view, vec![]);
+    let outside = egui::pos2(500.0, 350.0);
+    let blur = draw(
+        &ctx,
+        &mut view,
+        vec![
+            Event::PointerMoved(outside),
+            Event::PointerButton {
+                pos: outside,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: outside,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            },
+        ],
+    );
+    assert!(blur.iter().any(|event| event.body["action"] == "blur"));
     assert!(
         view.request_focus_value(&json!({"id":"missing","selection":[0,1]}))
             .is_err()

@@ -299,7 +299,7 @@ impl Window {
                 && self.pending.is_empty()
                 && self.effect.is_none()
                 && !self.engine_pending
-                && !self.view.as_ref().is_some_and(|v|v.focus_pending())
+                && !self.view.as_ref().is_some_and(|v| v.focus_pending())
             {
                 self.input_wait = false;
                 let mut state = self.state();

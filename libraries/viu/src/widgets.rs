@@ -196,7 +196,12 @@ impl Widget {
         if !self.actions().contains(&action) {
             return Err("unsupported widget action".into());
         }
-        if matches!(self.kind.as_str(),"field"|"multiline")&&action=="cancel"&&!value.is_null(){return Err("text-field cancel takes no value".into());}
+        if matches!(self.kind.as_str(), "field" | "multiline")
+            && action == "cancel"
+            && !value.is_null()
+        {
+            return Err("text-field cancel takes no value".into());
+        }
         if ["set", "submit", "blur"].contains(&action)
             || (action == "activate"
                 && ["list", "table", "tree", "toolbar"].contains(&self.kind.as_str()))
@@ -455,7 +460,8 @@ impl Widgets {
                         .password(widget.properties["password"] == true)
                         .id_salt(id),
                 );
-                self.text_input_active |= r.has_focus();
+                // The key which ends editing belongs to the field this frame.
+                self.text_input_active |= r.has_focus() || r.lost_focus();
                 if r.changed() {
                     // Preserve native edit-before-submit/cancel ordering when
                     // a single input pass contains both text and a key.

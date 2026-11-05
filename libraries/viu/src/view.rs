@@ -190,7 +190,9 @@ impl SceneView {
     pub fn take_focus_error(&mut self) -> Option<String> {
         self.focus_error.take()
     }
-    pub fn focus_pending(&self)->bool{self.widgets.focus.is_some()}
+    pub fn focus_pending(&self) -> bool {
+        self.widgets.focus.is_some()
+    }
     pub fn text_input_active(&self) -> bool {
         self.widgets.text_input_active
     }
