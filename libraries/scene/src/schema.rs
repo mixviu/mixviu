@@ -200,6 +200,8 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("h", false, Some(0.0)),
     ];
     static SPACER: [Port; 1] = [pn("size", false, None)];
+    static CONTROL: [Port;2]=[p("definition","object",true,None),p("on_intent","string",false,None)];
+    static GRID: [Port;6]=[p("children","list",true,None),pn("columns",true,Some(1.0)),p("identity","string",false,None),pnd("column_gap","12",None),pnd("row_gap","3",None),pnd("min_column_width","0",None)];
     let family: &[Port] = match f {
         "window" => &WINDOW,
         "column" => &BOX,
@@ -211,6 +213,8 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         "list" => &LIST,
         "image" => &IMAGE,
         "spacer" => &SPACER,
+        "control" => &CONTROL,
+        "grid" => &GRID,
         _ => return None,
     };
     let mut ports = family.to_vec();
@@ -307,6 +311,9 @@ pub(crate) fn check_port_value(
     out: &mut Vec<Diagnostic>,
 ) {
     let k = p.name;
+    if k=="columns" && v.as_f64().is_some_and(|n|n.fract()!=0.0 || n>16.0) {
+        out.push(Diagnostic::error("port-type",line,format!("port columns on {id} must be an integer from 1 to 16")));
+    }
     if k == "max_lines" && v.as_f64().is_some_and(|n| n.fract() != 0.0 || n > 1024.0) {
         out.push(Diagnostic::error(
             "port-type",

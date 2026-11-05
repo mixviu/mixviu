@@ -2,7 +2,8 @@
 //! Client adaptation of scene-host routes and template preparation, using
 //! native egui primitives. This lab renderer covers volume's node families.
 use crate::templates::{PreparedLists, children, rows, text, validate_templates};
-use egui::{Color32, RichText, Sense, Vec2};
+use crate::widgets::{Widget,Widgets,Intent};
+use egui::{Color32, Sense, Vec2};
 use scene::{Node, ResolvedScene};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -18,18 +19,28 @@ pub struct SceneView {
     lists: PreparedLists,
     pub revision: u64,
     pub geometry: BTreeMap<String, egui::Rect>,
+    widgets: Widgets,
+    focus_error: Option<String>,
 }
 
 impl SceneView {
     pub fn new(source: &str) -> Result<Self, String> {
-        let document = scene::parse(source).map_err(|e| format!("{e:?}"))?;
+        Self::prepare(source,None)
+    }
+    pub fn with_model(source:&str,model:Value)->Result<Self,String> { Self::prepare(source,Some(model)) }
+    fn prepare(source:&str,model:Option<Value>)->Result<Self,String> {
+        let mut document = scene::parse(source).map_err(|e| format!("{e:?}"))?;
+        if let Some(model)=model { document.model=Some(model); }
         let tree = scene::resolve(&document).map_err(|e| format!("{e:?}"))?;
         let lists = validate_templates(&tree).map_err(|e| e.to_string())?;
+        validate_controls(&tree)?;
         Ok(Self {
             tree,
             lists,
             revision: 0,
             geometry: BTreeMap::new(),
+            widgets: Widgets::default(),
+            focus_error: None,
         })
     }
 
@@ -46,6 +57,7 @@ impl SceneView {
         }
         let candidate = evaluated.tree;
         let lists = validate_templates(&candidate).map_err(|e| e.to_string())?;
+        validate_controls(&candidate)?;
         self.tree = candidate;
         self.lists = lists;
         self.revision += 1;
@@ -55,11 +67,20 @@ impl SceneView {
     pub fn show(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         let mut events = Vec::new();
         self.geometry.clear();
+        self.widgets.begin_frame();
         let tree = self.tree.clone();
         let nodes = tree.nodes.into_iter().collect();
         self.node(ui, "root", &nodes, None, 0, &mut events);
+        self.geometry.extend(self.widgets.geometry.iter().map(|(id,r)|(id.clone(),*r)));
+        self.focus_error=self.widgets.finish_frame().err();
         events
     }
+    pub fn request_focus(&mut self,id:&str)->Result<(),String> {
+        if !self.geometry.contains_key(id) { return Err("focus target not visible".into()); }
+        self.widgets.focus=Some(id.into());
+        Ok(())
+    }
+    pub fn take_focus_error(&mut self)->Option<String> { self.focus_error.take() }
 
     fn node(
         &mut self,
@@ -90,22 +111,59 @@ impl SceneView {
                 }
                 ui.spacing_mut().item_spacing = Vec2::splat(num(node, "gap").unwrap_or(4.0));
                 match node.family.as_str() {
-                    "text" => {
-                        let mut rich = RichText::new(text(node, "text"))
-                            .size(num(node, "size").unwrap_or(13.0))
-                            .color(color(text(node, "color")).unwrap_or(Color32::WHITE));
-                        if node.ports.get("bold").and_then(Value::as_bool) == Some(true) {
-                            rich = rich.strong();
+                    "grid" => {
+                        let columns=num(node,"columns").unwrap_or(2.0) as usize;
+                        let gap=num(node,"column_gap").unwrap_or(12.0);
+                        let width=((ui.available_width()-gap*(columns-1) as f32)/columns as f32).max(num(node,"min_column_width").unwrap_or(0.0));
+                        egui::Grid::new(text(node,"identity")).num_columns(columns).min_col_width(width).max_col_width(width)
+                            .spacing([gap,num(node,"row_gap").unwrap_or(3.0)]).show(ui,|ui| {
+                                for (index,child) in children(node).enumerate() {
+                                    ui.scope(|ui| { ui.set_min_width(width); ui.set_max_width(width);
+                                        self.node(ui,child,nodes,route,depth+1,events);
+                                    });
+                                    if index%columns==columns-1 { ui.end_row(); }
+                                }
+                            });
+                    }
+                    "control" => {
+                        match Widget::decode(&node.ports["definition"]) {
+                            Ok(widget)=> {
+                                for intent in self.widgets.widget(ui,&widget,&self.tree.model) {
+                                    if let Some(command)=node.ports.get("on_intent").and_then(Value::as_str) {
+                                        events.push(Event::from_intent(command,&self.tree.name,intent));
+                                    }
+                                }
+                            }
+                            Err(error)=>{ ui.colored_label(Color32::RED,error); }
                         }
-                        ui.label(rich);
+                    }
+                    "text" => {
+                        let colour=color(text(node,"color")).unwrap_or(Color32::WHITE).to_array();
+                        let widget=Widget::new(&key,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"colour":colour}));
+                        self.widgets.widget(ui,&widget,&json!({}));
                     }
                     "button" => {
-                        if ui.button(text(node, "label")).clicked() {
-                            route_event(&self.tree.name, id, node, route, events);
+                        let widget=Widget::new(&key,"button","",json!("Ready")).with_properties(json!({"text":text(node,"label")}));
+                        for intent in self.widgets.widget(ui,&widget,&json!({})) {
+                            if intent.action=="activate" { route_event(&self.tree.name,id,node,route,events); }
+                        }
+                    }
+                    "field" | "toggle" => {
+                        let widget=Widget::new(&key,&node.family,"",node.ports["value"].clone()).with_properties(json!({"text":text(node,"label"),"placeholder":text(node,"placeholder"),"password":node.ports.get("password")}));
+                        for intent in self.widgets.widget(ui,&widget,&json!({})) {
+                            let port=if intent.action=="submit" {"on_submit"} else {"on_change"};
+                            if let Some(command)=node.ports.get(port).and_then(Value::as_str) {
+                                events.push(Event{command:command.into(),body:json!({"scene":self.tree.name,"node":id,"kind":if intent.action=="submit" {"submit"} else {"change"},"value":intent.value})});
+                            }
+                        }
+                    }
+                    "image" => {
+                        if let Some(icon)=text(node,"src").strip_prefix("icon:").and_then(crate::icons::Icon::from_name) {
+                            ui.add(crate::icons::image(icon,num(node,"w").or(num(node,"h")).unwrap_or(24.0),ui.visuals().text_color()));
                         }
                     }
                     "spacer" => {
-                        ui.add_space(8.0);
+                        ui.add_space(num(node,"size").unwrap_or(8.0));
                     }
                     "list" => {
                         let horizontal = text(node, "flow") == "horizontal";
@@ -188,8 +246,33 @@ impl SceneView {
                 }
             })
             .response;
-        self.geometry.insert(key, response.rect);
+        if node.family!="control" { self.geometry.insert(key, response.rect); }
     }
+}
+
+impl Event {
+    pub fn from_intent(command:&str,scene:&str,intent:Intent)->Self {
+        let mut body=intent.encode(); body["scene"]=json!(scene); body["node"]=json!(intent.id);
+        Self{command:command.into(),body}
+    }
+}
+
+fn validate_controls(tree:&ResolvedScene)->Result<(),String> {
+    for (id,node) in &tree.nodes {
+        match node.family.as_str() {
+            "control" => {
+                let widget=Widget::decode(&node.ports["definition"])?;
+                if &widget.id!=id { return Err(format!("control ID {} differs from node {id}",widget.id)); }
+                widget.validate_model(&tree.model)?;
+            }
+            "image" => {
+                if text(node,"src").strip_prefix("icon:").and_then(crate::icons::Icon::from_name).is_none() { return Err(format!("image {id}: only known icon: sources supported")); }
+            }
+            "text"|"button"|"field"|"toggle"|"row"|"column"|"list"|"spacer"|"grid"=>{},
+            family=>return Err(format!("unsupported scene content family {family}")),
+        }
+    }
+    Ok(())
 }
 
 fn route_event(

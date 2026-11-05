@@ -13,37 +13,33 @@ use std::{
 };
 use viu::{
     runtime::{Program, Runtime},
-    widgets::{Widget, Widgets},
+    widgets::Widget,
+    view::SceneView,
 };
 
 struct Gallery {
     model: Value,
-    widgets: Widgets,
+    view: Option<SceneView>,
+    definitions: Vec<Widget>,
     runtime: Option<Runtime>,
     bus: NativeBus,
     pending: BTreeMap<u64, tokio::sync::oneshot::Sender<(u8, Value)>>,
     inflight: BTreeSet<u64>,
     input: Vec<egui::Event>,
     later_input: std::collections::VecDeque<Vec<egui::Event>>,
-    input_replies: Vec<tokio::sync::oneshot::Sender<(u8, Value)>>,
+    input_replies: Vec<(bool,tokio::sync::oneshot::Sender<(u8, Value)>)>,
     witness: Option<PathBuf>,
     error: String,
     mode: String,
 }
 impl Gallery {
     fn definitions(&self) -> Vec<Widget> {
-        self.model["widgets"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|v| Widget::decode(v).ok())
-            .collect()
+        self.definitions.clone()
     }
     fn state(&self) -> Value {
         let geometry: serde_json::Map<String, Value> = self
-            .widgets
-            .geometry
-            .iter()
+            .view.as_ref().into_iter().flat_map(|v|v.geometry.iter())
+            .filter(|(id,_)|self.definitions.iter().any(|w|id.as_str()==w.id || id.starts_with(&format!("{}.",w.id))))
             .map(|(id, r)| {
                 (
                     id.clone(),
@@ -60,20 +56,22 @@ impl Gallery {
     }
     fn publish(&mut self, model: Value) -> Result<(), String> {
         controller::validate_model(&model)?;
+        let definitions=model["widgets"].as_array().ok_or("missing widgets")?.iter().map(Widget::decode).collect::<Result<Vec<_>,_>>()?;
+        match &mut self.view {
+            Some(view)=>view.apply_model(model.clone())?,
+            None=>self.view=Some(SceneView::with_model(include_str!("../scene.mix"),model.clone())?),
+        }
+        self.definitions=definitions;
         self.model = model;
         Ok(())
     }
     fn execute(&mut self, body: Value, reply: Option<tokio::sync::oneshot::Sender<(u8, Value)>>) {
-        if body["action"] == "activate"
-            && body["id"] == "icon"
-            && self.model["values"]["icon"]["enabled"] != true
-        {
-            if let Some(reply) = reply {
-                let _ = reply.send((10, json!({"error_code":"DISABLED"})));
-            }
-            return;
-        }
-        if let Err(error) = controller::validate(&self.definitions(), &body) {
+        let admission=controller::validate(&self.definitions, &body).and_then(|()| {
+            if body["action"]=="reset" { return Ok(()); }
+            let widget=self.definitions.iter().find(|w|Some(w.id.as_str())==body["id"].as_str()).ok_or("unknown widget")?;
+            widget.admit(&self.model,body["action"].as_str().unwrap_or(""),&body["value"])
+        });
+        if let Err(error) = admission {
             if let Some(reply) = reply {
                 let _ = reply.send((10, json!({"error":error})));
             } else {
@@ -97,9 +95,12 @@ impl Gallery {
                 }
             }
         } else {
-            controller::apply(&mut self.model, &body);
+            let mut candidate=self.model.clone();
+            controller::apply(&mut candidate, &body);
+            let result=self.publish(candidate);
+            if let Err(error)=&result { self.error=error.clone(); } else { self.error.clear(); }
             if let Some(reply) = reply {
-                let _ = reply.send((0, self.state()));
+                let _ = reply.send((if result.is_ok() {0} else {10}, self.state()));
             }
         }
     }
@@ -136,7 +137,7 @@ impl Gallery {
             }
             _ => match self.ui_command(&command, &body, ctx) {
                 Ok(()) => {
-                    self.input_replies.push(reply);
+                    self.input_replies.push((command=="gallery.ui.focus",reply));
                     ctx.request_repaint();
                 }
                 Err(error) => {
@@ -185,12 +186,10 @@ impl Gallery {
             | "gallery.ui.drag" => {
                 let id = body["id"].as_str().ok_or("id required")?;
                 let rect = *self
-                    .widgets
-                    .geometry
-                    .get(id)
+                    .view.as_ref().and_then(|v|v.geometry.get(id))
                     .ok_or("widget not currently visible; open its parent first")?;
                 if command == "gallery.ui.focus" {
-                    self.widgets.focus = Some(id.into());
+                    self.view.as_mut().ok_or("scene not ready")?.request_focus(id)?;
                 } else {
                     self.input.push(egui::Event::PointerMoved(rect.center()));
                     if command == "gallery.ui.click" {
@@ -251,10 +250,12 @@ impl Gallery {
         loop {
             let done = self.runtime.as_ref().and_then(Runtime::try_completion);
             let Some(done) = done else { break };
+            self.inflight.remove(&done.sequence);
             if !self.runtime.as_ref().is_some_and(|r| r.accepts(&done)) {
+                if let Some(reply)=self.pending.remove(&done.sequence) { let _=reply.send((10,json!({"error_code":"SUPERSEDED","generation":done.generation,"sequence":done.sequence}))); }
                 continue;
             }
-            self.inflight.remove(&done.sequence);
+            self.error.clear();
             if let Some(error) = done.error {
                 self.error = error;
             } else if let Some(model) = done.model {
@@ -306,31 +307,29 @@ impl eframe::App for Gallery {
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
         }
-        let definitions = self.definitions();
         let events = egui::ScrollArea::vertical()
             .id_salt("gallery-page")
             .auto_shrink([false, false])
-            .show(ui, |ui| self.widgets.show(ui, &definitions, &self.model))
+            .show(ui, |ui| self.view.as_mut().map(|v|v.show(ui)).unwrap_or_default())
             .inner;
-        if let Err(error) = self.widgets.finish_frame() {
-            for reply in self.input_replies.drain(..) {
-                let _ = reply.send((
-                    10,
-                    json!({"error_code":"FOCUS_TARGET_UNAVAILABLE","error":error}),
-                ));
+        if let Some(error) = self.view.as_mut().and_then(SceneView::take_focus_error) {
+            let mut unaffected=Vec::new();
+            for (focus,reply) in self.input_replies.drain(..) {
+                if focus { let _=reply.send((10,json!({"error_code":"FOCUS_TARGET_UNAVAILABLE","error":error}))); }
+                else { unaffected.push((focus,reply)); }
             }
+            self.input_replies=unaffected;
         }
         for event in events {
-            self.execute(event.encode(), None);
+            if event.command=="gallery.execute" { self.execute(event.body,None); }
             ui.ctx().request_repaint();
         }
         if self.input.is_empty()
             && self.later_input.is_empty()
             && self.inflight.is_empty()
-            && self.widgets.focus.is_none()
         {
             let state = self.state();
-            for reply in self.input_replies.drain(..) {
+            for (_,reply) in self.input_replies.drain(..) {
                 let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, state.clone()));
             }
         }
@@ -424,13 +423,17 @@ fn main() -> eframe::Result {
             } else {
                 None
             };
-            Ok(Box::new(Gallery {
-                model: if mode == "rust" {
+            let model=if mode == "rust" {
                     controller::initial()
                 } else {
                     json!({})
-                },
-                widgets: Widgets::default(),
+                };
+            let view=if mode=="rust" { Some(SceneView::with_model(include_str!("../scene.mix"),model.clone()).expect("gallery scene")) } else {None};
+            let definitions=if mode=="rust" {controller::composition()} else {Vec::new()};
+            Ok(Box::new(Gallery {
+                model,
+                view,
+                definitions,
                 runtime,
                 bus,
                 pending: BTreeMap::new(),

@@ -131,52 +131,9 @@ pub fn validate(widgets: &[Widget], body: &Value) -> Result<(), String> {
         .find(|w| Some(w.id.as_str()) == body["id"].as_str())
         .ok_or("unknown widget")?;
     let action = body["action"].as_str().ok_or("action must be a string")?;
-    if !actions(widget).contains(&action) {
-        return Err("action not supported by widget".into());
-    }
-    if action == "set" || action == "submit" {
-        widget.validate(&body["value"])?;
-    }
-    if (action == "expand" || action == "sort") && !body["value"].is_boolean() {
-        return Err("expand/sort requires bool value".into());
-    }
-    if action == "activate" && widget.kind == "toolbar" {
-        widget.validate(&body["value"])?;
-    }
-    if action == "activate"
-        && widget.kind == "icon"
-        && body["value"]
-            .as_str()
-            .and_then(viu::icons::Icon::from_name)
-            .is_none()
-    {
-        return Err("activation requires an icon name".into());
-    }
-    Ok(())
+    widget.validate_action(action,&body["value"])
 }
-pub fn actions(w: &Widget) -> Vec<&'static str> {
-    let mut actions = vec!["set"];
-    if [
-        "button", "list", "table", "tree", "canvas", "link", "icon", "toolbar",
-    ]
-    .contains(&w.kind.as_str())
-    {
-        actions.push("activate");
-    }
-    if ["field", "multiline"].contains(&w.kind.as_str()) {
-        actions.push("submit");
-    }
-    if w.kind == "dialog" {
-        actions.extend(["accept", "cancel"]);
-    }
-    if w.kind == "tree" {
-        actions.push("expand");
-    }
-    if w.kind == "table" {
-        actions.push("sort");
-    }
-    actions
-}
+pub fn actions(w:&Widget)->Vec<&'static str> { w.actions() }
 
 /// Validate publications before replacing the last good composition/model.
 pub fn validate_model(model: &Value) -> Result<(), String> {
@@ -190,7 +147,7 @@ pub fn validate_model(model: &Value) -> Result<(), String> {
         if !ids.insert(widget.id.clone()) {
             return Err("duplicate widget ID".into());
         }
-        widget.validate(&model["values"][&widget.id])?;
+        widget.validate_model(model)?;
     }
     Ok(())
 }
