@@ -5,6 +5,10 @@ shared Rust admission checks, and one `viu::widgets` implementation. Each
 requests a 740 x 820 logical-pixel
 client area, suitable for comparison on a desktop of at least 1536 x 864.
 Window captions distinguish the languages; the client content is identical.
+Both hosts load the application-owned `scene.mix` at launch. Its grid, tiles
+and headings flow through `SceneView` into `Widgets::widget`; changing that
+layout needs no Rust rebuild. The declarative layout is shared, while widget
+definitions and reducers remain independently authored in Rust and Mix.
 
 Run the CBC-built `viu-gallery` in a MixOS graphical session:
 
@@ -36,6 +40,8 @@ The local link records activation and does not open a browser.
 other layouts. Mix supplies equivalent definitions and typed values through
 the embedded runtime. Application controllers own values and actions; the
 shared library renders widgets and emits intents.
+Direct layouts call `begin_frame`, `widget` and `finish_frame`; no gallery grid
+is embedded in the shared library. See [scene/widget contract](../../docs/scene-widget-adapter.md).
 Choices, captions, tab content, tree parent, context action and canvas shapes
 come from application-supplied `properties`. Lists read an application-selected
 `model.datasets` entry; the shared renderer generates no gallery rows. Both
@@ -81,6 +87,10 @@ Native egui input can also be driven through the Bus:
 - `gallery.ui.scroll {id,delta}` sends wheel input over a widget.
 - `gallery.ui.drag {id,fraction}` drags horizontally to 0..1 of its rectangle.
 - `gallery.quit` closes only this gallery.
+
+Row activation validates the same index range/type as selection. Disabled
+admission is shared by widget kind/current state, regardless of widget ID.
+Superseded worker results retire their pending sequence and reply SUPERSEDED.
 
 Open menus/dialogs expose their child IDs through `gallery.ui.tree` (for
 example `menu.Gamma`, `combo.Beta`, `dialog.Accept`, `tree.expand`,

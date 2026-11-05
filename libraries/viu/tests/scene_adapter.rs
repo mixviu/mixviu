@@ -67,6 +67,7 @@ fn scene_control_binding_rejects_bad_model_transactionally() {
     );
     let good = json!({"control":widget.encode()});
     let mut view = SceneView::with_model(&source, good.clone()).unwrap();
+    assert!(view.apply_model(json!([])).is_err());
     let bad = json!({"control":{"id":"root","kind":"icon","label":"","initial":{"name":"copy"}}});
     assert!(view.apply_model(bad).is_err());
     assert_eq!(view.revision, 0);

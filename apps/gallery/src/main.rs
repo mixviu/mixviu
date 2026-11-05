@@ -72,12 +72,7 @@ impl Gallery {
             .collect::<Result<Vec<_>, _>>()?;
         match &mut self.view {
             Some(view) => view.apply_model(model.clone())?,
-            None => {
-                self.view = Some(SceneView::with_model(
-                    &self.scene_source,
-                    model.clone(),
-                )?)
-            }
+            None => self.view = Some(SceneView::with_model(&self.scene_source, model.clone())?),
         }
         self.definitions = definitions;
         self.model = model;
@@ -432,7 +427,8 @@ fn main() -> eframe::Result {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("apps/gallery/gallery.mix"));
     let service = format!("gallery-{mode}");
-    let scene_source=std::fs::read_to_string(path.with_file_name("scene.mix")).expect("gallery scene layout");
+    let scene_source =
+        std::fs::read_to_string(path.with_file_name("scene.mix")).expect("gallery scene layout");
     let title = format!(
         "Viu Gallery — {}",
         if mode == "rust" { "Rust" } else { "Mix" }
@@ -477,10 +473,7 @@ fn main() -> eframe::Result {
                 json!({})
             };
             let view = if mode == "rust" {
-                Some(
-                    SceneView::with_model(&scene_source, model.clone())
-                        .expect("gallery scene"),
-                )
+                Some(SceneView::with_model(&scene_source, model.clone()).expect("gallery scene"))
             } else {
                 None
             };

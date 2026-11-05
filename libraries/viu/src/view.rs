@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Client adaptation of scene-host routes and template preparation, using
-//! native egui primitives. This lab renderer covers volume's node families.
+//! Scene layout, binding/template preparation and event adaptation. Control
+//! leaves and legacy text/button/field/toggle use the shared widget dispatch.
 use crate::templates::{PreparedLists, children, rows, text, validate_templates};
 use crate::widgets::{Intent, Widget, Widgets};
 use egui::{Color32, Sense, Vec2};
@@ -53,6 +53,9 @@ impl SceneView {
     }
 
     pub fn apply_model(&mut self, model: Value) -> Result<(), String> {
+        if !model.is_object() {
+            return Err("scene model must be an object".into());
+        }
         let set = scene::bindings::BindingSet::from_resolved(&self.tree);
         let evaluated = scene::bindings::reevaluate(&self.tree, &set, "model", &model)
             .map_err(|e| format!("{e:?}"))?;
