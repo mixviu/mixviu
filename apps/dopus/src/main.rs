@@ -38,7 +38,7 @@ struct App {
     effect_next: u64,
     effect_admissions: BTreeMap<String, tokio::sync::oneshot::Receiver<(i32, Value)>>,
     macro_session: macros::Session,
-    macro_replies: BTreeMap<String, Reply>,
+    job_replies: BTreeMap<String, Reply>,
     capture: viu::capture::Capture,
     capture_reply: Option<(u64, u64, u64, Reply)>,
     close_after_idle: bool,
@@ -279,7 +279,7 @@ impl App {
             match admission {
                 Ok(receipt) => {
                     self.effect_admissions.insert(id.clone(), receipt);
-                    self.macro_replies.insert(id, reply);
+                    self.job_replies.insert(id, reply);
                 }
                 Err(error) => {
                     let _ = reply.send((10, json!({"error_code":"BUSY","message":error})));
@@ -368,15 +368,35 @@ impl App {
                 }
             }
             "dopus.show" => {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                self.replies_after_frame.push(reply);
+                self.effect_next+=1;
+                let id=format!("window-rpc-{}",self.effect_next);
+                let path=self.app_dir.join("../../libraries/viu/mix/window.mix");
+                let admission=std::fs::read_to_string(&path).map_err(|e|e.to_string()).and_then(|source|self.jobs.submit(json!({"id":id,"owner":0,"path":path,"source":source,"command":"job.run","args":{"app_id":format!("mixviu.dopus.{}",self.mode),"pid":std::process::id()}})));
+                match admission {
+                    Ok(receipt)=>{self.effect_admissions.insert(id.clone(),receipt);self.job_replies.insert(id,reply);},
+                    Err(error)=>{let _=reply.send((10,json!({"error_code":"BUSY","message":error})));},
+                }
             }
             "dopus.window.state" => {
                 let state = ctx.input(|i| i.viewport().clone());
                 let _=reply.send((0,json!({"inner_rect":state.inner_rect.map(|r|json!([r.min.x,r.min.y,r.width(),r.height()])),"focused":state.focused,"maximized":state.maximized,"minimized":state.minimized})));
             }
             "dopus.window" => {
+                if let Some(action)=args["action"].as_str(){
+                    match action {
+                        "close"=>{close_after_reply.store(true,Ordering::Release);self.call("dopus.quit".into(),json!({}),headers,Some(reply),ctx);return;},
+                        "minimize"=>{
+                            if self.input_wait || self.capture_reply.is_some(){let _=reply.send((10,json!({"error_code":"BUSY","message":"Native input or capture is still pending"})));return;}
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                            let _=reply.send((0,json!({"requested":"minimize"})));return;
+                        },
+                        "maximize"=>ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true)),
+                        "restore"=>{ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));},
+                        "focus"=>{let _=reply.send((10,json!({"error_code":"UNSUPPORTED","message":"Use dopus.show through compositor authority"})));return;},
+                        _=>{let _=reply.send((10,json!({"error_code":"INVALID_ARGUMENT"})));return;},
+                    }
+                    self.replies_after_frame.push(reply);ctx.request_repaint();return;
+                }
                 let mut valid = false;
                 if let Some(size) = args["size"].as_array().filter(|a| a.len() == 2) {
                     if let (Some(w), Some(h)) = (size[0].as_f64(), size[1].as_f64()) {
@@ -576,7 +596,7 @@ impl App {
         for done in self.jobs.poll() {
             if let Some(reply) = done.tag["id"]
                 .as_str()
-                .and_then(|id| self.macro_replies.remove(id))
+                .and_then(|id| self.job_replies.remove(id))
             {
                 let _ = reply.send((done.rc, done.body));
             } else if self.runtime.is_some() {
@@ -594,7 +614,7 @@ impl App {
             match receipt.try_recv() {
                 Ok((rc, body)) => {
                     if rc >= 10 {
-                        if let Some(reply) = self.macro_replies.remove(id) {
+                        if let Some(reply) = self.job_replies.remove(id) {
                             let _ = reply.send((rc as u8, body));
                         } else if let Some(native) = self.native.as_mut() {
                             native.effect_result(rc as u8, &body);
@@ -605,7 +625,7 @@ impl App {
                 Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
                     let body =
                         json!({"error_code":"OWNER_CLOSED","message":"Job admission closed"});
-                    if let Some(reply) = self.macro_replies.remove(id) {
+                    if let Some(reply) = self.job_replies.remove(id) {
                         let _ = reply.send((20, body));
                     } else if let Some(native) = self.native.as_mut() {
                         native.effect_result(20, &body);
@@ -692,9 +712,7 @@ impl eframe::App for App {
     fn raw_input_hook(&mut self, _: &egui::Context, input: &mut egui::RawInput) {
         input.events.append(&mut self.input.now);
     }
-    fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
-        let context = ui.ctx().clone();
-        let ctx = &context;
+    fn logic(&mut self, ctx:&egui::Context, _: &mut eframe::Frame) {
         self.completions(ctx);
         if ctx.input(|i| i.viewport().close_requested())
             && !self.close_after_idle
@@ -712,6 +730,15 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
+        if self.save_at.is_some_and(|t|t<=Instant::now()) {
+            self.save_at=None;
+            self.call("dopus.persist".into(),json!({}),BTreeMap::new(),None,ctx);
+        }else if let Some(at)=self.save_at{ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));}
+    }
+    fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
+        let context = ui.ctx().clone();
+        let ctx = &context;
+        if self.bus.close_requested.load(Ordering::Acquire) || (self.close_after_idle && self.inflight.is_empty()){return;}
         ui.painter().rect_filled(
             ui.max_rect(),
             0.0,
@@ -803,18 +830,6 @@ impl eframe::App for App {
         for reply in self.replies_after_frame.drain(..) {
             let _ = reply.send((0, answer.clone()));
         }
-        if self.save_at.is_some_and(|t| t <= Instant::now()) {
-            self.save_at = None;
-            self.call(
-                "dopus.persist".into(),
-                json!({}),
-                BTreeMap::new(),
-                None,
-                ctx,
-            );
-        } else if let Some(at) = self.save_at {
-            ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
-        }
         if let Some(path) = std::env::var_os("VIU_DOPUS_WITNESS") {
             let _ = std::fs::write(path, self.state().to_string());
         }
@@ -828,7 +843,7 @@ impl Drop for App {
         if let Err(error) = self.macro_session.shutdown() {
             eprintln!("macro shutdown: {error}");
         }
-        for (_, reply) in std::mem::take(&mut self.macro_replies) {
+        for (_, reply) in std::mem::take(&mut self.job_replies) {
             let _ = reply.send((20, json!({"error_code":"OWNER_CLOSED"})));
         }
         for (_, reply) in std::mem::take(&mut self.pending) {
@@ -1053,7 +1068,7 @@ fn main() -> eframe::Result {
                 effect_next: 0,
                 effect_admissions: BTreeMap::new(),
                 macro_session,
-                macro_replies: BTreeMap::new(),
+                job_replies: BTreeMap::new(),
                 capture,
                 capture_reply: None,
                 close_after_idle: false,

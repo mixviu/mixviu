@@ -51,7 +51,7 @@ impl WindowFrame {
         let maximized=ui.input(|i|i.viewport().maximized.unwrap_or(false));
         if response.double_clicked(){ui.ctx().send_viewport_cmd(Command::Maximized(!maximized));}
         else if response.drag_started(){ui.ctx().send_viewport_cmd(Command::StartDrag);}
-        let font=egui::FontId::new(metrics.title_size,egui::FontFamily::Name("viu-medium".into()));
+        let font=crate::fonts::emphasis(ui.ctx(),egui::FontId::new(metrics.title_size,egui::FontFamily::Proportional));
         let title=crate::elide::fit(ui,title,&font,(drag.width()-24.0).max(0.0));
         ui.painter_at(drag).text(drag.center(),egui::Align2::CENTER_CENTER,title,font,ui.visuals().text_color());
         let names=if left{["close","minimize","maximize"]}else{["minimize","maximize","close"]};
