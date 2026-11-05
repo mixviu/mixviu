@@ -439,6 +439,7 @@ impl Native {
                 })
             }
             id if id.starts_with("theme.scheme-") => self.appearance["scheme"] = json!(&id[13..]),
+            "help.macros"=>return Ok(json!({"panel":"macros"})),
             "help.about" | "help.shortcuts" => {
                 let body = if id == "help.about" {
                     "Dopus — Rust behaviour with shared native Viu widgets.\nLab comparison implementation.".into()
@@ -810,6 +811,7 @@ impl Native {
             "dopus.execute" => self.action(string(args, "id")?, &args["params"]),
             "dopus.intent" => self.intent(args),
             "dopus.dialog.answer" => {
+                if args.get("instance")!=self.form.get("instance"){return Err("STALE_FORM: read the current dialog instance before answering".into());}
                 if args.get("text").is_some_and(|v| !v.is_string()) {
                     return Err("Dialog text must be text".into());
                 }

@@ -30,7 +30,7 @@ pub struct Jobs {
     limit: usize,
     wake: Wake,
     native_backend: Option<crate::runtime::BackendMaker>,
-    services:crate::runtime::Services,
+    services: crate::runtime::Services,
 }
 impl Jobs {
     pub fn new(limit: usize, wake: Wake) -> Self {
@@ -43,13 +43,15 @@ impl Jobs {
             limit,
             wake,
             native_backend: None,
-            services:Default::default(),
+            services: Default::default(),
         }
     }
     pub fn set_native_backend(&mut self, maker: crate::runtime::BackendMaker) {
         self.native_backend = Some(maker);
     }
-    pub fn set_services(&mut self,services:crate::runtime::Services){self.services=services;}
+    pub fn set_services(&mut self, services: crate::runtime::Services) {
+        self.services = services;
+    }
     pub fn backend(&self, base: Option<BackendFactory>) -> BackendFactory {
         let tx = self.tx.clone();
         let wake = self.wake.clone();

@@ -39,6 +39,7 @@ on dopus.call
           $candidate.appearance.scheme=$a.scheme
         end
       elif $name=="dopus.dialog.answer" then
+        if not deep_eq($a.instance,$candidate.form.instance) then raise("STALE_FORM","Read the current dialog instance before answering") end
         if $a.text!=nil and type($a.text)!="string" then raise("INVALID_ARGUMENT","Dialog text must be text") end
         if $a.text!=nil then $candidate.form.field=$a.text end
         $candidate=$app.dp_handle_answer($candidate,$contract,$a.choice)

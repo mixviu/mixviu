@@ -21,9 +21,9 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 
 /// Caller-owned native facilities shared by its root and job evaluators.
 /// Supplying one does not create a Bus citizen, broker or global registry.
-#[derive(Clone,Default)]
+#[derive(Clone, Default)]
 pub struct Services {
-    pub macros:Option<macros::Session>,
+    pub macros: Option<macros::Session>,
 }
 
 // Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
@@ -148,9 +148,14 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new(capacity: usize, wake: Wake, backend: Option<BackendFactory>) -> Self {
-        Self::with_services(capacity,wake,backend,Services::default())
+        Self::with_services(capacity, wake, backend, Services::default())
     }
-    pub fn with_services(capacity:usize,wake:Wake,backend:Option<BackendFactory>,services:Services)->Self{
+    pub fn with_services(
+        capacity: usize,
+        wake: Wake,
+        backend: Option<BackendFactory>,
+        services: Services,
+    ) -> Self {
         assert!(capacity > 0);
         let (tx, commands) = mpsc::sync_channel(capacity);
         // At most capacity queued requests, one in flight and one initial load.

@@ -9,14 +9,26 @@ use std::sync::{
 
 /// Existing native catalogue/storage/process-group runner, owned by the host.
 /// Filesystem/deferred work runs on the calling Mix worker, never the UI.
-pub(crate) fn macro_commands(session:macros::Session)->mix::evaluator::ExtFn{
-    mix::sync_ext(move|args|{
-        let fail=||MixError::RuntimeError{msg:"viu_macros expects a command suffix and argument object".into(),span:None};
-        let [Value::String(command),body]=args.as_slice()else{return Err(fail());};
-        if !macros::commands::SUFFIXES.contains(&command.as_str()){return Err(fail());}
-        let body=crate::runtime::to_json(body)?;
-        let result=macros::commands::handle(&session,command,&body).wait();
-        crate::runtime::from_json(match result{Ok(body)=>serde_json::json!({"rc":0,"body":body}),Err(error)=>serde_json::json!({"rc":10,"body":{"error_code":error.code,"message":error.message}})})
+pub(crate) fn macro_commands(session: macros::Session) -> mix::evaluator::ExtFn {
+    mix::sync_ext(move |args| {
+        let fail = || MixError::RuntimeError {
+            msg: "viu_macros expects a command suffix and argument object".into(),
+            span: None,
+        };
+        let [Value::String(command), body] = args.as_slice() else {
+            return Err(fail());
+        };
+        if !macros::commands::SUFFIXES.contains(&command.as_str()) {
+            return Err(fail());
+        }
+        let body = crate::runtime::to_json(body)?;
+        let result = macros::commands::handle(&session, command, &body).wait();
+        crate::runtime::from_json(match result {
+            Ok(body) => serde_json::json!({"rc":0,"body":body}),
+            Err(error) => {
+                serde_json::json!({"rc":10,"body":{"error_code":error.code,"message":error.message}})
+            }
+        })
     })
 }
 

@@ -591,14 +591,19 @@ impl Widgets {
                                     if let Some(icon) =
                                         crate::icons::Icon::from_name(widget.text("row_icon"))
                                     {
-                                        crate::icons::image_of(ui.ctx(),icon, 16.0, visuals.text_color())
-                                            .paint_at(
-                                                ui,
-                                                Rect::from_center_size(
-                                                    rect.left_center() + Vec2::new(12.0, 0.0),
-                                                    Vec2::splat(16.0),
-                                                ),
-                                            );
+                                        crate::icons::image_of(
+                                            ui.ctx(),
+                                            icon,
+                                            16.0,
+                                            visuals.text_color(),
+                                        )
+                                        .paint_at(
+                                            ui,
+                                            Rect::from_center_size(
+                                                rect.left_center() + Vec2::new(12.0, 0.0),
+                                                Vec2::splat(16.0),
+                                            ),
+                                        );
                                     }
                                     ui.painter().text(
                                         rect.left_center()

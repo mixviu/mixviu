@@ -7,10 +7,10 @@ use serde_json::Value;
 pub struct ResolvedAppearance {
     pub style: egui::Style,
     pub colours: std::collections::BTreeMap<String, Color32>,
-    pub body_weight:u16,
-    pub heading_weight:u16,
-    pub icon_stroke:f32,
-    pub icon_mask:[u8;4],
+    pub body_weight: u16,
+    pub heading_weight: u16,
+    pub icon_stroke: f32,
+    pub icon_mask: [u8; 4],
 }
 pub fn colour(ctx: &egui::Context, name: &str) -> Option<Color32> {
     ctx.data(|d| {
@@ -22,7 +22,7 @@ pub fn colour(ctx: &egui::Context, name: &str) -> Option<Color32> {
     .copied()
 }
 pub fn install(ctx: &egui::Context) {
-    crate::fonts::install(ctx,400,600);
+    crate::fonts::install(ctx, 400, 600);
     crate::icons::install(ctx);
 }
 pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {
@@ -65,8 +65,8 @@ pub fn resolve(description: &Value) -> Result<ResolvedAppearance, String> {
 }
 
 pub fn install_style(ctx: &egui::Context, description: &Value, appearance: ResolvedAppearance) {
-    crate::fonts::install(ctx,appearance.body_weight,appearance.heading_weight);
-    crate::icons::install_style(ctx,appearance.icon_stroke,appearance.icon_mask);
+    crate::fonts::install(ctx, appearance.body_weight, appearance.heading_weight);
+    crate::icons::install_style(ctx, appearance.icon_stroke, appearance.icon_mask);
     let theme = if description["mode"] == "light" {
         egui::Theme::Light
     } else {

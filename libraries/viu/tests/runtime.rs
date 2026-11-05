@@ -72,28 +72,79 @@ end
 }
 
 #[test]
-fn caller_owned_macro_service_is_shared_without_an_installed_interpreter(){
-    let dir=tempfile::tempdir().unwrap();
-    let session=macros::Session::with_roots("dopus",Some(macros::Roots{builtin:dir.path().join("builtin"),user:dir.path().join("user"),home:dir.path().into(),mix:dir.path().join("deliberately-no-executable")}));
-    let (tx,rx)=mpsc::channel();
-    let mut runtime=Runtime::with_services(4,Arc::new(move||{let _=tx.send(());}),None,viu::runtime::Services{macros:Some(session.clone())});
-    runtime.load(program(r#"
+fn caller_owned_macro_service_is_shared_without_an_installed_interpreter() {
+    let dir = tempfile::tempdir().unwrap();
+    let session = macros::Session::with_roots(
+        "dopus",
+        Some(macros::Roots {
+            builtin: dir.path().join("builtin"),
+            user: dir.path().join("user"),
+            home: dir.path().into(),
+            mix: dir.path().join("deliberately-no-executable"),
+        }),
+    );
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::with_services(
+        4,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+        viu::runtime::Services {
+            macros: Some(session.clone()),
+        },
+    );
+    runtime
+        .load(program(
+            r#"
 on manage
   $reply=viu_macros($event.args.command,$event.args.body)
   reply($reply.rc,json_encode($reply.body))
 end
-"#)).unwrap();
-    assert!(next(&runtime,&rx).error.is_none());
-    runtime.event("manage".into(),json!({"command":"new","body":{"title":"Worker created"}})).unwrap();
-    let created=next(&runtime,&rx).reply.unwrap();assert_eq!(created.rc,0);
-    let id=created.body["id"].clone();
-    assert!(session.catalogue().unwrap().entries.iter().any(|e|json!(e.id)==id));
-    runtime.event("manage".into(),json!({"command":"put","body":{"id":id,"text":"print(42)\n"}})).unwrap();
-    assert_eq!(next(&runtime,&rx).reply.unwrap().rc,0);
-    runtime.event("manage".into(),json!({"command":"get","body":{"id":id}})).unwrap();
-    assert_eq!(next(&runtime,&rx).reply.unwrap().body["text"],"print(42)\n");
-    runtime.event("manage".into(),json!({"command":"get","body":{"id":"missing"}})).unwrap();
-    let refused=next(&runtime,&rx);assert!(refused.error.is_none());assert_eq!(refused.reply.unwrap().rc,10);
+"#,
+        ))
+        .unwrap();
+    assert!(next(&runtime, &rx).error.is_none());
+    runtime
+        .event(
+            "manage".into(),
+            json!({"command":"new","body":{"title":"Worker created"}}),
+        )
+        .unwrap();
+    let created = next(&runtime, &rx).reply.unwrap();
+    assert_eq!(created.rc, 0);
+    let id = created.body["id"].clone();
+    assert!(
+        session
+            .catalogue()
+            .unwrap()
+            .entries
+            .iter()
+            .any(|e| json!(e.id) == id)
+    );
+    runtime
+        .event(
+            "manage".into(),
+            json!({"command":"put","body":{"id":id,"text":"print(42)\n"}}),
+        )
+        .unwrap();
+    assert_eq!(next(&runtime, &rx).reply.unwrap().rc, 0);
+    runtime
+        .event("manage".into(), json!({"command":"get","body":{"id":id}}))
+        .unwrap();
+    assert_eq!(
+        next(&runtime, &rx).reply.unwrap().body["text"],
+        "print(42)\n"
+    );
+    runtime
+        .event(
+            "manage".into(),
+            json!({"command":"get","body":{"id":"missing"}}),
+        )
+        .unwrap();
+    let refused = next(&runtime, &rx);
+    assert!(refused.error.is_none());
+    assert_eq!(refused.reply.unwrap().rc, 10);
     session.shutdown().unwrap();
 }
 

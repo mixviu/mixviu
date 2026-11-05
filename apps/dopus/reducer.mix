@@ -200,6 +200,7 @@ fn dp_action($s,$contract,$id,$params)
     return dp_start_effect($s,{kind:"mail",paths:$dp.dp_sources($p)})
   elif $id=="theme.mode-toggle" then $s.appearance.mode=if $s.appearance.mode=="dark" then "light" else "dark" end
   elif starts_with($id,"theme.scheme-") then $s.appearance.scheme=slice($id,len("theme.scheme-"))
+  elif $id=="help.macros" then $s.reply={panel:"macros"}
   elif $id=="help.shortcuts" then return dp_form($s,"message","Keyboard shortcuts",join(map($contract.actions,fn($a)=join($a.keys,", ").."  "..$a.label),"\n"),nil,{})
   elif $id=="help.about" then return dp_form($s,"message","About Dopus","Dopus — Mix behaviour with shared native Viu widgets.\nLab comparison implementation.",nil,{})
   elif $id=="search" then

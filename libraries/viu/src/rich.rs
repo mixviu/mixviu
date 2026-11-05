@@ -71,6 +71,11 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             {
                 return Err("modal form field must be string or null".into());
             }
+            if value.get("max_field_bytes").is_some_and(|v|v.as_u64().is_none_or(|n|n==0||n>1_048_576))
+                ||value.get("multiline").is_some_and(|v|!v.is_boolean())
+                ||value.get("rows").is_some_and(|v|v.as_u64().is_none_or(|n|!(1..=40).contains(&n)))
+                ||value.get("width").is_some_and(|v|v.as_f64().is_none_or(|n|!n.is_finite()||!(320.0..=1200.0).contains(&n)))
+            {return Err("invalid bounded form editor options".into());}
             entries(&value["choices"], 0, &mut BTreeSet::new())
         }
         _ => Err("unknown rich control".into()),
@@ -102,6 +107,7 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
         }
         "answer" => {
             if current["open"] != true
+                || current.get("instance").is_some_and(|instance|payload.get("instance")!=Some(instance))
                 || find(&current["choices"], text(payload, "choice"))
                     .is_none_or(|item| item["enabled"] != true)
             {
@@ -111,7 +117,7 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
         "edit" => {
             if current["open"] != true
                 || !current["field"].is_string()
-                || payload.as_str().is_none_or(|s| s.len() > 4096)
+                || payload.as_str().is_none_or(|s| s.len() > current["max_field_bytes"].as_u64().unwrap_or(4096) as usize)
             {
                 return Err("form is not editable".into());
             }
@@ -264,8 +270,9 @@ pub(crate) fn draw(
             let mut field = value["field"].as_str().map(str::to_owned);
             let modal = egui::Modal::new(egui::Id::unique((ui.ctx().viewport_id(), id, "modal")))
                 .show(ui.ctx(), |ui| {
-                    ui.set_min_width(320.0);
-                    ui.set_max_width(520.0);
+                    let width=value["width"].as_f64().unwrap_or(520.0) as f32;
+                    ui.set_min_width(width.min(ui.ctx().content_rect().width()-32.0).max(280.0));
+                    ui.set_max_width(width);
                     ui.heading(text(value, "title"));
                     if !text(value, "body").is_empty() {
                         egui::ScrollArea::vertical()
@@ -276,8 +283,9 @@ pub(crate) fn draw(
                             });
                     }
                     if let Some(text) = field.as_mut() {
+                        let edit=if value["multiline"]==true{egui::TextEdit::multiline(text).desired_rows(value["rows"].as_u64().unwrap_or(16) as usize).code_editor()}else{egui::TextEdit::singleline(text)};
                         let response = ui.add(
-                            egui::TextEdit::singleline(text)
+                            edit
                                 .id(egui::Id::unique((ui.ctx().viewport_id(), id, "field")))
                                 .desired_width(ui.available_width()),
                         );
@@ -286,14 +294,10 @@ pub(crate) fn draw(
                             ui.ctx().viewport_id(),
                             id,
                             "modal-focused",
-                            value["instance"].to_string(),
                         ));
-                        if !ui
-                            .ctx()
-                            .data(|d| d.get_temp::<bool>(marker).unwrap_or(false))
-                        {
+                        if ui.ctx().data(|d|d.get_temp::<Value>(marker)).as_ref()!=Some(&value["instance"]){
                             response.request_focus();
-                            ui.ctx().data_mut(|d| d.insert_temp(marker, true));
+                            ui.ctx().data_mut(|d| d.insert_temp(marker,value["instance"].clone()));
                         }
                         if response.changed() {
                             emit(events, id, "edit", json!(text));
@@ -317,7 +321,7 @@ pub(crate) fn draw(
                                     events,
                                     id,
                                     "answer",
-                                    json!({"choice":choice["id"],"field":field}),
+                                    json!({"choice":choice["id"],"field":field,"instance":value["instance"]}),
                                 );
                             }
                         }
@@ -344,10 +348,10 @@ pub(crate) fn draw(
                         events,
                         id,
                         "answer",
-                        json!({"choice":cancel["id"],"field":field}),
+                        json!({"choice":cancel["id"],"field":field,"instance":value["instance"]}),
                     );
                 }
-            } else if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            } else if ui.input(|i| (value["multiline"]!=true&&i.key_pressed(egui::Key::Enter))||(value["multiline"]==true&&i.modifiers.ctrl&&(i.key_pressed(egui::Key::Enter)||i.key_pressed(egui::Key::S)))) {
                 if let Some(default) = value["choices"]
                     .as_array()
                     .into_iter()
@@ -358,7 +362,7 @@ pub(crate) fn draw(
                         events,
                         id,
                         "answer",
-                        json!({"choice":default["id"],"field":field}),
+                        json!({"choice":default["id"],"field":field,"instance":value["instance"]}),
                     );
                 }
             }

@@ -16,16 +16,16 @@ pub fn install(ctx:&egui::Context,body:u16,heading:u16){
     if ctx.data(|d|d.get_temp::<(u16,u16)>(key))==Some((body,heading)){return;}
     let mut fonts=FontDefinitions::default();
     let mut add=|(name,bytes):(&'static str,&'static [u8])|{fonts.font_data.insert(name.into(),FontData::from_static(bytes).into());name.to_owned()};
-    let body_face=add(face(body));let medium=add(face(body.saturating_add(100)));let heading=add(face(heading));
+    let body_face=add(face(body));let medium=add(face(body.saturating_add(100)));let heading_face=add(face(heading));
     let mono=add(("JetBrains-Mono",include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")));
     fonts.families.entry(FontFamily::Proportional).or_default().insert(0,body_face);
     fonts.families.entry(FontFamily::Proportional).or_default().push(mono.clone());
     fonts.families.entry(FontFamily::Monospace).or_default().insert(0,mono);
-    for (family,first) in [("viu-medium",medium),("viu-heading",heading)]{
+    for (family,first) in [("viu-medium",medium),("viu-heading",heading_face)]{
         let mut stack=fonts.families[&FontFamily::Proportional].clone();stack.insert(0,first);
         fonts.families.insert(FontFamily::Name(family.into()),stack);
     }
-    ctx.set_fonts(fonts);ctx.data_mut(|d|d.insert_temp(key,(body,heading)));
+    ctx.set_fonts(fonts);ctx.data_mut(|d|d.insert_temp::<(u16,u16)>(key,(body,heading)));
 }
 pub fn emphasis(ctx:&egui::Context,font:FontId)->FontId{
     if ctx.data(|d|d.get_temp::<(u16,u16)>(egui::Id::unique("viu-font-weights"))).is_some(){FontId::new(font.size,FontFamily::Name("viu-medium".into()))}else{font}

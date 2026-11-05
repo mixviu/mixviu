@@ -24,16 +24,34 @@ pub fn image(icon: Icon, size: f32, colour: Color32) -> Image<'static> {
     .tint(colour)
 }
 
-pub fn install_style(ctx:&egui::Context,stroke:f32,mask:[u8;4]){
-    ctx.data_mut(|d|d.insert_temp(egui::Id::unique("viu-icon-style"),(stroke,mask)));
+pub fn install_style(ctx: &egui::Context, stroke: f32, mask: [u8; 4]) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("viu-icon-style"), (stroke, mask)));
 }
 /// Theme-aware native icon adapter. Contexts without an installed design keep
 /// the existing catalogue's two-unit Lucide stroke and opaque white mask.
-pub fn image_of(ctx:&egui::Context,icon:Icon,size:f32,colour:Color32)->Image<'static>{
-    let Some((stroke,mask))=ctx.data(|d|d.get_temp::<(f32,[u8;4])>(egui::Id::unique("viu-icon-style")))else{return image(icon,size,colour);};
-    let mask=format!("#{:02x}{:02x}{:02x}{:02x}",mask[0],mask[1],mask[2],mask[3]);
-    let bytes=icon.svg().replace("currentColor",&mask).replace("stroke-width=\"2\"",&format!("stroke-width=\"{stroke}\""));
-    Image::new(ImageSource::Bytes{uri:Cow::Owned(format!("bytes://viu-lucide/{}@{stroke}@{mask}.svg",icon.name())),bytes:bytes.into_bytes().into()}).fit_to_exact_size(Vec2::splat(size.clamp(8.0,64.0))).tint(colour)
+pub fn image_of(ctx: &egui::Context, icon: Icon, size: f32, colour: Color32) -> Image<'static> {
+    let Some((stroke, mask)) =
+        ctx.data(|d| d.get_temp::<(f32, [u8; 4])>(egui::Id::unique("viu-icon-style")))
+    else {
+        return image(icon, size, colour);
+    };
+    let mask = format!(
+        "#{:02x}{:02x}{:02x}{:02x}",
+        mask[0], mask[1], mask[2], mask[3]
+    );
+    let bytes = icon
+        .svg()
+        .replace("currentColor", &mask)
+        .replace("stroke-width=\"2\"", &format!("stroke-width=\"{stroke}\""));
+    Image::new(ImageSource::Bytes {
+        uri: Cow::Owned(format!(
+            "bytes://viu-lucide/{}@{stroke}@{mask}.svg",
+            icon.name()
+        )),
+        bytes: bytes.into_bytes().into(),
+    })
+    .fit_to_exact_size(Vec2::splat(size.clamp(8.0, 64.0)))
+    .tint(colour)
 }
 
 pub fn button(
@@ -51,7 +69,10 @@ pub fn button(
         } else {
             colour.unwrap_or_else(|| ui.visuals().text_color())
         };
-        ui.add(egui::Button::image_and_text(image_of(ui.ctx(),icon, size, tint), text).selected(selected))
+        ui.add(
+            egui::Button::image_and_text(image_of(ui.ctx(), icon, size, tint), text)
+                .selected(selected),
+        )
     })
     .inner
 }

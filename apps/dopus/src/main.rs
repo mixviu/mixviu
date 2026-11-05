@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 mod input;
 mod native;
+mod panel;
 #[cfg(test)]
 mod tests;
 use eframe::egui;
@@ -24,14 +25,16 @@ struct App {
     jobs: Jobs,
     bus: Endpoint,
     model: Value,
+    base_model: Value,
+    panel: panel::Panel,
     view: Option<SceneView>,
     scene: String,
     contract: Value,
     app_dir: PathBuf,
     effect_next: u64,
     effect_admissions: BTreeMap<String, tokio::sync::oneshot::Receiver<(i32, Value)>>,
-    macro_session:macros::Session,
-    macro_replies:BTreeMap<String,Reply>,
+    macro_session: macros::Session,
+    macro_replies: BTreeMap<String, Reply>,
     capture: viu::capture::Capture,
     capture_reply: Option<(u64, u64, u64, Reply)>,
     close_after_idle: bool,
@@ -71,7 +74,9 @@ impl App {
             .collect();
         json!({"ready":self.ready(),"mode":self.mode,"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len(),"jobs":self.jobs.pending(),"last_service_us":self.last_service_us,"model_age_us":self.last_model_at.elapsed().as_micros(),"endpoint":"model applied/native input consumed; physical presentation is not measured"})
     }
-    fn publish(&mut self, model: Value, ctx: &egui::Context) -> Result<(), String> {
+    fn publish(&mut self, mut model: Value, ctx: &egui::Context) -> Result<(), String> {
+        self.base_model=model.clone();
+        if self.panel.form["open"]==true {model["values"]["form"]=self.panel.form.clone();}
         let style = (self.model["appearance"] != model["appearance"])
             .then(|| viu::appearance::resolve(&model["appearance"]))
             .transpose()?;
@@ -118,6 +123,26 @@ impl App {
                 }
                 return;
             }
+        }
+        let open_macros=(command=="dopus.execute"&&args["id"]=="help.macros")
+            ||(command=="dopus.intent"&&["menu","toolbar"].iter().any(|id|args["id"]==*id)&&args["value"]["command"]=="help.macros");
+        let panel_args=if open_macros{
+            if self.model["values"]["form"]["open"]==true||self.panel.active(){
+                if let Some(reply)=reply{let _=reply.send((10,json!({"error_code":"BUSY","message":"Answer the current dialog first"})));}
+                return;
+            }
+            Some(json!({"command":"open"}))
+        }else if self.panel.active()&&command=="dopus.intent"&&args["id"]=="form"{
+            Some(if args["action"]=="edit"{json!({"command":"edit","value":args["value"]})}else{json!({"command":"answer","choice":args["value"]["choice"],"field":args["value"]["field"],"instance":args["value"]["instance"]})})
+        }else if self.panel.active()&&command=="dopus.dialog.answer"{
+            Some(json!({"command":"answer","choice":args["choice"],"field":args["text"],"instance":args["instance"]}))
+        }else{None};
+        if let Some(args)=panel_args{
+            if let Err((error,reply))=self.panel.call(args,reply){
+                if let Some(reply)=reply{let _=reply.send((10,json!({"error_code":"BUSY","message":error})));}
+                else{self.input_error=Some(error);}
+            }
+            ctx.request_repaint();return;
         }
         let quit = command == "dopus.quit"
             || (command == "dopus.execute" && args["id"] == "app.quit")
@@ -170,6 +195,12 @@ impl App {
             let model = self.native.as_ref().unwrap().model();
             let applied = self.publish(model, ctx);
             let result = result.and_then(|body| applied.map(|_| body));
+            if result.as_ref().is_ok_and(|body|body["panel"]=="macros"){
+                if let Err((error,reply))=self.panel.call(json!({"command":"open"}),reply){
+                    if let Some(reply)=reply{let _=reply.send((10,json!({"error_code":"BUSY","message":error})));}else{self.error=error;}
+                }
+                ctx.request_repaint();return;
+            }
             if human_close && result.is_ok() {
                 if let Some(flag) = &self.input_close {
                     flag.store(true, Ordering::Release);
@@ -199,14 +230,19 @@ impl App {
             reply,
             close_after_reply,
         } = r;
-        if let Some(suffix)=command.strip_prefix("dopus.macros."){
-            self.effect_next+=1;
-            let id=format!("macro-rpc-{}",self.effect_next);
-            let path=self.app_dir.join("macro-job.mix");
+        if let Some(suffix) = command.strip_prefix("dopus.macros.") {
+            self.effect_next += 1;
+            let id = format!("macro-rpc-{}", self.effect_next);
+            let path = self.app_dir.join("macro-job.mix");
             let admission=std::fs::read_to_string(&path).map_err(|e|e.to_string()).and_then(|source|self.jobs.submit(json!({"id":id,"owner":0,"path":path,"source":source,"command":"job.run","args":{"command":suffix,"body":args}})));
-            match admission{
-                Ok(receipt)=>{self.effect_admissions.insert(id.clone(),receipt);self.macro_replies.insert(id,reply);}
-                Err(error)=>{let _=reply.send((10,json!({"error_code":"BUSY","message":error})));}
+            match admission {
+                Ok(receipt) => {
+                    self.effect_admissions.insert(id.clone(), receipt);
+                    self.macro_replies.insert(id, reply);
+                }
+                Err(error) => {
+                    let _ = reply.send((10, json!({"error_code":"BUSY","message":error})));
+                }
             }
             return;
         }
@@ -359,6 +395,9 @@ impl App {
         }
     }
     fn completions(&mut self, ctx: &egui::Context) {
+        let (changed,error)=self.panel.poll();
+        if changed{if let Err(error)=self.publish(self.base_model.clone(),ctx){self.error=error;}}
+        if let Some(error)=error{self.error=error.clone();if self.input_wait{self.input_error=Some(error);}}
         if let Some((token, result)) = self.capture.poll(ctx) {
             if let Some((expected, serial, revision, reply)) = self.capture_reply.take() {
                 if expected == token {
@@ -424,6 +463,12 @@ impl App {
                     self.input_error = Some(error.clone());
                 }
             }
+            if error.is_none()&&result.reply.as_ref().is_some_and(|r|r.body["panel"]=="macros"){
+                if let Err((error,reply))=self.panel.call(json!({"command":"open"}),reply){
+                    if let Some(reply)=reply{let _=reply.send((10,json!({"error_code":"BUSY","message":error})));}else{self.error=error;}
+                }
+                ctx.request_repaint();continue;
+            }
             if let Some(reply) = reply {
                 let answer = if let Some(error) = &error {
                     (20, json!({"error_code":"BEHAVIOUR_FAILED","message":error}))
@@ -468,9 +513,12 @@ impl App {
             }
         }
         for done in self.jobs.poll() {
-            if let Some(reply)=done.tag["id"].as_str().and_then(|id|self.macro_replies.remove(id)){
-                let _=reply.send((done.rc,done.body));
-            }else if self.runtime.is_some() {
+            if let Some(reply) = done.tag["id"]
+                .as_str()
+                .and_then(|id| self.macro_replies.remove(id))
+            {
+                let _ = reply.send((done.rc, done.body));
+            } else if self.runtime.is_some() {
                 self.notices.push_back(viu::native_bus::Notice{command:"dopus.job.completed".into(),args:json!({"tag":done.tag,"rc":done.rc,"body":done.body,"elapsed_us":done.elapsed_us}),headers:BTreeMap::new()});
             } else if let Some(native) = self.native.as_mut() {
                 native.effect_result(done.rc, &done.body);
@@ -485,15 +533,22 @@ impl App {
             match receipt.try_recv() {
                 Ok((rc, body)) => {
                     if rc >= 10 {
-                        if let Some(reply)=self.macro_replies.remove(id){let _=reply.send((rc as u8,body));}
-                        else if let Some(native)=self.native.as_mut(){native.effect_result(rc as u8,&body);}
+                        if let Some(reply) = self.macro_replies.remove(id) {
+                            let _ = reply.send((rc as u8, body));
+                        } else if let Some(native) = self.native.as_mut() {
+                            native.effect_result(rc as u8, &body);
+                        }
                     }
                     retired.push(id.clone());
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                    let body=json!({"error_code":"OWNER_CLOSED","message":"Job admission closed"});
-                    if let Some(reply)=self.macro_replies.remove(id){let _=reply.send((20,body));}
-                    else if let Some(native)=self.native.as_mut(){native.effect_result(20,&body);}
+                    let body =
+                        json!({"error_code":"OWNER_CLOSED","message":"Job admission closed"});
+                    if let Some(reply) = self.macro_replies.remove(id) {
+                        let _ = reply.send((20, body));
+                    } else if let Some(native) = self.native.as_mut() {
+                        native.effect_result(20, &body);
+                    }
                     retired.push(id.clone());
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
@@ -617,7 +672,7 @@ impl eframe::App for App {
             if let Some(next) = self.input.later.pop_front() {
                 self.input.now = next;
                 ctx.request_repaint();
-            } else if self.input_wait && self.inflight.is_empty() {
+            } else if self.input_wait && self.inflight.is_empty() && !self.panel.pending() {
                 self.input_wait = false;
                 let mut answer = self.state();
                 let rc = if let Some(error) = self.input_error.take() {
@@ -659,8 +714,12 @@ impl Drop for App {
         self.runtime.take();
         self.jobs.cancel_all();
         self.native.take();
-        if let Err(error)=self.macro_session.shutdown(){eprintln!("macro shutdown: {error}");}
-        for (_,reply) in std::mem::take(&mut self.macro_replies){let _=reply.send((20,json!({"error_code":"OWNER_CLOSED"})));}
+        if let Err(error) = self.macro_session.shutdown() {
+            eprintln!("macro shutdown: {error}");
+        }
+        for (_, reply) in std::mem::take(&mut self.macro_replies) {
+            let _ = reply.send((20, json!({"error_code":"OWNER_CLOSED"})));
+        }
         for (_, reply) in std::mem::take(&mut self.pending) {
             let _ = reply.send((20, json!({"error_code":"OWNER_CLOSED"})));
         }
@@ -699,7 +758,11 @@ fn commands() -> Vec<String> {
     ]
     .into_iter()
     .map(str::to_owned)
-    .chain(macros::commands::SUFFIXES.into_iter().map(|suffix|format!("dopus.macros.{suffix}")))
+    .chain(
+        macros::commands::SUFFIXES
+            .into_iter()
+            .map(|suffix| format!("dopus.macros.{suffix}")),
+    )
     .collect()
 }
 fn main() -> eframe::Result {
@@ -734,7 +797,13 @@ fn main() -> eframe::Result {
         .canonicalize()
         .expect("app directory");
     let profile = PathBuf::from(args.get(3).expect("PROFILE_DIR"));
-    let profile=if profile.is_absolute(){profile}else{std::env::current_dir().expect("working directory").join(profile)};
+    let profile = if profile.is_absolute() {
+        profile
+    } else {
+        std::env::current_dir()
+            .expect("working directory")
+            .join(profile)
+    };
     let scene = std::fs::read_to_string(app_dir.join("scene.mix")).expect("Dopus scene");
     let contract: Value = serde_json::from_str(
         &std::fs::read_to_string(app_dir.join("contract.json")).expect("Dopus contract"),
@@ -778,8 +847,21 @@ fn main() -> eframe::Result {
             );
             let mut jobs = Jobs::new(4, wake.clone());
             jobs.set_native_backend(bus.backend_maker());
-            let macro_session=macros::Session::with_roots("dopus",Some(macros::Roots{builtin:app_dir.join("macros"),user:profile.join("macros"),home:std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(||profile.clone()),mix:std::env::current_exe().expect("own macro interpreter artifact")}));
-            let services=viu::runtime::Services{macros:Some(macro_session.clone())};
+            let macro_session = macros::Session::with_roots(
+                "dopus",
+                Some(macros::Roots {
+                    builtin: app_dir.join("macros"),
+                    user: profile.join("macros"),
+                    home: std::env::var_os("HOME")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| profile.clone()),
+                    mix: std::env::current_exe().expect("own macro interpreter artifact"),
+                }),
+            );
+            let services = viu::runtime::Services {
+                macros: Some(macro_session.clone()),
+            };
+            let panel=panel::Panel::new(app_dir.join("../../libraries/viu/mix/macros.mix"),services.clone(),wake.clone()).map_err(std::io::Error::other)?;
             jobs.set_services(services.clone());
             let capture = viu::capture::Capture::new(
                 std::env::var_os("XDG_RUNTIME_DIR")
@@ -792,8 +874,12 @@ fn main() -> eframe::Result {
             let mut native = None;
             if mode == "mix" {
                 let path = app_dir.join("dopus.mix");
-                let mut worker =
-                    Runtime::with_services(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))),services);
+                let mut worker = Runtime::with_services(
+                    32,
+                    wake.clone(),
+                    Some(jobs.backend(Some(bus.backend()))),
+                    services,
+                );
                 worker
                     .load(Program {
                         source: std::fs::read_to_string(&path).expect("Dopus Mix source"),
@@ -818,6 +904,8 @@ fn main() -> eframe::Result {
                 jobs,
                 bus,
                 model: json!({}),
+                base_model: json!({}),
+                panel,
                 view: None,
                 scene,
                 contract,
@@ -825,7 +913,7 @@ fn main() -> eframe::Result {
                 effect_next: 0,
                 effect_admissions: BTreeMap::new(),
                 macro_session,
-                macro_replies:BTreeMap::new(),
+                macro_replies: BTreeMap::new(),
                 capture,
                 capture_reply: None,
                 close_after_idle: false,
