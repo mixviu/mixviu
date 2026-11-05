@@ -255,9 +255,12 @@ impl Native {
             "view.toggle-previews" => p.previews,
             "view.toggle-places" => self.core().sidebar(Sidebar::Places).open,
             "view.toggle-properties" => self.core().sidebar(Sidebar::Properties).open,
-            id if id.starts_with("theme.scheme-")=>self.appearance["scheme"].as_str()==Some(&id[13..]),
-            id if id.starts_with("theme.style-")=>self.appearance["style"].as_str()==Some(&id[12..]),
-            id if id.starts_with("theme.mode-")=>self.appearance["mode"].as_str()==Some(&id[11..]),
+            id if id.starts_with("theme.scheme-") =>
+                self.appearance["scheme"].as_str() == Some(&id[13..]),
+            id if id.starts_with("theme.style-") =>
+                self.appearance["style"].as_str() == Some(&id[12..]),
+            id if id.starts_with("theme.mode-") =>
+                self.appearance["mode"].as_str() == Some(&id[11..]),
             _ => false,
         });
         a
@@ -862,8 +865,10 @@ impl Native {
                         return Err("Unknown colour scheme".into());
                     }
                 }
-                if let Some(style)=args.get("style"){
-                    if !self.contract["styles"].as_array().unwrap().contains(style){return Err("Unknown widget style".into());}
+                if let Some(style) = args.get("style") {
+                    if !self.contract["styles"].as_array().unwrap().contains(style) {
+                        return Err("Unknown widget style".into());
+                    }
                 }
                 if let Some(mode) = args.get("mode") {
                     self.appearance["mode"] = mode.clone();
@@ -871,8 +876,12 @@ impl Native {
                 if let Some(scheme) = args.get("scheme") {
                     self.appearance["scheme"] = scheme.clone();
                 }
-                if let Some(style)=args.get("style"){self.appearance["style"]=style.clone();}
-                Ok(self.appearance.clone())
+                if let Some(style) = args.get("style") {
+                    self.appearance["style"] = style.clone();
+                }
+                let mut answer=json!({"scheme":self.appearance["scheme"],"mode":self.appearance["mode"]});
+                if args.get("style").is_some(){answer["style"]=self.appearance["style"].clone();}
+                Ok(answer)
             }
             "dopus.quit" | "dopus.persist" => {
                 self.core_mut().flush_config();
