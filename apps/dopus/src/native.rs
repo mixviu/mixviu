@@ -279,11 +279,11 @@ impl Native {
                 self.appearance_choice.get(key).is_none()
             }
             id if id.starts_with("theme.scheme-") =>
-                self.appearance["scheme"].as_str() == Some(&id[13..]),
+                self.appearance_choice["scheme"].as_str() == Some(&id[13..]),
             id if id.starts_with("theme.style-") =>
-                self.appearance["style"].as_str() == Some(&id[12..]),
+                self.appearance_choice["style"].as_str() == Some(&id[12..]),
             id if id.starts_with("theme.mode-") =>
-                self.appearance["mode"].as_str() == Some(&id[11..]),
+                self.appearance_choice["mode"].as_str() == Some(&id[11..]),
             _ => false,
         });
         a
