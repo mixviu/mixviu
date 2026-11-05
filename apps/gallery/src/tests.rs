@@ -34,8 +34,10 @@ fn independent_mix_composition_and_every_action_match_rust() {
     for widget in &widgets {
         for action in controller::actions(widget) {
             let value = match widget.kind.as_str() {
-                "icon" if action=="activate" => json!("copy"),
-                "icon" => json!({"name":"star","size":32,"colour":[220,180,40],"enabled":true,"selected":true}),
+                "icon" if action == "activate" => json!("copy"),
+                "icon" => {
+                    json!({"name":"star","size":32,"colour":[220,180,40],"enabled":true,"selected":true})
+                }
                 "toolbar" => json!("save"),
                 "checkbox" | "toggle" | "collapse" | "dialog" => json!(true),
                 "slider" | "number" | "progress" | "split" => json!(82),
@@ -179,34 +181,40 @@ fn every_widget_renders_in_shared_native_path() {
 
 #[test]
 fn publications_refuse_unknown_icons_and_duplicate_ids() {
-    assert!(!request_ready(false,"gallery.describe"));
-    assert!(!request_ready(false,"gallery.execute"));
-    assert!(request_ready(false,"gallery.state"));
-    assert!(request_ready(false,"gallery.quit"));
-    assert!(request_ready(true,"gallery.describe"));
-    let mut model=controller::initial();
+    assert!(!request_ready(false, "gallery.describe"));
+    assert!(!request_ready(false, "gallery.execute"));
+    assert!(request_ready(false, "gallery.state"));
+    assert!(request_ready(false, "gallery.quit"));
+    assert!(request_ready(true, "gallery.describe"));
+    let mut model = controller::initial();
     assert!(controller::validate_model(&model).is_ok());
-    model["values"]["icon"]["name"]=json!("unknown");
+    model["values"]["icon"]["name"] = json!("unknown");
     assert!(controller::validate_model(&model).is_err());
-    let mut model=controller::initial();
-    model["widgets"][1]["id"]=json!("label");
+    let mut model = controller::initial();
+    model["widgets"][1]["id"] = json!("label");
     assert!(controller::validate_model(&model).is_err());
     assert!(controller::validate_model(&json!({})).is_err());
 }
 
 #[test]
 fn activation_retains_row_payload_and_disabled_toolbar_is_refused() {
-    let mut model=controller::initial();
-    let event=json!({"id":"list","action":"activate","value":42});
-    controller::apply(&mut model,&event);
-    assert_eq!(model["last_activation"],json!({"id":"list","value":42}));
-    assert!(controller::validate(&controller::composition(),&json!({"id":"toolbar","action":"activate","value":"trash"})).is_err());
+    let mut model = controller::initial();
+    let event = json!({"id":"list","action":"activate","value":42});
+    controller::apply(&mut model, &event);
+    assert_eq!(model["last_activation"], json!({"id":"list","value":42}));
+    assert!(
+        controller::validate(
+            &controller::composition(),
+            &json!({"id":"toolbar","action":"activate","value":"trash"})
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn disappeared_focus_is_refused_once_without_latching_next_frame() {
-    let mut widgets=Widgets::default();
-    widgets.focus=Some("closed-popup.choice".into());
+    let mut widgets = Widgets::default();
+    widgets.focus = Some("closed-popup.choice".into());
     assert!(widgets.finish_frame().is_err());
     assert!(widgets.focus.is_none());
     assert!(widgets.finish_frame().is_ok());

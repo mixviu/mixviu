@@ -53,15 +53,24 @@ impl Gallery {
             .collect();
         json!({"ready":self.ready(),"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len()})
     }
-    fn ready(&self)->bool { self.model["widgets"].as_array().is_some_and(|w|!w.is_empty()) }
-    fn publish(&mut self,model:Value)->Result<(),String> {
+    fn ready(&self) -> bool {
+        self.model["widgets"]
+            .as_array()
+            .is_some_and(|w| !w.is_empty())
+    }
+    fn publish(&mut self, model: Value) -> Result<(), String> {
         controller::validate_model(&model)?;
-        self.model=model;
+        self.model = model;
         Ok(())
     }
     fn execute(&mut self, body: Value, reply: Option<tokio::sync::oneshot::Sender<(u8, Value)>>) {
-        if body["action"]=="activate" && body["id"]=="icon" && self.model["values"]["icon"]["enabled"]!=true {
-            if let Some(reply)=reply { let _=reply.send((10,json!({"error_code":"DISABLED"}))); }
+        if body["action"] == "activate"
+            && body["id"] == "icon"
+            && self.model["values"]["icon"]["enabled"] != true
+        {
+            if let Some(reply) = reply {
+                let _ = reply.send((10, json!({"error_code":"DISABLED"})));
+            }
             return;
         }
         if let Err(error) = controller::validate(&self.definitions(), &body) {
@@ -101,7 +110,7 @@ impl Gallery {
             reply,
         } = request;
         if !request_ready(self.ready(), &command) {
-            let _=reply.send((10,json!({"error_code":"NOT_READY"})));
+            let _ = reply.send((10, json!({"error_code":"NOT_READY"})));
             return;
         }
         if let Some(suffix) = command.strip_prefix("gallery.widget.") {
@@ -242,12 +251,17 @@ impl Gallery {
         loop {
             let done = self.runtime.as_ref().and_then(Runtime::try_completion);
             let Some(done) = done else { break };
-            if !self.runtime.as_ref().is_some_and(|r|r.accepts(&done)) { continue; }
+            if !self.runtime.as_ref().is_some_and(|r| r.accepts(&done)) {
+                continue;
+            }
             self.inflight.remove(&done.sequence);
             if let Some(error) = done.error {
                 self.error = error;
             } else if let Some(model) = done.model {
-                match self.publish(model) { Ok(())=>self.error.clear(),Err(error)=>self.error=error }
+                match self.publish(model) {
+                    Ok(()) => self.error.clear(),
+                    Err(error) => self.error = error,
+                }
             }
             if let Some(reply) = self.pending.remove(&done.sequence) {
                 let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, self.state()));
@@ -298,9 +312,12 @@ impl eframe::App for Gallery {
             .auto_shrink([false, false])
             .show(ui, |ui| self.widgets.show(ui, &definitions, &self.model))
             .inner;
-        if let Err(error)=self.widgets.finish_frame() {
+        if let Err(error) = self.widgets.finish_frame() {
             for reply in self.input_replies.drain(..) {
-                let _=reply.send((10,json!({"error_code":"FOCUS_TARGET_UNAVAILABLE","error":error})));
+                let _ = reply.send((
+                    10,
+                    json!({"error_code":"FOCUS_TARGET_UNAVAILABLE","error":error}),
+                ));
             }
         }
         for event in events {
@@ -354,8 +371,8 @@ fn click_frames(
     }
     frames
 }
-fn request_ready(ready:bool,command:&str)->bool {
-    ready || ["gallery.state","gallery.quit"].contains(&command)
+fn request_ready(ready: bool, command: &str) -> bool {
+    ready || ["gallery.state", "gallery.quit"].contains(&command)
 }
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().collect();
