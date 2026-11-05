@@ -92,6 +92,7 @@ pub fn validate_properties(properties: &Value) -> Result<(), String> {
 
 pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String> {
     validate(value)?;
+    if ["ctrl","shift"].iter().any(|key|payload.get(*key).is_some_and(|v|!v.is_boolean())){return Err("selection modifiers must be bool".into());}
     let row = || {
         value["rows"]
             .as_array()
@@ -140,6 +141,7 @@ pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String>
             }
         }
         "command" => {
+            if payload["key"].is_string(){row()?;}
             if !value["context"]
                 .as_array()
                 .into_iter()
@@ -232,14 +234,14 @@ struct DragRows {
     keys: Vec<String>,
     label: String,
 }
-fn drop_target(response: &egui::Response, destination: &str, id: &str, events: &mut Vec<Intent>) {
+fn drop_target(ui:&Ui,response: &egui::Response, destination: &str, id: &str, events: &mut Vec<Intent>) {
     if let Some(payload) = response.dnd_release_payload::<DragRows>() {
-        if payload.source != id {
+        {
             emit(
                 events,
                 id,
                 "drop",
-                json!({"source":payload.source,"keys":payload.keys,"destination":destination}),
+                json!({"source":payload.source,"keys":payload.keys,"destination":destination,"ctrl":ui.input(|i|i.modifiers.ctrl||i.modifiers.command),"shift":ui.input(|i|i.modifiers.shift)}),
             );
         }
     }
@@ -326,7 +328,6 @@ pub(crate) fn draw(
         let background=ui.interact(body,Id::unique((ui.ctx().viewport_id(),id,"background")),Sense::click());
         geometry.insert(format!("{id}.background"),body);
         if background.clicked(){background.request_focus();emit(events,id,"activate-pane",Value::Null);}
-        drop_target(&background,text(value,"key"),id,events);
         background.context_menu(|ui|context(ui,&value["background_context"],&Value::Null,id,geometry,events));
         egui::ScrollArea::vertical().id_salt((id,"rows")).auto_shrink([false,false]).max_height(list_h).show_rows(ui,row_h,rows.len(),|ui,range|{
             for index in range {
@@ -378,10 +379,11 @@ pub(crate) fn draw(
                     let keys=if selected{rows.iter().filter(|r|r["selected"]==true).map(|r|text_value(r,"key").to_owned()).collect()}else{vec![key.to_owned()]};
                     response.dnd_set_drag_payload(DragRows{source:id.clone(),keys,label:row["cells"][0].as_str().unwrap_or("").into()});
                 }
-                if row["branch"]==true {drop_target(&response,key,id,events);}
+                if row["branch"]==true {drop_target(ui,&response,key,id,events);}
                 response.context_menu(|ui|context(ui,&value["context"],&row["key"],id,geometry,events));
             }
         });
+        drop_target(ui,&background,text(value,"key"),id,events);
     });
     if let Some(payload) = egui::DragAndDrop::payload::<DragRows>(ui.ctx()) {
         if let Some(pos) = ui.ctx().pointer_hover_pos() {

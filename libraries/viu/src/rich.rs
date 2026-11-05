@@ -257,7 +257,7 @@ pub(crate) fn draw(
                     ui.set_max_width(520.0);
                     ui.heading(text(value, "title"));
                     if !text(value, "body").is_empty() {
-                        ui.add(egui::Label::new(text(value, "body")).wrap());
+                        egui::ScrollArea::vertical().id_salt((id,"body")).max_height(350.0).show(ui,|ui|{ui.add(egui::Label::new(text(value,"body")).wrap());});
                     }
                     if let Some(text) = field.as_mut() {
                         let response = ui.add(
@@ -286,7 +286,7 @@ pub(crate) fn draw(
                     if !text(value, "error").is_empty() {
                         ui.colored_label(ui.visuals().error_fg_color, text(value, "error"));
                     }
-                    ui.horizontal(|ui| {
+                    let mut choices=|ui:&mut Ui| {
                         for choice in value["choices"].as_array().into_iter().flatten() {
                             let response = ui.add_enabled(
                                 choice["enabled"] == true,
@@ -305,7 +305,10 @@ pub(crate) fn draw(
                                 );
                             }
                         }
-                    });
+                    };
+                    if value["choice_layout"]=="list"{
+                        egui::ScrollArea::vertical().id_salt((id,"choices")).max_height(350.0).show(ui,|ui|{ui.vertical(&mut choices);});
+                    }else{ui.horizontal(choices);}
                 });
             if modal.should_close() {
                 if let Some(cancel) = value["choices"]

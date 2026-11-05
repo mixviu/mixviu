@@ -3,6 +3,21 @@
 -- All Mix Dopus application policy lives here and in the other .mix modules.
 $dp=require("core.mix")
 $view=require("presentation.mix")
+$ops=require("operations.mix")
+fn dp_drop_allowed($sources,$destination,$busy)
+  if $busy or len($sources)==0 then return false end
+  $destination=realpath($destination)
+  if $destination==nil then return false end
+  for $source in $sources
+    $st=$dp.dp_lstat($source)
+    if $st==nil then return false end
+    if $st.is_dir and not $st.is_symlink then
+      $source=realpath($source)
+      if $source==nil or dirname($source)==$destination or $ops.dp_inside($destination,$source) then return false end
+    elif realpath(dirname($source))==$destination then return false end
+  end
+  return true
+end
 fn dp_closed_form()
   return {open:false,title:"",body:"",field:nil,choices:[],instance:0}
 end
@@ -30,7 +45,7 @@ fn dp_initialise($a)
     if $place.path=="/" or $place.name=="Home" or is_dir($place.path) then push($places,$place) end
   end
   $places=concat($places,$config.bookmarks ?? [])
-  return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.16,0.1,0.4),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.4),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"ocean",style:"studio",body:14.666667},busy:false,job:nil,form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Ready" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
+  return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.16,0.1,0.4),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.4),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"ocean",style:"studio",body:14.666667},busy:false,job:nil,form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Select a file or folder" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
 end
 fn dp_update_previews($s)
   if $s.preview_slots==nil then $s.preview_slots=[{key:nil,job:nil,value:{phase:"none"}},{key:nil,job:nil,value:{phase:"none"}}] end
@@ -106,7 +121,33 @@ fn dp_answer($s,$choice)
   $s=dp_start_operation($s,$op);$s.form=dp_closed_form();$s.reservation=nil
   return $s
 end
+fn dp_search_choices($s,$contract)
+  $query=lower($s.form.field)
+  $choices=[]
+  for $action in $contract.actions
+    if $action.id!="search" and (contains(lower($action.label),$query) or contains($action.id,$query)) then
+      $choice=$view.dp_command($s,$contract,$action.id)
+      $choice.default=len($choices)==0
+      push($choices,$choice)
+    end
+  end
+  push($choices,{id:"cancel",label:"Cancel",enabled:true,cancel:true})
+  return $choices
+end
+fn dp_handle_answer($s,$contract,$choice)
+  if $s.reservation.kind=="search" and $choice!="cancel" then
+    if not any($s.form.choices,fn($c)=$c.id==$choice and $c.enabled) then raise("INVALID_ARGUMENT","Command is not available") end
+    $s.form=dp_closed_form();$s.reservation=nil
+    return dp_action($s,$contract,$choice,{})
+  end
+  return dp_answer($s,$choice)
+end
 fn dp_action($s,$contract,$id,$params)
+  if type($params)!="map" then raise("INVALID_ARGUMENT","Action params must be a map") end
+  for $key in keys($params)
+    if not contains(["pane","ctrl","shift","path"],$key) or ($key=="path" and $id!="place.open") then raise("INVALID_ARGUMENT","Unknown action parameter") end
+  end
+  for $key in ["ctrl","shift"] if $params[$key]!=nil and type($params[$key])!="bool" then raise("INVALID_ARGUMENT","Selection modifier must be bool") end end
   $i=$s.active
   if $params.pane!=nil then
     if not contains(["left","right","active"],$params.pane) then raise("INVALID_ARGUMENT","Unknown pane") end
@@ -148,7 +189,9 @@ fn dp_action($s,$contract,$id,$params)
   elif starts_with($id,"theme.scheme-") then $s.appearance.scheme=slice($id,len("theme.scheme-"))
   elif $id=="help.shortcuts" then return dp_form($s,"message","Keyboard shortcuts",join(map($contract.actions,fn($a)=join($a.keys,", ").."  "..$a.label),"\n"),nil,{})
   elif $id=="help.about" then return dp_form($s,"message","About Dopus","Dopus — Mix behaviour with shared native Viu widgets.\nLab comparison implementation.",nil,{})
-  elif $id=="search" then $s.focus=if $i==0 then "left-location" else "right-location" end
+  elif $id=="search" then
+    $s=dp_form($s,"search","Search commands","","",{})
+    $s.form.choice_layout="list";$s.form.choices=dp_search_choices($s,$contract)
   elif $id=="app.quit" then $s=dp_persist($s)
   else raise("UNKNOWN_ACTION",$id) end
   return $s
@@ -157,8 +200,11 @@ fn dp_intent($s,$contract,$a)
   $id=$a.id;$value=$a.value;$action=$a.action
   if $id=="menu" then return dp_action($s,$contract,$value.command,{})
   elif $id=="form" then
-    if $action=="edit" then $s.form.field=$value;return $s
-    elif $action=="answer" then return dp_answer($s,$value.choice) end
+    if $action=="edit" then
+      $s.form.field=$value
+      if $s.reservation.kind=="search" then $s.form.choices=dp_search_choices($s,$contract) end
+      return $s
+    elif $action=="answer" then return dp_handle_answer($s,$contract,$value.choice) end
   elif $id=="panes" then $s.split=clamp($value,0.2,0.8);return $s
   elif $id=="root" then
     if $value.child=="places" then $s.places_width=clamp($value.fraction,0.1,0.4)
@@ -166,6 +212,7 @@ fn dp_intent($s,$contract,$a)
     else raise("INVALID_ARGUMENT","Unknown resizable sidebar") end
     return $s
   elif $id=="places" then
+    if $action=="activate-pane" then return $s end
     for $i=0 to len($s.places)-1
       if $value.key=="place."..to_string($i) then return dp_go($s,$s.active,$s.places[$i].path) end
     end
@@ -191,11 +238,14 @@ fn dp_intent($s,$contract,$a)
     elif $action=="navigate" then
       if $value.key=="ArrowRight" or $value.key=="ArrowLeft" then
         $p=$s.panes[$i];$expanded=$p.expanded[$p.selected] ?? false
-        if ($value.key=="ArrowRight" and not $expanded) or ($value.key=="ArrowLeft" and $expanded) then $s.panes[$i]=$dp.dp_expand($p,$p.selected) end
+        $row=filter($p.entries,fn($r)=$r.path==$p.selected and $r.dir)[0]
+        if $row!=nil and (($value.key=="ArrowRight" and not $expanded) or ($value.key=="ArrowLeft" and $expanded)) then $s.panes[$i]=$dp.dp_expand($p,$p.selected) end
       else $s.panes[$i]=$dp.dp_select_key($s.panes[$i],$value.key,$value.ctrl ?? false,$value.shift ?? false) end
     elif $action=="drop" then
-      if $s.busy then raise("BUSY","Another file operation is still running") end
-      $s=dp_form($s,"drop","Transfer items","Move or copy the dragged items?",nil,{sources:$value.keys,destination:$value.destination})
+      $sources=filter($value.keys,fn($path)=not any($value.keys,fn($parent)=$parent!=$path and starts_with($path,$parent.."/")))
+      if not dp_drop_allowed($sources,$value.destination,$s.busy) then raise("UNAVAILABLE","This destination cannot receive the dragged items") end
+      if ($value.ctrl ?? false) or ($value.shift ?? false) then return dp_start_operation($s,{kind:if $value.ctrl ?? false then "copy" else "move" end,sources:$sources,destination:$value.destination}) end
+      $s=dp_form($s,"drop","Transfer items","Move or copy the dragged items?",nil,{sources:$sources,destination:$value.destination})
       $s.form.choices=[{id:"cancel",label:"Cancel",enabled:true,cancel:true},{id:"move",label:"Move",enabled:true},{id:"copy",label:"Copy",enabled:true}]
     elif $action!="activate-pane" then raise("INVALID_ARGUMENT","Unknown tree action") end
     return $s

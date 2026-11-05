@@ -54,6 +54,25 @@ impl SceneView {
     pub fn model(&self) -> &Value {
         &self.tree.model
     }
+    /// Shared control admission uses the currently rendered definition/model.
+    /// Applications still own the meaning and execution of admitted intents.
+    pub fn admit_intent(&self,id:&str,action:&str,value:&Value)->Result<(),String>{
+        let node=self.tree.nodes.get(id).ok_or("unknown scene node")?;
+        match node.family.as_str(){
+            "control"=>Widget::decode(&node.ports["definition"])?.admit(&self.tree.model,action,value),
+            "split"=>{
+                let min=num(node,"minimum").unwrap_or(0.1) as f64;let max=num(node,"maximum").unwrap_or(0.9) as f64;
+                if action=="set"&&value.as_f64().is_some_and(|v|v.is_finite()&&(min..=max).contains(&v)){Ok(())}else{Err("invalid split intent".into())}
+            }
+            "dock"=>{
+                let child=value["child"].as_str().ok_or("dock child required")?;
+                let placement=&node.ports["placements"][child];
+                let min=placement["minimum"].as_f64().unwrap_or(0.05);let max=placement["maximum"].as_f64().unwrap_or(0.5);
+                if action=="set"&&placement["resizable"]==true&&value["fraction"].as_f64().is_some_and(|v|v.is_finite()&&(min..=max).contains(&v)){Ok(())}else{Err("invalid dock intent".into())}
+            }
+            _=>Err("scene node does not accept intents".into())
+        }
+    }
 
     pub fn apply_model(&mut self, model: Value) -> Result<(), String> {
         if !model.is_object() {

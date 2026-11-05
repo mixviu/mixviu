@@ -33,3 +33,10 @@ blob as well as SHA256. PNG decoding enables only the existing pure-Rust image
 crate's png feature. No new C/C++/assembly dependency is introduced. Original
 decoder ownership/queue behaviour remains subject to the specimen's lifecycle
 checks; importing source is not proof of a stronger shutdown guarantee.
+
+The decoder adaptation now caps outstanding work, retires unshown keys and
+joins its worker. The native application screenshot owner extracts the
+exclusive PNG encoder contract from the original toolkit drive, with one
+pending readback, a deadline and token fencing. These are native renderer
+facilities; application control and file-manager policy remain in the drivers.
+The existing png0.18.1 lock entry is reused without a registry upgrade.

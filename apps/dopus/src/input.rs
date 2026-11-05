@@ -53,6 +53,7 @@ impl Input {
                 let position = |id: &str| {
                     view.geometry
                         .get(id)
+                        .filter(|r|r.is_positive())
                         .map(|r| r.center())
                         .ok_or_else(|| format!("Target is not visible: {id}"))
                 };

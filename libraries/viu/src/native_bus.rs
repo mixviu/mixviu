@@ -22,6 +22,9 @@ pub struct Request {
     pub args: Value,
     pub headers: BTreeMap<String, String>,
     pub reply: oneshot::Sender<(u8, Value)>,
+    /// An application can request close for this reply. The owner acts only
+    /// after the successful response has actually crossed the native transport.
+    pub close_after_reply:Arc<AtomicBool>,
 }
 pub struct Notice {
     pub command: String,
@@ -79,13 +82,14 @@ impl Endpoint {
                     if command.id.is_none(){post(Notice{command:command.topic().unwrap_or(&command.command).to_owned(),args:command.args,headers:command.headers});continue;}
                     if close.load(Ordering::Acquire){let _=native.respond(&command,10,&json!({"error_code":"CLOSING"}).to_string()).await;continue;}
                     let (reply,response)=oneshot::channel();
-                    let request=Request{command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply};
+                    let close_after_reply=Arc::new(AtomicBool::new(false));
+                    let request=Request{command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone()};
                     let answer=match tx.try_send(request){
                         Ok(())=>{wake();tokio::select!{_=&mut stopped=>break,result=tokio::time::timeout(Duration::from_secs(10),response)=>match result{Ok(Ok(value))=>value,_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}},
                         Err(_)=>(10,json!({"error_code":"BUSY"}))
                     };
                     let sent=native.respond(&command,answer.0,&answer.1.to_string()).await;
-                    if command.command==quit_command&&answer.0==0&&sent.is_ok(){close.store(true,Ordering::Release);wake();}
+                    if (command.command==quit_command||close_after_reply.load(Ordering::Acquire))&&answer.0==0&&sent.is_ok(){close.store(true,Ordering::Release);wake();}
                 }
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=None;
                 native.close().await;

@@ -21,8 +21,8 @@ available; runtime wiring must not hide untested application policy in Rust.
 ## Layout
 
 - engines/: eventual thin mix, mixd, viu, viud hosts; import as needed.
-- libraries/: reusable native code; currently scene, expr and strict only.
-- apps/: Mix-first shell/application bundles; currently a Quoin volume specimen.
+- libraries/: shared scene, expression, Mix, widget, icon, Bus and native facilities.
+- apps/: Mix-first bundles, paired galleries and the active Dopus comparison lab.
 - tools/: small Mix checks; no copied deployment/orchestration framework.
 - docs/: public architecture, development and contracts.
 - provenance/: immutable source revisions, file hashes and adaptation notes.
