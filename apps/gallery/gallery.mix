@@ -1,0 +1,65 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Mix application composition and behaviour. No Rust gallery controller called.
+$widgets = [
+ {id:"label",kind:"label",label:"Label",initial:"Shared Viu typography"},
+ {id:"button",kind:"button",label:"Button",initial:"Ready"},
+ {id:"field",kind:"field",label:"Text field",initial:"Edit this text"},
+ {id:"multiline",kind:"multiline",label:"Multiline editor",initial:"A small editable note"},
+ {id:"checkbox",kind:"checkbox",label:"Checkbox",initial:true},
+ {id:"toggle",kind:"toggle",label:"Toggle",initial:false},
+ {id:"radio",kind:"radio",label:"Radio group",initial:"Alpha"},
+ {id:"tabs",kind:"tabs",label:"Tabs",initial:"Beta"},
+ {id:"slider",kind:"slider",label:"Slider",initial:35},
+ {id:"number",kind:"number",label:"Number / spin control",initial:42},
+ {id:"progress",kind:"progress",label:"Progress indicator",initial:65},
+ {id:"combo",kind:"combo",label:"Combo box",initial:"Alpha"},
+ {id:"list",kind:"list",label:"Virtual list · 1,000 items",initial:1},
+ {id:"table",kind:"table",label:"Virtual table · 1,000 rows",initial:0},
+ {id:"tree",kind:"tree",label:"Tree rows",initial:0},
+ {id:"collapse",kind:"collapse",label:"Disclosure",initial:false},
+ {id:"menu",kind:"menu",label:"Menu",initial:"Alpha"},
+ {id:"dialog",kind:"dialog",label:"Confirmation dialog",initial:false},
+ {id:"split",kind:"split",label:"Resizable split",initial:50},
+ {id:"colour",kind:"colour",label:"Colour picker",initial:[70,150,210]},
+ {id:"canvas",kind:"canvas",label:"Canvas",initial:"Ready"},
+ {id:"link",kind:"link",label:"Local link",initial:"Ready"},
+ {id:"tooltip",kind:"tooltip",label:"Tooltip",initial:"Hover for help"},
+ {id:"separator",kind:"separator",label:"Separator",initial:"Section boundary"}
+]
+$state = {widgets:$widgets,values:{},serial:0,activations:0,last:"Ready"}
+for $widget in $widgets
+  $state.values[$widget.id] = $widget.initial
+end
+fn publish_gallery($ctx, $model)
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+  if $rc != 0 then raise("MODEL_PUBLISH",to_string($result)) end
+end
+$ctx = viu_context()
+on gallery.execute
+  $a = $event.args
+  if $a.action == "reset" then
+    for $widget in $widgets
+      $state.values[$widget.id] = $widget.initial
+    end
+    $state.serial = 0
+    $state.activations = 0
+    $state.last = "Ready"
+  else
+    if $a.action == "set" or $a.action == "submit" then
+      $state.values[$a.id] = $a.value
+    elif $a.action == "accept" or $a.action == "cancel" then
+      $state.values[$a.id] = false
+      $state.activations = $state.activations + 1
+    elif $a.action == "activate" then
+      $state.activations = $state.activations + 1
+    else
+      raise("UNKNOWN_ACTION",to_string($a.action))
+    end
+    $state.serial = $state.serial + 1
+    $state.last = $a.id .. "." .. $a.action
+  end
+  publish_gallery($ctx,$state)
+  reply(0,"{}")
+end
+publish_gallery($ctx,$state)

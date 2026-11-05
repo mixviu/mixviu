@@ -3,3 +3,4 @@
 pub mod runtime;
 pub mod templates;
 pub mod view;
+pub mod widgets;
