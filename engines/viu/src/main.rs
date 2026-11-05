@@ -24,24 +24,40 @@ impl Client {
         let view = SceneView::new(scene)?;
         let mut program = self.program.clone();
         program.source = source;
-        let generation = self.runtime.load(program.clone()).map_err(|e| format!("{e:?}"))?;
+        let generation = self
+            .runtime
+            .load(program.clone())
+            .map_err(|e| format!("{e:?}"))?;
         self.program = program;
         self.pending_view = Some((generation, view));
         self.behaviour_ready = false;
-        self.lifecycle_note = "Reload pending: earlier input results are superseded; controls wait for the new model".into();
+        self.lifecycle_note =
+            "Reload pending: earlier input results are superseded; controls wait for the new model"
+                .into();
         Ok(())
     }
 
     fn complete(&mut self, done: viu::runtime::Completion) {
         if !self.runtime.accepts(&done) {
-            eprintln!("VIU superseded generation={} sequence={}", done.generation, done.sequence);
+            eprintln!(
+                "VIU superseded generation={} sequence={}",
+                done.generation, done.sequence
+            );
             self.lifecycle_note = "An earlier generation's result was superseded by reload".into();
             return;
         }
         self.last_sequence = done.sequence;
-        eprintln!("VIU completion generation={} sequence={} callback_us={} error={:?}",
-            done.generation, done.sequence, done.elapsed.as_micros(), done.error);
+        eprintln!(
+            "VIU completion generation={} sequence={} callback_us={} error={:?}",
+            done.generation,
+            done.sequence,
+            done.elapsed.as_micros(),
+            done.error
+        );
         if let Some(error) = done.error {
+            if error.starts_with("behaviour_unavailable:") || error.contains("deadline exceeded") {
+                self.behaviour_ready = false;
+            }
             self.error = error;
             if done.sequence == 0 {
                 self.pending_view = None;
@@ -54,15 +70,24 @@ impl Client {
                 self.error = "reload completion does not match pending scene".into();
                 return;
             }
-            let result = done.model.ok_or_else(|| "reloaded behaviour did not publish an initial model".to_owned())
+            let result = done
+                .model
+                .ok_or_else(|| "reloaded behaviour did not publish an initial model".to_owned())
                 .and_then(|model| candidate.apply_model(model));
             match result {
-                Ok(()) => { self.view = candidate; self.behaviour_ready = true; self.error.clear(); }
+                Ok(()) => {
+                    self.view = candidate;
+                    self.behaviour_ready = true;
+                    self.error.clear();
+                }
                 Err(error) => self.error = error,
             }
         } else if let Some(model) = done.model {
             match self.view.apply_model(model) {
-                Ok(()) => { self.behaviour_ready = true; self.error.clear(); }
+                Ok(()) => {
+                    self.behaviour_ready = true;
+                    self.error.clear();
+                }
                 Err(error) => self.error = error,
             }
         }
@@ -76,21 +101,32 @@ impl eframe::App for Client {
         ui.label("Quoin volume — safe audio fixture");
         if ui.button("Reload scene and behaviour").clicked() {
             let scene = self.program.path.parent().unwrap().join("scene.mix");
-            let files = std::fs::read_to_string(scene).and_then(|scene|
-                std::fs::read_to_string(&self.program.path).map(|source| (scene, source)));
+            let files = std::fs::read_to_string(scene).and_then(|scene| {
+                std::fs::read_to_string(&self.program.path).map(|source| (scene, source))
+            });
             match files {
-                Ok((scene, source)) => if let Err(error) = self.reload(&scene, source) { self.error = error; },
+                Ok((scene, source)) => {
+                    if let Err(error) = self.reload(&scene, source) {
+                        self.error = error;
+                    }
+                }
                 Err(error) => self.error = error.to_string(),
             }
         }
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
         }
-        if !self.lifecycle_note.is_empty() { ui.label(&self.lifecycle_note); }
-        let events = ui.add_enabled_ui(self.behaviour_ready, |ui| egui::ScrollArea::vertical()
-            .id_salt("scene-root")
-            .show(ui, |ui| self.view.show(ui))
-            .inner).inner;
+        if !self.lifecycle_note.is_empty() {
+            ui.label(&self.lifecycle_note);
+        }
+        let events = ui
+            .add_enabled_ui(self.behaviour_ready, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("scene-root")
+                    .show(ui, |ui| self.view.show(ui))
+                    .inner
+            })
+            .inner;
         for event in events {
             eprintln!("VIU input command={} body={}", event.command, event.body);
             if let Err(refusal) = self.runtime.event(event.command, event.body) {

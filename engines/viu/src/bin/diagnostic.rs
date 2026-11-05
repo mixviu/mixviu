@@ -85,6 +85,19 @@ fn next(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> viu::runtime::Completi
     done
 }
 fn main() {
+    let profile = std::env::var_os("VIU_DIAGNOSTIC_PROFILE").is_some();
+    // Attribution run only: timer/log overhead is not baseline throughput.
+    let source = if profile {
+        BEHAVIOUR.replace(r#"  $model.visible = slice($model.rows, 0, 256)
+  send "viu-local" "scenes.model" body=json_encode({generation:$ctx.generation,value:$model})"#, r#"  $p0 = monotonic()
+  $model.visible = slice($model.rows, 0, 256)
+  $p1 = monotonic()
+  $encoded = json_encode({generation:$ctx.generation,value:$model})
+  $p2 = monotonic()
+  send "viu-local" "scenes.model" body=$encoded
+  $p3 = monotonic()
+  eprint(json_encode({slice_us:($p1-$p0)*1000000,encode_us:($p2-$p1)*1000000,send_us:($p3-$p2)*1000000}))"#)
+    } else { BEHAVIOUR.into() };
     let started = Instant::now();
     let (tx, rx) = mpsc::channel();
     let mut runtime = Runtime::new(
@@ -97,7 +110,7 @@ fn main() {
     runtime
         .load(Program {
             path: PathBuf::from("/tmp/viu-diagnostic.mix"),
-            source: BEHAVIOUR.into(),
+            source,
             scene: "diagnostic".into(),
             citizen: "diagnostic".into(),
         })
@@ -113,6 +126,7 @@ fn main() {
         let mut mix_wall = Vec::new();
         let mut rust_wall = Vec::new();
         let mut service = Vec::new();
+        let mut stages = Vec::new();
         for iteration in 0..35 {
             let args = match workload {
                 "select" => json!({"kind":"select","id":format!("row_{}",iteration*7)}),
@@ -131,6 +145,9 @@ fn main() {
             let start = Instant::now();
             runtime.event("intent".into(), args.clone()).unwrap();
             let done = next(&runtime, &rx);
+            if profile && iteration >= 4 {
+                stages.push(serde_json::from_str::<Value>(done.stderr.trim()).expect("profile stage receipt"));
+            }
             let actual = done.model.unwrap();
             draw(&ctx_mix, &mut mix_view, actual.clone());
             let mix_ns = start.elapsed().as_nanos();
@@ -158,12 +175,12 @@ fn main() {
                 service.push(done.elapsed.as_nanos());
             }
         }
-        results.push(json!({"workload":if workload=="scroll" {"scroll intent/model field update (no widget scrolling)"} else {workload},"mix_wall":summary(mix_wall),"rust_wall":summary(rust_wall),"mix_worker_service":summary(service)}));
+        results.push(json!({"workload":if workload=="scroll" {"scroll intent/model field update (no widget scrolling)"} else {workload},"mix_wall":summary(mix_wall),"rust_wall":summary(rust_wall),"mix_worker_service":summary(service),"profile_stages_us":stages}));
     }
     let idle = Instant::now();
     assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
     println!(
         "{}",
-        json!({"boundary":"synthetic512-row controller with256 visible rows + JSON model + same egui scene binding/template/paint CPU; excludes GPU, broker, compositor and physical presentation","samples":31,"warmups":4,"startup_model_ready_us":startup_us,"idle_no_completion_ms":idle.elapsed().as_millis(),"resources":std::fs::read_to_string("/proc/self/status").unwrap_or_default(),"results":results})
+        json!({"profile_instrumented":profile,"boundary":"synthetic512-row controller with256 visible rows + JSON model + same egui scene binding/template/paint CPU; excludes GPU, broker, compositor and physical presentation","samples":31,"warmups":4,"startup_model_ready_us":startup_us,"idle_no_completion_ms":idle.elapsed().as_millis(),"resources":std::fs::read_to_string("/proc/self/status").unwrap_or_default(),"results":results})
     );
 }

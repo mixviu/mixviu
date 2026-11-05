@@ -69,7 +69,7 @@ pub struct Completion {
 
 enum Request {
     Load(u64, Program),
-    Event(u64, u64, String, Json),
+    Event(u64, u64, String, Json, bool),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -130,12 +130,12 @@ impl Runtime {
                         current = Some((generation, eval, local, stdout, stderr));
                         (generation, 0, outcome.map(|_| ()))
                     }
-                    Request::Event(generation, sequence, command, args) => {
+                    Request::Event(generation, sequence, command, args, is_request) => {
                         let outcome = match current.as_mut() {
                             Some((active, eval, ..)) if *active == generation => {
                                 let event = IncomingEvent { generation, command, headers: BTreeMap::from([
                                     ("from".into(), "viu-client".into()),
-                                    ("type".into(), "request".into()),
+                                    ("type".into(), if is_request { "request" } else { "event" }.into()),
                                     ("id".into(), sequence.to_string()),
                                 ]), body: args.to_string() };
                                 let tasks = tokio::task::LocalSet::new();
@@ -190,8 +190,18 @@ impl Runtime {
     }
 
     pub fn event(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
+        self.submit_event(command, args, true)
+    }
+
+    /// Native Bus topic delivery has no reply obligation. It uses the same
+    /// ordered mailbox and generation fences as UI requests.
+    pub fn notify(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
+        self.submit_event(command, args, false)
+    }
+
+    fn submit_event(&mut self, command: String, args: Json, is_request: bool) -> Result<u64, Refusal> {
         let sequence = self.sequence.checked_add(1).expect("sequence overflow");
-        self.enqueue(Request::Event(self.generation, sequence, command, args))?;
+        self.enqueue(Request::Event(self.generation, sequence, command, args, is_request))?;
         self.sequence = sequence;
         Ok(sequence)
     }

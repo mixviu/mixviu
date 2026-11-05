@@ -91,7 +91,12 @@ fn callback_fault_discards_partial_publish_and_reload_recovers() {
     runtime.load(program("$x = [")).unwrap();
     assert!(next(&runtime, &wakes).error.is_some());
     runtime.event("fail".into(), json!({})).unwrap();
-    assert!(next(&runtime, &wakes).error.unwrap().starts_with("behaviour_unavailable:"));
+    assert!(
+        next(&runtime, &wakes)
+            .error
+            .unwrap()
+            .starts_with("behaviour_unavailable:")
+    );
     runtime.load(program(INIT)).unwrap();
     assert!(next(&runtime, &wakes).error.is_none());
     runtime.event("bump".into(), json!({})).unwrap();
