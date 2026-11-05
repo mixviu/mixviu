@@ -212,6 +212,20 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pnd("row_gap", "3", None),
         pnd("min_column_width", "0", None),
     ];
+    static DOCK: [Port; 3] = [
+        p("children","list",true,None),
+        p("placements","object",true,None),
+        p("on_change","string",false,None),
+    ];
+    static SPLIT: [Port; 7] = [
+        p("children","list",true,None),
+        pnd("ratio","0.5",None),
+        pe("axis","\"horizontal\"",&["horizontal","vertical"]),
+        pnd("divider","6",Some(1.0)),
+        pnd("minimum","0.1",None),
+        pnd("maximum","0.9",None),
+        p("on_change","string",false,None),
+    ];
     let family: &[Port] = match f {
         "window" => &WINDOW,
         "column" => &BOX,
@@ -225,6 +239,8 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         "spacer" => &SPACER,
         "control" => &CONTROL,
         "grid" => &GRID,
+        "dock" => &DOCK,
+        "split" => &SPLIT,
         _ => return None,
     };
     let mut ports = family.to_vec();
@@ -321,6 +337,9 @@ pub(crate) fn check_port_value(
     out: &mut Vec<Diagnostic>,
 ) {
     let k = p.name;
+    if ["ratio","minimum","maximum"].contains(&k) && v.as_f64().is_some_and(|n|n>1.0) {
+        out.push(Diagnostic::error("port-max",line,format!("port {k} on {id} must be at most 1")));
+    }
     if k == "columns" && v.as_f64().is_some_and(|n| n.fract() != 0.0 || n > 16.0) {
         out.push(Diagnostic::error(
             "port-type",

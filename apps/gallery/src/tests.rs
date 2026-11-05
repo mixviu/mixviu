@@ -32,7 +32,10 @@ fn independent_mix_composition_and_every_action_match_rust() {
     let mut expected = controller::initial();
     assert_eq!(completion(&runtime).model.unwrap(), expected);
     let widgets = controller::composition();
-    assert_eq!(widgets.len(), viu::widgets::KINDS.len());
+    // Preserve this foundation catalogue as the pre-Dopus visual oracle.
+    // New shared controls are exercised by their owning application/tests.
+    assert_eq!(widgets.len(), 26);
+    assert!(widgets.iter().all(|w|viu::widgets::KINDS.contains(&w.kind.as_str())));
     for widget in &widgets {
         for action in controller::actions(widget) {
             let value = match widget.kind.as_str() {

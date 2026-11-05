@@ -1,0 +1,120 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Application-supplied menus, command bars, property fields and modal forms.
+//! Command identity, availability and form outcomes remain application data.
+use crate::widgets::{Intent, Widget};
+use egui::{Rect, Ui};
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, BTreeSet};
+
+pub const KINDS: &[&str]=&["menubar","command-bar","property-grid","dialog-form"];
+pub fn actions(kind: &str)->Vec<&'static str>{match kind{"menubar"|"command-bar"=>vec!["set","command"],"dialog-form"=>vec!["set","edit","answer"],_=>vec!["set"]}}
+fn text<'a>(v:&'a Value,key:&str)->&'a str{v[key].as_str().unwrap_or("")}
+fn entries(value:&Value,depth:usize,ids:&mut BTreeSet<String>)->Result<(),String>{
+    if depth>8{return Err("menu nesting exceeds eight levels".into());}
+    let values=value.as_array().ok_or("command items must be an array")?;
+    for entry in values{
+        if entry["separator"]==true{continue;}
+        if text(entry,"id").is_empty()||!ids.insert(text(entry,"id").into())||!entry["label"].is_string()||!entry["enabled"].is_boolean(){return Err("command items require unique ID, label and enabled flag".into());}
+        if let Some(icon)=entry["icon"].as_str(){if crate::icons::Icon::from_name(icon).is_none(){return Err("unknown command icon".into());}}
+        if entry.get("children").is_some(){entries(&entry["children"],depth+1,ids)?;}
+    }
+    Ok(())
+}
+pub fn validate(kind:&str,value:&Value)->Result<(),String>{
+    match kind{
+        "menubar"|"command-bar"=>entries(value,0,&mut BTreeSet::new()),
+        "property-grid"=>{
+            let fields=value.as_array().ok_or("property fields must be an array")?;
+            if fields.iter().any(|f|!f["label"].is_string()||!f["value"].is_string()){Err("property fields require label and value strings".into())}else{Ok(())}
+        },
+        "dialog-form"=>{
+            if !value["open"].is_boolean()||!value["title"].is_string()||!value["body"].is_string(){return Err("modal form requires open, title and body".into());}
+            if value.get("field").is_some_and(|f|!f.is_null()&&!f.is_string()){return Err("modal form field must be string or null".into());}
+            entries(&value["choices"],0,&mut BTreeSet::new())
+        },
+        _=>Err("unknown rich control".into())
+    }
+}
+fn find<'a>(value:&'a Value,id:&str)->Option<&'a Value>{
+    for item in value.as_array().into_iter().flatten(){if text(item,"id")==id{return Some(item);}if let Some(found)=find(&item["children"],id){return Some(found);}}
+    None
+}
+pub fn admit(kind:&str,current:&Value,action:&str,payload:&Value)->Result<(),String>{
+    validate(kind,current)?;
+    match action{
+        "command"=>{if find(current,text(payload,"command")).is_none_or(|item|item["enabled"]!=true||item.get("children").is_some()){return Err("disabled or unknown command".into());}},
+        "answer"=>{if current["open"]!=true||find(&current["choices"],text(payload,"choice")).is_none_or(|item|item["enabled"]!=true){return Err("disabled or unknown form choice".into());}},
+        "edit"=>{if current["open"]!=true||!current["field"].is_string()||payload.as_str().is_none_or(|s|s.len()>4096){return Err("form is not editable".into());}},
+        _=>{}
+    }
+    Ok(())
+}
+fn emit(events:&mut Vec<Intent>,id:&str,action:&str,value:Value){events.push(Intent{id:id.into(),action:action.into(),value});}
+fn label(item:&Value)->egui::RichText{
+    egui::RichText::new(format!("{}{}",if item["checked"]==true{"✓  "}else{""},text(item,"label")))
+}
+fn menu(ui:&mut Ui,value:&Value,id:&str,geometry:&mut BTreeMap<String,Rect>,events:&mut Vec<Intent>){
+    for item in value.as_array().into_iter().flatten(){
+        if item["separator"]==true{ui.separator();continue;}
+        if item.get("children").is_some(){
+            let shown=ui.add_enabled_ui(item["enabled"]==true,|ui|ui.menu_button(label(item),|ui|menu(ui,&item["children"],id,geometry,events)));
+            geometry.insert(format!("{id}.command.{}",text(item,"id")),shown.inner.response.rect);
+        }else{
+            let mut button=egui::Button::new(label(item));
+            if let Some(shortcut)=item["shortcut"].as_str(){button=button.shortcut_text(shortcut);}
+            if let Some(icon)=item["icon"].as_str().and_then(crate::icons::Icon::from_name){button=button.image(crate::icons::image(icon,16.0,ui.visuals().text_color()));}
+            let response=ui.add_enabled(item["enabled"]==true,button);
+            geometry.insert(format!("{id}.command.{}",text(item,"id")),response.rect);
+            if response.clicked(){emit(events,id,"command",json!({"command":item["id"]}));ui.close();}
+        }
+    }
+}
+pub fn draw(ui:&mut Ui,widget:&Widget,value:&Value,geometry:&mut BTreeMap<String,Rect>,events:&mut Vec<Intent>)->egui::Response{
+    let id=&widget.id;
+    match widget.kind.as_str(){
+        "menubar"=>egui::MenuBar::new().ui(ui,|ui|{
+            for item in value.as_array().into_iter().flatten(){
+                let shown=ui.add_enabled_ui(item["enabled"]==true,|ui|ui.menu_button(text(item,"label"),|ui|menu(ui,&item["children"],id,geometry,events)));
+                geometry.insert(format!("{id}.menu.{}",text(item,"id")),shown.inner.response.rect);
+            }
+        }).response,
+        "command-bar"=>ui.horizontal(|ui|{
+            for item in value.as_array().into_iter().flatten(){
+                if item["separator"]==true{ui.separator();continue;}
+                let response=if let Some(icon)=item["icon"].as_str().and_then(crate::icons::Icon::from_name){crate::icons::button(ui,icon,text(item,"label"),16.0,None,item["enabled"]==true,item["checked"]==true)}else{ui.add_enabled(item["enabled"]==true,egui::Button::new(label(item)))};
+                geometry.insert(format!("{id}.command.{}",text(item,"id")),response.rect);
+                if response.clicked(){emit(events,id,"command",json!({"command":item["id"]}));}
+            }
+        }).response,
+        "property-grid"=>ui.vertical(|ui|{egui::ScrollArea::vertical().id_salt((id,"fields")).auto_shrink([false,false]).show(ui,|ui|{
+            for field in value.as_array().into_iter().flatten(){ui.label(egui::RichText::new(text(field,"label")).small().weak());ui.add(egui::Label::new(text(field,"value")).wrap());ui.add_space(4.0);}
+        });}).response,
+        "dialog-form"=>{
+            let mut field=value["field"].as_str().map(str::to_owned);
+            let modal=egui::Modal::new(egui::Id::new((id,"modal"))).show(ui.ctx(),|ui|{
+                ui.set_min_width(320.0);ui.set_max_width(520.0);
+                ui.heading(text(value,"title"));
+                if !text(value,"body").is_empty(){ui.add(egui::Label::new(text(value,"body")).wrap());}
+                if let Some(text)=field.as_mut(){
+                    let response=ui.add(egui::TextEdit::singleline(text).id(egui::Id::new((id,"field"))).desired_width(ui.available_width()));
+                    geometry.insert(format!("{id}.field"),response.rect);
+                    let marker=egui::Id::new((id,"modal-focused",value["instance"].to_string()));
+                    if !ui.ctx().data(|d|d.get_temp::<bool>(marker).unwrap_or(false)){response.request_focus();ui.ctx().data_mut(|d|d.insert_temp(marker,true));}
+                    if response.changed(){emit(events,id,"edit",json!(text));}
+                }
+                if !text(value,"error").is_empty(){ui.colored_label(ui.visuals().error_fg_color,text(value,"error"));}
+                ui.horizontal(|ui|{
+                    for choice in value["choices"].as_array().into_iter().flatten(){
+                        let response=ui.add_enabled(choice["enabled"]==true,egui::Button::new(text(choice,"label")));
+                        geometry.insert(format!("{id}.choice.{}",text(choice,"id")),response.rect);
+                        if response.clicked(){emit(events,id,"answer",json!({"choice":choice["id"],"field":field}));}
+                    }
+                });
+            });
+            if modal.should_close(){if let Some(cancel)=value["choices"].as_array().into_iter().flatten().find(|c|c["cancel"]==true){emit(events,id,"answer",json!({"choice":cancel["id"],"field":field}));}}
+            else if ui.input(|i|i.key_pressed(egui::Key::Enter)){if let Some(default)=value["choices"].as_array().into_iter().flatten().find(|c|c["default"]==true&&c["enabled"]==true){emit(events,id,"answer",json!({"choice":default["id"],"field":field}));}}
+            modal.response
+        },
+        _=>ui.colored_label(egui::Color32::RED,"Unsupported rich widget")
+    }
+}

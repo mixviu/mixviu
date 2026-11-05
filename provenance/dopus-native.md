@@ -25,3 +25,11 @@ All Rust source retains its SPDX licence and copyright. The root MIT and
 Apache-2.0 licences cover these imports. MixOS is a named source library;
 historical comments in imports do not set MixViu strategy. Imported worker
 and filesystem limitations must be measured and reported in the comparison.
+
+The original grapheme-aware, extension-preserving elision and bounded-image
+decoder are shared native primitives in Viu. Bundled Inter and JetBrains Mono
+faces retain their OFL notices; each asset is checked against its pinned git
+blob as well as SHA256. PNG decoding enables only the existing pure-Rust image
+crate's png feature. No new C/C++/assembly dependency is introduced. Original
+decoder ownership/queue behaviour remains subject to the specimen's lifecycle
+checks; importing source is not proof of a stronger shutdown guarantee.
