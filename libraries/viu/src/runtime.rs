@@ -3,11 +3,15 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+    mpsc,
+};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use mix::evaluator::{BusFuture, Evaluator, IncomingEvent, ServeRuntime, ReservedOutcome};
+use mix::evaluator::{BusFuture, Evaluator, IncomingEvent, ReservedOutcome, ServeRuntime};
 use mix::{BusHandler, MixError, MixResult, value::Value};
 use serde_json::{Value as Json, json};
 
@@ -18,10 +22,14 @@ pub type BackendFactory = Box<dyn FnOnce() -> Rc<dyn BusHandler> + Send>;
 #[derive(Clone, Default)]
 struct SharedBuf(Rc<RefCell<(Vec<u8>, bool)>>);
 impl SharedBuf {
-    fn new() -> Self { Self::default() }
+    fn new() -> Self {
+        Self::default()
+    }
     fn take(&self) -> Vec<u8> {
         let (mut bytes, truncated) = std::mem::take(&mut *self.0.borrow_mut());
-        if truncated { bytes.extend_from_slice(b"\n[viu output truncated]\n"); }
+        if truncated {
+            bytes.extend_from_slice(b"\n[viu output truncated]\n");
+        }
         bytes
     }
 }
@@ -29,11 +37,15 @@ impl std::io::Write for SharedBuf {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         let mut buffer = self.0.borrow_mut();
         let remaining = 65_536usize.saturating_sub(buffer.0.len());
-        buffer.0.extend_from_slice(&bytes[..bytes.len().min(remaining)]);
+        buffer
+            .0
+            .extend_from_slice(&bytes[..bytes.len().min(remaining)]);
         buffer.1 |= bytes.len() > remaining;
         Ok(bytes.len())
     }
-    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -61,7 +73,10 @@ enum Request {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Refusal { Full, Closed }
+pub enum Refusal {
+    Full,
+    Closed,
+}
 
 /// One bounded, ordered mailbox of semantic operations. No operation is coalesced.
 /// `Full` means the caller must keep/retry that operation or show a refusal.
@@ -149,7 +164,15 @@ impl Runtime {
             }
             if let Some((_, mut eval, ..)) = current { eval.close_native_events(); }
         }).expect("start Mix worker");
-        Self { tx: Some(tx), rx: Some(rx), thread: Some(thread), interrupt, stop, generation: 0, sequence: 0 }
+        Self {
+            tx: Some(tx),
+            rx: Some(rx),
+            thread: Some(thread),
+            interrupt,
+            stop,
+            generation: 0,
+            sequence: 0,
+        }
     }
 
     /// Fences visible results immediately after a successful enqueue. A refused
@@ -170,15 +193,25 @@ impl Runtime {
     }
 
     fn enqueue(&self, request: Request) -> Result<(), Refusal> {
-        self.tx.as_ref().ok_or(Refusal::Closed)?.try_send(request).map_err(|e| match e {
-            mpsc::TrySendError::Full(_) => Refusal::Full,
-            mpsc::TrySendError::Disconnected(_) => Refusal::Closed,
-        })
+        self.tx
+            .as_ref()
+            .ok_or(Refusal::Closed)?
+            .try_send(request)
+            .map_err(|e| match e {
+                mpsc::TrySendError::Full(_) => Refusal::Full,
+                mpsc::TrySendError::Disconnected(_) => Refusal::Closed,
+            })
     }
 
-    pub fn generation(&self) -> u64 { self.generation }
-    pub fn try_completion(&self) -> Option<Completion> { self.rx.as_ref()?.try_recv().ok() }
-    pub fn accepts(&self, completion: &Completion) -> bool { completion.generation == self.generation }
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+    pub fn try_completion(&self) -> Option<Completion> {
+        self.rx.as_ref()?.try_recv().ok()
+    }
+    pub fn accepts(&self, completion: &Completion) -> bool {
+        completion.generation == self.generation
+    }
 }
 
 impl Drop for Runtime {
@@ -188,11 +221,16 @@ impl Drop for Runtime {
         self.tx.take();
         // Unblock a worker held at the bounded completion mailbox before join.
         self.rx.take();
-        if let Some(thread) = self.thread.take() { let _ = thread.join(); }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 
-async fn bounded<T>(stop: &AtomicBool, future: impl std::future::Future<Output=MixResult<T>>) -> Result<T, String> {
+async fn bounded<T>(
+    stop: &AtomicBool,
+    future: impl std::future::Future<Output = MixResult<T>>,
+) -> Result<T, String> {
     tokio::pin!(future);
     // Event-driven callback execution with a deadline; this timer belongs only
     // to active behaviour, and causes no idle client wakes.
@@ -219,26 +257,59 @@ struct Local {
 }
 
 impl ServeRuntime for Local {
-    fn handle_reserved(&self, _: &str, _: Option<&str>, _: &str, _: &[(&str, Option<&str>)], _: bool) -> Option<ReservedOutcome> { None }
-    fn record_handler_fault(&self, summary: &str) { *self.error.borrow_mut() = Some(summary.into()); }
+    fn handle_reserved(
+        &self,
+        _: &str,
+        _: Option<&str>,
+        _: &str,
+        _: &[(&str, Option<&str>)],
+        _: bool,
+    ) -> Option<ReservedOutcome> {
+        None
+    }
+    fn record_handler_fault(&self, summary: &str) {
+        *self.error.borrow_mut() = Some(summary.into());
+    }
 }
 
-fn failure(message: &str) -> MixError { MixError::RuntimeError { msg: message.into(), span: None } }
+fn failure(message: &str) -> MixError {
+    MixError::RuntimeError {
+        msg: message.into(),
+        span: None,
+    }
+}
 
 impl BusHandler for Local {
-    fn send<'a>(&'a self, target: &'a str, command: &'a str, args: &'a Value) -> BusFuture<'a, MixResult<(i32, Value)>> {
+    fn send<'a>(
+        &'a self,
+        target: &'a str,
+        command: &'a str,
+        args: &'a Value,
+    ) -> BusFuture<'a, MixResult<(i32, Value)>> {
         Box::pin(async move {
             if target != "viu-local" {
-                return match &self.backend { Some(backend) => backend.send(target, command, args).await, None => Err(failure("no native Bus backend configured")) };
+                return match &self.backend {
+                    Some(backend) => backend.send(target, command, args).await,
+                    None => Err(failure("no native Bus backend configured")),
+                };
             }
             let args = to_json(args)?;
-            let body: Json = match args.get("body").and_then(Json::as_str) { Some(s) => serde_json::from_str(s).map_err(|_| failure("invalid body"))?, None => args };
+            let body: Json = match args.get("body").and_then(Json::as_str) {
+                Some(s) => serde_json::from_str(s).map_err(|_| failure("invalid body"))?,
+                None => args,
+            };
             let result = match command {
-                "shell.scene.describe" => json!([{"path":"flow", "enum":["horizontal","vertical"]}, {"path":"hidden","type":"bool"}]),
+                "shell.scene.describe" => {
+                    json!([{"path":"flow", "enum":["horizontal","vertical"]}, {"path":"hidden","type":"bool"}])
+                }
                 "scenes.ready" | "scenes.model" => {
-                    if body["generation"].as_u64() != Some(self.generation) { return Ok((10, from_json(json!({"error_code":"stale_generation"}))?)); }
+                    if body["generation"].as_u64() != Some(self.generation) {
+                        return Ok((10, from_json(json!({"error_code":"stale_generation"}))?));
+                    }
                     if command == "scenes.model" {
-                        if !body["value"].is_object() { return Err(failure("model must be a map")); }
+                        if !body["value"].is_object() {
+                            return Err(failure("model must be a map"));
+                        }
                         *self.model.borrow_mut() = Some(body["value"].clone());
                     }
                     json!({"ok":true})
@@ -248,14 +319,47 @@ impl BusHandler for Local {
             Ok((0, from_json(result)?))
         })
     }
-    fn emit<'a>(&'a self, target: &'a str, command: &'a str, args: &'a Value) -> BusFuture<'a, MixResult<()>> {
-        Box::pin(async move { match &self.backend { Some(b) => b.emit(target, command, args).await, None => Err(failure("no native event backend configured")) } })
+    fn emit<'a>(
+        &'a self,
+        target: &'a str,
+        command: &'a str,
+        args: &'a Value,
+    ) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async move {
+            match &self.backend {
+                Some(b) => b.emit(target, command, args).await,
+                None => Err(failure("no native event backend configured")),
+            }
+        })
     }
     fn port_exists<'a>(&'a self, target: &'a str) -> BusFuture<'a, MixResult<bool>> {
-        Box::pin(async move { if target == "viu-local" { Ok(true) } else { match &self.backend { Some(b) => b.port_exists(target).await, None => Ok(false) } } })
+        Box::pin(async move {
+            if target == "viu-local" {
+                Ok(true)
+            } else {
+                match &self.backend {
+                    Some(b) => b.port_exists(target).await,
+                    None => Ok(false),
+                }
+            }
+        })
     }
-    fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> { Box::pin(async { None }) }
-    fn reply<'a>(&'a self, _: &'a str, _: &'a str, _: Option<&'a str>, rc: u8, body: &'a str) -> BusFuture<'a, MixResult<()>> {
-        Box::pin(async move { if rc != 0 && self.error.borrow().is_none() { *self.error.borrow_mut() = Some(body.into()); } Ok(()) })
+    fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> {
+        Box::pin(async { None })
+    }
+    fn reply<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: Option<&'a str>,
+        rc: u8,
+        body: &'a str,
+    ) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async move {
+            if rc != 0 && self.error.borrow().is_none() {
+                *self.error.borrow_mut() = Some(body.into());
+            }
+            Ok(())
+        })
     }
 }

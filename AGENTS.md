@@ -7,10 +7,10 @@ desktop-only ownership is superseded. Mix/mixd separation is future work.
 
 ## Current scope
 
-Only a source seed and workspace preparation exist. Feature implementation is
-on hold. No runtime, shell replacement or app port is implemented or accepted
-by this import. Seed library checks are permitted; do not start engine work,
-install or deploy until Mark resumes implementation.
+Mark resumed implementation on 2026-11-05. The isolated lab branch implements
+the first bounded client-runtime/Quoin specimen. Prototype code stays on the
+lab branch for an independent whole-specimen survey; do not merge it into main.
+No production install, engine migration or desktop replacement is authorised.
 
 Application/compound-widget composition and behaviour start in Mix. Do not
 assign future UI to Rust because it looks dense or complicated. A particular

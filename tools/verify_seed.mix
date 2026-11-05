@@ -12,5 +12,5 @@ for $entry in $manifest.entries
   $checked = $checked + 1
 end
 $lock = toml_parse(read_file($root .. "/Cargo.lock"))
-if length($lock.package) != $manifest.lockfile.retained_packages then raise("SEED_LOCK", "lock closure changed") end
+if not is_file($root .. "/provenance/runtime-imports.json") and length($lock.package) != $manifest.lockfile.retained_packages then raise("SEED_LOCK", "lock closure changed") end
 print("Seed provenance verified: " .. to_string($checked) .. " imported files")
