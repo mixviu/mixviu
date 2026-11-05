@@ -126,12 +126,12 @@ impl Native {
                         PromptKind::Rename => "rename",
                     }
                     .into();
-                    self.form = json!({"open":true,"title":if kind==PromptKind::NewFolder{"New folder"}else{"Rename"},"body":"","field":initial,"instance":token,"error":"","choices":[{"id":"cancel","label":"Cancel","enabled":true},{"id":"ok","label":"OK","enabled":true}]});
+                    self.form = json!({"open":true,"title":if kind==PromptKind::NewFolder{"New folder"}else{"Rename"},"body":"","field":initial,"instance":token,"error":"","choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"OK","enabled":true,"default":true}]});
                 }
                 CoreEvent::ConfirmRequested { token, message } => {
                     self.token = token;
                     self.form_kind = "delete".into();
-                    self.form = json!({"open":true,"title":"Delete permanently","body":message,"field":null,"instance":token,"error":"","choices":[{"id":"cancel","label":"Cancel","enabled":true},{"id":"ok","label":"Delete","enabled":true}]});
+                    self.form = json!({"open":true,"title":"Delete permanently","body":message,"field":null,"instance":token,"error":"","choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"Delete","enabled":true,"default":true}]});
                 }
                 CoreEvent::Status {
                     kind: dopus_core::StatusKind::Message,
@@ -337,7 +337,7 @@ impl Native {
                         .collect::<Vec<_>>()
                         .join("\n")
                 };
-                self.form = json!({"open":true,"title":if id=="help.about"{"About Dopus"}else{"Keyboard shortcuts"},"body":body,"field":null,"instance":self.token,"choices":[{"id":"cancel","label":"Cancel","enabled":true},{"id":"ok","label":"OK","enabled":true}]});
+                self.form = json!({"open":true,"title":if id=="help.about"{"About Dopus"}else{"Keyboard shortcuts"},"body":body,"field":null,"instance":self.token,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"OK","enabled":true,"default":true}]});
             }
             "search" => {
                 self.focus = Some(format!(
@@ -570,7 +570,7 @@ impl Native {
                     self.drop_request = Some(v.clone());
                     self.form_kind = "drop".into();
                     self.token += 1;
-                    self.form = json!({"open":true,"title":"Transfer items","body":"Move or copy the dragged items?","field":null,"instance":self.token,"choices":[{"id":"cancel","label":"Cancel","enabled":true},{"id":"move","label":"Move","enabled":true},{"id":"copy","label":"Copy","enabled":true}]});
+                    self.form = json!({"open":true,"title":"Transfer items","body":"Move or copy the dragged items?","field":null,"instance":self.token,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"move","label":"Move","enabled":true},{"id":"copy","label":"Copy","enabled":true}]});
                 }
                 _ => return Err("Unknown tree action".into()),
             }
@@ -634,7 +634,7 @@ impl Native {
                 }
                 Ok(self.appearance.clone())
             }
-            "dopus.quit" => {
+            "dopus.quit" | "dopus.persist" => {
                 self.core_mut().flush_config();
                 Ok(json!({"ok":true}))
             }

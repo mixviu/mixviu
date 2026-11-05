@@ -63,7 +63,7 @@ end
 fn dp_form($s,$kind,$title,$body,$field,$operation)
   if $s.form.open then raise("BUSY","Answer the current dialog first") end
   $s.next_token=$s.next_token+1
-  $s.form={open:true,title:$title,body:$body,field:$field,instance:$s.next_token,error:"",choices:[{id:"cancel",label:"Cancel",enabled:true},{id:"ok",label:if $kind=="delete" then "Delete" else "OK" end,enabled:true}]}
+  $s.form={open:true,title:$title,body:$body,field:$field,instance:$s.next_token,error:"",choices:[{id:"cancel",label:"Cancel",enabled:true,cancel:true},{id:"ok",label:if $kind=="delete" then "Delete" else "OK" end,enabled:true,default:true}]}
   $s.reservation={kind:$kind,operation:$operation}
   return $s
 end
@@ -172,7 +172,7 @@ fn dp_intent($s,$contract,$a)
     elif $action=="drop" then
       if $s.busy then raise("BUSY","Another file operation is still running") end
       $s=dp_form($s,"drop","Transfer items","Move or copy the dragged items?",nil,{sources:$value.keys,destination:$value.destination})
-      $s.form.choices=[{id:"cancel",label:"Cancel",enabled:true},{id:"move",label:"Move",enabled:true},{id:"copy",label:"Copy",enabled:true}]
+      $s.form.choices=[{id:"cancel",label:"Cancel",enabled:true,cancel:true},{id:"move",label:"Move",enabled:true},{id:"copy",label:"Copy",enabled:true}]
     elif $action!="activate-pane" then raise("INVALID_ARGUMENT","Unknown tree action") end
     return $s
   end

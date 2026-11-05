@@ -38793,7 +38793,6 @@ mod char_aware_tests {
     #[cfg(feature = "crypto")]
     #[test]
     fn broken_digests_carry_the_warning() {
-        #[cfg(feature = "crypto")]
         for &algo in super::DigestAlgo::ALL {
             let name = format!("hash_{}", algo.name());
             let name = name.as_str();
@@ -41209,6 +41208,7 @@ mod strict_write_and_bool_option_tests {
             .contract
             .arg_hint("algo")
             .expect("hash_file's algo argument declares a gate hint");
+        #[cfg(feature = "crypto")]
         for &algo in super::DigestAlgo::ALL {
             assert!(
                 hint.contains(algo.name()),

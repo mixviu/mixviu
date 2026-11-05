@@ -6,7 +6,7 @@ mod tests;
 use eframe::egui;
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     path::PathBuf,
     sync::{Arc, atomic::Ordering},
     time::Instant,
@@ -30,6 +30,7 @@ struct App {
     app_dir: PathBuf,
     mode: String,
     pending: BTreeMap<u64, Reply>,
+    inflight:BTreeSet<u64>,
     input: input::Input,
     input_replies: Vec<Reply>,
     input_wait: bool,
@@ -92,7 +93,7 @@ impl App {
         reply: Option<Reply>,
         ctx: &egui::Context,
     ) {
-        self.save_at = Some(Instant::now() + std::time::Duration::from_millis(350));
+        if !matches!(command.as_str(),"dopus.persist"|"dopus.quit") { self.save_at = Some(Instant::now() + std::time::Duration::from_millis(350)); }
         if let Some(runtime) = &mut self.runtime {
             match runtime.event_with_headers(
                 "dopus.call".into(),
@@ -100,6 +101,7 @@ impl App {
                 headers,
             ) {
                 Ok(seq) => {
+                    self.inflight.insert(seq);
                     if let Some(reply) = reply {
                         self.pending.insert(seq, reply);
                     }
@@ -256,6 +258,7 @@ impl App {
         let results = self.runtime.as_mut().map(|r| r.drain()).unwrap_or_default();
         for result in results {
             let reply = self.pending.remove(&result.sequence);
+            self.inflight.remove(&result.sequence);
             if self
                 .runtime
                 .as_ref()
@@ -305,7 +308,8 @@ impl App {
                 self.notices.push_back(viu::native_bus::Notice{command:"dopus.job.completed".into(),args:json!({"tag":done.tag,"rc":done.rc,"body":done.body,"elapsed_us":done.elapsed_us}),headers:BTreeMap::new()});
             }
         }
-        while let Ok(notice) = self.bus.notices.try_recv() {
+        while self.notices.len()<64 {
+            let Ok(notice)=self.bus.notices.try_recv() else {break;};
             self.notices.push_back(notice);
         }
         if let Some(runtime) = &mut self.runtime {
@@ -368,7 +372,7 @@ impl eframe::App for App {
         for event in events {
             self.call(event.command, event.body, BTreeMap::new(), None, ctx);
         }
-        for action in input::Input::shortcuts(ctx, &self.contract) {
+        for action in input::Input::shortcuts(ctx, &self.contract,self.model["values"]["form"]["open"]==true||self.view.as_ref().is_some_and(|v|v.text_input_active())) {
             if let Some(key) = action["tree_navigation"].as_str() {
                 let side = if self.model["active"] == 0 {
                     "left"
@@ -384,7 +388,7 @@ impl eframe::App for App {
             if let Some(next) = self.input.later.pop_front() {
                 self.input.now = next;
                 ctx.request_repaint();
-            } else if self.input_wait && self.pending.is_empty() {
+            } else if self.input_wait && self.inflight.is_empty() {
                 self.input_wait = false;
                 let answer = self.state();
                 for reply in self.input_replies.drain(..) {
@@ -397,7 +401,8 @@ impl eframe::App for App {
             let _ = reply.send((0, answer.clone()));
         }
         if self.save_at.is_some_and(|t| t <= Instant::now()) {
-            self.save_at = None; /* Persistence is flushed explicitly at close until settle callback is wired. */
+            self.save_at = None;
+            self.call("dopus.persist".into(),json!({}),BTreeMap::new(),None,ctx);
         } else if let Some(at) = self.save_at {
             ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
         }
@@ -539,6 +544,7 @@ fn main() -> eframe::Result {
                 app_dir,
                 mode,
                 pending: BTreeMap::new(),
+                inflight:BTreeSet::new(),
                 input: input::Input::default(),
                 input_replies: Vec::new(),
                 input_wait: false,

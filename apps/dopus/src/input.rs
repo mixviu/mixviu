@@ -151,14 +151,14 @@ impl Input {
         self.now = now;
         Ok(())
     }
-    pub fn shortcuts(ctx: &egui::Context, contract: &Value) -> Vec<Value> {
-        if ctx.wants_keyboard_input() {
+    pub fn shortcuts(ctx: &egui::Context, contract: &Value, text_input_active: bool) -> Vec<Value> {
+        if text_input_active {
             return Vec::new();
         }
         ctx.input(|input|{
             let mut found=Vec::new();for event in &input.events {if let egui::Event::Key{key,pressed:true,modifiers,repeat:false,..}=event{
                 let name=key.name();
-                for action in contract["actions"].as_array().into_iter().flatten(){for binding in action["keys"].as_array().into_iter().flatten().filter_map(Value::as_str){let parts=binding.split('+').collect::<Vec<_>>();if parts.last()==Some(&name)&&parts.contains(&"Ctrl")==modifiers.ctrl&&parts.contains(&"Shift")==modifiers.shift&&parts.contains(&"Alt")==modifiers.alt{found.push(serde_json::json!({"id":action["id"],"params":{"ctrl":modifiers.ctrl,"shift":modifiers.shift}}));}}}
+                for action in contract["actions"].as_array().into_iter().flatten(){for binding in action["keys"].as_array().into_iter().flatten().filter_map(Value::as_str){let parts=binding.split('+').collect::<Vec<_>>();if parts.last()==Some(&name)&&((action["id"].as_str().is_some_and(|id|id.starts_with("selection."))&&!modifiers.alt)||(parts.contains(&"Ctrl")==modifiers.ctrl&&parts.contains(&"Shift")==modifiers.shift&&parts.contains(&"Alt")==modifiers.alt)){found.push(serde_json::json!({"id":action["id"],"params":{"ctrl":modifiers.ctrl,"shift":modifiers.shift}}));}}}
                 if ["ArrowLeft","ArrowRight"].contains(&name)&&!modifiers.alt&&!modifiers.ctrl{found.push(serde_json::json!({"tree_navigation":name,"ctrl":modifiers.ctrl,"shift":modifiers.shift}));}
             }}found
         })

@@ -45,7 +45,7 @@ on dopus.call
           if $a.text!=nil then $candidate.form.field=$a.text end
           $candidate=$app.dp_answer($candidate,$a.choice)
         end
-      elif $name=="dopus.quit" then $candidate=$app.dp_persist($candidate)
+      elif $name=="dopus.quit" or $name=="dopus.persist" then $candidate=$app.dp_persist($candidate)
       else raise("UNKNOWN_COMMAND",$name) end
       $candidate.serial=$candidate.serial+1
       $state=$candidate
