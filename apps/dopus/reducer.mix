@@ -185,7 +185,7 @@ fn dp_action($s,$contract,$id,$params)
     $s.panes[$i]=$dp.dp_select_key($p,$keys[slice($id,10)],$params.ctrl ?? false,$params.shift ?? false)
   elif $id=="file.new-folder" then return dp_form($s,"mkdir","New folder","", "New Folder",{kind:"mkdir",destination:$p.path})
   elif $id=="file.rename" then return dp_form($s,"rename","Rename","",basename($p.selected),{kind:"rename",source:$p.selected})
-  elif $id=="file.delete" then return dp_form($s,"delete","Delete permanently","Permanently delete the selected items?\n\n"..join($dp.dp_sources($p),"\n").."\n\nThis cannot be undone.",nil,{kind:"delete",sources:$dp.dp_sources($p)})
+  elif $id=="file.delete" then return dp_form($s,"delete","Delete permanently","Permanently delete the selected items?\n\n"..join(map($dp.dp_sources($p),fn($path)=$dp.dp_display($path)),"\n").."\n\nThis cannot be undone.",nil,{kind:"delete",sources:$dp.dp_sources($p)})
   elif $id=="file.copy-other-pane" or $id=="file.move-other-pane" then return dp_start_operation($s,{kind:if $id=="file.copy-other-pane" then "copy" else "move" end,sources:$dp.dp_sources($p),destination:$s.panes[1-$i].path})
   elif $id=="file.open" then
     $entry=filter($p.entries,fn($r)=$r.path==$p.selected)[0]

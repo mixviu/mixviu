@@ -27,9 +27,11 @@ end
 fn macro_detail($s)
   $m=macro_rpc("get",{id:$s.id});$status=macro_rpc("status",{})
   $choices=[{id:"back",label:"Back",enabled:true,cancel:true},macro_choice("run","Run"),macro_choice("edit","Edit source"),macro_choice("output","Output / Stop")]
+  $entry=filter(macro_rpc("list",{}).macros,fn($entry)=$entry.id==$s.id)[0]
+  if $entry!=nil and $entry.targets!=nil then push($choices,macro_choice("run-target","Run for another app")) end
   if starts_with($m.tier,"builtin-") then push($choices,macro_choice("copy","Copy to user tier"))
   else
-    push($choices,macro_choice("remove","Delete"));push($choices,macro_choice("move-global","Move to global"));push($choices,macro_choice("move-app","Move to this app"))
+    push($choices,macro_choice("remove","Delete"));push($choices,macro_choice("move-global","Move to global"));push($choices,macro_choice("move-app","Move to this app"));push($choices,macro_choice("move-other","Move to another app"))
   end
   return macro_form($s,"detail",$s.id,$m.path.."\nTier: "..$m.tier.."\nRun: "..json_encode($status),nil,$choices)
 end
@@ -47,10 +49,14 @@ fn macro_answer($s,$choice)
   if $choice=="new" then return macro_form($s,"new","New macro","Macro title","",[{id:"back",label:"Cancel",enabled:true,cancel:true},{id:"create",label:"Create",enabled:true,default:true}]) end
   if $choice=="create" then $m=macro_rpc("new",{title:$s.form.field});$s.id=$m.id;return macro_detail($s) end
   if $choice=="run" then macro_rpc("run",{id:$s.id});return macro_output($s) end
+  if $choice=="run-target" then return macro_form($s,"target","Run for another app","Enter an app allowed by the macro's target header.","",[{id:"back",label:"Cancel",enabled:true,cancel:true},{id:"run-on",label:"Run",enabled:true,default:true}]) end
+  if $choice=="run-on" then macro_rpc("run",{id:$s.id,target:$s.form.field});return macro_output($s) end
   if $choice=="copy" then macro_rpc("copy",{id:$s.id});return macro_detail($s) end
   if $choice=="move-global" or $choice=="move-app" then
     macro_rpc("move",{id:$s.id,tier:if $choice=="move-global" then "user-global" else "user-app" end});return macro_detail($s)
   end
+  if $choice=="move-other" then return macro_form($s,"destination","Move to another app","Destination app ID. The macro leaves this app's catalogue.","",[{id:"back",label:"Cancel",enabled:true,cancel:true},{id:"move-to",label:"Move",enabled:true,default:true}]) end
+  if $choice=="move-to" then macro_rpc("move",{id:$s.id,tier:"user-app",destination:$s.form.field});$s.id=nil;return macro_catalogue($s) end
   if $choice=="remove" then return macro_form($s,"remove","Delete macro",$s.id.." will be deleted permanently.",nil,[{id:"back",label:"Cancel",enabled:true,cancel:true},macro_choice("confirm-remove","Delete")]) end
   if $choice=="confirm-remove" then macro_rpc("remove",{id:$s.id});$s.id=nil;return macro_catalogue($s) end
   if $choice=="edit" then

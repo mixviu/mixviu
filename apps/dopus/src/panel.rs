@@ -75,11 +75,15 @@ impl Panel {
         let mut failed = None;
         for result in self.worker.drain() {
             let reply = self.pending.remove(&result.sequence).flatten();
-            let action_error = reply.is_none().then(|| {
-                result.reply.as_ref().and_then(|reply| {
-                    (reply.rc >= 10).then(|| reply.body.to_string())
+            let action_error = reply
+                .is_none()
+                .then(|| {
+                    result
+                        .reply
+                        .as_ref()
+                        .and_then(|reply| (reply.rc >= 10).then(|| reply.body.to_string()))
                 })
-            }).flatten();
+                .flatten();
             let error = result.error.or_else(|| {
                 (result.generation != self.worker.generation()).then(|| "STALE_GENERATION".into())
             });
@@ -179,9 +183,13 @@ mod tests {
         let entry = session.catalogue().unwrap().entries[0].clone();
         assert_eq!(answer(&mut panel, "edit", Value::Null).0, 0);
         let instance = panel.form["instance"].clone();
-        let source = "-- title: Panel sample\nprint(42)\n";
+        let source = "-- title: Panel sample\n-- target: email\nprint(42)\n";
         assert_eq!(answer(&mut panel, "save", json!(source)).0, 0);
         assert_eq!(std::fs::read_to_string(&entry.path).unwrap(), source);
+        assert_eq!(answer(&mut panel, "run-target", Value::Null).0, 0);
+        assert_eq!(answer(&mut panel, "run-on", json!("forbidden-app")).0, 10);
+        assert_eq!(answer(&mut panel, "back", Value::Null).0, 0);
+        assert_eq!(answer(&mut panel, &format!("select:{}", entry.id), Value::Null).0, 0);
         assert_eq!(
             call(
                 &mut panel,
@@ -194,9 +202,23 @@ mod tests {
         assert_eq!(answer(&mut panel, "remove", Value::Null).0, 0);
         assert_eq!(answer(&mut panel, "confirm-remove", Value::Null).0, 0);
         assert!(!entry.path.exists());
+        assert_eq!(answer(&mut panel, "new", Value::Null).0, 0);
+        assert_eq!(answer(&mut panel, "create", json!("Moved sample")).0, 0);
+        let moved = session.catalogue().unwrap().entries[0].clone();
+        assert_eq!(answer(&mut panel, "move-other", Value::Null).0, 0);
+        assert_eq!(answer(&mut panel, "move-to", json!("email")).0, 0);
+        assert!(!moved.path.exists());
+        assert!(dir.path().join("user/email").join(moved.path.file_name().unwrap()).is_file());
         assert_eq!(answer(&mut panel, "close", Value::Null).0, 0);
         assert_eq!(panel.form["open"], false);
-        assert!(panel.call(json!({"command":"answer","choice":"remove","instance":"expired"}), None).is_ok());
+        assert!(
+            panel
+                .call(
+                    json!({"command":"answer","choice":"remove","instance":"expired"}),
+                    None
+                )
+                .is_ok()
+        );
         let until = std::time::Instant::now() + std::time::Duration::from_secs(8);
         loop {
             let (_, error) = panel.poll();
@@ -204,7 +226,10 @@ mod tests {
                 assert!(error.contains("STALE"), "{error}");
                 break;
             }
-            assert!(std::time::Instant::now() < until, "UI refusal was not surfaced");
+            assert!(
+                std::time::Instant::now() < until,
+                "UI refusal was not surfaced"
+            );
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         session.shutdown().unwrap();
