@@ -9,7 +9,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         mpsc,
     },
     thread::JoinHandle,
@@ -25,6 +25,8 @@ pub struct Request {
     /// An application can request close for this reply. The owner acts only
     /// after the successful response has actually crossed the native transport.
     pub close_after_reply: Arc<AtomicBool>,
+    /// 0 pending, 1 reply crossed the transport, 2 delivery failed/cancelled.
+    pub delivery: Arc<AtomicU8>,
 }
 pub struct Notice {
     pub command: String,
@@ -69,9 +71,11 @@ impl Endpoint {
                 let mut state=native.subscribe_state();
                 let post=|notice:Notice|{if notice_tx.try_send(notice).is_err(){dropped.fetch_add(1,Ordering::Relaxed);}wake();};
                 post(Notice{command:"bus.connected".into(),args:json!({}),headers:BTreeMap::new()});
+                let mut responses=tokio::task::JoinSet::new();
                 loop{
                     let event=tokio::select!{
                         _=&mut stopped=>break,
+                        _=responses.join_next(),if !responses.is_empty()=>continue,
                         changed=state.changed()=>{if changed.is_err(){break;}let connected=native.is_connected();post(Notice{command:if connected{"bus.connected"}else{"bus.disconnected"}.into(),args:json!({"generation":native.connection_generation()}),headers:BTreeMap::new()});continue;},
                         event=incoming.recv()=>match event{Some(event)=>event,None=>break}
                     };
@@ -81,16 +85,23 @@ impl Endpoint {
                     };
                     if command.id.is_none(){post(Notice{command:command.topic().unwrap_or(&command.command).to_owned(),args:command.args,headers:command.headers});continue;}
                     if close.load(Ordering::Acquire){let _=native.respond(&command,10,&json!({"error_code":"CLOSING"}).to_string()).await;continue;}
+                    if responses.len()>=32{let _=native.respond(&command,10,&json!({"error_code":"BUSY"}).to_string()).await;continue;}
                     let (reply,response)=oneshot::channel();
                     let close_after_reply=Arc::new(AtomicBool::new(false));
-                    let request=Request{command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone()};
-                    let answer=match tx.try_send(request){
-                        Ok(())=>{wake();tokio::select!{_=&mut stopped=>break,result=tokio::time::timeout(Duration::from_secs(10),response)=>match result{Ok(Ok(value))=>value,_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}},
-                        Err(_)=>(10,json!({"error_code":"BUSY"}))
-                    };
-                    let sent=native.respond(&command,answer.0,&answer.1.to_string()).await;
-                    if (command.command==quit_command||close_after_reply.load(Ordering::Acquire))&&answer.0==0&&sent.is_ok(){close.store(true,Ordering::Release);wake();}
+                    let delivery=Arc::new(AtomicU8::new(0));
+                    let request=Request{command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
+                    let admitted=tx.try_send(request).is_ok();
+                    if admitted{wake();}
+                    let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;
+                    responses.spawn(async move{
+                        let ack=Delivery{state:delivery,wake:wake.clone()};
+                        let answer=if admitted{match tokio::time::timeout(Duration::from_secs(10),response).await{Ok(Ok(value))=>value,_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
+                        let sent=matches!(tokio::time::timeout(Duration::from_secs(2),native.respond(&command,answer.0,&answer.1.to_string())).await,Ok(Ok(())));
+                        ack.state.store(if sent{1}else{2},Ordering::Release);wake();
+                        if (quit||close_after_reply.load(Ordering::Acquire))&&answer.0==0&&sent{close.store(true,Ordering::Release);wake();}
+                    });
                 }
+                responses.abort_all();while responses.join_next().await.is_some(){}
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=None;
                 native.close().await;
             });
@@ -124,6 +135,10 @@ impl Endpoint {
             .unwrap_or_else(|e| e.into_inner())
             .clone()
     }
+}
+struct Delivery{state:Arc<AtomicU8>,wake:crate::runtime::Wake}
+impl Drop for Delivery{
+    fn drop(&mut self){let _=self.state.compare_exchange(0,2,Ordering::AcqRel,Ordering::Acquire);(self.wake)();}
 }
 impl Drop for Endpoint {
     fn drop(&mut self) {

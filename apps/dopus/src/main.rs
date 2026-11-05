@@ -255,6 +255,7 @@ impl App {
             headers,
             reply,
             close_after_reply,
+            ..
         } = r;
         if let Some(suffix) = command.strip_prefix("dopus.macros.") {
             self.effect_next += 1;

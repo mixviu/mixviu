@@ -130,6 +130,7 @@ mod tests {
             let (_, error) = panel.poll();
             assert!(error.is_none(), "{error:?}");
             if let Ok(answer) = rx.try_recv() {
+                eprintln!("macro panel answer: {answer:?}");
                 return answer;
             }
             assert!(std::time::Instant::now() < until, "panel did not answer");

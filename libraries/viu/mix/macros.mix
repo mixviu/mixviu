@@ -86,8 +86,10 @@ on macros.call
       end
       $s=macro_answer($s,$a.choice)
     elif $a.command=="refresh" then
+      $instance=$s.form.instance
       if $s.page=="output" then $s=macro_output($s)
       elif $s.page=="detail" then $s=macro_detail($s) end
+      $s.form.instance=$instance
     else raise("UNKNOWN_COMMAND","Unknown macro panel command") end
     $panel=$s;macro_publish($panel);reply(0,json_encode({ok:true}))
   catch $message,$error
