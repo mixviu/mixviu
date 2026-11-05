@@ -95,11 +95,15 @@ fn virtual_table_data_has_a_separate_bounded_transactional_model_budget() {
             "key":"files","columns":[{"id":"name","label":"Name"}],"rows":[]
         }
     }}}));
-    let rows: Vec<_> = (0..2000).map(|index| json!({
-        "key":format!("/example/{}/{index}", "long-directory/".repeat(12)),
-        "cells":[format!("item-{index}.txt")],"depth":0,"branch":false,
-        "expanded":false,"selected":false,"focused":false
-    })).collect();
+    let rows: Vec<_> = (0..2000)
+        .map(|index| {
+            json!({
+                "key":format!("/example/{}/{index}", "long-directory/".repeat(12)),
+                "cells":[format!("item-{index}.txt")],"depth":0,"branch":false,
+                "expanded":false,"selected":false,"focused":false
+            })
+        })
+        .collect();
     let model = json!({"values":{"root":{"key":"files","columns":[{"id":"name","label":"Name"}],"rows":rows}}});
     assert!(serde_json::to_vec(&model).unwrap().len() > scene::MAX_DOCUMENT_BYTES);
     let mut view = SceneView::new(&source).unwrap();
@@ -108,7 +112,11 @@ fn virtual_table_data_has_a_separate_bounded_transactional_model_budget() {
     SceneView::with_model(&source, model.clone()).unwrap();
     let mut oversized = model.clone();
     oversized["padding"] = json!("x".repeat(viu::view::MAX_MODEL_BYTES));
-    assert!(view.apply_model(oversized.clone()).unwrap_err().contains("data budget"));
+    assert!(
+        view.apply_model(oversized.clone())
+            .unwrap_err()
+            .contains("data budget")
+    );
     assert!(SceneView::with_model(&source, oversized).is_err());
     assert_eq!(view.revision, 1);
     assert_eq!(view.model(), &model);

@@ -683,7 +683,11 @@ impl Native {
                         );
                     }
                     if action == "activate" {
-                        let folder = self.core().visible_rows(p).iter().any(|r| r.entry.path == path && r.entry.is_dir);
+                        let folder = self
+                            .core()
+                            .visible_rows(p)
+                            .iter()
+                            .any(|r| r.entry.path == path && r.entry.is_dir);
                         if folder {
                             self.core_mut().toggle_expand(p, &path);
                         } else {

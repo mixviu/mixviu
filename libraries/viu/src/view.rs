@@ -113,8 +113,14 @@ impl SceneView {
     pub fn apply_model(&mut self, model: Value) -> Result<(), String> {
         validate_model_budget(&model)?;
         let set = scene::bindings::BindingSet::from_resolved(&self.tree);
-        let evaluated = scene::bindings::reevaluate_with_model_limit(&self.tree, &set, "model", &model, MAX_MODEL_BYTES)
-            .map_err(|e| format!("{e:?}"))?;
+        let evaluated = scene::bindings::reevaluate_with_model_limit(
+            &self.tree,
+            &set,
+            "model",
+            &model,
+            MAX_MODEL_BYTES,
+        )
+        .map_err(|e| format!("{e:?}"))?;
         if !evaluated.diagnostics.is_empty() {
             return Err(format!("{:?}", evaluated.diagnostics));
         }
