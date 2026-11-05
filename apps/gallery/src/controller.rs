@@ -60,8 +60,8 @@ pub fn apply(model: &mut Value, action: &Value) {
     let id = action["id"].as_str().unwrap();
     match action["action"].as_str().unwrap() {
         "set" | "submit" => model["values"][id] = action["value"].clone(),
-        "expand"=>model["expanded"][id]=action["value"].clone(),
-        "sort"=>model["sorted"][id]=action["value"].clone(),
+        "expand" => model["expanded"][id] = action["value"].clone(),
+        "sort" => model["sorted"][id] = action["value"].clone(),
         "accept" | "cancel" => {
             model["values"][id] = json!(false);
             model["activations"] = json!(model["activations"].as_u64().unwrap() + 1);
@@ -89,7 +89,9 @@ pub fn validate(widgets: &[Widget], body: &Value) -> Result<(), String> {
     if action == "set" || action == "submit" {
         widget.validate(&body["value"])?;
     }
-    if (action=="expand"||action=="sort")&&!body["value"].is_boolean(){return Err("expand/sort requires bool value".into());}
+    if (action == "expand" || action == "sort") && !body["value"].is_boolean() {
+        return Err("expand/sort requires bool value".into());
+    }
     Ok(())
 }
 pub fn actions(w: &Widget) -> Vec<&'static str> {
@@ -103,7 +105,11 @@ pub fn actions(w: &Widget) -> Vec<&'static str> {
     if w.kind == "dialog" {
         actions.extend(["accept", "cancel"]);
     }
-    if w.kind=="tree" {actions.push("expand");}
-    if w.kind=="table" {actions.push("sort");}
+    if w.kind == "tree" {
+        actions.push("expand");
+    }
+    if w.kind == "table" {
+        actions.push("sort");
+    }
     actions
 }

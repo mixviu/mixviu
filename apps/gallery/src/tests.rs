@@ -41,7 +41,11 @@ fn independent_mix_composition_and_every_action_match_rust() {
                 "colour" => json!([200, 80, 20]),
                 _ => json!("Changed"),
             };
-            let value=if action=="expand"||action=="sort" {json!(true)}else{value};
+            let value = if action == "expand" || action == "sort" {
+                json!(true)
+            } else {
+                value
+            };
             let intent = json!({"id":widget.id,"action":action,"value":value});
             controller::validate(&widgets, &intent).unwrap();
             controller::apply(&mut expected, &intent);

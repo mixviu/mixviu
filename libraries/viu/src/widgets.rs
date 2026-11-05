@@ -226,21 +226,27 @@ impl Widgets {
                 r
             }
             "radio" | "tabs" => {
-                let response=ui.horizontal(|ui| {
-                    for option in ["Alpha", "Beta", "Gamma"] {
-                        let r = if widget.kind == "radio" {
-                            ui.radio(value == option, option)
-                        } else {
-                            ui.selectable_label(value == option, option)
-                        };
-                        self.remember(ui, &format!("{id}.{option}"), &r);
-                        if r.clicked() {
-                            changed = Some(json!(option));
+                let response = ui
+                    .horizontal(|ui| {
+                        for option in ["Alpha", "Beta", "Gamma"] {
+                            let r = if widget.kind == "radio" {
+                                ui.radio(value == option, option)
+                            } else {
+                                ui.selectable_label(value == option, option)
+                            };
+                            self.remember(ui, &format!("{id}.{option}"), &r);
+                            if r.clicked() {
+                                changed = Some(json!(option));
+                            }
                         }
-                    }
-                })
-                .response;
-                if widget.kind=="tabs" {ui.small(format!("{} page content",value.as_str().unwrap_or("Alpha")));}
+                    })
+                    .response;
+                if widget.kind == "tabs" {
+                    ui.small(format!(
+                        "{} page content",
+                        value.as_str().unwrap_or("Alpha")
+                    ));
+                }
                 response
             }
             "slider" | "number" | "split" => {
@@ -299,52 +305,88 @@ impl Widgets {
                     .response
             }
             "list" | "table" | "tree" => {
-                if widget.kind=="table" {
-                    let reversed=model["sorted"][id].as_bool().unwrap_or(false);
-                    let header=ui.button(if reversed {"Name ↓                         Size"}else{"Name ↑                         Size"});
-                    self.remember(ui,&format!("{id}.sort"),&header);
-                    if header.clicked(){events.push(Intent{id:id.clone(),action:"sort".into(),value:json!(!reversed)});}
+                if widget.kind == "table" {
+                    let reversed = model["sorted"][id].as_bool().unwrap_or(false);
+                    let header = ui.button(if reversed {
+                        "Name ↓                         Size"
+                    } else {
+                        "Name ↑                         Size"
+                    });
+                    self.remember(ui, &format!("{id}.sort"), &header);
+                    if header.clicked() {
+                        events.push(Intent {
+                            id: id.clone(),
+                            action: "sort".into(),
+                            value: json!(!reversed),
+                        });
+                    }
                 }
-                let expanded=model["expanded"][id].as_bool().unwrap_or(true);
-                if widget.kind=="tree" {
-                    let header=ui.button(if expanded {"▾ Example folder"}else{"▸ Example folder"});
-                    self.remember(ui,&format!("{id}.expand"),&header);
-                    if header.clicked(){events.push(Intent{id:id.clone(),action:"expand".into(),value:json!(!expanded)});}
+                let expanded = model["expanded"][id].as_bool().unwrap_or(true);
+                if widget.kind == "tree" {
+                    let header = ui.button(if expanded {
+                        "▾ Example folder"
+                    } else {
+                        "▸ Example folder"
+                    });
+                    self.remember(ui, &format!("{id}.expand"), &header);
+                    if header.clicked() {
+                        events.push(Intent {
+                            id: id.clone(),
+                            action: "expand".into(),
+                            value: json!(!expanded),
+                        });
+                    }
                 }
                 let area = egui::ScrollArea::vertical()
                     .id_salt(id)
                     .max_height(54.0)
                     .auto_shrink([false, false])
-                    .show_rows(ui, 16.0, if widget.kind=="tree"&&!expanded {0}else{1000}, |ui, range| {
-                        for row in range {
-                            let row=if widget.kind=="table"&&model["sorted"][id]==true {999-row}else{row};
-                            let text = match widget.kind.as_str() {
-                                "table" => format!("Item {row:04}                 {} KiB", row + 1),
-                                "tree" => format!("    · Item {row:04}"),
-                                _ => format!("Item {row:04}"),
-                            };
-                            let r = ui.selectable_label(value.as_u64() == Some(row as u64), text);
-                            self.remember(ui, &format!("{id}.{row}"), &r);
-                            if r.clicked() {
-                                changed = Some(json!(row));
-                            }
-                            if r.double_clicked() {
-                                events.push(Intent {
-                                    id: id.clone(),
-                                    action: "activate".into(),
-                                    value: json!(row),
+                    .show_rows(
+                        ui,
+                        16.0,
+                        if widget.kind == "tree" && !expanded {
+                            0
+                        } else {
+                            1000
+                        },
+                        |ui, range| {
+                            for row in range {
+                                let row = if widget.kind == "table" && model["sorted"][id] == true {
+                                    999 - row
+                                } else {
+                                    row
+                                };
+                                let text = match widget.kind.as_str() {
+                                    "table" => {
+                                        format!("Item {row:04}                 {} KiB", row + 1)
+                                    }
+                                    "tree" => format!("    · Item {row:04}"),
+                                    _ => format!("Item {row:04}"),
+                                };
+                                let r =
+                                    ui.selectable_label(value.as_u64() == Some(row as u64), text);
+                                self.remember(ui, &format!("{id}.{row}"), &r);
+                                if r.clicked() {
+                                    changed = Some(json!(row));
+                                }
+                                if r.double_clicked() {
+                                    events.push(Intent {
+                                        id: id.clone(),
+                                        action: "activate".into(),
+                                        value: json!(row),
+                                    });
+                                }
+                                r.context_menu(|ui| {
+                                    let choice = ui.button("Choose item");
+                                    self.remember(ui, &format!("{id}.{row}.choose"), &choice);
+                                    if choice.clicked() {
+                                        changed = Some(json!(row));
+                                        ui.close();
+                                    }
                                 });
                             }
-                            r.context_menu(|ui| {
-                                let choice=ui.button("Choose item");
-                                self.remember(ui,&format!("{id}.{row}.choose"),&choice);
-                                if choice.clicked() {
-                                    changed = Some(json!(row));
-                                    ui.close();
-                                }
-                            });
-                        }
-                    });
+                        },
+                    );
                 ui.interact(area.inner_rect, ui.scope_id().with(id), Sense::hover())
             }
             "collapse" => {

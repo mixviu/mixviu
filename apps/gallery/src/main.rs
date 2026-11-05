@@ -24,7 +24,7 @@ struct Gallery {
     pending: BTreeMap<u64, tokio::sync::oneshot::Sender<(u8, Value)>>,
     inflight: BTreeSet<u64>,
     input: Vec<egui::Event>,
-    later_input:std::collections::VecDeque<Vec<egui::Event>>,
+    later_input: std::collections::VecDeque<Vec<egui::Event>>,
     input_replies: Vec<tokio::sync::oneshot::Sender<(u8, Value)>>,
     witness: Option<PathBuf>,
     error: String,
@@ -90,8 +90,14 @@ impl Gallery {
             body,
             reply,
         } = request;
-        if let Some(suffix)=command.strip_prefix("gallery.widget.") {
-            if let Some((id,action))=suffix.split_once('.') {self.execute(json!({"id":id,"action":action,"value":body["value"]}),Some(reply));return;}
+        if let Some(suffix) = command.strip_prefix("gallery.widget.") {
+            if let Some((id, action)) = suffix.split_once('.') {
+                self.execute(
+                    json!({"id":id,"action":action,"value":body["value"]}),
+                    Some(reply),
+                );
+                return;
+            }
         }
         match command.as_str() {
             "gallery.state" | "gallery.ui.tree" => {
@@ -153,7 +159,8 @@ impl Gallery {
                     .ok_or("text limit is 4096 bytes")?;
                 self.input.push(egui::Event::Text(text.into()));
             }
-            "gallery.ui.focus" | "gallery.ui.hover" | "gallery.ui.click" | "gallery.ui.scroll" | "gallery.ui.drag"=> {
+            "gallery.ui.focus" | "gallery.ui.hover" | "gallery.ui.click" | "gallery.ui.scroll"
+            | "gallery.ui.drag" => {
                 let id = body["id"].as_str().ok_or("id required")?;
                 let rect = *self
                     .widgets
@@ -181,11 +188,29 @@ impl Gallery {
                             }
                         }
                     } else if command == "gallery.ui.drag" {
-                        let fraction=body["fraction"].as_f64().filter(|v|v.is_finite()&&(0.0..=1.0).contains(v)).ok_or("drag requires fraction 0..1")?;
-                        let start=rect.center();let end=egui::pos2(rect.left()+rect.width()*fraction as f32,rect.center().y);
-                        self.input.push(egui::Event::PointerButton{pos:start,button:egui::PointerButton::Primary,pressed:true,modifiers});
-                        self.later_input.push_back(vec![egui::Event::PointerMoved(end)]);
-                        self.later_input.push_back(vec![egui::Event::PointerButton{pos:end,button:egui::PointerButton::Primary,pressed:false,modifiers}]);
+                        let fraction = body["fraction"]
+                            .as_f64()
+                            .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
+                            .ok_or("drag requires fraction 0..1")?;
+                        let start = rect.center();
+                        let end = egui::pos2(
+                            rect.left() + rect.width() * fraction as f32,
+                            rect.center().y,
+                        );
+                        self.input.push(egui::Event::PointerButton {
+                            pos: start,
+                            button: egui::PointerButton::Primary,
+                            pressed: true,
+                            modifiers,
+                        });
+                        self.later_input
+                            .push_back(vec![egui::Event::PointerMoved(end)]);
+                        self.later_input.push_back(vec![egui::Event::PointerButton {
+                            pos: end,
+                            button: egui::PointerButton::Primary,
+                            pressed: false,
+                            modifiers,
+                        }]);
                     } else if command == "gallery.ui.scroll" {
                         let delta = body["delta"]
                             .as_f64()
@@ -225,7 +250,11 @@ impl Gallery {
 }
 impl eframe::App for Gallery {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, input: &mut egui::RawInput) {
-        if !self.input.is_empty(){input.events.append(&mut self.input);}else if let Some(mut later)=self.later_input.pop_front(){input.events.append(&mut later);}
+        if !self.input.is_empty() {
+            input.events.append(&mut self.input);
+        } else if let Some(mut later) = self.later_input.pop_front() {
+            input.events.append(&mut later);
+        }
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.completions();
@@ -253,13 +282,19 @@ impl eframe::App for Gallery {
             self.execute(event.encode(), None);
             ui.ctx().request_repaint();
         }
-        if self.input.is_empty() && self.later_input.is_empty() && self.inflight.is_empty() && self.widgets.focus.is_none() {
+        if self.input.is_empty()
+            && self.later_input.is_empty()
+            && self.inflight.is_empty()
+            && self.widgets.focus.is_none()
+        {
             let state = self.state();
             for reply in self.input_replies.drain(..) {
                 let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, state.clone()));
             }
         }
-        if !self.later_input.is_empty(){ui.ctx().request_repaint();}
+        if !self.later_input.is_empty() {
+            ui.ctx().request_repaint();
+        }
         // The witness is explicit diagnostic I/O, enabled only by the caller.
         if let Some(path) = &self.witness {
             let temporary = path.with_extension("tmp");
@@ -329,7 +364,7 @@ fn main() -> eframe::Result {
                 pending: BTreeMap::new(),
                 inflight: BTreeSet::new(),
                 input: Vec::new(),
-                later_input:std::collections::VecDeque::new(),
+                later_input: std::collections::VecDeque::new(),
                 input_replies: Vec::new(),
                 witness: std::env::var_os("VIU_GALLERY_WITNESS").map(PathBuf::from),
                 error: String::new(),
