@@ -1,7 +1,8 @@
 # Paired Viu widget galleries
 
-Two lab applications, independent Rust/Mix composition and controllers, using
-one `viu::widgets` implementation. Each requests a 740 x 820 logical-pixel
+Two lab applications with independent Rust/Mix composition and state reduction,
+shared Rust admission checks, and one `viu::widgets` implementation. Each
+requests a 740 x 820 logical-pixel
 client area, suitable for comparison on a desktop of at least 1536 x 864.
 Window captions distinguish the languages; the client content is identical.
 
@@ -45,8 +46,13 @@ controllers load the same explicit `rows.json` fixture as their data control.
 `gallery.describe` lists every widget, supported actions and corresponding
 Bus command. `HELP` includes each `gallery.widget.ID.ACTION`. Each widget has
 a typed `set` action, including read-only display examples so stress tests
-can update them. Interactive widgets additionally expose activate, submit,
+can update them. The 36 named widget commands include three state-only setters:
+`button.set`, `canvas.set` and `link.set` update the model/status, while their
+visible content comes from properties. Interactive widgets additionally expose
+activate, submit,
 accept/cancel, expand or sort as applicable.
+Activation records a widget name/count; this specimen does not retain its
+payload or perform row-specific work from it.
 
 ```
 send gallery-rust gallery.describe
@@ -62,6 +68,8 @@ send gallery-rust gallery.state
 IDs/actions and invalid value types/ranges refuse before mutation. Rust and
 Mix use the same admission checks and independent state reducers. Successful
 action replies mean the resulting model was applied, not physical presentation.
+Screenshot equality confirms equal models and shared-renderer determinism.
+Mix supplies composition/behaviour; native Viu performs rendering for both.
 
 Native egui input can also be driven through the Bus:
 
@@ -98,3 +106,11 @@ The driver exercises every declared widget action, alternates language order
 between stress rounds and checks equal models after each pair. It records raw
 per-action round-trip samples. A refusal or mismatch stops the run with an
 error; an incomplete run cannot be counted as a passing timing sample.
+Mix additionally converts/publishes its complete dataset/model on each action;
+Rust mutates its model in place before the common Bus response encoding. Raw
+times include that asymmetry and UI scheduling, not just interpreter execution.
+
+The serial driver does not saturate ingress. Readiness gating, malformed-model
+refusal, stale-generation handling, disappearing focus targets and requests
+racing shutdown remain reusable-host hardening work. Run the specimen after
+startup has settled; quit should be the final request.
