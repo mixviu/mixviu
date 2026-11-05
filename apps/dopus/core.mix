@@ -5,6 +5,10 @@
 fn dp_display($text)
   return re_replace(to_string($text), "\\p{Cc}", "�")
 end
+fn dp_extension($path)
+  $parts=split(basename($path),".")
+  return if len($parts)>1 then lower($parts[len($parts)-1]) else "" end
+end
 fn dp_size($bytes)
   if $bytes==nil then return "—" end
   if $bytes<1024 then return fmt("%d B",$bytes)

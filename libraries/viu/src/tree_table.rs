@@ -21,16 +21,21 @@ fn emit(events: &mut Vec<Intent>, id: &str, action: &str, value: Value) {
 }
 
 pub fn validate(value: &Value) -> Result<(), String> {
-    if text(value,"key").is_empty(){return Err("tree-table requires a container key".into());}
+    if text(value, "key").is_empty() {
+        return Err("tree-table requires a container key".into());
+    }
     let rows = value["rows"].as_array().ok_or("tree-table requires rows")?;
     let columns = value["columns"]
         .as_array()
         .filter(|c| !c.is_empty() && c.len() <= 16)
         .ok_or("tree-table requires 1..16 columns")?;
     let mut keys = BTreeSet::new();
-    let mut column_keys=BTreeSet::new();
+    let mut column_keys = BTreeSet::new();
     for column in columns {
-        if text(column, "id").is_empty() || !column_keys.insert(text(column,"id")) || !column["label"].is_string() {
+        if text(column, "id").is_empty()
+            || !column_keys.insert(text(column, "id"))
+            || !column["label"].is_string()
+        {
             return Err("invalid tree-table column".into());
         }
     }
@@ -70,10 +75,16 @@ pub fn validate(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate_properties(properties:&Value)->Result<(),String>{
-    for key in ["height","row_height","name_min","metadata_scale"]{
-        if let Some(value)=properties.get(key){
-            if value.as_f64().is_none_or(|v|!v.is_finite()||v<0.0||(["row_height","metadata_scale"].contains(&key)&&v==0.0)){return Err(format!("invalid tree-table {key}"));}
+pub fn validate_properties(properties: &Value) -> Result<(), String> {
+    for key in ["height", "row_height", "name_min", "metadata_scale"] {
+        if let Some(value) = properties.get(key) {
+            if value.as_f64().is_none_or(|v| {
+                !v.is_finite()
+                    || v < 0.0
+                    || (["row_height", "metadata_scale"].contains(&key) && v == 0.0)
+            }) {
+                return Err(format!("invalid tree-table {key}"));
+            }
         }
     }
     Ok(())

@@ -1,0 +1,84 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- App-owned projection into reusable Viu controls. Shared data is deliberately
+-- consumed by both language drivers; no native file-manager reducer is called.
+$dp=require("core.mix")
+fn dp_icon($row)
+  if $row.dir then return if $row.expanded ?? false then "folder-open" else "folder" end end
+  $ext=$dp.dp_extension($row.path)
+  if contains(["png","jpg","jpeg","gif","webp","svg","avif"],$ext) then return "file-image"
+  elif contains(["mp3","flac","wav","ogg"],$ext) then return "file-music"
+  elif contains(["mp4","m4v","mkv","webm"],$ext) then return "file-video-camera"
+  elif contains(["zip","gz","tar","7z"],$ext) then return "file-archive"
+  elif contains(["rs","mix","c","h","toml","yaml","yml","json"],$ext) then return "file-code"
+  elif contains(["txt","log","conf","md","html","htm","css","csv","xml","pdf"],$ext) then return "file-text" end
+  return "file"
+end
+fn dp_enabled($state,$id)
+  $p=$state.panes[$state.active]
+  $n=len($p.selected_paths)
+  if $id=="file.open" then return $n>0
+  elif $id=="file.mail" then return $n>0 and all(filter($p.entries,fn($r)=contains($p.selected_paths,$r.path)),fn($r)=$r.file)
+  elif $id=="file.rename" then return $n==1 and not $state.busy
+  elif contains(["file.copy-other-pane","file.move-other-pane","file.delete"],$id) then return $n>0 and not $state.busy
+  elif $id=="file.new-folder" then return not $state.busy
+  elif starts_with($id,"selection.") then return len($p.entries)>0
+  end
+  return true
+end
+fn dp_command($state,$contract,$id)
+  $a=filter($contract.actions,fn($a)=$a.id==$id)[0]
+  if $a==nil then raise("UNKNOWN_ACTION",$id) end
+  $a.enabled=dp_enabled($state,$id)
+  $a.shortcut=join($a.keys," / ")
+  $p=$state.panes[$state.active]
+  $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open else false end
+  return $a
+end
+fn dp_menus($state,$contract)
+  $out=$contract.menus
+  for $i=0 to len($out)-1
+    for $j=0 to len($out[$i].children)-1 $out[$i].children[$j]=dp_command($state,$contract,$out[$i].children[$j].id) end
+  end
+  return $out
+end
+fn dp_kind($path,$st)
+  if $st.is_symlink then return "Symbolic link"
+  elif $st.is_dir then return "Folder" end
+  $ext=$dp.dp_extension($path)
+  $types={txt:"text/plain",log:"text/plain",conf:"text/plain",md:"text/markdown",html:"text/html",htm:"text/html",css:"text/css",csv:"text/csv",json:"application/json",xml:"application/xml",pdf:"application/pdf",zip:"application/zip",gz:"application/gzip",tar:"application/x-tar","7z":"application/x-7z-compressed",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",gif:"image/gif",webp:"image/webp",svg:"image/svg+xml",avif:"image/avif",mp3:"audio/mpeg",flac:"audio/flac",wav:"audio/wav",ogg:"audio/ogg",mp4:"video/mp4",m4v:"video/mp4",mkv:"video/x-matroska",webm:"video/webm",rs:"text/plain",mix:"text/plain",c:"text/plain",h:"text/plain",toml:"text/plain",yaml:"text/plain",yml:"text/plain"}
+  return if $ext=="" then "File" else upper($ext).." file" end.." ("..($types[$ext] ?? "application/octet-stream")..", guessed)"
+end
+fn dp_properties($pane)
+  if $pane.selected==nil then return [{label:"Folder",value:$dp.dp_display($pane.path)},{label:"Contents",value:$pane.summary}] end
+  $path=$pane.selected
+  $st=$dp.dp_lstat($path)
+  if $st==nil then return [{label:"Unavailable",value:"Entry no longer exists"}] end
+  $fields=[{label:"Name",value:$dp.dp_display(basename($path))},{label:"Type",value:dp_kind($path,$st)},{label:"Location",value:$dp.dp_display(dirname($path))},{label:"Size",value:$dp.dp_size($st.size)},{label:"Modified",value:$dp.dp_date($st.mtime)},{label:"Created",value:$dp.dp_date($st.btime)},{label:"Accessed",value:$dp.dp_date($st.atime)},{label:"Permissions",value:$dp.dp_permissions($st.perm)},{label:"Owner",value:$dp.dp_identity("/etc/passwd",$st.uid,2)..":"..$dp.dp_identity("/etc/group",$st.gid,2)}]
+  if $st.is_symlink then push($fields,{label:"Target",value:$dp.dp_display(read_link($path))}) end
+  return $fields
+end
+fn dp_project($state,$contract)
+  $context=map($contract.context,fn($id)=dp_command($state,$contract,$id))
+  $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
+  $values={menu:dp_menus($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
+  $panes=[]
+  for $i=0 to 1
+    $p=$state.panes[$i]
+    $side=if $i==0 then "left" else "right" end
+    $rows=[]
+    for $r in $p.entries
+      $r.expanded=$p.expanded[$r.path] ?? false
+      push($rows,{key:$r.path,cells:[$r.name,if $r.dir then $dp.dp_count($r.child_count) else $dp.dp_size($r.size) end,$dp.dp_date($r.modified)],depth:$r.depth,branch:$r.dir,expanded:$r.expanded,selected:contains($p.selected_paths,$r.path),focused:$p.selected==$r.path,icon:dp_icon($r)})
+    end
+    $values[$side.."-location"]=$state.locations[$i]
+    $values[$side.."-summary"]=$p.summary
+    $values[$side.."-tree"]={key:$p.path,revision:$p.revision,active:$state.active==$i,columns:$contract.columns,sort:$p.sort,ascending:$p.ascending,rows:$rows,context:$context,background_context:$background}
+    $expanded=[]
+    for $path in keys($p.expanded) if $p.expanded[$path] then push($expanded,$path) end end
+    push($panes,{path:$p.path,generation:$p.generation,show_hidden:$p.show_hidden,previews:$p.previews,sort:$p.sort,ascending:$p.ascending,selected:$p.selected,selected_paths:filter(map($p.entries,fn($r)=$r.path),fn($path)=contains($p.selected_paths,$path)),expanded:sort($expanded),summary:$p.summary,rows:len($p.entries),error:$p.error})
+  end
+  $values.places={key:"places",revision:0,active:false,columns:[{id:"name",label:"Places"}],rows:map($state.places,fn($p)={key:$p.path,cells:[$p.name],depth:0,branch:false,expanded:false,selected:$state.panes[$state.active].path==$p.path,focused:false,icon:"folder"}),context:[],background_context:[]}
+  $layout={form:{edge:"top",size:0},menu:{edge:"top",size:28},status:{edge:"bottom",size:24},places:{edge:"left",fraction:$state.places_width,resizable:true,minimum:0.1,maximum:0.4},properties:{edge:"right",fraction:$state.properties_width,resizable:true,minimum:0.1,maximum:0.4,minimum_window_width:700},panes:{edge:"fill"}}
+  return {values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
+end

@@ -33,7 +33,9 @@ impl SceneView {
     fn prepare(source: &str, model: Option<Value>) -> Result<Self, String> {
         let mut document = scene::parse(source).map_err(|e| format!("{e:?}"))?;
         if let Some(model) = model {
-            if !model.is_object(){return Err("scene model must be an object".into());}
+            if !model.is_object() {
+                return Err("scene model must be an object".into());
+            }
             document.model = Some(model);
         }
         let tree = scene::resolve(&document).map_err(|e| format!("{e:?}"))?;
@@ -313,7 +315,14 @@ impl SceneView {
             return;
         }
         let horizontal = text(node, "axis") != "vertical";
-        let divider = num(node, "divider").unwrap_or(6.0).min(if horizontal{area.width()}else{area.height()}.max(0.0));
+        let divider = num(node, "divider").unwrap_or(6.0).min(
+            if horizontal {
+                area.width()
+            } else {
+                area.height()
+            }
+            .max(0.0),
+        );
         let min = num(node, "minimum").unwrap_or(0.1);
         let max = num(node, "maximum").unwrap_or(0.9);
         let ratio = num(node, "ratio").unwrap_or(0.5).clamp(min, max);

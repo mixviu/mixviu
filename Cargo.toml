@@ -1,5 +1,5 @@
 [workspace]
-members = ["libraries/expr", "libraries/strict", "libraries/scene", "libraries/mix", "libraries/paths", "libraries/mimedb", "libraries/viu", "libraries/icons", "libraries/bus", "libraries/config", "libraries/files", "libraries/thumbs", "apps/dopus/rust-core", "engines/viu", "apps/gallery"]
+members = ["libraries/expr", "libraries/strict", "libraries/scene", "libraries/mix", "libraries/paths", "libraries/mimedb", "libraries/viu", "libraries/icons", "libraries/bus", "libraries/config", "libraries/files", "libraries/thumbs", "apps/dopus/rust-core", "apps/dopus", "engines/viu", "apps/gallery"]
 resolver = "3"
 
 [workspace.package]

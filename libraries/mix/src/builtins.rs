@@ -15383,9 +15383,19 @@ fn builtin_stat(args: Vec<Value>) -> MixResult<Option<Value>> {
     map.insert("atime".to_string(), Value::Number(meta.atime() as f64));
     // Birth time is independent of inode-change time. Some filesystems do
     // not supply it: preserve that uncertainty rather than inventing ctime.
-    let birth=meta.created().ok().map(stat_time_parts);
-    map.insert("btime".into(),birth.map(|(seconds,_)|Value::Number(seconds)).unwrap_or(Value::Nil));
-    map.insert("btime_nsec".into(),birth.map(|(_,nanos)|Value::Number(nanos)).unwrap_or(Value::Nil));
+    let birth = meta.created().ok().map(stat_time_parts);
+    map.insert(
+        "btime".into(),
+        birth
+            .map(|(seconds, _)| Value::Number(seconds))
+            .unwrap_or(Value::Nil),
+    );
+    map.insert(
+        "btime_nsec".into(),
+        birth
+            .map(|(_, nanos)| Value::Number(nanos))
+            .unwrap_or(Value::Nil),
+    );
     // Sub-second components (`st_?tim.tv_nsec`, 0..=999_999_999).
     //
     // Whole seconds are not enough to answer "did this file change?", which
@@ -15420,23 +15430,29 @@ fn builtin_stat(args: Vec<Value>) -> MixResult<Option<Value>> {
     Ok(Some(Value::map(map)))
 }
 
-fn stat_time_parts(time:std::time::SystemTime)->(f64,f64){
-    match time.duration_since(std::time::UNIX_EPOCH){
-        Ok(duration)=>(duration.as_secs() as f64,duration.subsec_nanos() as f64),
-        Err(error)=>{
-            let duration=error.duration();
-            if duration.subsec_nanos()==0{(-(duration.as_secs() as f64),0.0)}
-            else{(-(duration.as_secs() as f64)-1.0,(1_000_000_000-duration.subsec_nanos()) as f64)}
+fn stat_time_parts(time: std::time::SystemTime) -> (f64, f64) {
+    match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => (duration.as_secs() as f64, duration.subsec_nanos() as f64),
+        Err(error) => {
+            let duration = error.duration();
+            if duration.subsec_nanos() == 0 {
+                (-(duration.as_secs() as f64), 0.0)
+            } else {
+                (
+                    -(duration.as_secs() as f64) - 1.0,
+                    (1_000_000_000 - duration.subsec_nanos()) as f64,
+                )
+            }
         }
     }
 }
 
 #[cfg(test)]
-mod stat_birth_time_tests{
+mod stat_birth_time_tests {
     #[test]
-    fn pre_epoch_birth_times_keep_an_exact_nonnegative_nanosecond_part(){
-        let time=std::time::UNIX_EPOCH-std::time::Duration::from_millis(250);
-        assert_eq!(super::stat_time_parts(time),(-1.0,750_000_000.0));
+    fn pre_epoch_birth_times_keep_an_exact_nonnegative_nanosecond_part() {
+        let time = std::time::UNIX_EPOCH - std::time::Duration::from_millis(250);
+        assert_eq!(super::stat_time_parts(time), (-1.0, 750_000_000.0));
     }
 }
 

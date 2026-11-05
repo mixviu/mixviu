@@ -1,0 +1,67 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Embedded Mix entry. Commands use the host's existing native Bus connection.
+$app=require("reducer.mix")
+$projection=require("presentation.mix")
+$core=require("core.mix")
+$contract=json_parse(read_file(dirname(script_path()).."/contract.json"))
+$state=nil
+fn dp_publish($state,$contract)
+  send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$projection.dp_project($state,$contract)}
+  if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
+end
+on dopus.initialise
+  $state=$app.dp_initialise($event.args)
+  $state.owner=viu_context().generation
+  dp_publish($state,$contract)
+  reply(0,json_encode({ready:true}))
+end
+on dopus.call
+  if $state==nil then reply(10,json_encode({error_code:"NOT_READY"}))
+  else
+    try
+      $a=$event.args.args;$name=$event.args.command
+      $candidate=$state;$candidate.focus=nil;$candidate.reply={ok:true}
+      if $name=="dopus.execute" then $candidate=$app.dp_action($candidate,$contract,$a.id,$a.params ?? {})
+      elif $name=="dopus.intent" then $candidate=$app.dp_intent($candidate,$contract,$a)
+      elif $name=="dopus.open" then
+        $paths=$a.paths ?? []
+        if len($paths)==0 then raise("INVALID_ARGUMENT","paths must contain a location") end
+        for $i=0 to min(1,len($paths)-1) $candidate=$app.dp_go($candidate,$i,$paths[$i]) end
+      elif $name=="dopus.theme.set" then
+        if $a.mode!=nil then
+          if not contains(["dark","light"],$a.mode) then raise("INVALID_ARGUMENT","Unknown theme mode") end
+          $candidate.appearance.mode=$a.mode
+        end
+        if $a.scheme!=nil then
+          if $contract.schemes[$a.scheme]==nil then raise("INVALID_ARGUMENT","Unknown colour scheme") end
+          $candidate.appearance.scheme=$a.scheme
+        end
+      elif $name=="dopus.dialog.answer" then
+        if $candidate.reservation.kind=="drop" and contains(["copy","move"],$a.choice) then
+          $operation=$candidate.reservation.operation;$operation.kind=$a.choice
+          $candidate=$app.dp_start_operation($candidate,$operation);$candidate.form=$app.dp_closed_form();$candidate.reservation=nil
+        else
+          if $a.text!=nil then $candidate.form.field=$a.text end
+          $candidate=$app.dp_answer($candidate,$a.choice)
+        end
+      elif $name=="dopus.quit" then $candidate=$app.dp_persist($candidate)
+      else raise("UNKNOWN_COMMAND",$name) end
+      $candidate.serial=$candidate.serial+1
+      $state=$candidate
+      dp_publish($state,$contract)
+      reply(if $state.reply.error_code!=nil then 10 else 0 end,json_encode($state.reply))
+    catch $message,$error
+      reply(10,json_encode({error_code:$error.code,message:$message}))
+    end
+  end
+end
+on dopus.job.completed
+  if $state!=nil and $state.job==$event.args.tag.id and $event.args.tag.owner==viu_context().generation then
+    $state.busy=false;$state.job=nil
+    $result=$event.args.body
+    $state.info=$result.message ?? if $event.args.rc==0 then "Operation completed" else "Operation failed" end
+    for $i=0 to 1 $state.panes[$i]=$core.dp_refresh($state.panes[$i]) end
+    dp_publish($state,$contract)
+  end
+end

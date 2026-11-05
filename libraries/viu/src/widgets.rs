@@ -230,7 +230,9 @@ impl Widget {
             return Err("invalid widget definition".into());
         }
         self.validate(self.value(model))?;
-        if self.kind=="tree-table"{crate::tree_table::validate_properties(&self.properties)?;}
+        if self.kind == "tree-table" {
+            crate::tree_table::validate_properties(&self.properties)?;
+        }
         if ["list", "table", "tree"].contains(&self.kind.as_str()) {
             let rows = model["datasets"][self.text("dataset")]
                 .as_array()

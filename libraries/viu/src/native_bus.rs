@@ -146,16 +146,31 @@ impl Bridge {
         command: &str,
         args: &MixValue,
     ) -> MixResult<(BTreeMap<String, String>, String, bool)> {
-        Self::payload_mode(command,args,false)
+        Self::payload_mode(command, args, false)
     }
-    fn payload_mode(command:&str,args:&MixValue,all_headers:bool)->MixResult<(BTreeMap<String,String>,String,bool)>{
-        if let MixValue::Map(map)=args{
-            let route=all_headers||map.contains_key("body")||(command.contains(".props.")&&map.contains_key("namespace"));
-            if route&&map.values().any(|v|matches!(v,MixValue::Bytes(_)|MixValue::Buffer(_))){return Err(failure("native Bus headers/body do not accept bytes; encode them explicitly"));}
+    fn payload_mode(
+        command: &str,
+        args: &MixValue,
+        all_headers: bool,
+    ) -> MixResult<(BTreeMap<String, String>, String, bool)> {
+        if let MixValue::Map(map) = args {
+            let route = all_headers
+                || map.contains_key("body")
+                || (command.contains(".props.") && map.contains_key("namespace"));
+            if route
+                && map
+                    .values()
+                    .any(|v| matches!(v, MixValue::Bytes(_) | MixValue::Buffer(_)))
+            {
+                return Err(failure(
+                    "native Bus headers/body do not accept bytes; encode them explicitly",
+                ));
+            }
         }
         let args = crate::runtime::to_json(args)?;
         let mut headers = BTreeMap::new();
-        let header_route = (all_headers&&args.is_object())||args.get("body").is_some()
+        let header_route = (all_headers && args.is_object())
+            || args.get("body").is_some()
             || (command.contains(".props.") && args.get("namespace").is_some());
         let body = if header_route {
             if let Some(map) = args.as_object() {
@@ -226,7 +241,7 @@ impl BusHandler for Bridge {
     ) -> BusFuture<'a, MixResult<()>> {
         Box::pin(async move {
             let native = self.native()?;
-            let (mut headers, body, _) = Self::payload_mode(command, args,true)?;
+            let (mut headers, body, _) = Self::payload_mode(command, args, true)?;
             headers.insert("type".into(), "event".into());
             native
                 .send_with_headers(target, command, &headers, &body)
