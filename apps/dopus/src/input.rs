@@ -81,6 +81,8 @@ impl Input {
                         unit: egui::MouseWheelUnit::Point,
                         delta: egui::vec2(0.0, delta as f32),
                         modifiers,
+                        phase:egui::TouchPhase::Move,
+                        source:egui::MouseWheelSource::Unknown,
                     });
                 } else if command == "drag" {
                     let end = if let Some(id) = a["to"].as_str() {

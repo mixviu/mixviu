@@ -306,7 +306,7 @@ impl App {
             }
         }
         for done in self.jobs.poll() {
-            if let Some(runtime) = &mut self.runtime {
+            if self.runtime.is_some() {
                 self.notices.push_back(viu::native_bus::Notice{command:"dopus.job.completed".into(),args:json!({"tag":done.tag,"rc":done.rc,"body":done.body,"elapsed_us":done.elapsed_us}),headers:BTreeMap::new()});
             }
         }
@@ -344,7 +344,8 @@ impl eframe::App for App {
     fn raw_input_hook(&mut self, _: &egui::Context, input: &mut egui::RawInput) {
         input.events.append(&mut self.input.now);
     }
-    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+    fn ui(&mut self, ui:&mut egui::Ui, _: &mut eframe::Frame) {
+        let context=ui.ctx().clone();let ctx=&context;
         self.completions(ctx);
         while let Ok(request) = self.bus.requests.try_recv() {
             self.request(request, ctx);
@@ -353,14 +354,7 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        let mut events = Vec::new();
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(view) = &mut self.view {
-                events = view.show(ui);
-            } else {
-                ui.label("Loading Dopus…");
-            }
-        });
+        let events=if let Some(view)=&mut self.view{view.show(ui)}else{ui.label("Loading Dopus…");Vec::new()};
         if let Some(view) = &mut self.view {
             if let Some(id) = self.model["focus"].as_str() {
                 let serial = self.model["serial"].as_u64().unwrap_or(0);
