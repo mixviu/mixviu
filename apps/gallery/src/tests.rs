@@ -179,6 +179,11 @@ fn every_widget_renders_in_shared_native_path() {
 
 #[test]
 fn publications_refuse_unknown_icons_and_duplicate_ids() {
+    assert!(!request_ready(false,"gallery.describe"));
+    assert!(!request_ready(false,"gallery.execute"));
+    assert!(request_ready(false,"gallery.state"));
+    assert!(request_ready(false,"gallery.quit"));
+    assert!(request_ready(true,"gallery.describe"));
     let mut model=controller::initial();
     assert!(controller::validate_model(&model).is_ok());
     model["values"]["icon"]["name"]=json!("unknown");

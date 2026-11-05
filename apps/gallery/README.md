@@ -23,7 +23,7 @@ its own worker; Rust applies its own controller, without invoking Mix.
 Label, button, single-line field, multiline editor, checkbox, toggle, radio
 group, tabs, slider, numeric input, progress, combo, virtual list/table,
 tree disclosure/selection, disclosure, menu, confirmation dialog, draggable
-split, colour picker, canvas, local link, tooltip and separator: 24 samples.
+split, colour picker, canvas, local link, tooltip, separator, vector icon button and icon toolbar: 26 samples.
 The list/table use 1,000 rows with native visible-row rendering.
 
 These are foundation samples, not complete replacements for every existing
@@ -46,13 +46,13 @@ controllers load the same explicit `rows.json` fixture as their data control.
 `gallery.describe` lists every widget, supported actions and corresponding
 Bus command. `HELP` includes each `gallery.widget.ID.ACTION`. Each widget has
 a typed `set` action, including read-only display examples so stress tests
-can update them. The 36 named widget commands include three state-only setters:
+can update them. The 40 named widget commands include three state-only setters:
 `button.set`, `canvas.set` and `link.set` update the model/status, while their
 visible content comes from properties. Interactive widgets additionally expose
 activate, submit,
 accept/cancel, expand or sort as applicable.
-Activation records a widget name/count; this specimen does not retain its
-payload or perform row-specific work from it.
+Activation retains its widget ID and payload in model.last_activation. Toolbar
+activation also selects that application item; disabled actions refuse.
 
 ```
 send gallery-rust gallery.describe
@@ -110,7 +110,28 @@ Mix additionally converts/publishes its complete dataset/model on each action;
 Rust mutates its model in place before the common Bus response encoding. Raw
 times include that asymmetry and UI scheduling, not just interpreter execution.
 
-The serial driver does not saturate ingress. Readiness gating, malformed-model
-refusal, stale-generation handling, disappearing focus targets and requests
-racing shutdown remain reusable-host hardening work. Run the specimen after
-startup has settled; quit should be the final request.
+The serial driver does not saturate ingress. State exposes ready; commands
+except state/quit refuse NOT_READY before initial publication. Models validate
+transactionally, keeping the last good state on malformed definitions/values.
+Stale-generation completions are rejected. A disappearing focus target refuses
+FOCUS_TARGET_UNAVAILABLE without latching subsequent UI replies. Requests
+racing shutdown remain hardening work; quit should be the final request.
+
+## Shared vector icons
+
+libraries/icons contains all 109 SVG assets from the pinned toolkit catalogue,
+with name lookup and original ISC/MIT licence text. It has no renderer or
+application dependency. viu::icons installs the SVG loader and exposes image/
+button functions taking logical size, optional colour, enabled and selected
+states. SVG textures cache by identity and requested resolution; tint is
+applied at draw time. No file/network image loaders are enabled.
+
+Mix uses the same API through icon widget values:
+{name:"copy",size:24,colour:[80,180,230],enabled:true,selected:false}.
+Names must exist, size is 8..64 points, and colour is three 0..255 channels.
+Set this complete value through gallery.widget.icon.set. Activate takes an
+icon name; disabled icon activation refuses. Toolbar actions use
+gallery.widget.toolbar.activate {value:"save"}; disabled Trash refuses.
+Native subwidget IDs include toolbar.copy, toolbar.save and toolbar.trash.
+gallery.describe includes the complete icon name catalogue. The gallery uses
+icons on buttons, menu choices, context actions and virtual list/table/tree rows.

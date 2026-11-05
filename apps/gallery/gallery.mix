@@ -33,7 +33,7 @@ for $i=0 to len($widgets)-1
   $kind=$widgets[$i].kind
   $props={}
   if $kind=="button" then $props={text:"Press me",icon:"play"}
-  elif $kind=="icon" then $props={text:"Copy"}
+  elif $kind=="icon" then $props={text:""}
   elif $kind=="toolbar" then $props={items:[{id:"copy",icon:"copy",text:"Copy",enabled:true},{id:"save",icon:"save",text:"Save",enabled:true},{id:"trash",icon:"trash",text:"Trash",enabled:false}]}
   elif $kind=="checkbox" then $props={text:"Enabled"}
   elif $kind=="toggle" then $props={text:"Power"}

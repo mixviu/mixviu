@@ -60,6 +60,10 @@ impl Gallery {
         Ok(())
     }
     fn execute(&mut self, body: Value, reply: Option<tokio::sync::oneshot::Sender<(u8, Value)>>) {
+        if body["action"]=="activate" && body["id"]=="icon" && self.model["values"]["icon"]["enabled"]!=true {
+            if let Some(reply)=reply { let _=reply.send((10,json!({"error_code":"DISABLED"}))); }
+            return;
+        }
         if let Err(error) = controller::validate(&self.definitions(), &body) {
             if let Some(reply) = reply {
                 let _ = reply.send((10, json!({"error":error})));
@@ -96,7 +100,7 @@ impl Gallery {
             body,
             reply,
         } = request;
-        if !self.ready() && !["gallery.state","gallery.quit"].contains(&command.as_str()) {
+        if !request_ready(self.ready(), &command) {
             let _=reply.send((10,json!({"error_code":"NOT_READY"})));
             return;
         }
@@ -115,7 +119,7 @@ impl Gallery {
             }
             "gallery.describe" => {
                 let widgets=self.definitions().iter().map(|w|json!({"definition":w.encode(),"actions":controller::actions(w),"commands":controller::actions(w).iter().map(|action|format!("gallery.widget.{}.{action}",w.id)).collect::<Vec<_>>(),"ui_actions":["focus","hover","click","key","text","scroll","drag"]})).collect::<Vec<_>>();
-                let _=reply.send((0,json!({"schema":"viu.gallery.v1","mode":self.mode,"widgets":widgets,"execute":{"id":"widget ID","action":"set|activate|submit|accept|cancel|expand|sort|reset","value":"typed widget value"},"ui":{"focus":"{id}","hover":"{id}","click":"{id,button?,double?}","key":"{key,ctrl?,shift?,alt?}","text":"{text}","scroll":"{id,delta}","drag":"{id,fraction:0..1}"},"endpoint":"state/model applied; not physical presentation"})));
+                let _=reply.send((0,json!({"schema":"viu.gallery.v1","mode":self.mode,"icons":viu::icons::Icon::ALL.iter().map(|i|i.name()).collect::<Vec<_>>(),"widgets":widgets,"execute":{"id":"widget ID","action":"set|activate|submit|accept|cancel|expand|sort|reset","value":"typed widget value"},"ui":{"focus":"{id}","hover":"{id}","click":"{id,button?,double?}","key":"{key,ctrl?,shift?,alt?}","text":"{text}","scroll":"{id,delta}","drag":"{id,fraction:0..1}"},"endpoint":"state/model applied; not physical presentation"})));
             }
             "gallery.execute" => self.execute(body, Some(reply)),
             "gallery.quit" => {
@@ -349,6 +353,9 @@ fn click_frames(
         frames.push_front(vec![egui::Event::PointerMoved(pos)]);
     }
     frames
+}
+fn request_ready(ready:bool,command:&str)->bool {
+    ready || ["gallery.state","gallery.quit"].contains(&command)
 }
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().collect();

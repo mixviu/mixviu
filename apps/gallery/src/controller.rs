@@ -51,7 +51,7 @@ pub fn composition() -> Vec<Widget> {
 fn properties(kind: &str) -> Value {
     match kind {
         "button" => json!({"text":"Press me","icon":"play"}),
-        "icon" => json!({"text":"Copy"}),
+        "icon" => json!({"text":""}),
         "toolbar" => json!({"items":[{"id":"copy","icon":"copy","text":"Copy","enabled":true},{"id":"save","icon":"save","text":"Save","enabled":true},{"id":"trash","icon":"trash","text":"Trash","enabled":false}]}),
         "checkbox" => json!({"text":"Enabled"}),
         "toggle" => json!({"text":"Power"}),
