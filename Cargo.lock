@@ -5163,6 +5163,7 @@ dependencies = [
  "egui_extras",
  "icons",
  "image",
+ "macros",
  "mix",
  "png 0.18.1",
  "scene",
