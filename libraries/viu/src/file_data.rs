@@ -21,8 +21,12 @@ fn uri(path: &Path) -> Result<String, String> {
 fn token(path: &Path) -> Result<Value, String> {
     Ok(json!(files::local_path::encode(path)?))
 }
-pub fn encode_path(path:&Path)->Result<Value,String>{token(path)}
-pub fn decode_path(text:&str)->Result<PathBuf,String>{files::local_path::decode(text)}
+pub fn encode_path(path: &Path) -> Result<Value, String> {
+    token(path)
+}
+pub fn decode_path(text: &str) -> Result<PathBuf, String> {
+    files::local_path::decode(text)
+}
 fn raw_link(value: &Value) -> Result<std::ffi::OsString, String> {
     use std::os::unix::ffi::OsStringExt;
     let bytes = if let Some(text) = value.as_str() {

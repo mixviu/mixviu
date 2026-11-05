@@ -42,12 +42,21 @@ fn closed() -> Value {
 fn string<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
     v[key].as_str().ok_or_else(|| format!("{key} must be text"))
 }
-fn path_value(path:&Path)->Value {
-    viu::file_data::encode_path(path).unwrap_or_else(|error|{eprintln!("Dopus path encoding refused: {error}");Value::Null})
+fn path_value(path: &Path) -> Value {
+    viu::file_data::encode_path(path).unwrap_or_else(|error| {
+        eprintln!("Dopus path encoding refused: {error}");
+        Value::Null
+    })
 }
-fn path_text(path:&Path)->String {path_value(path).as_str().unwrap_or("").to_owned()}
-fn paths_value<P:AsRef<Path>>(paths:impl IntoIterator<Item=P>)->Value {Value::Array(paths.into_iter().map(|p|path_value(p.as_ref())).collect())}
-fn native_path(text:&str)->Result<PathBuf,String>{viu::file_data::decode_path(text)}
+fn path_text(path: &Path) -> String {
+    path_value(path).as_str().unwrap_or("").to_owned()
+}
+fn paths_value<P: AsRef<Path>>(paths: impl IntoIterator<Item = P>) -> Value {
+    Value::Array(paths.into_iter().map(|p| path_value(p.as_ref())).collect())
+}
+fn native_path(text: &str) -> Result<PathBuf, String> {
+    viu::file_data::decode_path(text)
+}
 fn pane(i: usize) -> PaneId {
     if i == 0 { PaneId::Left } else { PaneId::Right }
 }
@@ -80,10 +89,7 @@ fn icon(path: &Path, dir: bool, expanded: bool) -> &'static str {
 impl Native {
     pub fn new(profile: &Path, contract: Value, wake: Wake) -> Self {
         let (config, file) = ConfigFile::load(profile);
-        let locations = [
-            path_text(&config.left.path),
-            path_text(&config.right.path),
-        ];
+        let locations = [path_text(&config.left.path), path_text(&config.right.path)];
         let (core, source) = DopusCore::new(config, Some(file));
         let (tx, rx) = mpsc::sync_channel(64);
         // Preserve the original core's worker delivery and wake the UI exactly
@@ -200,9 +206,9 @@ impl Native {
                         self.core().info().into()
                     }
                 }
-                CoreEvent::OpenFile(path) => {
-                    self.effects.push_back(json!({"kind":"open","path":path_value(&path)}))
-                }
+                CoreEvent::OpenFile(path) => self
+                    .effects
+                    .push_back(json!({"kind":"open","path":path_value(&path)})),
                 _ => {}
             }
         }
@@ -445,7 +451,8 @@ impl Native {
             "file.move-other-pane" => self.core_mut().move_selection_to_other_pane(),
             "file.mail" => {
                 let paths = self.core().operation_sources(p);
-                self.effects.push_back(json!({"kind":"mail","paths":paths_value(paths)}));
+                self.effects
+                    .push_back(json!({"kind":"mail","paths":paths_value(paths)}));
             }
             "theme.mode-toggle" => {
                 self.appearance["mode"] = json!(if self.appearance["mode"] == "dark" {
@@ -551,7 +558,7 @@ impl Native {
                 .iter()
                 .filter_map(Value::as_str)
                 .map(native_path)
-                .collect::<Result<Vec<_>,_>>()?;
+                .collect::<Result<Vec<_>, _>>()?;
             let destination = native_path(string(request, "destination")?)?;
             let source_pane = if request["source"]
                 .as_str()
@@ -773,9 +780,7 @@ impl Native {
                         .as_array()
                         .ok_or("drop sources required")?
                         .iter()
-                        .map(|p| {
-                            native_path(p.as_str().ok_or("drop source must be text")?)
-                        })
+                        .map(|p| native_path(p.as_str().ok_or("drop source must be text")?))
                         .collect::<Result<Vec<_>, _>>()?;
                     let sources = keys
                         .iter()
@@ -1009,7 +1014,9 @@ impl Native {
         }
         values["places"] = json!({"key":"places","revision":0,"active":false,"columns":[{"id":"name","label":"Places"}],"rows":core.places().iter().enumerate().map(|(i,(name,path))|json!({"key":format!("place.{i}"),"path":path_value(path),"cells":[name],"depth":0,"branch":false,"expanded":false,"selected":core.pane(core.active()).path==*path,"focused":false,"icon":match name.as_str(){"Home"=>"house","Filesystem"=>"hard-drive","Documents"=>"file-text","Downloads"=>"download","Music"=>"music","Pictures"=>"image","Videos"=>"film",_=>"folder"}})).collect::<Vec<_>>(),"context":[],"background_context":[]});
         values["preview"] = match core.preview(core.active()) {
-            Some(dopus_core::thumbs::Preview::Ready(path)) => json!({"phase":"ready","path":path_value(path)}),
+            Some(dopus_core::thumbs::Preview::Ready(path)) => {
+                json!({"phase":"ready","path":path_value(&path)})
+            }
             Some(dopus_core::thumbs::Preview::Pending) => json!({"phase":"pending"}),
             _ => json!({"phase":"none"}),
         };

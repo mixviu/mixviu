@@ -76,7 +76,7 @@ pub enum SortColumn {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct PaneConfig {
-    #[serde(with="files::local_path::serde_path")]
+    #[serde(with = "files::local_path::serde_path")]
     pub path: PathBuf,
     pub show_hidden: bool,
     pub sort: SortColumn,
@@ -156,7 +156,7 @@ impl Default for DOpusConfig {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Bookmark {
     pub name: String,
-    #[serde(with="files::local_path::serde_path")]
+    #[serde(with = "files::local_path::serde_path")]
     pub path: PathBuf,
 }
 
