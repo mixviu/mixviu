@@ -308,7 +308,8 @@ pub(crate) fn draw(
                             id,
                             "modal-focused",
                         ));
-                        if ui.ctx().data(|d|d.get_temp::<Value>(marker)).as_ref()!=Some(&value["instance"]){
+                        if ui.ctx().data(|d|d.get_temp::<Value>(marker)).as_ref()!=Some(&value["instance"])
+                            || (!response.has_focus() && ui.memory(|m|m.focused().is_none())) {
                             response.request_focus();
                             ui.ctx().data_mut(|d| d.insert_temp(marker,value["instance"].clone()));
                         }
