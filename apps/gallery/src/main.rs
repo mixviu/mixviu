@@ -256,7 +256,13 @@ impl eframe::App for Gallery {
         }
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        if self.bus.close_requested.load(std::sync::atomic::Ordering::Acquire){ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);}
+        if self
+            .bus
+            .close_requested
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         self.completions();
         // Requests admitted this frame inject raw input at the next frame boundary.
         // Reply only after that boundary and after resulting Mix callbacks settle.

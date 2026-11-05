@@ -2,8 +2,8 @@
 //! Native supervised Bus ingress. No application socket or alternate transport.
 use bus::{SupervisedClient, native_client::BoundedIncomingEvent};
 use serde_json::{Value, json};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
-use std::sync::atomic::{AtomicBool,Ordering};
 use tokio::sync::oneshot;
 pub struct Request {
     pub command: String,
@@ -12,15 +12,15 @@ pub struct Request {
 }
 pub struct NativeBus {
     pub requests: mpsc::Receiver<Request>,
-    pub close_requested:Arc<AtomicBool>,
+    pub close_requested: Arc<AtomicBool>,
     stop: Option<oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl NativeBus {
     pub fn start(name: String, url: String, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
         let (tx, requests) = mpsc::sync_channel(32);
-        let close_requested=Arc::new(AtomicBool::new(false));
-        let close=close_requested.clone();
+        let close_requested = Arc::new(AtomicBool::new(false));
+        let close = close_requested.clone();
         let (stop, mut stopped) = oneshot::channel();
         let thread=std::thread::Builder::new().name("gallery-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
