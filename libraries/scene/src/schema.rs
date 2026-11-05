@@ -106,7 +106,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("h", false, None),
         p("chrome", "bool", false, Some("true")),
     ];
-    static BOX: [Port; 5] = [
+    static BOX: [Port; 8] = [
         p("children", "list", true, None),
         pnd("gap", "0", None),
         pnd("padding", "0", None),
@@ -114,6 +114,9 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         // A column stretched its children before `align` existed; the
         // default keeps every v0 document laying out exactly as it did.
         pe("align", "\"stretch\"", ALIGN),
+        pn("height", false, None),
+        pn("radius", false, None),
+        p("background", "string", false, None),
     ];
     static ROW: [Port; 11] = [
         p("children", "list", true, None),

@@ -21,14 +21,24 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 
 // Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
 // frames in debug can overflow the Rust default before Mix's depth guard runs.
-const EVALUATOR_STACK:usize=64*1024*1024;
+const EVALUATOR_STACK: usize = 64 * 1024 * 1024;
 struct WorkerPolicy;
-impl mix::evaluator::CapabilityPolicy for WorkerPolicy{
-    fn check_builtin(&self,name:&str)->Result<(),String>{
-        if ["chdir","exit"].contains(&name){Err(format!("{name} mutates the embedded host; use explicit process cwd/lifetime"))}else{Ok(())}
+impl mix::evaluator::CapabilityPolicy for WorkerPolicy {
+    fn check_builtin(&self, name: &str) -> Result<(), String> {
+        if ["chdir", "exit"].contains(&name) {
+            Err(format!(
+                "{name} mutates the embedded host; use explicit process cwd/lifetime"
+            ))
+        } else {
+            Ok(())
+        }
     }
-    fn check_class(&self,class:mix::builtins::CapabilityClass)->Result<(),String>{
-        if class==mix::builtins::CapabilityClass::Process{Err("embedded workers refuse export and shell syntax; use native argv functions with explicit options".into())}else{Ok(())}
+    fn check_class(&self, class: mix::builtins::CapabilityClass) -> Result<(), String> {
+        if class == mix::builtins::CapabilityClass::Process {
+            Err("embedded workers refuse export and shell syntax; use native argv functions with explicit options".into())
+        } else {
+            Ok(())
+        }
     }
 }
 
