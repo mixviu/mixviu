@@ -46,68 +46,69 @@ fn row_pick($state, $pane, $a)
 end
 paint_state($s)
 on pick_left
-  $s = row_pick($s, 0, event_args()); paint_state($s)
+  $s = row_pick($s, 0, event_args()); paint_state($s); reply(0, {})
 end
 on pick_right
-  $s = row_pick($s, 1, event_args()); paint_state($s)
+  $s = row_pick($s, 1, event_args()); paint_state($s); reply(0, {})
 end
 on path_left
-  $s = safe_apply($s, "open", {pane: 0, path: event_args().value}); paint_state($s)
+  $s = safe_apply($s, "open", {pane: 0, path: event_args().value}); paint_state($s); reply(0, {})
 end
 on path_right
-  $s = safe_apply($s, "open", {pane: 1, path: event_args().value}); paint_state($s)
+  $s = safe_apply($s, "open", {pane: 1, path: event_args().value}); paint_state($s); reply(0, {})
 end
 on name_changed
   $new_name = event_args().value
+  reply(0, {})
 end
 on switch
-  $s = safe_apply($s, "switch", {}); paint_state($s)
+  $s = safe_apply($s, "switch", {}); paint_state($s); reply(0, {})
 end
 on parent
-  $s = safe_apply($s, "parent", {}); paint_state($s)
+  $s = safe_apply($s, "parent", {}); paint_state($s); reply(0, {})
 end
 on back
-  $s = safe_apply($s, "back", {}); paint_state($s)
+  $s = safe_apply($s, "back", {}); paint_state($s); reply(0, {})
 end
 on hidden
-  $s = safe_apply($s, "hidden", {}); paint_state($s)
+  $s = safe_apply($s, "hidden", {}); paint_state($s); reply(0, {})
 end
 on refresh
-  $s = safe_apply($s, "refresh", {}); paint_state($s)
+  $s = safe_apply($s, "refresh", {}); paint_state($s); reply(0, {})
 end
 on expand
-  $s = safe_apply($s, "expand", {}); paint_state($s)
+  $s = safe_apply($s, "expand", {}); paint_state($s); reply(0, {})
 end
 on open_selected
-  $s = safe_apply($s, "open", {path: $s.panes[$s.active].focus}); paint_state($s)
+  $s = safe_apply($s, "open", {path: $s.panes[$s.active].focus}); paint_state($s); reply(0, {})
 end
 on mkdir
-  $s = safe_apply($s, "mkdir", {name: $new_name}); paint_state($s)
+  $s = safe_apply($s, "mkdir", {name: $new_name}); paint_state($s); reply(0, {})
 end
 on rename
-  $s = safe_apply($s, "rename", {name: $new_name}); paint_state($s)
+  $s = safe_apply($s, "rename", {name: $new_name}); paint_state($s); reply(0, {})
 end
 on copy
-  $s = safe_apply($s, "copy", {}); paint_state($s)
+  $s = safe_apply($s, "copy", {}); paint_state($s); reply(0, {})
 end
 on move
-  $s = safe_apply($s, "move", {}); paint_state($s)
+  $s = safe_apply($s, "move", {}); paint_state($s); reply(0, {})
 end
 on sort_name_left
-  $s = safe_apply($s, "sort", {pane: 0, key: "name"}); paint_state($s)
+  $s = safe_apply($s, "sort", {pane: 0, key: "name"}); paint_state($s); reply(0, {})
 end
 on sort_size_left
-  $s = safe_apply($s, "sort", {pane: 0, key: "size"}); paint_state($s)
+  $s = safe_apply($s, "sort", {pane: 0, key: "size"}); paint_state($s); reply(0, {})
 end
 on sort_modified_left
-  $s = safe_apply($s, "sort", {pane: 0, key: "modified"}); paint_state($s)
+  $s = safe_apply($s, "sort", {pane: 0, key: "modified"}); paint_state($s); reply(0, {})
 end
 on sort_name_right
-  $s = safe_apply($s, "sort", {pane: 1, key: "name"}); paint_state($s)
+  $s = safe_apply($s, "sort", {pane: 1, key: "name"}); paint_state($s); reply(0, {})
 end
 on sort_size_right
-  $s = safe_apply($s, "sort", {pane: 1, key: "size"}); paint_state($s)
+  $s = safe_apply($s, "sort", {pane: 1, key: "size"}); paint_state($s); reply(0, {})
 end
 on sort_modified_right
-  $s = safe_apply($s, "sort", {pane: 1, key: "modified"}); paint_state($s)
+  $s = safe_apply($s, "sort", {pane: 1, key: "modified"}); paint_state($s); reply(0, {})
 end

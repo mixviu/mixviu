@@ -243,6 +243,10 @@ fn fields_route_native_text_and_enter_and_keep_edits_across_model_updates() {
     view.apply_model(json!({"path":"authoritative", "status":"navigated"}))
         .unwrap();
     click(&ctx, &mut view, "path");
+    input(&ctx, &mut view, vec![egui::Event::Key {
+        key: egui::Key::Home, physical_key: None, pressed: true, repeat: false,
+        modifiers: Default::default(),
+    }]);
     let events = input(&ctx, &mut view, vec![egui::Event::Text("x".into())]);
     assert!(
         events
