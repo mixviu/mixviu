@@ -164,14 +164,23 @@ struct ClientConfig {
 impl ClientConfig {
     fn parse(source: Option<&str>) -> Result<Self, String> {
         let Some(source) = source else {
-            return Ok(Self { behaviour: "viu.mix".into(), scene: "volume".into(),
-                citizen: "scene-volume".into(), title: "Viu — Quoin lab".into(),
-                app_id: "mixviu.quoin.lab".into(), caption: "Quoin volume — safe audio fixture".into(),
-                size: [440.0, 680.0], audio_fixture: true });
+            return Ok(Self {
+                behaviour: "viu.mix".into(),
+                scene: "volume".into(),
+                citizen: "scene-volume".into(),
+                title: "Viu — Quoin lab".into(),
+                app_id: "mixviu.quoin.lab".into(),
+                caption: "Quoin volume — safe audio fixture".into(),
+                size: [440.0, 680.0],
+                audio_fixture: true,
+            });
         };
         let value: serde_json::Value = serde_json::from_str(source).map_err(|e| e.to_string())?;
         let string = |key: &str| -> Result<String, String> {
-            value[key].as_str().filter(|s| !s.is_empty()).map(str::to_owned)
+            value[key]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
                 .ok_or_else(|| format!("client.json requires nonempty string {key}"))
         };
         let backend = string("backend")?;
@@ -179,18 +188,36 @@ impl ClientConfig {
             return Err("unsupported client backend".into());
         }
         let behaviour = string("behaviour")?;
-        if !std::path::Path::new(&behaviour).components().all(|c| matches!(c, std::path::Component::Normal(_))) {
+        if !std::path::Path::new(&behaviour)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+        {
             return Err("behaviour must be a relative application path".into());
         }
-        let size = value["size"].as_array().filter(|s| s.len() == 2)
+        let size = value["size"]
+            .as_array()
+            .filter(|s| s.len() == 2)
             .ok_or("client.json size must contain width and height")?;
         let dimension = |i: usize| -> Result<f32, String> {
-            let n = size[i].as_f64().ok_or("window dimensions must be numbers")? as f32;
-            if n.is_finite() && n > 0.0 { Ok(n) } else { Err("invalid window dimension".into()) }
+            let n = size[i]
+                .as_f64()
+                .ok_or("window dimensions must be numbers")? as f32;
+            if n.is_finite() && n > 0.0 {
+                Ok(n)
+            } else {
+                Err("invalid window dimension".into())
+            }
         };
-        Ok(Self { behaviour, scene: string("scene")?, citizen: string("citizen")?,
-            title: string("title")?, app_id: string("app_id")?, caption: string("caption")?,
-            size: [dimension(0)?, dimension(1)?], audio_fixture: backend == "audio-fixture" })
+        Ok(Self {
+            behaviour,
+            scene: string("scene")?,
+            citizen: string("citizen")?,
+            title: string("title")?,
+            app_id: string("app_id")?,
+            caption: string("caption")?,
+            size: [dimension(0)?, dimension(1)?],
+            audio_fixture: backend == "audio-fixture",
+        })
     }
 }
 fn main() -> eframe::Result {
@@ -228,7 +255,11 @@ fn main() -> eframe::Result {
             let mut runtime = Runtime::new(
                 32,
                 Arc::new(move || ctx.request_repaint()),
-                if config.audio_fixture { Some(Box::new(|| fixture::AudioFixture::new())) } else { None },
+                if config.audio_fixture {
+                    Some(Box::new(|| fixture::AudioFixture::new()))
+                } else {
+                    None
+                },
             );
             runtime.load(program.clone()).expect("initial load");
             Ok(Box::new(Client {

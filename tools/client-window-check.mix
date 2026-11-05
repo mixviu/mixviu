@@ -7,12 +7,17 @@ if type($artifact) != "string" or $artifact == "" or exists($artifact) then
   raise("ARTIFACT", "Pass a new owned artifact directory")
 end
 mkdir($artifact)
+fn command($argv, $timeout)
+  $r = run_argv($argv, {timeout: $timeout, max_output: 100000, stderr: "stdout"})
+  print($r.stdout)
+  if not $r.ok then exit($r.exit_code ?? 1) end
+end
 print(run_argv_must(["cargo", "fmt", "--all"], {timeout: 120, stderr: "stdout"}))
 $diff = run_argv_must(["git", "diff"], {timeout: 30})
 write_file($artifact .. "/fmt.patch", $diff)
 print($diff)
 print(run_argv_must(["git", "checkout", "-q", "--", "."], {timeout: 30}))
-print(run_argv_must(["cargo", "test", "--locked", "-p", "viu", "-p", "viu-client"], {timeout: 1200, max_output: 100000, stderr: "stdout"}))
-print(run_argv_must(["cargo", "build", "--locked", "--release", "-p", "viu-client", "--bin", "viu-client"], {timeout: 1800, max_output: 100000, stderr: "stdout"}))
+command(["cargo", "test", "--locked", "-p", "viu", "-p", "viu-client"], 1200)
+command(["cargo", "build", "--locked", "--release", "-p", "viu-client", "--bin", "viu-client"], 1800)
 copy("target/release/viu-client", $artifact .. "/viu-client")
 print(json_encode({binary: $artifact .. "/viu-client", sha256: hash_file($artifact .. "/viu-client", "sha256")}))
