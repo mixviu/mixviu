@@ -297,7 +297,7 @@ impl Window {
             && !self.view.as_ref().is_some_and(|v| v.text_input_active())
         {
             let keys:Vec<_>=ctx.input(|input|input.events.iter().filter_map(|event|{
-                if let egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=event{Some(json!({"command":"key","key":key.name(),"ctrl":modifiers.ctrl,"shift":modifiers.shift,"alt":modifiers.alt}))}else{None}
+                if let egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=event{Some(json!({"command":"key","key":viu::input::key_name(*key),"ctrl":modifiers.ctrl,"shift":modifiers.shift,"alt":modifiers.alt}))}else{None}
             }).collect());
             for key in keys {
                 self.call(key);

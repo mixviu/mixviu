@@ -693,7 +693,7 @@ impl eframe::App for App {
         for event in events {
             self.call(event.command, event.body, BTreeMap::new(), None, ctx);
         }
-        for action in input::Input::shortcuts(
+        for action in input::shortcuts(
             ctx,
             &self.contract,
             self.model["values"]["form"]["open"] == true
