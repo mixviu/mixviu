@@ -101,7 +101,9 @@ impl Widget {
         self.properties[key].as_str().unwrap_or("")
     }
     pub fn validate(&self, value: &Value) -> Result<(), String> {
-        if crate::rich::KINDS.contains(&self.kind.as_str()) {return crate::rich::validate(&self.kind,value);}
+        if crate::rich::KINDS.contains(&self.kind.as_str()) {
+            return crate::rich::validate(&self.kind, value);
+        }
         let valid = match self.kind.as_str() {
             "tree-table" => return crate::tree_table::validate(value),
             "icon" => {
@@ -143,9 +145,22 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if crate::rich::KINDS.contains(&self.kind.as_str()) {return crate::rich::actions(&self.kind);}
+        if crate::rich::KINDS.contains(&self.kind.as_str()) {
+            return crate::rich::actions(&self.kind);
+        }
         if self.kind == "tree-table" {
-            return vec!["set","select","activate","expand","sort","context","drop","command","navigate","activate-pane"];
+            return vec![
+                "set",
+                "select",
+                "activate",
+                "expand",
+                "sort",
+                "context",
+                "drop",
+                "command",
+                "navigate",
+                "activate-pane",
+            ];
         }
         let mut actions = vec!["set"];
         if [
@@ -196,10 +211,10 @@ impl Widget {
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
         self.validate_action(action, value)?;
         if crate::rich::KINDS.contains(&self.kind.as_str()) && action != "set" {
-            return crate::rich::admit(&self.kind,self.value(model),action,value);
+            return crate::rich::admit(&self.kind, self.value(model), action, value);
         }
         if self.kind == "tree-table" && action != "set" {
-            return crate::tree_table::admit(self.value(model),action,value);
+            return crate::tree_table::admit(self.value(model), action, value);
         }
         if action == "activate" && self.kind == "icon" && self.value(model)["enabled"] != true {
             return Err("DISABLED".into());
@@ -319,11 +334,15 @@ impl Widgets {
         events: &mut Vec<Intent>,
     ) {
         let id = &widget.id;
-        if widget.kind=="dialog-form" && value["open"]!=true {return;}
+        if widget.kind == "dialog-form" && value["open"] != true {
+            return;
+        }
         let mut changed = None;
         let response = match widget.kind.as_str() {
-            "tree-table" => crate::tree_table::draw(ui,widget,value,&mut self.geometry,events),
-            "menubar"|"command-bar"|"property-grid"|"dialog-form"=>crate::rich::draw(ui,widget,value,&mut self.geometry,events),
+            "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
+            "menubar" | "command-bar" | "property-grid" | "dialog-form" => {
+                crate::rich::draw(ui, widget, value, &mut self.geometry, events)
+            }
             "label" => {
                 let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
                 if let Some(size) = widget.properties["size"].as_f64() {

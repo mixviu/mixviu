@@ -270,98 +270,259 @@ impl SceneView {
         }
     }
 
-    fn child_rect(&mut self,ui:&mut egui::Ui,id:&str,rect:egui::Rect,nodes:&BTreeMap<String,Node>,route:Option<(&str,&Node,&Value)>,depth:usize,events:&mut Vec<Event>){
-        ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(id),|ui|{
+    fn child_rect(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        rect: egui::Rect,
+        nodes: &BTreeMap<String, Node>,
+        route: Option<(&str, &Node, &Value)>,
+        depth: usize,
+        events: &mut Vec<Event>,
+    ) {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(id), |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(rect));
-            self.node(ui,id,nodes,route,depth+1,events);
+            self.node(ui, id, nodes, route, depth + 1, events);
         });
     }
 
-    fn layout_change(&self,node:&Node,id:&str,value:Value,events:&mut Vec<Event>){
-        if let Some(command)=node.ports.get("on_change").and_then(Value::as_str){
-            events.push(Event::from_intent(command,&self.tree.name,Intent::set(id,value)));
+    fn layout_change(&self, node: &Node, id: &str, value: Value, events: &mut Vec<Event>) {
+        if let Some(command) = node.ports.get("on_change").and_then(Value::as_str) {
+            events.push(Event::from_intent(
+                command,
+                &self.tree.name,
+                Intent::set(id, value),
+            ));
         }
     }
 
-    fn split(&mut self,ui:&mut egui::Ui,key:&str,node:&Node,nodes:&BTreeMap<String,Node>,route:Option<(&str,&Node,&Value)>,depth:usize,events:&mut Vec<Event>){
-        let area=ui.available_rect_before_wrap();
-        let child=children(node).collect::<Vec<_>>();
-        if child.len()!=2{return;}
-        let horizontal=text(node,"axis")!="vertical";
-        let divider=num(node,"divider").unwrap_or(6.0);
-        let min=num(node,"minimum").unwrap_or(0.1);
-        let max=num(node,"maximum").unwrap_or(0.9);
-        let ratio=num(node,"ratio").unwrap_or(0.5).clamp(min,max);
-        let length=if horizontal{area.width()}else{area.height()};
-        let first=((length-divider).max(0.0)*ratio).round();
-        let (a,grip,b)=if horizontal{
-            let a=egui::Rect::from_min_size(area.min,Vec2::new(first,area.height()));
-            let grip=egui::Rect::from_min_size(egui::pos2(a.right(),area.top()),Vec2::new(divider,area.height()));
-            (a,grip,egui::Rect::from_min_max(egui::pos2(grip.right(),area.top()),area.max))
-        }else{
-            let a=egui::Rect::from_min_size(area.min,Vec2::new(area.width(),first));
-            let grip=egui::Rect::from_min_size(egui::pos2(area.left(),a.bottom()),Vec2::new(area.width(),divider));
-            (a,grip,egui::Rect::from_min_max(egui::pos2(area.left(),grip.bottom()),area.max))
+    fn split(
+        &mut self,
+        ui: &mut egui::Ui,
+        key: &str,
+        node: &Node,
+        nodes: &BTreeMap<String, Node>,
+        route: Option<(&str, &Node, &Value)>,
+        depth: usize,
+        events: &mut Vec<Event>,
+    ) {
+        let area = ui.available_rect_before_wrap();
+        let child = children(node).collect::<Vec<_>>();
+        if child.len() != 2 {
+            return;
+        }
+        let horizontal = text(node, "axis") != "vertical";
+        let divider = num(node, "divider").unwrap_or(6.0);
+        let min = num(node, "minimum").unwrap_or(0.1);
+        let max = num(node, "maximum").unwrap_or(0.9);
+        let ratio = num(node, "ratio").unwrap_or(0.5).clamp(min, max);
+        let length = if horizontal {
+            area.width()
+        } else {
+            area.height()
         };
-        let response=ui.interact(grip,egui::Id::new((key,"divider")),Sense::click_and_drag());
-        self.geometry.insert(format!("{key}.divider"),grip);
-        if response.hovered()||response.dragged(){ui.ctx().set_cursor_icon(if horizontal{egui::CursorIcon::ResizeHorizontal}else{egui::CursorIcon::ResizeVertical});}
-        if response.double_clicked(){self.layout_change(node,key,json!(0.5f64.clamp(min as f64,max as f64)),events);}
-        else if response.dragged(){if let Some(pointer)=response.interact_pointer_pos(){
-            let offset=if horizontal{pointer.x-area.left()}else{pointer.y-area.top()};
-            self.layout_change(node,key,json!((offset/(length-divider).max(1.0)).clamp(min,max)),events);
-        }}
-        let stroke=ui.visuals().widgets.noninteractive.bg_stroke;
-        if horizontal{ui.painter().vline(grip.center().x,grip.y_range(),stroke);}else{ui.painter().hline(grip.x_range(),grip.center().y,stroke);}
-        self.child_rect(ui,child[0],a,nodes,route,depth,events);
-        self.child_rect(ui,child[1],b,nodes,route,depth,events);
-        ui.allocate_rect(area,Sense::hover());
-    }
-
-    fn dock(&mut self,ui:&mut egui::Ui,key:&str,node:&Node,nodes:&BTreeMap<String,Node>,route:Option<(&str,&Node,&Value)>,depth:usize,events:&mut Vec<Event>){
-        let area=ui.available_rect_before_wrap();
-        let mut remaining=area;
-        let placements=&node.ports["placements"];
-        for child in children(node){
-            if nodes.get(child).is_some_and(|n|n.ports.get("hidden")==Some(&Value::Bool(true))){continue;}
-            let placement=&placements[child];
-            let edge=placement["edge"].as_str().unwrap_or("fill");
-            if placement["minimum_window_width"].as_f64().is_some_and(|w|(area.width() as f64)<w){continue;}
-            let horizontal=["left","right"].contains(&edge);
-            let dimension=if horizontal{area.width()}else{area.height()};
-            let requested=placement["size"].as_f64().map(|v|v as f32).unwrap_or_else(||placement["fraction"].as_f64().unwrap_or(0.2) as f32*dimension);
-            let maximum=(if horizontal{remaining.width()}else{remaining.height()}).max(0.0);
-            let size=requested.clamp(0.0,maximum);
-            let mut rect=remaining;
-            match edge{
-                "left"=>{rect.max.x=rect.min.x+size;remaining.min.x=rect.max.x;},
-                "right"=>{rect.min.x=rect.max.x-size;remaining.max.x=rect.min.x;},
-                "top"=>{rect.max.y=rect.min.y+size;remaining.min.y=rect.max.y;},
-                "bottom"=>{rect.min.y=rect.max.y-size;remaining.max.y=rect.min.y;},
-                _=>{}
-            }
-            self.child_rect(ui,child,rect,nodes,route,depth,events);
-            if placement["resizable"]==true&&edge!="fill"{
-                let line=match edge{
-                    "left"=>egui::Rect::from_min_max(egui::pos2(rect.right()-3.0,rect.top()),egui::pos2(rect.right()+3.0,rect.bottom())),
-                    "right"=>egui::Rect::from_min_max(egui::pos2(rect.left()-3.0,rect.top()),egui::pos2(rect.left()+3.0,rect.bottom())),
-                    "top"=>egui::Rect::from_min_max(egui::pos2(rect.left(),rect.bottom()-3.0),egui::pos2(rect.right(),rect.bottom()+3.0)),
-                    _=>egui::Rect::from_min_max(egui::pos2(rect.left(),rect.top()-3.0),egui::pos2(rect.right(),rect.top()+3.0))
+        let first = ((length - divider).max(0.0) * ratio).round();
+        let (a, grip, b) = if horizontal {
+            let a = egui::Rect::from_min_size(area.min, Vec2::new(first, area.height()));
+            let grip = egui::Rect::from_min_size(
+                egui::pos2(a.right(), area.top()),
+                Vec2::new(divider, area.height()),
+            );
+            (
+                a,
+                grip,
+                egui::Rect::from_min_max(egui::pos2(grip.right(), area.top()), area.max),
+            )
+        } else {
+            let a = egui::Rect::from_min_size(area.min, Vec2::new(area.width(), first));
+            let grip = egui::Rect::from_min_size(
+                egui::pos2(area.left(), a.bottom()),
+                Vec2::new(area.width(), divider),
+            );
+            (
+                a,
+                grip,
+                egui::Rect::from_min_max(egui::pos2(area.left(), grip.bottom()), area.max),
+            )
+        };
+        let response = ui.interact(
+            grip,
+            egui::Id::unique((ui.ctx().viewport_id(),key, "divider")),
+            Sense::click_and_drag(),
+        );
+        self.geometry.insert(format!("{key}.divider"), grip);
+        if response.hovered() || response.dragged() {
+            ui.ctx().set_cursor_icon(if horizontal {
+                egui::CursorIcon::ResizeHorizontal
+            } else {
+                egui::CursorIcon::ResizeVertical
+            });
+        }
+        if response.double_clicked() {
+            self.layout_change(
+                node,
+                key,
+                json!(0.5f64.clamp(min as f64, max as f64)),
+                events,
+            );
+        } else if response.dragged() {
+            if let Some(pointer) = response.interact_pointer_pos() {
+                let offset = if horizontal {
+                    pointer.x - area.left()
+                } else {
+                    pointer.y - area.top()
                 };
-                let response=ui.interact(line,egui::Id::new((key,child,"resize")),Sense::drag());
-                self.geometry.insert(format!("{child}.divider"),line);
-                if response.hovered()||response.dragged(){ui.ctx().set_cursor_icon(if horizontal{egui::CursorIcon::ResizeHorizontal}else{egui::CursorIcon::ResizeVertical});}
-                if response.dragged(){if let Some(pointer)=response.interact_pointer_pos(){
-                    let pixels=match edge{"left"=>pointer.x-rect.left(),"right"=>rect.right()-pointer.x,"top"=>pointer.y-rect.top(),_=>rect.bottom()-pointer.y};
-                    let min=placement["min_fraction"].as_f64().unwrap_or(0.05) as f32;
-                    let max=placement["max_fraction"].as_f64().unwrap_or(0.8) as f32;
-                    let fraction=(pixels/dimension.max(1.0)).clamp(min,max);
-                    self.layout_change(node,key,json!({"child":child,"fraction":fraction}),events);
-                }}
-                if horizontal{ui.painter().vline(line.center().x,line.y_range(),ui.visuals().widgets.noninteractive.bg_stroke);}else{ui.painter().hline(line.x_range(),line.center().y,ui.visuals().widgets.noninteractive.bg_stroke);}
+                self.layout_change(
+                    node,
+                    key,
+                    json!((offset / (length - divider).max(1.0)).clamp(min, max)),
+                    events,
+                );
             }
         }
-        ui.allocate_rect(area,Sense::hover());
+        let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
+        if horizontal {
+            ui.painter().vline(grip.center().x, grip.y_range(), stroke);
+        } else {
+            ui.painter().hline(grip.x_range(), grip.center().y, stroke);
+        }
+        self.child_rect(ui, child[0], a, nodes, route, depth, events);
+        self.child_rect(ui, child[1], b, nodes, route, depth, events);
+        ui.allocate_rect(area, Sense::hover());
+    }
+
+    fn dock(
+        &mut self,
+        ui: &mut egui::Ui,
+        key: &str,
+        node: &Node,
+        nodes: &BTreeMap<String, Node>,
+        route: Option<(&str, &Node, &Value)>,
+        depth: usize,
+        events: &mut Vec<Event>,
+    ) {
+        let area = ui.available_rect_before_wrap();
+        let mut remaining = area;
+        let placements = &node.ports["placements"];
+        for child in children(node) {
+            if nodes
+                .get(child)
+                .is_some_and(|n| n.ports.get("hidden") == Some(&Value::Bool(true)))
+            {
+                continue;
+            }
+            let placement = &placements[child];
+            let edge = placement["edge"].as_str().unwrap_or("fill");
+            if placement["minimum_window_width"]
+                .as_f64()
+                .is_some_and(|w| (area.width() as f64) < w)
+            {
+                continue;
+            }
+            let horizontal = ["left", "right"].contains(&edge);
+            let dimension = if horizontal {
+                area.width()
+            } else {
+                area.height()
+            };
+            let requested = placement["size"]
+                .as_f64()
+                .map(|v| v as f32)
+                .unwrap_or_else(|| {
+                    placement["fraction"].as_f64().unwrap_or(0.2) as f32 * dimension
+                });
+            let maximum = (if horizontal {
+                remaining.width()
+            } else {
+                remaining.height()
+            })
+            .max(0.0);
+            let size = requested.clamp(0.0, maximum);
+            let mut rect = remaining;
+            match edge {
+                "left" => {
+                    rect.max.x = rect.min.x + size;
+                    remaining.min.x = rect.max.x;
+                }
+                "right" => {
+                    rect.min.x = rect.max.x - size;
+                    remaining.max.x = rect.min.x;
+                }
+                "top" => {
+                    rect.max.y = rect.min.y + size;
+                    remaining.min.y = rect.max.y;
+                }
+                "bottom" => {
+                    rect.min.y = rect.max.y - size;
+                    remaining.max.y = rect.min.y;
+                }
+                _ => {}
+            }
+            self.child_rect(ui, child, rect, nodes, route, depth, events);
+            if placement["resizable"] == true && edge != "fill" {
+                let line = match edge {
+                    "left" => egui::Rect::from_min_max(
+                        egui::pos2(rect.right() - 3.0, rect.top()),
+                        egui::pos2(rect.right() + 3.0, rect.bottom()),
+                    ),
+                    "right" => egui::Rect::from_min_max(
+                        egui::pos2(rect.left() - 3.0, rect.top()),
+                        egui::pos2(rect.left() + 3.0, rect.bottom()),
+                    ),
+                    "top" => egui::Rect::from_min_max(
+                        egui::pos2(rect.left(), rect.bottom() - 3.0),
+                        egui::pos2(rect.right(), rect.bottom() + 3.0),
+                    ),
+                    _ => egui::Rect::from_min_max(
+                        egui::pos2(rect.left(), rect.top() - 3.0),
+                        egui::pos2(rect.right(), rect.top() + 3.0),
+                    ),
+                };
+                let response =
+                    ui.interact(line, egui::Id::unique((ui.ctx().viewport_id(),key, child, "resize")), Sense::drag());
+                self.geometry.insert(format!("{child}.divider"), line);
+                if response.hovered() || response.dragged() {
+                    ui.ctx().set_cursor_icon(if horizontal {
+                        egui::CursorIcon::ResizeHorizontal
+                    } else {
+                        egui::CursorIcon::ResizeVertical
+                    });
+                }
+                if response.dragged() {
+                    if let Some(pointer) = response.interact_pointer_pos() {
+                        let pixels = match edge {
+                            "left" => pointer.x - rect.left(),
+                            "right" => rect.right() - pointer.x,
+                            "top" => pointer.y - rect.top(),
+                            _ => rect.bottom() - pointer.y,
+                        };
+                        let min = placement["min_fraction"].as_f64().unwrap_or(0.05) as f32;
+                        let max = placement["max_fraction"].as_f64().unwrap_or(0.8) as f32;
+                        let fraction = (pixels / dimension.max(1.0)).clamp(min, max);
+                        self.layout_change(
+                            node,
+                            key,
+                            json!({"child":child,"fraction":fraction}),
+                            events,
+                        );
+                    }
+                }
+                if horizontal {
+                    ui.painter().vline(
+                        line.center().x,
+                        line.y_range(),
+                        ui.visuals().widgets.noninteractive.bg_stroke,
+                    );
+                } else {
+                    ui.painter().hline(
+                        line.x_range(),
+                        line.center().y,
+                        ui.visuals().widgets.noninteractive.bg_stroke,
+                    );
+                }
+            }
+        }
+        ui.allocate_rect(area, Sense::hover());
     }
 }
 
@@ -381,25 +542,64 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
     for (id, node) in &tree.nodes {
         match node.family.as_str() {
             "split" => {
-                if children(node).count()!=2 || num(node,"minimum").unwrap_or(0.1)>num(node,"maximum").unwrap_or(0.9){return Err(format!("split {id}: two children and ordered bounds required"));}
+                if children(node).count() != 2
+                    || num(node, "minimum").unwrap_or(0.1) > num(node, "maximum").unwrap_or(0.9)
+                {
+                    return Err(format!(
+                        "split {id}: two children and ordered bounds required"
+                    ));
+                }
             }
             "dock" => {
-                let children=children(node).collect::<Vec<_>>();
-                let placements=node.ports["placements"].as_object().ok_or("dock placements must be an object")?;
-                if placements.len()!=children.len(){return Err(format!("dock {id}: each child requires one placement"));}
-                let mut fill=0;
-                for (index,child) in children.iter().enumerate(){
-                    let p=placements.get(*child).ok_or("dock child missing placement")?;
-                    let edge=p["edge"].as_str().ok_or("dock edge required")?;
-                    if !["top","bottom","left","right","fill"].contains(&edge){return Err("invalid dock edge".into());}
-                    if edge=="fill"{fill+=1;if index+1!=children.len(){return Err("dock fill must be last".into());}}
-                    for key in ["size","fraction","minimum_window_width","min_fraction","max_fraction"]{
-                        if let Some(v)=p.get(key){if v.as_f64().is_none_or(|n|!n.is_finite()||n<0.0||(key.contains("fraction")&&n>1.0)){return Err(format!("invalid dock {key}"));}}
-                    }
-                    if p["min_fraction"].as_f64().unwrap_or(0.05)>p["max_fraction"].as_f64().unwrap_or(0.8){return Err("dock bounds are reversed".into());}
-                    if p.get("resizable").is_some_and(|v|!v.is_boolean()){return Err("dock resizable must be bool".into());}
+                let children = children(node).collect::<Vec<_>>();
+                let placements = node.ports["placements"]
+                    .as_object()
+                    .ok_or("dock placements must be an object")?;
+                if placements.len() != children.len() {
+                    return Err(format!("dock {id}: each child requires one placement"));
                 }
-                if fill!=1{return Err("dock requires one fill child".into());}
+                let mut fill = 0;
+                for (index, child) in children.iter().enumerate() {
+                    let p = placements
+                        .get(*child)
+                        .ok_or("dock child missing placement")?;
+                    let edge = p["edge"].as_str().ok_or("dock edge required")?;
+                    if !["top", "bottom", "left", "right", "fill"].contains(&edge) {
+                        return Err("invalid dock edge".into());
+                    }
+                    if edge == "fill" {
+                        fill += 1;
+                        if index + 1 != children.len() {
+                            return Err("dock fill must be last".into());
+                        }
+                    }
+                    for key in [
+                        "size",
+                        "fraction",
+                        "minimum_window_width",
+                        "min_fraction",
+                        "max_fraction",
+                    ] {
+                        if let Some(v) = p.get(key) {
+                            if v.as_f64().is_none_or(|n| {
+                                !n.is_finite() || n < 0.0 || (key.contains("fraction") && n > 1.0)
+                            }) {
+                                return Err(format!("invalid dock {key}"));
+                            }
+                        }
+                    }
+                    if p["min_fraction"].as_f64().unwrap_or(0.05)
+                        > p["max_fraction"].as_f64().unwrap_or(0.8)
+                    {
+                        return Err("dock bounds are reversed".into());
+                    }
+                    if p.get("resizable").is_some_and(|v| !v.is_boolean()) {
+                        return Err("dock resizable must be bool".into());
+                    }
+                }
+                if fill != 1 {
+                    return Err("dock requires one fill child".into());
+                }
             }
             "control" => {
                 let widget = Widget::decode(&node.ports["definition"])?;

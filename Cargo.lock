@@ -5140,10 +5140,14 @@ dependencies = [
  "egui",
  "egui_extras",
  "icons",
+ "image",
  "mix",
  "scene",
  "serde_json",
+ "tempfile",
+ "thumbs",
  "tokio",
+ "unicode-segmentation",
 ]
 
 [[package]]
