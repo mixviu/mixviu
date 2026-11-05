@@ -138,4 +138,40 @@ fn native_widget_input_runs_existing_mix_callbacks_and_readback() {
     view.apply_model(ready(&runtime, &wakes).model.unwrap())
         .unwrap();
     assert_eq!(view.model()["out"]["level_text"], "75%");
+    for open in [true, false, true] {
+        runtime.event("scenes.changed".into(), json!({"scenes":[{"name":"volume","open":open}]})).unwrap();
+        let done = ready(&runtime, &wakes);
+        if open { assert!(done.model.is_some(), "every popup reopen must refresh, not just the first"); }
+    }
+}
+
+#[test]
+fn reload_commits_scene_with_its_fresh_model_and_retains_last_good_on_error() {
+    let old_scene = "---\nscene: 1\nname: test\ncitizen: test\nmodel: {\"old\":\"previous\"}\n---\n```mix\nroot: {widget:\"text\",text:\"= $model.old\"}\n```\n";
+    let new_scene = old_scene.replace("old", "new");
+    let (tx, wakes) = mpsc::channel();
+    let runtime = Runtime::new(4, Arc::new(move || { let _ = tx.send(()); }), None);
+    let mut client = Client { runtime, view: SceneView::new(old_scene).unwrap(), error: String::new(),
+        program: Program {path: PathBuf::from("/tmp/viu-reload.mix"), source: String::new(), scene:"test".into(), citizen:"test".into()},
+        witness:None, last_sequence:0, pending_view:None, behaviour_ready:true, lifecycle_note:String::new() };
+    let source = "$ctx=viu_context(); send \"viu-local\" \"scenes.model\" body=json_encode({generation:$ctx.generation,value:{new:\"fresh\"}});";
+    client.reload(&new_scene, source.into()).unwrap();
+    assert!(!client.behaviour_ready);
+    assert_eq!(client.view.model()["old"], "previous", "keep committed view while load is pending");
+    client.complete(ready(&client.runtime, &wakes));
+    assert!(client.behaviour_ready);
+    assert_eq!(client.view.model()["new"], "fresh");
+    assert!(client.view.model().get("old").is_none());
+    let revision = client.view.revision;
+    client.reload(old_scene, "$broken = [".into()).unwrap();
+    wakes.recv_timeout(Duration::from_secs(5)).unwrap();
+    client.complete(client.runtime.try_completion().unwrap());
+    assert!(!client.behaviour_ready);
+    assert!(!client.error.is_empty());
+    assert_eq!(client.view.model()["new"], "fresh");
+    assert_eq!(client.view.revision, revision);
+    client.reload(&new_scene, source.into()).unwrap();
+    client.complete(ready(&client.runtime, &wakes));
+    assert!(client.behaviour_ready);
+    assert!(client.error.is_empty());
 }

@@ -15,66 +15,82 @@ struct Client {
     program: Program,
     witness: Option<PathBuf>,
     last_sequence: u64,
+    pending_view: Option<(u64, SceneView)>,
+    behaviour_ready: bool,
+    lifecycle_note: String,
+}
+impl Client {
+    fn reload(&mut self, scene: &str, source: String) -> Result<(), String> {
+        let view = SceneView::new(scene)?;
+        let mut program = self.program.clone();
+        program.source = source;
+        let generation = self.runtime.load(program.clone()).map_err(|e| format!("{e:?}"))?;
+        self.program = program;
+        self.pending_view = Some((generation, view));
+        self.behaviour_ready = false;
+        self.lifecycle_note = "Reload pending: earlier input results are superseded; controls wait for the new model".into();
+        Ok(())
+    }
+
+    fn complete(&mut self, done: viu::runtime::Completion) {
+        if !self.runtime.accepts(&done) {
+            eprintln!("VIU superseded generation={} sequence={}", done.generation, done.sequence);
+            self.lifecycle_note = "An earlier generation's result was superseded by reload".into();
+            return;
+        }
+        self.last_sequence = done.sequence;
+        eprintln!("VIU completion generation={} sequence={} callback_us={} error={:?}",
+            done.generation, done.sequence, done.elapsed.as_micros(), done.error);
+        if let Some(error) = done.error {
+            self.error = error;
+            if done.sequence == 0 {
+                self.pending_view = None;
+                self.behaviour_ready = false;
+            }
+            return;
+        }
+        if let Some((generation, mut candidate)) = self.pending_view.take() {
+            if generation != done.generation || done.sequence != 0 {
+                self.error = "reload completion does not match pending scene".into();
+                return;
+            }
+            let result = done.model.ok_or_else(|| "reloaded behaviour did not publish an initial model".to_owned())
+                .and_then(|model| candidate.apply_model(model));
+            match result {
+                Ok(()) => { self.view = candidate; self.behaviour_ready = true; self.error.clear(); }
+                Err(error) => self.error = error,
+            }
+        } else if let Some(model) = done.model {
+            match self.view.apply_model(model) {
+                Ok(()) => { self.behaviour_ready = true; self.error.clear(); }
+                Err(error) => self.error = error,
+            }
+        }
+    }
 }
 impl eframe::App for Client {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         while let Some(done) = self.runtime.try_completion() {
-            if !self.runtime.accepts(&done) {
-                continue;
-            }
-            self.last_sequence = done.sequence;
-            eprintln!(
-                "VIU completion generation={} sequence={} callback_us={} error={:?}",
-                done.generation,
-                done.sequence,
-                done.elapsed.as_micros(),
-                done.error
-            );
-            if done.error.is_none() {
-                self.error.clear();
-            }
-            if let Some(error) = done.error {
-                self.error = error;
-            }
-            if let Some(model) = done.model {
-                if let Err(error) = self.view.apply_model(model) {
-                    self.error = error;
-                }
-            }
+            self.complete(done);
         }
         ui.label("Quoin volume — safe audio fixture");
         if ui.button("Reload scene and behaviour").clicked() {
             let scene = self.program.path.parent().unwrap().join("scene.mix");
-            match std::fs::read_to_string(scene)
-                .map_err(|e| e.to_string())
-                .and_then(|source| SceneView::new(&source))
-            {
-                Ok(mut view) => {
-                    if let Err(error) = view.apply_model(self.view.model().clone()) {
-                        self.error = error;
-                    } else {
-                        self.view = view;
-                    }
-                }
-                Err(error) => self.error = error,
-            }
-            match std::fs::read_to_string(&self.program.path) {
-                Ok(source) => {
-                    self.program.source = source;
-                    if let Err(e) = self.runtime.load(self.program.clone()) {
-                        self.error = format!("{e:?}");
-                    }
-                }
-                Err(e) => self.error = e.to_string(),
+            let files = std::fs::read_to_string(scene).and_then(|scene|
+                std::fs::read_to_string(&self.program.path).map(|source| (scene, source)));
+            match files {
+                Ok((scene, source)) => if let Err(error) = self.reload(&scene, source) { self.error = error; },
+                Err(error) => self.error = error.to_string(),
             }
         }
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
         }
-        let events = egui::ScrollArea::vertical()
+        if !self.lifecycle_note.is_empty() { ui.label(&self.lifecycle_note); }
+        let events = ui.add_enabled_ui(self.behaviour_ready, |ui| egui::ScrollArea::vertical()
             .id_salt("scene-root")
             .show(ui, |ui| self.view.show(ui))
-            .inner;
+            .inner).inner;
         for event in events {
             eprintln!("VIU input command={} body={}", event.command, event.body);
             if let Err(refusal) = self.runtime.event(event.command, event.body) {
@@ -132,6 +148,9 @@ fn main() -> eframe::Result {
                 program,
                 witness: std::env::var_os("VIU_LAB_WITNESS").map(PathBuf::from),
                 last_sequence: 0,
+                pending_view: None,
+                behaviour_ready: false,
+                lifecycle_note: String::new(),
             }))
         }),
     )

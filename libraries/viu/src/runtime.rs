@@ -145,7 +145,8 @@ impl Runtime {
                                     Ok(())
                                 }))
                             }
-                            _ => Err("stale generation".into()),
+                            Some(_) => Err("stale_generation: superseded behaviour".into()),
+                            None => Err("behaviour_unavailable: load failed or callback deadline expired; reload required".into()),
                         };
                         (generation, sequence, outcome)
                     }
