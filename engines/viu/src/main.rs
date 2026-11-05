@@ -47,7 +47,9 @@ impl Client {
             return;
         }
         self.last_sequence = done.sequence;
-        if !done.behaviour_available { self.behaviour_ready = false; }
+        if !done.behaviour_available {
+            self.behaviour_ready = false;
+        }
         eprintln!(
             "VIU completion generation={} sequence={} callback_us={} error={:?}",
             done.generation,
@@ -60,6 +62,8 @@ impl Client {
             if done.sequence == 0 {
                 self.pending_view = None;
                 self.behaviour_ready = false;
+                self.lifecycle_note =
+                    "Reload failed; last good scene retained, reload to recover".into();
             }
             return;
         }
@@ -77,6 +81,8 @@ impl Client {
                     self.view = candidate;
                     self.behaviour_ready = true;
                     self.error.clear();
+                    self.lifecycle_note =
+                        "Reload committed; earlier input results were superseded".into();
                 }
                 Err(error) => self.error = error,
             }

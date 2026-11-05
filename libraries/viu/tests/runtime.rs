@@ -141,7 +141,11 @@ $payload.value.items[0].id="mutated after publication"
 #[test]
 fn application_error_text_cannot_retire_a_live_generation() {
     let (mut runtime, wakes) = runtime(2);
-    runtime.load(program(&(INIT.to_owned() + "\non named; raise(\"APP\",\"upstream deadline exceeded\"); end"))).unwrap();
+    runtime
+        .load(program(
+            &(INIT.to_owned() + "\non named; raise(\"APP\",\"upstream deadline exceeded\"); end"),
+        ))
+        .unwrap();
     assert!(next(&runtime, &wakes).error.is_none());
     runtime.event("named".into(), json!({})).unwrap();
     let failed = next(&runtime, &wakes);
