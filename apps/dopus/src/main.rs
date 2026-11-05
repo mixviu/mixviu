@@ -307,7 +307,9 @@ impl App {
                 // model over the Bus when checking a controller outcome.
                 let state = if command == "dopus.state" && args["compact"] == true {
                     json!({"ready":self.ready(),"mode":self.mode,"model":{"panes":self.model["panes"],"active":self.model["active"],"busy":self.model["busy"],"serial":self.model["serial"],"appearance":self.model["appearance"]},"error":self.error,"last_service_us":self.last_service_us,"endpoint":"compact applied-model observation; physical presentation unmeasured"})
-                } else { self.state() };
+                } else {
+                    self.state()
+                };
                 let _ = reply.send((0, state));
             }
             "dopus.describe" | "app.describe" => {

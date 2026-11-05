@@ -23,6 +23,14 @@ Bus surface. Semantic intents use `dopus.intent`; native input uses the
 `dopus.ui.*` commands. Application GPU readback and compositor captures are
 separate endpoints, neither proving physical presentation.
 
+`dopus.state {compact:true}` returns the applied pane summaries without the
+full row model/geometry. Use this for outcome observations in Bus benchmarks;
+retain the default response for complete UI inspection. An execute reply is
+not proof of physical presentation. Viu bounds model data at 8 MiB independently
+of the scene library's unchanged 256 KiB authored-document limit. Legacy list
+templates retain their 500-row limit; native virtual tree tables use their own
+row validation and still must fit the model and evaluator budgets.
+
 The native pilots exercised real selection, byte-equal file copying and
 previews in all three versions. The two Viu clients also produced byte-identical
 application GPU captures. Shared appearance resolves the original design-token

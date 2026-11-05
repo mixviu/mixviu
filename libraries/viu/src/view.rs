@@ -8,6 +8,21 @@ use scene::{Node, ResolvedScene};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+/// Data held by native virtual controls is independent of authored scene text
+/// and of legacy template row expansion. Refuse before changing live state.
+pub const MAX_MODEL_BYTES: usize = 8 * 1024 * 1024;
+
+fn validate_model_budget(model: &Value) -> Result<(), String> {
+    if !model.is_object() {
+        return Err("scene model must be an object".into());
+    }
+    let bytes = serde_json::to_vec(model).map_err(|e| e.to_string())?;
+    if bytes.len() > MAX_MODEL_BYTES {
+        return Err("scene model exceeds 8 MiB data budget".into());
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
 pub struct Event {
     pub command: String,
@@ -33,10 +48,10 @@ impl SceneView {
     fn prepare(source: &str, model: Option<Value>) -> Result<Self, String> {
         let mut document = scene::parse(source).map_err(|e| format!("{e:?}"))?;
         if let Some(model) = model {
-            if !model.is_object() {
-                return Err("scene model must be an object".into());
-            }
+            validate_model_budget(&model)?;
             document.model = Some(model);
+        } else if let Some(model) = &document.model {
+            validate_model_budget(model)?;
         }
         let tree = scene::resolve(&document).map_err(|e| format!("{e:?}"))?;
         let lists = validate_templates(&tree).map_err(|e| e.to_string())?;
@@ -96,11 +111,9 @@ impl SceneView {
     }
 
     pub fn apply_model(&mut self, model: Value) -> Result<(), String> {
-        if !model.is_object() {
-            return Err("scene model must be an object".into());
-        }
+        validate_model_budget(&model)?;
         let set = scene::bindings::BindingSet::from_resolved(&self.tree);
-        let evaluated = scene::bindings::reevaluate(&self.tree, &set, "model", &model)
+        let evaluated = scene::bindings::reevaluate_with_model_limit(&self.tree, &set, "model", &model, MAX_MODEL_BYTES)
             .map_err(|e| format!("{e:?}"))?;
         if !evaluated.diagnostics.is_empty() {
             return Err(format!("{:?}", evaluated.diagnostics));
