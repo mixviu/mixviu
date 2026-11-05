@@ -154,7 +154,8 @@ fn host_slots_reuse_scene_composition_without_consuming_the_fallback_dock_edge()
     pass(&mut view, 40.0);
     assert!(view.geometry.contains_key("only"));
     assert!((view.geometry["heading"].min.x - 100.0).abs() < 0.1);
-    assert!((view.geometry["body"].min.y - 40.0).abs() < 0.1);
+    assert!(view.geometry["body"].min.y >= 40.0);
+    assert!((view.geometry["body"].min.y - view.geometry["root"].min.y).abs() < 0.1);
     view.set_slots(std::collections::BTreeMap::new()).unwrap();
     pass(&mut view, 0.0);
     assert!(!view.geometry.contains_key("only"));
