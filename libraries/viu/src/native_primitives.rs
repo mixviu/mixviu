@@ -103,7 +103,9 @@ pub(crate) fn thumbnail(stop: Arc<AtomicBool>) -> mix::evaluator::ExtFn {
             return Err(fail());
         };
         use std::os::unix::ffi::OsStringExt;
-        let path=std::path::PathBuf::from(std::ffi::OsString::from_vec(files::chooser::location(&serde_json::json!(path)).map_err(|_|fail())?));
+        let path = std::path::PathBuf::from(std::ffi::OsString::from_vec(
+            files::chooser::location(&serde_json::json!(path)).map_err(|_| fail())?,
+        ));
         let remote = match args.get(1) {
             None | Some(Value::Bool(false)) => false,
             Some(Value::Bool(true)) => true,
@@ -112,20 +114,21 @@ pub(crate) fn thumbnail(stop: Arc<AtomicBool>) -> mix::evaluator::ExtFn {
         static GENERATOR: OnceLock<Option<thumbs::generate::Generator>> = OnceLock::new();
         let result = GENERATOR.get_or_init(|| thumbs::generate::Generator::from_env("viu"));
         let value = match result {
-            Some(generator) => match generator.thumbnail_with(
-                &path,
-                thumbs::Size::XLarge,
-                remote,
-                &|| stop.load(Ordering::Acquire),
-            ) {
-                thumbs::Outcome::Ready(path) => serde_json::json!({"phase":"ready","path":path}),
-                thumbs::Outcome::Failed(error) => {
-                    serde_json::json!({"phase":"failed","message":error})
+            Some(generator) => {
+                match generator.thumbnail_with(&path, thumbs::Size::XLarge, remote, &|| {
+                    stop.load(Ordering::Acquire)
+                }) {
+                    thumbs::Outcome::Ready(path) => {
+                        serde_json::json!({"phase":"ready","path":path})
+                    }
+                    thumbs::Outcome::Failed(error) => {
+                        serde_json::json!({"phase":"failed","message":error})
+                    }
+                    thumbs::Outcome::Skipped(reason) => {
+                        serde_json::json!({"phase":"skipped","message":reason})
+                    }
                 }
-                thumbs::Outcome::Skipped(reason) => {
-                    serde_json::json!({"phase":"skipped","message":reason})
-                }
-            },
+            }
             None => serde_json::json!({"phase":"skipped","message":"no thumbnail cache directory"}),
         };
         crate::runtime::from_json(value)

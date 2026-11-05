@@ -4,9 +4,9 @@ mod input;
 mod native;
 mod panel;
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod raw_names_test;
+#[cfg(test)]
+mod tests;
 use eframe::egui;
 use serde_json::{Value, json};
 use std::{
@@ -99,10 +99,22 @@ impl App {
             viu::appearance::install_style(ctx, &model["appearance"], style);
         }
         self.model = model;
-        if let Some(path)=self.model["panes"][self.model["active"].as_u64().unwrap_or(0) as usize]["path"].as_str(){
-            let path=path.chars().map(|c|if c.is_control(){'�'}else{c}).collect::<String>();
-            let title=format!("{path} — Dopus {} / Viu",if self.mode=="mix"{"Mix"}else{"Rust"});
-            if title!=self.title {ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));self.title=title;}
+        if let Some(path) = self.model["panes"][self.model["active"].as_u64().unwrap_or(0) as usize]
+            ["path"]
+            .as_str()
+        {
+            let path = path
+                .chars()
+                .map(|c| if c.is_control() { '�' } else { c })
+                .collect::<String>();
+            let title = format!(
+                "{path} — Dopus {} / Viu",
+                if self.mode == "mix" { "Mix" } else { "Rust" }
+            );
+            if title != self.title {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+                self.title = title;
+            }
         }
         self.last_model_at = Instant::now();
         Ok(())
@@ -185,7 +197,10 @@ impl App {
                 && args["value"]["command"] == "app.quit");
         let ui_call = reply.is_none() && self.input_wait && command != "dopus.persist";
         let human_close = reply.is_none() && quit;
-        if !matches!(command.as_str(), "dopus.persist" | "dopus.quit" | "dopus.session") {
+        if !matches!(
+            command.as_str(),
+            "dopus.persist" | "dopus.quit" | "dopus.session"
+        ) {
             self.save_at = Some(Instant::now() + std::time::Duration::from_millis(350));
         }
         if let Some(runtime) = &mut self.runtime {
@@ -370,13 +385,18 @@ impl App {
                 }
             }
             "dopus.show" => {
-                self.effect_next+=1;
-                let id=format!("window-rpc-{}",self.effect_next);
-                let path=self.app_dir.join("../../libraries/viu/mix/window.mix");
+                self.effect_next += 1;
+                let id = format!("window-rpc-{}", self.effect_next);
+                let path = self.app_dir.join("../../libraries/viu/mix/window.mix");
                 let admission=std::fs::read_to_string(&path).map_err(|e|e.to_string()).and_then(|source|self.jobs.submit(json!({"id":id,"owner":0,"path":path,"source":source,"command":"job.run","args":{"app_id":format!("mixviu.dopus.{}",self.mode),"pid":std::process::id()}})));
                 match admission {
-                    Ok(receipt)=>{self.effect_admissions.insert(id.clone(),receipt);self.job_replies.insert(id,reply);},
-                    Err(error)=>{let _=reply.send((10,json!({"error_code":"BUSY","message":error})));},
+                    Ok(receipt) => {
+                        self.effect_admissions.insert(id.clone(), receipt);
+                        self.job_replies.insert(id, reply);
+                    }
+                    Err(error) => {
+                        let _ = reply.send((10, json!({"error_code":"BUSY","message":error})));
+                    }
                 }
             }
             "dopus.window.state" => {
@@ -384,20 +404,39 @@ impl App {
                 let _=reply.send((0,json!({"inner_rect":state.inner_rect.map(|r|json!([r.min.x,r.min.y,r.width(),r.height()])),"focused":state.focused,"maximized":state.maximized,"minimized":state.minimized})));
             }
             "dopus.window" => {
-                if let Some(action)=args["action"].as_str(){
+                if let Some(action) = args["action"].as_str() {
                     match action {
-                        "close"=>{close_after_reply.store(true,Ordering::Release);self.call("dopus.quit".into(),json!({}),headers,Some(reply),ctx);return;},
-                        "minimize"=>{
-                            if self.input_wait || self.capture_reply.is_some(){let _=reply.send((10,json!({"error_code":"BUSY","message":"Native input or capture is still pending"})));return;}
+                        "close" => {
+                            close_after_reply.store(true, Ordering::Release);
+                            self.call("dopus.quit".into(), json!({}), headers, Some(reply), ctx);
+                            return;
+                        }
+                        "minimize" => {
+                            if self.input_wait || self.capture_reply.is_some() {
+                                let _=reply.send((10,json!({"error_code":"BUSY","message":"Native input or capture is still pending"})));
+                                return;
+                            }
                             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                            let _=reply.send((0,json!({"requested":"minimize"})));return;
-                        },
-                        "maximize"=>ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true)),
-                        "restore"=>{ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));},
-                        "focus"=>{let _=reply.send((10,json!({"error_code":"UNSUPPORTED","message":"Use dopus.show through compositor authority"})));return;},
-                        _=>{let _=reply.send((10,json!({"error_code":"INVALID_ARGUMENT"})));return;},
+                            let _ = reply.send((0, json!({"requested":"minimize"})));
+                            return;
+                        }
+                        "maximize" => ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true)),
+                        "restore" => {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+                        }
+                        "focus" => {
+                            let _=reply.send((10,json!({"error_code":"UNSUPPORTED","message":"Use dopus.show through compositor authority"})));
+                            return;
+                        }
+                        _ => {
+                            let _ = reply.send((10, json!({"error_code":"INVALID_ARGUMENT"})));
+                            return;
+                        }
                     }
-                    self.replies_after_frame.push(reply);ctx.request_repaint();return;
+                    self.replies_after_frame.push(reply);
+                    ctx.request_repaint();
+                    return;
                 }
                 let mut valid = false;
                 if let Some(size) = args["size"].as_array().filter(|a| a.len() == 2) {
@@ -714,7 +753,7 @@ impl eframe::App for App {
     fn raw_input_hook(&mut self, _: &egui::Context, input: &mut egui::RawInput) {
         input.events.append(&mut self.input.now);
     }
-    fn logic(&mut self, ctx:&egui::Context, _: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.completions(ctx);
         if ctx.input(|i| i.viewport().close_requested())
             && !self.close_after_idle
@@ -732,21 +771,34 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        if self.save_at.is_some_and(|t|t<=Instant::now()) {
-            self.save_at=None;
-            self.call("dopus.persist".into(),json!({}),BTreeMap::new(),None,ctx);
-        }else if let Some(at)=self.save_at{ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));}
+        if self.save_at.is_some_and(|t| t <= Instant::now()) {
+            self.save_at = None;
+            self.call(
+                "dopus.persist".into(),
+                json!({}),
+                BTreeMap::new(),
+                None,
+                ctx,
+            );
+        } else if let Some(at) = self.save_at {
+            ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
+        }
     }
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
         let context = ui.ctx().clone();
         let ctx = &context;
-        if self.bus.close_requested.load(Ordering::Acquire) || (self.close_after_idle && self.inflight.is_empty()){return;}
+        if self.bus.close_requested.load(Ordering::Acquire)
+            || (self.close_after_idle && self.inflight.is_empty())
+        {
+            return;
+        }
         ui.painter().rect_filled(
             ui.max_rect(),
             0.0,
             viu::appearance::colour(ctx, "dock").unwrap_or(ui.visuals().panel_fill),
         );
-        self.window_frame.show(ui,&self.title,&self.session.snapshot["state"]["values"]);
+        self.window_frame
+            .show(ui, &self.title, &self.session.snapshot["state"]["values"]);
         let events = if let Some(view) = &mut self.view {
             view.show(ui)
         } else {
@@ -754,7 +806,9 @@ impl eframe::App for App {
             Vec::new()
         };
         self.window_frame.edges(ui);
-        if let Some(view)=self.view.as_mut(){view.geometry.extend(self.window_frame.geometry.clone());}
+        if let Some(view) = self.view.as_mut() {
+            view.geometry.extend(self.window_frame.geometry.clone());
+        }
         if let Some(error) = self.view.as_mut().and_then(SceneView::take_focus_error) {
             if self.input_wait {
                 self.input_error = Some(error);
@@ -781,7 +835,9 @@ impl eframe::App for App {
         for event in events {
             self.call(event.command, event.body, BTreeMap::new(), None, ctx);
         }
-        if self.window_frame.close_requested {self.call("dopus.quit".into(),json!({}),BTreeMap::new(),None,ctx);}
+        if self.window_frame.close_requested {
+            self.call("dopus.quit".into(), json!({}), BTreeMap::new(), None, ctx);
+        }
         for action in input::shortcuts(ctx, &self.contract, shortcuts_blocked) {
             if let Some(key) = action["tree_navigation"].as_str() {
                 let side = if self.model["active"] == 0 {
