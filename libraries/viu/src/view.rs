@@ -41,7 +41,9 @@ impl SceneView {
         let set = scene::bindings::BindingSet::from_resolved(&self.tree);
         let evaluated = scene::bindings::reevaluate(&self.tree, &set, "model", &model)
             .map_err(|e| format!("{e:?}"))?;
-        if !evaluated.diagnostics.is_empty() { return Err(format!("{:?}", evaluated.diagnostics)); }
+        if !evaluated.diagnostics.is_empty() {
+            return Err(format!("{:?}", evaluated.diagnostics));
+        }
         let candidate = evaluated.tree;
         let lists = validate_templates(&candidate).map_err(|e| e.to_string())?;
         self.tree = candidate;
@@ -64,7 +66,7 @@ impl SceneView {
         ui: &mut egui::Ui,
         id: &str,
         nodes: &BTreeMap<String, Node>,
-        route: Option<(&Node, &Value)>,
+        route: Option<(&str, &Node, &Value)>,
         depth: usize,
         events: &mut Vec<Event>,
     ) {
@@ -79,7 +81,7 @@ impl SceneView {
         }
         let key = route.map_or_else(
             || id.to_owned(),
-            |(_, item)| format!("{}#{id}", item["id"].as_str().unwrap_or("")),
+            |(_, _, item)| format!("{}#{id}", item["id"].as_str().unwrap_or("")),
         );
         let response = ui
             .push_id(&key, |ui| {
@@ -118,7 +120,7 @@ impl SceneView {
                                         ui,
                                         text(node, "row"),
                                         instance,
-                                        Some((node, item)),
+                                        Some((id, node, item)),
                                         depth + 1,
                                         events,
                                     );
@@ -166,7 +168,7 @@ impl SceneView {
                                 }
                             })
                             .response;
-                        if route.is_some_and(|(list, _)| text(list, "row") == id)
+                        if route.is_some_and(|(_, list, _)| text(list, "row") == id)
                             || node.ports.contains_key("on_click")
                         {
                             if ui
@@ -194,12 +196,12 @@ fn route_event(
     scene: &str,
     id: &str,
     node: &Node,
-    route: Option<(&Node, &Value)>,
+    route: Option<(&str, &Node, &Value)>,
     events: &mut Vec<Event>,
 ) {
-    let (node, item) = route.map_or((node, None), |(node, item)| (node, Some(item)));
+    let (route_id, node, item) = route.map_or((id, node, None), |(id, node, item)| (id, node, Some(item)));
     if let Some(command) = node.ports.get("on_click").and_then(Value::as_str) {
-        let mut body = json!({"scene":scene,"node":id,"kind":"click"});
+        let mut body = json!({"scene":scene,"node":route_id,"kind":"click"});
         if let Some(item) = item {
             body["item"] = item.clone();
         }

@@ -117,4 +117,19 @@ fn native_widget_input_runs_existing_mix_callbacks_and_readback() {
         .unwrap();
     assert_eq!(view.model()["out"]["name"], "Example headphones");
     assert_eq!(view.model()["out"]["level_text"], "65%");
+    let events = click(&ctx, &mut view, "sink_1#vo_row");
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].command, "vol_output_pick");
+    assert_eq!(events[0].body["node"], "v_outs");
+    assert_eq!(events[0].body["item"]["id"], "sink_1");
+    for event in events { runtime.event(event.command, event.body).unwrap(); }
+    view.apply_model(ready(&runtime, &wakes).model.unwrap()).unwrap();
+    let events = click(&ctx, &mut view, "v75#vo_seg");
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].command, "vol_out_set");
+    assert_eq!(events[0].body["node"], "vo_bar");
+    assert_eq!(events[0].body["item"]["pct"], 75);
+    for event in events { runtime.event(event.command, event.body).unwrap(); }
+    view.apply_model(ready(&runtime, &wakes).model.unwrap()).unwrap();
+    assert_eq!(view.model()["out"]["level_text"], "75%");
 }

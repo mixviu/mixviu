@@ -12,11 +12,15 @@ use viu::{
     view::SceneView,
 };
 
+#[cfg(test)]
+#[test]
+fn populated_diagnostic_preserves_equal_outputs_and_geometry() { main(); }
+
 const BEHAVIOUR: &str = r#"
 $ctx = viu_context()
 $rows = []
 for $i = 0 to 511
-  push($rows, {id: "row_" .. to_string($i), text: "Row " .. to_string($i)})
+  push($rows, {id: "row_" .. to_string($i), text: "Row " .. to_string($i), cells: []})
 end
 $model = {rows: $rows, selected: "row_0", offset: 0}
 fn publish_model()
@@ -142,7 +146,10 @@ fn main() {
                 mix_view.geometry, rust_view.geometry,
                 "same widget geometry"
             );
-            assert!(mix_view.geometry.len()>256,"the list must actually draw populated row instances");
+            assert!(
+                mix_view.geometry.len() > 256,
+                "the list must actually draw populated row instances"
+            );
             if iteration >= 4 {
                 mix_wall.push(mix_ns);
                 rust_wall.push(rust_ns);
