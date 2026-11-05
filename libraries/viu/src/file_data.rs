@@ -18,8 +18,19 @@ fn uri(path: &Path) -> Result<String, String> {
 pub fn command(command: &str, args: &Value) -> Result<Value, String> {
     match command {
         "uri" => Ok(json!(uri(&path(&args["path"])?)?)),
-        "display-path"=>Ok(json!(path(&args["path"])?.to_string_lossy().chars().map(|c|if c.is_control(){'�'}else{c}).collect::<String>())),
-        "count"=>Ok(json!(command_fn("scan",args)?.as_array().ok_or("Expected directory rows")?.len())),
+        "display-path" => Ok(json!(
+            path(&args["path"])?
+                .to_string_lossy()
+                .chars()
+                .map(|c| if c.is_control() { '�' } else { c })
+                .collect::<String>()
+        )),
+        "count" => Ok(json!(
+            command_fn("scan", args)?
+                .as_array()
+                .ok_or("Expected directory rows")?
+                .len()
+        )),
         "parent" => {
             let p = path(&args["path"])?;
             Ok(json!(uri(p.parent().unwrap_or(Path::new("/")))?))

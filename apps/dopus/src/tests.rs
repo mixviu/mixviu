@@ -24,6 +24,7 @@ fn wait(
         assert!(Instant::now() < end, "Mix did not complete");
         std::thread::sleep(Duration::from_millis(2));
     }
+
 }
 #[test]
 fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
@@ -126,6 +127,16 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
         assert!(Instant::now() < end);
         std::thread::sleep(Duration::from_millis(2));
     }
+    let seq=runtime.event("dopus.call".into(),json!({"command":"dopus.theme.set","args":{"mode":"light","scheme":"forest","style":"plain"}})).unwrap();
+    let changed=wait(&runtime,&mut jobs,seq).0;
+    assert_eq!(changed.reply.unwrap().rc,0);
+    let model=changed.model.unwrap();
+    assert_eq!(model["appearance"],json!({"mode":"light","scheme":"forest","style":"plain"}));
+    assert!(model["actions"].as_array().unwrap().iter().any(|a|a["id"]=="theme.style-plain"&&a["checked"]==true));
+    let seq=runtime.event("dopus.call".into(),json!({"command":"dopus.theme.set","args":{"mode":"dark","style":"invalid"}})).unwrap();
+    let refused=wait(&runtime,&mut jobs,seq).0;assert_eq!(refused.reply.unwrap().rc,10);assert!(refused.model.is_none());
+    let seq=runtime.event("dopus.call".into(),json!({"command":"dopus.theme.set","args":{}})).unwrap();
+    assert_eq!(wait(&runtime,&mut jobs,seq).0.model.unwrap()["appearance"],model["appearance"]);
 }
 
 #[test]

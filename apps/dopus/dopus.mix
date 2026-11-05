@@ -38,6 +38,10 @@ on dopus.call
           if $contract.schemes[$a.scheme]==nil then raise("INVALID_ARGUMENT","Unknown colour scheme") end
           $candidate.appearance.scheme=$a.scheme
         end
+        if $a.style!=nil then
+          if not contains($contract.styles,$a.style) then raise("INVALID_ARGUMENT","Unknown widget style") end
+          $candidate.appearance.style=$a.style
+        end
       elif $name=="dopus.dialog.answer" then
         if not deep_eq($a.instance,$candidate.form.instance) then raise("STALE_FORM","Read the current dialog instance before answering") end
         if $a.text!=nil and type($a.text)!="string" then raise("INVALID_ARGUMENT","Dialog text must be text") end

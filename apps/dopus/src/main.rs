@@ -309,19 +309,7 @@ impl App {
                 let _=reply.send((0,json!({"schema":"viu.dopus.v1","mode":self.mode,"actions":self.contract["actions"],"commands":commands(),"shared_scene":true,"shared_widgets":true,"original_core":self.mode=="rust","limits":{"bus":32,"behaviour":32,"jobs":4,"job_admission":8},"features":{"macros":"native session and shared Mix panel","chooser":"--choose-service provides the native files.choose contract with shared Viu controls","external_effects":"native open process admission and mail Bus delivery"},"boundaries":["external application completion is not measured","physical presentation is not measured"]})));
             }
             "dopus.actions" => {
-                let actions = if let Some(native) = &self.native {
-                    native.actions()
-                } else {
-                    let menus = self.model["values"]["menu"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .flat_map(|m| m["children"].as_array().into_iter().flatten())
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    json!({"actions":self.contract["actions"].as_array().unwrap().iter().map(|a|menus.iter().find(|c|c["id"]==a["id"]).cloned().unwrap_or_else(||a.clone())).collect::<Vec<_>>()})
-                };
-                let _ = reply.send((0, actions));
+                let _ = reply.send((0,json!({"actions":self.model["actions"]})));
             }
             "dopus.info" => {
                 let _=reply.send((0,json!({"info":self.model["info"],"busy":self.model["busy"],"panes":self.model["panes"]})));
@@ -857,7 +845,12 @@ fn main() -> eframe::Result {
     )
     .expect("Dopus contract data");
     if args.iter().any(|a| a == "--choose-service") {
-        let service=args.iter().position(|a|a=="--service").and_then(|i|args.get(i+1)).cloned().unwrap_or_else(||"files".into());
+        let service = args
+            .iter()
+            .position(|a| a == "--service")
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+            .unwrap_or_else(|| "files".into());
         return chooser::run(app_dir, profile, service);
     }
     let title = format!(

@@ -329,7 +329,7 @@ enum Pending {
 struct Shell {
     app_dir: PathBuf,
     profile: PathBuf,
-    topic:String,
+    topic: String,
     home: Value,
     bus: Endpoint,
     service: viu::chooser::Service,
@@ -492,7 +492,7 @@ impl eframe::App for Shell {
                     if choose && answer.0 == 0 {
                         // A renamed comparison citizen advertises its own
                         // native topic; the canonical provider remains files.
-                        answer.1["topic"]=json!(self.topic);
+                        answer.1["topic"] = json!(self.topic);
                         if let Some(id) = answer.1["request"].as_str() {
                             self.delivery.insert(id.into(), delivery);
                         }
@@ -668,8 +668,8 @@ fn commands() -> Vec<String> {
     .map(str::to_owned)
     .collect()
 }
-pub fn run(app_dir: PathBuf, profile: PathBuf,service_name:String) -> eframe::Result {
-    let topic=format!("{service_name}.chosen");
+pub fn run(app_dir: PathBuf, profile: PathBuf, service_name: String) -> eframe::Result {
+    let topic = format!("{service_name}.chosen");
     eframe::run_native(
         "Viu file chooser",
         eframe::NativeOptions {

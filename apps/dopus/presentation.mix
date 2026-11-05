@@ -32,15 +32,11 @@ fn dp_command($state,$contract,$id)
   $a.enabled=dp_enabled($state,$id)
   $a.shortcut=join($a.keys," / ")
   $p=$state.panes[$state.active]
-  $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open else false end
+  $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open elif starts_with($id,"theme.scheme-") then $state.appearance.scheme==slice($id,13) elif starts_with($id,"theme.style-") then $state.appearance.style==slice($id,12) elif starts_with($id,"theme.mode-") then $state.appearance.mode==slice($id,11) else false end
   return $a
 end
 fn dp_menus($state,$contract)
-  $out=$contract.menus
-  for $i=0 to len($out)-1
-    for $j=0 to len($out[$i].children)-1 $out[$i].children[$j]=dp_command($state,$contract,$out[$i].children[$j].id) end
-  end
-  return $out
+  return map($contract.menus,fn($item)=dp_toolbar_item($state,$contract,$item))
 end
 fn dp_toolbar_item($state,$contract,$item)
   if $item.children!=nil then
@@ -105,5 +101,5 @@ fn dp_project($state,$contract)
   $values.places={key:"places",revision:0,active:false,columns:[{id:"name",label:"Places"}],rows:$place_rows,context:[],background_context:[]}
   $values.preview=if $state.preview_slots==nil then {phase:"none"} else $state.preview_slots[$state.active].value end
   $layout={form:{edge:"top",size:0},topbar:{edge:"top",size:38},"status-pane":{edge:"bottom",size:30},"places-pane":{edge:"left",fraction:$state.places_width,resizable:true,minimum:0.1,maximum:0.3,minimum_window_width:640},"properties-pane":{edge:"right",fraction:$state.properties_width,resizable:true,minimum:0.1,maximum:0.3,minimum_window_width:640},"center-pane":{edge:"fill"}}
-  return {values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
+  return {actions:map($contract.actions,fn($a)=dp_command($state,$contract,$a.id)),values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
 end

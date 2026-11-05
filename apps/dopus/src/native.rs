@@ -255,6 +255,9 @@ impl Native {
             "view.toggle-previews" => p.previews,
             "view.toggle-places" => self.core().sidebar(Sidebar::Places).open,
             "view.toggle-properties" => self.core().sidebar(Sidebar::Properties).open,
+            id if id.starts_with("theme.scheme-")=>self.appearance["scheme"].as_str()==Some(&id[13..]),
+            id if id.starts_with("theme.style-")=>self.appearance["style"].as_str()==Some(&id[12..]),
+            id if id.starts_with("theme.mode-")=>self.appearance["mode"].as_str()==Some(&id[11..]),
             _ => false,
         });
         a
@@ -299,7 +302,7 @@ impl Native {
         let mut menus = self.contract["menus"].clone();
         for m in menus.as_array_mut().unwrap() {
             for a in m["children"].as_array_mut().unwrap() {
-                *a = self.command(a["id"].as_str().unwrap());
+                *a = self.toolbar_item(a.clone());
             }
         }
         menus
@@ -439,6 +442,8 @@ impl Native {
                 })
             }
             id if id.starts_with("theme.scheme-") => self.appearance["scheme"] = json!(&id[13..]),
+            id if id.starts_with("theme.style-") => self.appearance["style"] = json!(&id[12..]),
+            id if id.starts_with("theme.mode-") => self.appearance["mode"] = json!(&id[11..]),
             "help.macros" => return Ok(json!({"panel":"macros"})),
             "help.about" | "help.shortcuts" => {
                 let body = if id == "help.about" {
@@ -857,12 +862,16 @@ impl Native {
                         return Err("Unknown colour scheme".into());
                     }
                 }
+                if let Some(style)=args.get("style"){
+                    if !self.contract["styles"].as_array().unwrap().contains(style){return Err("Unknown widget style".into());}
+                }
                 if let Some(mode) = args.get("mode") {
                     self.appearance["mode"] = mode.clone();
                 }
                 if let Some(scheme) = args.get("scheme") {
                     self.appearance["scheme"] = scheme.clone();
                 }
+                if let Some(style)=args.get("style"){self.appearance["style"]=style.clone();}
                 Ok(self.appearance.clone())
             }
             "dopus.quit" | "dopus.persist" => {
@@ -942,7 +951,7 @@ impl Native {
             Some(dopus_core::thumbs::Preview::Pending) => json!({"phase":"pending"}),
             _ => json!({"phase":"none"}),
         };
-        json!({"values":values,"panes":panes,"active":core.active().index(),"split":config.split_ratio,"layout":{"form":{"edge":"top","size":0},"topbar":{"edge":"top","size":38},"status-pane":{"edge":"bottom","size":30},"places-pane":{"edge":"left","fraction":config.places.width,"resizable":true,"minimum":0.1,"maximum":0.3,"minimum_window_width":640},"properties-pane":{"edge":"right","fraction":config.properties.width,"resizable":true,"minimum":0.1,"maximum":0.3,"minimum_window_width":640},"center-pane":{"edge":"fill"}},"places_hidden":!config.places.open,"properties_hidden":!config.properties.open,"appearance":self.appearance,"busy":core.availability().operation_running,"serial":self.serial,"focus":self.focus,"info":self.info,"ready":!core.pane(PaneId::Left).listing&&!core.pane(PaneId::Right).listing})
+        json!({"actions":self.actions()["actions"],"values":values,"panes":panes,"active":core.active().index(),"split":config.split_ratio,"layout":{"form":{"edge":"top","size":0},"topbar":{"edge":"top","size":38},"status-pane":{"edge":"bottom","size":30},"places-pane":{"edge":"left","fraction":config.places.width,"resizable":true,"minimum":0.1,"maximum":0.3,"minimum_window_width":640},"properties-pane":{"edge":"right","fraction":config.properties.width,"resizable":true,"minimum":0.1,"maximum":0.3,"minimum_window_width":640},"center-pane":{"edge":"fill"}},"places_hidden":!config.places.open,"properties_hidden":!config.properties.open,"appearance":self.appearance,"busy":core.availability().operation_running,"serial":self.serial,"focus":self.focus,"info":self.info,"ready":!core.pane(PaneId::Left).listing&&!core.pane(PaneId::Right).listing})
     }
 }
 impl Drop for Native {
