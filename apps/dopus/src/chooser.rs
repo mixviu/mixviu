@@ -329,6 +329,7 @@ enum Pending {
 struct Shell {
     app_dir: PathBuf,
     profile: PathBuf,
+    topic:String,
     home: Value,
     bus: Endpoint,
     service: viu::chooser::Service,
@@ -349,7 +350,7 @@ impl Shell {
     ) -> Result<(), Pending> {
         match self.engine.event(
             "engine.call".into(),
-            json!({"command":command,"body":body,"caller":caller}),
+            json!({"command":command,"body":body,"caller":caller,"topic":self.topic}),
         ) {
             Ok(seq) => {
                 self.pending.insert(seq, pending);
@@ -362,7 +363,7 @@ impl Shell {
         let command = request.command.clone();
         match command.as_str() {
             "HELP" | "app.describe" => {
-                let _=request.reply.send((0,json!({"commands":commands(),"contract":"files.choose","view":"shared Viu widgets / Mix behaviour"})));
+                let _=request.reply.send((0,json!({"commands":commands(),"contract":"files.choose","topic":self.topic,"view":"shared Viu widgets / Mix behaviour"})));
             }
             "files.quit" => {
                 if self.quitting.is_some() {
@@ -474,7 +475,7 @@ impl eframe::App for Shell {
                 }
                 continue;
             };
-            let answer = if let Some(error) = result.error {
+            let mut answer = if let Some(error) = result.error {
                 (20, json!({"error_code":"ENGINE_FAILED","message":error}))
             } else {
                 result
@@ -489,6 +490,9 @@ impl eframe::App for Shell {
                     choose,
                 } => {
                     if choose && answer.0 == 0 {
+                        // A renamed comparison citizen advertises its own
+                        // native topic; the canonical provider remains files.
+                        answer.1["topic"]=json!(self.topic);
                         if let Some(id) = answer.1["request"].as_str() {
                             self.delivery.insert(id.into(), delivery);
                         }
@@ -664,8 +668,8 @@ fn commands() -> Vec<String> {
     .map(str::to_owned)
     .collect()
 }
-pub fn run(app_dir: PathBuf, profile: PathBuf, mode: &str) -> eframe::Result {
-    let service_name = format!("files-{mode}");
+pub fn run(app_dir: PathBuf, profile: PathBuf,service_name:String) -> eframe::Result {
+    let topic=format!("{service_name}.chosen");
     eframe::run_native(
         "Viu file chooser",
         eframe::NativeOptions {
@@ -737,6 +741,7 @@ pub fn run(app_dir: PathBuf, profile: PathBuf, mode: &str) -> eframe::Result {
             Ok(Box::new(Shell {
                 app_dir,
                 profile,
+                topic,
                 home: json!(home),
                 bus,
                 service,

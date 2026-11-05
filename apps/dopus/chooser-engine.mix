@@ -7,7 +7,7 @@ on engine.call
     -- Exactly one publication attempt. The native engine retains the outcome
     -- for result queries if transport delivery fails or is unknown.
     try
-      if publish("files.chosen",json_encode($answer.outcome),{retain:false})!=0 then print("chooser publication refused: "..to_string($result)) end
+      if publish($a.topic ?? "files.chosen",json_encode($answer.outcome),{retain:false,command:"files.chosen"})!=0 then print("chooser publication refused: "..to_string($result)) end
     catch $message print("chooser publication: "..$message) end
   end
   reply($answer.rc,json_encode($answer.body))

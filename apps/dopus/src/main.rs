@@ -857,7 +857,8 @@ fn main() -> eframe::Result {
     )
     .expect("Dopus contract data");
     if args.iter().any(|a| a == "--choose-service") {
-        return chooser::run(app_dir, profile, &mode);
+        let service=args.iter().position(|a|a=="--service").and_then(|i|args.get(i+1)).cloned().unwrap_or_else(||"files".into());
+        return chooser::run(app_dir, profile, service);
     }
     let title = format!(
         "Dopus — {} / Viu",
