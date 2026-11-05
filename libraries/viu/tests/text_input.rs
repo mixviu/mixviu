@@ -104,24 +104,41 @@ fn native_text_selection_edits_unicode_stems_and_escape_releases_focus() {
 
 #[test]
 fn rejected_modal_submission_keeps_the_field_editable_without_an_extra_click() {
-    let source = format!("---\nscene: 1\nname: modal\ncitizen: modal\n---\n```mix\n{}\n```\n", json!({"root":{"widget":"control","on_intent":"input","definition":{"id":"root","kind":"dialog-form","label":"","initial":{"open":true,"title":"Name","body":"","field":"invalid/name","instance":1,"choices":[{"id":"ok","label":"OK","enabled":true,"default":true}]}}}}));
+    let source = format!(
+        "---\nscene: 1\nname: modal\ncitizen: modal\n---\n```mix\n{}\n```\n",
+        json!({"root":{"widget":"control","on_intent":"input","definition":{"id":"root","kind":"dialog-form","label":"","initial":{"open":true,"title":"Name","body":"","field":"invalid/name","instance":1,"choices":[{"id":"ok","label":"OK","enabled":true,"default":true}]}}}})
+    );
     let mut view = SceneView::new(&source).unwrap();
     let ctx = Context::default();
     viu::appearance::install(&ctx);
     draw(&ctx, &mut view, vec![]);
     draw(&ctx, &mut view, vec![]);
     let submitted = draw(&ctx, &mut view, key(Key::Enter));
-    assert!(submitted.iter().any(|e| e.body["action"]=="answer"));
+    assert!(submitted.iter().any(|e| e.body["action"] == "answer"));
     // The application refuses the name and retains this instance/model.
     draw(&ctx, &mut view, vec![]);
     draw(&ctx, &mut view, vec![]);
     let mut select = key(Key::A);
-    let modifiers = Modifiers {ctrl:true, command:true, ..Modifiers::NONE};
+    let modifiers = Modifiers {
+        ctrl: true,
+        command: true,
+        ..Modifiers::NONE
+    };
     for event in &mut select {
-        if let Event::Key{modifiers:current,..}=event { *current=modifiers; }
+        if let Event::Key {
+            modifiers: current, ..
+        } = event
+        {
+            *current = modifiers;
+        }
     }
-    select.insert(0,Event::ModifiersChanged(modifiers));
+    select.insert(0, Event::ModifiersChanged(modifiers));
     draw(&ctx, &mut view, select);
-    let edited=draw(&ctx, &mut view, vec![Event::Text("repaired".into())]);
-    assert!(edited.iter().any(|e|e.body["action"]=="edit"&&e.body["value"]=="repaired"),"{edited:?}");
+    let edited = draw(&ctx, &mut view, vec![Event::Text("repaired".into())]);
+    assert!(
+        edited
+            .iter()
+            .any(|e| e.body["action"] == "edit" && e.body["value"] == "repaired"),
+        "{edited:?}"
+    );
 }
