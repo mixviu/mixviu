@@ -118,6 +118,7 @@ fn host_slots_reuse_scene_composition_without_consuming_the_fallback_dock_edge()
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
     let pass = |view: &mut SceneView, reserve: f32| {
+        let mut content_top = 0.0;
         let mut out = ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -130,10 +131,12 @@ fn host_slots_reuse_scene_composition_without_consuming_the_fallback_dock_edge()
                 if reserve > 0.0 {
                     ui.allocate_space(egui::vec2(400.0, reserve));
                 }
+                content_top = ui.available_rect_before_wrap().min.y;
                 view.show(ui);
             },
         );
         out.textures_delta.clear();
+        content_top
     };
     pass(&mut view, 0.0);
     assert!(!view.geometry.contains_key("only"));
@@ -151,11 +154,11 @@ fn host_slots_reuse_scene_composition_without_consuming_the_fallback_dock_edge()
     )]))
     .unwrap();
     assert!(!view.current_revision_drawn());
-    pass(&mut view, 40.0);
+    let content_top = pass(&mut view, 40.0);
     assert!(view.geometry.contains_key("only"));
     assert!((view.geometry["heading"].min.x - 100.0).abs() < 0.1);
     assert!(view.geometry["body"].min.y >= 40.0);
-    assert!((view.geometry["body"].min.y - view.geometry["root"].min.y).abs() < 0.1);
+    assert!((view.geometry["body"].min.y - content_top).abs() < 0.1);
     view.set_slots(std::collections::BTreeMap::new()).unwrap();
     pass(&mut view, 0.0);
     assert!(!view.geometry.contains_key("only"));
