@@ -89,19 +89,64 @@ fn shared_design_applies_session_density_roundness_and_text_scale_once() {
 
 #[test]
 fn client_captions_have_native_geometry_and_close_is_an_owner_intent() {
-    let ctx=egui::Context::default();
-    let mut frame=viu::window_frame::WindowFrame::default();
-    let settings=json!({"window.decorations":"csd","window.caption_side":"left"});
-    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{frame.show(ui,"Reusable window",&settings);frame.edges(ui);});
+    let ctx = egui::Context::default();
+    let mut frame = viu::window_frame::WindowFrame::default();
+    let settings = json!({"window.decorations":"csd","window.caption_side":"left"});
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        frame.show(ui, "Reusable window", &settings);
+        frame.edges(ui);
+    });
     output.textures_delta.clear();
-    assert!(frame.geometry["window.caption.close"].left()<frame.geometry["window.caption.maximize"].left());
-    assert_eq!(frame.geometry.keys().filter(|key|key.starts_with("window.resize.")).count(),8);
-    let point=frame.geometry["window.caption.close"].center();
-    let mut output=ctx.run_ui(egui::RawInput{events:vec![egui::Event::PointerMoved(point),egui::Event::PointerButton{pos:point,button:egui::PointerButton::Primary,pressed:true,modifiers:egui::Modifiers::NONE},egui::Event::PointerButton{pos:point,button:egui::PointerButton::Primary,pressed:false,modifiers:egui::Modifiers::NONE}],..Default::default()},|ui|{frame.show(ui,"Reusable window",&settings);frame.edges(ui);});
+    assert!(
+        frame.geometry["window.caption.close"].left()
+            < frame.geometry["window.caption.maximize"].left()
+    );
+    assert_eq!(
+        frame
+            .geometry
+            .keys()
+            .filter(|key| key.starts_with("window.resize."))
+            .count(),
+        8
+    );
+    let point = frame.geometry["window.caption.close"].center();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            events: vec![
+                egui::Event::PointerMoved(point),
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+            ..Default::default()
+        },
+        |ui| {
+            frame.show(ui, "Reusable window", &settings);
+            frame.edges(ui);
+        },
+    );
     output.textures_delta.clear();
     assert!(frame.close_requested);
-    assert!(!output.viewport_output.values().flat_map(|v|&v.commands).any(|c|matches!(c,egui::ViewportCommand::Close)));
-    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{frame.show(ui,"Reusable window",&json!({"window.decorations":"ssd"}));frame.edges(ui);});
+    assert!(
+        !output
+            .viewport_output
+            .values()
+            .flat_map(|v| &v.commands)
+            .any(|c| matches!(c, egui::ViewportCommand::Close))
+    );
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        frame.show(ui, "Reusable window", &json!({"window.decorations":"ssd"}));
+        frame.edges(ui);
+    });
     output.textures_delta.clear();
     assert!(frame.geometry.is_empty());
     assert!(!frame.close_requested);

@@ -75,7 +75,7 @@ pub fn install_style(ctx: &egui::Context, description: &Value, appearance: Resol
     };
     let style = appearance.style.clone();
     ctx.data_mut(|d| {
-        d.insert_temp(egui::Id::unique("viu-window-metrics"),appearance.frame);
+        d.insert_temp(egui::Id::unique("viu-window-metrics"), appearance.frame);
         d.insert_temp(
             egui::Id::unique("viu-design-colours"),
             std::sync::Arc::new(appearance.colours),

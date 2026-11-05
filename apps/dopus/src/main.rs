@@ -183,7 +183,7 @@ impl App {
                 && args["value"]["command"] == "app.quit");
         let ui_call = reply.is_none() && self.input_wait && command != "dopus.persist";
         let human_close = reply.is_none() && quit;
-        if !matches!(command.as_str(), "dopus.persist" | "dopus.quit") {
+        if !matches!(command.as_str(), "dopus.persist" | "dopus.quit" | "dopus.session") {
             self.save_at = Some(Instant::now() + std::time::Duration::from_millis(350));
         }
         if let Some(runtime) = &mut self.runtime {

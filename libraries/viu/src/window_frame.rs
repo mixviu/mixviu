@@ -47,7 +47,7 @@ impl WindowFrame {
         let controls=Rect::from_min_size(pos2(if left{band.left()}else{band.right()-3.0*caption_width},band.top()),vec2(3.0*caption_width,height));
         let drag=Rect::from_min_max(pos2(if left{controls.right()}else{band.left()},band.top()),pos2(if left{band.right()}else{controls.left()},band.bottom()));
         self.geometry.insert("window.title".into(),drag);
-        let response=ui.interact(drag,ui.id().with("viu-window-drag"),egui::Sense::click_and_drag());
+        let response=ui.interact(drag,ui.scope_id().with("viu-window-drag"),egui::Sense::click_and_drag());
         let maximized=ui.input(|i|i.viewport().maximized.unwrap_or(false));
         if response.double_clicked(){ui.ctx().send_viewport_cmd(Command::Maximized(!maximized));}
         else if response.drag_started(){ui.ctx().send_viewport_cmd(Command::StartDrag);}
@@ -58,7 +58,7 @@ impl WindowFrame {
         for (i,name) in names.into_iter().enumerate(){
             let rect=Rect::from_min_size(pos2(controls.left()+i as f32*caption_width,band.top()),vec2(caption_width,height));
             self.geometry.insert(format!("window.caption.{name}"),rect);
-            let r=ui.interact(rect,ui.id().with(("viu-caption",name)),egui::Sense::click());
+            let r=ui.interact(rect,ui.scope_id().with(("viu-caption",name)),egui::Sense::click());
             r.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,true,name));
             if r.hovered(){ui.painter().rect_filled(rect,0.0,if name=="close"{ui.visuals().error_fg_color}else{ui.visuals().widgets.hovered.weak_bg_fill});}
             let glyph=if name=="close"{"x"}else if name=="minimize"{"minus"}else if maximized{"copy"}else{"square"};
@@ -85,7 +85,7 @@ impl WindowFrame {
             ("e",D::East,Rect::from_min_max(pos2(r.right()-e,r.top()+c),pos2(r.right(),r.bottom()-c))),
         ]{
             self.geometry.insert(format!("window.resize.{name}"),rect);
-            let response=ui.interact(rect,ui.id().with(("viu-resize",name)),egui::Sense::drag());
+            let response=ui.interact(rect,ui.scope_id().with(("viu-resize",name)),egui::Sense::drag());
             if response.drag_started(){ui.ctx().send_viewport_cmd(Command::BeginResize(direction));}
         }
     }
