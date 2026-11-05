@@ -358,9 +358,17 @@ impl App {
                 let _ = reply.send((0, json!({"menus":self.model["values"]["menu"]})));
             }
             "dopus.ui.menu" => {
-                let snapshot = self.view.as_ref().map(|view|
-                    viu::rich::menu_snapshot(&self.model["values"]["menu"], "menu", &view.geometry)
-                ).unwrap_or_else(|| json!({"open":false,"path":[]}));
+                let snapshot = self
+                    .view
+                    .as_ref()
+                    .map(|view| {
+                        viu::rich::menu_snapshot(
+                            &self.model["values"]["menu"],
+                            "menu",
+                            &view.geometry,
+                        )
+                    })
+                    .unwrap_or_else(|| json!({"open":false,"path":[]}));
                 let _ = reply.send((0, snapshot));
             }
             "dopus.ui.menu.close" => {
@@ -369,14 +377,18 @@ impl App {
                 ctx.request_repaint();
             }
             "dopus.ui.menu.open" => {
-                let result = self.view.as_mut().ok_or("NOT_READY".into()).and_then(|view| {
-                    viu::rich::menu_targets(&self.model["values"]["menu"], "menu", &args)?;
-                    if self.input_wait {
-                        return Err("BUSY: native input gesture in progress".into());
-                    }
-                    egui::Popup::close_all(ctx);
-                    self.input.queue("menu.open", &args, view)
-                });
+                let result = self
+                    .view
+                    .as_mut()
+                    .ok_or("NOT_READY".into())
+                    .and_then(|view| {
+                        viu::rich::menu_targets(&self.model["values"]["menu"], "menu", &args)?;
+                        if self.input_wait {
+                            return Err("BUSY: native input gesture in progress".into());
+                        }
+                        egui::Popup::close_all(ctx);
+                        self.input.queue("menu.open", &args, view)
+                    });
                 match result {
                     Ok(()) => {
                         self.input_replies.push(reply);
@@ -384,7 +396,10 @@ impl App {
                         self.input_error = None;
                         ctx.request_repaint();
                     }
-                    Err(error) => { let _ = reply.send((10,json!({"error_code":"INPUT_REFUSED","message":error}))); }
+                    Err(error) => {
+                        let _ =
+                            reply.send((10, json!({"error_code":"INPUT_REFUSED","message":error})));
+                    }
                 }
             }
             "dopus.info" => {
@@ -904,7 +919,11 @@ impl eframe::App for App {
             if let Some(next) = self.input.later.pop_front() {
                 self.input.now = next;
                 ctx.request_repaint();
-            } else if let Some(result) = self.view.as_mut().and_then(|view| self.input.advance_menu(view)) {
+            } else if let Some(result) = self
+                .view
+                .as_mut()
+                .and_then(|view| self.input.advance_menu(view))
+            {
                 if let Err(error) = result {
                     self.input_error = Some(error);
                 }

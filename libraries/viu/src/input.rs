@@ -33,7 +33,8 @@ impl Input {
         let mut now = vec![egui::Event::ModifiersChanged(modifiers)];
         match command {
             "menu.open" => {
-                let targets = crate::rich::menu_targets(&view.model()["values"]["menu"], "menu", a)?;
+                let targets =
+                    crate::rich::menu_targets(&view.model()["values"]["menu"], "menu", a)?;
                 let mut targets: VecDeque<_> = targets.into();
                 let first = targets.pop_front().ok_or("menu path is empty")?;
                 self.queue("click", &serde_json::json!({"id":first}), view)?;

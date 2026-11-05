@@ -122,13 +122,22 @@ pub fn menu_targets(value: &Value, id: &str, args: &Value) -> Result<Vec<String>
     let mut level = value;
     let mut targets = Vec::new();
     for (depth, name) in names.into_iter().enumerate() {
-        let matches: Vec<_> = level.as_array().into_iter().flatten()
-            .filter(|item| text(item,"id") == name || text(item,"label") == name).collect();
-        if matches.len() != 1 || matches[0]["enabled"] != true || !matches[0]["children"].is_array() {
+        let matches: Vec<_> = level
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|item| text(item, "id") == name || text(item, "label") == name)
+            .collect();
+        if matches.len() != 1 || matches[0]["enabled"] != true || !matches[0]["children"].is_array()
+        {
             return Err("unknown, disabled, ambiguous or leaf menu path".into());
         }
         let item = matches[0];
-        targets.push(format!("{id}.{}.{}", if depth == 0 { "menu" } else { "command" }, text(item,"id")));
+        targets.push(format!(
+            "{id}.{}.{}",
+            if depth == 0 { "menu" } else { "command" },
+            text(item, "id")
+        ));
         level = &item["children"];
     }
     Ok(targets)
@@ -138,16 +147,18 @@ pub fn menu_snapshot(value: &Value, id: &str, geometry: &BTreeMap<String, Rect>)
     fn descend(value: &Value, id: &str, geometry: &BTreeMap<String, Rect>, path: &mut Vec<String>) {
         for item in value.as_array().into_iter().flatten() {
             if let Some(children) = item["children"].as_array() {
-                if children.iter().any(|child| geometry.contains_key(&format!("{id}.command.{}", text(child,"id")))) {
-                    path.push(text(item,"label").into());
-                    descend(&item["children"],id,geometry,path);
+                if children.iter().any(|child| {
+                    geometry.contains_key(&format!("{id}.command.{}", text(child, "id")))
+                }) {
+                    path.push(text(item, "label").into());
+                    descend(&item["children"], id, geometry, path);
                     break;
                 }
             }
         }
     }
     let mut path = Vec::new();
-    descend(value,id,geometry,&mut path);
+    descend(value, id, geometry, &mut path);
     json!({"open":!path.is_empty(),"path":path})
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {

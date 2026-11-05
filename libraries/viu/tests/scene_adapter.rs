@@ -116,38 +116,61 @@ fn menu_paths_drive_native_popups_and_refuse_disabled_or_leaf_targets() {
         {"id":"Theme","label":"Theme","enabled":true,"children":[
             {"id":"Dark","label":"Dark","enabled":true}]},
         {"id":"Off","label":"Off","enabled":false,"children":[]}]}]);
-    for args in [json!({"menu":"missing"}), json!({"menu":"View","path":["Off"]}),
-        json!({"menu":"View","path":["Theme","Dark"]})] {
-        assert!(viu::rich::menu_targets(&menus,"menu",&args).is_err());
+    for args in [
+        json!({"menu":"missing"}),
+        json!({"menu":"View","path":["Off"]}),
+        json!({"menu":"View","path":["Theme","Dark"]}),
+    ] {
+        assert!(viu::rich::menu_targets(&menus, "menu", &args).is_err());
     }
-    let source = scene(json!({"root":{"widget":"column","children":["menu"]},"menu":{"widget":"control","definition":{
-        "id":"menu","kind":"menubar","label":"","initial":menus
-    }}}));
-    let mut view = SceneView::with_model(&source,json!({"values":{"menu":menus}})).unwrap();
+    let source = scene(
+        json!({"root":{"widget":"column","children":["menu"]},"menu":{"widget":"control","definition":{
+            "id":"menu","kind":"menubar","label":"","initial":menus
+        }}}),
+    );
+    let mut view = SceneView::with_model(&source, json!({"values":{"menu":menus}})).unwrap();
     let ctx = egui::Context::default();
     let mut input = viu::input::Input::default();
     for frame in 0..12 {
-        let mut raw = egui::RawInput { screen_rect:Some(egui::Rect::from_min_size(
-            egui::Pos2::ZERO,egui::vec2(600.0,400.0))),time:Some(frame as f64 * 0.05),..Default::default() };
+        let mut raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(600.0, 400.0),
+            )),
+            time: Some(frame as f64 * 0.05),
+            ..Default::default()
+        };
         raw.events.append(&mut input.now);
-        let mut out = ctx.run_ui(raw,|ui| { view.show(ui); });
+        let mut out = ctx.run_ui(raw, |ui| {
+            view.show(ui);
+        });
         out.textures_delta.clear();
-        eprintln!("menu frame {frame}: {} geometry={:?}", viu::rich::menu_snapshot(&menus,"menu",&view.geometry), view.geometry.keys().collect::<Vec<_>>());
         if frame == 0 {
-            input.queue("menu.open",&json!({"menu":"View","path":["Theme"]}),&mut view).unwrap();
+            input
+                .queue(
+                    "menu.open",
+                    &json!({"menu":"View","path":["Theme"]}),
+                    &mut view,
+                )
+                .unwrap();
         } else if let Some(next) = input.later.pop_front() {
             input.now = next;
         } else if let Some(result) = input.advance_menu(&mut view) {
             result.unwrap();
         }
     }
-    let snapshot = viu::rich::menu_snapshot(&menus,"menu",&view.geometry);
-    assert_eq!(snapshot["path"],json!(["View","Theme"]));
+    let snapshot = viu::rich::menu_snapshot(&menus, "menu", &view.geometry);
+    assert_eq!(snapshot["path"], json!(["View", "Theme"]));
     assert!(view.geometry.contains_key("menu.command.Dark"));
     egui::Popup::close_all(&ctx);
-    let mut out = ctx.run_ui(egui::RawInput::default(),|ui| { view.show(ui); });
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
     out.textures_delta.clear();
-    assert_eq!(viu::rich::menu_snapshot(&menus,"menu",&view.geometry)["open"],false);
+    assert_eq!(
+        viu::rich::menu_snapshot(&menus, "menu", &view.geometry)["open"],
+        false
+    );
 }
 
 #[test]
