@@ -144,7 +144,7 @@ fn tree_table_admission_is_based_on_current_row_and_column_identity() {
     let mut bad = table(3);
     bad["rows"][1]["key"] = json!("item-0");
     assert!(w.validate(&bad).is_err());
-    for selection in [json!(["absent"]), json!(["item-0","item-0"]), json!(false)] {
+    for selection in [json!(["absent"]), json!(["item-0", "item-0"]), json!(false)] {
         let mut bad = table(3);
         bad["selected_keys"] = selection;
         assert!(w.validate(&bad).is_err());
@@ -159,7 +159,7 @@ fn native_drag_to_a_folder_in_the_same_table_reaches_the_folder_before_backgroun
     let ctx = egui::Context::default();
     let mut widgets = Widgets::default();
     let mut value = table(3);
-    value["selected_keys"] = json!(["item-1","item-2"]);
+    value["selected_keys"] = json!(["item-1", "item-2"]);
     value["focused_key"] = json!("item-1");
     let w = Widget::new("items", "tree-table", "", value).with_properties(json!({"height":320}));
     frame(&ctx, &mut widgets, &w, vec![]);
@@ -203,7 +203,7 @@ fn native_drag_to_a_folder_in_the_same_table_reaches_the_folder_before_backgroun
     assert!(
         events.iter().any(|e| e.action == "drop"
             && e.value["destination"] == "item-0"
-            && e.value["keys"] == json!(["item-1","item-2"])),
+            && e.value["keys"] == json!(["item-1", "item-2"])),
         "{events:?}"
     );
     assert_eq!(events.iter().filter(|e| e.action == "drop").count(), 1);

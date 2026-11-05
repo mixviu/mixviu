@@ -73,7 +73,9 @@ pub fn validate(value: &Value) -> Result<(), String> {
         }
     }
     if let Some(selected) = value.get("selected_keys") {
-        let selected = selected.as_array().ok_or("selected_keys must be an array")?;
+        let selected = selected
+            .as_array()
+            .ok_or("selected_keys must be an array")?;
         let mut seen = BTreeSet::new();
         for key in selected {
             let key = key.as_str().ok_or("selection key must be text")?;
@@ -91,13 +93,18 @@ pub fn validate(value: &Value) -> Result<(), String> {
 }
 
 fn selected(value: &Value, row: &Value) -> bool {
-    value.get("selected_keys").map_or(row["selected"] == true, |keys| {
-        keys.as_array().is_some_and(|keys| keys.contains(&row["key"]))
-    })
+    value
+        .get("selected_keys")
+        .map_or(row["selected"] == true, |keys| {
+            keys.as_array()
+                .is_some_and(|keys| keys.contains(&row["key"]))
+        })
 }
 
 fn focused(value: &Value, row: &Value) -> bool {
-    value.get("focused_key").map_or(row["focused"] == true, |key| key == &row["key"])
+    value
+        .get("focused_key")
+        .map_or(row["focused"] == true, |key| key == &row["key"])
 }
 
 pub fn validate_properties(properties: &Value) -> Result<(), String> {

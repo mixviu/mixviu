@@ -738,7 +738,12 @@ impl eframe::App for App {
                     let _ = reply.send((rc, answer.clone()));
                 }
                 self.input_close = None;
-            } else if self.input_wait && self.view.as_ref().is_some_and(|v| !v.current_revision_drawn()) {
+            } else if self.input_wait
+                && self
+                    .view
+                    .as_ref()
+                    .is_some_and(|v| !v.current_revision_drawn())
+            {
                 ctx.request_repaint();
             }
         }
