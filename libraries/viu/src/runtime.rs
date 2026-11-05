@@ -7,12 +7,34 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use mix::evaluator::{BusFuture, Evaluator, IncomingEvent, SharedBuf, ServeRuntime, ReservedOutcome};
+use mix::evaluator::{BusFuture, Evaluator, IncomingEvent, ServeRuntime, ReservedOutcome};
 use mix::{BusHandler, MixError, MixResult, value::Value};
 use serde_json::{Value as Json, json};
 
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
 pub type BackendFactory = Box<dyn FnOnce() -> Rc<dyn BusHandler> + Send>;
+
+/// Per-request log retention has a fixed ceiling, including a noisy script.
+#[derive(Clone, Default)]
+struct SharedBuf(Rc<RefCell<(Vec<u8>, bool)>>);
+impl SharedBuf {
+    fn new() -> Self { Self::default() }
+    fn take(&self) -> Vec<u8> {
+        let (mut bytes, truncated) = std::mem::take(&mut *self.0.borrow_mut());
+        if truncated { bytes.extend_from_slice(b"\n[viu output truncated]\n"); }
+        bytes
+    }
+}
+impl std::io::Write for SharedBuf {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let mut buffer = self.0.borrow_mut();
+        let remaining = 65_536usize.saturating_sub(buffer.0.len());
+        buffer.0.extend_from_slice(&bytes[..bytes.len().min(remaining)]);
+        buffer.1 |= bytes.len() > remaining;
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+}
 
 #[derive(Clone)]
 pub struct Program {
@@ -68,8 +90,8 @@ impl Runtime {
             let backend = backend.map(|make| make());
             let mut current: Option<(u64, Evaluator, Rc<Local>, SharedBuf, SharedBuf)> = None;
             while let Ok(request) = commands.recv() {
-                if worker_stop.load(Ordering::Acquire) { break; }
                 worker_interrupt.store(false, Ordering::Release);
+                if worker_stop.load(Ordering::Acquire) { break; }
                 let start = Instant::now();
                 let (generation, sequence, result) = match request {
                     Request::Load(generation, program) => {

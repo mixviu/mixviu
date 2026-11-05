@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 mod fixture;
+#[cfg(test)]
+mod tests;
 use std::{path::PathBuf, sync::Arc};
 use viu::{runtime::{Program, Runtime}, view::SceneView};
 

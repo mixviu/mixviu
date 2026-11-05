@@ -10,9 +10,9 @@ pub struct AudioFixture { snapshot: RefCell<Json> }
 impl AudioFixture {
     pub fn new() -> Rc<Self> { Rc::new(Self { snapshot: RefCell::new(json!({
         "ok":true,"default_sink_found":true,"default_source_found":true,"raw_sources":1,
-        "sinks":[{"index":1,"name":"example.output","description":"Example output","level":50,"muted":false,"default":true}],
-        "sources":[{"index":2,"name":"example.input","description":"Example input","level":75,"muted":false,"default":true}],
-        "streams":[{"index":3,"name":"Example player","media":"Fixture","level":40,"muted":false,"sink":1}]
+        "sinks":[{"index":1,"name":"example.output","description":"Example output","level":50,"muted":false,"default":true}, {"index":4,"name":"example.headphones","description":"Example headphones","level":65,"muted":false,"default":false}],
+        "sources":[{"index":2,"name":"example.input","description":"Example input","level":75,"muted":false,"default":true}, {"index":5,"name":"example.microphone","description":"Example microphone","level":60,"muted":false,"default":false}],
+        "streams":[{"index":3,"name":"Example player","media":"Fixture","level":40,"muted":false,"sink":1}, {"index":6,"name":"Example call","media":"Fixture","level":80,"muted":false,"sink":1}]
     })) }) }
 }
 impl BusHandler for AudioFixture {
@@ -27,6 +27,16 @@ impl BusHandler for AudioFixture {
                     let argv = body["argv"].as_array();
                     let mut snap = self.snapshot.borrow_mut();
                     let mut accepted = false;
+                    if let Some(argv) = argv.filter(|a| a.len() == 2) {
+                        let collection = match argv[0].as_str() { Some("set-default-sink") => Some("sinks"), Some("set-default-source") => Some("sources"), _ => None };
+                        if let Some(collection) = collection {
+                            let devices = snap[collection].as_array_mut().unwrap();
+                            if devices.iter().any(|d| d["name"] == argv[1]) {
+                                for device in devices { device["default"] = json!(device["name"] == argv[1]); }
+                                accepted = true;
+                            }
+                        }
+                    }
                     if let Some(argv) = argv.filter(|a| a.len() == 3) {
                         let command = argv[0].as_str().unwrap_or("");
                         let collection = if command.contains("sink-input") {"streams"} else if command.contains("source") {"sources"} else {"sinks"};
