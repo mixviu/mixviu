@@ -378,8 +378,8 @@
     }
   ],
   "lockfile": {
-    "note": "Reachability-filtered dependency lock; seed workspace packages renamed to internal version 0.1.0; external versions/checksums preserved",
-    "retained_packages": 18,
+    "note": "Reachable dependency lock canonicalised by Cargo on the build worker; source external versions/checksums preserved; internal seed packages use 0.1.0",
+    "retained_packages": 17,
     "source": "Cargo.lock"
   },
   "repository": "https://github.com/markc/mixos",
