@@ -42,6 +42,12 @@ fn closed() -> Value {
 fn string<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
     v[key].as_str().ok_or_else(|| format!("{key} must be text"))
 }
+fn path_value(path:&Path)->Value {
+    viu::file_data::encode_path(path).unwrap_or_else(|error|{eprintln!("Dopus path encoding refused: {error}");Value::Null})
+}
+fn path_text(path:&Path)->String {path_value(path).as_str().unwrap_or("").to_owned()}
+fn paths_value<P:AsRef<Path>>(paths:impl IntoIterator<Item=P>)->Value {Value::Array(paths.into_iter().map(|p|path_value(p.as_ref())).collect())}
+fn native_path(text:&str)->Result<PathBuf,String>{viu::file_data::decode_path(text)}
 fn pane(i: usize) -> PaneId {
     if i == 0 { PaneId::Left } else { PaneId::Right }
 }
@@ -75,8 +81,8 @@ impl Native {
     pub fn new(profile: &Path, contract: Value, wake: Wake) -> Self {
         let (config, file) = ConfigFile::load(profile);
         let locations = [
-            config.left.path.to_string_lossy().into_owned(),
-            config.right.path.to_string_lossy().into_owned(),
+            path_text(&config.left.path),
+            path_text(&config.right.path),
         ];
         let (core, source) = DopusCore::new(config, Some(file));
         let (tx, rx) = mpsc::sync_channel(64);
@@ -195,7 +201,7 @@ impl Native {
                     }
                 }
                 CoreEvent::OpenFile(path) => {
-                    self.effects.push_back(json!({"kind":"open","path":path}))
+                    self.effects.push_back(json!({"kind":"open","path":path_value(&path)}))
                 }
                 _ => {}
             }
@@ -215,12 +221,7 @@ impl Native {
             ctx.request_repaint_after(deadline.saturating_duration_since(Instant::now()));
         }
         for i in 0..2 {
-            let actual = self
-                .core()
-                .pane(pane(i))
-                .path
-                .to_string_lossy()
-                .into_owned();
+            let actual = path_text(&self.core().pane(pane(i)).path);
             if self.locations[i].is_empty() {
                 self.locations[i] = actual;
             }
@@ -402,7 +403,7 @@ impl Native {
             "nav.home" => self.core_mut().go_home(),
             "place.open" => self
                 .core_mut()
-                .navigate(p, PathBuf::from(string(params, "path")?)),
+                .navigate(p, native_path(string(params, "path")?)?),
             "location.focus" => {
                 self.focus = Some(
                     json!({"id":format!("{}-location",if i==0{"left"}else{"right"}),"selection":[0,self.locations[i].chars().count()]}),
@@ -444,7 +445,7 @@ impl Native {
             "file.move-other-pane" => self.core_mut().move_selection_to_other_pane(),
             "file.mail" => {
                 let paths = self.core().operation_sources(p);
-                self.effects.push_back(json!({"kind":"mail","paths":paths}));
+                self.effects.push_back(json!({"kind":"mail","paths":paths_value(paths)}));
             }
             "theme.mode-toggle" => {
                 self.appearance["mode"] = json!(if self.appearance["mode"] == "dark" {
@@ -511,12 +512,7 @@ impl Native {
             }
         }
         for i in 0..2 {
-            self.locations[i] = self
-                .core()
-                .pane(pane(i))
-                .path
-                .to_string_lossy()
-                .into_owned();
+            self.locations[i] = path_text(&self.core().pane(pane(i)).path);
         }
         let events = self.core_mut().tick(Instant::now());
         self.absorb(events);
@@ -554,9 +550,9 @@ impl Native {
                 .unwrap()
                 .iter()
                 .filter_map(Value::as_str)
-                .map(PathBuf::from)
-                .collect();
-            let destination = PathBuf::from(string(request, "destination")?);
+                .map(native_path)
+                .collect::<Result<Vec<_>,_>>()?;
+            let destination = native_path(string(request, "destination")?)?;
             let source_pane = if request["source"]
                 .as_str()
                 .is_some_and(|s| s.starts_with("right-"))
@@ -673,7 +669,7 @@ impl Native {
         self.core_mut().set_active_pane(p);
         if id.ends_with("-location") {
             if matches!(action, "cancel" | "blur") {
-                self.locations[p.index()] = self.core().pane(p).path.to_string_lossy().into_owned();
+                self.locations[p.index()] = path_text(&self.core().pane(p).path);
                 return Ok(json!({"ok":true}));
             }
             let path = v
@@ -681,7 +677,7 @@ impl Native {
                 .filter(|s| s.len() <= 4096)
                 .ok_or("location must be text")?;
             if action == "submit" {
-                self.core_mut().navigate(p, path.into());
+                self.core_mut().navigate(p, native_path(path)?);
             } else if action != "set" {
                 return Err("Unknown location action".into());
             }
@@ -689,7 +685,7 @@ impl Native {
         } else if id.ends_with("-tree") {
             match action {
                 "select" | "activate" | "context" => {
-                    let path = PathBuf::from(string(v, "key")?);
+                    let path = native_path(string(v, "key")?)?;
                     if !self
                         .core()
                         .visible_rows(p)
@@ -720,7 +716,7 @@ impl Native {
                     }
                 }
                 "expand" => {
-                    let path = PathBuf::from(string(v, "key")?);
+                    let path = native_path(string(v, "key")?)?;
                     if !self
                         .core()
                         .visible_rows(p)
@@ -736,7 +732,7 @@ impl Native {
                 }
                 "command" => {
                     if let Some(key) = v["key"].as_str() {
-                        let path = PathBuf::from(key);
+                        let path = native_path(key)?;
                         if !self.core().pane(p).selected_paths.contains(&path) {
                             self.core_mut().select_path(p, Some(path));
                         }
@@ -778,9 +774,7 @@ impl Native {
                         .ok_or("drop sources required")?
                         .iter()
                         .map(|p| {
-                            p.as_str()
-                                .map(PathBuf::from)
-                                .ok_or("drop source must be text")
+                            native_path(p.as_str().ok_or("drop source must be text")?)
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                     let sources = keys
@@ -792,7 +786,7 @@ impl Native {
                         })
                         .cloned()
                         .collect::<Vec<_>>();
-                    let destination = PathBuf::from(string(v, "destination")?);
+                    let destination = native_path(string(v, "destination")?)?;
                     if !dopus_core::model::file_drop_actions_batch(
                         &sources,
                         &destination,
@@ -827,7 +821,7 @@ impl Native {
                         return Err("Answer the current dialog first".into());
                     }
                     let mut request = v.clone();
-                    request["keys"] = json!(sources);
+                    request["keys"] = paths_value(sources);
                     let form = json!({"open":true,"title":"Transfer items","body":"Move or copy the dragged items?","field":null,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"move","label":"Move","enabled":true},{"id":"copy","label":"Copy","enabled":true}]});
                     self.enqueue_form("drop", 0, form, Some(request))?;
                 }
@@ -838,12 +832,7 @@ impl Native {
         }
         for i in 0..2 {
             if id.ends_with("-tree") {
-                self.locations[i] = self
-                    .core()
-                    .pane(pane(i))
-                    .path
-                    .to_string_lossy()
-                    .into_owned();
+                self.locations[i] = path_text(&self.core().pane(pane(i)).path);
             }
         }
         let events = self.core_mut().tick(Instant::now());
@@ -878,14 +867,9 @@ impl Native {
                 for (i, path) in paths.iter().take(2).enumerate() {
                     self.core_mut().navigate(
                         pane(i),
-                        PathBuf::from(path.as_str().ok_or("path must be text")?),
+                        native_path(path.as_str().ok_or("path must be text")?)?,
                     );
-                    self.locations[i] = self
-                        .core()
-                        .pane(pane(i))
-                        .path
-                        .to_string_lossy()
-                        .into_owned();
+                    self.locations[i] = path_text(&self.core().pane(pane(i)).path);
                 }
                 Ok(json!({"ok":true}))
             }
@@ -1015,17 +999,17 @@ impl Native {
         for i in 0..2 {
             let p = core.pane(pane(i));
             let side = if i == 0 { "left" } else { "right" };
-            let rows=core.visible_rows(pane(i)).iter().map(|r|{let e=&r.entry;let expanded=p.expanded.contains(&e.path);json!({"key":e.path,"cells":[dopus_core::sanitise_display_text(&e.name),if e.is_dir{dopus_core::format_child_count(e.child_count)}else{e.size.map(dopus_core::format_size).unwrap_or_else(||"—".into())},date(e.modified)],"depth":r.depth,"branch":e.is_dir,"expanded":expanded,"selected":false,"focused":false,"icon":icon(&e.path,e.is_dir,expanded)})}).collect::<Vec<_>>();
+            let rows=core.visible_rows(pane(i)).iter().map(|r|{let e=&r.entry;let expanded=p.expanded.contains(&e.path);json!({"key":path_value(&e.path),"cells":[dopus_core::sanitise_display_text(&e.name),if e.is_dir{dopus_core::format_child_count(e.child_count)}else{e.size.map(dopus_core::format_size).unwrap_or_else(||"—".into())},date(e.modified)],"depth":r.depth,"branch":e.is_dir,"expanded":expanded,"selected":false,"focused":false,"icon":icon(&e.path,e.is_dir,expanded)})}).collect::<Vec<_>>();
             values[format!("{side}-location")] = json!(self.locations[i]);
             values[format!("{side}-summary")] = json!(p.footer_summary());
-            values[format!("{side}-tree")] = json!({"key":p.path,"revision":p.listing_revision,"active":core.active()==pane(i),"columns":self.contract["columns"],"sort":p.sort,"ascending":p.ascending,"rows":rows,"selected_keys":p.selected_paths,"focused_key":p.selected,"context":context,"background_context":background});
+            values[format!("{side}-tree")] = json!({"key":path_value(&p.path),"revision":p.listing_revision,"active":core.active()==pane(i),"columns":self.contract["columns"],"sort":p.sort,"ascending":p.ascending,"rows":rows,"selected_keys":paths_value(&p.selected_paths),"focused_key":p.selected.as_deref().map(path_value),"context":context,"background_context":background});
             let mut expanded = p.expanded.iter().collect::<Vec<_>>();
             expanded.sort();
-            panes.push(json!({"path":p.path,"generation":p.generation,"show_hidden":p.show_hidden,"previews":p.previews,"sort":p.sort,"ascending":p.ascending,"selected":p.selected,"selected_paths":core.selected_paths(pane(i)),"expanded":expanded,"summary":p.footer_summary(),"rows":rows.len(),"error":null}));
+            panes.push(json!({"path":path_value(&p.path),"generation":p.generation,"show_hidden":p.show_hidden,"previews":p.previews,"sort":p.sort,"ascending":p.ascending,"selected":p.selected.as_deref().map(path_value),"selected_paths":paths_value(core.selected_paths(pane(i))),"expanded":paths_value(expanded),"summary":p.footer_summary(),"rows":rows.len(),"error":null}));
         }
-        values["places"] = json!({"key":"places","revision":0,"active":false,"columns":[{"id":"name","label":"Places"}],"rows":core.places().iter().enumerate().map(|(i,(name,path))|json!({"key":format!("place.{i}"),"path":path,"cells":[name],"depth":0,"branch":false,"expanded":false,"selected":core.pane(core.active()).path==*path,"focused":false,"icon":match name.as_str(){"Home"=>"house","Filesystem"=>"hard-drive","Documents"=>"file-text","Downloads"=>"download","Music"=>"music","Pictures"=>"image","Videos"=>"film",_=>"folder"}})).collect::<Vec<_>>(),"context":[],"background_context":[]});
+        values["places"] = json!({"key":"places","revision":0,"active":false,"columns":[{"id":"name","label":"Places"}],"rows":core.places().iter().enumerate().map(|(i,(name,path))|json!({"key":format!("place.{i}"),"path":path_value(path),"cells":[name],"depth":0,"branch":false,"expanded":false,"selected":core.pane(core.active()).path==*path,"focused":false,"icon":match name.as_str(){"Home"=>"house","Filesystem"=>"hard-drive","Documents"=>"file-text","Downloads"=>"download","Music"=>"music","Pictures"=>"image","Videos"=>"film",_=>"folder"}})).collect::<Vec<_>>(),"context":[],"background_context":[]});
         values["preview"] = match core.preview(core.active()) {
-            Some(dopus_core::thumbs::Preview::Ready(path)) => json!({"phase":"ready","path":path}),
+            Some(dopus_core::thumbs::Preview::Ready(path)) => json!({"phase":"ready","path":path_value(path)}),
             Some(dopus_core::thumbs::Preview::Pending) => json!({"phase":"pending"}),
             _ => json!({"phase":"none"}),
         };

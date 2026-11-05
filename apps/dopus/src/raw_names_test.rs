@@ -80,3 +80,29 @@ fn mix_controller_selects_and_copies_a_non_utf8_name_without_replacing_its_bytes
     );
     assert!(!right.join("raw�.txt").exists());
 }
+
+#[test]
+fn rust_comparator_uses_the_same_opaque_keys_and_persists_raw_folder_paths() {
+    let dir=tempfile::tempdir().unwrap();
+    let raw_folder=dir.path().join(std::ffi::OsStr::from_bytes(b"folder\xff"));
+    std::fs::create_dir(&raw_folder).unwrap();
+    let raw_file=raw_folder.join(std::ffi::OsStr::from_bytes(b"file\xfe.txt"));
+    std::fs::write(&raw_file,b"raw comparator").unwrap();
+    let profile=dir.path().join("profile");std::fs::create_dir(&profile).unwrap();
+    std::fs::write(profile.join("config.conf.mix"),json!({"left":{"path":viu::file_data::encode_path(&raw_folder).unwrap(),"previews":false},"right":{"path":dir.path(),"previews":false}}).to_string()).unwrap();
+    let contract:Value=serde_json::from_str(&std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("contract.json")).unwrap()).unwrap();
+    let mut native=native::Native::new(&profile,contract,Arc::new(||{}));
+    let ctx=egui::Context::default();let until=Instant::now()+std::time::Duration::from_secs(5);
+    while native.model()["ready"]!=true {native.poll(&ctx);assert!(Instant::now()<until);std::thread::sleep(std::time::Duration::from_millis(2));}
+    let model=native.model();
+    let key=viu::file_data::encode_path(&raw_file).unwrap();
+    assert_eq!(model["values"]["left-tree"]["rows"][0]["key"],key);
+    native.intent(&json!({"id":"left-tree","action":"select","value":{"key":key}})).unwrap();
+    assert_eq!(native.model()["panes"][0]["selected"],key);
+    native.call("dopus.persist",&json!({})).unwrap();
+    let saved:Value=serde_json::from_str(&std::fs::read_to_string(profile.join("config.conf.mix")).unwrap()).unwrap();
+    assert_eq!(saved["left"]["path"],viu::file_data::encode_path(&raw_folder).unwrap());
+    native.action("file.copy-other-pane",&json!({})).unwrap();
+    while !dir.path().join(raw_file.file_name().unwrap()).exists(){native.poll(&ctx);assert!(Instant::now()<until);std::thread::sleep(std::time::Duration::from_millis(2));}
+    assert_eq!(std::fs::read(dir.path().join(raw_file.file_name().unwrap())).unwrap(),b"raw comparator");
+}
