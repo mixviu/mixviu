@@ -304,6 +304,7 @@ impl Runtime {
                     None => (None, String::new(), String::new(), None,None),
                 };
                 let result = result.and_then(|_| fault.map_or(Ok(()), |error| Err(RunFailure::Evaluation(error))));
+                let result=if current.as_ref().is_some_and(|(_,_,local,..)|local.prefs_deferred.borrow().is_some() && (reply.is_some() || local.deferred.get())) {Err(RunFailure::Evaluation("request cannot both reply and defer".into()))}else{result};
                 // Failed callbacks never publish a partial model to the UI.
                 if result.is_err() { model = None; reply=None; }
                 if (sequence == 0 && result.is_err()) || matches!(&result, Err(RunFailure::Deadline)) {

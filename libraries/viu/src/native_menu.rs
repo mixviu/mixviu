@@ -78,7 +78,7 @@ pub(crate) fn shortcut(ctx: Option<&egui::Context>, item: &Value) -> Option<Stri
             .and_then(toolkit::keymap::parse_chord)
             .and_then(|shortcut| ctx.map(|ctx| ctx.format_shortcut(&shortcut)))
     } else {
-        item["shortcut"].as_str().map(str::to_owned)
+        item["shortcut"].as_str().map(|s| ctx.and_then(|ctx| toolkit::keymap::parse_chord(s).map(|key| ctx.format_shortcut(&key))).unwrap_or_else(||s.into()))
     }
 }
 fn entries(

@@ -685,7 +685,7 @@ pub(crate) fn draw(
                     },
                     if widget.properties["vertical"] == true {
                         egui::Layout::top_down(egui::Align::Center)
-                    } else if widget.properties["reverse"].as_bool().unwrap_or(gold) {
+                    } else if widget.properties["reverse"].as_bool().unwrap_or(gold && widget.properties["hostable"] != false) {
                         egui::Layout::right_to_left(egui::Align::Center)
                     } else {
                         egui::Layout::left_to_right(egui::Align::Center)

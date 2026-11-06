@@ -68,11 +68,15 @@ impl Default for Manifest {
 }
 impl Manifest {
     pub fn app(&self) -> &str {
-        self.app.as_deref().or(self.drive.as_deref()).unwrap_or(&self.service)
+        self.app
+            .as_deref()
+            .or(self.drive.as_deref())
+            .unwrap_or(&self.service)
     }
     pub fn bus_url(&self) -> String {
         self.bus_url
-            .clone().or_else(||self.url.clone())
+            .clone()
+            .or_else(|| self.url.clone())
             .unwrap_or_else(bus::client_helpers::resolve_noded_url)
     }
 }
