@@ -23,7 +23,12 @@ pub fn client_of(ctx: &egui::Context) -> bool {
 pub fn request_menu(ctx: &egui::Context, position: Option<egui::Pos2>) {
     if client_of(ctx) && design::decorations::is_wayland() {
         if let Some(position) = position {
-            ctx.data_mut(|d|d.insert_temp(egui::Id::unique(("eframe.window-menu",ctx.viewport_id())),position));
+            ctx.data_mut(|d| {
+                d.insert_temp(
+                    egui::Id::unique(("eframe.window-menu", ctx.viewport_id())),
+                    position,
+                )
+            });
         }
     }
 }
@@ -204,7 +209,7 @@ impl WindowFrame {
         );
         let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
         if response.secondary_clicked() {
-            request_menu(ui.ctx(),response.interact_pointer_pos());
+            request_menu(ui.ctx(), response.interact_pointer_pos());
         } else if response.double_clicked() {
             ui.ctx().send_viewport_cmd(Command::Maximized(!maximized));
         } else if response.drag_started() {
@@ -339,7 +344,11 @@ pub fn caption_controls(
     let height = area.height();
     let band = area;
     let controls = area;
-    let caption_width = if (area.width() - 3.0 * metrics.caption_width).abs() < 0.001 { metrics.caption_width } else { area.width() / 3.0 };
+    let caption_width = if (area.width() - 3.0 * metrics.caption_width).abs() < 0.001 {
+        metrics.caption_width
+    } else {
+        area.width() / 3.0
+    };
     let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
     let mut close_requested = false;
     let mut geometry = BTreeMap::new();

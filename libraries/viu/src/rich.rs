@@ -414,7 +414,12 @@ pub(crate) fn draw(
             let response = if form["hosted"] == true && !gold {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else if widget.properties["style"] == "gold" {
-                let response = crate::native_menu::draw(ui, value, form["effective"] != "bar",widget.properties["header_icon"].as_str());
+                let response = crate::native_menu::draw(
+                    ui,
+                    value,
+                    form["effective"] != "bar",
+                    widget.properties["header_icon"].as_str(),
+                );
                 if let Some(command) = crate::native_menu::picked(ui.ctx()) {
                     emit(events, id, "command", command);
                 }
@@ -488,7 +493,19 @@ pub(crate) fn draw(
                         Some(toolkit::titlebar::IconBarItem {
                             command: crate::native_menu::native_id(ui.ctx(), item["id"].as_str()?)?,
                             icon: crate::icons::Icon::from_name(item["icon"].as_str()?)?,
-                            tooltip: item["shortcut"].as_str().and_then(toolkit::keymap::parse_chord).map_or_else(||text(item,"label").into(),|s|format!("{} ({})",text(item,"label"),ui.ctx().format_shortcut(&s))),
+                            tooltip: item["shortcut"]
+                                .as_str()
+                                .and_then(toolkit::keymap::parse_chord)
+                                .map_or_else(
+                                    || text(item, "label").into(),
+                                    |s| {
+                                        format!(
+                                            "{} ({})",
+                                            text(item, "label"),
+                                            ui.ctx().format_shortcut(&s)
+                                        )
+                                    },
+                                ),
                             enabled: item["enabled"] == true,
                             toggled: item["checked"] == true,
                         })
@@ -506,9 +523,20 @@ pub(crate) fn draw(
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         if widget.properties["style"] == "gold" {
-                            let chrome=toolkit::chrome::Chrome::of(ui.ctx());
-                            if chrome.band.actions.alignment()==design::title_band::Alignment::Left {
-                                let pad=if crate::window_frame::client_of(ui.ctx()) && chrome.captions.alignment(design::title_band::Alignment::Right)==design::title_band::Alignment::Left { chrome.metrics.caption_gap } else { chrome.metrics.title_bar_margin };
+                            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                            if chrome.band.actions.alignment()
+                                == design::title_band::Alignment::Left
+                            {
+                                let pad = if crate::window_frame::client_of(ui.ctx())
+                                    && chrome
+                                        .captions
+                                        .alignment(design::title_band::Alignment::Right)
+                                        == design::title_band::Alignment::Left
+                                {
+                                    chrome.metrics.caption_gap
+                                } else {
+                                    chrome.metrics.title_bar_margin
+                                };
                                 ui.add_space(pad);
                             }
                             ui.spacing_mut().item_spacing.x = toolkit::chrome::Chrome::of(ui.ctx())
@@ -656,7 +684,17 @@ pub(crate) fn draw(
                                     egui::Grid::new((id, "shortcuts")).show(ui, |ui| {
                                         for row in rows {
                                             ui.label(text(row, "label"));
-                                            let keys = row["keys"].as_array().map(|keys|keys.iter().filter_map(Value::as_str).filter_map(toolkit::keymap::parse_chord).map(|s|ui.ctx().format_shortcut(&s)).collect::<Vec<_>>().join(", ")).unwrap_or_else(||text(row,"shortcut").into());
+                                            let keys = row["keys"]
+                                                .as_array()
+                                                .map(|keys| {
+                                                    keys.iter()
+                                                        .filter_map(Value::as_str)
+                                                        .filter_map(toolkit::keymap::parse_chord)
+                                                        .map(|s| ui.ctx().format_shortcut(&s))
+                                                        .collect::<Vec<_>>()
+                                                        .join(", ")
+                                                })
+                                                .unwrap_or_else(|| text(row, "shortcut").into());
                                             ui.weak(keys);
                                             ui.end_row();
                                         }
