@@ -634,6 +634,33 @@ pub(crate) fn draw(
                                     egui::Button::new(label(item)),
                                 )
                             };
+                            if gold && item["id"] == "help.macros" {
+                                let viewport = ui.ctx().viewport_id();
+                                ui.ctx().data_mut(|d| {
+                                    d.insert_temp(
+                                        toolkit::window_id(viewport, "macro-anchor"),
+                                        response.rect,
+                                    )
+                                });
+                                if ui
+                                    .ctx()
+                                    .data(|d| {
+                                        d.get_temp::<bool>(toolkit::window_id(viewport, "macro-busy"))
+                                    })
+                                    .unwrap_or(false)
+                                {
+                                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                                    ui.painter().circle_filled(
+                                        response.rect.right_top()
+                                            + egui::vec2(
+                                                -chrome.metrics.menu_row_padding.x / 2.0,
+                                                chrome.metrics.menu_row_padding.y,
+                                            ),
+                                        chrome.style.hairline_width as f32 * 2.0,
+                                        chrome.palette.accent,
+                                    );
+                                }
+                            }
                             let response = response.on_hover_text(text(item, "label"));
                             geometry.insert(
                                 format!("{id}.command.{}", text(item, "id")),
