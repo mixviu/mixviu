@@ -17,7 +17,7 @@ fn done(runtime: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
 #[test]
 fn round_two_bundles_publish_and_draw_through_the_real_embedded_interpreter() {
     let scratch = tempfile::tempdir().unwrap();
-    for name in ["screenshot", "prefs", "ced"] {
+    for name in ["screenshot", "prefs", "ced", "workshop"] {
         let args = if name == "screenshot" {
             vec![
                 "comp".into(),

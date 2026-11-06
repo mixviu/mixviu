@@ -167,7 +167,11 @@ impl Widget {
             "colour" => value.as_array().is_some_and(|v| {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
-            "editor" => value.as_str().is_some_and(|v| v.len() <= 65536),
+            "editor" => {
+                value.as_str().is_some_and(|v| v.len() <= 65536)
+                    && (self.properties["rows"].is_null()
+                        || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
+            }
             _ => value.as_str().is_some_and(|v| v.len() <= 4096),
         };
         if valid {
@@ -514,7 +518,7 @@ impl Widgets {
                 } else if widget.kind == "editor" {
                     egui::TextEdit::multiline(&mut text)
                         .code_editor()
-                        .desired_rows(24)
+                        .desired_rows(whole(&widget.properties["rows"]).unwrap_or(24))
                         .char_limit(16384)
                 } else {
                     egui::TextEdit::multiline(&mut text).desired_rows(1)
