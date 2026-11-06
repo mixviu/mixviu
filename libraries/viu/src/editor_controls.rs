@@ -173,7 +173,7 @@ pub fn draw(
     if kind == "form-fields" {
         let mut rows = value.clone();
         let mut changed = false;
-        return toolkit::bars::options(ui, |ui| {
+        return ui.scope(|ui| {
             egui::Grid::new(id).num_columns(2).show(ui, |ui| {
                 for row in rows.as_array_mut().unwrap() {
                     ui.label(row["label"].as_str().unwrap());
