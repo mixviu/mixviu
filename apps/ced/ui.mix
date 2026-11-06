@@ -56,7 +56,8 @@ fn ced_ui_model($s,$model)
   $model.local_theme=$s.local_theme ?? {}
   $model.settings_reload=$s.settings_reload ?? 0
   $model.find_open=$s.find.open;$model.values["find-bar"]=merge($s.find,{instance:$s.find_instance ?? 0})
-  $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Save changes?",body:"Save this document before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
+  $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Unsaved changes",body:"Save this document before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
+  $model.values["disk-dialog"]={open:$s.disk_dialog!=nil,title:"The file changed on disk",body:"The file has changed on disk. Save anyway?",choices:[{id:"save",label:"Save Anyway",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
   $model.values["save-dialog"]=ui_form($s.save_dialog,"Save As","File path",$s.save_path ?? ($t.path ?? ""),$s.dialog_instance ?? 0)
   $model.values["goto-dialog"]=ui_form($s.goto_dialog,"Go to Line","Line[:column]",$s.goto_text ?? "",$s.dialog_instance ?? 0)
   $body=if $s.help=="keys" then "" elif $s.help=="about" then "The MixOS Editor edits buffers shared through the edit service: other people and agents can edit the same document at the same time." else "" end
@@ -84,7 +85,7 @@ fn ced_ui_model($s,$model)
   end
   $model.show_notice=$model.notice!=""
   $model.show_problems=$s.problems;$model.show_output=$s.output
-  $modal=$s.open_dialog or $s.save_dialog or $s.goto_dialog or $s.close_dialog!=nil or contains(["keys","about"],$s.help) or ($s.recovery_open ?? false)
+  $modal=$s.open_dialog or $s.save_dialog or $s.goto_dialog or $s.close_dialog!=nil or $s.disk_dialog!=nil or contains(["keys","about"],$s.help) or ($s.recovery_open ?? false)
   $model.editor.properties.enabled=not $modal
   $model.problems_text=if $has and $s.problems then join(map(viu_document("problems",$t.document,{}),fn($p)=to_string($p.line)..":"..to_string($p.col ?? 1).."  "..$p.severity.."  "..$p.code.."  "..$p.message),"\n") else "" end
   if $model.problems_text=="" then $model.problems_text="No problems" end
@@ -124,6 +125,9 @@ fn ced_ui_intent($s,$a)
       $s.active=$i
       $s=do_action($s,"file.close",if $a.value.choice=="save" then {save:true} else {force:true} end).state
     end
+  elif $a.id=="disk-dialog" then
+    $i=tab_index($s,{tab:to_number($s.disk_dialog)});$s.disk_dialog=nil
+    if $i>=0 and $a.value.choice=="save" then $s=do_action($s,"file.save",{force:true},nil,$i).state end
   elif $a.id=="find-bar" then
     if $a.action=="edit" then $s.find=$a.value
     elif $a.action=="close" then $s.find.open=false

@@ -64,7 +64,10 @@ fn pump($s)
     for $request in $effects.out $s=queue_job($s,"io",{document:$t.document,request:$request}) end
     if $effects.retry_ms!=nil then viu_timer($t.document..":retry",$effects.retry_ms,{document:$t.document,kind:"retry"}) end
     if $effects.echo!=nil then viu_timer($t.document..":echo",$effects.echo[1],{document:$t.document,kind:"echo",op_id:$effects.echo[0]}) end
-    for $outcome in $effects.outcomes $s.outcomes[$outcome.op_id]=$outcome end
+    for $outcome in $effects.outcomes
+      $s.outcomes[$outcome.op_id]=$outcome
+      if not $outcome.ok and $outcome.error.reason=="disk_modified" then $s.disk_dialog=$t.document end
+    end
   end
   for $id in keys($s.close_after ?? {})
     if $s.outcomes[$id]!=nil then

@@ -292,6 +292,23 @@ fn window_actions_wait_for_dialog_acceptance_or_cancellation() {
 }
 
 #[test]
+fn gold_dialog_surface_reads_opens_refuses_and_answers_the_window() {
+    let mut app=App::new();
+    assert_eq!(app.answered("ced.dialog",json!({})),(0,json!({"dialog":null})));
+    assert_eq!(app.answered("ced.dialog",json!({"answer":"done"})).1["error_code"],"NO_DIALOG");
+    assert_eq!(app.answered("ced.dialog",json!({"unknown":true})).1["error_code"],"ARGUMENT");
+    let (rc,body)=app.answered("ced.dialog",json!({"open":"keys"}));assert_eq!(rc,0);
+    assert_eq!(body["dialog"]["kind"],"keys");assert_eq!(body["dialog"]["buttons"],json!([{"id":"done","label":"Close","role":"default"}]));
+    assert_eq!(app.answered("ced.dialog",json!({"open":"about"})).1["error_code"],"DIALOG_OPEN");
+    assert_eq!(app.answered("ced.dialog",json!({"answer":"done"})),(0,json!({"dialog":null})));
+    let mut pending=app.command("ced.execute",json!({"id":"search.goto_line"}));
+    assert!(pending.try_recv().is_err());
+    assert_eq!(app.answered("ced.dialog",json!({})).1["dialog"]["kind"],"goto");
+    assert_eq!(app.answered("ced.dialog",json!({"answer":"go","text":"2:2"})),(0,json!({"dialog":null})));
+    assert_eq!(pending.try_recv().unwrap().1["result"],json!({"line":2,"col":2}));
+}
+
+#[test]
 fn header_form_rejects_hidden_read_only_and_unoffered_choices() {
     let value = json!({"enabled":true,"fields":[{"id":"to","label":"To","value":"","visible":true,"actions":[]},{"id":"thread","label":"Thread","value":"fixed","visible":true,"read_only":true,"actions":[]},{"id":"cc","label":"Cc","value":"","visible":false,"actions":[]}],"attachments":[],"attachment_label":"Attachments","attach_label":"Attach…","remove_label":"Remove","chooser":{"open":false,"title":"Attach…","directory":"/"}});
     let widget = viu::widgets::Widget::new("headers", "header-form", "Headers", value.clone());

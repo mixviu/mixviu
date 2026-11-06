@@ -80,6 +80,11 @@ fn check_calls($s)
 end
 fn bus_command($s,$e)
   $s=refresh_tabs($s);$a=$e.args;$command=$e.command
+  if $command=="ced.dialog" then
+    try $s=dialog_apply($s,$a);reply(0,json_encode({dialog:dialog_view($s)}))
+    catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+    return pump($s)
+  end
   if type($a)!="map" then return refused($s,"INVALID_ARGUMENT","Expected an object","bad_args") end
   if $command=="ced.info" then
     reply(0,json_encode({version:$ctx.version ?? "0.1.2",git_sha:$ctx.git_sha ?? "unknown",build_time:$ctx.build_time ?? "unknown",headless:false,tabs:len($s.tabs),edit:$s.edit,config_path:nil,session_path:$s.session_path}));return $s
