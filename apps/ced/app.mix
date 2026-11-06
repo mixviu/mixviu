@@ -2,7 +2,8 @@
 -- version: 0.1.0
 -- lint: globals app_args
 $ctx=viu_context()
-$state={tabs:[],active:0,busy:false,serial:0,status:"Open a UTF-8 document · explicit Apply draft",path:"",pending:nil}
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
+$state={tabs:[],active:0,busy:false,serial:0,status:"Open a UTF-8 document · explicit Apply draft",path:"",pending:nil,wrap:false,line_numbers:true,find:false,window_close:false}
 fn current($s)
   if len($s.tabs)==0 then raise("EMPTY","Open a document first") end
   return $s.tabs[$s.active]
@@ -12,7 +13,11 @@ fn clean_draft($s)
 end
 fn publish_ced($s)
   $t=if len($s.tabs)>0 then current($s) else {draft:"",path:"No document",rev:nil} end
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:{status:$s.status,document:$t.path.." · rev "..to_string($t.rev),tabs:{id:"tabs",kind:"combo",label:"Documents",initial:if len($s.tabs)>0 then to_string($s.active) else "none" end,properties:{choices:if len($s.tabs)>0 then map(range(0,len($s.tabs)-1),fn($i)=to_string($i)) else ["none"] end}},values:{editor:$t.draft,path:$s.path}}}
+  $has=len($s.tabs)>0
+  $items=map(["apply","save","undo","redo","refresh","discard","close"],fn($op)={id:$op,label:$op,enabled:$has and not $s.busy})
+  $model={status:$s.status,document:$t.path.." · rev "..to_string($t.rev),window_close:$s.window_close,tabs:{id:"tabs",kind:"tabs",label:"Documents",initial:if $has then to_string($s.active) else "none" end,properties:{choices:if $has then map(range(0,len($s.tabs)-1),fn($i)=to_string($i)) else ["none"] end}},editor:{id:"editor",kind:"editor",label:"Editing buffer",initial:"",properties:{native_document:true,document:$t.buffer ?? "empty",language:$t.language ?? "text",soft_wrap:$s.wrap,line_numbers:$s.line_numbers,find_bar:$s.find,read_only:not $has or $s.busy}},values:{editor:$t.draft,path:$s.path}}
+  $model=$frame.apply($model,{icon:"file-text",title:$t.path,menus:[{id:"file-menu",label:"File",enabled:true,children:concat([{id:"open",label:"Open",enabled:not $s.busy}],$items)},{id:"view-menu",label:"View",enabled:true,children:[{id:"wrap",label:"Soft wrap",enabled:true},{id:"line_numbers",label:"Line numbers",enabled:true},{id:"find",label:"Find / replace",enabled:$has}]}],toolbar:$items,status:$s.status})
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
 end
 fn start_ced($s,$op,$payload)
   if $s.busy then raise("BUSY","An edit operation is pending") end
@@ -25,7 +30,6 @@ end
 fn operation($s,$op,$a)
   if $s.busy then raise("BUSY","An edit operation is pending") end
   if $op=="open" then
-    clean_draft($s)
     if type($a.path)!="string" or not starts_with($a.path,"/") then raise("PATH","Absolute path required") end
     return start_ced($s,$op,{path:$a.path,create:$a.create ?? false})
   end
@@ -65,12 +69,22 @@ on ced.intent
     $t=current($state);$state.tabs[$state.active].draft=$a.value
   elif $a.id=="path" then $state.path=$a.value
   elif $a.id=="tabs" then
-    clean_draft($state);$index=to_number($a.value)
+    $index=to_number($a.value)
     if $index<0 or floor($index)!=$index or $index>=len($state.tabs) then raise("TAB","Unknown tab") end
     $state.active=$index
   elif $a.id=="discard" then $t=current($state);$state.tabs[$state.active].draft=$t.text
   else $state=operation($state,$a.id,{path:if $a.id=="open" then $state.path else nil end}) end
   publish_ced($state);reply(0,"{}")
+end
+on viu.frame.intent
+  $op=$event.args.value.command
+  if contains(["wrap","line_numbers","find"],$op) then $state[$op]=not $state[$op]
+  else $state=operation($state,$op,{path:if $op=="open" then $state.path else nil end}) end
+  publish_ced($state);reply(0,"{}")
+end
+on viu.frame.close
+  if $state.busy or any($state.tabs,fn($t)=$t.draft!=$t.text or ($t.dirty ?? false)) then raise("DRAFT","Save or explicitly discard dirty documents before quitting") end
+  $state.window_close=true;publish_ced($state);reply(0,"{}")
 end
 on viu.job.completed
   $d=$event.args
