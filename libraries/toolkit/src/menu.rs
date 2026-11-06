@@ -1062,7 +1062,8 @@ pub fn popup(ctx: &Context, side: Option<design::MenuSide>, x: Option<f32>) -> R
     Ok(())
 }
 
-pub(crate) fn toggle(ctx: &Context) {
+/// Toggle the compact native menu from an embedding frame's menu button.
+pub fn toggle(ctx: &Context) {
     let state_key = state_id(ctx);
     let mut st: State = ctx.data(|d| d.get_temp(state_key)).unwrap_or_default();
     st.popup_anchor = None;

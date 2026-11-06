@@ -56,7 +56,14 @@ fn framed($s)
   $model.native_overlays=[]
   if $s.dialog!=nil then
     $definition={id:"monitor-dialog",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Monitor" else "Keyboard shortcuts" end,body:"Processes and performance for this node or any node on the mesh, read from monitord. End task and Kill act only on this node"..chr(39).."s processes, as you.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
-    if $s.dialog=="shortcuts" then $definition.initial.grid=filter($commands.registry($s),fn($a)=$a.shortcut!=nil) end
+    if $s.dialog=="shortcuts" then
+      $grid=[]
+      for $a in $commands.registry($s)
+        $bound=$s.bindings[$a.id] ?? {}; $a.keys=$bound.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+        if len($a.keys)>0 then push($grid,$a) end
+      end
+      $definition.initial.grid=$grid
+    end
     $model.native_overlays=[{definition:$definition,command:"monitor.dialog.intent"}]
   end
   return $frame.apply($model,{icon:"monitor",title:"Monitor — "..(if $s.snapshot!=nil then $s.snapshot.host ?? "This node" else "This node" end),menus:$menus,toolbar:$actions,status:status_line($s)})

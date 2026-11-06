@@ -1004,7 +1004,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                                 && child.ports.get("definition").is_some_and(|definition| {
                                     matches!(
                                         definition["kind"].as_str(),
-                                        Some("label" | "command-bar")
+                                        Some("label" | "command-bar" | "menubar")
                                     )
                                 }))
                         {
@@ -1155,7 +1155,8 @@ fn band_groups(
     children.into_iter().map(|child|{
         let group=groups.get(child).ok_or("band child missing group")?;
         let length=|name:&str|if group[name]=="window.captions"{Ok(caption_width)}else if group[name]=="content"{Ok(content_width(child))}else if let Some(length)=design_length(&group[name],ctx){Ok(length)}else{group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length, content, or window.captions metric"))};
-        let align=match group["align"].as_str(){Some("window.captions")=>caption_side,Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center or right".into())};
+        let chrome=ctx.map(toolkit::chrome::Chrome::of);
+        let align=match group["align"].as_str(){Some("window.captions")=>caption_side,Some("window.menu")=>chrome.as_ref().map_or(Alignment::Left,|c|c.menu_side.alignment()),Some("window.actions")=>chrome.as_ref().map_or(Alignment::Right,|c|c.band.actions.alignment()),Some("window.title")=>chrome.as_ref().map_or(Alignment::Center,|c|c.band.title.alignment(c.band.style.title_alignment())),Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center, right or a native window alignment".into())};
         let integer=|name:&str|group[name].as_f64().filter(|n|n.is_finite()&&n.fract()==0.0&&(0.0..=255.0).contains(n)).map(|n|n as u8).ok_or_else(||format!("band {name} must be an integer 0..255"));
         let shrink=if group["shrink"].is_null(){None}else{Some(integer("shrink")?)};
         let order=integer("order")?;

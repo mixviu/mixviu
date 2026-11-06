@@ -2,6 +2,7 @@
 //! Bounded adapter from Mix command data to the native menu renderer.
 //! Static native slots are allocated once; application IDs remain owned data.
 use serde_json::Value;
+use egui::emath::GuiRounding;
 use std::sync::OnceLock;
 use toolkit::menu::{Entry, Menu, Row};
 
@@ -20,6 +21,7 @@ pub fn command_slot(index: usize) -> Option<&'static str> {
 #[derive(Clone, Default)]
 struct Model {
     ids: Vec<String>,
+    menu_len: usize,
 }
 fn model_id(ctx: &egui::Context) -> egui::Id {
     egui::Id::unique((ctx.viewport_id(), "viu-native-menu-model"))
@@ -34,11 +36,13 @@ pub fn application_id(ctx: &egui::Context, slot: &str) -> Option<String> {
 }
 pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
     let key = model_id(ctx);
-    let index = ctx
-        .data(|d| d.get_temp::<Model>(key))?
-        .ids
-        .iter()
-        .position(|id| id == command)?;
+    let index = ctx.data_mut(|d| {
+        let model = d.get_temp_mut_or_default::<Model>(key);
+        if let Some(index) = model.ids.iter().position(|id| id == command) { return Some(index); }
+        if model.ids.len() == CAPACITY { return None; }
+        model.ids.push(command.into());
+        Some(model.ids.len()-1)
+    })?;
     Some(slots()[index])
 }
 fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
@@ -83,7 +87,7 @@ pub fn validate(value: &Value) -> Result<(), String> {
     }
     Ok(())
 }
-pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
+pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>) -> egui::Response {
     let mut ids = vec![];
     let menus: Vec<Menu> = value
         .as_array()
@@ -95,14 +99,14 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
         })
         .collect();
     let key = model_id(ui.ctx());
-    if ui
-        .ctx()
-        .data(|d| d.get_temp::<Model>(key))
-        .is_some_and(|old| old.ids != ids)
-    {
-        toolkit::menu::close(ui.ctx());
+    let menu_len = ids.len();
+    if let Some(old) = ui.ctx().data(|d| d.get_temp::<Model>(key)) {
+        if old.ids[..old.menu_len] != ids { toolkit::menu::close(ui.ctx()); }
+        for id in old.ids.into_iter().skip(old.menu_len) {
+            if !ids.contains(&id) && ids.len() < CAPACITY { ids.push(id); }
+        }
     }
-    ui.ctx().data_mut(|d| d.insert_temp(key, Model { ids }));
+    ui.ctx().data_mut(|d| d.insert_temp(key, Model { ids, menu_len }));
     let search = menus
         .iter()
         .position(|m| m.title == "Help")
@@ -117,12 +121,23 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
         |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             let hosted = toolkit::menu::form(ui.ctx())["hosted"] == true;
-            if !hosted && !crate::window_frame::client_of(ui.ctx()) {
+            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+            if !hosted && chrome.menu_side == design::MenuSide::Left {
                 ui.add_space(
                     toolkit::chrome::Chrome::of(ui.ctx())
                         .metrics
                         .title_bar_margin,
                 );
+            }
+            if crate::window_frame::client_of(ui.ctx()) {
+                if let Some(icon) = mark.and_then(crate::icons::Icon::from_name) {
+                    let (area, _) = ui.allocate_exact_size(egui::vec2(chrome.metrics.mark+chrome.metrics.mark_gap,ui.available_height()),egui::Sense::hover());
+                    let rect = egui::Rect::from_min_size(egui::pos2(area.left(),area.center().y-chrome.metrics.mark/2.0),egui::Vec2::splat(chrome.metrics.mark)).round_to_pixels(ui.pixels_per_point());
+                    toolkit::icons::image_of(ui.ctx(),icon,chrome.metrics.mark,chrome.palette.icon).paint_at(ui,rect);
+                    let response = ui.interact(rect,ui.id().with("window-menu-mark"),egui::Sense::click());
+                    response.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,true,toolkit::strings::own("window-system-menu")));
+                    if response.clicked_by(egui::PointerButton::Primary) { crate::window_frame::request_menu(ui.ctx(),response.interact_pointer_pos()); }
+                }
             }
             if hosted {
                 let rect = ui.ctx().content_rect();
@@ -142,12 +157,8 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
                 let response = ui.add(toolkit::button::IconButton::new(
                     crate::icons::Icon::from_name("menu").unwrap(),
                 ));
-                if response.clicked() {
-                    if toolkit::menu::is_open(ui.ctx()) {
-                        toolkit::menu::close(ui.ctx());
-                    } else if let Some(first) = menus.first() {
-                        let _ = toolkit::menu::open_path(ui.ctx(), &[first.title.clone()]);
-                    }
+                if (response.hovered() && ui.input(|i|i.pointer.primary_pressed())) || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary)) {
+                    toolkit::menu::toggle(ui.ctx());
                 }
                 toolkit::menu::compact_picked(ui, &menus, search.as_ref(), response.rect)
             } else {
@@ -166,4 +177,24 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
 pub fn picked(ctx: &egui::Context) -> Option<Value> {
     let key = model_id(ctx).with("picked");
     ctx.data_mut(|d| d.remove_temp::<Value>(key))
+}
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn hosted_tail_commands_keep_their_owned_identity_across_menu_frames() {
+        let ctx=egui::Context::default();
+        crate::appearance::install(&ctx);
+        let menus=serde_json::json!([{"label":"File","children":[{"id":"file.refresh","label":"Refresh","enabled":true}]}]);
+        let mut tail=None;
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput::default(),|ui| {
+                super::draw(ui,&menus,false,Some("monitor"));
+                let current=super::native_id(ui.ctx(),"view.search").unwrap();
+                if let Some(previous)=tail { assert_eq!(current,previous); }
+                tail=Some(current);
+                assert_eq!(super::application_id(ui.ctx(),current).as_deref(),Some("view.search"));
+                assert_eq!(super::application_id(ui.ctx(),super::native_id(ui.ctx(),"file.refresh").unwrap()).as_deref(),Some("file.refresh"));
+            }).drop_without_applying_deltas();
+        }
+    }
 }

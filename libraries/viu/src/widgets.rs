@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Shared native widgets. Applications supply their own definitions and model;
 //! this module draws and reports intents, never executes application policy.
-use egui::emath::GuiRounding;
 use egui::{Color32, Id, Rect, Sense, Vec2};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -103,6 +102,16 @@ impl Widget {
     /// Untruncated native label width, using exactly the same typography as
     /// drawing. Containers choose whether and how this preferred size shrinks.
     pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
+        if self.kind == "menubar" && self.properties["style"] == "gold" {
+            let c = toolkit::chrome::Chrome::of(ui.ctx());
+            let form = toolkit::menu::form(ui.ctx());
+            if form["hosted"] == true { return Ok(0.0); }
+            let width = if form["effective"] == "bar" {
+                self.value(model).as_array().into_iter().flatten().map(|menu|ui.painter().layout_no_wrap(menu["label"].as_str().unwrap_or("").into(), toolkit::chrome::Chrome::menu_font(ui.style()),c.palette.text).size().x+2.0*c.metrics.menu_title_padding.x).sum()
+            } else { c.style.icon_button as f32 };
+            let mark = if crate::window_frame::client_of(ui.ctx()) && self.properties["header_icon"].is_string() { c.metrics.mark+c.metrics.mark_gap } else { 0.0 };
+            return Ok(width + mark + if c.menu_side != design::MenuSide::Center { c.metrics.title_bar_margin } else { 0.0 });
+        }
         if self.kind == "command-bar" && self.properties["style"] == "gold" {
             if toolkit::titlebar::hosting::hosted(ui.ctx()) {
                 return Ok(0.0);
@@ -118,7 +127,10 @@ impl Widget {
                 n * (c.style.icon_button as f32 + c.style.title_control_spacing as f32)
                     + if c.band.actions.alignment() == design::title_band::Alignment::Center {
                         0.0
-                    } else if crate::window_frame::client_of(ui.ctx()) && c.band.actions.alignment() == c.captions.alignment(design::title_band::Alignment::Right) {
+                    } else if crate::window_frame::client_of(ui.ctx())
+                        && c.band.actions.alignment()
+                            == c.captions.alignment(design::title_band::Alignment::Right)
+                    {
                         c.metrics.caption_gap
                     } else {
                         c.metrics.title_bar_margin
@@ -711,35 +723,9 @@ impl Widgets {
             "label" => {
                 let text = label_text(ui, widget, value);
                 if widget.properties["role"] == "title" {
-                    let galley = ui.painter().layout_no_wrap(
-                        value.as_str().unwrap_or("").to_owned(),
-                        crate::fonts::emphasis(
-                            ui.ctx(),
-                            egui::FontId::proportional(
-                                crate::window_frame::Metrics::of(ui.ctx()).title_size,
-                            ),
-                        ),
-                        toolkit::chrome::Chrome::of(ui.ctx()).palette.text_dim,
-                    );
-                    let (rect, response) =
-                        ui.allocate_exact_size(ui.available_size_before_wrap(), Sense::hover());
-                    let margin = if toolkit::chrome::Chrome::of(ui.ctx()).band.title
-                        == design::TitleAlign::Auto
-                    {
-                        toolkit::chrome::Chrome::of(ui.ctx())
-                            .metrics
-                            .title_bar_margin
-                            / 2.0
-                    } else {
-                        0.0
-                    };
-                    let position = (rect.center() + egui::vec2(margin, 0.0) - galley.size() / 2.0)
-                        .round_to_pixels(ui.pixels_per_point());
-                    ui.painter().galley(
-                        position,
-                        galley,
-                        toolkit::chrome::Chrome::of(ui.ctx()).palette.text_dim,
-                    );
+                    let (rect,response)=ui.allocate_exact_size(ui.available_size_before_wrap(),Sense::hover());
+                    let chrome=toolkit::chrome::Chrome::of(ui.ctx());
+                    toolkit::titlebar::window_title(ui,&chrome,value.as_str().unwrap_or(""),rect,rect.left()+chrome.metrics.title_gap,rect.right()-chrome.metrics.title_gap);
                     response.widget_info(|| {
                         egui::WidgetInfo::labeled(
                             egui::Role::Label,
