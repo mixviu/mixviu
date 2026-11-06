@@ -1,86 +1,92 @@
-# MixViu app ports — round 1 checkpoint
+# MixViu app ports — round 2 checkpoint
 
-Steps 0/1/2 are implemented and verified as bounded lab specimens.
-No install, desktop/VT change, main merge or production acceptance.
+Screenshot and Prefs are implemented and verified as bounded Mix lab specimens.
+Round-1 results stand. No install, real desktop/VT change, main merge or
+production acceptance. Inventories were committed before implementation.
 
-- `viu run APP_DIR [ARGS]` runs Mix bundles through the shared native host.
-  Gallery has no Rust; its historical comparator/tests are in gallery-reference.
-  Dopus is unchanged; its future host inventory is in docs/ports/generic-host.md.
-- Backdrop: colour, five image modes, an actual output override and a native
-  Bus settings witness change passed headless capture checks. All six original/
-  new wallpaper pairs have AE=0 at 1280×900. Mix owns document/settings policy.
-- Monitor: real monitord CPU/memory/process data rendered; native focus/text
-  filtering, CPU/memory sorts, pause stability, explicit refresh and tree
-  queries passed. Captures were inspected beside the original Monitor.
-- Per-app Rust added: **0**. Shared native imports/extensions and line counts
-  are recorded in docs/ports/generic-host.md and provenance. The five added
-  packages have MIT/Apache licences and no build scripts.
+- Screenshot: output, fenced window, explicit/interactive region capture;
+  confirmed minimise/restore, delay/cursor, UI Cancel, bounded image preview,
+  exclusive PNG export/Save and native blobd/clipd image copy. Clipboard bytes
+  were read back and compared. Stale window refusal restored its own window.
+- Prefs: real settings.describe/get/status, typed registry editor, fenced
+  settings.apply/reset, category/search/selection and authoritative refresh.
+  Real checkbox Apply passed. A six-second draft retained its fence; a
+  concurrent authority edit caused conflict without replay. Authority loss
+  made the snapshot stale, inhibited writes and recovered on restart/refresh.
+- Per-app Rust added: **0 for each app**. Shared production Rust: **+90/-10
+  lines**, plus 91 integration-test lines. Count and rationale are in
+  docs/ports/round2-native.md. No new dependencies or libraries/mix changes;
+  embedded Mix remains 0.117. Term needs are inventoried, not implemented.
 
 ## Exact-source evidence
 
-Validated source: `14943caf69394c93e66acdd7af878b7634707b7f`.
-CBC `20261106-195953-c07e7f58-a1`, BUILD_RC=0: fmt check, locked scoped checks,
-106 tests, clippy and debug build. Full saved log read; worker diff empty.
-Clippy exits successfully with style warnings, including four collapsible-if
-suggestions in the new host; this is not a warning-free claim.
+Validated runtime/bundle/test source:
+`df85b9fe84bf07ed3634015037814765e58fabcc`.
+CBC `20261106-214217-d2c1545d-a1`, BUILD_RC=0: fmt check, locked scoped
+checks, **108 tests**, clippy and debug build. Full 44185-character saved log
+read, worker diff empty. Clippy succeeds with existing style warnings,
+including the generic host; this is not a warning-free claim.
 
-Binary SHA256: `47f1e617aa204eba7bc1e9b8bac267247005a543496c4301a9eada3990e7ca3e`.
-Final immutable-archive headless run: `native.CvXIFK`, 16 result records.
-App archive SHA256: `78c3dc7ea567e10c11d0efacf589c12a875034c1e8beb7bde0068b3e5f65140e`.
-Captures inspected directly or verified byte-identical to inspected images;
-all nine owned processes confirmed stopped. Private captures stay outside this
-public tree. Native source/binary and final archive match the validated SHA.
+Binary SHA256:
+`05017aa8e5e5fed5b56a4b1ab13422c314f5817116c1cd2ef842529b893ecb27`.
+Final artifact fetched and verified byte-identical to the native witness.
+Immutable-archive native run: **native.5I3U3L**, **13 result records**.
+App archive SHA256:
+`d59e04f1aa5ecc0ca3e2c52c6917319081db19fa8c33ec997b688a74dcea1ce5`.
+All eight application/comparator captures inspected beside the originals;
+all eleven owned processes confirmed stopped. Evidence remains private in
+app-ports-r2-20261106/report.md and the native run directory.
 
-Pure Mix checks pass: backdrop refusals/output mapping and explicit 2001-process
-refusal. A 2000-row installed-interpreter projection sample took 15.6 ms; this
-is not embedded UI latency or a performance-parity result. Seed, external-pin,
-native-Bus, Dopus-import and app-port integrity checks pass. Runtime-import
-verification still hits jwt-rsa-test.pem, already absent at the base revision;
-no test/verifier was weakened.
+Native compd ran nested under the existing private headless Weston harness.
+Output PNG dimensions exactly matched the compositor registry (1280x800,
+scale 1); interactive selection produced 300x200. Native headless pilots also
+passed capture/settings/copy cases, but have no human input source, so pointer
+selection acceptance used the nested harness. No real display was used.
+
+Pure Mix capture-shape/refusal, revision/type/range/owner/stale/operation-ID
+checks pass. Mix lint passes with the actual embedder functions declared.
+Seed provenance, fourteen external pins, 101 native imports and five-bundle
+zero-per-app-Rust checks pass. No test/verifier was weakened. The inherited
+runtime-import verifier limitation (jwt-rsa-test.pem absent at the base) remains.
 
 ## Limits and deferrals
 
-Full inventories: docs/ports/backdrop.md and docs/ports/monitor.md.
-Reference headless compd exposes one output: simultaneous multi-output/hotplug
-acceptance remains deferred. Backdrop lacks slideshow/train views,
-decode-before-commit/store parity and zero-poll settings following. Monitor's
-detailed resource/TCP charts, seeded interactive history, signals, shared action
-menus/macros and complete original wire/UI compatibility remain deferred.
-These specimens do not establish complete app parity or readiness to install.
+Complete source-derived inventories: docs/ports/screenshot.md and prefs.md.
+These are functional specimens with simpler composition, not complete visual,
+feature or performance parity, and not installation acceptance.
 
-Earlier CBC attempts: 20261106-192006-425c8dff-a1 (lock update),
-20261106-193321-957e2f64-a1 (logging adaptation),
-20261106-194334-64190f42-a1 (scene-colour fix),
-20261106-194851-e7308ce5-a1 (exploratory green),
-20261106-195718-70b492c0-a1 (scene-key quoting fix). Reporting-only commits
-after the validated source change no runtime, bundle or test source.
+Screenshot annotations/crop/history, dialogs, original raw pruning/on-disk
+recent index and session theme/keymaps remain deferred. Save folder is explicit
+or HOME/Pictures/Screenshots; XDG user-dirs compatibility remains deferred.
+Track B7 needs an owned selection handle with cancellation/status/removal
+acknowledgement. Stopping the Mix worker cannot certify overlay removal;
+the app exposes the Escape/55-second timeout limit. No overlays moved to Rust.
 
-Branch: lab/app-ports; head/source SHA: 14943caf69394c93e66acdd7af878b7634707b7f (validated source; reporting commit follows); steps done: 0/1/2 bounded lab specimens with listed deferrals; CBC job ids: 20261106-195953-c07e7f58-a1 (final green), 20261106-194851-e7308ce5-a1 (exploratory green).
+Prefs specialised backend pages, appearance packages, library/chooser controls,
+email secrets/migrations, software installs and complete topic/receipt/wire
+compatibility remain deferred. Lists and Email-owned workflows are read-only.
+Prefs itself does not yet follow the edited theme/keymaps. Polling pauses
+during draft edits; explicit refresh discards a draft and recovers uncertainty.
+settingsd was tested through its unchanged wire, not a new mixd personality.
 
+## Checkpoint history
 
-Round 2 started from 11945c0. Source-derived screenshot/prefs inventories written before implementation. Embedded mix remains 0.117; no installs or desktop changes.
-Branch: lab/app-ports; head SHA: 11945c0a2f96f1067aab79050b25a9ceeabd93c4; apps done: round-1 specimens, round-2 inventory only; CBC job ids: 20261106-195953-c07e7f58-a1 (round 1).
+Round 2 starts at reporting head 11945c0. CBC 20261106-210513-b604d880-a1
+hit worker compiler tmpfs exhaustion before tests; full log read and fmt patch
+applied. Later jobs use an owned build-volume TMPDIR and no compiler wrapper,
+without touching shared caches. Scoped jobs 20261106-210914-2b236015-a1 and
+20261106-211636-ceb74f7b-a1 passed; full logs read and adaptations empty.
+Full gate 20261106-212655-f9a8eff8-a1 passed 108 tests at c8132dd. The
+superseded queue job 20261106-213101-2218a4fc was confirmed cancelled with
+zero attempts; it is not a failed build. Reporting-only commits after the
+validated source change no runtime, bundle, manifest or test source.
 
-Round 2 implementation checkpoint: new Mix screenshot/prefs bundles; reusable generic-host jobs, explicit native timeout bounds, bounded image metadata/exclusive PNG export and native clipboard image submission. Pure Mix capture-shape and settings-fence/refusal checks pass. Native build/render gates pending. No libraries/mix changes.
-Branch: lab/app-ports; head SHA: de075ba9c09ffd4ba9b8f6162959c02aaa2f9f0e; apps done: screenshot/prefs prototypes, acceptance pending; CBC job ids: round-2 pending.
+Round 1 validated source: 14943caf69394c93e66acdd7af878b7634707b7f;
+CBC 20261106-195953-c07e7f58-a1, 106 tests. Generic host/Gallery, Backdrop
+and Monitor remain as accepted bounded specimens. All six wallpaper mode/
+colour pairs had AE=0 at 1280x900; Monitor captures and native interactions
+passed. Its native.CvXIFK run had 16 records, all nine owned processes stopped.
+Round-1 inventories retain multi-output/hotplug, slideshow, detailed monitor
+views/signals/actions and full compatibility deferrals. Dopus is unchanged.
 
-CBC 20261106-210513-b604d880-a1 did not reach tests: worker compiler tempfs exhausted. Full saved log read and fmt patch applied. Read-only df confirms ample build-volume space; next job uses a job-owned temporary directory there and disables its compiler wrapper, without touching shared caches or other sessions. Term-needs inventory added; no Term implementation.
-Branch: lab/app-ports; head SHA: b77bd167a4d4d5a7fd29bdd222f567ac7fc01e17; apps done: screenshot/prefs prototypes, acceptance pending; CBC job ids: 20261106-210513-b604d880-a1 (infrastructure space failure).
-
-CBC 20261106-210914-2b236015-a1 passed scoped round-2 render/export tests and binary build. Full saved log read; empty adaptation diff. Screenshot copy now follows native blobd + clipd references in Mix after source inspection showed egui image copy unavailable in the current host feature profile. No dependency/interpreter changes. Private native harness prepared against real settingsd, original apps and compositor commands.
-Branch: lab/app-ports; head SHA: 78949427c03ff9b019bc546acefaefb5ea174866; apps done: screenshot/prefs implemented, native acceptance pending; CBC job ids: 20261106-210914-2b236015-a1 (scoped green).
-
-CBC 20261106-211636-ceb74f7b-a1 passed scoped tests/build; full log read. First private native pilot exposed job admission argument routing: local jobs require flat named arguments, unlike native Bus JSON bodies. Both bundles corrected; initial settings reads remain timer driven. Host timers now admit fairly during request traffic. Native acceptance pending, pilots fully torn down.
-Branch: lab/app-ports; head SHA: 76d8ce0 (checkpoint parent); apps done: screenshot/prefs implemented, native acceptance pending; CBC job ids: 20261106-211636-ceb74f7b-a1 (scoped green).
-
-Private native pilots passed settings authority reads/writes/reset, real checkbox Apply, output/window/explicit-region captures, restore, exclusive export/save, delayed cancellation and native PNG clipboard byte readback. Interactive selection moved to the existing nested harness because native headless has no human seat. The nested command rejected a 60000 ms deadline; corrected to its advertised 55000 ms ceiling. Five-bundle zero-per-app-Rust and Dopus native import checks pass. Operation identifier wire validation now has a pure regression check. Final nested/CBC gates pending.
-Branch: lab/app-ports; head SHA: 3abf5f39bc75a278bd3fb6c03caa5381b2062cc6 (checkpoint parent); apps done: screenshot/prefs specimens, final acceptance pending; CBC job ids: 20261106-211636-ceb74f7b-a1 (scoped green).
-
-Nested pilot native.bLyH2H passed ten records, including actual pointer-driven 300x200 region selection and original-app comparator captures. Inspected original Screenshot, original Prefs, Mix settings editor and capture previews; these are functional specimens with visibly simpler composition, not visual parity. All ten owned processes stopped. Shared production Rust diff is +90/-10 lines, separately documented; app Rust remains zero. UI and semantic Cancel now share the same restore/Track B7 warning policy. Full CBC is still running for c8132dd; a final exact-source gate follows this convergence checkpoint.
-Branch: lab/app-ports; head SHA: c8132ddf2bde63a9e81025964f549fc2f1a30937 (pilot source); apps done: screenshot/prefs bounded specimens, final gate pending; CBC job ids: 20261106-212655-f9a8eff8-a1 (running), 20261106-211636-ceb74f7b-a1 (scoped green).
-
-Convergence review found a failed settings read retained the previous writable snapshot. Read completion now marks it stale before validating a successful replacement. A private authority-loss/recovery check was added. The queued f86ca36 gate was cancelled before execution and superseded; this is not a failed build. Native 12-record run at f86ca36 passed and all ten owned processes stopped. No Rust source changed after the full c8132dd gate.
-Branch: lab/app-ports; head SHA: f86ca36ff1c4a21f2168ed0b194de5ddefc8ac7a (checkpoint parent); apps done: screenshot/prefs bounded specimens, final stale-read recovery gate pending; CBC job ids: 20261106-212655-f9a8eff8-a1 (full green), 20261106-213101-2218a4fc (cancelled before execution).
-
-Final native source df85b9f passed 13 records in native.5I3U3L: real authority-loss write inhibition/recovery, stale-draft conflict without replay, UI Cancel, stale window restoration, clipboard byte readback, exact registered output dimensions and pointer-driven region selection. All eight app/comparator captures inspected and eleven owned processes stopped. App archive SHA256 d59e04f1aa5ecc0ca3e2c52c6917319081db19fa8c33ec997b688a74dcea1ce5. Native binary SHA256 05017aa8e5e5fed5b56a4b1ab13422c314f5817116c1cd2ef842529b893ecb27 comes from the full green c8132dd gate; all Rust/library/engine/Cargo inputs remain byte-identical. Exact df85b9f gate is first in the CBC queue; final artifact identity is still pending. The superseded queue job was confirmed cancelled with zero attempts after releasing its own interest.
-Branch: lab/app-ports; head/source SHA: df85b9fe84bf07ed3634015037814765e58fabcc (source; reporting-only commit follows); apps done: screenshot/prefs bounded specimens, exact-source CBC pending; CBC job ids: 20261106-214217-d2c1545d (queued), 20261106-212655-f9a8eff8-a1 (full green), 20261106-213101-2218a4fc (cancelled unstarted).
+Branch: lab/app-ports; head/source SHA: df85b9fe84bf07ed3634015037814765e58fabcc (validated source; reporting-only commit follows); apps done: screenshot/prefs bounded lab specimens with listed deferrals; CBC job ids: 20261106-214217-d2c1545d-a1 (final green), 20261106-212655-f9a8eff8-a1 (earlier full green), 20261106-211636-ceb74f7b-a1 and 20261106-210914-2b236015-a1 (scoped green), 20261106-210513-b604d880-a1 (infrastructure failure), 20261106-213101-2218a4fc (cancelled unstarted).
