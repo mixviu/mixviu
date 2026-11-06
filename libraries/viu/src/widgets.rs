@@ -994,6 +994,7 @@ impl Widgets {
                                 .map_or(ui.available_width(), |w| w as f32),
                         )
                         .hint_text(widget.text("placeholder"))
+                        .interactive(widget.properties["interactive"] != false)
                         .password(widget.properties["password"] == true)
                         .id_salt(id),
                     )

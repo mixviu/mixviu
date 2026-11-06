@@ -167,6 +167,9 @@ impl Host {
             return;
         };
         if r.command == format!("{}.quit", self.app) {
+            if let Some(saved) = &mut self.saved {
+                saved.capture_exit(self.bus.client());
+            }
             r.close_after_reply
                 .store(true, std::sync::atomic::Ordering::Release);
         }
@@ -448,6 +451,10 @@ impl Host {
                 }
             }
             if saved.announced {
+                saved.restore(self.bus.client());
+                if self.model["window_close"] == true {
+                    saved.capture_exit(self.bus.client());
+                }
                 saved.tick(ctx, &self.app, self.model["window_close"] == true);
             }
         }
@@ -471,6 +478,9 @@ impl Host {
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
+                    if let Some(saved) = &self.saved {
+                        saved.notice_topic(&n.command);
+                    }
                     self.facilities.notice(&n.command, &n.args);
                     if n.command == "theme.changed" {
                         self.file_theme = toolkit::Theme::load();
@@ -735,7 +745,11 @@ impl Host {
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
     let saved = bundle.manifest.saved_version.map(|v| {
-        crate::saved_state::Saved::load(bundle.manifest.app(), v, bundle.launch["headless"] == true)
+        let mut saved = crate::saved_state::Saved::load(bundle.manifest.app(), v, bundle.launch["headless"] == true);
+        if bundle.launch["headless"] != true {
+            saved.configure(bundle.manifest.bus_surface.as_ref().and_then(|s| s["app_id"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("mixviu.{service}")), bundle.launch["comp"].as_str().unwrap_or("comp").to_owned());
+        }
+        saved
     });
     let native_choice = saved
         .as_ref()
