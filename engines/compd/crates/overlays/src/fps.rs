@@ -203,5 +203,4 @@ pub fn per_frame(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, 
     }
 }
 
-
 use ui::TypedSurfaces as _;

@@ -153,5 +153,3 @@ async fn explicit_reconcile_fences_readback_before_queued_loss_notice() {
     assert!(!ui.session().host().consumer().is_confirmed());
     assert_eq!(ui.session().host().consumer().generation(), None);
 }
-
-use ui::TypedSurfaces as _;

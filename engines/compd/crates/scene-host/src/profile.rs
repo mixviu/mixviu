@@ -192,5 +192,3 @@ mod tests {
         assert_eq!(fault["path"], "shell.panels.bottom.edge");
     }
 }
-
-use ui::TypedSurfaces as _;

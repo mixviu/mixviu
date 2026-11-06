@@ -82,6 +82,5 @@ zbus = { workspace = true, optional = true }
 buildinfo = { workspace = true }
 
 [dev-dependencies]
-egui = { workspace = true, optional = true }
-overlays = { workspace = true, optional = true }
+egui = { workspace = true }
 tokio = { workspace = true }

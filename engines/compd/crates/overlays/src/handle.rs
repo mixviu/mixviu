@@ -90,5 +90,4 @@ pub fn load<T: UiProgram>(
     handle
 }
 
-
 use ui::TypedSurfaces as _;

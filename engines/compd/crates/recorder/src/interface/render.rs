@@ -303,5 +303,3 @@ where
         Err(e) => warn!("capture render: finish failed: {e:?}"),
     }
 }
-
-

@@ -56,5 +56,3 @@ fn classes_follow_mutation() {
 fn truth_command_is_a_registered_query() {
     assert_eq!(class_of("compd.truth"), Some("query"));
 }
-
-use ui::TypedSurfaces as _;

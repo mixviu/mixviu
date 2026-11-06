@@ -512,6 +512,3 @@ icon: {widget: "image", src: "", w: 31, h: 31}
         );
     }
 }
-
-
-use ui::TypedSurfaces as _;

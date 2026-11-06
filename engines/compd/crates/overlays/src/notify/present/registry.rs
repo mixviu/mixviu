@@ -108,7 +108,7 @@ pub fn ensure_registry(p: &mut Presenter, kernel: &Storage) -> bool {
 }
 
 
-use ui::TypedSurfaces as _;
+
 
 impl world::notify::present::registry::NotifyPresenter for Presenter {
     fn tick(&mut self, next: Option<String>, kernel: &Storage, renderer: &mut GlesRenderer,
@@ -117,3 +117,5 @@ impl world::notify::present::registry::NotifyPresenter for Presenter {
         super::base::tick(self, next, kernel, renderer, node, screen)
     }
 }
+
+use ui::TypedSurfaces as _;

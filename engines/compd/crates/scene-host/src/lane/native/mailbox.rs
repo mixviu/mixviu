@@ -89,5 +89,3 @@ impl<T> Mailbox<T> {
         events
     }
 }
-
-use ui::TypedSurfaces as _;

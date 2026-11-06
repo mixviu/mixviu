@@ -324,5 +324,3 @@ pub fn shutdown() {
         host.finish();
     }
 }
-
-use ui::TypedSurfaces as _;

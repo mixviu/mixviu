@@ -151,5 +151,3 @@ impl<T: Send + 'static> Lane<T> {
         self.worker.flush_cache(deadline).await
     }
 }
-
-use ui::TypedSurfaces as _;

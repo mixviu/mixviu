@@ -572,6 +572,3 @@ fn paint_image(
     painter.image(texture, rect, uv, tint);
     Some(cache)
 }
-
-
-use ui::TypedSurfaces as _;

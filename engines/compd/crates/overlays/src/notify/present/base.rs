@@ -118,5 +118,4 @@ pub fn tick(
     )
 }
 
-
 use ui::TypedSurfaces as _;
