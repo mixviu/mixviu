@@ -283,6 +283,18 @@ pub(crate) fn atomic_replace() -> mix::evaluator::ExtFn {
     })
 }
 
+/// Descriptor-relative private directory creation, refusing linked ancestors.
+pub(crate) fn private_directory() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let [Value::String(path)] = args.as_slice() else {
+            return Err(MixError::RuntimeError { msg: "viu_private_directory expects an absolute path".into(), span: None });
+        };
+        config::atomic::create_directory(std::path::Path::new(path))
+            .map_err(|e| MixError::RuntimeError { msg: format!("Private directory: {e}"), span: None })?;
+        Ok(Value::Nil)
+    })
+}
+
 /// Bounded, nonblocking optional text read through the existing held-directory
 /// primitive. Only NotFound means absent; unreadable/linked/special files fail.
 pub(crate) fn read_optional() -> mix::evaluator::ExtFn {

@@ -24,7 +24,7 @@ end
 fn save_password($id,$password)
   $v=secrets_read();$old=$v.passwords[$id]
   if $password=="" then $v.passwords=delete($v.passwords,$id) else $v.passwords[$id]=$password end
-  if $old!=$v.passwords[$id] then viu_atomic_replace(secrets_path(),data_encode($v)) end
+  if $old!=$v.passwords[$id] then viu_private_directory(dirname(secrets_path()));viu_atomic_replace(secrets_path(),data_encode($v)) end
   return $old!=nil
 end
 fn settings_call($command,$body)

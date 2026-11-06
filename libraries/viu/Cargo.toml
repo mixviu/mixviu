@@ -35,7 +35,7 @@ design = { path = "../design" }
 icons = { path = "../icons" }
 bus = { path = "../bus", features = ["native"] }
 egui_extras = { version = "=0.37.0", default-features = false, features = ["svg"] }
-mix = { path = "../mix", features = ["regex", "tokio-sleep", "json", "datetime", "mime"] }
+mix = { path = "../mix", features = ["regex", "tokio-sleep", "json", "datetime", "mime", "url"] }
 thumbs.workspace = true
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
 png = "=0.18.1"

@@ -207,6 +207,7 @@ impl Runtime {
                         eval.set_serve_runtime(local.clone());
                         eval.register("viu_thumbnail",crate::native_primitives::thumbnail(worker_stop.clone()));
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
+                        eval.register("viu_private_directory",crate::native_primitives::private_directory());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
                         eval.register("viu_app_dirs",crate::native_primitives::app_dirs());
                         eval.register("viu_maildoc",crate::native_primitives::mail_document());

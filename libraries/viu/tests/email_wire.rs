@@ -15,6 +15,7 @@ fn probe_sequence(replies: Vec<Value>, call: &str) -> (u8, Value) {
 }
 fn probe_module(replies: Vec<Value>, call: &str, module: &str, auth: Vec<&'static str>) -> (u8, Value) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let bodies: Vec<_> = replies
         .iter()
@@ -22,7 +23,14 @@ fn probe_module(replies: Vec<Value>, call: &str, module: &str, auth: Vec<&'stati
         .collect();
     let server = std::thread::spawn(move || {
         for (index, body) in bodies.into_iter().enumerate() {
-            let (mut socket, _) = listener.accept().unwrap();
+            let until=std::time::Instant::now()+Duration::from_secs(10);
+            let mut socket=loop {
+                match listener.accept() {
+                    Ok((socket,_))=>break socket,
+                    Err(e) if e.kind()==std::io::ErrorKind::WouldBlock && std::time::Instant::now()<until => std::thread::sleep(Duration::from_millis(5)),
+                    Err(e)=>panic!("client did not deliver expected request {index}: {e}"),
+                }
+            };
             socket
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
