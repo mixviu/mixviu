@@ -220,7 +220,9 @@ impl BusHandler for Backend {
                 && ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command)
             {
                 let mut spec = to_json(args)?;
-                if let Some(body)=spec.get("body") {spec=body.clone();}
+                if let Some(body) = spec.get("body") {
+                    spec = body.clone();
+                }
                 if !spec.is_object() {
                     return Err(error("job arguments must be an object"));
                 }
