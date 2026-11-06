@@ -158,7 +158,10 @@ impl Host {
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
-                self.unknown_command.as_ref().map_or_else(||json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),|message|json!({"error_code":"UNKNOWN_COMMAND","message":message})),
+                self.unknown_command.as_ref().map_or_else(
+                    || json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
+                    |message| json!({"error_code":"UNKNOWN_COMMAND","message":message}),
+                ),
             ));
             return;
         }
@@ -376,10 +379,15 @@ impl Host {
             }
         }
         while let Some(request) = self.held_requests.front() {
-            let queues = request.command.strip_prefix(&format!("{}.",self.service)).is_some_and(toolkit::drive::queues);
-            if toolkit::drive::pending(ctx) && !queues { break; }
+            let queues = request
+                .command
+                .strip_prefix(&format!("{}.", self.service))
+                .is_some_and(toolkit::drive::queues);
+            if toolkit::drive::pending(ctx) && !queues {
+                break;
+            }
             let request = self.held_requests.pop_front().unwrap();
-            self.request(request,ctx);
+            self.request(request, ctx);
         }
         for _ in 0..32 {
             match self.bus.notices.try_recv() {

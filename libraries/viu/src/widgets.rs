@@ -811,6 +811,11 @@ impl Widgets {
                 } else {
                     icon_button(ui, widget.text("icon"), widget.text("text"), false)
                 };
+                let r = if let Some(tip) = widget.properties["tooltip"].as_str() {
+                    let shortcut=widget.properties["shortcut"].as_str().and_then(toolkit::keymap::parse_chord).map(|key|ui.ctx().format_shortcut(&key));
+                    let tip=toolkit::tooltip::text(tip,shortcut.as_deref());
+                    r.on_hover_text(tip.clone()).on_disabled_hover_text(tip)
+                } else { r };
                 if r.clicked() {
                     events.push(Intent {
                         id: id.clone(),

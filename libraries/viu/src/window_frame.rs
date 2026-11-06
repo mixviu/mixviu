@@ -368,7 +368,9 @@ pub fn caption_controls(
             ui.scope_id().with(("viu-caption", id, name)),
             egui::Sense::click(),
         );
-        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+        let label_key=match name { "minimize"=>"window-minimize","maximize" if maximized=>"window-restore","maximize"=>"window-maximize",_=>"window-close" };
+        let label=toolkit::action::label_text(&toolkit::Strings::new(""),label_key);
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         let chrome = toolkit::chrome::Chrome::of(ui.ctx());
         let pressed = r.is_pointer_button_down_on();
         let hovered = r.hovered() || pressed;
@@ -435,7 +437,7 @@ pub fn caption_controls(
                 painter.line_segment([b.right_top(), b.left_bottom()], line);
             }
         }
-        if r.on_hover_text(name).clicked() {
+        if r.on_hover_text(&label).clicked() {
             if name == "close" {
                 close_requested = true;
             } else {
