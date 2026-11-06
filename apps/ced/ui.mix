@@ -44,7 +44,7 @@ fn ced_status($s,$t)
     if $t.pending>0 then push($right,to_string($t.pending).." pending") end
     push($right,"Ln "..to_string($t.selection.head.line)..", Col "..to_string($t.selection.head.col))
   end
-  return {left:if starts_with($s.status,"Failed:") or starts_with($s.status,"An agent's save") then $s.status else "" end,right:$right,icon:if $s.edit.epoch!=nil then "plug" else "unplug" end,error:$s.edit.epoch==nil}
+  return {left:if starts_with($s.status,"Failed:") or monotonic()<($s.status_until ?? 0) then $s.status else "" end,right:$right,icon:if $s.edit.epoch!=nil then "plug" else "unplug" end,error:$s.edit.epoch==nil}
 end
 fn ced_ui_model($s,$model)
   $has=len($s.tabs)>0;$t=if $has then current($s) else {path:nil} end

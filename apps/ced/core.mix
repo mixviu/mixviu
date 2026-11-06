@@ -95,7 +95,7 @@ fn pump($s)
       $s.outcomes[$outcome.op_id]=$outcome
       if not $outcome.ok and $outcome.error.reason=="disk_modified" then
         if $s.save_prompts[$outcome.op_id] ?? true then $s.disk_dialog=$t.document
-        else $s.status="An agent's save was refused: the file changed on disk" end
+        else $s=notify_ced($s,$t,"An agent's save was refused: the file changed on disk","warning") end
       end
       $s.save_prompts=delete($s.save_prompts,$outcome.op_id)
     end
@@ -115,6 +115,13 @@ fn pump($s)
     $s.running[$job.id]=$job
   end
   return check_calls(session_changed(refresh_tabs($s)))
+end
+fn notify_ced($s,$tab,$text,$level)
+  $text=basename($tab.path ?? "untitled-"..$tab.document)..": "..$text
+  if monotonic()-($s.notice_at[$text] ?? -100)>5 then
+    $s.notice_at[$text]=monotonic();$s=queue_job($s,"notify",{text:$text,level:$level})
+  end
+  return $s
 end
 fn operation($s,$op,$a)
   if $op=="open" or $op=="new" then

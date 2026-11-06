@@ -51,6 +51,9 @@ end
 on job.run
   $job=$event.args;$a=$job.payload
   if $job.kind=="action-publish" then publish("ced.action.executed",json_encode($a.body));reply(0,"{}");return
+  elif $job.kind=="notify" then
+    send "notify" "notify.send" body={summary:"Ced",body:slice($a.text,0,500),app:"ced",level:$a.level,timeout_ms:6000} timeout=3
+    reply(0,json_encode({fallback:$rc<0 or $rc>=10,text:$a.text}));return
   elif $job.kind=="macro-panel" then
     $panel=$a.panel
     if $a.action=="open" then $panel=macro_catalogue($panel)
