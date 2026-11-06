@@ -109,6 +109,15 @@ impl Widget {
     /// drawing. Containers choose whether and how this preferred size shrinks.
     pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
         self.validate_model(model)?;
+        if self.kind=="menubar" && self.properties["style"]=="gold" {
+            let chrome=toolkit::chrome::Chrome::of(ui.ctx());
+            if toolkit::menu::effective(ui.ctx())!=design::MenuStyle::Bar {return Ok(chrome.style.icon_button as f32);}
+            return Ok(self.value(model).as_array().unwrap().iter().map(|menu|ui.painter().layout_no_wrap(menu["label"].as_str().unwrap().into(),toolkit::chrome::Chrome::menu_font(ui.style()),chrome.palette.text).size().x+2.0*chrome.metrics.menu_title_padding.x).sum());
+        }
+        if self.kind=="command-bar" && self.properties["style"]=="gold" {
+            let n=self.value(model).as_array().unwrap().len();let chrome=toolkit::chrome::Chrome::of(ui.ctx());
+            return Ok(n as f32*chrome.style.icon_button as f32+n.saturating_sub(1) as f32*chrome.style.title_control_spacing as f32);
+        }
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
         }
