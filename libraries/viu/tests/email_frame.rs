@@ -19,8 +19,12 @@ fn complete(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> Completion {
 
 #[test]
 fn connected_email_model_mounts_all_panes_and_draws_native_rows() {
-    let bundle = Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"), &[]).unwrap();
-    let mut program=bundle.program;
+    let bundle = Bundle::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
+        &[],
+    )
+    .unwrap();
+    let mut program = bundle.program;
     program.source.push_str(r#"
 on test.ready
   $entries=[{id:"a",name:"Fixture",label:"Fixture",user:"user@example.test",email:"user@example.test",enabled:true}];$active="a"
@@ -31,22 +35,45 @@ on test.ready
   publish_email();reply(0,"{}")
 end
 "#);
-    let (tx,rx)=mpsc::channel();
-    let mut runtime=Runtime::new(8,Arc::new(move||{let _=tx.send(());}),None);
-    runtime.load(program).unwrap();complete(&runtime,&rx);
-    runtime.event("test.ready".into(),json!({})).unwrap();
-    let model=complete(&runtime,&rx).model.unwrap();
-    assert_eq!(model["native_table"]["initial"]["rows"][0]["strong"],true);
-    let mut view=viu::gold_frame::mount(&bundle.scene,model).unwrap();
-    let ctx=egui::Context::default();viu::appearance::install(&ctx);
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(
+        8,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+    );
+    runtime.load(program).unwrap();
+    complete(&runtime, &rx);
+    runtime.event("test.ready".into(), json!({})).unwrap();
+    let model = complete(&runtime, &rx).model.unwrap();
+    assert_eq!(model["native_table"]["initial"]["rows"][0]["strong"], true);
+    let mut view = viu::gold_frame::mount(&bundle.scene, model).unwrap();
+    let ctx = egui::Context::default();
+    viu::appearance::install(&ctx);
     for _ in 0..3 {
-        ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1040.0,680.0))),..Default::default()},|ui|{view.show(ui);}).drop_without_applying_deltas();
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1040.0, 680.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        )
+        .drop_without_applying_deltas();
     }
-    assert!(view.geometry["places-pane"].width()>150.0);
-    assert!(view.geometry["message-list"].width()>400.0);
-    assert!(view.geometry["reader-pane"].width()>300.0);
+    assert!(view.geometry["places-pane"].width() > 150.0);
+    assert!(view.geometry["message-list"].width() > 400.0);
+    assert!(view.geometry["reader-pane"].width() > 300.0);
     assert!(view.geometry.contains_key("emails"));
-    assert!(view.geometry.contains_key("account-tree.key.mailbox:a:inbox"));
+    assert!(
+        view.geometry
+            .contains_key("account-tree.key.a/mailbox/inbox")
+    );
 }
 
 #[test]

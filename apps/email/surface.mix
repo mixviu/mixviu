@@ -16,19 +16,24 @@ fn compact_date($stamp)
   end
 end
 fn gold_rows($emails)
-  return rows_project($emails,fn($m)={key:$m.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[$m.subject ?? "",address_display(($m.from ?? [])[0]),compact_date($m.receivedAt ?? $m.date)],strong:($m.keywords ?? {})["$seen"]!=true,weak_cells:[false,false,($m.keywords ?? {})["$seen"]==true],markers:[concat(if $m.hasAttachment==true then ["paperclip"] else [] end,if ($m.keywords ?? {})["$flagged"]==true then ["flag"] else [] end),[],[]]})
+  $dates={}
+  for $stamp in unique(rows_project($emails,fn($m)=$m.receivedAt ?? $m.date ?? "")) $dates[$stamp]=compact_date($stamp) end
+  return rows_project($emails,fn($m)={key:$m.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[$m.subject ?? "",len($m.from ?? [])>0 ? ($m.from[0].name ?? $m.from[0].email ?? "") : "",$dates[$m.receivedAt ?? $m.date ?? ""]],strong:($m.keywords ?? {})["$seen"]!=true,weak_cells:[false,false,($m.keywords ?? {})["$seen"]==true],markers:[$m.hasAttachment==true ? ((($m.keywords ?? {})["$flagged"]==true) ? ["paperclip","flag"] : ["paperclip"]) : ((($m.keywords ?? {})["$flagged"]==true) ? ["flag"] : []),[],[]]})
 end
 fn outline_row($key,$depth,$label,$icon,$branch=false,$count=0)
-  return {key:$key,depth:$depth,branch:$branch,expanded:not contains($tree_closed,$key),selected:false,focused:false,cells:[$label],icon:$icon,count:$count,strong:$depth==0}
+  return {key:$key,depth:$depth,branch:$branch,expanded:$branch and not contains($tree_closed,$key),selected:false,focused:false,cells:[$label],icon:$icon,count:$count,strong:$depth==0}
 end
 fn mailbox_icon($role)
   return if $role=="inbox" then "inbox" elif $role=="sent" then "send" elif $role=="drafts" then "file-text" elif $role=="trash" then "trash" elif $role=="junk" then "circle-alert" elif $role=="archive" or $role=="all" then "file-archive" else "folder" end
 end
 fn folder_rows($account,$boxes,$parent,$depth,$seen=[])
   $out=[]
-  for $b in $boxes
-    if $b.parentId==$parent and not contains($seen,$b.id) then
-      $key="mailbox:"..$account..":"..$b.id;$branch=any($boxes,fn($child)=$child.parentId==$b.id)
+  if $depth>16 then return [] end
+  $level=filter($boxes,fn($b)=if $parent==nil then $b.parentId==nil or $b.parentId==$b.id or not any($boxes,fn($p)=$p.id==$b.parentId) else $b.parentId==$parent and $b.id!=$parent end)
+  $level=sort_by($level,fn($b)=[if $b.role=="inbox" then 0 elif $b.role=="drafts" then 1 elif $b.role=="sent" then 2 elif $b.role=="archive" or $b.role=="all" then 3 elif $b.role==nil then 4 elif $b.role=="junk" or $b.role=="spam" then 6 elif $b.role=="trash" then 7 else 5 end,$b.sortOrder ?? 0,$b.name])
+  for $b in $level
+    if not contains($seen,$b.id) then
+      $key=$account.."/mailbox/"..$b.id;$branch=any($boxes,fn($child)=$child.parentId==$b.id and $child.id!=$b.id)
       push($out,outline_row($key,$depth,$b.name,mailbox_icon($b.role),$branch,$b.unreadEmails))
       if $branch and not contains($tree_closed,$key) then $out=concat($out,folder_rows($account,$boxes,$b.id,$depth+1,concat($seen,[$b.id]))) end
     end
@@ -38,15 +43,16 @@ end
 fn navigation_rows()
   $out=[]
   for $e in $entries
-    $view=$wire_views[$e.id] ?? {};$data=$wire_data[$e.id] ?? {};$key="account:"..$e.id
+    $view=$wire_views[$e.id] ?? {};$data=$wire_data[$e.id] ?? {};$key=$e.id
     $row=outline_row($key,0,$e.name,if $e.enabled==false then "unplug" elif $view.state=="ready" then "mail" elif contains(["failed","no_password"],$view.state) then "circle-alert" else "loader-circle" end,true,$view.unread ?? 0)
     $row.error=contains(["failed","no_password"],$view.state);$row.weak=$e.enabled==false;push($out,$row)
-    if not contains($tree_closed,$key) then
+    if not contains($tree_closed,$key) and $view.state=="ready" then
       $out=concat($out,folder_rows($e.id,$data.boxes ?? [],nil,1))
       for $group in [{kind:"calendars",label:"Calendars",icon:"calendar",items:$data.calendars ?? []},{kind:"books",label:"Address Books",icon:"book-user",items:$data.books ?? []}]
-        $group_key=$group.kind..":"..$e.id
+        if len($group.items)==0 then continue end
+        $group_key=$e.id.."/"..$group.kind
         push($out,outline_row($group_key,1,$group.label,$group.icon,true))
-        if not contains($tree_closed,$group_key) then for $item in $group.items push($out,outline_row($group.kind..":"..$e.id..":"..$item.id,2,$item.name,$group.icon)) end end
+        if not contains($tree_closed,$group_key) then for $item in $group.items push($out,outline_row($e.id.."/"..(if $group.kind=="calendars" then "calendar" else "book" end).."/"..$item.id,2,$item.name,$group.icon)) end end
       end
     end
   end
@@ -55,7 +61,7 @@ end
 fn surface_model($m)
   $data=$wire_data[$active] ?? {};$state=$wire_views[$active] ?? {};$opened=$message ?? {}
   $m.places_ratio=$places_ratio;$m.list_ratio=$list_ratio;$m.pane=$pane;$m.ready=$state.state=="ready"
-  $tree_selected=if $box!="" then "mailbox:"..$active..":"..$box else "account:"..$active end
+  $tree_selected=if $box!="" then $active.."/mailbox/"..$box else $active end
   $nav=navigation_rows()
   $m.navigation={id:"account-tree",kind:"tree-table",label:"Accounts",initial:{key:"accounts",revision:$revision,rows:$nav,columns:[{id:"name",label:""}],selected_keys:if any($nav,fn($r)=$r.key==$tree_selected) then [$tree_selected] else [] end,focused_key:nil},properties:{style:"outline"}}
   $found=filter($boxes,fn($b)=$b.id==$box);$name=if len($found)>0 then $found[0].name else "Mail" end
@@ -93,9 +99,9 @@ fn surface_intent($a)
     $key=$a.value.key
     if $a.action=="expand" then $tree_closed=if contains($tree_closed,$key) then filter($tree_closed,fn($k)=$k!=$key) else concat($tree_closed,[$key]) end
     else
-      $parts=split($key,":")
-      if $parts[0]=="account" then surface_account($parts[1])
-      elif $parts[0]=="mailbox" then surface_mailbox($parts[1],$parts[2]) end
+      $parts=split($key,"/")
+      if len($parts)==1 then surface_account($parts[0])
+      elif $parts[1]=="mailbox" then surface_mailbox($parts[0],$parts[2]) end
       $pane="tree"
     end
   elif $a.id=="emails" then
