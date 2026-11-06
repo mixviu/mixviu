@@ -1,18 +1,32 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Client furniture host. No compositor Loop, registry or input hooks.
-use std::{collections::BTreeMap, sync::{Arc,Mutex}, time::{Duration,Instant}};
-use serde_json::{Value,json};
-use toolkit::layer::{self,Anchor,KeyboardInteractivity,Layer,LayerOptions,LayerPresentation,LayerProgram,Outputs,SurfaceInfo};
-use edges::{PanelConfig,PanelInput,PanelMode,PanelStateMachine,PanelWake};
-use crate::{appearance,command::SceneCommand,mount,seat::Edge,store::{SceneStore,SceneMount,Mounted},view::{self,Content,SceneUi,SceneMessage}};
+use crate::{
+    appearance,
+    command::SceneCommand,
+    mount,
+    seat::Edge,
+    store::{Mounted, SceneMount, SceneStore},
+    view::{self, Content, SceneMessage, SceneUi},
+};
+use edges::{PanelConfig, PanelInput, PanelMode, PanelStateMachine, PanelWake};
+use serde_json::{Value, json};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+use toolkit::layer::{
+    self, Anchor, KeyboardInteractivity, Layer, LayerOptions, LayerPresentation, LayerProgram,
+    Outputs, SurfaceInfo,
+};
 
 type Shared = Arc<Mutex<State>>;
-type Key = (String,String);
+type Key = (String, String);
 struct State {
     store: SceneStore,
-    panels: BTreeMap<Key,PanelStateMachine>,
-    contexts: BTreeMap<Key,egui::Context>,
+    panels: BTreeMap<Key, PanelStateMachine>,
+    contexts: BTreeMap<Key, egui::Context>,
     started: Instant,
     look: Option<Arc<appearance::Look>>,
     look_revision: u64,
@@ -21,156 +35,370 @@ struct State {
     publish: Vec<String>,
 }
 impl State {
-    fn wake(&self) { for ctx in self.contexts.values() { ctx.request_repaint(); } }
+    fn wake(&self) {
+        for ctx in self.contexts.values() {
+            ctx.request_repaint();
+        }
+    }
     fn panel(&mut self, output: &str, edge: &str) -> &mut PanelStateMachine {
-        self.panels.entry((output.into(),edge.into())).or_insert_with(|| {
-            let thickness = if edge=="left" || edge=="right" {440.0} else {40.0};
-            let mut model = PanelStateMachine::new(PanelConfig::new(thickness,Duration::from_millis(800),Duration::from_millis(200)).unwrap(),Duration::ZERO).unwrap();
-            model.set_holder_plane(true,Duration::ZERO).unwrap();
-            if edge=="bottom" { model.apply(Duration::ZERO,PanelInput::Dock).unwrap(); }
-            model
-        })
+        self.panels
+            .entry((output.into(), edge.into()))
+            .or_insert_with(|| {
+                let thickness = if edge == "left" || edge == "right" {
+                    440.0
+                } else {
+                    40.0
+                };
+                let mut model = PanelStateMachine::new(
+                    PanelConfig::new(
+                        thickness,
+                        Duration::from_millis(800),
+                        Duration::from_millis(200),
+                    )
+                    .unwrap(),
+                    Duration::ZERO,
+                )
+                .unwrap();
+                model.set_holder_plane(true, Duration::ZERO).unwrap();
+                if edge == "bottom" {
+                    model.apply(Duration::ZERO, PanelInput::Dock).unwrap();
+                }
+                model
+            })
     }
     fn input(&mut self, output: &str, edge: &str, input: PanelInput) {
-        let now=self.started.elapsed();
-        let _=self.panel(output,edge).apply(now,input);
+        let now = self.started.elapsed();
+        let _ = self.panel(output, edge).apply(now, input);
         self.wake();
     }
-    fn content(&self, output: &str, edge: &str) -> Option<(String,Arc<Content>)> {
-        self.store.scenes().find_map(|(name,entry)| {
-            let tree=entry.tree();
-            if mount::is_dialog(tree) || mount::is_toast(tree) || mount::scene_edge(tree).as_str()!=edge {return None;}
-            let page=mount::page_id(tree);
-            let seat=self.store.pages().seat(&page)?;
-            if seat.output!=output && seat.output!=comp_model::snapshot::output_key(output) {return None;}
-            Some((name.into(),Arc::new(Content {tree:tree.clone(),lists:entry.prepared().clone(),revision:entry.revision(),frame:None,dialog:false})))
+    fn content(&self, output: &str, edge: &str) -> Option<(String, Arc<Content>)> {
+        self.store.scenes().find_map(|(name, entry)| {
+            let tree = entry.tree();
+            if mount::is_dialog(tree)
+                || mount::is_toast(tree)
+                || mount::scene_edge(tree).as_str() != edge
+            {
+                return None;
+            }
+            let page = mount::page_id(tree);
+            let seat = self.store.pages().seat(&page)?;
+            if seat.output != output && seat.output != comp_model::snapshot::output_key(output) {
+                return None;
+            }
+            Some((
+                name.into(),
+                Arc::new(Content {
+                    tree: tree.clone(),
+                    lists: entry.prepared().clone(),
+                    revision: entry.revision(),
+                    frame: None,
+                    dialog: false,
+                }),
+            ))
         })
     }
 }
 enum Outgoing {
-    Fire(String,String,Value),
-    Register(String,String),
-    Mode(String,String,String),
-    Presented(String,String,u64),
-    Frame(String,u32),
+    Fire(String, String, Value),
+    Register(String, String),
+    Mode(String, String, String),
+    Presented(String, String, u64),
+    Frame(String, u32),
 }
 struct Program {
     edge: String,
     state: Shared,
     send: tokio::sync::mpsc::UnboundedSender<Outgoing>,
-    views: BTreeMap<String,(String,SceneUi,u64)>,
-    last: BTreeMap<String,(String,u64)>,
+    views: BTreeMap<String, (String, SceneUi, u64)>,
+    last: BTreeMap<String, (String, u64)>,
     cold: bool,
     cold_frame: bool,
 }
 impl LayerProgram for Program {
-    fn setup(&mut self,ctx:&egui::Context) { toolkit::install(ctx,&toolkit::Theme::embedded()); }
-    fn frame_interval(&self)->Duration {Duration::from_millis(16)}
-    fn strict_frame_callbacks(&self)->bool {true}
-    fn presentation(&mut self,ctx:&egui::Context,info:&SurfaceInfo)->LayerPresentation {
-        let output=info.output.as_deref().unwrap_or("default");
-        let mut state=self.state.lock().unwrap();
-        let key=(output.into(),self.edge.clone());
-        if !state.contexts.contains_key(&key) {
-            state.contexts.insert(key,ctx.clone());
-            let _=self.send.send(Outgoing::Register(output.into(),self.edge.clone()));
-        }
-        let has_content=state.content(output,&self.edge).is_some();
-        let now=state.started.elapsed();
-        let model=state.panel(output,&self.edge);
-        let _=model.tick(now);
-        let snap=model.snapshot();
-        if model.wake()==PanelWake::Animate {ctx.request_repaint_after(Duration::from_millis(16));}
-        let offset=((1.0-snap.visible_fraction)*snap.thickness_px).round() as i32;
-        let margin=match self.edge.as_str() {"left"=>(0,0,0,-offset),"right"=>(0,-offset,0,0),"top"=>(-offset,0,0,0),_=>(0,0,-offset,0)};
-        LayerPresentation {visible:has_content&&snap.mapped&&snap.visible_fraction>0.0, exclusive_zone:Some(snap.exclusive_zone_px.round() as i32),
-            size:Some(if self.edge=="left"||self.edge=="right" {(snap.thickness_px as u32,0)} else {(0,snap.thickness_px as u32)}),
-            layer:Some(if snap.mode==PanelMode::Docked {Layer::Top} else {Layer::Overlay}),margin:Some(margin)}
+    fn setup(&mut self, ctx: &egui::Context) {
+        toolkit::install(ctx, &toolkit::Theme::embedded());
     }
-    fn show(&mut self,ui:&mut egui::Ui,info:&SurfaceInfo) {
-        let output=info.output.as_deref().unwrap_or("default").to_owned();
-        let (content,look,look_revision)={let state=self.state.lock().unwrap();(state.content(&output,&self.edge),state.look.clone(),state.look_revision)};
-        let Some((name,content))=content else {return;};
-        let entry=self.views.entry(output.clone()).or_insert_with(|| {
-            let mut view=SceneUi::new(content.clone());view.setup(ui.ctx());(name.clone(),view,0)
+    fn frame_interval(&self) -> Duration {
+        Duration::from_millis(16)
+    }
+    fn strict_frame_callbacks(&self) -> bool {
+        true
+    }
+    fn presentation(&mut self, ctx: &egui::Context, info: &SurfaceInfo) -> LayerPresentation {
+        let output = info.output.as_deref().unwrap_or("default");
+        let mut state = self.state.lock().unwrap();
+        let key = (output.into(), self.edge.clone());
+        if !state.contexts.contains_key(&key) {
+            state.contexts.insert(key, ctx.clone());
+            let _ = self
+                .send
+                .send(Outgoing::Register(output.into(), self.edge.clone()));
+        }
+        let has_content = state.content(output, &self.edge).is_some();
+        let now = state.started.elapsed();
+        let model = state.panel(output, &self.edge);
+        let _ = model.tick(now);
+        let snap = model.snapshot();
+        if model.wake() == PanelWake::Animate {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+        let offset = ((1.0 - snap.visible_fraction) * snap.thickness_px).round() as i32;
+        let margin = match self.edge.as_str() {
+            "left" => (0, 0, 0, -offset),
+            "right" => (0, -offset, 0, 0),
+            "top" => (-offset, 0, 0, 0),
+            _ => (0, 0, -offset, 0),
+        };
+        LayerPresentation {
+            visible: has_content && snap.mapped && snap.visible_fraction > 0.0,
+            exclusive_zone: Some(snap.exclusive_zone_px.round() as i32),
+            size: Some(if self.edge == "left" || self.edge == "right" {
+                (snap.thickness_px as u32, 0)
+            } else {
+                (0, snap.thickness_px as u32)
+            }),
+            layer: Some(if snap.mode == PanelMode::Docked {
+                Layer::Top
+            } else {
+                Layer::Overlay
+            }),
+            margin: Some(margin),
+        }
+    }
+    fn show(&mut self, ui: &mut egui::Ui, info: &SurfaceInfo) {
+        let output = info.output.as_deref().unwrap_or("default").to_owned();
+        let (content, look, look_revision) = {
+            let state = self.state.lock().unwrap();
+            (
+                state.content(&output, &self.edge),
+                state.look.clone(),
+                state.look_revision,
+            )
+        };
+        let Some((name, content)) = content else {
+            return;
+        };
+        let entry = self.views.entry(output.clone()).or_insert_with(|| {
+            let mut view = SceneUi::new(content.clone());
+            view.setup(ui.ctx());
+            (name.clone(), view, 0)
         });
-        if entry.0!=name {let mut view=SceneUi::new(content.clone());view.setup(ui.ctx());*entry=(name.clone(),view,0);}
-        if entry.1.revision()!=content.revision {entry.1.update(SceneMessage::Replace(content.clone()));}
-        if entry.2!=look_revision {if let Some(look)=look {entry.1.update(SceneMessage::Appearance(look));} entry.2=look_revision;}
-        let mut messages=Vec::new();entry.1.show(ui,&mut messages);
+        if entry.0 != name {
+            let mut view = SceneUi::new(content.clone());
+            view.setup(ui.ctx());
+            *entry = (name.clone(), view, 0);
+        }
+        if entry.1.revision() != content.revision {
+            entry.1.update(SceneMessage::Replace(content.clone()));
+        }
+        if entry.2 != look_revision {
+            if let Some(look) = look {
+                entry.1.update(SceneMessage::Appearance(look));
+            }
+            entry.2 = look_revision;
+        }
+        let mut messages = Vec::new();
+        entry.1.show(ui, &mut messages);
         for message in messages {
-            if let Some((service,command,body))=view::event_of(&message) {let _=self.send.send(Outgoing::Fire(service.into(),command.into(),body));}
-            if matches!(message,SceneMessage::EscapeEdge) {let _=self.send.send(Outgoing::Mode(output.clone(),self.edge.clone(),"hidden".into()));}
-            if let SceneMessage::Tooltip(Some(tip))=&message {
-                if tip.tip.thumbnail.is_some() {ui.label("Window previews unavailable");}
+            if let Some((service, command, body)) = view::event_of(&message) {
+                let _ = self
+                    .send
+                    .send(Outgoing::Fire(service.into(), command.into(), body));
+            }
+            if matches!(message, SceneMessage::EscapeEdge) {
+                let _ = self.send.send(Outgoing::Mode(
+                    output.clone(),
+                    self.edge.clone(),
+                    "hidden".into(),
+                ));
+            }
+            if let SceneMessage::Tooltip(Some(tip)) = &message {
+                if tip.tip.thumbnail.is_some() {
+                    ui.label("Window previews unavailable");
+                }
             }
             entry.1.update(message);
         }
-        self.last.insert(output,(name,content.revision));
+        self.last.insert(output, (name, content.revision));
     }
-    fn presented(&mut self,info:&SurfaceInfo) {
-        let output=info.output.as_deref().unwrap_or("default");
-        if let Some((name,revision))=self.last.get(output) {
-            let _=self.send.send(Outgoing::Presented(name.clone(),output.into(),*revision));
-            if !self.cold {println!("VIU_PANEL_FIRST_COMMIT edge={} output={} cold_ms={:.3}",self.edge,output,self.state.lock().unwrap().started.elapsed().as_secs_f64()*1000.0);self.cold=true;}
+    fn presented(&mut self, info: &SurfaceInfo) {
+        let output = info.output.as_deref().unwrap_or("default");
+        if let Some((name, revision)) = self.last.get(output) {
+            let _ = self
+                .send
+                .send(Outgoing::Presented(name.clone(), output.into(), *revision));
+            if !self.cold {
+                println!(
+                    "VIU_PANEL_FIRST_COMMIT edge={} output={} cold_ms={:.3}",
+                    self.edge,
+                    output,
+                    self.state.lock().unwrap().started.elapsed().as_secs_f64() * 1000.0
+                );
+                self.cold = true;
+            }
         }
     }
-    fn frame(&mut self,info:&SurfaceInfo,time_ms:u32) {
-        let output=info.output.as_deref().unwrap_or("default");
-        if let Some((name,_))=self.last.get(output) {
-            let _=self.send.send(Outgoing::Frame(name.clone(),time_ms));
-            if !self.cold_frame {println!("VIU_PANEL_FIRST_FRAME edge={} output={} cold_ms={:.3}",self.edge,output,self.state.lock().unwrap().started.elapsed().as_secs_f64()*1000.0);self.cold_frame=true;}
+    fn frame(&mut self, info: &SurfaceInfo, time_ms: u32) {
+        let output = info.output.as_deref().unwrap_or("default");
+        if let Some((name, _)) = self.last.get(output) {
+            let _ = self.send.send(Outgoing::Frame(name.clone(), time_ms));
+            if !self.cold_frame {
+                println!(
+                    "VIU_PANEL_FIRST_FRAME edge={} output={} cold_ms={:.3}",
+                    self.edge,
+                    output,
+                    self.state.lock().unwrap().started.elapsed().as_secs_f64() * 1000.0
+                );
+                self.cold_frame = true;
+            }
         }
     }
-    fn removed(&mut self,_:&egui::Context,info:&SurfaceInfo) {
-        let output=info.output.as_deref().unwrap_or("default");
-        self.state.lock().unwrap().contexts.remove(&(output.into(),self.edge.clone()));
-        self.views.remove(output);self.last.remove(output);
+    fn removed(&mut self, _: &egui::Context, info: &SurfaceInfo) {
+        let output = info.output.as_deref().unwrap_or("default");
+        self.state
+            .lock()
+            .unwrap()
+            .contexts
+            .remove(&(output.into(), self.edge.clone()));
+        self.views.remove(output);
+        self.last.remove(output);
     }
 }
 
-pub fn run(service:String,comp:String)->Result<(),String> {
-    let state=Arc::new(Mutex::new(State {store:SceneStore::default(),panels:BTreeMap::new(),contexts:BTreeMap::new(),started:Instant::now(),look:None,look_revision:0,corner_events:0,comp_state:Value::Null,publish:Vec::new()}));
-    let (send,receive)=tokio::sync::mpsc::unbounded_channel();
-    let worker_state=state.clone();
-    std::thread::Builder::new().name("viu-bus".into()).spawn(move || {
-        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        if let Err(error)=runtime.block_on(worker(service,comp,worker_state,receive)) {eprintln!("viu Bus: {error}");std::process::exit(1);}
-    }).map_err(|e|e.to_string())?;
-    let mut threads=Vec::new();
-    for edge in ["left","right","top","bottom"] {
-        let anchor=match edge {"left"=>Anchor::LEFT|Anchor::TOP|Anchor::BOTTOM,"right"=>Anchor::RIGHT|Anchor::TOP|Anchor::BOTTOM,"top"=>Anchor::TOP|Anchor::LEFT|Anchor::RIGHT,_=>Anchor::BOTTOM|Anchor::LEFT|Anchor::RIGHT};
-        let options=LayerOptions {namespace:format!("viu-panel-{edge}"),layer:Layer::Overlay,anchor,keyboard:KeyboardInteractivity::OnDemand,exclusive_zone:0,size:if edge=="left"||edge=="right" {(440,0)}else{(0,40)},outputs:Outputs::Each};
-        let program=Program {edge:edge.into(),state:state.clone(),send:send.clone(),views:BTreeMap::new(),last:BTreeMap::new(),cold:false,cold_frame:false};
+pub fn run(service: String, comp: String) -> Result<(), String> {
+    let state = Arc::new(Mutex::new(State {
+        store: SceneStore::default(),
+        panels: BTreeMap::new(),
+        contexts: BTreeMap::new(),
+        started: Instant::now(),
+        look: None,
+        look_revision: 0,
+        corner_events: 0,
+        comp_state: Value::Null,
+        publish: Vec::new(),
+    }));
+    let (send, receive) = tokio::sync::mpsc::unbounded_channel();
+    let worker_state = state.clone();
+    std::thread::Builder::new()
+        .name("viu-bus".into())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            if let Err(error) = runtime.block_on(worker(service, comp, worker_state, receive)) {
+                eprintln!("viu Bus: {error}");
+                std::process::exit(1);
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    let mut threads = Vec::new();
+    for edge in ["left", "right", "top", "bottom"] {
+        let anchor = match edge {
+            "left" => Anchor::LEFT | Anchor::TOP | Anchor::BOTTOM,
+            "right" => Anchor::RIGHT | Anchor::TOP | Anchor::BOTTOM,
+            "top" => Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
+            _ => Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+        };
+        let options = LayerOptions {
+            namespace: format!("viu-panel-{edge}"),
+            layer: Layer::Overlay,
+            anchor,
+            keyboard: KeyboardInteractivity::OnDemand,
+            exclusive_zone: 0,
+            size: if edge == "left" || edge == "right" {
+                (440, 0)
+            } else {
+                (0, 40)
+            },
+            outputs: Outputs::Each,
+        };
+        let program = Program {
+            edge: edge.into(),
+            state: state.clone(),
+            send: send.clone(),
+            views: BTreeMap::new(),
+            last: BTreeMap::new(),
+            cold: false,
+            cold_frame: false,
+        };
         threads.push(std::thread::spawn(move || {
-            if let Err(error)=layer::run(options,program) {eprintln!("viu layer: {error}");std::process::exit(1);}
+            if let Err(error) = layer::run(options, program) {
+                eprintln!("viu layer: {error}");
+                std::process::exit(1);
+            }
         }));
     }
-    for thread in threads {thread.join().map_err(|_|"viu layer thread panicked")?;}
+    for thread in threads {
+        thread.join().map_err(|_| "viu layer thread panicked")?;
+    }
     Ok(())
 }
 
-async fn report(client:&bus::SupervisedClient,comp:&str,output:&str,edge:&str,mode:&str) {
-    let args=json!({"output":output,"edge":edge,"surface":format!("viu-panel-{edge}"),"mode":mode,"generation":client.connection_generation()});
-    let _=tokio::time::timeout(Duration::from_secs(1),client.call(comp,"comp.panel.mode",args)).await;
+async fn report(client: &bus::SupervisedClient, comp: &str, output: &str, edge: &str, mode: &str) {
+    let args = json!({"output":output,"edge":edge,"surface":format!("viu-panel-{edge}"),"mode":mode,"generation":client.connection_generation()});
+    let _ = tokio::time::timeout(
+        Duration::from_secs(1),
+        client.call(comp, "comp.panel.mode", args),
+    )
+    .await;
 }
-async fn worker(service:String,comp:String,state:Shared,mut outgoing:tokio::sync::mpsc::UnboundedReceiver<Outgoing>)->Result<(),String> {
-    let client=bus::SupervisedClient::connect_options(&service,&bus::noded_url()).connect().await.map_err(|e|e.to_string())?;
-    let mut incoming=client.incoming().ok_or("Bus incoming already taken")?;
-    for suffix in ["corner.input","corner.clicked.v2","corner.entered","corner.left","panel.command","props.changed","chrome.action.hover"] {
-        client.subscribe_topic(&format!("{comp}.{suffix}")).await.map_err(|e|e.to_string())?;
+async fn worker(
+    service: String,
+    comp: String,
+    state: Shared,
+    mut outgoing: tokio::sync::mpsc::UnboundedReceiver<Outgoing>,
+) -> Result<(), String> {
+    let client = bus::SupervisedClient::connect_options(&service, &bus::noded_url())
+        .connect()
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut incoming = client.incoming().ok_or("Bus incoming already taken")?;
+    for suffix in [
+        "corner.input",
+        "corner.clicked.v2",
+        "corner.entered",
+        "corner.left",
+        "panel.command",
+        "props.changed",
+        "chrome.action.hover",
+    ] {
+        client
+            .subscribe_topic(&format!("{comp}.{suffix}"))
+            .await
+            .map_err(|e| e.to_string())?;
     }
-    let binding=settings::session::binding().map_err(|e|format!("settings binding: {e:?}"))?;
-    let mut consumer=settings::consumer::Consumer::for_shell(binding).map_err(|e|format!("settings consumer: {e:?}"))?;
-    let mut work=None;
-    let mut generation=None;
-    let mut states=client.subscribe_state();
-    let mut retry=tokio::time::interval(Duration::from_secs(1));retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let binding = settings::session::binding().map_err(|e| format!("settings binding: {e:?}"))?;
+    let mut consumer = settings::consumer::Consumer::for_shell(binding)
+        .map_err(|e| format!("settings consumer: {e:?}"))?;
+    let mut work = None;
+    let mut generation = None;
+    let mut states = client.subscribe_state();
+    let mut retry = tokio::time::interval(Duration::from_secs(1));
+    retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
-        if let Some(live)=settings::native::live_generation(&client) {if generation!=Some(live) {generation=Some(live);work=consumer.connected(live);}}
-        else {generation=None;consumer.disconnected();}
-        while let Some(action)=work.take() {let result=settings::native::execute(&client,&action).await;work=consumer.complete(&action,result);}
-        if let Some(update)=consumer.pending().cloned() {if let Ok(look)=appearance::build(update.snapshot()) {let mut shared=state.lock().unwrap();shared.look=Some(Arc::new(look));shared.look_revision+=1;shared.wake();consumer.acknowledge(&update);}}
+        if let Some(live) = settings::native::live_generation(&client) {
+            if generation != Some(live) {
+                generation = Some(live);
+                work = consumer.connected(live);
+            }
+        } else {
+            generation = None;
+            consumer.disconnected();
+        }
+        while let Some(action) = work.take() {
+            let result = settings::native::execute(&client, &action).await;
+            work = consumer.complete(&action, result);
+        }
+        if let Some(update) = consumer.pending().cloned() {
+            if let Ok(look) = appearance::build(update.snapshot()) {
+                let mut shared = state.lock().unwrap();
+                shared.look = Some(Arc::new(look));
+                shared.look_revision += 1;
+                shared.wake();
+                consumer.acknowledge(&update);
+            }
+        }
         tokio::select! {
             changed=states.changed()=>{if changed.is_err(){break;} states.borrow_and_update();}
             _=retry.tick()=>{
@@ -216,54 +444,161 @@ async fn worker(service:String,comp:String,state:Shared,mut outgoing:tokio::sync
     }
     Ok(())
 }
-fn topic(state:&Shared,comp:&str,topic:&str,body:&Value) {
-    let mut shared=state.lock().unwrap();
-    if topic==format!("{comp}.props.changed") {shared.comp_state=body.clone();return;}
-    if topic==format!("{comp}.corner.input") {shared.corner_events+=1;return;}
-    let key=body["output"].as_str().unwrap_or_default();
-    let output=shared.contexts.keys().map(|(o,_)|o).find(|o|o.as_str()==key||comp_model::snapshot::output_key(o)==key).cloned();
-    let Some(output)=output else {return;};
-    if topic==format!("{comp}.panel.command") {
-        if let Some(edge)=body["edge"].as_str() {shared.input(&output,edge,if body["action"]=="reveal" {PanelInput::HolderReveal}else{PanelInput::HolderConceal});}
-    } else if topic==format!("{comp}.corner.clicked.v2") {
-        let edge=match body["corner"].as_str() {Some("tl")=>"left",Some("bl")=>"bottom",Some("br")=>"right",Some("tr")=>"top",_=>return};
-        if body["button"]=="left" {
-            let shift=body["modifiers"].as_array().is_some_and(|m|m.iter().any(|v|v=="shift"));
-            shared.input(&output,edge,if shift {PanelInput::DockToggle}else{PanelInput::PinToggle});
+fn topic(state: &Shared, comp: &str, topic: &str, body: &Value) {
+    let mut shared = state.lock().unwrap();
+    if topic == format!("{comp}.props.changed") {
+        shared.comp_state = body.clone();
+        return;
+    }
+    if topic == format!("{comp}.corner.input") {
+        shared.corner_events += 1;
+        return;
+    }
+    let key = body["output"].as_str().unwrap_or_default();
+    let output = shared
+        .contexts
+        .keys()
+        .map(|(o, _)| o)
+        .find(|o| o.as_str() == key || comp_model::snapshot::output_key(o) == key)
+        .cloned();
+    let Some(output) = output else {
+        return;
+    };
+    if topic == format!("{comp}.panel.command") {
+        if let Some(edge) = body["edge"].as_str() {
+            shared.input(
+                &output,
+                edge,
+                if body["action"] == "reveal" {
+                    PanelInput::HolderReveal
+                } else {
+                    PanelInput::HolderConceal
+                },
+            );
+        }
+    } else if topic == format!("{comp}.corner.clicked.v2") {
+        let edge = match body["corner"].as_str() {
+            Some("tl") => "left",
+            Some("bl") => "bottom",
+            Some("br") => "right",
+            Some("tr") => "top",
+            _ => return,
+        };
+        if body["button"] == "left" {
+            let shift = body["modifiers"]
+                .as_array()
+                .is_some_and(|m| m.iter().any(|v| v == "shift"));
+            shared.input(
+                &output,
+                edge,
+                if shift {
+                    PanelInput::DockToggle
+                } else {
+                    PanelInput::PinToggle
+                },
+            );
         }
     }
 }
-fn dispatch(state:&Shared,service:&str,command:&bus::IncomingCommand,args:&Value)->(u8,Value) {
-    if matches!(command.command.as_str(),"HELP"|"app.describe") {
-        return (0,json!({"commands":SceneCommand::manifest(service)}));
+fn dispatch(
+    state: &Shared,
+    service: &str,
+    command: &bus::IncomingCommand,
+    args: &Value,
+) -> (u8, Value) {
+    if matches!(command.command.as_str(), "HELP" | "app.describe") {
+        return (0, json!({"commands":SceneCommand::manifest(service)}));
     }
-    if command.header("broker_origin")==Some("mesh") {return (10,json!({"error_code":"FORBIDDEN","message":"Furniture authority requires a local broker caller"}));}
-    let mut shared=state.lock().unwrap();
-    let Some(kind)=SceneCommand::parse(service,&command.command) else {return (10,json!({"error_code":"UNKNOWN_COMMAND"}));};
-    let output=args["output"].as_str().map(str::to_owned).or_else(||shared.contexts.keys().next().map(|(o,_)|o.clone())).unwrap_or_else(||"headless-0".into());
-    let edge=args["edge"].as_str().unwrap_or("bottom");
-    let result=match kind {
-        SceneCommand::Ping=>json!({"service":service,"status":"ok","engine":"viu"}),
-        SceneCommand::Info=>json!({"service":service,"engine":"viu","commands":SceneCommand::names(service),"pending":["dialogs","toasts","corner menus"],"window_previews":false}),
-        SceneCommand::List=>shared.store.list(&comp_model::snapshot::output_key(&output)),
-        SceneCommand::PropsGet=>json!({"panels":shared.panels.iter().map(|((o,e),p)|json!({"output":o,"edge":e,"mode":p.snapshot().mode.as_str(),"mapped":p.snapshot().mapped})).collect::<Vec<_>>(),"corner_events":shared.corner_events,"window_previews":false}),
-        SceneCommand::PanelState=>{let p=shared.panel(&output,edge).snapshot();json!({"edge":edge,"mode":p.mode.as_str(),"mapped":p.mapped,"fraction":p.visible_fraction})}
-        SceneCommand::PanelMode|SceneCommand::Panel{..}=>{
-            let input=match kind {SceneCommand::PanelMode=>match args["mode"].as_str().and_then(PanelMode::parse){Some(mode)=>PanelInput::SetMode(mode),None=>return(10,json!({"error_code":"INVALID_ARGS","field":"mode"}))},
-                SceneCommand::Panel{kind,..}=>match kind {crate::panels::PanelCommand::Show=>PanelInput::Reveal,crate::panels::PanelCommand::Hide=>PanelInput::Hide,crate::panels::PanelCommand::Toggle=>PanelInput::ToggleShown,crate::panels::PanelCommand::Pin=>PanelInput::Pin,crate::panels::PanelCommand::Unpin=>PanelInput::Release,crate::panels::PanelCommand::Dock=>PanelInput::Dock},_=>unreachable!()};
-            shared.input(&output,edge,input);json!({"edge":edge,"mode":shared.panel(&output,edge).snapshot().mode.as_str()})
+    if command.header("broker_origin") == Some("mesh") {
+        return (
+            10,
+            json!({"error_code":"FORBIDDEN","message":"Furniture authority requires a local broker caller"}),
+        );
+    }
+    let mut shared = state.lock().unwrap();
+    let Some(kind) = SceneCommand::parse(service, &command.command) else {
+        return (10, json!({"error_code":"UNKNOWN_COMMAND"}));
+    };
+    let output = args["output"]
+        .as_str()
+        .map(str::to_owned)
+        .or_else(|| shared.contexts.keys().next().map(|(o, _)| o.clone()))
+        .unwrap_or_else(|| "headless-0".into());
+    let edge = args["edge"].as_str().unwrap_or("bottom");
+    let result = match kind {
+        SceneCommand::Ping => json!({"service":service,"status":"ok","engine":"viu"}),
+        SceneCommand::Info => {
+            json!({"service":service,"engine":"viu","commands":SceneCommand::names(service),"pending":["dialogs","toasts","corner menus"],"window_previews":false})
         }
-        SceneCommand::Frame=>match shared.store.arm_frame(args["scene"].as_str().unwrap_or_default(),&command.from){Ok(())=>json!({"armed":true}),Err(error)=>return(10,error)},
-        SceneCommand::Layout=>return(10,json!({"error_code":"SCENE_NOT_RENDERED","message":"Client layout readback is pending"})),
-        SceneCommand::Load|SceneCommand::Validate|SceneCommand::Patch|SceneCommand::Get|SceneCommand::Describe|SceneCommand::Unload|SceneCommand::Watch=>{
-            let output=comp_model::snapshot::output_key(&output);
-            let mut mount=SceneMount{output:&output,owner:&command.from,accepted_at:command.generation};
-            let result=shared.store.dispatch(kind,&command.body,args,&mut mount);
+        SceneCommand::List => shared
+            .store
+            .list(&comp_model::snapshot::output_key(&output)),
+        SceneCommand::PropsGet => {
+            json!({"panels":shared.panels.iter().map(|((o,e),p)|json!({"output":o,"edge":e,"mode":p.snapshot().mode.as_str(),"mapped":p.snapshot().mapped})).collect::<Vec<_>>(),"corner_events":shared.corner_events,"window_previews":false})
+        }
+        SceneCommand::PanelState => {
+            let p = shared.panel(&output, edge).snapshot();
+            json!({"edge":edge,"mode":p.mode.as_str(),"mapped":p.mapped,"fraction":p.visible_fraction})
+        }
+        SceneCommand::PanelMode | SceneCommand::Panel { .. } => {
+            let input = match kind {
+                SceneCommand::PanelMode => match args["mode"].as_str().and_then(PanelMode::parse) {
+                    Some(mode) => PanelInput::SetMode(mode),
+                    None => return (10, json!({"error_code":"INVALID_ARGS","field":"mode"})),
+                },
+                SceneCommand::Panel { kind, .. } => match kind {
+                    crate::panels::PanelCommand::Show => PanelInput::Reveal,
+                    crate::panels::PanelCommand::Hide => PanelInput::Hide,
+                    crate::panels::PanelCommand::Toggle => PanelInput::ToggleShown,
+                    crate::panels::PanelCommand::Pin => PanelInput::Pin,
+                    crate::panels::PanelCommand::Unpin => PanelInput::Release,
+                    crate::panels::PanelCommand::Dock => PanelInput::Dock,
+                },
+                _ => unreachable!(),
+            };
+            shared.input(&output, edge, input);
+            json!({"edge":edge,"mode":shared.panel(&output,edge).snapshot().mode.as_str()})
+        }
+        SceneCommand::Frame => match shared
+            .store
+            .arm_frame(args["scene"].as_str().unwrap_or_default(), &command.from)
+        {
+            Ok(()) => json!({"armed":true}),
+            Err(error) => return (10, error),
+        },
+        SceneCommand::Layout => {
+            return (
+                10,
+                json!({"error_code":"SCENE_NOT_RENDERED","message":"Client layout readback is pending"}),
+            );
+        }
+        SceneCommand::Load
+        | SceneCommand::Validate
+        | SceneCommand::Patch
+        | SceneCommand::Get
+        | SceneCommand::Describe
+        | SceneCommand::Unload
+        | SceneCommand::Watch => {
+            let output = comp_model::snapshot::output_key(&output);
+            let mut mount = SceneMount {
+                output: &output,
+                owner: &command.from,
+                accepted_at: command.generation,
+            };
+            let result = shared.store.dispatch(kind, &command.body, args, &mut mount);
             shared.publish.extend(result.publish);
             shared.wake();
-            return(result.rc,serde_json::from_str(&result.body).unwrap_or(Value::Null));
+            return (
+                result.rc,
+                serde_json::from_str(&result.body).unwrap_or(Value::Null),
+            );
         }
-        _=>return(10,json!({"error_code":"NOT_IMPLEMENTED","message":"Dialog, toast and menu presentation follows the panel client"})),
+        _ => {
+            return (
+                10,
+                json!({"error_code":"NOT_IMPLEMENTED","message":"Dialog, toast and menu presentation follows the panel client"}),
+            );
+        }
     };
-    (0,result)
+    (0, result)
 }

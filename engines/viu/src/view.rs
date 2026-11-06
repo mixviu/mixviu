@@ -430,7 +430,6 @@ impl SceneUi {
 }
 
 impl SceneUi {
-
     pub fn setup(&mut self, ctx: &egui::Context) {
         // Before the first pass: egui binds new fonts from the next pass on,
         // and the first pass already measures text in the named families.
@@ -542,7 +541,13 @@ mod tests;
 impl ui::UiProgram for SceneUi {
     ui::program_owner!(SceneUi);
     type Message = SceneMessage;
-    fn setup(&mut self, ctx: &egui::Context) { SceneUi::setup(self,ctx); }
-    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<SceneMessage>) { SceneUi::show(self,ui,emit); }
-    fn update(&mut self, message: SceneMessage) { SceneUi::update(self,message); }
+    fn setup(&mut self, ctx: &egui::Context) {
+        SceneUi::setup(self, ctx);
+    }
+    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<SceneMessage>) {
+        SceneUi::show(self, ui, emit);
+    }
+    fn update(&mut self, message: SceneMessage) {
+        SceneUi::update(self, message);
+    }
 }

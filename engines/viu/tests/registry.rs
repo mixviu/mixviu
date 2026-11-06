@@ -3,8 +3,8 @@
 //! The Bus command registry (`docs/docs/spec/bus/commands.conf.mix`, AGENTS.md §5)
 //! lists exactly the `shell.*` commands the scene host serves under its default
 //! service name: `SceneCommand::names`, which is also what `shell.info` lists.
-use viu::{DEFAULT_SERVICE, SceneCommand};
 use std::collections::BTreeSet;
+use viu::{DEFAULT_SERVICE, SceneCommand};
 
 const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 

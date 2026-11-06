@@ -60,7 +60,7 @@ type Repaint = (u64, Duration);
 const REPEAT: (Duration, Duration) = (Duration::from_millis(600), Duration::from_millis(40));
 
 struct Surface {
-    margin: (i32,i32,i32,i32),
+    margin: (i32, i32, i32, i32),
     visible: bool,
     unmapped: bool,
     requested: LayerOptions,
@@ -234,13 +234,23 @@ pub(super) fn run<P: LayerProgram + 'static>(
 impl<P: LayerProgram + 'static> State<P> {
     fn presentations(&mut self) {
         for surface in &mut self.surfaces {
-            let info = SurfaceInfo { output: surface.output_name.clone(), width: surface.size.0,
-                height: surface.size.1, scale: surface.scale };
+            let info = SurfaceInfo {
+                output: surface.output_name.clone(),
+                width: surface.size.0,
+                height: surface.size.1,
+                scale: surface.scale,
+            };
             let desired = self.program.presentation(&surface.ctx, &info);
             let mut next = surface.requested.clone();
-            if let Some(zone) = desired.exclusive_zone { next.exclusive_zone = zone; }
-            if let Some(size) = desired.size { next.size = size; }
-            if let Some(layer) = desired.layer { next.layer = layer; }
+            if let Some(zone) = desired.exclusive_zone {
+                next.exclusive_zone = zone;
+            }
+            if let Some(size) = desired.size {
+                next.size = size;
+            }
+            if let Some(layer) = desired.layer {
+                next.layer = layer;
+            }
             if !desired.visible {
                 if surface.visible {
                     surface.layer.wl_surface().attach(None, 0, 0);
@@ -265,7 +275,9 @@ impl<P: LayerProgram + 'static> State<P> {
                 surface.layer.set_exclusive_zone(next.exclusive_zone);
                 surface.layer.set_keyboard_interactivity(next.keyboard);
                 surface.layer.set_size(next.size.0, next.size.1);
-                surface.layer.set_margin(margin.0,margin.1,margin.2,margin.3);
+                surface
+                    .layer
+                    .set_margin(margin.0, margin.1, margin.2, margin.3);
                 surface.margin = margin;
                 surface.layer.commit();
                 if surface.unmapped || next.size != surface.requested.size {
@@ -322,7 +334,7 @@ impl<P: LayerProgram + 'static> State<P> {
             .and_then(|i| i.name);
         logging::debug!(id, namespace = %self.options.namespace, output = ?output_name, "layer viewport created");
         self.surfaces.push(Surface {
-            margin: (0,0,0,0),
+            margin: (0, 0, 0, 0),
             visible: true,
             unmapped: false,
             requested: self.options.clone(),
@@ -1365,7 +1377,12 @@ impl<P: LayerProgram + 'static> Dispatch<wl_callback::WlCallback, (u64, u64)> fo
             s.pending_since = None;
             s.rescued = false;
             let ctx = s.ctx.clone();
-            let info = SurfaceInfo { output: s.output_name.clone(), width: s.size.0, height: s.size.1, scale: s.scale };
+            let info = SurfaceInfo {
+                output: s.output_name.clone(),
+                width: s.size.0,
+                height: s.size.1,
+                scale: s.scale,
+            };
             s.retry_at = None;
             state.program.visibility(&ctx, true);
             state.program.frame(&info, callback_data);

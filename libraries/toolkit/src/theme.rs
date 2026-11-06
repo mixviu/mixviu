@@ -7,7 +7,9 @@ pub use theme::theme::{Choice, Error, Overlay, THEME_FILE, theme_path};
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme(theme::Theme);
 impl From<theme::Theme> for Theme {
-    fn from(theme: theme::Theme) -> Self { Self(theme) }
+    fn from(theme: theme::Theme) -> Self {
+        Self(theme)
+    }
 }
 impl std::ops::Deref for Theme {
     type Target = theme::Theme;

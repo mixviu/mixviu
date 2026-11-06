@@ -9,7 +9,7 @@ fn gate_run($cmd)
 end
 $scratch="/tmp/engine-split-furniture-"..uuid()
 mkdir($scratch,{parents:true})
-gate_run(["cargo","build","-p","compd","--no-default-features","--features","backend-native,backend-headless"])
+gate_run(["cargo","build","-p","compd","--no-default-features","--features","backend-all"])
 $meta=json_parse(run_argv_must(["cargo","metadata","--no-deps","--format-version","1","--locked"]))
 $target=$meta.target_directory.."/debug/"
 run_argv_must(["cp","--",$target.."compd",$scratch.."/viud-v0"])

@@ -130,14 +130,22 @@ pub trait LayerProgram {
 
 #[derive(Clone, Debug)]
 pub struct LayerPresentation {
-    pub margin: Option<(i32,i32,i32,i32)>,
+    pub margin: Option<(i32, i32, i32, i32)>,
     pub visible: bool,
     pub exclusive_zone: Option<i32>,
-    pub size: Option<(u32,u32)>,
+    pub size: Option<(u32, u32)>,
     pub layer: Option<Layer>,
 }
 impl Default for LayerPresentation {
-    fn default() -> Self { Self { visible: true, exclusive_zone: None, size: None, layer: None, margin: None } }
+    fn default() -> Self {
+        Self {
+            visible: true,
+            exclusive_zone: None,
+            size: None,
+            layer: None,
+            margin: None,
+        }
+    }
 }
 
 /// Run `program` until the connection ends. With [`Outputs::Compositor`] it

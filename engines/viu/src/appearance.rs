@@ -1,34 +1,49 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+use decor::{ChromeStyle, ChromeTheme, Palette};
+use design::TypographyRole;
+use settings::{Diagnostic, Snapshot};
 use std::sync::Arc;
 use toolkit::theme::Theme;
-use decor::{ChromeTheme, Palette, ChromeStyle};
-use design::TypographyRole;
-use settings::{Snapshot, Diagnostic};
 const CONTEXT: &str = "desktop";
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct Look {
     pub theme: Arc<Theme>,
     pub text_scale: f32,
     pub window_style: ChromeStyle,
     native: decor::appearance::Look,
 }
-pub fn build(snapshot: &Snapshot) -> Result<Look,Diagnostic> {
+pub fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
     let native = decor::appearance::build(snapshot)?;
-    Ok(Look { theme: Arc::new((*native.theme).clone().into()), text_scale: native.text_scale,
-        window_style: native.window_style, native })
+    Ok(Look {
+        theme: Arc::new((*native.theme).clone().into()),
+        text_scale: native.text_scale,
+        window_style: native.window_style,
+        native,
+    })
 }
 impl Look {
-    pub fn chrome(&self, style: ChromeStyle) -> ChromeTheme { self.native.chrome(style) }
-    pub fn palette(&self, dialog: bool) -> Palette { page(&self.theme,dialog) }
+    pub fn chrome(&self, style: ChromeStyle) -> ChromeTheme {
+        self.native.chrome(style)
+    }
+    pub fn palette(&self, dialog: bool) -> Palette {
+        page(&self.theme, dialog)
+    }
 }
 pub(crate) fn ui_size(theme: &Theme, text_scale: f32) -> f32 {
-    let record = design::active_typography(Some(theme.typography()),TypographyRole::Ui);
-    (if record.font_size > 0.0 { record.font_size as f32 } else { crate::view::TEXT_SIZE }) * theme.interface_size_scale() * text_scale
+    let record = design::active_typography(Some(theme.typography()), TypographyRole::Ui);
+    (if record.font_size > 0.0 {
+        record.font_size as f32
+    } else {
+        crate::view::TEXT_SIZE
+    }) * theme.interface_size_scale()
+        * text_scale
 }
 pub(crate) fn page(theme: &Theme, dialog: bool) -> Palette {
     let mut palette = Palette::from_dictionary(theme.dictionary());
-    if !dialog { palette.base = palette.secondary; }
+    if !dialog {
+        palette.base = palette.secondary;
+    }
     palette
 }
 pub(crate) fn install(ctx: &egui::Context, theme: &Theme, text_scale: f32, dialog: bool) {
@@ -45,7 +60,6 @@ pub(crate) fn install(ctx: &egui::Context, theme: &Theme, text_scale: f32, dialo
         style.visuals.override_text_color = Some(ink);
     });
 }
-
 
 #[cfg(test)]
 pub(crate) fn fixture(mode: &str, scale: f64) -> Arc<Look> {
