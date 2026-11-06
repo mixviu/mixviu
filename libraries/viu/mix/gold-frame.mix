@@ -3,6 +3,8 @@
 fn apply($model,$options)
   $model.frame={identity:$options.identity ?? true,icon:"icon:"..$options.icon,groups:{"gold-captions":{preferred:"window.captions",minimum:"window.captions",align:"window.captions",shrink:nil,order:4},"gold-icon":{preferred:40,minimum:40,align:"left",shrink:nil,order:0},"gold-menu":{preferred:"content",minimum:"content",align:"left",shrink:1,order:1},"gold-title":{preferred:"content",minimum:0,align:"center",shrink:0,order:2},"gold-toolbar":{preferred:"content",minimum:36,align:"right",shrink:1,order:3}}}
   $values=$model.values ?? {}
+  $model.frame.padding_top=$options.padding_top ?? 4
+  $model.frame.padding_bottom=$options.padding_bottom ?? 4
   $values["gold-icon"]=$options.icon
   $values["gold-title"]=$options.title
   $values["gold-menu"]=$options.menus

@@ -720,6 +720,7 @@ impl Widgets {
             "dashboard" => crate::dashboard::draw(ui, id, value, events),
             "time-series" => crate::time_series::draw(ui, id, value),
             "status-line" => {
+                ui.spacing_mut().item_spacing.x = ui.ctx().global_style().spacing.item_spacing.x;
                 toolkit::bars::status(ui, |ui| {
                     let colour = if value["error"] == true {
                         ui.visuals().error_fg_color
