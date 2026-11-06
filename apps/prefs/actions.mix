@@ -70,6 +70,8 @@ fn action_list($s)
   $out=[]
   for $a in $registry
     if $s.bindings[$a.id]!=nil then $a.shortcut=$s.bindings[$a.id].shortcut end
+    $keys=($s.bindings[$a.id] ?? {}).keys ?? []
+    if len($keys)>1 then $a.more=slice($keys,1) end
     $a.enabled=enabled($s,$a.id);$a.reason=if $a.enabled then nil else "disabled" end;$a.checked=nil
     $parts=split($a.id,".")
     if len($parts)==3 and $parts[0]=="view" then

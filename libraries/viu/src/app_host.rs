@@ -432,6 +432,7 @@ impl Host {
                             }
                             self.ready = true;
                             self.model = model;
+                            ctx.request_repaint();
                         }
                         Err(e) => self.error = e,
                     }
@@ -494,6 +495,10 @@ impl Host {
             ctx.request_repaint_after(deadline.saturating_duration_since(Instant::now()));
         }
         for _ in 0..32 {
+            if self.ready && !self.view.current_revision_drawn() {
+                ctx.request_repaint();
+                break;
+            }
             if toolkit::drive::pending(ctx) || !self.drive_answers.is_empty() {
                 break;
             }
@@ -637,6 +642,8 @@ impl Host {
             if self.view.model() != &projected {
                 if let Err(error) = self.view.apply_model(projected) {
                     self.error = error;
+                } else {
+                    ctx.request_repaint();
                 }
             }
         }
