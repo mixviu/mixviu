@@ -55,7 +55,7 @@ fn terminal($s)
       row($s,"terminal.env.term","terminal-term","text",{hint:"xterm-256color",commit:true,description:$n.text_for("terminal-term-note")})])]
 end
 fn software($s)
-  $group={id:"software.group",title:"",kind:"choice",inline:true,value:$s.ui.software_group,blocked:nil,shown:true,choices:choices(["mixos-desktop","mixos-server","creative"],["group-desktop","group-server","group-creative"])}
+  $group={id:"software.group",title:"",kind:"choice",standalone:true,inline:true,value:$s.ui.software_group,blocked:nil,shown:true,choices:choices(["mixos-desktop","mixos-server","creative"],["group-desktop","group-server","group-creative"])}
   for $o in $group.choices
     $meta=filter($s.apps,fn($r)=$n.group_of($r)==$o.value and ($r.category_label ?? "")!="")[0]
     if $meta!=nil then
@@ -64,12 +64,18 @@ fn software($s)
   end
   if any($s.apps,fn($r)=$n.group_of($r)=="other") then $group.choices=concat($group.choices,choices(["other"],["group-other"])) end
   $rows=[{id:"software.apps",title:"",kind:"records",inline:true,shown:len($n.apps_view($s).visible)>0,blocked:nil,value:$s.ui.selected,choices:map($n.apps_view($s).visible,fn($r)={value:$r.app,label:$r.app,detail:join([$r.installed ?? "—",$r.latest ?? "—",$r.status],"    ")})},
-    {id:"software.notice",title:"",kind:"info",inline:true,shown:true,value:replace($n.text_for("apps-scope"),"{ $prefix }","/opt/mixos").."\n"..$s.release_status,blocked:nil}]
+    {id:"software.notice",title:"",kind:"info",inline:true,separator_before:true,shown:true,value:replace($n.text_for("apps-scope"),"{ $prefix }","/opt/mixos"),blocked:nil},
+    {id:"software.availability",title:"",kind:"info",inline:true,shown:true,value:if $s.releases=="missing" then $n.text_for("missing") elif len($n.apps_view($s).visible)==0 then $n.text_for("group-empty") else "" end,blocked:nil}]
   $note=if $s.notes!=nil then $s.notes.notes ?? "" else $s.notes_error ?? $n.text_for("select-app") end
-  return [section("software-actions",nil,[$group,buttons($s,"software-actions",["apps.check","apps.update_all"])]),section("software-list",nil,$rows),section("software-notes","notes",[buttons($s,"software-mutations",["apps.install","apps.rollback","apps.remove"]),{id:"software.notes",title:"",kind:"info",inline:true,shown:true,value:$note,blocked:nil}])]
+  $mutations=buttons($s,"software-mutations",["apps.install","apps.rollback","apps.remove"])
+  $mutations.choices[0].primary=true;$mutations.separator_after=true
+  $notes=section("software-notes",nil,[$mutations,{id:"software.notes",title:"",kind:"info",inline:true,shown:true,value:$note,blocked:nil}])
+  $notes.panel_group=true;$notes.title=$s.ui.selected ?? $n.text_for("notes")
+  return [section("software-actions",nil,[$group,buttons($s,"software-actions",["apps.check","apps.update_all"])]),section("software-list",nil,$rows),$notes]
 end
 fn email_sections($s)
   $rows=[buttons($s,"email-actions",["email.account.add","email.account.up","email.account.down","email.account.default","email.account.remove","view.refresh"])]
+  $rows[0].choices[5].align="right"
   push($rows,{id:"email.accounts",title:$n.text_for("email-accounts"),kind:"records",split:true,empty_detail:if $s.email.form!=nil then "" elif len($email.accounts($s))==0 then $n.text_for("email-empty") else $n.text_for("email-select") end,inline:true,shown:true,blocked:nil,value:$s.ui.email_account,choices:map($email.accounts($s),fn($a)={value:$a.id,label:$a.name,detail:$a.email..if $a.id==$s.values["email.default_account"] then " ★" else "" end}),empty:$n.text_for("email-no-accounts")})
   if $s.email.form!=nil then
     for $field in ["name","url","email","ca_path","signature"]
@@ -93,7 +99,7 @@ fn email_sections($s)
       push($rows,buttons($s,"email-password-actions",["email.password.set","email.account.connect","email.password.forget"]))
     end
   end
-  $mail=[row($s,"email.mail.page_size","email-page-size","number",{slider:true}),row($s,"email.mail.mark_read_on_open","email-mark-read","toggle",{}),row($s,"email.mail.confirm_delete","email-confirm-delete","toggle",{}),row($s,"email.mail.quote_on_reply","email-quote-on-reply","toggle",{}),row($s,"email.mail.reply_position","email-reply-position","choice",{choices:choices(["above","below"],["email-reply-above","email-reply-below"])})]
+  $mail=[row($s,"email.mail.page_size","email-page-size","number",{slider:true}),row($s,"email.mail.mark_read_on_open","email-mark-read","toggle",{}),row($s,"email.mail.confirm_delete","email-confirm-delete","toggle",{}),row($s,"email.mail.quote_on_reply","email-quote-on-reply","toggle",{}),row($s,"email.mail.reply_position","email-reply-position","choice",{presentation:"radio",choices:choices(["above","below"],["email-reply-above","email-reply-below"])})]
   return [section("email-accounts",nil,$rows),section("email-mail","email-mail",$mail),text_controls($s,"email.reader","text-reader"),text_controls($s,"email.composer","text-composer"),section("email-reset",nil,[buttons($s,"email-reset",["email.reset"])])]
 end
 fn sections($s,$page)

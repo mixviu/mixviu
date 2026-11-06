@@ -525,19 +525,18 @@ impl Host {
             if let Some(session) = &mut self.session {
                 let refresh_key = self.model.get("theme_refresh_key");
                 let key_changed = refresh_key.is_some_and(|key| key != &self.session_key);
-                if let Some(snapshot) = session
-                    .poll()
-                    .or_else(|| (self.session_dirty || key_changed).then(|| session.snapshot.clone()))
-                {
+                if let Some(snapshot) = session.poll().or_else(|| {
+                    (self.session_dirty || key_changed).then(|| session.snapshot.clone())
+                }) {
                     let appearance = snapshot["appearance"].clone();
                     let installed = if refresh_key.is_none() || key_changed {
                         crate::appearance::install_session_choice(
-                        ui.ctx(),
-                        &snapshot,
-                        &self.service,
-                        &self.file_theme,
-                        &self.last_ui,
-                        &self.model["theme_choice"],
+                            ui.ctx(),
+                            &snapshot,
+                            &self.service,
+                            &self.file_theme,
+                            &self.last_ui,
+                            &self.model["theme_choice"],
                         )
                     } else {
                         Ok(self.last_ui.clone())
@@ -558,10 +557,11 @@ impl Host {
                                 }
                             }
                             self.session_window = Some(window);
-                            if (refresh_key.is_none() || key_changed) && self
-                                .native_choice
-                                .as_object()
-                                .is_some_and(|c| !c.is_empty())
+                            if (refresh_key.is_none() || key_changed)
+                                && self
+                                    .native_choice
+                                    .as_object()
+                                    .is_some_and(|c| !c.is_empty())
                                 && let Ok(choice) = crate::native_theme::choice(&self.native_choice)
                             {
                                 if let Ok((base, _)) = crate::appearance::session_base(

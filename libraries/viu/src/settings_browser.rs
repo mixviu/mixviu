@@ -215,6 +215,7 @@ pub fn validate(value: &Value) -> Result<(), String> {
                 "link",
                 "button",
                 "info",
+                "plain-row",
                 "image",
                 "buttons",
                 "records",
@@ -591,22 +592,26 @@ pub(crate) fn draw(
                         .into_iter()
                         .rev()
                     {
-                        ui.add_enabled_ui(extra["enabled"] == true, |ui| {
-                            if extra["link"] == true {
-                                ui.label(
-                                    RichText::new(format!("{} ↗", text(extra, "label")))
-                                        .color(look.accent.gamma_multiply(0.5)),
-                                );
+                        if extra["link"] == true {
+                            let ink = if extra["enabled"] == true {look.accent} else {look.accent.gamma_multiply(0.5)};
+                            let galley=ui.painter().layout_no_wrap(text(extra,"label").into(),egui::FontId::proportional(14.0),ink);
+                            let (rect,response)=ui.allocate_exact_size(vec2(galley.size().x+20.0,24.0),Sense::hover());
+                            ui.painter().galley(pos2(rect.left(),rect.center().y-galley.size().y/2.0),galley,ink);
+                            toolkit::button::paint_icon(ui,toolkit::Icon::MoveUpRight,pos2(rect.right()-8.0,rect.center().y),16.0,ink);
+                            response.widget_info(||egui::WidgetInfo::labeled(egui::Role::Link,extra["enabled"]==true,text(extra,"label")));
                             } else {
+                            ui.add_enabled_ui(extra["enabled"] == true, |ui| {
                                 standard_button(ui, text(extra, "label"), &look);
-                            }
                         });
+                        }
                     }
                 },
             );
         }
         body.add_space(look.m);
-        egui::ScrollArea::vertical()
+        if value["scroll_content"] == false {
+            cards(&mut body,id,&value["sections"],&look,geometry,events);
+        } else {egui::ScrollArea::vertical()
             .id_salt((id, "page", text(value, "page")))
             .auto_shrink([false, false])
             .show(&mut body, |ui| {
@@ -699,7 +704,8 @@ pub(crate) fn draw(
                     }
                 }
                 cards(ui, id, &value["sections"], &look, geometry, events);
-            });
+                if value["end_space"] == true {ui.add_space(look.m);}
+            });}
     }
     crate::media_gallery::finish(ui, id, events);
     ui.allocate_rect(area, Sense::hover())
@@ -714,6 +720,14 @@ fn cards(
 ) {
     for (section_index, section) in array(sections).enumerate() {
         if section["shown"] == false {
+            continue;
+        }
+        if section["panel_group"] == true {
+            toolkit::panel::group(ui,text(section,"id"),&[text(section,"title")],|ui,_| {
+                for row in array(&section["rows"]).filter(|r|r["shown"]!=false) {
+                    draw_inline_row(ui,id,row,look,geometry,events);
+                }
+            });
             continue;
         }
         if section["plain"] == true {
@@ -757,6 +771,7 @@ fn cards(
         }
         if let Some(notice) = section["notice"].as_str() {
             browser_notice(ui, look, notice);
+            if array(&section["rows"]).next().is_none() {continue;}
         }
         let visible: Vec<_> = array(&section["rows"])
             .filter(|r| r["shown"] != false)
@@ -783,6 +798,7 @@ fn cards(
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (index, row) in array(&section["rows"])
                     .filter(|r| r["shown"] != false)
+                    .filter(|r| r["kind"] != "ordered" || array(&r["items"]).next().is_some() || r.get("reason").unwrap_or(&r["blocked"]).is_string())
                     .enumerate()
                 {
                     if index > 0 {
@@ -998,7 +1014,9 @@ fn radio_rows(
                         }
                     });
                     ui.add_space(look.xs);
-                    ui.vertical(|ui| {
+                    if text(choice, "description").is_empty() {
+                        ui.label(RichText::new(text(choice,"label")).size(14.0).color(look.text));
+                    } else {ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 2.0;
                         ui.label(
                             RichText::new(text(choice, "label"))
@@ -1010,7 +1028,7 @@ fn radio_rows(
                         {
                             ui.label(RichText::new(description).size(12.0).color(look.text));
                         }
-                    });
+                    });}
                 });
             })
             .response;
@@ -1038,6 +1056,13 @@ fn draw_row(
     geometry: &mut BTreeMap<String, Rect>,
     events: &mut Vec<Intent>,
 ) {
+    if row["kind"] == "plain-row" {
+        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(look.row_pad() as i8,4)).show(ui,|ui| {
+            ui.set_min_height(32.0);
+            ui.vertical(|ui| {ui.label(RichText::new(text(row,"title")).size(14.0).color(look.text));});
+        });
+        return;
+    }
     if row["kind"] == "choice" && row["presentation"] == "radio" {
         radio_rows(ui, id, row, look, geometry, events);
         return;
@@ -1857,7 +1882,10 @@ fn draw_inline_row(
                             }
                         });
                 } else if text(row, "kind") == "info" {
+                    if row["separator_before"] == true {toolkit::bars::hairline(ui);}
                     ui.label(RichText::new(row["value"].as_str().unwrap_or("")).weak());
+                } else if text(row,"kind")=="choice" && row["standalone"]==true {
+                    edit=inline_choices(ui,id,row,geometry);
                 } else if text(row, "kind") == "records" {
                     if row["split"] == true {
                         toolkit::bars::hairline(ui);
@@ -1909,16 +1937,19 @@ fn draw_inline_row(
                 } else if text(row, "kind") == "buttons" {
                     ui.horizontal_wrapped(|ui| {
                         for (index, item) in array(&row["choices"]).enumerate() {
-                            let r = ui.add_enabled(
+                            let mut button = |ui:&mut Ui| {let r = ui.add_enabled(
                                 item["enabled"] != false,
-                                toolkit::button::PushButton::secondary(text(item, "label")),
+                                if item["primary"]==true {toolkit::button::PushButton::primary(text(item,"label"))}else{toolkit::button::PushButton::secondary(text(item, "label"))},
                             );
                             record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
                             if r.clicked() {
                                 edit = Some(item["value"].clone());
                             }
+                            };
+                            if item["align"]=="right" {ui.with_layout(Layout::right_to_left(Align::Center),button);}else{button(ui);}
                         }
                     });
+                    if row["separator_after"]==true {toolkit::bars::hairline(ui);}
                 } else {
                     egui::Grid::new("form-row")
                         .num_columns(2)
@@ -1981,27 +2012,7 @@ fn draw_inline_row(
                                             edit = value;
                                             return;
                                         }
-                                        ui.horizontal_wrapped(|ui| {
-                                            for (index, item) in array(&row["choices"]).enumerate()
-                                            {
-                                                let r = ui.add_enabled(
-                                                    item["enabled"] != false,
-                                                    egui::Button::selectable(
-                                                        item["value"] == row["value"],
-                                                        text(item, "label"),
-                                                    ),
-                                                );
-                                                record(
-                                                    geometry,
-                                                    id,
-                                                    &format!("row.{key}.choice.{index}"),
-                                                    &r,
-                                                );
-                                                if r.clicked() {
-                                                    edit = Some(item["value"].clone());
-                                                }
-                                            }
-                                        });
+                                        edit=inline_choices(ui,id,row,geometry);
                                     }
                                     "number" => {
                                         let (r, value) = numeric(ui, id, row);
@@ -2087,53 +2098,170 @@ fn draw_inline_row(
     }
 }
 
-fn append_list(ui: &mut Ui, id: &str, row: &Value, look: &Look, geometry: &mut BTreeMap<String, Rect>, events: &mut Vec<Intent>) {
+fn inline_choices(ui:&mut Ui,id:&str,row:&Value,geometry:&mut BTreeMap<String,Rect>)->Option<Value> {
+    let mut edited=None;
+    ui.horizontal_wrapped(|ui| {
+        for (index,item) in array(&row["choices"]).enumerate() {
+            let selected=item["value"]==row["value"];
+            let response=ui.add_enabled_ui(item["enabled"]!=false,|ui| {
+                if row["presentation"]=="radio" {ui.radio(selected,text(item,"label"))}
+                else {ui.add(egui::Button::selectable(selected,text(item,"label")))}
+            }).inner;
+            record(geometry,id,&format!("row.{}.choice.{index}",text(row,"id")),&response);
+            if response.clicked() {edited=Some(item["value"].clone());}
+        }
+    });
+    edited
+}
+fn append_list(
+    ui: &mut Ui,
+    id: &str,
+    row: &Value,
+    look: &Look,
+    geometry: &mut BTreeMap<String, Rect>,
+    events: &mut Vec<Intent>,
+) {
     let key = text(row, "id");
     let filter_id = ui.make_persistent_id((id, key, "append-filter"));
     let more_id = filter_id.with("more");
-    let mut query = ui.data(|d| d.get_temp::<String>(filter_id)).unwrap_or_default();
-    let search = ui.add(egui::TextEdit::singleline(&mut query).hint_text(text(row, "search_hint")).desired_width(ui.available_width()));
-    record(geometry,id,&format!("row.{key}.search"),&search);
-    if search.changed() { ui.data_mut(|d| d.insert_temp(filter_id, query.clone())); }
+    let mut query = ui
+        .data(|d| d.get_temp::<String>(filter_id))
+        .unwrap_or_default();
+    let search = ui.add(
+        egui::TextEdit::singleline(&mut query)
+            .hint_text(text(row, "search_hint"))
+            .desired_width(ui.available_width()),
+    );
+    record(geometry, id, &format!("row.{key}.search"), &search);
+    if search.changed() {
+        ui.data_mut(|d| d.insert_temp(filter_id, query.clone()));
+    }
     ui.add_space(look.s);
     let mut extended = ui.data(|d| d.get_temp::<bool>(more_id)).unwrap_or(false);
     if row["extended"] == true {
-        egui::Frame::NONE.fill(look.card).corner_radius(Look::radius(look.r_s)).show(ui,|ui| {
-            egui::Frame::NONE.inner_margin(egui::Margin::symmetric(look.row_pad() as i8,4)).show(ui,|ui| {
-                ui.set_min_height(32.0); ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {ui.with_layout(Layout::right_to_left(Align::Center),|ui| {
-                    let r=cosmic_switch(ui,extended,look,text(row,"more_label"));
-                    record(geometry,id,&format!("row.{key}.more"),&r);
-                    if r.clicked() {extended=!extended;ui.data_mut(|d|d.insert_temp(more_id,extended));}
-                    ui.with_layout(Layout::left_to_right(Align::Center),|ui| { ui.label(RichText::new(text(row,"more_label")).size(14.0).color(look.text)); });
-                });});
+        egui::Frame::NONE
+            .fill(look.card)
+            .corner_radius(Look::radius(look.r_s))
+            .show(ui, |ui| {
+                egui::Frame::NONE
+                    .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
+                    .show(ui, |ui| {
+                        ui.set_min_height(32.0);
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                let r = cosmic_switch(ui, extended, look, text(row, "more_label"));
+                                record(geometry, id, &format!("row.{key}.more"), &r);
+                                if r.clicked() {
+                                    extended = !extended;
+                                    ui.data_mut(|d| d.insert_temp(more_id, extended));
+                                }
+                                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                    ui.label(
+                                        RichText::new(text(row, "more_label"))
+                                            .size(14.0)
+                                            .color(look.text),
+                                    );
+                                });
+                            });
+                        });
+                    });
             });
-        });
         ui.add_space(look.s);
     }
-    let query=query.trim().to_lowercase();
-    let choices:Vec<_>=array(&row["choices"]).enumerate().filter(|(i,c)| (extended || *i < row["primary_count"].as_u64().unwrap_or(0) as usize) && text(c,"label").to_lowercase().contains(&query)).collect();
-    egui::Frame::NONE.fill(look.card).corner_radius(Look::radius(look.r_s)).show(ui,|ui| {
-        ui.set_width(ui.available_width()); ui.spacing_mut().item_spacing.y=0.0;
-        if choices.is_empty() {egui::Frame::NONE.inner_margin(egui::Margin::symmetric(look.row_pad() as i8,4)).show(ui,|ui| {ui.set_min_height(32.0);ui.label(RichText::new(text(row,"empty_label")).size(14.0).color(look.text));});}
-        for (position,(index,choice)) in choices.iter().enumerate() {
-            if position>0 {let y=ui.cursor().top();ui.painter().hline(ui.min_rect().x_range(),y,Stroke::new(1.0,look.divider));ui.add_space(1.0);}
-            let (rect,_)=ui.allocate_exact_size(vec2(ui.available_width(),40.0),Sense::hover());
-            if !ui.is_rect_visible(rect) {continue;}
-            let indent=if choice["value"].as_array().and_then(|a|a.last()).and_then(Value::as_str).is_some_and(|s|!s.is_empty()) {look.l}else{0.0};
-            ui.painter().text(rect.left_center()+vec2(look.m+indent,0.0),egui::Align2::LEFT_CENTER,text(choice,"label"),egui::FontId::proportional(14.0),look.text);
-            let have=array(&row["value"]).any(|v|v==&choice["value"]);
-            let full=array(&row["value"]).count()>=row["max_items"].as_u64().unwrap_or(8) as usize;
-            let word=text(row,if have {"added_label"}else{"add_label"});
-            let slot=Rect::from_min_max(pos2(rect.right()-160.0,rect.top()),rect.max-vec2(look.m,0.0));
-            ui.scope_builder(egui::UiBuilder::new().max_rect(slot).layout(Layout::right_to_left(Align::Center)),|ui| {
-                let r=ui.add_enabled_ui(row["blocked"].is_null()&&!have&&!full,|ui|standard_button(ui,word,look)).inner;
-                r.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,ui.is_enabled()&&!have&&!full,format!("{word} {}",text(choice,"label"))));
-                record(geometry,id,&format!("row.{key}.choice.{index}"),&r);
-                if r.clicked() {emit(events,id,"edit",json!({"row":key,"value":choice["value"]}));}
-            });
-        }
-    });
+    let query = query.trim().to_lowercase();
+    let choices: Vec<_> = array(&row["choices"])
+        .enumerate()
+        .filter(|(i, c)| {
+            (extended || *i < row["primary_count"].as_u64().unwrap_or(0) as usize)
+                && text(c, "label").to_lowercase().contains(&query)
+        })
+        .collect();
+    egui::Frame::NONE
+        .fill(look.card)
+        .corner_radius(Look::radius(look.r_s))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            if choices.is_empty() {
+                egui::Frame::NONE
+                    .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
+                    .show(ui, |ui| {
+                        ui.set_min_height(32.0);
+                        ui.label(
+                            RichText::new(text(row, "empty_label"))
+                                .size(14.0)
+                                .color(look.text),
+                        );
+                    });
+            }
+            for (position, (index, choice)) in choices.iter().enumerate() {
+                if position > 0 {
+                    let y = ui.cursor().top();
+                    ui.painter()
+                        .hline(ui.min_rect().x_range(), y, Stroke::new(1.0, look.divider));
+                    ui.add_space(1.0);
+                }
+                let (rect, _) =
+                    ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
+                if !ui.is_rect_visible(rect) {
+                    continue;
+                }
+                let indent = if choice["value"]
+                    .as_array()
+                    .and_then(|a| a.last())
+                    .and_then(Value::as_str)
+                    .is_some_and(|s| !s.is_empty())
+                {
+                    look.l
+                } else {
+                    0.0
+                };
+                ui.painter().text(
+                    rect.left_center() + vec2(look.m + indent, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    text(choice, "label"),
+                    egui::FontId::proportional(14.0),
+                    look.text,
+                );
+                let have = array(&row["value"]).any(|v| v == &choice["value"]);
+                let full =
+                    array(&row["value"]).count() >= row["max_items"].as_u64().unwrap_or(8) as usize;
+                let word = text(row, if have { "added_label" } else { "add_label" });
+                let slot = Rect::from_min_max(
+                    pos2(rect.right() - 160.0, rect.top()),
+                    rect.max - vec2(look.m, 0.0),
+                );
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(slot)
+                        .layout(Layout::right_to_left(Align::Center)),
+                    |ui| {
+                        let r = ui
+                            .add_enabled_ui(row["blocked"].is_null() && !have && !full, |ui| {
+                                standard_button(ui, word, look)
+                            })
+                            .inner;
+                        r.widget_info(|| {
+                            egui::WidgetInfo::labeled(
+                                egui::Role::Button,
+                                ui.is_enabled() && !have && !full,
+                                format!("{word} {}", text(choice, "label")),
+                            )
+                        });
+                        record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
+                        if r.clicked() {
+                            emit(
+                                events,
+                                id,
+                                "edit",
+                                json!({"row":key,"value":choice["value"]}),
+                            );
+                        }
+                    },
+                );
+            }
+        });
 }
 fn numeric(ui: &mut Ui, id: &str, row: &Value) -> (Response, Option<Value>) {
     let current = row["value"].as_f64().unwrap_or(0.0);
