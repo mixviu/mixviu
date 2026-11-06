@@ -368,8 +368,13 @@ pub fn caption_controls(
             ui.scope_id().with(("viu-caption", id, name)),
             egui::Sense::click(),
         );
-        let label_key=match name { "minimize"=>"window-minimize","maximize" if maximized=>"window-restore","maximize"=>"window-maximize",_=>"window-close" };
-        let label=toolkit::action::label_text(&toolkit::Strings::new(""),label_key);
+        let label_key = match name {
+            "minimize" => "window-minimize",
+            "maximize" if maximized => "window-restore",
+            "maximize" => "window-maximize",
+            _ => "window-close",
+        };
+        let label = toolkit::action::label_text(&toolkit::Strings::new(""), label_key);
         r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         let chrome = toolkit::chrome::Chrome::of(ui.ctx());
         let pressed = r.is_pointer_button_down_on();
