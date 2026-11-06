@@ -26,3 +26,4 @@ pub mod widgets;
 pub mod window_frame;
 
 pub mod input;
+pub mod decorations;

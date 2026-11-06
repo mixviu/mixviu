@@ -713,6 +713,7 @@ pub fn run(app_dir: PathBuf, profile: PathBuf, service_name: String) -> eframe::
             ..Default::default()
         },
         Box::new(move |cc| {
+            viu::decorations::initialise(cc);
             viu::appearance::install(&cc.egui_ctx);
             cc.egui_ctx.set_embed_viewports(false);
             cc.egui_ctx

@@ -151,11 +151,28 @@ impl App {
                 return;
             }
         }
-        if command=="viu.window" || (command=="dopus.intent" && self.view.as_ref().and_then(|v|v.control_kind(args["id"].as_str().unwrap_or("")))==Some("window-controls")) {
-            match viu::window_frame::apply_control(ctx,args["action"].as_str().unwrap_or("")) {
-                Ok(true) => self.call("dopus.quit".into(),json!({}),headers,reply,ctx),
-                Ok(false) => { if let Some(reply)=reply {self.replies_after_frame.push(reply);}ctx.request_repaint(); },
-                Err(error) => { if let Some(reply)=reply {let _=reply.send((10,json!({"error_code":"INVALID_INTENT","message":error})));} },
+        if command == "viu.window"
+            || (command == "dopus.intent"
+                && self
+                    .view
+                    .as_ref()
+                    .and_then(|v| v.control_kind(args["id"].as_str().unwrap_or("")))
+                    == Some("window-controls"))
+        {
+            match viu::window_frame::apply_control(ctx, args["action"].as_str().unwrap_or("")) {
+                Ok(true) => self.call("dopus.quit".into(), json!({}), headers, reply, ctx),
+                Ok(false) => {
+                    if let Some(reply) = reply {
+                        self.replies_after_frame.push(reply);
+                    }
+                    ctx.request_repaint();
+                }
+                Err(error) => {
+                    if let Some(reply) = reply {
+                        let _ = reply
+                            .send((10, json!({"error_code":"INVALID_INTENT","message":error})));
+                    }
+                }
             }
             return;
         }
@@ -318,7 +335,13 @@ impl App {
             return;
         }
         if (command == "dopus.execute" && args["id"] == "app.quit")
-            || (command=="dopus.intent" && args["action"]=="close" && self.view.as_ref().and_then(|v|v.control_kind(args["id"].as_str().unwrap_or("")))==Some("window-controls"))
+            || (command == "dopus.intent"
+                && args["action"] == "close"
+                && self
+                    .view
+                    .as_ref()
+                    .and_then(|v| v.control_kind(args["id"].as_str().unwrap_or("")))
+                    == Some("window-controls"))
             || (command == "dopus.intent"
                 && ["menu", "toolbar"].iter().any(|id| args["id"] == *id)
                 && args["value"]["command"] == "app.quit")
@@ -900,7 +923,9 @@ impl eframe::App for App {
             self.view
                 .as_ref()
                 .is_some_and(|view| view.has_slot("window.header")),
-            self.view.as_ref().is_some_and(|view|view.has_slot("window.header") && view.has_control_kind("window-controls")),
+            self.view.as_ref().is_some_and(|view| {
+                view.has_slot("window.header") && view.has_control_kind("window-controls")
+            }),
         );
         if let Some(view) = self.view.as_mut() {
             let slots = self
@@ -1154,6 +1179,7 @@ fn main() -> eframe::Result {
             ..Default::default()
         },
         Box::new(move |cc| {
+            viu::decorations::initialise(cc);
             viu::appearance::install(&cc.egui_ctx);
             let context = cc.egui_ctx.clone();
             let wake: viu::runtime::Wake = Arc::new(move || context.request_repaint());

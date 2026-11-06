@@ -355,16 +355,41 @@ fn virtual_table_data_has_a_separate_bounded_transactional_model_budget() {
 
 #[test]
 fn scene_band_reuses_the_native_solver_with_app_owned_groups_and_transactional_validation() {
-    let source=scene(json!({"root":{"widget":"band","children":["a","b","c"],"groups":"= $model.groups"},"a":{"widget":"text","text":"Menu"},"b":{"widget":"text","text":"Title"},"c":{"widget":"text","text":"Actions"}}));
-    let ctx=egui::Context::default();
-    for alignment in ["left","center","right"] {
-        let model=json!({"groups":{"a":{"preferred":100,"minimum":40,"align":alignment,"shrink":1,"order":0},"b":{"preferred":200,"minimum":0,"align":"center","shrink":0,"order":1},"c":{"preferred":150,"minimum":80,"align":"right","shrink":1,"order":2}}});
-        let mut view=SceneView::with_model(&source,model.clone()).unwrap();
-        let mut out=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(600.0,300.0))),..Default::default()},|ui|{view.show(ui);});out.textures_delta.clear();
-        for (a,b) in [("a","b"),("a","c"),("b","c")] {assert!(!view.geometry[a].intersects(view.geometry[b]),"{alignment}: {:?} {:?}",view.geometry[a],view.geometry[b]);}
-        for bad in [json!(null),json!({}),json!({"a":{"preferred":-1,"minimum":0,"align":"left","order":0}})] {
+    let source = scene(
+        json!({"root":{"widget":"band","children":["a","b","c"],"groups":"= $model.groups"},"a":{"widget":"text","text":"Menu"},"b":{"widget":"text","text":"Title"},"c":{"widget":"text","text":"Actions"}}),
+    );
+    let ctx = egui::Context::default();
+    for alignment in ["left", "center", "right"] {
+        let model = json!({"groups":{"a":{"preferred":100,"minimum":40,"align":alignment,"shrink":1,"order":0},"b":{"preferred":200,"minimum":0,"align":"center","shrink":0,"order":1},"c":{"preferred":150,"minimum":80,"align":"right","shrink":1,"order":2}}});
+        let mut view = SceneView::with_model(&source, model.clone()).unwrap();
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(600.0, 300.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        );
+        out.textures_delta.clear();
+        for (a, b) in [("a", "b"), ("a", "c"), ("b", "c")] {
+            assert!(
+                !view.geometry[a].intersects(view.geometry[b]),
+                "{alignment}: {:?} {:?}",
+                view.geometry[a],
+                view.geometry[b]
+            );
+        }
+        for bad in [
+            json!(null),
+            json!({}),
+            json!({"a":{"preferred":-1,"minimum":0,"align":"left","order":0}}),
+        ] {
             assert!(view.apply_model(json!({"groups":bad})).is_err());
-            assert_eq!(view.model(),&model);
+            assert_eq!(view.model(), &model);
         }
     }
 }

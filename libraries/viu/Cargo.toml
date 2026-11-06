@@ -7,6 +7,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+raw-window-handle = "=0.6.2"
+wayland-client = { version = "=0.31.15", default-features = false }
 files = { path = "../files" }
 mimedb.workspace = true
 macros = { path = "../macros" }

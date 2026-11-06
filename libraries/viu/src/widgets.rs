@@ -107,7 +107,12 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
-            "window-controls" => value["side"].as_str().is_some_and(|v|["left","center","right"].contains(&v)) && value["enabled"].is_boolean(),
+            "window-controls" => {
+                value["side"]
+                    .as_str()
+                    .is_some_and(|v| ["left", "center", "right"].contains(&v))
+                    && value["enabled"].is_boolean()
+            }
             "image-view" => return crate::image_view::validate(value),
             "tree-table" => return crate::tree_table::validate(value),
             "icon" => {
@@ -149,7 +154,9 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.kind == "window-controls" { return vec!["close","minimize","toggle-maximize"]; }
+        if self.kind == "window-controls" {
+            return vec!["close", "minimize", "toggle-maximize"];
+        }
         if crate::rich::KINDS.contains(&self.kind.as_str()) {
             return crate::rich::actions(&self.kind);
         }
@@ -228,7 +235,9 @@ impl Widget {
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
         self.validate_action(action, value)?;
-        if self.kind=="window-controls" && self.value(model)["enabled"]!=true { return Err("DISABLED".into()); }
+        if self.kind == "window-controls" && self.value(model)["enabled"] != true {
+            return Err("DISABLED".into());
+        }
         if crate::rich::KINDS.contains(&self.kind.as_str()) && action != "set" {
             return crate::rich::admit(&self.kind, self.value(model), action, value);
         }
@@ -402,13 +411,32 @@ impl Widgets {
         let mut changed = None;
         let response = match widget.kind.as_str() {
             "window-controls" => {
-                let metrics=crate::window_frame::Metrics::of(ui.ctx());
-                let (area,response)=ui.allocate_exact_size(egui::vec2(metrics.caption_width*3.0,ui.available_height().min(metrics.height)),Sense::hover());
-                let shown=ui.add_enabled_ui(value["enabled"]==true,|ui|crate::window_frame::caption_controls(ui,area,value["side"]=="left",&widget.id));
+                let metrics = crate::window_frame::Metrics::of(ui.ctx());
+                let (area, response) = ui.allocate_exact_size(
+                    egui::vec2(
+                        metrics.caption_width * 3.0,
+                        ui.available_height().min(metrics.height),
+                    ),
+                    Sense::hover(),
+                );
+                let shown = ui.add_enabled_ui(value["enabled"] == true, |ui| {
+                    crate::window_frame::caption_controls(
+                        ui,
+                        area,
+                        value["side"] == "left",
+                        &widget.id,
+                    )
+                });
                 self.geometry.extend(shown.inner.1);
-                if shown.inner.0 { events.push(Intent{id:widget.id.clone(),action:"close".into(),value:Value::Null}); }
+                if shown.inner.0 {
+                    events.push(Intent {
+                        id: widget.id.clone(),
+                        action: "close".into(),
+                        value: Value::Null,
+                    });
+                }
                 response
-            },
+            }
             "image-view" => self.images.draw(ui, id, value),
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" => {

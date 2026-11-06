@@ -154,34 +154,115 @@ fn client_captions_have_native_geometry_and_close_is_an_owner_intent() {
 
 #[test]
 fn scene_authored_caption_groups_share_native_controls_and_retire_when_detached() {
-    use viu::{view::SceneView,widgets::Widget};
-    let ctx=egui::Context::default();
+    use viu::{view::SceneView, widgets::Widget};
+    let ctx = egui::Context::default();
     viu::appearance::install(&ctx);
-    let mut frame=viu::window_frame::WindowFrame::default();
-    for side in ["left","center","right"] {
-        let source=format!("---\nscene: 1\nname: window\ncitizen: window\n---\n```mix\n{}\n```\n",json!({"root":{"widget":"dock","children":["header","body"],"placements":{"header":{"edge":"top","size":30},"body":{"edge":"fill"}}},"header":{"widget":"band","window_slot":"window.header","children":["caption","title"],"groups":{"caption":{"preferred":"window.captions","minimum":"window.captions","align":side,"shrink":null,"order":3},"title":{"preferred":200,"minimum":0,"align":"center","shrink":0,"order":1}}},"caption":{"widget":"control","slot_only":"window.header","on_intent":"viu.window","definition":Widget::new("caption","window-controls","",json!({"side":side,"enabled":true})).encode()},"title":{"widget":"text","text":"Title"},"body":{"widget":"text","text":"Body"}}));
-        let mut view=SceneView::new(&source).unwrap();
-        let mut output=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(800.0,400.0))),..Default::default()},|ui|{
-            frame.show_with_chrome(ui,"Native window",&json!({"window.decorations":"csd"}),true,true);
-            assert!(!frame.geometry.contains_key("window.caption.close"),"Scene owns exactly one caption group");
-            view.set_slots(std::collections::BTreeMap::from([("window.header".into(),frame.geometry["window.header"])] )).unwrap();
-            assert!(view.show(ui).is_empty());
-        });output.textures_delta.clear();
-        let close=view.geometry["caption.caption.close"];
-        assert!(!close.intersects(view.geometry["title"]));
-        assert_eq!(view.control_kind("caption"),Some("window-controls"));
-        let mut intents=Vec::new();
-        let point=close.center();
-        let mut output=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(800.0,400.0))),events:vec![egui::Event::PointerMoved(point),egui::Event::PointerButton{pos:point,button:egui::PointerButton::Primary,pressed:true,modifiers:egui::Modifiers::NONE},egui::Event::PointerButton{pos:point,button:egui::PointerButton::Primary,pressed:false,modifiers:egui::Modifiers::NONE}],..Default::default()},|ui|{intents=view.show(ui);});
+    let mut frame = viu::window_frame::WindowFrame::default();
+    for side in ["left", "center", "right"] {
+        let source = format!(
+            "---\nscene: 1\nname: window\ncitizen: window\n---\n```mix\n{}\n```\n",
+            json!({"root":{"widget":"dock","children":["header","body"],"placements":{"header":{"edge":"top","size":30},"body":{"edge":"fill"}}},"header":{"widget":"band","window_slot":"window.header","children":["caption","title"],"groups":{"caption":{"preferred":"window.captions","minimum":"window.captions","align":side,"order":3},"title":{"preferred":200,"minimum":0,"align":"center","shrink":0,"order":1}}},"caption":{"widget":"control","slot_only":"window.header","on_intent":"viu.window","definition":Widget::new("caption","window-controls","",json!({"side":side,"enabled":true})).encode()},"title":{"widget":"text","text":"Title"},"body":{"widget":"text","text":"Body"}})
+        );
+        let mut view = SceneView::new(&source).unwrap();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 400.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                frame.show_with_chrome(
+                    ui,
+                    "Native window",
+                    &json!({"window.decorations":"csd"}),
+                    true,
+                    true,
+                );
+                assert!(
+                    !frame.geometry.contains_key("window.caption.close"),
+                    "Scene owns exactly one caption group"
+                );
+                view.set_slots(std::collections::BTreeMap::from([(
+                    "window.header".into(),
+                    frame.geometry["window.header"],
+                )]))
+                .unwrap();
+                assert!(view.show(ui).is_empty());
+            },
+        );
         output.textures_delta.clear();
-        assert!(intents.iter().any(|event|event.command=="viu.window"&&event.body["action"]=="close"));
-        assert!(!output.viewport_output.values().flat_map(|v|&v.commands).any(|command|matches!(command,egui::ViewportCommand::Close)));
+        let close = view.geometry["caption.caption.close"];
+        assert!(!close.intersects(view.geometry["title"]));
+        assert_eq!(view.control_kind("caption"), Some("window-controls"));
+        let mut intents = Vec::new();
+        let point = close.center();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 400.0),
+                )),
+                events: vec![
+                    egui::Event::PointerMoved(point),
+                    egui::Event::PointerButton {
+                        pos: point,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                    egui::Event::PointerButton {
+                        pos: point,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                ..Default::default()
+            },
+            |ui| {
+                frame.show_with_chrome(ui,"Native window",&json!({"window.decorations":"csd"}),true,true);
+                view.set_slots(std::collections::BTreeMap::from([("window.header".into(),frame.geometry["window.header"])] )).unwrap();
+                intents = view.show(ui);
+            },
+        );
+        output.textures_delta.clear();
+        assert!(
+            intents
+                .iter()
+                .any(|event| event.command == "viu.window" && event.body["action"] == "close")
+        );
+        assert!(
+            !output
+                .viewport_output
+                .values()
+                .flat_map(|v| &v.commands)
+                .any(|command| matches!(command, egui::ViewportCommand::Close))
+        );
         view.set_slots(Default::default()).unwrap();
-        let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});output.textures_delta.clear();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            view.show(ui);
+        });
+        output.textures_delta.clear();
         assert!(!view.geometry.contains_key("caption.caption.close"));
-        assert!(viu::window_frame::apply_control(&ctx,"unknown").is_err());
-        assert_eq!(viu::window_frame::apply_control(&ctx,"close").unwrap(),true);
+        assert!(viu::window_frame::apply_control(&ctx, "unknown").is_err());
+        assert_eq!(
+            viu::window_frame::apply_control(&ctx, "close").unwrap(),
+            true
+        );
     }
-    let disabled=Widget::new("caption","window-controls","",json!({"side":"right","enabled":false}));
-    for action in disabled.actions(){assert!(disabled.admit(&json!({}),action,&serde_json::Value::Null).is_err());}
+    let disabled = Widget::new(
+        "caption",
+        "window-controls",
+        "",
+        json!({"side":"right","enabled":false}),
+    );
+    for action in disabled.actions() {
+        assert!(
+            disabled
+                .admit(&json!({}), action, &serde_json::Value::Null)
+                .is_err()
+        );
+    }
 }

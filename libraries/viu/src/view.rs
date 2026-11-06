@@ -74,12 +74,17 @@ impl SceneView {
         &self.tree.model
     }
     pub fn control_kind(&self, id: &str) -> Option<&str> {
-        let node=self.tree.nodes.get(id)?;
-        if node.family!="control" { return None; }
+        let node = self.tree.nodes.get(id)?;
+        if node.family != "control" {
+            return None;
+        }
         node.ports.get("definition")?.get("kind")?.as_str()
     }
     pub fn has_control_kind(&self, kind: &str) -> bool {
-        self.tree.nodes.keys().any(|id|self.control_kind(id)==Some(kind))
+        self.tree
+            .nodes
+            .keys()
+            .any(|id| self.control_kind(id) == Some(kind))
     }
     pub fn has_slot(&self, name: &str) -> bool {
         self.tree
@@ -776,7 +781,9 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             return Err("scene slots must attach a dock child".into());
         }
         match node.family.as_str() {
-            "band" => { band_groups(node,0.0)?; }
+            "band" => {
+                band_groups(node, 0.0)?;
+            }
             "split" => {
                 if children(node).count() != 2
                     || num(node, "minimum").unwrap_or(0.1) > num(node, "maximum").unwrap_or(0.9)
@@ -788,7 +795,9 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             }
             "dock" => {
                 let children = children(node).collect::<Vec<_>>();
-                let placements = node.ports.get("placements")
+                let placements = node
+                    .ports
+                    .get("placements")
                     .and_then(Value::as_object)
                     .ok_or("dock placements must be an object")?;
                 if placements.len() != children.len() {
@@ -838,7 +847,11 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                 }
             }
             "control" => {
-                let widget = Widget::decode(node.ports.get("definition").ok_or("control definition is required")?)?;
+                let widget = Widget::decode(
+                    node.ports
+                        .get("definition")
+                        .ok_or("control definition is required")?,
+                )?;
                 if &widget.id != id {
                     return Err(format!("control ID {} differs from node {id}", widget.id));
                 }
@@ -861,11 +874,17 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
     Ok(())
 }
 
-fn band_groups(node: &Node, caption_width: f32) -> Result<Vec<design::title_band::Group>,String> {
-    use design::title_band::{Alignment,Group};
-    let groups=node.ports.get("groups").and_then(Value::as_object).ok_or("band groups must be an object")?;
-    let children=children(node).collect::<Vec<_>>();
-    if groups.len()!=children.len(){return Err("band requires one group per child".into());}
+fn band_groups(node: &Node, caption_width: f32) -> Result<Vec<design::title_band::Group>, String> {
+    use design::title_band::{Alignment, Group};
+    let groups = node
+        .ports
+        .get("groups")
+        .and_then(Value::as_object)
+        .ok_or("band groups must be an object")?;
+    let children = children(node).collect::<Vec<_>>();
+    if groups.len() != children.len() {
+        return Err("band requires one group per child".into());
+    }
     children.into_iter().map(|child|{
         let group=groups.get(child).ok_or("band child missing group")?;
         let length=|name:&str|if group[name]=="window.captions"{Ok(caption_width)}else{group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length or window.captions metric"))};
