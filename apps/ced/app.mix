@@ -73,7 +73,7 @@ on ced.intent
     if type($a.value)!="string" or byte_length($a.value)>65536 then raise("SIZE","Editor values must be text within 64 KiB") end
     $t=current($state);$state.tabs[$state.active].draft=$a.value
   elif $a.id=="open-dialog" then
-    $state.path=$a.value.field
+    $state.path=if $a.action=="edit" then $a.value else $a.value.field end
     if $a.action=="answer" then
       if $a.value.choice=="open" then $state=operation($state,"open",{path:$state.path}) end
       $state.open_dialog=false

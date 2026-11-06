@@ -102,4 +102,12 @@ publish_ced($state)
         wrapped.model.unwrap()["editor"]["properties"]["soft_wrap"],
         true
     );
+    runtime.event("viu.frame.intent".into(), json!({"value":{"command":"open"}})).unwrap();
+    assert_eq!(done(&runtime, &rx).model.unwrap()["values"]["open-dialog"]["open"], true);
+    runtime.event("ced.intent".into(), json!({"id":"open-dialog","action":"edit","value":"/tmp/other.rs"})).unwrap();
+    let edited = done(&runtime, &rx);
+    assert!(edited.error.is_none(), "{:?}", edited.error);
+    assert_eq!(edited.model.unwrap()["values"]["open-dialog"]["field"], "/tmp/other.rs");
+    runtime.event("ced.intent".into(), json!({"id":"open-dialog","action":"answer","value":{"field":"/tmp/other.rs","choice":"cancel"}})).unwrap();
+    assert_eq!(done(&runtime, &rx).model.unwrap()["values"]["open-dialog"]["open"], false);
 }
