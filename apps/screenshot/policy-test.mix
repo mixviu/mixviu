@@ -5,6 +5,7 @@ $registry=require("registry.mix")
 $core=require("core.mix")
 $model=require("model.mix")
 $cli=require("launch-core.mix")
+$journal=require("journal.mix")
 $tmp=path_join("/var/tmp","screenshot-policy-"..uuid())
 try
   if $cli.service_name("comp",false)!="screenshot" or $cli.service_name("comp-nested",true)!="screenshot-headless-comp-nested" then raise("LAUNCH","per-compositor namespace differs") end
@@ -14,6 +15,11 @@ try
     if not $refused then raise("LAUNCH","invalid CLI accepted") end
   end
   $s=$states.initial("comp",path_join($tmp,"saved"),path_join($tmp,"raw"))
+  $event_state=$s
+  for $i=1 to 258 $event_state=$journal.record_action($event_state,"example.action",nil,nil) end
+  if len($event_state.action_queue)!=256 or $event_state.action_lost!=2 or $event_state.action_queue[0].seq!=3 then raise("JOURNAL","bounded action journal lost sequence or drop accounting") end
+  $large=$journal.bounded(repeat("x",4097))
+  if $large.bytes!=4099 or len($large.sha256)!=64 then raise("JOURNAL","large action payload was not bounded") end
   $view=$model.render($s)
   if $view.values.preview.colour!="design.canvas" then raise("PREFS","canvas must follow the live design") end
   if $registry.entry($s,"capture.mode.region").checked!=true then raise("REGISTRY","gold starts in region mode") end

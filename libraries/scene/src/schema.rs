@@ -304,6 +304,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         justify.enum_values = &["start", "center", "end", "between", "around", "evenly"];
         ports.extend([
             justify,
+            p("bar", "string", false, None),
             p("padding_x", "length", false, None),
             p("padding_y", "length", false, None),
             pn("row_gap", false, None),

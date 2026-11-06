@@ -581,6 +581,12 @@ impl SceneView {
                         }
                     }
                     "row" | "column" => {
+                        if ["options","tools"].contains(&text(node,"bar")) {
+                            let mut draw=|ui:&mut egui::Ui| {
+                                for child in children(node) {self.node(ui,child,nodes,route,depth+1,events);}
+                            };
+                            return if text(node,"bar")=="options" {toolkit::bars::options(ui,&mut draw).response}else{toolkit::bars::tools(ui,&mut draw).response};
+                        }
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let frame = egui::Frame::new()
                             .fill(background)
@@ -985,6 +991,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             return Err("scene slots must attach a dock child".into());
         }
         match node.family.as_str() {
+            "row" | "column" if node.ports.get("bar").is_some_and(|v| ![Some("options"),Some("tools")].contains(&v.as_str())) => return Err("unknown native bar role".into()),
             "band" => {
                 band_groups(node, 0.0, &|_| 0.0)?;
                 for child in children(node) {

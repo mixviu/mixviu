@@ -1,7 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 $op=require("operations.mix");$states=require("state.mix");$registry=require("registry.mix");$store=require("storage.mix")
+$journal=require("journal.mix")
 fn completed($s,$d,$service)
+  if $d.tag.id=="screenshot-events" then return $journal.completed($s,$d) end
   if $d.tag.id=="screenshot-preview" then
     if not ($s.rendering ?? false) or $d.tag.owner!=$s.render_revision then return $s end
     $s.rendering=false
@@ -102,6 +104,7 @@ fn canvas($s,$a)
   $r=$op.edited($s,"annotate",$shape);$s=$r.state;$s.ui.selected=$r.result.id;return $s
 end
 fn intent($s,$a)
+  $s.origin=if $a.id=="gold-menu" then $a.value.origin ?? "menu" else "ui" end
   try
     if $a.action=="command" then $r=$op.execute($s,$a.value.command,nil,false);$s=$r.state
     elif $a.id=="preview" then $s=canvas($s,$a)
@@ -127,6 +130,7 @@ fn intent($s,$a)
   return $s
 end
 fn key($s,$a)
+  $s.origin="shortcut"
   $key=$a.key
   if $a.typing and not $a.ctrl then return $s end
   $names={Minus:"-",Plus:"Plus",Equals:"Plus",Slash:"/",Num0:"0"}

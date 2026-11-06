@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+fn bounded($value)
+  $text=json_encode($value)
+  return if byte_length($text)<=4096 then $value else {bytes:byte_length($text),sha256:hash_sha256($text)} end
+end
+fn record_action($s,$id,$params,$result)
+  $s.action_run=$s.action_run ?? uuid();$s.action_sequence=($s.action_sequence ?? 0)+1
+  $queue=$s.action_queue ?? []
+  if len($queue)>=256 then $queue=slice($queue,1);$s.action_lost=($s.action_lost ?? 0)+1 end
+  push($queue,{v:2,run:$s.action_run,seq:$s.action_sequence,at_ms:floor(time()*1000),id:$id,origin:$s.origin ?? "bus",params:bounded($params),result:bounded($result),dropped:0})
+  $s.action_queue=$queue
+  return $s
+end
+fn flush($s,$service)
+  if ($s.action_publishing ?? false) or not $s.connected or len($s.action_queue ?? [])==0 then return $s end
+  $value=$s.action_queue[0];$value.dropped=$s.action_lost ?? 0
+  $path=path_join(dirname(script_path()),"publish-job.mix")
+  send "viu-local" "jobs.start" id="screenshot-events" owner=$value.seq path=$path source=read_file($path) command="job.run" args={topic:$service..".action.executed",event:$value}
+  if $rc==0 then $s.action_queue=slice($s.action_queue,1);$s.action_publishing=true;$s.action_lost=0 end
+  return $s
+end
+fn completed($s,$d)
+  $s.action_publishing=false
+  if $d.rc!=0 or $d.body.rc!=0 then $s.action_lost=($s.action_lost ?? 0)+1+($d.body.dropped ?? 0) end
+  return $s
+end

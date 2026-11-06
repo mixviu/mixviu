@@ -72,7 +72,7 @@ fn render($s)
     if $s.ui.tool=="text" then $preview.guide.text=if trim($s.ui.text)=="" then "Text" else $s.ui.text end end
     if $s.ui.tool=="number" then $preview.guide.number=1 end
   end
-  $model={native_header:true,header_search_menu:"Help",native_menus:true,keyboard_events:true,theme_choice:$s.look,window_overrides:{},hide_window:$s.ui.mode!="window",hide_output:$s.ui.mode=="window" or len($s.outputs)<=1,hide_ink:not $has,hide_size:not $has or not contains(["text","number"],$s.ui.tool),hide_text:not $has or $s.ui.tool!="text",hide_file:not $has,
+  $model={native_header:true,native_status:true,header_search_menu:"Help",native_menus:true,keyboard_events:true,theme_choice:$s.look,window_overrides:{},hide_window:$s.ui.mode!="window",hide_output:$s.ui.mode=="window" or len($s.outputs)<=1,hide_ink:not $has,hide_size:not $has or not contains(["text","number"],$s.ui.tool),hide_text:not $has or $s.ui.tool!="text",hide_file:not $has,
     window_control:combo("window","Window",$window_choices,$window_labels,180,not $s.busy),
     output_control:combo("output","Output",concat(["pointer"],$s.outputs),{pointer:"Output under the pointer"},180,not $s.busy),
     inks_control:{id:"inks",kind:"swatches",label:"Colour",initial:$s.ui.colour,properties:{items:$swatches,enabled:$editable}},
@@ -91,6 +91,6 @@ fn render($s)
   $model.frame.groups["gold-icon"].preferred=40;$model.frame.groups["gold-icon"].minimum=40
   $model.frame.groups["gold-menu"].preferred=310;$model.frame.groups["gold-menu"].minimum=310
   $model.frame.groups["gold-toolbar"].preferred=136;$model.frame.groups["gold-toolbar"].minimum=136
-  if $s.close_after then $model.window_close=true end
+  if $s.close_after and not ($s.action_publishing ?? false) and len($s.action_queue ?? [])==0 then $model.window_close=true end
   return $model
 end

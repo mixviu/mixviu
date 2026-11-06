@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 $state=require("state.mix");$core=require("core.mix");$store=require("storage.mix");$registry=require("registry.mix");$model=require("model.mix")
+$journal=require("journal.mix")
 fn refresh($s)
   try
     send $s.comp "comp.windows.list" body={} timeout=5
@@ -48,6 +49,7 @@ fn render($s)
   return $s
 end
 fn edited($s,$op,$params)
+  $history=if $op=="undo" or $op=="redo" then $s.document[$op] else 1 end
   $body=$params ?? {}
   if $op=="annotate" then $body={shape:$params}
   elif $op=="move" then $state.check_fields($body,["id","dx","dy"])
@@ -66,6 +68,7 @@ fn edited($s,$op,$params)
   $s=render($s)
   $value=$result.document
   if $result.id!=nil then $value.id=$result.id end
+  if $history>0 then $s=$journal.record_action($s,"edit."..$op,if contains(["undo","redo"],$op) then nil else $params end,$value) end
   return {state:$s,result:$value}
 end
 fn capture_request($s,$mode)
@@ -235,6 +238,7 @@ fn execute($s,$id,$params,$alias)
   elif $id=="help.about" then $s=open_dialog($s,"about")
   elif $id=="help.shortcuts" then $s=open_dialog($s,"shortcuts")
   end
+  if not contains(["edit.annotate","edit.move","edit.delete","edit.crop","edit.undo","edit.redo"],$id) then $s=$journal.record_action($s,$id,$params,$result) end
   return {state:$s,result:$result}
 end
 fn select_ui($s,$a)
@@ -248,6 +252,7 @@ fn select_ui($s,$a)
   return $s
 end
 fn dispatch($s,$command,$a)
+  $s.origin="bus"
   $body=nil;$deferred=false;$rc=0
   try
     $state.check_fields($a,keys($a))
@@ -261,7 +266,7 @@ fn dispatch($s,$command,$a)
       $limit=if has_key($a,"limit") then $a.limit else 10 end
       if type($limit)!="number" or floor($limit)!=$limit or $limit<1 or $limit>100 then raise("ARGUMENT","limit must be 1..100") end
       $body={shots:$store.recent($s.state_dir,$limit)}
-    elif $command=="screenshot.cancel" then $body={cancelling:$s.busy and $s.job=="capture"};$s=cancel($s)
+    elif $command=="screenshot.cancel" then $body={cancelling:$s.busy and $s.job=="capture"};$s=cancel($s);if $body.cancelling then $s=$journal.record_action($s,"capture.cancel",nil,nil) end
     elif $command=="screenshot.theme" then
       for $key in ["scheme","mode"]
         if has_key($a,$key) and $a[$key]!=nil and not any($registry.definitions,fn($r)=$r.id==(if $key=="scheme" then "view.theme." else "view.mode." end)..to_string($a[$key])) then raise("ARGUMENT","unknown "..$key) end
@@ -323,11 +328,12 @@ fn dispatch($s,$command,$a)
         $path=nil
         if $command=="screenshot.export" then $state.check_fields($a,["path"]);$path=$state.path($a.path) end
         $s=save($s,$path,true);$deferred=true
+        if $command=="screenshot.save" then $s=$journal.record_action($s,"file.save",nil,nil) end
       elif $command=="screenshot.select" then $s=select_ui($s,$a);$body={ui:$s.ui}
       elif $command=="screenshot.show" then
         if $s.headless ?? false then raise("HEADLESS","A headless instance has no window") end
         $s=work($s,{op:"show"},true);$deferred=true
-      elif $command=="screenshot.quit" then $state.clean($s);$s=perform($s,{op:"quit"});$body={quitting:true}
+      elif $command=="screenshot.quit" then $state.clean($s);$s=perform($s,{op:"quit"});$s=$journal.record_action($s,"file.quit",nil,nil);$body={quitting:true}
       elif $command=="screenshot.targets" then $s=refresh($s);$body={windows:$s.windows,outputs:$s.outputs}
       else raise("UNKNOWN_COMMAND","unknown screenshot command") end
     end

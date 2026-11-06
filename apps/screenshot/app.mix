@@ -2,6 +2,7 @@
 -- version: 0.2.0
 -- lint: globals app_args
 $states=require("state.mix");$op=require("operations.mix");$events=require("events.mix");$model=require("model.mix")
+$journal=require("journal.mix")
 $ctx=viu_context()
 $launch={}
 if $app_args[1]=="--launch" then $launch=json_parse($app_args[2]) end
@@ -10,11 +11,13 @@ $options=$ctx.options ?? {}
 $state.headless=$options.headless ?? false
 $state=$op.refresh($state)
 fn publish_model($s)
+  $s=$journal.flush($s,$ctx.citizen)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model.render($s)}
+  return $s
 end
 fn command($s,$name,$args)
   $result=$op.dispatch($s,$name,$args)
-  publish_model($result.state)
+  $result.state=publish_model($result.state)
   if not $result.deferred then reply($result.rc,json_encode($result.body)) end
   return $result.state
 end
@@ -24,30 +27,30 @@ elif $launch.capture!=nil then
   if $launch.window!=nil then $request.window=$launch.window end
   $state=$op.capture($state,$request,false,true)
 end
-publish_model($state)
+$state=publish_model($state)
 on viu.job.completed
-  $state=$events.completed($state,$event.args,$ctx.citizen);publish_model($state)
+  $state=$events.completed($state,$event.args,$ctx.citizen);$state=publish_model($state)
 end
 on screenshot.intent
-  $state=$events.intent($state,$event.args);publish_model($state)
+  $state=$events.intent($state,$event.args);$state=publish_model($state)
 end
 on viu.frame.intent
-  $state=$events.intent($state,$event.args);publish_model($state)
+  $state=$events.intent($state,$event.args);$state=publish_model($state)
 end
 on viu.frame.close
-  $state=$op.request($state,{op:"quit"});publish_model($state)
+  $state=$op.request($state,{op:"quit"});$state=publish_model($state)
 end
 on viu.key
-  $state=$events.key($state,$event.args);publish_model($state)
+  $state=$events.key($state,$event.args);$state=publish_model($state)
 end
 on viu.session.changed
-  $state.effective=$event.args.appearance;$state.keymap=$event.args.keymap;publish_model($state)
+  $state.effective=$event.args.appearance;$state.keymap=$event.args.keymap;$state=publish_model($state)
 end
 on bus.connected
-  $state.connected=true;$state=$op.refresh($state);publish_model($state)
+  $state.connected=true;$state=$op.refresh($state);$state=publish_model($state)
 end
 on bus.disconnected
-  $state.connected=false;$state.status="The Bus is disconnected";publish_model($state)
+  $state.connected=false;$state.status="The Bus is disconnected";$state=publish_model($state)
 end
 
 on HELP

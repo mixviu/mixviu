@@ -531,6 +531,14 @@ impl Host {
                     self.error = e;
                 }
                 }
+                if self.model["native_status"]==true {
+                    let left=self.model["values"]["gold-status-text"].as_str().unwrap_or("");
+                    let right=self.model["values"]["gold-status-right"].as_str().unwrap_or("");
+                    toolkit::bars::status(ui,|ui| {
+                        ui.small(left);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {if !right.is_empty(){ui.small(right);}});
+                    });
+                }
             }
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);

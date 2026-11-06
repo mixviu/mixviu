@@ -9,7 +9,9 @@ use std::{
 // identifiers and native action labels once per process, with a fixed ceiling
 // of 4096 entries and 2048 bytes per retained string.
 pub(crate) fn command_id(id: &str) -> Result<&'static str, String> {
-    if id.len()>128 {return Err("native command ID budget exceeded".into());}
+    if id.len() > 128 {
+        return Err("native command ID budget exceeded".into());
+    }
     retained_text(id)
 }
 pub(crate) fn retained_text(id: &str) -> Result<&'static str, String> {

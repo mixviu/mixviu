@@ -8,7 +8,7 @@ citizen: screenshot
 root:{widget:"dock",children:["dialog","macros","options-row","tool-rail","preview"],placements:{dialog:{edge:"top",size:0},macros:{edge:"top",size:0},"options-row":{edge:"top",size:"design.options_height"},"tool-rail":{edge:"left",size:"design.tools_width"},preview:{edge:"fill"}}},
 dialog:{widget:"control",definition:{id:"dialog",kind:"dialog-form",label:"",initial:{open:false,title:"",body:"",field:nil,choices:[]}},on_intent:"screenshot.intent"},
 macros:{widget:"control",definition:{id:"macros",kind:"macro-window",label:"",initial:false,properties:{app:"screenshot"}},on_intent:"screenshot.intent"},
-"options-row":{widget:"column",background:"design.chrome",padding_x:"design.bar_inset",padding_y:"design.bar_padding_y",children:["options-band"]},
+"options-row":{widget:"column",bar:"options",children:["options-band"]},
 "options-band":{widget:"band",children:["options","window","output","inks","width","text_size","text","file_actions"],groups:{options:{preferred:250,minimum:250,align:"left",shrink:nil,order:0},window:{preferred:200,minimum:100,align:"left",shrink:1,order:1},output:{preferred:200,minimum:100,align:"left",shrink:1,order:1},inks:{preferred:150,minimum:150,align:"left",shrink:nil,order:2},width:{preferred:96,minimum:96,align:"left",shrink:nil,order:3},text_size:{preferred:128,minimum:128,align:"left",shrink:nil,order:4},text:{preferred:220,minimum:80,align:"left",shrink:1,order:5},file_actions:{preferred:136,minimum:100,align:"right",shrink:1,order:6}}},
 options:{widget:"control",definition:{id:"options",kind:"command-bar",label:"Capture",initial:[],properties:{hostable:false}},on_intent:"screenshot.intent"},
 window:{widget:"control",hidden:"= $model.hide_window",definition:"= $model.window_control",on_intent:"screenshot.intent"},
@@ -18,7 +18,7 @@ width:{widget:"control",hidden:"= $model.hide_ink",definition:"= $model.width_co
 text_size:{widget:"control",hidden:"= $model.hide_size",definition:"= $model.size_control",on_intent:"screenshot.intent"},
 text:{widget:"control",hidden:"= $model.hide_text",definition:"= $model.text_control",on_intent:"screenshot.intent"},
 file_actions:{widget:"control",hidden:"= $model.hide_file",definition:{id:"file_actions",kind:"command-bar",label:"File",initial:[],properties:{hostable:false}},on_intent:"screenshot.intent"},
-"tool-rail":{widget:"column",background:"design.chrome",padding_x:"design.tool_margin",padding_y:"design.tool_margin",children:["tools"]},
+"tool-rail":{widget:"column",bar:"tools",children:["tools"]},
 tools:{widget:"control",definition:{id:"tools",kind:"command-bar",label:"Annotate",initial:[],properties:{vertical:true,hostable:false}},on_intent:"screenshot.intent"},
 preview:{widget:"control",definition:{id:"preview",kind:"image-canvas",label:"Picture",initial:{canvas:true,phase:"none",colour:"design.canvas",fit:"fit",enabled:false,zoom:1,pan:{x:0,y:0},empty_text:"Take a screenshot (Ctrl+N) or open an image (Ctrl+O)."}},on_intent:"screenshot.intent"}
 }
