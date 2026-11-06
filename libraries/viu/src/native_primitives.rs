@@ -70,8 +70,7 @@ pub(crate) fn token() -> mix::evaluator::ExtFn {
 pub(crate) fn settings_values() -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
         let fail = || MixError::RuntimeError {
-            msg: "viu_settings expects default/path or apply|admit/values/changes/reset"
-                .into(),
+            msg: "viu_settings expects default/path or apply|admit/values/changes/reset".into(),
             span: None,
         };
         match args.as_slice() {
