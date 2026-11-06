@@ -146,7 +146,7 @@ impl Endpoint {
         quit_command: String,
         wake: crate::runtime::Wake,
     ) -> Self {
-        Self::start_described(name, url, commands, quit_command, wake, None)
+        Self::start_described(name, url, commands, quit_command, wake, None, false)
     }
     pub fn start_described(
         name: String,
@@ -155,6 +155,7 @@ impl Endpoint {
         quit_command: String,
         wake: crate::runtime::Wake,
         help: Option<Value>,
+        owner_help: bool,
     ) -> Self {
         let (tx, requests) = mpsc::sync_channel(32);
         let (notice_tx, notices) = mpsc::sync_channel(32);
@@ -171,7 +172,7 @@ impl Endpoint {
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
                 let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
-                let options=if help.is_none() && !commands.iter().any(|c|c.name=="HELP"){options.with_commands(commands)}else{options};
+                let options=if help.is_none() && !owner_help{options.with_commands(commands)}else{options};
                 let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");close.store(true,Ordering::Release);wake();return;}}};
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=Some(native.clone());

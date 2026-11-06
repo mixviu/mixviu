@@ -24,6 +24,8 @@ pub struct Manifest {
     pub url: Option<String>,
     pub job_limit: usize,
     pub command_metadata: Vec<serde_json::Value>,
+    /// Keep HELP dispatch in Mix when the bundle supplies its own handler.
+    pub owner_help: bool,
     /// App-authored compatibility surface; native facilities append descriptors.
     pub bus_surface: Option<serde_json::Value>,
     pub native_ui: bool,
@@ -55,6 +57,7 @@ impl Default for Manifest {
             url: None,
             job_limit: 4,
             command_metadata: vec![],
+            owner_help: false,
             bus_surface: None,
             native_ui: false,
             native_macros: false,

@@ -1258,6 +1258,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         "viu.quit".into(),
         wake.clone(),
         facilities.surface.as_ref().map(|s| s["commands"].clone()),
+        bundle.manifest.owner_help,
     );
     let documents = crate::documents::Documents::default();
     let timers = crate::timers::Timers::default();
