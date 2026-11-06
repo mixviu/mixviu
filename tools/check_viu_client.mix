@@ -1,8 +1,9 @@
 -- CBC only. Resolve the client closure before the locked checks.
 for $cmd in [
+  ["/opt/mixos/bin/mix", "tools/format_comp_split.mix", "fmt-only"],
   ["cargo", "check", "-p", "viu"],
   ["cargo", "test", "-p", "viu", "--no-fail-fast", "--locked"],
-  ["/opt/mixos/bin/mix", "tools/format_comp_split.mix", "fmt-only"],
+  ["cargo", "clippy", "-p", "viu", "--all-targets", "--locked"],
   ["cargo", "build", "-p", "viu", "--locked"]
 ]
   print("STEP_BEGIN " .. join($cmd," "))

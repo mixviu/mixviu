@@ -84,7 +84,6 @@ use comp_model::snapshot::output_key;
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use protocols::window::ident;
-use surfaces::SurfaceRole;
 use world::state::Loop;
 
 pub fn truth(lp: &Loop) -> Value {
