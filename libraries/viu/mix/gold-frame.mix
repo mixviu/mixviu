@@ -7,7 +7,7 @@ fn apply($model,$options)
   $values["gold-title"]=$options.title
   $values["gold-menu"]=$options.menus
   $values["gold-toolbar"]=$options.toolbar
-  $values["gold-status-text"]=$options.status
+  $values["gold-status-text"]=if type($options.status)=="string" then {left:$options.status,right:[],icon:"plug"} else $options.status end
   $model.values=$values
   $model.appearance=$options.appearance ?? {scheme:"studio",mode:"dark"}
   $model.window_settings=$options.window ?? {"window.decorations":"csd"}

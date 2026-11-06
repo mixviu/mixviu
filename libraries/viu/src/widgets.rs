@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
     "mark",
+    "status-line",
     "label",
     "button",
     "field",
@@ -129,6 +130,9 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
+            "status-line" => value["left"].is_string()
+                && value["right"].as_array().is_some_and(|a| a.len() <= 16 && a.iter().all(Value::is_string))
+                && value["icon"].as_str().and_then(crate::icons::Icon::from_name).is_some(),
             "mark" => value
                 .as_str()
                 .and_then(crate::icons::Icon::from_name)
@@ -188,7 +192,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.kind == "mark" {
+        if self.kind == "mark" || self.kind == "status-line" {
             return vec![];
         }
         if self.kind == "editor" && self.properties["read_only"] == true {
@@ -274,6 +278,9 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
+        if self.properties["enabled"] == false {
+            return Err("DISABLED".into());
+        }
         self.validate_action(action, value)?;
         if self.kind == "window-controls" && self.value(model)["enabled"] != true {
             return Err("DISABLED".into());
@@ -401,7 +408,9 @@ impl Widgets {
             .get(&definition.id)
             .unwrap_or(&definition.initial);
         ui.push_id(&definition.id, |ui| {
-            self.draw(ui, definition, value, model, &mut intents)
+            ui.add_enabled_ui(definition.properties["enabled"] != false, |ui| {
+                self.draw(ui, definition, value, model, &mut intents)
+            });
         });
         intents
     }
@@ -457,6 +466,15 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
+            "status-line" => toolkit::bars::status(ui, |ui| {
+                let colour=if value["error"]==true {ui.visuals().error_fg_color} else {ui.visuals().weak_text_color()};
+                ui.add(crate::icons::image_of(ui.ctx(),crate::icons::Icon::from_name(value["icon"].as_str().unwrap()).unwrap(),14.0,colour));
+                ui.small(value["left"].as_str().unwrap());
+                if let Some(error)=value["message"].as_str() {ui.small(egui::RichText::new(error).color(ui.visuals().error_fg_color));}
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
+                    for item in value["right"].as_array().unwrap() {ui.small(item.as_str().unwrap());}
+                });
+            }).response,
             "mark" => ui.add(crate::icons::image_of(
                 ui.ctx(),
                 crate::icons::Icon::from_name(value.as_str().expect("validated mark"))

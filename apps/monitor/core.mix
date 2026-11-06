@@ -19,7 +19,7 @@ fn project($s)
     push($rows,{key:to_string($p.pid),depth:min(256,$p.depth ?? 0),branch:false,selected:$p.pid==$s.selected,focused:$p.pid==$s.selected,expanded:false,cells:[$p.name,to_string($p.pid),$p.user,fmt("%.1f",$p.cpu),gold_bytes($p.memory),if $p.read_bps==nil and $p.write_bps==nil then "—" else gold_bytes(($p.read_bps ?? 0)+($p.write_bps ?? 0)).."/s" end,$p.cmdline ?? ""]})
   end
   $columns=[]
-  for $pair in [["name","Name"],["pid","PID"],["user","User"],["cpu","CPU %"],["memory","Memory"],["io","I/O"],["cmdline","Command line"]] push($columns,{id:$pair[0],label:$pair[1],width:if $pair[0]=="name" then 240 elif $pair[0]=="pid" or $pair[0]=="cpu" then 70 elif $pair[0]=="user" then 100 else 90 end,min_width:if $pair[0]=="name" or $pair[0]=="cmdline" then 120 elif $pair[0]=="user" or $pair[0]=="memory" or $pair[0]=="io" then 60 else 50 end,remainder:$pair[0]=="cmdline",sortable:$pair[0]!="cmdline",weak:$pair[0]=="cmdline",align:if contains(["pid","cpu","memory","io"],$pair[0]) then "right" else "left" end}) end
+  for $pair in [["name","Name"],["pid","PID"],["user","User"],["cpu","CPU"],["memory","Memory"],["io","Disk"],["cmdline","Command line"]] push($columns,{id:$pair[0],label:$pair[1],width:if $pair[0]=="name" then 240 elif $pair[0]=="pid" or $pair[0]=="cpu" then 70 elif $pair[0]=="user" then 100 else 90 end,min_width:if $pair[0]=="name" or $pair[0]=="cmdline" then 120 elif $pair[0]=="user" or $pair[0]=="memory" or $pair[0]=="io" then 60 else 50 end,remainder:$pair[0]=="cmdline",sortable:$pair[0]!="cmdline",weak:$pair[0]=="cmdline",align:if contains(["pid","cpu","memory","io"],$pair[0]) then "right" else "left" end}) end
   $shapes=[]
   if len($s.history)>1 then
     for $i=1 to len($s.history)-1 push($shapes,{kind:"line",from:[($i-1)/59,1-$s.history[$i-1]/100],to:[$i/59,1-$s.history[$i]/100]}) end
@@ -29,15 +29,15 @@ fn project($s)
     $v=$s.snapshot
     $summary=fmt("CPU %.1f%% · %d cores · Memory %s / %s · Swap %s / %s",$v.cpu.busy,$v.cpu.cores,format_bytes($v.memory.used),format_bytes($v.memory.total),format_bytes($v.swap.used),format_bytes($v.swap.total))
   end
-  $model={status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:$s.sort,reverse:$s.reverse,ascending:if contains(["name","pid","user"],$s.sort) then not $s.reverse else $s.reverse end},properties:{style:"grid"}},options:{tabs:{preferred:190,minimum:160,align:"left",order:0},node:{preferred:150,minimum:100,align:"left",order:1},filter:{preferred:220,minimum:120,align:"right",order:2},tree:{preferred:50,minimum:40,align:"right",order:3},"end-task":{preferred:90,minimum:80,align:"right",order:4}},performance:$s.tab=="Performance",values:{tabs:$s.tab,tree:$s.tree,pause:$s.paused,filter:$s.filter,node:if $s.node=="" then "This node" else $s.node end},serial:$s.serial}
+  $model={end_button:{id:"end-task",kind:"button",label:"",initial:"End task",properties:{text:"End task",enabled:$s.node=="" and $s.dialog==nil and $s.selected!=nil}},status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:$s.sort,reverse:$s.reverse,ascending:if contains(["name","pid","user"],$s.sort) then not $s.reverse else $s.reverse end},properties:{style:"grid"}},options:{tabs:{preferred:190,minimum:160,align:"left",order:0},node:{preferred:150,minimum:100,align:"left",order:1},filter:{preferred:220,minimum:120,align:"right",order:2},tree:{preferred:50,minimum:40,align:"right",order:3},"end-task":{preferred:90,minimum:80,align:"right",order:4}},performance:$s.tab=="Performance",values:{tabs:$s.tab,tree:$s.tree,pause:$s.paused,filter:$s.filter,node:if $s.node=="" then "This node" else $s.node end},serial:$s.serial}
   return $model
 end
 
 fn framed($s)
   $model=project($s)
-  $actions=[{id:"file.refresh",label:"Refresh",icon:"refresh-cw",icon_only:true,enabled:true},{id:"view.pause",label:"Pause",checked:$s.paused,enabled:true}]
-  $menus=[{id:"File",label:"File",enabled:true,children:[{id:"file.refresh",label:"Refresh",enabled:true},{id:"file.quit",label:"Quit",enabled:true}]},{id:"View",label:"View",enabled:true,children:[{id:"view.pause",label:"Pause",enabled:true,checked:$s.paused},{id:"view.tree",label:"Process tree",enabled:true,checked:$s.tree}]},{id:"Process",label:"Process",enabled:true,children:[{id:"process.end",label:"End task",enabled:$s.node=="" and $s.selected!=nil and $s.dialog==nil},{id:"process.kill",label:"Kill",enabled:$s.node=="" and $s.selected!=nil and $s.dialog==nil}]},{id:"Help",label:"Help",enabled:true,children:[]}]
-  return $frame.apply($model,{icon:"monitor",title:"Monitor — "..(if $s.snapshot!=nil then $s.snapshot.host ?? "This node" else "This node" end),menus:$menus,toolbar:$actions,status:$model.status})
+  $actions=[{id:"file.refresh",label:"Refresh now",icon:"refresh-cw",icon_only:true,enabled:true},{id:"view.pause",label:"Pause updates",checked:$s.paused,enabled:true}]
+  $menus=[{id:"File",label:"File",enabled:true,children:[{id:"file.refresh",label:"Refresh now",enabled:true},{id:"file.quit",label:"Quit",enabled:true}]},{id:"View",label:"View",enabled:true,children:[{id:"view.pause",label:"Pause updates",enabled:true,checked:$s.paused},{id:"view.tree",label:"Show as tree",enabled:true,checked:$s.tree}]},{id:"Process",label:"Process",enabled:true,children:[{id:"process.end",label:"End task",enabled:$s.node=="" and $s.selected!=nil and $s.dialog==nil},{id:"process.kill",label:"Kill",enabled:$s.node=="" and $s.selected!=nil and $s.dialog==nil}]},{id:"Help",label:"Help",enabled:true,children:[]}]
+  return $frame.apply($model,{icon:"monitor",title:"Monitor — "..(if $s.snapshot!=nil then $s.snapshot.host ?? "This node" else "This node" end),menus:$menus,toolbar:$actions,status:status_line($s)})
 end
 
 fn gold_bytes($n)
@@ -46,4 +46,17 @@ fn gold_bytes($n)
     $v=$v/1024;$i=$i+1
   end
   return (if $i==0 or $v>=100 then fmt("%.0f",$v) else fmt("%.1f",$v) end).." "..$units[$i]
+end
+
+fn status_line($s)
+  $right=[]
+  if $s.snapshot!=nil and $s.snapshot.uptime_s!=nil then push($right,"Up time "..gold_uptime($s.snapshot.uptime_s)) end
+  if $s.snapshot!=nil then push($right,to_string(len($s.processes)).." of "..to_string($s.total).." processes") end
+  return {left:if $s.snapshot==nil then "Connecting to monitord…" elif $s.error!=nil then "monitord is not answering" elif $s.paused then "Paused" else "Live" end,icon:if $s.error==nil then "plug" else "unplug" end,error:$s.error!=nil,message:$s.error,right:$right}
+end
+fn gold_uptime($seconds)
+  $s=floor(max(0,$seconds));$d=floor($s/86400);$h=floor(($s%86400)/3600);$m=floor(($s%3600)/60)
+  if $d>0 then return fmt("%dd %dh %dm",$d,$h,$m)
+  elif $h>0 then return fmt("%dh %dm",$h,$m)
+  else return fmt("%dm %ds",$m,$s%60) end
 end

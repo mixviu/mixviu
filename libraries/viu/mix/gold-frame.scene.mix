@@ -13,7 +13,7 @@ root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placem
 "gold-title":{widget:"control",definition:{id:"gold-title",kind:"label",label:"",initial:"",properties:{role:"title",weak:true}}},
 "gold-toolbar":{widget:"control",definition:{id:"gold-toolbar",kind:"command-bar",label:"",initial:[]},on_intent:"viu.frame.intent"},
 "gold-status":{widget:"column",background:"design.chrome",padding:0,children:["gold-status-text"]},
-"gold-status-text":{widget:"control",definition:{id:"gold-status-text",kind:"label",label:"",initial:"",properties:{role:"status"}}},
+"gold-status-text":{widget:"control",definition:{id:"gold-status-text",kind:"status-line",label:"",initial:{left:"",right:[],icon:"plug"}}},
 "gold-content":{widget:"column",children:[]}
 }
 ```

@@ -4,32 +4,50 @@
 use serde_json::{Value, json};
 
 fn pid(args: &Value) -> Result<i32, String> {
-    args["pid"].as_i64().and_then(|p| i32::try_from(p).ok())
-        .filter(|p| *p > 0).ok_or_else(|| "not a process id".into())
+    args["pid"]
+        .as_i64()
+        .and_then(|p| i32::try_from(p).ok())
+        .filter(|p| *p > 0)
+        .ok_or_else(|| "not a process id".into())
 }
 fn parse_start_time(stat: &str) -> Result<String, String> {
     // comm may contain spaces, newlines and parentheses. Field 3 follows
     // the LAST closing parenthesis; field 22 is its nineteenth successor.
     let (_, rest) = stat.rsplit_once(')').ok_or("invalid process stat")?;
-    let value = rest.split_whitespace().nth(19).ok_or("missing process start time")?;
-    value.parse::<u64>().map_err(|_| "invalid process start time")?;
+    let value = rest
+        .split_whitespace()
+        .nth(19)
+        .ok_or("missing process start time")?;
+    value
+        .parse::<u64>()
+        .map_err(|_| "invalid process start time")?;
     Ok(value.into())
 }
 fn start_time(pid: i32) -> Result<String, String> {
-    parse_start_time(&std::fs::read_to_string(format!("/proc/{pid}/stat"))
-        .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound {
-            std::io::Error::from_raw_os_error(libc::ESRCH).to_string()
-        } else { e.to_string() })?)
+    parse_start_time(
+        &std::fs::read_to_string(format!("/proc/{pid}/stat")).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                std::io::Error::from_raw_os_error(libc::ESRCH).to_string()
+            } else {
+                e.to_string()
+            }
+        })?,
+    )
 }
 pub fn command(command: &str, args: &Value) -> Result<Value, String> {
     match command {
         "snapshot" => {
-            let pids = args["pids"].as_array().filter(|p| p.len() <= 100_000)
+            let pids = args["pids"]
+                .as_array()
+                .filter(|p| p.len() <= 100_000)
                 .ok_or("expected at most 100000 process ids")?;
             let mut result = serde_json::Map::new();
             for value in pids {
                 let id = pid(&json!({"pid":value}))?;
-                result.insert(id.to_string(), start_time(id).map(Value::String).unwrap_or(Value::Null));
+                result.insert(
+                    id.to_string(),
+                    start_time(id).map(Value::String).unwrap_or(Value::Null),
+                );
             }
             Ok(Value::Object(result))
         }
@@ -44,7 +62,9 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
                 Ok(value) => value,
                 Err(error) => return Ok(json!({"ok":false,"error":error})),
             };
-            let expected = args["start_time"].as_str().map(str::to_owned)
+            let expected = args["start_time"]
+                .as_str()
+                .map(str::to_owned)
                 .or_else(|| args["start_time"].as_u64().map(|n| n.to_string()));
             if expected.as_deref() != Some(live.as_str()) {
                 return Ok(json!({"ok":false,"pid_reused":true,"error":"pid reused"}));
@@ -76,20 +96,34 @@ mod tests {
     #[test]
     fn stat_identity_handles_embedded_parentheses_and_spaces() {
         let tail = (3..=21).map(|_| "0").collect::<Vec<_>>().join(" ");
-        assert_eq!(parse_start_time(&format!("123 (name ) weird\n) {tail} 9007199254740993 0")).unwrap(), "9007199254740993");
+        assert_eq!(
+            parse_start_time(&format!("123 (name ) weird\n) {tail} 9007199254740993 0")).unwrap(),
+            "9007199254740993"
+        );
         assert!(parse_start_time("bad").is_err());
     }
     #[test]
     fn fence_and_both_signals_use_only_disposable_children() {
         for (signal, number) in [("SIGTERM", libc::SIGTERM), ("SIGKILL", libc::SIGKILL)] {
-            let mut child = std::process::Command::new("sleep").arg("60").spawn().unwrap();
+            let mut child = std::process::Command::new("sleep")
+                .arg("60")
+                .spawn()
+                .unwrap();
             let id = child.id();
             let snapshot = command("snapshot", &json!({"pids":[id]})).unwrap();
-            let refused = command("signal", &json!({"pid":id,"signal":signal,"start_time":"0"})).unwrap();
+            let refused = command(
+                "signal",
+                &json!({"pid":id,"signal":signal,"start_time":"0"}),
+            )
+            .unwrap();
             assert_eq!(refused["error"], "pid reused");
             assert_eq!(refused["pid_reused"], true);
             assert!(child.try_wait().unwrap().is_none());
-            let allowed = command("signal", &json!({"pid":id,"signal":signal,"start_time":snapshot[id.to_string()]})).unwrap();
+            let allowed = command(
+                "signal",
+                &json!({"pid":id,"signal":signal,"start_time":snapshot[id.to_string()]}),
+            )
+            .unwrap();
             assert_eq!(allowed["ok"], true);
             assert_eq!(child.wait().unwrap().signal(), Some(number));
         }
