@@ -132,7 +132,7 @@ fn bus_command($s,$e)
       $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",action:$a.id,timeout_ms:30000}))
     end
     try $out=do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index,$e.headers["viu-call"])
-    catch $message return refused($s,"CONFLICT",$message) end
+    catch $message,$error return refused($s,if contains(["INVALID_ARGUMENT","NOT_FOUND","UNKNOWN_ACTION"],$error.code) then $error.code else "CONFLICT" end,$message) end
     $s=$out.state
     if $out.kind=="mail" then return check_calls(hold_call($s,$e,{kind:"job",timeout_ms:150000})) end
     if $out.op_id!=nil then return check_calls(hold_call($s,$e,{kind:"outcome",tab:if $index>=0 then to_number($s.tabs[$index].document) else nil end,op_id:$out.op_id,action:$a.id,close_after:$a.id=="file.close",timeout_ms:60000}))
@@ -164,7 +164,7 @@ fn bus_command($s,$e)
     $m=$s.mail[$t.document]
     if $m!=nil and ($m.sending or ($m.saving and not $m.parked)) then return refused($s,"CONFLICT","Wait for the mail operation to finish") end
     try $v=viu_document("command",$t.document,{name:"insert",text:$a.text,caller:caller($e.headers)})
-    catch $message return refused($s,"CONFLICT",$message) end
+    catch $message,$error return refused($s,if contains(["INVALID_ARGUMENT","NOT_FOUND","UNKNOWN_ACTION"],$error.code) then $error.code else "CONFLICT" end,$message) end
     reply(0,json_encode({tab:to_number($t.document),pending:$v.pending}));return pump($s)
   elif $command=="ced.wait" then
     $conditions=filter(["rev","idle","epoch","phase"],fn($k)=$a[$k]!=nil)

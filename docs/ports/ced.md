@@ -1,34 +1,33 @@
 # Ced parity inventory
 
-Current checkpoint: reusable gold editor integration, **not full parity**.
-Gold reference remains MixOS 8779f3328. No deviation below is approved.
+Gold reference: MixOS 8779f3328. Full parity is not yet accepted.
 
-| Capability | Current evidence / remaining work |
-|---|---|
-| Editing, cursor, selection, undo/redo | Retained editor/model, native Unicode typing and local undo regression pass. UI Undo/Redo stay local; legacy ced.command undo/redo still target editd history. |
-| Clipboard, IME, Unicode and mouse/keyboard bindings | Gold widget code reused; Unicode selection/input tested. OS clipboard, native IME and complete binding acceptance remain open. |
-| Syntax, gutter, wrap | Gold syntax/model/rendering wired; Rust highlighting inspected, wrap and line-number options supplied by Mix. |
-| Find/replace | Literal find, wrap-around Next and single replace. Regex, case/word options, all-replace and gold navigation remain open. |
-| Large files | Widget admits 64 MiB and uses gold visible-row rendering. Ced still refuses snapshots/drafts above 64 KiB. Paged loading, delta publication, bounded search and representative performance remain open. |
-| Tabs, open/save | Named tabs retain independent drafts; reopening preserves drafts/fences. Open dialog, explicit Apply, Save/Save As and authoritative language/dirty metadata. Tab close furniture and gold chooser/prompt behaviour remain open. |
-| Shared frame | Gold frame adopted with Mix-authored menus, toolbar and status; no frame implementation changed. Menu/action completeness and status details remain open. |
-| Collaboration, sessions and recovery | Revision-fenced Apply retained. Gold mirror reconciliation, remote cursors, reply-loss recovery, session restore and persisted local drafts remain open. |
-| Prefs | Widget resolves palette/style each frame; Ced uses gold's default 13-point editor text. Live settings subscription, font selection, text scaling and keymap compatibility remain open. |
-| Other gold views | Diagnostics/problems/output, previews, mail documents/send, macros and complete dialogs remain open. |
+The current Mix application uses the retained paged editor-model Mirror through
+a reusable in-process Viu document handle. Mix owns editd transport, retries,
+epoch reattachment, session policy, tabs, actions and mail save/send policy.
+Scene publication carries metadata, never complete large documents.
 
-Gold Bus surface still to reproduce compatibly: ced.open/new/tabs/focus/show,
-ced.state/type/select/execute/actions/wait/layout/stats/diagnostics/problems,
-ced.macros.list/reload/run/status/output/stop/new, app.describe/quit, window
-drive/debug commands, command manifests, topics and properties. Existing
-ced.ping/info responses also retain specimen shapes rather than gold DTOs.
-ced.command/draft/intent are specimen interfaces, not compatibility aliases.
+Native evidence covers 64 MiB documents and gold byte/line refusals, file and
+scratch recovery across Ced and editd restarts, real settingsd changes, native
+clipboard and IME preedit/commit, file save/undo/redo, regex replacement,
+diagnostics, macros and inert mail body/header save and crash recovery.
+Tabs, search controls, dialogs and Markdown previews use shared Viu widgets.
+The shared frame is merged from lab/gold-parity through 0807e73.
 
-Paired 1000x720 gold/Mix captures were inspected with perceptual-difference
-figures. They remain visibly different; header, tabs, editor inset and status
-regions are open. Private receipts retain the captures. No full functional,
-Bus, Prefs, visual or large-file acceptance is claimed.
+Gold DTOs are implemented for the application commands and native window
+drive/debug surfaces. Gold macro transport exposes twelve operations, including
+get/put/remove/move/copy; the older seven-command inventory was incomplete.
+The 61-action inventory is registered. Registration alone is not acceptance:
+complete action scenarios, topics, cancellation and visual states still need
+final coverage. ced.specimen is the diagnostic surface; ced.info uses gold DTOs.
+ced.command/draft/intent remain specimen interfaces.
 
-Reusable widget contract and limits: [editor-widget.md](editor-widget.md).
+Remaining acceptance includes successful mail Send through an isolated Email
+fixture, complete action/panel interactions, matched live-Prefs gold captures,
+full topic/property comparison and closure of every visual region. No deviation
+is approved. Current native witnesses and CBC receipts are recorded in last.md.
+
+Reusable widget contract: [editor-widget.md](editor-widget.md).
 
 ## Historical round-3 inventory
 

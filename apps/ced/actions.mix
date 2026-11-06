@@ -17,6 +17,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
   $original_active=$s.active
   if $index!=nil and $index>=0 then $s.active=$index end
   $has=len($s.tabs)>0;$t=if $has then current($s) else nil end
+  if contains(["file.send","mail.headers"],$id) and (not $has or $s.mail[$t.document]==nil) then raise("INVALID_ARGUMENT","Not a mail document") end
   if $has and $s.mail[$t.document]!=nil and (contains(["file.save","file.save_as","file.send","mail.headers"],$id) or ($id=="file.close" and ($a.save ?? false))) then
     return mail_action($s,$id,$a,$t.document,$call)
   end
@@ -35,7 +36,8 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
     elif $id=="file.save_as" and $a.path==nil then $s.save_dialog=true
     else
       $name=if starts_with($id,"file.save") or $id=="file.close" then "save" elif $id=="file.reload" then "reload" elif $id=="edit.redo" then "redo" else "undo" end
-      $lane=if $id=="edit.undo_any" then "any" elif $id=="edit.undo_other" then viu_document("inspect",$t.document,{}).last_remote.lane else nil end
+      $remote=viu_document("inspect",$t.document,{}).last_remote
+      $lane=if $id=="edit.undo_any" then "any" elif $id=="edit.undo_other" and $remote!=nil then $remote.lane else nil end
       if $id=="edit.undo_other" and $lane==nil then raise("CONFLICT","No other origin has edited this tab") end
       $v=viu_document("command",$t.document,{name:$name,path:$a.path,force:$a.force ?? false,lane:$lane,caller:$who})
       $op_id=$v.op_id
