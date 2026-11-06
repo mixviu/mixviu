@@ -4220,6 +4220,20 @@
       "destination_sha256": "e902f3648d6fd3af1ef04dedfaebd55f1d904a487b6f35ab5fc770c7e939c086",
       "source": "services/noded/src/subscription.rs",
       "source_sha256": "e902f3648d6fd3af1ef04dedfaebd55f1d904a487b6f35ab5fc770c7e939c086"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/test-broker/noded/session.rs",
+      "destination_sha256": "9d6bf563f19755dd557b598b4ecf6d310cfaa4402e9c152a4515379954e14170",
+      "source": "services/noded/src/session.rs",
+      "source_sha256": "9d6bf563f19755dd557b598b4ecf6d310cfaa4402e9c152a4515379954e14170"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/test-broker/noded/native_session_tests.rs",
+      "destination_sha256": "604c7e82602df34d7465762aaad700fe002edc307575ca5511ebd0f79bc106a2",
+      "source": "services/noded/src/native_session_tests.rs",
+      "source_sha256": "604c7e82602df34d7465762aaad700fe002edc307575ca5511ebd0f79bc106a2"
     }
   ],
   "licence": "MIT OR Apache-2.0",

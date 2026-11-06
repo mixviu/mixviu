@@ -2,6 +2,8 @@
 -- exact MixOS revision into this worktree, remap paths to the mixviu layout,
 -- and write per-file provenance. Lab only (decision 2026-11-06-engine-split-start).
 -- usage: mix tools/import_engine_split_mix.mix SRC_REPO REV STAGE_DIR
+-- It recopies whole crates: later lab commits to imported files are
+-- overwritten. Restore them with `git checkout HEAD -- PATH` afterwards.
 
 $a = args()
 if len($a) != 3 then
@@ -35,7 +37,7 @@ $map = [
   ["docs/_build/gen-builtins-md.mix", "docs/_build/gen-builtins-md.mix"],
 ]
 -- noded sources that test-broker compiles in through #[path]
-for $n in ["admission", "authority", "native_ingress", "noded", "observe", "props", "props_reservation", "protection", "routing", "spec", "spec_release", "subscription"]
+for $n in ["admission", "authority", "native_ingress", "noded", "observe", "props", "props_reservation", "protection", "routing", "spec", "spec_release", "subscription", "session", "native_session_tests"]
   push($map, ["services/noded/src/" .. $n .. ".rs", "libraries/test-broker/noded/" .. $n .. ".rs"])
 end
 
