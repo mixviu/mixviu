@@ -42,6 +42,7 @@ pub struct Endpoint {
     pub close_requested: Arc<AtomicBool>,
     pub dropped_notices: Arc<AtomicU64>,
     client: SharedClient,
+    hints: tokio::sync::mpsc::Sender<(String, Value)>,
     stop: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
 }
@@ -62,6 +63,7 @@ impl Endpoint {
         let client: SharedClient = Arc::new(Mutex::new(None));
         let shared = client.clone();
         let (stop, mut stopped) = oneshot::channel();
+        let (hints, mut hint_rx) = tokio::sync::mpsc::channel::<(String, Value)>(1);
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
@@ -77,6 +79,13 @@ impl Endpoint {
                     let event=tokio::select!{
                         _=&mut stopped=>break,
                         _=responses.join_next(),if !responses.is_empty()=>continue,
+                        hint=hint_rx.recv()=>{if let Some((topic,body))=hint {
+                            let mut frame=::bus::BusMessage::new();frame.set("command",&topic);frame.body=body.to_string();
+                            let headers=BTreeMap::from([("name".into(),topic.clone()),("retain".into(),"false".into())]);
+                            let wire=frame.to_wire();
+                            let outcome=tokio::select!{_=&mut stopped=>break,r=native.call_with_headers_raw_within("noded","topic.publish",&headers,&wire,Duration::from_secs(2))=>r};
+                            post(Notice{command:"bus.hint.completed".into(),args:json!({"topic":topic,"ok":matches!(outcome,Ok((0,_,_)))}),headers:BTreeMap::new()});
+                        }continue;},
                         changed=state.changed()=>{if changed.is_err(){break;}let connected=native.is_connected();post(Notice{command:if connected{"bus.connected"}else{"bus.disconnected"}.into(),args:json!({"generation":native.connection_generation()}),headers:BTreeMap::new()});continue;},
                         event=incoming.recv()=>match event{Some(event)=>event,None=>break}
                     };
@@ -113,6 +122,7 @@ impl Endpoint {
             close_requested,
             dropped_notices,
             client,
+            hints,
             stop: Some(stop),
             thread: Some(thread),
         }
@@ -135,6 +145,15 @@ impl Endpoint {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+    /// One bounded topic-publication slot on this same native connection.
+    /// The owner coalesces data and retries a refused/failed hint; no transport
+    /// or service identity is created. Completion is a native owner notice.
+    pub fn hint(&self, topic: String, body: Value) -> Result<(), String> {
+        if topic.is_empty() || topic.len()>256 || body.to_string().len()>4096 {
+            return Err("hint exceeds topic/body budget".into());
+        }
+        self.hints.try_send((topic,body)).map_err(|_|"native hint slot is busy or closed".into())
     }
 }
 struct Delivery {

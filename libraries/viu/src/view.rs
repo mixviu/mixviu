@@ -6,7 +6,7 @@ use crate::widgets::{Intent, Widget, Widgets};
 use egui::{Color32, Sense, Vec2};
 use scene::{Node, ResolvedScene};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap,BTreeSet};
 
 /// Data held by native virtual controls is independent of authored scene text
 /// and of legacy template row expansion. Refuse before changing live state.
@@ -38,6 +38,7 @@ pub struct SceneView {
     focus_error: Option<String>,
     shown_revision: Option<u64>,
     slots: BTreeMap<String, egui::Rect>,
+    overlays: BTreeSet<String>,
 }
 
 impl SceneView {
@@ -67,11 +68,19 @@ impl SceneView {
             focus_error: None,
             shown_revision: None,
             slots: BTreeMap::new(),
+            overlays: BTreeSet::new(),
         })
     }
 
     pub fn model(&self) -> &Value {
         &self.tree.model
+    }
+    /// Hosted controls retain the same identity, model and intent dispatch.
+    /// Their popup layers draw independently of the detached client layout.
+    pub fn set_overlay_controls(&mut self,ids:impl IntoIterator<Item=String>)->Result<(),String>{
+        let ids=ids.into_iter().collect::<BTreeSet<_>>();
+        if ids.iter().any(|id|!matches!(self.control_kind(id),Some("menubar"|"command-bar"))){return Err("only menu/command controls support native hosted overlays".into());}
+        self.overlays=ids;Ok(())
     }
     pub fn control_kind(&self, id: &str) -> Option<&str> {
         let node = self.tree.nodes.get(id)?;
@@ -178,6 +187,14 @@ impl SceneView {
         let tree = self.tree.clone();
         let nodes = tree.nodes.into_iter().collect();
         self.node(ui, "root", &nodes, None, 0, &mut events);
+        for id in &self.overlays {
+            let node=&nodes[id];
+            if let Ok(widget)=Widget::decode(&node.ports["definition"]){
+                egui::Area::new(ui.id().with(("viu-hosted-overlay",id))).fixed_pos(ui.ctx().content_rect().left_top()).order(egui::Order::Foreground).show(ui.ctx(),|ui|{
+                    for intent in self.widgets.widget(ui,&widget,&self.tree.model){if let Some(command)=node.ports.get("on_intent").and_then(Value::as_str){events.push(Event::from_intent(command,&self.tree.name,intent));}}
+                });
+            }
+        }
         self.geometry
             .extend(self.widgets.geometry.iter().map(|(id, r)| (id.clone(), *r)));
         self.focus_error = self.widgets.finish_frame().err();
@@ -278,6 +295,7 @@ impl SceneView {
         let Some(node) = nodes.get(id) else {
             return;
         };
+        if self.overlays.contains(id){return;}
         if node.ports.get("hidden").and_then(Value::as_bool) == Some(true) {
             return;
         }

@@ -12,6 +12,7 @@ pub mod fonts;
 pub mod icons;
 pub mod image_view;
 pub mod jobs;
+pub mod hosting;
 pub mod macro_host;
 pub mod native_bus;
 mod native_primitives;

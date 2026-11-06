@@ -62,6 +62,8 @@ struct App {
     focus_serial: Option<(u64, String)>,
     title: String,
     window_frame: viu::window_frame::WindowFrame,
+    hosting: viu::hosting::Hosting,
+    chrome_state: (bool,bool),
 }
 impl App {
     fn ready(&self) -> bool {
@@ -306,13 +308,15 @@ impl App {
     }
     fn request(&mut self, r: Request, ctx: &egui::Context) {
         let Request {
-            command,
+            mut command,
             args,
             headers,
             reply,
             close_after_reply,
             ..
         } = r;
+        let service=format!("dopus-{}",self.mode);
+        if let Some(suffix)=command.strip_prefix(&format!("{service}.")) {command=format!("dopus.{suffix}");}
         tracing::debug!(command, "Bus command received");
         if let Some(answer) = viu::debug::request("dopus", &command, &args.to_string()) {
             let _ = reply.send(answer);
@@ -362,6 +366,11 @@ impl App {
             let _ = reply.send((10, json!({"error_code":"NOT_READY"})));
             return;
         }
+        if command=="dopus.execute" {
+            if let Some(id)=args["id"].as_str().and_then(|id|viu::hosting::popup_target(&self.model["values"]["toolbar"],id)) {
+                viu::rich::command_popup(ctx,id);self.replies_after_frame.push(reply);return;
+            }
+        }
         match command.as_str() {
             "HELP" => {
                 let _ = reply.send((0, json!({"commands":commands()})));
@@ -398,12 +407,14 @@ impl App {
                 let _ = reply.send((0, viu::rich::menu_form(ctx)));
             }
             "dopus.ui.titlebar.form" => {
+                let eligible=viu::hosting::Hosting::eligible(&self.session.snapshot["state"]["values"]);
+                if eligible && r.from==std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_|"shell".into()) {self.hosting.confirmed=true;ctx.request_repaint();}
                 let _ = reply.send((
                     0,
-                    self.window_frame.form(
+                    self.hosting.form(self.window_frame.form(
                         &self.session.snapshot["state"]["values"],
                         Some(&format!("dopus-{}", self.mode)),
-                    ),
+                    ),eligible),
                 ));
             }
             "dopus.ui.menu.popup" => {
@@ -804,12 +815,26 @@ impl App {
             let Ok(notice) = self.bus.notices.try_recv() else {
                 break;
             };
+            if notice.command=="bus.hint.completed" {self.hosting.completed(notice.args["ok"]==true);continue;}
+            if notice.command=="bus.connected" || notice.command=="bus.disconnected" {self.hosting.reconnect();}
+            if let Some(suffix)=notice.command.strip_prefix(&format!("dopus-{}.",self.mode)) {
+                if suffix=="ui.menu.popup" {if let Err(error)=viu::rich::menu_popup(ctx,"menu",&notice.args){self.error=error;}continue;}
+                if suffix=="execute" {
+                    if let Some(id)=notice.args["id"].as_str().and_then(|id|viu::hosting::popup_target(&self.model["values"]["toolbar"],id)) {viu::rich::command_popup(ctx,id);}
+                    else {self.call("dopus.execute".into(),notice.args,notice.headers,None,ctx);}
+                    continue;
+                }
+            }
             self.session.hint(&notice.command, &notice.args);
             self.notices.push_back(notice);
         }
         if let Some(snapshot) = self.session.poll() {
             self.session_pending = Some(snapshot);
         }
+        let settings=&self.session.snapshot["state"]["values"];
+        let hosted=self.hosting.confirmed && viu::hosting::Hosting::eligible(settings);
+        let chrome=(hosted && settings["window.menu_style"]=="titlebar",hosted);
+        if chrome!=self.chrome_state {self.chrome_state=chrome;self.session_pending=Some(self.session.snapshot.clone());}
         if self.ready() {
             if let Some(mut snapshot) = self.session_pending.take() {
                 if viu::appearance::resolve(&snapshot["appearance"]).is_err() {
@@ -824,9 +849,11 @@ impl App {
                             action["keys"] = keys.clone();
                         }
                     }
+                    let mut window=snapshot["state"]["values"].clone();
+                    window["viu.hosted-menu"]=json!(self.chrome_state.0);window["viu.hosted-actions"]=json!(self.chrome_state.1);
                     self.call(
                         "dopus.session".into(),
-                        json!({"appearance":snapshot["appearance"],"keymap":snapshot["keymap"],"window":snapshot["state"]["values"]}),
+                        json!({"appearance":snapshot["appearance"],"keymap":snapshot["keymap"],"window":window}),
                         BTreeMap::new(),
                         None,
                         ctx,
@@ -916,6 +943,9 @@ impl eframe::App for App {
             &self.session.snapshot["state"]["values"],
             Some(&format!("dopus-{}", self.mode)),
         );
+        viu::rich::configure_hosting(ctx,self.chrome_state.0,self.chrome_state.1);
+        if let Err(error)=self.hosting.update(&self.model["values"]["toolbar"]){self.error=error;}
+        self.hosting.poll(ctx,&self.bus,&format!("dopus-{}",self.mode),viu::hosting::Hosting::eligible(&self.session.snapshot["state"]["values"]));
         self.window_frame.show_with_chrome(
             ui,
             &self.title,
@@ -928,6 +958,8 @@ impl eframe::App for App {
             }),
         );
         if let Some(view) = self.view.as_mut() {
+            let mut overlays=Vec::new();if self.chrome_state.0 {overlays.push("menu".into());}if self.chrome_state.1 {overlays.push("toolbar".into());}
+            if let Err(error)=view.set_overlay_controls(overlays){self.error=error;}
             let slots = self
                 .window_frame
                 .geometry
@@ -1175,7 +1207,7 @@ fn main() -> eframe::Result {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([980.0, 760.0])
                 .with_min_inner_size([480.0, 300.0])
-                .with_app_id(format!("mixviu.dopus.{mode}")),
+                .with_app_id(format!("dev.mixos.dopus-{mode}")),
             ..Default::default()
         },
         Box::new(move |cc| {
@@ -1185,6 +1217,7 @@ fn main() -> eframe::Result {
             let wake: viu::runtime::Wake = Arc::new(move || context.request_repaint());
             let descriptors = commands()
                 .into_iter()
+                .chain(["ui.menu.popup","ui.titlebar.form","execute"].into_iter().map(|suffix|format!("dopus-{mode}.{suffix}")))
                 .map(|name| {
                     bus::CommandDescriptor::new(
                         &name,
@@ -1304,6 +1337,8 @@ fn main() -> eframe::Result {
                 input_wait: false,
                 replies_after_frame: Vec::new(),
                 notices: VecDeque::new(),
+                hosting:Default::default(),
+                chrome_state:(false,false),
                 error: String::new(),
                 last_service_us: 0,
                 last_model_at: Instant::now(),
