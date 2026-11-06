@@ -1,23 +1,108 @@
-# Backdrop — document and retained-raster checkpoint
+# Backdrop round two — Fable decision required
 
-Overall parity: NOT ACCEPTED. This checkpoint is implementation work, not the requested final feature/visual acceptance. No deviation or Fable question is proposed.
+**NOT ACCEPTED.** Stop for Fable under the standing brief's “propose to
+deviate from gold” rule. No waiver is assumed. Opus can take the question
+below to Fable; the other open acceptance items remain required afterwards.
 
-Exact tested code: d825c2ae665c1d6fe06d73708242f84bb3682774. Gold: 8779f33284b7d3f1178c3d57a699efb9b0867b22. Receipt-only commit follows. docs/ports/backdrop.md records the inventory correction and exact checkpoint scope.
+Exact release/test source: `d34633db087f1e6d6f3281d5f5e207a65057af99`,
+branch `lab/parity-backdrop`. This file and `docs/ports/backdrop.md` form a
+receipt-only documentation commit after that source. Gold remains
+`8779f33284b7d3f1178c3d57a699efb9b0867b22`. Gold has no chooser/settings
+window; its shared-window-frame adoption is inapplicable to the background
+and standalone probe layers.
 
-Gold has no chooser/settings window: only the background layer and standalone probe. No shared window frame is applicable. Gold does include the train view, which remains required.
+## Question for Fable: live Prefs versus the pinned gold behaviour
 
-Implemented: strict Mix document schema and canonicalisation, CLI config/image/colour/fit parsing and startup loading, structured invalid-set refusal, pure slideshow traversal/deadlines/failure handling, shared retained raster facility with the gold bounded decoder and provenance. Root/Jobs evaluators share the native handle store; image-fill renders the decoded handle without reopening paths, accounts resident/texture overlap, uses original dimensions for native sizing, and shares ownership with newly added output views.
+May Backdrop keep the live native settings follower, deliberately differing
+from the gold application's startup-only appearance?
 
-CBC 20261107-090116-633bcd47-a1 passed at the exact tested code on cbc3: four Mix suites, eight lint checks, fmt check, 13 raster-related tests, three app-port tests and normal Clippy. No worker diff. Complete saved log read. Earlier failed/green job IDs are in the port record. No release artifact, install, VT action or native compositor test was performed.
+- **B — recommended:** retain the port's live Prefs response and approve
+  this specific behaviour/visual deviation. Then complete the remaining
+  appearance matrix against the gold toolkit's tokens, using fresh-start
+  gold captures where necessary. The current implementation is B, awaiting
+  approval; it is not accepted merely because it exists.
+- **A — strict gold:** remove the live follower for Backdrop, preserve the
+  startup-only look and explicitly waive this app's standing live-Prefs
+  acceptance criterion. Re-run the native matrix with that behaviour.
 
-Required next work:
+Evidence: pinned `apps/backdrop/src/main.rs` passes `Theme::load()` once to
+`Backdrop::new`; its program installs the theme at setup. The pinned layer
+loop has no settings-session follower. This is confirmed by two isolated
+native gold runs, not inferred solely from source. The release pair's gold
+PID 2945883 remains alive while private settingsd accepts/resolves light
+(revision 3). Its before/after PNG SHA256 is identical:
+`a761cc8b8692b55e8eff32604d1520bfec0a6eb56178ac861110c6db327baf26`;
+SSIM/RMSE distortion is 0/0. Candidate PID 2946263 remains alive at its
+light revision 5 and produces
+`a03f8a4eb4f1e9445ebff5adaed673435e7e862cfc5718dc47f86c25afafbbc9`.
+The light gold/candidate pair differs across the background: normalised
+SSIM distortion 0.418086, RMSE 0.887584. Both were dark and pixel-identical
+before the live change. Full state, settings CAS/readbacks, captures and
+figures are retained. C1 explicitly concerns evident layout defects that
+hide function; applying it to an absent settings follower would be a new
+interpretation, so no C1 exemption is presumed.
 
-- Wire retained handles into the Mix wallpaper transaction controller. Use Jobs for blocking decode/store; hold and finish native call receipts. Fence superseded work and release stale handles, including cancellation during decode. Current app still publishes path-based models and old model-only success replies.
-- Preserve last applied document/pixels on IMAGE/STORE refusal, implement durable storage and exact requested/active/pending/state/output envelopes, source refresh at the same path, and full gold descriptors, debug, action/executed surface.
-- Wire independent slideshow schedules with native one-shot deadlines, folder/list startup selection, failed-entry retries, manual next and half-second crossfade. schedule.mix is pure and tested but is not yet used by the running app.
-- Port probe rendering and train 2D/3D, queue/history/gate, retained alerts, visibility/animation leases and view commands. Probe currently explicitly refuses.
-- Replace hardcoded theme fallback and polling with live gold appearance/settings behaviour. Exercise all Prefs fields, authority loss/recovery and unchanged PIDs.
-- Test simultaneous outputs, hotplug/removal, scale/work-area changes, texture starvation and wake-on-release. Native store/renderer tests are not output acceptance.
-- Build and hash exact release bytes, run the isolated gold/candidate recipe, capture every required state, compare whole/regions with parity_compare.mix and inspect images; retain Bus replies and owned-process cleanup. Existing six-mode AE=0 is historical, not revalidated by this checkpoint.
+## Implemented checkpoint and evidence
 
-Branch lab/parity-backdrop; head SHA d825c2ae665c1d6fe06d73708242f84bb3682774 (exact tested code; receipt HEAD is the commit containing this file); parity evidence: document/launch/schedule and retained-raster contracts pass, full features/Bus/Prefs incomplete, SSIM/regions pending; CBC job ids: 20261107-090116-633bcd47-a1, 20261107-085920-7963d5d5-a1, 20261107-085822-29188e7c-a1, 20261107-085523-b9e3c76c-a1; failed 20261107-085433-7d251078-a1, 20261107-090016-dbccaea6-a1.
+Retained-raster decode-before-commit, durable set, held Bus replies,
+supersession scopes, same-path refresh, independent slideshow timers,
+failed-slide skipping, manual next and crossfade ownership are wired into
+the running Mix controller. Train views/readers/history/gate/alerts and the
+offline probe variant are implemented in Mix over reusable native widgets.
+Generic layers now expose native output/configure/presentation/input
+events and a settings session; app policy remains in-process Mix. No
+per-app Rust, install or VT change.
+
+Release SHA256:
+`5df196a34e6ddf6ccc96ffa3f80ba6fff6eda39d0f9fb0c3749b78fcb292187c`,
+fetched and verified against CBC's source/profile receipt before use.
+Private archive: `_var/backdrop-parity-20261107/pair.6PjeW0` in the private
+hub. It retains scripts, receipts/hashes, native Bus traffic, source archive,
+PNGs and ten comparison sets. Gold/candidate use canonical `backdrop`
+sequentially on an owned native broker, compd and settingsd, 1040×680,
+scale 1, Studio dark, comfortable. All five owned PIDs are confirmed exited.
+
+Whole/wallpaper SSIM and RMSE distortions are both **0** for colour, fill,
+fit, centre, tile, stretch and default dark theme. All 12 HELP descriptors
+match exactly. Both train renderers' unavailable states match exactly in
+header, queues and scene. History differs only at the rounded “Now” legend
+background corners: SSIM distortion 0.0000246615 / RMSE 0.000493558;
+whole-image 0.00000689071 / 0.000260892. Originals, side-by-side and diff
+figures were inspected; that small difference is still open. ImageMagick
+7.1.2-35 reports SSIM as distortion (zero identical, lower better).
+
+Native decode refusal preserves active config/revision. Runtime/Jobs tests
+also cover same-path replacement, failed slide traversal, source-document
+retention and fade ownership. Full feature/Bus/Prefs acceptance is not
+implied by HELP or those focused witnesses.
+
+CBC `20261107-094413-6a3e7ac6-a1` on cbc3: **BUILD_RC=0**, exact source
+above, `mix tools/backdrop_accept_gate.mix`, 647.2 seconds. Six Mix suites,
+lint, rustfmt check, both artifacts, 23 raster-related tests, five app/controller
+tests, normal Clippy and complete Viu/engine tests pass, with no worker diff.
+The full saved 2717-line log was read, including warnings and six existing
+ignored engine tests (installed icon tree / offscreen snapshots / native GPU
+process gate). Those ignored cases are not claimed as passed. Saved log:
+`20261107-094413-cbc3-d34633db087f-20261107-094413-6a3e7ac6-a1-c479a8c5.log`
+in the CBC client cache. Earlier green prepare/artifact job
+`20261107-093600-9a0a97f4-a1` returned formatting, applied before this exact
+gate; repair receipts are preserved in the port record.
+
+## Open after the ruling
+
+- Complete native Bus payload/refusal/topic/debug/action-executed audit.
+  Observed port train output state still reports underlying `theme` rather
+  than `train`; view-frame counters also need gold-compatible semantics.
+  Invalid-view error wrapping and nullary executed params need comparison.
+- Close the train legend corners and exercise populated deterministic and
+  real train/build services, retained alerts, stale reads and large histories.
+- Capture timed slideshows/crossfades, supersession and storage failures;
+  exercise native probe/input and CLI refusal/exit-code cases.
+- Complete the approved Prefs matrix, authority loss/recovery, fractional
+  scale, work areas and native texture starvation/wake-on-release.
+- Simultaneous outputs/hotplug is unverified. Pinned headless backend owns
+  exactly one `headless-0`; nested owns exactly one `winit`; CLI has no
+  output-count flag. The actual witness is one 1040×680 scale-1 output.
+  Shared output-store/removal tests do not substitute for compositor evidence.
+
+Branch lab/parity-backdrop; head SHA d34633db087f1e6d6f3281d5f5e207a65057af99 (exact tested code; receipt HEAD is the commit containing this file); OPEN: Fable live-Prefs ruling, full features/Bus/Prefs and train legend acceptance; CBC job ids: 20261107-094413-6a3e7ac6-a1, 20261107-093600-9a0a97f4-a1, 20261107-093016-40e41e4e-a1; repair failures listed in docs/ports/backdrop.md.
