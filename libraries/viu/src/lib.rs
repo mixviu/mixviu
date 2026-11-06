@@ -34,8 +34,8 @@ pub mod widgets;
 pub mod window_frame;
 
 pub mod calls;
-pub mod platform;
 pub mod decorations;
 pub mod input;
 pub mod layer;
+pub mod platform;
 pub mod ui_state;

@@ -19,7 +19,7 @@ use std::{
 struct Document {
     diagnostics: editor_model::diag::Diagnostics,
     matches: Vec<std::ops::Range<usize>>,
-    resyncs:u64,
+    resyncs: u64,
     mirror: Mirror,
     model: EditorModel,
     highlight: Highlight,
@@ -142,14 +142,21 @@ fn scalar_offset(text: &edit::text::Text, mut n: usize) -> usize {
 impl Document {
     fn step(&mut self, step: Step) {
         for delta in step.deltas {
-            if delta.kind==editor_model::types::DeltaKind::Resync{self.resyncs+=1;}
+            if delta.kind == editor_model::types::DeltaKind::Resync {
+                self.resyncs += 1;
+            }
             self.diagnostics.apply_delta(&delta);
             self.matches.clear();
             self.model.apply_delta(&delta);
             self.highlight.apply_delta(self.mirror.text(), &delta);
         }
         self.model.clamp(self.mirror.text());
-        self.model.remote=self.mirror.remote_cursors().iter().filter_map(|(origin,sels)|origin.parse().ok().map(|origin|(origin,sels.clone()))).collect();
+        self.model.remote = self
+            .mirror
+            .remote_cursors()
+            .iter()
+            .filter_map(|(origin, sels)| origin.parse().ok().map(|origin| (origin, sels.clone())))
+            .collect();
         self.out.extend(step.out);
         self.notices
             .extend(step.notices.into_iter().map(|n| format!("{n:?}")));
@@ -244,7 +251,7 @@ impl Documents {
             let mut doc = Document {
                 diagnostics: Default::default(),
                 matches: Vec::new(),
-                resyncs:0,
+                resyncs: 0,
                 mirror,
                 model: EditorModel::default(),
                 highlight: Highlight::for_language(

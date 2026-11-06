@@ -34,9 +34,19 @@ impl Input {
         let mut now = vec![egui::Event::ModifiersChanged(modifiers)];
         match command {
             "ime" => {
-                let text=a["text"].as_str().unwrap_or("");
-                if text.len()>65536 {return Err("IME text limit is 65536 bytes".into());}
-                let event=match a["phase"].as_str(){Some("enabled")=>egui::ImeEvent::Enabled,Some("preedit")=>egui::ImeEvent::Preedit(text.into()),Some("commit")=>egui::ImeEvent::Commit(text.into()),Some("disabled")=>egui::ImeEvent::Disabled,_=>return Err("IME phase must be enabled, preedit, commit or disabled".into())};
+                let text = a["text"].as_str().unwrap_or("");
+                if text.len() > 65536 {
+                    return Err("IME text limit is 65536 bytes".into());
+                }
+                let event = match a["phase"].as_str() {
+                    Some("enabled") => return Ok(()),
+                    Some("preedit") => egui::ImeEvent::Preedit { text:text.into(),active_range_chars:None },
+                    Some("commit") => egui::ImeEvent::Commit(text.into()),
+                    Some("disabled") => egui::ImeEvent::Preedit { text:String::new(),active_range_chars:None },
+                    _ => {
+                        return Err("IME phase must be enabled, preedit, commit or disabled".into());
+                    }
+                };
                 now.push(egui::Event::Ime(event));
             }
             "menu.open" => {

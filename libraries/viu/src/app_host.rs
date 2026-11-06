@@ -15,9 +15,9 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
-    platform:crate::platform::Platform,
-    paste_waits:std::collections::VecDeque<String>,
-    platform_results:std::collections::VecDeque<Value>,
+    platform: crate::platform::Platform,
+    paste_waits: std::collections::VecDeque<String>,
+    platform_results: std::collections::VecDeque<Value>,
     service: String,
     native_drive: bool,
     drive_next: u64,
@@ -220,8 +220,12 @@ impl eframe::App for Host {
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
         if !self.paste_waits.is_empty() {
             raw.events.retain(|event| {
-                if let egui::Event::Paste(text)=event {
-                    if let Some(id)=self.paste_waits.pop_front(){self.platform_results.push_back(json!({"id":id,"text":text}));return false;}
+                if let egui::Event::Paste(text) = event {
+                    if let Some(id) = self.paste_waits.pop_front() {
+                        self.platform_results
+                            .push_back(json!({"id":id,"text":text}));
+                        return false;
+                    }
                 }
                 true
             });
@@ -247,11 +251,27 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
-        for request in self.platform.take(){
-            if request["kind"]=="copy" {ui.ctx().copy_text(request["body"]["text"].as_str().unwrap_or("").into());}
-            else {self.paste_waits.push_back(request["id"].as_str().unwrap_or("").into());ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);}
+        for request in self.platform.take() {
+            if request["kind"] == "copy" {
+                ui.ctx()
+                    .copy_text(request["body"]["text"].as_str().unwrap_or("").into());
+            } else {
+                self.paste_waits
+                    .push_back(request["id"].as_str().unwrap_or("").into());
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
         }
-        while let Some(result)=self.platform_results.front(){if self.runtime.notify("viu.platform.completed".into(),result.clone()).is_err(){break;}self.platform_results.pop_front();}
+        while let Some(result) = self.platform_results.front() {
+            if self
+                .runtime
+                .notify("viu.platform.completed".into(), result.clone())
+                .is_err()
+            {
+                break;
+            }
+            self.platform_results.pop_front();
+        }
         if self.native_drive {
             toolkit::drive::set_service(
                 ui.ctx(),
@@ -591,9 +611,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let timers = crate::timers::Timers::default();
     let calls = crate::calls::Calls::default();
     let ui_state = crate::ui_state::UiState::default();
-    let platform=crate::platform::Platform::default();
+    let platform = crate::platform::Platform::default();
     let services = crate::runtime::Services {
-        platform:Some(platform.clone()),
+        platform: Some(platform.clone()),
         ui_state: Some(ui_state.clone()),
         macros: bundle.manifest.macros.then(|| {
             let roots = macros::Roots::resolve().map(|mut roots| {
@@ -639,8 +659,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .join("viu-captures");
     Host {
         platform,
-        paste_waits:Default::default(),
-        platform_results:Default::default(),
+        paste_waits: Default::default(),
+        platform_results: Default::default(),
         service: bundle.manifest.service.clone(),
         native_drive: bundle.manifest.native_drive,
         drive_next: 0,
