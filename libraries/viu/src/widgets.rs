@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 pub const KINDS: &[&str] = &[
     "mark",
     "status-line",
+    "time-series",
     "label",
     "button",
     "field",
@@ -130,6 +131,7 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
+            "time-series" => return crate::time_series::validate(value),
             "status-line" => {
                 value["left"].is_string()
                     && value["right"]
@@ -199,7 +201,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.kind == "mark" || self.kind == "status-line" {
+        if self.kind == "mark" || self.kind == "status-line" || self.kind == "time-series" {
             return vec![];
         }
         if self.kind == "editor" && self.properties["read_only"] == true {
@@ -473,6 +475,7 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
+            "time-series" => crate::time_series::draw(ui,id,value),
             "status-line" => {
                 toolkit::bars::status(ui, |ui| {
                     let colour = if value["error"] == true {
