@@ -89,6 +89,7 @@ pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), 
     toolkit::install(ctx, theme);
     // Normal clients have the same presentation in debug and release builds.
     // Fractional spacing is valid; egui's development overlay is opt-in.
+    #[cfg(debug_assertions)]
     for theme in [egui::Theme::Light, egui::Theme::Dark] {
         ctx.style_mut_of(theme, |style| style.debug.show_unaligned = false);
     }
