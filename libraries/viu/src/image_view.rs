@@ -36,6 +36,7 @@ struct Slot {
     _lease: Option<crate::raster::TextureLease>,
 }
 pub(crate) struct Images {
+    fills: BTreeMap<String, crate::raster_fill::Fill>,
     rasters: Option<crate::raster::Rasters>,
     decoder: crate::thumbnail::Decoder<Key>,
     slots: BTreeMap<String, Slot>,
@@ -44,6 +45,7 @@ pub(crate) struct Images {
 impl Default for Images {
     fn default() -> Self {
         Self {
+            fills: BTreeMap::new(),
             rasters: None,
             decoder: crate::thumbnail::Decoder::new("viu-preview-decode"),
             slots: BTreeMap::new(),
@@ -62,12 +64,16 @@ impl Images {
         }
     }
     pub fn states(&self) -> Value {
+        if !self.fills.is_empty() {
+            return serde_json::json!(self.fills.iter().map(|(id,fill)|(id.clone(),fill.status.clone())).collect::<BTreeMap<_,_>>());
+        }
         serde_json::json!(self.slots.iter().map(|(id,s)|(id.clone(),serde_json::json!({"path":s.path,"phase":if s.texture.is_some(){"ready"}else if s.answered{"failed"}else{"pending"}}))).collect::<BTreeMap<_,_>>())
     }
     pub fn begin(&mut self) {
         self.visible.clear();
     }
     pub fn finish(&mut self) {
+        self.fills.retain(|id, _| self.visible.contains(id));
         self.slots.retain(|id, _| self.visible.contains(id));
         self.decoder.retain(
             &self
@@ -81,6 +87,13 @@ impl Images {
         self.draw_internal(ui, id, value, false)
     }
     pub fn draw_fill(&mut self, ui: &mut Ui, id: &str, value: &Value) -> egui::Response {
+        if value["retained"] == true {
+            self.visible.insert(id.into());
+            if let Some(rasters) = &self.rasters {
+                return self.fills.entry(id.into()).or_default().draw(ui, value, rasters);
+            }
+            return ui.colored_label(egui::Color32::RED, "retained raster facility unavailable");
+        }
         self.draw_internal(ui, id, value, true)
     }
     fn draw_internal(

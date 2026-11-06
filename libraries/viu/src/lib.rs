@@ -30,6 +30,8 @@ mod native_primitives;
 mod native_theme;
 pub mod raster;
 pub mod raster_decode;
+pub mod raster_fit;
+pub mod raster_fill;
 pub mod rich;
 pub mod runtime;
 pub mod session;

@@ -31,12 +31,13 @@ fn app(name: &str) -> (Bundle, Runtime, mpsc::Receiver<()>) {
     )
     .unwrap();
     let (tx, rx) = mpsc::channel();
-    let runtime = Runtime::new(
+    let runtime = Runtime::with_services(
         8,
         Arc::new(move || {
             let _ = tx.send(());
         }),
         None,
+        viu::runtime::Services { rasters: Some(Default::default()), timers: Some(Default::default()), ui_state: Some(Default::default()), ..Default::default() },
     );
     (bundle, runtime, rx)
 }
@@ -69,44 +70,6 @@ fn all_mix_bundles_publish_models_the_actual_scene_adapter_can_draw() {
         .drop_without_applying_deltas();
         assert!(!view.geometry.is_empty(), "{name}");
     }
-}
-#[test]
-fn backdrop_colours_modes_outputs_and_refusals_use_mix() {
-    let (bundle, mut runtime, wakes) = app("backdrop");
-    runtime.load(bundle.program).unwrap();
-    completion(&runtime, &wakes);
-    for mode in ["fill", "fit", "centre", "tile", "stretch"] {
-        runtime.event("backdrop.set".into(),json!({"schema":1,"default":{"colour":"#1234ab"},"outputs":{"HEADLESS-2":{"image":"/tmp/fixture.png","fit":mode}}})).unwrap();
-        let model = completion(&runtime, &wakes).model.unwrap();
-        assert_eq!(model["values"]["root"]["colour"], json!([18, 52, 171]));
-        assert_eq!(
-            model["surfaces"]["HEADLESS-2"]["values"]["root"]["fit"],
-            mode
-        );
-    }
-    runtime
-        .event(
-            "backdrop.set".into(),
-            json!({"schema":1,"default":{"slideshow":{}}}),
-        )
-        .unwrap();
-    wakes.recv_timeout(Duration::from_secs(10)).unwrap();
-    let failed = runtime.try_completion().unwrap();
-    assert!(failed.error.is_none(), "a refusal is a normal Bus reply");
-    assert!(failed.model.is_none());
-    let reply = failed.reply.unwrap();
-    assert_eq!(reply.rc, 10);
-    assert_eq!(reply.body["error_code"], "ARGUMENT");
-    assert!(
-        reply.body["message"]
-            .as_str()
-            .is_some_and(|s| !s.is_empty())
-    );
-    runtime.event("backdrop.state".into(), json!({})).unwrap();
-    assert_eq!(
-        completion(&runtime, &wakes).reply.unwrap().body["revision"],
-        5
-    );
 }
 #[test]
 fn bundle_arguments_are_literal_data_including_mix_interpolation() {

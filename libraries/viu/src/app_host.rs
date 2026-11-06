@@ -1189,7 +1189,9 @@ impl crate::layer::LayerProgram for LayerHost {
             .get(&output)
             .and_then(|o| o["presented_frames"].as_u64())
             .unwrap_or(0);
-        host.outputs.insert(output.clone(),json!({"width":surface.width,"height":surface.height,"scale":surface.scale,"presented_frames":frames}));
+        let state = host.outputs.entry(output.clone()).or_insert_with(|| json!({}));
+        state["width"] = json!(surface.width);state["height"] = json!(surface.height);state["scale"] = json!(surface.scale);state["presented_frames"] = json!(frames);
+        host.ui_state.set_outputs(&host.outputs);
         let (view, loaded) = self
             .views
             .entry(output.clone())
@@ -1200,6 +1202,12 @@ impl crate::layer::LayerProgram for LayerHost {
         // Layer hosts use the same owner loop; eframe's Frame is not needed.
         host.pump(ui.ctx());
         host.frame(ui);
+        if let Some(state) = host.outputs.get_mut(host.output.as_ref().unwrap()) {
+            let raster = host.view.raster_states();
+            if raster["root"].is_object() {
+                for key in ["shows", "error", "fit"] { state[key] = raster["root"][key].clone(); }
+            }
+        }
         std::mem::swap(&mut host.view, view);
         std::mem::swap(&mut host.loaded, loaded);
     }
@@ -1208,6 +1216,7 @@ impl crate::layer::LayerProgram for LayerHost {
         self.views.remove(&output);
         if let Some(host) = &mut self.host {
             host.outputs.remove(&output);
+            host.ui_state.set_outputs(&host.outputs);
         }
         self.contexts.lock().unwrap().retain(|c| c != ctx);
     }
@@ -1218,8 +1227,9 @@ impl crate::layer::LayerProgram for LayerHost {
                 state["presented_frames"] =
                     json!(state["presented_frames"].as_u64().unwrap_or(0) + 1);
                 state["presented_revision"] =
-                    json!(self.views.get(&output).map(|(v, _)| v.revision));
+                    json!(self.views.get(&output).map(|(v, _)| v.model()["serial"].as_u64().unwrap_or(v.revision)));
             }
+            host.ui_state.set_outputs(&host.outputs);
         }
     }
 }

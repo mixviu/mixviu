@@ -7,15 +7,23 @@ use std::{
     sync::{Arc, Mutex},
 };
 #[derive(Clone, Default)]
-pub struct UiState(Arc<Mutex<Value>>);
+pub struct UiState(Arc<Mutex<Value>>, Arc<Mutex<Value>>);
 impl UiState {
+    pub fn set_outputs(&self, outputs: &BTreeMap<String, Value>) {
+        *self.1.lock().unwrap() = json!(outputs);
+    }
     pub fn set(&self, window: egui::Rect, geometry: &BTreeMap<String, egui::Rect>, stats: Value) {
         let rect = |r: egui::Rect| json!([r.min.x, r.min.y, r.width(), r.height()]);
         *self.0.lock().unwrap() = json!({"window":rect(window),"geometry":geometry.iter().map(|(id,r)|(id.clone(),rect(*r))).collect::<serde_json::Map<_,_>>(),"stats":stats});
     }
     pub fn binding(&self) -> mix::evaluator::ExtFn {
         let state = self.clone();
-        mix::sync_ext(move |_| crate::runtime::from_json(state.0.lock().unwrap().clone()))
+        mix::sync_ext(move |_| {
+            let mut value = state.0.lock().unwrap().clone();
+            if !value.is_object() { value = json!({}); }
+            value["outputs"] = state.1.lock().unwrap().clone();
+            crate::runtime::from_json(value)
+        })
     }
 }
 #[derive(Default)]
