@@ -1,0 +1,54 @@
+[package]
+name = "blobd"
+description = "Node blob store: content-addressed bytes over mds, owner pins, quotas, GC"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+autobins = false
+
+[package.metadata.mixos]
+component = "blobd"
+kind = "service"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[lib]
+name = "blobd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "blobd"
+path = "src/main.rs"
+
+[dependencies]
+paths = { path = "../../libraries/paths" }
+mds = { path = "../../libraries/mds" }
+props = { path = "../../libraries/props", features = ["bus"] }
+bus = { path = "../../libraries/bus" }
+buildinfo.workspace = true
+config = { path = "../../libraries/config" }
+logging = { path = "../../libraries/logging" }
+rusqlite.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+clap = { workspace = true }
+# flock on <root>/.blobd.lock — one GC owner per root.
+libc.workspace = true
+uuid.workspace = true
+blake3.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "net", "rt-multi-thread", "signal"] }
+futures-util.workspace = true
+axum.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
+http-body-util = "0.1"
+tokio-util = { version = "0.7", features = ["io"] }
+
+[dev-dependencies]
+tempfile.workspace = true

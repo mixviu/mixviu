@@ -51,7 +51,7 @@ $fails = $fails + check("shell build as mixd refuses, no loop", not $r.ok and no
 $pers = path_join($dir, "pers")
 mkdir($pers)
 $listed = run_argv([$mixd, "--personalities"], {timeout: 30})
-for $p in ["noded", "settingsd", "editd"]
+for $p in ["noded", "settingsd", "editd", "monitord", "dnsd", "blobd", "hostd", "mixtrayd"]
   run_argv_must(["ln", "-s", $mixd, path_join($pers, $p)])
   $r = run_argv([path_join($pers, $p), "--version"], {timeout: 30})
   $fails = $fails + check($p .. " personality answers --version", $r.ok and contains($r.stdout, $p), trim($r.stdout .. $r.stderr))

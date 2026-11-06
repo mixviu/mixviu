@@ -28,6 +28,16 @@ const PERSONALITIES: &[(&str, &str)] = &[
     ("settingsd", settingsd::COMPONENT_VERSION),
     #[cfg(feature = "editd")]
     ("editd", editd::COMPONENT_VERSION),
+    #[cfg(feature = "monitord")]
+    ("monitord", monitord::COMPONENT_VERSION),
+    #[cfg(feature = "dnsd")]
+    ("dnsd", dnsd::COMPONENT_VERSION),
+    #[cfg(feature = "blobd")]
+    ("blobd", blobd::COMPONENT_VERSION),
+    #[cfg(feature = "hostd")]
+    ("hostd", hostd::COMPONENT_VERSION),
+    #[cfg(feature = "mixtrayd")]
+    ("mixtrayd", mixtrayd::COMPONENT_VERSION),
 ];
 
 /// A personality whose main returns `anyhow::Result`, reported the way Rust's
@@ -141,6 +151,16 @@ fn run_personality(name: &str) -> ExitCode {
         "settingsd" => exit_of(settingsd::main()),
         #[cfg(feature = "editd")]
         "editd" => exit_of(editd::main()),
+        #[cfg(feature = "monitord")]
+        "monitord" => monitord::main(),
+        #[cfg(feature = "dnsd")]
+        "dnsd" => dnsd::main(),
+        #[cfg(feature = "blobd")]
+        "blobd" => exit_of(blobd::main()),
+        #[cfg(feature = "hostd")]
+        "hostd" => exit_of(hostd::main()),
+        #[cfg(feature = "mixtrayd")]
+        "mixtrayd" => exit_of(mixtrayd::main()),
         other => unreachable!("personality {other} is listed but not dispatched"),
     }
 }

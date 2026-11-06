@@ -13,7 +13,7 @@ $root = path_join(dirname(realpath(script_path())), "..")
 $members = ["libraries/expr", "libraries/scene", "libraries/strict", "libraries/mix",
   "libraries/bus", "libraries/props", "libraries/logging", "libraries/config",
   "libraries/buildinfo", "libraries/paths", "libraries/mimedb", "libraries/test-broker",
-  "libraries/mesh", "libraries/mesh-trust", "engines/mix-shell", "engines/mix", "engines/mixd", "services/noded", "libraries/design", "libraries/settings", "libraries/edit", "services/settingsd", "services/editd"]
+  "libraries/mesh", "libraries/mesh-trust", "engines/mix-shell", "engines/mix", "engines/mixd", "services/noded", "libraries/design", "libraries/settings", "libraries/edit", "services/settingsd", "services/editd", "libraries/mds", "services/monitord", "services/dnsd", "services/dnsd/crates/dns-core", "services/blobd", "services/hostd", "services/mixtrayd"]
 -- workspace.dependencies path entries kept, by crate key -> new path
 $keep = {}
 for $m in $members
