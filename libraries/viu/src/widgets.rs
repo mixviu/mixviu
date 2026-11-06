@@ -256,7 +256,7 @@ impl Widget {
             "header-form",
             "macro-menu",
             "notice-bar",
-    "diagnostic-list",
+            "diagnostic-list",
         ]
         .contains(&self.kind.as_str())
         {
@@ -414,7 +414,9 @@ impl Widget {
         if self.kind == "macro-menu" {
             return vec!["close"];
         }
-        if self.kind == "notice-bar" { return vec!["command"]; }
+        if self.kind == "notice-bar" {
+            return vec!["command"];
+        }
         if self.kind == "diagnostic-list" {
             return vec!["goto"];
         }
@@ -535,7 +537,7 @@ impl Widget {
             "header-form",
             "macro-menu",
             "notice-bar",
-    "diagnostic-list",
+            "diagnostic-list",
         ]
         .contains(&self.kind.as_str())
         {

@@ -395,12 +395,21 @@ fn header_form_rejects_hidden_read_only_and_unoffered_choices() {
 #[test]
 fn recovery_notice_choices_refuse_disabled_and_unoffered_commands() {
     let value = json!([{"icon":"info","label":"Retained edit","choices":[{"id":"reinsert:1","label":"Re-insert at Caret","enabled":false},{"id":"dismiss:1","label":"Dismiss","enabled":true}]}]);
-    let widget = viu::widgets::Widget::new("notice-actions", "notice-bar", "Recovery", value.clone());
+    let widget =
+        viu::widgets::Widget::new("notice-actions", "notice-bar", "Recovery", value.clone());
     widget.validate(&value).unwrap();
     let model = json!({"values":{"notice-actions":value}});
-    assert!(widget.admit(&model, "command", &json!({"command":"dismiss:1"})).is_ok());
+    assert!(
+        widget
+            .admit(&model, "command", &json!({"command":"dismiss:1"}))
+            .is_ok()
+    );
     for command in ["reinsert:1", "dismiss:2", "keep-mine"] {
-        assert!(widget.admit(&model, "command", &json!({"command":command})).is_err());
+        assert!(
+            widget
+                .admit(&model, "command", &json!({"command":command}))
+                .is_err()
+        );
     }
 }
 
