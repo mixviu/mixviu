@@ -108,7 +108,11 @@ impl WindowFrame {
         if !self.client && !header {
             return;
         }
-        if !self.client && header && toolkit::menu::form(ui.ctx())["hosted"] == true && toolkit::titlebar::hosting::hosted(ui.ctx()) {
+        if !self.client
+            && header
+            && toolkit::menu::form(ui.ctx())["hosted"] == true
+            && toolkit::titlebar::hosting::hosted(ui.ctx())
+        {
             return;
         }
         let metrics = Metrics::of(ui.ctx());

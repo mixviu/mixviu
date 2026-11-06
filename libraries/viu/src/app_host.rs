@@ -100,7 +100,11 @@ impl Host {
         if self.framed {
             projected["__viu_window_client"] =
                 json!(crate::window_frame::is_client(&self.window_settings(model)));
-            projected["__viu_header_hosted"] = json!(projected["__viu_window_client"] == false && toolkit::menu::form(ctx)["hosted"] == true && toolkit::titlebar::hosting::hosted(ctx));
+            projected["__viu_header_hosted"] = json!(
+                projected["__viu_window_client"] == false
+                    && toolkit::menu::form(ctx)["hosted"] == true
+                    && toolkit::titlebar::hosting::hosted(ctx)
+            );
         }
         projected
     }
@@ -424,9 +428,15 @@ impl Host {
                         Ok(common_ui) => {
                             use settings::view::View;
                             if snapshot["state"]["lost"] != true {
-                                if let Ok(values) = serde_json::from_value::<settings::registry::Values>(snapshot["state"]["values"].clone()) {
-                                    let keymap = settings::view::Look::of(&values).keymaps.app(&self.service);
-                                    let _ = self.runtime.notify("viu.keymap.changed".into(), json!(keymap));
+                                if let Ok(values) =
+                                    serde_json::from_value::<settings::registry::Values>(
+                                        snapshot["state"]["values"].clone(),
+                                    )
+                                {
+                                    let keymap = settings::view::Keymaps::of(&values).app(&self.service);
+                                    let _ = self
+                                        .runtime
+                                        .notify("viu.keymap.changed".into(), json!(keymap));
                                 }
                             }
                             self.last_ui = common_ui;
@@ -578,7 +588,12 @@ impl Host {
             }
             if !toolkit::menu::is_open(ui.ctx()) {
                 for command in crate::shortcuts::pressed(ui.ctx(), &self.model["shortcuts"]) {
-                    self.dispatch("viu.frame.intent".into(),json!({"id":"shortcut","value":{"command":command,"origin":"shortcut"}}),BTreeMap::new(),None);
+                    self.dispatch(
+                        "viu.frame.intent".into(),
+                        json!({"id":"shortcut","value":{"command":command,"origin":"shortcut"}}),
+                        BTreeMap::new(),
+                        None,
+                    );
                 }
             }
             if self.framed {

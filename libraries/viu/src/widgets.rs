@@ -104,7 +104,9 @@ impl Widget {
     /// drawing. Containers choose whether and how this preferred size shrinks.
     pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
         if self.kind == "command-bar" && self.properties["style"] == "gold" {
-            if toolkit::titlebar::hosting::hosted(ui.ctx()) { return Ok(0.0); }
+            if toolkit::titlebar::hosting::hosted(ui.ctx()) {
+                return Ok(0.0);
+            }
             let n = model["values"]
                 .get(&self.id)
                 .unwrap_or(&self.initial)

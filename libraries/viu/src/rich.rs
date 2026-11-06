@@ -406,7 +406,11 @@ pub(crate) fn draw(
     match widget.kind.as_str() {
         "menubar" => {
             let gold = widget.properties["style"] == "gold";
-            let form = if gold { toolkit::menu::form(ui.ctx()) } else { menu_form(ui.ctx()) };
+            let form = if gold {
+                toolkit::menu::form(ui.ctx())
+            } else {
+                menu_form(ui.ctx())
+            };
             let response = if form["hosted"] == true && !gold {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else if widget.properties["style"] == "gold" {
@@ -476,14 +480,25 @@ pub(crate) fn draw(
             let state = presentation(ui.ctx());
             let gold = widget.properties["style"] == "gold";
             if gold {
-                let items = value.as_array().into_iter().flatten().filter_map(|item| Some(toolkit::titlebar::IconBarItem {
-                    command: crate::native_menu::native_id(ui.ctx(), item["id"].as_str()?)?,
-                    icon: crate::icons::Icon::from_name(item["icon"].as_str()?)?,
-                    tooltip: item["label"].as_str()?.into(), enabled:item["enabled"]==true,toggled:item["checked"]==true,
-                })).collect::<Vec<_>>();
+                let items = value
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|item| {
+                        Some(toolkit::titlebar::IconBarItem {
+                            command: crate::native_menu::native_id(ui.ctx(), item["id"].as_str()?)?,
+                            icon: crate::icons::Icon::from_name(item["icon"].as_str()?)?,
+                            tooltip: item["label"].as_str()?.into(),
+                            enabled: item["enabled"] == true,
+                            toggled: item["checked"] == true,
+                        })
+                    })
+                    .collect::<Vec<_>>();
                 toolkit::titlebar::hosting::publish(ui.ctx(), &items);
             }
-            let response = if state.hosted_actions || (gold && toolkit::titlebar::hosting::hosted(ui.ctx())) {
+            let response = if state.hosted_actions
+                || (gold && toolkit::titlebar::hosting::hosted(ui.ctx()))
+            {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
                 ui.allocate_ui_with_layout(

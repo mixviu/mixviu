@@ -14,7 +14,9 @@ fn slots() -> &'static [&'static str] {
             .collect()
     })
 }
-pub fn command_slot(index: usize) -> Option<&'static str> { slots().get(index).copied() }
+pub fn command_slot(index: usize) -> Option<&'static str> {
+    slots().get(index).copied()
+}
 #[derive(Clone, Default)]
 struct Model {
     ids: Vec<String>,
@@ -32,7 +34,11 @@ pub fn application_id(ctx: &egui::Context, slot: &str) -> Option<String> {
 }
 pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
     let key = model_id(ctx);
-    let index = ctx.data(|d| d.get_temp::<Model>(key))?.ids.iter().position(|id| id == command)?;
+    let index = ctx
+        .data(|d| d.get_temp::<Model>(key))?
+        .ids
+        .iter()
+        .position(|id| id == command)?;
     Some(slots()[index])
 }
 fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
@@ -121,8 +127,17 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
             if hosted {
                 let rect = ui.ctx().content_rect();
                 let side = toolkit::chrome::Chrome::of(ui.ctx()).menu_side;
-                let x = match side { design::MenuSide::Left => rect.left(), design::MenuSide::Center => rect.center().x, design::MenuSide::Right => rect.right() };
-                toolkit::menu::compact_picked(ui, &menus, search.as_ref(), egui::Rect::from_min_size(egui::pos2(x,rect.top()),egui::Vec2::ZERO))
+                let x = match side {
+                    design::MenuSide::Left => rect.left(),
+                    design::MenuSide::Center => rect.center().x,
+                    design::MenuSide::Right => rect.right(),
+                };
+                toolkit::menu::compact_picked(
+                    ui,
+                    &menus,
+                    search.as_ref(),
+                    egui::Rect::from_min_size(egui::pos2(x, rect.top()), egui::Vec2::ZERO),
+                )
             } else if compact {
                 let response = ui.add(toolkit::button::IconButton::new(
                     crate::icons::Icon::from_name("menu").unwrap(),
