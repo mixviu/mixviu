@@ -368,6 +368,7 @@ fn header_form_rejects_hidden_read_only_and_unoffered_choices() {
 fn conflict_choices_reinsert_retained_text_or_dismiss_without_changing_it() {
     for reinsert in [false, true] {
         let mut app = App::new();
+        app.docs.call("close", "1", json!({})).unwrap();
         let mut server = fixture::seed(&app.docs, "1", "/tmp/conflict.txt", "hello world\n");
         app.docs.call("select", "1", json!({"anchor":2,"head":4})).unwrap();
         app.docs.call("command", "1", json!({"name":"insert","text":"XY"})).unwrap();
