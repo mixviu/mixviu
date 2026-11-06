@@ -518,3 +518,60 @@ branch lab/gold-parity; head 0a7ae37937e8b022b38fb5b0adc176a6b83ce97b (tested co
 
 
 branch lab/gold-parity; head bb950a59f82ef5c400fe89eaf1175a42bef6f93c (tested code; receipt-only commit follows); frame: identity-preserving mount adopted by Monitor, five live Prefs variants/recovery/close passed, remaining input combinations unaccepted; Monitor: NOT at parity, matched 1040x680 SSIM distortion 0.0957189, menus/options/table/status/Performance/ABP/actions remain, no accepted deviations, Fable P1 pending; CBC job ids: 20261107-012348-cc3a95cf-a1 (final scoped green), 20261107-012031-152ba7e4-a1 (preparation passed with formatting diff), 20261107-011138-9b732aa9-a1 (earlier scoped green).
+
+## Prefs parity: Fable P2 — inventory contradicts gold command contracts
+
+Stopped before frame adoption under the per-app brief's explicit instruction
+to ask Fable and stop whenever gold and the inventory disagree. Opus should
+relay P2; no Fable answer or approved deviation is recorded here.
+
+Inspected candidate source: `64e3b7b49707f4e14ac49f6b342315536786db05`.
+Gold oracle: `8779f33284b7d3f1178c3d57a699efb9b0867b22`, read through
+`git show`/`git grep` at that revision, not the oracle's working tree.
+
+Evidence:
+
+- `docs/ports/prefs.md:14` labels search/section/key selection and Bus
+  commands as ported. These names conceal incompatible gold contracts.
+- Gold `apps/prefs/crates/preferences/src/engine.rs:1138` returns
+  `search_view(query)` for `prefs.search`; `model.rs:131` declares it
+  read-only and describes page/row landing hits. Candidate
+  `apps/prefs/app.mix:41` changes `state.search`, republishes the window
+  model and returns `{}`. A valid query therefore changes the candidate
+  UI and supplies none of the gold search result data.
+- Gold `engine.rs:1178` requires `prefs.select {app}`, checks the software
+  app catalogue and busy/dialog state, selects the app and returns
+  `apps_view()`. `model.rs:133` describes opening its Software group and
+  loading release notes. Candidate `apps/prefs/app.mix:45` instead requires
+  `{key}` through `core.choose` and returns `{}`. A gold-shaped request
+  cannot select a software app in the candidate.
+- Gold `prefs.section` also returns section/category/UI data and validates
+  optional software group; the candidate only validates its reduced
+  section list and returns `{}`. The inventory does not enumerate these
+  missing reply/error contracts.
+
+Question P2: should the inventory's claimed ported navigation/Bus surface
+be replaced with the pinned gold contracts, and how should the existing
+registry-browser commands survive?
+
+Options:
+
+1. Recommended: gold owns the canonical `prefs.search`, `prefs.select` and
+   `prefs.section` names, arguments, replies and refusals. Correct the
+   inventory, port the full gold search/navigation/software behaviour and
+   move any retained registry-only operations to distinct command names.
+   No acceptance credit carries over from the current handlers.
+2. Keep the current registry command contracts and explicitly approve them
+   as incompatible deviations, with affected callers and missing gold
+   behaviour recorded. This sacrifices the requested gold Bus compatibility.
+
+Acceptance status: **BLOCKED ON P2, NOT AT PARITY**. No implementation was
+changed, no binary built or tested, no native harness launched, no service
+or desktop state changed. Feature, Bus and live Prefs gates remain
+unaccepted. No matched captures, binary hashes, SSIM/region metrics or
+cleanup receipt exist for this round; no CBC jobs were submitted. Source
+inspection is evidence for the question, not runtime acceptance. This is a
+receipt-only checkpoint; the source SHA below is the inspected code, and
+the containing Git commit identifies the hand-off receipt.
+
+branch lab/parity-prefs; head SHA 64e3b7b49707f4e14ac49f6b342315536786db05 (inspected source; receipt-only commit follows); frame not adopted; parity evidence: features/Bus/Prefs unaccepted, P2 contract evidence above, SSIM/regions not measured; CBC job ids: none.
