@@ -61,6 +61,14 @@ end
         runtime.event("probe".into(), json!({"catalogue":{"commands":[{"name":"echo"}]},"command":command,"text":text,"busy":busy})).unwrap();
         assert_eq!(completion(&runtime, &rx).reply.unwrap().rc, 10);
     }
+    for invalid in [
+        json!({"commands":[{"name":""}]}),
+        json!({"commands":[{"name":"echo", "description":"x".repeat(262145)}]}),
+        json!({"unexpected":[]}),
+    ] {
+        runtime.event("probe".into(), json!({"catalogue":invalid,"command":"echo","text":"{}"})).unwrap();
+        assert_eq!(completion(&runtime, &rx).reply.unwrap().rc, 10);
+    }
 }
 
 #[test]

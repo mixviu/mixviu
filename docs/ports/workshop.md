@@ -10,8 +10,9 @@ This is a bounded local Bus browser, not full Workshop parity.
 |---|---|
 | Local membership and Refresh | Ported via noded.list; at most 512 services, sorted/deduplicated; malformed/oversized results refuse, never silently omit entries |
 | Node tree, identities and remote routed discovery | Deferred: local selector replaces tree; per-node generations, progress, identity badges and parallel capacity policy need Mix composition |
-| HELP with app.describe fallback | Ported on demand for selected service; string/object entries, array/commands envelopes; at most 512 commands, names deduplicated |
+| HELP with app.describe fallback | Ported on demand for selected service; string/object entries, array/commands envelopes; at most 512 commands/256 KiB description, names deduplicated |
 | Arguments/descriptions and service search | Ported bounded metadata and case-insensitive local service filter; filtering leaves chosen target intact |
+| Read-only declaration badge | Deferred metadata presentation; target admission stays authoritative for every call |
 | Advertised command selection | Ported: command must belong to selected service's catalogue; changing service clears command before discovery |
 | JSON body editing, clear and format | Ported shared editor, 65,536 UTF-8 bytes; blank body or valid JSON; format emits compact JSON rather than original indentation |
 | Explicit command call and reply | Ported one native call, 8-second deadline, body/selection held while busy; peer rc/structured refusal retained; transport uncertainty never auto-retried |

@@ -18,6 +18,7 @@ fn membership($v)
   return sort($names)
 end
 fn catalogue($v)
+  if byte_length(json_encode($v))>262144 then raise("COMMANDS","Description exceeds 256 KiB; no partial catalogue") end
   $entries=if type($v)=="list" then $v else $v.commands end
   if type($entries)!="list" or len($entries)>512 then raise("COMMANDS","Expected at most 512 commands; no partial catalogue") end
   $commands=[];$seen=[]
