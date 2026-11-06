@@ -56,11 +56,11 @@ fn shown_path($path)
   return if $home!="" and starts_with($path,$home.."/") then "~/"..slice($path,len($home)+1) else $path end
 end
 fn canvas($s,$a)
+  if $a.action=="viewport" then $s.view_scale=$a.value.scale;return $s end
   if $s.busy or $s.ui.dialog!=nil or $s.document==nil then return $s end
   $v=$a.value
   if $a.action=="pan" then $s.ui.pan.x=$s.ui.pan.x+$v.x;$s.ui.pan.y=$s.ui.pan.y+$v.y;return $s end
   if $a.action=="zoom" then $s.ui.zoom=clamp($s.ui.zoom*$v.factor,0.1,8);return $s end
-  if $a.action=="viewport" then $s.view_scale=$v.scale;return $s end
   $s.view_scale=$v.scale
   $points=if $a.action=="pick" then [$v.point,$v.point] else $v.points end
   $first=$points[0];$last=$points[len($points)-1];$tool=$s.ui.tool

@@ -445,7 +445,7 @@ pub fn validate_canvas(value: &Value) -> Result<(), String> {
     Ok(())
 }
 pub fn admit_canvas(current: &Value, action: &str, payload: &Value) -> Result<(), String> {
-    if current["enabled"] != true || current["phase"] != "ready" {
+    if (current["enabled"] != true && action != "viewport") || current["phase"] != "ready" {
         return Err("DISABLED".into());
     }
     let point = |p: &Value| {
