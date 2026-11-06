@@ -68,11 +68,12 @@ end
         assert!(c.error.is_none(), "{:?}", c.error);
         assert_eq!(c.reply.unwrap().body["same"], true, "{modified}");
     }
-    rows[0]["modified"]=json!(null);
-    rows[1]["modified"]=json!("nil");
-    r.event("probe".into(),json!({"rows":rows,"expanded":{}})).unwrap();
+    rows[0]["modified"] = json!(null);
+    rows[1]["modified"] = json!("nil");
+    r.event("probe".into(), json!({"rows":rows,"expanded":{}}))
+        .unwrap();
     rx.recv_timeout(Duration::from_secs(20)).unwrap();
-    let c=r.try_completion().unwrap();
-    assert!(c.error.is_none(),"{:?}",c.error);
-    assert_eq!(c.reply.unwrap().body["same"],true);
+    let c = r.try_completion().unwrap();
+    assert!(c.error.is_none(), "{:?}", c.error);
+    assert_eq!(c.reply.unwrap().body["same"], true);
 }
