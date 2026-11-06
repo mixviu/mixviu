@@ -1,0 +1,126 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+fn absolute_env($key)
+  $p=env($key,"")
+  return if starts_with($p,"/") then $p else nil end
+end
+fn state_directory()
+  $base=absolute_env("MIXOS_APP_HOME")
+  if $base!=nil then return $base end
+  $base=absolute_env("MIXOS_APPS_HOME")
+  if $base!=nil then return path_join($base,"screenshot") end
+  $base=absolute_env("MIXOS_VAR")
+  if $base!=nil then return path_join($base,"apps/screenshot") end
+  $base=absolute_env("XDG_STATE_HOME")
+  if $base!=nil then return path_join($base,"mixos/apps/screenshot") end
+  $base=absolute_env("HOME")
+  if $base==nil then raise("FAILED","no absolute application state directory") end
+  return path_join($base,".local/state/mixos/apps/screenshot")
+end
+fn screenshots_directory()
+  $base=absolute_env("MIXOS_SCREENSHOTS_DIR")
+  if $base!=nil then return $base end
+  $home=absolute_env("HOME")
+  if $home==nil then raise("FAILED","HOME is not an absolute path") end
+  $config=absolute_env("XDG_CONFIG_HOME") ?? path_join($home,".config")
+  $pictures=path_join($home,"Pictures")
+  try
+    for $line in split(read_file(path_join($config,"user-dirs.dirs")),"\n")
+      $line=trim($line)
+      if starts_with($line,"XDG_PICTURES_DIR=") then
+        $value=trim(trim(slice($line,17)),"\"")
+        if starts_with($value,"$HOME") then $value=path_join($home,trim(slice($value,5),"/")) end
+        if starts_with($value,"/") and $value!=$home then $pictures=$value end
+        break
+      end
+    end
+  catch $message
+    $pictures=path_join($home,"Pictures")
+  end
+  return path_join($pictures,"Screenshots")
+end
+fn secure_directory($path)
+  mkdir($path,{parents:true})
+  $meta=stat($path,{follow_symlinks:false})
+  if $meta.is_symlink or not $meta.is_dir or $meta.uid!=uid() then raise("FAILED","the capture directory must be an owned directory, not a symlink") end
+  chmod($path,0o700)
+end
+fn raw_capture($root,$path)
+  return dirname($path)==$root and starts_with(basename($path),"capture-") and ends_with($path,".png")
+end
+fn forget_capture($root,$path)
+  if $path!=nil and raw_capture($root,$path) then
+    try
+      if stat($path,{follow_symlinks:false}).is_file then remove($path) end
+    catch $message end
+  end
+end
+fn prune($root)
+  $files=[]
+  for $name in ls($root)
+    $p=path_join($root,$name)
+    if raw_capture($root,$p) then
+      $m=stat($p,{follow_symlinks:false})
+      if $m.is_file and not $m.is_symlink then push($files,{path:$p,mtime:$m.mtime}) end
+    end
+  end
+  $files=reverse(sort_by($files,fn($f)=$f.mtime))
+  for $i=0 to len($files)-1
+    if $i>=20 or $files[$i].mtime<time()-604800 then forget_capture($root,$files[$i].path) end
+  end
+end
+fn recent($state,$limit)
+  $records=[]
+  try
+    $file=viu_read_optional(path_join($state,"saved.jsonl"),{tail_lines:1048576})
+    if $file.found then
+      for $line in reverse(split($file.text,"\n"))
+        try
+          $shot=ledger_shot(json_parse($line))
+          if is_file($shot.path) and not any($records,fn($r)=$r.path==$shot.path) then push($records,$shot) end
+        catch $m end
+        if len($records)>=$limit then break end
+      end
+    end
+  catch $m end
+  return $records
+end
+fn ledger_shot($shot)
+  if type($shot)!="map" or type($shot.path)!="string" or type($shot.saved_at)!="string" or type($shot.annotated)!="bool" then raise("LEDGER","malformed saved shot") end
+  for $key in ["width","height"]
+    $n=$shot[$key]
+    if type($n)!="number" or $n<0 or $n>4294967295 or floor($n)!=$n then raise("LEDGER","malformed saved dimensions") end
+  end
+  return {path:$shot.path,width:$shot.width,height:$shot.height,annotated:$shot.annotated,saved_at:$shot.saved_at}
+end
+fn append_saved($state,$saved)
+  secure_directory($state)
+  $path=path_join($state,"saved.jsonl");$lock=$path..".lock"
+  if not flock($lock,{wait:5}) then raise("FAILED","ledger lock timed out") end
+  try
+    $old=viu_read_optional($path,{tail_lines:1048576})
+    $text=if $old.found then $old.text else "" end
+    $line=json_encode($saved)
+    if byte_length($text)+byte_length($line)+1>524288 then
+      -- Join only after compaction: a full tail plus one line can exceed
+      -- the interpreter's string bound even though the retained ledger fits.
+      $entries=split(trim($text),"\n");push($entries,$line)
+      $lines=[];$bytes=0
+      for $line in reverse($entries)
+        try
+          $shot=ledger_shot(json_parse($line))
+          $line=json_encode($shot)
+          $bytes=$bytes+byte_length($line)+1
+          if len($lines)>=500 or $bytes>262144 then break end
+          push($lines,$line)
+        catch $message end
+      end
+      $text=join(reverse($lines),"\n").."\n"
+    else
+      $text=$text..$line.."\n"
+    end
+    viu_atomic_replace($path,$text)
+  finally
+    funlock($lock)
+  end
+end

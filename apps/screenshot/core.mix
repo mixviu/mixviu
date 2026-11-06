@@ -1,33 +1,44 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
+fn target($value)
+  if type($value)!="map" then raise("ARGUMENT","expected window target") end
+  for $key in ["id","generation"]
+    if not has_key($value,$key) then raise("ARGUMENT","missing field `"..$key.."`") end
+    if type($value[$key])!="number" or $value[$key]<0 or floor($value[$key])!=$value[$key] then raise("ARGUMENT","invalid window identity") end
+  end
+  for $key in keys($value) if not contains(["id","generation"],$key) then raise("ARGUMENT","unknown field `"..$key.."`, expected `id` or `generation`") end end
+  return $value
+end
 fn request($a)
   if type($a)!="map" then raise("ARGUMENT","Capture requires a map") end
   for $k in keys($a) if not contains(["mode","output","window","region","cursor","delay"],$k) then raise("ARGUMENT","Unknown capture field: "..$k) end end
-  $r={mode:$a.mode ?? "screen",cursor:$a.cursor ?? false,delay:$a.delay ?? 0}
-  if not contains(["screen","window","region"],$r.mode) or type($r.cursor)!="bool" or type($r.delay)!="number" then raise("ARGUMENT","Invalid mode, cursor or delay") end
-  if $r.delay<0 or $r.delay>10 or floor($r.delay)!=$r.delay then raise("DELAY","Delay must be integer 0..10") end
+  $r={mode:if has_key($a,"mode") then $a.mode else "screen" end,cursor:if has_key($a,"cursor") then $a.cursor else false end,delay:if has_key($a,"delay") then $a.delay else 0 end}
+  if not contains(["screen","window","region"],$r.mode) then raise("ARGUMENT","unknown variant `"..to_string($r.mode).."`, expected one of `screen`, `window`, `region`") end
+  if type($r.cursor)!="bool" then
+    $description=if type($r.cursor)=="number" then if floor($r.cursor)==$r.cursor then "integer `"..to_string($r.cursor).."`" else "floating point `"..to_string($r.cursor).."`" end elif $r.cursor==nil then "null" else "string "..json_encode($r.cursor) end
+    raise("ARGUMENT","invalid type: "..$description..", expected a boolean")
+  end
+  if type($r.delay)!="number" or $r.delay<0 or $r.delay>10 or floor($r.delay)!=$r.delay then raise("DELAY","delay must be 0..10 seconds") end
   if $a.output!=nil then
-    if type($a.output)!="string" or len($a.output)==0 or len($a.output)>256 then raise("OUTPUT","Invalid output name") end
+    if type($a.output)!="string" or byte_length($a.output)==0 or byte_length($a.output)>256 then raise("OUTPUT","invalid output name") end
     $r.output=$a.output
   end
   if $r.mode=="window" then
-    if type($a.window)!="map" then raise("WINDOW","Choose an id and generation") end
-    for $key in ["id","generation"] if type($a.window[$key])!="number" or $a.window[$key]<0 or floor($a.window[$key])!=$a.window[$key] then raise("WINDOW","Invalid window identity") end end
-    if len(keys($a.window))!=2 or $a.output!=nil then raise("WINDOW","Window target must stand alone") end
-    $r.window=$a.window
-  elif $a.window!=nil then raise("WINDOW","Window applies only to window mode") end
+    if $a.window==nil then raise("WINDOW","choose a window first") end
+    $r.window=target($a.window)
+  elif $a.window!=nil then raise("WINDOW","window only applies to window mode") end
   if $a.region!=nil then
-    if $r.mode!="region" or type($a.region)!="map" then raise("REGION","Region applies only to region mode") end
+    if $r.mode!="region" or type($a.region)!="map" then raise("REGION","region only applies to region mode") end
     for $key in ["x","y","width","height"]
       $n=$a.region[$key]
       if type($n)!="number" or floor($n)!=$n or $n<0 or $n>2147483647 then raise("REGION","Invalid rectangle") end
     end
-    if $a.region.width==0 or $a.region.height==0 or $a.region.x+$a.region.width>2147483647 or $a.region.y+$a.region.height>2147483647 or len(keys($a.region))!=4 then raise("REGION","Invalid extent or fields") end
+    if $a.region.width==0 or $a.region.height==0 or $a.region.x+$a.region.width>2147483647 or $a.region.y+$a.region.height>2147483647 or any(keys($a.region),fn($k)=not contains(["x","y","width","height","output"],$k)) then raise("REGION","Invalid extent or fields") end
+    if $a.region.output!=nil then
+      if type($a.region.output)!="string" or len($a.region.output)==0 or len($a.region.output)>256 then raise("REGION","Invalid region output name") end
+      if $r.output!=nil and $r.output!=$a.region.output then raise("REGION","region.output and output name different outputs") end
+    end
     $r.region=$a.region
   end
   return $r
-end
-fn model($s)
-  $outputs=concat(["Pointer output"],$s.outputs);$windows=concat(["Choose window"],map($s.windows,fn($w)=to_string($w.id)..":"..to_string($w.generation).." "..$w.title))
-  return {status:$s.status,destination:"Save folder: "..$s.folder.." · "..if $s.path==nil then "No image" else to_string($s.image.width).." × "..to_string($s.image.height).." pixels" end,output_control:{id:"output",kind:"combo",label:"Output",initial:"Pointer output",properties:{choices:$outputs}},window_control:{id:"window",kind:"combo",label:"Window",initial:"Choose window",properties:{choices:$windows}},values:{mode:$s.mode,cursor:$s.cursor,output:$s.output,window:$s.window,preview:if $s.path==nil then {phase:"none",colour:[25,28,32],fit:"fit"} else {phase:"ready",path:$s.path,colour:[25,28,32],fit:"fit"} end}}
 end

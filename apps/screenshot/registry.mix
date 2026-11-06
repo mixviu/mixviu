@@ -1,0 +1,105 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$definitions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
+$menu_template=json_parse(read_file(path_join(dirname(script_path()),"menus.json")))
+$tools=["select","crop","arrow","line","rectangle","ellipse","pen","highlighter","redact","text","number"]
+$inks={"amber":[199,150,0,255],"black":[0,38,49,255],"green":[0,104,24,255],"red":[194,23,37,255],"teal":[0,111,135,255],"white":[243,250,252,255]}
+$widths={thin:2,medium:4,thick:8,heavy:16}
+$sizes={small:16,medium:24,large:40,huge:64}
+$icons={"file.open":"folder-open","file.save":"save","file.copy":"copy","capture.take":"camera","capture.mode.region":"square-dashed","capture.mode.screen":"monitor","capture.mode.window":"app-window","tool.select":"mouse-pointer-2","tool.crop":"crop","tool.arrow":"move-up-right","tool.line":"minus","tool.rectangle":"square","tool.ellipse":"circle","tool.pen":"pencil","tool.highlighter":"highlighter","tool.redact":"eye-off","tool.text":"type","tool.number":"hash","edit.undo":"undo-2","edit.redo":"redo-2","edit.delete_selected":"trash","help.macros":"scroll-text","help.shortcuts":"keyboard","view.mode":"sun"}
+fn reason($s,$id)
+  $modal=$s.ui.dialog!=nil;$doc=$s.document!=nil
+  $idle=not $s.busy and not $modal and not $s.quitting
+  $editable=$doc and $idle
+  if contains(["edit.undo","edit.redo","edit.annotate","edit.move","edit.delete","edit.crop"],$id) then
+    if $modal then return "dialog open" end
+    if $s.busy or $s.quitting then return "busy" end
+    if not $doc then return "no image" end
+    if $id=="edit.undo" and $s.document.undo==0 then return "nothing to undo" end
+    if $id=="edit.redo" and $s.document.redo==0 then return "nothing to redo" end
+    return nil
+  end
+  $enabled=true
+  if $id=="file.open" then $enabled=$idle and not ($s.headless ?? false)
+  elif $id=="file.save_as" then $enabled=$editable and not ($s.headless ?? false)
+  elif contains(["file.save","file.save_as","file.copy"],$id) then $enabled=$editable
+  elif $id=="file.quit" then $enabled=not $modal and not $s.quitting
+  elif $id=="edit.delete_selected" then $enabled=$editable and $s.ui.selected!=nil
+  elif $id=="edit.uncrop" then $enabled=$editable and $s.document.crop!=nil
+  elif $id=="edit.deselect" then $enabled=$s.ui.selected!=nil
+  elif contains(["capture.take","capture.region","capture.screen"],$id) then $enabled=$idle and $s.connected
+  elif $id=="capture.window" then $enabled=$idle and $s.connected and $s.ui.window!=nil
+  elif $id=="capture.cancel" then $enabled=$s.busy and $s.job=="capture"
+  elif $id=="capture.output.next" then $enabled=not $s.busy and not $modal and len($s.outputs)>1
+  elif $id=="capture.pointer" then $enabled=not $s.busy and not $modal
+  elif $id=="capture.refresh" then $enabled=$s.connected
+  elif starts_with($id,"capture.") then $enabled=true
+  elif starts_with($id,"tool.") or contains(["view.zoom_in","view.zoom_out","view.fit"],$id) then $enabled=$doc and not $modal
+  elif starts_with($id,"annotate.") or starts_with($id,"view.") then $enabled=true
+  elif contains(["help.shortcuts","help.about"],$id) then $enabled=$idle and not ($s.headless ?? false)
+  elif $id=="help.macros" then $enabled=$s.ui.macros_open or not $modal and not ($s.headless ?? false)
+  end
+  return if $enabled then nil else "disabled" end
+end
+fn checked($s,$id)
+  if starts_with($id,"tool.") then return slice($id,5)==$s.ui.tool end
+  if starts_with($id,"capture.mode.") then return slice($id,13)==$s.ui.mode end
+  if starts_with($id,"capture.delay.") then return to_number(slice($id,14))==$s.ui.delay end
+  if $id=="capture.pointer" then return $s.ui.cursor end
+  if $id=="capture.output.pointer" then return $s.ui.output==nil end
+  if starts_with($id,"annotate.colour.") then return deep_eq($inks[slice($id,16)],$s.ui.colour) end
+  if starts_with($id,"annotate.width.") then return $widths[slice($id,15)]==$s.ui.width end
+  if starts_with($id,"annotate.size.") then return $sizes[slice($id,14)]==$s.ui.text_size end
+  if $id=="view.mode" then return false end
+  for $pair in [{prefix:"view.theme.",field:"scheme"},{prefix:"view.mode.",field:"mode"},{prefix:"view.style.",field:"style"},{prefix:"view.decorations.",field:"decorations"},{prefix:"view.captions.",field:"captions"}]
+    if starts_with($id,$pair.prefix) then
+      $selected=$s.look[$pair.field] ?? if contains(["decorations","captions"],$pair.field) then "auto" else "session" end
+      return slice($id,len($pair.prefix))==$selected
+    end
+  end
+  return nil
+end
+fn describe($s)
+  $rows=[]
+  for $definition in $definitions
+    push($rows,described($s,$definition))
+  end
+  return $rows
+end
+fn described($s,$row)
+  $row.reason=reason($s,$row.id);$row.enabled=$row.reason==nil;$row.checked=checked($s,$row.id)
+  if $s.keymap[$row.id]!=nil then
+    $chords=$s.keymap[$row.id];$row.shortcut=$chords[0];$row=delete($row,"more")
+    if len($chords)>1 then $row.more=slice($chords,1) end
+  end
+  return $row
+end
+fn entry($s,$id)
+  $found=filter($definitions,fn($row)=$row.id==$id)
+  if len($found)==0 then raise("UNKNOWN_ACTION","No such command") end
+  return described($s,$found[0])
+end
+fn item($s,$id,$icons_only)
+  $row=entry($s,$id)
+  $item={id:$id,label:$row.label,enabled:$row.enabled,checked:$row.checked,shortcut:$row.shortcut,icon_only:$icons_only}
+  if $icons[$id]!=nil then $item.icon=$icons[$id] end
+  return $item
+end
+fn menus($s)
+  return menu_rows($s,$menu_template,"")
+end
+fn menu_rows($s,$rows,$prefix)
+  $out=[]
+  for $r in $rows
+    if $r.separator==true then push($out,$r)
+    elif $r.children!=nil then
+      $id=$prefix..$r.label
+      push($out,{id:$id,label:$r.label,enabled:true,children:menu_rows($s,$r.children,$id..".")})
+    else
+      $r=item($s,$r.id,false)
+      if $r.shortcut!=nil then $r.shortcut=replace(replace($r.shortcut,"+-","+Minus"),"+/","+Slash") end
+      push($out,$r)
+    end
+  end
+  return $out
+end

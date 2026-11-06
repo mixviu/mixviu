@@ -23,3 +23,7 @@ Branch lab/gold-parity; tested head SHA 4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0
 Prefs merge checkpoint: shared deferred replies, settings preview, galleries and settings-browser retained alongside Ced and Monitor. Integration gates pending.
 
 Branch lab/gold-parity; head is this Prefs merge checkpoint; per-app revalidation, final artifacts and CBC pending.
+
+Screenshot merge checkpoint: all four app contracts retained; shared host reconciliation and full CBC/release-native gates pending.
+
+Branch lab/gold-parity; head is this merge checkpoint; all per-app revalidation and final four-engine artifacts pending; CBC pending.

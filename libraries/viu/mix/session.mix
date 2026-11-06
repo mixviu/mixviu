@@ -47,7 +47,7 @@ fn session_appearance($values,$app)
   for $pair in [{key:"scheme",source:"appearance.scheme"},{key:"mode",source:"appearance.mode"},{key:"style",source:"appearance.style"},{key:"contrast",source:"appearance.contrast"},{key:"accent",source:"appearance.accent"},{key:"weight",source:"appearance.font_weight"},{key:"body",source:"appearance.font_size"},{key:"icon_stroke",source:"appearance.icon_stroke"},{key:"reduced_motion",source:"accessibility.reduced_motion"}]
     if $values[$pair.source]!=nil then $out[$pair.key]=$values[$pair.source] end
   end
-  if $out.mode=="auto" then $out.mode=if $values["state.appearance.daylight"]==true then "light" else "dark" end end
+  if $out.mode=="auto" then $out.mode=$values["state.appearance.mode_override"] ?? if $values["state.appearance.daylight"]==true then "light" else "dark" end end
   for $key in ["scheme","mode","contrast"]
     $value=$values["apps."..$app.."."..$key]
     if $value!=nil and not ($key=="contrast" and $out.contrast=="high") then $out[$key]=$value end

@@ -641,7 +641,7 @@ pub(crate) fn draw(
         "command-bar" => {
             let state = presentation(ui.ctx());
             let gold = widget.properties["style"] == "gold";
-            if gold {
+            if gold && widget.properties["hostable"] != false {
                 let items = value
                     .as_array()
                     .into_iter()
@@ -670,20 +670,30 @@ pub(crate) fn draw(
                     .collect::<Vec<_>>();
                 toolkit::titlebar::hosting::publish(ui.ctx(), &items);
             }
-            let response = if state.hosted_actions
-                || (gold && toolkit::titlebar::hosting::hosted(ui.ctx()))
+            let response = if widget.properties["hostable"] != false
+                && (state.hosted_actions || (gold && toolkit::titlebar::hosting::hosted(ui.ctx())))
             {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
                 ui.allocate_ui_with_layout(
-                    ui.available_size_before_wrap(),
-                    if gold {
+                    if widget.properties["hostable"] == false
+                        && widget.properties["vertical"] != true
+                    {
+                        egui::vec2(0.0, ui.available_height())
+                    } else {
+                        ui.available_size_before_wrap()
+                    },
+                    if widget.properties["vertical"] == true {
+                        egui::Layout::top_down(egui::Align::Center)
+                    } else if widget.properties["reverse"] == true {
                         egui::Layout::right_to_left(egui::Align::Center)
                     } else {
                         egui::Layout::left_to_right(egui::Align::Center)
                     },
                     |ui| {
-                        if widget.properties["style"] == "gold" {
+                        if widget.properties["style"] == "gold"
+                            && widget.properties["hostable"] != false
+                        {
                             let chrome = toolkit::chrome::Chrome::of(ui.ctx());
                             if chrome.band.actions.alignment()
                                 == design::title_band::Alignment::Right
@@ -711,10 +721,22 @@ pub(crate) fn draw(
                         }
                         for item in items {
                             if item["separator"] == true {
-                                ui.separator();
+                                if widget.properties["vertical"] == true {
+                                    toolkit::bars::hairline(ui);
+                                } else {
+                                    toolkit::bars::divider(
+                                        ui,
+                                        toolkit::bars::divider_height_of(ui.ctx()),
+                                    );
+                                }
                                 continue;
                             }
-                            let response = if widget.properties["style"] == "gold"
+                            let response = if item["primary"] == true {
+                                ui.add_enabled(
+                                    item["enabled"] == true,
+                                    toolkit::button::PushButton::primary(text(item, "label")),
+                                )
+                            } else if widget.properties["style"] == "gold"
                                 && item["icon"].as_str().is_some()
                             {
                                 let icon =
@@ -757,12 +779,36 @@ pub(crate) fn draw(
                                     item["enabled"] == true,
                                     item["checked"] == true,
                                 )
+                            } else if gold {
+                                ui.add_enabled(
+                                    item["enabled"] == true,
+                                    toolkit::button::PushButton::secondary(text(item, "label")),
+                                )
                             } else {
                                 ui.add_enabled(
                                     item["enabled"] == true,
                                     egui::Button::new(label(item)),
                                 )
                             };
+                            if gold && item["id"] == "help.macros" {
+                                let viewport = ui.ctx().viewport_id();
+                                // Match the toolkit titlebar's viewport-scoped popup keys.
+                                let anchor = egui::Id::unique((viewport, "macro-anchor"));
+                                let busy = egui::Id::unique((viewport, "macro-busy"));
+                                ui.ctx().data_mut(|d| d.insert_temp(anchor, response.rect));
+                                if ui.ctx().data(|d| d.get_temp::<bool>(busy)).unwrap_or(false) {
+                                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                                    ui.painter().circle_filled(
+                                        response.rect.right_top()
+                                            + egui::vec2(
+                                                -chrome.metrics.menu_row_padding.x / 2.0,
+                                                chrome.metrics.menu_row_padding.y,
+                                            ),
+                                        chrome.style.hairline_width as f32 * 2.0,
+                                        chrome.palette.accent,
+                                    );
+                                }
+                            }
                             let response = response.on_hover_text(text(item, "label"));
                             if item["macro_anchor"] == true {
                                 toolkit::macros::anchor(ui.ctx(), response.rect);
@@ -842,43 +888,76 @@ pub(crate) fn draw(
                         .enabled(c["enabled"] == true)
                     })
                     .collect();
-                let shown = toolkit::dialog::Dialog::new(dialog_id, text(value, "title"))
-                    .buttons(choices)
-                    .show(ui.ctx(), |ui| {
-                        if let Some(rows) = value["grid"].as_array() {
-                            egui::ScrollArea::vertical()
-                                .max_height(360.0)
-                                .show(ui, |ui| {
-                                    egui::Grid::new((id, "shortcuts")).show(ui, |ui| {
-                                        for row in rows {
-                                            ui.label(text(row, "label"));
-                                            let keys = row["keys"]
-                                                .as_array()
-                                                .map(|keys| {
-                                                    keys.iter()
-                                                        .filter_map(Value::as_str)
-                                                        .filter_map(toolkit::keymap::parse_chord)
-                                                        .map(|s| ui.ctx().format_shortcut(&s))
-                                                        .collect::<Vec<_>>()
-                                                        .join(", ")
-                                                })
-                                                .unwrap_or_else(|| text(row, "shortcut").into());
-                                            ui.weak(keys);
-                                            ui.end_row();
-                                        }
-                                    });
+                let mut dialog =
+                    toolkit::dialog::Dialog::new(dialog_id, text(value, "title")).buttons(choices);
+                if field.is_some() {
+                    dialog = dialog.width(egui::Rangef::new(480.0, 600.0));
+                }
+                let shown = dialog.show(ui.ctx(), |ui| {
+                    if let Some(rows) = value["grid"].as_array() {
+                        egui::ScrollArea::vertical()
+                            .max_height(360.0)
+                            .show(ui, |ui| {
+                                egui::Grid::new((id, "shortcuts")).show(ui, |ui| {
+                                    for row in rows {
+                                        ui.label(text(row, "label"));
+                                        let keys = row["keys"]
+                                            .as_array()
+                                            .map(|keys| {
+                                                keys.iter()
+                                                    .filter_map(Value::as_str)
+                                                    .filter_map(toolkit::keymap::parse_chord)
+                                                    .map(|s| ui.ctx().format_shortcut(&s))
+                                                    .collect::<Vec<_>>()
+                                                    .join(", ")
+                                            })
+                                            .unwrap_or_else(|| text(row, "shortcut").into());
+                                        ui.weak(keys);
+                                        ui.end_row();
+                                    }
                                 });
-                        } else {
-                            ui.add(egui::Label::new(text(value, "body")).wrap());
+                            });
+                    } else if !text(value, "body").is_empty() {
+                        ui.add(egui::Label::new(text(value, "body")).wrap());
+                    }
+                    if !text(value, "note").is_empty() {
+                        ui.weak(text(value, "note"));
+                    }
+                    if let Some(path) = field.as_mut() {
+                        ui.label(value["field_label"].as_str().unwrap_or("Path"));
+                        let response = ui.add(
+                            egui::TextEdit::singleline(path)
+                                .id(dialog_id.with("field"))
+                                .desired_width(f32::INFINITY),
+                        );
+                        geometry.insert(format!("{id}.field"), response.rect);
+                        submitted =
+                            response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        if !response.has_focus() && ui.memory(|m| m.focused().is_none()) {
+                            response.request_focus();
                         }
-                    });
-                if let Some(index) = shown.chosen {
+                        if response.changed() {
+                            emit(events, id, "edit", json!(path));
+                        }
+                        ui.label(egui::RichText::new(text(value, "status")).small().weak());
+                    }
+                });
+                if let Some(index) = shown.chosen.or_else(|| {
+                    if submitted {
+                        value["choices"]
+                            .as_array()?
+                            .iter()
+                            .position(|v| v["default"] == true && v["enabled"] == true)
+                    } else {
+                        None
+                    }
+                }) {
                     let choice = &value["choices"][index];
                     emit(
                         events,
                         id,
                         "answer",
-                        json!({"choice":choice["id"],"instance":value["instance"]}),
+                        json!({"choice":choice["id"],"field":field,"instance":value["instance"]}),
                     );
                     toolkit::dialog::Dialog::reset(ui.ctx(), dialog_id);
                 } else if shown.dismissed {

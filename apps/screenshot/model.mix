@@ -1,0 +1,101 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
+$registry=require("registry.mix")
+fn combo($id,$label,$choices,$labels,$width,$enabled)
+  return {id:$id,kind:"combo",label:$label,initial:$choices[0],properties:{choices:$choices,choice_labels:$labels,width:$width,native:true,enabled:$enabled}}
+end
+fn dialog_form($s)
+  $kind=$s.ui.dialog
+  $form={open:$kind!=nil,title:"",body:"",field:nil,choices:[],instance:$s.dialog_serial ?? 0,error:""}
+  if $kind==nil then return $form end
+  if $kind=="discard" then
+    $form.title="Unsaved annotations";$form.body="Save these annotations to Pictures/Screenshots, or discard them?"
+    $form.choices=[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"keep",label:"Keep editing",enabled:true,cancel:true}]
+  elif $kind=="open" or $kind=="save_as" then
+    $save=$kind=="save_as";$form.title=if $save then "Save PNG" else "Open image" end
+    $form.field_label="File";$form.field=$s.ui.path;$form.status=$s.status;$form.error=$s.dialog_error ?? "";$form.width=520
+    $form.choices=[{id:if $save then "save" else "open" end,label:if $save then "Save" else "Open" end,enabled:not $s.busy,default:true},{id:"cancel",label:"Cancel",enabled:not $s.busy,cancel:true}]
+  elif $kind=="about" then
+    $form.title="About Screenshot";$form.body="Native screenshots and editable annotations for MixOS. Shots are saved to Pictures/Screenshots, and agents find them with screenshot.recent."
+    $form.choices=[{id:"done",label:"Done",enabled:true,default:true,cancel:true}]
+    $form.note="0.1.2 ("..($s.build.git_sha ?? "unknown")..")"
+  else
+    $form.title="Keyboard shortcuts"
+    $rows=filter($registry.describe($s),fn($r)=$r.shortcut!=nil)
+    $form.grid=map($rows,fn($r)={label:$r.label,keys:concat([$r.shortcut],$r.more ?? [])})
+    $form.choices=[{id:"done",label:"Done",enabled:true,default:true,cancel:true}]
+  end
+  return $form
+end
+fn render($s)
+  $has=$s.document!=nil;$editable=$s.ui.dialog==nil
+  $options=[]
+  $take=$registry.item($s,"capture.take",false);$take=delete($take,"icon");$take.primary=true;push($options,$take)
+  for $mode in ["region","screen","window"]
+    $item=$registry.item($s,"capture.mode."..$mode,true);$item.enabled=$item.enabled and not $s.busy;push($options,$item)
+  end
+  if $has then push($options,{separator:true}) end
+  $tools=[]
+  for $tool in $registry.tools
+    push($tools,$registry.item($s,"tool."..$tool,true))
+    if $tool=="crop" then push($tools,{separator:true}) end
+  end
+  push($tools,{separator:true})
+  for $id in ["edit.undo","edit.redo","edit.delete_selected"] push($tools,$registry.item($s,$id,true)) end
+  $header=[]
+  for $id in ["capture.take","help.macros","help.shortcuts","view.mode"] push($header,$registry.item($s,$id,true)) end
+  $header[3].icon=if ($s.look.mode ?? $s.effective.mode)=="light" then "moon" else "sun" end
+  $header[3].checked=false
+  $header[3].id=if ($s.look.mode ?? $s.effective.mode)=="light" then "view.mode.dark" else "view.mode.light" end
+  $files=[]
+  for $id in ["file.save","file.copy"]
+    $item=delete($registry.item($s,$id,false),"icon")
+    if $id=="file.copy" then $item.label="Copy" end
+    push($files,$item)
+  end
+  $window_choices=[];$window_labels={}
+  for $w in $s.windows
+    $id=to_string($w.target.id)..":"..to_string($w.target.generation)
+    push($window_choices,$id);$window_labels[$id]=if $w.title!="" then $w.title else $w.app_id end
+  end
+  if len($window_choices)==0 then $window_choices=["none"];$window_labels={none:"No windows to capture"} end
+  $window_value=if $s.ui.window==nil then $window_choices[0] else to_string($s.ui.window.id)..":"..to_string($s.ui.window.generation) end
+  if not contains($window_choices,$window_value) then $window_value=$window_choices[0] end
+  $swatches=[]
+  for $name in ["red","amber","green","teal","black","white"] push($swatches,{id:$name,label:upper(left($name,1))..slice($name,1),colour:$registry.inks[$name]}) end
+  $width_name=filter(keys($registry.widths),fn($name)=$registry.widths[$name]==$s.ui.width)[0] ?? "medium"
+  $size_name=filter(keys($registry.sizes),fn($name)=$registry.sizes[$name]==$s.ui.text_size)[0] ?? "medium"
+  $preview={phase:if $s.preview==nil then "none" else "ready" end,canvas:true,enabled:$has and $editable and not $s.busy,colour:"design.canvas",fit:"fit",zoom:$s.ui.zoom,pan:$s.ui.pan,crop:if $has then $s.document.crop else nil end,empty_text:if $s.busy then "Taking a screenshot…" else "Take a screenshot (Ctrl+N) or open an image (Ctrl+O)." end}
+  if $s.preview!=nil then $preview.path=$s.preview;$preview.width=$s.document.width;$preview.height=$s.document.height end
+  if $has then
+    $selected=filter($s.document.objects,fn($o)=$o.id==$s.ui.selected)[0]
+    $preview.selection=if $selected==nil then nil else $selected.shape end
+    $preview.guide_mode=if contains(["select","crop"],$s.ui.tool) then $s.ui.tool else "draw" end
+    $preview.guide={kind:if contains(["select","crop"],$s.ui.tool) then "rectangle" else $s.ui.tool end,points:[{x:0,y:0},{x:1,y:1}],colour:$s.ui.colour,width:clamp($s.ui.width/($s.view_scale ?? 1),0.5,512)}
+    if contains(["number","text"],$s.ui.tool) then $preview.guide.size=clamp($s.ui.text_size/($s.view_scale ?? 1),8,1024) end
+    if $s.ui.tool=="text" then $preview.guide.text=if trim($s.ui.text)=="" then "Text" else $s.ui.text end end
+    if $s.ui.tool=="number" then $preview.guide.number=1 end
+  end
+  $model={native_header:true,native_status:true,header_search_menu:"Help",native_menus:true,keyboard_events:true,theme_choice:$s.look,window_overrides:{},hide_window:$s.ui.mode!="window",hide_output:$s.ui.mode=="window" or len($s.outputs)<=1,hide_ink:not $has,hide_size:not $has or not contains(["text","number"],$s.ui.tool),hide_text:not $has or $s.ui.tool!="text",hide_file:not $has,
+    window_control:combo("window","Window",$window_choices,$window_labels,180,not $s.busy),
+    output_control:combo("output","Output",concat(["pointer"],$s.outputs),{pointer:"Output under the pointer"},180,not $s.busy),
+    inks_control:{id:"inks",kind:"swatches",label:"Colour",initial:$s.ui.colour,properties:{items:$swatches,read_only:not $editable}},
+    width_control:combo("width","Stroke width",["thin","medium","thick","heavy"],{thin:"Thin",medium:"Medium",thick:"Thick",heavy:"Heavy"},96,$editable),
+    size_control:combo("text_size","Text size",["small","medium","large","huge"],{small:"Small text",medium:"Medium text",large:"Large text",huge:"Huge text"},96,$editable),
+    text_control:{id:"text",kind:"field",label:"Text",initial:"",properties:{native:true,placeholder:"Text, then click or drag on the picture",enabled:$editable}},
+    values:{options:$options,tools:$tools,window:$window_value,output:$s.ui.output ?? "pointer",inks:$s.ui.colour,width:$width_name,text_size:$size_name,text:$s.ui.text,preview:$preview,dialog:dialog_form($s),macros:$s.ui.macros_open,file_actions:$files}}
+  for $pair in [{field:"decorations",key:"window.decorations"},{field:"captions",key:"window.caption_side"}]
+    if $s.look[$pair.field]!=nil then $model.window_overrides[$pair.key]=$s.look[$pair.field] end
+  end
+  $right=""
+  if $has then $right=to_string($s.document.width).." × "..to_string($s.document.height).." · "..to_string(round($s.ui.zoom*100)).."% · "..if $s.document.dirty or $s.saved==nil then "Not saved" else "Saved" end end
+  $path=if $s.saved!=nil then $s.saved.path else $s.source end
+  $title=if $path==nil then "Screenshot" else basename($path).." — Screenshot" end
+  $model=$frame.apply($model,{icon:"camera",title:$title,menus:$registry.menus($s),toolbar:$header,status:{left:$s.status,right:if $right=="" then [] else [$right] end,icon:nil},native_title:$title,toolbar_minimum:"content.minimum"})
+  $model.macros_open=$s.ui.macros_open;$model.values.macros=false
+  $model.width_control.properties.measure_choices=true;$model.size_control.properties.measure_choices=true
+  $model.values["gold-actions"]=$registry.describe($s)
+  if $s.close_after and not ($s.action_publishing ?? false) and len($s.action_queue ?? [])==0 then $model.window_close=true end
+  return $model
+end

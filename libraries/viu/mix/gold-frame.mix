@@ -2,7 +2,7 @@
 -- Shared application frame policy. Apps supply their own actions and state.
 fn apply($model,$options)
   if $options.native_title!=nil then $model.window_title=$options.native_title end
-  $model.frame={icon:"icon:"..$options.icon,menu:{id:"gold-menu",kind:"menubar",label:"",initial:$options.menus,properties:{style:"gold",header_icon:$options.icon}},groups:{"gold-captions":{preferred:"window.captions",minimum:"window.captions",align:"window.captions",shrink:nil,order:3},"gold-menu":{preferred:"content",minimum:"content",align:"window.menu",shrink:nil,order:0},"gold-toolbar":{preferred:"content",minimum:136,align:"window.actions",shrink:1,order:2},"gold-title":{preferred:"content",minimum:0,align:"window.title",shrink:0,order:1}}}
+  $model.frame={icon:"icon:"..$options.icon,menu:{id:"gold-menu",kind:"menubar",label:"",initial:$options.menus,properties:{style:"gold",header_icon:$options.icon}},groups:{"gold-captions":{preferred:"window.captions",minimum:"window.captions",align:"window.captions",shrink:nil,order:3},"gold-menu":{preferred:"content",minimum:"content",align:"window.menu",shrink:nil,order:0},"gold-toolbar":{preferred:"content",minimum:($options.toolbar_minimum ?? 136),align:"window.actions",shrink:1,order:2},"gold-title":{preferred:"content",minimum:0,align:"window.title",shrink:0,order:1}}}
   $values=$model.values ?? {}
   $model.frame.padding_top=$options.padding_top ?? 4
   $model.frame.padding_bottom=$options.padding_bottom ?? 4

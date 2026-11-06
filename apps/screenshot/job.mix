@@ -1,29 +1,120 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.1.0
-on job.run
-  $a=$event.args
-  if $a.op=="export" then
-    $info=viu_image("export",$a.source,$a.path)
-    reply(0,json_encode({path:$a.path,image:$info,op:"export"}))
-  else
-    $r=$a.request
-    if $r.delay>0 then sleep($r.delay) end
-    send $a.comp "comp.window.minimize" body=$a.own timeout=5
-    if $rc!=0 or $reply.minimized!=true then raise("HIDE","Compositor did not confirm minimisation") end
+-- version: 0.2.0
+fn check_cancelled()
+  if viu_cancelled() then raise("CANCELLED","cancelled") end
+end
+fn restore_capture($a,$own)
+  if $own==nil then return false end
+  $pause=0.25
+  for $attempt=0 to 5
+    if $attempt>0 then sleep($pause);$pause=$pause*2 end
+    try
+      send $a.comp "comp.window.restore" body={id:$own.id,generation:$own.generation,activate:$a.focus} timeout=5
+      if $rc==0 and $reply.minimized==false then
+        if $a.focus then
+          send $a.comp "comp.window.focus" body={id:$own.id,generation:$own.generation,raise:true} timeout=5
+        end
+        return false
+      end
+    catch $m end
+    try
+      send $a.comp "comp.windows.list" body={} timeout=5
+      if $rc==0 and not any($reply.windows,fn($w)=$w.id==$own.id and $w.generation==$own.generation) then return false end
+    catch $m end
+  end
+  return true
+end
+fn capture_image($a)
+  $r=$a.request;$own=nil;$out={op:"capture",restore_failed:false,cancelled:false}
+  try
+    $deadline=monotonic()+$r.delay
+    while monotonic()<$deadline check_cancelled();sleep(min(0.05,max(0,$deadline-monotonic()))) end
+    check_cancelled()
+    if $a.hide then
+      send $a.comp "comp.window.wait" body={match:{app_id:"dev.mixos.screenshot"},until:"mapped",timeout_ms:10000} timeout=12
+      if $rc!=0 then raise("FAILED",to_string($result)) end
+      send $a.comp "comp.windows.list" body={} timeout=5
+      if $rc!=0 then raise("FAILED",to_string($result)) end
+      $rows=filter($reply.windows,fn($w)=$w.app_id=="dev.mixos.screenshot" and $w.pid==$a.pid)
+      if len($rows)!=1 then raise("FAILED","own window is not mapped") end
+      $own={id:$rows[0].id,generation:$rows[0].generation}
+      send $a.comp "comp.window.minimize" body=$own timeout=5
+      if $rc!=0 or $reply.minimized!=true then raise("FAILED","Compositor did not confirm minimisation") end
+    end
+    check_cancelled()
     $frame={path:$a.path,cursor:$r.cursor}
-    if $r.output!=nil then $frame.output=$r.output end
-    if $r.window!=nil then $frame.window=$r.window end
-    if $r.region!=nil then $frame.region=$r.region
+    if $r.mode=="window" then $frame.window=$r.window
+    elif $r.output!=nil then $frame.output=$r.output end
+    if $r.region!=nil then
+      $frame.region={x:$r.region.x,y:$r.region.y,width:$r.region.width,height:$r.region.height}
+      if $r.region.output!=nil then $frame.output=$r.region.output end
     elif $r.mode=="region" then
-      send $a.comp "comp.region.select" body={output:$r.output,timeout_ms:60000} timeout=70
-      if $rc!=0 or $reply.status!="selected" then raise("SELECTION",json_encode($reply)) end
+      $selection={}
+      if $r.output!=nil then $selection.output=$r.output end
+      send $a.comp "comp.region.select" body=$selection timeout=60
+      if $rc!=0 then raise("FAILED",to_string($result)) end
+      if $reply.status!="selected" then raise("FAILED","selection "..to_string($reply.status ?? "failed")) end
       $frame.output=$reply.output;$frame.region=$reply.region;$frame.output_generation=$reply.output_generation
     end
+    check_cancelled()
     send $a.comp "comp.capture.frame" body=$frame timeout=8
-    if $rc!=0 then raise("CAPTURE",to_string($result)) end
-    $metadata=$reply
-    chmod($a.path,0o600)
-    $info=viu_image("info",$a.path)
-    reply(0,json_encode({op:"capture",path:$a.path,image:$info,metadata:$metadata}))
+    if $rc!=0 then raise("FAILED","comp.capture.frame refused (rc "..to_string($rc).."): "..json_encode($reply)) end
+    $out.metadata=$reply
+    check_cancelled();chmod($a.path,0o600)
+    $opened=viu_document("open",{path:$a.path})
+    if viu_cancelled() then viu_document("close",{handle:$opened.handle});raise("CANCELLED","cancelled") end
+    $out.path=$a.path;$out.handle=$opened.handle;$out.document=$opened.document;$out.rc=0
+  catch $message,$error
+    $out.rc=10;$out.error_code=if viu_cancelled() then "CANCELLED" else "FAILED" end;$out.message=$message
+    $out.cancelled=viu_cancelled()
+    if is_file($a.path) then remove($a.path) end
+  finally
+    $out.restore_failed=restore_capture($a,$own);$out.own=$own
+  end
+  return $out
+end
+on job.run
+  $a=$event.args
+  try
+    if $a.op=="capture" then $out=capture_image($a)
+    elif $a.op=="open" then
+      $opened=viu_document("open",{path:$a.path})
+      $out={op:"open",rc:0,path:$a.path,handle:$opened.handle,document:$opened.document}
+    elif $a.op=="show" then
+      send $a.comp "comp.window.wait" body={match:{app_id:"dev.mixos.screenshot"},until:"mapped",timeout_ms:10000} timeout=15
+      if $rc!=0 then raise("FAILED",to_string($result)) end
+      send $a.comp "comp.windows.list" body={} timeout=5
+      if $rc!=0 then raise("FAILED",to_string($result)) end
+      $rows=filter($reply.windows,fn($w)=$w.app_id=="dev.mixos.screenshot" and $w.pid==$a.pid)
+      if len($rows)!=1 then raise("FAILED","own window is not mapped") end
+      $target={id:$rows[0].id,generation:$rows[0].generation}
+      send $a.comp "comp.window.restore" body=$target timeout=5
+      if $rc!=0 or $reply.minimized!=false then raise("FAILED","window restoration failed") end
+      send $a.comp "comp.window.focus" body={id:$target.id,generation:$target.generation,raise:true} timeout=5
+      if $rc!=0 or $reply.focused!=true then raise("FAILED","window focus failed") end
+      $out={op:"show",rc:0,result:{shown:true,target:$reply}}
+    elif $a.op=="render" or $a.op=="export" or $a.op=="copy" then
+      if $a.op=="export" and $a.paths==nil and exists($a.path,{follow_symlinks:false}) then raise("FAILED",$a.path.." already exists") end
+      $dest={handle:$a.handle,path:$a.path}
+      if $a.paths!=nil then $dest.paths=$a.paths end
+      $rendered=viu_document("export",$dest)
+      $out={op:$a.op,rc:0,path:$rendered.path,document:$rendered.document}
+      if $a.op=="copy" then
+        if not $a.hide then raise("FAILED","A headless instance has no clipboard") end
+        $copy=viu_clipboard($a.path)
+        if $copy.rc!=0 then raise("FAILED",json_encode($copy.body)) end
+        $out.clipboard=$copy.body
+      end
+    else raise("FAILED","Unknown work operation") end
+    if $out.rc==0 and $a.hide and contains(["capture","open"],$out.op) then
+      try
+        $rendered=viu_document("export",{handle:$out.handle,path:$a.preview});$out.preview=$a.preview
+      catch $message
+        $out.preview_error=$message;$out.preview=nil
+      end
+    end
+    reply(0,json_encode($out))
+  catch $message,$error
+    reply(0,json_encode({op:$a.op,rc:10,error_code:"FAILED",message:$message}))
   end
 end

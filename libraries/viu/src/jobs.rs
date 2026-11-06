@@ -79,6 +79,16 @@ impl Jobs {
     pub fn poll(&mut self) -> Vec<ResultMessage> {
         while let Ok(start) = self.rx.try_recv() {
             let id = start.spec["id"].as_str().unwrap_or("");
+            if start.spec["signal"] == "cancel" {
+                let found = self.running.get(id);
+                if let Some(job) = found {
+                    job.runtime.signal_cancel();
+                }
+                let _ = start
+                    .reply
+                    .send((0, json!({"cancelling":found.is_some(),"id":id})));
+                continue;
+            }
             if start.spec["cancel"] == true {
                 let removed = self.running.remove(id).is_some();
                 let _ = start.reply.send((0, json!({"cancelled":removed,"id":id})));
@@ -89,7 +99,7 @@ impl Jobs {
             let timeout = start
                 .spec
                 .get("timeout_seconds")
-                .map_or(Some(90), Value::as_u64);
+                .map_or(Some(180), Value::as_u64);
             if id.is_empty()
                 || id.len() > 128
                 || path.is_none()
@@ -104,12 +114,19 @@ impl Jobs {
                 let _ = start.reply.send((10, json!({"error_code":"BUSY"})));
                 continue;
             }
+            let timeout = start.spec["timeout"].as_u64().unwrap_or(timeout.expect("validated job timeout"));
+            if !(1..=3600).contains(&timeout) {
+                let _ = start
+                    .reply
+                    .send((10, json!({"error_code":"INVALID_JOB_TIMEOUT"})));
+                continue;
+            }
             let mut runtime = Runtime::with_deadline(
                 2,
                 self.wake.clone(),
                 self.native_backend.as_ref().map(|f| f()),
                 self.services.clone(),
-                std::time::Duration::from_secs(timeout.expect("validated job timeout")),
+                std::time::Duration::from_secs(timeout),
             );
             let program = Program {
                 path: PathBuf::from(path.unwrap()),
@@ -204,8 +221,13 @@ impl BusHandler for Backend {
         args: &'a MixValue,
     ) -> BusFuture<'a, MixResult<(i32, MixValue, MixValue)>> {
         Box::pin(async move {
-            if target == "viu-local" && ["jobs.start", "jobs.cancel"].contains(&command) {
+            if target == "viu-local"
+                && ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command)
+            {
                 let mut spec = to_json(args)?;
+                if let Some(body) = spec.get("body") {
+                    spec = body.clone();
+                }
                 if !spec.is_object() {
                     return Err(error("job arguments must be an object"));
                 }

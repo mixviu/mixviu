@@ -183,6 +183,10 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             EventResult::CloseRequested => {
                 // The windows need to be dropped whilst the event loop is running to allow for proper cleanup.
                 self.winit_app.save_and_destroy();
+                // Wayland need not deliver another window event after the
+                // last surface is destroyed (notably after minimisation).
+                // Cleanup has run on the active loop; finish it now.
+                exit = true;
                 event_result
             }
         });

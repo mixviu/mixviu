@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Lab client scene runtime. The evaluator is created and retained on its worker.
+pub mod annotation;
 pub mod app_facilities;
 pub mod app_host;
 pub mod appearance;
 pub mod bundle;
 pub mod capture;
 pub mod chooser;
+pub mod clipboard;
 pub mod debug;
 mod debug_recent;
 mod design_style;

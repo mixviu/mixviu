@@ -51,24 +51,24 @@ end
                     done.stdout,
                     done.stderr
                 );
-                assert_eq!(done.deferred.as_deref(), Some("owned"));
+                assert_eq!(done.deferred_token.as_deref(), Some("owned"));
                 assert!(done.reply.is_none());
             }
             "ping" => assert_eq!(done.reply.unwrap().body["alive"], true),
             "fault" => {
                 assert!(done.error.is_some());
-                assert!(done.answers.is_empty());
+                assert!(done.deferred_answers.is_empty());
             }
             "finish" => {
                 assert!(done.error.is_none());
-                assert_eq!(done.answers.len(), 1);
-                assert_eq!(done.answers[0].reply.rc, 10);
-                assert_eq!(done.answers[0].reply.body["error_code"], "REFUSED");
+                assert_eq!(done.deferred_answers.len(), 1);
+                assert_eq!(done.deferred_answers[0].reply.rc, 10);
+                assert_eq!(done.deferred_answers[0].reply.body["error_code"], "REFUSED");
             }
             "invalid" => {
                 assert!(done.error.is_some());
                 assert!(done.reply.is_none());
-                assert!(done.deferred.is_none());
+                assert!(done.deferred_token.is_none());
             }
             _ => unreachable!(),
         }

@@ -3,6 +3,7 @@
 //! leaves and legacy text/button/field/toggle use the shared widget dispatch.
 use crate::templates::{PreparedLists, children, rows, text, validate_templates};
 use crate::widgets::{Intent, Widget, Widgets};
+use egui::emath::GuiRounding;
 use egui::{Color32, Sense, Vec2};
 use scene::{Node, ResolvedScene};
 use serde_json::{Value, json};
@@ -493,10 +494,10 @@ impl SceneView {
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
                     "band"=>{
                         let area=ui.available_rect_before_wrap();
-                        let measure=|child:&str| {
+                        let measure=|child:&str,minimum:bool| {
                             let node=&nodes[child];
                             let widget=if node.family=="control" {Widget::decode(&node.ports["definition"]).expect("validated label")}else{Widget::new(child,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono")}))};
-                            widget.intrinsic_width(ui,&self.tree.model).expect("validated intrinsic label")
+                            if minimum {widget.minimum_width(ui,&self.tree.model)}else{widget.intrinsic_width(ui,&self.tree.model)}.expect("validated intrinsic label")
                         };
                         let groups=band_groups(node,crate::window_frame::Metrics::of(ui.ctx()).caption_width*3.0,ui.ctx().data(|d| d.get_temp::<design::title_band::Alignment>(egui::Id::unique("viu-caption-alignment"))).unwrap_or_else(|| toolkit::chrome::Chrome::of(ui.ctx()).captions.alignment(design::title_band::Alignment::Right)),Some(ui.ctx()),&measure).expect("validated band groups");
                         let active=children(node).zip(groups).filter(|(child,_)|nodes.get(*child).is_some_and(|child|child.ports.get("hidden").and_then(Value::as_bool)!=Some(true)&&child.ports.get("slot_only").and_then(Value::as_str).is_none_or(|name|self.slots.contains_key(name)))).collect::<Vec<_>>();
@@ -541,7 +542,7 @@ impl SceneView {
                         }
                     }
                     "text" => {
-                        let colour=color(text(node,"color")).unwrap_or(Color32::WHITE).to_array();
+                        let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
                         let widget=Widget::new(&key,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"colour":colour}));
                         self.widgets.widget(ui,&widget,&json!({}));
                     }
@@ -600,6 +601,44 @@ impl SceneView {
                         }
                     }
                     "row" | "column" => {
+                        if text(node,"packing")=="toolbar" {
+                            ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
+                            ui.allocate_ui_with_layout(ui.available_size_before_wrap(),egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let end=text(node,"end");
+                                if nodes.get(end).is_some_and(|n|n.ports.get("hidden")!=Some(&json!(true))) {
+                                    self.node(ui,end,nodes,route,depth+1,events);
+                                    ui.add_space(8.0);
+                                }
+                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                    ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+                                    let flex=text(node,"flex");
+                                    let reserve=nodes.get(flex).filter(|n|n.ports.get("hidden")!=Some(&json!(true))).map_or(0.0, |_|80.0+ui.spacing().item_spacing.x);
+                                    for child in children(node).filter(|c|*c!=end) {
+                                        let n=&nodes[child];
+                                        if n.ports.get("hidden")==Some(&json!(true)) {continue;}
+                                        if node.ports.get("fit").and_then(Value::as_array).is_some_and(|items|items.iter().any(|v|v==child)) {
+                                            let widget=Widget::decode(&n.ports["definition"]).expect("validated toolbar control");
+                                            let width=widget.intrinsic_width(ui,&self.tree.model).expect("validated toolbar width");
+                                            if ui.available_width()<width+ui.spacing().item_spacing.x+reserve {continue;}
+                                        }
+                                        if child==flex {
+                                            let width=(ui.available_width()-2.0).clamp(80.0,220.0);
+                                            let area=egui::Rect::from_min_size(ui.cursor().min,egui::vec2(width,ui.available_height()));
+                                            self.child_rect(ui,child,area,nodes,route,depth,events);
+                                            ui.allocate_rect(area,egui::Sense::hover());
+                                        } else {self.node(ui,child,nodes,route,depth+1,events);}
+                                    }
+                                });
+                            });
+                            return;
+                        }
+                        if ["options","tools"].contains(&text(node,"bar")) {
+                            let mut draw=|ui:&mut egui::Ui| {
+                                for child in children(node) {self.node(ui,child,nodes,route,depth+1,events);}
+                            };
+                            if text(node,"bar")=="options" {toolkit::bars::options(ui,&mut draw);}else{toolkit::bars::tools(ui,&mut draw);}
+                            return;
+                        }
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let frame = egui::Frame::new()
                             .fill(background)
@@ -949,6 +988,16 @@ impl SceneView {
                 }
                 _ => {}
             }
+            // Native panels round their outer bounds before placing contents.
+            // Keep the neighbouring scene regions on the same layout grid.
+            rect = rect.round_ui();
+            match edge {
+                "left" => remaining.min.x = rect.max.x,
+                "right" => remaining.max.x = rect.min.x,
+                "top" => remaining.min.y = rect.max.y,
+                "bottom" => remaining.max.y = rect.min.y,
+                _ => {}
+            }
             self.child_rect(ui, child, rect, nodes, route, depth, events);
             if edge == "bottom" && placement["size"] == "design.status_height" {
                 // The native panel rounds its frame and integer margins after
@@ -1079,13 +1128,50 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             return Err("scene slots must attach a dock child".into());
         }
         match node.family.as_str() {
+            "row" if text(node, "packing") == "toolbar" => {
+                let kids = children(node).collect::<Vec<_>>();
+                for name in ["end", "flex"] {
+                    if node
+                        .ports
+                        .get(name)
+                        .is_some_and(|v| v.as_str().is_none_or(|s| !kids.contains(&s)))
+                    {
+                        return Err("toolbar role must name a child".into());
+                    }
+                }
+                if node
+                    .ports
+                    .get("fit")
+                    .and_then(Value::as_array)
+                    .is_some_and(|items| {
+                        items.iter().any(|v| {
+                            v.as_str().is_none_or(|s| {
+                                !kids.contains(&s)
+                                    || ![Some("combo"), Some("swatches")].contains(
+                                        &tree.nodes[s].ports["definition"]["kind"].as_str(),
+                                    )
+                            })
+                        })
+                    })
+                {
+                    return Err("toolbar fit requires combo or swatches children".into());
+                }
+            }
+            "row" | "column"
+                if node
+                    .ports
+                    .get("bar")
+                    .is_some_and(|v| ![Some("options"), Some("tools")].contains(&v.as_str())) =>
+            {
+                return Err("unknown native bar role".into());
+            }
             "band" => {
                 band_groups(
                     node,
                     0.0,
                     design::title_band::Alignment::Right,
                     None,
-                    &|_| 0.0,
+                    &|_, _| 0.0,
                 )?;
                 for child in children(node) {
                     let group = &node.ports["groups"][child];
@@ -1226,6 +1312,18 @@ fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
         "design.options_height" => Some(ctx.map_or(42.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.bars.options
         })),
+        "design.tools_width" => Some(ctx.map_or(50.0, |ctx| {
+            toolkit::chrome::Chrome::of(ctx).metrics.bars.tool
+        })),
+        "design.tool_margin" => Some(ctx.map_or(8.0, |ctx| {
+            toolkit::chrome::Chrome::of(ctx).metrics.bars.tool_margin
+        })),
+        "design.bar_inset" => Some(ctx.map_or(8.0, |ctx| {
+            toolkit::chrome::Chrome::of(ctx).style.bars_bar_inset as f32
+        })),
+        "design.bar_padding_y" => Some(ctx.map_or(6.0, |ctx| {
+            toolkit::chrome::Chrome::of(ctx).style.bar_padding_y as f32
+        })),
         _ => None,
     }
 }
@@ -1235,7 +1333,7 @@ fn band_groups(
     caption_width: f32,
     caption_side: design::title_band::Alignment,
     ctx: Option<&egui::Context>,
-    content_width: &dyn Fn(&str) -> f32,
+    content_width: &dyn Fn(&str, bool) -> f32,
 ) -> Result<Vec<design::title_band::Group>, String> {
     use design::title_band::{Alignment, Group};
     let groups = node
@@ -1249,7 +1347,7 @@ fn band_groups(
     }
     children.into_iter().map(|child|{
         let group=groups.get(child).ok_or("band child missing group")?;
-        let length=|name:&str|if group[name]=="window.captions"{Ok(caption_width)}else if group[name]=="content"{Ok(content_width(child))}else if let Some(length)=design_length(&group[name],ctx){Ok(length)}else{group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length, content, or window.captions metric"))};
+        let length=|name:&str|if group[name]=="window.captions"{Ok(caption_width)}else if group[name]=="content"{Ok(content_width(child,false))}else if group[name]=="content.minimum"{Ok(content_width(child,true))}else if let Some(length)=design_length(&group[name],ctx){Ok(length)}else{group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length, content, or window.captions metric"))};
         let chrome=ctx.map(toolkit::chrome::Chrome::of);
         let align=match group["align"].as_str(){Some("window.captions")=>caption_side,Some("window.menu")=>chrome.as_ref().map_or(Alignment::Left,|c|c.menu_side.alignment()),Some("window.actions")=>chrome.as_ref().map_or(Alignment::Right,|c|c.band.actions.alignment()),Some("window.title")=>chrome.as_ref().map_or(Alignment::Center,|c|c.band.title.alignment(c.band.style.title_alignment())),Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center, right or a native window alignment".into())};
         let integer=|name:&str|group[name].as_f64().filter(|n|n.is_finite()&&n.fract()==0.0&&(0.0..=255.0).contains(n)).map(|n|n as u8).ok_or_else(||format!("band {name} must be an integer 0..255"));

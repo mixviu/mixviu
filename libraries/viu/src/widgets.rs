@@ -54,6 +54,9 @@ pub const KINDS: &[&str] = &[
     "dialog-form",
     "image-view",
     "image-fill",
+    "image-canvas",
+    "macro-window",
+    "swatches",
     "window-controls",
     "settings-browser",
 ];
@@ -66,6 +69,29 @@ pub struct Widget {
     pub initial: Value,
     pub properties: Value,
 }
+fn native_numbers(value: &Value) -> Value {
+    match value {
+        Value::Number(n) if n.is_f64() => {
+            let n = n.as_f64().unwrap();
+            if n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0 {
+                if n >= 0.0 {
+                    json!(n as u64)
+                } else {
+                    json!(n as i64)
+                }
+            } else {
+                value.clone()
+            }
+        }
+        Value::Array(a) => Value::Array(a.iter().map(native_numbers).collect()),
+        Value::Object(o) => Value::Object(
+            o.iter()
+                .map(|(k, v)| (k.clone(), native_numbers(v)))
+                .collect(),
+        ),
+        _ => value.clone(),
+    }
+}
 impl Widget {
     pub fn new(id: &str, kind: &str, label: &str, initial: Value) -> Self {
         Self {
@@ -77,6 +103,9 @@ impl Widget {
         }
     }
     pub fn decode(value: &Value) -> Result<Self, String> {
+        // Scene numbers deliberately resolve as f64. Typed native payloads
+        // (RGBA bytes, IDs and pixel extents) still require integral JSON.
+        let value = native_numbers(value);
         let field = |name| {
             value[name]
                 .as_str()
@@ -108,9 +137,40 @@ impl Widget {
         self.properties = properties;
         self
     }
+    fn combo_width(&self, ui: &egui::Ui) -> f32 {
+        let minimum = self.properties["width"].as_f64().unwrap_or(96.0) as f32;
+        if self.properties["measure_choices"] != true {
+            return minimum;
+        }
+        let font = egui::TextStyle::Button.resolve(ui.style());
+        let longest = self
+            .choices()
+            .iter()
+            .map(|id| {
+                let label = self.properties["choice_labels"][*id].as_str().unwrap_or(id);
+                ui.painter()
+                    .layout_no_wrap(label.into(), font.clone(), egui::Color32::PLACEHOLDER)
+                    .size()
+                    .x
+            })
+            .fold(0.0, f32::max);
+        minimum.max(longest + ui.spacing().icon_spacing + ui.spacing().icon_width)
+    }
     /// Untruncated native label width, using exactly the same typography as
     /// drawing. Containers choose whether and how this preferred size shrinks.
     pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
+        if self.kind == "swatches" {
+            return Ok(self.properties["items"]
+                .as_array()
+                .ok_or("swatches required")?
+                .len() as f32
+                * (18.0 + ui.spacing().item_spacing.x)
+                + 6.0
+                - ui.spacing().item_spacing.x);
+        }
+        if self.kind == "combo" && self.properties["native"] == true {
+            return Ok(self.combo_width(ui) + 2.0 * ui.spacing().button_padding.x);
+        }
         if self.kind == "menubar" && self.properties["style"] == "gold" {
             let c = toolkit::chrome::Chrome::of(ui.ctx());
             let form = toolkit::menu::form(ui.ctx());
@@ -153,6 +213,36 @@ impl Widget {
                 });
         }
         if self.kind == "command-bar" && self.properties["style"] == "gold" {
+            if self.properties["hostable"] == false {
+                let items = self.value(model);
+                let items = items.as_array().ok_or("command bar list required")?;
+                let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                let font = toolkit::fonts::bound(
+                    ui.ctx(),
+                    toolkit::fonts::medium(chrome.style.push_label_size as f32),
+                );
+                return Ok(items
+                    .iter()
+                    .map(|item| {
+                        if item["separator"] == true {
+                            9.0
+                        } else if item["icon"].is_string() && item["primary"] != true {
+                            chrome.style.icon_button as f32
+                        } else {
+                            ui.painter()
+                                .layout_no_wrap(
+                                    item["label"].as_str().unwrap_or("").into(),
+                                    font.clone(),
+                                    egui::Color32::PLACEHOLDER,
+                                )
+                                .size()
+                                .x
+                                + chrome.style.button_push_padding as f32
+                        }
+                    })
+                    .sum::<f32>()
+                    + ui.spacing().item_spacing.x * items.len().saturating_sub(1) as f32);
+            }
             if toolkit::titlebar::hosting::hosted(ui.ctx()) {
                 return Ok(0.0);
             }
@@ -230,7 +320,43 @@ impl Widget {
                     egui::TextStyle::Body,
                 )
                 .size()
-                .x)
+                .x
+            + if self.properties["role"] == "status"
+                && self.value(model).as_str().is_some_and(|s| !s.is_empty())
+            {
+                2.0 * toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as f32
+            } else {
+                0.0
+            })
+    }
+
+    /// The native header keeps its standard tail while optional actions give
+    /// up room. Measure that tail with the current theme, just like its icons.
+    pub fn minimum_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
+        if self.kind == "command-bar"
+            && self.properties["style"] == "gold"
+            && self.properties["hostable"] != false
+        {
+            let mut tail = model.clone();
+            let items = self
+                .value(model)
+                .as_array()
+                .ok_or("command bar list required")?
+                .iter()
+                .filter(|item| {
+                    let id = item["id"].as_str().unwrap_or("");
+                    icons::standard(if matches!(id, "view.mode.light" | "view.mode.dark") {
+                        "view.mode"
+                    } else {
+                        id
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            tail["values"][&self.id] = serde_json::json!(items);
+            return self.intrinsic_width(ui, &tail);
+        }
+        self.intrinsic_width(ui, model)
     }
     fn choices(&self) -> Vec<&str> {
         self.properties["choices"]
@@ -264,6 +390,31 @@ impl Widget {
             return crate::editor_controls::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
+            "swatches" => {
+                value.as_array().is_some_and(|v| {
+                    v.len() == 4 && v.iter().all(|v| v.as_u64().is_some_and(|n| n <= 255))
+                }) && self.properties["items"].as_array().is_some_and(|items| {
+                    items.len() <= 32
+                        && items.iter().all(|item| {
+                            item["id"].is_string()
+                                && item["label"].is_string()
+                                && item["colour"].as_array().is_some_and(|v| {
+                                    v.len() == 4
+                                        && v.iter().all(|v| v.as_u64().is_some_and(|n| n <= 255))
+                                })
+                        })
+                })
+            }
+            "macro-window" => {
+                value.is_boolean()
+                    && self.properties["app"].as_str().is_some_and(|app| {
+                        !app.is_empty()
+                            && app.len() <= 64
+                            && app
+                                .bytes()
+                                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                    })
+            }
             "widget-row" => {
                 for side in ["left", "right"] {
                     for item in value[side]
@@ -288,10 +439,11 @@ impl Widget {
                     && value["right"]
                         .as_array()
                         .is_some_and(|a| a.len() <= 16 && a.iter().all(Value::is_string))
-                    && value["icon"]
-                        .as_str()
-                        .and_then(crate::icons::Icon::from_name)
-                        .is_some()
+                    && (value["icon"].is_null()
+                        || value["icon"]
+                            .as_str()
+                            .and_then(crate::icons::Icon::from_name)
+                            .is_some())
             }
             "mark" => value
                 .as_str()
@@ -306,6 +458,7 @@ impl Widget {
             }
             "image-view" => return crate::image_view::validate(value),
             "image-fill" => return crate::image_view::validate_fill(value),
+            "image-canvas" => return crate::image_view::validate_canvas(value),
             "tree-table" => return crate::tree_table::validate(value),
             "icon" => {
                 value["name"]
@@ -435,6 +588,15 @@ impl Widget {
         }
         if self.kind == "mark" || self.kind == "status-line" {
             return vec![];
+}
+        if self.kind == "swatches" {
+            return vec!["select"];
+        }
+        if self.kind == "macro-window" {
+            return vec!["close"];
+        }
+        if self.kind == "image-canvas" {
+            return vec!["pan", "zoom", "pick", "gesture", "viewport"];
         }
         if self.properties["read_only"] == true && self.kind == "tree-table" {
             return vec![];
@@ -497,6 +659,16 @@ impl Widget {
         actions
     }
     pub fn validate_action(&self, action: &str, value: &Value) -> Result<(), String> {
+        if self.kind == "swatches" {
+            if action != "select"
+                || !self.properties["items"]
+                    .as_array()
+                    .is_some_and(|items| items.iter().any(|item| item["id"] == *value))
+            {
+                return Err("invalid swatch choice".into());
+            }
+            return Ok(());
+        }
         if !self.actions().contains(&action) {
             return Err("unsupported widget action".into());
         }
@@ -528,7 +700,9 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
-        if self.properties["enabled"] == false {
+        if self.properties["enabled"] == false
+            || (self.kind == "swatches" && self.properties["read_only"] == true)
+        {
             return Err("DISABLED".into());
         }
         if [
@@ -546,6 +720,9 @@ impl Widget {
         }
         if self.properties["enabled"] == false {
             return Err("DISABLED".into());
+}
+        if self.kind == "image-canvas" {
+            return crate::image_view::admit_canvas(self.value(model), action, value);
         }
         if self.kind == "dashboard" {
             return crate::dashboard::admit(self.value(model), action, value);
@@ -569,6 +746,13 @@ impl Widget {
         model["values"].get(&self.id).unwrap_or(&self.initial)
     }
     pub fn validate_model(&self, model: &Value) -> Result<(), String> {
+        if self
+            .properties
+            .get("enabled")
+            .is_some_and(|v| !v.is_boolean())
+        {
+            return Err("widget enabled must be bool".into());
+        }
         if !KINDS.contains(&self.kind.as_str()) || !self.properties.is_object() {
             return Err("invalid widget definition".into());
         }
@@ -645,6 +829,7 @@ pub struct Widgets {
     surfaces: Option<crate::image_view::Images>,
     editors: crate::editor::Editors,
     documents: crate::documents::Documents,
+    canvases: Option<crate::image_view::Images>,
 }
 impl Widgets {
     pub fn set_native_menus(&mut self, enabled: bool) {
@@ -671,6 +856,9 @@ impl Widgets {
         self.text_input_active = false;
         self.focus_error = None;
         self.images.begin();
+        if let Some(images) = &mut self.canvases {
+            images.begin();
+        }
         if let Some(images) = &mut self.surfaces {
             images.begin();
         }
@@ -703,6 +891,9 @@ impl Widgets {
     /// `widget` calls). A disappeared target must not latch future replies.
     pub fn finish_frame(&mut self) -> Result<(), String> {
         self.images.finish();
+        if let Some(images) = &mut self.canvases {
+            images.finish();
+        }
         if let Some(images) = &mut self.surfaces {
             images.finish();
         }
@@ -821,12 +1012,12 @@ impl Widgets {
                     } else {
                         ui.visuals().weak_text_color()
                     };
-                    ui.add(crate::icons::image_of(
-                        ui.ctx(),
-                        crate::icons::Icon::from_name(value["icon"].as_str().unwrap()).unwrap(),
-                        14.0,
-                        colour,
-                    ));
+                    if let Some(icon) = value["icon"]
+                        .as_str()
+                        .and_then(crate::icons::Icon::from_name)
+                    {
+                        ui.add(crate::icons::image_of(ui.ctx(), icon, 14.0, colour));
+                    }
                     ui.small(value["left"].as_str().unwrap());
                     if let Some(error) = value["message"].as_str() {
                         ui.small(egui::RichText::new(error).color(ui.visuals().error_fg_color));
@@ -909,7 +1100,27 @@ impl Widgets {
                 }
                 response
             }
+            "macro-window" => {
+                if value == true
+                    && toolkit::macros::show_app(
+                        ui.ctx(),
+                        widget.properties["app"].as_str().unwrap(),
+                        true,
+                    )
+                {
+                    events.push(Intent {
+                        id: id.into(),
+                        action: "close".into(),
+                        value: Value::Null,
+                    });
+                }
+                ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
+            }
             "image-view" => self.images.draw(ui, id, value),
+            "image-canvas" => self
+                .canvases
+                .get_or_insert_with(crate::image_view::Images::document)
+                .draw_canvas(ui, id, value, events),
             "image-fill" => self
                 .surfaces
                 .get_or_insert_with(crate::image_view::Images::surface)
@@ -1054,6 +1265,9 @@ impl Widgets {
                         .unwrap_or(ui.available_width() as f64)
                         as f32;
                     toolkit::field::search(ui, &mut text, widget.text("placeholder"), width)
+                } else if widget.kind == "field" && widget.properties["native"] == true {
+                    let width = ui.available_width();
+                    toolkit::field::text(ui, &mut text, widget.text("placeholder"), width)
                 } else {
                     let edit = if widget.kind == "field" {
                         egui::TextEdit::singleline(&mut text)
@@ -1200,6 +1414,84 @@ impl Widgets {
                     .show_percentage()
                     .desired_width(ui.available_width()),
             ),
+            "combo" if widget.properties["native"] == true => {
+                let ids = widget.choices();
+                let labels = ids
+                    .iter()
+                    .map(|id| {
+                        widget.properties["choice_labels"][*id]
+                            .as_str()
+                            .unwrap_or(id)
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>();
+                let mut at = ids
+                    .iter()
+                    .position(|id| *id == value.as_str().unwrap_or(""))
+                    .unwrap_or(0);
+                let response =
+                    toolkit::combo::show(ui, id, &mut at, &labels, Some(widget.combo_width(ui)))
+                        .accessible_name(&widget.label);
+                if response.changed() {
+                    changed = Some(json!(ids[at]));
+                }
+                response
+            }
+            "swatches" => {
+                ui.horizontal(|ui| {
+                    use egui::emath::GuiRounding;
+                    // Native allocations round each item. Round this nested
+                    // row's spacing too, including its trailing inset.
+                    ui.spacing_mut().item_spacing = ui.spacing().item_spacing.round_ui();
+                    for item in widget.properties["items"].as_array().unwrap() {
+                        let selected = item["colour"] == *value;
+                        let (rect, response) =
+                            ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+                        let name = item["label"].as_str().unwrap();
+                        response.widget_info(|| {
+                            egui::WidgetInfo::selected(
+                                egui::Role::Button,
+                                ui.is_enabled() && widget.properties["read_only"] != true,
+                                selected,
+                                name,
+                            )
+                        });
+                        let c = item["colour"].as_array().unwrap();
+                        ui.painter().rect_filled(
+                            rect.shrink(2.0),
+                            2.0,
+                            egui::Color32::from_rgba_unmultiplied(
+                                c[0].as_u64().unwrap() as u8,
+                                c[1].as_u64().unwrap() as u8,
+                                c[2].as_u64().unwrap() as u8,
+                                c[3].as_u64().unwrap() as u8,
+                            ),
+                        );
+                        let outline = if selected {
+                            egui::Stroke::new(2.0, ui.visuals().selection.stroke.color)
+                        } else {
+                            ui.visuals().widgets.inactive.bg_stroke
+                        };
+                        ui.painter()
+                            .rect_stroke(rect, 3.0, outline, egui::StrokeKind::Inside);
+                        self.geometry
+                            .insert(format!("{id}.{}", item["id"].as_str().unwrap()), rect);
+                        if response.on_hover_text(name).clicked()
+                            && widget.properties["read_only"] != true
+                        {
+                            events.push(Intent {
+                                id: id.into(),
+                                action: "select".into(),
+                                value: item["id"].clone(),
+                            });
+                        }
+                    }
+                    // The enclosing native control contributes the final
+                    // item gap; retain the six-point trailing ink inset once.
+                    ui.add_space(6.0 - ui.spacing().item_spacing.x);
+                })
+                .response
+            }
             "combo" => {
                 let choices = widget.choices();
                 let mut selected = choices

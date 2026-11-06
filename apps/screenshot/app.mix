@@ -1,149 +1,208 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.1.0
+-- version: 0.2.0
 -- lint: globals app_args
-$core=require("core.mix");$ctx=viu_context()
-$comp=$app_args[0] ?? env("MIXOS_COMP_SERVICE","comp")
-$home=env("HOME","/tmp")
-$folder=$app_args[1] ?? path_join($home,"Pictures/Screenshots")
-$raw=$app_args[2] ?? path_join(env("XDG_STATE_HOME",path_join($home,".local/state")),"mixviu/screenshot/captures-"..to_string(pid()))
-mkdir($raw,{parents:true});chmod($raw,0o700)
-$state={comp:$comp,folder:$folder,status:"Ready · raw PNG captures; annotation tools deferred",path:nil,image:nil,mode:"screen",cursor:false,output:"Pointer output",window:"Choose window",windows:[],outputs:[],busy:false,serial:0,own:nil,restore_failed:false,recent:[],pending:nil,settings_error:nil}
-fn publish_shot($s)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.model($s)}
-end
-fn restored($s)
-  if $s.own!=nil then
-    try
-      send $comp "comp.window.restore" body={id:$s.own.id,generation:$s.own.generation,activate:false} timeout=5
-      $s.restore_failed=$rc!=0 or $reply.minimized!=false
-    catch $m $s.restore_failed=true end
-    if not $s.restore_failed then $s.own=nil end
-  end
-  if $s.restore_failed then $s.status=$s.status.." · window restore failed; use screenshot.restore" end
+$states=require("state.mix");$op=require("operations.mix");$events=require("events.mix");$model=require("model.mix")
+$journal=require("journal.mix")
+$macros=require("macros.mix")
+$ctx=viu_context()
+$launch={}
+if $app_args[1]=="--launch" then $launch=json_parse($app_args[2]) end
+$state=$states.initial($app_args[0] ?? env("MIXOS_COMP_SERVICE","comp"),if $app_args[1]=="--launch" then nil else $app_args[1] end,if $app_args[1]=="--launch" then nil else $app_args[2] end)
+$options=$ctx.options ?? {}
+$state.headless=$options.headless ?? false
+$state.build=$ctx.build
+$state=$op.refresh($state)
+fn publish_model($s)
+  $s=$macros.flush($s)
+  $s=$journal.flush($s,$ctx.citizen)
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model.render($s)}
   return $s
 end
-fn targets($s)
-  send $comp "comp.windows.list" body={}
-  if $rc!=0 then raise("TARGETS",to_string($result)) end
-  $s.windows=filter($reply.windows,fn($w)=$w.app_id!="mixviu.screenshot")
-  $own=filter($reply.windows,fn($w)=$w.app_id=="mixviu.screenshot" and $w.pid==pid())
-  if len($own)==1 then $s.own={id:$own[0].id,generation:$own[0].generation} end
-  send $comp "comp.props.get" body={path:"outputs"}
-  if $rc==0 then
-    $out=$reply.value ?? $reply;$s.outputs=[]
-    for $key in keys($out) if $out[$key].name!=nil then $s.outputs=push($s.outputs,$out[$key].name) end end
-  end
-  return $s
+fn command($s,$name,$args)
+  $result=$op.dispatch($s,$name,$args)
+  $result.state=publish_model($result.state)
+  if not $result.deferred then reply($result.rc,json_encode($result.body)) end
+  return $result.state
 end
-fn start_job($s,$payload)
-  if $s.busy then raise("BUSY","A job is already active") end
-  $s.serial=$s.serial+1;$s.pending=$payload;$s.busy=true;$s.status="Working…"
-  $path=path_join(dirname(script_path()),"job.mix")
-  send "viu-local" "jobs.start" body={id:"screenshot-work",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:$payload}
-  if $rc!=0 then raise("JOB",to_string($result)) end
-  return $s
+if $launch.path!=nil then $state=$op.work($state,{op:"open",path:$launch.path},false)
+elif $launch.capture!=nil then
+  $request=$op.capture_request($state,$launch.capture)
+  if $launch.window!=nil then $request.window=$launch.window end
+  $state=$op.capture($state,$request,false,true)
 end
-fn capture_shot($s,$a)
-  if $s.busy then raise("BUSY","Capture already in progress") end
-  $r=$core.request($a);$s=targets($s)
-  if $s.own==nil then raise("WINDOW","Own window is not mapped") end
-  return start_job($s,{op:"capture",comp:$comp,request:$r,own:$s.own,path:path_join($raw,"capture-"..to_string($s.serial+1)..".png")})
-end
-fn export_shot($s,$path)
-  if $s.path==nil then raise("EMPTY","No image to save") end
-  if type($path)!="string" or not starts_with($path,"/") or not ends_with(lower($path),".png") then raise("PATH","Choose an absolute .png destination") end
-  return start_job($s,{op:"export",source:$s.path,path:$path})
-end
-fn save_shot($s)
-  mkdir($s.folder,{parents:true})
-  $name=date_format(time(),"%Y%m%d_%H%M%S");$path=path_join($s.folder,$name..".png");$n=2
-  while exists($path)
-    $path=path_join($s.folder,$name.."_"..to_string($n)..".png");$n=$n+1
-    if $n>1000 then raise("COLLISION","Too many name collisions") end
-  end
-  return export_shot($s,$path)
-end
-fn cancel_shot($s)
-  if $s.busy then
-    send "viu-local" "jobs.cancel" body={id:"screenshot-work"}
-    if $rc!=0 then raise("CANCEL","Worker cancellation refused") end
-    $s.serial=$s.serial+1;$s.busy=false;$s.status="Cancelled"
-    if $s.pending.op=="capture" and $s.pending.request.mode=="region" and $s.pending.request.region==nil then $s.status="Worker stopped; region selector may remain until Escape/timeout (Track B7 gap)" end
-    if $s.pending.op=="capture" and is_file($s.pending.path) then remove($s.pending.path) end
-  end
-  return restored($s)
-end
-publish_shot($state)
-on screenshot.ping
-  reply(0,json_encode({comp:$comp,ready:true,schema:"screenshot.mix.lab.v1"}))
-end
-on screenshot.info
-  reply(0,json_encode($state))
-end
-on screenshot.targets
-  $state=targets($state);publish_shot($state);reply(0,json_encode({windows:$state.windows,outputs:$state.outputs}))
-end
-on screenshot.capture
-  $state=capture_shot($state,$event.args);publish_shot($state);reply(0,json_encode({accepted:true,job:$state.serial}))
-end
-on screenshot.cancel
-  $state=cancel_shot($state);publish_shot($state);reply(0,json_encode({cancelled:true,restore_failed:$state.restore_failed}))
-end
-on screenshot.restore
-  $state=restored($state);publish_shot($state);reply(0,json_encode({restore_failed:$state.restore_failed}))
-end
-on screenshot.open
-  if $state.busy then raise("BUSY","Wait for current job") end
-  $info=viu_image("info",$event.args.path)
-  $state.path=$event.args.path;$state.image=$info;$state.status="Opened image";publish_shot($state);reply(0,json_encode($info))
-end
-on screenshot.export
-  $state=export_shot($state,$event.args.path);publish_shot($state);reply(0,json_encode({accepted:true}))
-end
-on screenshot.save
-  $state=save_shot($state);publish_shot($state);reply(0,json_encode({accepted:true}))
-end
-on screenshot.copy
-  if $state.path==nil or $state.busy then raise("EMPTY","No idle image") end
-  $state=start_job($state,{op:"copy",source:$state.path});publish_shot($state);reply(0,json_encode({accepted:true}))
-end
-on screenshot.recent
-  reply(0,json_encode({folder:$state.folder,shots:$state.recent}))
-end
+$state=publish_model($state)
 on viu.job.completed
-  $d=$event.args
-  if $state.busy and $d.tag.owner==$state.serial then
-    $state.busy=false
-    if $d.rc==0 then
-      if $d.body.op=="capture" then $state.path=$d.body.path;$state.image=$d.body.image;$state.status="Captured PNG"
-      elif $d.body.op=="copy" then
-        $state.status=if $d.body.clipboard.applied==true then "Image copied through blobd + clipd" else "Clipboard ownership pending" end
-      else
-        $shot={path:$d.body.path,width:$d.body.image.width,height:$d.body.image.height,annotated:false,saved_at:time()}
-        $state.recent=concat([$shot],slice($state.recent,0,99));$state.status="Saved: "..$d.body.path
-        publish("screenshot.saved",json_encode($shot))
-      end
-    else $state.status="Failed: "..json_encode($d.body) end
-    if $state.pending.op=="capture" then $state=restored($state) end
-    publish_shot($state)
-  end
+  $state=$events.completed($state,$event.args,$ctx.citizen);$state=publish_model($state)
 end
 on screenshot.intent
-  $a=$event.args
-  if $a.id=="capture" then
-    $r={mode:$state.mode,cursor:$state.cursor}
-    if $state.output!="Pointer output" then $r.output=$state.output end
-    if $state.mode=="window" then
-      $key=split(split($state.window," ")[0],":");$r.window={id:to_number($key[0]),generation:to_number($key[1])};$r=delete($r,"output")
-    end
-    $state=capture_shot($state,$r)
-  elif $a.id=="save" then $state=save_shot($state)
-  elif $a.id=="copy" then
-    if $state.path==nil then raise("EMPTY","No image") end
-    $state=start_job($state,{op:"copy",source:$state.path})
-  elif $a.id=="refresh" then $state=targets($state)
-  elif $a.id=="cancel" then
-    $state=cancel_shot($state)
-  elif contains(["mode","cursor","output","window"],$a.id) then $state[$a.id]=$a.value end
-  publish_shot($state);reply(0,"{}")
+  $state=$events.intent($state,$event.args);$state=publish_model($state)
+end
+on viu.frame.intent
+  $state=$events.intent($state,$event.args);$state=publish_model($state)
+end
+on viu.frame.close
+  $state=$op.request($state,{op:"quit"});$state=publish_model($state)
+end
+on viu.key
+  $state=$events.key($state,$event.args);$state=publish_model($state)
+end
+on viu.session.changed
+  $state.effective=$event.args.appearance;$state.keymap=$event.args.keymap;$state=publish_model($state)
+end
+on bus.connected
+  $state.connected=true;$state=$op.refresh($state);$state=publish_model($state)
+end
+on bus.disconnected
+  $state.connected=false;$state.status="The Bus is disconnected";$state=publish_model($state)
+end
+
+on HELP
+  $state=command($state,"HELP",$event.args)
+end
+
+on app.describe
+  $state=command($state,"app.describe",$event.args)
+end
+
+on screenshot.ping
+  $state=command($state,"screenshot.ping",$event.args)
+end
+
+on screenshot.info
+  $state=command($state,"screenshot.info",$event.args)
+end
+
+on screenshot.capture
+  $state=command($state,"screenshot.capture",$event.args)
+end
+
+on screenshot.take
+  $state=command($state,"screenshot.take",$event.args)
+end
+
+on screenshot.cancel
+  $state=command($state,"screenshot.cancel",$event.args)
+end
+
+on screenshot.open
+  $state=command($state,"screenshot.open",$event.args)
+end
+
+on screenshot.annotate
+  $state=command($state,"screenshot.annotate",$event.args)
+end
+
+on screenshot.move
+  $state=command($state,"screenshot.move",$event.args)
+end
+
+on screenshot.delete
+  $state=command($state,"screenshot.delete",$event.args)
+end
+
+on screenshot.crop
+  $state=command($state,"screenshot.crop",$event.args)
+end
+
+on screenshot.undo
+  $state=command($state,"screenshot.undo",$event.args)
+end
+
+on screenshot.redo
+  $state=command($state,"screenshot.redo",$event.args)
+end
+
+on screenshot.export
+  $state=command($state,"screenshot.export",$event.args)
+end
+
+on screenshot.save
+  $state=command($state,"screenshot.save",$event.args)
+end
+
+on screenshot.recent
+  $state=command($state,"screenshot.recent",$event.args)
+end
+
+on screenshot.select
+  $state=command($state,"screenshot.select",$event.args)
+end
+
+on screenshot.actions
+  $state=command($state,"screenshot.actions",$event.args)
+end
+
+on screenshot.execute
+  $state=command($state,"screenshot.execute",$event.args)
+end
+
+on screenshot.show
+  $state=command($state,"screenshot.show",$event.args)
+end
+
+on screenshot.quit
+  $state=command($state,"screenshot.quit",$event.args)
+end
+
+on screenshot.theme
+  $state=command($state,"screenshot.theme",$event.args)
+end
+
+on screenshot.dialog
+  $state=command($state,"screenshot.dialog",$event.args)
+end
+
+on screenshot.macros.list
+  $state=$macros.request_macro($state,"list",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.reload
+  $state=$macros.request_macro($state,"reload",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.run
+  $state=$macros.request_macro($state,"run",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.status
+  $state=$macros.request_macro($state,"status",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.output
+  $state=$macros.request_macro($state,"output",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.stop
+  $state=$macros.request_macro($state,"stop",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.new
+  $state=$macros.request_macro($state,"new",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.get
+  $state=$macros.request_macro($state,"get",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.put
+  $state=$macros.request_macro($state,"put",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.remove
+  $state=$macros.request_macro($state,"remove",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.move
+  $state=$macros.request_macro($state,"move",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.copy
+  $state=$macros.request_macro($state,"copy",$event.args);$state=publish_model($state)
+end
+
+on viu.macros.closed
+  $state.ui.macros_open=false;$state=publish_model($state)
+end
+on viu.macros.changed
+  $state.ui.macros_open=$event.args.open;$state=publish_model($state)
 end

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -31,6 +31,9 @@ pub struct Services {
     pub documents: Option<crate::documents::Documents>,
     pub macros: Option<macros::Session>,
     pub chooser: Option<crate::chooser::Service>,
+    pub annotations: crate::annotation::Documents,
+    pub clipboard: Option<crate::clipboard::Clipboard>,
+    pub options: Json,
 }
 
 // Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
@@ -94,11 +97,12 @@ pub struct Program {
     pub citizen: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Reply {
     pub rc: u8,
     pub body: Json,
 }
+
 #[derive(Debug)]
 pub struct DeferredAnswer {
     pub token: String,
@@ -118,8 +122,12 @@ pub struct Completion {
     /// The callback's explicit application reply. A refusal is a normal
     /// response, distinct from an evaluator/handler failure in `error`.
     pub reply: Option<Reply>,
-    pub deferred: Option<String>,
-    pub answers: Vec<DeferredAnswer>,
+    /// Keep the native request open after this callback has returned.
+    pub deferred: bool,
+    pub deferred_token: Option<String>,
+    pub deferred_answers: Vec<DeferredAnswer>,
+    /// Replies to earlier requests, correlated independently of this callback.
+    pub answers: Vec<(u64, Reply)>,
 }
 
 enum RunFailure {
@@ -140,6 +148,7 @@ impl RunFailure {
 enum Request {
     Load(u64, Program),
     Event(u64, u64, String, Json, bool, BTreeMap<String, String>),
+    Forget(u64, u64),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -156,6 +165,7 @@ pub struct Runtime {
     thread: Option<JoinHandle<()>>,
     interrupt: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
+    cancel: Arc<AtomicBool>,
     generation: u64,
     sequence: u64,
 }
@@ -187,6 +197,8 @@ impl Runtime {
         let (results, rx) = mpsc::sync_channel(capacity + 2);
         let interrupt = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = cancel.clone();
         let worker_interrupt = interrupt.clone();
         let worker_stop = stop.clone();
         let thread = std::thread::Builder::new().name("viu-mix".into()).stack_size(EVALUATOR_STACK).spawn(move || {
@@ -197,11 +209,12 @@ impl Runtime {
                 worker_interrupt.store(false, Ordering::Release);
                 if worker_stop.load(Ordering::Acquire) { break; }
                 let start = Instant::now();
+                let retained_before=current.as_ref().map(|(_,_,local,..)|local.requests.borrow().clone());
                 let (generation, sequence, result) = match request {
                     Request::Load(generation, program) => {
                         if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                         // A fresh evaluator never retains old closures or module state.
-                        let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), deferred: RefCell::new(None), answers: RefCell::new(Vec::new()), is_request: std::cell::Cell::new(false), backend: backend.clone() });
+                        let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), backend: backend.clone(), requests: RefCell::new(BTreeMap::new()), active: RefCell::new(None), deferred: Cell::new(false), answers: RefCell::new(Vec::new()), identity: NEXT_RUNTIME.fetch_add(1,Ordering::Relaxed), prefs_deferred: RefCell::new(None), prefs_answers: RefCell::new(Vec::new()), is_request: Cell::new(false) });
                         let stdout = SharedBuf::new();
                         let stderr = SharedBuf::new();
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
@@ -215,31 +228,44 @@ impl Runtime {
                         eval.register("viu_thumbnail",crate::native_primitives::thumbnail(worker_stop.clone()));
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
-                        eval.register("viu_app_dirs",crate::native_primitives::app_dirs());
-                        eval.register("viu_maildoc",crate::native_primitives::mail_document());
-                        eval.register("viu_editor_write",crate::native_primitives::editor_write());
-                        eval.register("viu_digest",crate::native_primitives::digest());
-                        eval.register("viu_action_event",crate::native_primitives::action_event());
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_process",crate::process::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
+                        eval.register("viu_image",crate::native_primitives::image_file());
+                        eval.register("viu_http",crate::http::binding());
+                        let raster=services.annotations.clone().binding();
+                        let text=services.documents.clone().map(|d|d.binding()).unwrap_or_else(||mix::sync_ext(|_|Err(failure("text document facility unavailable"))));
+                        eval.register("viu_document",Rc::new(move|args| if args.len()==2 {raster(args)}else{text(args)}));
+                        if let Some(clipboard)=services.clipboard.clone(){eval.register("viu_clipboard",clipboard.binding());}
+                        let cancelled=worker_cancel.clone();
+                        eval.register("viu_cancelled",mix::sync_ext(move |args| {
+                            if !args.is_empty(){return Err(failure("viu_cancelled takes no arguments"));}
+                            Ok(Value::Bool(cancelled.load(Ordering::Acquire)))
+                        }));
+                        let replies=local.clone();
+                        let handles=mix::sync_ext(move |args| replies.reply_handle(args));
+                        let owner=services.calls.clone().map(|c|c.binding()).unwrap_or_else(||mix::sync_ext(|_|Err(failure("owner receipt facility unavailable"))));
+                        eval.register("viu_reply",Rc::new(move|args|if args.len()==3 {owner(args)}else{handles(args)}));
+                        if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
+                        if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
                         eval.register("viu_settings",crate::native_primitives::settings_values());
                         eval.register("viu_token",crate::native_primitives::token());
                         eval.register("viu_fonts",crate::native_primitives::installed_fonts());
-                        eval.register("viu_image",crate::native_primitives::image_file());
-                        eval.register("viu_http",crate::http::binding());
-                        if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
-                        if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
-                        if let Some(documents)=services.documents.clone(){eval.register("viu_document",documents.binding());}
+                        if let Some(documents)=services.documents.clone(){eval.register("viu_text_document",documents.binding());}
                         if let Some(timers)=services.timers.clone(){eval.register("viu_timer",timers.binding());}
-                        if let Some(calls)=services.calls.clone(){eval.register("viu_reply",calls.binding());}
                         if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());}
                         if let Some(platform)=services.platform.clone(){eval.register("viu_platform",platform.binding());}
+                        eval.register("viu_app_dirs",crate::native_primitives::app_dirs());
+                        eval.register("viu_maildoc",crate::native_primitives::mail_document());
+                        eval.register("viu_digest",crate::native_primitives::digest());
+                        eval.register("viu_editor_write",crate::native_primitives::editor_write());
+                        eval.register("viu_action_event",crate::native_primitives::action_event());
+                        let options=services.options.clone();
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
-                            "version":env!("CARGO_PKG_VERSION"),"git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"),
+                            "git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"), "loader": "viu-local", "host": "viu-local", "options":options,
                             "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
-                            "loader": "viu-local", "host": "viu-local"
+                            "build":serde_json::from_str::<serde_json::Value>(&buildinfo::build_info!().json()).expect("build provenance JSON"),
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));
@@ -248,8 +274,8 @@ impl Runtime {
                     Request::Event(generation, sequence, command, args, is_request, mut headers) => {
                         let outcome = match current.as_mut() {
                             Some((active, eval, local, ..)) if *active == generation => {
-                                local.is_request.set(is_request);
-                                headers.entry("from".into()).or_insert_with(||"viu-client".into());
+                                local.is_request.set(is_request); headers.entry("from".into()).or_insert_with(||"viu-client".into());
+                                *local.active.borrow_mut()=is_request.then(||(sequence,headers["from"].clone()));
                                 headers.insert("type".into(),if is_request{"request"}else{"event"}.into());
                                 headers.insert("id".into(),sequence.to_string());
                                 let event = IncomingEvent { generation, command, headers, body: args.to_string() };
@@ -265,6 +291,12 @@ impl Runtime {
                         };
                         (generation, sequence, outcome)
                     }
+                    Request::Forget(generation,sequence) => {
+                        if let Some((active,_,local,..))=&current {
+                            if *active==generation { local.requests.borrow_mut().retain(|_,request| request.0!=sequence); }
+                        }
+                        continue;
+                    }
                 };
                 if worker_stop.load(Ordering::Acquire) { break; }
                 let (mut model, stdout, stderr, fault, mut reply) = match current.as_ref() {
@@ -272,14 +304,25 @@ impl Runtime {
                     None => (None, String::new(), String::new(), None,None),
                 };
                 let result = result.and_then(|_| fault.map_or(Ok(()), |error| Err(RunFailure::Evaluation(error))));
-                let (mut deferred, mut answers) = current.as_ref().map(|(_,_,local,_,_)| (local.deferred.borrow_mut().take(), std::mem::take(&mut *local.answers.borrow_mut()))).unwrap_or_default();
-                let result = if deferred.is_some() && reply.is_some() { Err(RunFailure::Evaluation("request cannot both reply and defer".into())) } else { result };
                 // Failed callbacks never publish a partial model to the UI.
-                if result.is_err() { model = None; reply=None; deferred=None; answers.clear(); }
+                if result.is_err() { model = None; reply=None; }
                 if (sequence == 0 && result.is_err()) || matches!(&result, Err(RunFailure::Deadline)) {
                     if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                 }
-                let completion = Completion { generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply,deferred,answers };
+                let (mut deferred,mut answers)=current.as_ref().map(|(_,_,local,..)| {
+                    *local.active.borrow_mut()=None;
+                    (local.deferred.replace(false),std::mem::take(&mut *local.answers.borrow_mut()))
+                }).unwrap_or_default();
+                if result.is_err() {
+                    deferred=false; answers.clear();
+                    if let Some((_,_,local,..))=&current {
+                        *local.requests.borrow_mut()=retained_before.unwrap_or_default();
+                        local.requests.borrow_mut().retain(|_,r|r.0!=sequence);
+                    }
+                }
+                let (mut deferred_token,mut deferred_answers)=current.as_ref().map(|(_,_,local,..)|(local.prefs_deferred.borrow_mut().take(),std::mem::take(&mut *local.prefs_answers.borrow_mut()))).unwrap_or_default();
+                if result.is_err(){deferred_token=None;deferred_answers.clear();}
+                let completion = Completion { generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply,deferred,answers,deferred_token,deferred_answers };
                 if results.send(completion).is_err() { break; }
                 wake();
             }
@@ -291,6 +334,7 @@ impl Runtime {
             thread: Some(thread),
             interrupt,
             stop,
+            cancel,
             generation: 0,
             sequence: 0,
         }
@@ -368,6 +412,18 @@ impl Runtime {
     pub fn generation(&self) -> u64 {
         self.generation
     }
+    pub fn sequence(&self) -> u64 {
+        self.sequence
+    }
+    /// Cooperative cancellation keeps the work lane alive for native cleanup.
+    pub fn signal_cancel(&self) {
+        self.cancel.store(true, Ordering::Release);
+    }
+    /// Retire a caller whose native response receiver has gone away.
+    /// On a full mailbox the owner must retry; no reply handle is reused.
+    pub fn forget_reply(&self, sequence: u64) -> Result<(), Refusal> {
+        self.enqueue(Request::Forget(self.generation, sequence))
+    }
     pub fn try_completion(&self) -> Option<Completion> {
         self.rx.as_ref()?.try_recv().ok()
     }
@@ -420,14 +476,83 @@ pub fn to_json(value: &Value) -> MixResult<Json> {
 }
 
 struct Local {
+    prefs_deferred: RefCell<Option<String>>,
+    prefs_answers: RefCell<Vec<DeferredAnswer>>,
+    is_request: Cell<bool>,
     generation: u64,
     model: RefCell<Option<Json>>,
     error: RefCell<Option<String>>,
     reply: RefCell<Option<Reply>>,
-    deferred: RefCell<Option<String>>,
-    answers: RefCell<Vec<DeferredAnswer>>,
-    is_request: std::cell::Cell<bool>,
     backend: Option<Rc<dyn BusHandler>>,
+    identity: u64,
+    requests: RefCell<BTreeMap<String, (u64, String)>>,
+    active: RefCell<Option<(u64, String)>>,
+    deferred: Cell<bool>,
+    answers: RefCell<Vec<(u64, Reply)>>,
+}
+static NEXT_RUNTIME: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+impl Local {
+    fn reply_handle(&self, args: Vec<Value>) -> MixResult<Value> {
+        let values = args.iter().map(to_json).collect::<MixResult<Vec<_>>>()?;
+        match values.as_slice() {
+            [op] if op == "keep" => {
+                if self.reply.borrow().is_some() || self.deferred.get() {
+                    return Err(failure("request already answered or retained"));
+                }
+                let (sequence, caller) = self
+                    .active
+                    .borrow()
+                    .clone()
+                    .ok_or_else(|| failure("only a request can be retained"))?;
+                if self.requests.borrow().len() >= 32 {
+                    return Err(failure("deferred reply capacity exceeded"));
+                }
+                let handle = format!("{}:{}:{}", self.identity, self.generation, sequence);
+                self.requests
+                    .borrow_mut()
+                    .insert(handle.clone(), (sequence, caller.clone()));
+                self.deferred.set(true);
+                from_json(json!({"handle":handle,"request":sequence,"caller":caller}))
+            }
+            [op, handle, rc, body] if op == "send" => {
+                let token = handle["handle"]
+                    .as_str()
+                    .ok_or_else(|| failure("invalid reply handle"))?;
+                let rc = rc
+                    .as_u64()
+                    .filter(|r| *r <= 255)
+                    .ok_or_else(|| failure("reply code must be 0..255"))?
+                    as u8;
+                let mut requests = self.requests.borrow_mut();
+                let (sequence, caller) = requests
+                    .get(token)
+                    .ok_or_else(|| failure("stale or consumed reply handle"))?;
+                if handle["request"].as_u64() != Some(*sequence)
+                    || handle["caller"].as_str() != Some(caller.as_str())
+                {
+                    return Err(failure("reply handle identity mismatch"));
+                }
+                if self
+                    .active
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|r| r.0 == *sequence)
+                {
+                    return Err(failure("retained reply requires a later callback"));
+                }
+                self.answers.borrow_mut().push((
+                    *sequence,
+                    Reply {
+                        rc,
+                        body: body.clone(),
+                    },
+                ));
+                requests.remove(token);
+                from_json(json!({"answered":true}))
+            }
+            _ => Err(failure("viu_reply expects keep, or send/handle/rc/body")),
+        }
+    }
 }
 
 impl ServeRuntime for Local {
@@ -463,7 +588,7 @@ impl BusHandler for Local {
         Box::pin(async move {
             if target != "viu-local"
                 || command.starts_with("native.")
-                || ["jobs.start", "jobs.cancel"].contains(&command)
+                || ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command)
             {
                 return match &self.backend {
                     Some(backend) => backend.send_with_reply(target, command, args).await,
@@ -483,7 +608,7 @@ impl BusHandler for Local {
         Box::pin(async move {
             if target != "viu-local"
                 || command.starts_with("native.")
-                || ["jobs.start", "jobs.cancel"].contains(&command)
+                || ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command)
             {
                 return match &self.backend {
                     Some(backend) => backend.send(target, command, args).await,
@@ -506,12 +631,12 @@ impl BusHandler for Local {
                         .as_str()
                         .filter(|s| !s.is_empty() && s.len() <= 128)
                         .ok_or_else(|| failure("invalid deferred request token"))?;
-                    if !self.is_request.get() || self.deferred.borrow().is_some() {
+                    if !self.is_request.get() || self.prefs_deferred.borrow().is_some() {
                         return Err(failure(
                             "only one deferral is allowed on a request callback",
                         ));
                     }
-                    *self.deferred.borrow_mut() = Some(token.into());
+                    *self.prefs_deferred.borrow_mut() = Some(token.into());
                     json!({"deferred":true})
                 }
                 "requests.reply" => {
@@ -524,12 +649,12 @@ impl BusHandler for Local {
                         .filter(|rc| *rc <= 255)
                         .ok_or_else(|| failure("invalid deferred reply code"))?
                         as u8;
-                    if self.answers.borrow().len() >= 32
-                        || self.answers.borrow().iter().any(|a| a.token == token)
+                    if self.prefs_answers.borrow().len() >= 32
+                        || self.prefs_answers.borrow().iter().any(|a| a.token == token)
                     {
                         return Err(failure("duplicate or over-budget deferred reply"));
                     }
-                    self.answers.borrow_mut().push(DeferredAnswer {
+                    self.prefs_answers.borrow_mut().push(DeferredAnswer {
                         token: token.into(),
                         reply: Reply {
                             rc,
@@ -612,16 +737,8 @@ impl BusHandler for Local {
         body: &'a str,
     ) -> BusFuture<'a, MixResult<()>> {
         Box::pin(async move {
-            // Mix synthesises NO_REPLY when a clean handler returns without
-            // reply(). The host now owns that obligation after local deferral.
-            // Explicit replies and fault replies still follow normal admission.
-            if self.deferred.borrow().is_some()
-                && rc == mix::evaluator::NO_REPLY_RC
-                && body == mix::evaluator::NO_REPLY_BODY
-            {
-                return Ok(());
-            }
-            if self.reply.borrow().is_some() {
+            if self.prefs_deferred.borrow().is_some() && rc==mix::evaluator::NO_REPLY_RC && body==mix::evaluator::NO_REPLY_BODY { return Ok(()); }
+            if self.reply.borrow().is_some() || self.deferred.get() {
                 return Err(failure("callback already replied"));
             }
             let body = serde_json::from_str(body).unwrap_or_else(|_| Json::String(body.into()));

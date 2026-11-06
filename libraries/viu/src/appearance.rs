@@ -253,3 +253,19 @@ pub fn install_style(ctx: &egui::Context, description: &Value, appearance: Resol
     ctx.set_style_of(egui::Theme::Light, style.clone());
     ctx.set_style_of(egui::Theme::Dark, style);
 }
+
+pub fn install_session_choice(
+    ctx: &egui::Context,
+    snapshot: &Value,
+    app: &str,
+    file: &toolkit::Theme,
+    last_ui: &settings::model::CommonUi,
+    choice: &Value,
+) -> Result<settings::model::CommonUi, String> {
+    let (base, ui) = session_base(snapshot, app, file, last_ui)?;
+    let theme = base
+        .with_choice(&theme_choice(choice)?)
+        .map_err(|e| e.to_string())?;
+    install_theme(ctx, &theme)?;
+    Ok(ui)
+}
