@@ -49,3 +49,65 @@ Branch lab/gold-parity; code head SHA 5ab4207ab7a0c74aaf4b40592370a69b875e5eed (
 Integration checkpoint: merging origin/lab/mixviu-poc 4c1d715. Bulk and Monitor code retained; merged-head gate and release capture revalidation pending. No replacement desk artifact is accepted yet.
 
 Branch lab/gold-parity; integration merge head is the commit containing this checkpoint; gates pending; artifacts pending; CBC pending.
+
+## Ced round 4 — accepted
+
+Acceptance record: [docs/ports/ced-acceptance.md](docs/ports/ced-acceptance.md).
+Exact tested code is `5ad8ad4aac6cba0363c28dc90103493842a42c2e`; this final
+checkpoint adds documentation only. The private acceptance receipt records
+the resulting receipt commit separately. The shared frame was merged through
+`5ab4207ab7a0c74aaf4b40592370a69b875e5eed` before the final Ced gate.
+
+The remaining dialog, recovery and conflict interactions are closed. Bus
+Open/Save As/Goto and scratch Save hold replies until native acceptance or
+cancellation, with disk completion before Save success. Native dirty Close,
+Don't Save, Save/Save As, overwrite confirmation and cancellations match
+gold; agent refusals do not create a modal. Recovered Open/Discard/Close,
+native Re-insert/Dismiss and Keep Mine/Take the Service's pass against real
+editd, with the four conflict/disconnected-copy capture pairs exact. Recovery
+notices and the empty window now use gold's labels, controls and layout.
+The shadow-plugin exit-owner repair is **gold-behaviour restoration**: pinned
+gold Quit exits cleanly, and the port now releases its retained window and
+exits within the same native witness. It is not a proposed deviation.
+
+Fable C1 resolves the earlier question: show both Replace rows, preserving
+gold styling and insets. The private `gold-replace-clipping-bug.md`, matched
+gold/port PNGs and full/regional figures retain gold's clipped controls and
+the approved repair. No Fable question remains.
+
+Final native runs cover 61/61 successful actions across text and mail, the
+53-command gold Bus surface, native drive/debug, all macro operations,
+clipboard/IME, mail/attachments/uncertain Send, sessions, recovery, 16/64 MiB
+and gold refusals. Ten suites plus selected-Goto and native recovery-button rechecks produce twelve
+source/hash-checked receipts; all owned processes and brokers are stopped.
+Live Prefs changes stay on one candidate PID through nine paired variants,
+including independent editor typography, scale/density, framing, app
+overrides, auto-mode and settings authority loss/recovery.
+
+Visual acceptance: 35 matched 1000×720 pairs inspected, **31 pixel-identical**.
+Problems/Output differ only in one antialiased separator row; the enlarged
+compact look has small raster-edge differences in Search and the status
+rule. C1's Replace repair is the sole approved design difference. Full and
+regional SSIM/RMSE distortions, capture hashes, native layout/titlebar forms,
+fixtures, cleanup and the source/binary provenance are indexed in the
+acceptance record and private `accepted-5ad8ad4` collection. The final Goto
+capture selects the same `2:2` text in both apps to match caret state.
+
+CBC `20261107-063528-808d3be7`: fmt check, normal Clippy, 29 scoped tests and
+host build passed at the exact tested source, with no worker diff; complete
+saved log read. Preceding exact-source gates `20261107-062747-64d9272f` and
+`20261107-061822-1babe0aa` also passed. Earlier failed gates and native runs
+remain in the private evidence; assertions were preserved, including the
+rendered-field/path-echo guard for synthetic Save input. No local Rust build,
+deployment, VT work or main merge occurred.
+
+branch: lab/viu-editor; head SHA: 5ad8ad4aac6cba0363c28dc90103493842a42c2e (exact tested code before this receipt-only commit); acceptance evidence: docs/ports/ced-acceptance.md, 61/61 actions, 12 native receipts, 35 matched captures (31 exact, three raster-edge-only, C1 Replace approved), nine live Prefs variants, cleanup verified; CBC job ids: 20261107-063528-808d3be7, 20261107-062747-64d9272f, 20261107-061822-1babe0aa.
+
+
+## Integration close-out in progress
+
+Frozen first source: 9643f9235819d33fc8e398ea0abfcc29d84192cf. Four release engines saved on CBC2. Monitor release revalidation passes all 12 runs and 55 figures, Bus 46/46; ordinary whole/regions distortion 0. Full Rust test stages: 10649 passed, no failures; the job was interrupted during the oracle build. Furniture/Track A continuation and worker-locked direct performance comparison are queued. First performance witness passed 480 samples.
+
+Merged accepted Ced d4e19db5259e448190f3e877a0021f735195635a; only last.md conflicted. No source conflict. Ced release-byte acceptance, Monitor quick check and the second four-engine set remain pending.
+
+Branch lab/gold-parity; head is the merge containing this receipt; first source 9643f9235819d33fc8e398ea0abfcc29d84192cf, CBC2 /build/es-artifacts/9643f9235819d33fc8e398ea0abfcc29d84192cf; final gates and second artifacts pending; CBC 20261107-064343-f05d5cfb-a1, 20261107-075258-c6071acd, 20261107-075542-24a1c263-a1, 20261107-075901-fe888f44.

@@ -63,8 +63,8 @@ impl Facilities {
         Self {
             app,
             service: manifest.service.clone(),
-            ui: manifest.native_ui,
-            debug: manifest.native_debug,
+            ui: manifest.native_ui || manifest.native_drive,
+            debug: manifest.native_debug || manifest.native_drive,
             installed: false,
             context: None,
             surface,
@@ -245,7 +245,7 @@ fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {
         Err(e) => (10, json!({"error_code":e.code,"message":e.message})),
     }
 }
-fn remap(ctx: &egui::Context, value: &mut Value) {
+pub(crate) fn remap(ctx: &egui::Context, value: &mut Value) {
     match value {
         Value::Array(values) => {
             for value in values {

@@ -6,10 +6,17 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
+    "mark",
+    "macro-menu",
+    "notice-bar",
+    "diagnostic-list",
+    "document-tabs",
+    "search-bar",
+    "form-fields",
+    "header-form",
+    "status-line",
     "widget-row",
     "divider",
-    "mark",
-    "status-line",
     "time-series",
     "dashboard",
     "label",
@@ -17,6 +24,7 @@ pub const KINDS: &[&str] = &[
     "field",
     "multiline",
     "editor",
+    "markdown",
     "checkbox",
     "toggle",
     "radio",
@@ -169,6 +177,35 @@ impl Widget {
             );
         }
         self.validate_model(model)?;
+        if self.kind == "menubar" && self.properties["style"] == "gold" {
+            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+            if toolkit::menu::effective(ui.ctx()) != design::MenuStyle::Bar {
+                return Ok(chrome.style.icon_button as f32);
+            }
+            return Ok(self
+                .value(model)
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|menu| {
+                    ui.painter()
+                        .layout_no_wrap(
+                            menu["label"].as_str().unwrap().into(),
+                            toolkit::chrome::Chrome::menu_font(ui.style()),
+                            chrome.palette.text,
+                        )
+                        .size()
+                        .x
+                        + 2.0 * chrome.metrics.menu_title_padding.x
+                })
+                .sum());
+        }
+        if self.kind == "command-bar" && self.properties["style"] == "gold" {
+            let n = self.value(model).as_array().unwrap().len();
+            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+            return Ok(n as f32 * chrome.style.icon_button as f32
+                + n.saturating_sub(1) as f32 * chrome.style.title_control_spacing as f32);
+        }
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
         }
@@ -212,6 +249,19 @@ impl Widget {
             }
             return crate::rich::validate(&self.kind, value);
         }
+        if [
+            "document-tabs",
+            "search-bar",
+            "form-fields",
+            "header-form",
+            "macro-menu",
+            "notice-bar",
+            "diagnostic-list",
+        ]
+        .contains(&self.kind.as_str())
+        {
+            return crate::editor_controls::validate(&self.kind, value);
+        }
         let valid = match self.kind.as_str() {
             "widget-row" => {
                 for side in ["left", "right"] {
@@ -246,6 +296,7 @@ impl Widget {
                 .as_str()
                 .and_then(crate::icons::Icon::from_name)
                 .is_some(),
+
             "window-controls" => {
                 value["side"]
                     .as_str()
@@ -285,8 +336,67 @@ impl Widget {
             "colour" => value.as_array().is_some_and(|v| {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
-            "editor" => {
-                value.as_str().is_some_and(|v| v.len() <= 65536)
+            "editor" | "markdown" => {
+                let handle = self.properties["native_document"] == true
+                    && value["document"]
+                        .as_str()
+                        .is_some_and(|s| !s.is_empty() && s.len() <= 128);
+                if self.properties.get("font_size").is_some_and(|v| {
+                    v.as_f64()
+                        .is_none_or(|n| !n.is_finite() || !(3.0..=144.0).contains(&n))
+                }) {
+                    return Err("editor font size must be 3..144".into());
+                }
+                if self.properties.get("padding").is_some_and(|v| {
+                    v.as_f64()
+                        .is_none_or(|n| !n.is_finite() || !(0.0..=127.0).contains(&n))
+                }) {
+                    return Err("editor padding must be 0..127".into());
+                }
+                if self
+                    .properties
+                    .get("light")
+                    .is_some_and(|v| !v.is_boolean())
+                {
+                    return Err("editor light must be bool".into());
+                }
+                for key in ["native_document", "soft_wrap", "line_numbers", "find_bar"] {
+                    if self.properties.get(key).is_some_and(|v| !v.is_boolean()) {
+                        return Err(format!("editor {key} requires bool"));
+                    }
+                }
+                if let Some(command) = self.properties.get("command") {
+                    if !command.is_object()
+                        || whole(&command["serial"]).is_none()
+                        || !command["name"].as_str().is_some_and(|v| {
+                            [
+                                "",
+                                "undo",
+                                "redo",
+                                "select-all",
+                                "duplicate-line",
+                                "delete-line",
+                                "move-line-up",
+                                "move-line-down",
+                                "toggle-comment",
+                                "indent",
+                                "outdent",
+                            ]
+                            .contains(&v)
+                        })
+                    {
+                        return Err("invalid editor command".into());
+                    }
+                }
+                (handle
+                    || value.as_str().is_some_and(|v| {
+                        v.len()
+                            <= if self.properties["native_document"] == true {
+                                64 * 1024 * 1024
+                            } else {
+                                65536
+                            }
+                    }))
                     && (self.properties["rows"].is_null()
                         || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
                     && (self.properties["read_only"].is_null()
@@ -301,6 +411,30 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind == "macro-menu" {
+            return vec!["close"];
+        }
+        if self.kind == "notice-bar" {
+            return vec!["command"];
+        }
+        if self.kind == "diagnostic-list" {
+            return vec!["goto"];
+        }
+        if self.kind == "document-tabs" {
+            return vec!["select", "close"];
+        }
+        if self.kind == "header-form" {
+            return vec!["edit", "commit", "command", "remove", "picked", "cancel"];
+        }
+        if self.kind == "form-fields" {
+            return vec!["edit"];
+        }
+        if self.kind == "search-bar" {
+            return vec!["edit", "next", "prev", "replace", "replace-all", "close"];
+        }
+        if self.kind == "mark" || self.kind == "status-line" {
+            return vec![];
+        }
         if self.properties["read_only"] == true && self.kind == "tree-table" {
             return vec![];
         }
@@ -396,6 +530,22 @@ impl Widget {
         if self.properties["enabled"] == false {
             return Err("DISABLED".into());
         }
+        if [
+            "document-tabs",
+            "search-bar",
+            "form-fields",
+            "header-form",
+            "macro-menu",
+            "notice-bar",
+            "diagnostic-list",
+        ]
+        .contains(&self.kind.as_str())
+        {
+            return crate::editor_controls::admit(&self.kind, self.value(model), action, value);
+        }
+        if self.properties["enabled"] == false {
+            return Err("DISABLED".into());
+        }
         if self.kind == "dashboard" {
             return crate::dashboard::admit(self.value(model), action, value);
         }
@@ -452,7 +602,7 @@ impl Widget {
     }
 }
 
-fn whole(v: &Value) -> Option<u64> {
+pub(crate) fn whole(v: &Value) -> Option<u64> {
     v.as_u64().or_else(|| {
         v.as_f64()
             .filter(|n| {
@@ -483,6 +633,8 @@ impl Intent {
 
 #[derive(Default)]
 pub struct Widgets {
+    native_menu: crate::native_menu::NativeMenu,
+    gold_menus: bool,
     pub geometry: BTreeMap<String, Rect>,
     pub focus: Option<String>,
     pub text_input_active: bool,
@@ -490,8 +642,16 @@ pub struct Widgets {
     focus_error: Option<String>,
     images: crate::image_view::Images,
     surfaces: Option<crate::image_view::Images>,
+    editors: crate::editor::Editors,
+    documents: crate::documents::Documents,
 }
 impl Widgets {
+    pub fn set_native_menus(&mut self, enabled: bool) {
+        self.gold_menus = enabled;
+    }
+    pub fn set_documents(&mut self, documents: crate::documents::Documents) {
+        self.documents = documents;
+    }
     pub fn request_focus(&mut self, id: &str, selection: Option<[usize; 2]>) -> Result<(), String> {
         if selection.is_some_and(|[start, end]| start > end || end > 1_048_576) {
             return Err("invalid selection range".into());
@@ -590,6 +750,10 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
+            "document-tabs" | "search-bar" | "form-fields" | "header-form" | "macro-menu"
+            | "diagnostic-list" | "notice-bar" => {
+                crate::editor_controls::draw(ui, id, &widget.kind, value, events)
+            }
             "widget-row" => {
                 let mut row = |ui: &mut egui::Ui| {
                     for item in value["left"].as_array().unwrap() {
@@ -649,6 +813,7 @@ impl Widgets {
             "dashboard" => crate::dashboard::draw(ui, id, value, events),
             "time-series" => crate::time_series::draw(ui, id, value),
             "status-line" => {
+                ui.spacing_mut().item_spacing.x = ui.ctx().global_style().spacing.item_spacing.x;
                 toolkit::bars::status(ui, |ui| {
                     let colour = if value["error"] == true {
                         ui.visuals().error_fg_color
@@ -715,6 +880,7 @@ impl Widgets {
                     ui.add(image)
                 }
             }
+
             "window-controls" => {
                 let metrics = crate::window_frame::Metrics::of(ui.ctx());
                 let (area, response) = ui.allocate_exact_size(
@@ -748,6 +914,7 @@ impl Widgets {
                 .get_or_insert_with(crate::image_view::Images::surface)
                 .draw_fill(ui, id, value),
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
+            "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" => {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
@@ -831,6 +998,21 @@ impl Widgets {
                     });
                 }
                 r
+            }
+            "markdown" => self.documents.show_preview(ui, widget, value),
+            "editor" if widget.properties["native_document"] == true => {
+                let selection = if self.focus.as_deref() == Some(id) {
+                    self.focus_selection.take()
+                } else {
+                    None
+                };
+                let response = if value.is_object() {
+                    self.documents.draw(ui, widget, value, selection, events)
+                } else {
+                    self.editors.draw(ui, widget, value, selection, events)
+                };
+                self.text_input_active |= response.has_focus();
+                response
             }
             "editor" if widget.properties["read_only"] == true => {
                 // An immutable native text buffer permits selection/copy but
@@ -952,7 +1134,12 @@ impl Widgets {
                             let r = if widget.kind == "radio" {
                                 ui.radio(value == option, option)
                             } else {
-                                toolkit::selectable(ui, value == option, option)
+                                ui.selectable_label(
+                                    value == option,
+                                    widget.properties["labels"][option]
+                                        .as_str()
+                                        .unwrap_or(option),
+                                )
                             };
                             self.remember(ui, &format!("{id}.{option}"), &r);
                             if r.clicked() {
@@ -962,11 +1149,12 @@ impl Widgets {
                     })
                     .response;
                 if widget.kind == "tabs" && widget.properties["pages"].is_object() {
-                    ui.small(
-                        widget.properties["pages"][value.as_str().unwrap_or("")]
-                            .as_str()
-                            .unwrap_or(""),
-                    );
+                    if let Some(page) = widget.properties["pages"][value.as_str().unwrap_or("")]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                    {
+                        ui.small(page);
+                    }
                 }
                 response
             }

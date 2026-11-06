@@ -9,6 +9,8 @@ pub mod chooser;
 pub mod debug;
 mod debug_recent;
 mod design_style;
+pub mod documents;
+pub mod editor;
 pub mod elide;
 pub mod file_data;
 pub mod fonts;
@@ -32,14 +34,21 @@ pub mod session;
 mod shortcuts;
 pub mod templates;
 pub mod thumbnail;
+pub mod timers;
 pub mod tree_table;
 pub mod view;
 pub mod widgets;
 pub mod window_frame;
 
+pub mod calls;
 pub mod decorations;
 pub mod input;
 pub mod layer;
+pub mod platform;
+pub mod ui_state;
+
+pub mod editor_controls;
+pub mod header_controls;
 
 pub mod process;
 

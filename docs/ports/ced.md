@@ -1,41 +1,46 @@
-# Ced round-3 inventory
+# Ced parity inventory
 
-Oracle: MixOS 8779f3328, apps/ced actions/app/view/bus/mail and edit wire
-fixtures. Inventory committed before implementation. Per-app Rust: zero.
+Gold reference: MixOS 8779f3328. Acceptance: see [ced-acceptance.md](ced-acceptance.md) for the exact tested source, native witnesses and inspected capture regions.
 
-| Original capability | Disposition |
+Ced is a Mix application over the reusable in-process editor-model Mirror.
+Mix owns editd traffic, retries, epoch reattachment, file/scratch sessions,
+tabs, actions, menus, dialogs, recovery and mail save/send policy. Root and
+Jobs share native document handles; scene publication carries metadata.
+The shared frame was merged through lab/gold-parity 5ab4207.
+
+| Surface | Implementation and evidence |
 |---|---|
-| Open/new, file tabs and active selection | Ported bounded Mix edit.open/get; semantic open with create=true provides new documents |
-| Native editing buffer, selection and keyboard text | Ported reusable libraries/viu editor control, no file/session policy in Rust |
-| Revision-fenced changes and save/save-as | Ported explicit Apply draft then server save; optional semantic destination; no unfenced overwrites |
-| Undo/redo/reload and dirty-close refusal | Ported editd commands, preserve draft on conflict; original close/quit prompts remain deferred |
-| Search/goto, line operations and commands | Deferred rich commands until the shared model/mirror integration is derived |
-| Optimistic typing, remote cursors, OT history/gap/reply-loss reconciliation | Deferred: editor-model mirror is the appropriate reusable owner; this first specimen uses a bounded explicit CAS draft, not a replacement mirror |
-| Large paged documents and recovery/epoch reattachment | Deferred; refuse truncated reads rather than presenting partial editable buffers |
-| Highlighting, diagnostics/problems/output, markdown previews | Deferred reusable editor-model/syntax/view integration |
-| Mail documents/send/headers | Deferred Email/document workflows; never copied into native widget |
-| Menus/macros/shortcuts, settings/keymaps/theme/session restore | Deferred original compatibility and generic session host work |
+| Editing | Retained virtualised editor, Unicode/IME, cursor/selection, clipboard, wrap, line numbers, overwrite, indentation/comments, line operations and per-origin undo/redo |
+| Files and tabs | Open/new, file/scratch tabs, Save/Save As/Save All, reload, dirty close, save-before-close and session restore; scratch Save waits for the native path dialog and disk completion |
+| Recovery | editd recovery IDs, restored views, epoch reattachment, Keep mine/Take theirs, conflict Reinsert/Dismiss and recovered-buffer Open/Discard |
+| Search and previews | Literal/regex/case find, previous/next, replacement captures, transactional Replace All, goto, source/split/Markdown preview |
+| Panels and chrome | Gold grouped menus, Markdown/Theme submenus, toolbar, status, Problems/Output, keyboard shortcuts, About and retained macro popup |
+| Mail | Inert classification, body mirror, compact optional header rows, thread metadata, attachment chooser/chips, header undo/redo, save, recovery and explicit Send through Email |
+| Live Prefs | Retained theme/typography follower plus editor font/scale/padding/light surface; real settingsd changes and nine paired gold variants |
+| Large files | Paged 16/64 MiB native flow and gold byte/line refusals; metadata-only scenes and bounded inline reads |
+| Actions and Bus | 61 action IDs share the menu/key/Bus reducer; native tests dispatch every ID, use both successful mail contexts and non-mail guards, and inspect action/macro/selection topics |
 
-The existing edit Text gap buffer depends on its vendored msedit closure;
-editor-model additionally depends on syntax and its mirror protocol. Importing
-these wholesale just for a bounded draft would pretend to provide the original
-collaboration semantics. The initial native control therefore uses the retained
-egui text buffer; future model/mirror integration must retain the original
-fixtures, dependencies/licences and convergence tests. This is a bounded editor
-specimen, not full Ced parity.
+Gold's windowed surface includes `ced.dialog`, `INFO`, sixteen native drive
+operations and twelve macro operations. The previous seven-macro inventory
+was incomplete. `ced.dialog` reads/opens/answers gold-shaped dialogs, including
+deferred Open/Save As/Goto receipts. Gold `HELP` descriptors are retained for
+all 53 commands. `ced.specimen`, `ced.command`, `ced.draft` and `ced.intent`
+are additional specimen interfaces.
 
-Launch: `viu run apps/ced`. `ced.command {op,path?,create?}` admits open,
-apply, save, undo, redo, reload, refresh and close. `ced.info` reports the job
-state/tabs; `ced.draft {text}` edits the draft. UI open/path, numeric tab picker,
-editor and Apply/Save/Undo/Redo/Refresh/Discard/Close route to Mix policy.
-Apply is explicit: typing never silently overwrites a server revision. Refresh
-requires an applied or discarded draft. Refusals retain the draft; no automatic
-write replay. Generic host quit does not provide original unsaved-draft prompts.
+Native coverage includes Clipboard/IME, a real native scratch Save dialog,
+mail row disclosure and attachment selection, isolated Email acceptance and
+outcome-unknown without retry, crash recovery and process termination. The
+test Email fixture never delivers external mail. Macro globals belong to
+Workshop and leave Ced's catalogue when moved there, as in pinned gold.
 
-The native control admits up to 65536 UTF-8 bytes and limits interactive text
-insertion to 16384 Unicode scalars. Partial/paged snapshots are refused.
-Shared production Rust is +12/-5 lines at the initial checkpoint (widget kind,
-limits/code-editor drawing and native selection admission), plus +10/-1 shared
-test lines. No dependency, interpreter or per-app Rust additions. Native OS
-clipboard integration and full per-document editing-model/undo/mirror state
-remain deferred; the tested Undo/Redo buttons use editd history.
+The candidate shows both Replace rows under Fable C1: gold clips the second
+row and hides part of its controls. The acceptance record retains both
+captures and the gold bug note. Other differences are confined to edge
+antialiasing. The shutdown-plugin window release restores gold Quit
+behaviour; it is not a design deviation.
+
+Gold source corrections include path:line[:col] Open, file directory defaults,
+Bus dirty-close refusals without a modal, native dirty-close prompts,
+last-holder editd decisions and native disk-overwrite confirmation.
+
+Reusable widget contract: [editor-widget.md](editor-widget.md).

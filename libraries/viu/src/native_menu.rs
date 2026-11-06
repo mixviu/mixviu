@@ -6,6 +6,28 @@ use serde_json::Value;
 use std::sync::OnceLock;
 use toolkit::menu::{Entry, Menu, Row};
 
+#[derive(Default)]
+pub struct NativeMenu;
+impl NativeMenu {
+    pub fn draw(
+        &mut self,
+        ui: &mut egui::Ui,
+        widget: &crate::widgets::Widget,
+        value: &Value,
+        events: &mut Vec<crate::widgets::Intent>,
+    ) -> egui::Response {
+        let response = draw(ui, value, false, widget.properties["header_icon"].as_str());
+        if let Some(command) = picked(ui.ctx()) {
+            events.push(crate::widgets::Intent {
+                id: widget.id.clone(),
+                action: "command".into(),
+                value: serde_json::json!({"command":command}),
+            });
+        }
+        response
+    }
+}
+
 const CAPACITY: usize = 256;
 fn slots() -> &'static [&'static str] {
     static SLOTS: OnceLock<Vec<&'static str>> = OnceLock::new();

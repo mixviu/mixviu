@@ -1,0 +1,191 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold ced.v1 application protocol. All policy and deferred conditions are Mix.
+-- lint: globals ctx
+fn refused($s,$code,$message,$reason=nil)
+  reply(10,json_encode({error_code:$code,message:$message,reason:$reason}));return $s
+end
+fn tab_index($s,$a)
+  if $a.tab!=nil and (type($a.tab)!="number" or floor($a.tab)!=$a.tab or $a.tab<0) then return -1 end
+  for $i=0 to len($s.tabs)-1
+    $t=$s.tabs[$i]
+    if $a.tab!=nil then
+      if to_number($t.document)==$a.tab and ($a.buffer==nil or $t.buffer==$a.buffer) then return $i end
+    elif $a.buffer!=nil then
+      if $t.buffer==$a.buffer then return $i end
+    elif $i==$s.active then return $i end
+  end
+  return -1
+end
+fn caller($headers)
+  if $headers.broker_origin=="local" then
+    if $headers.from!="" then return "local:"..$headers.from end
+    if $headers.broker_connection!=nil and $headers.broker_connection!="" then return "local:connection:"..$headers.broker_connection end
+  elif $headers.broker_origin=="mesh" then return "mesh:"..($headers.broker_service ?? "unknown").."@"..($headers.broker_peer ?? "unknown") end
+  return "anon"
+end
+fn tab_row($t,$preview="source")
+  return {tab:to_number($t.document),preview:$preview,buffer:$t.buffer,epoch:$t.epoch,path:$t.path,name:if $t.path!=nil then basename($t.path) else "untitled-"..$t.document end,language:$t.language,rev:$t.rev,dirty:$t.dirty,disk:$t.disk,pending:$t.pending,conflicts:$t.conflicts,recovered:$t.recovered,phase:$t.phase}
+end
+fn hold_call($s,$e,$wait)
+  $token=$e.headers["viu-call"]
+  if $token==nil or not viu_reply("hold",$token,{}) then raise("CALL","Native receipt is unavailable") end
+  $wait.started=monotonic();$wait.token=$token
+  $s.waits[$token]=$wait
+  viu_timer("call:"..$token,min(90000,$wait.timeout_ms),{kind:"call",token:$token})
+  reply(0,"{}");return $s
+end
+fn finish_call($s,$token,$rc,$body,$close=false)
+  $ok=viu_reply("finish",$token,{rc:$rc,body:$body,close:$close})
+  viu_timer("call:"..$token,nil,{})
+  $s.waits=delete($s.waits,$token);return $s
+end
+fn check_calls($s)
+  for $token in keys($s.waits)
+    $w=$s.waits[$token];$i=tab_index($s,{tab:$w.tab})
+    if $w.kind=="open" then
+      $ready=true;$rows=[];$error=nil
+      for $key in $w.documents
+        $match=filter($s.tabs,fn($t)=$t.document==$key)
+        if len($match)==0 then
+          if $s.open_errors[$key]!=nil then $error=$s.open_errors[$key] else $ready=false end
+        else
+          $t=$match[0]
+          if $t.phase!="live" then $ready=false end
+          if $ready and $w.line!=nil then $v=viu_document("select",$key,{anchor:{line:$w.line,col:$w.col ?? 1},head:{line:$w.line,col:$w.col ?? 1}}) end
+          push($rows,{tab:to_number($key),buffer:$t.buffer,path:$t.path})
+        end
+      end
+      if $error!=nil then $s=finish_call($s,$token,10,{error_code:"UNAVAILABLE",message:json_encode($error),reason:nil})
+      elif $ready then $s=finish_call($s,$token,0,if $w.new then {tab:$rows[0].tab,buffer:$rows[0].buffer} else {tabs:$rows} end) end
+    elif $w.kind=="wait" then
+      if $i<0 then $s=finish_call($s,$token,10,{error_code:"CONFLICT",message:"The tab closed",reason:"cancelled"})
+      else
+        $t=$s.tabs[$i];$a=$w.condition
+        if ($a.rev!=nil and $t.rev>=$a.rev) or ($a.idle==true and $t.idle and $t.phase=="live") or ($a.epoch!=nil and $t.epoch==$a.epoch) or ($a.phase!=nil and $t.phase==$a.phase) then
+          $s=finish_call($s,$token,0,{tab:to_number($t.document),rev:$t.rev,phase:$t.phase,epoch:$t.epoch,waited_ms:round((monotonic()-$w.started)*1000)})
+        end
+      end
+    elif $w.kind=="outcome" and $s.outcomes[$w.op_id]!=nil then
+      $o=$s.outcomes[$w.op_id]
+      if $o.ok and $w.close_after then
+        $i=tab_index($s,{tab:$w.tab});$old=$s.active;$s.active=$i;$s=operation($s,"close",{});$s.active=min($old,max(0,len($s.tabs)-1));$s.waits[$token].kind="close"
+      elif $o.ok then $s=finish_call($s,$token,0,{id:$w.action,ok:true,result:nil})
+      else $s=finish_call($s,$token,10,{error_code:$o.error.error_code,message:$o.error.message,reason:$o.error.reason}) end
+    elif $w.kind=="close" and $i<0 then $s=finish_call($s,$token,0,{id:$w.action,ok:true,result:nil})
+    elif $w.kind=="quit" and not any(concat($s.queue,values($s.running)),fn($j)=contains(["session-save","action-publish"],$j.kind)) then
+      $s=finish_call($s,$token,0,if $w.action!=nil then {id:$w.action,ok:true,result:nil} else {quitting:true} end,true)
+    end
+  end
+  return $s
+end
+fn bus_command($s,$e)
+  $s=refresh_tabs($s);$a=$e.args;$command=$e.command
+  if $command=="ced.dialog" then
+    try $s=dialog_apply($s,$a);reply(0,json_encode({dialog:dialog_view($s)}))
+    catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+    return pump($s)
+  end
+  if type($a)!="map" then return refused($s,"INVALID_ARGUMENT","Expected an object","bad_args") end
+  if $command=="ced.info" then
+    reply(0,json_encode({version:$ctx.version ?? "0.1.2",git_sha:$ctx.git_sha ?? "unknown",build_time:$ctx.build_time ?? "unknown",headless:false,tabs:len($s.tabs),edit:$s.edit,config_path:nil,session_path:$s.session_path}));return $s
+  elif $command=="ced.tabs" then
+    reply(0,json_encode({active:if len($s.tabs)>0 then to_number(current($s).document) else nil end,tabs:map($s.tabs,fn($t)=tab_row($t,if $t.language=="markdown" then $s.previews[$t.document] ?? "source" else "source" end))}));return $s
+  elif $command=="ced.open" or $command=="ced.new" then
+    $new=$command=="ced.new"
+    if not $new and (type($a.paths)!="list" or len($a.paths)==0 or not all($a.paths,fn($p)=type($p)=="string")) then return refused($s,"INVALID_ARGUMENT","ced.open needs paths","bad_args") end
+    $docs=[]
+    if $new then $s=operation($s,"new",{});push($docs,to_string($s.next_tab))
+    else
+      for $path in $a.paths
+        $s=operation($s,"open",{path:$path})
+        $known=filter($s.tabs,fn($t)=$t.path==$path)
+        push($docs,$s.last_open)
+      end
+    end
+    return check_calls(hold_call($s,$e,{kind:"open",documents:$docs,new:$new,line:$a.line,col:$a.col,timeout_ms:60000}))
+  elif starts_with($command,"ced.macros.") then
+    $s=hold_call($s,$e,{kind:"job",timeout_ms:60000})
+    return pump(queue_job($s,"macro",{call:$e.headers["viu-call"],command:replace($command,"ced.macros.",""),args:$a}))
+  elif $command=="ced.actions" then reply(0,json_encode({actions:action_rows($s)}));return $s
+  elif $command=="app.describe" then
+    reply(0,json_encode({contract:"ctk-app-control.v0",app:"ced",title:"MixOS Editor",view:if len($s.tabs)>0 then tab_row(current($s)).name else "" end,engine:"egui",version:$ctx.version ?? "0.1.2",description:"The MixOS Editor: an egui editor over the edit Bus service",controls:[],commands:$s.commands}));return $s
+  elif $command=="app.quit" then
+    if any($s.tabs,fn($t)=$s.mail[$t.document]!=nil and ($t.dirty or $s.mail[$t.document].sending or $s.mail[$t.document].saving)) then return refused($s,"CONFLICT","Save or discard mail document changes before quitting") end
+    $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",timeout_ms:30000}))
+  elif $command=="ced.show" then
+    $s=hold_call($s,$e,{kind:"job",timeout_ms:10000});return pump(queue_job($s,"show",{call:$e.headers["viu-call"]}))
+  elif $command=="ced.stats" then
+    $v=viu_ui_state();reply(0,json_encode(merge($v.stats,viu_document("stats","*",{}))));return $s
+  elif $command=="ced.diagnostics" then
+    if type($a.path)!="string" or not starts_with($a.path,"/") or type($a.source)!="string" or $a.source=="lint" or not re_match($a.source,"^[a-z][a-z0-9-]{0,31}$") or type($a.diagnostics)!="list" or len($a.diagnostics)>500 or byte_length(json_encode($a))>65536 or ($a.digest!=nil and (type($a.digest)!="string" or not re_match($a.digest,"^[0-9a-f]{64}$"))) then return refused($s,"INVALID_ARGUMENT","Invalid diagnostic request","bad_args") end
+    if not all($a.diagnostics,fn($d)=type($d.line)=="number" and $d.line>=1 and floor($d.line)==$d.line and ($d.col==nil or (type($d.col)=="number" and $d.col>=1 and floor($d.col)==$d.col)) and contains(["error","warning","note"],$d.severity) and type($d.code)=="string" and type($d.message)=="string") then return refused($s,"INVALID_ARGUMENT","Invalid diagnostic item","bad_args") end
+    if $s.diagnostics[$a.path]==nil then $s.diagnostics[$a.path]={} end
+    $s.diagnostics[$a.path][$a.source]=$a
+    $s.diag_paths=concat(filter($s.diag_paths,fn($p)=$p!=$a.path),[$a.path])
+    if len($s.diag_paths)>64 then $s.diagnostics=delete($s.diagnostics,$s.diag_paths[0]);$s.diag_paths=slice($s.diag_paths,1) end
+    $docs=map(filter($s.tabs,fn($t)=$t.path==$a.path),fn($t)=$t.document)
+    $s=hold_call($s,$e,{kind:"job",timeout_ms:30000})
+    return pump(queue_job($s,"diagnostics",{call:$e.headers["viu-call"],request:$a,documents:$docs}))
+  elif $command=="ced.execute" then
+    if type($a.id)!="string" or ($a.params!=nil and type($a.params)!="map") then return refused($s,"INVALID_ARGUMENT","id and object params required","bad_args") end
+    $params=$a.params ?? {}
+    if any(keys($params),fn($k)=not contains(["tab","buffer","args"],$k)) then return refused($s,"INVALID_ARGUMENT","Unknown params key","unknown_param") end
+    if not any($s.actions,fn($row)=$row.id==$a.id) then return refused($s,"UNKNOWN_ACTION","Unknown action "..$a.id,"unknown_action") end
+    $index=tab_index($s,$params)
+    if ($params.tab!=nil or $params.buffer!=nil) and $index<0 then return refused($s,"NOT_FOUND","No matching tab") end
+    if $a.id=="file.exit" then
+      if any($s.tabs,fn($t)=$s.mail[$t.document]!=nil and ($t.dirty or $s.mail[$t.document].sending or $s.mail[$t.document].saving)) then return refused($s,"CONFLICT","Save or discard mail document changes before quitting") end
+      $s=queue_job($s,"action-publish",{body:viu_action_event($a.id,"bus",$a.params,nil)})
+      $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",action:$a.id,timeout_ms:30000}))
+    end
+    try $out=do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index,$e.headers["viu-call"],"bus",$a.params)
+    catch $message,$error return refused($s,if contains(["INVALID_ARGUMENT","NOT_FOUND","UNKNOWN_ACTION"],$error.code) then $error.code else "CONFLICT" end,$message) end
+    $s=$out.state
+    if $out.kind=="dialog" then
+      if $s.dialog_call!=nil then $s=dialog_cancel($s) end
+      $s=hold_call($s,$e,{kind:"dialog",action:$a.id,timeout_ms:10000});$s.dialog_call=$e.headers["viu-call"];return $s
+    end
+    if $out.kind=="mail" then return check_calls(hold_call($s,$e,{kind:"job",timeout_ms:150000})) end
+    if $out.op_id!=nil then return check_calls(hold_call($s,$e,{kind:"outcome",tab:if $index>=0 then to_number($s.tabs[$index].document) else nil end,op_id:$out.op_id,action:$a.id,close_after:$a.id=="file.close",timeout_ms:60000}))
+    elif $out.kind=="close" then return check_calls(hold_call($s,$e,{kind:"close",tab:to_number($s.tabs[$index].document),action:$a.id,timeout_ms:60000})) end
+    reply(0,json_encode({id:$a.id,ok:true,result:$out.result}));return $s
+  end
+  $i=tab_index($s,$a)
+  if $i<0 then return refused($s,"NOT_FOUND","No matching tab") end
+  $t=$s.tabs[$i]
+  if $command=="ced.focus" then
+    $s.active=$i;reply(0,json_encode({tab:to_number($t.document)}));return session_changed($s)
+  elif $command=="ced.state" then
+    if $a.text!=nil and type($a.text)!="bool" then return refused($s,"INVALID_ARGUMENT","text must be boolean","bad_args") end
+    try
+      $v=viu_document("inspect",$t.document,{text:$a.text ?? false})
+      $body={tab:to_number($t.document),preview:$s.previews[$t.document] ?? "source",buffer:$v.buffer,rev:$v.rev,view_gen:$v.view_gen,phase:$v.phase,pending:$v.pending,inflight:$v.inflight,text_hash:$v.text_hash,bytes:$v.bytes,lines:$v.lines,selection:$v.selection,first_line:$v.first_line,last_remote:$v.last_remote,conflicts:$v.conflicts,detached_copy:$v.detached_copy,text:$v.text}
+      if $s.mail[$t.document]!=nil then $m=$s.mail[$t.document];$body.mail={headers:$m.headers,sending:$m.sending,saving:$m.saving,notice:$m.notice} end
+      if $s.notices[$t.document]!=nil then $body.document_notice=$s.notices[$t.document] end
+      reply(0,json_encode($body));return $s
+    catch $message
+      return refused($s,"INVALID_ARGUMENT",$message)
+    end
+  elif $command=="ced.select" then
+    try $v=viu_document("select",$t.document,{anchor:$a.anchor,head:$a.head})
+    catch $message return refused($s,"INVALID_ARGUMENT",$message,"bad_position") end
+    reply(0,json_encode({selection:$v.selection}));return session_changed(refresh_tabs($s))
+  elif $command=="ced.type" then
+    if type($a.text)!="string" then return refused($s,"INVALID_ARGUMENT","text is required","bad_args") end
+    $m=$s.mail[$t.document]
+    if $m!=nil and ($m.sending or ($m.saving and not $m.parked)) then return refused($s,"CONFLICT","Wait for the mail operation to finish") end
+    try $v=viu_document("command",$t.document,{name:"insert",text:$a.text,caller:caller($e.headers)})
+    catch $message,$error return refused($s,if contains(["INVALID_ARGUMENT","NOT_FOUND","UNKNOWN_ACTION"],$error.code) then $error.code else "CONFLICT" end,$message) end
+    reply(0,json_encode({tab:to_number($t.document),pending:$v.pending}));return pump($s)
+  elif $command=="ced.wait" then
+    $conditions=filter(["rev","idle","epoch","phase"],fn($k)=$a[$k]!=nil)
+    if len($conditions)!=1 or type($a.timeout_ms)!="number" or $a.timeout_ms<0 or $a.timeout_ms>30000 or floor($a.timeout_ms)!=$a.timeout_ms or ($a.idle!=nil and $a.idle!=true) or ($a.rev!=nil and (type($a.rev)!="number" or $a.rev<0 or floor($a.rev)!=$a.rev)) or ($a.epoch!=nil and type($a.epoch)!="string") or ($a.phase!=nil and not contains(["live","bootstrapping","recovering","detached"],$a.phase)) then return refused($s,"INVALID_ARGUMENT","Exactly one valid condition and timeout_ms <= 30000 required","bad_args") end
+    return check_calls(hold_call($s,$e,{kind:"wait",tab:to_number($t.document),condition:$a,timeout_ms:$a.timeout_ms}))
+  elif $command=="ced.layout" then
+    $ui=viu_ui_state();$g=$ui.geometry;$l=$t.layout
+    $rect=fn($r)={x:$r[0] ?? 0,y:$r[1] ?? 0,w:$r[2] ?? 0,h:$r[3] ?? 0}
+    reply(0,json_encode({tab:to_number($t.document),window:$rect($ui.window),menubar:$rect($g["gold-header"]),tabstrip:$rect($g.tabs),editor:$rect($l.editor),gutter_w:$l.gutter_width,line_height:$l.row_height,cell_w:$l.cell_width,first_line:$l.first_line,visible_rows:$l.visible_rows,caret:$rect($l.caret),statusbar:$rect($g["gold-status"])}));return $s
+  elif $command=="ced.problems" then reply(0,json_encode({tab:to_number($t.document),path:$t.path,problems:viu_document("problems",$t.document,{})}));return $s
+  end
+  return refused($s,"UNKNOWN_COMMAND","Unknown command "..$command)
+end

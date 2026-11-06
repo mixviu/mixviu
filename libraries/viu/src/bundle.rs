@@ -11,9 +11,14 @@ pub struct Manifest {
     pub title: String,
     pub size: [f32; 2],
     pub commands: Vec<String>,
+    pub command_descriptors: Vec<bus::CommandDescriptor>,
     pub tick_ms: Option<u64>,
     pub surface: String,
     pub frame: Option<String>,
+    pub follow_settings: bool,
+    pub macros: bool,
+    pub native_drive: bool,
+    pub max_string_bytes: Option<usize>,
     /// App-authored compatibility surface; native facilities append descriptors.
     pub bus_surface: Option<serde_json::Value>,
     pub native_ui: bool,
@@ -32,9 +37,14 @@ impl Default for Manifest {
             title: "Viu".into(),
             size: [800.0, 600.0],
             commands: vec![],
+            command_descriptors: vec![],
             tick_ms: None,
             surface: "window".into(),
             frame: None,
+            follow_settings: false,
+            macros: false,
+            native_drive: false,
+            max_string_bytes: None,
             bus_surface: None,
             native_ui: false,
             native_macros: false,
@@ -91,6 +101,15 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
+            || manifest.command_descriptors.len() > 256
+            || manifest.command_descriptors.iter().any(|d| {
+                !manifest.commands.contains(&d.name)
+                    || d.description.len() > 8192
+                    || d.args.len() > 64
+            })
+            || manifest
+                .max_string_bytes
+                .is_some_and(|n| !(1_048_576..=32 * 1024 * 1024).contains(&n))
             || !["window", "background"].contains(&manifest.surface.as_str())
             || manifest
                 .frame

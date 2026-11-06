@@ -152,6 +152,13 @@ pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, S
         style.scroll_animation = egui::style::ScrollAnimation::none();
     }
     let mut colours = palette_from_visuals(&style.visuals);
+    // Editor highlighting resolves semantic primitives (success, warning,
+    // accent hover) as well as chrome roles, just like the gold toolkit.
+    for (name, value) in &dictionary.colours.primitives {
+        colours
+            .entry(name.clone())
+            .or_insert_with(|| colour(*value));
+    }
     if tokens.widgets == Widgets::Chrome {
         if let Some(chrome) = &dictionary.chrome {
             colours.extend(
@@ -173,7 +180,9 @@ pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, S
     };
     if let Some(weight) = value.get("weight") {
         let weight = weight
-            .as_u64()
+            .as_f64()
+            .filter(|w| w.is_finite() && w.fract() == 0.0)
+            .map(|w| w as u64)
             .filter(|w| (100..=900).contains(w) && w % 100 == 0)
             .ok_or("font weight must be 100..900 in steps of 100")? as u16;
         let offset = i32::from(heading_weight) - i32::from(body_weight);

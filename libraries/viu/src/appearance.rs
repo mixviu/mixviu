@@ -37,6 +37,10 @@ pub fn install_session(
 ) -> Result<settings::model::CommonUi, String> {
     let (theme, ui) = session_base(snapshot, app, file, last_ui)?;
     install_theme(ctx, &theme)?;
+    ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::unique("viu-session-theme"), theme);
+        d.remove::<Value>(egui::Id::unique("viu-local-choice"));
+    });
     Ok(ui)
 }
 pub fn session_base(
@@ -66,6 +70,7 @@ pub fn session_base(
 }
 pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), String> {
     toolkit::install(ctx, theme);
+    let editor_palette = editor::Palette::from_theme(theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();
     for role in resolve(&serde_json::json!({}))?.colours.keys() {
@@ -73,8 +78,15 @@ pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), 
             colours.insert(role.clone(), colour);
         }
     }
+    colours.insert("editor.background".into(), editor_palette.background);
+    colours.insert(
+        "editor.light-background".into(),
+        editor::Palette::from_theme(toolkit::content::light_theme()).background,
+    );
     let m = chrome.metrics;
     ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::unique("viu-resolved-theme"), theme.clone());
+        d.insert_temp(egui::Id::unique("viu-gold-editor-palette"), editor_palette);
         d.insert_temp(egui::Id::unique("viu-gold-fonts"), true);
         d.insert_temp(
             egui::Id::unique("viu-design-colours"),
@@ -97,6 +109,60 @@ pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), 
         toolkit::icons::stroke_width(theme),
         chrome.style.icon_mask.0,
     );
+    Ok(())
+}
+
+/// A window choice overlays the live session theme, as in gold clients.
+pub fn local_mode(ctx: &egui::Context, name: &str) -> Result<(), String> {
+    let mode = match name {
+        "dark" => design::Mode::Dark,
+        "light" => design::Mode::Light,
+        _ => return Err("invalid local mode".into()),
+    };
+    local_choice(ctx, &serde_json::json!({"mode":mode.name()}))
+}
+pub fn local_choice(ctx: &egui::Context, value: &Value) -> Result<(), String> {
+    let key = egui::Id::unique("viu-local-choice");
+    if ctx.data(|d| d.get_temp::<Value>(key)).as_ref() == Some(value) {
+        return Ok(());
+    }
+    let choice = toolkit::theme::Choice {
+        scheme: value["theme"].as_str().and_then(design::Scheme::from_name),
+        mode: value["mode"].as_str().and_then(design::Mode::from_name),
+        style: value["style"].as_str().map(|s| design::Style::from_name(s)),
+        decorations: value["decorations"]
+            .as_str()
+            .and_then(design::RequestedDecorations::from_name),
+        captions: value["captions"]
+            .as_str()
+            .and_then(design::CaptionSide::from_name),
+    };
+    let theme = ctx
+        .data(|d| d.get_temp::<toolkit::Theme>(egui::Id::unique("viu-session-theme")))
+        .unwrap_or_else(toolkit::Theme::load);
+    let theme = theme.with_choice(&choice).map_err(|e| e.to_string())?;
+    toolkit::install(ctx, &theme);
+    let palette = editor::Palette::from_theme(&theme);
+    let chrome = toolkit::chrome::Chrome::of(ctx);
+    let mut colours = resolve(&serde_json::json!({}))?
+        .colours
+        .keys()
+        .filter_map(|role| chrome.palette.get(role).map(|c| (role.clone(), c)))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    colours.insert("editor.background".into(), palette.background);
+    colours.insert(
+        "editor.light-background".into(),
+        editor::Palette::from_theme(toolkit::content::light_theme()).background,
+    );
+    ctx.data_mut(|d| {
+        d.insert_temp(key, value.clone());
+        d.insert_temp(egui::Id::unique("viu-resolved-theme"), theme);
+        d.insert_temp(egui::Id::unique("viu-gold-editor-palette"), palette);
+        d.insert_temp(
+            egui::Id::unique("viu-design-colours"),
+            std::sync::Arc::new(colours),
+        );
+    });
     Ok(())
 }
 pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {

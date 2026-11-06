@@ -23,6 +23,12 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 /// Supplying one does not create a Bus citizen, broker or global registry.
 #[derive(Clone, Default)]
 pub struct Services {
+    pub max_string_bytes: Option<usize>,
+    pub platform: Option<crate::platform::Platform>,
+    pub ui_state: Option<crate::ui_state::UiState>,
+    pub calls: Option<crate::calls::Calls>,
+    pub timers: Option<crate::timers::Timers>,
+    pub documents: Option<crate::documents::Documents>,
     pub macros: Option<macros::Session>,
     pub chooser: Option<crate::chooser::Service>,
 }
@@ -194,7 +200,7 @@ impl Runtime {
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
                         eval.set_capability_policy(Rc::new(WorkerPolicy));
                         eval.set_interrupt_flag(worker_interrupt.clone());
-                        eval.set_limits(mix::EvalLimits { time_limit: Some(deadline), max_string_len: Some(1_048_576), max_list_len: Some(65_536), max_map_len: Some(65_536), ..Default::default() });
+                        eval.set_limits(mix::EvalLimits { time_limit: Some(deadline), max_string_len: Some(services.max_string_bytes.unwrap_or(1_048_576).clamp(1_048_576,32*1024*1024)), max_list_len: Some(65_536), max_map_len: Some(65_536), ..Default::default() });
                         eval.set_entry_script(&program.path.to_string_lossy());
                         eval.set_file(program.path.to_string_lossy().to_string());
                         eval.set_bus_handler(local.clone());
@@ -202,6 +208,11 @@ impl Runtime {
                         eval.register("viu_thumbnail",crate::native_primitives::thumbnail(worker_stop.clone()));
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
+                        eval.register("viu_app_dirs",crate::native_primitives::app_dirs());
+                        eval.register("viu_maildoc",crate::native_primitives::mail_document());
+                        eval.register("viu_editor_write",crate::native_primitives::editor_write());
+                        eval.register("viu_digest",crate::native_primitives::digest());
+                        eval.register("viu_action_event",crate::native_primitives::action_event());
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_process",crate::process::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
@@ -209,8 +220,14 @@ impl Runtime {
                         eval.register("viu_http",crate::http::binding());
                         if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
+                        if let Some(documents)=services.documents.clone(){eval.register("viu_document",documents.binding());}
+                        if let Some(timers)=services.timers.clone(){eval.register("viu_timer",timers.binding());}
+                        if let Some(calls)=services.calls.clone(){eval.register("viu_reply",calls.binding());}
+                        if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());}
+                        if let Some(platform)=services.platform.clone(){eval.register("viu_platform",platform.binding());}
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
+                            "version":env!("CARGO_PKG_VERSION"),"git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"),
                             "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
                             "loader": "viu-local", "host": "viu-local"
                         }))));

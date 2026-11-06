@@ -44,6 +44,18 @@ pub struct SceneView {
 }
 
 impl SceneView {
+    pub fn set_native_menus(&mut self, enabled: bool) {
+        self.widgets.set_native_menus(enabled);
+        if let Some(frame) = self.frame.as_mut() {
+            frame.set_native_menus(enabled);
+        }
+    }
+    pub fn set_documents(&mut self, documents: crate::documents::Documents) {
+        self.widgets.set_documents(documents.clone());
+        if let Some(frame) = self.frame.as_mut() {
+            frame.set_documents(documents);
+        }
+    }
     pub fn allocated_region(&self, id: &str) -> Option<egui::Rect> {
         self.frame
             .as_ref()
@@ -267,6 +279,8 @@ impl SceneView {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique("viu-editor-focused"), false));
         if let Some(mut frame) = self.frame.take() {
             let mut events = frame.show(ui);
             if let Some(rect) = frame.regions.get("gold-content").copied() {
@@ -709,6 +723,22 @@ impl SceneView {
         if child.len() != 2 {
             return;
         }
+        let active = child
+            .iter()
+            .filter(|id| {
+                nodes
+                    .get(**id)
+                    .is_some_and(|node| node.ports.get("hidden") != Some(&Value::Bool(true)))
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        if active.len() < 2 {
+            if let Some(child) = active.first() {
+                self.child_rect(ui, child, area, nodes, route, depth, events);
+            }
+            ui.advance_cursor_after_rect(area);
+            return;
+        }
         let horizontal = text(node, "axis") != "vertical";
         let divider = num(node, "divider").unwrap_or(6.0).min(
             if horizontal {
@@ -828,6 +858,22 @@ impl SceneView {
             }
             let placement = &placements[child];
             let edge = placement["edge"].as_str().unwrap_or("fill");
+            if edge == "bottom" && placement["panel"] == true {
+                let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
+                egui::Panel::bottom(egui::Id::unique((key, child)))
+                    .resizable(placement["resizable"] == true)
+                    .default_size(placement["size"].as_f64().unwrap_or(140.0) as f32)
+                    .size_range(
+                        0.0..=remaining.height()
+                            * placement["max_fraction"].as_f64().unwrap_or(0.3) as f32,
+                    )
+                    .frame(toolkit::bars::dock_frame(ui.ctx()))
+                    .show(&mut panel_ui, |ui| {
+                        self.node(ui, child, nodes, route, depth + 1, events)
+                    });
+                remaining = panel_ui.available_rect_before_wrap();
+                continue;
+            }
             if placement["minimum_window_width"]
                 .as_f64()
                 .is_some_and(|w| (area.width() as f64) < w)
@@ -835,6 +881,31 @@ impl SceneView {
                 continue;
             }
             let horizontal = ["left", "right"].contains(&edge);
+            // A top strip may follow its intrinsic content height. This keeps
+            // forms and search rows correct when live typography changes.
+            if edge == "top" && placement["size"] == "content" {
+                if let Some(background) = nodes.get(child).and_then(|node| {
+                    color(text(node, "background")).or_else(|| {
+                        text(node, "background")
+                            .strip_prefix("design.")
+                            .and_then(|role| crate::appearance::colour(ui.ctx(), role))
+                    })
+                }) {
+                    ui.painter().rect_filled(remaining, 0.0, background);
+                }
+                let mut child_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(remaining)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                child_ui.set_clip_rect(remaining.intersect(ui.clip_rect()));
+                self.node(&mut child_ui, child, nodes, route, depth + 1, events);
+                remaining.min.y = child_ui
+                    .min_rect()
+                    .bottom()
+                    .clamp(remaining.top(), remaining.bottom());
+                continue;
+            }
             let dimension = if horizontal {
                 area.width()
             } else {
@@ -870,11 +941,32 @@ impl SceneView {
                 }
                 "bottom" => {
                     rect.min.y = rect.max.y - size;
+                    if placement["size"] == "design.status_height" {
+                        use egui::emath::GuiRounding;
+                        rect = rect.round_ui();
+                    }
                     remaining.max.y = rect.min.y;
                 }
                 _ => {}
             }
             self.child_rect(ui, child, rect, nodes, route, depth, events);
+            if edge == "bottom" && placement["size"] == "design.status_height" {
+                // The native panel rounds its frame and integer margins after
+                // applying live scale. Reserve its painted bounds, rather than
+                // leaving a fractional strip between it and the document.
+                if let Some(top) = nodes
+                    .values()
+                    .filter_map(|node| node.ports.get("definition"))
+                    .filter(|definition| definition["kind"] == "status-line")
+                    .filter_map(|definition| definition["id"].as_str())
+                    .filter_map(|id| self.widgets.geometry.get(id))
+                    .filter(|bounds| bounds.top() >= rect.top() && bounds.bottom() <= rect.bottom())
+                    .map(egui::Rect::top)
+                    .min_by(f32::total_cmp)
+                {
+                    remaining.max.y = top;
+                }
+            }
             if placement["resizable"] == true && edge != "fill" {
                 let line = match edge {
                     "left" => egui::Rect::from_min_max(
@@ -1062,6 +1154,9 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                         "max_fraction",
                     ] {
                         if let Some(v) = p.get(key) {
+                            if key == "size" && v == "content" && edge == "top" {
+                                continue;
+                            }
                             if key == "size" && design_length(v, None).is_some() {
                                 continue;
                             }
