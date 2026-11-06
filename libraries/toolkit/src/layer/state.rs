@@ -161,7 +161,7 @@ struct State<P> {
 
 pub(super) fn run<P: LayerProgram + 'static>(
     options: LayerOptions,
-    program: P,
+    mut program: P,
 ) -> Result<(), String> {
     let conn = Connection::connect_to_env().map_err(|e| format!("wayland: {e}"))?;
     let (globals, queue) =
@@ -178,10 +178,23 @@ pub(super) fn run<P: LayerProgram + 'static>(
     handle
         .insert_source(requests, |event, _, state: &mut State<P>| {
             if let ChannelEvent::Msg((id, delay)) = event {
-                state.request(id, delay);
+                if id == u64::MAX {
+                    if std::env::var_os("VIU_TRACE_LAYERS").is_some() {
+                        eprintln!("NATIVE_WAKE {}", state.options.namespace);
+                    }
+                    for surface in &mut state.surfaces {
+                        surface.dirty = true;
+                    }
+                } else {
+                    state.request(id, delay);
+                }
             }
         })
         .map_err(|e| format!("repaint channel: {e}"))?;
+    let control = repaint.clone();
+    program.set_waker(std::sync::Arc::new(move || {
+        let _ = control.send((u64::MAX, Duration::ZERO));
+    }));
 
     let gpu = Gpu::new(conn.backend().display_ptr().cast())?;
     let mut state = State {

@@ -35,6 +35,7 @@ struct State {
     store: SceneStore,
     panels: BTreeMap<Key, PanelStateMachine>,
     contexts: BTreeMap<Key, egui::Context>,
+    wakes: Vec<Arc<dyn Fn() + Send + Sync>>,
     started: Instant,
     look: Option<Arc<appearance::Look>>,
     look_revision: u64,
@@ -56,6 +57,7 @@ impl State {
             store: SceneStore::default(),
             panels: BTreeMap::new(),
             contexts: BTreeMap::new(),
+            wakes: Vec::new(),
             started: Instant::now(),
             look: None,
             look_revision: 0,
@@ -75,8 +77,9 @@ impl State {
         }
     }
     fn wake(&self) {
+        for wake in &self.wakes { wake(); }
         if std::env::var_os("VIU_TRACE_LAYERS").is_some() {
-            eprintln!("VIU_WAKE contexts={:?}", self.contexts.keys().collect::<Vec<_>>());
+            eprintln!("VIU_WAKE native={} contexts={:?}", self.wakes.len(), self.contexts.keys().collect::<Vec<_>>());
         }
         for ctx in self.contexts.values() {
             ctx.request_repaint();
@@ -178,6 +181,9 @@ struct Program {
     cold_frame: bool,
 }
 impl LayerProgram for Program {
+    fn set_waker(&mut self, wake: Arc<dyn Fn() + Send + Sync>) {
+        self.state.lock().unwrap().wakes.push(wake);
+    }
     fn setup(&mut self, ctx: &egui::Context) {
         toolkit::install(ctx, &toolkit::Theme::embedded());
     }
@@ -249,7 +255,7 @@ impl LayerProgram for Program {
         };
         LayerPresentation {
             input_passthrough: false,
-            visible: has_content && snap.mapped && snap.visible_fraction > 0.0,
+            visible: has_content && snap.mapped,
             exclusive_zone: Some(snap.exclusive_zone_px.round() as i32),
             size: Some(if self.edge == "left" || self.edge == "right" {
                 (snap.thickness_px as u32, 0)
@@ -382,6 +388,9 @@ struct TooltipProgram {
     cards: BTreeMap<String, CardState>,
 }
 impl LayerProgram for TooltipProgram {
+    fn set_waker(&mut self, wake: Arc<dyn Fn() + Send + Sync>) {
+        self.state.lock().unwrap().wakes.push(wake);
+    }
     fn setup(&mut self, ctx: &egui::Context) {
         toolkit::install(ctx, &toolkit::Theme::embedded());
     }
