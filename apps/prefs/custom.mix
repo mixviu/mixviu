@@ -75,7 +75,7 @@ fn software($s)
   return [section("software-actions",nil,[$group,buttons($s,"software-actions",["apps.check","apps.update_all"])]),section("software-list",nil,$rows),$notes]
 end
 fn software_row($r)
-  $state=if contains(["current","update","not installed","unchecked"],$r.status) then $r.status else "error" end
+  $state=if $r.status=="unchecked" and $r.installed!=nil then "current" elif contains(["current","update","not installed","unchecked"],$r.status) then $r.status else "error" end
   return {value:$r.app,label:$r.app,cells:[{text:$r.installed ?? "—",mono:true},{text:$r.latest ?? "—",mono:true},{text:$r.published ?? "—"},{text:$n.text_for("status-"..replace($state,"not installed","not-installed")),hint:$r.status,weak:contains(["current","unchecked"],$state),tone:if $state=="update" then "warning" elif $state=="error" then "error" else nil end}]}
 end
 fn software_notes($s)
