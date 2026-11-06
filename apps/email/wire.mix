@@ -9,7 +9,7 @@ fn wire_entry($id)
   return nil
 end
 fn wire_refuse($code,$message)
-  reply(10,json_encode({error_code:$code,message:$message}))
+  return {rc:10,body:{error_code:$code,message:$message}}
 end
 fn wire_start($command,$args,$event=nil,$purpose="query")
   global $wire_sequence,$wire_pending,$wire_views,$wire_sessions,$wire_generations
@@ -18,25 +18,25 @@ fn wire_start($command,$args,$event=nil,$purpose="query")
   $id=$args.account ?? $active;$entry=wire_entry($id)
   if $command=="email.account.connect" then $id=$args.id;$entry=wire_entry($id) end
   if not $settings then
-    if $entry==nil then wire_refuse(if $args.account!=nil or $command=="email.account.connect" then "UNKNOWN_ACCOUNT" else "NO_ACCOUNT" end,"No account "..to_string($id));return end
-    if $entry.enabled==false then wire_refuse("NOT_READY","This account is disabled");return end
-    if $command!="email.account.connect" and $wire_sessions[$id]==nil then wire_refuse("NOT_READY","The account is not connected");return end
+    if $entry==nil then return wire_refuse(if $args.account!=nil or $command=="email.account.connect" then "UNKNOWN_ACCOUNT" else "NO_ACCOUNT" end,"No account "..to_string($id)) end
+    if $entry.enabled==false then return wire_refuse("NOT_READY","This account is disabled") end
+    if $command!="email.account.connect" and $wire_sessions[$id]==nil then return wire_refuse("NOT_READY","The account is not connected") end
   end
-  if len(keys($wire_pending))>=32 then wire_refuse("BUSY","Too many requests pending");return end
+  if len(keys($wire_pending))>=32 then return wire_refuse("BUSY","Too many requests pending") end
   if $command=="email.account.connect" then $wire_generations[$id]=($wire_generations[$id] ?? 0)+1;$wire_sessions=delete($wire_sessions,$id) end
   $token=if $event!=nil then $event.headers["viu-call"] else nil end
-  if $token!=nil and not viu_reply("hold",$token,{}) then wire_refuse("BUSY","Request receipt unavailable");return end
+  if $token!=nil and not viu_reply("hold",$token,{}) then return wire_refuse("BUSY","Request receipt unavailable") end
   $wire_sequence=$wire_sequence+1;$job="email-wire-"..to_string($wire_sequence)
   $owner={id:$job,account:$id,entry:$entry,generation:$wire_generations[$id] ?? 0,command:$command,args:$args,token:$token,purpose:$purpose}
   $path=path_join(dirname(script_path()),"wire-job.mix")
   send "viu-local" "jobs.start" id=$job owner={id:$job} path=$path source=read_file($path) command="job.run" args={entry:$entry,command:$command,args:$args,session:if $command=="email.account.connect" then nil else $wire_sessions[$id] end,binding:$mail_settings.binding}
   if $rc!=0 then
-    if $token!=nil then viu_reply("finish",$token,{rc:10,body:{error_code:"BUSY",message:"Mail worker unavailable"}}) else wire_refuse("BUSY","Mail worker unavailable") end
-    return
+    if $token!=nil then viu_reply("finish",$token,{rc:10,body:{error_code:"BUSY",message:"Mail worker unavailable"}}) end
+    return wire_refuse("BUSY","Mail worker unavailable")
   end
   $wire_pending[$job]=$owner
   if $command=="email.account.connect" then $wire_views[$id]={state:"connecting",error:nil,has_password:false} end
-  reply(0,"{}")
+  return {rc:0,body:{}}
 end
 fn wire_accounts()
   $default=$mail_settings.default_account

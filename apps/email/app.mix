@@ -262,53 +262,53 @@ on email.accounts
   reply(0,json_encode({accounts:wire_accounts()}))
 end
 on email.account.set
-  wire_start("email.account.set",$event.args,$event)
+  $r=wire_start("email.account.set",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.account.remove
-  wire_start("email.account.remove",$event.args,$event)
+  $r=wire_start("email.account.remove",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.account.default
-  wire_start("email.account.default",$event.args,$event)
+  $r=wire_start("email.account.default",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.account.password.set
-  wire_start("email.account.password.set",$event.args,$event)
+  $r=wire_start("email.account.password.set",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.account.connect
-  wire_start("email.account.connect",$event.args,nil,"connect");reply(0,json_encode({id:$event.args.id}))
+  $r=wire_start("email.account.connect",$event.args,nil,"connect");reply($r.rc,json_encode(if $r.rc==0 then {id:$event.args.id} else $r.body end))
 end
 on email.mailboxes
-  wire_start("email.mailboxes",$event.args,$event)
+  $r=wire_start("email.mailboxes",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.list
-  wire_start("email.list",$event.args,$event)
+  $r=wire_start("email.list",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.search
-  wire_start("email.search",$event.args,$event)
+  $r=wire_start("email.search",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.get
-  wire_start("email.get",$event.args,$event)
+  $r=wire_start("email.get",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.open
-  wire_start("email.open",$event.args,$event,"open")
+  $r=wire_start("email.open",$event.args,$event,"open");reply($r.rc,json_encode($r.body))
 end
 on email.mark
-  wire_start("email.mark",$event.args,$event)
+  $r=wire_start("email.mark",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.move
-  wire_start("email.move",$event.args,$event)
+  $r=wire_start("email.move",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.junk
-  wire_start("email.junk",$event.args,$event)
+  $r=wire_start("email.junk",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.delete
-  wire_start("email.delete",$event.args,$event)
+  $r=wire_start("email.delete",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.mailbox.create
-  wire_start("email.mailbox.create",$event.args,$event)
+  $r=wire_start("email.mailbox.create",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.mailbox.rename
-  wire_start("email.mailbox.rename",$event.args,$event)
+  $r=wire_start("email.mailbox.rename",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.mailbox.delete
-  wire_start("email.mailbox.delete",$event.args,$event)
+  $r=wire_start("email.mailbox.delete",$event.args,$event);reply($r.rc,json_encode($r.body))
 end

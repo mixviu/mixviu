@@ -1218,8 +1218,18 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             "text" | "button" | "field" | "toggle" | "row" | "column" | "list" | "spacer"
             | "grid" => {}
             "section" => {
-                let titles=node.ports.get("titles").and_then(Value::as_array).filter(|t| !t.is_empty() && t.len()<=32).ok_or("section requires 1..32 titles")?;
-                if titles.iter().any(|t|t.as_str().is_none_or(|s|s.len()>4096)){return Err("invalid section title".into());}
+                let titles = node
+                    .ports
+                    .get("titles")
+                    .and_then(Value::as_array)
+                    .filter(|t| !t.is_empty() && t.len() <= 32)
+                    .ok_or("section requires 1..32 titles")?;
+                if titles
+                    .iter()
+                    .any(|t| t.as_str().is_none_or(|s| s.len() > 4096))
+                {
+                    return Err("invalid section title".into());
+                }
             }
             family => return Err(format!("unsupported scene content family {family}")),
         }
