@@ -1,0 +1,11 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$c=require("counter.mix")
+fn check($v,$why) if not $v then raise("COUNTER_TEST",$why) end end
+check($c.add(1,2)==3,"small counters stay numeric")
+check($c.add("9007199254740991",1)=="9007199254740992","exact transition past 2^53")
+check($c.add("18446744073709551614",1)=="18446744073709551615","exact u64 maximum")
+check($c.add("18446744073709551615",1)=="18446744073709551615","saturating add")
+check($c.compare("9007199254740993","9007199254740992")==1,"comparison preserves low bit")
+check($c.extract('{"args":{"dropped_count":18446744073709551615}}',["args","dropped_count"])=="18446744073709551615","lossless original JSON")
+check($c.wire({seq:"9007199254740993",title:"9007199254740993"})=='{"seq":9007199254740993,"title":"9007199254740993"}',"exact numeric wire fields preserve ordinary strings")
+print("Workshop exact counter contracts PASS")

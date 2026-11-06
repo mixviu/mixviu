@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $m=require("model.mix");$tree=require("tree.mix");$work=require("work.mix");$discovery=require("discovery.mix");$text=require("text.mix");$actions=require("actions.mix");$theme=require("theme.mix")
 $macros=require("macro.mix")
-$agents=require("agents.mix");$traffic=require("traffic.mix")
+$agents=require("agents.mix");$traffic=require("traffic.mix");$mesh=require("mesh.mix");$mesh_flow=require("mesh-flow.mix");$counter=require("counter.mix")
 fn result($s,$body) return {state:$s,rc:0,body:$body,deferred:false} end
 fn refused($s,$code,$message) return {state:$s,rc:10,body:{error_code:$code,message:$message},deferred:false} end
 fn guard($s) return $s.dialog!=nil or $s.quitting end
@@ -45,6 +45,7 @@ fn select_row($s,$key)
   if $r.kind!="macro" then $s.macro_selected=nil end
   if $r.kind=="macro" then $s=$macros.enqueue($s,"macros.open",{app:$r.app,id:$r.macro_id},nil) end
   if $r.kind=="agent_session" then $s=$agents.select_session($s,$r.node,$r.session)
+  elif $r.kind=="mesh_map" then $s=$mesh_flow.ensure($mesh_flow.refresh($s))
   elif $r.kind=="agents" then $s=$agents.refresh($s)
   elif $r.kind=="agents_node" then $s=$agents.refresh_node($s,$r.node) end
   return result($s,{row_key:$s.row_key,selection:$s.selection})
@@ -67,6 +68,8 @@ fn execute($s,$id,$origin)
   elif $id=="help.about" then $s.dialog="about"
   elif $id=="help.shortcuts" then $s.dialog="shortcuts"
   elif $id=="view.traffic" then $s.dock_open=not $s.dock_open
+  elif $id=="mesh.ping" then return $mesh_flow.ping($s)
+  elif $id=="bus.observe" then $s=$mesh_flow.queue($s,"observe",{on:$s.subscription==nil},nil)
   elif starts_with($id,"view.traffic.") then $s.dock_side=strip_prefix($id,"view.traffic.")
   else
     $axis=if starts_with($id,"view.theme.") then "scheme" elif starts_with($id,"view.style.") then "style" elif starts_with($id,"view.decorations.") then "decorations" elif starts_with($id,"view.captions.") then "caption_side" else "mode" end
@@ -81,6 +84,22 @@ end
 fn request($s,$event)
   $a=$event.args;$cmd=$event.command
   if type($a)!="map" then return refused($s,"ARGUMENT","arguments must be a JSON object") end
+  if $cmd=="workshop.mesh" or $cmd=="workshop.mesh.ping" then
+    if len($a)!=0 then return refused($s,"ARGUMENT","expected an empty object") end
+    if $cmd=="workshop.mesh.ping" then return $mesh_flow.ping($s) end
+    return result($s,$mesh.snapshot($s.mesh,$mesh.now_ms()))
+  elif $cmd=="workshop.traffic" then
+    if any(keys($a),fn($k)=not contains(["limit","filter"],$k)) or (has_key($a,"limit") and (type($a.limit)!="number" or $a.limit<0 or $a.limit>1024 or floor($a.limit)!=$a.limit)) or (has_key($a,"filter") and type($a.filter)!="string") then return refused($s,"INVALID_ARGUMENT","invalid traffic arguments") end
+    return result($s,{rows:$traffic.rows($s,$a.limit ?? 100,$a.filter ?? ""),dropped:$s.dropped,ignored_observations:$s.ignored_observations,observe:$s.observe})
+  elif $cmd=="noded.observe.event" then
+    $s.ignored_observations=$counter.add($s.ignored_observations,1)
+    return refused($s,"INVALID_ARGUMENT","observe deliveries require a live broker event")
+  elif $cmd=="workshop.observe" then
+    if $s.mesh.observe_ticket!=nil then return refused($s,"BUSY","an observe change is already running") end
+    if $s.quitting then return refused($s,"BUSY","Workshop is closing") end
+    $id=$work.defer($event);$s=$mesh_flow.queue($s,"observe",$a,$id)
+    return {state:$s,rc:0,body:nil,deferred:true}
+  end
   if $cmd=="workshop.agents" or starts_with($cmd,"workshop.agents.") then return $agents.request($s,$event) end
   if starts_with($cmd,"workshop.macros.") then
     $limit=if $cmd=="workshop.macros.put" then 1581056 else 8192 end
@@ -111,7 +130,7 @@ fn request($s,$event)
     $id=$work.defer($event);$s=$discovery.begin($s,$id);return {state:$s,rc:0,body:nil,deferred:true}
   elif $cmd=="workshop.show" then
     if $s.quitting then return refused($s,"BUSY","An operation is already running") end
-    $id=$work.defer($event);$ticket=$s.serial+1;$s.activations=push($s.activations,$ticket)
+    $id=$work.defer($event);$s.activation_next=$s.activation_next+1;$ticket=$s.activation_next;$s.activations=push($s.activations,$ticket)
     $s=$work.enqueue($s,{owner:"activation",op:"show",job:"activation-job.mix",comp:$s.comp,pid:viu_context().pid,reply:$id,ticket:$ticket,lane:"activation"})
     return {state:$work.launch($s),rc:0,body:nil,deferred:true}
   elif $cmd=="workshop.quit" then
@@ -168,6 +187,7 @@ fn received($s,$d)
     return $s
   end
   if $task.owner=="macros" then return $work.launch($macros.received($s,$task,$d)) end
+  if $task.owner=="mesh" then return $mesh_flow.received($s,$task,$d) end
   if $task.owner=="agents" and $task.departed!=true then return $work.launch($agents.received($s,$task,$d)) end
   if $task.owner=="activation" then
     $s.activations=filter($s.activations,fn($t)=$t!=$task.ticket);$work.answer($task.reply,$d.rc,$d.body);return $work.launch($s)
@@ -197,10 +217,11 @@ fn notice($s,$event)
   if $cmd=="bus.connected" then
     $s.connected=true;$s.status="Connected"
     for $topic in ["noded.props.changed","agent.session.updated","agent.session.ended","agent.permission.requested",viu_context().citizen..".macros.finished"] subscribe($topic) end
-    $s=$discovery.begin($s,nil);$s=$agents.refresh($s);$s=$macros.enqueue($s,"catalogues",{},nil)
+    $s=$discovery.begin($s,nil);$s=$agents.refresh($s);$s=$macros.enqueue($s,"catalogues",{},nil);$s=$mesh_flow.refresh($s)
+    if $s.mesh.resume_observe then $s=$mesh_flow.ensure($s) end
     if $s.startup_macro!=nil then $s=$macros.enqueue($s,"macros.open",$s.startup_macro,nil);$s.startup_macro=nil end
   elif $cmd=="bus.disconnected" then
-    $s.connected=false;$s.status="Disconnected — requests are never replayed";$s.subscription=nil
+    $s.connected=false;$s.status="Disconnected — requests are never replayed";$s=$mesh_flow.disconnect($s)
   elif contains(["agent.session.updated","agent.session.ended","agent.permission.requested"],$cmd) then $s=$agents.topic($s,$cmd,$a)
   elif $cmd=="noded.props.changed" then
     if $a.path=="services.registered" then
@@ -212,12 +233,15 @@ fn notice($s,$event)
     $s.dropped=$s.dropped+($a.dropped ?? 0);$s=$agents.refresh_node($s,$agents.local_name($s))
     if $s.agents.selected!=nil and $s.agents.selected.node==$agents.local_name($s) and not $s.agents.transcript.filling then $s=$agents.read_transcript($s) end
   elif $cmd=="noded.observe.event" then
-    if $headers.type=="event" and $s.subscription!=nil and $a.subscription_id==$s.subscription then $s=$traffic.observed($s,$a)
-    else $s.ignored_observations=$s.ignored_observations+1 end
+    $s=$mesh_flow.observed($s,$event)
   elif ends_with($cmd,".action.executed") or ends_with($cmd,".macros.finished") then
     if ends_with($cmd,".macros.finished") then $s.macro_message=json_encode($a);$s.traffic_filter="" end
     $stamp=now_iso();$stamp=if len($stamp)>=23 then substr($stamp,11,12) else $stamp end
     $s=$traffic.retain($s,{ts:$stamp,direction:"topic",from:$headers.from,service:$headers.from,command:$cmd,payload:$a})
   end
   return $s
+end
+fn follow_up($s)
+  if $s.refetch and not $m.busy($s) and $s.connected and not $s.quitting then $s.refetch=false;$s=$discovery.begin($s,nil) end
+  return $work.launch($s)
 end

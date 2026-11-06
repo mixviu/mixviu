@@ -98,12 +98,45 @@ fn workshop_embedded_text_budget_retains_gold_sized_utf8_replies() {
 }
 
 #[test]
+fn workshop_policy_contracts_run_inside_the_embedded_runtime() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
+    for name in ["tree", "agents", "traffic", "transcript", "counter", "mesh"] {
+        let (tx, rx) = mpsc::channel();
+        let mut runtime = Runtime::new(8, Arc::new(move || { let _ = tx.send(()); }), None);
+        let path = root.join(format!("{name}-test.mix"));
+        runtime.load(viu::runtime::Program {
+            source: std::fs::read_to_string(&path).unwrap(), path,
+            scene: format!("workshop-{name}"), citizen: format!("workshop-{name}"),
+        }).unwrap();
+        rx.recv_timeout(Duration::from_secs(20)).unwrap();
+        let done = runtime.try_completion().unwrap();
+        assert!(done.error.is_none(), "{name}: {:?}", done.error);
+        assert!(done.stdout.contains("PASS"), "{name}: {}", done.stdout);
+    }
+}
+
+#[test]
 fn macro_library_binding_keeps_disk_work_inside_the_owned_session_roots() {
-    let dir=tempfile::tempdir().unwrap();
-    let roots=macros::Roots {builtin:dir.path().join("builtin"),user:dir.path().join("user"),home:dir.path().join("home"),mix:"/opt/mixos/bin/mix".into()};
-    let session=macros::Session::with_roots("workshop",Some(roots.clone()));
-    let (tx,rx)=mpsc::channel();
-    let mut runtime=Runtime::with_services(8,Arc::new(move || {let _=tx.send(());}),None,viu::runtime::Services {macros:Some(session),chooser:None});
+    let dir = tempfile::tempdir().unwrap();
+    let roots = macros::Roots {
+        builtin: dir.path().join("builtin"),
+        user: dir.path().join("user"),
+        home: dir.path().join("home"),
+        mix: "/opt/mixos/bin/mix".into(),
+    };
+    let session = macros::Session::with_roots("workshop", Some(roots.clone()));
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::with_services(
+        8,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+        viu::runtime::Services {
+            macros: Some(session),
+            chooser: None,
+        },
+    );
     runtime.load(viu::runtime::Program {
         path:dir.path().join("library-test.mix"),
         source:r#"
@@ -114,13 +147,25 @@ send "viu-local" "scenes.model" body={generation:viu_context().generation,value:
 "#.into(),scene:"library-test".into(),citizen:"library-test".into(),
     }).unwrap();
     rx.recv_timeout(Duration::from_secs(20)).unwrap();
-    let done=runtime.try_completion().unwrap();
-    assert!(done.error.is_none(),"{:?}",done.error);
-    let model=done.model.unwrap();
-    assert_eq!(model["global"]["rc"],0);
-    assert_eq!(model["app"]["rc"],0);
-    assert!(std::path::Path::new(model["global"]["body"]["path"].as_str().unwrap()).starts_with(&roots.user));
-    assert!(std::path::Path::new(model["app"]["body"]["path"].as_str().unwrap()).starts_with(roots.user.join("email")));
-    assert_eq!(model["catalogues"]["email"]["running"],false);
-    assert!(model["catalogues"]["global"]["macros"].as_array().unwrap().iter().any(|m|m["id"]=="global-example"));
+    let done = runtime.try_completion().unwrap();
+    assert!(done.error.is_none(), "{:?}", done.error);
+    let model = done.model.unwrap();
+    assert_eq!(model["global"]["rc"], 0);
+    assert_eq!(model["app"]["rc"], 0);
+    assert!(
+        std::path::Path::new(model["global"]["body"]["path"].as_str().unwrap())
+            .starts_with(&roots.user)
+    );
+    assert!(
+        std::path::Path::new(model["app"]["body"]["path"].as_str().unwrap())
+            .starts_with(roots.user.join("email"))
+    );
+    assert_eq!(model["catalogues"]["email"]["running"], false);
+    assert!(
+        model["catalogues"]["global"]["macros"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["id"] == "global-example")
+    );
 }

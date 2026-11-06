@@ -285,11 +285,39 @@
         },
         {
           "args": {
+            "filter": "optional string",
+            "limit": "optional integer 0..1024"
+          },
+          "description": "Read the bounded traffic ring",
+          "name": "workshop.traffic",
+          "read_only": true
+        },
+        {
+          "args": {
+            "body": "none or redacted (default)",
+            "filter": "optional observe filter",
+            "on": "bool"
+          },
+          "description": "Control broker observation; topic rows remain after refusal",
+          "name": "workshop.observe",
+          "read_only": false
+        },
+        {
+          "args": {
             "app": "app or global",
             "id": "string"
           },
           "description": "Select a macro and read its document",
           "name": "workshop.macros.open",
+          "read_only": false
+        },
+        {
+          "args": {
+            "app": "app or global",
+            "title": "string"
+          },
+          "description": "Create a macro, select it and open its document",
+          "name": "workshop.macros.new",
           "read_only": false
         }
       ],
@@ -344,8 +372,9 @@
       "workshop.macros.remove",
       "workshop.macros.move",
       "workshop.macros.copy",
-      "workshop.macros.ced",
-      "workshop.macros.dopus"
+      "workshop.traffic",
+      "workshop.observe",
+      "noded.observe.event"
     ],
     "frame": "gold",
     "help": "workshop — native ABP service and command browser\nUsage: workshop [--debug[=LEVEL]] [--headless] [--noded-url URL] [--service NAME] [--comp NAME]\nLevels: off|error|warn|info|debug|trace (default warn; --debug means debug)",

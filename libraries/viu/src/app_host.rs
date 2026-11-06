@@ -78,8 +78,17 @@ struct Host {
     next_tick: Instant,
     last_viewport: Option<[f32; 3]>,
     notice_command: Option<String>,
+    deliveries: Vec<Arc<std::sync::atomic::AtomicU8>>,
 }
 impl Host {
+    fn model_close_ready(&self) -> bool {
+        self.model["window_close"] == true
+            && self.deliveries.is_empty()
+            && self.pending.is_empty()
+            && self.deferred.is_empty()
+            && self.inflight.is_empty()
+            && self.held_requests.is_empty()
+    }
     fn window_settings(&self, model: &Value) -> Value {
         let mut settings = self
             .session_window
@@ -149,15 +158,14 @@ impl Host {
         }
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
+        self.deliveries.push(r.delivery.clone());
         // Never accept a wire-authored claim that automated input is physical.
         r.headers.insert("viu_input".into(), "bus".into());
         r.headers.insert("from".into(), r.from.clone());
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
-        if r.command == format!("{}.quit", self.app)
-            || (r.command == format!("{}.execute", self.app) && r.args["id"] == "file.quit")
-        {
+        if r.command == format!("{}.quit", self.app) {
             r.close_after_reply
                 .store(true, std::sync::atomic::Ordering::Release);
         }
@@ -242,6 +250,7 @@ impl eframe::App for Host {
 }
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
+        self.deliveries.retain(|ack| ack.load(std::sync::atomic::Ordering::Acquire) == 0);
         self.facilities.prepare(ctx, &self.bus);
         self.deferred.retain(|_, reply| !reply.is_closed());
         while let Ok(request) = self.local_ui.requests.try_recv() {
@@ -259,9 +268,15 @@ impl Host {
                     .zip(request.args["rc"].as_u64().filter(|rc| *rc <= 255))
                     .ok_or("request id and byte rc required".into())
                     .and_then(|(id, rc)| {
+                        let value = match request.args.get("value_json") {
+                            Some(Value::String(text)) if text.len() <= 16 * 1024 * 1024 =>
+                                serde_json::from_str(text).map_err(|e| e.to_string())?,
+                            Some(_) => return Err("value_json must be bounded JSON text".into()),
+                            None => request.args["value"].clone(),
+                        };
                         let reply = self.deferred.remove(&id).ok_or("request is not deferred")?;
                         reply
-                            .send((rc as u8, request.args["value"].clone()))
+                            .send((rc as u8, value))
                             .map_err(|_| "request was cancelled".to_owned())?;
                         Ok(json!({"replied":id}))
                     }),
@@ -671,7 +686,7 @@ impl Host {
                 if self.window_frame.close_requested {
                     self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
                 }
-                if self.model["window_close"] == true {
+                if self.model_close_ready() {
                     self.facilities.finish(ui.ctx());
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -802,6 +817,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         next_tick: Instant::now(),
         last_viewport: None,
         notice_command: bundle.manifest.notice_command.clone(),
+        deliveries: Vec::new(),
     }
 }
 
@@ -827,7 +843,10 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         logging_args.get(3).map(String::as_str),
         Some("--help" | "-h")
     ) {
-        if let Some(help)=&preview.manifest.help {println!("{help}");return Ok(());}
+        if let Some(help) = &preview.manifest.help {
+            println!("{help}");
+            return Ok(());
+        }
         println!(
             "Usage: viu run APP_DIR [--service NAME] [--comp NAME] [--noded-url URL] [APP_ARGS]"
         );
@@ -846,7 +865,7 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         eprintln!("viu: {e}");
         std::process::exit(i32::from(preview.manifest.argument_error_exit))
     });
-    if bundle.launch["headless"]==true {
+    if bundle.launch["headless"] == true {
         return run_headless(bundle);
     }
     if bundle.manifest.surface == "background" {
@@ -865,8 +884,8 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         return Ok(());
     }
     if let Some(command) = &bundle.manifest.activation {
-        let fallback=vec![json!({"command":command,"body":{}})];
-        let plan=bundle.launch["activation"].as_array().unwrap_or(&fallback);
+        let fallback = vec![json!({"command":command,"body":{}})];
+        let plan = bundle.launch["activation"].as_array().unwrap_or(&fallback);
         match crate::native_bus::activate_existing_plan(
             &bundle.manifest.service,
             plan,
@@ -913,20 +932,43 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     )
 }
 
-fn run_headless(bundle:Bundle)->eframe::Result {
-    let (tx,rx)=std::sync::mpsc::channel();
-    let wake:crate::runtime::Wake=Arc::new(move || {let _=tx.send(());});
-    let mut host=create(bundle,wake);
-    let ctx=egui::Context::default();
+fn run_headless(bundle: Bundle) -> eframe::Result {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let wake: crate::runtime::Wake = Arc::new(move || {
+        let _ = tx.send(());
+    });
+    let mut host = create(bundle, wake);
+    let ctx = egui::Context::default();
     crate::appearance::install(&ctx);
     loop {
-        let output=ctx.run_ui(egui::RawInput::default(),|ui|host.pump(ui.ctx()));
-        if host.bus.close_requested.load(std::sync::atomic::Ordering::Acquire) || host.model["window_close"]==true {break;}
-        let repaint=output.viewport_output.values().map(|o|o.repaint_delay).min().unwrap_or(Duration::MAX);
-        let delay=host.tick.map(|_|host.next_tick.saturating_duration_since(Instant::now())).unwrap_or(Duration::MAX).min(repaint);
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| host.pump(ui.ctx()));
+        if host
+            .bus
+            .close_requested
+            .load(std::sync::atomic::Ordering::Acquire)
+            || host.model_close_ready()
+        {
+            break;
+        }
+        let repaint = output
+            .viewport_output
+            .values()
+            .map(|o| o.repaint_delay)
+            .min()
+            .unwrap_or(Duration::MAX);
+        let delay = host
+            .tick
+            .map(|_| host.next_tick.saturating_duration_since(Instant::now()))
+            .unwrap_or(Duration::MAX)
+            .min(repaint);
         output.drop_without_applying_deltas();
-        if delay==Duration::MAX {if rx.recv().is_err(){break;}}
-        else {let _=rx.recv_timeout(delay);}
+        if delay == Duration::MAX {
+            if rx.recv().is_err() {
+                break;
+            }
+        } else {
+            let _ = rx.recv_timeout(delay);
+        }
     }
     Ok(())
 }

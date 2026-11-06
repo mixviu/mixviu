@@ -1,0 +1,93 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$mesh=require("mesh.mix");$work=require("work.mix");$counter=require("counter.mix")
+fn queue($s,$op,$args,$reply)
+  $s.macro_pending=$s.macro_pending+1;$s.macro_next_ticket=$s.macro_next_ticket+1;$ticket=$s.macro_next_ticket
+  if $op=="observe" then
+    $s.mesh.observe_ticket=$ticket
+    if type($args.on)=="bool" then $s.mesh.resume_observe=$args.on end
+    $args.subscription_id=$s.subscription
+  elif $op=="mesh.nodes" then $s.mesh.nodes_ticket=$ticket
+  else $s.mesh.ping_ticket=$ticket end
+  if $op=="mesh.nodes" then
+    $s.mesh.reads[to_string($ticket)]={remaining:2,values:{},error:nil}
+    for $part in ["info","peers"]
+      $s=$work.enqueue($s,{owner:"mesh",op:$op,part:$part,service:"noded",command:"noded."..$part,reply:$reply,ticket:$ticket,lane:"mesh",timeout:3})
+    end
+    return $work.launch($s)
+  end
+  $s=$work.enqueue($s,{owner:"mesh",op:$op,args:$args,node:$args.node,reply:$reply,ticket:$ticket,job:if $op=="observe" then "observe-job.mix" else "mesh-job.mix" end,lane:if $op=="observe" then "mutation" else "mesh" end})
+  return $work.launch($s)
+end
+fn refresh($s)
+  if $s.connected and not $s.quitting and $s.mesh.nodes_ticket==nil then return queue($s,"mesh.nodes",{},nil) end
+  return $s
+end
+fn ensure($s)
+  if $s.connected and not $s.quitting and $s.subscription==nil and $s.mesh.observe_ticket==nil then return queue($s,"observe",{on:true},nil) end
+  return $s
+end
+fn next_ping($s)
+  if len($s.mesh.ping_queue)==0 then return $s end
+  $node=$s.mesh.ping_queue[0];$s.mesh.ping_queue=slice($s.mesh.ping_queue,1)
+  return queue($s,"mesh.ping",{node:$node},nil)
+end
+fn ping($s)
+  $code=nil;$message=""
+  if $s.quitting then $code="BUSY";$message="Workshop is closing"
+  elif not $s.connected then $code="DISCONNECTED";$message="Disconnected — requests are never replayed"
+  elif $s.mesh.ping_ticket!=nil then $code="BUSY";$message="A peer ping is already running"
+  else
+    $peers=map(filter($s.mesh.nodes,fn($n)=not $n.self),fn($n)=$n.name)
+    if len($peers)==0 then $code="UNAVAILABLE";$message="No peers"
+    else $s.mesh.ping_queue=$peers;return {state:next_ping($s),rc:0,body:{pinging:$peers},deferred:false} end
+  end
+  return {state:$s,rc:10,body:{error_code:$code,message:$message},deferred:false}
+end
+fn received($s,$task,$d)
+  $body=$d.body
+  if $task.op=="mesh.nodes" then
+    $key=to_string($task.ticket);$read=$s.mesh.reads[$key]
+    if $read==nil then return $s end
+    $read.remaining=$read.remaining-1
+    try
+      if $d.rc!=0 then raise("UNAVAILABLE",$body.transport_error ?? "unavailable") end
+      if $body.rc>=10 then raise("UNAVAILABLE","noded."..$task.part..": "..to_string($body.rc).." "..$body.body) end
+      $read.values[$task.part]=json_parse($body.body)
+    catch $why $read.error=$why end
+    if $read.remaining>0 then $s.mesh.reads[$key]=$read;return $work.launch($s) end
+    $s.mesh.reads=delete($s.mesh.reads,$key)
+    $body=if $read.error!=nil then {error_code:"UNAVAILABLE",message:$read.error} else $read.values end
+  end
+  $s.macro_pending=max(0,$s.macro_pending-1)
+  if $task.op=="mesh.nodes" and $task.ticket==$s.mesh.nodes_ticket then
+    $s.mesh.nodes_ticket=nil
+    if $d.rc!=0 or $body.error_code!=nil then $s.mesh.nodes_error=$mesh.text($body.message ?? "unavailable")
+    else $s.mesh=$mesh.set_nodes($s.mesh,$body.info,$body.peers) end
+  elif $task.op=="mesh.ping" and $task.ticket==$s.mesh.ping_ticket then
+    $s.mesh.ping_ticket=nil;$result={};$result[$task.node]=$body;$s.mesh=$mesh.set_probe($s.mesh,$result,$mesh.now_ms())
+    if $s.connected then $s=next_ping($s) end
+  elif $task.op=="observe" and $task.ticket==$s.mesh.observe_ticket then
+    $s.mesh.observe_ticket=nil
+    if $d.rc==0 and $body.error_code==nil then $s.subscription=$body.subscription_id end
+    $s.mesh=$mesh.set_observing($s.mesh,$s.subscription!=nil,$body.message)
+    $s.observe=if $body.error_code!=nil then ($body.message ?? "unavailable") elif $s.subscription!=nil then "Observing" else "Stopped" end
+  end
+  $work.answer($task.reply,$d.rc,$body)
+  return $work.launch($s)
+end
+fn disconnect($s)
+  $s.subscription=nil;$s.mesh.observe_ticket=nil;$s.mesh.nodes_ticket=nil;$s.mesh.ping_ticket=nil;$s.mesh.ping_queue=[]
+  $s.mesh=$mesh.set_observing($s.mesh,false,"Disconnected — requests are never replayed")
+  return $s
+end
+fn observed($s,$event)
+  $a=$event.args.args;$headers=$event.headers
+  if $headers.type!="event" or $s.subscription==nil or $a.subscription_id!=$s.subscription then
+    $s.ignored_observations=$counter.add($s.ignored_observations,1);return $s
+  end
+  $a.dropped_count=$counter.extract($event.body,["args","dropped_count"])
+  $s.mesh=$mesh.add_event($s.mesh,$a,$mesh.now_ms())
+  $traffic=require("traffic.mix");$s=$traffic.observed($s,$a)
+  if $s.mesh.topology_needed then $s.mesh.topology_needed=false;$s=refresh($s) end
+  return $s
+end

@@ -1,8 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- lint: globals app_launch app_args
-$controller=require("controller.mix");$model=require("model.mix");$frame=require("frame.mix");$presentation=require("presentation.mix");$discovery=require("discovery.mix");$work=require("work.mix")
-$state=$model.initial();$ctx=viu_context()
+$controller=require("controller.mix");$model=require("model.mix");$frame=require("frame.mix");$presentation=require("presentation.mix");$discovery=require("discovery.mix");$work=require("work.mix");$counter=require("counter.mix")
+$state=$model.initial();$ctx=viu_context();$state.mesh.observer=$ctx.citizen
 try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$launcher.plan($app_args) end
 $state.comp=$launch.comp ?? env("MIXOS_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
 fn publish_workshop($s)
@@ -17,79 +17,79 @@ end
 publish_workshop($state)
 on workshop.ping
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.info
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.actions
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.execute
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.theme
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.dialog
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.call
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.refresh
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.quit
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.select
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.body
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.filter
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.tree
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.reply
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.split
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.dock
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.expand
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.select_row
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on viu.frame.intent
   $out=$controller.execute($state,$event.args.value.command,$event.args.value.origin ?? "ui");$state=$out.state
-  publish_workshop($state);reply($out.rc,json_encode($out.body))
+  publish_workshop($state);reply($out.rc,$counter.wire($out.body))
 end
 on viu.frame.close
   $state.quitting=true;publish_workshop($state)
@@ -146,120 +146,140 @@ on bus.disconnected
   $state.connected=false;$state.status="Disconnected — requests are never replayed";publish_workshop($state)
 end
 on viu.job.completed
-  $state=$controller.received($state,$event.args);publish_workshop($state)
+  $state=$controller.follow_up($controller.received($state,$event.args));publish_workshop($state)
 end
 on viu.tick
-  $state=$work.launch($state)
+  $state=$controller.follow_up($state)
 end
 on workshop.agents
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.agents.select
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.agents.refresh
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.agents.filter
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.agents.new
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.agents.prompt
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.agents.cancel
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.agents.close
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.agents.resume
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.agents.set
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.agents.answer
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.open
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.list
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.reload
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.run
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.status
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.output
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.stop
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.new
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.get
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.put
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.remove
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.move
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.copy
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.ced
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.macros.dopus
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.notice
-  $state=$controller.notice($state,$event);publish_workshop($state)
+  $state=$controller.follow_up($controller.notice($state,$event));publish_workshop($state)
+end
+on workshop.mesh
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.mesh.ping
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.traffic
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.observe
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on noded.observe.event
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 
 on workshop.show
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)
-  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end

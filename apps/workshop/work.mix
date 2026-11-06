@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
-$path=path_join(dirname(script_path()),"rpc-job.mix");$source=read_file($path)
+$path=path_join(dirname(script_path()),"rpc-job.mix");$source=read_file($path);$counter=require("counter.mix")
 fn enqueue($s,$task)
   $task.generation=$s.generation;$task.queued=monotonic();$s.queue=push($s.queue,$task)
   return $s
@@ -26,5 +26,5 @@ fn defer($event)
   return $id
 end
 fn answer($id,$rc,$value)
-  if $id!=nil then send "viu-local" "native.reply" body={id:$id,rc:$rc,value:$value} end
+  if $id!=nil then send "viu-local" "native.reply" body={id:$id,rc:$rc,value_json:$counter.wire($value)} end
 end

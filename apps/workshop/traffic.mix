@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Bounded observation ring and redaction, adapted from gold inspector/workshop.rs.
+$counter=require("counter.mix")
 fn redact($v)
   if type($v)=="map" then
     for $key in keys($v)
@@ -33,7 +34,7 @@ fn clock_ms($v)
   catch $why return nil end
 end
 fn observed($s,$frame)
-  $s.dropped=$s.dropped+max(0,$frame.dropped_count ?? 0)
+  $s.dropped=$counter.add($s.dropped,$frame.dropped_count ?? 0)
   if $s.traffic_paused then return $s end
   if $frame.message_type=="response" and type($frame.correlation_id)=="string" then
     $index=nil
