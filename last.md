@@ -1,3 +1,5 @@
+Round 4 started: Workshop inventory reviewed against pinned 8779f3328 source. Local discovery / JSON request specimen next; Email follows its checkpoint. No new acceptance yet.
+
 # MixViu app ports — round 3 Ced checkpoint
 
 Ced is a bounded Mix specimen over the unchanged editd wire. Workshop is
