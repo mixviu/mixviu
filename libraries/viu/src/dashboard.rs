@@ -20,16 +20,30 @@ fn hue(v: &Value) -> Hue {
         Some("accent-plus") => Hue::AccentPlus,
         Some("accent-minus") => Hue::AccentMinus,
         Some("warning") => Hue::Warning,
-        _ => v
-            .as_u64()
+        _ => crate::time_series::whole(v)
             .map_or(Hue::Accent, |n| Hue::Series(n.min(255) as usize)),
     }
+}
+fn metric(value: &Value, key: &str, low: f64, high: f64) -> Result<(), String> {
+    if !value[key].is_null() && value[key].as_f64().is_none_or(|n| !n.is_finite() || n<low || n>high) {
+        return Err(format!("dashboard {key} exceeds renderer bounds"));
+    }
+    Ok(())
+}
+fn spark_values(value: &Value) -> Result<(), String> {
+    if !value.is_null() && value.as_array().is_none_or(|a| a.len()>6000 || a.iter().any(|n| !n.is_null() && n.as_f64().is_none_or(|n| !n.is_finite() || n.abs()>1e300))) {
+        return Err("invalid dashboard series".into());
+    }
+    Ok(())
 }
 fn blocks_valid(blocks: &Value, depth: usize, budget: &mut usize) -> Result<(), String> {
     if depth > 8 {
         return Err("dashboard nesting exceeds eight".into());
     }
     for block in blocks.as_array().ok_or("dashboard blocks must be a list")? {
+        metric(block,"height",1.0,2000.0)?;
+        metric(block,"size",0.0,100.0)?;
+        metric(block,"columns",1.0,16.0)?;
         *budget += 1;
         if *budget > 512 {
             return Err("dashboard block budget exceeded".into());
@@ -42,6 +56,11 @@ fn blocks_valid(blocks: &Value, depth: usize, budget: &mut usize) -> Result<(), 
                 if block["items"].as_array().is_none_or(|a| a.len() > 256) {
                     return Err("dashboard items exceed budget".into());
                 }
+                for item in block["items"].as_array().unwrap() {
+                    metric(item,"width",0.0,8192.0)?;
+                    metric(item,"peak",0.0,1e300)?;
+                    spark_values(&item["values"])?;
+                }
             }
             "table" => crate::tree_table::validate(&block["table"])?,
             _ => return Err("unknown dashboard block".into()),
@@ -50,12 +69,18 @@ fn blocks_valid(blocks: &Value, depth: usize, budget: &mut usize) -> Result<(), 
     Ok(())
 }
 pub fn validate(value: &Value) -> Result<(), String> {
+    metric(value,"sidebar_width",32.0,4096.0)?;
+    metric(value,"compact_width",64.0,8192.0)?;
+    metric(value,"interval_s",0.000001,1e10)?;
     let items = value["items"]
         .as_array()
         .filter(|a| a.len() <= 256)
         .ok_or("dashboard requires at most 256 chooser items")?;
     let mut seen = std::collections::BTreeSet::new();
     for item in items {
+        metric(item,"peak",0.0,1e300)?;
+        spark_values(&item["values"])?;
+        spark_values(&item["second_values"])?;
         if text(item, "id").is_empty()
             || !seen.insert(text(item, "id"))
             || !item["title"].is_string()
@@ -142,7 +167,7 @@ fn blocks(ui: &mut Ui, id: &str, items: &Value, interval: f64, events: &mut Vec<
                 }
             }
             "figures" => {
-                let columns = block["columns"].as_u64().unwrap_or(2).clamp(1, 16) as usize;
+                let columns = crate::time_series::whole(&block["columns"]).unwrap_or(2).clamp(1, 16) as usize;
                 egui::Grid::new(&key)
                     .num_columns(columns * 2)
                     .spacing([18.0, 6.0])
@@ -224,7 +249,7 @@ fn blocks(ui: &mut Ui, id: &str, items: &Value, interval: f64, events: &mut Vec<
                 let widget =
                     crate::widgets::Widget::new(&key, "tree-table", "", block["table"].clone())
                         .with_properties(
-                            json!({"style":"grid","vscroll":false,"auto_shrink":true}),
+                            json!({"style":"grid","vscroll":false,"auto_shrink":true,"read_only":true}),
                         );
                 crate::tree_table::draw(
                     ui,

@@ -356,12 +356,8 @@ impl Host {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
             }
             if self.framed {
-                let left = self
-                    .session_window
-                    .as_ref()
-                    .unwrap_or(&self.model["window_settings"])["window.caption_side"]
-                    == "left";
-                self.window_frame.finish_captions(ui, left);
+                let reserved = self.view.allocated_region("gold-captions");
+                self.window_frame.finish_captions(ui, reserved);
                 self.window_frame.edges(ui);
                 self.view
                     .geometry

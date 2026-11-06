@@ -44,6 +44,9 @@ pub struct SceneView {
 }
 
 impl SceneView {
+    pub fn allocated_region(&self, id: &str) -> Option<egui::Rect> {
+        self.frame.as_ref().and_then(|frame| frame.allocated_region(id)).or_else(|| self.regions.get(id).copied())
+    }
     pub fn new(source: &str) -> Result<Self, String> {
         Self::prepare(source, None)
     }
@@ -478,7 +481,7 @@ impl SceneView {
                             let widget=if node.family=="control" {Widget::decode(&node.ports["definition"]).expect("validated label")}else{Widget::new(child,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono")}))};
                             widget.intrinsic_width(ui,&self.tree.model).expect("validated intrinsic label")
                         };
-                        let groups=band_groups(node,crate::window_frame::Metrics::of(ui.ctx()).caption_width*3.0,toolkit::chrome::Chrome::of(ui.ctx()).captions.alignment(design::title_band::Alignment::Right),&measure).expect("validated band groups");
+                        let groups=band_groups(node,crate::window_frame::Metrics::of(ui.ctx()).caption_width*3.0,ui.ctx().data(|d| d.get_temp::<design::title_band::Alignment>(egui::Id::unique("viu-caption-alignment"))).unwrap_or_else(|| toolkit::chrome::Chrome::of(ui.ctx()).captions.alignment(design::title_band::Alignment::Right)),&measure).expect("validated band groups");
                         let active=children(node).zip(groups).filter(|(child,_)|nodes.get(*child).is_some_and(|child|child.ports.get("hidden").and_then(Value::as_bool)!=Some(true)&&child.ports.get("slot_only").and_then(Value::as_str).is_none_or(|name|self.slots.contains_key(name)))).collect::<Vec<_>>();
                         let groups=active.iter().map(|(_,group)|*group).collect::<Vec<_>>();
                         let rectangles=design::title_band::layout(area.width(),&groups);

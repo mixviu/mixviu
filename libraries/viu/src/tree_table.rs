@@ -470,13 +470,14 @@ fn draw_grid(
     let columns = value["columns"].as_array().expect("validated columns");
     let height = ui.text_style_height(&TextStyle::Body) + 6.0;
     ui.scope(|ui| {
+        let read_only = widget.properties["read_only"] == true;
         let mut table = TableBuilder::new(ui)
             .id_salt(id)
             .auto_shrink([widget.properties["auto_shrink"] == true; 2])
             .vscroll(widget.properties["vscroll"] != false)
             .striped(true)
             .resizable(true)
-            .sense(Sense::click())
+            .sense(if read_only { Sense::hover() } else { Sense::click() })
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
         for column in columns {
             let width = if column["remainder"] == true {
@@ -502,14 +503,14 @@ fn draw_grid(
                         let label =
                             egui::RichText::new(format!("{}{arrow}", text(column, "label")))
                                 .strong();
-                        let response = if column["sortable"] == false {
+                        let response = if read_only || column["sortable"] == false {
                             ui.label(label)
                         } else {
                             ui.add(egui::Button::new(label).frame(false))
                         };
                         geometry
                             .insert(format!("{id}.column.{}", text(column, "id")), response.rect);
-                        if response.clicked() && column["sortable"] != false {
+                        if !read_only && response.clicked() && column["sortable"] != false {
                             emit(events, id, "sort", json!({"column":column["id"]}));
                         }
                     });
@@ -544,7 +545,7 @@ fn draw_grid(
                     }
                     let response = row.response();
                     geometry.insert(format!("{id}.key.{key}"), response.rect);
-                    if response.clicked() {
+                    if !read_only && response.clicked() {
                         emit(events, id, "select", json!({"key":key}));
                     }
                 });

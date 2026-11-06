@@ -10,7 +10,7 @@ root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placem
 "gold-band":{widget:"band",children:["gold-captions","gold-icon","gold-menu","gold-title","gold-toolbar"],groups:"= $model.frame.groups"},
 "gold-icon":{widget:"control",definition:{id:"gold-icon",kind:"mark",label:"",initial:"monitor",properties:{fill_height:true}}},
 "gold-menu":{widget:"control",definition:{id:"gold-menu",kind:"menubar",label:"",initial:[]},on_intent:"viu.frame.intent"},
-"gold-captions":{widget:"spacer"},
+"gold-captions":{widget:"spacer",slot_only:"window.header"},
 "gold-title":{widget:"control",definition:{id:"gold-title",kind:"label",label:"",initial:"",properties:{role:"title",weak:true}}},
 "gold-toolbar":{widget:"control",definition:{id:"gold-toolbar",kind:"command-bar",label:"",initial:[]},on_intent:"viu.frame.intent"},
 "gold-status":{widget:"column",background:"design.chrome",padding:0,children:["gold-status-text"]},

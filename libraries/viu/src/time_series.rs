@@ -9,6 +9,9 @@ use egui_plot::{
 use serde_json::Value;
 use std::{cell::Cell, collections::HashMap};
 use toolkit::graph::{self, Hue};
+pub(crate) fn whole(value: &Value) -> Option<u64> {
+    value.as_f64().filter(|n| n.is_finite() && *n >= 0.0 && *n <= 9007199254740991.0 && n.fract() == 0.0).map(|n| n as u64)
+}
 
 /// Bounded data contract for a Mix-authored interactive time-series widget.
 pub fn validate(value: &serde_json::Value) -> Result<(), String> {
@@ -16,8 +19,7 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
         .as_array()
         .filter(|a| !a.is_empty() && a.len() <= 64)
         .ok_or("expected 1..64 chart series")?;
-    if value["samples"]
-        .as_u64()
+    if whole(&value["samples"])
         .is_none_or(|n| !(2..=6000).contains(&n))
         || value["interval_s"]
             .as_f64()
@@ -28,6 +30,10 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
     {
         return Err("invalid chart interval, window or height".into());
     }
+    let window=(whole(&value["samples"]).unwrap()-1) as f64*value["interval_s"].as_f64().unwrap();
+    if !window.is_finite() || window>1e12 || value["peak"].as_f64().is_some_and(|n| !n.is_finite() || n.abs()>1e300) {
+        return Err("chart range exceeds finite renderer bounds".into());
+    }
     if !["percent", "bytes", "rate", "count", "count-rate"]
         .contains(&value["format"].as_str().unwrap_or(""))
         || !["percent", "capacity", "rate", "count"]
@@ -35,10 +41,20 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
     {
         return Err("invalid chart units or scale".into());
     }
-    if !value["height_share"].is_null() && value["height_share"].as_f64().is_none_or(|n| !n.is_finite() || n <= 0.0 || n > 1.0) {
+    if !value["height_share"].is_null()
+        && value["height_share"]
+            .as_f64()
+            .is_none_or(|n| !n.is_finite() || n <= 0.0 || n > 1.0)
+    {
         return Err("invalid chart height share".into());
     }
-    if !value["annotations"].is_null() && value["annotations"].as_array().is_none_or(|a| a.len() > 6000 || a.iter().any(|n| !n.is_null() && n.as_str().is_none_or(|s| s.len() > 4096))) {
+    if !value["annotations"].is_null()
+        && value["annotations"].as_array().is_none_or(|a| {
+            a.len() > 6000
+                || a.iter()
+                    .any(|n| !n.is_null() && n.as_str().is_none_or(|s| s.len() > 4096))
+        })
+    {
         return Err("invalid chart annotations".into());
     }
     for item in series {
@@ -46,7 +62,7 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
             || item["values"].as_array().is_none_or(|a| {
                 a.len() > 6000
                     || a.iter()
-                        .any(|n| !n.is_null() && n.as_f64().is_none_or(|n| !n.is_finite()))
+                        .any(|n| !n.is_null() && n.as_f64().is_none_or(|n| !n.is_finite() || n.abs()>1e300))
             })
         {
             return Err("invalid chart series values".into());
@@ -113,8 +129,7 @@ pub(crate) fn draw(ui: &mut Ui, id: &str, value: &serde_json::Value) -> egui::Re
                 "accent-plus" => Hue::AccentPlus,
                 "accent-minus" => Hue::AccentMinus,
                 "warning" => Hue::Warning,
-                _ => s["hue"]
-                    .as_u64()
+                _ => whole(&s["hue"])
                     .map_or(Hue::Accent, |n| Hue::Series(n.min(255) as usize)),
             },
         })
@@ -134,12 +149,16 @@ pub(crate) fn draw(ui: &mut Ui, id: &str, value: &serde_json::Value) -> egui::Re
         "count-rate" => count_rate,
         _ => percent,
     };
-    let height = value["height_share"].as_f64().map_or(value["height"].as_f64().unwrap() as f32, |share| (ui.available_height()*share as f32).clamp(120.0,320.0));
-    let size = Vec2::new(ui.available_width(),height);
+    let height = value["height_share"]
+        .as_f64()
+        .map_or(value["height"].as_f64().unwrap() as f32, |share| {
+            (ui.available_height() * share as f32).clamp(120.0, 320.0)
+        });
+    let size = Vec2::new(ui.available_width(), height);
     ui.scope(|ui| {
         let chart = Chart {
             series: &series,
-            samples: value["samples"].as_u64().unwrap() as usize,
+            samples: whole(&value["samples"]).unwrap() as usize,
             interval_s: value["interval_s"].as_f64().unwrap(),
             scale,
             format,

@@ -15,6 +15,14 @@ use viu::{
     bundle::Bundle,
     runtime::{Completion, Runtime, from_json},
 };
+struct OwnedChild(std::process::Child);
+impl std::ops::Deref for OwnedChild { type Target=std::process::Child;fn deref(&self)->&Self::Target {&self.0} }
+impl std::ops::DerefMut for OwnedChild { fn deref_mut(&mut self)->&mut Self::Target {&mut self.0} }
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        if self.0.try_wait().ok().flatten().is_none() {let _=self.0.kill();let _=self.0.wait();}
+    }
+}
 struct Processes {
     pid: u32,
     reads: Arc<Mutex<usize>>,
@@ -69,10 +77,10 @@ fn event(runtime: &mut Runtime, rx: &mpsc::Receiver<()>, name: &str, args: Value
 }
 #[test]
 fn mix_signal_api_uses_snapshot_and_refuses_reuse_then_refreshes_without_prompt() {
-    let mut child = std::process::Command::new("sleep")
+    let mut child = OwnedChild(std::process::Command::new("sleep")
         .arg("60")
         .spawn()
-        .unwrap();
+        .unwrap());
     let pid = child.id();
     let reads = Arc::new(Mutex::new(0));
     let keep = reads.clone();

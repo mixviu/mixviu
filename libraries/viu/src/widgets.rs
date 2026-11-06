@@ -203,6 +203,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.properties["read_only"] == true && self.kind == "tree-table" {return vec![];}
         if self.kind == "dashboard" {
             return vec!["choose"];
         }
@@ -292,11 +293,11 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
-        if self.kind == "dashboard" {
-            return crate::dashboard::admit(self.value(model), action, value);
-        }
         if self.properties["enabled"] == false {
             return Err("DISABLED".into());
+        }
+        if self.kind == "dashboard" {
+            return crate::dashboard::admit(self.value(model), action, value);
         }
         self.validate_action(action, value)?;
         if self.kind == "window-controls" && self.value(model)["enabled"] != true {
