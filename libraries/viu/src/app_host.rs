@@ -737,8 +737,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     );
     // Explicit app descriptors may refine commands supplied by a native
     // facility. Register one command, retaining the app's descriptor first.
-    let mut command_names=std::collections::BTreeSet::new();
-    commands.retain(|name|command_names.insert(name.clone()));
+    let mut command_names = std::collections::BTreeSet::new();
+    commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
     let bus = Endpoint::start(
         service,
