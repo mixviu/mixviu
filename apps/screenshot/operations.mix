@@ -139,7 +139,7 @@ fn raise_window($s)
   if $s.headless ?? false then return $s end
   $path=path_join(dirname(script_path()),"job.mix")
   try
-    send "viu-local" "jobs.start" id="screenshot-raise" owner=$s.serial path=$path source=read_file($path) command="job.run" body={op:"show",comp:$s.comp,pid:pid(),timeout:30}
+    send "viu-local" "jobs.start" body={id:"screenshot-raise",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:{op:"show",comp:$s.comp,pid:pid()},timeout:30}
   catch $message end
   return $s
 end
