@@ -28,8 +28,8 @@ A registered host query acknowledges support before the ordinary client row
 is detached. Menu and nested action popups remain the same shared Viu controls.
 The historical `dev.mixos.<service>` application-ID namespace and three service
 command aliases are retained solely for the current compositor protocol.
-An absent host leaves usable client controls; unacknowledged offers retry six
-times within a bounded startup window, then become idle until state changes.
+An absent host leaves usable client controls; unacknowledged offers make at most six
+attempts within a bounded startup window, then become idle until state changes.
 The canonical app commands remain `dopus.*`. `dopus.dialog` accepts the original
 open/answer writes; its read result is the Viu form schema. The separate
 `dopus.dialog.answer` adds an explicit form-generation fence.

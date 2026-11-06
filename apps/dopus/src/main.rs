@@ -1028,7 +1028,7 @@ impl eframe::App for App {
             ctx,
             &self.bus,
             &format!("dopus-{}", self.mode),
-            &std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_|"shell".into()),
+            &std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()),
             viu::hosting::Hosting::eligible(&self.session.snapshot["state"]["values"]),
         );
         self.window_frame.show_with_chrome(
