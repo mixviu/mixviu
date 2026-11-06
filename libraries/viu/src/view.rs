@@ -478,7 +478,7 @@ impl SceneView {
                             let widget=if node.family=="control" {Widget::decode(&node.ports["definition"]).expect("validated label")}else{Widget::new(child,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono")}))};
                             widget.intrinsic_width(ui,&self.tree.model).expect("validated intrinsic label")
                         };
-                        let groups=band_groups(node,crate::window_frame::Metrics::of(ui.ctx()).caption_width*3.0,&measure).expect("validated band groups");
+                        let groups=band_groups(node,crate::window_frame::Metrics::of(ui.ctx()).caption_width*3.0,toolkit::chrome::Chrome::of(ui.ctx()).captions.alignment(design::title_band::Alignment::Right),&measure).expect("validated band groups");
                         let active=children(node).zip(groups).filter(|(child,_)|nodes.get(*child).is_some_and(|child|child.ports.get("hidden").and_then(Value::as_bool)!=Some(true)&&child.ports.get("slot_only").and_then(Value::as_str).is_none_or(|name|self.slots.contains_key(name)))).collect::<Vec<_>>();
                         let groups=active.iter().map(|(_,group)|*group).collect::<Vec<_>>();
                         let rectangles=design::title_band::layout(area.width(),&groups);
@@ -584,7 +584,7 @@ impl SceneView {
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let frame = egui::Frame::new()
                             .fill(background)
-                            .inner_margin(num(node, "padding").unwrap_or(0.0))
+                            .inner_margin(egui::Margin::symmetric(num(node, "padding_x").or(num(node, "padding")).or_else(|| node.ports.get("padding").and_then(|v| design_length(v, Some(ui.ctx())))).unwrap_or(0.0) as i8,num(node, "padding_y").or(num(node, "padding")).or_else(|| node.ports.get("padding").and_then(|v| design_length(v, Some(ui.ctx())))).unwrap_or(0.0) as i8))
                             .corner_radius(num(node, "radius").unwrap_or(0.0));
                         let response = frame
                             .show(ui, |ui| {
@@ -983,7 +983,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
         }
         match node.family.as_str() {
             "band" => {
-                band_groups(node, 0.0, &|_| 0.0)?;
+                band_groups(node, 0.0, design::title_band::Alignment::Right, &|_| 0.0)?;
                 for child in children(node) {
                     let group = &node.ports["groups"][child];
                     if group["preferred"] == "content" || group["minimum"] == "content" {
@@ -1108,6 +1108,7 @@ fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
         "design.status_height" => Some(ctx.map_or(30.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.bars.status
         })),
+        "design.dock_margin" => Some(ctx.map_or(2.0, |ctx| toolkit::chrome::Chrome::of(ctx).metrics.dock_margin)),
         "design.options_height" => Some(ctx.map_or(42.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.bars.options
         })),
@@ -1118,6 +1119,7 @@ fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
 fn band_groups(
     node: &Node,
     caption_width: f32,
+    caption_side: design::title_band::Alignment,
     content_width: &dyn Fn(&str) -> f32,
 ) -> Result<Vec<design::title_band::Group>, String> {
     use design::title_band::{Alignment, Group};
@@ -1133,7 +1135,7 @@ fn band_groups(
     children.into_iter().map(|child|{
         let group=groups.get(child).ok_or("band child missing group")?;
         let length=|name:&str|if group[name]=="window.captions"{Ok(caption_width)}else if group[name]=="content"{Ok(content_width(child))}else{group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length, content, or window.captions metric"))};
-        let align=match group["align"].as_str(){Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center or right".into())};
+        let align=match group["align"].as_str(){Some("window.captions")=>caption_side,Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center or right".into())};
         let integer=|name:&str|group[name].as_f64().filter(|n|n.is_finite()&&n.fract()==0.0&&(0.0..=255.0).contains(n)).map(|n|n as u8).ok_or_else(||format!("band {name} must be an integer 0..255"));
         let shrink=if group["shrink"].is_null(){None}else{Some(integer("shrink")?)};
         let order=integer("order")?;

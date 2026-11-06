@@ -84,7 +84,7 @@ on monitor.intent
   elif $a.id=="filter" then $state.filter=$a.value;$state=refresh_monitor($state)
   elif $a.id=="node" then
     $state.node_draft=$a.value
-    if $a.action=="submit" then
+    if $a.action=="submit" or $a.action=="set" then
       $node=if $a.value=="This node" then "" else $a.value end
       $checked=$core.target($node);$state.node=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.selected=nil;$state=refresh_monitor($state)
     end

@@ -472,6 +472,7 @@ fn draw_grid(
     ui.scope(|ui| {
         let mut table = TableBuilder::new(ui)
             .id_salt(id)
+            .auto_shrink([false, false])
             .striped(true)
             .resizable(true)
             .sense(Sense::click())

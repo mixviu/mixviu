@@ -341,7 +341,7 @@ impl Host {
                     .unwrap_or_else(|| self.model["window_settings"].clone());
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 self.window_frame
-                    .show_with_header(ui, &self.title, &settings, true);
+                    .show_with_chrome(ui, &self.title, &settings, true, true);
                 let slots = self
                     .window_frame
                     .geometry
@@ -356,6 +356,8 @@ impl Host {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
             }
             if self.framed {
+                let left = self.session_window.as_ref().unwrap_or(&self.model["window_settings"])["window.caption_side"] == "left";
+                self.window_frame.finish_captions(ui, left);
                 self.window_frame.edges(ui);
                 self.view
                     .geometry
