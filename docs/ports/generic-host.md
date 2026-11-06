@@ -21,9 +21,9 @@ It supports fill, fit, centre, tile and stretch. File decoding runs off the UI
 thread with regular-file, byte, dimension and allocation limits. PNG, JPEG and
 WebP use pure Rust decoders. Tiny-image tiling is bounded to 4096 quads.
 
-Native additions are shared: bundle loader 138 lines, host 431 lines, retained
+Round-1 native additions were shared: bundle loader 138 lines, host 431 lines, retained
 layer backend 2,211 lines across six files, plus the bounded image-fill and
-decoder-selector/widget-admission extensions. The three bundles add zero Rust.
+decoder-selector/widget-admission extensions. Those three bundles add zero Rust.
 No gallery header, catalogue or reducer moved into native code. The original
 layer backend's logging calls use Viu tracing; its new close hook waits for
 native reply delivery. Import hashes and those adaptations are recorded in
@@ -44,6 +44,12 @@ testing independent Mix output projections.
 
 The old gallery comparator remains under `apps/gallery-reference` to retain
 its tests and independent Rust oracle; it is not used by the bundle host.
+
+Round 2 adds Screenshot and Prefs through this same host, bringing the total
+to five Mix bundles with zero per-app Rust. Shared job delivery, command
+deadlines and bounded image export are counted in
+[round2-native.md](round2-native.md); application inventories and deferrals are
+in [screenshot.md](screenshot.md) and [prefs.md](prefs.md).
 
 ## Dopus inventory for a later round
 

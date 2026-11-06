@@ -56,6 +56,7 @@ on viu.job.completed
   $answer=$d.body.answer ?? {}
   if $state.busy and $d.tag.owner==$state.serial then
     $state.busy=false;$state.read_at=monotonic()
+    if $state.pending.op=="read" then $state.stale=true end
     if $d.rc==0 and $d.body.op=="read" then
       $b=$d.body
       if type($b.catalog.keys)!="list" or len($b.catalog.keys)>2048 or type($b.read.values)!="map" or type($b.read.revision)!="string" or not re_match($b.read.revision,"^(0|[1-9][0-9]*)$") or type($b.read.incarnation)!="string" then raise("REPLY","Malformed or oversized settings reply") end

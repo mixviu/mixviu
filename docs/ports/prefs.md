@@ -20,6 +20,7 @@ Per-app Rust added: 0. The inventory was committed before implementation.
 | Software catalogues/install/remove/release progress | Deferred: releases service workflows outside settings specimen |
 | Keyboard layout add/search, font discovery, custom assets | Deferred specialised native catalogues/choosers |
 | Original action menus/dialogs/macros/theme/single-instance CLI/wire compatibility | Deferred; generic viu native automation and new Mix commands are explicit |
+| Settings-driven appearance/keymaps of Prefs itself | Deferred with the generic host's session design/keymap follower; editing the authority does not yet restyle this registry browser |
 
 settingsd may be a mixd personality; no engine/interpreter migration is part of
 this port. No settings registry or validation is copied into Rust.
