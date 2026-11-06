@@ -320,10 +320,17 @@ fn icon(ui: &Ui, name: &str, at: egui::Pos2, colour: Color32) {
 }
 fn record(geometry: &mut BTreeMap<String, Rect>, id: &str, suffix: &str, response: &Response) {
     geometry.insert(format!("{id}.{suffix}"), response.rect);
-    let key=egui::Id::unique((id,"browser-focus"));
-    if response.ctx.data(|d|d.get_temp::<String>(key)).is_some_and(|row|suffix==format!("row.{row}")) {
+    let key = egui::Id::unique((id, "browser-focus"));
+    if response
+        .ctx
+        .data(|d| d.get_temp::<String>(key))
+        .is_some_and(|row| suffix == format!("row.{row}"))
+    {
         response.scroll_to_me(Some(Align::Center));
-        response.ctx.data_mut(|d| {d.remove_temp::<String>(key);d.insert_temp(key.with("done"),true);});
+        response.ctx.data_mut(|d| {
+            d.remove_temp::<String>(key);
+            d.insert_temp(key.with("done"), true);
+        });
     }
 }
 pub(crate) fn draw(
@@ -334,9 +341,13 @@ pub(crate) fn draw(
     events: &mut Vec<Intent>,
 ) -> Response {
     let area = ui.available_rect_before_wrap();
-    let focus_key=egui::Id::unique((id,"browser-focus"));
+    let focus_key = egui::Id::unique((id, "browser-focus"));
     ui.ctx().data_mut(|d| {
-        if let Some(row)=value["focus_row"].as_str() {d.insert_temp(focus_key,row.to_owned());}else{d.remove_temp::<String>(focus_key);}
+        if let Some(row) = value["focus_row"].as_str() {
+            d.insert_temp(focus_key, row.to_owned());
+        } else {
+            d.remove_temp::<String>(focus_key);
+        }
     });
     crate::media_gallery::begin(ui, id);
     let mut look = Look::of(
@@ -512,6 +523,7 @@ pub(crate) fn draw(
     let mut body = ui.new_child(
         egui::UiBuilder::new()
             .id_salt((id, "body"))
+            .ui_stack_info(egui::UiStackInfo::new(egui::UiKind::CentralPanel).with_frame(egui::Frame::NONE.fill(look.window)))
             .max_rect(column)
             .layout(Layout::top_down(Align::Min)),
     );
@@ -750,7 +762,13 @@ pub(crate) fn draw(
                 });
         }
     }
-    if ui.ctx().data_mut(|d|d.remove_temp::<bool>(focus_key.with("done"))).unwrap_or(false) {emit(events,id,"focus.done",Value::Null);}
+    if ui
+        .ctx()
+        .data_mut(|d| d.remove_temp::<bool>(focus_key.with("done")))
+        .unwrap_or(false)
+    {
+        emit(events, id, "focus.done", Value::Null);
+    }
     crate::media_gallery::finish(ui, id, events);
     ui.allocate_rect(area, Sense::hover())
 }
@@ -1128,7 +1146,9 @@ fn radio_rows(
             Sense::click(),
         );
         record(geometry, id, &format!("row.{key}.choice.{index}"), &click);
-        if selected {record(geometry,id,&format!("row.{key}"),&response);}
+        if selected {
+            record(geometry, id, &format!("row.{key}"), &response);
+        }
         if click.clicked() && row["blocked"].is_null() && !selected {
             emit(
                 events,

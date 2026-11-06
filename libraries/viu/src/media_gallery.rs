@@ -7,31 +7,68 @@ use egui::{Color32, Rect, Response, Sense, Stroke, StrokeKind, Ui, vec2};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, mpsc, atomic::{AtomicU64, Ordering}},
 };
 struct State {
-    images: crate::image_view::Images,
+    pool: thumbs::Pool<String>,
+    replies: mpsc::Receiver<thumbs::Reply<String>>,
+    decoder: crate::thumbnail::Decoder<String>,
+    live: Arc<AtomicU64>,
+    textures: BTreeMap<String, Option<egui::TextureHandle>>,
+    asked: BTreeMap<String,u64>,
+    used: u64,
+    active: bool,
     chooser: Option<(String, Option<String>, toolkit::choose::Handle)>,
 }
+impl State {
+    fn new(ctx:&egui::Context)->Self {
+        let (tx,replies)=mpsc::channel();let wake=ctx.clone();
+        let pool=thumbs::Pool::new("viu",move |reply| {let sent=tx.send(reply).is_ok();wake.request_repaint();sent});
+        Self {pool,replies,decoder:crate::thumbnail::Decoder::new("viu-media-thumbs"),live:Arc::new(AtomicU64::new(0)),textures:BTreeMap::new(),asked:BTreeMap::new(),used:0,active:false,chooser:None}
+    }
+    fn pump(&mut self,ctx:&egui::Context) {
+        while let Ok(reply)=self.replies.try_recv() {
+            if !self.asked.contains_key(&reply.lane) {continue;}
+            match reply.outcome {
+                thumbs::Outcome::Ready(cache)=>{if !self.decoder.ask(&reply.lane,&cache,ctx) {self.textures.insert(reply.lane,None);}},
+                _=>{self.textures.insert(reply.lane,None);}
+            }
+        }
+        for (key,image) in self.decoder.drain() {
+            if self.asked.contains_key(&key) {self.textures.insert(key.clone(),image.map(|image|ctx.load_texture(&key,image,egui::TextureOptions::LINEAR)));}
+        }
+    }
+    fn texture(&mut self,ctx:&egui::Context,path:&str,size:thumbs::Size)->Option<egui::TextureHandle> {
+        self.pump(ctx);self.active=true;self.used+=1;
+        let key=format!("{}:{path}",size.px());let first=self.asked.insert(key.clone(),self.used).is_none();
+        while self.asked.len()>128 {
+            let oldest=self.asked.iter().min_by_key(|(_,used)|*used).map(|(k,_)|k.clone()).unwrap();
+            self.asked.remove(&oldest);self.textures.remove(&oldest);
+        }
+        if let Some(texture)=self.textures.get(&key) {return texture.clone();}
+        if first {self.pool.submit(thumbs::Request{lane:key,ticket:thumbs::Ticket::new(self.live.clone(),self.live.load(Ordering::Relaxed)),path:path.into(),size});}
+        None
+    }
+}
+impl Drop for State {fn drop(&mut self) {self.live.fetch_add(1,Ordering::Relaxed);}}
 fn state(ui: &Ui, id: &str) -> Arc<Mutex<State>> {
     let key = egui::Id::unique((ui.ctx().viewport_id(), id, "media"));
     ui.ctx().data_mut(|d| {
         d.get_temp_mut_or_insert_with(key, || {
-            Arc::new(Mutex::new(State {
-                images: crate::image_view::Images::surface_with_capacity(128),
-                chooser: None,
-            }))
+            Arc::new(Mutex::new(State::new(ui.ctx())))
         })
         .clone()
     })
 }
 pub(crate) fn begin(ui: &Ui, id: &str) {
-    state(ui, id).lock().unwrap().images.begin();
+    state(ui, id).lock().unwrap().active=false;
 }
 pub(crate) fn finish(ui: &Ui, id: &str, events: &mut Vec<Intent>) {
     let shared = state(ui, id);
     let mut state = shared.lock().unwrap();
-    state.images.finish();
+    if !state.active && !state.asked.is_empty() {
+        state.live.fetch_add(1,Ordering::Relaxed);state.asked.clear();state.textures.clear();state.decoder.retain(&[]);
+    }
     let outcome = state.chooser.as_mut().and_then(|(row, operation, handle)| {
         handle
             .poll(ui.ctx())
@@ -387,8 +424,16 @@ pub(crate) fn draw(
         if row["path"].is_string() && ui.is_rect_visible(screen) {
             let shared = state(ui, id);
             let mut state = shared.lock().unwrap();
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(screen));
-            state.images.draw_fill(&mut child,key,&json!({"phase":"ready","path":row["path"],"fit":row["fit"].as_str().unwrap_or("fill"),"colour":[look.window.r(),look.window.g(),look.window.b()]}));
+            match state.texture(ui.ctx(),text(row,"path"),thumbs::Size::at_least(300)) {
+                Some(texture)=>{
+                    if row["fit"]=="fit" {
+                        ui.painter().rect_filled(screen,Look::radius(look.r_xs),Color32::BLACK);
+                        let size=texture.size_vec2();let scale=(screen.width()/size.x.max(1.0)).min(screen.height()/size.y.max(1.0));
+                        paint_texture(ui,Rect::from_center_size(screen.center(),size*scale),0.0,&texture,Rect::from_min_max(egui::Pos2::ZERO,egui::pos2(1.0,1.0)));
+                    }else{paint_texture(ui,screen,look.r_xs,&texture,crop(texture.size_vec2(),screen.size()));}
+                },
+                None=>{ui.painter().rect_filled(screen,Look::radius(look.r_xs),look.card);}
+            }
         }
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::Role::Image, ui.is_enabled(), text(row, "title"))
@@ -406,8 +451,8 @@ pub(crate) fn draw(
                 if is_colour{fill(ui,rect,text(item,"colour"),look.r_s);}else{
                     ui.painter().rect_filled(rect,Look::radius(look.r_s),look.card);
                     let shared=state(ui,id);let mut state=shared.lock().unwrap();
-                    let mut child=ui.new_child(egui::UiBuilder::new().max_rect(rect));
-                    state.images.draw_fill(&mut child,&format!("{key}:{index}"),&json!({"phase":"ready","path":item["path"],"fit":"fill","colour":[look.card.r(),look.card.g(),look.card.b()]}));
+                    if let Some(texture)=state.texture(ui.ctx(),text(item,"path"),thumbs::Size::Normal) {paint_texture(ui,rect,look.r_s,&texture,crop(texture.size_vec2(),size));}
+                    else {toolkit::button::paint_icon(ui,toolkit::Icon::Image,rect.center(),24.0,look.icon);}
                 }
                 if item["value"]==row["value"]{ui.painter().rect_stroke(rect.expand(2.0),Look::radius(look.r_s+2.0),Stroke::new(2.0,look.accent),StrokeKind::Outside);}
                 if item["removable"]==true {
@@ -426,4 +471,19 @@ pub(crate) fn draw(
     }).response;
     geometry.insert(format!("{id}.row.{key}"), response.rect);
     response
+}
+fn crop(size:egui::Vec2,target:egui::Vec2)->Rect {
+    let (image,wanted)=(size.x/size.y.max(1.0),target.x/target.y.max(1.0));
+    if image>wanted {let w=wanted/image;Rect::from_min_max(egui::pos2((1.0-w)/2.0,0.0),egui::pos2((1.0+w)/2.0,1.0))}
+    else {let h=image/wanted;Rect::from_min_max(egui::pos2(0.0,(1.0-h)/2.0),egui::pos2(1.0,(1.0+h)/2.0))}
+}
+fn paint_texture(ui:&Ui,rect:Rect,radius:f32,texture:&egui::TextureHandle,uv:Rect) {
+    let shape=egui::epaint::RectShape::filled(rect,Look::radius(radius),Color32::WHITE);
+    let mut tessellator=egui::epaint::Tessellator::new(ui.ctx().pixels_per_point(),Default::default(),[1,1],Vec::new());
+    let mut mesh=egui::epaint::Mesh::default();tessellator.tessellate_rect(&shape,&mut mesh);
+    for vertex in &mut mesh.vertices {
+        let coverage=f32::from(vertex.color.a())/255.0;vertex.color=Color32::WHITE.gamma_multiply(coverage);
+        let t=((vertex.pos-rect.min)/rect.size()).clamp(egui::Vec2::ZERO,egui::Vec2::splat(1.0));vertex.uv=uv.lerp_inside(t);
+    }
+    mesh.texture_id=texture.id();ui.painter().add(egui::Shape::mesh(mesh));
 }
