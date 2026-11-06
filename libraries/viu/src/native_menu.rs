@@ -99,7 +99,7 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
             hint: "Search commands".into(),
             empty: "No matching commands".into(),
         });
-    let shown = ui.horizontal(|ui| {
+    let shown = ui.allocate_ui_with_layout(ui.available_size_before_wrap(),egui::Layout::left_to_right(egui::Align::Center),|ui| {
         if compact {
             let response = ui.add(toolkit::button::IconButton::new(
                 crate::icons::Icon::from_name("menu").unwrap(),

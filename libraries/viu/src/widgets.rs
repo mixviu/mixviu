@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
+    "widget-row",
+    "divider",
     "mark",
     "status-line",
     "time-series",
@@ -135,6 +137,17 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
+            "widget-row" => {
+                for side in ["left", "right"] {
+                    for item in value[side].as_array().filter(|a|a.len()<=64).ok_or("row requires bounded left/right widgets")? {
+                        let child=Widget::decode(item)?;
+                        if child.kind=="widget-row" {return Err("nested widget rows are not supported".into());}
+                        child.validate(&child.initial)?;
+                    }
+                }
+                true
+            }
+            "divider" => value.is_null(),
             "dashboard" => return crate::dashboard::validate(value),
             "time-series" => return crate::time_series::validate(value),
             "status-line" => {
@@ -495,6 +508,31 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
+            "widget-row" => {
+                let mut row = |ui: &mut egui::Ui| {
+                    for item in value["left"].as_array().unwrap() {
+                        let child=Widget::decode(item).expect("validated row child");
+                        events.extend(self.widget(ui,&child,model));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
+                        for item in value["right"].as_array().unwrap() {
+                            let child=Widget::decode(item).expect("validated row child");
+                            events.extend(self.widget(ui,&child,model));
+                        }
+                    });
+                };
+                if widget.properties["chrome"]=="options" {
+                    toolkit::bars::options(ui,|ui| {
+                        if let Some(threshold)=widget.properties["scroll_below"].as_f64().filter(|n|ui.available_width()<*n as f32) {
+                            let width=widget.properties["scroll_width"].as_f64().unwrap_or(threshold).clamp(64.0,8192.0) as f32;
+                            egui::ScrollArea::horizontal().min_scrolled_width(0.0).auto_shrink(false).show(ui,|ui| {
+                                ui.horizontal(|ui| {ui.set_width(width);row(ui);});
+                            });
+                        } else {row(ui);}
+                    }).response
+                } else {ui.horizontal(row).response}
+            }
+            "divider" => {toolkit::bars::divider(ui,ui.available_height().min(18.0));ui.response()}
             "dashboard" => crate::dashboard::draw(ui, id, value, events),
             "time-series" => crate::time_series::draw(ui, id, value),
             "status-line" => {
@@ -532,7 +570,7 @@ impl Widgets {
                     crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
                         .expect("validated mark"),
                     size,
-                    ui.visuals().text_color(),
+                    if widget.properties["weak"]==true {ui.visuals().weak_text_color()}else{ui.visuals().text_color()},
                 );
                 if widget.properties["fill_height"] == true {
                     let (rect, response) = ui.allocate_exact_size(
@@ -666,11 +704,12 @@ impl Widgets {
                 }
                 let rows = whole(&widget.properties["rows"]).unwrap_or(24) as usize;
                 let r = if widget.kind == "field" && widget.properties["search"] == true {
+                    let width=widget.properties["width"].as_f64().unwrap_or(ui.available_width() as f64) as f32;
                     toolkit::field::search(
                         ui,
                         &mut text,
                         widget.text("placeholder"),
-                        ui.available_width(),
+                        width,
                     )
                 } else {
                     let edit = if widget.kind == "field" {
