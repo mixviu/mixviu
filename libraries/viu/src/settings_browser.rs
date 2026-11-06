@@ -474,12 +474,17 @@ pub(crate) fn draw(
             });
     } else {
         if !value["parent"].is_null() {
-            let r = body
-                .add(egui::Button::new(format!("‹  {}", text(value, "parent_title"))).frame(false));
+            let r = body.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x=4.0;
+                ui.add(crate::icons::image_of(ui.ctx(),crate::icons::Icon::from_name("chevron-left").unwrap(),16.0,look.text));
+                ui.add(egui::Label::new(RichText::new(text(value,"parent_title")).color(look.text).size(14.0)).sense(Sense::click()))
+            }).inner;
+            r.widget_info(||egui::WidgetInfo::labeled(egui::Role::Link,ui.is_enabled(),text(value,"parent_title")));
             record(geometry, id, "back", &r);
             if r.clicked() {
                 emit(events, id, "navigate", json!({"page":value["parent"]}));
             }
+            body.add_space(6.0);
         }
         let title = body.painter().layout_no_wrap(
             text(value, "title").into(),
@@ -670,6 +675,7 @@ fn cards(
                             y,
                             Stroke::new(1.0, look.divider),
                         );
+                        ui.add_space(1.0);
                     }
                     draw_row(ui, id, row, look, geometry, events);
                 }
