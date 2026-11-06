@@ -136,6 +136,7 @@ fn bus_command($s,$e)
     try $out=do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index,$e.headers["viu-call"],"bus",$a.params)
     catch $message,$error return refused($s,if contains(["INVALID_ARGUMENT","NOT_FOUND","UNKNOWN_ACTION"],$error.code) then $error.code else "CONFLICT" end,$message) end
     $s=$out.state
+    if $out.kind=="dirty-close" then return refused($s,"CONFLICT","Unsaved text; save or discard before closing","dirty") end
     if $out.kind=="dialog" then
       if $s.dialog_call!=nil then $s=dialog_cancel($s) end
       $s=hold_call($s,$e,{kind:"dialog",action:$a.id,timeout_ms:10000});$s.dialog_call=$e.headers["viu-call"];return $s

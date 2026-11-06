@@ -869,8 +869,14 @@ impl SceneView {
             // A top strip may follow its intrinsic content height. This keeps
             // forms and search rows correct when live typography changes.
             if edge == "top" && placement["size"] == "content" {
-                if let Some(background)=nodes.get(child).and_then(|node| color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role)))) {
-                    ui.painter().rect_filled(remaining,0.0,background);
+                if let Some(background) = nodes.get(child).and_then(|node| {
+                    color(text(node, "background")).or_else(|| {
+                        text(node, "background")
+                            .strip_prefix("design.")
+                            .and_then(|role| crate::appearance::colour(ui.ctx(), role))
+                    })
+                }) {
+                    ui.painter().rect_filled(remaining, 0.0, background);
                 }
                 let mut child_ui = ui.new_child(
                     egui::UiBuilder::new()

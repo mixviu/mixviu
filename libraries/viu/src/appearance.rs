@@ -67,7 +67,10 @@ pub fn install_session(
         }
     }
     colours.insert("editor.background".into(), editor_palette.background);
-    colours.insert("editor.light-background".into(), editor::Palette::from_theme(toolkit::content::light_theme()).background);
+    colours.insert(
+        "editor.light-background".into(),
+        editor::Palette::from_theme(toolkit::content::light_theme()).background,
+    );
     let m = chrome.metrics;
     ctx.data_mut(|d| {
         d.insert_temp(egui::Id::unique("viu-gold-editor-palette"), editor_palette);
@@ -134,7 +137,10 @@ pub fn local_choice(ctx: &egui::Context, value: &Value) -> Result<(), String> {
         .filter_map(|role| chrome.palette.get(role).map(|c| (role.clone(), c)))
         .collect::<std::collections::BTreeMap<_, _>>();
     colours.insert("editor.background".into(), palette.background);
-    colours.insert("editor.light-background".into(), editor::Palette::from_theme(toolkit::content::light_theme()).background);
+    colours.insert(
+        "editor.light-background".into(),
+        editor::Palette::from_theme(toolkit::content::light_theme()).background,
+    );
     ctx.data_mut(|d| {
         d.insert_temp(key, value.clone());
         d.insert_temp(egui::Id::unique("viu-resolved-theme"), theme);

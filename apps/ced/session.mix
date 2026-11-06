@@ -67,7 +67,7 @@ fn dialog_complete($s,$out)
   if $s.dialog_call==nil or $s.waits[$s.dialog_call]==nil then return $s end
   $token=$s.dialog_call;$s.dialog_call=nil
   if $out.op_id!=nil then
-    $s.waits[$token]=merge($s.waits[$token],{kind:"outcome",op_id:$out.op_id,tab:to_number(current($s).document)})
+    $s.waits[$token]=merge($s.waits[$token],{kind:"outcome",op_id:$out.op_id,tab:$out.target ?? to_number(current($s).document)})
     return check_calls($s)
   end
   return finish_call($s,$token,0,{id:$s.waits[$token].action,ok:true,result:$out.result})

@@ -66,6 +66,12 @@ fn pump($s)
     if $effects.echo!=nil then viu_timer($t.document..":echo",$effects.echo[1],{document:$t.document,kind:"echo",op_id:$effects.echo[0]}) end
     for $outcome in $effects.outcomes $s.outcomes[$outcome.op_id]=$outcome end
   end
+  for $id in keys($s.close_after ?? {})
+    if $s.outcomes[$id]!=nil then
+      $key=$s.close_after[$id];$s.close_after=delete($s.close_after,$id)
+      if $s.outcomes[$id].ok and any($s.tabs,fn($t)=$t.document==$key) then $tab=viu_document("state",$key,{});$s=queue_job($s,"close",{document:$key,buffer:$tab.buffer,force:false}) end
+    end
+  end
   while len($s.queue)>0 and len(keys($s.running))<4
     $job=$s.queue[0];$s.queue=slice($s.queue,1)
     if $job.kind=="session-save" and any(values($s.running),fn($j)=$j.kind=="session-save") then $s.queue=concat([$job],$s.queue);break end

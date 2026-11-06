@@ -246,7 +246,15 @@ pub fn draw(
                     &tabs,
                     selected,
                     None,
-                    if value["light"]==true {editor::Palette::from_theme(toolkit::content::light_theme()).background} else {ui.ctx().data(|d| d.get_temp::<editor::Palette>(Id::unique("viu-gold-editor-palette"))).map_or(ui.visuals().extreme_bg_color,|p|p.background)},
+                    if value["light"] == true {
+                        editor::Palette::from_theme(toolkit::content::light_theme()).background
+                    } else {
+                        ui.ctx()
+                            .data(|d| {
+                                d.get_temp::<editor::Palette>(Id::unique("viu-gold-editor-palette"))
+                            })
+                            .map_or(ui.visuals().extreme_bg_color, |p| p.background)
+                    },
                 );
                 if let Some(i) = picked.selected {
                     emit(events, "select", items[i]["id"].clone());

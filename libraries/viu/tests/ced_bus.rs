@@ -252,32 +252,70 @@ fn action_inventory_and_execute_share_native_editor_semantics() {
 
 #[test]
 fn window_actions_wait_for_dialog_acceptance_or_cancellation() {
-    let mut app=App::new();
-    for id in ["file.open","file.save_as","search.goto_line"] {
-        let mut pending=app.command("ced.execute",json!({"id":id}));
-        assert!(pending.try_recv().is_err(),"{id} answered before the window");
-        let control=match id {"file.open"=>"open-dialog","file.save_as"=>"save-dialog",_=>"goto-dialog"};
-        assert_eq!(app.answered("ced.intent",json!({"id":control,"action":"answer","value":{"choice":"cancel","field":""}})).0,0);
-        let (rc,body)=pending.try_recv().unwrap();
-        assert_eq!(rc,10);assert_eq!(body["error_code"],"CONFLICT");assert_eq!(body["reason"],"cancelled");
+    let mut app = App::new();
+    for id in ["file.open", "file.save_as", "search.goto_line"] {
+        let mut pending = app.command("ced.execute", json!({"id":id}));
+        assert!(
+            pending.try_recv().is_err(),
+            "{id} answered before the window"
+        );
+        let control = match id {
+            "file.open" => "open-dialog",
+            "file.save_as" => "save-dialog",
+            _ => "goto-dialog",
+        };
+        assert_eq!(
+            app.answered(
+                "ced.intent",
+                json!({"id":control,"action":"answer","value":{"choice":"cancel","field":""}})
+            )
+            .0,
+            0
+        );
+        let (rc, body) = pending.try_recv().unwrap();
+        assert_eq!(rc, 10);
+        assert_eq!(body["error_code"], "CONFLICT");
+        assert_eq!(body["reason"], "cancelled");
     }
-    let mut pending=app.command("ced.execute",json!({"id":"search.goto_line"}));
-    app.answered("ced.intent",json!({"id":"goto-dialog","action":"answer","value":{"choice":"ok","field":"2:2"}}));
-    let (rc,body)=pending.try_recv().unwrap();assert_eq!(rc,0);assert_eq!(body["result"],json!({"line":2,"col":2}));
-    assert_eq!(app.docs.call("state","1",json!({})).unwrap()["selection"]["head"]["line"],2);
+    let mut pending = app.command("ced.execute", json!({"id":"search.goto_line"}));
+    app.answered(
+        "ced.intent",
+        json!({"id":"goto-dialog","action":"answer","value":{"choice":"ok","field":"2:2"}}),
+    );
+    let (rc, body) = pending.try_recv().unwrap();
+    assert_eq!(rc, 0);
+    assert_eq!(body["result"], json!({"line":2,"col":2}));
+    assert_eq!(
+        app.docs.call("state", "1", json!({})).unwrap()["selection"]["head"]["line"],
+        2
+    );
 }
 
 #[test]
 fn header_form_rejects_hidden_read_only_and_unoffered_choices() {
-    let value=json!({"enabled":true,"fields":[{"id":"to","label":"To","value":"","visible":true,"actions":[]},{"id":"thread","label":"Thread","value":"fixed","visible":true,"read_only":true,"actions":[]},{"id":"cc","label":"Cc","value":"","visible":false,"actions":[]}],"attachments":[],"attachment_label":"Attachments","attach_label":"Attach…","remove_label":"Remove","chooser":{"open":false,"title":"Attach…","directory":"/"}});
-    let widget=viu::widgets::Widget::new("headers","header-form","Headers",value.clone());
+    let value = json!({"enabled":true,"fields":[{"id":"to","label":"To","value":"","visible":true,"actions":[]},{"id":"thread","label":"Thread","value":"fixed","visible":true,"read_only":true,"actions":[]},{"id":"cc","label":"Cc","value":"","visible":false,"actions":[]}],"attachments":[],"attachment_label":"Attachments","attach_label":"Attach…","remove_label":"Remove","chooser":{"open":false,"title":"Attach…","directory":"/"}});
+    let widget = viu::widgets::Widget::new("headers", "header-form", "Headers", value.clone());
     widget.validate(&value).unwrap();
-    let model=json!({"values":{"headers":value}});
-    assert!(widget.admit(&model,"edit",&json!({"to":"reader@example.org"})).is_ok());
-    for payload in [json!({"thread":"forged"}),json!({"cc":"hidden"}),json!({"unknown":"forged"})] {assert!(widget.admit(&model,"edit",&payload).is_err());}
-    assert!(widget.admit(&model,"remove",&json!(0)).is_err());
-    assert!(widget.admit(&model,"picked",&json!(["/tmp/file"])).is_err());
-    assert!(widget.admit(&model,"command",&json!("unknown")).is_err());
+    let model = json!({"values":{"headers":value}});
+    assert!(
+        widget
+            .admit(&model, "edit", &json!({"to":"reader@example.org"}))
+            .is_ok()
+    );
+    for payload in [
+        json!({"thread":"forged"}),
+        json!({"cc":"hidden"}),
+        json!({"unknown":"forged"}),
+    ] {
+        assert!(widget.admit(&model, "edit", &payload).is_err());
+    }
+    assert!(widget.admit(&model, "remove", &json!(0)).is_err());
+    assert!(
+        widget
+            .admit(&model, "picked", &json!(["/tmp/file"]))
+            .is_err()
+    );
+    assert!(widget.admit(&model, "command", &json!("unknown")).is_err());
 }
 
 #[test]
