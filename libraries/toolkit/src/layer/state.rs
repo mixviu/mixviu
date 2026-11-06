@@ -60,6 +60,7 @@ type Repaint = (u64, Duration);
 const REPEAT: (Duration, Duration) = (Duration::from_millis(600), Duration::from_millis(40));
 
 struct Surface {
+    input_passthrough: bool,
     margin: (i32, i32, i32, i32),
     visible: bool,
     unmapped: bool,
@@ -241,6 +242,17 @@ impl<P: LayerProgram + 'static> State<P> {
                 scale: surface.scale,
             };
             let desired = self.program.presentation(&surface.ctx, &info);
+            if desired.input_passthrough != surface.input_passthrough {
+                if desired.input_passthrough {
+                    let region = smithay_client_toolkit::compositor::Region::new(&self.compositor)
+                        .expect("tooltip input region");
+                    surface.layer.wl_surface().set_input_region(Some(region.wl_region()));
+                } else {
+                    surface.layer.wl_surface().set_input_region(None);
+                }
+                surface.input_passthrough = desired.input_passthrough;
+                surface.layer.commit();
+            }
             let mut next = surface.requested.clone();
             if let Some(zone) = desired.exclusive_zone {
                 next.exclusive_zone = zone;
@@ -334,6 +346,7 @@ impl<P: LayerProgram + 'static> State<P> {
             .and_then(|i| i.name);
         logging::debug!(id, namespace = %self.options.namespace, output = ?output_name, "layer viewport created");
         self.surfaces.push(Surface {
+            input_passthrough: false,
             margin: (0, 0, 0, 0),
             visible: true,
             unmapped: false,

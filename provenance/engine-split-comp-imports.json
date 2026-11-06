@@ -23827,7 +23827,7 @@
     {
       "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
       "destination": "engines/viu/src/command.rs",
-      "destination_sha256": "be4b9c484a1775a710b999b9f17f19056df514496dda310aaa1a413d537374f8",
+      "destination_sha256": "fcf4ca0f469f8011be8d30300e1312159829d3a340c3afedc319e2339f56bb7a",
       "source": "services/compd/crates/scene-host/src/command.rs",
       "source_sha256": "be4b9c484a1775a710b999b9f17f19056df514496dda310aaa1a413d537374f8"
     },
@@ -23890,7 +23890,7 @@
     {
       "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
       "destination": "engines/viu/src/view.rs",
-      "destination_sha256": "bebd2e0c7a2c9375db9ed72f08f379927869daa3f0bcfcec3c67174fc6d6f2ca",
+      "destination_sha256": "dfc844339ffa22ee5a255607e1f748998eefcf55660a5fc2775046b6a08acd0c",
       "source": "services/compd/crates/scene-host/src/view.rs",
       "source_sha256": "5b80bb9522f8f26fd4be74ac17b49e2ccf5639d2d00b02413dc41138f446f785"
     },
@@ -23918,7 +23918,7 @@
     {
       "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
       "destination": "engines/viu/src/view/tests.rs",
-      "destination_sha256": "96940225633707204e595d4e496cc76e6455b3800ef81f1aad09bb0bf8607a1b",
+      "destination_sha256": "5f3e8b3f2d0e6c467d9103b201180be91166ca247a983df01d7c2c4665571173",
       "source": "services/compd/crates/scene-host/src/view/tests.rs",
       "source_sha256": "2695e7dac7e2cdaabdba3e93093c36d4c24a45783657399ff16d7f41965b56e4"
     },
@@ -23967,9 +23967,30 @@
     {
       "adaptation": "B6 client test/fixture copy; registry imports and relative fixture paths follow the new owning crate",
       "destination": "engines/viu/tests/registry.rs",
-      "destination_sha256": "dc71b703336d6c49b5a40ae2154ba5b9fd533fd2006cb4fe51923c622f52689d",
+      "destination_sha256": "29f3ca88a929e402e585fdcc2dab067322684a7cf20fba52cac0415700186829",
       "source": "services/compd/crates/scene-host/tests/registry.rs",
       "source_sha256": "13dee7d232af58f616383024cf7d1ef725679d95ef4171816287da0da771d32c"
+    },
+    {
+      "adaptation": "B5/B6 extraction of chrome theme, client appearance and passive tooltip drawing; compositor Loop and typed registry stay outside the client",
+      "destination": "engines/compd/crates/decor/src/appearance.rs",
+      "destination_sha256": "e002313e6763f85ee1c474b8611dc690396b437e3b80b00f7718556d5fa6a5eb",
+      "source": "services/compd/crates/scene-host/src/appearance.rs",
+      "source_sha256": "1537c8c96556b13935485bb574801fd14d97a0f26eefc25ea999047d19cc289d"
+    },
+    {
+      "adaptation": "B5/B6 extraction of chrome theme, client appearance and passive tooltip drawing; compositor Loop and typed registry stay outside the client",
+      "destination": "engines/viu/src/appearance.rs",
+      "destination_sha256": "0ebfff723a87e5293f789f6d32aa2260fbf4a85423d45221bf64f26c0e2cc367",
+      "source": "services/compd/crates/scene-host/src/appearance.rs",
+      "source_sha256": "1537c8c96556b13935485bb574801fd14d97a0f26eefc25ea999047d19cc289d"
+    },
+    {
+      "adaptation": "B5/B6 extraction of chrome theme, client appearance and passive tooltip drawing; compositor Loop and typed registry stay outside the client",
+      "destination": "engines/viu/src/tooltip.rs",
+      "destination_sha256": "b84f0eca9773e848069b39b29d866682e61a121a764f993add658ce033a65eef",
+      "source": "services/compd/crates/scene-host/src/tooltip.rs",
+      "source_sha256": "be2345a020a2653fa122ac902597666f0c83059214260fd2ee53eee6d84d1197"
     }
   ],
   "licence": "Original per-file and vendor licences retained",

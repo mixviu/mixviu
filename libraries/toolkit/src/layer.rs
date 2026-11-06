@@ -130,6 +130,8 @@ pub trait LayerProgram {
 
 #[derive(Clone, Debug)]
 pub struct LayerPresentation {
+    /// Empty Wayland input region, for passive cards drawn above other clients.
+    pub input_passthrough: bool,
     pub margin: Option<(i32, i32, i32, i32)>,
     pub visible: bool,
     pub exclusive_zone: Option<i32>,
@@ -139,6 +141,7 @@ pub struct LayerPresentation {
 impl Default for LayerPresentation {
     fn default() -> Self {
         Self {
+            input_passthrough: false,
             visible: true,
             exclusive_zone: None,
             size: None,

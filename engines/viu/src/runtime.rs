@@ -33,6 +33,9 @@ struct State {
     corner_events: u64,
     comp_state: Value,
     publish: Vec<String>,
+    hover: Value,
+    tips: BTreeMap<String, (String, view::tip::TipAt)>,
+    output_size: BTreeMap<String, (f32, f32)>,
 }
 impl State {
     fn wake(&self) {
@@ -135,6 +138,9 @@ impl LayerProgram for Program {
                 .send(Outgoing::Register(output.into(), self.edge.clone()));
         }
         let has_content = state.content(output, &self.edge).is_some();
+        let size = state.output_size.entry(output.into()).or_default();
+        if self.edge == "top" || self.edge == "bottom" { size.0 = info.width as f32; }
+        else { size.1 = info.height as f32; }
         let now = state.started.elapsed();
         let model = state.panel(output, &self.edge);
         let _ = model.tick(now);
@@ -150,6 +156,7 @@ impl LayerProgram for Program {
             _ => (0, 0, -offset, 0),
         };
         LayerPresentation {
+            input_passthrough: false,
             visible: has_content && snap.mapped && snap.visible_fraction > 0.0,
             exclusive_zone: Some(snap.exclusive_zone_px.round() as i32),
             size: Some(if self.edge == "left" || self.edge == "right" {
@@ -212,10 +219,11 @@ impl LayerProgram for Program {
                     "hidden".into(),
                 ));
             }
-            if let SceneMessage::Tooltip(Some(tip)) = &message {
-                if tip.tip.thumbnail.is_some() {
-                    ui.label("Window previews unavailable");
-                }
+            if let SceneMessage::Tooltip(tip) = &message {
+                let mut state = self.state.lock().unwrap();
+                if let Some(tip) = tip { state.tips.insert(output.clone(), (self.edge.clone(), tip.clone())); }
+                else { state.tips.remove(&output); }
+                state.wake();
             }
             entry.1.update(message);
         }
@@ -265,6 +273,101 @@ impl LayerProgram for Program {
     }
 }
 
+struct CardState {
+    view: crate::tooltip::TooltipUi,
+    metrics: egui::Context,
+    hover: view::tip::Hover,
+    shown: Option<view::tip::TipAt>,
+    revision: u64,
+}
+struct TooltipProgram { state: Shared, cards: BTreeMap<String, CardState> }
+impl LayerProgram for TooltipProgram {
+    fn setup(&mut self, ctx: &egui::Context) { toolkit::install(ctx, &toolkit::Theme::embedded()); }
+    fn presentation(&mut self, ctx: &egui::Context, info: &SurfaceInfo) -> LayerPresentation {
+        use view::tip::{self, Candidate, Outcome, Tip};
+        let output = info.output.as_deref().unwrap_or("default");
+        let mut shared = self.state.lock().unwrap();
+        shared.contexts.insert((output.into(), "tooltip".into()), ctx.clone());
+        let card = self.cards.entry(output.into()).or_insert_with(|| {
+            let metrics = egui::Context::default();
+            toolkit::install(&metrics, &toolkit::Theme::embedded());
+            let mut view = crate::tooltip::TooltipUi { tip: Tip::default(), look: shared.look.clone(), installed: None };
+            view.setup(ctx);
+            CardState { view, metrics, hover: tip::Hover::default(), shown: None, revision: u64::MAX }
+        });
+        if card.revision != shared.look_revision {
+            if let Some(look) = &shared.look {
+                card.view.update(crate::tooltip::Message::Appearance(look.clone()));
+                appearance::install(&card.metrics, &look.theme, look.text_scale, false);
+            }
+            let _ = card.metrics.run(egui::RawInput::default(), |_| {});
+            card.revision = shared.look_revision;
+        }
+        let hover = &shared.hover;
+        let active = hover["output"].as_str().is_some_and(|key| key == output || key == comp_model::snapshot::output_key(output));
+        let anchor: Vec<f32> = hover["anchor"].as_array().map(|a| a.iter().filter_map(|v| v.as_f64().map(|v| v as f32)).collect()).unwrap_or_default();
+        let candidate = (active && anchor.len() == 4).then(|| Candidate {
+            key: hover["key"].as_str().unwrap_or_default().into(),
+            rect: egui::Rect::from_min_size(egui::pos2(anchor[0], anchor[1]), egui::vec2(anchor[2], anchor[3])),
+            tip: Tip { title: hover["title"].as_str().unwrap_or_default().into(), ..Tip::default() },
+        });
+        let metrics = &card.metrics;
+        let ui_size = shared.look.as_ref().map_or(13.0, |l| appearance::ui_size(&l.theme, l.text_scale));
+        let measure = |tip: &Tip| tip::card(tip, ui_size, &|text, font| {
+            let size = metrics.fonts_mut(|f| f.layout_no_wrap(text.into(), font.clone(), egui::Color32::WHITE).size());
+            (size.x, size.y)
+        });
+        match card.hover.pass(Instant::now(), candidate, active && hover["pressed"] == true, &measure) {
+            Outcome::Show(at) => card.shown = Some(at),
+            Outcome::Hide => card.shown = None,
+            Outcome::Wait(delay) => ctx.request_repaint_after(delay),
+            Outcome::Same => {}
+        }
+        let mut size = shared.output_size.get(output).copied().unwrap_or((0.0, 0.0));
+        let want = if let Some(at) = &card.shown {
+            if let Some(values) = hover["output_size"].as_array() {
+                size = (values[0].as_f64().unwrap_or(0.0) as f32, values[1].as_f64().unwrap_or(0.0) as f32);
+            }
+            let (x,y,w,h) = at.anchor;
+            let mut at = at.clone(); at.anchor = (0.0,0.0,w,h);
+            Some(((x,y,w,h), at))
+        } else { shared.tips.get(output).map(|(edge, at)| {
+            let mut at = at.clone();
+            if at.tip.thumbnail.take().is_some() {
+                at.tip.lines.push("Window previews unavailable until B7".into());
+                let laid = measure(&at.tip); at.size = laid.size; at.thumb = None;
+            }
+            let thickness = shared.panels.get(&(output.into(), edge.clone())).map_or(40.0, |p| p.snapshot().thickness_px as f32);
+            let scene = match edge.as_str() {
+                "left" => (0.0,0.0,thickness,size.1),
+                "right" => (size.0-thickness,0.0,thickness,size.1),
+                "top" => (0.0,0.0,size.0,thickness),
+                _ => (0.0,size.1-thickness,size.0,thickness),
+            };
+            (scene,at)
+        }) };
+        let Some((scene, at)) = want.filter(|_| size.0 > 0.0 && size.1 > 0.0) else {
+            return LayerPresentation { visible: false, input_passthrough: true, ..Default::default() };
+        };
+        let (x,y,w,h) = crate::tooltip::place(scene, &at, size);
+        if card.view.tip != at.tip { card.view.update(crate::tooltip::Message::Replace(at.tip)); ctx.request_repaint(); }
+        let margin = crate::tooltip::MARGIN;
+        LayerPresentation { visible: true, input_passthrough: true,
+            exclusive_zone: Some(-1), size: Some(((w+2.0*margin).ceil() as u32,(h+2.0*margin).ceil() as u32)),
+            margin: Some(((y-margin).round() as i32,0,0,(x-margin).round() as i32)), ..Default::default() }
+    }
+    fn show(&mut self, ui: &mut egui::Ui, info: &SurfaceInfo) {
+        if let Some(card) = self.cards.get_mut(info.output.as_deref().unwrap_or("default")) {
+            card.view.show(ui, &mut Vec::new());
+        }
+    }
+    fn removed(&mut self, _: &egui::Context, info: &SurfaceInfo) {
+        let output = info.output.as_deref().unwrap_or("default");
+        self.cards.remove(output);
+        self.state.lock().unwrap().contexts.remove(&(output.into(), "tooltip".into()));
+    }
+}
+
 pub fn run(service: String, comp: String) -> Result<(), String> {
     let state = Arc::new(Mutex::new(State {
         store: SceneStore::default(),
@@ -276,6 +379,9 @@ pub fn run(service: String, comp: String) -> Result<(), String> {
         corner_events: 0,
         comp_state: Value::Null,
         publish: Vec::new(),
+        hover: Value::Null,
+        tips: BTreeMap::new(),
+        output_size: BTreeMap::new(),
     }));
     let (send, receive) = tokio::sync::mpsc::unbounded_channel();
     let worker_state = state.clone();
@@ -293,6 +399,15 @@ pub fn run(service: String, comp: String) -> Result<(), String> {
         })
         .map_err(|e| e.to_string())?;
     let mut threads = Vec::new();
+    let tip_state = state.clone();
+    threads.push(std::thread::spawn(move || {
+        let options = LayerOptions { namespace: "viu-tooltip".into(), layer: Layer::Overlay,
+            anchor: Anchor::TOP | Anchor::LEFT, keyboard: KeyboardInteractivity::None,
+            exclusive_zone: -1, size: (320, 100), outputs: Outputs::Each };
+        if let Err(error) = layer::run(options, TooltipProgram { state: tip_state, cards: BTreeMap::new() }) {
+            eprintln!("viu tooltip: {error}"); std::process::exit(1);
+        }
+    }));
     for edge in ["left", "right", "top", "bottom"] {
         let anchor = match edge {
             "left" => Anchor::LEFT | Anchor::TOP | Anchor::BOTTOM,
@@ -446,6 +561,11 @@ async fn worker(
 }
 fn topic(state: &Shared, comp: &str, topic: &str, body: &Value) {
     let mut shared = state.lock().unwrap();
+    if topic == format!("{comp}.chrome.action.hover") {
+        shared.hover = body["hover"].clone();
+        shared.wake();
+        return;
+    }
     if topic == format!("{comp}.props.changed") {
         shared.comp_state = body.clone();
         return;

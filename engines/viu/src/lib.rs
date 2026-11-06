@@ -13,3 +13,5 @@ pub mod templates;
 pub mod view;
 pub use command::SceneCommand;
 pub const DEFAULT_SERVICE: &str = "shell";
+
+pub(crate) mod tooltip;
