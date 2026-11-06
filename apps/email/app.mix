@@ -1,0 +1,35 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- lint: globals app_args
+$c=require("core.mix");$ctx=viu_context()
+$fixture=($app_args[0] ?? "")=="--fixture"
+$rows=[];$selected=nil;$revision=0;$account="No account connected";$mailbox="No mailbox";$reader="No message open";$draft={to:"",subject:"",text:""}
+fn publish_email()
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$c.model($rows,$selected,$revision,$account,$mailbox,$reader,$draft)}
+end
+publish_email()
+on email.ping
+  reply(0,"{}")
+end
+on email.info
+  reply(0,json_encode({fixture:$fixture,connected:false,rows:len($rows),selected:$selected,revision:$revision,draft:$draft}))
+end
+on email.fixture
+  if not $fixture then raise("FIXTURE","Explicit --fixture launch required; this is not maild data") end
+  $candidate=$c.rows($event.args.messages,$event.args.bulk ?? true)
+  $rows=$candidate;$selected=nil;$revision=$revision+1
+  $account="Synthetic account · user@example.test";$mailbox="Synthetic Inbox"
+  publish_email();reply(0,json_encode({rows:len($rows),revision:$revision}))
+end
+on email.intent
+  $a=$event.args
+  if $a.id=="messages" then
+    if not contains(["select","activate"],$a.action) then raise("DEFERRED","Message sorting/navigation needs authoritative list wiring") end
+    if not any($rows,fn($r)=$r.key==$a.value.key) then raise("ID","Unknown message") end
+    $selected=$a.value.key;$reader="Selected fixture "..$selected.." · full message read not wired"
+  elif contains(["to","subject","compose"],$a.id) then
+    if type($a.value)!="string" or byte_length($a.value)>if $a.id=="compose" then 65536 else 4096 end then raise("TEXT","Draft text exceeds budget") end
+    if $a.id=="compose" then $draft.text=$a.value else $draft[$a.id]=$a.value end
+  else raise("DEFERRED","Mail transport is not wired at this checkpoint") end
+  publish_email();reply(0,"{}")
+end

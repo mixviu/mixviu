@@ -1,0 +1,20 @@
+---
+scene: 1
+name: email
+citizen: email
+---
+```mix
+{
+root:{widget:"column",children:["title","status","account","mailbox","messages","reader","compose-label","to-label","to","subject-label","subject","compose"],gap:6},
+title:{widget:"text",text:"Email · bounded list experiment"},
+status:{widget:"text",text:"= $model.status"},
+account:{widget:"text",text:"= $model.account"},mailbox:{widget:"text",text:"= $model.mailbox"},
+messages:{widget:"control",definition:"= $model.table",on_intent:"email.intent"},
+reader:{widget:"text",text:"= $model.reader"},
+"compose-label":{widget:"text",text:"Draft experiment · sending unavailable · not persisted"},
+"to-label":{widget:"text",text:"To"},"subject-label":{widget:"text",text:"Subject"},
+to:{widget:"control",definition:{id:"to",kind:"field",label:"To",initial:"",properties:{}},on_intent:"email.intent"},
+subject:{widget:"control",definition:{id:"subject",kind:"field",label:"Subject",initial:"",properties:{}},on_intent:"email.intent"},
+compose:{widget:"control",definition:{id:"compose",kind:"editor",label:"Draft body",initial:"",properties:{rows:5}},on_intent:"email.intent"}
+}
+```

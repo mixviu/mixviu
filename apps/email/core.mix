@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+fn rows($messages,$bulk)
+  if type($messages)!="list" or len($messages)>2000 or byte_length(json_encode($messages))>4194304 then raise("BUDGET","At most 2000 complete messages / 4 MiB per fixture") end
+  if jq($messages,'map(.id) | unique | length')!=len($messages) then raise("IDS","Duplicate message IDs") end
+  if $bulk then
+    return jq($messages,'map({key:.id,depth:0,branch:false,expanded:false,cells:[(.subject // ""),(.from[0].email // ""),(.receivedAt // ""),(.preview // "")]})')
+  end
+  $rows=[]
+  for $m in $messages
+    push($rows,{key:$m.id,depth:0,branch:false,expanded:false,cells:[$m.subject ?? "",if len($m.from ?? [])>0 then $m.from[0].email ?? "" else "" end,$m.receivedAt ?? "",$m.preview ?? ""]})
+  end
+  return $rows
+end
+fn model($rows,$selected,$revision,$account,$mailbox,$reader,$draft)
+  return {status:"FIXTURE ONLY · no mail connection · "..to_string(len($rows)).." rows",account:$account,mailbox:$mailbox,reader:$reader,table:{id:"messages",kind:"tree-table",label:"Messages",initial:{key:"messages",revision:$revision,rows:$rows,selected_keys:if $selected==nil then [] else [$selected] end,focused_key:$selected,columns:[{id:"subject",label:"Subject"},{id:"from",label:"From"},{id:"date",label:"Received"},{id:"preview",label:"Preview"}],sort:"date",ascending:false},properties:{height:340}},values:{to:$draft.to,subject:$draft.subject,compose:$draft.text}}
+end

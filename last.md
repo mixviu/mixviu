@@ -1,3 +1,5 @@
+Round 5 list checkpoint in progress: explicit Email fixture-only bundle on the generic host; per-row Mix and existing lib-mix jq bulk projection prepared for an equivalent 2000-message measurement. No maild connection or core acceptance yet. No new native primitive or interpreter update.
+
 # Round 4 Workshop checkpoint
 
 Validated source: `e330c14a5c7725804ef62614badd7c8b08dd1b69` on
