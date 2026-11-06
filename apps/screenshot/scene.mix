@@ -5,7 +5,7 @@ citizen: screenshot
 ---
 ```mix
 {
-root:{widget:"dock",children:["dialog","macros","options-row","tool-rail","preview"],placements:{dialog:{edge:"top",size:0},macros:{edge:"top",size:0},"options-row":{edge:"top",size:"design.options_height"},"tool-rail":{edge:"left",size:"design.tools_width"},preview:{edge:"fill"}}},
+root:{widget:"dock",children:["options-row","tool-rail","preview","dialog","macros"],placements:{dialog:{edge:"top",size:0},macros:{edge:"top",size:0},"options-row":{edge:"top",size:"design.options_height"},"tool-rail":{edge:"left",size:"design.tools_width"},preview:{edge:"fill"}}},
 dialog:{widget:"control",definition:{id:"dialog",kind:"dialog-form",label:"",properties:{style:"gold"},initial:{open:false,title:"",body:"",field:nil,choices:[]}},on_intent:"screenshot.intent"},
 macros:{widget:"control",definition:{id:"macros",kind:"macro-window",label:"",initial:false,properties:{app:"screenshot"}},on_intent:"screenshot.intent"},
 "options-row":{widget:"column",bar:"options",children:["options-band"]},
