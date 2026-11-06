@@ -1,0 +1,37 @@
+[package]
+name = "viu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+comp-model.workspace = true
+toolkit = { workspace = true, features = ["layer"] }
+settings = { workspace = true, features = ["native", "cache"] }
+bus = { workspace = true, features = ["client", "native"] }
+tokio.workspace = true
+tracing.workspace = true
+scene.workspace = true
+egui.workspace = true
+taffy.workspace = true
+decor.workspace = true
+design.workspace = true
+image.workspace = true
+resvg.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+config.workspace = true
+paths.workspace = true
+edges.workspace = true
+
+[dev-dependencies]
+ui.workspace = true
+egui_kittest.workspace = true
+tempfile.workspace = true
+test-broker.workspace = true
+
+[lints.clippy]
+mod_module_files = "deny"

@@ -23823,6 +23823,153 @@
       "destination_sha256": "f772a976440e088a5016fff194bd93228c78f40735e889336669c5735d2f9f86",
       "source": "services/compd/crates/headless/tests/boot.rs",
       "source_sha256": "24eeae0d9e269e2d0a54751a466ee9ea68d7f56dd18f78f88cc3772231c3a542"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/command.rs",
+      "destination_sha256": "be4b9c484a1775a710b999b9f17f19056df514496dda310aaa1a413d537374f8",
+      "source": "services/compd/crates/scene-host/src/command.rs",
+      "source_sha256": "be4b9c484a1775a710b999b9f17f19056df514496dda310aaa1a413d537374f8"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/mount.rs",
+      "destination_sha256": "67f7cf25261334e2f19200ce32d985565e2e8fb009a726780c02b9dc51f1054f",
+      "source": "services/compd/crates/scene-host/src/mount.rs",
+      "source_sha256": "67f7cf25261334e2f19200ce32d985565e2e8fb009a726780c02b9dc51f1054f"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/seat.rs",
+      "destination_sha256": "70905b789dbb4a4c70a893d31648f85fa267bcd542911bf4b471e8f5e48a84df",
+      "source": "services/compd/crates/scene-host/src/seat.rs",
+      "source_sha256": "70905b789dbb4a4c70a893d31648f85fa267bcd542911bf4b471e8f5e48a84df"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/store.rs",
+      "destination_sha256": "af4c71d169301f8289a748b556e7d58986677ae6ad237efbcc664d314148a061",
+      "source": "services/compd/crates/scene-host/src/store.rs",
+      "source_sha256": "af4c71d169301f8289a748b556e7d58986677ae6ad237efbcc664d314148a061"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/store_tests.rs",
+      "destination_sha256": "33470950e8538f1084e1f9f33eba0f812f874f96b7dbc6f1ec5c854935fff64c",
+      "source": "services/compd/crates/scene-host/src/store_tests.rs",
+      "source_sha256": "33470950e8538f1084e1f9f33eba0f812f874f96b7dbc6f1ec5c854935fff64c"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/templates.rs",
+      "destination_sha256": "76b63ae987d8591ff769d4e7ba3a3af0c0d8a499e0b91ddb253809cd575039b2",
+      "source": "services/compd/crates/scene-host/src/templates.rs",
+      "source_sha256": "76b63ae987d8591ff769d4e7ba3a3af0c0d8a499e0b91ddb253809cd575039b2"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/images.rs",
+      "destination_sha256": "22ce204ea81decf8fafe02f0398a8348913a2f271391ecb982695807cf1e55fb",
+      "source": "services/compd/crates/scene-host/src/images.rs",
+      "source_sha256": "22ce204ea81decf8fafe02f0398a8348913a2f271391ecb982695807cf1e55fb"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/icons.rs",
+      "destination_sha256": "aa91e8605b5b8310d942a4a1d3b2c648e36dbe28462c6b3b9d80f48fb543b41e",
+      "source": "services/compd/crates/scene-host/src/icons.rs",
+      "source_sha256": "aa91e8605b5b8310d942a4a1d3b2c648e36dbe28462c6b3b9d80f48fb543b41e"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/freedesktop.rs",
+      "destination_sha256": "848e737865d430df813fc4f46cca6e047f06994226ecd5e500e9b7574ed74b65",
+      "source": "services/compd/crates/scene-host/src/freedesktop.rs",
+      "source_sha256": "848e737865d430df813fc4f46cca6e047f06994226ecd5e500e9b7574ed74b65"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/view.rs",
+      "destination_sha256": "bebd2e0c7a2c9375db9ed72f08f379927869daa3f0bcfcec3c67174fc6d6f2ca",
+      "source": "services/compd/crates/scene-host/src/view.rs",
+      "source_sha256": "5b80bb9522f8f26fd4be74ac17b49e2ccf5639d2d00b02413dc41138f446f785"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/view/flex.rs",
+      "destination_sha256": "b332e3a48fddcecd5ff88d0d31d7274df87803c93f7ae9821ad31220207d94ee",
+      "source": "services/compd/crates/scene-host/src/view/flex.rs",
+      "source_sha256": "b332e3a48fddcecd5ff88d0d31d7274df87803c93f7ae9821ad31220207d94ee"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/view/paint.rs",
+      "destination_sha256": "5e6e120050ced9a9536823becc4c18f051e25edcabe8bf14b9b07b7e9521e9a0",
+      "source": "services/compd/crates/scene-host/src/view/paint.rs",
+      "source_sha256": "5e6e120050ced9a9536823becc4c18f051e25edcabe8bf14b9b07b7e9521e9a0"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/view/tip.rs",
+      "destination_sha256": "caa29e24c1c7557ba54a61d86d09e504cc272987dd7050fb8b40875be2b7a23c",
+      "source": "services/compd/crates/scene-host/src/view/tip.rs",
+      "source_sha256": "caa29e24c1c7557ba54a61d86d09e504cc272987dd7050fb8b40875be2b7a23c"
+    },
+    {
+      "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
+      "destination": "engines/viu/src/view/tests.rs",
+      "destination_sha256": "96940225633707204e595d4e496cc76e6455b3800ef81f1aad09bb0bf8607a1b",
+      "source": "services/compd/crates/scene-host/src/view/tests.rs",
+      "source_sha256": "2695e7dac7e2cdaabdba3e93093c36d4c24a45783657399ff16d7f41965b56e4"
+    },
+    {
+      "adaptation": "B6 client test/fixture copy; registry imports and relative fixture paths follow the new owning crate",
+      "destination": "engines/viu/tests/fixtures/calendar.scene.mix",
+      "destination_sha256": "5f4f894f97adcdbc0ac627c8e274706693a07b109c1201da0c6ab0a0c263676b",
+      "source": "services/compd/crates/scene-host/tests/fixtures/calendar.scene.mix",
+      "source_sha256": "5f4f894f97adcdbc0ac627c8e274706693a07b109c1201da0c6ab0a0c263676b"
+    },
+    {
+      "adaptation": "B6 client test/fixture copy; registry imports and relative fixture paths follow the new owning crate",
+      "destination": "engines/viu/tests/fixtures/colours.scene.mix",
+      "destination_sha256": "883c509cadc624e827237893aa0d796a268c2049dfd85d1d66ee36e79de5c4fa",
+      "source": "services/compd/crates/scene-host/tests/fixtures/colours.scene.mix",
+      "source_sha256": "883c509cadc624e827237893aa0d796a268c2049dfd85d1d66ee36e79de5c4fa"
+    },
+    {
+      "adaptation": "B6 client test/fixture copy; registry imports and relative fixture paths follow the new owning crate",
+      "destination": "engines/viu/tests/fixtures/embedded-icon.svg",
+      "destination_sha256": "81e8330b96158e05796345384ee573207e5de6dd21aced94521dd78f3a0edf1d",
+      "source": "services/compd/crates/scene-host/tests/fixtures/embedded-icon.svg",
+      "source_sha256": "81e8330b96158e05796345384ee573207e5de6dd21aced94521dd78f3a0edf1d"
+    },
+    {
+      "adaptation": "B6 client test/fixture copy; registry imports and relative fixture paths follow the new owning crate",
+      "destination": "engines/viu/tests/fixtures/icon.png",
+      "destination_sha256": "7591144776509b0a6c033614ec49d560b8211c59b949aa98e4670932c3a14c5e",
+      "source": "services/compd/crates/scene-host/tests/fixtures/icon.png",
+      "source_sha256": "7591144776509b0a6c033614ec49d560b8211c59b949aa98e4670932c3a14c5e"
+    },
+    {
+      "adaptation": "B6 client test/fixture copy; registry imports and relative fixture paths follow the new owning crate",
+      "destination": "engines/viu/tests/fixtures/panel-render.scene.mix",
+      "destination_sha256": "a6c0a267d2c3f09e209a2c76a62db90848d3f9cc5534f10101e8aeccc8f01ebb",
+      "source": "services/compd/crates/scene-host/tests/fixtures/panel-render.scene.mix",
+      "source_sha256": "a6c0a267d2c3f09e209a2c76a62db90848d3f9cc5534f10101e8aeccc8f01ebb"
+    },
+    {
+      "adaptation": "B6 client test/fixture copy; registry imports and relative fixture paths follow the new owning crate",
+      "destination": "engines/viu/tests/fixtures/shell-commands.json",
+      "destination_sha256": "a8e0ef6093186390ae9cfdfd4071029b35d1983bd588a1537d49d5edafc3f535",
+      "source": "services/compd/crates/scene-host/tests/fixtures/shell-commands.json",
+      "source_sha256": "a8e0ef6093186390ae9cfdfd4071029b35d1983bd588a1537d49d5edafc3f535"
+    },
+    {
+      "adaptation": "B6 client test/fixture copy; registry imports and relative fixture paths follow the new owning crate",
+      "destination": "engines/viu/tests/registry.rs",
+      "destination_sha256": "dc71b703336d6c49b5a40ae2154ba5b9fd533fd2006cb4fe51923c622f52689d",
+      "source": "services/compd/crates/scene-host/tests/registry.rs",
+      "source_sha256": "13dee7d232af58f616383024cf7d1ef725679d95ef4171816287da0da771d32c"
     }
   ],
   "licence": "Original per-file and vendor licences retained",

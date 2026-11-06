@@ -38,7 +38,7 @@ pub enum Outputs {
 }
 
 /// Where the surfaces go and what the compositor is told about them.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LayerOptions {
     pub layer: Layer,
     /// The namespace the compositor sees.
@@ -84,6 +84,14 @@ pub struct SurfaceInfo {
 
 /// An egui program drawn on layer surfaces.
 pub trait LayerProgram {
+    /// The compositor completed this surface's frame callback.
+    fn frame(&mut self, _surface: &SurfaceInfo, _time_ms: u32) {}
+    /// Client presentation requested after a repaint wake, before any draw.
+    /// Hidden surfaces detach their buffer and stop drawing/callback waits.
+    /// Input routing and exclusive-zone enforcement remain compositor-owned.
+    fn presentation(&mut self, _ctx: &egui::Context, _surface: &SurfaceInfo) -> LayerPresentation {
+        LayerPresentation::default()
+    }
     /// Callback withholding/resumption, per surface. No visibility polling.
     fn visibility(&mut self, _ctx: &egui::Context, _visible: bool) {}
     /// Optional host policy for egui requests, including internally generated
@@ -118,6 +126,18 @@ pub trait LayerProgram {
     fn removed(&mut self, ctx: &egui::Context, surface: &SurfaceInfo) {
         let _ = (ctx, surface);
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct LayerPresentation {
+    pub margin: Option<(i32,i32,i32,i32)>,
+    pub visible: bool,
+    pub exclusive_zone: Option<i32>,
+    pub size: Option<(u32,u32)>,
+    pub layer: Option<Layer>,
+}
+impl Default for LayerPresentation {
+    fn default() -> Self { Self { visible: true, exclusive_zone: None, size: None, layer: None, margin: None } }
 }
 
 /// Run `program` until the connection ends. With [`Outputs::Compositor`] it

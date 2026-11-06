@@ -1980,7 +1980,15 @@ async fn publish_message<C: WorkerClient>(
 ) -> Result<(), ()> {
     let mut headers = BTreeMap::new();
     headers.insert("name".to_string(), topic.to_string());
-    headers.insert("retain".to_string(), if topic.ends_with(".chrome.action.hover") { "true" } else { "false" }.to_string());
+    headers.insert(
+        "retain".to_string(),
+        if topic.ends_with(".chrome.action.hover") {
+            "true"
+        } else {
+            "false"
+        }
+        .to_string(),
+    );
     let wire = message.to_wire();
     match tokio::time::timeout(PUBLISH_TIMEOUT, client.publish(&headers, &wire)).await {
         Ok(Ok(())) => Ok(()),

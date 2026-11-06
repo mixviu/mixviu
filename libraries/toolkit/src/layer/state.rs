@@ -60,6 +60,10 @@ type Repaint = (u64, Duration);
 const REPEAT: (Duration, Duration) = (Duration::from_millis(600), Duration::from_millis(40));
 
 struct Surface {
+    margin: (i32,i32,i32,i32),
+    visible: bool,
+    unmapped: bool,
+    requested: LayerOptions,
     // Field order is load-bearing: the GPU target (a wgpu surface on this
     // `wl_surface`'s raw pointer) drops before `layer`. Do not reorder.
     // `State.gpu` dropping before `State.surfaces` is safe only because wgpu
@@ -221,12 +225,60 @@ pub(super) fn run<P: LayerProgram + 'static>(
             .dispatch(wait, &mut state)
             .map_err(|e| format!("dispatch: {e}"))?;
         state.expire_frames();
+        state.presentations();
         state.draw_due(&qh);
     }
     Ok(())
 }
 
 impl<P: LayerProgram + 'static> State<P> {
+    fn presentations(&mut self) {
+        for surface in &mut self.surfaces {
+            let info = SurfaceInfo { output: surface.output_name.clone(), width: surface.size.0,
+                height: surface.size.1, scale: surface.scale };
+            let desired = self.program.presentation(&surface.ctx, &info);
+            let mut next = surface.requested.clone();
+            if let Some(zone) = desired.exclusive_zone { next.exclusive_zone = zone; }
+            if let Some(size) = desired.size { next.size = size; }
+            if let Some(layer) = desired.layer { next.layer = layer; }
+            if !desired.visible {
+                if surface.visible {
+                    surface.layer.wl_surface().attach(None, 0, 0);
+                    surface.layer.commit();
+                    surface.visible = false;
+                    surface.unmapped = true;
+                    surface.configured = false;
+                    surface.frame_pending = false;
+                    surface.pending_since = None;
+                    surface.frame_gen = surface.frame_gen.wrapping_add(1);
+                    surface.events.clear();
+                    surface.dirty = false;
+                    self.program.visibility(&surface.ctx, false);
+                }
+                surface.requested = next;
+                continue;
+            }
+            let margin = desired.margin.unwrap_or(surface.margin);
+            if !surface.visible || next != surface.requested || margin != surface.margin {
+                surface.layer.set_layer(next.layer);
+                surface.layer.set_anchor(next.anchor);
+                surface.layer.set_exclusive_zone(next.exclusive_zone);
+                surface.layer.set_keyboard_interactivity(next.keyboard);
+                surface.layer.set_size(next.size.0, next.size.1);
+                surface.layer.set_margin(margin.0,margin.1,margin.2,margin.3);
+                surface.margin = margin;
+                surface.layer.commit();
+                if surface.unmapped || next.size != surface.requested.size {
+                    surface.configured = false;
+                }
+                surface.visible = true;
+                surface.unmapped = false;
+                surface.dirty = true;
+                surface.requested = next;
+                self.program.visibility(&surface.ctx, true);
+            }
+        }
+    }
     fn add_surface(
         &mut self,
         qh: &QueueHandle<Self>,
@@ -270,6 +322,10 @@ impl<P: LayerProgram + 'static> State<P> {
             .and_then(|i| i.name);
         logging::debug!(id, namespace = %self.options.namespace, output = ?output_name, "layer viewport created");
         self.surfaces.push(Surface {
+            margin: (0,0,0,0),
+            visible: true,
+            unmapped: false,
+            requested: self.options.clone(),
             target,
             id,
             output,
@@ -494,7 +550,7 @@ impl<P: LayerProgram + 'static> State<P> {
         let due: Vec<u64> = self
             .surfaces
             .iter()
-            .filter(|s| s.configured && s.dirty && !s.frame_pending)
+            .filter(|s| s.visible && s.configured && s.dirty && !s.frame_pending)
             .filter(|s| {
                 timing::draw_at(s.last_draw, self.program.frame_interval(), s.retry_at)
                     .is_none_or(|t| t <= now)
@@ -1301,7 +1357,7 @@ impl<P: LayerProgram + 'static> Dispatch<wl_callback::WlCallback, (u64, u64)> fo
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_callback::Event::Done { .. } = event
+        if let wl_callback::Event::Done { callback_data } = event
             && let Some(s) = state.surface_mut(id)
             && s.frame_gen == generation
         {
@@ -1309,8 +1365,10 @@ impl<P: LayerProgram + 'static> Dispatch<wl_callback::WlCallback, (u64, u64)> fo
             s.pending_since = None;
             s.rescued = false;
             let ctx = s.ctx.clone();
+            let info = SurfaceInfo { output: s.output_name.clone(), width: s.size.0, height: s.size.1, scale: s.scale };
             s.retry_at = None;
             state.program.visibility(&ctx, true);
+            state.program.frame(&info, callback_data);
         }
     }
 }

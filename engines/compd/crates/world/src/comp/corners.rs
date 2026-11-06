@@ -36,7 +36,7 @@ use smithay::wayland::pointer_constraints::with_pointer_constraint;
 use crate::state::Loop;
 use smithay::reexports::wayland_server::backend::ClientId;
 use std::collections::BTreeMap;
-type PanelClaim = (String, String, ClientId, Option<u64>);
+type PanelClaim = (String, String, Option<ClientId>, Option<u64>, String, String);
 static PANEL_INPUT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub fn enable_panel_input() {
     PANEL_INPUT.store(true, std::sync::atomic::Ordering::Release);
@@ -385,14 +385,16 @@ fn panel_claim(lp: &Loop, output: &str, corner: Corner) -> Option<PanelClaim> {
         .panels
         .holders
         .get(&(output.into(), edge.into()))?;
-    if holder.stalled || holder.id.is_none() || holder.reporter.is_none() {
+    if holder.stalled || holder.reporter.is_none() {
         return None;
     }
     Some((
         output.into(),
         edge.into(),
-        holder.owner.clone()?,
+        holder.owner.clone(),
         holder.generation,
+        holder.reporter.clone()?,
+        holder.surface.clone(),
     ))
 }
 
@@ -411,7 +413,7 @@ pub fn panel_button(lp: &mut Loop, button: u32, pressed: bool) -> bool {
         let Some((claim, corner)) = lp.inner.comp.corners.panel_presses.remove(&button) else {
             return false;
         };
-        if panel_claim(lp, &claim.0, corner).as_ref() != Some(&claim)
+        if !panel_claim(lp, &claim.0, corner).is_some_and(|now| now.0 == claim.0 && now.1 == claim.1 && now.3 == claim.3 && now.4 == claim.4 && now.5 == claim.5 && (claim.2.is_none() || now.2 == claim.2))
             || super::session_lock::active(lp)
         {
             lp.inner.comp.corners.presses.cancel(button);

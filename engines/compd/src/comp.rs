@@ -490,8 +490,14 @@ impl Bus {
         #[cfg(not(feature = "inproc-ui"))]
         {
             use dispatcher::wire::trait_::wire_trait::WireTrait;
-            comp_service::chrome::targets(lp.inner.all_world_spaces().iter()
-                .flat_map(|space| space.state.elements()).filter_map(decor::window::action_service).collect());
+            comp_service::chrome::targets(
+                lp.inner
+                    .all_world_spaces()
+                    .iter()
+                    .flat_map(|space| space.state.elements())
+                    .filter_map(decor::window::action_service)
+                    .collect(),
+            );
         }
         // Layer exclusive zones: each output's usable area; maximised windows
         // follow it when it moves.

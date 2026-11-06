@@ -840,6 +840,7 @@ dependencies = [
  "buildinfo",
  "comp-model",
  "comp-service",
+ "decor",
  "dispatcher",
  "effects",
  "egui",
