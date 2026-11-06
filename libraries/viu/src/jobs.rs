@@ -114,7 +114,9 @@ impl Jobs {
                 let _ = start.reply.send((10, json!({"error_code":"BUSY"})));
                 continue;
             }
-            let timeout = start.spec["timeout"].as_u64().unwrap_or(timeout.expect("validated job timeout"));
+            let timeout = start.spec["timeout"]
+                .as_u64()
+                .unwrap_or(timeout.expect("validated job timeout"));
             if !(1..=3600).contains(&timeout) {
                 let _ = start
                     .reply

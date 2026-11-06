@@ -85,7 +85,6 @@ struct Host {
     clipboard: crate::thumbnail::Decoder<String>,
     clipboard_reply: Option<Reply>,
     local_clipboard: std::sync::mpsc::Receiver<crate::clipboard::Request>,
-    macros: macros::Session,
     commands: BTreeSet<String>,
     scene_source: String,
     loaded: bool,
@@ -228,8 +227,7 @@ impl Host {
             ));
             return;
         }
-        if let Some((rc, body)) =
-            crate::debug::request(&self.app, &r.command, &r.args.to_string())
+        if let Some((rc, body)) = crate::debug::request(&self.app, &r.command, &r.args.to_string())
         {
             let _ = r.reply.send((rc, body));
             return;
@@ -237,13 +235,25 @@ impl Host {
         let prefix = format!("{}.", self.app);
         if let Some(suffix) = r.command.strip_prefix(&prefix) {
             if toolkit::drive::COMMANDS.contains(&suffix) {
-                if self.headless {let _=r.reply.send((10,json!({"error_code":"HEADLESS","message":"a headless instance has no window"})));return;}
+                if self.headless {
+                    let _=r.reply.send((10,json!({"error_code":"HEADLESS","message":"a headless instance has no window"})));
+                    return;
+                }
                 if suffix == "window"
                     && r.args["action"] == "close"
                     && r.args.get("viewport").is_none()
                 {
                     self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
-                    if self.drive.is_some(){if let Some(mut a)=toolkit::drive::request(ctx,0,"window.state",&json!({})){a.body["requested"]=json!("close");let _=r.reply.send((a.rc,a.body));}}else{let _ = r.reply.send((0, json!({"action":"close"})));}
+                    if self.drive.is_some() {
+                        if let Some(mut a) =
+                            toolkit::drive::request(ctx, 0, "window.state", &json!({}))
+                        {
+                            a.body["requested"] = json!("close");
+                            let _ = r.reply.send((a.rc, a.body));
+                        }
+                    } else {
+                        let _ = r.reply.send((0, json!({"action":"close"})));
+                    }
                     return;
                 }
                 self.drive_serial += 1;
@@ -320,11 +330,14 @@ impl Host {
             _ => match self.calls.begin(r.reply, r.close_after_reply) {
                 Ok(token) => {
                     let mut headers = r.headers;
-                    headers.insert("from".into(),r.from);
-                    let before=self.runtime.sequence();
+                    headers.insert("from".into(), r.from);
+                    let before = self.runtime.sequence();
                     headers.insert("viu-call".into(), token);
                     self.dispatch(r.command, r.args, headers, None);
-                    let after=self.runtime.sequence();if after!=before {self.retained.insert(after,r.deferred);}
+                    let after = self.runtime.sequence();
+                    if after != before {
+                        self.retained.insert(after, r.deferred);
+                    }
                 }
                 Err(reply) => {
                     let _ = reply.send((10, json!({"error_code":"BUSY"})));
@@ -372,15 +385,21 @@ impl eframe::App for Host {
         self.frame(ui);
     }
 }
-impl Drop for Host {
-    fn drop(&mut self) {
-        let _ = self.macros.shutdown();
-    }
-}
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
-        self.wire_deliveries.retain(|s|s.load(std::sync::atomic::Ordering::Acquire)==0);
-        while let Ok(request)=self.local_clipboard.try_recv(){if self.clipboard_reply.is_none() && self.clipboard.replace(&request.path,std::path::Path::new(&request.path),ctx){self.clipboard_reply=Some(request.reply)}else{let _=request.reply.send((10,json!({"error_code":"BUSY"})));}}
+        self.wire_deliveries
+            .retain(|s| s.load(std::sync::atomic::Ordering::Acquire) == 0);
+        while let Ok(request) = self.local_clipboard.try_recv() {
+            if self.clipboard_reply.is_none()
+                && self
+                    .clipboard
+                    .replace(&request.path, std::path::Path::new(&request.path), ctx)
+            {
+                self.clipboard_reply = Some(request.reply)
+            } else {
+                let _ = request.reply.send((10, json!({"error_code":"BUSY"})));
+            }
+        }
         if !self.facilities.native_ui() {
             self.drive_answers.extend(toolkit::drive::logic(ctx));
         }
@@ -447,8 +466,16 @@ impl Host {
             self.platform_results.pop_front();
         }
         for token in self.calls.cancelled() {
-            let seqs=self.pending.iter().filter_map(|(seq,t)|(t==&token).then_some(*seq)).collect::<Vec<_>>();
-            for seq in seqs {let _=self.runtime.forget_reply(seq);self.pending.remove(&seq);self.retained.remove(&seq);}
+            let seqs = self
+                .pending
+                .iter()
+                .filter_map(|(seq, t)| (t == &token).then_some(*seq))
+                .collect::<Vec<_>>();
+            for seq in seqs {
+                let _ = self.runtime.forget_reply(seq);
+                self.pending.remove(&seq);
+                self.retained.remove(&seq);
+            }
             let _ = self
                 .runtime
                 .notify("viu.call.cancelled".into(), json!({"token":token}));
@@ -620,18 +647,27 @@ impl Host {
                 }
             }
             for (seq, answer) in done.answers {
-                if let Some(token)=self.pending.remove(&seq){self.calls.finish(&token,answer.rc,answer.body,false);self.retained.remove(&seq);}
+                if let Some(token) = self.pending.remove(&seq) {
+                    self.calls.finish(&token, answer.rc, answer.body, false);
+                    self.retained.remove(&seq);
+                }
             }
             for answer in done.deferred_answers {
                 if let Some((generation, _, reply)) = self.deferred_replies.remove(&answer.token) {
                     if generation == done.generation {
-                        self.calls.finish(&reply, answer.reply.rc, answer.reply.body, false);
+                        self.calls
+                            .finish(&reply, answer.reply.rc, answer.reply.body, false);
                     } else {
                         self.calls.finish(&reply,10,json!({"error_code":"STALE_GENERATION","message":"deferred request owner changed"}),false);
                     }
                 }
             }
-            if done.deferred && self.error.is_empty(){if let Some(flag)=self.retained.get(&done.sequence){flag.store(true,std::sync::atomic::Ordering::Release);}continue;}
+            if done.deferred && self.error.is_empty() {
+                if let Some(flag) = self.retained.get(&done.sequence) {
+                    flag.store(true, std::sync::atomic::Ordering::Release);
+                }
+                continue;
+            }
             self.retained.remove(&done.sequence);
             if let Some(reply) = self.pending.remove(&done.sequence) {
                 if self.error.is_empty()
@@ -662,20 +698,10 @@ impl Host {
                 };
                 self.calls.complete(&reply, answer.0, answer.1);
             }
-            for (sequence, answer) in done.answers {
-                self.retained.remove(&sequence);
-                if let Some(reply) = self.pending.remove(&sequence) {
-                    let _ = reply.send(if self.error.is_empty() {
-                        (answer.rc, answer.body)
-                    } else {
-                        (10, json!({"error":self.error}))
-                    });
-                }
-            }
             if !done.behaviour_available {
                 self.retained.clear();
                 for (_, reply) in std::mem::take(&mut self.pending) {
-                    let _ = reply.send((20, json!({"error_code":"OWNER_CLOSED"})));
+                    self.calls.finish(&reply,20,json!({"error_code":"OWNER_CLOSED"}),false);
                 }
             }
         }
@@ -687,10 +713,12 @@ impl Host {
             .collect();
         for key in expired {
             if let Some((_, _, reply)) = self.deferred_replies.remove(&key) {
-                self.calls.finish(&reply,
+                self.calls.finish(
+                    &reply,
                     20,
                     json!({"error_code":"TIMEOUT","message":"deferred request expired"}),
-                false);
+                    false,
+                );
             }
         }
         if let Some(deadline) = self.deferred_replies.values().map(|(_, at, _)| *at).min() {
@@ -703,7 +731,10 @@ impl Host {
             }
         }
         while let Some(request) = self.held_requests.front() {
-            if self.ready && !self.view.current_revision_drawn() { ctx.request_repaint(); break; }
+            if self.ready && !self.view.current_revision_drawn() {
+                ctx.request_repaint();
+                break;
+            }
             let queues = request
                 .command
                 .strip_prefix(&format!("{}.", self.app))
@@ -859,7 +890,17 @@ impl Host {
                 }
             }
         }
-        if let Some(snapshot)=&self.session_notice {if self.runtime.notify("viu.session.changed".into(),snapshot.clone()).is_ok(){self.session_notice=None;}else{ctx.request_repaint();}}
+        if let Some(snapshot) = &self.session_notice {
+            if self
+                .runtime
+                .notify("viu.session.changed".into(), snapshot.clone())
+                .is_ok()
+            {
+                self.session_notice = None;
+            } else {
+                ctx.request_repaint();
+            }
+        }
         if let Some(update) = &self.session_update {
             if self
                 .runtime
@@ -982,7 +1023,12 @@ impl Host {
                 }
             }
             self.view.geometry.extend(self.overlays.geometry.clone());
-            if self.model["keyboard_events"]==true {let keys=ui.input(|i|i.events.iter().filter_map(|e|match e{egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=>Some(json!({"key":crate::input::key_name(*key),"ctrl":modifiers.ctrl||modifiers.command,"alt":modifiers.alt,"shift":modifiers.shift,"typing":self.view.text_input_active()})),_=>None}).collect::<Vec<_>>());for key in keys{self.dispatch("viu.key".into(),key,BTreeMap::new(),None);}}
+            if self.model["keyboard_events"] == true {
+                let keys=ui.input(|i|i.events.iter().filter_map(|e|match e{egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=>Some(json!({"key":crate::input::key_name(*key),"ctrl":modifiers.ctrl||modifiers.command,"alt":modifiers.alt,"shift":modifiers.shift,"typing":self.view.text_input_active()})),_=>None}).collect::<Vec<_>>());
+                for key in keys {
+                    self.dispatch("viu.key".into(), key, BTreeMap::new(), None);
+                }
+            }
             if !self.native_drive
                 && self.facilities.macros.is_some()
                 && toolkit::macros::show_app(ui.ctx(), &self.app, self.model["macros_open"] == true)
@@ -1116,7 +1162,12 @@ fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {
 impl Drop for Host {
     fn drop(&mut self) {
         for (_, (_, _, reply)) in std::mem::take(&mut self.deferred_replies) {
-            self.calls.finish(&reply,20,json!({"error_code":"APP_CLOSED","message":"request owner closed"}),false);
+            self.calls.finish(
+                &reply,
+                20,
+                json!({"error_code":"APP_CLOSED","message":"request owner closed"}),
+                false,
+            );
         }
         if let Err(error) = self.macros.shutdown() {
             tracing::warn!(%error, "macro shutdown");
@@ -1173,7 +1224,15 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         {
             let mut described = bundle.manifest.command_descriptors.clone();
             for entry in &bundle.manifest.command_metadata {
-                described.push(bus::CommandDescriptor { name: entry["name"].as_str().unwrap().into(),args:entry["args"].as_object().map(|a|a.keys().cloned().collect()).unwrap_or_default(),description:entry["description"].as_str().unwrap().into(),read_only:entry["read_only"]==true });
+                described.push(bus::CommandDescriptor {
+                    name: entry["name"].as_str().unwrap().into(),
+                    args: entry["args"]
+                        .as_object()
+                        .map(|a| a.keys().cloned().collect())
+                        .unwrap_or_default(),
+                    description: entry["description"].as_str().unwrap().into(),
+                    read_only: entry["read_only"] == true,
+                });
             }
             let mut native = Vec::new();
             if bundle.manifest.native_drive {
@@ -1229,9 +1288,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         let _ = macro_tx.send(body);
         macro_wake();
     }));
-    let (clipboard,local_clipboard)=crate::clipboard::Clipboard::channel(wake.clone());
+    let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
     let services = crate::runtime::Services {
-        clipboard: Some(clipboard),options:json!({"headless":bundle.manifest.surface=="headless"}),
+        clipboard: Some(clipboard),
+        options: json!({"headless":bundle.manifest.surface=="headless"}),
         max_string_bytes: bundle.manifest.max_string_bytes,
         platform: Some(platform.clone()),
         ui_state: Some(ui_state.clone()),
@@ -1316,7 +1376,6 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         ),
         clipboard_reply: None,
         local_clipboard,
-        macros,
         jobs,
         job_results: std::collections::VecDeque::new(),
         commands: declared,

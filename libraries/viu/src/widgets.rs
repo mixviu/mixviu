@@ -588,7 +588,7 @@ impl Widget {
         }
         if self.kind == "mark" || self.kind == "status-line" {
             return vec![];
-}
+        }
         if self.kind == "swatches" {
             return vec!["select"];
         }
@@ -720,7 +720,7 @@ impl Widget {
         }
         if self.properties["enabled"] == false {
             return Err("DISABLED".into());
-}
+        }
         if self.kind == "image-canvas" {
             return crate::image_view::admit_canvas(self.value(model), action, value);
         }

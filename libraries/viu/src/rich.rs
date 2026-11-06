@@ -870,6 +870,8 @@ pub(crate) fn draw(
                     "gold-dialog",
                     text(value, "instance"),
                 ));
+                let mut field = value["field"].as_str().map(str::to_owned);
+                let mut submitted = false;
                 let choices: Vec<_> = value["choices"]
                     .as_array()
                     .unwrap()

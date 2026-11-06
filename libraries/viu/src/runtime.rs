@@ -737,7 +737,12 @@ impl BusHandler for Local {
         body: &'a str,
     ) -> BusFuture<'a, MixResult<()>> {
         Box::pin(async move {
-            if self.prefs_deferred.borrow().is_some() && rc==mix::evaluator::NO_REPLY_RC && body==mix::evaluator::NO_REPLY_BODY { return Ok(()); }
+            if self.prefs_deferred.borrow().is_some()
+                && rc == mix::evaluator::NO_REPLY_RC
+                && body == mix::evaluator::NO_REPLY_BODY
+            {
+                return Ok(());
+            }
             if self.reply.borrow().is_some() || self.deferred.get() {
                 return Err(failure("callback already replied"));
             }
