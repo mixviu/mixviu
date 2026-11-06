@@ -49,7 +49,9 @@ pub fn open(
     // These display-only programs receive recorder updates but never send
     // them back through the surface channel.
     let emit = match &program {
-        CaptureProgram::Border { .. } | CaptureProgram::Dim { .. } | CaptureProgram::Encoding => None,
+        CaptureProgram::Border { .. } | CaptureProgram::Dim { .. } | CaptureProgram::Encoding => {
+            None
+        }
         _ => Some(emit),
     };
     macro_rules! open {
