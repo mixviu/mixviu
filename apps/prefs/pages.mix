@@ -193,7 +193,7 @@ fn browser_sections($s,$p,$sections)
     if $p.id=="wifi" and contains(["known","visible"],$sec.id) then
       $rows=[{id:$sec.id.."_none",title:$n.text_for("row-wifi-"..$sec.id.."_none"),kind:"plain-row",shown:true,blocked:nil,value:nil}]
     end
-    push($out,{id:$sec.id,title:$sec.title,plain:len($rows)==1 and $rows[0].kind=="append-list",shown:section_shown($s,$p,$sec),notice:if $p.id=="power" and $sec.id=="devices" then backend_reason("backend-hostd-upower") else nil end,rows:$rows})
+    push($out,{id:$sec.id,title:$sec.title,standalone:len($sec.rows)==1 and $sec.rows[0].control.control=="reset",plain:len($rows)==1 and $rows[0].kind=="append-list",shown:section_shown($s,$p,$sec),notice:if $p.id=="power" and $sec.id=="devices" then backend_reason("backend-hostd-upower") else nil end,rows:$rows})
   end
   return $out
 end
