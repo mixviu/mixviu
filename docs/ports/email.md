@@ -1,9 +1,23 @@
-# Email inventory (before implementation)
+# Email inventory and round-5 list experiment
 
 Oracle: MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`, `apps/email`:
 actions/commands/state/shell, account/mail/compose/calendar/contacts views,
 reader/documents/drafts/attachments/writer and embedded JMAP client.
-Email follows the Workshop checkpoint. No Email acceptance is claimed.
+Email core remains open. The round-5 budget checkpoint adds a fixture-only
+list/draft experiment, not a mail client or viability step-2 acceptance.
+`viu run apps/email --fixture` admits an explicit synthetic message snapshot;
+ordinary launch refuses snapshot injection. The status always says fixture-only.
+The table uses the existing Viu virtual tree-table, with 2000-row/4 MiB input
+bounds, unique IDs and bounded text cells. A per-row Mix loop and the existing
+lib-mix `jq` bulk primitive project identical rows. No per-app Rust or shared
+production Rust is added; no interpreter/dependency change.
+
+Selection and an in-memory native draft editor are exercised; accounts and
+mailboxes are synthetic labels. No real account/mailbox list, message fetch,
+send, durable draft or real maild acceptance exists yet. Those remain next
+work, not optional feature deferrals. Existing richer-feature deferrals below
+remain explicit. The saved original snapshot is a layout reference with
+different fixture content, not a same-data original-run comparison.
 
 | Original capability | Disposition |
 |---|---|

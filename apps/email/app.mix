@@ -2,7 +2,7 @@
 -- version: 0.1.0
 -- lint: globals app_args
 $c=require("core.mix");$ctx=viu_context()
-$fixture=($app_args[0] ?? "")=="--fixture"
+$fixture=len($app_args)>0 and $app_args[0]=="--fixture"
 $rows=[];$selected=nil;$revision=0;$account="No account connected";$mailbox="No mailbox";$reader="No message open";$draft={to:"",subject:"",text:""}
 fn publish_email()
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$c.model($rows,$selected,$revision,$account,$mailbox,$reader,$draft)}
