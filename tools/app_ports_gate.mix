@@ -2,10 +2,12 @@
 -- version: 0.1.0
 -- CBC only. Formatting/lock adaptations are returned as a patch, never hidden.
 $rc=0
+$temporary=path_join(dirname(cwd()),".app-ports-tmp-"..to_string(pid()))
+mkdir($temporary)
 try
   for $a in [["cargo","fmt","--all","--","--check"],["cargo","check","--locked","--all-targets","-p","viu","-p","viu-client","-p","viu-gallery"],["cargo","test","--locked","-p","viu","-p","viu-client","-p","viu-gallery"],["cargo","clippy","--locked","--all-targets","-p","viu","-p","viu-client","-p","viu-gallery"],["cargo","build","--locked","-p","viu-client","--bin","viu"]]
     print({argv:$a})
-    $r=run_argv($a,{env:{CARGO_BUILD_JOBS:"6"},timeout:1800,max_output:8000000})
+    $r=run_argv($a,{env:{CARGO_BUILD_JOBS:"6",TMPDIR:$temporary,RUSTC_WRAPPER:""},timeout:1800,max_output:8000000})
     print($r)
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
   end
@@ -25,5 +27,6 @@ finally
   print("APP_PORTS_PATCH_END")
   print(run_argv_must(["git","checkout","-q","--","."]))
   if $diff!="" then $rc=97 end
+  remove_dir($temporary)
 end
 exit($rc)

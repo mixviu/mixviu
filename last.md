@@ -63,3 +63,6 @@ Branch: lab/app-ports; head SHA: 11945c0a2f96f1067aab79050b25a9ceeabd93c4; apps 
 
 Round 2 implementation checkpoint: new Mix screenshot/prefs bundles; reusable generic-host jobs, explicit native timeout bounds, bounded image metadata/exclusive PNG export and native clipboard image submission. Pure Mix capture-shape and settings-fence/refusal checks pass. Native build/render gates pending. No libraries/mix changes.
 Branch: lab/app-ports; head SHA: de075ba9c09ffd4ba9b8f6162959c02aaa2f9f0e; apps done: screenshot/prefs prototypes, acceptance pending; CBC job ids: round-2 pending.
+
+CBC 20261106-210513-b604d880-a1 did not reach tests: worker compiler tempfs exhausted. Full saved log read and fmt patch applied. Read-only df confirms ample build-volume space; next job uses a job-owned temporary directory there and disables its compiler wrapper, without touching shared caches or other sessions. Term-needs inventory added; no Term implementation.
+Branch: lab/app-ports; head SHA: b77bd167a4d4d5a7fd29bdd222f567ac7fc01e17; apps done: screenshot/prefs prototypes, acceptance pending; CBC job ids: 20261106-210513-b604d880-a1 (infrastructure space failure).
