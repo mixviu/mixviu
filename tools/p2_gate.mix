@@ -16,7 +16,10 @@ end
 $art="/build/es-artifacts/"..$binary_source
 if $mode=="build" then
   mkdir($art,{parents:true})
-  for $pair in [["system","mix"],["mixd","mixd"],["viud","viud"],["viu-engine","viu"]]
+  $group=args()[2] ?? "all"
+  if not contains(["all","headless","desktop"],$group) then raise("USAGE","build group must be all, headless or desktop") end
+  $engines=if $group=="headless" then [["system","mix"],["mixd","mixd"]] elif $group=="desktop" then [["viud","viud"],["viu-engine","viu"]] else [["system","mix"],["mixd","mixd"],["viud","viud"],["viu-engine","viu"]] end
+  for $pair in $engines
     p2_run(["cargo","build","--release","--locked","-p",$pair[0]])
     copy("target/release/"..$pair[1],$art.."/"..$pair[1])
     $ldd=run_argv_must(["ldd",$art.."/"..$pair[1]])
@@ -28,8 +31,10 @@ if $mode=="build" then
       end
     end
   end
-  p2_run(["cargo","build","--release","--locked","-p","compd","--features","backend-all"])
-  copy("target/release/compd",$art.."/compd-oracle")
+  if $group!="headless" then
+    p2_run(["cargo","build","--release","--locked","-p","compd","--features","backend-all"])
+    copy("target/release/compd",$art.."/compd-oracle")
+  end
 elif $mode=="tests" then
   p2_run(["cargo","test","--locked","-p","mixd","-p","noded"])
   p2_run(["cargo","test","--locked","-p","viu","-p","viu-engine"])

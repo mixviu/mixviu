@@ -53,6 +53,15 @@ The compositor publication reservation is in `services/noded`, with its
 foreign-publisher refusal and broker-attestation test. Test-broker embeds the
 real service modules directly; the copied broker implementation is removed.
 
+The integrated B6 gate exposed layer lifecycle defects: a furniture layer
+hidden before its first buffer discarded a configure the server had not
+invalidated, while a genuinely unmapped layer needed a new initial configure
+on its remap commit. The client now tracks whether it attached a buffer and
+keeps hidden layers out of draw deadlines. Presentation control has an
+explicit event-loop wake, independent of whether egui has run its first pass.
+The compositor sends pending configures after arrangement. The original
+launcher mapping/focus assertion remains and now also checks close/reopen.
+
 ## Reproduction
 
 All Rust commands run through CBC. `tools/p2_gate.mix` builds each engine

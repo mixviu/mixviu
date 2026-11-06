@@ -24,6 +24,8 @@ copy($root.."/../mixos/tests/desktop/smoke-settings.json",$run.path.."/settings.
 write_file($run.path.."/preferences.json",json_encode({scene_host:false}))
 $env={HOME:$run.path.."/home",XDG_RUNTIME_DIR:$runtime,XDG_CONFIG_HOME:$run.path.."/config",XDG_DATA_HOME:$run.path.."/data",XDG_STATE_HOME:$run.path.."/state",XDG_CACHE_HOME:$run.path.."/cache",MIXOS_ETC:$run.path.."/etc",MIXOS_VAR:$run.path.."/var",MIXOS_RUN:$bus.dir.."/run",MIXOS_NODE_CONFIG:$bus.conf,MIXOS_NODED_URL:$bus.url,DISPLAY:nil,DBUS_SESSION_BUS_ADDRESS:nil,MIXOS_VT:nil,NOTIFY_SOCKET:nil,MESA_VK_WSI_PRESENT_MODE:"mailbox"}
 mkdir($env.HOME,{parents:true})
+mkdir($env.HOME.."/Documents",{parents:true})
+write_file($env.HOME.."/readme.txt","Private P2 file-browser fixture.\n")
 fn launch($argv,$name,$extra)
   $e=merge($env,$extra)
   return spawn($argv,{env:$e,stdout:{file:$run.path.."/"..$name..".log"},stderr:"stdout",detach:true})
