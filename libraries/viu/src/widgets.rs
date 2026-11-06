@@ -168,6 +168,9 @@ impl Widget {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
             "editor" => {
+                if self.properties.get("font_size").is_some_and(|v| v.as_f64().is_none_or(|n| !n.is_finite() || !(8.0..=72.0).contains(&n))) {
+                    return Err("editor font size must be 8..72".into());
+                }
                 for key in ["native_document", "soft_wrap", "line_numbers", "find_bar"] {
                     if self.properties.get(key).is_some_and(|v| !v.is_boolean()) {
                         return Err(format!("editor {key} requires bool"));
@@ -673,11 +676,9 @@ impl Widgets {
                     })
                     .response;
                 if widget.kind == "tabs" {
-                    ui.small(
-                        widget.properties["pages"][value.as_str().unwrap_or("")]
-                            .as_str()
-                            .unwrap_or(""),
-                    );
+                    if let Some(page) = widget.properties["pages"][value.as_str().unwrap_or("")].as_str().filter(|s| !s.is_empty()) {
+                        ui.small(page);
+                    }
                 }
                 response
             }
