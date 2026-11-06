@@ -539,18 +539,15 @@ pub(crate) fn draw(
             });
         });
         drawer.add_space(look.m);
-        egui::ScrollArea::vertical()
-            .id_salt((id, "drawer-scroll"))
-            .show(&mut drawer, |ui| {
-                cards(
-                    ui,
-                    id,
-                    &value["drawer"]["sections"],
-                    &look,
-                    geometry,
-                    events,
-                );
-            });
+        if value["drawer"]["scroll"] == false {
+            cards(&mut drawer, id, &value["drawer"]["sections"], &look, geometry, events);
+        } else {
+            egui::ScrollArea::vertical()
+                .id_salt((id, "drawer-scroll"))
+                .show(&mut drawer, |ui| {
+                    cards(ui, id, &value["drawer"]["sections"], &look, geometry, events);
+                });
+        }
         content.max.x = rect.left();
     }
     let side = if condensed { look.s } else { look.l };

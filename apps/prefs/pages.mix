@@ -234,7 +234,7 @@ fn browser($s)
   while $root.parent!=nil $root=$n.page($root.parent) end
   $drawer=nil
   if $p.id=="wallpaper" and $s.nav.drawer=="gallery.colour" then
-    $drawer={title:$n.text_for("drawer-wallpaper-gallery"),sections:[{id:"add-colour",plain:true,shown:true,rows:[{id:"gallery.colour",title:"",kind:"colour-editor",shown:true,blocked:nil,submit_label:$n.text_for("gallery-add-colour"),hex_label:$n.text_for("colour-hex")}]}]}
+    $drawer={title:$n.text_for("drawer-wallpaper-gallery"),scroll:false,sections:[{id:"add-colour",plain:true,shown:true,rows:[{id:"gallery.colour",title:"",kind:"colour-editor",shown:true,blocked:nil,submit_label:$n.text_for("gallery-add-colour"),hex_label:$n.text_for("colour-hex")}]}]}
   elif $s.nav.drawer!=nil then
     $ds=filter($p.drawers,fn($d)=$d.id==$s.nav.drawer)
     if len($ds)==1 then $drawer={title:$n.text_for("drawer-"..$p.id.."-"..$ds[0].id),sections:browser_sections($s,$p,$ds[0].sections)} end
@@ -245,13 +245,13 @@ fn browser($s)
         $meta=filter($s.catalog,fn($k)=$k.path==$r.key)[0] ?? {}
         $pick.choices=filter($pick.choices,fn($o)=$o.value!=nil)
         if $meta.default==nil then $pick.choices=concat([{value:nil,label:$n.text_for("pick-default")}],$pick.choices) end
-        $drawer={title:$r.title,sections:[{id:"pick",plain:true,shown:true,rows:[$pick]}]}
+        $drawer={title:$r.title,scroll:false,sections:[{id:"pick",plain:true,shown:true,rows:[$pick]}]}
       elif contains(["colour","accent"],$r.control.control) then
         $colour=browser_row($s,$p,$r);$colour.id="pick:"..$r.id;$colour.kind="colour-editor";$colour.choices=nil
         $colour.hex_label=$n.text_for("colour-hex");$colour.invalid_label=$n.text_for("colour-hex-invalid")
         $colour.auto_value=if $r.key=="window.hint_colour" then "accent" else "auto" end
         $colour.reset_label=$n.text_for(if $colour.auto_value=="accent" then "colour-reset-accent" else "colour-reset-auto" end)
-        $drawer={title:$r.title,sections:[{id:"colour",plain:true,shown:true,rows:[$colour]}]}
+        $drawer={title:$r.title,scroll:false,sections:[{id:"colour",plain:true,shown:true,rows:[$colour]}]}
       end
     end
   end
