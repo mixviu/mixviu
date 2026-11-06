@@ -40,7 +40,7 @@ fn admitted($s,$key,$value)
     $changes["wallpaper.slideshow.enabled"]=false
     push($reset,if $key=="wallpaper.image" then "wallpaper.color" else "wallpaper.image" end)
   end
-  return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:"prefs-mix-"..to_string(pid()).."-"..to_string(time()).."-"..to_string($s.serial+1),changes:$changes,reset:$reset}
+  return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:"prefs-mix-"..to_string(pid()).."-"..date_format(time(),"%Y%m%d%H%M%S").."-"..to_string($s.serial+1),changes:$changes,reset:$reset}
 end
 fn model($s)
   $section=filter($sections,fn($x)=$x.id==$s.section)[0]

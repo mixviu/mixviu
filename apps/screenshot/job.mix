@@ -3,7 +3,7 @@
 on job.run
   $a=$event.args
   if $a.op=="copy" then
-    $owner="screenshot-copy-"..to_string(pid()).."-"..to_string(time())
+    $owner="screenshot-copy-"..to_string(pid()).."-"..date_format(time(),"%Y%m%d%H%M%S")
     send "blobd" "blob.put" body={path:$a.source,mime:"image/png",owner:$owner} timeout=8
     if $rc!=0 then raise("BLOB","Native image ingestion refused") end
     $blob=$reply
