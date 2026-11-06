@@ -2,7 +2,7 @@
 -- Native jobs own waits; request receipts remain held across callbacks.
 -- lint: globals ctx entries active session boxes box rows total offset selected message reader account mailbox connected revision serial status fixture c
 $account_policy=require("accounts.mix")
-$wire_sequence=0;$wire_pending={};$wire_sessions={};$wire_views={};$wire_generations={}
+$wire_sequence=0;$wire_pending={};$wire_sessions={};$wire_views={};$wire_generations={};$wire_data={}
 $mail_settings={binding:{instance:env("MIXOS_INSTANCE","default"),profile:"default"},source:"cache",default_account:nil,page_size:100,mark_read_on_open:true,confirm_delete:true,quote_on_reply:true,reply_position:"above",revision:nil}
 fn wire_entry($id)
   for $e in $entries if $e.id==$id then return $e end end
@@ -58,7 +58,7 @@ fn wire_session($update)
   if $update.binding!=nil then $mail_settings.binding=$update.binding end
   $next=map($v["email.accounts"] ?? [],fn($e)=$account_policy.entry($e))
   -- Gold keeps a nonempty cache when an authority temporarily advertises [].
-  if len($next)==0 and len($entries)>0 then return end
+  if len($next)==0 and len($entries)>0 and $update.confirmed!=true then return end
   $old=$entries;$entries=$next
   $mail_settings.default_account=$v["email.default_account"]
   for $pair in [["page_size",100],["mark_read_on_open",true],["confirm_delete",true],["quote_on_reply",true],["reply_position","above"]]
@@ -74,7 +74,7 @@ fn wire_session($update)
   end
 end
 fn wire_completed($d)
-  global $wire_pending,$wire_sessions,$wire_views,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status
+  global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus
   $id=$d.tag.owner.id;$job=$wire_pending[$id]
   if $job==nil then return end
   $wire_pending=delete($wire_pending,$id)
@@ -88,26 +88,34 @@ fn wire_completed($d)
     $wire_sessions[$job.account]=$answer.session
     $wire_views[$job.account]={state:"ready",error:nil,has_password:true,session:$answer.session.raw,unread:0}
   end
+  if $answer.rc==0 and $job.purpose!="settings" then
+    $wire_data[$job.account]=$wire_data[$job.account] ?? {}
+    if $answer.body.mailboxes!=nil then
+      $wire_data[$job.account].boxes=$answer.body.mailboxes
+      $view=$wire_views[$job.account] ?? {};$view.unread=sum(map($answer.body.mailboxes,fn($b)=$b.unread_emails));$wire_views[$job.account]=$view
+    end
+  end
   if $job.command=="email.account.connect" then
     if $answer.rc!=0 then $wire_views[$job.account]={state:if $answer.body.error_code=="NO_PASSWORD" then "no_password" else "failed" end,error:if $answer.body.error_code=="NO_PASSWORD" then nil else $answer.body.message end,has_password:$answer.body.error_code!="NO_PASSWORD"} end
     if $answer.rc==0 and $job.account==$active then
       $session={account:$answer.session.account,accounts:map(keys($answer.session.raw.accounts),fn($k)=merge({id:$k},$answer.session.raw.accounts[$k]))}
-      $boxes=map($answer.body.mailboxes,fn($b)=merge($b,{choice:$b.name,total:$b.total_emails,unread:$b.unread_emails}))
+      $boxes=$answer.body.mailboxes
       $connected=true;$account=$entry.label.." · "..$entry.user;$status="Connected";$box="";$rows=[]
       $inbox=filter($boxes,fn($b)=$b.role=="inbox")
       if len($inbox)>0 then wire_start("email.list",{mailbox:$inbox[0].id,limit:$mail_settings.page_size},nil,"list") end
     end
     $answer.body={id:$job.account}
   elif $answer.rc==0 and $job.purpose=="list" and $job.account==$active then
-    $raw=map($answer.body.emails,fn($m)={id:$m.id,subject:$m.subject ?? "",from:$m.from ?? [],receivedAt:$m.received_at ?? $m.date ?? "",preview:""})
-    $rows=$c.rows($raw,false);$total=$answer.body.total;$offset=$answer.body.offset;$box=$job.args.mailbox;$revision=$revision+1
+    $mail_emails=$answer.body.emails;$rows=gold_rows($mail_emails);$total=$answer.body.total;$offset=$answer.body.offset;$box=$job.args.mailbox;$revision=$revision+1;$mail_selection=[];$mail_focus=nil
+    $wire_data[$job.account].emails=$mail_emails;$wire_data[$job.account].total=$total;$wire_data[$job.account].offset=$offset;$wire_data[$job.account].box=$box
     $match=filter($boxes,fn($b)=$b.id==$box);$mailbox=if len($match)>0 then $match[0].name else "" end
   elif $answer.rc==0 and $job.command=="email.open" and $job.account==$active then
-    $m=$answer.body;$message=merge($m,{text:$m.text ?? $m.html ?? ""});$selected=$m.id;$reader=reader_text($message)
+    $m=$answer.body;$message=$m;$selected=$m.id;$reader=reader_text($message);$wire_data[$job.account].message=$m
+    if $mail_settings.mark_read_on_open and ($m.keywords ?? {})["$seen"]!=true then wire_start("email.mark",{ids:[$m.id],read:true},nil,"mutation") end
   end
   if $answer.rc==0 and $job.purpose=="settings" then
-    if $answer.settings!=nil then wire_session({state:merge($answer.settings,{binding:$mail_settings.binding,lost:false})}) end
-    if contains(["email.account.set","email.account.password.set"],$job.command) and wire_entry($answer.body.id)!=nil then wire_start("email.account.connect",{id:$answer.body.id},nil,"connect") end
+    if $answer.settings!=nil then wire_session({state:merge($answer.settings,{binding:$mail_settings.binding,lost:false}),confirmed:true}) end
+    if ($job.command=="email.account.password.set" or ($job.command=="email.account.set" and contains(keys($job.args),"password"))) and wire_entry($answer.body.id)!=nil then wire_start("email.account.connect",{id:$answer.body.id},nil,"connect") end
   end
   if $job.token!=nil then viu_reply("finish",$job.token,{rc:$answer.rc,body:$answer.body}) end
 end

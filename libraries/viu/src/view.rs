@@ -494,16 +494,37 @@ impl SceneView {
                         ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
                         let titles=node.ports["titles"].as_array().expect("validated section titles").iter().map(|v|v.as_str().expect("validated section title")).collect::<Vec<_>>();
                         let mut draw=|ui:&mut egui::Ui| {
-                            let shown=toolkit::panel::group(ui,&key,&titles,|ui,_|{
-                                for child in children(node){self.node(ui,child,nodes,route,depth+1,events);}
-                            });
+                            let mut actions=Vec::new();
+                            let shown=if let Some(items)=node.ports.get("actions").and_then(Value::as_array) {
+                                toolkit::panel::group_with_actions(ui,&key,|ui|{
+                                    ui.horizontal(|ui|for item in items {
+                                        if let Some(icon)=item["icon"].as_str().and_then(crate::icons::Icon::from_name) {
+                                            let r=ui.add_enabled(item["enabled"]!=false,toolkit::button::Link::new(icon,item["label"].as_str().unwrap_or("")));
+                                            if r.clicked(){actions.push(item["id"].clone());}
+                                        }
+                                    });
+                                },|ui,_|for child in children(node){self.node(ui,child,nodes,route,depth+1,events);})
+                            }else{
+                                toolkit::panel::group(ui,&key,&titles,|ui,_|{
+                                    for child in children(node){self.node(ui,child,nodes,route,depth+1,events);}
+                                })
+                            };
+                            if let Some(command)=node.ports.get("on_action").and_then(Value::as_str) {
+                                for action in actions {events.push(Event{command:command.into(),body:json!({"id":action,"origin":"panel"})});}
+                            }
                             if shown.handle.drag_stopped() {
                                 if let Some(command)=node.ports.get("on_change").and_then(Value::as_str) {
                                     events.push(Event{command:command.into(),body:json!({"id":key,"selected":shown.state.selected,"collapsed":shown.state.collapsed})});
                                 }
                             }
                         };
-                        if text(node,"frame")=="dock" {toolkit::bars::dock_frame(ui.ctx()).show(ui,|ui|draw(ui));}else{draw(ui);}
+                        if text(node,"frame")=="dock" {
+                            let focused=node.ports.get("focused")==Some(&Value::Bool(true));
+                            let ring=if focused{let palette=&toolkit::chrome::Chrome::of(ui.ctx()).palette;palette.card_border.lerp_to_gamma(palette.accent,0.25)}else{Color32::TRANSPARENT};
+                            let frame=toolkit::bars::dock_frame(ui.ctx());
+                            let frame=if node.ports.contains_key("focused"){frame.stroke(egui::Stroke::new(1.0,ring))}else{frame};
+                            frame.show(ui,|ui|draw(ui));
+                        }else{draw(ui);}
                     },
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
                     "band"=>{

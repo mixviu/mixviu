@@ -118,11 +118,14 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("radius", false, None),
         p("background", "string", false, None),
     ];
-    static SECTION: [Port; 4] = [
+    static SECTION: [Port; 7] = [
         p("children", "list", true, None),
         p("titles", "list", true, None),
         pe("frame", "\"plain\"", &["plain", "dock"]),
         p("on_change", "string", false, None),
+        p("actions", "list", false, None),
+        p("on_action", "string", false, None),
+        p("focused", "bool", false, None),
     ];
     static ROW: [Port; 11] = [
         p("children", "list", true, None),

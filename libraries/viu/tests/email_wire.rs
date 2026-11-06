@@ -126,6 +126,19 @@ end
 }
 
 #[test]
+fn gold_writes_accept_missing_error_maps_and_preserve_partial_failures() {
+    let session=r#"{account:"1",api:$e.url,token:nil,using:[]}"#;
+    let (rc,body)=probe_module(vec![json!({"methodResponses":[["Email/set",{"updated":{"a":null}},"c0"]]})], &format!(r#"$m.batch($e,{session},"email.mark",{{ids:["a"],read:true}})"#),"protocol.mix",vec![]);
+    assert_eq!(rc,0,"{body}");
+    assert_eq!(body["done"],json!(["a"]));
+    assert_eq!(body["partial"],false);
+    let (rc,body)=probe_module(vec![json!({"methodResponses":[["Email/set",{"updated":{"a":null},"notUpdated":{"missing":{"type":"notFound"}}},"c0"]]})], &format!(r#"$m.batch($e,{session},"email.mark",{{ids:["a","missing"],read:false}})"#),"protocol.mix",vec![]);
+    assert_eq!(rc,0,"{body}");
+    assert_eq!(body["done"],json!(["a"]));
+    assert_eq!(body["failed"],json!([{"id":"missing","reason":"notFound"}]));
+    assert_eq!(body["partial"],true);
+}
+#[test]
 fn gold_token_session_and_query_preserve_bearer_auth_and_query_order() {
     let session = json!({"apiUrl":"ORIGIN/api/mail","accounts":{"1":{"name":"One"}},"primaryAccounts":{"urn:ietf:params:jmap:mail":"1"},"capabilities":{"urn:ietf:params:jmap:core":{},"urn:ietf:params:jmap:mail":{}}});
     let (rc, body) = probe_module(

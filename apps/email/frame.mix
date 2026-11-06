@@ -3,6 +3,7 @@
 $frame=require("../../libraries/viu/mix/gold-frame.mix")
 $actions=require("actions.mix")
 fn apply($model,$s)
+  $model=merge({fixture:$s.fixture,places_ratio:0.18,list_ratio:0.58,pane:"list",ready:false,navigation:{id:"account-tree",kind:"tree-table",label:"Accounts",initial:{key:"accounts",rows:[],columns:[{id:"name",label:""}]},properties:{style:"outline"}},list_titles:["Mail"],reader_actions:[],no_message:true,html_source:false,markdown:false},$model)
   $model.no_accounts=not $s.fixture and $s.accounts==0
   $model.has_accounts=not $model.no_accounts
   $model.window_close=$s.window_close
