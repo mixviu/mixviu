@@ -271,7 +271,7 @@ pub fn draw(
     let mut regex = v["regex"] == true;
     let mut case = v["case"] == true;
     ui.spacing_mut().item_spacing.y = 0.0;
-    toolkit::bars::options(ui, |ui| {
+    let add = |ui: &mut Ui| {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 let field = toolkit::field::search(ui, &mut pattern, "Find", 220.0);
@@ -305,8 +305,7 @@ pub fn draw(
             if value["replace"] == true {
                 ui.horizontal(|ui| {
                     toolkit::field::text(ui, &mut replacement, "Replace with", 220.0);
-                    for (action, label) in [("replace", "Replace"), ("replace-all", "All")]
-                    {
+                    for (action, label) in [("replace", "Replace"), ("replace-all", "All")] {
                         if ui.button(label).clicked() {
                             emit(events, action, Value::Null);
                         }
@@ -321,6 +320,18 @@ pub fn draw(
         if &v != value {
             emit(events, "edit", v);
         }
-    })
-    .response
+    };
+    if value["replace"] == true {
+        // Proposed gold deviation: the retained fixed-height options rail
+        // clips its second row. Keep the same chrome and insets, but measure
+        // both rows so Replace and All remain visible and reachable.
+        let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+        egui::Frame::new()
+            .fill(chrome.palette.chrome)
+            .inner_margin(egui::Margin::symmetric(chrome.style.bars_bar_inset as i8, chrome.style.bar_padding_y as i8))
+            .show(ui, add)
+            .response
+    } else {
+        toolkit::bars::options(ui, add).response
+    }
 }
