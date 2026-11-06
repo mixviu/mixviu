@@ -4388,6 +4388,216 @@
       "destination_sha256": "a6eb921129a1bdb14ca2cb840461cf092ee27356d8aaf58c2e45a244966bb6d8",
       "source": "services/dlnad/units/dlnad.service",
       "source_sha256": "a6eb921129a1bdb14ca2cb840461cf092ee27356d8aaf58c2e45a244966bb6d8"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/CHANGELOG.md",
+      "destination_sha256": "5164ed469d73377780d9ebcfaf816ed369f0e9403501b17f20074dda3b4ffece",
+      "source": "services/noded/CHANGELOG.md",
+      "source_sha256": "5164ed469d73377780d9ebcfaf816ed369f0e9403501b17f20074dda3b4ffece"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/Cargo.toml",
+      "destination_sha256": "4672ee795da0e3cf1b565162925d34fcddbf4d74fc3d4b5e166162baa0ded0ac",
+      "source": "services/noded/Cargo.toml",
+      "source_sha256": "4672ee795da0e3cf1b565162925d34fcddbf4d74fc3d4b5e166162baa0ded0ac"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/README.md",
+      "destination_sha256": "dbdc5af8c5bf4d0d74061a4fee94a7973dce177603b55fe23be01a5c507a2709",
+      "source": "services/noded/README.md",
+      "source_sha256": "dbdc5af8c5bf4d0d74061a4fee94a7973dce177603b55fe23be01a5c507a2709"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/build.rs",
+      "destination_sha256": "b234d1d74b8983232afc24eeb7b1e9c44fe0b31505cf9010443743319fbc80e5",
+      "source": "services/noded/build.rs",
+      "source_sha256": "b234d1d74b8983232afc24eeb7b1e9c44fe0b31505cf9010443743319fbc80e5"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/scripts/broker_profile.mix",
+      "destination_sha256": "cb28d319a46721f2f35473082612d69f194e3be92498666e57ac0b2db3c7394c",
+      "source": "services/noded/scripts/broker_profile.mix",
+      "source_sha256": "cb28d319a46721f2f35473082612d69f194e3be92498666e57ac0b2db3c7394c"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/admission.rs",
+      "destination_sha256": "428ca74989b814666553c909c091d53f18656670edde3cd151fd0c66a70982ca",
+      "source": "services/noded/src/admission.rs",
+      "source_sha256": "428ca74989b814666553c909c091d53f18656670edde3cd151fd0c66a70982ca"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/authority.rs",
+      "destination_sha256": "498c0f207cc0a72c550abee050be6f3700f1550caf1bd5f7fda4fa580162937e",
+      "source": "services/noded/src/authority.rs",
+      "source_sha256": "498c0f207cc0a72c550abee050be6f3700f1550caf1bd5f7fda4fa580162937e"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/lib.rs",
+      "destination_sha256": "79b1bd948555761266f0112cbfed9131481326d84d0b0c2e3141c3f7614da749",
+      "source": "services/noded/src/lib.rs",
+      "source_sha256": "79b1bd948555761266f0112cbfed9131481326d84d0b0c2e3141c3f7614da749"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/log_props.rs",
+      "destination_sha256": "18aa1ee9d9d69c7740c4655ed726d17ebad65e36e97be516636f551a36da5c3b",
+      "source": "services/noded/src/log_props.rs",
+      "source_sha256": "18aa1ee9d9d69c7740c4655ed726d17ebad65e36e97be516636f551a36da5c3b"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/logger.rs",
+      "destination_sha256": "488e2a10bfac16abe3b830e310e77c305d07c329b3e25becc25e93309f606fc7",
+      "source": "services/noded/src/logger.rs",
+      "source_sha256": "488e2a10bfac16abe3b830e310e77c305d07c329b3e25becc25e93309f606fc7"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/main.rs",
+      "destination_sha256": "ae55362b750f56cde46d6e5cd7af19e1fc3438fc407a8bbe2f13743b4b589e9b",
+      "source": "services/noded/src/main.rs",
+      "source_sha256": "ae55362b750f56cde46d6e5cd7af19e1fc3438fc407a8bbe2f13743b4b589e9b"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/mon_props.rs",
+      "destination_sha256": "295419e48a09243cd636cfc620938ef9f4d1cdd5f65d995c756994d7254ec099",
+      "source": "services/noded/src/mon_props.rs",
+      "source_sha256": "295419e48a09243cd636cfc620938ef9f4d1cdd5f65d995c756994d7254ec099"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/monitor.rs",
+      "destination_sha256": "3d3f721a5fa8ecee486c12e35fcb09cd33b6ce36fb685db55ab57950601db732",
+      "source": "services/noded/src/monitor.rs",
+      "source_sha256": "3d3f721a5fa8ecee486c12e35fcb09cd33b6ce36fb685db55ab57950601db732"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/native_ingress.rs",
+      "destination_sha256": "8eb131f5876c2897bec12e73a82c7df9ba1bef77a2d43d9c637972577d5bf4f0",
+      "source": "services/noded/src/native_ingress.rs",
+      "source_sha256": "8eb131f5876c2897bec12e73a82c7df9ba1bef77a2d43d9c637972577d5bf4f0"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/native_session_tests.rs",
+      "destination_sha256": "604c7e82602df34d7465762aaad700fe002edc307575ca5511ebd0f79bc106a2",
+      "source": "services/noded/src/native_session_tests.rs",
+      "source_sha256": "604c7e82602df34d7465762aaad700fe002edc307575ca5511ebd0f79bc106a2"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/noded.rs",
+      "destination_sha256": "8b99cffefc09f1fa15c0459de05f0a50d258766e7b0e6defea9e014b82057192",
+      "source": "services/noded/src/noded.rs",
+      "source_sha256": "8b99cffefc09f1fa15c0459de05f0a50d258766e7b0e6defea9e014b82057192"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/observe.rs",
+      "destination_sha256": "57874f011fcdf559cc69b68cb735f8f2f7ef93205ed24b697593129d82d15033",
+      "source": "services/noded/src/observe.rs",
+      "source_sha256": "57874f011fcdf559cc69b68cb735f8f2f7ef93205ed24b697593129d82d15033"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/props.rs",
+      "destination_sha256": "4384e46a21fa5e32029a6eb12409e62a1e15478ea5429f768f0d49fbb2e47695",
+      "source": "services/noded/src/props.rs",
+      "source_sha256": "4384e46a21fa5e32029a6eb12409e62a1e15478ea5429f768f0d49fbb2e47695"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/props_reservation.rs",
+      "destination_sha256": "b97d9f39876c93922813d583a7db4a9258e6df3cbd1909df6ecda956de09e884",
+      "source": "services/noded/src/props_reservation.rs",
+      "source_sha256": "b97d9f39876c93922813d583a7db4a9258e6df3cbd1909df6ecda956de09e884"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/protection.rs",
+      "destination_sha256": "78d3a86dae0447fe7269222270f1d79f0ef1d7a8ee91c5b0a4b9113671c32584",
+      "source": "services/noded/src/protection.rs",
+      "source_sha256": "78d3a86dae0447fe7269222270f1d79f0ef1d7a8ee91c5b0a4b9113671c32584"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/routing.rs",
+      "destination_sha256": "b5f6c15d866d64871c040c39c5bb1fa439d9cbc662a219beb1d9a0625c9745f6",
+      "source": "services/noded/src/routing.rs",
+      "source_sha256": "b5f6c15d866d64871c040c39c5bb1fa439d9cbc662a219beb1d9a0625c9745f6"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/session.rs",
+      "destination_sha256": "9d6bf563f19755dd557b598b4ecf6d310cfaa4402e9c152a4515379954e14170",
+      "source": "services/noded/src/session.rs",
+      "source_sha256": "9d6bf563f19755dd557b598b4ecf6d310cfaa4402e9c152a4515379954e14170"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/spec.rs",
+      "destination_sha256": "1a813ff7727620513aa7a6f5517210cda8d87d85bdcc86d319c53fb5385bde80",
+      "source": "services/noded/src/spec.rs",
+      "source_sha256": "1a813ff7727620513aa7a6f5517210cda8d87d85bdcc86d319c53fb5385bde80"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/spec_release.rs",
+      "destination_sha256": "aa6d5041dc966335825178355e140dc4e0d48e959a26d4f88f550229db99cf52",
+      "source": "services/noded/src/spec_release.rs",
+      "source_sha256": "aa6d5041dc966335825178355e140dc4e0d48e959a26d4f88f550229db99cf52"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/src/subscription.rs",
+      "destination_sha256": "e902f3648d6fd3af1ef04dedfaebd55f1d904a487b6f35ab5fc770c7e939c086",
+      "source": "services/noded/src/subscription.rs",
+      "source_sha256": "e902f3648d6fd3af1ef04dedfaebd55f1d904a487b6f35ab5fc770c7e939c086"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/tests/broker_namespace_test.mix",
+      "destination_sha256": "77f6678bdcb98c8b0d99123e4d82020ace230c56815ac8d4c2d6d71bee84bb4d",
+      "source": "services/noded/tests/broker_namespace_test.mix",
+      "source_sha256": "77f6678bdcb98c8b0d99123e4d82020ace230c56815ac8d4c2d6d71bee84bb4d"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/tests/mesh_processes.rs",
+      "destination_sha256": "c4af1548e5b004d15a20c123946d429acb2a2efda063f060748b670b89d58125",
+      "source": "services/noded/tests/mesh_processes.rs",
+      "source_sha256": "c4af1548e5b004d15a20c123946d429acb2a2efda063f060748b670b89d58125"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/units/noded.service",
+      "destination_sha256": "8dbe57eed2518171524559d243484091ff3b759c832fb3bd9b6e8fd09b64788e",
+      "source": "services/noded/units/noded.service",
+      "source_sha256": "8dbe57eed2518171524559d243484091ff3b759c832fb3bd9b6e8fd09b64788e"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/units/noded@.service",
+      "destination_sha256": "85f2e058047558c451fdd6e777ce2bb2ba440a43dec18a99f3d55bb71c135154",
+      "source": "services/noded/units/noded@.service",
+      "source_sha256": "85f2e058047558c451fdd6e777ce2bb2ba440a43dec18a99f3d55bb71c135154"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/noded/units/sysusers.conf",
+      "destination_sha256": "cd83ac261d3328365ca7475b89894d915136f50061d0ee2ec61d5e784fe7cd82",
+      "source": "services/noded/units/sysusers.conf",
+      "source_sha256": "cd83ac261d3328365ca7475b89894d915136f50061d0ee2ec61d5e784fe7cd82"
     }
   ],
   "licence": "MIT OR Apache-2.0",

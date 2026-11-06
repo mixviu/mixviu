@@ -5,7 +5,7 @@
 [workspace]
 resolver = "3"
 # libs/* includes maildoc and every other shared library component.
-members = ["libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","engines/mix-shell","engines/mix","engines/mixd"]
+members = ["libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","engines/mix-shell","engines/mix","engines/mixd","services/noded"]
 
 [workspace.package]
 version = "0.1.2"

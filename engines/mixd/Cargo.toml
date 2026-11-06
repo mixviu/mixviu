@@ -19,6 +19,13 @@ mod_module_files = "deny"
 name = "mixd"
 path = "src/main.rs"
 
+[features]
+# Headless personalities, chosen by argv[0] (a `noded` symlink to mixd runs
+# the broker). Each is its component's library `main`.
+default = ["noded"]
+noded = ["dep:noded"]
+
 [dependencies]
 mix-shell = { path = "../mix-shell", features = ["service-builtins", "serve"] }
+noded = { path = "../../services/noded", optional = true }
 mimalloc.workspace = true

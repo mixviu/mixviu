@@ -20,7 +20,11 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 /// Every personality this binary carries, with its component's version.
 /// The service shell is always present; daemons join here.
-const PERSONALITIES: &[(&str, &str)] = &[("mixd", mix_shell::COMPONENT_VERSION)];
+const PERSONALITIES: &[(&str, &str)] = &[
+    ("mixd", mix_shell::COMPONENT_VERSION),
+    #[cfg(feature = "noded")]
+    ("noded", noded::COMPONENT_VERSION),
+];
 
 fn personality_name(argv0: &OsStr) -> String {
     let base = Path::new(argv0)
@@ -79,13 +83,17 @@ fn main() -> ExitCode {
         eprintln!("usage: mixd run FILE [ARGS...] | mixd serve FILE [ARGS...]");
         return ExitCode::from(2);
     }
-    // Daemon personalities will dispatch on this name first. Every other
-    // name (mixd, a dev copy, `mix` from a self re-exec, `exe`) is the
-    // service shell.
-    let _personality = args.first().map(|a| personality_name(a)).unwrap_or_default();
-    match rewrite(&args) {
-        Some(rewritten) => mix_shell::main_with_args(rewritten),
-        None => mix_shell::main(),
+    // Daemon personalities dispatch on argv[0] first. Every other name
+    // (mixd, a dev copy, `mix` from a self re-exec, `exe`) is the service
+    // shell.
+    let personality = args.first().map(|a| personality_name(a)).unwrap_or_default();
+    match personality.as_str() {
+        #[cfg(feature = "noded")]
+        "noded" => noded::main(),
+        _ => match rewrite(&args) {
+            Some(rewritten) => mix_shell::main_with_args(rewritten),
+            None => mix_shell::main(),
+        },
     }
 }
 
