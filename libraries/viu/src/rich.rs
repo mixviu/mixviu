@@ -628,7 +628,9 @@ pub(crate) fn draw(
                                 )
                             };
                             let response = response.on_hover_text(text(item, "label"));
-                            if item["macro_anchor"] == true {toolkit::macros::anchor(ui.ctx(), response.rect);}
+                            if item["macro_anchor"] == true {
+                                toolkit::macros::anchor(ui.ctx(), response.rect);
+                            }
                             geometry.insert(
                                 format!("{id}.command.{}", text(item, "id")),
                                 response.rect,

@@ -185,8 +185,15 @@ impl Host {
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         if self.native_drive {
-            if let Some((rc, body)) = crate::debug::request(&self.service, &r.command, &r.args.to_string()) { let _ = r.reply.send((rc,body)); return; }
-            if r.command == format!("{}.window", self.app) && r.args["action"] == "close" { r.command="app.quit".into(); }
+            if let Some((rc, body)) =
+                crate::debug::request(&self.service, &r.command, &r.args.to_string())
+            {
+                let _ = r.reply.send((rc, body));
+                return;
+            }
+            if r.command == format!("{}.window", self.app) && r.args["action"] == "close" {
+                r.command = "app.quit".into();
+            }
         }
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
@@ -263,7 +270,9 @@ impl Host {
                     headers.insert("viu-call".into(), token);
                     self.dispatch(r.command, r.args, headers, None);
                 }
-                Err(reply) => { let _ = reply.send((10, json!({"error_code":"BUSY"}))); }
+                Err(reply) => {
+                    let _ = reply.send((10, json!({"error_code":"BUSY"})));
+                }
             },
         }
     }
@@ -312,8 +321,7 @@ impl Host {
         self.facilities.prepare(ctx, &self.bus);
         for request in self.platform.take() {
             if request["kind"] == "copy" {
-                ctx
-                    .copy_text(request["body"]["text"].as_str().unwrap_or("").into());
+                ctx.copy_text(request["body"]["text"].as_str().unwrap_or("").into());
             } else {
                 self.paste_waits
                     .push_back(request["id"].as_str().unwrap_or("").into());
@@ -328,12 +336,10 @@ impl Host {
         }
         if self.paste_deadline.is_none() && !self.paste_waits.is_empty() {
             self.paste_deadline = Some(Instant::now() + Duration::from_secs(2));
-            ctx
-                .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
         if let Some(at) = self.paste_deadline {
-            ctx
-                .request_repaint_after(at.saturating_duration_since(Instant::now()));
+            ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
         }
         while let Some(result) = self.platform_results.front() {
             if self
@@ -353,8 +359,7 @@ impl Host {
         let (due, deadline) = self.timers.poll();
         self.timer_results.extend(due);
         if let Some(at) = deadline {
-            ctx
-                .request_repaint_after(at.saturating_duration_since(Instant::now()));
+            ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
         }
         while let Some(body) = self.timer_results.front() {
             if self
@@ -451,7 +456,8 @@ impl Host {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         while let Some(done) = self.runtime.try_completion() {
-            self.measurements.model(done.elapsed.as_micros().min(u64::MAX as u128) as u64);
+            self.measurements
+                .model(done.elapsed.as_micros().min(u64::MAX as u128) as u64);
             self.inflight.remove(&done.sequence);
             self.error = done.error.unwrap_or_default();
             if self.error.is_empty() {
@@ -591,9 +597,14 @@ impl Host {
                                 }
                             }
                             self.last_ui = common_ui;
-                            let mut update=snapshot.clone();
-                            update["appearance"]["mode"]=json!(if ctx.global_style().visuals.dark_mode {"dark"} else {"light"});
-                            self.session_update=Some(update);
+                            let mut update = snapshot.clone();
+                            update["appearance"]["mode"] =
+                                json!(if ctx.global_style().visuals.dark_mode {
+                                    "dark"
+                                } else {
+                                    "light"
+                                });
+                            self.session_update = Some(update);
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
                             self.session_window = Some(snapshot["state"]["values"].clone());
@@ -622,7 +633,17 @@ impl Host {
                 }
             }
         }
-        if let Some(update)=&self.session_update { if self.runtime.notify("viu.session".into(),update.clone()).is_ok() {self.session_update=None;} else {ctx.request_repaint();} }
+        if let Some(update) = &self.session_update {
+            if self
+                .runtime
+                .notify("viu.session".into(), update.clone())
+                .is_ok()
+            {
+                self.session_update = None;
+            } else {
+                ctx.request_repaint();
+            }
+        }
         if self.ready && self.framed {
             let projected = self.projection(&self.model, ctx);
             if self.view.model() != &projected {
@@ -699,12 +720,14 @@ impl Host {
                     self.error = e;
                 }
             }
-            let started=Instant::now();
+            let started = Instant::now();
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
             }
             self.measurements.view(started.elapsed().as_micros() as u64);
-            if let Some(at)=self.input_at.take() {self.measurements.next(at.elapsed().as_micros() as u64);}
+            if let Some(at) = self.input_at.take() {
+                self.measurements.next(at.elapsed().as_micros() as u64);
+            }
             self.overlays.begin_frame();
             for overlay in self.model["native_overlays"]
                 .as_array()
@@ -721,7 +744,8 @@ impl Host {
                 }
             }
             self.view.geometry.extend(self.overlays.geometry.clone());
-            if !self.native_drive && self.facilities.macros.is_some()
+            if !self.native_drive
+                && self.facilities.macros.is_some()
                 && toolkit::macros::show_app(ui.ctx(), &self.app, self.model["macros_open"] == true)
             {
                 self.dispatch(
@@ -741,72 +765,77 @@ impl Host {
                 ui.ctx().request_repaint();
             }
             if self.native_drive {
-            if self.model["local_theme"].is_object() {
-                if let Err(error) =
-                    crate::appearance::local_choice(ui.ctx(), &self.model["local_theme"])
+                if self.model["local_theme"].is_object() {
+                    if let Err(error) =
+                        crate::appearance::local_choice(ui.ctx(), &self.model["local_theme"])
+                    {
+                        self.error = error;
+                    }
+                } else if let Some(mode) = self.model["local_mode"].as_str() {
+                    if let Err(error) = crate::appearance::local_mode(ui.ctx(), mode) {
+                        self.error = error;
+                    }
+                }
+                let reload = self.model["settings_reload"].as_u64().unwrap_or(0);
+                if reload != self.settings_reload {
+                    self.settings_reload = reload;
+                    self.file_theme = toolkit::Theme::load();
+                    if let Some(session) = &mut self.session {
+                        session.hint("theme.changed", &json!({}));
+                    }
+                    ui.ctx().request_repaint();
+                }
+                if let Some(bindings) = self.model["shortcuts"]
+                    .as_array()
+                    .filter(|_| !toolkit::menu::is_open(ui.ctx()))
                 {
-                    self.error = error;
-                }
-            } else if let Some(mode) = self.model["local_mode"].as_str() {
-                if let Err(error) = crate::appearance::local_mode(ui.ctx(), mode) {
-                    self.error = error;
-                }
-            }
-            let reload = self.model["settings_reload"].as_u64().unwrap_or(0);
-            if reload != self.settings_reload {
-                self.settings_reload = reload;
-                self.file_theme = toolkit::Theme::load();
-                if let Some(session) = &mut self.session {
-                    session.hint("theme.changed", &json!({}));
-                }
-                ui.ctx().request_repaint();
-            }
-            if let Some(bindings) = self.model["shortcuts"]
-                .as_array()
-                .filter(|_| !toolkit::menu::is_open(ui.ctx()))
-            {
-                let bindings = bindings.clone();
-                for binding in bindings {
-                    let editor_focus = ui
-                        .ctx()
-                        .data(|d| d.get_temp::<bool>(egui::Id::unique("viu-editor-focused")))
-                        .unwrap_or(false);
-                    let focused = ui
-                        .ctx()
-                        .data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")));
-                    let allowed = binding["text_scopes"].as_array().is_some_and(|a| {
-                        focused
-                            .as_deref()
-                            .is_some_and(|id| a.iter().any(|v| v == id))
-                    });
-                    if ui.ctx().memory(|m| m.focused().is_some()) && !editor_focus && !allowed {
-                        continue;
-                    }
-                    if binding["enabled"] == false {
-                        continue;
-                    }
-                    if let (Some(chord), Some(id), Some(command)) = (
-                        binding["chord"].as_str(),
-                        binding["id"].as_str(),
-                        self.model["on_shortcut"].as_str(),
-                    ) {
-                        if crate::input::consume_chord(ui.ctx(), chord) {
-                            self.dispatch(command.into(), json!({"id":id}), BTreeMap::new(), None);
+                    let bindings = bindings.clone();
+                    for binding in bindings {
+                        let editor_focus = ui
+                            .ctx()
+                            .data(|d| d.get_temp::<bool>(egui::Id::unique("viu-editor-focused")))
+                            .unwrap_or(false);
+                        let focused = ui
+                            .ctx()
+                            .data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")));
+                        let allowed = binding["text_scopes"].as_array().is_some_and(|a| {
+                            focused
+                                .as_deref()
+                                .is_some_and(|id| a.iter().any(|v| v == id))
+                        });
+                        if ui.ctx().memory(|m| m.focused().is_some()) && !editor_focus && !allowed {
+                            continue;
+                        }
+                        if binding["enabled"] == false {
+                            continue;
+                        }
+                        if let (Some(chord), Some(id), Some(command)) = (
+                            binding["chord"].as_str(),
+                            binding["id"].as_str(),
+                            self.model["on_shortcut"].as_str(),
+                        ) {
+                            if crate::input::consume_chord(ui.ctx(), chord) {
+                                self.dispatch(
+                                    command.into(),
+                                    json!({"id":id}),
+                                    BTreeMap::new(),
+                                    None,
+                                );
+                            }
                         }
                     }
                 }
-            }
             } else {
-            if !toolkit::menu::is_open(ui.ctx()) {
-                for command in crate::shortcuts::pressed(ui.ctx(), &self.model["shortcuts"]) {
-                    self.dispatch(
+                if !toolkit::menu::is_open(ui.ctx()) {
+                    for command in crate::shortcuts::pressed(ui.ctx(), &self.model["shortcuts"]) {
+                        self.dispatch(
                         "viu.frame.intent".into(),
                         json!({"id":"shortcut","value":{"command":command,"origin":"shortcut"}}),
                         BTreeMap::new(),
                         None,
                     );
+                    }
                 }
-            }
             }
             if self.framed {
                 let reserved = self.view.allocated_region("gold-captions");
@@ -824,7 +853,11 @@ impl Host {
                 }
             }
         }
-        self.ui_state.set(ui.ctx().content_rect(), &self.view.geometry, self.measurements.snapshot());
+        self.ui_state.set(
+            ui.ctx().content_rect(),
+            &self.view.geometry,
+            self.measurements.snapshot(),
+        );
         self.settle(ui.ctx());
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
@@ -847,10 +880,12 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     }
     if bundle.manifest.native_drive {
         commands.extend(
-            toolkit::drive::COMMANDS.iter().map(|suffix|format!("{service}.{suffix}")),
+            toolkit::drive::COMMANDS
+                .iter()
+                .map(|suffix| format!("{service}.{suffix}")),
         );
         commands.push(format!("{service}.debug"));
-        commands.extend(["set","recent"].map(|suffix|format!("{service}.debug.{suffix}")));
+        commands.extend(["set", "recent"].map(|suffix| format!("{service}.debug.{suffix}")));
     }
     commands.extend(
         [
@@ -870,7 +905,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         ]
         .map(String::from),
     );
-    let mut command_names=BTreeSet::new();commands.retain(|name|command_names.insert(name.clone()));
+    let mut command_names = BTreeSet::new();
+    commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
     let bus = Endpoint::start_described(
         service,
@@ -943,7 +979,21 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
-        platform, paste_waits:Default::default(),paste_deadline:None,platform_results:Default::default(),calls,timers,timer_results:Default::default(),documents,ui_state,measurements:Default::default(),input_at:None,native_drive:bundle.manifest.native_drive,service:bundle.manifest.service.clone(),settings_reload:0,session_update:None,
+        platform,
+        paste_waits: Default::default(),
+        paste_deadline: None,
+        platform_results: Default::default(),
+        calls,
+        timers,
+        timer_results: Default::default(),
+        documents,
+        ui_state,
+        measurements: Default::default(),
+        input_at: None,
+        native_drive: bundle.manifest.native_drive,
+        service: bundle.manifest.service.clone(),
+        settings_reload: 0,
+        session_update: None,
         local_ui,
         native_choice: json!({}),
         overlays: Default::default(),
