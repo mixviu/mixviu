@@ -24,7 +24,7 @@ pub fn open(registry: &mut dyn UiSurfaces, program: CaptureProgram, node: &str,
         CaptureProgram::Dim { width, height, region } => open!(RegionDim::new(width,height,region)),
         CaptureProgram::Stop => open!(StopHud),
         CaptureProgram::Continue(seconds) => open!(ContinueDialog::new(seconds)),
-        CaptureProgram::Save { label, optimized } => open!(SaveDialog::new(label, optimized)),
+        CaptureProgram::Save { label, offer_optimized } => open!(SaveDialog::new(label, offer_optimized)),
         CaptureProgram::Error(message) => open!(ErrorDialog::new(message)),
         CaptureProgram::Encoding => open!(EncodingDialog::new()),
     }

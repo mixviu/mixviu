@@ -119,11 +119,11 @@ pub struct SaveChoice {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum CaptureProgram {
     Setup { width: i32, height: i32, media: CaptureMedia, kind: TargetKind, preselect: Option<OverlayRect> },
-    Border { width: i32, height: i32, region: Option<OverlayRect> },
-    Dim { width: i32, height: i32, region: Option<OverlayRect> },
+    Border { width: i32, height: i32, region: OverlayRect },
+    Dim { width: i32, height: i32, region: OverlayRect },
     Stop,
     Continue(u32),
-    Save { label: String, optimized: bool },
+    Save { label: String, offer_optimized: bool },
     Error(String),
     Encoding,
 }

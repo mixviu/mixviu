@@ -903,7 +903,7 @@ fn begin_saving(state: &mut Loop, renderer: &mut GlesRenderer) {
         renderer,
         // Offer the "Optimized encoding" checkbox only in manual mode (auto runs
         // it in the background with no checkbox).
-        CaptureProgram::Save { label: label.into(), optimized: !capture_background_auto() },
+        CaptureProgram::Save { label: label.into(), offer_optimized: !capture_background_auto() },
         rect,
         UiSpace::Screen,
         Layer::SCENE.bits(),
@@ -1241,7 +1241,7 @@ fn respawn_save_dialog(state: &mut Loop, renderer: &mut GlesRenderer, lossless: 
     let dlg = load_snapshot(
         state,
         renderer,
-        CaptureProgram::Save { label: "Video".into(), optimized: !capture_background_auto() },
+        CaptureProgram::Save { label: "Video".into(), offer_optimized: !capture_background_auto() },
         rect,
         UiSpace::Screen,
         Layer::SCENE.bits(),
