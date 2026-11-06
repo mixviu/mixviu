@@ -63,6 +63,7 @@ struct Surface {
     input_passthrough: bool,
     margin: (i32, i32, i32, i32),
     visible: bool,
+    has_buffer: bool,
     unmapped: bool,
     requested: LayerOptions,
     // Field order is load-bearing: the GPU target (a wgpu surface on this
@@ -281,11 +282,17 @@ impl<P: LayerProgram + 'static> State<P> {
             }
             if !desired.visible {
                 if surface.visible {
-                    surface.layer.wl_surface().attach(None, 0, 0);
-                    surface.layer.commit();
+                    // A surface hidden before its first buffer has not been
+                    // unmapped by the server. Keep its initial configure;
+                    // otherwise showing it waits for a configure never owed.
+                    if surface.has_buffer {
+                        surface.layer.wl_surface().attach(None, 0, 0);
+                        surface.layer.commit();
+                        surface.has_buffer = false;
+                        surface.unmapped = true;
+                        surface.configured = false;
+                    }
                     surface.visible = false;
-                    surface.unmapped = true;
-                    surface.configured = false;
                     surface.frame_pending = false;
                     surface.pending_since = None;
                     surface.frame_gen = surface.frame_gen.wrapping_add(1);
@@ -365,6 +372,7 @@ impl<P: LayerProgram + 'static> State<P> {
             input_passthrough: false,
             margin: (0, 0, 0, 0),
             visible: true,
+            has_buffer: false,
             unmapped: false,
             requested: self.options.clone(),
             target,
@@ -650,6 +658,7 @@ impl<P: LayerProgram + 'static> State<P> {
         });
         match painted {
             Ok(()) => {
+                s.has_buffer = true;
                 s.frame_pending = true;
                 s.pending_since = Some(Instant::now());
                 s.skips = 0;
