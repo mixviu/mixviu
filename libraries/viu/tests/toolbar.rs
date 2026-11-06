@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use serde_json::json;
 
 #[test]
 fn toolbar_reserves_end_actions_and_omits_whole_optional_groups() {
@@ -15,7 +14,7 @@ width:{widget:"control",definition:{id:"width",kind:"combo",label:"Width",initia
 save:{widget:"control",definition:{id:"save",kind:"command-bar",label:"",initial:[{id:"save",label:"Save",enabled:true}],properties:{style:"gold",hostable:false,reverse:true}}}}
 ```
 "#;
-    let mut view=viu::view::View::new(source,json!({})).unwrap();
+    let mut view=viu::view::SceneView::new(source).unwrap();
     let ctx=egui::Context::default();
     viu::appearance::install(&ctx);
     for (width,visible) in [(800.0,true),(250.0,false),(800.0,true)] {
@@ -26,5 +25,5 @@ save:{widget:"control",definition:{id:"save",kind:"command-bar",label:"",initial
         assert!(view.geometry["take.command.take"].right()<view.geometry["save.command.save"].left());
         if visible { assert!(view.geometry["width"].right()<view.geometry["save.command.save"].left()); }
     }
-    assert!(viu::view::View::new(&source.replace("fit:[\"width\"]","fit:[\"take\"]"),json!({})).is_err());
+    assert!(viu::view::SceneView::new(&source.replace("fit:[\"width\"]","fit:[\"take\"]")).is_err());
 }
