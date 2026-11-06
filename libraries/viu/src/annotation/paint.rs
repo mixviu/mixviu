@@ -366,10 +366,7 @@ mod tests {
     use image::Rgba;
 
     pub(crate) fn face() -> Face {
-        Face::new(include_bytes!(
-            "../../assets/fonts/Inter-Regular.ttf"
-        ))
-        .unwrap()
+        Face::new(include_bytes!("../../assets/fonts/Inter-Regular.ttf")).unwrap()
     }
 
     fn doc() -> Document {

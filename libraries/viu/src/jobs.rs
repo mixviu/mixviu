@@ -80,9 +80,13 @@ impl Jobs {
         while let Ok(start) = self.rx.try_recv() {
             let id = start.spec["id"].as_str().unwrap_or("");
             if start.spec["signal"] == "cancel" {
-                let found=self.running.get(id);
-                if let Some(job)=found {job.runtime.signal_cancel();}
-                let _=start.reply.send((0,json!({"cancelling":found.is_some(),"id":id})));
+                let found = self.running.get(id);
+                if let Some(job) = found {
+                    job.runtime.signal_cancel();
+                }
+                let _ = start
+                    .reply
+                    .send((0, json!({"cancelling":found.is_some(),"id":id})));
                 continue;
             }
             if start.spec["cancel"] == true {
@@ -205,7 +209,9 @@ impl BusHandler for Backend {
         args: &'a MixValue,
     ) -> BusFuture<'a, MixResult<(i32, MixValue, MixValue)>> {
         Box::pin(async move {
-            if target == "viu-local" && ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command) {
+            if target == "viu-local"
+                && ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command)
+            {
                 let mut spec = to_json(args)?;
                 if !spec.is_object() {
                     return Err(error("job arguments must be an object"));

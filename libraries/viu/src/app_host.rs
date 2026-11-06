@@ -478,9 +478,14 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     );
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
     jobs.set_native_backend(bus.backend_maker());
-    let services=crate::runtime::Services::default();
+    let services = crate::runtime::Services::default();
     jobs.set_services(services.clone());
-    let mut runtime = Runtime::with_services(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))),services);
+    let mut runtime = Runtime::with_services(
+        32,
+        wake.clone(),
+        Some(jobs.backend(Some(bus.backend()))),
+        services,
+    );
     runtime.load(bundle.program).expect("load behaviour");
     let capture_root = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)

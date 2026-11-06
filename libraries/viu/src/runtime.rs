@@ -182,7 +182,7 @@ impl Runtime {
         let interrupt = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
         let cancel = Arc::new(AtomicBool::new(false));
-        let worker_cancel=cancel.clone();
+        let worker_cancel = cancel.clone();
         let worker_interrupt = interrupt.clone();
         let worker_stop = stop.clone();
         let thread = std::thread::Builder::new().name("viu-mix".into()).stack_size(EVALUATOR_STACK).spawn(move || {
@@ -377,7 +377,9 @@ impl Runtime {
         self.sequence
     }
     /// Cooperative cancellation keeps the work lane alive for native cleanup.
-    pub fn signal_cancel(&self) {self.cancel.store(true,Ordering::Release);}
+    pub fn signal_cancel(&self) {
+        self.cancel.store(true, Ordering::Release);
+    }
     /// Retire a caller whose native response receiver has gone away.
     /// On a full mailbox the owner must retry; no reply handle is reused.
     pub fn forget_reply(&self, sequence: u64) -> Result<(), Refusal> {
@@ -542,7 +544,9 @@ impl BusHandler for Local {
         args: &'a Value,
     ) -> BusFuture<'a, MixResult<(i32, Value, Value)>> {
         Box::pin(async move {
-            if target != "viu-local" || ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command) {
+            if target != "viu-local"
+                || ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command)
+            {
                 return match &self.backend {
                     Some(backend) => backend.send_with_reply(target, command, args).await,
                     None => Err(failure("no native Bus backend configured")),
@@ -559,7 +563,9 @@ impl BusHandler for Local {
         args: &'a Value,
     ) -> BusFuture<'a, MixResult<(i32, Value)>> {
         Box::pin(async move {
-            if target != "viu-local" || ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command) {
+            if target != "viu-local"
+                || ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command)
+            {
                 return match &self.backend {
                     Some(backend) => backend.send(target, command, args).await,
                     None => Err(failure("no native Bus backend configured")),

@@ -190,7 +190,9 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.kind=="image-canvas" {return vec!["pan","zoom","pick","gesture"];}
+        if self.kind == "image-canvas" {
+            return vec!["pan", "zoom", "pick", "gesture"];
+        }
         if self.kind == "mark" {
             return vec![];
         }
@@ -277,7 +279,9 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
-        if self.kind=="image-canvas" {return crate::image_view::admit_canvas(self.value(model),action,value);}
+        if self.kind == "image-canvas" {
+            return crate::image_view::admit_canvas(self.value(model), action, value);
+        }
         self.validate_action(action, value)?;
         if self.kind == "window-controls" && self.value(model)["enabled"] != true {
             return Err("DISABLED".into());
@@ -390,7 +394,9 @@ impl Widgets {
         self.text_input_active = false;
         self.focus_error = None;
         self.images.begin();
-        if let Some(images)=&mut self.canvases {images.begin();}
+        if let Some(images) = &mut self.canvases {
+            images.begin();
+        }
         if let Some(images) = &mut self.surfaces {
             images.begin();
         }
@@ -415,7 +421,9 @@ impl Widgets {
     /// `widget` calls). A disappeared target must not latch future replies.
     pub fn finish_frame(&mut self) -> Result<(), String> {
         self.images.finish();
-        if let Some(images)=&mut self.canvases {images.finish();}
+        if let Some(images) = &mut self.canvases {
+            images.finish();
+        }
         if let Some(images) = &mut self.surfaces {
             images.finish();
         }
@@ -499,7 +507,10 @@ impl Widgets {
                 response
             }
             "image-view" => self.images.draw(ui, id, value),
-            "image-canvas"=>self.canvases.get_or_insert_with(crate::image_view::Images::document).draw_canvas(ui,id,value,events),
+            "image-canvas" => self
+                .canvases
+                .get_or_insert_with(crate::image_view::Images::document)
+                .draw_canvas(ui, id, value, events),
             "image-fill" => self
                 .surfaces
                 .get_or_insert_with(crate::image_view::Images::surface)

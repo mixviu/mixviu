@@ -40,12 +40,18 @@ impl Default for Images {
     }
 }
 impl Images {
-    pub fn document()->Self {
-        Self {decoder:crate::thumbnail::Decoder::with_decoder("viu-document-decode",|path| {
-            let document=crate::annotation::document::Document::open(path).ok()?;
-            let (w,h)=document.dimensions();
-            Some(egui::ColorImage::from_rgba_unmultiplied([w as usize,h as usize],document.original().as_raw()))
-        }),..Self::default()}
+    pub fn document() -> Self {
+        Self {
+            decoder: crate::thumbnail::Decoder::with_decoder("viu-document-decode", |path| {
+                let document = crate::annotation::document::Document::open(path).ok()?;
+                let (w, h) = document.dimensions();
+                Some(egui::ColorImage::from_rgba_unmultiplied(
+                    [w as usize, h as usize],
+                    document.original().as_raw(),
+                ))
+            }),
+            ..Self::default()
+        }
     }
     pub fn surface() -> Self {
         Self {
@@ -75,47 +81,98 @@ impl Images {
     pub fn draw_fill(&mut self, ui: &mut Ui, id: &str, value: &Value) -> egui::Response {
         self.draw_internal(ui, id, value, true)
     }
-    pub fn draw_canvas(&mut self,ui:&mut Ui,id:&str,value:&Value,events:&mut Vec<crate::widgets::Intent>)->egui::Response {
-        let response=self.draw_internal(ui,id,value,true);
-        if value["enabled"]!=true || value["phase"]!="ready" {return response;}
-        use crate::annotation::{document::Point,viewport::Viewport};
-        let view=Viewport::fit((value["width"].as_u64().unwrap() as u32,value["height"].as_u64().unwrap() as u32),(response.rect.width(),response.rect.height()),value["zoom"].as_f64().unwrap() as f32,Point{x:value["pan"]["x"].as_f64().unwrap() as f32,y:value["pan"]["y"].as_f64().unwrap() as f32});
-        let point=|p:egui::Pos2| {
-            let mut p=view.image(Point{x:p.x-response.rect.min.x,y:p.y-response.rect.min.y});
-            p.x+=value["crop"]["x"].as_f64().unwrap_or(0.0) as f32;
-            p.y+=value["crop"]["y"].as_f64().unwrap_or(0.0) as f32;p
+    pub fn draw_canvas(
+        &mut self,
+        ui: &mut Ui,
+        id: &str,
+        value: &Value,
+        events: &mut Vec<crate::widgets::Intent>,
+    ) -> egui::Response {
+        let response = self.draw_internal(ui, id, value, true);
+        if value["enabled"] != true || value["phase"] != "ready" {
+            return response;
+        }
+        use crate::annotation::{document::Point, viewport::Viewport};
+        let view = Viewport::fit(
+            (
+                value["width"].as_u64().unwrap() as u32,
+                value["height"].as_u64().unwrap() as u32,
+            ),
+            (response.rect.width(), response.rect.height()),
+            value["zoom"].as_f64().unwrap() as f32,
+            Point {
+                x: value["pan"]["x"].as_f64().unwrap() as f32,
+                y: value["pan"]["y"].as_f64().unwrap() as f32,
+            },
+        );
+        let point = |p: egui::Pos2| {
+            let mut p = view.image(Point {
+                x: p.x - response.rect.min.x,
+                y: p.y - response.rect.min.y,
+            });
+            p.x += value["crop"]["x"].as_f64().unwrap_or(0.0) as f32;
+            p.y += value["crop"]["y"].as_f64().unwrap_or(0.0) as f32;
+            p
         };
-        let gesture_id=egui::Id::new(("canvas-points",id));
-        let mut points=ui.data_mut(|d|d.get_temp::<Vec<Point>>(gesture_id).unwrap_or_default());
-        let panning=ui.input(|i|i.pointer.button_down(egui::PointerButton::Middle)||i.key_down(egui::Key::Space));
-        let mut emit=|action:&str,value:Value|events.push(crate::widgets::Intent{id:id.into(),action:action.into(),value});
+        let gesture_id = egui::Id::new(("canvas-points", id));
+        let mut points = ui.data_mut(|d| d.get_temp::<Vec<Point>>(gesture_id).unwrap_or_default());
+        let panning = ui.input(|i| {
+            i.pointer.button_down(egui::PointerButton::Middle) || i.key_down(egui::Key::Space)
+        });
+        let mut emit = |action: &str, value: Value| {
+            events.push(crate::widgets::Intent {
+                id: id.into(),
+                action: action.into(),
+                value,
+            })
+        };
         if response.hovered() {
-            let zoom=ui.input(|i|i.zoom_delta());
-            if (zoom-1.0).abs()>0.001 {emit("zoom",serde_json::json!({factor:zoom}));}
-            let wheel=ui.input(|i|i.smooth_scroll_delta);
-            if wheel!=egui::Vec2::ZERO {emit("pan",serde_json::json!({x:wheel.x,y:wheel.y}));}
+            let zoom = ui.input(|i| i.zoom_delta());
+            if (zoom - 1.0).abs() > 0.001 {
+                emit("zoom", serde_json::json!({"factor":zoom}));
+            }
+            let wheel = ui.input(|i| i.smooth_scroll_delta);
+            if wheel != egui::Vec2::ZERO {
+                emit("pan", serde_json::json!({"x":wheel.x,"y":wheel.y}));
+            }
         }
         if panning && response.dragged() {
-            let delta=ui.input(|i|i.pointer.delta());
-            if delta!=egui::Vec2::ZERO {emit("pan",serde_json::json!({x:delta.x,y:delta.y}));}
+            let delta = ui.input(|i| i.pointer.delta());
+            if delta != egui::Vec2::ZERO {
+                emit("pan", serde_json::json!({"x":delta.x,"y":delta.y}));
+            }
             points.clear();
         } else {
             if response.drag_started_by(egui::PointerButton::Primary) {
                 points.clear();
-                if let Some(p)=ui.input(|i|i.pointer.press_origin()){points.push(point(p));}
+                if let Some(p) = ui.input(|i| i.pointer.press_origin()) {
+                    points.push(point(p));
+                }
             }
-            if response.dragged_by(egui::PointerButton::Primary) && points.len()<document_point_limit() {
-                if let Some(p)=response.interact_pointer_pos(){points.push(point(p));}
+            if response.dragged_by(egui::PointerButton::Primary)
+                && points.len() < document_point_limit()
+            {
+                if let Some(p) = response.interact_pointer_pos() {
+                    points.push(point(p));
+                }
             }
             if response.drag_stopped_by(egui::PointerButton::Primary) && !points.is_empty() {
-                if let Some(p)=response.interact_pointer_pos(){points.push(point(p));}
-                emit("gesture",serde_json::json!({points:points,scale:view.scale}));points.clear();
+                if let Some(p) = response.interact_pointer_pos() {
+                    points.push(point(p));
+                }
+                emit(
+                    "gesture",
+                    serde_json::json!({"points":points,"scale":view.scale}),
+                );
+                points.clear();
             }
             if response.clicked_by(egui::PointerButton::Primary) {
-                if let Some(p)=response.interact_pointer_pos(){emit("pick",serde_json::json!({point:point(p),scale:view.scale}));}
+                if let Some(p) = response.interact_pointer_pos() {
+                    emit("pick", serde_json::json!({"point":point(p),"scale":view.scale}));
+                }
             }
         }
-        ui.data_mut(|d|d.insert_temp(gesture_id,points));
+        ui.data_mut(|d| d.insert_temp(gesture_id, points));
         response
     }
     fn draw_internal(
@@ -128,25 +185,40 @@ impl Images {
         self.visible.insert(id.into());
         let rect = ui.available_rect_before_wrap();
         if fill {
-            if value["canvas"]==true {toolkit::canvas::surround(ui,rect);}
-            else {
-            let colour=if let Some(c)=value["colour"].as_array() {
-                egui::Color32::from_rgb(c[0].as_u64().unwrap() as u8,c[1].as_u64().unwrap() as u8,c[2].as_u64().unwrap() as u8)
+            if value["canvas"] == true {
+                toolkit::canvas::surround(ui, rect);
             } else {
-                crate::appearance::colour(ui.ctx(),value["colour"].as_str().unwrap().strip_prefix("design.").unwrap()).unwrap_or(ui.visuals().panel_fill)
-            };
-            ui.painter().rect_filled(
-                rect,
-                0.0,
-                colour,
-            );
+                let colour = if let Some(c) = value["colour"].as_array() {
+                    egui::Color32::from_rgb(
+                        c[0].as_u64().unwrap() as u8,
+                        c[1].as_u64().unwrap() as u8,
+                        c[2].as_u64().unwrap() as u8,
+                    )
+                } else {
+                    crate::appearance::colour(
+                        ui.ctx(),
+                        value["colour"]
+                            .as_str()
+                            .unwrap()
+                            .strip_prefix("design.")
+                            .unwrap(),
+                    )
+                    .unwrap_or(ui.visuals().panel_fill)
+                };
+                ui.painter().rect_filled(rect, 0.0, colour);
             }
         }
         if value["phase"] != "ready" {
             self.slots.remove(id);
-            if value["canvas"]==true {
-                ui.painter().text(rect.center(),egui::Align2::CENTER_CENTER,value["empty_text"].as_str().unwrap_or(""),egui::TextStyle::Body.resolve(ui.style()),ui.visuals().weak_text_color());
-                return ui.allocate_rect(rect,egui::Sense::hover());
+            if value["canvas"] == true {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    value["empty_text"].as_str().unwrap_or(""),
+                    egui::TextStyle::Body.resolve(ui.style()),
+                    ui.visuals().weak_text_color(),
+                );
+                return ui.allocate_rect(rect, egui::Sense::hover());
             }
             return ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover());
         }
@@ -184,14 +256,33 @@ impl Images {
         if let Some(texture) = self.slots.get(id).and_then(|s| s.texture.as_ref()) {
             let natural = texture.size_vec2() / ui.ctx().pixels_per_point();
             if fill {
-                if value["canvas"]==true {
-                    use crate::annotation::{document::Point,viewport::Viewport};
-                    let vp=Viewport::fit((value["width"].as_u64().unwrap() as u32,value["height"].as_u64().unwrap() as u32),(rect.width(),rect.height()),value["zoom"].as_f64().unwrap() as f32,Point{x:value["pan"]["x"].as_f64().unwrap() as f32,y:value["pan"]["y"].as_f64().unwrap() as f32});
-                    let image=egui::Rect::from_min_size(rect.min+egui::vec2(vp.origin.x,vp.origin.y),egui::vec2(vp.width,vp.height));
-                    let painter=ui.painter_at(rect);
-                    painter.rect_filled(image,0.0,egui::Color32::WHITE);
-                    painter.image(texture.id(),image,egui::Rect::from_min_max(egui::Pos2::ZERO,egui::pos2(1.0,1.0)),egui::Color32::WHITE);
-                    return ui.allocate_rect(rect,egui::Sense::click_and_drag());
+                if value["canvas"] == true {
+                    use crate::annotation::{document::Point, viewport::Viewport};
+                    let vp = Viewport::fit(
+                        (
+                            value["width"].as_u64().unwrap() as u32,
+                            value["height"].as_u64().unwrap() as u32,
+                        ),
+                        (rect.width(), rect.height()),
+                        value["zoom"].as_f64().unwrap() as f32,
+                        Point {
+                            x: value["pan"]["x"].as_f64().unwrap() as f32,
+                            y: value["pan"]["y"].as_f64().unwrap() as f32,
+                        },
+                    );
+                    let image = egui::Rect::from_min_size(
+                        rect.min + egui::vec2(vp.origin.x, vp.origin.y),
+                        egui::vec2(vp.width, vp.height),
+                    );
+                    let painter = ui.painter_at(rect);
+                    painter.rect_filled(image, 0.0, egui::Color32::WHITE);
+                    painter.image(
+                        texture.id(),
+                        image,
+                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+                    return ui.allocate_rect(rect, egui::Sense::click_and_drag());
                 }
                 let fit = value["fit"].as_str().unwrap();
                 let scale = match fit {
@@ -244,46 +335,91 @@ impl Images {
             })
             .response
         } else {
-            if value["canvas"]==true {return ui.allocate_rect(rect,egui::Sense::hover());}
+            if value["canvas"] == true {
+                return ui.allocate_rect(rect, egui::Sense::hover());
+            }
             ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
         }
     }
 }
-fn document_point_limit()->usize {crate::annotation::document::MAX_POINTS-1}
-pub fn validate_canvas(value:&Value)->Result<(),String> {
+fn document_point_limit() -> usize {
+    crate::annotation::document::MAX_POINTS - 1
+}
+pub fn validate_canvas(value: &Value) -> Result<(), String> {
     validate_fill(value)?;
-    if value["canvas"]!=true || !value["enabled"].is_boolean()
-        || !value["zoom"].as_f64().is_some_and(|n|n.is_finite()&&(0.1..=8.0).contains(&n))
-        || ["x","y"].iter().any(|k|!value["pan"][k].as_f64().is_some_and(|n|n.is_finite()&&n.abs()<1e9))
-        || (value["phase"]=="ready" && ["width","height"].iter().any(|k|!value[k].as_u64().is_some_and(|n|(1..=16384).contains(&n)))) {
+    if value["canvas"] != true
+        || !value["enabled"].is_boolean()
+        || !value["zoom"]
+            .as_f64()
+            .is_some_and(|n| n.is_finite() && (0.1..=8.0).contains(&n))
+        || ["x", "y"].iter().any(|k| {
+            !value["pan"][k]
+                .as_f64()
+                .is_some_and(|n| n.is_finite() && n.abs() < 1e9)
+        })
+        || (value["phase"] == "ready"
+            && ["width", "height"]
+                .iter()
+                .any(|k| !value[k].as_u64().is_some_and(|n| (1..=16384).contains(&n))))
+    {
         return Err("invalid image canvas geometry".into());
     }
     Ok(())
 }
-pub fn admit_canvas(current:&Value,action:&str,payload:&Value)->Result<(),String> {
-    if current["enabled"]!=true || current["phase"]!="ready" {return Err("DISABLED".into());}
-    let point=|p:&Value|["x","y"].iter().all(|k|p[k].as_f64().is_some_and(|n|n.is_finite()&&n.abs()<1e9));
-    let valid=match action {
-        "pan"=>point(payload),
-        "zoom"=>payload["factor"].as_f64().is_some_and(|n|n.is_finite()&&(0.01..=100.0).contains(&n)),
-        "pick"=>point(&payload["point"])&&payload["scale"].as_f64().is_some_and(|n|n.is_finite()&&n>0.0),
-        "gesture"=>payload["points"].as_array().is_some_and(|p|(2..=crate::annotation::document::MAX_POINTS).contains(&p.len())&&p.iter().all(point))&&payload["scale"].as_f64().is_some_and(|n|n.is_finite()&&n>0.0),
-        _=>false
+pub fn admit_canvas(current: &Value, action: &str, payload: &Value) -> Result<(), String> {
+    if current["enabled"] != true || current["phase"] != "ready" {
+        return Err("DISABLED".into());
+    }
+    let point = |p: &Value| {
+        ["x", "y"].iter().all(|k| {
+            p[k].as_f64()
+                .is_some_and(|n| n.is_finite() && n.abs() < 1e9)
+        })
     };
-    if valid {Ok(())}else{Err("invalid canvas intent".into())}
+    let valid = match action {
+        "pan" => point(payload),
+        "zoom" => payload["factor"]
+            .as_f64()
+            .is_some_and(|n| n.is_finite() && (0.01..=100.0).contains(&n)),
+        "pick" => {
+            point(&payload["point"])
+                && payload["scale"]
+                    .as_f64()
+                    .is_some_and(|n| n.is_finite() && n > 0.0)
+        }
+        "gesture" => {
+            payload["points"].as_array().is_some_and(|p| {
+                (2..=crate::annotation::document::MAX_POINTS).contains(&p.len())
+                    && p.iter().all(point)
+            }) && payload["scale"]
+                .as_f64()
+                .is_some_and(|n| n.is_finite() && n > 0.0)
+        }
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err("invalid canvas intent".into())
+    }
 }
 
 pub fn validate_fill(value: &Value) -> Result<(), String> {
-    let design=matches!(value["colour"].as_str(),Some("design.canvas"|"design.dock"|"design.base"));
-    if !(design || value["colour"].as_array().is_some_and(|c| {
-        c.len() == 3
-            && c.iter().all(|v| {
-                v.as_f64().is_some_and(|n| {
-                    n.is_finite() && (0.0..=255.0).contains(&n) && n.fract() == 0.0
+    let design = matches!(
+        value["colour"].as_str(),
+        Some("design.canvas" | "design.dock" | "design.base")
+    );
+    if !(design
+        || value["colour"].as_array().is_some_and(|c| {
+            c.len() == 3
+                && c.iter().all(|v| {
+                    v.as_f64().is_some_and(|n| {
+                        n.is_finite() && (0.0..=255.0).contains(&n) && n.fract() == 0.0
+                    })
                 })
-            })
-    })) || !["fill", "fit", "centre", "tile", "stretch"]
-        .contains(&value["fit"].as_str().unwrap_or(""))
+        }))
+        || !["fill", "fit", "centre", "tile", "stretch"]
+            .contains(&value["fit"].as_str().unwrap_or(""))
     {
         return Err("image-fill requires RGB colour and fill/fit/centre/tile/stretch".into());
     }
