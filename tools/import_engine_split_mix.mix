@@ -1,0 +1,108 @@
+-- Track A1 lab import: copy the mix/mix-shell/system source closure from an
+-- exact MixOS revision into this worktree, remap paths to the mixviu layout,
+-- and write per-file provenance. Lab only (decision 2026-11-06-engine-split-start).
+-- usage: mix tools/import_engine_split_mix.mix SRC_REPO REV STAGE_DIR
+
+$a = args()
+if len($a) != 3 then
+  raise("USAGE", "import_engine_split_mix.mix SRC_REPO REV STAGE_DIR")
+end
+$src_repo = $a[0]
+$rev = $a[1]
+$stage = $a[2]
+$root = path_join(dirname(realpath(script_path())), "..")
+
+$full_rev = trim(run_argv_must(["git", "-C", $src_repo, "rev-parse", $rev]))
+
+-- source path -> destination path
+$map = [
+  ["libs/mix", "libraries/mix"],
+  ["libs/bus", "libraries/bus"],
+  ["libs/props", "libraries/props"],
+  ["libs/logging", "libraries/logging"],
+  ["libs/config", "libraries/config"],
+  ["libs/buildinfo", "libraries/buildinfo"],
+  ["libs/paths", "libraries/paths"],
+  ["libs/strict", "libraries/strict"],
+  ["libs/mimedb", "libraries/mimedb"],
+  ["libs/test-broker", "libraries/test-broker"],
+  ["services/noded/crates/mesh", "libraries/mesh"],
+  ["services/noded/crates/mesh-trust", "libraries/mesh-trust"],
+  ["cli/mix-shell", "engines/mix-shell"],
+  ["cli/system", "engines/mix"],
+  ["vendor/dirs-sys", "vendor/dirs-sys"],
+  ["docs/mix", "docs/mix"],
+  ["docs/_build/gen-builtins-md.mix", "docs/_build/gen-builtins-md.mix"],
+]
+-- noded sources that test-broker compiles in through #[path]
+for $n in ["admission", "authority", "native_ingress", "noded", "observe", "props", "props_reservation", "protection", "routing", "spec", "spec_release", "subscription"]
+  push($map, ["services/noded/src/" .. $n .. ".rs", "libraries/test-broker/noded/" .. $n .. ".rs"])
+end
+
+if is_dir($stage) then
+  raise("STAGE_EXISTS", "stage dir must not exist: " .. $stage)
+end
+mkdir($stage, {parents: true})
+$tar = path_join($stage, "closure.tar")
+$argv = ["git", "-C", $src_repo, "archive", "--format=tar", "-o", $tar, $full_rev]
+for $m in $map
+  push($argv, $m[0])
+end
+run_argv_must($argv)
+$ex = path_join($stage, "x")
+mkdir($ex)
+run_argv_must(["tar", "-xf", $tar, "-C", $ex])
+
+-- text rewrites applied to imported .rs/.toml files
+$rewrites = [
+  ["\"../../../libs/", "\"../../../libraries/"],
+  ["\"../../libs/", "\"../../libraries/"],
+  ["\"../../../services/noded/src/", "\"../noded/"],
+]
+-- personalities leave the mix engine; mixd will own them
+$personality_lines = "(?m)^(noded|monitord|maild|webd|dnsd) = .*\\n"
+
+$entries = []
+for $m in $map
+  $s = path_join($ex, $m[0])
+  $d = path_join($root, $m[1])
+  if is_dir($d) or is_file($d) then
+    run_argv_must(["rm", "-rf", $d])
+  end
+  mkdir(dirname($d), {parents: true})
+  $files = if is_dir($s) then walk($s) else [$s] end
+  for $f in $files
+    $rel = substr($f, len($s))
+    $src_rel = $m[0] .. $rel
+    $dst_rel = $m[1] .. $rel
+    $src_sha = hash_file($f, "sha256")
+    $adapt = nil
+    if ends_with($f, ".rs") or ends_with($f, ".toml") then
+      $t = read_file($f)
+      $t2 = $t
+      for $r in $rewrites
+        $t2 = replace($t2, $r[0], $r[1])
+      end
+      if $dst_rel == "engines/mix/Cargo.toml" then
+        $t2 = re_replace($t2, $personality_lines, "")
+      end
+      if $t2 != $t then
+        write_file($f, $t2)
+        $adapt = "relative libs/ and noded source paths remapped; engines/mix personality deps removed (mixd owns them)"
+      end
+    end
+    push($entries, {source: $src_rel, destination: $dst_rel, source_sha256: $src_sha,
+      destination_sha256: hash_file($f, "sha256"), adaptation: $adapt})
+  end
+  run_argv_must(["mv", $s, $d])
+end
+
+$prov = {
+  source_repository: "https://github.com/markc/mixos",
+  source_revision: $full_rev,
+  purpose: "Track A lab (mix -> mix + mixd): unchanged-behaviour oracle closure",
+  licence: "MIT OR Apache-2.0",
+  entries: $entries
+}
+write_file(path_join($root, "provenance/engine-split-mix-imports.json"), json_encode($prov, true) .. "\n")
+print "imported " .. to_string(len($entries)) .. " files from " .. $full_rev
