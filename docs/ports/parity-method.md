@@ -124,6 +124,23 @@ Update `last.md` at the checkpoint. Its final line carries branch, head SHA,
 frame state, Monitor evidence and CBC job IDs. A receipt-only documentation
 commit must identify the exact tested code SHA separately.
 
+Save the exact accepted release executable under `/build/es-artifacts/<sha>/`
+with its SHA256 and source/profile receipt. Fetch and verify that hash before
+running the final native evidence suite. Debug witnesses do not attest the
+release bytes. `tools/gold_parity_gate.mix` performs the scoped checks and
+saves both profiles; its release receipt is `viu.json`. The artifact handoff
+does not install it or restart a desk.
+
+## Monitor accepted reference
+
+The [Monitor acceptance record](monitor.md#acceptance-2026-11-07) is the
+completed example: exact release source/bytes, 1040×680 whole/region figures,
+46/46 matched Bus replies, live Prefs on unchanged PIDs, inspected raster
+differences, P1's approved non-visual fence and native cleanup receipts.
+Its private archive includes the executed scripts, seeded fixtures, all
+55 comparison sets and a machine-readable index. Earlier failed receipts
+below remain historical evidence, not the current verdict.
+
 ## Monitor round-two record: failed
 
 Tested code: `bb950a59f82ef5c400fe89eaf1175a42bef6f93c`; pinned gold as

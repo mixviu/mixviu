@@ -1,15 +1,46 @@
-# Monitor round 4 checkpoint
+# Monitor round 5: ACCEPTED
 
-Acceptance remains OPEN while the final exact-source captures and gate run. No Fable question or proposed deviation is pending. P1 is the sole approved non-visual deviation.
+Exact tested code head: `5ab4207ab7a0c74aaf4b40592370a69b875e5eed` on
+`lab/gold-parity`. This following commit records acceptance only. Full record:
+[docs/ports/monitor.md](docs/ports/monitor.md#acceptance-2026-11-07), using
+[parity-method.md](docs/ports/parity-method.md). No open items or Fable question.
 
-The shared frame now matches native menu/title/caption/action alignment, CSD/SSD and hosted chrome; live font/density spacing comes from gold's global style. Application content identities remain intact. Menu measurement, compact menu press behaviour, selected-row tint, Help text/accelerators and per-instance dialog positioning are corrected. Static native window title is Monitor; client title includes the watched host.
+Generic `viu run` now consumes gold's `--service`, `--comp` and `--noded-url`
+flags while retaining canonical command/Prefs/macro identity. The native
+window title is static `Monitor`. The shared frame and first-reading states
+match gold; app composition and behaviour remain Mix.
 
-Matched witnesses: 1040×680 Processes and all seven Performance pages, including populated TCP, whole/header/options/content/status SSIM and RMSE distortion 0. Selected/tree/menu/About/Shortcuts witnesses and 1120×788 compositor furniture are exact. Nineteen live Prefs states on one PID per app passed; only compact/enlarged-font chevron/caption raster-edge differences remain (whole SSIM distortion 9.74852e-8 and 7.93036e-8), with table/status exact. These are being checked in the final capture set.
+The **release binary** passed the final isolated native evidence run:
 
-Native Bus checks: full 51-command/45-action catalogue, drive input/menus/capture/window/debug, all macro mutations and completion/event sequencing, second-instance activation/minimise/restore; 46 matched gold/Mix structured replies, including malformed input and refusals, have no differences. Disposable-child SIGTERM/SIGKILL fence and real monitord sampling/signalling witnesses passed. Final native rechecks remain.
+- Processes and all seven Performance pages, including populated TCP:
+  1040×680 whole/header/options/content/status SSIM=0 and RMSE=0.
+  Resource rail/dashboard, command-line column and CPU chart/grid crops: 0.
+- Eleven selected/tree/tab/menu/dialog states and compositor-hosted furniture
+  (1120×788): exact. All 45 action records match gold in every state.
+- Bus structured replies: **46/46**. Complete 51-command catalogue, native UI,
+  macros/topics, activation, hidden restore, launch overrides and close pass.
+- Nineteen live Prefs states on one unchanged PID per app: 17 exact; compact
+  and fonts/scale have only node-chevron/Close antialiasing. Whole SSIM
+  distortion 9.74852e-8 / 7.93036e-8; RMSE 8.50963e-5 / 8.14068e-5.
+  Chrome SSIM 5.52416e-7 / 4.49387e-7; content/status 0. Authority recovery passes.
+- P1 is the sole approved non-visual deviation. Stale-token refusal/refresh
+  and TERM/KILL were verified using disposable children only; real monitord passes.
 
-Latest full scoped CBC preparation 20261107-050528-784f2ca5-a1 at 255ffb1488fe3c00058b18558cc75cf73be590f1 passed all Viu/viu-engine tests/check/clippy/build; rc97 formatting returned/applied. Final no-diff exact-source gate remains required. Recent focused repair jobs: 20261107-045746-b6cdf2e8-a1 and 20261107-050113-4d633b99-a1. No local Rust build, install or VT work. All completed run children were stopped.
+Private archive: `gold-parity-20261107/round5/5ab4207ab7a0c74aaf4b40592370a69b875e5eed`.
+Its index contains 12 passing runs, 55 comparison sets, inspected figures,
+source/input/binary hashes, executed scripts, native replies and all-stopped
+cleanup receipts. Processes PNG pair SHA256:
+`800c28506c24d9bc9c755c740d4cbca72486ce67aee48597e548461d12da19fc`.
 
-Private evidence roots (round4 receipts will archive the final set): zero fixtures d358237; populated TCP oxsMET; live Prefs KF59G2; state matrix XS4GQw; hosted INxXPt; structured Bus 4AWjrB; macros WTwtHX; signals f4oLqN; real-daemon PRUyUC.
+CBC `20261107-053306-0497e9c3-a1`: **BUILD_RC=0**, exact source, no worker diff.
+Four Mix tests; Viu/viu-engine fmt/check/tests/clippy; debug and release builds.
+226 Rust tests passed; six existing environment-dependent ignores. Complete
+2,614-line saved log read and archived. Earlier green scoped gate:
+`20261107-051408-7e22145e-a1` at f550c0b. No install or VT work.
 
-Branch lab/gold-parity; tested code 255ffb1488fe3c00058b18558cc75cf73be590f1; Monitor OPEN, baseline whole/regions SSIM=0 RMSE=0, final rechecks pending; CBC 20261107-050528-784f2ca5-a1, 20261107-045746-b6cdf2e8-a1, 20261107-050113-4d633b99-a1.
+Desk4 handoff: release `viu` and `viu.json` saved on the successful CBC worker
+under `/build/es-artifacts/5ab4207ab7a0c74aaf4b40592370a69b875e5eed/`.
+The captured copy and saved executable have the same SHA256:
+`3ba7412344bcd3c110164d762c0812359ba6fc2908f2943558383883a7bbb046`.
+
+Branch lab/gold-parity; code head SHA 5ab4207ab7a0c74aaf4b40592370a69b875e5eed (receipt HEAD is the commit containing this file); Monitor ACCEPTED, whole/regions SSIM=0 RMSE=0, Prefs raster-only max whole SSIM=9.74852e-8; artifact /build/es-artifacts/5ab4207ab7a0c74aaf4b40592370a69b875e5eed/viu SHA256 3ba7412344bcd3c110164d762c0812359ba6fc2908f2943558383883a7bbb046; CBC 20261107-053306-0497e9c3-a1, 20261107-051408-7e22145e-a1.
