@@ -37,7 +37,7 @@ fn compile(
         return Err(fail("row expression exceeds 64 levels / 512 nodes"));
     }
     let mut sub = |e: &Expr| compile(e, param, index_param, captures, depth + 1, nodes, eval);
-    Ok(match e {
+    let plan = match e {
         Expr::Variable(n) if n==param => Plan::Row,
         Expr::Variable(n) if index_param==Some(n.as_str()) => Plan::Position,
         Expr::Variable(n) => Plan::Literal(captures.and_then(|m|m.get(n)).ok_or_else(||fail(format!("uncaptured variable ${n}; pass constants through the lambda's lexical capture")))?.clone()),
@@ -54,12 +54,18 @@ fn compile(
             Plan::Call(name.clone(),args.iter().map(&mut sub).collect::<MixResult<_>>()?)
         }
         _=>return Err(fail("rows_project requires an expression lambda: literals, row fields/indexes, maps/lists, operators, ternary and documented pure calls; use map for other Mix code")),
-    })
+    };
+    // Captures are immutable throughout this synchronous, pure plan. Validate
+    // them once rather than walking a whole captured batch on every row/index.
+    if let Plan::Literal(value) = &plan {
+        eval.check_collection_size(value)?;
+    }
+    Ok(plan)
 }
 impl Plan {
     fn run(&self, row: &Value, position: usize, eval: &Evaluator) -> MixResult<Value> {
         let value = match self {
-            Self::Literal(v) => v.clone(),
+            Self::Literal(v) => return Ok(v.clone()), // validated when compiled
             Self::Row => row.clone(),
             Self::Position => Value::Number(position as f64),
             Self::Field(p, key, optional) => match p.run(row, position, eval)? {
