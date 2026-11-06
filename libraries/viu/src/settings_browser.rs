@@ -614,21 +614,62 @@ pub(crate) fn draw(
                             });
                         });
                 }
-                for (index,p) in array(&value["children"]).enumerate() {
-                    if index>0 {ui.add_space(look.s);}
-                    let (rect,r)=ui.allocate_exact_size(vec2(width,40.0+2.0*look.s),Sense::click());
-                    ui.painter().rect_filled(rect,Look::radius(look.r_s),if r.hovered(){look.card_hover}else{look.card});
-                    if let Some(glyph)=toolkit::Icon::from_name(text(p,"icon")) {
-                        toolkit::button::paint_icon(ui,glyph,pos2(rect.left()+look.m+18.0,rect.center().y),20.0,look.icon);
+                for (index, p) in array(&value["children"]).enumerate() {
+                    if index > 0 {
+                        ui.add_space(look.s);
                     }
-                    let x=rect.left()+look.m+40.0;
-                    ui.painter().text(pos2(x,rect.center().y-1.0),egui::Align2::LEFT_BOTTOM,text(p,"title"),egui::FontId::proportional(14.0),look.text);
-                    if !text(p,"description").is_empty() {
-                        ui.painter().text(pos2(x,rect.center().y+1.0),egui::Align2::LEFT_TOP,text(p,"description"),egui::FontId::proportional(12.0),look.text);
+                    let (rect, r) =
+                        ui.allocate_exact_size(vec2(width, 40.0 + 2.0 * look.s), Sense::click());
+                    ui.painter().rect_filled(
+                        rect,
+                        Look::radius(look.r_s),
+                        if r.hovered() {
+                            look.card_hover
+                        } else {
+                            look.card
+                        },
+                    );
+                    if let Some(glyph) = toolkit::Icon::from_name(text(p, "icon")) {
+                        toolkit::button::paint_icon(
+                            ui,
+                            glyph,
+                            pos2(rect.left() + look.m + 18.0, rect.center().y),
+                            20.0,
+                            look.icon,
+                        );
                     }
-                    toolkit::button::paint_icon(ui,toolkit::Icon::ChevronRight,pos2(rect.right()-look.m-10.0,rect.center().y),20.0,look.icon);
-                    r.widget_info(||egui::WidgetInfo::labeled(egui::Role::Link,ui.is_enabled(),text(p,"title")));
-                    focus_ring(ui,&r,rect,look.r_s,&look);
+                    let x = rect.left() + look.m + 40.0;
+                    ui.painter().text(
+                        pos2(x, rect.center().y - 1.0),
+                        egui::Align2::LEFT_BOTTOM,
+                        text(p, "title"),
+                        egui::FontId::proportional(14.0),
+                        look.text,
+                    );
+                    if !text(p, "description").is_empty() {
+                        ui.painter().text(
+                            pos2(x, rect.center().y + 1.0),
+                            egui::Align2::LEFT_TOP,
+                            text(p, "description"),
+                            egui::FontId::proportional(12.0),
+                            look.text,
+                        );
+                    }
+                    toolkit::button::paint_icon(
+                        ui,
+                        toolkit::Icon::ChevronRight,
+                        pos2(rect.right() - look.m - 10.0, rect.center().y),
+                        20.0,
+                        look.icon,
+                    );
+                    r.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Link,
+                            ui.is_enabled(),
+                            text(p, "title"),
+                        )
+                    });
+                    focus_ring(ui, &r, rect, look.r_s, &look);
                     record(geometry, id, &format!("child.{}", text(p, "id")), &r);
                     if r.clicked() {
                         emit(events, id, "navigate", json!({"page":p["id"]}));
@@ -834,7 +875,8 @@ fn radio_rows(
     for (index, choice) in array(&row["choices"]).enumerate() {
         if index > 0 {
             let y = ui.cursor().top();
-            ui.painter().hline(ui.min_rect().x_range(), y, Stroke::new(1.0, look.divider));
+            ui.painter()
+                .hline(ui.min_rect().x_range(), y, Stroke::new(1.0, look.divider));
             ui.add_space(1.0);
         }
         let selected = choice["value"] == row["value"];
@@ -845,33 +887,67 @@ fn radio_rows(
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     ui.add_enabled_ui(row["blocked"].is_null(), |ui| {
-                        let (rect, response) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::click());
+                        let (rect, response) =
+                            ui.allocate_exact_size(vec2(16.0, 16.0), Sense::click());
                         if selected {
                             ui.painter().circle_filled(rect.center(), 8.0, look.accent);
-                            ui.painter().circle_filled(rect.center(), 3.0, look.on_accent);
+                            ui.painter()
+                                .circle_filled(rect.center(), 3.0, look.on_accent);
                         } else {
                             ui.painter().circle_filled(rect.center(), 8.0, look.field);
-                            ui.painter().circle_stroke(rect.center(), 7.5, Stroke::new(1.0, look.swatch_border));
+                            ui.painter().circle_stroke(
+                                rect.center(),
+                                7.5,
+                                Stroke::new(1.0, look.swatch_border),
+                            );
                         }
-                        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, ui.is_enabled(), selected, text(choice, "label")));
+                        response.widget_info(|| {
+                            egui::WidgetInfo::selected(
+                                egui::Role::RadioButton,
+                                ui.is_enabled(),
+                                selected,
+                                text(choice, "label"),
+                            )
+                        });
                         if response.clicked() && !selected {
-                            emit(events, id, "edit", json!({"row":key,"value":choice["value"]}));
+                            emit(
+                                events,
+                                id,
+                                "edit",
+                                json!({"row":key,"value":choice["value"]}),
+                            );
                         }
                     });
                     ui.add_space(look.xs);
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 2.0;
-                        ui.label(RichText::new(text(choice, "label")).size(14.0).color(look.text));
-                        if let Some(description) = choice["description"].as_str().filter(|s| !s.is_empty()) {
+                        ui.label(
+                            RichText::new(text(choice, "label"))
+                                .size(14.0)
+                                .color(look.text),
+                        );
+                        if let Some(description) =
+                            choice["description"].as_str().filter(|s| !s.is_empty())
+                        {
                             ui.label(RichText::new(description).size(12.0).color(look.text));
                         }
                     });
                 });
-            }).response;
-        let click = ui.interact(response.rect, response.id.with((key, index)), Sense::click());
+            })
+            .response;
+        let click = ui.interact(
+            response.rect,
+            response.id.with((key, index)),
+            Sense::click(),
+        );
         record(geometry, id, &format!("row.{key}.choice.{index}"), &click);
         if click.clicked() && row["blocked"].is_null() && !selected {
-            emit(events, id, "edit", json!({"row":key,"value":choice["value"]}));
+            emit(
+                events,
+                id,
+                "edit",
+                json!({"row":key,"value":choice["value"]}),
+            );
         }
     }
 }
