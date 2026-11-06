@@ -129,7 +129,10 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
-            "mark" => value.as_str().and_then(crate::icons::Icon::from_name).is_some(),
+            "mark" => value
+                .as_str()
+                .and_then(crate::icons::Icon::from_name)
+                .is_some(),
             "window-controls" => {
                 value["side"]
                     .as_str()
@@ -185,7 +188,9 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.kind == "mark" { return vec![]; }
+        if self.kind == "mark" {
+            return vec![];
+        }
         if self.kind == "editor" && self.properties["read_only"] == true {
             return vec![];
         }
@@ -452,7 +457,13 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
-            "mark" => ui.add(crate::icons::image_of(ui.ctx(), crate::icons::Icon::from_name(value.as_str().expect("validated mark")).expect("validated mark"), toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark, ui.visuals().text_color())),
+            "mark" => ui.add(crate::icons::image_of(
+                ui.ctx(),
+                crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
+                    .expect("validated mark"),
+                toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark,
+                ui.visuals().text_color(),
+            )),
             "window-controls" => {
                 let metrics = crate::window_frame::Metrics::of(ui.ctx());
                 let (area, response) = ui.allocate_exact_size(
@@ -501,11 +512,23 @@ impl Widgets {
                     label = label.halign(egui::Align::Max);
                 }
                 if matches!(widget.properties["role"].as_str(), Some("title" | "status")) {
-                    ui.allocate_ui_with_layout(ui.available_size_before_wrap(), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        if widget.properties["role"] == "status" { ui.add_space(toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as f32); }
-                        ui.add(label);
-                    }).response
-                } else { ui.add(label) }
+                    ui.allocate_ui_with_layout(
+                        ui.available_size_before_wrap(),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            if widget.properties["role"] == "status" {
+                                ui.add_space(
+                                    toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset
+                                        as f32,
+                                );
+                            }
+                            ui.add(label);
+                        },
+                    )
+                    .response
+                } else {
+                    ui.add(label)
+                }
             }
             "button" => {
                 let r = icon_button(ui, widget.text("icon"), widget.text("text"), false);
@@ -1065,9 +1088,14 @@ fn icon_button(ui: &mut egui::Ui, name: &str, text: &str, selected: bool) -> egu
 
 fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
-    if widget.properties["role"] == "status" { text = text.small(); }
+    if widget.properties["role"] == "status" {
+        text = text.small();
+    }
     if widget.properties["role"] == "title" {
-        text = text.font(crate::fonts::emphasis(ui.ctx(), egui::FontId::proportional(crate::window_frame::Metrics::of(ui.ctx()).title_size)));
+        text = text.font(crate::fonts::emphasis(
+            ui.ctx(),
+            egui::FontId::proportional(crate::window_frame::Metrics::of(ui.ctx()).title_size),
+        ));
     }
     if let Some(size) = widget.properties["size"].as_f64() {
         text = text.size(size as f32);
