@@ -755,3 +755,62 @@ or Fable-approved deviation is claimed. No owned native capture processes
 are running at this checkpoint.
 
 branch lab/parity-prefs; head SHA 86c003c1b64c0df4be2fe191b0d723baf358111d (code head before receipt-only commit); pages at acceptance 0/42, figures pair.WrTxPr/appearance-diff FAIL; Bus/menu native implementation repaired, exact native HELP/menu comparison pending; CBC job ids 20261107-033807-34f3d949-a1 merge repair, 20261107-034027-0a438d39-a1 and 20261107-034248-534fb98a-a1 status repair, 20261107-034401-76fce065-a1 lifetime repair, 20261107-034553-0321d97f pending.
+
+## Prefs round 3 native capture checkpoint: Bus menus and HELP matched
+
+Tested source `d0b95f7063d32bf49c2577d549d90215871d20bf`; candidate artifact
+SHA256 `53117836f345049dd31857fc31f5e24669d929157369cc925e5d2102f9b1bc12`.
+CBC `20261107-034553-0321d97f-a1` passed the scoped Viu/viu-engine check,
+test, clippy and build sequence, plus 32 toolkit menu unit tests and 32 menu
+integration tests. It returned rc 97 for one formatting patch, now applied.
+The complete saved log was read:
+`20261107-034554-cbc2-d0b95f7063d3-20261107-034553-0321d97f-a1-838e35aa.log`
+under the private CBC log root. A final exact-source gate is still required.
+
+Private run `prefs-parity-20261107/pair.TD1EvM` completed all **42 gold
+and 42 candidate page captures**, then 11 accepted live variants per process.
+Both clients are 1040×680 at scale 1 on identical isolated native services,
+gold first then candidate. Terminal now captures successfully. All five
+owned processes are confirmed stopped in `closure.json`. The receipt records
+source/binary hashes; earlier gold pin/hash remain unchanged.
+
+Exact structured comparisons passed: HELP, app.describe, prefs.actions,
+prefs.pages, the full native menu model, and open-path replies for File, View,
+View → Theme and Help. HELP has exactly gold's 55 commands; host extensions
+are absent. Menus preserve original command IDs, shortcuts, separators,
+checks and enablement. This closes the reported HELP/menu readback gaps;
+complete Bus mutation/refusal/service acceptance remains outstanding.
+
+Live settings tests retained the same PID through mode, scheme/style, accent,
+compact/spacious density, square roundness, interface/mono families, weight
+and size, text scale, icon stroke, app overrides and auto mode. Each accepted
+change waited for its settings receipt revision before capture. The invalid
+`tune.chrome.title_size` request was refused by both authorities; this is
+refusal evidence, not a valid tunable variant or full Prefs acceptance.
+
+All 42 regional comparisons and figures are indexed in
+`pair.TD1EvM/comparison-index.json`; each `diff-<page>` retains originals,
+montages, differences and header/sidebar/content crops. ImageMagick 7.1.2-35
+SSIM numbers are distortion, zero identical. Appearance full is `0.0734909`,
+header `0.0883552`, sidebar `0.00161027`, content `0.100063`. Terminal full
+is `0.0577293`; pending-page full values are about 0.011–0.015. These remain
+**FAIL**, not arbitrary score-based passes. Originals, Appearance montage/full
+diff and header montage were inspected. All-page inspection/closure continues.
+
+Gold live visual quirk confirmed by pinned shell.rs: follow_theme increments
+look_key.0, but follow_look only rebuilds COSMIC page colours after density or
+roundness differs. Mode changes update header/global typography and control
+swatches while page/sidebar colours remain retained until that refresh.
+The light pair visibly demonstrates this. Gold wins: Mix now authors the same
+palette refresh key; a reusable browser cache implements that key. No deviation
+is proposed and no Fable question is needed.
+
+Subsequent source `03db134d0a6027fcd622cd6ba7e961c8fc66ff7f` replaces guessed
+header widths with native measured menu/icon/action widths, native action
+spacing and the native automatic-title offset. It also repairs the sidebar
+divider and page back-link spacing and preserves the gold palette quirk.
+Generic native facility polling now stays with the opted-in request owner.
+CBC queue `20261107-040306-60d6ff3c` tests those changes; result pending.
+No page is visually accepted yet; further paired captures are required.
+
+branch lab/parity-prefs; head SHA 03db134d0a6027fcd622cd6ba7e961c8fc66ff7f (code head before receipt-only commit); pages at acceptance 0/42, all 42 pairs/figures in pair.TD1EvM/diff-<page> and comparison-index.json FAIL; Bus HELP/full menu/four open paths exactly gold, full mutation matrix open; CBC job ids 20261107-034553-0321d97f-a1 checks and 64 menu tests passed with applied formatting, 20261107-040306-60d6ff3c pending.
