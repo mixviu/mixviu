@@ -12,6 +12,7 @@ use std::{
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 pub struct Facilities {
     app: String,
+    service: String,
     ui: bool,
     debug: bool,
     installed: bool,
@@ -31,7 +32,7 @@ pub struct Facilities {
 }
 impl Facilities {
     pub fn new(manifest: &Manifest, wake: crate::runtime::Wake) -> Self {
-        let app = manifest.service.clone();
+        let app = manifest.app().to_owned();
         let mut surface = manifest.bus_surface.clone();
         if let Some(surface) = surface.as_mut() {
             let commands = surface["commands"]
@@ -61,6 +62,7 @@ impl Facilities {
         let (complete, completed) = mpsc::channel();
         Self {
             app,
+            service: manifest.service.clone(),
             ui: manifest.native_ui,
             debug: manifest.native_debug,
             installed: false,
@@ -98,7 +100,7 @@ impl Facilities {
             self.context = Some(ctx.clone());
         }
         if self.ui {
-            toolkit::drive::set_service(ctx, bus.client().as_ref().map(|_| self.app.as_str()));
+            toolkit::drive::set_service(ctx, bus.client().as_ref().map(|_| self.service.as_str()));
         }
         while let Ok((reply, answer)) = self.completed.try_recv() {
             let _ = reply.send(macro_answer(answer));

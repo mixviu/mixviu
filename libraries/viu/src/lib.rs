@@ -19,6 +19,7 @@ pub mod icons;
 pub mod image_view;
 pub mod jobs;
 mod local_ui;
+mod launch;
 pub mod macro_host;
 pub mod native_bus;
 mod native_events;

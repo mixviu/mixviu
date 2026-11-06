@@ -43,7 +43,7 @@ struct Host {
     session: Option<crate::session::Session>,
     session_appearance: Option<Value>,
     session_window: Option<Value>,
-    service: String,
+    app: String,
     file_theme: toolkit::Theme,
     last_ui: settings::model::CommonUi,
     session_dirty: bool,
@@ -149,8 +149,8 @@ impl Host {
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
-        if r.command == format!("{}.quit", self.service)
-            || (r.command == format!("{}.execute", self.service) && r.args["id"] == "file.quit")
+        if r.command == format!("{}.quit", self.app)
+            || (r.command == format!("{}.execute", self.app) && r.args["id"] == "file.quit")
         {
             r.close_after_reply
                 .store(true, std::sync::atomic::Ordering::Release);
@@ -262,7 +262,7 @@ impl Host {
                         let base = if let Some(snapshot) = snapshot {
                             crate::appearance::session_base(
                                 &snapshot,
-                                &self.service,
+                                &self.app,
                                 &self.file_theme,
                                 &self.last_ui,
                             )?
@@ -381,7 +381,7 @@ impl Host {
         while let Some(request) = self.held_requests.front() {
             let queues = request
                 .command
-                .strip_prefix(&format!("{}.", self.service))
+                .strip_prefix(&format!("{}.", self.app))
                 .is_some_and(toolkit::drive::queues);
             if toolkit::drive::pending(ctx) && !queues {
                 break;
@@ -437,7 +437,7 @@ impl Host {
                     match crate::appearance::install_session(
                         ctx,
                         &snapshot,
-                        &self.service,
+                        &self.app,
                         &self.file_theme,
                         &self.last_ui,
                     ) {
@@ -450,7 +450,7 @@ impl Host {
                                     )
                                 {
                                     let keymap =
-                                        settings::view::Keymaps::of(&values).app(&self.service);
+                                        settings::view::Keymaps::of(&values).app(&self.app);
                                     let _ = self
                                         .runtime
                                         .notify("viu.keymap.changed".into(), json!(keymap));
@@ -463,7 +463,7 @@ impl Host {
                             if let Ok(choice) = crate::native_theme::choice(&self.native_choice) {
                                 if let Ok((base, _)) = crate::appearance::session_base(
                                     &snapshot,
-                                    &self.service,
+                                    &self.app,
                                     &self.file_theme,
                                     &self.last_ui,
                                 ) {
@@ -583,7 +583,7 @@ impl Host {
             if self.facilities.macros.is_some()
                 && toolkit::macros::show_app(
                     ui.ctx(),
-                    &self.service,
+                    &self.app,
                     self.model["macros_open"] == true,
                 )
             {
@@ -669,7 +669,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let declared = commands.iter().cloned().collect();
     let bus = Endpoint::start_described(
         service,
-        std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
+        bundle.manifest.bus_url(),
         commands
             .into_iter()
             .map(|name| bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false))
@@ -703,13 +703,13 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         overlays: Default::default(),
         focus_serial: Value::Null,
         facilities,
-        service: bundle.manifest.service.clone(),
+        app: bundle.manifest.app().to_owned(),
         file_theme: toolkit::Theme::load(),
         last_ui: settings::model::CommonUi::default(),
         session_dirty: false,
         session: bundle.manifest.frame.as_ref().map(|_| {
             crate::session::Session::embedded(
-                &bundle.manifest.service,
+                bundle.manifest.app(),
                 &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_| "default".into()),
                 wake.clone(),
                 bus.backend(),
@@ -757,16 +757,20 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         eprintln!("usage: viu run APP_DIR [ARGS]");
         std::process::exit(2);
     }
-    let bundle = Bundle::load(std::path::Path::new(&args[1]), &args[2..]).unwrap_or_else(|e| {
-        eprintln!("viu: {e}");
-        std::process::exit(2)
-    });
-    let mut logging_args: Vec<String> = std::env::args().collect();
-    let _logging = toolkit::debug::init(&bundle.manifest.service, "warn", &mut logging_args)
-        .unwrap_or_else(|error| {
-            eprintln!("viu logging: {error}");
-            std::process::exit(2)
-        });
+    let root=std::path::Path::new(&args[1]);
+    let preview=Bundle::load(root,&[]).unwrap_or_else(|e|{eprintln!("viu: {e}");std::process::exit(2)});
+    let mut logging_args=std::iter::once("viu".to_owned()).chain(args.iter().cloned()).collect::<Vec<_>>();
+    let _logging=toolkit::debug::init(preview.manifest.app(),"warn",&mut logging_args).unwrap_or_else(|e|{eprintln!("viu logging: {e}");std::process::exit(2)});
+    if matches!(logging_args.get(3).map(String::as_str),Some("--help"|"-h")) {
+        println!("Usage: viu run APP_DIR [--service NAME] [--comp NAME] [--noded-url URL] [APP_ARGS]");
+        println!("{}",toolkit::debug::HELP);
+        return Ok(());
+    }
+    if logging_args.get(3).map(String::as_str)==Some("--version") {
+        println!("{} {} (generic viu)",preview.manifest.app(),env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    let bundle=crate::launch::load(root,&logging_args[3..]).unwrap_or_else(|e|{eprintln!("viu: {e}");std::process::exit(2)});
     if bundle.manifest.surface == "background" {
         let mut options = crate::layer::LayerOptions::background(&bundle.manifest.service);
         options.exclusive_zone = 0;
@@ -786,7 +790,7 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         match crate::native_bus::activate_existing(
             &bundle.manifest.service,
             command,
-            &std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
+            &bundle.manifest.bus_url(),
         ) {
             Ok(true) => return Ok(()),
             Ok(false) => {}

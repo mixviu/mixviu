@@ -3,7 +3,7 @@ $wire=require("wire.mix")
 $commands=require("actions.mix")
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
--- lint: globals app_args
+-- lint: globals app_args app_launch
 $history=require("history.mix")
 $performance=require("performance.mix")
 $core=require("core.mix");$state=$core.initial();$ctx=viu_context()
@@ -261,7 +261,7 @@ on monitor.quit
   $state.quitting=true;reply(0,json_encode({quitting:true}))
 end
 on monitor.show
-  $comp=env("MIXOS_COMP_SERVICE","comp")
+  $comp=$app_launch.comp ?? env("MIXOS_COMP_SERVICE","comp")
   send $comp "comp.window.wait" body={match:{app_id:"dev.mixos.monitor"},until:"mapped",timeout_ms:10000}
   if $rc!=0 then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
   send $comp "comp.windows.list" body={}

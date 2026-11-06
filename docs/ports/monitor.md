@@ -31,9 +31,12 @@ title painting); their implementations are unchanged.
 
 ## Bus and launch contract
 
-Run `viu run apps/monitor [--node NAME]`. The generic host's environment and
-manifest select its native Bus/compositor connection; no Monitor Rust host is
-used. Gold's app ID is `dev.mixos.monitor`, service `monitor`, native window
+Run `viu run apps/monitor [--node NAME] [--service NAME] [--comp NAME]
+[--noded-url URL] [--debug[=LEVEL]]`. Common native flags are consumed by the
+generic host; Monitor receives its node argument. Registration overrides keep
+the canonical Monitor command, Prefs, macro and diagnostic identity. The host
+also supplies help/version and environment/manifest defaults. No Monitor Rust
+host is used. Gold's app ID is `dev.mixos.monitor`, service `monitor`, native window
 title `Monitor`; the client header includes the watched host. A second launch
 activates the existing instance. Framing, native input, capture, macro and
 diagnostic commands are generic opt-in host facilities.
