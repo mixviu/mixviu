@@ -76,14 +76,22 @@ fn recent($state,$limit)
     if $file.found then
       for $line in reverse(split($file.text,"\n"))
         try
-          $shot=json_parse($line)
-          if type($shot.path)=="string" and is_file($shot.path) and not any($records,fn($r)=$r.path==$shot.path) then push($records,$shot) end
+          $shot=ledger_shot(json_parse($line))
+          if is_file($shot.path) and not any($records,fn($r)=$r.path==$shot.path) then push($records,$shot) end
         catch $m end
         if len($records)>=$limit then break end
       end
     end
   catch $m end
   return $records
+end
+fn ledger_shot($shot)
+  if type($shot)!="map" or type($shot.path)!="string" or type($shot.saved_at)!="string" or type($shot.annotated)!="bool" then raise("LEDGER","malformed saved shot") end
+  for $key in ["width","height"]
+    $n=$shot[$key]
+    if type($n)!="number" or $n<0 or $n>4294967295 or floor($n)!=$n then raise("LEDGER","malformed saved dimensions") end
+  end
+  return {path:$shot.path,width:$shot.width,height:$shot.height,annotated:$shot.annotated,saved_at:$shot.saved_at}
 end
 fn append_saved($state,$saved)
   secure_directory($state)
@@ -97,8 +105,8 @@ fn append_saved($state,$saved)
       $lines=[];$bytes=0
       for $line in reverse(split(trim($text),"\n"))
         try
-          $shot=json_parse($line)
-          if type($shot.path)!="string" then continue end
+          $shot=ledger_shot(json_parse($line))
+          $line=json_encode($shot)
           $bytes=$bytes+byte_length($line)+1
           if len($lines)>=500 or $bytes>262144 then break end
           push($lines,$line)

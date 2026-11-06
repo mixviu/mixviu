@@ -25,6 +25,7 @@ fn screenshot_mix_controller_mounts_and_keeps_read_surfaces_available() {
         ],
     )
     .unwrap();
+    assert!(bundle.manifest.native_debug);
     let (tx, rx) = mpsc::channel();
     let mut runtime = Runtime::new(
         8,

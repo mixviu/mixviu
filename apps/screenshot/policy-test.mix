@@ -6,6 +6,7 @@ $core=require("core.mix")
 $model=require("model.mix")
 $cli=require("launch-core.mix")
 $journal=require("journal.mix")
+$storage=require("storage.mix")
 $tmp=path_join("/var/tmp","screenshot-policy-"..uuid())
 try
   if $cli.service_name("comp",false)!="screenshot" or $cli.service_name("comp-nested",true)!="screenshot-headless-comp-nested" then raise("LAUNCH","per-compositor namespace differs") end
@@ -21,6 +22,12 @@ try
   $large=$journal.bounded(repeat("x",4097))
   if $large.bytes!=4099 or len($large.sha256)!=64 then raise("JOURNAL","large action payload was not bounded") end
   $view=$model.render($s)
+  $shot={path:"/tmp/a.png",width:0,height:4294967295,annotated:false,saved_at:"",ignored:1}
+  if len(keys($storage.ledger_shot($shot)))!=5 then raise("LEDGER","unknown fields must be removed like gold's Saved type") end
+  for $bad in [merge($shot,{width:"320"}),merge($shot,{height:-1}),merge($shot,{width:1.5}),merge($shot,{height:4294967296}),merge($shot,{annotated:1}),merge($shot,{saved_at:nil})]
+    $refused=false;try $storage.ledger_shot($bad) catch $m $refused=true end
+    if not $refused then raise("LEDGER","malformed saved shot accepted") end
+  end
   if $view.values.preview.colour!="design.canvas" then raise("PREFS","canvas must follow the live design") end
   if $registry.entry($s,"capture.mode.region").checked!=true then raise("REGISTRY","gold starts in region mode") end
   if $registry.entry($s,"file.save").enabled!=false then raise("REGISTRY","empty document cannot save") end
