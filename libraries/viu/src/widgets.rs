@@ -10,6 +10,7 @@ pub const KINDS: &[&str] = &[
     "button",
     "field",
     "multiline",
+    "editor",
     "checkbox",
     "toggle",
     "radio",
@@ -166,6 +167,7 @@ impl Widget {
             "colour" => value.as_array().is_some_and(|v| {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
+            "editor" => value.as_str().is_some_and(|v| v.len() <= 65536),
             _ => value.as_str().is_some_and(|v| v.len() <= 4096),
         };
         if valid {
@@ -203,7 +205,7 @@ impl Widget {
         {
             actions.push("activate");
         }
-        if ["field", "multiline"].contains(&self.kind.as_str()) {
+        if ["field", "multiline", "editor"].contains(&self.kind.as_str()) {
             actions.push("submit");
             if self.properties["cancel_on_escape"] == true {
                 actions.push("cancel");
@@ -227,7 +229,7 @@ impl Widget {
         if !self.actions().contains(&action) {
             return Err("unsupported widget action".into());
         }
-        if matches!(self.kind.as_str(), "field" | "multiline")
+        if matches!(self.kind.as_str(), "field" | "multiline" | "editor")
             && action == "cancel"
             && !value.is_null()
         {
@@ -278,7 +280,7 @@ impl Widget {
             return Err("invalid widget definition".into());
         }
         self.validate(self.value(model))?;
-        if ["field", "multiline"].contains(&self.kind.as_str())
+        if ["field", "multiline", "editor"].contains(&self.kind.as_str())
             && ["cancel_on_escape", "notify_blur"]
                 .iter()
                 .any(|key| self.properties.get(*key).is_some_and(|v| !v.is_boolean()))
@@ -498,7 +500,7 @@ impl Widgets {
                 }
                 r
             }
-            "field" | "multiline" => {
+            "field" | "multiline" | "editor" => {
                 let mut text = value.as_str().unwrap_or_default().to_owned();
                 if self.focus.as_deref() == Some(id) {
                     if let Some(range) = &mut self.focus_selection {
@@ -509,6 +511,8 @@ impl Widgets {
                 }
                 let edit = if widget.kind == "field" {
                     egui::TextEdit::singleline(&mut text)
+                } else if widget.kind == "editor" {
+                    egui::TextEdit::multiline(&mut text).code_editor().desired_rows(24).char_limit(16384)
                 } else {
                     egui::TextEdit::multiline(&mut text).desired_rows(1)
                 };

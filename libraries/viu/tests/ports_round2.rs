@@ -17,7 +17,7 @@ fn done(runtime: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
 #[test]
 fn round_two_bundles_publish_and_draw_through_the_real_embedded_interpreter() {
     let scratch = tempfile::tempdir().unwrap();
-    for name in ["screenshot", "prefs"] {
+    for name in ["screenshot", "prefs", "ced"] {
         let args = if name == "screenshot" {
             vec![
                 "comp".into(),
@@ -62,6 +62,15 @@ fn round_two_bundles_publish_and_draw_through_the_real_embedded_interpreter() {
         .drop_without_applying_deltas();
         assert!(!view.geometry.is_empty());
     }
+}
+#[test]
+fn editor_is_reusable_and_does_not_relax_existing_text_controls() {
+    let editor = viu::widgets::Widget::new("notes", "editor", "", json!(""));
+    assert!(editor.validate(&json!("🦀".repeat(16384))).is_ok());
+    assert!(editor.validate(&json!("x".repeat(65537))).is_err());
+    assert!(editor.validate(&json!(false)).is_err());
+    let field = viu::widgets::Widget::new("path", "field", "", json!(""));
+    assert!(field.validate(&json!("x".repeat(4097))).is_err());
 }
 #[test]
 fn shared_image_export_is_bounded_and_never_overwrites() {

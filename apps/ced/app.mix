@@ -1,0 +1,92 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- lint: globals app_args
+$ctx=viu_context()
+$state={tabs:[],active:0,busy:false,serial:0,status:"Open a UTF-8 document · explicit Apply draft",path:"",pending:nil}
+fn current($s)
+  if len($s.tabs)==0 then raise("EMPTY","Open a document first") end
+  return $s.tabs[$s.active]
+end
+fn clean_draft($s)
+  if len($s.tabs)>0 and current($s).draft!=current($s).text then raise("DRAFT","Apply or explicitly discard the draft first") end
+end
+fn publish_ced($s)
+  $t=if len($s.tabs)>0 then current($s) else {draft:"",path:"No document",rev:nil} end
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:{status:$s.status,document:$t.path.." · rev "..to_string($t.rev),tabs:{id:"tabs",kind:"combo",label:"Documents",initial:if len($s.tabs)>0 then to_string($s.active) else "none" end,properties:{choices:if len($s.tabs)>0 then map(range(0,len($s.tabs)-1),fn($i)=to_string($i)) else ["none"] end}},values:{editor:$t.draft,path:$s.path}}}
+end
+fn start_ced($s,$op,$payload)
+  if $s.busy then raise("BUSY","An edit operation is pending") end
+  $s.serial=$s.serial+1;$s.busy=true;$s.pending={op:$op,payload:$payload};$s.status="Working: "..$op
+  $p=path_join(dirname(script_path()),"job.mix")
+  send "viu-local" "jobs.start" id="ced-work" owner=$s.serial path=$p source=read_file($p) command="job.run" args={op:$op,payload:$payload}
+  if $rc!=0 then raise("JOB",to_string($result)) end
+  return $s
+end
+fn operation($s,$op,$a)
+  if $s.busy then raise("BUSY","An edit operation is pending") end
+  if $op=="open" then
+    clean_draft($s)
+    if type($a.path)!="string" or not starts_with($a.path,"/") then raise("PATH","Absolute path required") end
+    return start_ced($s,$op,{path:$a.path,create:$a.create ?? false})
+  end
+  $t=current($s)
+  if $op=="apply" then
+    return start_ced($s,$op,{buffer:$t.buffer,expect_rev:$t.rev,range:"all",text:$t.draft})
+  end
+  clean_draft($s)
+  if $op=="save" then
+    $p={buffer:$t.buffer,expect_rev:$t.rev}
+    if $a.path!=nil then $p.path=$a.path end
+    return start_ced($s,$op,$p)
+  end
+  if not contains(["undo","redo","reload","close","refresh"],$op) then raise("OP","Unknown edit operation") end
+  return start_ced($s,$op,{buffer:$t.buffer,expect_rev:$t.rev})
+end
+publish_ced($state)
+on ced.ping
+  reply(0,"{}")
+end
+on ced.info
+  reply(0,json_encode($state))
+end
+on ced.command
+  $state=operation($state,$event.args.op,$event.args);publish_ced($state);reply(0,json_encode({accepted:true}))
+end
+on ced.draft
+  if $state.busy then raise("BUSY","Wait for the pending operation") end
+  if type($event.args.text)!="string" or len($event.args.text)>65536 then raise("SIZE","Draft limited to 64 KiB") end
+  $t=current($state);$state.tabs[$state.active].draft=$event.args.text;publish_ced($state);reply(0,"{}")
+end
+on ced.intent
+  $a=$event.args
+  if $state.busy then raise("BUSY","Wait for the pending operation") end
+  if $a.id=="editor" then
+    $t=current($state);$state.tabs[$state.active].draft=$a.value
+  elif $a.id=="path" then $state.path=$a.value
+  elif $a.id=="tabs" then clean_draft($state);$state.active=to_number($a.value)
+  elif $a.id=="discard" then $t=current($state);$state.tabs[$state.active].draft=$t.text
+  else $state=operation($state,$a.id,{path:if $a.id=="open" then $state.path else nil end}) end
+  publish_ced($state);reply(0,"{}")
+end
+on viu.job.completed
+  $d=$event.args
+  if $state.busy and $d.tag.owner==$state.serial then
+    $state.busy=false
+    if $d.rc==0 then
+      if $state.pending.op=="close" then
+        $state.tabs=filter($state.tabs,fn($t)=$t.buffer!=$state.pending.payload.buffer);$state.active=0
+      else
+        $t=$d.body
+        if type($t.text)!="string" or len($t.text)>65536 or $t.truncated or $t.next!=nil then raise("SIZE","Partial snapshots cannot be edited") end
+        $t.draft=$t.text
+        $found=false
+        for $i=0 to len($state.tabs)-1
+          if $state.tabs[$i].buffer==$t.buffer then $state.tabs[$i]=$t;$state.active=$i;$found=true end
+        end
+        if not $found then $state.tabs=push($state.tabs,$t);$state.active=len($state.tabs)-1 end
+      end
+      $state.status="Completed: "..$state.pending.op
+    else $state.status="Failed; draft retained: "..json_encode($d.body) end
+    publish_ced($state)
+  end
+end
