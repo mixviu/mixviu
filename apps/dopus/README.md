@@ -33,7 +33,10 @@ attempts within a bounded startup window, then become idle until state changes.
 The canonical app commands remain `dopus.*`. `dopus.dialog` accepts the original
 open/answer writes and typed `dialog` envelope alongside the Viu form fields.
 An unacknowledged offer reports its effective client row honestly. The separate
-`dopus.dialog.answer` adds an explicit form-generation fence.
+`dopus.dialog.answer` adds an explicit form-generation fence. Window-local title-bar
+and caption-position choices are application-owned commands in both drivers;
+Auto resumes the desktop profile. Their effective metadata feeds the same
+shared framing, caption and native-host controls.
 
 `HELP`, `dopus.describe`, `dopus.actions` and `dopus.ui.tree` describe the actual
 Bus surface. Semantic intents use `dopus.intent`; native input uses the

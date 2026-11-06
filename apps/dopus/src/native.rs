@@ -286,8 +286,16 @@ impl Native {
                     .unwrap();
                 self.appearance_choice.get(key).is_none()
             }
-            id if id.starts_with("theme.decorations-") => self.window_choice["window.decorations"].as_str().unwrap_or("auto") == &id[18..],
-            id if id.starts_with("theme.captions-") => self.window_choice["window.caption_side"].as_str().unwrap_or("auto") == &id[15..],
+            id if id.starts_with("theme.decorations-") =>
+                self.window_choice["window.decorations"]
+                    .as_str()
+                    .unwrap_or("auto")
+                    == &id[18..],
+            id if id.starts_with("theme.captions-") =>
+                self.window_choice["window.caption_side"]
+                    .as_str()
+                    .unwrap_or("auto")
+                    == &id[15..],
             id if id.starts_with("theme.scheme-") =>
                 self.appearance_choice["scheme"].as_str() == Some(&id[13..]),
             id if id.starts_with("theme.style-") =>
@@ -479,8 +487,12 @@ impl Native {
                 self.appearance_choice.as_object_mut().unwrap().remove(key);
                 self.appearance[key] = self.appearance_session[key].clone();
             }
-            id if id.starts_with("theme.decorations-") => self.window_choice["window.decorations"] = json!(&id[18..]),
-            id if id.starts_with("theme.captions-") => self.window_choice["window.caption_side"] = json!(&id[15..]),
+            id if id.starts_with("theme.decorations-") => {
+                self.window_choice["window.decorations"] = json!(&id[18..])
+            }
+            id if id.starts_with("theme.captions-") => {
+                self.window_choice["window.caption_side"] = json!(&id[15..])
+            }
             "theme.mode-toggle" => {
                 self.appearance["mode"] = json!(if self.appearance["mode"] == "dark" {
                     "light"
@@ -1116,14 +1128,16 @@ impl Native {
         value
     }
     fn window_settings(&self) -> Value {
-        let mut settings=self.window.clone();
-        for (key,value) in self.window_choice.as_object().unwrap() {
-            if value!="auto" { settings[key]=value.clone(); }
+        let mut settings = self.window.clone();
+        for (key, value) in self.window_choice.as_object().unwrap() {
+            if value != "auto" {
+                settings[key] = value.clone();
+            }
         }
         settings
     }
     pub fn model(&self) -> Value {
-        let window=self.window_settings();
+        let window = self.window_settings();
         let side = |key: &str, fallback: &str| {
             window[key]
                 .as_str()
@@ -1140,8 +1154,7 @@ impl Native {
             },
         );
         let caption_side = side("window.caption_side", "right");
-        let compact =
-            [json!("button"), json!("titlebar")].contains(&window["window.menu_style"]);
+        let compact = [json!("button"), json!("titlebar")].contains(&window["window.menu_style"]);
         let mut header_groups = json!({"menu":{"preferred":if compact{36}else{180},"minimum":if compact{36}else{120},"align":side("window.menu_side","left"),"shrink":1,"order":0},"toolbar":{"preferred":280,"minimum":80,"align":side("window.actions_align","right"),"shrink":1,"order":2},"caption-title":{"preferred":"content","minimum":0,"align":title_align,"shrink":0,"order":1},"window":{"preferred":"window.captions","minimum":"window.captions","align":caption_side,"shrink":null,"order":3}});
         if window["viu.hosted-menu"] == true {
             header_groups["menu"]["preferred"] = json!(0);

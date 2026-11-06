@@ -71,8 +71,11 @@ impl App {
         self.view.is_some() && self.model["ready"] == true
     }
     fn window_settings(&self) -> Value {
-        self.model.get("window_settings").filter(|v|v.is_object()).cloned()
-            .unwrap_or_else(||self.session.snapshot["state"]["values"].clone())
+        self.model
+            .get("window_settings")
+            .filter(|v| v.is_object())
+            .cloned()
+            .unwrap_or_else(|| self.session.snapshot["state"]["values"].clone())
     }
     fn state(&self) -> Value {
         let geometry: BTreeMap<_, _> = self
@@ -423,8 +426,7 @@ impl App {
                 let _ = reply.send((0, viu::rich::menu_form(ctx)));
             }
             "dopus.ui.titlebar.form" => {
-                let eligible =
-                    viu::hosting::Hosting::eligible(&self.window_settings());
+                let eligible = viu::hosting::Hosting::eligible(&self.window_settings());
                 if eligible
                     && viu::hosting::Hosting::local_owner(
                         &headers,
@@ -868,9 +870,7 @@ impl App {
                     ]
                     .iter()
                     .any(|service| viu::hosting::Hosting::local_owner(&notice.headers, service))
-                        && viu::hosting::Hosting::host_available(
-                            &self.window_settings(),
-                        )
+                        && viu::hosting::Hosting::host_available(&self.window_settings())
                     {
                         self.hosting.confirmed = true;
                     }
