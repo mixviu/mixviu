@@ -349,3 +349,68 @@ exact-source full gate, remaining acceptance includes native search edits,
 drawers/menus/keyboard callbacks, populated Software/Email, macro mutations,
 topics/properties and CLI/single-instance behaviour. Baseline page acceptance
 does not claim those capabilities. No Fable deviation is proposed.
+
+## Prefs round four: live response accepted, native interactions progressing
+
+All **17/17 live Prefs variants** are accepted at tested source
+`d23465bbee2436cb538f116f0e146f2601cc8dc3`, candidate SHA256
+`fc09a098797c50a5d28c3c68f10419b500a8ee81f5b2b1f2c7d7155d2a88d8ec`.
+Pinned gold revision/hash and the isolated 1040×680, scale-1 native recipe
+remain as above. `prefs-parity-20261107/pair.UWEu2H/live-acceptance.json`
+records both source/binary identities, accepted revisions, unchanged PIDs,
+captures, regional figures, raw metrics, tool version and all seven stopped
+processes. The invalid tune request returns gold's exact validation refusal.
+
+Sixteen variants are pixel-identical in all regions. Spacious has only the
+inspected 16×13 Macros-icon anti-aliasing residue: full SSIM distortion
+0.0000928134, RMSE 0.00306816; header (0,0,1040,46) SSIM 0.00137202,
+RMSE 0.0117965; sidebar/content both zero. Native bounds differ by 1/32
+logical point. The parity method explicitly permits anti-aliasing/hinting;
+this is accepted on inspection, without an arbitrary metric threshold.
+Compact's correct header crop is (0,0,1040,33); all its metrics are zero.
+
+**Settings authority absence and recovery are pixel-identical**, including
+header, sidebar and content. Both preserve the accepted role/stale/revision,
+return the same valid queued-write reply, retain the error notice and settle
+the write after restart without restarting Prefs. Both original pairs and
+the new `acceptance-diff-authority-*` figures were inspected. The lost-session
+frame-retention repair is verified. No Fable deviation is proposed.
+
+Native search clicks now focus gold's field and editing the live Compact
+result settles in settingsd while the open page stays unchanged
+(`pair.zhBDtX`). A candidate-only debug-build “Unaligned” annotation was
+identified; normal native clients now suppress egui's development overlay,
+with geometry preserved. A fresh native interaction run is pending.
+
+All four native menu popups and the new-account form are now pixel-identical
+in `pair.eVIWoy`, tested `82a1c159f26b570cfc0db4a234c3f9a3ffbc85fc`, binary
+SHA256 `3fc976e5f76cf4d025e8f45993b1c685df6a7385d1e4940924180768aca892f7`.
+The original/side-by-side pairs were inspected. Live shortcut bindings use
+the native conflict resolver and menu formatter. Populated Software's five
+columns/release notes and Email's account pane now render through reusable
+widgets; their remaining viewport/separator differences are being closed.
+Successful release arrays had exposed a Mix scalar-field assumption; it is
+fixed. The private native release fixture is deterministic evidence, not a
+claim that the real service was tested (no releases binary is installed).
+
+A Mix launcher now provides page/row deep links, native Bus/service/compositor
+options and reuse of the existing window. The generic host keeps the app's
+command namespace separate from an overridden service identity. Native first
+and second launch checks remain pending. Macro mutation probes follow gold's
+per-app/global namespace rules; moving to global removes it from Prefs' own
+catalogue and belongs to Workshop thereafter.
+
+CBC `20261107-062527-a1aac21b-a1` passed 15 tests/build with formatting
+applied. `20261107-063252-b15af459-a1` caught a missing menu-helper argument;
+`20261107-063430-56c4de16-a1` caught an egui API call; both were fixed without
+test changes. `20261107-063654-21e3e59d-a1` and
+`20261107-064033-96555226-a1` passed all **17** focused tests/build, with
+formatting applied. Complete saved logs read. Repair job
+`20261107-064358-480a8017` tests code `5329cebc40d9a4eca47427dd4793e604b2ca025f`.
+
+Overall **OPEN**: fresh final baseline/gate, populated-service visuals and
+mutations, drawers/pickers, remaining native callbacks/topics and launcher
+acceptance. Baseline acceptance stays 42/42; the direct functional/refusal
+matrix stays 40/40 (only sequential accepted revisions are normalised after
+mutation witnesses). No inventory disagreement or proposed deviation blocks
+the work.
