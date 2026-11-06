@@ -410,6 +410,7 @@ impl Host {
                                 ) {
                                     if let Ok(theme) = base.with_choice(&choice) {
                                         let _ = crate::appearance::install_theme(ui.ctx(), &theme);
+                                        let _=self.runtime.notify("viu.theme.changed".into(),crate::native_theme::describe(&theme));
                                     }
                                 }
                             }

@@ -120,7 +120,11 @@ impl Widget {
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
         }
-        Ok(
+        let extra=if self.properties["role"]=="title" {
+            let c=toolkit::chrome::Chrome::of(ui.ctx());
+            2.0*c.metrics.title_gap+if c.band.title==design::TitleAlign::Auto {c.metrics.title_bar_margin}else{0.0}
+        }else{0.0};
+        Ok(extra+
             egui::WidgetText::from(label_text(ui, self, self.value(model)))
                 .into_galley(
                     ui,
@@ -704,7 +708,8 @@ impl Widgets {
                     );
                     let (rect, response) =
                         ui.allocate_exact_size(ui.available_size_before_wrap(), Sense::hover());
-                    let position = (rect.center() - galley.size() / 2.0)
+                    let margin=if toolkit::chrome::Chrome::of(ui.ctx()).band.title==design::TitleAlign::Auto {toolkit::chrome::Chrome::of(ui.ctx()).metrics.title_bar_margin/2.0}else{0.0};
+                    let position = (rect.center()+egui::vec2(margin,0.0) - galley.size() / 2.0)
                         .round_to_pixels(ui.pixels_per_point());
                     ui.painter().galley(
                         position,

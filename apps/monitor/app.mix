@@ -266,6 +266,9 @@ end
 on viu.macros.changed
   $state.macros_open=$event.args.open;publish_monitor($state)
 end
+on viu.theme.changed
+  $state.theme_effective=$event.args;publish_monitor($state)
+end
 on monitor.dialog.intent
   if $event.args.value.instance==$state.dialog then $state.dialog=nil;publish_monitor($state) end
 end
