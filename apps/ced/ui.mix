@@ -39,6 +39,7 @@ fn ced_ui_model($s,$model)
   end
   $model.tabs={id:"tabs",kind:"document-tabs",label:"Documents",initial:{items:$items,selected:to_string($s.active)}}
   $model.find_open=$s.find.open;$model.values["find-bar"]=merge($s.find,{instance:$s.find_instance ?? 0})
+  $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Save changes?",body:"Save this document before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
   $model.values["save-dialog"]=ui_form($s.save_dialog,"Save As","File path",$s.save_path ?? ($t.path ?? ""),$s.dialog_instance ?? 0)
   $model.values["goto-dialog"]=ui_form($s.goto_dialog,"Go to Line","Line[:column]",$s.goto_text ?? "",$s.dialog_instance ?? 0)
   $body=if $s.help=="keys" then join(map(action_rows($s),fn($a)=$a.label.."    "..join($a.keys," / ")),"\n") elif $s.help=="about" then "MixOS Editor\nAn editor over the edit Bus service.\nMixOS 0.1.2" else "" end
@@ -69,7 +70,13 @@ fn ced_ui_model($s,$model)
   return $model
 end
 fn ced_ui_intent($s,$a)
-  if $a.id=="find-bar" then
+  if $a.id=="close-dialog" then
+    $i=tab_index($s,{tab:to_number($s.close_dialog)});$s.close_dialog=nil
+    if $i>=0 and $a.value.choice!="cancel" then
+      $s.active=$i
+      $s=do_action($s,"file.close",if $a.value.choice=="save" then {save:true} else {force:true} end).state
+    end
+  elif $a.id=="find-bar" then
     if $a.action=="edit" then $s.find=$a.value
     elif $a.action=="close" then $s.find.open=false
     else $id=if $a.action=="next" then "search.find_next" elif $a.action=="prev" then "search.find_prev" elif $a.action=="replace-all" then "search.replace_all" else "search.replace" end;$s=do_action($s,$id,$s.find).state end

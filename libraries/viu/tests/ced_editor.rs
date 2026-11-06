@@ -49,7 +49,7 @@ fn done(runtime: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
 }
 
 #[test]
-fn ced_retains_independent_tab_drafts_and_refuses_dirty_caption_close() {
+fn ced_retains_independent_tab_drafts_and_preserves_recoverable_text_on_caption_close() {
     let mut bundle = Bundle::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/ced"),
         &[],
@@ -135,7 +135,8 @@ publish_ced($state)
     );
     runtime.event("viu.frame.close".into(), json!({})).unwrap();
     let refused = done(&runtime, &rx);
-    assert!(refused.error.is_some(), "{refused:?}");
+    assert!(refused.error.is_none(), "{refused:?}");
+    assert_eq!(docs.call("read", "one", json!({})).unwrap()["text"], "unsaved λ");
     runtime
         .event(
             "viu.frame.intent".into(),
