@@ -125,7 +125,8 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
         ui.available_size_before_wrap(),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
-            if compact {
+            ui.spacing_mut().item_spacing.x=0.0;
+        if compact {
                 let response = ui.add(toolkit::button::IconButton::new(
                     crate::icons::Icon::from_name("menu").unwrap(),
                 ));

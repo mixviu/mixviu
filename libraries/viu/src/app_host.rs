@@ -504,6 +504,7 @@ impl Host {
             }
         }
         if self.ready {
+            if let Some(mode)=self.model["local_mode"].as_str() {if let Err(error)=crate::appearance::local_mode(ui.ctx(),mode) {self.error=error;}}
             let reload=self.model["settings_reload"].as_u64().unwrap_or(0);
             if reload!=self.settings_reload {self.settings_reload=reload;self.file_theme=toolkit::Theme::load();if let Some(session)=&mut self.session {session.hint("theme.changed",&json!({}));}ui.ctx().request_repaint();}
             if let Some(bindings) = self.model["shortcuts"]

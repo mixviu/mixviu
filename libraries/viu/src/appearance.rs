@@ -53,6 +53,7 @@ pub fn install_session(
         toolkit::session_look::ui(&look, Some(app))
     };
     toolkit::install(ctx, &theme);
+    ctx.data_mut(|d|d.insert_temp(egui::Id::unique("viu-resolved-theme"),theme.clone()));
     let editor_palette = editor::Palette::from_theme(&theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();
@@ -87,6 +88,24 @@ pub fn install_session(
         chrome.style.icon_mask.0,
     );
     Ok(ui)
+}
+
+/// A window choice overlays the live session theme, as in gold clients.
+pub fn local_mode(ctx: &egui::Context, name: &str) -> Result<(), String> {
+    let mode=match name {"dark"=>design::Mode::Dark,"light"=>design::Mode::Light,_=>return Err("invalid local mode".into())};
+    let theme=ctx.data(|d|d.get_temp::<toolkit::Theme>(egui::Id::unique("viu-resolved-theme"))).unwrap_or_else(toolkit::Theme::load);
+    if theme.mode()==mode {return Ok(());}
+    let theme=theme.with_choice(&toolkit::theme::Choice{mode:Some(mode),..Default::default()}).map_err(|e|e.to_string())?;
+    toolkit::install(ctx,&theme);
+    let palette=editor::Palette::from_theme(&theme);
+    let chrome=toolkit::chrome::Chrome::of(ctx);
+    let colours=resolve(&serde_json::json!({}))?.colours.keys().filter_map(|role|chrome.palette.get(role).map(|c|(role.clone(),c))).collect::<std::collections::BTreeMap<_,_>>();
+    ctx.data_mut(|d|{
+        d.insert_temp(egui::Id::unique("viu-resolved-theme"),theme);
+        d.insert_temp(egui::Id::unique("viu-gold-editor-palette"),palette);
+        d.insert_temp(egui::Id::unique("viu-design-colours"),std::sync::Arc::new(colours));
+    });
+    Ok(())
 }
 pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {
     let mut style = egui::Style::default();

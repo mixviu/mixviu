@@ -38,6 +38,7 @@ fn ced_ui_model($s,$model)
     push($items,{id:to_string($i),name:basename($tab.path ?? "untitled-"..$tab.document),title:$tab.path ?? "untitled-"..$tab.document,meta:$tab.language,dirty:$tab.dirty,opening:$tab.phase=="bootstrapping"})
   end
   $model.tabs={id:"tabs",kind:"document-tabs",label:"Documents",initial:{items:$items,selected:to_string($s.active)}}
+  $model.local_mode=$s.local_mode
   $model.settings_reload=$s.settings_reload ?? 0
   $model.find_open=$s.find.open;$model.values["find-bar"]=merge($s.find,{instance:$s.find_instance ?? 0})
   $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Save changes?",body:"Save this document before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
