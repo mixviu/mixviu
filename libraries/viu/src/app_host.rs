@@ -145,11 +145,13 @@ impl Host {
                 }
             }
             _ => {
-                r.headers.insert("from".into(),r.from);
-                let before=self.runtime.sequence();
+                r.headers.insert("from".into(), r.from);
+                let before = self.runtime.sequence();
                 self.dispatch(r.command, r.args, r.headers, Some(r.reply));
-                let after=self.runtime.sequence();
-                if after!=before {self.retained.insert(after,r.deferred);}
+                let after = self.runtime.sequence();
+                if after != before {
+                    self.retained.insert(after, r.deferred);
+                }
             }
         }
     }
@@ -168,9 +170,16 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
-        let gone:Vec<_>=self.pending.iter().filter_map(|(seq,reply)|reply.is_closed().then_some(*seq)).collect();
+        let gone: Vec<_> = self
+            .pending
+            .iter()
+            .filter_map(|(seq, reply)| reply.is_closed().then_some(*seq))
+            .collect();
         for seq in gone {
-            if self.runtime.forget_reply(seq).is_ok() {self.pending.remove(&seq);self.retained.remove(&seq);}
+            if self.runtime.forget_reply(seq).is_ok() {
+                self.pending.remove(&seq);
+                self.retained.remove(&seq);
+            }
         }
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
@@ -210,7 +219,9 @@ impl Host {
         }
         while let Some(done) = self.runtime.try_completion() {
             self.inflight.remove(&done.sequence);
-            if !self.runtime.accepts(&done) {continue;}
+            if !self.runtime.accepts(&done) {
+                continue;
+            }
             self.error = done.error.unwrap_or_default();
             if self.error.is_empty() {
                 if let Some(model) = done.model {
@@ -260,7 +271,9 @@ impl Host {
                 }
             }
             if done.deferred && self.error.is_empty() {
-                if let Some(kept)=self.retained.get(&done.sequence) {kept.store(true,std::sync::atomic::Ordering::Release);}
+                if let Some(kept) = self.retained.get(&done.sequence) {
+                    kept.store(true, std::sync::atomic::Ordering::Release);
+                }
             } else if let Some(reply) = self.pending.remove(&done.sequence) {
                 self.retained.remove(&done.sequence);
                 let answer = if !self.error.is_empty() {
@@ -272,15 +285,21 @@ impl Host {
                 };
                 let _ = reply.send(answer);
             }
-            for (sequence,answer) in done.answers {
+            for (sequence, answer) in done.answers {
                 self.retained.remove(&sequence);
-                if let Some(reply)=self.pending.remove(&sequence) {
-                    let _=reply.send(if self.error.is_empty() {(answer.rc,answer.body)}else{(10,json!({"error":self.error}))});
+                if let Some(reply) = self.pending.remove(&sequence) {
+                    let _ = reply.send(if self.error.is_empty() {
+                        (answer.rc, answer.body)
+                    } else {
+                        (10, json!({"error":self.error}))
+                    });
                 }
             }
             if !done.behaviour_available {
                 self.retained.clear();
-                for (_,reply) in std::mem::take(&mut self.pending) {let _=reply.send((20,json!({"error_code":"OWNER_CLOSED"})));}
+                for (_, reply) in std::mem::take(&mut self.pending) {
+                    let _ = reply.send((20, json!({"error_code":"OWNER_CLOSED"})));
+                }
             }
         }
         for _ in 0..32 {

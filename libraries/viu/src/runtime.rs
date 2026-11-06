@@ -362,11 +362,13 @@ impl Runtime {
     pub fn generation(&self) -> u64 {
         self.generation
     }
-    pub fn sequence(&self) -> u64 {self.sequence}
+    pub fn sequence(&self) -> u64 {
+        self.sequence
+    }
     /// Retire a caller whose native response receiver has gone away.
     /// On a full mailbox the owner must retry; no reply handle is reused.
     pub fn forget_reply(&self, sequence: u64) -> Result<(), Refusal> {
-        self.enqueue(Request::Forget(self.generation,sequence))
+        self.enqueue(Request::Forget(self.generation, sequence))
     }
     pub fn try_completion(&self) -> Option<Completion> {
         self.rx.as_ref()?.try_recv().ok()
@@ -426,37 +428,72 @@ struct Local {
     reply: RefCell<Option<Reply>>,
     backend: Option<Rc<dyn BusHandler>>,
     identity: u64,
-    requests: RefCell<BTreeMap<String,(u64,String)>>,
-    active: RefCell<Option<(u64,String)>>,
+    requests: RefCell<BTreeMap<String, (u64, String)>>,
+    active: RefCell<Option<(u64, String)>>,
     deferred: Cell<bool>,
-    answers: RefCell<Vec<(u64,Reply)>>,
+    answers: RefCell<Vec<(u64, Reply)>>,
 }
-static NEXT_RUNTIME: std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(1);
+static NEXT_RUNTIME: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 impl Local {
-    fn reply_handle(&self,args:Vec<Value>)->MixResult<Value> {
-        let values=args.iter().map(to_json).collect::<MixResult<Vec<_>>>()?;
+    fn reply_handle(&self, args: Vec<Value>) -> MixResult<Value> {
+        let values = args.iter().map(to_json).collect::<MixResult<Vec<_>>>()?;
         match values.as_slice() {
-            [op] if op=="keep" => {
-                if self.reply.borrow().is_some() || self.deferred.get() {return Err(failure("request already answered or retained"));}
-                let (sequence,caller)=self.active.borrow().clone().ok_or_else(||failure("only a request can be retained"))?;
-                if self.requests.borrow().len()>=32 {return Err(failure("deferred reply capacity exceeded"));}
-                let handle=format!("{}:{}:{}",self.identity,self.generation,sequence);
-                self.requests.borrow_mut().insert(handle.clone(),(sequence,caller.clone()));
+            [op] if op == "keep" => {
+                if self.reply.borrow().is_some() || self.deferred.get() {
+                    return Err(failure("request already answered or retained"));
+                }
+                let (sequence, caller) = self
+                    .active
+                    .borrow()
+                    .clone()
+                    .ok_or_else(|| failure("only a request can be retained"))?;
+                if self.requests.borrow().len() >= 32 {
+                    return Err(failure("deferred reply capacity exceeded"));
+                }
+                let handle = format!("{}:{}:{}", self.identity, self.generation, sequence);
+                self.requests
+                    .borrow_mut()
+                    .insert(handle.clone(), (sequence, caller.clone()));
                 self.deferred.set(true);
                 from_json(json!({"handle":handle,"request":sequence,"caller":caller}))
             }
-            [op,handle,rc,body] if op=="send" => {
-                let token=handle["handle"].as_str().ok_or_else(||failure("invalid reply handle"))?;
-                let rc=rc.as_u64().filter(|r|*r<=255).ok_or_else(||failure("reply code must be 0..255"))? as u8;
-                let mut requests=self.requests.borrow_mut();
-                let (sequence,caller)=requests.get(token).ok_or_else(||failure("stale or consumed reply handle"))?;
-                if handle["request"].as_u64()!=Some(*sequence) || handle["caller"].as_str()!=Some(caller.as_str()) {return Err(failure("reply handle identity mismatch"));}
-                if self.active.borrow().as_ref().is_some_and(|r|r.0==*sequence) {return Err(failure("retained reply requires a later callback"));}
-                self.answers.borrow_mut().push((*sequence,Reply{rc,body:body.clone()}));
+            [op, handle, rc, body] if op == "send" => {
+                let token = handle["handle"]
+                    .as_str()
+                    .ok_or_else(|| failure("invalid reply handle"))?;
+                let rc = rc
+                    .as_u64()
+                    .filter(|r| *r <= 255)
+                    .ok_or_else(|| failure("reply code must be 0..255"))?
+                    as u8;
+                let mut requests = self.requests.borrow_mut();
+                let (sequence, caller) = requests
+                    .get(token)
+                    .ok_or_else(|| failure("stale or consumed reply handle"))?;
+                if handle["request"].as_u64() != Some(*sequence)
+                    || handle["caller"].as_str() != Some(caller.as_str())
+                {
+                    return Err(failure("reply handle identity mismatch"));
+                }
+                if self
+                    .active
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|r| r.0 == *sequence)
+                {
+                    return Err(failure("retained reply requires a later callback"));
+                }
+                self.answers.borrow_mut().push((
+                    *sequence,
+                    Reply {
+                        rc,
+                        body: body.clone(),
+                    },
+                ));
                 requests.remove(token);
                 from_json(json!({"answered":true}))
             }
-            _=>Err(failure("viu_reply expects keep, or send/handle/rc/body"))
+            _ => Err(failure("viu_reply expects keep, or send/handle/rc/body")),
         }
     }
 }
