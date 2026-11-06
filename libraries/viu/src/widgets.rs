@@ -1207,6 +1207,10 @@ impl Widgets {
             }
             "swatches" => {
                 ui.horizontal(|ui| {
+                    use egui::emath::GuiRounding;
+                    // Native allocations round each item. Round this nested
+                    // row's spacing too, including its trailing inset.
+                    ui.spacing_mut().item_spacing = ui.spacing().item_spacing.round_ui();
                     for item in widget.properties["items"].as_array().unwrap() {
                         let selected = item["colour"] == *value;
                         let (rect, response) =

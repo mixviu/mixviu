@@ -3,6 +3,7 @@
 //! leaves and legacy text/button/field/toggle use the shared widget dispatch.
 use crate::templates::{PreparedLists, children, rows, text, validate_templates};
 use crate::widgets::{Intent, Widget, Widgets};
+use egui::emath::GuiRounding;
 use egui::{Color32, Sense, Vec2};
 use scene::{Node, ResolvedScene};
 use serde_json::{Value, json};
@@ -910,6 +911,16 @@ impl SceneView {
                     rect.min.y = rect.max.y - size;
                     remaining.max.y = rect.min.y;
                 }
+                _ => {}
+            }
+            // Native panels round their outer bounds before placing contents.
+            // Keep the neighbouring scene regions on the same layout grid.
+            rect = rect.round_ui();
+            match edge {
+                "left" => remaining.min.x = rect.max.x,
+                "right" => remaining.max.x = rect.min.x,
+                "top" => remaining.min.y = rect.max.y,
+                "bottom" => remaining.max.y = rect.min.y,
                 _ => {}
             }
             self.child_rect(ui, child, rect, nodes, route, depth, events);
