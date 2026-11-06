@@ -155,7 +155,9 @@ pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, S
     // Editor highlighting resolves semantic primitives (success, warning,
     // accent hover) as well as chrome roles, just like the gold toolkit.
     for (name, value) in &dictionary.colours.primitives {
-        colours.entry(name.clone()).or_insert_with(|| colour(*value));
+        colours
+            .entry(name.clone())
+            .or_insert_with(|| colour(*value));
     }
     if tokens.widgets == Widgets::Chrome {
         if let Some(chrome) = &dictionary.chrome {

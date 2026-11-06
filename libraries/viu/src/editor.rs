@@ -99,7 +99,12 @@ impl Editors {
             };
         }
         let mut view = editor::View {
-            font_size: Some(widget.properties["font_size"].as_f64().map(|v| v as f32).unwrap_or_else(|| TextStyle::Monospace.resolve(ui.style()).size)),
+            font_size: Some(
+                widget.properties["font_size"]
+                    .as_f64()
+                    .map(|v| v as f32)
+                    .unwrap_or_else(|| TextStyle::Monospace.resolve(ui.style()).size),
+            ),
             wrap: if widget.properties["soft_wrap"] == true {
                 editor::Wrap::Words
             } else {
