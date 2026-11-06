@@ -18,20 +18,30 @@ pub struct Hosting {
 impl Hosting {
     /// Topic deliveries carry broker_service; local RPCs carry the broker's
     /// registered caller in from. Both require the broker's local origin.
-    pub fn local_owner(headers:&std::collections::BTreeMap<String,String>,expected:&str)->bool {
-        headers.get("broker_origin").map(String::as_str)==Some("local") && headers.get("broker_service").or_else(||headers.get("from")).map(String::as_str)==Some(expected)
+    pub fn local_owner(
+        headers: &std::collections::BTreeMap<String, String>,
+        expected: &str,
+    ) -> bool {
+        headers.get("broker_origin").map(String::as_str) == Some("local")
+            && headers
+                .get("broker_service")
+                .or_else(|| headers.get("from"))
+                .map(String::as_str)
+                == Some(expected)
     }
     pub fn eligible(settings: &Value) -> bool {
         Self::host_available(settings) && settings["window.actions_place"] == "titlebar"
     }
-    pub fn host_available(settings: &Value)->bool {
+    pub fn host_available(settings: &Value) -> bool {
         let requested = settings["window.decorations"]
             .as_str()
             .and_then(design::RequestedDecorations::from_name);
         design::decorations::resolve_with_actions(
             requested,
             design::RequestedDecorations::Auto,
-            design::ActionsPlace::resolve(settings["window.actions_place"].as_str().unwrap_or("row")),
+            design::ActionsPlace::resolve(
+                settings["window.actions_place"].as_str().unwrap_or("row"),
+            ),
         )
         .mode
             == design::Decorations::Server
@@ -85,7 +95,7 @@ impl Hosting {
                 )
                 .saturating_add(1);
             self.dirty = true;
-            self.probes=0;
+            self.probes = 0;
         }
         Ok(())
     }
@@ -104,26 +114,34 @@ impl Hosting {
         self.dirty = true;
         self.pending = false;
         self.retry = None;
-        self.offered=false;
-        self.probes=0;
+        self.offered = false;
+        self.probes = 0;
     }
     pub fn completed(&mut self, ok: bool) {
         self.pending = false;
         if !ok || !self.confirmed {
             self.dirty = true;
         }
-        let delays=[100,250,500,1000,2000,5000];
-        self.retry = Some(Instant::now() + Duration::from_millis(delays[self.probes.saturating_sub(1).min(5)]));
+        let delays = [100, 250, 500, 1000, 2000, 5000];
+        self.retry = Some(
+            Instant::now() + Duration::from_millis(delays[self.probes.saturating_sub(1).min(5)]),
+        );
     }
     pub fn poll(
         &mut self,
         ctx: &egui::Context,
         endpoint: &crate::native_bus::Endpoint,
         service: &str,
+        host: &str,
         eligible: bool,
     ) {
-        if eligible!=self.offered {self.offered=eligible;self.probes=0;self.dirty=true;self.retry=None;}
-        if !eligible || !self.dirty || self.pending || (!self.confirmed && self.probes>=6) {
+        if eligible != self.offered {
+            self.offered = eligible;
+            self.probes = 0;
+            self.dirty = true;
+            self.retry = None;
+        }
+        if !eligible || !self.dirty || self.pending || (!self.confirmed && self.probes >= 6) {
             return;
         }
         if let Some(at) = self.retry {
@@ -132,14 +150,15 @@ impl Hosting {
                 return;
             }
         }
-        match endpoint.hint(
+        match endpoint.hint_with_probe(
             format!("{service}.ui.titlebar.changed"),
             json!({"revision":self.revision}),
+            host.into(),
         ) {
             Ok(()) => {
                 self.dirty = false;
                 self.pending = true;
-                self.probes+=1;
+                self.probes += 1;
             }
             Err(_) => {
                 self.retry = Some(Instant::now() + Duration::from_millis(100));
@@ -172,13 +191,27 @@ pub fn popup_target<'a>(toolbar: &'a Value, command: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]fn hosting_acknowledgement_uses_only_the_native_broker_owner_stamp(){
-        let mut headers=std::collections::BTreeMap::from([("from".into(),"shell@example.invalid".into()),("broker_service".into(),"shell".into()),("broker_origin".into(),"local".into())]);
-        assert!(Hosting::local_owner(&headers,"shell"));assert!(!Hosting::local_owner(&headers,"comp"));
-        headers.insert("broker_origin".into(),"mesh".into());assert!(!Hosting::local_owner(&headers,"shell"));
-        headers.remove("broker_origin");assert!(!Hosting::local_owner(&headers,"shell"));
-        let rpc=std::collections::BTreeMap::from([("from".into(),"shell".into()),("broker_origin".into(),"local".into())]);assert!(Hosting::local_owner(&rpc,"shell"));
-        let mut qualified=rpc.clone();qualified.insert("from".into(),"shell@example.invalid".into());assert!(!Hosting::local_owner(&qualified,"shell"));
+    #[test]
+    fn hosting_acknowledgement_uses_only_the_native_broker_owner_stamp() {
+        let mut headers = std::collections::BTreeMap::from([
+            ("from".into(), "shell@example.invalid".into()),
+            ("broker_service".into(), "shell".into()),
+            ("broker_origin".into(), "local".into()),
+        ]);
+        assert!(Hosting::local_owner(&headers, "shell"));
+        assert!(!Hosting::local_owner(&headers, "comp"));
+        headers.insert("broker_origin".into(), "mesh".into());
+        assert!(!Hosting::local_owner(&headers, "shell"));
+        headers.remove("broker_origin");
+        assert!(!Hosting::local_owner(&headers, "shell"));
+        let rpc = std::collections::BTreeMap::from([
+            ("from".into(), "shell".into()),
+            ("broker_origin".into(), "local".into()),
+        ]);
+        assert!(Hosting::local_owner(&rpc, "shell"));
+        let mut qualified = rpc.clone();
+        qualified.insert("from".into(), "shell@example.invalid".into());
+        assert!(!Hosting::local_owner(&qualified, "shell"));
     }
     #[test]
     fn native_bar_preserves_leaf_identity_and_bounds_popup_codec() {

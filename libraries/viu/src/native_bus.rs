@@ -35,6 +35,20 @@ pub struct Notice {
     pub headers: BTreeMap<String, String>,
 }
 type SharedClient = Arc<Mutex<Option<Arc<SupervisedClient>>>>;
+struct Hint {topic:String,body:Value,probe:Option<String>}
+type HintFuture=std::pin::Pin<Box<dyn std::future::Future<Output=(String,bool,bool)>+Send>>;
+
+async fn send_hint(native:Arc<SupervisedClient>,hint:Hint)->(String,bool,bool){
+    let mut frame=::bus::BusMessage::new();frame.set("command",&hint.topic);frame.body=hint.body.to_string();
+    let headers=BTreeMap::from([("name".into(),hint.topic.clone()),("retain".into(),"false".into())]);
+    let wire=frame.to_wire();
+    let result=native.call_with_headers_raw_within("noded","topic.publish",&headers,&wire,Duration::from_secs(2)).await;
+    // The existing host's ping wakes its window/decoration registry after an
+    // offered bar. Without this, a window mapped after the registry pass can
+    // remain absent from the host's initial titlebar subscription set.
+    let probe=if let Some(service)=hint.probe {matches!(native.call_with_headers_raw_within(&service,&format!("{service}.ping"),&BTreeMap::new(),"{}",Duration::from_secs(2)).await,Ok((0,_,_)))}else{true};
+    (hint.topic,matches!(result,Ok((0,_,_))),probe)
+}
 
 pub struct Endpoint {
     pub requests: mpsc::Receiver<Request>,
@@ -42,7 +56,7 @@ pub struct Endpoint {
     pub close_requested: Arc<AtomicBool>,
     pub dropped_notices: Arc<AtomicU64>,
     client: SharedClient,
-    hints: tokio::sync::mpsc::Sender<(String, Value)>,
+    hints: tokio::sync::mpsc::Sender<Hint>,
     stop: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
 }
@@ -63,7 +77,7 @@ impl Endpoint {
         let client: SharedClient = Arc::new(Mutex::new(None));
         let shared = client.clone();
         let (stop, mut stopped) = oneshot::channel();
-        let (hints, mut hint_rx) = tokio::sync::mpsc::channel::<(String, Value)>(1);
+        let (hints, mut hint_rx) = tokio::sync::mpsc::channel::<Hint>(1);
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
@@ -75,17 +89,13 @@ impl Endpoint {
                 let post=|notice:Notice|{if notice_tx.try_send(notice).is_err(){dropped.fetch_add(1,Ordering::Relaxed);}wake();};
                 post(Notice{command:"bus.connected".into(),args:json!({}),headers:BTreeMap::new()});
                 let mut responses=tokio::task::JoinSet::new();
+                let mut publishing:Option<HintFuture>=None;
                 loop{
                     let event=tokio::select!{
                         _=&mut stopped=>break,
                         _=responses.join_next(),if !responses.is_empty()=>continue,
-                        hint=hint_rx.recv()=>{if let Some((topic,body))=hint {
-                            let mut frame=::bus::BusMessage::new();frame.set("command",&topic);frame.body=body.to_string();
-                            let headers=BTreeMap::from([("name".into(),topic.clone()),("retain".into(),"false".into())]);
-                            let wire=frame.to_wire();
-                            let outcome=tokio::select!{_=&mut stopped=>break,r=native.call_with_headers_raw_within("noded","topic.publish",&headers,&wire,Duration::from_secs(2))=>r};
-                            post(Notice{command:"bus.hint.completed".into(),args:json!({"topic":topic,"ok":matches!(outcome,Ok((0,_,_)))}),headers:BTreeMap::new()});
-                        }continue;},
+                        hint=hint_rx.recv(),if publishing.is_none()=>{if let Some(hint)=hint {publishing=Some(Box::pin(send_hint(native.clone(),hint)));}continue;},
+                        (topic,ok,probe_ok)=async{publishing.as_mut().expect("guarded hint future").await},if publishing.is_some()=>{publishing=None;post(Notice{command:"bus.hint.completed".into(),args:json!({"topic":topic,"ok":ok,"probe_ok":probe_ok}),headers:BTreeMap::new()});continue;},
                         changed=state.changed()=>{if changed.is_err(){break;}let connected=native.is_connected();post(Notice{command:if connected{"bus.connected"}else{"bus.disconnected"}.into(),args:json!({"generation":native.connection_generation()}),headers:BTreeMap::new()});continue;},
                         event=incoming.recv()=>match event{Some(event)=>event,None=>break}
                     };
@@ -112,6 +122,7 @@ impl Endpoint {
                     });
                 }
                 responses.abort_all();while responses.join_next().await.is_some(){}
+                drop(publishing);
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=None;
                 native.close().await;
             });
@@ -150,11 +161,20 @@ impl Endpoint {
     /// The owner coalesces data and retries a refused/failed hint; no transport
     /// or service identity is created. Completion is a native owner notice.
     pub fn hint(&self, topic: String, body: Value) -> Result<(), String> {
+        self.queue_hint(topic,body,None)
+    }
+    /// The same one-slot native hint lane, with a bounded existing-host ping.
+    /// At most one future runs; normal requests remain independently serviced.
+    pub fn hint_with_probe(&self,topic:String,body:Value,service:String)->Result<(),String>{
+        if service.is_empty() || service.len()>64 || !service.bytes().all(|b|b.is_ascii_lowercase()||b.is_ascii_digit()||b==b'-'){return Err("invalid native probe service".into());}
+        self.queue_hint(topic,body,Some(service))
+    }
+    fn queue_hint(&self,topic:String,body:Value,probe:Option<String>)->Result<(),String>{
         if topic.is_empty() || topic.len() > 256 || body.to_string().len() > 4096 {
             return Err("hint exceeds topic/body budget".into());
         }
         self.hints
-            .try_send((topic, body))
+            .try_send(Hint{topic,body,probe})
             .map_err(|_| "native hint slot is busy or closed".into())
     }
 }

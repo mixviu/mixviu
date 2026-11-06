@@ -317,7 +317,9 @@ impl App {
             ..
         } = r;
         let service = format!("dopus-{}", self.mode);
-        if command==format!("{service}.ui.titlebar.form") {self.host_query=json!({"from":r.from,"broker_service":headers.get("broker_service"),"broker_origin":headers.get("broker_origin")});}
+        if command == format!("{service}.ui.titlebar.form") {
+            self.host_query = json!({"from":r.from,"broker_service":headers.get("broker_service"),"broker_origin":headers.get("broker_origin")});
+        }
         if let Some(suffix) = command.strip_prefix(&format!("{service}.")) {
             command = format!("dopus.{suffix}");
         }
@@ -419,14 +421,24 @@ impl App {
                 let eligible =
                     viu::hosting::Hosting::eligible(&self.session.snapshot["state"]["values"]);
                 if eligible
-                    && viu::hosting::Hosting::local_owner(&headers,&std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()))
+                    && viu::hosting::Hosting::local_owner(
+                        &headers,
+                        &std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()),
+                    )
                 {
                     self.hosting.confirmed = true;
                     ctx.request_repaint();
                 }
-                let mut form=self.hosting.form(self.window_frame.form(&self.session.snapshot["state"]["values"],Some(&format!("dopus-{}",self.mode))),eligible);
-                form["acknowledged"]=json!(self.hosting.confirmed);form["last_host_query"]=self.host_query.clone();
-                let _ = reply.send((0,form));
+                let mut form = self.hosting.form(
+                    self.window_frame.form(
+                        &self.session.snapshot["state"]["values"],
+                        Some(&format!("dopus-{}", self.mode)),
+                    ),
+                    eligible,
+                );
+                form["acknowledged"] = json!(self.hosting.confirmed);
+                form["last_host_query"] = self.host_query.clone();
+                let _ = reply.send((0, form));
             }
             "dopus.ui.menu.popup" => {
                 if self.input_wait {
@@ -845,7 +857,18 @@ impl App {
                 .strip_prefix(&format!("dopus-{}.", self.mode))
             {
                 if suffix == "ui.menu.popup" {
-                    if [std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_|"comp".into()),std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_|"shell".into())].iter().any(|service|viu::hosting::Hosting::local_owner(&notice.headers,service)) && viu::hosting::Hosting::host_available(&self.session.snapshot["state"]["values"]) {self.hosting.confirmed=true;}
+                    if [
+                        std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
+                        std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()),
+                    ]
+                    .iter()
+                    .any(|service| viu::hosting::Hosting::local_owner(&notice.headers, service))
+                        && viu::hosting::Hosting::host_available(
+                            &self.session.snapshot["state"]["values"],
+                        )
+                    {
+                        self.hosting.confirmed = true;
+                    }
                     if let Err(error) = viu::rich::menu_popup(ctx, "menu", &notice.args) {
                         self.error = error;
                     }
@@ -877,7 +900,9 @@ impl App {
         let settings = &self.session.snapshot["state"]["values"];
         let hosted = self.hosting.confirmed && viu::hosting::Hosting::eligible(settings);
         let chrome = (
-            self.hosting.confirmed && viu::hosting::Hosting::host_available(settings) && settings["window.menu_style"] == "titlebar",
+            self.hosting.confirmed
+                && viu::hosting::Hosting::host_available(settings)
+                && settings["window.menu_style"] == "titlebar",
             hosted,
         );
         if chrome != self.chrome_state {
@@ -994,13 +1019,16 @@ impl eframe::App for App {
             Some(&format!("dopus-{}", self.mode)),
         );
         viu::rich::configure_hosting(ctx, self.chrome_state.0, self.chrome_state.1);
-        if self.ready() && let Err(error) = self.hosting.update(&self.model["values"]["toolbar"]) {
+        if self.ready()
+            && let Err(error) = self.hosting.update(&self.model["values"]["toolbar"])
+        {
             self.error = error;
         }
         self.hosting.poll(
             ctx,
             &self.bus,
             &format!("dopus-{}", self.mode),
+            &std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_|"shell".into()),
             viu::hosting::Hosting::eligible(&self.session.snapshot["state"]["values"]),
         );
         self.window_frame.show_with_chrome(
@@ -1408,7 +1436,7 @@ fn main() -> eframe::Result {
                 notices: VecDeque::new(),
                 hosting: Default::default(),
                 chrome_state: (false, false),
-                host_query:Value::Null,
+                host_query: Value::Null,
                 error: String::new(),
                 last_service_us: 0,
                 last_model_at: Instant::now(),
