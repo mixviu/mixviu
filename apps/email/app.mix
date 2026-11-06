@@ -23,7 +23,7 @@ fn publish_email()
   $m.status=if $fixture then $m.status else $status.." · "..to_string(len($rows)).." / "..to_string($total).." messages · offset "..to_string($offset) end
   $m.accounts={id:"accounts",kind:"combo",label:"Account",initial:if $active!="" then $active else "No account" end,properties:{choices:if len($entries)>0 then map($entries,fn($e)=$e.id) else ["No account"] end}}
   $chosen=filter($boxes,fn($b)=$b.id==$box)
-  $m.mailboxes={id:"mailboxes",kind:"combo",label:"Mailbox",initial:if len($chosen)>0 then $chosen[0].choice else "Select mailbox" end,properties:{choices:concat(["Select mailbox"],map($boxes,fn($b)=$b.choice ?? $b.name))}}
+  $m.mailboxes={id:"mailboxes",kind:"combo",label:"Mailbox",initial:if len($chosen)>0 then $chosen[0].choice ?? $chosen[0].name else "Select mailbox" end,properties:{choices:concat(["Select mailbox"],map($boxes,fn($b)=$b.choice ?? $b.name))}}
   $m.values.view=$view;$m.mail_hidden=$view!="Mail";$m.compose_hidden=$view!="Compose"
   $m.values["reader-body"]=if $message!=nil then $message.text ?? $message.html ?? "" else "" end
   if not $fixture then $m=surface_model($m) end

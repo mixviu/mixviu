@@ -10,7 +10,7 @@ fn endpoint($e,$url)
   return $url
 end
 fn http($e,$url,$method,$body,$token=nil)
-  $request={url:endpoint($e,$url),method:$method,body:$body,headers:{"Content-Type":"application/json"},timeout:30}
+  $request={url:endpoint($e,$url),method:$method,body:$body,headers:{"Content-Type":"application/json"},timeout:300,max_request:16777216,max_response:16777216}
   if $token!=nil then $request.headers.Authorization="Bearer "..$token
   else $request.basic={username:$e.user,password:if $e.password_file!=nil then $legacy.secret($e.password_file) else $accounts.password($e.id) end} end
   if $e.ca_file!=nil then
