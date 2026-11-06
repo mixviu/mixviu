@@ -35,7 +35,17 @@ fn start_prefs($s,$payload)
   return $s
 end
 fn refresh_prefs($s)
+  $s.needs_read=false
   return start_prefs($s,{op:"read",binding:$s.binding})
+end
+fn queued_prefs($s)
+  if $s.busy or len(keys($s.queue_changes))==0 or $s.uncertain then return $s end
+  $changes={};$reset=[]
+  for $key in keys($s.queue_changes)
+    if $s.queue_changes[$key]==nil then push($reset,$key) else $changes[$key]=$s.queue_changes[$key] end
+  end
+  $s.inflight_changes=$s.queue_changes;$s.queue_changes={}
+  return start_prefs($s,{op:"write",request:{binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:uuid(),changes:$changes,reset:$reset}})
 end
 fn release_request($s,$command,$body)
   $s.release_serial=$s.release_serial+1
@@ -47,12 +57,26 @@ fn release_request($s,$command,$body)
   return $s
 end
 fn set_prefs($s,$key,$value)
-  return start_prefs($s,{op:"write",request:$core.admitted($s,$key,$value)})
+  $admission=$s;$admission.busy=false
+  $request=$core.admitted($admission,$key,$value)
+  $s.queue_changes=merge($s.queue_changes,$request.changes)
+  for $key in $request.reset $s.queue_changes[$key]=nil end
+  return queued_prefs($s)
+end
+fn hint_prefs($s)
+  $s.needs_read=true
+  if not $s.busy then return refresh_prefs($s) end
+  return $s
 end
 publish_prefs($state)
 on viu.tick
+  if not $state.subscribed then
+    for $prefix in ["wallpaper","appearance","window","shell.panels","workspaces","displays","sound","power","input","keymaps","apps_default","apps_startup","xwayland","time","region","accessibility","terminal","email","ced","apps","tune","state"] subscribe("settingsd.desktop.keys.default."..$prefix) end
+    subscribe("settingsd.desktop.look.default")
+    $state.subscribed=true
+  end
   if not $state.release_started then $state.release_started=true;$state=release_request($state,"releases.list",{}) end
-  if not $state.busy and not $state.uncertain and not $state.dirty and monotonic()>$state.read_at+5 then $state=refresh_prefs($state);publish_prefs($state) end
+  if not $state.busy and $state.needs_read then $state=refresh_prefs($state);publish_prefs($state) end
 end
 on prefs.ping
   reply(0,json_encode({schema:"prefs.mix.lab.v1"}))
@@ -134,7 +158,7 @@ on viu.job.completed
     end
     publish_prefs($state);return
   end
-  if $state.busy and $d.tag.owner==$state.serial then
+  if $d.tag.id=="prefs-work" and $state.busy and $d.tag.owner==$state.serial then
     $state.busy=false;$state.read_at=monotonic()
     if $state.pending.op=="read" then $state.stale=true end
     if $d.rc==0 and $d.body.op=="read" then
@@ -149,13 +173,22 @@ on viu.job.completed
         $state=$core.choose($state,$state.key)
       end
     elif $d.rc==0 then
-      $state.dirty=false;$state.status="Write accepted; reading authoritative values";$state=refresh_prefs($state)
+      $state.inflight_changes={};$state.dirty=false;$state.status="Write accepted; reading authoritative values";$state=refresh_prefs($state)
     elif $answer.status=="wrong_target" and not $state.retargeted and ($answer.binding ?? {}).profile=="default" then
       $state.binding=$answer.binding;$state.retargeted=true;$state=refresh_prefs($state)
     else
       $state.status="Settings failed: "..json_encode($d.body)
-      if $state.pending.op=="write" then $state.uncertain=true end
+      if $state.pending.op=="write" then
+        if contains(["conflict","outcome_unknown","authority_unreachable"],$answer.status) or $d.rc>=20 then
+          $state.queue_changes=merge($state.inflight_changes,$state.queue_changes)
+          if $answer.status=="authority_unreachable" then $state.uncertain=true
+          else $state=refresh_prefs($state) end
+        end
+        $state.inflight_changes={}
+      end
     end
+    if not $state.busy and $state.needs_read then $state=refresh_prefs($state) end
+    if not $state.busy then $state=queued_prefs($state) end
     publish_prefs($state)
   end
 end
@@ -192,4 +225,102 @@ on prefs.intent
   elif $a.id=="reset" then $state=set_prefs($state,$state.key,nil)
   elif $a.id=="refresh" then $state.dirty=false;$state=refresh_prefs($state) end
   publish_prefs($state);reply(0,"{}")
+end
+
+on settingsd.desktop.keys.default.wallpaper
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.appearance
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.window
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.shell.panels
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.workspaces
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.displays
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.sound
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.power
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.input
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.keymaps
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.apps_default
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.apps_startup
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.xwayland
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.time
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.region
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.accessibility
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.terminal
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.email
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.ced
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.apps
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.tune
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.state
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.look.default
+  $state=hint_prefs($state)
+end
+on bus.connected
+  $state.connected=true;$state=hint_prefs($state)
+end
+on bus.disconnected
+  $state.connected=false;$state.stale=true;$state.needs_read=true;publish_prefs($state)
 end

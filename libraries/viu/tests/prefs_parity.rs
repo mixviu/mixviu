@@ -56,42 +56,86 @@ fn prefs_mounts_the_shared_frame_and_owns_caption_close() {
 
 #[test]
 fn prefs_search_is_read_only_and_every_gold_page_mounts() {
-    let bundle=Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/prefs"),&[]).unwrap();
-    let (tx,rx)=mpsc::channel();
-    let mut runtime=Runtime::new(8,Arc::new(move || {let _=tx.send(());}),None);
+    let bundle = Bundle::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/prefs"),
+        &[],
+    )
+    .unwrap();
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(
+        8,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+    );
     runtime.load(bundle.program).unwrap();
     rx.recv_timeout(Duration::from_secs(10)).unwrap();
-    let done=runtime.try_completion().unwrap();assert!(done.error.is_none(),"{:?}",done.error);
-    for query in ["density","BACKGROUND","terminal.",""] {
-        runtime.event("prefs.search".into(),json!({"query":query})).unwrap();
+    let done = runtime.try_completion().unwrap();
+    assert!(done.error.is_none(), "{:?}", done.error);
+    for query in ["density", "BACKGROUND", "terminal.", ""] {
+        runtime
+            .event("prefs.search".into(), json!({"query":query}))
+            .unwrap();
         rx.recv_timeout(Duration::from_secs(10)).unwrap();
-        let done=runtime.try_completion().unwrap();assert!(done.error.is_none(),"{:?}",done.error);
-        assert!(done.model.is_none(),"read-only search published a window change");
-        let reply=done.reply.unwrap();assert_eq!(reply.rc,0);assert_eq!(reply.body["query"],query);assert!(reply.body["hits"].is_array());
+        let done = runtime.try_completion().unwrap();
+        assert!(done.error.is_none(), "{:?}", done.error);
+        assert!(
+            done.model.is_none(),
+            "read-only search published a window change"
+        );
+        let reply = done.reply.unwrap();
+        assert_eq!(reply.rc, 0);
+        assert_eq!(reply.body["query"], query);
+        assert!(reply.body["hits"].is_array());
     }
-    let pages:serde_json::Value=serde_json::from_str(include_str!("../../../apps/prefs/pages.json")).unwrap();
-    assert_eq!(pages.as_array().unwrap().len(),42);
-    let ctx=eframe::egui::Context::default();viu::icons::install(&ctx);
+    let pages: serde_json::Value =
+        serde_json::from_str(include_str!("../../../apps/prefs/pages.json")).unwrap();
+    assert_eq!(pages.as_array().unwrap().len(), 42);
+    let ctx = eframe::egui::Context::default();
+    viu::icons::install(&ctx);
     for page in pages.as_array().unwrap() {
-        runtime.event("prefs.page.open".into(),json!({"page":page["id"]})).unwrap();
+        runtime
+            .event("prefs.page.open".into(), json!({"page":page["id"]}))
+            .unwrap();
         rx.recv_timeout(Duration::from_secs(10)).unwrap();
-        let done=runtime.try_completion().unwrap();assert!(done.error.is_none(),"{}: {:?}",page["id"],done.error);
-        assert_eq!(done.reply.unwrap().rc,0);
-        let mut view=viu::gold_frame::mount(&bundle.scene,done.model.unwrap()).unwrap();
-        ctx.run_ui(eframe::egui::RawInput {screen_rect:Some(eframe::egui::Rect::from_min_size(eframe::egui::Pos2::ZERO,eframe::egui::vec2(1040.0,680.0))),..Default::default()},|ui|{view.show(ui);}).drop_without_applying_deltas();
+        let done = runtime.try_completion().unwrap();
+        assert!(done.error.is_none(), "{}: {:?}", page["id"], done.error);
+        assert_eq!(done.reply.unwrap().rc, 0);
+        let mut view = viu::gold_frame::mount(&bundle.scene, done.model.unwrap()).unwrap();
+        ctx.run_ui(
+            eframe::egui::RawInput {
+                screen_rect: Some(eframe::egui::Rect::from_min_size(
+                    eframe::egui::Pos2::ZERO,
+                    eframe::egui::vec2(1040.0, 680.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        )
+        .drop_without_applying_deltas();
         assert!(view.geometry.contains_key("browser"));
     }
 }
 
 #[test]
 fn browser_refuses_hidden_disabled_removed_and_unknown_choice_rows() {
-    let value=json!({"title":"Example","pages":[],"sections":[{"rows":[
+    let value = json!({"title":"Example","pages":[],"sections":[{"rows":[
         {"id":"disabled","title":"Disabled","kind":"toggle","blocked":"backend missing","value":false},
         {"id":"hidden","title":"Hidden","kind":"toggle","shown":false,"value":false},
         {"id":"choice","title":"Choice","kind":"choice","choices":[{"value":"a","label":"A"}],"value":"a"}
     ]}]});
-    for payload in [json!({"row":"disabled","value":true}),json!({"row":"hidden","value":true}),json!({"row":"removed","value":true}),json!({"row":"choice","value":"b"})] {
-        assert!(viu::settings_browser::admit(&value,"edit",&payload).is_err());
+    for payload in [
+        json!({"row":"disabled","value":true}),
+        json!({"row":"hidden","value":true}),
+        json!({"row":"removed","value":true}),
+        json!({"row":"choice","value":"b"}),
+    ] {
+        assert!(viu::settings_browser::admit(&value, "edit", &payload).is_err());
     }
-    assert!(viu::settings_browser::admit(&value,"edit",&json!({"row":"choice","value":"a"})).is_ok());
+    assert!(
+        viu::settings_browser::admit(&value, "edit", &json!({"row":"choice","value":"a"})).is_ok()
+    );
 }

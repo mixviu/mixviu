@@ -6,7 +6,13 @@ use egui::{Rect, Ui};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const KINDS: &[&str] = &["menubar", "command-bar", "property-grid", "dialog-form", "settings-browser"];
+pub const KINDS: &[&str] = &[
+    "menubar",
+    "command-bar",
+    "property-grid",
+    "dialog-form",
+    "settings-browser",
+];
 #[derive(Clone, Default)]
 struct MenuPresentation {
     settings: Value,
@@ -277,7 +283,9 @@ pub fn menu_snapshot(value: &Value, id: &str, geometry: &BTreeMap<String, Rect>)
     json!({"open":!path.is_empty() || geometry.contains_key(&format!("{id}.popup")),"path":path})
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
-    if kind == "settings-browser" { return crate::settings_browser::admit(current, action, payload); }
+    if kind == "settings-browser" {
+        return crate::settings_browser::admit(current, action, payload);
+    }
     validate(kind, current)?;
     match action {
         "command" => {
