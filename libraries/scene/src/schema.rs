@@ -118,6 +118,12 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("radius", false, None),
         p("background", "string", false, None),
     ];
+    static SECTION: [Port; 4] = [
+        p("children", "list", true, None),
+        p("titles", "list", true, None),
+        pe("frame", "\"plain\"", &["plain", "dock"]),
+        p("on_change", "string", false, None),
+    ];
     static ROW: [Port; 11] = [
         p("children", "list", true, None),
         pnd("gap", "0", None),
@@ -238,6 +244,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     let family: &[Port] = match f {
         "window" => &WINDOW,
         "column" => &BOX,
+        "section" => &SECTION,
         "row" => &ROW,
         "text" => &TEXT,
         "field" => &FIELD,

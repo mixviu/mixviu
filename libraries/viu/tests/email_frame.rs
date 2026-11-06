@@ -66,7 +66,7 @@ fn email_empty_frame_draws_and_primary_button_keeps_native_intent() {
         )
         .drop_without_applying_deltas();
     }
-    assert!(view.geometry["empty-title"].top() >= view.geometry["gold-header"].bottom());
+    assert!(view.geometry["no-accounts"].top() >= view.geometry["gold-header"].bottom());
     assert!(view.geometry["open-settings"].bottom() < view.geometry["gold-status"].top());
     assert!(
         intents

@@ -490,6 +490,21 @@ impl SceneView {
                     ui.spacing_mut().item_spacing=Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0));
                 }
                 match node.family.as_str() {
+                    "section"=>{
+                        ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
+                        let titles=node.ports["titles"].as_array().expect("validated section titles").iter().map(|v|v.as_str().expect("validated section title")).collect::<Vec<_>>();
+                        let mut draw=|ui:&mut egui::Ui| {
+                            let shown=toolkit::panel::group(ui,&key,&titles,|ui,_|{
+                                for child in children(node){self.node(ui,child,nodes,route,depth+1,events);}
+                            });
+                            if shown.handle.drag_stopped() {
+                                if let Some(command)=node.ports.get("on_change").and_then(Value::as_str) {
+                                    events.push(Event{command:command.into(),body:json!({"id":key,"selected":shown.state.selected,"collapsed":shown.state.collapsed})});
+                                }
+                            }
+                        };
+                        if text(node,"frame")=="dock" {toolkit::bars::dock_frame(ui.ctx()).show(ui,|ui|draw(ui));}else{draw(ui);}
+                    },
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
                     "band"=>{
                         let area=ui.available_rect_before_wrap();
@@ -1202,6 +1217,10 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             }
             "text" | "button" | "field" | "toggle" | "row" | "column" | "list" | "spacer"
             | "grid" => {}
+            "section" => {
+                let titles=node.ports.get("titles").and_then(Value::as_array).filter(|t| !t.is_empty() && t.len()<=32).ok_or("section requires 1..32 titles")?;
+                if titles.iter().any(|t|t.as_str().is_none_or(|s|s.len()>4096)){return Err("invalid section title".into());}
+            }
             family => return Err(format!("unsupported scene content family {family}")),
         }
     }
