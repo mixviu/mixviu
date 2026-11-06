@@ -7,7 +7,7 @@ use std::{
 };
 // The retained toolkit's command IDs are static. Intern only bounded command
 // identifiers (never labels/data), once per app process, with a fixed ceiling.
-fn command_id(id: &str) -> Result<&'static str, String> {
+pub(crate) fn command_id(id: &str) -> Result<&'static str, String> {
     static IDS: OnceLock<Mutex<BTreeMap<String, &'static str>>> = OnceLock::new();
     let mut ids = IDS
         .get_or_init(Default::default)
@@ -71,4 +71,18 @@ pub fn enabled(ctx: &egui::Context) -> bool {
         d.get_temp(egui::Id::unique("viu-native-menus"))
             .unwrap_or(false)
     })
+}
+
+pub fn publish_bar(ctx: &egui::Context, values: &Value) -> Result<(), String> {
+    let items = values.as_array().ok_or("bar must be an array")?.iter()
+        .filter(|v| v["separator"] != true)
+        .map(|v| Ok(toolkit::titlebar::IconBarItem {
+            command: command_id(v["id"].as_str().ok_or("bar ID required")?)?,
+            icon: v["icon"].as_str().and_then(crate::icons::Icon::from_name).ok_or("bar icon required")?,
+            tooltip: v["label"].as_str().ok_or("bar label required")?.into(),
+            enabled: v["enabled"] == true,
+            toggled: v["checked"] == true,
+        })).collect::<Result<Vec<_>, String>>()?;
+    toolkit::titlebar::hosting::publish(ctx, &items);
+    Ok(())
 }

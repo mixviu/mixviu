@@ -477,6 +477,9 @@ pub(crate) fn draw(
             response
         }
         "command-bar" => {
+            if crate::native_menu::enabled(ui.ctx()) && widget.properties["hostable"] != false {
+                let _ = crate::native_menu::publish_bar(ui.ctx(), value);
+            }
             let state = presentation(ui.ctx());
             let response = if state.hosted_actions && widget.properties["hostable"] != false {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())

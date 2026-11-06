@@ -63,8 +63,8 @@ impl Documents {
             )?,
             "delete" => doc.delete(number(args, "id")?)?,
             "restyle" => {
-                let colour: [u8; 4] = serde_json::from_value(args["colour"].clone())
-                    .map_err(|e| e.to_string())?;
+                let colour: [u8; 4] =
+                    serde_json::from_value(args["colour"].clone()).map_err(|e| e.to_string())?;
                 doc.restyle(number(args, "id")?, colour, scalar(args, "width")?)?;
             }
             "crop" => {
@@ -96,7 +96,10 @@ impl Documents {
                     if paths.is_empty() || paths.len() > 1000 {
                         return Err("expected 1..1000 destination candidates".into());
                     }
-                    paths.iter().map(|p| p.as_str().ok_or("expected path")).collect::<Result<_, _>>()?
+                    paths
+                        .iter()
+                        .map(|p| p.as_str().ok_or("expected path"))
+                        .collect::<Result<_, _>>()?
                 } else {
                     vec![args["path"].as_str().ok_or("expected path")?]
                 };

@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 $definitions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
+$menu_template=json_parse(read_file(path_join(dirname(script_path()),"menus.json")))
 $tools=["select","crop","arrow","line","rectangle","ellipse","pen","highlighter","redact","text","number"]
 $inks={"amber":[199,150,0,255],"black":[0,38,49,255],"green":[0,104,24,255],"red":[194,23,37,255],"teal":[0,111,135,255],"white":[243,250,252,255]}
 $widths={thin:2,medium:4,thick:8,heavy:16}
@@ -28,7 +29,7 @@ fn reason($s,$id)
   elif contains(["capture.take","capture.region","capture.screen"],$id) then $enabled=$idle and $s.connected
   elif $id=="capture.window" then $enabled=$idle and $s.connected and $s.ui.window!=nil
   elif $id=="capture.cancel" then $enabled=$s.busy and $s.job=="capture"
-  elif $id=="capture.output.next" then $enabled=not $modal and len($s.outputs)>0
+  elif $id=="capture.output.next" then $enabled=not $modal and len($s.outputs)>1
   elif starts_with($id,"capture.") then $enabled=not $modal
   elif starts_with($id,"tool.") or contains(["view.zoom_in","view.zoom_out","view.fit"],$id) then $enabled=$doc and not $modal
   elif starts_with($id,"annotate.") or starts_with($id,"view.") then $enabled=not $modal
@@ -79,13 +80,20 @@ fn item($s,$id,$icons_only)
   return $item
 end
 fn menus($s)
-  $menus=[];$rows=describe($s)
-  for $menu in ["File","Edit","Capture","Annotate","View","Help"]
-    $children=[]
-    for $row in filter($rows,fn($r)=$r.menu==$menu)
-      push($children,item($s,$row.id,false))
+  return menu_rows($s,$menu_template,"")
+end
+fn menu_rows($s,$rows,$prefix)
+  $out=[]
+  for $r in $rows
+    if $r.separator==true then push($out,$r)
+    elif $r.children!=nil then
+      $id=$prefix..$r.label
+      push($out,{id:$id,label:$r.label,enabled:true,children:menu_rows($s,$r.children,$id..".")})
+    else
+      $r=item($s,$r.id,false)
+      if $r.shortcut!=nil then $r.shortcut=replace(replace($r.shortcut,"+-","+Minus"),"+/","+Slash") end
+      push($out,$r)
     end
-    push($menus,{id:$menu,label:$menu,enabled:true,children:$children})
   end
-  return $menus
+  return $out
 end

@@ -28,7 +28,7 @@ fn work($s,$payload,$hold)
   $payload.pid=pid();$payload.comp=$s.comp
   $payload.preview=path_join($s.raw,"preview-"..to_string(pid()).."-"..to_string($s.serial)..".png")
   $path=path_join(dirname(script_path()),"job.mix")
-  send "viu-local" "jobs.start" id="screenshot-work" owner=$s.serial path=$path source=read_file($path) command="job.run" args=$payload timeout=180
+  send "viu-local" "jobs.start" body={id:"screenshot-work",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:$payload,timeout:180}
   if $rc!=0 then raise("FAILED",to_string($result)) end
   $s.pending_reply=if $hold then viu_reply("keep") else nil end
   return $s

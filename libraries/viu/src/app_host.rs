@@ -219,6 +219,11 @@ impl Host {
         self.wire_deliveries
             .retain(|state| state.load(std::sync::atomic::Ordering::Acquire) == 0);
         if self.drive.is_some() {
+            toolkit::drive::publish_titlebar(ui.ctx(), |topic, bodies, _| {
+                for body in bodies {
+                    let _ = self.bus.hint(topic.into(), body);
+                }
+            });
             let answers = if self.model["window_close"] == true {
                 toolkit::drive::finish(ui.ctx())
             } else {
