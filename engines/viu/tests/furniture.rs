@@ -287,6 +287,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             {
                 println!("SCRIPTED_CORNER_DELIVERED before={before} after={count}");
                 println!("EARLY_CLICK_PHASES {}", props["corner_phases"]);
+                println!("CORNER_FURNITURE_STATE {props}");
                 break;
             }
             assert!(Instant::now() < until, "corner topic missing: {props}");
