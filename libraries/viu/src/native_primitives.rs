@@ -188,22 +188,6 @@ fn read_tail_lines(mut file: std::fs::File, limit: usize) -> std::io::Result<Vec
     Ok(bytes)
 }
 
-#[cfg(test)]
-mod tail_tests {
-    #[test]
-    fn line_tail_keeps_newest_complete_records_and_held_inode() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("log");
-        std::fs::write(&path, "€€€\nold\nnewest\n").unwrap();
-        let parent = config::atomic::open_directory(dir.path()).unwrap();
-        let file = config::atomic::open_nested(&parent, std::path::Path::new("log")).unwrap();
-        std::fs::rename(&path, dir.path().join("old")).unwrap();
-        std::fs::write(&path, "replacement").unwrap();
-        assert_eq!(super::read_tail_lines(file, 13).unwrap(), b"old\nnewest\n");
-        std::os::unix::fs::symlink("log", dir.path().join("link")).unwrap();
-        assert!(config::atomic::open_nested(&parent, std::path::Path::new("link")).is_err());
-    }
-}
 pub(crate) fn thumbnail(stop: Arc<AtomicBool>) -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
         let fail = || MixError::RuntimeError {
@@ -247,4 +231,21 @@ pub(crate) fn thumbnail(stop: Arc<AtomicBool>) -> mix::evaluator::ExtFn {
         };
         crate::runtime::from_json(value)
     })
+}
+
+#[cfg(test)]
+mod tail_tests {
+    #[test]
+    fn line_tail_keeps_newest_complete_records_and_held_inode() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("log");
+        std::fs::write(&path, "€€€\nold\nnewest\n").unwrap();
+        let parent = config::atomic::open_directory(dir.path()).unwrap();
+        let file = config::atomic::open_nested(&parent, std::path::Path::new("log")).unwrap();
+        std::fs::rename(&path, dir.path().join("old")).unwrap();
+        std::fs::write(&path, "replacement").unwrap();
+        assert_eq!(super::read_tail_lines(file, 13).unwrap(), b"old\nnewest\n");
+        std::os::unix::fs::symlink("log", dir.path().join("link")).unwrap();
+        assert!(config::atomic::open_nested(&parent, std::path::Path::new("link")).is_err());
+    }
 }
