@@ -75,26 +75,64 @@ fn epoch_reattach_preserves_a_differing_local_draft_until_keep_or_take() {
     for keep in [false, true] {
         let docs = Documents::default();
         let mut old = seed(&docs, "draft", "/tmp/recovery.rs", "old\n");
-        docs.call("select", "draft", json!({"anchor":0,"head":0})).unwrap();
-        docs.call("command", "draft", json!({"name":"insert","text":"mine λ\n"})).unwrap();
+        docs.call("select", "draft", json!({"anchor":0,"head":0}))
+            .unwrap();
+        docs.call(
+            "command",
+            "draft",
+            json!({"name":"insert","text":"mine λ\n"}),
+        )
+        .unwrap();
         // No reply or event for this edit: the process died with a local draft.
-        assert_eq!(old.text(docs.call("state","draft",json!({})).unwrap()["buffer"].as_str().unwrap()), "old\n");
+        assert_eq!(
+            old.text(
+                docs.call("state", "draft", json!({})).unwrap()["buffer"]
+                    .as_str()
+                    .unwrap()
+            ),
+            "old\n"
+        );
         docs.call("epoch", "draft", json!({})).unwrap();
         let detached = docs.call("state", "draft", json!({})).unwrap();
         assert_eq!(detached["reattach_needed"], true);
-        assert_eq!(docs.call("read", "draft", json!({})).unwrap()["text"], "mine λ\nold\n");
+        assert_eq!(
+            docs.call("read", "draft", json!({})).unwrap()["text"],
+            "mine λ\nold\n"
+        );
         let mut server = editor_model::fake::FakeEditd::new("87654321");
         server.create(Some("/tmp/recovery.rs"), "theirs\n");
         let open = server.handle("ced", "edit.open", &json!({"path":"/tmp/recovery.rs"}));
         docs.call("reattach", "draft", open.body).unwrap();
         settle(&docs, "draft", &mut server);
-        assert_eq!(docs.call("state", "draft", json!({})).unwrap()["detached_copy"], true);
-        assert_eq!(docs.call("read", "draft", json!({})).unwrap()["text"], "theirs\n");
-        docs.call(if keep { "keep-mine" } else { "take-theirs" }, "draft", json!({})).unwrap();
+        assert_eq!(
+            docs.call("state", "draft", json!({})).unwrap()["detached_copy"],
+            true
+        );
+        assert_eq!(
+            docs.call("read", "draft", json!({})).unwrap()["text"],
+            "theirs\n"
+        );
+        docs.call(
+            if keep { "keep-mine" } else { "take-theirs" },
+            "draft",
+            json!({}),
+        )
+        .unwrap();
         settle(&docs, "draft", &mut server);
-        assert_eq!(docs.call("read", "draft", json!({})).unwrap()["text"], if keep { "mine λ\nold\n" } else { "theirs\n" });
-        assert_eq!(docs.call("state", "draft", json!({})).unwrap()["detached_copy"], false);
-        docs.call("restore-view", "draft", json!({"caret":999999,"first_line":999999})).unwrap();
+        assert_eq!(
+            docs.call("read", "draft", json!({})).unwrap()["text"],
+            if keep { "mine λ\nold\n" } else { "theirs\n" }
+        );
+        assert_eq!(
+            docs.call("state", "draft", json!({})).unwrap()["detached_copy"],
+            false
+        );
+        docs.call(
+            "restore-view",
+            "draft",
+            json!({"caret":999999,"first_line":999999}),
+        )
+        .unwrap();
         let restored = docs.call("state", "draft", json!({})).unwrap();
         assert_eq!(restored["selection"]["head"]["offset"], restored["bytes"]);
         assert_eq!(restored["first_line"], restored["lines"]);
@@ -105,15 +143,23 @@ fn epoch_reattach_preserves_a_differing_local_draft_until_keep_or_take() {
 fn reopening_retains_saved_revision_and_recovered_metadata() {
     let docs = Documents::default();
     let mut server = seed(&docs, "first", "/tmp/dirty.rs", "on disk");
-    docs.call("command", "first", json!({"name":"insert","text":"unsaved "})).unwrap();
-    settle(&docs,"first",&mut server);
-    let open = server.handle("ced","edit.open",&json!({"path":"/tmp/dirty.rs"}));
+    docs.call(
+        "command",
+        "first",
+        json!({"name":"insert","text":"unsaved "}),
+    )
+    .unwrap();
+    settle(&docs, "first", &mut server);
+    let open = server.handle("ced", "edit.open", &json!({"path":"/tmp/dirty.rs"}));
     docs.call("open", "second", open.body).unwrap();
-    let list = server.handle("ced","edit.list",&json!({}));
+    let list = server.handle("ced", "edit.list", &json!({}));
     docs.call("saved", "second", list.body).unwrap();
-    settle(&docs,"second",&mut server);
+    settle(&docs, "second", &mut server);
     let reopened = docs.call("state", "second", json!({})).unwrap();
     assert_eq!(reopened["dirty"], true);
     assert_eq!(reopened["saved_rev"], 0);
-    assert_eq!(docs.call("read", "second",json!({})).unwrap()["text"], "unsaved on disk");
+    assert_eq!(
+        docs.call("read", "second", json!({})).unwrap()["text"],
+        "unsaved on disk"
+    );
 }

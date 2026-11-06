@@ -305,7 +305,11 @@ impl Documents {
             "saved" => {
                 let list: edit::wire::ListReply = decode(&a)?;
                 if list.epoch == doc.mirror.epoch() {
-                    if let Some(row) = list.buffers.iter().find(|b| b.buffer == doc.mirror.buffer()) {
+                    if let Some(row) = list
+                        .buffers
+                        .iter()
+                        .find(|b| b.buffer == doc.mirror.buffer())
+                    {
                         doc.mirror.note_saved(row.saved_rev, row.recovered);
                     }
                 }
