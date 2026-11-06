@@ -17,13 +17,15 @@ fn presentation_id(ctx: &egui::Context) -> egui::Id {
     egui::Id::unique((ctx.viewport_id(), "viu-menu-presentation"))
 }
 fn presentation(ctx: &egui::Context) -> MenuPresentation {
-    ctx.data(|data| data.get_temp(presentation_id(ctx))).unwrap_or_default()
+    let key = presentation_id(ctx);
+    ctx.data(|data| data.get_temp(key)).unwrap_or_default()
 }
 /// Native window/menu policy is shared by scene and direct Rust callers.
 /// A compositor-hosted menu is never claimed before a host adapter exists.
 pub fn configure_menu(ctx: &egui::Context, settings: &Value, service: Option<&str>) {
+    let key = presentation_id(ctx);
     ctx.data_mut(|data| {
-        let state = data.get_temp_mut_or_default::<MenuPresentation>(presentation_id(ctx));
+        let state = data.get_temp_mut_or_default::<MenuPresentation>(key);
         state.settings = settings.clone();
         state.service = service.map(str::to_owned);
     });
@@ -49,7 +51,8 @@ pub fn menu_popup(ctx: &egui::Context, id: &str, args: &Value) -> Result<(), Str
         None => match side { design::MenuSide::Left => bounds.left(), design::MenuSide::Center => bounds.center().x, design::MenuSide::Right => bounds.right() },
         Some(value) => value.as_f64().filter(|x| x.is_finite() && (*x as f32).is_finite()).ok_or("x must be finite")? as f32,
     }.clamp(bounds.left(), bounds.right());
-    ctx.data_mut(|data| data.get_temp_mut_or_default::<MenuPresentation>(presentation_id(ctx)).popup = Some((x,side==design::MenuSide::Right)));
+    let key = presentation_id(ctx);
+    ctx.data_mut(|data| data.get_temp_mut_or_default::<MenuPresentation>(key).popup = Some((x,side==design::MenuSide::Right)));
     egui::Popup::open_id(ctx, egui::Id::unique((ctx.viewport_id(),id,"vertical-menu")));
     ctx.request_repaint();
     Ok(())
