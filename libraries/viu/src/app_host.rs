@@ -228,8 +228,10 @@ impl eframe::App for Host {
         if self.paste_deadline.is_some() {
             raw.events.retain(|event| {
                 if let egui::Event::Paste(text) = event {
-                    if self.paste_deadline.is_some() && let Some(id) = self.paste_waits.pop_front() {
-                        self.paste_deadline=None;
+                    if self.paste_deadline.is_some()
+                        && let Some(id) = self.paste_waits.pop_front()
+                    {
+                        self.paste_deadline = None;
                         self.platform_results
                             .push_back(json!({"id":id,"text":text}));
                         return false;
@@ -267,16 +269,24 @@ impl Host {
             } else {
                 self.paste_waits
                     .push_back(request["id"].as_str().unwrap_or("").into());
-
             }
         }
-        if self.paste_deadline.is_some_and(|at|at<=Instant::now()) {
-            self.paste_deadline=None;if let Some(id)=self.paste_waits.pop_front() {self.platform_results.push_back(json!({"id":id,"text":"","reason":"timeout"}));}
+        if self.paste_deadline.is_some_and(|at| at <= Instant::now()) {
+            self.paste_deadline = None;
+            if let Some(id) = self.paste_waits.pop_front() {
+                self.platform_results
+                    .push_back(json!({"id":id,"text":"","reason":"timeout"}));
+            }
         }
         if self.paste_deadline.is_none() && !self.paste_waits.is_empty() {
-            self.paste_deadline=Some(Instant::now()+Duration::from_secs(2));ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            self.paste_deadline = Some(Instant::now() + Duration::from_secs(2));
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
-        if let Some(at)=self.paste_deadline {ui.ctx().request_repaint_after(at.saturating_duration_since(Instant::now()));}
+        if let Some(at) = self.paste_deadline {
+            ui.ctx()
+                .request_repaint_after(at.saturating_duration_since(Instant::now()));
+        }
         while let Some(result) = self.platform_results.front() {
             if self
                 .runtime
@@ -341,11 +351,12 @@ impl Host {
                     Ok(value) => {
                         self.last_ui = value;
                         self.session_appearance = true;
-                        update["appearance"]["mode"] = json!(if ui.ctx().global_style().visuals.dark_mode {
-                            "dark"
-                        } else {
-                            "light"
-                        });
+                        update["appearance"]["mode"] =
+                            json!(if ui.ctx().global_style().visuals.dark_mode {
+                                "dark"
+                            } else {
+                                "light"
+                            });
                     }
                     Err(error) => self.error = error,
                 }
@@ -538,10 +549,21 @@ impl Host {
             {
                 let bindings = bindings.clone();
                 for binding in bindings {
-                    let editor_focus=ui.ctx().data(|d|d.get_temp::<bool>(egui::Id::unique("viu-editor-focused"))).unwrap_or(false);
-                    let focused=ui.ctx().data(|d|d.get_temp::<String>(egui::Id::unique("viu-focused-widget")));
-                    let allowed=binding["text_scopes"].as_array().is_some_and(|a|focused.as_deref().is_some_and(|id|a.iter().any(|v|v==id)));
-                    if ui.ctx().memory(|m|m.focused().is_some()) && !editor_focus && !allowed {continue;}
+                    let editor_focus = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<bool>(egui::Id::unique("viu-editor-focused")))
+                        .unwrap_or(false);
+                    let focused = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")));
+                    let allowed = binding["text_scopes"].as_array().is_some_and(|a| {
+                        focused
+                            .as_deref()
+                            .is_some_and(|id| a.iter().any(|v| v == id))
+                    });
+                    if ui.ctx().memory(|m| m.focused().is_some()) && !editor_focus && !allowed {
+                        continue;
+                    }
                     if binding["enabled"] == false {
                         continue;
                     }

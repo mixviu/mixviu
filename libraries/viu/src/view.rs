@@ -279,7 +279,8 @@ impl SceneView {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
-        ui.ctx().data_mut(|d|d.insert_temp(egui::Id::unique("viu-editor-focused"),false));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique("viu-editor-focused"), false));
         if let Some(mut frame) = self.frame.take() {
             let mut events = frame.show(ui);
             if let Some(rect) = frame.regions.get("gold-content").copied() {

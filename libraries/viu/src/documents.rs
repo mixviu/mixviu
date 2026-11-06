@@ -623,7 +623,10 @@ impl Documents {
                 )
             })
             .inner;
-        if out.response.has_focus() {ui.ctx().data_mut(|d|d.insert_temp(egui::Id::unique("viu-editor-focused"),true));}
+        if out.response.has_focus() {
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(egui::Id::unique("viu-editor-focused"), true));
+        }
         for event in out.events {
             match event {
                 Event::Command(c) => {

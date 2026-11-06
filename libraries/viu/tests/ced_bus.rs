@@ -84,13 +84,15 @@ impl App {
             "\n$state.tabs=[viu_document(\"state\",\"1\",{})]\n$state.next_tab=1
 $state.classified={\"1\":true}\npublish_ced($state)\n",
         );
-        bundle.program.source.push_str(r#"
+        bundle.program.source.push_str(
+            r#"
 on test.mail
   $state.mail["1"]=$event.args
   $state.session_loaded=true;$state.session_path="/tmp/ced-test-session.json"
   $state.session_seen=session_value($state);$state.session_dirty=false
 end
-"#);
+"#,
+        );
         let docs = viu::documents::Documents::default();
         fixture::seed(&docs, "1", "/tmp/contract.rs", "λ one\ntwo\n");
         let calls = viu::calls::Calls::default();
@@ -250,30 +252,69 @@ fn action_inventory_and_execute_share_native_editor_semantics() {
 
 #[test]
 fn bus_mail_header_edits_arm_session_persistence_and_keep_header_undo() {
-    let mut app=App::new();
-    let headers=json!({"from":"","to":"recipient@example.org","cc":"","bcc":"","reply_to":"","subject":"Before","in_reply_to":null,"references":[],"attachments":[]});
+    let mut app = App::new();
+    let headers = json!({"from":"","to":"recipient@example.org","cc":"","bcc":"","reply_to":"","subject":"Before","in_reply_to":null,"references":[],"attachments":[]});
     app.runtime.event("test.mail".into(),json!({"path":"/tmp/message.md","disk":"---\nmail-subject: Before\n---\nBody","headers":headers,"saved_headers":headers,"body_hash":"same","saved_body_hash":"same","hash_gen":1,"saving":false,"sending":false,"parked":false,"notice":null,"undo":[],"redo":[]})).unwrap();
     app.ready.recv_timeout(Duration::from_secs(5)).unwrap();
-    let setup=app.runtime.try_completion().unwrap();assert!(setup.error.is_none(),"{:?}",setup.error);
-    let mut changed=headers.clone();changed["subject"]=json!("After");
-    assert_eq!(app.answered("ced.execute",json!({"id":"mail.headers","params":{"args":{"headers":changed}}})).0,0);
-    let (_,state)=app.answered("ced.specimen",json!({}));
-    assert_eq!(state["session_dirty"],true);
-    assert_eq!(state["session_seen"]["tabs"][0]["mail"]["headers"]["subject"],"After");
-    assert_eq!(app.answered("ced.execute",json!({"id":"edit.undo"})).0,0);
-    assert_eq!(app.answered("ced.state",json!({})).1["mail"]["headers"]["subject"],"Before");
-    assert_eq!(app.answered("ced.execute",json!({"id":"edit.redo"})).0,0);
-    assert_eq!(app.answered("ced.state",json!({})).1["mail"]["headers"]["subject"],"After");
-    assert_eq!(app.docs.call("read","1",json!({})).unwrap()["text"],"λ one\ntwo\n");
+    let setup = app.runtime.try_completion().unwrap();
+    assert!(setup.error.is_none(), "{:?}", setup.error);
+    let mut changed = headers.clone();
+    changed["subject"] = json!("After");
+    assert_eq!(
+        app.answered(
+            "ced.execute",
+            json!({"id":"mail.headers","params":{"args":{"headers":changed}}})
+        )
+        .0,
+        0
+    );
+    let (_, state) = app.answered("ced.specimen", json!({}));
+    assert_eq!(state["session_dirty"], true);
+    assert_eq!(
+        state["session_seen"]["tabs"][0]["mail"]["headers"]["subject"],
+        "After"
+    );
+    assert_eq!(app.answered("ced.execute", json!({"id":"edit.undo"})).0, 0);
+    assert_eq!(
+        app.answered("ced.state", json!({})).1["mail"]["headers"]["subject"],
+        "Before"
+    );
+    assert_eq!(app.answered("ced.execute", json!({"id":"edit.redo"})).0, 0);
+    assert_eq!(
+        app.answered("ced.state", json!({})).1["mail"]["headers"]["subject"],
+        "After"
+    );
+    assert_eq!(
+        app.docs.call("read", "1", json!({})).unwrap()["text"],
+        "λ one\ntwo\n"
+    );
 }
 
 #[test]
 fn reusable_header_form_keeps_all_rows_in_its_allocated_height() {
-    let rows=vec![json!({"id":"field","label":"Header","value":"recipient@example.org"});6];
-    let widget=viu::widgets::Widget::new("headers","form-fields","Mail headers",json!(rows));
-    let ctx=egui::Context::default();viu::appearance::install(&ctx);
-    let mut widgets=viu::widgets::Widgets::default();
-    ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.0,720.0))),..Default::default()},|ui|{widgets.begin_frame();widgets.widget(ui,&widget,&json!({}));widgets.finish_frame().unwrap();}).drop_without_applying_deltas();
-    let height=widgets.geometry["headers"].height();
-    assert!(height>100.0 && height<300.0,"six headers must not be clipped to a one-row options bar: {height}");
+    let rows = vec![json!({"id":"field","label":"Header","value":"recipient@example.org"}); 6];
+    let widget = viu::widgets::Widget::new("headers", "form-fields", "Mail headers", json!(rows));
+    let ctx = egui::Context::default();
+    viu::appearance::install(&ctx);
+    let mut widgets = viu::widgets::Widgets::default();
+    ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1000.0, 720.0),
+            )),
+            ..Default::default()
+        },
+        |ui| {
+            widgets.begin_frame();
+            widgets.widget(ui, &widget, &json!({}));
+            widgets.finish_frame().unwrap();
+        },
+    )
+    .drop_without_applying_deltas();
+    let height = widgets.geometry["headers"].height();
+    assert!(
+        height > 100.0 && height < 300.0,
+        "six headers must not be clipped to a one-row options bar: {height}"
+    );
 }
