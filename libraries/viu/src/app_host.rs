@@ -150,8 +150,8 @@ impl Host {
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         // Never accept a wire-authored claim that automated input is physical.
-        r.headers.insert("viu_input".into(),"bus".into());
-        r.headers.insert("from".into(),r.from.clone());
+        r.headers.insert("viu_input".into(), "bus".into());
+        r.headers.insert("from".into(), r.from.clone());
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
@@ -431,11 +431,13 @@ impl Host {
                     if let Some(session) = &mut self.session {
                         session.hint(&n.command, &n.args);
                     }
-                    let (command,args)=match &self.notice_command {
-                        Some(command)=>(command.clone(),json!({"command":n.command,"args":n.args})),
-                        None=>(n.command,n.args),
+                    let (command, args) = match &self.notice_command {
+                        Some(command) => {
+                            (command.clone(), json!({"command":n.command,"args":n.args}))
+                        }
+                        None => (n.command, n.args),
                     };
-                    let _ = self.runtime.notify_with_headers(command,args,n.headers);
+                    let _ = self.runtime.notify_with_headers(command, args, n.headers);
                 }
                 Err(_) => break,
             }
@@ -607,8 +609,10 @@ impl Host {
                     self.error = e;
                 }
             }
-            let mut input_headers=self.facilities.input_headers(ui.ctx());
-            if self.input_reply.is_some() {input_headers.insert("viu_input".into(),"bus".into());}
+            let mut input_headers = self.facilities.input_headers(ui.ctx());
+            if self.input_reply.is_some() {
+                input_headers.insert("viu_input".into(), "bus".into());
+            }
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, input_headers.clone(), None);
             }
@@ -823,6 +827,7 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         logging_args.get(3).map(String::as_str),
         Some("--help" | "-h")
     ) {
+        if let Some(help)=&preview.manifest.help {println!("{help}");return Ok(());}
         println!(
             "Usage: viu run APP_DIR [--service NAME] [--comp NAME] [--noded-url URL] [APP_ARGS]"
         );
@@ -839,8 +844,11 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     }
     let bundle = crate::launch::load(root, &logging_args[3..]).unwrap_or_else(|e| {
         eprintln!("viu: {e}");
-        std::process::exit(2)
+        std::process::exit(i32::from(preview.manifest.argument_error_exit))
     });
+    if bundle.launch["headless"]==true {
+        return run_headless(bundle);
+    }
     if bundle.manifest.surface == "background" {
         let mut options = crate::layer::LayerOptions::background(&bundle.manifest.service);
         options.exclusive_zone = 0;
@@ -857,9 +865,11 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         return Ok(());
     }
     if let Some(command) = &bundle.manifest.activation {
-        match crate::native_bus::activate_existing(
+        let fallback=vec![json!({"command":command,"body":{}})];
+        let plan=bundle.launch["activation"].as_array().unwrap_or(&fallback);
+        match crate::native_bus::activate_existing_plan(
             &bundle.manifest.service,
-            command,
+            plan,
             &bundle.manifest.bus_url(),
         ) {
             Ok(true) => return Ok(()),
@@ -901,6 +911,24 @@ pub fn run(args: Vec<String>) -> eframe::Result {
             )))
         }),
     )
+}
+
+fn run_headless(bundle:Bundle)->eframe::Result {
+    let (tx,rx)=std::sync::mpsc::channel();
+    let wake:crate::runtime::Wake=Arc::new(move || {let _=tx.send(());});
+    let mut host=create(bundle,wake);
+    let ctx=egui::Context::default();
+    crate::appearance::install(&ctx);
+    loop {
+        let output=ctx.run_ui(egui::RawInput::default(),|ui|host.pump(ui.ctx()));
+        if host.bus.close_requested.load(std::sync::atomic::Ordering::Acquire) || host.model["window_close"]==true {break;}
+        let repaint=output.viewport_output.values().map(|o|o.repaint_delay).min().unwrap_or(Duration::MAX);
+        let delay=host.tick.map(|_|host.next_tick.saturating_duration_since(Instant::now())).unwrap_or(Duration::MAX).min(repaint);
+        output.drop_without_applying_deltas();
+        if delay==Duration::MAX {if rx.recv().is_err(){break;}}
+        else {let _=rx.recv_timeout(delay);}
+    }
+    Ok(())
 }
 struct LayerHost {
     bundle: Option<Bundle>,

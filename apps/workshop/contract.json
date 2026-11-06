@@ -1,5 +1,7 @@
 {
   "host": {
+    "activation": "workshop.show",
+    "argument_error_exit": 1,
     "bus_surface": {
       "app_id": "dev.mixos.workshop",
       "commands": [
@@ -280,6 +282,15 @@
           "name": "workshop.agents.answer",
           "read_only": false,
           "version": "0.2.0"
+        },
+        {
+          "args": {
+            "app": "app or global",
+            "id": "string"
+          },
+          "description": "Select a macro and read its document",
+          "name": "workshop.macros.open",
+          "read_only": false
         }
       ],
       "schema": "workshop.v1"
@@ -319,12 +330,30 @@
       "workshop.agents.close",
       "workshop.agents.resume",
       "workshop.agents.set",
-      "workshop.agents.answer"
+      "workshop.agents.answer",
+      "workshop.macros.open",
+      "workshop.macros.list",
+      "workshop.macros.reload",
+      "workshop.macros.run",
+      "workshop.macros.status",
+      "workshop.macros.output",
+      "workshop.macros.stop",
+      "workshop.macros.new",
+      "workshop.macros.get",
+      "workshop.macros.put",
+      "workshop.macros.remove",
+      "workshop.macros.move",
+      "workshop.macros.copy",
+      "workshop.macros.ced",
+      "workshop.macros.dopus"
     ],
     "frame": "gold",
+    "help": "workshop — native ABP service and command browser\nUsage: workshop [--debug[=LEVEL]] [--headless] [--noded-url URL] [--service NAME] [--comp NAME]\nLevels: off|error|warn|info|debug|trace (default warn; --debug means debug)",
+    "launch": "launch.mix",
     "native_debug": true,
     "native_macros": true,
     "native_ui": true,
+    "notice_command": "workshop.notice",
     "service": "workshop",
     "size": [
       1100,

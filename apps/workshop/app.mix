@@ -1,7 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
+-- lint: globals app_launch app_args
 $controller=require("controller.mix");$model=require("model.mix");$frame=require("frame.mix");$presentation=require("presentation.mix");$discovery=require("discovery.mix");$work=require("work.mix")
 $state=$model.initial();$ctx=viu_context()
+try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$launcher.plan($app_args) end
+$state.comp=$launch.comp ?? env("MIXOS_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
 fn publish_workshop($s)
   $s.busy=$model.busy($s)
   if $s.quitting and not $s.busy then $s.window_close=true end
@@ -147,4 +150,116 @@ on viu.job.completed
 end
 on viu.tick
   $state=$work.launch($state)
+end
+on workshop.agents
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.agents.select
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.agents.refresh
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.agents.filter
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.agents.new
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.agents.prompt
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.agents.cancel
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.agents.close
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.agents.resume
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.agents.set
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.agents.answer
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.open
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.list
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.reload
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.run
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.status
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.output
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.stop
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.new
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.get
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.put
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.remove
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.move
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.copy
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.ced
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.macros.dopus
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
+end
+on workshop.notice
+  $state=$controller.notice($state,$event);publish_workshop($state)
+end
+
+on workshop.show
+  $out=handle($state,$event);$state=$out.state;publish_workshop($state)
+  if not $out.deferred then reply($out.rc,json_encode($out.body)) end
 end

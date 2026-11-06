@@ -9,10 +9,15 @@ fn project($s,$model)
   end
   $model.window_close=$s.window_close;$model.macros_open=$s.macros_open
   $model.native_focus=if $s.focus_serial>0 then {id:"filter",serial:$s.focus_serial} else nil end
-  $model.shortcuts=$all;$model.native_overlays=[]
+  $shortcuts=[]
+  for $a in $all
+    $binding=$s.bindings[$a.id] ?? {};$a.keys=$binding.keys ?? (if $a.shortcut!=nil then [$a.shortcut] else [] end)
+    for $key in $a.keys $entry=$a;$entry.shortcut=$key;push($shortcuts,$entry) end
+  end
+  $model.shortcuts=$shortcuts;$model.native_overlays=[]
   if $s.dialog!=nil then
     $d={id:"workshop-dialog",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Workshop" else "Keyboard shortcuts" end,body:"Browse native ABP services, inspect command descriptions and mesh membership, and send a JSON body once. Replies retain their return code and plain-text errors.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
-    if $s.dialog=="shortcuts" then $d.initial.grid=filter($all,fn($a)=$a.shortcut!=nil) end
+    if $s.dialog=="shortcuts" then $d.initial.grid=filter($shortcuts,fn($a)=$a.shortcut!=nil) end
     $model.native_overlays=[{definition:$d,command:"workshop.dialog.intent"}]
   end
   return $gold.apply($model,{icon:"server",title:"Workshop",native_title:"Workshop",menus:$menus.menus($s),toolbar:$toolbar,status:{left:$s.status,icon:if $s.connected then "plug" else "unplug" end,error:not $s.connected,right:[]},appearance:$s.theme_choice})

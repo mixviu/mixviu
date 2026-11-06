@@ -46,7 +46,15 @@ fn received($s,$task,$d)
     $work.answer($task.reply,10,{error_code:"BUSY",message:"superseded by a newer selection"});return $s
   end
   $body=$d.body;$failed=$d.rc!=0 or $body.error_code!=nil
-  if $task.op=="catalogues" and not $failed then $s.catalogues=$body
+  if $task.op=="catalogues" and not $failed then
+    $s.catalogues=$body;$topics=[viu_context().citizen..".macros.finished"]
+    for $service in values($task.running)
+      push($topics,$service..".action.executed");push($topics,$service..".macros.finished")
+    end
+    $topics=unique($topics)
+    for $topic in $s.watched_topics if not contains($topics,$topic) then unsubscribe($topic) end end
+    for $topic in $topics if not contains($s.watched_topics,$topic) then subscribe($topic) end end
+    $s.watched_topics=$topics
   elif contains(["macros.open","macros.new"],$task.op) and not $failed then
     $app=$task.args.app ?? "global"
     if $body.branch!=nil then

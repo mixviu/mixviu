@@ -110,18 +110,17 @@ fn macro_library_binding_keeps_disk_work_inside_the_owned_session_roots() {
 $global=viu_macro_storage("global","new",{title:"Global example"})
 $app=viu_macro_storage("email","new",{title:"App example"})
 $catalogues=viu_macro_library()
-reply(0,json_encode({global:$global,app:$app,catalogues:$catalogues}))
+send "viu-local" "scenes.model" body={generation:viu_context().generation,value:{global:$global,app:$app,catalogues:$catalogues}}
 "#.into(),scene:"library-test".into(),citizen:"library-test".into(),
     }).unwrap();
     rx.recv_timeout(Duration::from_secs(20)).unwrap();
     let done=runtime.try_completion().unwrap();
     assert!(done.error.is_none(),"{:?}",done.error);
-    let reply=done.reply.unwrap();
-    assert_eq!(reply.rc,0);
-    assert_eq!(reply.body["global"]["rc"],0);
-    assert_eq!(reply.body["app"]["rc"],0);
-    assert!(std::path::Path::new(reply.body["global"]["body"]["path"].as_str().unwrap()).starts_with(&roots.user));
-    assert!(std::path::Path::new(reply.body["app"]["body"]["path"].as_str().unwrap()).starts_with(roots.user.join("email")));
-    assert_eq!(reply.body["catalogues"]["email"]["running"],false);
-    assert!(reply.body["catalogues"]["global"]["macros"].as_array().unwrap().iter().any(|m|m["id"]=="global-example"));
+    let model=done.model.unwrap();
+    assert_eq!(model["global"]["rc"],0);
+    assert_eq!(model["app"]["rc"],0);
+    assert!(std::path::Path::new(model["global"]["body"]["path"].as_str().unwrap()).starts_with(&roots.user));
+    assert!(std::path::Path::new(model["app"]["body"]["path"].as_str().unwrap()).starts_with(roots.user.join("email")));
+    assert_eq!(model["catalogues"]["email"]["running"],false);
+    assert!(model["catalogues"]["global"]["macros"].as_array().unwrap().iter().any(|m|m["id"]=="global-example"));
 }

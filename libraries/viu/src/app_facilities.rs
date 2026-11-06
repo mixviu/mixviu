@@ -22,7 +22,7 @@ pub struct Facilities {
     pub macros: Option<macros::Session>,
     next: u64,
     pending: BTreeMap<u64, Reply>,
-    input_headers: BTreeMap<u64, BTreeMap<String,String>>,
+    input_headers: BTreeMap<u64, BTreeMap<String, String>>,
     completed: mpsc::Receiver<(Reply, macros::commands::Answer)>,
     complete: mpsc::Sender<(Reply, macros::commands::Answer)>,
     finished: mpsc::Receiver<Value>,
@@ -49,7 +49,7 @@ impl Facilities {
             if manifest.native_debug {
                 commands.extend(toolkit::debug::describe(&app));
             }
-            let mut names=std::collections::BTreeSet::new();
+            let mut names = std::collections::BTreeSet::new();
             commands.retain(|c| names.insert(c["name"].as_str().unwrap_or_default().to_owned()));
         }
         let macros = manifest
@@ -113,7 +113,7 @@ impl Facilities {
         }
         while let Ok(body) = self.finished.try_recv() {
             self.events
-                .push(format!("{}.macros.finished", self.app), body, 0);
+                .push(format!("{}.macros.finished", self.service), body, 0);
         }
         if self.publishing.is_none() {
             if let Some((topic, body)) = self.events.front() {
@@ -144,12 +144,14 @@ impl Facilities {
             .record(id, origin, args["params"].clone(), args["result"].clone());
         Ok(json!({"recorded":true}))
     }
-    pub fn input_headers(&self,ctx:&egui::Context)->BTreeMap<String,String> {
-        if let Some(id)=toolkit::drive::input_request(ctx) {
-            let mut headers=self.input_headers.get(&id).cloned().unwrap_or_default();
-            headers.insert("viu_input".into(),"bus".into());
+    pub fn input_headers(&self, ctx: &egui::Context) -> BTreeMap<String, String> {
+        if let Some(id) = toolkit::drive::input_request(ctx) {
+            let mut headers = self.input_headers.get(&id).cloned().unwrap_or_default();
+            headers.insert("viu_input".into(), "bus".into());
             headers
-        } else {BTreeMap::from([("viu_input".into(),"physical".into())])}
+        } else {
+            BTreeMap::from([("viu_input".into(), "physical".into())])
+        }
     }
     pub fn notice(&mut self, command: &str, args: &Value) {
         if command == "bus.hint.completed"
@@ -212,7 +214,7 @@ impl Facilities {
                 self.next += 1;
                 let id = self.next;
                 self.pending.insert(id, r.reply);
-                self.input_headers.insert(id,r.headers.clone());
+                self.input_headers.insert(id, r.headers.clone());
                 if let Some(answer) = toolkit::drive::request(ctx, id, suffix, &r.args) {
                     self.answers(ctx, vec![answer]);
                 }
@@ -221,7 +223,9 @@ impl Facilities {
             if let Some(suffix) = suffix.strip_prefix("macros.") {
                 // An explicitly declared application workflow owns its command;
                 // otherwise the reusable native macro surface handles it.
-                if self.app_commands.contains(&r.command) { return Some(r); }
+                if self.app_commands.contains(&r.command) {
+                    return Some(r);
+                }
                 if let Some(session) = &self.macros {
                     match macros::commands::handle(session, suffix, &r.args) {
                         macros::commands::Reply::Immediate(answer) => {

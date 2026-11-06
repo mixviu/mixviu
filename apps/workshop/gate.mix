@@ -8,6 +8,14 @@ try
     $r=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}});print($r)
     if not $r.ok then $code=$r.exit_code ?? 124;break end
   end
+  if $code==0 and contains(args(),"--binary") then
+    $r=run_argv(["cargo","build","--locked","-p","viu-engine","--bin","viu"],{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}});print($r)
+    if not $r.ok then $code=$r.exit_code ?? 124
+    else
+      $sha=trim(run_argv_must(["git","rev-parse","HEAD"]));$dir="/build/workshop-artifacts/"..$sha;mkdir($dir,{parents:true});copy("target/debug/viu",$dir.."/viu")
+      $receipt={source:$sha,profile:"debug",binary:"viu",sha256:hash_file($dir.."/viu","sha256")};write_file($dir.."/viu.json",json_encode($receipt));print({artifact:$dir,receipt:$receipt})
+    end
+  end
 finally
   print("WORKSHOP_PATCH_BEGIN");print(run_argv_must(["git","diff","--binary"]));print("WORKSHOP_PATCH_END")
   print(run_argv_must(["git","checkout","-q","--","."]))

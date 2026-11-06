@@ -300,3 +300,29 @@ fn tree($s)
   if $answered and not $shown then push($children,make_row($s,"agents:down","agents_down","agentd is not running on any reachable node",[])) end
   return make_row($s,"agents","agents","Agents",$children)
 end
+fn discovered($s)
+  $s=sync_local($s);$known=nodes($s)
+  for $id in keys($s.jobs)
+    $task=$s.jobs[$id]
+    if $task.owner=="agents" and not contains($known,$task.node) and $task.departed!=true then
+      $work.answer($task.reply,10,{error_code:"UNAVAILABLE",message:"agentd is no longer advertised on "..$task.node})
+      $s.jobs[$id].departed=true;$s.jobs[$id].reply=nil
+      if $task.ticket==$s.agents.read_ticket then $s.agents.read_ticket=nil;$s.agents.transcript.filling=false end
+    end
+  end
+  $kept=[]
+  for $task in $s.queue
+    if $task.owner=="agents" and not contains($known,$task.node) then
+      $work.answer($task.reply,10,{error_code:"UNAVAILABLE",message:"agentd is no longer advertised on "..$task.node})
+      if $task.ticket==$s.agents.read_ticket then $s.agents.read_ticket=nil;$s.agents.transcript.filling=false end
+    else push($kept,$task) end
+  end
+  $s.queue=$kept
+  for $node in keys($s.agents.nodes) if not contains($known,$node) then $s.agents.nodes=delete($s.agents.nodes,$node) end end
+  if $s.agents.selected!=nil and not contains($known,$s.agents.selected.node) then $s.agents.prompting=false;$s.agents.error="Selected node no longer advertises agentd" end
+  for $node in $known
+    $entry=$s.agents.nodes[$node]
+    if $node!=local_name($s) and ($entry==nil or $entry.available==false) then $s=refresh_node($s,$node) end
+  end
+  return $s
+end

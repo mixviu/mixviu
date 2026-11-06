@@ -43,6 +43,9 @@ struct Hint {
 type HintFuture = std::pin::Pin<Box<dyn std::future::Future<Output = (String, bool, bool)> + Send>>;
 /// Launch-time activation uses the existing native SDK and compositor path.
 pub fn activate_existing(service: &str, command: &str, url: &str) -> Result<bool, String> {
+    activate_existing_plan(service,&[json!({"command":command,"body":{}})],url)
+}
+pub fn activate_existing_plan(service:&str,operations:&[Value],url:&str)->Result<bool,String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -63,21 +66,20 @@ pub fn activate_existing(service: &str, command: &str, url: &str) -> Result<bool
             if !services.iter().any(|s| s == service) {
                 return Ok(false);
             }
+            for operation in operations {
             let (rc, body, error) = client
                 .call_with_headers_raw_within(
                     service,
-                    command,
+                    operation["command"].as_str().ok_or("activation command required")?,
                     &BTreeMap::new(),
-                    "{}",
+                    &operation["body"].to_string(),
                     Duration::from_secs(10),
                 )
                 .await
                 .map_err(|e| e.to_string())?;
-            if rc == 0 {
-                Ok(true)
-            } else {
-                Err(error.unwrap_or(body))
+            if rc!=0 {return Err(error.unwrap_or(body));}
             }
+            Ok(true)
         }
         .await;
         client.close().await;
@@ -379,8 +381,12 @@ impl Bridge {
         command: &str,
         args: &MixValue,
     ) -> MixResult<(i32, MixValue, MixValue)> {
-        let native = self.native()?;
         let raw = crate::runtime::to_json(args)?["reply_mode"] == "raw";
+        let native = match self.native() {
+            Ok(native)=>native,
+            Err(error) if raw=>return raw_transport_parts(error.to_string(),false),
+            Err(error)=>return Err(error),
+        };
         let timeout = crate::runtime::to_json(args)?["timeout"]
             .as_f64()
             .unwrap_or(10.0);
@@ -388,7 +394,7 @@ impl Bridge {
             return Err(failure("native timeout must be 0.1..90 seconds"));
         }
         let (headers, body, header_route) = Self::payload(command, args)?;
-        let (rc, body, error) = native
+        let received = native
             .call_with_headers_raw_within(
                 target,
                 command,
@@ -396,8 +402,15 @@ impl Bridge {
                 &body,
                 Duration::from_secs_f64(timeout),
             )
-            .await
-            .map_err(failure)?;
+            .await;
+        let (rc,body,error)=match received {
+            Ok(reply)=>reply,
+            Err(error) if raw=>{
+                let unknown=!matches!(error,::bus::client::SupervisedError::Disconnected | ::bus::client::SupervisedError::ShuttingDown);
+                return raw_transport_parts(error.to_string(),unknown);
+            }
+            Err(error)=>return Err(failure(error)),
+        };
         if raw {
             return raw_reply_parts(rc, body, error);
         }
@@ -479,6 +492,11 @@ fn raw_reply_parts(
     Ok((i32::from(rc), envelope.clone(), envelope))
 }
 
+fn raw_transport_parts(message:String,outcome_unknown:bool)->MixResult<(i32,MixValue,MixValue)> {
+    let envelope=crate::runtime::from_json(json!({"rc":-1,"body":"","error":message,"transport_error":message,"outcome_unknown":outcome_unknown,"retried":false}))?;
+    Ok((-1,envelope.clone(),envelope))
+}
+
 fn reply_parts(
     rc: u8,
     body: String,
@@ -538,6 +556,17 @@ fn reply_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn raw_transport_failure_keeps_delivery_uncertainty_and_never_claims_retry() {
+        for unknown in [false,true] {
+            let (rc,_,reply)=raw_transport_parts("transport fault".into(),unknown).unwrap();
+            assert_eq!(rc,-1);
+            let reply=crate::runtime::to_json(&reply).unwrap();
+            assert_eq!(reply["outcome_unknown"],unknown);
+            assert_eq!(reply["retried"],false);
+            assert_eq!(reply["transport_error"],"transport fault");
+        }
+    }
     #[test]
     fn raw_reply_envelope_preserves_whitespace_and_error_separately() {
         for body in [" { \"x\" : 1 } \n", "permission denied\n", "", "\"text\""] {

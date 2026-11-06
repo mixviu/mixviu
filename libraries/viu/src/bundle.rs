@@ -22,6 +22,9 @@ pub struct Manifest {
     pub activation: Option<String>,
     pub unknown_command: Option<String>,
     pub notice_command: Option<String>,
+    pub launch: Option<String>,
+    pub help: Option<String>,
+    pub argument_error_exit: u8,
     pub app: Option<String>,
     pub bus_url: Option<String>,
 }
@@ -43,6 +46,9 @@ impl Default for Manifest {
             activation: None,
             unknown_command: None,
             notice_command: None,
+            launch: None,
+            help: None,
+            argument_error_exit: 2,
             app: None,
             bus_url: None,
         }
@@ -63,6 +69,7 @@ pub struct Bundle {
     pub manifest: Manifest,
     pub scene: String,
     pub program: crate::runtime::Program,
+    pub launch: serde_json::Value,
 }
 impl Bundle {
     pub fn load(root: &Path, args: &[String]) -> Result<Self, String> {
@@ -93,7 +100,10 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
-            || manifest.notice_command.as_ref().is_some_and(|s| s.is_empty() || s.len()>128)
+            || manifest
+                .notice_command
+                .as_ref()
+                .is_some_and(|s| s.is_empty() || s.len() > 128)
             || !["window", "background"].contains(&manifest.surface.as_str())
             || manifest
                 .frame
@@ -155,6 +165,7 @@ impl Bundle {
             manifest,
             scene,
             program,
+            launch: serde_json::json!({}),
         })
     }
 }

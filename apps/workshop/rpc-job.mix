@@ -20,7 +20,7 @@ on job.run
       reply(0,json_encode({Ok:$commands}))
     else
       send $a.service $a.command body=($a.body ?? "") timeout=($a.timeout ?? 3) reply_mode="raw"
-      reply(0,json_encode($reply))
+      reply(if $reply.transport_error!=nil then 20 else 0 end,json_encode($reply))
     end
   catch $message
     reply(20,json_encode({transport_error:$message}))
