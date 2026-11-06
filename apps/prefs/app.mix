@@ -267,7 +267,9 @@ on prefs.actions
 end
 on prefs.execute
   try
+    $pages.check_params($event.args,["id"],["id"])
     if type($event.args.id)!="string" then raise("ARGUMENT","id must be a command id string") end
+    if contains(["page.open","set","item"],$event.args.id) then raise("DISABLED",$nav.text_for("command-disabled")) end
     $state=execute_prefs($state,$event.args.id,$event.args.params ?? {});publish_prefs($state)
     $body={executed:$event.args.id}
     if $event.args.params!=nil then $body.result=$pages.action_result($state,$event.args.id,$event.args.params) end
@@ -305,7 +307,7 @@ on prefs.dialog
     elif contains(keys($a),"open") and contains(["about","shortcuts",nil],$a.open) then
       if $a.open!=nil and ($state.ui.dialog!=nil or $state.quitting) then raise("BUSY",$nav.text_for("busy")) end
       $state.ui.dialog=$a.open
-    else raise("ARGUMENT","open must be about, shortcuts or null") end
+    else raise("ARGUMENT","open must be \"about\", \"shortcuts\" or null") end
     publish_prefs($state);reply(0,json_encode({dialog:$state.ui.dialog}))
   catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end

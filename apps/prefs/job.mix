@@ -18,13 +18,13 @@ on job.run
     reply(if $rc==0 then 0 else 10 end,json_encode({op:"write",peer_rc:$rc,answer:$reply}))
   else
     send "settingsd" "settings.describe" body={} timeout=5
-    if $rc!=0 then reply(10,json_encode({op:"read",stage:"describe",peer_rc:$rc,answer:$reply}));return end
+    if $rc!=0 then reply(10,json_encode({op:"read",stage:"describe",peer_rc:$rc,answer:$reply ?? {message:to_string($result)}}));return end
     $catalog=$reply
     send "settingsd" "settings.get" body={binding:$a.binding,view:"values"} timeout=5
-    if $rc!=0 then reply(10,json_encode({op:"read",stage:"get",peer_rc:$rc,answer:$reply}));return end
+    if $rc!=0 then reply(10,json_encode({op:"read",stage:"get",peer_rc:$rc,answer:$reply ?? {message:to_string($result)}}));return end
     $read=$reply
     send "settingsd" "settings.status" body={binding:$a.binding} timeout=5
-    if $rc!=0 then reply(10,json_encode({op:"read",stage:"status",peer_rc:$rc,answer:$reply}));return end
+    if $rc!=0 then reply(10,json_encode({op:"read",stage:"status",peer_rc:$rc,answer:$reply ?? {message:to_string($result)}}));return end
     reply(0,json_encode({op:"read",catalog:$catalog,read:$read,status:$reply}))
   end
   catch $message reply(20,json_encode({op:$a.op,answer:{message:$message}})) end

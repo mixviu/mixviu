@@ -52,10 +52,10 @@ fn admitted($s,$key,$value)
   if not contains(["stored","applied"],$k.class) or contains(["email.accounts","email.default_account"],$key) or contains($key,"<") then raise("READ_ONLY","This key needs its owning service workflow") end
   if $value!=nil and $k.kind!="domain" then
     if $k.kind=="bool" and type($value)!="bool" then raise("TYPE","Boolean required") end
-    if $k.kind=="enum" and not contains($k.variants,$value) then raise("ENUM","Value is not a described variant") end
+    if $k.kind=="enum" and not contains($k.variants,$value) then raise("ENUM",$key..": expected one of "..join($k.variants,", ")) end
     if contains(["int","number"],$k.kind) then
       if type($value)!="number" then raise("TYPE","Number required") end
-      if ($k.min!=nil and $value<$k.min) or ($k.max!=nil and $value>$k.max) or ($k.kind=="int" and floor($value)!=$value) then raise("RANGE","Number outside described range") end
+      if ($k.min!=nil and $value<$k.min) or ($k.max!=nil and $value>$k.max) or ($k.kind=="int" and floor($value)!=$value) then raise("RANGE",$key..": "..to_string($value).." is outside "..to_string($k.min)..".."..to_string($k.max)) end
       if $k.values!=nil and not contains($k.values,$value) then raise("RANGE","Number is not a described step") end
     elif $k.kind=="list" then
       if type($value)!="list" then raise("TYPE","List required") end
@@ -93,7 +93,7 @@ end
 fn model($s)
   $browser=$pages.browser($s)
   $dialog=$actions.dialog_form($s)
-  return {browser:{id:"browser",kind:"settings-browser",label:"",initial:$browser},dialog:{id:"dialog",kind:"dialog-form",label:"",initial:$dialog},values:{browser:$browser,dialog:$dialog}}
+  return {browser:{id:"browser",kind:"settings-browser",label:"",initial:$browser},dialog:{id:"dialog",kind:"dialog-form",label:"",initial:$dialog,properties:{style:"gold"}},values:{browser:$browser,dialog:$dialog}}
 end
 
 fn info($s)

@@ -5,8 +5,14 @@ $custom=require("custom.mix")
 $gallery=require("gallery.mix")
 fn check_params($params,$allowed,$required)
   if type($params)!="map" then raise("ARGUMENT","parameters must be an object") end
-  for $key in keys($params) if not contains($allowed,$key) then raise("ARGUMENT","unknown field "..json_encode($key)) end end
-  for $key in $required if not contains(keys($params),$key) then raise("ARGUMENT","missing field "..json_encode($key)) end end
+  for $key in keys($params)
+    if not contains($allowed,$key) then
+      $names=map($allowed,fn($name)="`"..$name.."`")
+      $expected=if len($names)==2 then $names[0].." or "..$names[1] elif len($names)==1 then $names[0] else "one of "..join($names,", ") end
+      raise("ARGUMENT","unknown field `"..$key.."`, expected "..$expected)
+    end
+  end
+  for $key in $required if not contains(keys($params),$key) then raise("ARGUMENT","missing field `"..$key.."`") end end
 end
 fn action_result($s,$id,$params)
   if $id=="page.open" then return {page:$s.nav.page,row:$params.row,drawer:$s.nav.drawer} end
@@ -20,7 +26,7 @@ fn item_action($s,$params)
   for $p in $n.pages
     for $sec in $p.sections
       if $sec.source==$params.source then
-        if $p.backend!=nil then raise("FAILED",$n.text_for($p.backend)) end
+        if $p.backend!=nil then raise("FAILED",backend_reason($p.backend)) end
         raise("FAILED",replace($n.text_for("item-unknown"),"{ $item }",$params.id))
       end
     end
@@ -87,10 +93,11 @@ fn pages_view($s)
   return {pages:map($n.pages,fn($p)={id:$p.id,title:$p.title,parent:$p.parent,icon:$p.icon,kind:$p.kind,backend:$p.backend}),open:$s.nav.page}
 end
 fn open_page($s,$name,$row)
-  $p=$n.page($name);$found=[]
+  try $p=$n.page($name) catch $message raise("FAILED",$message) end
+  $found=[]
   if $row!=nil then
     for $sec in $n.row_sections($p) $found=concat($found,filter($sec.rows,fn($r)=$r.id==$row)) end
-    if len($found)!=1 then raise("ARGUMENT",$p.id..": no row "..to_string($row)) end
+    if len($found)!=1 then raise("FAILED",$p.id..": no row "..to_string($row)) end
   end
   if $s.ui.dialog!=nil or $s.quitting then raise("BUSY",$n.text_for("command-disabled")) end
   $custom={term:"apps_term",email:"apps_email",ced:"apps_ced",software:"software"}
@@ -123,7 +130,7 @@ fn control_for($s,$key)
       end
     end
   end
-  raise("FAILED","No control in Preferences for "..to_string($key))
+  raise("FAILED",replace($n.text_for("set-no-control"),"{ $key }",to_string($key)))
 end
 fn browser_row($s,$p,$r)
   $v=row_view($s,$p,$r);$c=$r.control;$kind=$c.control

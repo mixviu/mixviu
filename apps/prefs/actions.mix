@@ -107,13 +107,22 @@ end
 fn dialog_form($s)
   $d=$s.ui.dialog
   if $d==nil then return {open:false,title:"",body:"",choices:[]} end
-  $choices=[{id:"cancel",label:"Close",enabled:true,cancel:true,default:true}]
-  if $d=="about" then return {open:true,title:"About Preferences",body:"Preferences\nMixOS Preferences 0.1.2\nMIT OR Apache-2.0",choices:$choices} end
+  $choices=[{id:"cancel",label:$n.text_for("done"),enabled:true,default:true}]
+  if $d=="about" then return {open:true,title:$n.text_for("about"),body:$n.text_for("about-body"),choices:$choices} end
   if $d=="shortcuts" then
-    $lines=[]
-    for $a in $registry if $a.shortcut!=nil then push($lines,$a.shortcut.."    "..$a.label) end end
-    return {open:true,title:"Keyboard shortcuts",body:join($lines,"\n"),choices:$choices}
+    $rows=[]
+    for $a in action_list($s).actions if $a.shortcut!=nil then push($rows,{label:$a.label,shortcut:$a.shortcut,keys:[$a.shortcut]}) end end
+    return {open:true,title:$n.text_for("shortcuts"),body:"",grid:$rows,choices:$choices}
   end
-  $verb=if type($d)=="map" and contains(keys($d),"remove") then "Remove" elif $d=="reset_email" then "Reset email settings" else "Confirm" end
-  return {open:true,title:$verb.."?",body:if type($d)=="map" then json_encode($d) else $verb end,choices:[{id:"cancel",label:"Cancel",enabled:true,cancel:true,default:true},{id:"confirm",label:$verb,enabled:true}]}
+  $prefix="remove";$arg="{ $app }";$name=if type($d)=="map" then $d.remove else nil end
+  if $d=="reset_email" then $prefix="email-reset";$name="";$arg=""
+  elif type($d)=="map" and ($d.remove_account!=nil or $d.forget_password!=nil) then
+    $prefix=if $d.remove_account!=nil then "email-remove" else "email-forget" end
+    $arg="{ $account }";$id=$d.remove_account ?? $d.forget_password
+    $account=filter($email.accounts($s),fn($a)=$a.id==$id)[0]
+    $name=if $account!=nil then $account.name else $id end
+  end
+  $title=$n.text_for($prefix.."-title");$body=$n.text_for($prefix.."-body")
+  if $arg!="" then $title=replace($title,$arg,$name);$body=replace($body,$arg,$name) end
+  return {open:true,title:$title,body:$body,choices:[{id:"confirm",label:$n.text_for(if $prefix=="email-remove" then "remove-confirm" else $prefix.."-confirm" end),enabled:true},{id:"cancel",label:$n.text_for("cancel"),enabled:true,default:true}]}
 end
