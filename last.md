@@ -1,3 +1,112 @@
+# Screenshot round 4 — acceptance record, S2 decision required
+
+Overall verdict: **OPEN — S2 only**. Implementation, Bus compatibility and
+live Prefs checks are complete. The visual gate is open for the truthful
+About source stamp; no approval is claimed. Full record:
+[docs/ports/screenshot.md](docs/ports/screenshot.md).
+
+Branch `lab/parity-screenshot`; exact tested code
+`5c3f3852bdd5d0705881a266a20db30c833f6f72`. This checkpoint adds only the
+acceptance record and the vendored-runtime provenance receipt after that
+tested commit. Shared frame adopted through `158adc5` in `38ca78b`.
+
+Round-four closures:
+
+- Window-capture target requests 800×600, above gold's minimum, and asserts
+  settled native client dimensions separately from decoded capture extent.
+  Both gold and candidate returned 800×600 captures with the selected
+  id/generation fence intact. CLI fixtures track launcher and actual host
+  PIDs, including restart and same-PID Print handoff.
+- Spacious options, tool rail, canvas and status now match exactly. The
+  remaining header/frame differences are raster edges only. Default dialogs,
+  six tight menu overlays and the anchored native macro popup are exact.
+- Canonical debug dispatch and received/answered history work for normal,
+  aliased and headless services. Aliases retain Screenshot Prefs/keymaps.
+  Gold's unchecked generic mode action and theme-file toggle fallback are
+  preserved; internal native send results do not leak into action topics.
+- Native quit-during-capture now answers CANCELLED and exits. The generic
+  eframe event-loop fix and its hash are recorded in provenance.
+
+Final CBC **20261107-083150-1cb4a226-a1**, cbc3, **BUILD_RC=0**, empty worker
+diff. `mix apps/screenshot/gate.mix --release` passed policy, formatting,
+locked all-target check, scene/Viu/viu-engine tests, isolated no-default-feature
+shell-profile test, clippy and release build. The complete saved log was read:
+`20261107-083150-cbc3-5c3f3852bdd5-20261107-083150-1cb4a226-a1-d0c7d2c7.log`.
+Candidate release SHA256:
+`2a6db756d90172ce84348c55cbc4c90a7c583780088fa9f9e0a0d8ede88e351b`.
+This is the full scoped app/host gate, not an integration claim for other apps.
+
+Final native evidence under private hub `_var/screenshot-parity-20261107/`:
+
+- `abp.x92JBC`: 53 cases, zero structured differences; all 55 descriptors and
+  initial action registry match. Native traffic covers every command in both
+  apps, including errors/refusals and compatibility aliases.
+- `extras.wWFTO6`: 27 extended cases, zero structured differences; saved,
+  action-executed and macro-finished topics, macro lifecycle/refusals, debug,
+  window controls, F8 remapping and settings authority loss/recovery.
+- `cli-headless.2zMYIM`: 22 cases, zero structured differences, actual Mix
+  launcher, PNG/JPEG/WebP and invalid input, completion capture, dirty refusal,
+  history persistence and debug controller. `cli-window.u0SjFR`: native image
+  launch, canonical light Prefs/keymap and same-PID capture handoff.
+- `files.MwgRg5`: XDG paths, no-clobber names, raw pruning, protected symlink,
+  >1 MiB history/compaction, malformed and UTF-8 prefix records, mismatch
+  refusal. `lifecycle-nested.Rn9YNN`: screen, actual 300×200 seat selection,
+  fenced window, clipboard, cancellation after selection, caller loss and
+  quit during capture.
+- `release-functional-gold.R1BfyZ` / `release-functional-mix.nB7p8e`:
+  fourteen equal annotation/history replies, all nine kinds; byte-identical
+  PNG `f0ea386d7e8aff6f85a731b384d05f174e103be80b6cdf895e4e6069f0aee9f3`.
+  Native pointer PNG and actual clipboard bytes also match gold exactly.
+- `deferred-native.aiMlim`: original native request retained **22.042 s**,
+  73 pings answered, then finished reply; separate cancellation returns rc 10
+  / CANCELLED to the original caller. No 20-second request deadline.
+- `matched.AVcnx9`, `advanced.LJ37jD`, the extras and CLI-window runs:
+  35 matched image pairs and 12 additional tight overlay comparisons.
+  Twelve live Prefs variants retain each app PID. All eleven final runs
+  confirm every owned PID, including the private broker, is stopped.
+
+ImageMagick 7.1.2-35 SSIM is distortion, zero identical. Seventeen complete
+pairs are identical; remaining non-About differences are inspected edge
+anti-aliasing. Spacious body regions and all six tight menu overlays are 0.
+Spacious full SSIM/RMSE: `0.0000936303` / `0.00474771`; header:
+`0.0013841` / `0.0182541`. Compact/font full:
+`2.02248e-8` / `4.09199e-5`; guide full: `1.78112e-9` / `7.37325e-6`.
+The record contains every full and region metric and the gold-derived crop
+rectangles. Originals, paired figures and difference figures were inspected;
+no arbitrary numerical pass threshold, mask or image resizing was used.
+
+Frozen final harness manifest SHA256:
+`10374311c309e247b633e2cf4962ad2b24f27a4d87a612fc56517c7f6ec514dc`.
+`release-evidence-index.json` SHA256:
+`dc7aa613884ba7406de4ea240ac7140f7fcc092b897e7a8709358946004fdffb`.
+The manifest identifies the exact release bytes and immutable source archive;
+the index hashes traffic, records, images and closure receipts. Failed
+diagnostic runs remain. No desktop, VT, live Prefs or installation changed.
+
+## Fable question S2 — truthful About build provenance
+
+Proposed deviation from gold: retain the candidate's actual source stamp.
+Gold displays `0.1.2 (8779f33284b7)`; the candidate displays
+`0.1.2 (5c3f3852bdd5)`. Everything else in the dialog matches. This is a text
+difference, not anti-aliasing, and has not been excluded from the metrics.
+
+Options:
+
+- **A — approve** this provenance-only difference and close the visual gate.
+- **B — hold** the visual gate open pending a different provenance policy.
+
+Evidence: `matched.AVcnx9/gold-about-dark.png` and `mix-about-dark.png`,
+`diff-about-dark/` and `overlay-diff-about-dark/`. Full SSIM/RMSE:
+`0.000487896` / `0.00796244`; tight overlay `[284,245,472,194]`:
+`0.00376813` / `0.0221282`. The original pair and difference show changes only
+in the source hash. Owner: Opus to relay to Fable. Answer/rationale: **pending**.
+Standing brief requires stopping for a proposed gold deviation, so overall
+ACCEPTED is withheld solely for S2. All other requested work is closed.
+
+Earlier checkpoint receipts follow; their open implementation items are
+superseded by this round-four record.
+
+
 # Screenshot round 3 — feature checkpoint, acceptance running
 
 Overall parity remains **unaccepted**. No gold deviation is proposed at this
@@ -743,3 +852,6 @@ branch lab/parity-screenshot; head febe71da6958436f9c41d4b04213712a2419385b (tes
 branch lab/parity-screenshot; head fc774bb (implementation; gate pending); parity evidence: deferred primitive accepted at its earlier SHA, merged app features/Bus/Prefs not yet accepted, SSIM/regions pending; CBC 20261107-050951-a88e1a14-a1 preparation passed with formatting, 20261107-051316-4ed4aa20 queued.
 
 branch lab/parity-screenshot; head SHA 2cdba49 (implementation; receipt-only commit follows); parity evidence: features/native Bus/Prefs witnesses above, release and final exact-source acceptance pending, default four states SSIM/regions 0; CBC job ids 20261107-054705-cd516070-a1 PASS, 20261107-062223-3170eca0-a1 preparation passed with formatting, 20261107-063549-402316b5-a1 running.
+
+
+branch lab/parity-screenshot | head 5c3f3852bdd5d0705881a266a20db30c833f6f72 (tested code; receipt-only commit follows) | OPEN: S2 About provenance only; features/55 Bus/Prefs pass, 35 pairs + 12 overlay comparisons | CBC 20261107-083150-1cb4a226-a1
