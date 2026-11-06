@@ -585,41 +585,25 @@ pub(crate) fn draw(
                             });
                         });
                 }
-                for p in array(&value["children"]) {
-                    let r = egui::Frame::NONE
-                        .fill(look.card)
-                        .corner_radius(Look::radius(look.r_s))
-                        .inner_margin(egui::Margin::same(look.m as i8))
-                        .show(ui, |ui| {
-                            ui.set_min_width((width - 2.0 * look.m).max(0.0));
-                            ui.horizontal(|ui| {
-                                ui.add(crate::icons::image_of(
-                                    ui.ctx(),
-                                    crate::icons::Icon::from_name(text(p, "icon")).unwrap_or(
-                                        crate::icons::Icon::from_name("settings").unwrap(),
-                                    ),
-                                    24.0,
-                                    look.icon,
-                                ));
-                                ui.vertical(|ui| {
-                                    ui.label(text(p, "title"));
-                                    let desc = text(p, "description");
-                                    if !desc.is_empty() {
-                                        ui.small(desc);
-                                    }
-                                });
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    ui.label("›");
-                                });
-                            });
-                        })
-                        .response
-                        .interact(Sense::click());
+                for (index,p) in array(&value["children"]).enumerate() {
+                    if index>0 {ui.add_space(look.s);}
+                    let (rect,r)=ui.allocate_exact_size(vec2(width,40.0+2.0*look.s),Sense::click());
+                    ui.painter().rect_filled(rect,Look::radius(look.r_s),if r.hovered(){look.card_hover}else{look.card});
+                    if let Some(glyph)=toolkit::Icon::from_name(text(p,"icon")) {
+                        toolkit::button::paint_icon(ui,glyph,pos2(rect.left()+look.m+18.0,rect.center().y),20.0,look.icon);
+                    }
+                    let x=rect.left()+look.m+40.0;
+                    ui.painter().text(pos2(x,rect.center().y-1.0),egui::Align2::LEFT_BOTTOM,text(p,"title"),egui::FontId::proportional(14.0),look.text);
+                    if !text(p,"description").is_empty() {
+                        ui.painter().text(pos2(x,rect.center().y+1.0),egui::Align2::LEFT_TOP,text(p,"description"),egui::FontId::proportional(12.0),look.text);
+                    }
+                    toolkit::button::paint_icon(ui,toolkit::Icon::ChevronRight,pos2(rect.right()-look.m-10.0,rect.center().y),20.0,look.icon);
+                    r.widget_info(||egui::WidgetInfo::labeled(egui::Role::Link,ui.is_enabled(),text(p,"title")));
+                    focus_ring(ui,&r,rect,look.r_s,&look);
                     record(geometry, id, &format!("child.{}", text(p, "id")), &r);
                     if r.clicked() {
                         emit(events, id, "navigate", json!({"page":p["id"]}));
                     }
-                    ui.add_space(look.xs);
                 }
                 cards(ui, id, &value["sections"], &look, geometry, events);
             });
