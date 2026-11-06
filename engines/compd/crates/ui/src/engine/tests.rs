@@ -24,7 +24,8 @@ struct Seen {
     hover: Option<egui::Pos2>,
 }
 
-impl UiProgram for Probe {
+impl crate::UiProgram for Probe {
+    crate::program_owner!(Probe);
     type Message = u32;
 
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<u32>) {
@@ -122,7 +123,8 @@ struct Clicker {
     clicks: u32,
 }
 
-impl UiProgram for Clicker {
+impl crate::UiProgram for Clicker {
+    crate::program_owner!(Clicker);
     type Message = ();
 
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<()>) {
@@ -193,7 +195,8 @@ struct Spinner {
     passes: u32,
 }
 
-impl UiProgram for Spinner {
+impl crate::UiProgram for Spinner {
+    crate::program_owner!(Spinner);
     type Message = ();
 
     fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<()>) {

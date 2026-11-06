@@ -25,7 +25,8 @@ impl RegionBorder {
     }
 }
 
-impl UiProgram for RegionBorder {
+impl ui::UiProgram for RegionBorder {
+    ui::program_owner!(RegionBorder);
     type Message = CaptureMessage;
 
     fn update(&mut self, message: Self::Message) {

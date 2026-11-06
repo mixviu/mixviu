@@ -111,7 +111,8 @@ impl TooltipUi {
     }
 }
 
-impl UiProgram for TooltipUi {
+impl ui::UiProgram for TooltipUi {
+    ui::program_owner!(TooltipUi);
     type Message = Message;
 
     fn setup(&mut self, ctx: &egui::Context) {

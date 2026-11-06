@@ -209,6 +209,7 @@ fn bus_and_ui_wakes_schedule_frames_without_input_even_when_paced() {
     // a timer fired) wakes the loop through that source.
     struct Idle;
     impl ui::UiProgram for Idle {
+    ui::program_owner!(Idle);
         type Message = ();
         fn show(&mut self, _ui: &mut egui::Ui, _emit: &mut Vec<()>) {}
         fn update(&mut self, _message: ()) {}

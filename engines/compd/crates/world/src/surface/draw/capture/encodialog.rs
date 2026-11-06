@@ -28,7 +28,8 @@ impl Default for EncodingDialog {
     }
 }
 
-impl UiProgram for EncodingDialog {
+impl ui::UiProgram for EncodingDialog {
+    ui::program_owner!(EncodingDialog);
     type Message = CaptureMessage;
 
     fn update(&mut self, message: Self::Message) {

@@ -55,3 +55,6 @@ pub use registry::{PaneView, UiRegistry};
 pub use space::{Transform, UiSpace};
 
 pub use graphics::surface::{WgpuGlContext, create_wgpu_gl_context, make_current, texture_format};
+
+pub mod owner;
+pub use owner::UiControl;

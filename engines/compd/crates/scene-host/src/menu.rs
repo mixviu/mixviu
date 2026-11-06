@@ -313,7 +313,8 @@ impl MenuUi {
     }
 }
 
-impl UiProgram for MenuUi {
+impl ui::UiProgram for MenuUi {
+    ui::program_owner!(MenuUi);
     type Message = Message;
 
     fn setup(&mut self, _ctx: &egui::Context) {}

@@ -39,7 +39,8 @@ pub enum FpsMessage {
     Set { fps: u32 },
 }
 
-impl UiProgram for FpsUi {
+impl ui::UiProgram for FpsUi {
+    ui::program_owner!(FpsUi);
     type Message = FpsMessage;
 
     fn update(&mut self, message: FpsMessage) {

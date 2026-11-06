@@ -7393,7 +7393,19 @@ dependencies = [
  "smithay",
  "thiserror 2.0.20",
  "toolkit",
+ "ui-surface",
  "wgpu",
+]
+
+[[package]]
+name = "ui-surface"
+version = "0.1.2"
+dependencies = [
+ "dispatcher",
+ "graphics",
+ "serde",
+ "smithay",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

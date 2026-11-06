@@ -1,0 +1,18 @@
+-- Lab B3: typed controls refer to one UI instance, never the shared registry.
+-- The registry owns the strong instance; per-program control tables keep Weak
+-- references, so destroy still releases the GPU backing immediately.
+fn rust_method($text, $name)
+  $matches = re_find($text, "(?m)^    (?:pub(?:\\(crate\\))? )?fn " .. $name .. "(?:<|\\()")
+  if len($matches) == 0 then raise("METHOD", $name) end
+  $start = $matches[0].start
+  $open = $start + index_of(substr($text, $start), "{")
+  $level = 1
+  $at = $open + 1
+  while $level > 0
+    $c = substr($text,$at,1)
+    if $c == "{" then $level = $level + 1 end
+    if $c == "}" then $level = $level - 1 end
+    $at = $at + 1
+  end
+  return {text: substr($text,$start,$at-$start), sig: trim(substr($text,$start,$open-$start)), start: $start, end: $at}
+end

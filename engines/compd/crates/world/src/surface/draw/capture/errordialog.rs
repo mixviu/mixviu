@@ -22,7 +22,8 @@ impl ErrorDialog {
     }
 }
 
-impl UiProgram for ErrorDialog {
+impl ui::UiProgram for ErrorDialog {
+    ui::program_owner!(ErrorDialog);
     type Message = CaptureMessage;
 
     fn update(&mut self, _message: Self::Message) {}

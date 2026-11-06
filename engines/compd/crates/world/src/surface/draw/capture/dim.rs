@@ -25,7 +25,8 @@ impl RegionDim {
     }
 }
 
-impl UiProgram for RegionDim {
+impl ui::UiProgram for RegionDim {
+    ui::program_owner!(RegionDim);
     type Message = CaptureMessage;
 
     fn update(&mut self, message: Self::Message) {

@@ -1,0 +1,101 @@
+-- Run after split_comp_owner.mix. Object-safe registration of erased sources;
+-- generic helpers live only in the UI owner, never on the world interface.
+include "split_comp_owner_helpers.mix"
+$base = "engines/compd/crates/"
+$p = $base .. "ui/src/registry.rs"
+$reg = read_file($p)
+$names = ["create", "create_screen", "create_in_space_snapshot", "create_in_space", "create_with", "destroy", "set_location", "request_resize", "dispatch_message", "set_message_handler", "snapshot", "instance_mut", "instance", "create_tooltip"]
+$methods = []
+for $name in $names
+  $m = rust_method($reg,$name)
+  $method = replace($m.text,"    pub fn ","    fn ")
+  if $name == "create_with" then
+    $method = $m.sig .. <<EOF
+ {
+        let id = self.allocate_id();
+        let gpu = self.gpu();
+        let surface = UiSurface::allocate(render_node, &gpu, gles, size)?;
+        let instance = build_instance(id, ui, surface, gpu, location, self.instance_scale());
+        let control = crate::UiControl::new(instance);
+        self.insert(Box::new(crate::instance::SharedInstance(control)), space, layer);
+        Ok(UiHandle::new(id))
+    }
+EOF
+  end
+  if $name == "create_tooltip" then
+    $method = <<EOF
+    fn create_tooltip<U: UiProgram>(&mut self, render_node: &str, program: U, gles: &mut GlesRenderer, size: Size<i32, Physical>, layer: u64) -> Result<UiHandle<U>, CreateError> {
+        let handle = self.create_screen(render_node, program, gles, Point::from((0, 0)), size, layer)?;
+        self.set_passthrough_by_id(handle.id, true);
+        self.set_visible_by_id(handle.id, false);
+        Ok(handle)
+    }
+EOF
+  end
+  push($methods,$method)
+  $reg = replace_must($reg,$m.text,"")
+end
+write_file($p,$reg)
+$p = $base .. "ui/src/owner.rs"
+write_file($p,read_file($p) .. "\nuse ui_surface::UiSurfaces;\nuse crate::{UiHandle, UiSpace, UiSnapshot};\nuse crate::error::{CreateError, DispatchError};\nuse crate::instance::build_instance;\nuse graphics::surface::UiSurface;\nuse smithay::backend::renderer::gles::GlesRenderer;\nuse smithay::utils::{Physical, Point, Size};\n/// Typed control operations are provided by the UI owner only.\npub trait TypedSurfaces: UiSurfaces {\n" .. join($methods,"\n") .. "\n}\nimpl<T: UiSurfaces + ?Sized> TypedSurfaces for T {}\n")
+$p = $base .. "ui/src/instance.rs"
+$s = read_file($p)
+$m = rust_method($s,"new")
+$body = split($m.text,"        Self {")[1]
+$body = replace_must($body,"inner: Box::new(SharedInstance(UiControl::new(inst)))", "inner")
+$new = "    pub(crate) fn new<U: UiProgram>(inst: UiInstance<U>, space: UiSpace, layer: u64) -> Self { Self::from_source(Box::new(SharedInstance(UiControl::new(inst))), space, layer) }\n    pub(crate) fn from_source(inner: Box<dyn UiInstanceAny>, space: UiSpace, layer: u64) -> Self {\n        Self {" .. $body
+$s = replace_must($s,$m.text,$new)
+$s = replace_must($s,"struct SharedInstance<U: UiProgram>(UiControl<U>);", "pub(crate) struct SharedInstance<U: UiProgram>(pub(crate) UiControl<U>);")
+write_file($p,$s)
+$p = $base .. "ui-surface/src/interface.rs"
+write_file($p,replace_must(read_file($p),"pub trait UiSurfaces {",<<EOF
+pub trait UiSurfaces {
+    fn allocate_id(&mut self) -> HandleId;
+    fn gpu(&self) -> Arc<WgpuGlContext>;
+    fn instance_scale(&self) -> f32;
+    fn insert(&mut self, source: Box<dyn crate::producer::UiProducer>, space: UiSpace, layer: u64);
+    fn request_redraw(&mut self, id: HandleId);
+EOF
+))
+$p = $base .. "ui/src/registry.rs"
+write_file($p,replace_must(read_file($p),"impl ui_surface::UiSurfaces for UiRegistry {",<<EOF
+impl ui_surface::UiSurfaces for UiRegistry {
+    fn allocate_id(&mut self) -> HandleId { HandleId(next_handle_id()) }
+    fn gpu(&self) -> Arc<WgpuGlContext> { self.wgpu_ctx.clone() }
+    fn instance_scale(&self) -> f32 { self.instance_scale }
+    fn insert(&mut self, source: Box<dyn ui_surface::producer::UiProducer>, space: UiSpace, layer: u64) {
+        let item = UiItem::from_source(source, space, layer);
+        let id = item.handle_id();
+        assert!(!self.index.contains_key(&id), "duplicate UI handle");
+        self.index.insert(id, self.items.len());
+        self.items.push(item);
+    }
+    fn request_redraw(&mut self, id: HandleId) { if let Some(item) = self.get_mut(id) { item.request_redraw(); } }
+EOF
+))
+-- Register a factory before worlds are created. A compositor without an
+-- in-process UI owner leaves the factory empty and allocates no UI runtimes.
+write_file($base .. "ui-surface/src/factory.rs", <<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use std::sync::{Arc, OnceLock};
+use graphics::surface::WgpuGlContext;
+use crate::UiSurfaces;
+type Factory = fn(Arc<WgpuGlContext>) -> Box<dyn UiSurfaces>;
+static FACTORY: OnceLock<Factory> = OnceLock::new();
+pub fn register(factory: Factory) { FACTORY.set(factory).unwrap_or_else(|_| panic!("UI factory already registered")); }
+pub fn create(gpu: Arc<WgpuGlContext>) -> Option<Box<dyn UiSurfaces>> { FACTORY.get().map(|factory| factory(gpu)) }
+EOF
+)
+$p = $base .. "ui-surface/src/lib.rs"
+write_file($p,read_file($p) .. "\npub mod factory;\n")
+$p = $base .. "ui/src/lib.rs"
+write_file($p,read_file($p) .. "\npub use owner::TypedSurfaces;\npub fn register() { ui_surface::factory::register(|gpu| Box::new(UiRegistry::new(gpu))); }\n")
+for $p in walk("engines/compd")
+  if not ends_with($p,".rs") then continue end
+  $s = read_file($p)
+  if contains($s,"ui::") or starts_with($p,$base .. "ui/src/") then
+    $path = if starts_with($p,$base .. "ui/src/") then "crate" else "ui" end
+    write_file($p,$s .. "\nuse " .. $path .. "::TypedSurfaces as _;\n")
+  end
+end
+print("typed operations moved behind per-program controls, not registry downcasts")

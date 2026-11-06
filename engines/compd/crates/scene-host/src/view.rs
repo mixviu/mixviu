@@ -430,6 +430,7 @@ impl SceneUi {
 }
 
 impl ui::UiProgram for SceneUi {
+    ui::program_owner!(SceneUi);
     type Message = SceneMessage;
 
     fn setup(&mut self, ctx: &egui::Context) {

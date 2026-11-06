@@ -580,18 +580,15 @@ impl UiRegistry {
         Ok(())
     }
 
-    pub fn dispatch_message<U: UiProgram>(
+pub fn dispatch_message<U: UiProgram>(
         &mut self,
         handle: UiHandle<U>,
         message: U::Message,
     ) -> Result<(), DispatchError> {
-        let item = self
-            .get_mut(handle.id)
-            .ok_or(DispatchError::UnknownHandle(handle.id))?;
-        let typed = item.get_mut::<U>().ok_or(DispatchError::TypeMismatch)?;
-        typed.runtime_mut().queue_message(message);
-        Ok(())
-    }
+ let instance = self.instance_mut(handle).ok_or(DispatchError::UnknownHandle(handle.id))?;
+ instance.runtime_mut().queue_message(message);
+ Ok(())
+ }
 
     /// Install the compositor's observer for an instance's messages.
     ///
@@ -617,15 +614,11 @@ impl UiRegistry {
         self.instance(handle).map(|i| i.ui().snapshot())
     }
 
-    pub fn instance_mut<U: UiProgram>(
+pub fn instance_mut<U: UiProgram>(
         &mut self,
         handle: UiHandle<U>,
-    ) -> Option<&mut UiInstance<U>> {
-        self.get_mut(handle.id).and_then(|i| i.get_mut::<U>())
-    }
-    pub fn instance<U: UiProgram>(&self, handle: UiHandle<U>) -> Option<&UiInstance<U>> {
-        self.get(handle.id).and_then(|i| i.get::<U>())
-    }
+    ) -> Option<crate::UiControl<U>> { if !self.contains(handle.id) { return None; } crate::UiControl::lookup(handle.id) }
+pub fn instance<U: UiProgram>(&self, handle: UiHandle<U>) -> Option<crate::UiControl<U>> { if !self.contains(handle.id) { return None; } crate::UiControl::lookup(handle.id) }
 
     /// Route a pointer position to a specific (already-hit-tested) UI item.
     /// Drives Enter/Leave bookkeeping based on the previous target.

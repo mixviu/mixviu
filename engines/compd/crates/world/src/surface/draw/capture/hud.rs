@@ -12,7 +12,8 @@ use crate::surface::draw::capture::style;
 
 pub struct StopHud;
 
-impl UiProgram for StopHud {
+impl ui::UiProgram for StopHud {
+    ui::program_owner!(StopHud);
     type Message = CaptureMessage;
 
     fn update(&mut self, _message: Self::Message) {}

@@ -108,7 +108,8 @@ fn rect_from(a: (i32, i32), b: (i32, i32)) -> OverlayRect {
     }
 }
 
-impl UiProgram for SetupOverlay {
+impl ui::UiProgram for SetupOverlay {
+    ui::program_owner!(SetupOverlay);
     type Message = CaptureMessage;
 
     fn update(&mut self, message: Self::Message) {

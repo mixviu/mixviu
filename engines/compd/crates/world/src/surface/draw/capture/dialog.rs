@@ -21,7 +21,8 @@ impl ContinueDialog {
     }
 }
 
-impl UiProgram for ContinueDialog {
+impl ui::UiProgram for ContinueDialog {
+    ui::program_owner!(ContinueDialog);
     type Message = CaptureMessage;
 
     fn update(&mut self, message: Self::Message) {

@@ -31,7 +31,8 @@ impl NotifyUi {
     }
 }
 
-impl UiProgram for NotifyUi {
+impl ui::UiProgram for NotifyUi {
+    ui::program_owner!(NotifyUi);
     type Message = NotifyMessage;
 
     fn update(&mut self, message: Self::Message) {

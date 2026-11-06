@@ -38,7 +38,8 @@ impl SaveDialog {
     }
 }
 
-impl UiProgram for SaveDialog {
+impl ui::UiProgram for SaveDialog {
+    ui::program_owner!(SaveDialog);
     type Message = CaptureMessage;
 
     fn update(&mut self, message: Self::Message) {

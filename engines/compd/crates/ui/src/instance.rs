@@ -13,7 +13,9 @@
 //! passed as arguments. This mirrors how Smithay's `window.render_elements`
 //! takes the screen location and zoom as arguments rather than storing them.
 
-use std::any::{Any, TypeId};
+use std::cell::{RefCell, Ref, RefMut};
+use std::rc::{Rc, Weak};
+use crate::owner::UiControl;
 use std::time::Instant;
 
 use std::sync::Arc;
@@ -75,94 +77,14 @@ impl<U: UiProgram> UiInstance<U> {
 
 // ── Vtable ─────────────────────────────────────────────────────────────
 
-pub(crate) trait UiInstanceAny: Any {
-    fn handle_id(&self) -> HandleId;
-    fn smithay_id(&self) -> &Id;
-    fn commit(&self) -> CommitCounter;
-    fn bump_commit(&mut self);
-    fn location(&self) -> Point<i32, Physical>;
-    fn size(&self) -> Size<i32, Physical>;
-    /// The UI viewport scale factor (logical = physical / scale_factor). For
-    /// `World` items this is the zoom counter-scale (`1/zoom`); for `Screen`
-    /// items it's the instance scale (currently always 1.0).
-    fn scale_factor(&self) -> f32;
-    fn set_location(&mut self, p: Point<i32, Physical>);
-    fn queue_input(&mut self, input: Input);
-    /// Events or messages wait for the next tick (`UiRuntime::has_queued`).
-    fn has_queued(&self) -> bool;
-    /// Input or messages wait (`UiRuntime::has_input`); a repaint request
-    /// alone does not count.
-    fn has_input(&self) -> bool;
-    fn tick(&mut self) -> bool;
-    /// Run what queued input owes outside a frame, GPU untouched
-    /// (`UiRuntime::tick_offscreen`).
-    fn tick_offscreen(&mut self);
-    /// Advance frame bookkeeping WITHOUT rasterizing: clears the runtime's dirty
-    /// flag so an off-screen surface stops pinning the redraw loop, while its
-    /// animation/message driving (in `tick`) continues untouched. Paired with a
-    /// `stale` flag on the item so it re-renders once when it becomes visible.
-    fn acknowledge_frame(&mut self);
-    /// Off screen (`true`) or shown again (see `UiRuntime::set_suspended`).
-    fn set_suspended(&mut self, suspended: bool);
-    /// Force a pass and paint on the next frame (`UiRuntime::request_redraw`).
-    fn request_redraw(&mut self);
-    /// True if the runtime still wants to be rendered next frame — dirty or
-    /// mid-animation. Drives the host's "keep scheduling frames" decision.
-    fn wants_frame(&self) -> bool;
-    /// The future instant an animation asked to be redrawn at (UI
-    /// `RedrawRequest::At`), which `wants_frame` deliberately does not cover.
-    fn deadline(&self) -> Option<Instant>;
-    fn render(&mut self);
-    /// Retire a pipelined frame if the GPU finished it, WITHOUT rasterizing, and
-    /// bump the commit when one becomes visible. Must run every frame for every
-    /// item: UI rasterizes only when dirty, so a deferred publish has no render
-    /// call of its own to ride along with and would otherwise never land.
-    fn poll_publish(&mut self);
-    /// Whether the GPU backing is currently allocated. Off-screen surfaces are
-    /// released to reclaim memory while their runtime keeps ticking.
-    fn is_resident(&self) -> bool;
-    /// Free the GPU backing (the GL texture ring). The `UiRuntime` keeps
-    /// running; call `ensure_backing` before the next render.
-    fn release_backing(&mut self);
-    /// Re-allocate the backing at the current size if it was released.
-    fn ensure_backing(
-        &mut self,
-        render_node: &str,
-        wgpu_ctx: &WgpuGlContext,
-        gles: &mut GlesRenderer,
-    ) -> Result<(), SurfaceError>;
-    /// Match the ring to the live setting. Per-frame, so the knob applies
-    /// without a restart; a no-op while released or once the depth matches.
-    fn sync_depth(
-        &mut self,
-        render_node: &str,
-        wgpu_ctx: &WgpuGlContext,
-        gles: &mut GlesRenderer,
-        want: usize,
-    ) -> Result<(), SurfaceError>;
-    /// The GL texture UI last published, or `None` while the backing is
-    /// released. The only output: UI draws into this texture on
-    /// the compositor's own context.
-    fn texture_handle(&self) -> Option<&smithay::backend::renderer::gles::GlesTexture>;
-    fn apply_pending_resize(
-        &mut self,
-        render_node: &str,
-        wgpu_ctx: &WgpuGlContext,
-        gles: &mut GlesRenderer,
-    ) -> Result<bool, SurfaceError>;
-    fn request_resize(&mut self, new_size: Size<i32, Physical>, scale_factor: f32);
-    fn pending_resize(&self) -> Option<(Size<i32, Physical>, f32)>;
-    fn pointer_leave(&mut self);
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-}
+use ui_surface::producer::UiProducer as UiInstanceAny;
 
 impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
     fn handle_id(&self) -> HandleId {
         self.id
     }
-    fn smithay_id(&self) -> &Id {
-        &self.smithay_id
+    fn smithay_id(&self) -> Id {
+        self.smithay_id.clone()
     }
     fn commit(&self) -> CommitCounter {
         self.commit
@@ -267,8 +189,8 @@ impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
     ) -> Result<(), SurfaceError> {
         self.surface.sync_depth(render_node, wgpu_ctx, gles, want)
     }
-    fn texture_handle(&self) -> Option<&smithay::backend::renderer::gles::GlesTexture> {
-        self.surface.gles_texture()
+    fn texture_handle(&self) -> Option<smithay::backend::renderer::gles::GlesTexture> {
+        self.surface.gles_texture().cloned()
     }
     fn apply_pending_resize(
         &mut self,
@@ -307,19 +229,14 @@ impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
     fn pointer_leave(&mut self) {
         self.runtime.pointer_leave();
     }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+
+
 }
 
 // ── UiItem (the registry's stored type) ─────────────────────────────
 
 pub struct UiItem {
     pub(crate) inner: Box<dyn UiInstanceAny>,
-    type_id: TypeId,
     space: UiSpace,
     pub layer: u64,
     /// When false the item is skipped by `elements`/`element_of` and never
@@ -407,8 +324,7 @@ impl UiItem {
     }
     pub(crate) fn new<U: UiProgram>(inst: UiInstance<U>, space: UiSpace, layer: u64) -> Self {
         Self {
-            type_id: TypeId::of::<UiInstance<U>>(),
-            inner: Box::new(inst),
+            inner: Box::new(SharedInstance(UiControl::new(inst))),
             space,
             layer,
             visible: true,
@@ -690,25 +606,11 @@ impl UiItem {
 
     // ── Type queries ──────────────────────────────────────────────
 
-    pub fn is<U: UiProgram>(&self) -> bool {
-        self.type_id == TypeId::of::<UiInstance<U>>()
-    }
 
-    pub fn get<U: UiProgram>(&self) -> Option<&UiInstance<U>> {
-        if self.is::<U>() {
-            self.inner.as_any().downcast_ref::<UiInstance<U>>()
-        } else {
-            None
-        }
-    }
 
-    pub fn get_mut<U: UiProgram>(&mut self) -> Option<&mut UiInstance<U>> {
-        if self.is::<U>() {
-            self.inner.as_any_mut().downcast_mut::<UiInstance<U>>()
-        } else {
-            None
-        }
-    }
+
+
+
 
     // ── Internal ──────────────────────────────────────────────────
 
@@ -943,4 +845,54 @@ pub(crate) fn build_instance<U: UiProgram>(
         pending_resize: None,
         generation: 0,
     }
+}
+
+struct SharedInstance<U: UiProgram>(UiControl<U>);
+impl<U: UiProgram> UiInstanceAny for SharedInstance<U> {
+    fn handle_id(&self) -> HandleId { self.0.inner.borrow().handle_id() }
+    fn smithay_id(&self) -> Id { self.0.inner.borrow().smithay_id() }
+    fn commit(&self) -> CommitCounter { self.0.inner.borrow().commit() }
+    fn bump_commit(&mut self) { self.0.inner.borrow_mut().bump_commit() }
+    fn location(&self) -> Point<i32, Physical> { self.0.inner.borrow().location() }
+    fn size(&self) -> Size<i32, Physical> { self.0.inner.borrow().size() }
+    fn scale_factor(&self) -> f32 { self.0.inner.borrow().scale_factor() }
+    fn set_location(&mut self, p: Point<i32, Physical>) { self.0.inner.borrow_mut().set_location(p) }
+    fn queue_input(&mut self, input: Input) { self.0.inner.borrow_mut().queue_input(input) }
+    fn has_queued(&self) -> bool { self.0.inner.borrow().has_queued() }
+    fn has_input(&self) -> bool { self.0.inner.borrow().has_input() }
+    fn tick(&mut self) -> bool { self.0.inner.borrow_mut().tick() }
+    fn tick_offscreen(&mut self) { self.0.inner.borrow_mut().tick_offscreen() }
+    fn acknowledge_frame(&mut self) { self.0.inner.borrow_mut().acknowledge_frame() }
+    fn set_suspended(&mut self, suspended: bool) { self.0.inner.borrow_mut().set_suspended(suspended) }
+    fn request_redraw(&mut self) { self.0.inner.borrow_mut().request_redraw() }
+    fn wants_frame(&self) -> bool { self.0.inner.borrow().wants_frame() }
+    fn deadline(&self) -> Option<Instant> { self.0.inner.borrow().deadline() }
+    fn render(&mut self) { self.0.inner.borrow_mut().render() }
+    fn poll_publish(&mut self) { self.0.inner.borrow_mut().poll_publish() }
+    fn is_resident(&self) -> bool { self.0.inner.borrow().is_resident() }
+    fn release_backing(&mut self) { self.0.inner.borrow_mut().release_backing() }
+    fn ensure_backing(
+        &mut self,
+        render_node: &str,
+        wgpu_ctx: &WgpuGlContext,
+        gles: &mut GlesRenderer,
+    ) -> Result<(), SurfaceError> { self.0.inner.borrow_mut().ensure_backing(render_node, wgpu_ctx, gles) }
+    fn sync_depth(
+        &mut self,
+        render_node: &str,
+        wgpu_ctx: &WgpuGlContext,
+        gles: &mut GlesRenderer,
+        want: usize,
+    ) -> Result<(), SurfaceError> { self.0.inner.borrow_mut().sync_depth(render_node, wgpu_ctx, gles, want) }
+    fn texture_handle(&self) -> Option<smithay::backend::renderer::gles::GlesTexture> { self.0.inner.borrow().texture_handle() }
+    fn apply_pending_resize(
+        &mut self,
+        render_node: &str,
+        wgpu_ctx: &WgpuGlContext,
+        gles: &mut GlesRenderer,
+    ) -> Result<bool, SurfaceError> { self.0.inner.borrow_mut().apply_pending_resize(render_node, wgpu_ctx, gles) }
+    fn request_resize(&mut self, new_size: Size<i32, Physical>, scale_factor: f32) { self.0.inner.borrow_mut().request_resize(new_size, scale_factor) }
+    fn pending_resize(&self) -> Option<(Size<i32, Physical>, f32)> { self.0.inner.borrow().pending_resize() }
+    fn pointer_leave(&mut self) { self.0.inner.borrow_mut().pointer_leave() }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self.0.inner.borrow_mut().as_any_mut() }
 }

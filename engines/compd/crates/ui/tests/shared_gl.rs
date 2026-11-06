@@ -35,7 +35,8 @@ const SCALE: f32 = 2.0;
 /// empty with text). Bottom half: opaque blue.
 struct Bars;
 
-impl UiProgram for Bars {
+impl ui::UiProgram for Bars {
+    ui::program_owner!(Bars);
     type Message = ();
 
     fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<()>) {
@@ -235,7 +236,8 @@ fn egui_paints_into_the_shared_context_and_smithay_composites_it() {
 /// A full surface of one colour, changed by message.
 struct Fill(egui::Color32);
 
-impl UiProgram for Fill {
+impl ui::UiProgram for Fill {
+    ui::program_owner!(Fill);
     type Message = egui::Color32;
 
     fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<egui::Color32>) {
@@ -383,7 +385,8 @@ fn two_painters_alternate_with_smithay_draws() {
 /// it at the end of that very pass, and its shapes still draw it.
 struct Transient;
 
-impl UiProgram for Transient {
+impl ui::UiProgram for Transient {
+    ui::program_owner!(Transient);
     type Message = ();
 
     fn show(&mut self, ui: &mut egui::Ui, _emit: &mut Vec<()>) {

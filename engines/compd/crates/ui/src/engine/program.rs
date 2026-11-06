@@ -12,7 +12,8 @@
 /// `Send + 'static` so the registry can hold programs behind trait objects.
 /// One program type has one message type, so a typed handle can only send
 /// that program its own messages.
-pub trait UiProgram: Send + 'static {
+pub trait UiProgram: Sized + Send + 'static {
+    fn with_controls<R>(f: impl FnOnce(&mut std::collections::HashMap<crate::HandleId, std::rc::Weak<std::cell::RefCell<crate::UiInstance<Self>>>>) -> R) -> R;
     type Message: Clone + Send + std::fmt::Debug + 'static;
 
     /// Draw the UI for this pass into `ui`, the root covering the whole

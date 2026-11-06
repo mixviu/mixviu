@@ -1,0 +1,124 @@
+-- Lab B3: typed controls refer to one UI instance, never the shared registry.
+-- The registry owns the strong instance; per-program control tables keep Weak
+-- references, so destroy still releases the GPU backing immediately.
+fn rust_method($text, $name)
+  $matches = re_find($text, "(?m)^    (?:pub(?:\\(crate\\))? )?fn " .. $name .. "(?:<|\\()")
+  if len($matches) == 0 then raise("METHOD", $name) end
+  $start = $matches[0].start
+  $open = $start + index_of(substr($text, $start), "{")
+  $level = 1
+  $at = $open + 1
+  while $level > 0
+    $c = substr($text,$at,1)
+    if $c == "{" then $level = $level + 1 end
+    if $c == "}" then $level = $level - 1 end
+    $at = $at + 1
+  end
+  return {text: substr($text,$start,$at-$start), sig: trim(substr($text,$start,$open-$start)), start: $start, end: $at}
+end
+$base = "engines/compd/crates/"
+$path = $base .. "ui/src/instance.rs"
+$s = read_file($path)
+$trait = split(split($s,"pub(crate) trait UiInstanceAny: Any {")[1],"\n}\n")[0]
+$trait = re_replace($trait,"(?m)^    fn as_any.*\\n", "")
+$trait = replace($trait,"fn smithay_id(&self) -> &Id", "fn smithay_id(&self) -> Id")
+$trait = replace($trait,"Option<&smithay::backend::renderer::gles::GlesTexture>", "Option<smithay::backend::renderer::gles::GlesTexture>")
+$imports = <<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Erased GPU surface source. Typed program storage never crosses this seam.
+use std::time::Instant;
+use crate::{HandleId, input::Input};
+use graphics::surface::{SurfaceError, WgpuGlContext};
+use smithay::backend::renderer::{element::Id, utils::CommitCounter, gles::GlesRenderer};
+use smithay::utils::{Physical, Point, Size};
+pub trait UiProducer {
+EOF
+write_file($base .. "ui-surface/src/producer.rs", $imports .. "\n" .. $trait .. "\n}\n")
+$s = replace_must($s,"pub(crate) trait UiInstanceAny: Any {" .. split(split($s,"pub(crate) trait UiInstanceAny: Any {")[1],"\n}\n")[0] .. "\n}", "use ui_surface::producer::UiProducer as UiInstanceAny;")
+for $name in ["as_any", "as_any_mut", "is", "get", "get_mut"]
+  $m = rust_method($s,$name)
+  $s = replace_must($s,$m.text,"")
+end
+$s = replace_must($s,"use std::any::{Any, TypeId};", "use std::cell::{RefCell, Ref, RefMut};\nuse std::rc::{Rc, Weak};\nuse crate::owner::UiControl;")
+$s = replace_must($s,"    type_id: TypeId,\n", "")
+$s = replace_must($s,"            type_id: TypeId::of::<UiInstance<U>>(),\n", "")
+$s = replace_must($s,"            inner: Box::new(inst),", "            inner: Box::new(SharedInstance(UiControl::new(inst))),")
+$s = replace_must($s,"fn smithay_id(&self) -> &Id {\n        &self.smithay_id", "fn smithay_id(&self) -> Id {\n        self.smithay_id.clone()")
+$s = replace_must($s,"Option<&smithay::backend::renderer::gles::GlesTexture>", "Option<smithay::backend::renderer::gles::GlesTexture>")
+$s = replace_must($s,"self.surface.gles_texture()", "self.surface.gles_texture().cloned()")
+$forward = []
+for $m in re_find($trait,"fn ([a-z_]+)\\(")
+  $tail = substr($trait,$m.start)
+  $sig = trim(split($tail,";")[0])
+  $params = split(split($sig,"(")[1],")")[0]
+  $names = []
+  for $p in split($params,",")
+    if contains($p,":") then push($names,trim(split($p,":")[0])) end
+  end
+  $borrow = if contains($sig,"&mut self") then "borrow_mut" else "borrow" end
+  push($forward,"    " .. $sig .. " { self.0.inner." .. $borrow .. "()." .. $m.groups[0] .. "(" .. join($names,", ") .. ") }")
+end
+$s = $s .. "\nstruct SharedInstance<U: UiProgram>(UiControl<U>);\nimpl<U: UiProgram> UiInstanceAny for SharedInstance<U> {\n" .. join($forward,"\n") .. "\n}\n"
+write_file($path,$s)
+write_file($base .. "ui/src/owner.rs", <<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Typed per-program controls. The compositor registry itself is never shared.
+use std::cell::{RefCell, Ref, RefMut};
+use std::rc::Rc;
+use crate::{UiProgram, UiInstance, UiRuntime, HandleId};
+pub struct UiControl<U: UiProgram> { pub(crate) inner: Rc<RefCell<UiInstance<U>>> }
+impl<U: UiProgram> Clone for UiControl<U> { fn clone(&self) -> Self { Self { inner: self.inner.clone() } } }
+impl<U: UiProgram> UiControl<U> {
+    pub(crate) fn new(instance: UiInstance<U>) -> Self {
+        let id = instance.handle_id();
+        let inner = Rc::new(RefCell::new(instance));
+        U::with_controls(|controls| { controls.retain(|_, v| v.strong_count() != 0); controls.insert(id, Rc::downgrade(&inner)); });
+        Self { inner }
+    }
+    pub fn lookup(id: HandleId) -> Option<Self> { U::with_controls(|controls| controls.get(&id).and_then(|v| v.upgrade()).map(|inner| Self { inner })) }
+    pub fn runtime(&self) -> Ref<'_, UiRuntime<U>> { Ref::map(self.inner.borrow(), |i| i.runtime()) }
+    pub fn runtime_mut(&self) -> RefMut<'_, UiRuntime<U>> { RefMut::map(self.inner.borrow_mut(), |i| i.runtime_mut()) }
+    pub fn ui(&self) -> Ref<'_, U> { Ref::map(self.inner.borrow(), |i| i.ui()) }
+    pub fn ui_mut(&self) -> RefMut<'_, U> { RefMut::map(self.inner.borrow_mut(), |i| i.ui_mut()) }
+}
+#[macro_export]
+macro_rules! program_owner {
+    ($program:ty) => {
+        fn with_controls<R>(f: impl FnOnce(&mut std::collections::HashMap<$crate::HandleId, std::rc::Weak<std::cell::RefCell<$crate::UiInstance<Self>>>>) -> R) -> R {
+            thread_local! { static CONTROLS: std::cell::RefCell<std::collections::HashMap<$crate::HandleId, std::rc::Weak<std::cell::RefCell<$crate::UiInstance<$program>>>>> = std::cell::RefCell::new(std::collections::HashMap::new()); }
+            CONTROLS.with(|controls| f(&mut controls.borrow_mut()))
+        }
+    };
+}
+EOF
+)
+$p = $base .. "ui/src/lib.rs"
+write_file($p,read_file($p) .. "\npub mod owner;\npub use owner::UiControl;\n")
+$p = $base .. "ui/src/engine/program.rs"
+$s = replace_must(read_file($p),"pub trait UiProgram: Send + 'static {", "pub trait UiProgram: Sized + Send + 'static {\n    fn with_controls<R>(f: impl FnOnce(&mut std::collections::HashMap<crate::HandleId, std::rc::Weak<std::cell::RefCell<crate::UiInstance<Self>>>>) -> R) -> R;")
+write_file($p,$s)
+for $p in walk("engines/compd")
+  if not ends_with($p,".rs") then continue end
+  $s = read_file($p)
+  $s = re_replace($s, "impl (?:ui::)?UiProgram for ([A-Za-z_]+) \\{", "impl ui::UiProgram for $1 {\n    ui::program_owner!($1);")
+  -- Within the ui crate itself the exported macro is reached through crate.
+  if starts_with($p,$base .. "ui/src/") then $s = replace($s,"impl ui::UiProgram", "impl crate::UiProgram"); $s = replace($s,"ui::program_owner!", "crate::program_owner!") end
+  write_file($p,$s)
+end
+-- Keep the existing typed concrete APIs while switching their implementation
+-- from Any lookups to the typed controls. The object-safe extension follows.
+$p = $base .. "ui/src/registry.rs"
+$s = read_file($p)
+for $name in ["instance", "instance_mut"]
+  $m = rust_method($s,$name)
+  $sig = re_replace($m.sig,"Option<&(?:mut )?UiInstance<U>>", "Option<crate::UiControl<U>>")
+  $s = replace_must($s,$m.text,$sig .. " { if !self.contains(handle.id) { return None; } crate::UiControl::lookup(handle.id) }")
+end
+$m = rust_method($s,"dispatch_message")
+$s = replace_must($s,$m.text,$m.sig .. " {\n let instance = self.instance_mut(handle).ok_or(DispatchError::UnknownHandle(handle.id))?;\n instance.runtime_mut().queue_message(message);\n Ok(())\n }")
+write_file($p,$s)
+$p = $base .. "ui-surface/src/lib.rs"
+write_file($p,read_file($p) .. "\npub mod producer;\n")
+print("typed UI controls no longer downcast registry items")
