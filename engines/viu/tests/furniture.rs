@@ -156,7 +156,8 @@ async fn exercise(old: bool, parent: Option<&Path>) {
     if !old {
         let log = root.path().join("viu.log");
         let file = fs::File::create(&log).unwrap();
-        let child = Command::new(env!("CARGO_BIN_EXE_viu")).arg("--host")
+        let child = Command::new(env!("CARGO_BIN_EXE_viu"))
+            .arg("--host")
             .env("WAYLAND_DISPLAY", "wayland-furniture-test")
             .env("XDG_RUNTIME_DIR", root.path())
             .env("HOME", root.path())

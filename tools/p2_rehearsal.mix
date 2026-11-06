@@ -66,7 +66,7 @@ try
   await_service("comp-p2","comp.ping")
   $env.WAYLAND_DISPLAY="p2-desk";$env.MIXOS_COMP_SERVICE="comp-p2";$env.VIU_COMP_SERVICE="comp-p2"
   print(run_argv_must([$run.path.."/settingsd","init","--root",$run.path.."/settings","--instance","example"],{env:$env}))
-  for $item in [{name:"settingsd",argv:["serve","--root",$run.path.."/settings","--instance","example"],service:"settingsd",ping:"HELP"},{name:"editd",argv:["serve"],service:"edit",ping:"edit.ping"},{name:"monitord",argv:["serve","--db",$run.path.."/monitor.sqlite"],service:"monitord",ping:"monitord.ping"}]
+  for $item in [{name:"settingsd",argv:["serve","--root",$run.path.."/settings","--instance","example"],service:"settingsd",ping:"HELP"},{name:"editd",argv:["serve"],service:"edit",ping:"edit.ping"},{name:"monitord",argv:["serve","--db",$run.path.."/monitor.sqlite"],service:"monitord",ping:"monitord.status"}]
     $p=launch(concat([$run.path.."/"..$item.name],$item.argv),$item.name,{})
     push($children,$p)
     push($records,{service:$item.service,pid:$p,ping:await_service($item.service,$item.ping)})
