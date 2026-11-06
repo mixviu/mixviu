@@ -124,12 +124,12 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
     if let Some(pick) = shown.inner {
         if let Some(command) = application_id(ui.ctx(), pick.0) {
             ui.ctx()
-                .data_mut(|d| d.insert_temp(key.with("picked"), command));
+                .data_mut(|d| d.insert_temp(key.with("picked"), serde_json::json!({"command":command,"origin":if pick.1 {"palette"}else{"menu"}})));
         }
     }
     shown.response
 }
-pub fn picked(ctx: &egui::Context) -> Option<String> {
+pub fn picked(ctx: &egui::Context) -> Option<Value> {
     let key = model_id(ctx).with("picked");
-    ctx.data_mut(|d| d.remove_temp::<String>(key))
+    ctx.data_mut(|d| d.remove_temp::<Value>(key))
 }

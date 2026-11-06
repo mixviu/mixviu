@@ -70,8 +70,9 @@ on monitor.node
   $node=$event.args.node ?? ""
   if $event.args.node!=nil and not re_match($node,"^[a-zA-Z0-9_-]{1,63}$") then reply(10,json_encode({error_code:"ARGUMENT",message:"Not a node name"}));return end
   if $node==$state.node then reply(0,json_encode({node:$event.args.node,target:$core.target($node)}));return end
+  for $kind in ["snapshot","processes","history","connections"] $state=$fetch.cancel($state,$kind) end
   $state.node=$node;$state.node_draft=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.rings={};$state.history_seeded=false;$state.connections=nil;$state.connections_error=nil;$state.selected=nil
-  $state=refresh_monitor($state);publish_monitor($state)
+  $state=$fetch.poll($state);publish_monitor($state)
   reply(0,json_encode({node:$event.args.node,target:$core.target($node)}))
 end
 on monitor.sort
@@ -109,10 +110,10 @@ end
 on monitor.intent
   $a=$event.args
   if $a.id=="end-task" then
-    $out=signal_monitor($state,{pid:$state.selected,signal:"SIGTERM"});$state=$out.state
+    $out=execute_monitor($state,"process.end","ui");$state=$out.state
   elif $a.id=="tabs" then $state.tab=$a.value;$state=navigate_monitor($state)
   elif $a.id=="performance" and $a.action=="choose" then $state.section=$a.value;$state=navigate_monitor($state)
-  elif $a.id=="tree" then $state.tree=$a.value;$state=refresh_monitor($state)
+  elif $a.id=="tree" then $out=execute_monitor($state,"view.tree","ui");$state=$out.state
   elif $a.id=="refresh" then $state=refresh_monitor($state)
   elif $a.id=="pause" then $state.paused=$a.value
   elif $a.id=="filter" then $state.filter=$a.value;$state=refresh_monitor($state)
@@ -149,6 +150,9 @@ fn signal_monitor($s,$a)
   end
   $expected=$a.start_time ?? $s.start_times[to_string($pid)]
   $answer=viu_process("signal",{pid:$pid,signal:$a.signal,start_time:$expected})
+  if $answer.pid_reused==true or $answer.ok then
+    $s=$fetch.cancel($s,"snapshot");$s=$fetch.cancel($s,"processes")
+  end
   if $answer.pid_reused==true then $s=refresh_monitor($s) end
   if not $answer.ok then
     $s.error=$answer.error
@@ -212,6 +216,8 @@ fn execute_monitor($s,$id,$origin)
     $answer=theme_monitor($s,$edit);$s=$answer.state
     if $answer.rc!=0 then return $answer end
   end
+  send "viu-local" "native.executed" body={id:$id,origin:$origin,params:nil,result:nil}
+  $recorded=$rc
   return {state:$s,rc:0,body:{executed:$id}}
 end
 fn theme_monitor($s,$args)

@@ -411,7 +411,7 @@ pub(crate) fn draw(
             } else if widget.properties["style"] == "gold" {
                 let response = crate::native_menu::draw(ui, value, form["effective"] != "bar");
                 if let Some(command) = crate::native_menu::picked(ui.ctx()) {
-                    emit(events, id, "command", json!({"command":command}));
+                    emit(events, id, "command", command);
                 }
                 response
             } else if form["effective"] == "bar" {

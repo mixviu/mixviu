@@ -198,6 +198,7 @@ impl Host {
         self.facilities.prepare(ui.ctx(), &self.bus);
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
+                "native.executed"=>self.facilities.record(&request.args),
                 "native.copy" => match request.args["text"]
                     .as_str()
                     .filter(|s| s.len() <= 1_048_576)
