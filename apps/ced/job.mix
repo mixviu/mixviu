@@ -57,9 +57,6 @@ on job.run
   elif $job.kind=="find" then
     $v=viu_document("find",$a.document,$a.query)
     reply(0,json_encode($v));return
-  elif $job.kind=="clipboard" then
-    if $a.operation=="copy" then $ok=clip_set($a.text)
-    else $text=clip_get("text/plain");$v=viu_document("command",$a.document,{name:"insert",text:$text,caller:$a.caller}) end
   elif $job.kind=="macro" then
     reply(0,json_encode(viu_macros($a.command,$a.args)));return
   elif $job.kind=="session-load" then reply(0,json_encode(load_session()));return

@@ -10070,6 +10070,7 @@ dependencies = [
  "tempfile",
  "thumbs",
  "tokio",
+ "toolkit",
  "tracing",
  "tracing-subscriber",
  "unicode-segmentation",

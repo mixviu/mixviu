@@ -45,10 +45,12 @@ fn do_action($s,$id,$a,$who=nil,$index=nil)
     if contains(["edit.copy","edit.cut"],$id) then
       $result=viu_document("selected",$t.document,{}).text
       if $result!=nil then
-        $s=queue_job($s,"clipboard",{operation:"copy",text:$result})
+        viu_platform("copy","ced-copy",{text:$result})
         if $id=="edit.cut" then $v=viu_document("command",$t.document,{name:"delete",caller:$who}) end
       end
-    elif $id=="edit.paste" then $s=queue_job($s,"clipboard",{operation:"paste",document:$t.document,caller:$who})
+    elif $id=="edit.paste" then
+      $s.serial=$s.serial+1;$key="paste-"..to_string($s.serial)
+      $s.pastes[$key]={document:$t.document,caller:$who};viu_platform("paste",$key,{})
     elif $id=="edit.overwrite" then $v=viu_document("overwrite",$t.document,{})
     else $v=viu_document("command",$t.document,{name:replace(replace($id,"edit.",""),"_","-"),caller:$who}) end
   elif starts_with($id,"search.") then

@@ -7,7 +7,12 @@ fn current($s)
   return $s.tabs[$s.active]
 end
 fn refresh_tabs($s)
-  for $i=0 to len($s.tabs)-1 $s.tabs[$i]=viu_document("state",$s.tabs[$i].document,{}) end
+  for $i=0 to len($s.tabs)-1
+    $old=$s.tabs[$i];$s.tabs[$i]=viu_document("state",$old.document,{});$t=$s.tabs[$i]
+    if $t.phase=="live" and $t.path!=nil and $s.diagnostics[$t.path]!=nil and ($old.phase!="live" or $old.resyncs!=$t.resyncs or ($old.dirty and not $t.dirty)) then
+      for $source in keys($s.diagnostics[$t.path]) $s=queue_job($s,"diagnostics",{request:$s.diagnostics[$t.path][$source],documents:[$t.document]}) end
+    end
+  end
   for $t in $s.tabs
     if $s.restore[$t.document]!=nil and $t.phase=="live" then
       $v=viu_document("restore-view",$t.document,$s.restore[$t.document]);$s.restore=delete($s.restore,$t.document)

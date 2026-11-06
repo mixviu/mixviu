@@ -15,10 +15,13 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
-    service:String,
-    native_drive:bool,
-    drive_next:u64,
-    drive_pending:BTreeMap<u64,Reply>,
+    platform:crate::platform::Platform,
+    paste_waits:std::collections::VecDeque<String>,
+    platform_results:std::collections::VecDeque<Value>,
+    service: String,
+    native_drive: bool,
+    drive_next: u64,
+    drive_pending: BTreeMap<u64, Reply>,
     ui_state: crate::ui_state::UiState,
     measurements: crate::ui_state::Measurements,
     input_at: Option<Instant>,
@@ -124,17 +127,27 @@ impl Host {
             return;
         }
         if self.native_drive {
-            if let Some((rc,body))=crate::debug::request(&self.service,&r.command,&r.args.to_string()) {let _=r.reply.send((rc,body));return;}
-            let prefix=format!("{}.",self.service);
-            if let Some(suffix)=r.command.strip_prefix(&prefix) {
+            if let Some((rc, body)) =
+                crate::debug::request(&self.service, &r.command, &r.args.to_string())
+            {
+                let _ = r.reply.send((rc, body));
+                return;
+            }
+            let prefix = format!("{}.", self.service);
+            if let Some(suffix) = r.command.strip_prefix(&prefix) {
                 if toolkit::drive::COMMANDS.contains(&suffix) {
-                    if suffix=="window" && r.args["action"]=="close" {
-                        r.command="app.quit".into();
-                    }else{
-                        self.drive_next+=1;let id=self.drive_next;
-                        let answer=toolkit::drive::request(ctx,id,suffix,&r.args);
-                        if let Some(answer)=answer {let _=r.reply.send((answer.rc,answer.body));}
-                        else{self.drive_pending.insert(id,r.reply);ctx.request_repaint();}
+                    if suffix == "window" && r.args["action"] == "close" {
+                        r.command = "app.quit".into();
+                    } else {
+                        self.drive_next += 1;
+                        let id = self.drive_next;
+                        let answer = toolkit::drive::request(ctx, id, suffix, &r.args);
+                        if let Some(answer) = answer {
+                            let _ = r.reply.send((answer.rc, answer.body));
+                        } else {
+                            self.drive_pending.insert(id, r.reply);
+                            ctx.request_repaint();
+                        }
                         return;
                     }
                 }
@@ -205,6 +218,14 @@ impl Host {
 }
 impl eframe::App for Host {
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
+        if !self.paste_waits.is_empty() {
+            raw.events.retain(|event| {
+                if let egui::Event::Paste(text)=event {
+                    if let Some(id)=self.paste_waits.pop_front(){self.platform_results.push_back(json!({"id":id,"text":text}));return false;}
+                }
+                true
+            });
+        }
         if !self.input.now.is_empty() {
             raw.events.append(&mut self.input.now);
         } else if let Some(mut events) = self.input.later.pop_front() {
@@ -226,9 +247,21 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
+        for request in self.platform.take(){
+            if request["kind"]=="copy" {ui.ctx().copy_text(request["body"]["text"].as_str().unwrap_or("").into());}
+            else {self.paste_waits.push_back(request["id"].as_str().unwrap_or("").into());ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);}
+        }
+        while let Some(result)=self.platform_results.front(){if self.runtime.notify("viu.platform.completed".into(),result.clone()).is_err(){break;}self.platform_results.pop_front();}
         if self.native_drive {
-            toolkit::drive::set_service(ui.ctx(),self.bus.client().as_ref().map(|_|self.service.as_str()));
-            for answer in toolkit::drive::logic(ui.ctx()) {if let Some(reply)=self.drive_pending.remove(&answer.id){let _=reply.send((answer.rc,answer.body));}}
+            toolkit::drive::set_service(
+                ui.ctx(),
+                self.bus.client().as_ref().map(|_| self.service.as_str()),
+            );
+            for answer in toolkit::drive::logic(ui.ctx()) {
+                if let Some(reply) = self.drive_pending.remove(&answer.id) {
+                    let _ = reply.send((answer.rc, answer.body));
+                }
+            }
         }
         for token in self.calls.cancelled() {
             let _ = self
@@ -415,13 +448,19 @@ impl Host {
             }
         }
         if self.ready {
-            if let Some(bindings)=self.model["shortcuts"].as_array() {
-                let bindings=bindings.clone();
+            if let Some(bindings) = self.model["shortcuts"].as_array() {
+                let bindings = bindings.clone();
                 for binding in bindings {
-                    if binding["enabled"]==false {continue;}
-                    if let (Some(chord),Some(id),Some(command))=(binding["chord"].as_str(),binding["id"].as_str(),self.model["on_shortcut"].as_str()) {
-                        if crate::input::consume_chord(ui.ctx(),chord) {
-                            self.dispatch(command.into(),json!({"id":id}),BTreeMap::new(),None);
+                    if binding["enabled"] == false {
+                        continue;
+                    }
+                    if let (Some(chord), Some(id), Some(command)) = (
+                        binding["chord"].as_str(),
+                        binding["id"].as_str(),
+                        self.model["on_shortcut"].as_str(),
+                    ) {
+                        if crate::input::consume_chord(ui.ctx(), chord) {
+                            self.dispatch(command.into(), json!({"id":id}), BTreeMap::new(), None);
                         }
                     }
                 }
@@ -497,7 +536,13 @@ impl Host {
             &self.view.geometry,
             self.measurements.snapshot(),
         );
-        if self.native_drive {for answer in toolkit::drive::finish(ui.ctx()){if let Some(reply)=self.drive_pending.remove(&answer.id){let _=reply.send((answer.rc,answer.body));}}}
+        if self.native_drive {
+            for answer in toolkit::drive::finish(ui.ctx()) {
+                if let Some(reply) = self.drive_pending.remove(&answer.id) {
+                    let _ = reply.send((answer.rc, answer.body));
+                }
+            }
+        }
     }
 }
 
@@ -505,8 +550,13 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
     let mut commands = bundle.manifest.commands.clone();
     if bundle.manifest.native_drive {
-        commands.extend(toolkit::drive::COMMANDS.iter().map(|suffix|format!("{service}.{suffix}")));
-        commands.extend(["state","set","recent"].map(|suffix|format!("{service}.debug.{suffix}")));
+        commands.extend(
+            toolkit::drive::COMMANDS
+                .iter()
+                .map(|suffix| format!("{service}.{suffix}")),
+        );
+        commands
+            .extend(["state", "set", "recent"].map(|suffix| format!("{service}.debug.{suffix}")));
     }
     commands.extend(
         [
@@ -516,6 +566,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             "viu.ui.focus",
             "viu.ui.text",
             "viu.ui.key",
+            "viu.ui.ime",
             "viu.ui.hover",
             "viu.ui.scroll",
             "viu.ui.drag",
@@ -540,7 +591,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let timers = crate::timers::Timers::default();
     let calls = crate::calls::Calls::default();
     let ui_state = crate::ui_state::UiState::default();
+    let platform=crate::platform::Platform::default();
     let services = crate::runtime::Services {
+        platform:Some(platform.clone()),
         ui_state: Some(ui_state.clone()),
         macros: bundle.manifest.macros.then(|| {
             let roots = macros::Roots::resolve().map(|mut roots| {
@@ -585,10 +638,13 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        platform,
+        paste_waits:Default::default(),
+        platform_results:Default::default(),
         service: bundle.manifest.service.clone(),
-        native_drive:bundle.manifest.native_drive,
-        drive_next:0,
-        drive_pending:BTreeMap::new(),
+        native_drive: bundle.manifest.native_drive,
+        drive_next: 0,
+        drive_pending: BTreeMap::new(),
         ui_state,
         measurements: Default::default(),
         input_at: None,
@@ -632,7 +688,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
 }
 
 pub fn run(mut args: Vec<String>) -> eframe::Result {
-    crate::debug::init("info",&mut args).unwrap_or_else(|e|{eprintln!("viu: {e}");std::process::exit(2)});
+    crate::debug::init("info", &mut args).unwrap_or_else(|e| {
+        eprintln!("viu: {e}");
+        std::process::exit(2)
+    });
     if args.first().is_some_and(|p| p.ends_with(".mix")) {
         std::process::exit(crate::macro_host::run(
             args[0].clone().into(),
@@ -665,7 +724,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
     let service = bundle.manifest.service.clone();
-    let native_drive=bundle.manifest.native_drive;
+    let native_drive = bundle.manifest.native_drive;
     eframe::run_native(
         &title,
         eframe::NativeOptions {
@@ -676,7 +735,9 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         },
         Box::new(move |cc| {
             crate::appearance::install(&cc.egui_ctx);
-            if native_drive {toolkit::drive::install(&cc.egui_ctx,&service);}
+            if native_drive {
+                toolkit::drive::install(&cc.egui_ctx, &service);
+            }
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(
                 bundle,

@@ -166,18 +166,70 @@ fn reopening_retains_saved_revision_and_recovered_metadata() {
 
 #[test]
 fn regex_replacement_is_one_server_transaction_and_diagnostics_invalidate_covered_lines() {
-    let docs=Documents::default();let mut server=seed(&docs,"tools","/tmp/tools.rs","one 12\ntwo 34\n");
-    let found=docs.call("find","tools",json!({"pattern":"([0-9]+)","regex":true,"case":true,"kind":"next"})).unwrap();assert_eq!(found["matches"],2);
-    assert_eq!(docs.call("selected","tools",json!({})).unwrap()["text"],"12");
-    let request=json!({"source":"test","diagnostics":[{"line":1,"severity":"warning","code":"TEST","message":"first"},{"line":2,"col":1,"severity":"error","code":"TEST2","message":"second"}]});
-    assert_eq!(docs.call("diagnostics","tools",request).unwrap()["shown"],2);
-    docs.call("select","tools",json!({"anchor":0,"head":0})).unwrap();docs.call("command","tools",json!({"name":"insert","text":"changed "})).unwrap();
-    let problems=docs.call("problems","tools",json!({})).unwrap();assert_eq!(problems.as_array().unwrap().len(),1);assert_eq!(problems[0]["message"],"second");
-    settle(&docs,"tools",&mut server);
-    let found=docs.call("find","tools",json!({"pattern":"([0-9]+)","regex":true,"kind":"replace-all","replacement":"<$1>","expand":true,"caller":"local:tester"})).unwrap();assert_eq!(found["replaced"],2);assert!(found["op_id"].is_string());
-    settle(&docs,"tools",&mut server);assert_eq!(docs.call("read","tools",json!({})).unwrap()["text"],"changed one <12>\ntwo <34>\n");
-    docs.call("command","tools",json!({"name":"undo","caller":"local:tester"})).unwrap();settle(&docs,"tools",&mut server);assert_eq!(docs.call("read","tools",json!({})).unwrap()["text"],"changed one 12\ntwo 34\n");
-    let stale=docs.call("diagnostics","tools",json!({"source":"test","digest":"0000000000000000000000000000000000000000000000000000000000000000","diagnostics":[{"line":1,"severity":"warning","code":"TEST","message":"stale"}]})).unwrap();assert_eq!(stale["stale"],true);assert_eq!(stale["shown"],0);
-    assert!(docs.call("diagnostics","tools",json!({"source":"lint","diagnostics":[]})).is_err());
-    assert!(docs.call("find","tools",json!({"pattern":"(","regex":true})).unwrap_err().contains("bad_regex"));
+    let docs = Documents::default();
+    let mut server = seed(&docs, "tools", "/tmp/tools.rs", "one 12\ntwo 34\n");
+    let found = docs
+        .call(
+            "find",
+            "tools",
+            json!({"pattern":"([0-9]+)","regex":true,"case":true,"kind":"next"}),
+        )
+        .unwrap();
+    assert_eq!(found["matches"], 2);
+    assert_eq!(
+        docs.call("selected", "tools", json!({})).unwrap()["text"],
+        "12"
+    );
+    let request = json!({"source":"test","diagnostics":[{"line":1,"severity":"warning","code":"TEST","message":"first"},{"line":2,"col":1,"severity":"error","code":"TEST2","message":"second"}]});
+    assert_eq!(
+        docs.call("diagnostics", "tools", request).unwrap()["shown"],
+        2
+    );
+    docs.call("select", "tools", json!({"anchor":0,"head":0}))
+        .unwrap();
+    docs.call(
+        "command",
+        "tools",
+        json!({"name":"insert","text":"changed "}),
+    )
+    .unwrap();
+    let problems = docs.call("problems", "tools", json!({})).unwrap();
+    assert_eq!(problems.as_array().unwrap().len(), 1);
+    assert_eq!(problems[0]["message"], "second");
+    settle(&docs, "tools", &mut server);
+    let found=docs.call("find","tools",json!({"pattern":"([0-9]+)","regex":true,"kind":"replace-all","replacement":"<$1>","expand":true,"caller":"local:tester"})).unwrap();
+    assert_eq!(found["replaced"], 2);
+    assert!(found["op_id"].is_string());
+    settle(&docs, "tools", &mut server);
+    assert_eq!(
+        docs.call("read", "tools", json!({})).unwrap()["text"],
+        "changed one <12>\ntwo <34>\n"
+    );
+    docs.call(
+        "command",
+        "tools",
+        json!({"name":"undo","caller":"local:tester"}),
+    )
+    .unwrap();
+    settle(&docs, "tools", &mut server);
+    assert_eq!(
+        docs.call("read", "tools", json!({})).unwrap()["text"],
+        "changed one 12\ntwo 34\n"
+    );
+    let stale=docs.call("diagnostics","tools",json!({"source":"test","digest":"0000000000000000000000000000000000000000000000000000000000000000","diagnostics":[{"line":1,"severity":"warning","code":"TEST","message":"stale"}]})).unwrap();
+    assert_eq!(stale["stale"], true);
+    assert_eq!(stale["shown"], 0);
+    assert!(
+        docs.call(
+            "diagnostics",
+            "tools",
+            json!({"source":"lint","diagnostics":[]})
+        )
+        .is_err()
+    );
+    assert!(
+        docs.call("find", "tools", json!({"pattern":"(","regex":true}))
+            .unwrap_err()
+            .contains("bad_regex")
+    );
 }
