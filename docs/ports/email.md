@@ -35,7 +35,7 @@ Region rectangles: header `[0,0,1040,38]`, content `[0,38,1040,612]`, status
 
 Nine states exercise dark/light, About, shortcuts, accent, density, roundness,
 font and text scale on unchanged PIDs. The shortcuts comparison revealed a
-missing grid-key projection, subsequently repaired. Compact frame geometry
+missing grid-key projection and a shared renderer that ignored grid rows, subsequently repaired. Compact frame geometry
 and no-account content still differ. The complete Prefs matrix (including
 authority loss/recovery) remains required. Process cleanup receipts show all
 owned applications, compositor, settingsd and private broker stopped.
@@ -57,6 +57,19 @@ and debug host build. Its formatting diff was applied. Earlier frame gate
 frame test, clippy, debug and release builds with no worker diff. These are
 scoped checks; **overall Email parity remains FAIL / incomplete**. Exact-source
 validation of the repaired checkpoint follows in `last.md`.
+
+Final focused CBC `20261107-090221-75f94d9d-a1` at
+`376f7f994feba2097552f7d36d97b53bb2b4416d` passes all five focused tests
+(including native primary-button input, disabled Compose, and a regression
+requiring the shortcuts rows to render), formatting and debug build with no
+worker diff. Debug binary SHA256:
+`a85315f811a46ad49500ebaa139f4bb7659c60a8d489b72fe5baf3fe6882f1e8`.
+In a matched native diagnostic, the shortcuts dialog crop `[294,120,452,458]`
+has SSIM and RMSE distortion **0**; whole image **0.01577 / 0.0648568**
+(the no-account content behind the dialog still differs). All 78 initial
+action records match structurally. These are frame diagnostics, not complete
+ABP compatibility or final release acceptance.
+
 
 ## Round 6 measured list rerun
 
@@ -234,3 +247,16 @@ The private Dopus results now carry this separate cohort beside those numbers.
 At that checkpoint the mail connection and core were still absent. Round 6
 implements the core above using generic native HTTP, rather than enabling the
 feature-gated lib-mix HTTP/JMAP handlers or changing the embedded interpreter.
+
+## Frame gate receipts
+
+CBC `20261107-085434-f2ceeae1-a1` at `df74a8337fdedecb769810adbc92275ec6b394cd`
+passed the complete scoped Viu/viu-engine fmt, check, test, clippy, debug and
+release gate with no worker diff. Existing warnings and six environment-specific
+ignored tests remain. Release receipt is retained at
+`/build/es-artifacts/df74a8337fdedecb769810adbc92275ec6b394cd/viu.json`, SHA256
+`ce949216c28bc88c2ba4c8fb96fed6228cc536a9621a3289a9e873c157c862b2`.
+This precedes the shortcut-grid renderer repair. The latest code head
+`376f7f994feba2097552f7d36d97b53bb2b4416d` has the focused gate above and
+debug native evidence; a complete final-source release gate and acceptance
+suite remain required. No release-byte acceptance or install is claimed.
