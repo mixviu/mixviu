@@ -330,6 +330,9 @@ impl Host {
             let answer = match request.command.as_str() {
                 "native.executed" => self.facilities.record(&request.args),
                 "native.bindings" => crate::shortcuts::resolve(&request.args),
+                "native.theme.file" => {
+                    Ok(crate::native_theme::describe(&toolkit::Theme::load()))
+                }
                 "native.copy" => match request.args["text"]
                     .as_str()
                     .filter(|s| s.len() <= 1_048_576)

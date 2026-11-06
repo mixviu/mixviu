@@ -50,7 +50,7 @@ fn checked($s,$id)
   if starts_with($id,"annotate.colour.") then return deep_eq($inks[slice($id,16)],$s.ui.colour) end
   if starts_with($id,"annotate.width.") then return $widths[slice($id,15)]==$s.ui.width end
   if starts_with($id,"annotate.size.") then return $sizes[slice($id,14)]==$s.ui.text_size end
-  if $id=="view.mode" then return ($s.look.mode ?? $s.effective.mode)=="light" end
+  if $id=="view.mode" then return false end
   for $pair in [{prefix:"view.theme.",field:"scheme"},{prefix:"view.mode.",field:"mode"},{prefix:"view.style.",field:"style"},{prefix:"view.decorations.",field:"decorations"},{prefix:"view.captions.",field:"captions"}]
     if starts_with($id,$pair.prefix) then
       $selected=$s.look[$pair.field] ?? if contains(["decorations","captions"],$pair.field) then "auto" else "session" end

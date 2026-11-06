@@ -250,7 +250,14 @@ fn execute($s,$id,$params,$alias)
   elif $id=="view.zoom_in" then $s.ui.zoom=clamp($s.ui.zoom*1.25,0.1,8)
   elif $id=="view.zoom_out" then $s.ui.zoom=clamp($s.ui.zoom/1.25,0.1,8)
   elif $id=="view.fit" then $s.ui.zoom=1;$s.ui.pan={x:0,y:0}
-  elif $id=="view.mode" then $s.look.mode=if ($s.look.mode ?? $s.effective.mode)=="light" then "dark" else "light" end
+  elif $id=="view.mode" then
+    $mode=$s.look.mode
+    if $mode==nil then
+      send "viu-local" "native.theme.file" body={}
+      if $rc!=0 then raise("FAILED",to_string($result)) end
+      $mode=$reply.mode
+    end
+    $s.look.mode=if $mode=="light" then "dark" else "light" end
   elif starts_with($id,"view.") then
     for $p in [{prefix:"view.theme.",axis:"scheme"},{prefix:"view.mode.",axis:"mode"},{prefix:"view.style.",axis:"style"},{prefix:"view.decorations.",axis:"decorations"},{prefix:"view.captions.",axis:"captions"}]
       if starts_with($id,$p.prefix) then $name=slice($id,len($p.prefix));$s.look[$p.axis]=if contains(["session","auto"],$name) then nil else $name end end
