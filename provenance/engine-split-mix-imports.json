@@ -14524,6 +14524,20 @@
       "destination_sha256": "860698372fe080e16c8826f0b1b7d85bebaf0ed15905ef5a3ef60b21e473f751",
       "source": "vendor/mail-parser/tests/integration_test.rs",
       "source_sha256": "860698372fe080e16c8826f0b1b7d85bebaf0ed15905ef5a3ef60b21e473f751"
+    },
+    {
+      "adaptation": null,
+      "destination": "docs/docs/spec/bus/commands.conf.mix",
+      "destination_sha256": "1278e90ef4d540247488c952a01d14f6c1fb7a85b57fc893e362af86c57cd829",
+      "source": "docs/docs/spec/bus/commands.conf.mix",
+      "source_sha256": "1278e90ef4d540247488c952a01d14f6c1fb7a85b57fc893e362af86c57cd829"
+    },
+    {
+      "adaptation": null,
+      "destination": "tools/test-support/load_guard.rs",
+      "destination_sha256": "3cef131db8d7f5519586482cac23852f7dc285921223efe9c659b5698c5096fb",
+      "source": "tools/test-support/load_guard.rs",
+      "source_sha256": "3cef131db8d7f5519586482cac23852f7dc285921223efe9c659b5698c5096fb"
     }
   ],
   "licence": "MIT OR Apache-2.0",
