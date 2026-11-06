@@ -6,7 +6,9 @@ $n=require("navigation.mix")
 $actions=require("actions.mix")
 $email=require("email.mix")
 fn value_of($s,$key)
-  return $s.values[$key] ?? viu_settings("default",$key)
+  $value=$s.values[$key] ?? viu_settings("default",$key)
+  if $value==nil and ends_with($key,".font.size") then return $s.values["appearance.font_size"] ?? 14.6666666667 end
+  return $value
 end
 fn row($s,$key,$title,$kind,$options)
   $meta=filter($s.catalog,fn($k)=$k.path==$key)[0] ?? {}
@@ -27,7 +29,7 @@ fn text_controls($s,$prefix,$title)
   $families=if $prefix=="email.reader" then [nil,"Inter","JetBrains Mono"] else [nil,"JetBrains Mono"] end
   return section($prefix,$title,[
     row($s,$prefix..".font.family","text-family","choice",{choices:choices($families,concat(["text-family-default"],slice($families,1))),description:if $prefix=="ced.editor" then $n.text_for("text-editor-mono") else "" end}),
-    row($s,$prefix..".font.size","text-size","number",{slider:true,places:1,unit:"px"}),
+    row($s,$prefix..".font.size","text-size","number",{slider:true,places:1,unit:"px",min:6,max:48}),
     row($s,$prefix..".padding","text-padding","choice",{choices:choices([1,2,4,8,16],[])}),
     row($s,$prefix..".light","text-light","toggle",{})])
 end
@@ -68,7 +70,7 @@ fn software($s)
 end
 fn email_sections($s)
   $rows=[buttons($s,"email-actions",["email.account.add","email.account.up","email.account.down","email.account.default","email.account.remove","view.refresh"])]
-  push($rows,{id:"email.accounts",title:$n.text_for("email-accounts"),kind:"records",inline:true,shown:true,blocked:nil,value:$s.ui.email_account,choices:map($email.accounts($s),fn($a)={value:$a.id,label:$a.name,detail:$a.email..if $a.id==$s.values["email.default_account"] then " ★" else "" end}),empty:$n.text_for("email-no-accounts")})
+  push($rows,{id:"email.accounts",title:$n.text_for("email-accounts"),kind:"records",split:true,empty_detail:if $s.email.form!=nil then "" elif len($email.accounts($s))==0 then $n.text_for("email-empty") else $n.text_for("email-select") end,inline:true,shown:true,blocked:nil,value:$s.ui.email_account,choices:map($email.accounts($s),fn($a)={value:$a.id,label:$a.name,detail:$a.email..if $a.id==$s.values["email.default_account"] then " ★" else "" end}),empty:$n.text_for("email-no-accounts")})
   if $s.email.form!=nil then
     for $field in ["name","url","email","ca_path","signature"]
       $title={name:"email-name",url:"email-url",email:"email-address",ca_path:"email-ca",signature:"email-signature"}[$field]

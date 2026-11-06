@@ -142,7 +142,8 @@ fn browser_row($s,$p,$r)
     $v.kind=if $kind=="slider" then "slider" else "number" end
     $v.min=$c.min;$v.max=$c.max;$v.step=$c.step;$v.scale=$c.scale ?? 1;$v.show_value=$c.show_value ?? false
     $v.start=if $c.start!=nil then $n.text_for($c.start) else nil end;$v.end=if $c.end!=nil then $n.text_for($c.end) else nil end
-  elif $kind=="steps" then $v.kind="choice";$v.choices=map($c.steps,fn($step)={value:$step,label:to_string($step)})
+  elif $kind=="steps" then
+    $v.kind="steps";$v.steps=$c.steps;$v.start=$n.text_for($c.start);$v.end=$n.text_for($c.end)
   elif $kind=="ordered" then
     $v.kind="ordered";$v.items=map($v.value ?? [],fn($value)={value:$value,label:(filter(concat($s.live.options["xkb.layouts"] ?? [],$s.live.options["xkb.layouts.extended"] ?? []),fn($option)=deep_eq($option.value,$value))[0] ?? {}).label ?? json_encode($value)})
   elif $kind=="append" then $v.kind="pick";$v.choices=concat($s.live.options[$c.source] ?? [],$s.live.options[$c.more] ?? [])

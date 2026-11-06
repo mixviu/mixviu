@@ -205,6 +205,7 @@ pub fn validate(value: &Value) -> Result<(), String> {
                 "swatches",
                 "number",
                 "slider",
+                "steps",
                 "text",
                 "link",
                 "button",
@@ -272,7 +273,7 @@ pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String>
                     "toggle" if !payload["value"].is_boolean() => {
                         return Err("toggle requires boolean".into());
                     }
-                    "number" | "slider" if !payload["value"].is_number() => {
+                    "number" | "slider" | "steps" if !payload["value"].is_number() => {
                         return Err("number requires number".into());
                     }
                     "text" | "multitext" | "secret" if !payload["value"].is_string() => {
@@ -598,6 +599,7 @@ pub(crate) fn draw(
                         .show(ui, |ui| {
                             ui.set_width((width - 2.0 * look.row_pad()).max(0.0));
                             ui.set_min_height(32.0);
+                            ui.spacing_mut().item_spacing.y=0.0;
                             ui.vertical(|ui| {
                                 ui.label(
                                     RichText::new(text(&value["pending"], "title"))
@@ -647,14 +649,14 @@ fn cards(
     events: &mut Vec<Intent>,
 ) {
     for (section_index, section) in array(sections).filter(|s| s["shown"] != false).enumerate() {
-        if section_index > 0 {
-            ui.add_space(look.m);
-        }
         if section["plain"] == true {
             if let Some(title) = section["title"].as_str() {
-                ui.separator();
-                ui.label(RichText::new(title).strong());
-                ui.add_space(6.0);
+                if section_index>0 {toolkit::bars::hairline(ui);}
+                ui.add_space(ui.spacing().item_spacing.y);
+                let size=egui::TextStyle::Body.resolve(ui.style()).size;
+                let font=toolkit::fonts::bound(ui.ctx(),toolkit::fonts::heading(size*1.1));
+                ui.label(RichText::new(title).font(font).strong());
+                ui.add_space(ui.spacing().item_spacing.y);
             }
             for row in array(&section["rows"]).filter(|r| r["shown"] != false) {
                 if ["tiles", "media-preview", "file-pick"].contains(&text(row, "kind")) {
@@ -665,6 +667,7 @@ fn cards(
             }
             continue;
         }
+        if section_index > 0 {ui.add_space(look.m);}
         if let Some(title) = section["title"].as_str() {
             let galley = ui.painter().layout_no_wrap(
                 title.into(),
@@ -902,7 +905,7 @@ fn draw_row(
                 "toggle" => 48.0,
                 "link" => 16.0,
                 "number" => 96.0,
-                "slider" => 360.0,
+                "slider" | "steps" => 360.0,
                 "choice" => array(&row["choices"]).map(|c| text_width(ui, text(c,"label"),14.0)).fold(0.0_f32,f32::max)+33.0,
                 "pick" => text_width(ui,text(row,"value"),14.0)+28.0,
                 "info" => text_width(ui,text(row,"value"),14.0),
@@ -1221,17 +1224,26 @@ fn draw_control(
             }
         }
         "number" => {
-            let mut value = row["value"].as_f64().unwrap_or(0.0);
-            let r = ui.add(
-                egui::DragValue::new(&mut value)
-                    .range(
-                        row["min"].as_f64().unwrap_or(0.0)..=row["max"].as_f64().unwrap_or(100.0),
-                    )
-                    .speed(row["step"].as_f64().unwrap_or(1.0)),
-            );
-            record(geometry, id, &format!("row.{key}.control"), &r);
-            if r.changed() && ui.is_enabled() {
-                edit = Some(json!(value));
+            let min=row["min"].as_f64().unwrap_or(0.0);
+            let max=row["max"].as_f64().unwrap_or(100.0);
+            let value=row["value"].as_f64().filter(|v|v.is_finite()).unwrap_or(min).round().clamp(min,max);
+            let step=row["step"].as_f64().unwrap_or(1.0);
+            ui.spacing_mut().item_spacing.x=4.0;
+            let plus=cosmic_icon_button(ui,toolkit::Icon::Plus,value<max,&format!("{} +",text(row,"title")),look);
+            ui.label(RichText::new(value.to_string()).size(14.0).color(look.value));
+            let minus=cosmic_icon_button(ui,toolkit::Icon::Minus,value>min,&format!("{} −",text(row,"title")),look);
+            record(geometry,id,&format!("row.{key}.plus"),&plus);
+            record(geometry,id,&format!("row.{key}.minus"),&minus);
+            if plus.clicked(){edit=Some(json!((value+step).min(max)));}
+            if minus.clicked(){edit=Some(json!((value-step).max(min)));}
+        }
+        "steps" => {
+            let steps:Vec<_>=array(&row["steps"]).collect();
+            if !steps.is_empty() {
+                let current=steps.iter().position(|v|**v==row["value"]).unwrap_or(steps.len()/2) as f64;
+                if let Some(next)=cosmic_slider(ui,(id,key),current,(0.0,(steps.len()-1) as f64),1.0,false,row["start"].as_str(),row["end"].as_str(),text(row,"title"),look) {
+                    edit=Some(steps[(next.round().max(0.0) as usize).min(steps.len()-1)].clone());
+                }
             }
         }
         "slider" => {
@@ -1400,25 +1412,37 @@ fn draw_inline_row(
                 if text(row, "kind") == "info" {
                     ui.label(RichText::new(row["value"].as_str().unwrap_or("")).weak());
                 } else if text(row, "kind") == "records" {
-                    if array(&row["choices"]).next().is_none() {
-                        ui.label(RichText::new(text(row, "empty")).weak());
-                    }
-                    for (index, item) in array(&row["choices"]).enumerate() {
-                        let r = ui.selectable_label(
-                            item["value"] == row["value"],
-                            format!("{}    {}", text(item, "label"), text(item, "detail")),
-                        );
-                        record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
-                        if r.clicked() {
-                            edit = Some(item["value"].clone());
+                    if row["split"]==true {toolkit::bars::hairline(ui);}
+                    let shown=ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            if row["split"]==true {ui.set_width(220.0);toolkit::panel::section_label(ui,text(row,"title"));}
+                            if array(&row["choices"]).next().is_none() {ui.label(RichText::new(text(row,"empty")).weak());}
+                            for (index,item) in array(&row["choices"]).enumerate() {
+                                let r=toolkit::selectable(ui,item["value"]==row["value"],text(item,"label"));
+                                record(geometry,id,&format!("row.{key}.choice.{index}"),&r);
+                                if r.clicked(){edit=Some(item["value"].clone());}
+                                ui.label(RichText::new(text(item,"detail")).small().weak());
+                                ui.add_space(ui.spacing().item_spacing.y);
+                            }
+                        });
+                        if row["split"]==true {
+                            ui.add_space(ui.spacing().item_spacing.x*2.0);
+                            ui.vertical(|ui| {
+                                ui.set_width(ui.available_width());
+                                ui.add(egui::Label::new(RichText::new(text(row,"empty_detail")).weak()).wrap());
+                            });
                         }
+                    });
+                    if row["split"]==true {
+                        let rect=shown.response.rect;
+                        ui.painter().vline(rect.left()+220.0+ui.spacing().item_spacing.x*2.0,rect.y_range(),ui.visuals().widgets.noninteractive.bg_stroke);
                     }
                 } else if text(row, "kind") == "buttons" {
                     ui.horizontal_wrapped(|ui| {
                         for (index, item) in array(&row["choices"]).enumerate() {
                             let r = ui.add_enabled(
                                 item["enabled"] != false,
-                                egui::Button::new(text(item, "label")),
+                                toolkit::button::PushButton::secondary(text(item, "label")),
                             );
                             record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
                             if r.clicked() {
@@ -1958,5 +1982,29 @@ fn images(
             look.text,
         );
     }
+}
+
+
+fn cosmic_icon_button(ui: &mut Ui, icon: toolkit::Icon, enabled: bool, name: &str, look: &Look) -> Response {
+    let enabled = enabled && ui.is_enabled();
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(24.0), sense);
+    if response.hovered() && enabled {
+        ui.painter()
+            .circle_filled(rect.center(), 12.0, look.button_hover);
+    }
+    let ink = if enabled {
+        look.value
+    } else {
+        look.value.gamma_multiply(0.5)
+    };
+    toolkit::button::paint_icon(ui, icon, rect.center(), 16.0, ink);
+    focus_ring(ui, &response, rect, look.r_xl, look);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
+    response
 }
 
