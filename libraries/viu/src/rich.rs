@@ -639,14 +639,8 @@ pub(crate) fn draw(
                                 // Match the toolkit titlebar's viewport-scoped popup keys.
                                 let anchor = egui::Id::unique((viewport, "macro-anchor"));
                                 let busy = egui::Id::unique((viewport, "macro-busy"));
-                                ui.ctx().data_mut(|d| {
-                                    d.insert_temp(anchor, response.rect)
-                                });
-                                if ui
-                                    .ctx()
-                                    .data(|d| d.get_temp::<bool>(busy))
-                                    .unwrap_or(false)
-                                {
+                                ui.ctx().data_mut(|d| d.insert_temp(anchor, response.rect));
+                                if ui.ctx().data(|d| d.get_temp::<bool>(busy)).unwrap_or(false) {
                                     let chrome = toolkit::chrome::Chrome::of(ui.ctx());
                                     ui.painter().circle_filled(
                                         response.rect.right_top()
