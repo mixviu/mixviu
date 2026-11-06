@@ -88,6 +88,7 @@ fn render($s)
   $path=if $s.saved!=nil then $s.saved.path else $s.source end
   $title=if $path==nil then "Screenshot" else basename($path).." — Screenshot" end
   $model=$frame.apply($model,{icon:"camera",title:$title,menus:$registry.menus($s),toolbar:$header,status:$s.status,status_right:$right})
+  $model.values["gold-actions"]=$registry.describe($s)
   $model.frame.groups["gold-icon"].preferred=40;$model.frame.groups["gold-icon"].minimum=40
   $model.frame.groups["gold-menu"].preferred=310;$model.frame.groups["gold-menu"].minimum=310
   $model.frame.groups["gold-toolbar"].preferred=136;$model.frame.groups["gold-toolbar"].minimum=136

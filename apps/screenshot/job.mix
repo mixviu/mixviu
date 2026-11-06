@@ -99,6 +99,7 @@ on job.run
       $rendered=viu_document("export",$dest)
       $out={op:$a.op,rc:0,path:$rendered.path,document:$rendered.document}
       if $a.op=="copy" then
+        if not $a.hide then raise("FAILED","A headless instance has no clipboard") end
         $copy=viu_clipboard($a.path)
         if $copy.rc!=0 then raise("FAILED",json_encode($copy.body)) end
         $out.clipboard=$copy.body

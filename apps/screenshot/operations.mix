@@ -27,6 +27,7 @@ fn work($s,$payload,$hold)
   $s.serial=$s.serial+1;$s.pending=$payload;$s.busy=true
   if contains(["capture","open"],$payload.op) then $s.after=nil end
   $s.job=if $payload.op=="export" then "save" else $payload.op end
+  if contains(["open","copy"],$payload.op) then $s.status="Working…" end
   $payload.pid=pid();$payload.comp=$s.comp
   $payload.hide=not ($s.headless ?? false)
   $payload.preview=path_join($s.raw,"preview-"..to_string(pid()).."-"..to_string($s.serial)..".png")
@@ -80,8 +81,8 @@ fn capture($s,$r,$hold,$focus)
   $r=$core.request($r)
   $s.ui.mode=$r.mode;$s.ui.cursor=$r.cursor;$s.ui.delay=$r.delay
   if $r.mode=="window" then $s.ui.window=$r.window end
-  if $r.output!=nil then $s.ui.output=$r.output end
-  $s.status=if $r.mode=="region" and $r.region==nil then "Drag to select an area · Esc to cancel" else "Taking a screenshot…" end
+  if $r.mode!="window" then $s.ui.output=$r.output end
+  $s.status=if $r.mode=="region" then "Drag to select an area · Esc to cancel" else "Taking a screenshot…" end
   $p=path_join($s.raw,"capture-"..to_string(pid()).."-"..to_string($s.serial+1)..".png")
   return work($s,{op:"capture",request:$r,path:$p,focus:$focus},$hold)
 end
@@ -99,8 +100,13 @@ fn save($s,$path,$hold)
 end
 fn open_dialog($s,$kind)
   $s.ui.dialog=$kind;$s.dialog_serial=($s.dialog_serial ?? 0)+1;$s.dialog_error=""
-  if $kind=="open" then $s.ui.path=if $s.source!=nil then dirname($s.source).."/" else $s.folder.."/" end
-  elif $kind=="save_as" then $s.ui.path=path_join($s.folder,date_format(time(),"%Y%m%d_%H%M%S")..".png") end
+  if $kind=="open" then $s.ui.path=$s.folder.."/"
+  elif $kind=="save_as" then
+    $stem=date_format(time(),"%Y%m%d_%H%M%S");$s.ui.path=path_join($s.folder,$stem..".png");$n=2
+    while exists($s.ui.path,{follow_symlinks:false}) and $n<=999
+      $s.ui.path=path_join($s.folder,$stem.."_"..to_string($n)..".png");$n=$n+1
+    end
+  end
   return $s
 end
 fn perform($s,$pending)
@@ -159,11 +165,11 @@ fn answer($s,$a)
   else
     $s.ui.path=$a.path ?? $s.ui.path
     try
-      if trim($s.ui.path)=="" then raise("ARGUMENT","Name a file") end
-      $text=$s.ui.path
+      $text=trim($s.ui.path)
+      if $text=="" or ends_with($text,"/") then raise("ARGUMENT","Name a file") end
       if re_match($text,"^~/") then $text=path_join(env("HOME"),slice($text,2)) end
       $path=$state.path($text)
-      if $kind=="save_as" and exists($path) then raise("ARGUMENT","destination already exists") end
+      if $kind=="save_as" and exists($path,{follow_symlinks:false}) then raise("ARGUMENT","That file already exists; choose a new name") end
       $s.ui.dialog=nil
       if $kind=="open" then
         if $s.document!=nil and $s.document.dirty then
@@ -189,6 +195,8 @@ fn restyle($s,$width)
 end
 fn execute($s,$id,$params,$alias)
   $entry=$registry.entry($s,$id)
+  if $entry.schema==nil and $params!=nil and not (type($params)=="map" and len(keys($params))==0) then raise("ARGUMENT","this command takes no parameters") end
+  if $entry.schema==nil then $params=nil end
   if not $entry.enabled and not ($alias and contains(["edit.undo","edit.redo"],$id)) then
     if starts_with($id,"edit.") and $entry.reason!="disabled" then
       $code=if $entry.reason=="no image" then "NO_IMAGE" elif $entry.reason=="dialog open" then "DIALOG" elif $entry.reason=="busy" then "BUSY" else "DISABLED" end

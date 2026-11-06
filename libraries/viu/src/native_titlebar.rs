@@ -94,6 +94,9 @@ pub fn draw(
     for row in toolbar {
         add(&mut registry, &mut seen, row, None, None, 0)?;
     }
+    for row in values["gold-actions"].as_array().into_iter().flatten() {
+        add(&mut registry, &mut seen, row, None, None, 0)?;
+    }
     registry.no_search();
     if let Some(menu) = search_menu {
         registry.search_menu(crate::native_menu::retained_text(menu)?);
