@@ -70,7 +70,8 @@ pub(crate) fn token() -> mix::evaluator::ExtFn {
 pub(crate) fn settings_values() -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
         let fail = || MixError::RuntimeError {
-            msg: "viu_settings expects default/path, check/changes or apply/values/changes/reset".into(),
+            msg: "viu_settings expects default/path or apply|admit/values/changes/reset"
+                .into(),
             span: None,
         };
         match args.as_slice() {
@@ -81,14 +82,41 @@ pub(crate) fn settings_values() -> mix::evaluator::ExtFn {
                         .unwrap_or(serde_json::Value::Null),
                 )
             }
-            [Value::String(op), changes] if op == "check" => {
-                let changes:settings::registry::Values=serde_json::from_value(crate::runtime::to_json(changes)?).map_err(|_|fail())?;
-                let diagnostics:Vec<_>=changes.iter().filter(|(_,value)|!value.is_null()).filter_map(|(path,value)|settings::registry::check_value(path,value).err()).collect();
-                crate::runtime::from_json(serde_json::json!({"ok":diagnostics.is_empty(),"diagnostics":diagnostics}))
-            }
-            [Value::String(op), values, changes, reset] if op == "apply" => {
-                let values =
+            [Value::String(op), values, changes, reset] if op == "apply" || op == "admit" => {
+                let mut values: settings::registry::Values =
                     serde_json::from_value(crate::runtime::to_json(values)?).map_err(|_| fail())?;
+                if op == "admit" {
+                    // settings.get's effective view includes defaults, nulls and live
+                    // observations. Restore the authored representation before asking
+                    // the registry to validate the complete proposed transaction.
+                    let mut authored = settings::registry::Values::new();
+                    let mut diagnostics = Vec::new();
+                    for (path, value) in &values {
+                        if value.is_null() {
+                            continue;
+                        }
+                        match settings::registry::lookup(path) {
+                            Ok(m) if m.def.is_live() => continue,
+                            Ok(m) => match settings::registry::check_value(path, value) {
+                                Ok(normal) => {
+                                    let default = settings::registry::domain_default(path)
+                                        .or_else(|| m.default_value());
+                                    if default.as_ref() != Some(&normal) {
+                                        authored.insert(path.clone(), normal);
+                                    }
+                                }
+                                Err(error) => diagnostics.push(error),
+                            },
+                            Err(error) => diagnostics.push(error),
+                        }
+                    }
+                    if !diagnostics.is_empty() {
+                        return crate::runtime::from_json(
+                            serde_json::json!({"ok":false,"diagnostics":diagnostics}),
+                        );
+                    }
+                    values = authored;
+                }
                 let changes = serde_json::from_value(crate::runtime::to_json(changes)?)
                     .map_err(|_| fail())?;
                 let reset = serde_json::from_value::<Vec<String>>(crate::runtime::to_json(reset)?)
