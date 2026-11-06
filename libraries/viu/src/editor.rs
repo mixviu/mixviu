@@ -14,6 +14,7 @@ struct Document {
     find: String,
     replacement: String,
     searching: bool,
+    command_serial: u64,
 }
 
 #[derive(Default)]
@@ -70,6 +71,7 @@ impl Editors {
                             find: String::new(),
                             replacement: String::new(),
                             searching: false,
+                            command_serial: 0,
                         },
                     );
                 }
@@ -109,6 +111,31 @@ impl Editors {
             ..Default::default()
         };
         let before = doc.local.doc().revision;
+        if let Some(serial) = widget.properties["command"]["serial"].as_u64() {
+            if serial > doc.command_serial {
+                doc.command_serial = serial;
+                let name = widget.properties["command"]["name"].as_str().unwrap_or("");
+                if !view.read_only {
+                    let command = match name {
+                        "select-all" => Some(editor::EditCommand::SelectAll),
+                        "duplicate-line" => Some(editor::EditCommand::DuplicateLine),
+                        "delete-line" => Some(editor::EditCommand::DeleteLine),
+                        "move-line-up" => Some(editor::EditCommand::MoveLineUp),
+                        "move-line-down" => Some(editor::EditCommand::MoveLineDown),
+                        "toggle-comment" => Some(editor::EditCommand::ToggleComment),
+                        "indent" => Some(editor::EditCommand::Tab),
+                        "outdent" => Some(editor::EditCommand::Outdent),
+                        _ => None,
+                    };
+                    let result = if let Some(command) = command {
+                        doc.local.command(command, &view)
+                    } else if name == "undo" { doc.local.undo() }
+                    else if name == "redo" { doc.local.redo() }
+                    else { Ok(()) };
+                    if let Err(e) = result { ui.colored_label(Color32::RED, e.to_string()); }
+                }
+            }
+        }
         let editor_id = ui.make_persistent_id(&key);
         if ui.memory(|m| m.has_focus(editor_id))
             && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::F))

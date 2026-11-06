@@ -3,7 +3,7 @@
 -- lint: globals app_args
 $ctx=viu_context()
 $frame=require("../../libraries/viu/mix/gold-frame.mix")
-$state={tabs:[],active:0,busy:false,serial:0,status:"Open a UTF-8 document · explicit Apply draft",path:"",pending:nil,wrap:false,line_numbers:true,find:false,window_close:false}
+$state={tabs:[],active:0,busy:false,serial:0,status:"Open a UTF-8 document · explicit Apply draft",path:"",pending:nil,wrap:false,line_numbers:true,find:false,window_close:false,editor_commands:{},editor_serial:0}
 fn current($s)
   if len($s.tabs)==0 then raise("EMPTY","Open a document first") end
   return $s.tabs[$s.active]
@@ -15,7 +15,7 @@ fn publish_ced($s)
   $t=if len($s.tabs)>0 then current($s) else {draft:"",path:"No document",rev:nil} end
   $has=len($s.tabs)>0
   $items=map(["apply","save","undo","redo","refresh","discard","close"],fn($op)={id:$op,label:$op,enabled:$has and not $s.busy})
-  $model={status:$s.status,document:$t.path.." · rev "..to_string($t.rev),window_close:$s.window_close,tabs:{id:"tabs",kind:"tabs",label:"Documents",initial:if $has then to_string($s.active) else "none" end,properties:{choices:if $has then map(range(0,len($s.tabs)-1),fn($i)=to_string($i)) else ["none"] end}},editor:{id:"editor",kind:"editor",label:"Editing buffer",initial:"",properties:{native_document:true,document:$t.buffer ?? "empty",language:$t.language ?? "text",soft_wrap:$s.wrap,line_numbers:$s.line_numbers,find_bar:$s.find,read_only:not $has or $s.busy}},values:{editor:$t.draft,path:$s.path}}
+  $model={status:$s.status,document:$t.path.." · rev "..to_string($t.rev),window_close:$s.window_close,tabs:{id:"tabs",kind:"tabs",label:"Documents",initial:if $has then to_string($s.active) else "none" end,properties:{choices:if $has then map(range(0,len($s.tabs)-1),fn($i)=to_string($i)) else ["none"] end}},editor:{id:"editor",kind:"editor",label:"Editing buffer",initial:"",properties:{native_document:true,document:$t.buffer ?? "empty",language:$t.language ?? "text",soft_wrap:$s.wrap,line_numbers:$s.line_numbers,find_bar:$s.find,read_only:not $has or $s.busy,command:$s.editor_commands[$t.buffer ?? "empty"] ?? {serial:0,name:""}}},values:{editor:$t.draft,path:$s.path}}
   $model=$frame.apply($model,{icon:"file-text",title:$t.path,menus:[{id:"file-menu",label:"File",enabled:true,children:concat([{id:"open",label:"Open",enabled:not $s.busy}],$items)},{id:"view-menu",label:"View",enabled:true,children:[{id:"wrap",label:"Soft wrap",enabled:true},{id:"line_numbers",label:"Line numbers",enabled:true},{id:"find",label:"Find / replace",enabled:$has}]}],toolbar:$items,status:$s.status})
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
 end
@@ -67,7 +67,9 @@ on ced.intent
   if $a.id=="editor" then
     if type($a.value)!="string" or byte_length($a.value)>65536 then raise("SIZE","Editor values must be text within 64 KiB") end
     $t=current($state);$state.tabs[$state.active].draft=$a.value
-  elif $a.id=="path" then $state.path=$a.value
+  elif $a.id=="path" then
+    $state.path=$a.value
+    if $a.action=="submit" then $state=operation($state,"open",{path:$state.path}) end
   elif $a.id=="tabs" then
     $index=to_number($a.value)
     if $index<0 or floor($index)!=$index or $index>=len($state.tabs) then raise("TAB","Unknown tab") end
@@ -78,7 +80,12 @@ on ced.intent
 end
 on viu.frame.intent
   $op=$event.args.value.command
-  if contains(["wrap","line_numbers","find"],$op) then $state[$op]=not $state[$op]
+  if contains(["undo","redo"],$op) then
+    $t=current($state);$state.editor_serial=$state.editor_serial+1;$state.editor_commands[$t.buffer]={serial:$state.editor_serial,name:$op}
+  elif $op=="discard" then
+    if $state.busy then raise("BUSY","Wait for the pending operation") end
+    $t=current($state);$state.tabs[$state.active].draft=$t.text
+  elif contains(["wrap","line_numbers","find"],$op) then $state[$op]=not $state[$op]
   else $state=operation($state,$op,{path:if $op=="open" then $state.path else nil end}) end
   publish_ced($state);reply(0,"{}")
 end

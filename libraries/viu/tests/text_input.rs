@@ -85,6 +85,27 @@ fn native_document_admits_large_files_without_relaxing_legacy_controls() {
             .is_ok()
     );
 }
+
+#[test]
+fn native_document_commands_are_local_and_a_serial_is_consumed_once() {
+    let ctx = Context::default();
+    viu::appearance::install(&ctx);
+    let mut widgets = viu::widgets::Widgets::default();
+    for (serial, name, expected) in [(1, "duplicate-line", Some("alpha\nalpha")), (2, "undo", Some("alpha")), (2, "undo", None)] {
+        let widget = viu::widgets::Widget::new("editor", "editor", "", json!("alpha"))
+            .with_properties(json!({"native_document":true,"command":{"serial":serial,"name":name}}));
+        let mut events = Vec::new();
+        ctx.run_ui(RawInput::default(), |ui| {
+            widgets.begin_frame();
+            events = widgets.widget(ui, &widget, &json!({}));
+            widgets.finish_frame().unwrap();
+        }).drop_without_applying_deltas();
+        match expected {
+            Some(text) => assert!(events.iter().any(|e| e.value == text), "{events:?}"),
+            None => assert!(events.is_empty(), "{events:?}"),
+        }
+    }
+}
 #[test]
 fn read_only_editor_keeps_full_text_scrollable_and_rejects_native_edits() {
     let body = "An immutable Unicode line λ\n".repeat(1000);

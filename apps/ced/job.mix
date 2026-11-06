@@ -18,6 +18,8 @@ on job.run
     send "edit" "edit.info" body={buffer:$buffer} timeout=8
     if $rc!=0 then raise("INFO",json_encode($reply ?? $result)) end
     $read.path=$reply.path ?? $answer.path ?? "Untitled"
+    $read.language=$reply.language ?? "text"
+    $read.dirty=$reply.dirty ?? false
     reply(0,json_encode($read))
   end
 end
