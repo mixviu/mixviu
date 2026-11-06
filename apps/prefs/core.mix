@@ -58,7 +58,7 @@ fn admitted($s,$key,$value)
     $changes["wallpaper.slideshow.enabled"]=false
     push($reset,if $key=="wallpaper.image" then "wallpaper.color" else "wallpaper.image" end)
   end
-  return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:uuid(),changes:$changes,reset:$reset}
+  return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:viu_token(),changes:$changes,reset:$reset}
 end
 fn registry_model($s)
   $section=filter($sections,fn($x)=$x.id==$s.section)[0] ?? {prefixes:[]}

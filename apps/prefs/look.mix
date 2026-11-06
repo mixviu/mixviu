@@ -104,7 +104,7 @@ fn prepare($l,$binding,$dialog)
   elif $l.current!=nil and len(keys($l.edited))>0 and not $dialog and not $l.hold and not $l.syncing and $l.uncertain==nil and len($l.conflicts)==0 and $l.sent==nil then
     $changes={}
     for $axis in keys($l.edited) $changes[$paths[$axis]]=if $axis=="density" then density_step($l.edited[$axis]) else $l.edited[$axis] end end
-    $operation="prefs-look-"..uuid()
+    $operation="prefs-look-"..viu_token()
     $l.sent={operation:$operation,axes:$l.edited,base:$l.base ?? $l.current}
     $l.edited={};$l.base=nil
     $command="settings.apply";$body={binding:$binding,expected_incarnation:$l.incarnation,expected_revision:$l.revision,operation_id:$operation,changes:$changes,reset:[]}

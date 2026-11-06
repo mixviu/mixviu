@@ -52,7 +52,7 @@ fn queued_prefs($s)
     if $s.queue_changes[$key]==nil then push($reset,$key) else $changes[$key]=$s.queue_changes[$key] end
   end
   $s.inflight_changes=$s.queue_changes;$s.queue_changes={}
-  return start_prefs($s,{op:"write",request:{binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:uuid(),changes:$changes,reset:$reset}})
+  return start_prefs($s,{op:"write",request:{binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:viu_token(),changes:$changes,reset:$reset}})
 end
 fn release_request($s,$command,$body)
   if $command!="releases.notes" and $s.release_busy then
@@ -201,7 +201,7 @@ on prefs.email.set
     if not $email.view($state).can_edit then raise("BUSY",$nav.text_for("busy")) end
     if $event.args.op=="remove" and $state.email.service!="absent" then
       if $email.account($state,$event.args.id)==nil then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
-      $token=uuid()
+      $token=viu_token()
       $state=email_task($state,"remove",$event.args.id,"email.account.remove",{id:$event.args.id},false,$token)
       send "viu-local" "requests.defer" token=$token
       publish_prefs($state);return
@@ -227,7 +227,7 @@ on prefs.email.password
       if $a.password=="" then raise("ARGUMENT",$nav.text_for("email-password-empty")) end
       if $state.revision!=nil and $email.account($state,$a.id)==nil then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
     end
-    $token=uuid()
+    $token=viu_token()
     $state=email_task($state,if $forget then "forget" else "password" end,$a.id,"email.account.password.set",{id:$a.id,password:if $forget then "" else $a.password end},true,$token)
     send "viu-local" "requests.defer" token=$token
     publish_prefs($state)

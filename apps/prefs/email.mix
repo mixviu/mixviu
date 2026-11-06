@@ -83,7 +83,7 @@ fn plan($s,$args)
     if $op!="add" and not ($op=="default" and $id==nil) and $at<0 then raise("ARGUMENT",$n.text_for("email-unknown-account")) end
     if $op=="add" then
       if not all(["name","url","email"],fn($key)=contains(keys($args),$key)) then raise("ARGUMENT","add needs name, url and email") end
-      $added="acct-"..substr(replace(uuid(),"-",""),0,12)
+      $added="acct-"..substr(replace(viu_token(),"-",""),0,12)
       $a=patch_account({id:$added,name:"",url:"",email:"",ca_path:nil,enabled:true,signature:""},$args)
       push($list,$a);$changes["email.accounts"]=$list
     elif $op=="update" then $list[$at]=patch_account($list[$at],$args);$changes["email.accounts"]=$list

@@ -7,6 +7,22 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+/// OS-random correlation identifiers without enabling Mix's optional crypto
+/// bundle. Account names, request tokens and operation receipts remain policy
+/// owned by their Mix caller; this binding provides only 128 random bits.
+pub(crate) fn token() -> mix::evaluator::ExtFn {
+    mix::sync_ext(move |args| {
+        use std::io::Read;
+        if !args.is_empty() {
+            return Err(MixError::RuntimeError {msg:"viu_token expects no arguments".into(),span:None});
+        }
+        let mut bytes=[0u8;16];
+        std::fs::File::open("/dev/urandom").and_then(|mut file|file.read_exact(&mut bytes))
+            .map_err(|e|MixError::RuntimeError {msg:format!("random token: {e}"),span:None})?;
+        Ok(Value::String(bytes.iter().map(|b|format!("{b:02x}")).collect()))
+    })
+}
+
 /// Pure settings admission/defaults through the retained native registry.
 /// The caller owns navigation, edits, fences, service traffic and retries.
 pub(crate) fn settings_values() -> mix::evaluator::ExtFn {
