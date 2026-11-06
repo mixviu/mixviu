@@ -1,0 +1,101 @@
+-- version: 0.1.0
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$r = require($LIB .. "/runtime.mix")
+$m = require($LIB .. "/models.mix")
+$ctx = $r.scene_context("notes")
+$NOTIFY = env("NOTIFY_SERVICE", "notify")
+$state = {notes: [], sequence: 0, queued: false, ready: false, model: $m.notes([])}
+
+fn schedule()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
+  $state.sequence = $state.sequence + 1
+  if $state.ready and not $state.queued then
+    $state.queued = true
+    try
+      emit $ctx.citizen refresh
+    catch $message, $error
+      $state.queued = false
+      raise($error.code, $message, $error.details)
+    end
+  end
+end
+fn snapshot()
+  $out = $r.call($NOTIFY, "notify.list", {})
+  if not $out.ok then return $out end
+  if type($out.value) != "list" then return $r.failure("notify_invalid_reply", "notify.list must return a list") end
+  return {ok: true, rc: 0, value: $out.value}
+end
+fn refresh()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
+  if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
+  $sequence = $state.sequence
+  $out = snapshot()
+  if not $out.ok then return $out end
+  if not $state.ready or $sequence != $state.sequence then return $r.failure("superseded", "A newer notification event replaced this snapshot") end
+  $state.notes = $out.value
+  $state.model = $m.notes($state.notes)
+  return $r.publish_model($ctx, $state.model)
+end
+on refresh async
+  $state.queued = false
+  $r.respond($r.refresh_result(fn() = refresh()))
+end
+on note_close async
+  $id = $r.item_id($event)
+  if $id == nil or not re_match($id, "^[0-9]+$") then
+    $r.respond($r.failure("invalid_args", "item.id must be a notification ID")); return
+  end
+  -- The human closed it here: a dismissal, never an answer to a question.
+  $out = $r.call($NOTIFY, "notify.dismiss", {id: to_number($id)})
+  if $out.ok then schedule() end
+  $r.respond($out)
+end
+-- Clear all closes the notes without buttons; questions stay until answered.
+on notes_clear async
+  $out = $r.call($NOTIFY, "notify.close_all", {})
+  schedule()
+  $r.respond($out)
+end
+on notes.open
+  $r.respond($r.popup($ctx, "open"))
+end
+on notes.close
+  $r.respond($r.popup($ctx, "close"))
+end
+on notes
+  $r.respond($r.popup($ctx, "toggle"))
+end
+on notes.state
+  reply(0, json_encode({count: $state.model.count}))
+end
+on props.changed
+  $a = $r.event_args($event)
+  if $event.headers.from == env("NODED_SERVICE", "noded") and $a.path != "services.registered" then return end
+  if not $state.ready then
+    $ready = $r.ready($ctx)
+    $state.ready = $ready.ok
+  end
+  schedule()
+end
+on notification.created
+  schedule()
+end
+on notification.closed
+  schedule()
+end
+on notification.answered
+  schedule()
+end
+on bus.connected
+  $state.ready = false
+  $ready = $r.ready($ctx)
+  $state.ready = $ready.ok
+  schedule()
+end
+subscribe($NOTIFY .. ".changed")
+subscribe($NOTIFY .. ".props.changed")
+subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
+$ready = $r.ready($ctx)
+if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
+$state.ready = true
+schedule()

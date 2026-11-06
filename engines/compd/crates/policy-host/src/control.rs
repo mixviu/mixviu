@@ -1,0 +1,2137 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! The comp control commands compd answers, and the executor for the policy
+//! effects they return.
+//!
+//! - `comp.workspace.switch`, `comp.window.send_to_workspace`;
+//! - `comp.window.{maximize,unmaximize,fullscreen,unfullscreen}`,
+//!   `minimize`, `restore` (named, or `{}` = rule 8's LIFO pick), `close`
+//!   (polite); `close {force}` is a long command (compd's waiter, kill via
+//!   [`kill_client`]);
+//! - `props.set` of `windows.s<id>.{minimized,maximized,fullscreen}`;
+//! - the client's own maximise / minimise requests ([`apply_client_requests`]);
+//! - `comp.window.place` (move and/or resize, output-relative) and the
+//!   interactive move/resize grab ([`apply_interactive`]);
+//! - `props.set` of `workspaces.count`, `workspaces.current`,
+//!   `workspaces.o_<key>.current` and `windows.s<id>.workspace` (the same
+//!   replies as the commands).
+//!
+//! - `props.set windows.s<id>.band` (`bottom` / `normal`) and the window
+//!   stats commands.
+//!
+//! A session lock answers `locked` for every command that names or changes a
+//! window, and for the window and workspace sets.
+//!
+//! The effects: visibility is not stored but derived (`CompState::hidden`,
+//! read by the draw through `DrawWindow::visible`), so `Withdraw` /
+//! `Present` / `Relabelled` only need a frame; `Settle` re-arbitrates the
+//! keyboard; `Activate` queues the engine's activation. The X11 halves
+//! (`_NET_*_DESKTOP`, `_NET_WM_STATE_HIDDEN`) are [`crate::x11`]'s.
+
+use serde_json::Value;
+use smithay::desktop::Window;
+use smithay::utils::SERIAL_COUNTER;
+
+use crate::geometry::{clamp_size, size_hints};
+use comp_model::observation::{
+    HOST_PASSTHROUGH_PATH, PropValue, WORKSPACE_COUNT_RANGE, WORKSPACE_INDEX_RANGE,
+    WORKSPACE_OUTPUT_RANGE, WorkspacesSetTarget, apply_corner_value, invalid_value,
+    parse_window_leaf_path, parse_workspaces_set_path, read_only_or_unknown, validate_corner_value,
+    workspace_value,
+};
+use comp_model::reply::ControlReply;
+use comp_model::request::{WindowOp, WindowState};
+use comp_model::snapshot::output_key;
+use dispatcher::state::RedrawReason;
+use dispatcher::wire::trait_::surface_event::SurfaceHandle;
+use dispatcher::wire::trait_::surface_event::WindowRequest;
+use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
+use policy::Effect;
+use policy::window::{KillVia, WindowFacts};
+use policy::workspaces::{DefaultOutput, SwitchGates, WorkspaceRefusal, WorkspaceTarget};
+use protocols::window::shell;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::backend::protocol::ProtocolError;
+use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::wayland::seat::WaylandFocus;
+use smithay::xwayland::XWaylandClientData;
+use smithay::xwayland::xwm::X11KillError;
+use surfaces::{SurfaceId, WindowTargetError};
+use world::camera::transform::translate::slot;
+use world::comp::usable::Reserved;
+use world::state::Loop;
+use world::window::interface::draw::visible::DrawWindow;
+
+/// An output's usable area: its
+/// `geometry` (host Space, logical) less what layer-shell exclusive zones
+/// reserve, as smithay's layer arrangement computes it (anchors, margins, and
+/// several layers on one edge stacking). An output with no layers is whole. A
+/// concealed panel keeps its zone: enforcement hides and excludes an enforced layer
+/// but leaves it in the layer map, so the area it reserves stays reserved.
+/// `reserved` (docked Mix Scenes panels) comes off what the layers
+/// leave, stacking as a further layer on that edge would.
+pub fn usable_area(
+    output: &smithay::output::Output,
+    geometry: Rectangle<i32, Logical>,
+    reserved: Reserved,
+) -> Rectangle<i32, Logical> {
+    crate::geometry::usable_area(output, geometry, reserved)
+}
+
+/// What docked scene panels reserve on `output` (none when unset).
+pub fn reserved_for(lp: &Loop, output: &smithay::output::Output) -> Reserved {
+    lp.inner
+        .comp
+        .reserved
+        .get(&output.name())
+        .copied()
+        .unwrap_or_default()
+}
+
+/// Refresh CompState's usable areas. When one moved (a
+/// panel mapped, unmapped or resized its zone, an output changed), the
+/// maximised and tiled windows take their new area.
+pub fn refresh_usable(lp: &mut Loop) -> crate::geometry::GeometryChange {
+    refresh_output_generations(lp);
+    let windows: Vec<_> = lp
+        .inner
+        .comp
+        .placed_ids()
+        .into_iter()
+        .filter_map(|id| Some((id, window_of(lp, id)?)))
+        .collect();
+    let (comp, space) = lp.inner.comp_space_mut();
+    let change = crate::geometry::refresh_usable(comp, space, &windows);
+    if change.windows {
+        lp.state.schedule_redraw(RedrawReason::WindowState);
+        crate::input::retarget_pointer(lp);
+    }
+    change
+}
+
+/// Refresh each output's generation: its place in the
+/// host Space, its mode and its scale are the signature; a change, or a
+/// return after removal, is a new generation.
+fn refresh_output_generations(lp: &mut Loop) {
+    let space = &lp.inner.host_space().state;
+    let present: std::collections::BTreeMap<String, world::comp::OutputSignature> = space
+        .outputs()
+        .filter_map(|output| {
+            let geometry = space.output_geometry(output)?;
+            let mode = output
+                .current_mode()
+                .map_or((0, 0), |mode| (mode.size.w, mode.size.h));
+            Some((
+                output.name(),
+                (
+                    geometry.loc.x,
+                    geometry.loc.y,
+                    geometry.size.w,
+                    geometry.size.h,
+                    mode.0,
+                    mode.1,
+                    output.current_scale().fractional_scale(),
+                ),
+            ))
+        })
+        .collect();
+    lp.inner.comp.observe_outputs(&present);
+    for output in lp.inner.host_space().state.outputs() {
+        let generation = lp.inner.comp.output_generation(&output.name());
+        let data = output.user_data();
+        data.insert_if_missing(|| {
+            comp_model::capture::OutputGeneration(
+                std::sync::atomic::AtomicU64::new(generation),
+                std::sync::Mutex::new(screencopy::file::output_signature(output)),
+            )
+        });
+        data.get::<comp_model::capture::OutputGeneration>()
+            .expect("inserted generation")
+            .0
+            .store(generation, std::sync::atomic::Ordering::Relaxed);
+        *data
+            .get::<comp_model::capture::OutputGeneration>()
+            .expect("inserted generation")
+            .1
+            .lock()
+            .expect("output signature") = screencopy::file::output_signature(output);
+    }
+}
+
+/// Refresh the default output (the host Space's first output) the workspace
+/// model keys its current workspace on. Called before each Bus pass.
+pub fn refresh_default_output(lp: &mut Loop) {
+    let default = lp.inner.host_space().state.outputs().next().map(|output| {
+        let name = output.name();
+        DefaultOutput {
+            key: output_key(&name),
+            name,
+        }
+    });
+    lp.inner.comp.default_output = default;
+}
+
+/// A `comp.window.*` / `comp.workspace.*` command, or `None` when compd does not
+/// answer it yet (the caller replies `busy`).
+pub fn window(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
+    let reply = window_op(lp, op);
+    // What a window command changed carries `comp.window` as its cause.
+    if let Some(id) = named_window(op) {
+        lp.inner.comp.causes.note_window(id, "comp.window");
+    }
+    reply
+}
+
+/// The window a command names, if any.
+fn named_window(op: &WindowOp) -> Option<u64> {
+    match op {
+        WindowOp::PlaceAs { id, .. } | WindowOp::TileKey { id, .. } => Some(*id),
+        WindowOp::State { id, .. }
+        | WindowOp::Minimize { id, .. }
+        | WindowOp::Focus { id, .. }
+        | WindowOp::Raise { id, .. }
+        | WindowOp::Menu { id, .. }
+        | WindowOp::Action { id, .. }
+        | WindowOp::Close { id, .. }
+        | WindowOp::SendToWorkspace { id, .. } => Some(*id),
+        WindowOp::Restore { target, .. } => target.map(|(id, _)| id),
+        WindowOp::Place(spec) => Some(spec.id),
+        _ => None,
+    }
+}
+
+fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
+    // A session lock refuses every command that names or changes a window, and
+    // the workspace switch.
+    if let Some(locked) = policy::window::locked_refusal(op, world::comp::session_lock::active(lp))
+    {
+        return Some(locked);
+    }
+    match op {
+        WindowOp::TilesGet { output, workspace } => Some(world::comp::geometry::tiles_get(
+            &lp.inner.comp,
+            &lp.inner.host_space().state,
+            output.as_deref(),
+            *workspace,
+        )),
+        WindowOp::PlaceAs { id, generation, .. } | WindowOp::TileKey { id, generation, .. } => {
+            let (sid, window) = match motion_window(lp, *id, *generation) {
+                Ok(target) => target,
+                Err(reply) => return Some(reply),
+            };
+            let owner = lp.inner.world_of_window(&window)?;
+            let had_grab = lp.inner.comp.interactive.is_some_and(|grab| grab.id == sid);
+            let (comp, space) = lp.inner.comp_space_of_mut(owner);
+            let reply = match op {
+                WindowOp::PlaceAs {
+                    placement, output, ..
+                } => world::comp::geometry::place_as(
+                    comp,
+                    space,
+                    &window,
+                    sid.0,
+                    *generation,
+                    *placement,
+                    output.as_deref(),
+                ),
+                WindowOp::TileKey { direction, .. } => world::comp::geometry::tile_key(
+                    comp,
+                    space,
+                    &window,
+                    sid.0,
+                    *generation,
+                    *direction,
+                ),
+                _ => unreachable!(),
+            };
+            if matches!(&reply, ControlReply::Body(body) if had_grab || body.get("changed") == Some(&Value::Bool(true)))
+            {
+                lp.state.schedule_redraw(RedrawReason::WindowState);
+                crate::input::retarget_pointer(lp);
+            }
+            Some(reply)
+        }
+        WindowOp::SwitchWorkspace {
+            output,
+            index,
+            wrap,
+        } => {
+            let comp = &mut lp.inner.comp;
+            let default_output = comp.default_output.clone();
+            let (reply, effects) = policy::workspaces::service_switch(
+                &mut comp.workspaces,
+                &comp.registry,
+                default_output.as_ref(),
+                output.as_deref(),
+                *index,
+                *wrap,
+            );
+            execute(lp, effects);
+            Some(reply)
+        }
+        WindowOp::SetWorkspaceCount { count, persist } => {
+            let comp = &mut lp.inner.comp;
+            match comp.workspaces.set_count(&mut comp.registry, *count) {
+                Ok(((old, new), effects)) => {
+                    execute(lp, effects);
+                    let mut body = serde_json::json!({"from": old, "count": new});
+                    if *persist {
+                        persist_workspaces(lp, &mut body);
+                    }
+                    Some(ControlReply::Body(body))
+                }
+                Err(refusal) => Some(policy::workspaces::workspace_refusal(refusal, None, 0)),
+            }
+        }
+        WindowOp::RenameWorkspace {
+            index,
+            name,
+            persist,
+        } => match lp.inner.comp.workspaces.rename(*index, name) {
+            Ok(((previous, new), effects)) => {
+                execute(lp, effects);
+                let mut body =
+                    serde_json::json!({"index": index, "name": new, "previous": previous});
+                if *persist {
+                    persist_workspaces(lp, &mut body);
+                }
+                Some(ControlReply::Body(body))
+            }
+            Err(refusal) => Some(policy::workspaces::workspace_refusal(refusal, None, 0)),
+        },
+        WindowOp::SendToWorkspace {
+            id,
+            generation,
+            index,
+            follow,
+        } => {
+            let locked = world::comp::session_lock::active(lp);
+            let latched = world::comp::latch::active(lp);
+            let comp = &mut lp.inner.comp;
+            let default_output = comp.default_output.clone();
+            let gates = SwitchGates {
+                session_lock: locked,
+                exclusive_layer: latched,
+                input_presentable: true,
+            };
+            let outcome = policy::window::send_to_workspace(
+                &mut comp.registry,
+                &mut comp.workspaces,
+                default_output.as_ref(),
+                gates,
+                *id,
+                *generation,
+                *index,
+                *follow,
+            );
+            Some(match outcome {
+                Ok((reply, effects)) => {
+                    execute(lp, effects);
+                    reply
+                }
+                Err(refusal) => refusal,
+            })
+        }
+        WindowOp::State {
+            id,
+            generation,
+            state,
+            enabled,
+            output,
+        } => Some(
+            match window_state(lp, *id, *generation, *state, *enabled, output.as_deref()) {
+                Ok((record_id, before, after)) => {
+                    let facts = window_facts(lp, record_id);
+                    let registry = &lp.inner.comp.registry;
+                    match registry.get(record_id) {
+                        Some(record) => {
+                            policy::window::state_reply(record, before != after, &facts)
+                        }
+                        None => ControlReply::WindowTarget {
+                            id: *id,
+                            error: WindowTargetError::UnknownWindow,
+                        },
+                    }
+                }
+                Err(reply) => reply,
+            },
+        ),
+        WindowOp::Minimize { id, generation } => Some(minimized(lp, *id, *generation, true)),
+        WindowOp::Restore {
+            target: Some((id, generation)),
+            activate,
+        } => Some(restore(lp, *id, *generation, *activate)),
+        WindowOp::Restore {
+            target: None,
+            activate,
+        } => {
+            let comp = &lp.inner.comp;
+            match comp
+                .lifo_restore_candidate()
+                .and_then(|id| comp.registry.get(id))
+            {
+                Some(record) => {
+                    let (id, generation) = (record.id().0, record.generation());
+                    Some(restore(lp, id, generation, *activate))
+                }
+                None => Some(policy::window::nothing_to_restore(&comp.registry)),
+            }
+        }
+        WindowOp::Place(spec) => Some(place(lp, spec)),
+        WindowOp::Focus {
+            id,
+            generation,
+            raise,
+        } => Some(focus(lp, *id, *generation, *raise)),
+        WindowOp::Raise { id, generation } => Some(raise(lp, *id, *generation)),
+        WindowOp::Action {
+            id,
+            generation,
+            command,
+        } => Some(match motion_window(lp, *id, *generation) {
+            Ok((_, window)) if decor::window::execute_action(&window, command) => {
+                ControlReply::Body(
+                    serde_json::json!({"id":id, "generation":generation, "queued":true}),
+                )
+            }
+            Ok(_) => ControlReply::refused("action_unavailable", serde_json::json!({"id":id})),
+            Err(reply) => reply,
+        }),
+        WindowOp::Menu { id, generation } => Some(match motion_window(lp, *id, *generation) {
+            Ok((_, window)) => {
+                if decor::window::open_menu(&window) {
+                    ControlReply::Body(
+                        serde_json::json!({"id": id, "generation": generation, "queued": true}),
+                    )
+                } else {
+                    ControlReply::refused("menu_unavailable", serde_json::json!({"id": id}))
+                }
+            }
+            Err(reply) => reply,
+        }),
+        WindowOp::Close { id, generation } => Some(
+            match policy::window::close(&lp.inner.comp.registry, *id, *generation) {
+                Ok((reply, effects)) => {
+                    execute(lp, effects);
+                    reply
+                }
+                Err(reply) => reply,
+            },
+        ),
+        WindowOp::Stats { target, samples } => Some(stats(lp, target, *samples)),
+        WindowOp::StatsReset { target } => Some(stats_reset(lp, target.as_ref())),
+        // Every WindowOp is served; no catch-all, so a new
+        // variant fails to compile here instead of answering busy silently.
+    }
+}
+
+/// `body` with `extra`'s keys added.
+fn merged(mut body: Value, extra: Value) -> Value {
+    if let (Some(body), Value::Object(extra)) = (body.as_object_mut(), extra) {
+        body.extend(extra);
+    }
+    body
+}
+
+/// `comp.window.stats`: the window's or content
+/// source's leaves plus the newest `samples` of each ring.
+fn stats(lp: &Loop, target: &comp_model::request::StatsTarget, samples: usize) -> ControlReply {
+    use comp_model::request::StatsTarget;
+    match target {
+        StatsTarget::Window { id, generation } => {
+            if let Err(error) = lp
+                .inner
+                .comp
+                .registry
+                .resolve_window_target(*id, Some(*generation))
+            {
+                return ControlReply::WindowTarget { id: *id, error };
+            }
+            let stats = &lp.inner.comp.presentation.stats;
+            let empty = ledger::presentation_stats::PresentationStats::new(stats.epoch_us);
+            let window = stats.window(*id, *generation).unwrap_or(&empty);
+            ControlReply::Body(merged(
+                merged(
+                    serde_json::json!({"id": id, "generation": generation}),
+                    window.leaves().to_json(),
+                ),
+                window.samples(samples),
+            ))
+        }
+        StatsTarget::Source { id, registration } => {
+            let counters = match source_target(lp, id, *registration) {
+                Ok(counters) => counters,
+                Err(reply) => return reply,
+            };
+            ControlReply::Body(merged(
+                merged(
+                    serde_json::json!({
+                        "source": id,
+                        "registration": counters.registration,
+                        "output": crate::project::source_output_name(lp, counters.output.as_deref()),
+                        "registered_at_us": counters.registered_at_us,
+                        "revision": counters.revision,
+                    }),
+                    serde_json::to_value(counters.leaves()).unwrap_or(serde_json::Value::Null),
+                ),
+                counters.samples(samples),
+            ))
+        }
+    }
+}
+
+/// A registered source, at `registration` when given
+/// (a re-registered id is a different source); policy's fence decides.
+fn source_target<'a>(
+    lp: &'a Loop,
+    id: &str,
+    registration: Option<u64>,
+) -> Result<&'a ledger::presentation::SourceCounters, ControlReply> {
+    let counters = lp.inner.comp.presentation.sources.get(id);
+    policy::window::source_target(
+        id,
+        registration,
+        counters.map(|counters| counters.registration),
+    )?;
+    counters
+        .ok_or_else(|| ControlReply::refused("unknown_source", serde_json::json!({"source": id})))
+}
+
+/// `comp.window.stats.reset`: one window, or
+/// (no target) every window and output. Counting restarts now.
+fn stats_reset(lp: &mut Loop, target: Option<&comp_model::request::StatsTarget>) -> ControlReply {
+    use comp_model::request::StatsTarget;
+    let now = world::comp::injection::monotonic_us();
+    match target {
+        None => {
+            lp.inner.comp.presentation.stats.reset_all(now);
+            lp.inner.comp.presentation.sources.reset_all(now);
+            ControlReply::Body(serde_json::json!({"reset": "all", "since_us": now}))
+        }
+        Some(StatsTarget::Window { id, generation }) => {
+            if let Err(error) = lp
+                .inner
+                .comp
+                .registry
+                .resolve_window_target(*id, Some(*generation))
+            {
+                return ControlReply::WindowTarget { id: *id, error };
+            }
+            lp.inner
+                .comp
+                .presentation
+                .stats
+                .reset_window(*id, *generation, now);
+            ControlReply::Body(serde_json::json!({
+                "reset": "window",
+                "id": id,
+                "generation": generation,
+                "since_us": now,
+            }))
+        }
+        Some(StatsTarget::Source { id, registration }) => {
+            let registration = match source_target(lp, id, *registration) {
+                Ok(counters) => counters.registration,
+                Err(reply) => return reply,
+            };
+            lp.inner.comp.presentation.sources.reset(id, now);
+            ControlReply::Body(serde_json::json!({
+                "reset": "source",
+                "source": id,
+                "registration": registration,
+                "since_us": now,
+            }))
+        }
+    }
+}
+
+/// `comp.window.focus {id, generation, raise}` (comp `service_window_focus`,
+/// which the human `{window}` input path needs):
+/// policy decides (rule 6 switches to the window's workspace), the
+/// effects run, and `focused` is read back from the seat. The engine's
+/// activation (the raise) lands at the frame step, so the keyboard is focused
+/// at once for the read-back either way.
+fn focus(lp: &mut Loop, id: u64, generation: u64, raise: bool) -> ControlReply {
+    let sid = match lp
+        .inner
+        .comp
+        .registry
+        .resolve_window_target(id, Some(generation))
+    {
+        Ok(record) => record.id(),
+        Err(error) => return ControlReply::WindowTarget { id, error },
+    };
+    let facts = window_facts(lp, sid);
+    let scene = policy::window::SceneFacts {
+        session_lock: world::comp::session_lock::active(lp),
+        exclusive_layer: world::comp::latch::active(lp),
+    };
+    let comp = &mut lp.inner.comp;
+    let default_output = comp.default_output.clone();
+    let decision = policy::window::focus(
+        &comp.registry,
+        &mut comp.workspaces,
+        default_output.as_ref(),
+        scene,
+        &facts,
+        id,
+        generation,
+        raise,
+    );
+    let decision = match decision {
+        Ok(decision) => decision,
+        Err(reply) => return reply,
+    };
+    let reason = decision.reason;
+    execute(lp, decision.effects);
+    if reason.is_none() {
+        focus_keyboard(lp, sid);
+    }
+    let focused = lp
+        .state
+        .seat
+        .seat
+        .get_keyboard()
+        .and_then(|keyboard| keyboard.current_focus())
+        .and_then(|surface| lp.inner.comp.id_for_surface(&surface))
+        == Some(sid);
+    policy::window::focus_reply(id, generation, focused, reason)
+}
+
+/// `comp.window.raise`:
+/// stacking only, never a bring-into-view path. `raised` is whether the
+/// window's place in the draw order moved.
+fn raise(lp: &mut Loop, id: u64, generation: u64) -> ControlReply {
+    let effects = match policy::window::raise(&lp.inner.comp.registry, id, generation) {
+        Ok(effects) => effects,
+        Err(reply) => return reply,
+    };
+    let sid = lp
+        .inner
+        .comp
+        .registry
+        .resolve_window_target(id, Some(generation))
+        .ok()
+        .map(|record| record.id());
+    let position = |lp: &Loop| {
+        let uuid = sid.and_then(|sid| lp.inner.comp.registry.uuid_for(sid))?;
+        lp.inner
+            .drawable_order()
+            .iter()
+            .position(|candidate| *candidate == uuid)
+    };
+    let before = position(lp);
+    execute(lp, effects);
+    let after = position(lp);
+    policy::window::raise_reply(id, generation, before != after)
+}
+
+/// Give the primary seat's keyboard to a window.
+fn focus_keyboard(lp: &mut Loop, id: SurfaceId) {
+    let Some(window) = window_of(lp, id) else {
+        return;
+    };
+    let Some(surface) = window.wl_surface().map(|surface| surface.into_owned()) else {
+        return;
+    };
+    if let Some(keyboard) = lp.state.seat.seat.get_keyboard() {
+        keyboard.set_focus(&mut lp.state, Some(surface), SERIAL_COUNTER.next_serial());
+    }
+}
+
+/// `minimize` / `restore {id, generation}`: the flag through the policy,
+/// the LIFO and the visibility funnel through the effects.
+/// `comp.window.restore` of one window: activated (the default), or only
+/// restored without moving focus (`activate: false`).
+fn restore(lp: &mut Loop, id: u64, generation: u64, activate: bool) -> ControlReply {
+    match policy::window::restore(&mut lp.inner.comp.registry, id, generation, activate) {
+        Ok((reply, effects)) => {
+            execute(lp, effects);
+            reply
+        }
+        Err(reply) => reply,
+    }
+}
+
+fn minimized(lp: &mut Loop, id: u64, generation: u64, minimized: bool) -> ControlReply {
+    match policy::window::set_minimized(&mut lp.inner.comp.registry, id, generation, minimized) {
+        Ok((reply, effects)) => {
+            execute(lp, effects);
+            reply
+        }
+        Err(reply) => reply,
+    }
+}
+
+/// The policy's refusals, then the request; `Ok`
+/// carries the record and the requested state before and after.
+fn window_state(
+    lp: &mut Loop,
+    id: u64,
+    generation: u64,
+    state: WindowState,
+    enabled: bool,
+    output: Option<&str>,
+) -> Result<(SurfaceId, bool, bool), ControlReply> {
+    let record_id = lp
+        .inner
+        .comp
+        .registry
+        .resolve_window_target(id, Some(generation))
+        .map_err(|error| ControlReply::WindowTarget { id, error })?
+        .id();
+    let facts = window_facts(lp, record_id);
+    let (outputs, _, _) = crate::project::project_outputs(lp);
+    let effects = policy::window::set_state(
+        &lp.inner.comp.registry,
+        id,
+        generation,
+        state,
+        enabled,
+        output,
+        &facts,
+        &outputs,
+    )?;
+    let before = requested(lp, record_id, state);
+    // Un-maximise also untiles, and a tiled window is not maximised either
+    // side of that, so `changed` compares constrained placement instead.
+    let constrained_before = lp.inner.comp.placement(record_id).constrained();
+    execute(lp, effects);
+    let after = requested(lp, record_id, state);
+    if after != enabled {
+        return Err(ControlReply::refused(
+            "unsupported_state",
+            serde_json::json!({"id": id, "reason": "configure_refused"}),
+        ));
+    }
+    let constrained_after = lp.inner.comp.placement(record_id).constrained();
+    if untiled_by_unmaximize(state, enabled, constrained_before, constrained_after) {
+        return Ok((record_id, true, false));
+    }
+    Ok((record_id, before, after))
+}
+
+/// `comp.window.unmaximize` of a tiled window untiles it, but the window was
+/// not maximised before or after, so its reply must still say `changed`.
+fn untiled_by_unmaximize(
+    state: WindowState,
+    enabled: bool,
+    constrained_before: bool,
+    constrained_after: bool,
+) -> bool {
+    state == WindowState::Maximized && !enabled && constrained_before && !constrained_after
+}
+
+/// The requested (not yet committed) state: compd's maximise record, the
+/// engine's fullscreen record.
+fn requested(lp: &Loop, id: SurfaceId, state: WindowState) -> bool {
+    match state {
+        WindowState::Maximized => lp.inner.comp.placement(id).maximized(),
+        WindowState::Fullscreen => window_of(lp, id)
+            .is_some_and(|window| protocols::window::ident::states(&window).fullscreen),
+    }
+}
+
+/// Whether the client has committed the maximised state (xdg: its last acked
+/// configure; X11: `_NET_WM_STATE`).
+pub fn committed_maximized(window: &Window) -> bool {
+    match (window.toplevel(), window.x11_surface()) {
+        (Some(toplevel), _) => toplevel.with_committed_state(|state| {
+            state.is_some_and(|state| state.states.contains(xdg_toplevel::State::Maximized))
+        }),
+        (None, Some(x11)) => x11.is_maximized(),
+        (None, None) => false,
+    }
+}
+
+/// An xdg toplevel's min/max size hints (0 = unset); X11 has none here.
+/// `comp.window.place`: policy decides the
+/// target (output-relative x/y, clamped size, `off_output` / `invalid_state`
+/// refusals); the effects move and/or configure; the reply says where the
+/// window stands.
+fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
+    let id = match lp
+        .inner
+        .comp
+        .registry
+        .resolve_window_target(spec.id, Some(spec.generation))
+    {
+        Ok(record) => record.id(),
+        Err(error) => return ControlReply::WindowTarget { id: spec.id, error },
+    };
+    let facts = window_facts(lp, id);
+    let (outputs, _, _) = crate::project::project_outputs(lp);
+    let window = window_of(lp, id);
+    let hints = window.as_ref().map(size_hints).unwrap_or_default();
+    let window_output = window.as_ref().and_then(|window| {
+        let space =
+            &world::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), window)?
+                .state;
+        space
+            .outputs_for_element(window)
+            .first()
+            .map(|output| output_key(&output.name()))
+    });
+    let default_key = lp
+        .inner
+        .comp
+        .default_output
+        .as_ref()
+        .map(|output| output.key.clone());
+    let placement = policy::window::place(
+        &lp.inner.comp.registry,
+        spec,
+        &facts,
+        &outputs,
+        window_output.as_deref(),
+        default_key.as_deref(),
+        |size| clamp_size(size, hints),
+        |point| point,
+    );
+    let mut placement = match placement {
+        Ok(placement) => placement,
+        Err(reply) => return reply,
+    };
+    execute(lp, std::mem::take(&mut placement.effects));
+    let placed = window_of(lp, id)
+        .and_then(|window| {
+            world::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), &window)?
+                .state
+                .element_location(&window)
+        })
+        .map_or(facts.window_origin, |origin| {
+            (origin.x as f32, origin.y as f32)
+        });
+    policy::window::place_reply(spec, &placement, placed, placement.requested.is_some())
+}
+
+/// Test-only placement of a wl_surface origin in the native world Space.
+#[cfg(feature = "wlcs")]
+pub fn wlcs_place_surface(lp: &mut Loop, id: SurfaceId, origin: Point<i32, Logical>) {
+    let Some(window) = window_of(lp, id) else {
+        return;
+    };
+    // wlcs may deliberately put the window partly or wholly off the output.
+    // Keep the operator command's native effects, without its clipping policy.
+    let location = origin + window.geometry().loc;
+    execute(
+        lp,
+        vec![
+            Effect::FinishInteractive(id),
+            Effect::MoveTo {
+                id,
+                x: location.x as f32,
+                y: location.y as f32,
+            },
+            Effect::RetargetPointer,
+        ],
+    );
+}
+
+/// Put a window's geometry origin at `location` (and, with `size`, configure
+/// that size: one configure, no Resizing state).
+fn place_window(
+    lp: &mut Loop,
+    id: SurfaceId,
+    location: Point<i32, Logical>,
+    size: Option<Size<i32, Logical>>,
+) {
+    let Some(window) = window_of(lp, id) else {
+        return;
+    };
+    let Some(owner) = lp.inner.world_of_window(&window) else {
+        return;
+    };
+    if let Some(size) = size {
+        shell::stage(&window, size, false);
+        shell::send(&window);
+        slot::set_expected_size(&window, size);
+    }
+    lp.inner
+        .space_of_mut(owner)
+        .state
+        .map_element(window, location, false);
+}
+
+/// The window a `comp.motion.run` addresses, resolved the way `comp.window.*`
+/// resolves it (a stale generation is refused).
+fn motion_window(lp: &Loop, id: u64, generation: u64) -> Result<(SurfaceId, Window), ControlReply> {
+    let surface = match lp
+        .inner
+        .comp
+        .registry
+        .resolve_window_target(id, Some(generation))
+    {
+        Ok(record) => record.id(),
+        Err(error) => return Err(ControlReply::WindowTarget { id, error }),
+    };
+    let window = window_of(lp, surface)
+        .ok_or_else(|| ControlReply::refused("unknown_window", serde_json::json!({})))?;
+    Ok((surface, window))
+}
+
+/// Where a window is now, `[x, y, w, h]` in global logical coordinates: the
+/// start of a `comp.motion.run` window target.
+pub fn window_rect(lp: &Loop, id: u64, generation: u64) -> Result<[f64; 4], ControlReply> {
+    let (_, window) = motion_window(lp, id, generation)?;
+    let origin =
+        world::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), &window)
+            .and_then(|space| space.state.element_location(&window))
+            .unwrap_or_else(|| Point::from((0, 0)));
+    let size = window.geometry().size;
+    Ok([
+        f64::from(origin.x),
+        f64::from(origin.y),
+        f64::from(size.w),
+        f64::from(size.h),
+    ])
+}
+
+/// Move and resize a window to `rect` (`[x, y, w, h]`, global logical) for one
+/// motion tick. It is the origin and configure `comp.window.place` makes, and a
+/// configure is sent only when the size actually changes.
+pub fn window_glide_step(
+    lp: &mut Loop,
+    id: u64,
+    generation: u64,
+    rect: [f64; 4],
+) -> Result<(), ControlReply> {
+    let (surface, window) = motion_window(lp, id, generation)?;
+    let location = Point::<i32, Logical>::from((rect[0].round() as i32, rect[1].round() as i32));
+    let wanted = Size::<i32, Logical>::from((
+        (rect[2].round() as i32).max(1),
+        (rect[3].round() as i32).max(1),
+    ));
+    let size = (wanted != window.geometry().size).then_some(wanted);
+    place_window(lp, surface, location, size);
+    Ok(())
+}
+
+/// Apply the interactive move/resize grab's latest step: a move carries the
+/// window by the pointer delta; a
+/// resize grows from the grabbed edges, anchored on the opposite ones, clamped
+/// to the client's hints, with the `Resizing` state until the button is let go.
+pub fn apply_interactive(lp: &mut Loop) {
+    let Some(mut grab) = lp.inner.comp.interactive.take() else {
+        return;
+    };
+    let Some(window) = window_of(lp, grab.id) else {
+        lp.inner.comp.drag = None;
+        return;
+    };
+    let Some(owner) = lp.inner.world_of_window(&window) else {
+        lp.inner.comp.drag = None;
+        return;
+    };
+    let shift = lp
+        .state
+        .seat
+        .seat
+        .get_keyboard()
+        .is_some_and(|keyboard| keyboard.modifier_state().shift);
+    // Pointer motion is physical output-local, despite its historical Logical
+    // marker. The dispatcher's pointer location is world/camera coordinates.
+    let cursor = lp.inner.pointer().motion;
+    let pointer = lp
+        .inner
+        .space_state()
+        .state
+        .outputs()
+        .find(|output| lp.inner.cursor_output.as_ref() == Some(&world::state::output_key(output)))
+        .and_then(|output| {
+            let area = lp.inner.space_state().state.output_geometry(output)?;
+            let scale = output.current_scale().fractional_scale();
+            Some(area.loc.to_f64() + Point::from((cursor.x / scale, cursor.y / scale)))
+        })
+        .unwrap_or(grab.pointer_start + smithay::utils::Point::from(grab.delta));
+    let changed = {
+        let (comp, space) = lp.inner.comp_space_of_mut(owner);
+        crate::geometry::apply_interactive_at(comp, space, &window, &mut grab, pointer, shift)
+    };
+    if changed {
+        lp.state.schedule_redraw(RedrawReason::WindowState);
+    }
+    if grab.ended {
+        if grab.edges != 0 {
+            shell::unstage_resizing(&window);
+            shell::send(&window);
+        }
+        return;
+    }
+    lp.inner.comp.interactive = Some(grab);
+}
+
+/// The engine facts the window-state policy and replies read.
+pub fn window_facts(lp: &Loop, id: SurfaceId) -> WindowFacts {
+    let Some(window) = window_of(lp, id) else {
+        return WindowFacts::default();
+    };
+    let requested_maximized = lp.inner.comp.placement(id).maximized();
+    let committed_maximized = committed_maximized(&window);
+    let (min_size, max_size) = size_hints(&window);
+    let origin =
+        world::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), &window)
+            .and_then(|space| space.state.element_location(&window))
+            .unwrap_or_default();
+    let fullscreen = protocols::window::ident::states(&window).fullscreen;
+    let geometry = window.geometry();
+    WindowFacts {
+        requested_maximized,
+        requested_tiled: matches!(
+            lp.inner.comp.placement(id),
+            world::comp::Placement::Tiled { .. }
+        ),
+        requested_fullscreen: fullscreen,
+        committed_maximized,
+        committed_fullscreen: fullscreen,
+        configure_pending: requested_maximized != committed_maximized,
+        min_size,
+        max_size,
+        visible: drawn(lp, &window),
+        input_presentable: true,
+        geometry_size: (geometry.size.w, geometry.size.h),
+        window_origin: (origin.x as f32, origin.y as f32),
+        interactive: lp.inner.comp.interactive.is_some_and(|grab| grab.id == id),
+        ..WindowFacts::default()
+    }
+}
+
+/// A `comp.props.set` compd answers, or `None` (the caller replies `busy`).
+pub fn set(
+    lp: &mut Loop,
+    path: &str,
+    value: &Value,
+    generation: Option<u64>,
+) -> Option<ControlReply> {
+    let reply = set_leaf(lp, path, value, generation);
+    // What an admitted set changed carries `props.set` as its cause: the window's rows
+    // for a window leaf, else the leaf itself.
+    if let Some(ControlReply::Set { old, new, .. }) = &reply {
+        match parse_window_leaf_path(path) {
+            Some((window, _)) => lp.inner.comp.causes.note_window(window, "props.set"),
+            None => lp.inner.comp.causes.note(path, "props.set"),
+        }
+        // Every applied Bus set owes a frame, including input/model leaves
+        // whose setter has no window-specific redraw side effect. Reads,
+        // refusals and unchanged values do not disturb the idle desktop.
+        if old != new {
+            lp.state.schedule_redraw(RedrawReason::Bus);
+        }
+    }
+    reply
+}
+
+fn set_leaf(
+    lp: &mut Loop,
+    path: &str,
+    value: &Value,
+    generation: Option<u64>,
+) -> Option<ControlReply> {
+    if let Some((window, leaf)) = parse_window_leaf_path(path) {
+        // The fence first, so a stale write never reaches whatever window
+        // inherited the id.
+        if let Some(generation) = generation
+            && let Err(error @ WindowTargetError::StaleTarget { .. }) = lp
+                .inner
+                .comp
+                .registry
+                .resolve_window_target(window, Some(generation))
+        {
+            return Some(ControlReply::WindowTarget { id: window, error });
+        }
+        // A session lock refuses the window-changing leaves.
+        if world::comp::session_lock::active(lp)
+            && matches!(leaf, "workspace" | "minimized" | "maximized" | "fullscreen")
+        {
+            return Some(ControlReply::Locked);
+        }
+        return match leaf {
+            "workspace" => Some(set_window_workspace(lp, path, value, window, generation)),
+            "minimized" => Some(set_window_minimized(lp, path, value, window, generation)),
+            "maximized" | "fullscreen" => {
+                Some(set_window_state(lp, path, value, window, generation, leaf))
+            }
+            "band" => Some(set_window_band(lp, path, value, window)),
+            _ => Some(ControlReply::Validation(read_only_or_unknown(path))),
+        };
+    }
+    if path == "xwayland.enabled" {
+        return Some(set_xwayland_enabled(lp, path, value));
+    }
+    if generation.is_some() {
+        return Some(ControlReply::Validation(invalid_value(
+            "generation",
+            "absent",
+            "generation applies to windows.s<id>.* paths only",
+        )));
+    }
+    if let Some(target) = parse_workspaces_set_path(path) {
+        if world::comp::session_lock::active(lp) {
+            return Some(ControlReply::Locked);
+        }
+        return Some(set_workspaces(lp, path, value, target));
+    }
+    if path == HOST_PASSTHROUGH_PATH {
+        return Some(set_host_passthrough(lp, path, value));
+    }
+    if path.starts_with("tiling.") {
+        let reply = crate::tiling::set(&mut lp.inner.comp, path, value);
+        if matches!(&reply, ControlReply::Set { .. }) {
+            lp.inner.preference.tiling = serde_json::to_value(lp.inner.comp.tiling)
+                .expect("tiling config")
+                .as_object()
+                .expect("tiling object")
+                .clone();
+        }
+        return Some(reply);
+    }
+    Some(set_corners(lp, path, value))
+}
+
+/// `input.host.passthrough` (nested only):
+/// `false` stops host pointer and key input reaching the seat, so the host
+/// cursor cannot overwrite an injected position. Process-lifetime; the leaf
+/// does not exist on kms.
+fn set_host_passthrough(lp: &mut Loop, path: &str, value: &Value) -> ControlReply {
+    let injection = &mut lp.inner.comp.injection;
+    if !injection.host_passthrough_available {
+        return ControlReply::Validation(comp_model::observation::SetValidationError::UnknownPath);
+    }
+    let Some(wanted) = value.as_bool() else {
+        return ControlReply::Validation(invalid_value(path, "bool", "true|false"));
+    };
+    let old = injection.host_passthrough;
+    if old != wanted {
+        injection.set_host_passthrough(wanted);
+        lp.inner.comp.input_changed();
+    }
+    ControlReply::Set {
+        path: path.to_string(),
+        old: PropValue::Bool(old),
+        new: PropValue::Bool(wanted),
+        persisted: None,
+    }
+}
+
+/// `xwayland.enabled`: the configured
+/// value for the next start, persisted on every admitted set; the running
+/// Xwayland is untouched. A failed write still changes the configured value
+/// and replies `persisted: false` (no rollback).
+fn set_xwayland_enabled(lp: &mut Loop, path: &str, value: &Value) -> ControlReply {
+    let Some(wanted) = value.as_bool() else {
+        return ControlReply::Validation(invalid_value(path, "bool", "true|false"));
+    };
+    let (old, persisted) = crate::xwayland::set(wanted);
+    if old != wanted {
+        lp.inner.comp.settings_changed("xwayland", "props.set");
+    }
+    ControlReply::Set {
+        path: path.to_string(),
+        old: PropValue::Bool(old),
+        new: PropValue::Bool(wanted),
+        persisted: Some(persisted),
+    }
+}
+
+/// `input.corners.*`: every other path lands here and is refused
+/// (read-only or unknown).
+fn set_corners(lp: &mut Loop, path: &str, value: &Value) -> ControlReply {
+    let validated = match validate_corner_value(path, value) {
+        Ok(validated) => validated,
+        Err(error) => return ControlReply::Validation(error),
+    };
+    let mut config = lp.inner.comp.corners.config();
+    let (old, new) = apply_corner_value(&mut config, validated);
+    lp.inner.comp.corners.set_config(config);
+    ControlReply::Set {
+        path: path.to_string(),
+        old,
+        new,
+        persisted: None,
+    }
+}
+
+/// `windows.s<id>.band`: `bottom` demotes
+/// the window behind every normal window, `normal` restores it. Runtime
+/// state only, never persisted.
+fn set_window_band(lp: &mut Loop, path: &str, value: &Value, window: u64) -> ControlReply {
+    let band = match comp_model::observation::validate_window_band_value(path, value) {
+        Ok(band) => band,
+        Err(error) => return ControlReply::Validation(error),
+    };
+    match world::comp::band::set(lp, SurfaceId(window), band) {
+        Some((old, new)) => {
+            lp.state.schedule_redraw(RedrawReason::Stack);
+            // Stacking changed what is under the cursor.
+            crate::input::retarget_pointer(lp);
+            ControlReply::Set {
+                path: path.to_string(),
+                old: PropValue::String(old.into()),
+                new: PropValue::String(new.into()),
+                persisted: None,
+            }
+        }
+        None => missing_window(path),
+    }
+}
+
+fn missing_window(path: &str) -> ControlReply {
+    ControlReply::Validation(invalid_value(
+        path,
+        "existing window id",
+        "a live toplevel window",
+    ))
+}
+
+/// `windows.s<id>.minimized`.
+fn set_window_minimized(
+    lp: &mut Loop,
+    path: &str,
+    value: &Value,
+    window: u64,
+    generation: Option<u64>,
+) -> ControlReply {
+    let Some(wanted) = value.as_bool() else {
+        return ControlReply::Validation(invalid_value(path, "bool", "true|false"));
+    };
+    let (id, current_generation, old) = match lp
+        .inner
+        .comp
+        .registry
+        .resolve_window_target(window, generation)
+    {
+        Ok(record) => (record.id(), record.generation(), record.minimized()),
+        Err(error @ WindowTargetError::StaleTarget { .. }) => {
+            return ControlReply::WindowTarget { id: window, error };
+        }
+        Err(_) => return missing_window(path),
+    };
+    match policy::window::set_minimized(
+        &mut lp.inner.comp.registry,
+        window,
+        current_generation,
+        wanted,
+    ) {
+        Ok((_, effects)) => execute(lp, effects),
+        Err(_) => return missing_window(path),
+    }
+    let new = lp
+        .inner
+        .comp
+        .registry
+        .get(id)
+        .is_some_and(|record| record.minimized());
+    ControlReply::Set {
+        path: path.to_string(),
+        old: PropValue::Bool(old),
+        new: PropValue::Bool(new),
+        persisted: None,
+    }
+}
+
+/// `windows.s<id>.{maximized,fullscreen}`.
+fn set_window_state(
+    lp: &mut Loop,
+    path: &str,
+    value: &Value,
+    window: u64,
+    generation: Option<u64>,
+    leaf: &str,
+) -> ControlReply {
+    let Some(enabled) = value.as_bool() else {
+        return ControlReply::Validation(invalid_value(path, "bool", "true|false"));
+    };
+    let current_generation = match lp
+        .inner
+        .comp
+        .registry
+        .resolve_window_target(window, generation)
+    {
+        Ok(record) => record.generation(),
+        Err(error @ WindowTargetError::StaleTarget { .. }) => {
+            return ControlReply::WindowTarget { id: window, error };
+        }
+        Err(_) => return missing_window(path),
+    };
+    let state = if leaf == "maximized" {
+        WindowState::Maximized
+    } else {
+        WindowState::Fullscreen
+    };
+    match window_state(lp, window, current_generation, state, enabled, None) {
+        Ok((_, old, new)) => ControlReply::Set {
+            path: path.to_string(),
+            old: PropValue::Bool(old),
+            new: PropValue::Bool(new),
+            persisted: None,
+        },
+        Err(reply) => reply,
+    }
+}
+
+fn set_window_workspace(
+    lp: &mut Loop,
+    path: &str,
+    value: &Value,
+    window: u64,
+    generation: Option<u64>,
+) -> ControlReply {
+    let index = match workspace_value(path, value, WORKSPACE_INDEX_RANGE) {
+        Ok(index) => index,
+        Err(error) => return ControlReply::Validation(error),
+    };
+    let comp = &mut lp.inner.comp;
+    let id = match comp.registry.resolve_window_target(window, generation) {
+        Ok(record) => record.id(),
+        Err(error @ WindowTargetError::StaleTarget { .. }) => {
+            return ControlReply::WindowTarget { id: window, error };
+        }
+        Err(_) => return missing_window(path),
+    };
+    let default_output = comp.default_output.clone();
+    let outcome = comp.workspaces.move_window(
+        &mut comp.registry,
+        default_output.as_ref(),
+        id,
+        WorkspaceTarget::Index(index),
+        None,
+    );
+    match outcome {
+        Ok(((old, new), effects)) => {
+            execute(lp, effects);
+            ControlReply::Set {
+                path: path.to_string(),
+                old: PropValue::U32(old),
+                new: PropValue::U32(new),
+                persisted: None,
+            }
+        }
+        Err(WorkspaceRefusal::NotAWindow) => missing_window(path),
+        Err(_) => ControlReply::Validation(invalid_value(path, "integer", WORKSPACE_INDEX_RANGE)),
+    }
+}
+
+fn set_workspaces(
+    lp: &mut Loop,
+    path: &str,
+    value: &Value,
+    target: WorkspacesSetTarget,
+) -> ControlReply {
+    let range = match target {
+        WorkspacesSetTarget::Count => WORKSPACE_COUNT_RANGE,
+        WorkspacesSetTarget::Current(_) => WORKSPACE_INDEX_RANGE,
+    };
+    let value = match workspace_value(path, value, range) {
+        Ok(value) => value,
+        Err(error) => return ControlReply::Validation(error),
+    };
+    let comp = &mut lp.inner.comp;
+    let default_output = comp.default_output.clone();
+    let outcome = match &target {
+        WorkspacesSetTarget::Count => comp.workspaces.set_count(&mut comp.registry, value),
+        WorkspacesSetTarget::Current(key) => comp
+            .workspaces
+            .switch(
+                &comp.registry,
+                default_output.as_ref(),
+                key.as_deref(),
+                WorkspaceTarget::Index(value),
+                true,
+                None,
+            )
+            .map(|(switched, effects)| ((switched.from, switched.to), effects)),
+    };
+    match outcome {
+        Ok(((old, new), effects)) => {
+            execute(lp, effects);
+            ControlReply::Set {
+                path: path.to_string(),
+                old: PropValue::U32(old),
+                new: PropValue::U32(new),
+                persisted: None,
+            }
+        }
+        // The key may exist under `outputs.*`; what is refused is a key that
+        // is not the DEFAULT output's.
+        Err(WorkspaceRefusal::UnknownOutput) => {
+            ControlReply::Validation(invalid_value(path, "output key", WORKSPACE_OUTPUT_RANGE))
+        }
+        Err(_) => ControlReply::Validation(invalid_value(path, "integer", range)),
+    }
+}
+
+/// Save the live workspace count and names as the ones compd starts with,
+/// and the live `preference` copy with them. The reply says whether it
+/// stuck: `persisted`, plus `persist_error` when the file was not written
+/// (the live change stands either way).
+fn persist_workspaces(lp: &mut Loop, body: &mut Value) {
+    let count = lp.inner.comp.workspaces.count;
+    let names = lp.inner.comp.workspaces.names_list();
+    let mut fields = serde_json::Map::new();
+    fields.insert("workspaces_count".into(), serde_json::json!(count));
+    fields.insert("workspace_names".into(), serde_json::json!(names));
+    match model::environment::preference::base::save_fields(fields) {
+        Ok(()) => {
+            lp.inner.preference.workspaces_count = count;
+            lp.inner.preference.workspace_names = names;
+            body["persisted"] = Value::Bool(true);
+        }
+        Err(error) => {
+            body["persisted"] = Value::Bool(false);
+            body["persist_error"] = Value::String(error);
+        }
+    }
+}
+
+/// Carry out the effects the workspace policy returned.
+pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
+    let _span = ledger::frame_trace::span("comp_workspace_effects", 0);
+    crate::x11::sync_windows(
+        lp,
+        effects.iter().filter_map(|effect| match effect {
+            Effect::Withdraw { id, .. }
+            | Effect::Present { id, .. }
+            | Effect::Relabelled { id, .. } => Some(*id),
+            _ => None,
+        }),
+    );
+    let mut moved = false;
+    let mut refit = false;
+    for effect in effects {
+        match effect {
+            // The X11 half: an X11 window's HIDDEN and `_NET_WM_DESKTOP`
+            // follow its workspace (the relabel).
+            Effect::Withdraw { .. } | Effect::Present { .. } | Effect::Relabelled { .. } => {
+                moved = true;
+                refit = true;
+            }
+            Effect::MarkDirty { .. } | Effect::WorkspacesDirty(_) => moved = true,
+            Effect::Settle { prefer } => {
+                settle(lp, prefer);
+                moved = true;
+            }
+            Effect::Activate(id) => {
+                activate(lp, id);
+                moved = true;
+            }
+            Effect::Focus(id) => focus_keyboard(lp, id),
+            // Stacking: the draw order (hit-testing follows it) and the Space.
+            Effect::Raise(id) => {
+                raise_now(lp, id);
+            }
+            // Stacking or visibility changed what is under the cursor.
+            Effect::RetargetPointer => crate::input::retarget_pointer(lp),
+            Effect::Minimize(id) => {
+                lp.inner.comp.note_minimized(id, true);
+                crate::x11::sync_window(lp, id);
+                settle(lp, None);
+                moved = true;
+            }
+            Effect::Restore(id) => {
+                lp.inner.comp.note_minimized(id, false);
+                crate::x11::sync_window(lp, id);
+                bring_into_view(lp, id);
+                activate(lp, id);
+                moved = true;
+            }
+            // Shown again where it is. The focus is left exactly as it is,
+            // empty included: nothing is activated or raised.
+            Effect::Unminimize(id) => {
+                lp.inner.comp.note_minimized(id, false);
+                crate::x11::sync_window(lp, id);
+                moved = true;
+            }
+            Effect::ClosePolite(id) => {
+                if let Some(window) = window_of(lp, id) {
+                    shell::close(&window);
+                }
+            }
+            Effect::RequestWindowState {
+                id,
+                state,
+                enabled,
+                output,
+            } => {
+                match state {
+                    WindowState::Maximized => maximize_on(lp, id, enabled, output.as_deref()),
+                    // Applied now, not queued to the frame hook (the engine's
+                    // `fullscreen_request`): the command reads the requested state
+                    // back at once, and a queued request read as refused.
+                    WindowState::Fullscreen => {
+                        if let Some(window) = window_of(lp, id) {
+                            // Already fullscreen and asked again (an `{output}`):
+                            // move it there (a re-target); `fullscreen_set` returns early.
+                            if enabled && protocols::window::ident::states(&window).fullscreen {
+                                world::comp::fullscreen::retarget(lp, &window);
+                            } else {
+                                world::window::interface::draw::fullscreen::fullscreen_set(
+                                    lp, window, enabled,
+                                );
+                            }
+                        }
+                    }
+                }
+                moved = true;
+            }
+            Effect::MoveTo { id, x, y } => {
+                place_window(
+                    lp,
+                    id,
+                    Point::from((x.round() as i32, y.round() as i32)),
+                    None,
+                );
+                lp.state.schedule_redraw(RedrawReason::WindowState);
+            }
+            Effect::Resize {
+                id,
+                x,
+                y,
+                width,
+                height,
+            } => {
+                place_window(
+                    lp,
+                    id,
+                    Point::from((x.round() as i32, y.round() as i32)),
+                    Some(Size::from((width, height))),
+                );
+                lp.state.schedule_redraw(RedrawReason::WindowState);
+            }
+            // A place mid-grab: the grab would steer the window straight back.
+            Effect::FinishInteractive(id) => {
+                if crate::geometry::finish_interactive(&mut lp.inner.comp, id) {
+                    apply_interactive(lp);
+                    lp.state.schedule_redraw(RedrawReason::WindowState);
+                }
+            }
+            // The output a fullscreen covers: policy names it by its
+            // `outputs.*` key; CompState keeps the output's name, which the
+            // engine's fullscreen asks `comp::fullscreen::target` for.
+            Effect::SetFullscreenOutput { id, output } => {
+                let name = output.and_then(|key| {
+                    let (rows, _, _) = crate::project::project_outputs(lp);
+                    rows.get(&key).map(|row| row.name.clone())
+                });
+                lp.inner.comp.fullscreen.select(id, name);
+            }
+            // EWMH desktops: the root pair, and every X11 window's.
+            Effect::PublishDesktops => crate::x11::publish_desktops(lp),
+            Effect::ResyncAllX11 => crate::x11::sync(lp),
+            // The workspace commands return none of the rest.
+            _ => {}
+        }
+    }
+    if moved {
+        lp.inner.comp.workspaces_changed();
+        lp.state.schedule_redraw(RedrawReason::Workspace);
+    }
+    if refit {
+        // A send changes which split owns a tile. Apply it before the command
+        // projects its reply, including windows hidden on the destination.
+        refresh_usable(lp);
+    }
+}
+
+/// The engine `Window` behind a registry record, wherever it lives.
+pub(crate) fn window_of(lp: &Loop, id: SurfaceId) -> Option<Window> {
+    let handle = lp.inner.comp.registry.get(id)?.handle().clone();
+    lp.inner.all_world_spaces().into_iter().find_map(|space| {
+        let window = space
+            .state
+            .elements()
+            .find(|window| SurfaceHandle::of_window(window).as_ref() == Some(&handle))?;
+        world::comp::window_is_live(&lp.inner.comp, &space.state, window).then(|| window.clone())
+    })
+}
+
+/// Raise `id` now: the draw order (hit-testing follows it), the Space, and
+/// an X11 window's X stack.
+fn raise_now(lp: &mut Loop, id: SurfaceId) {
+    if let Some(window) = window_of(lp, id)
+        && let Some(owner) = lp.inner.world_of_window(&window)
+    {
+        if let Some(uuid) = lp.inner.comp.registry.uuid_for(id) {
+            lp.inner.raise_drawable_of(owner, uuid);
+        }
+        lp.inner
+            .space_of_mut(owner)
+            .state
+            .raise_element(&window, false);
+    }
+    crate::x11::sync_stacking(lp);
+    lp.state.schedule_redraw(RedrawReason::WindowState);
+}
+
+/// Focus and raise `id`. The raise happens
+/// NOW, inside the command: the engine's activation is queued to
+/// the next frame step, and a command that follows before that frame (a hit test,
+/// `comp_control_smoke`'s occluded refusal) must already see the new
+/// order. Idempotent with the engine's later activation.
+fn activate(lp: &mut Loop, id: SurfaceId) {
+    raise_now(lp, id);
+    if let Some(window) = window_of(lp, id) {
+        lp.inner
+            .request_activation(window, ActivationOrigin::Foreign);
+    }
+}
+
+/// A restored window on another workspace is brought on screen by switching
+/// to it.
+fn bring_into_view(lp: &mut Loop, id: SurfaceId) {
+    let locked = world::comp::session_lock::active(lp);
+    let latched = world::comp::latch::active(lp);
+    let comp = &mut lp.inner.comp;
+    let default_output = comp.default_output.clone();
+    let allowed = comp.registry.get(id).and_then(|record| {
+        policy::workspaces::switch_allowed_for(
+            record,
+            SwitchGates {
+                session_lock: locked,
+                exclusive_layer: latched,
+                input_presentable: true,
+            },
+        )
+    });
+    if let Some(effects) =
+        comp.workspaces
+            .ensure_shown(&comp.registry, default_output.as_ref(), id, allowed)
+    {
+        execute(lp, effects);
+    }
+}
+
+/// Maximise on the engine's window: the window takes its owning
+/// output's usable area (what layer exclusive zones leave) and
+/// goes back to where it was on unmaximise. One configure either way. Called
+/// again for a maximised window when the usable area moves. A window with
+/// server-side chrome gets the usable area less its chrome, so the titlebar
+/// stays on the output.
+pub fn maximize(lp: &mut Loop, id: SurfaceId, enabled: bool) {
+    maximize_on(lp, id, enabled, None);
+}
+
+fn maximize_on(lp: &mut Loop, id: SurfaceId, enabled: bool, output: Option<&str>) {
+    let Some(window) = window_of(lp, id) else {
+        return;
+    };
+    let Some(owner) = lp.inner.world_of_window(&window) else {
+        return;
+    };
+    let (comp, space) = lp.inner.comp_space_of_mut(owner);
+    if crate::geometry::set_maximized_on(comp, space, id, &window, enabled, output).windows {
+        lp.state.schedule_redraw(RedrawReason::WindowState);
+        crate::input::retarget_pointer(lp);
+    }
+}
+
+/// The client's own maximise / minimise requests, through the same policy as
+/// the commands (a refusal still answers the client with a configure).
+pub fn apply_client_requests(lp: &mut Loop) {
+    for (id, request) in lp.inner.comp.take_requests() {
+        let Some((window_id, generation)) = lp
+            .inner
+            .comp
+            .registry
+            .get(id)
+            .map(|record| (record.id().0, record.generation()))
+        else {
+            continue;
+        };
+        match request {
+            WindowRequest::Maximize(enabled) => {
+                if window_state(
+                    lp,
+                    window_id,
+                    generation,
+                    WindowState::Maximized,
+                    enabled,
+                    None,
+                )
+                .is_err()
+                    && let Some(window) = window_of(lp, id)
+                {
+                    shell::send(&window);
+                }
+            }
+            WindowRequest::Minimize => {
+                let _ = minimized(lp, window_id, generation, true);
+            }
+            // The chrome's close button: the polite close (xdg `close` /
+            // `WM_DELETE_WINDOW`), through the same policy as `comp.window.close`.
+            WindowRequest::Close => {
+                if let Ok((_, effects)) =
+                    policy::window::close(&lp.inner.comp.registry, window_id, generation)
+                {
+                    execute(lp, effects);
+                }
+            }
+            // X11 requests, answered through the
+            // commands' own code, so a session lock refuses them (`locked_refusal`)
+            // and an exclusive latch refuses the focus. A request for an
+            // override-redirect window is ignored (X-2a).
+            WindowRequest::Unminimize
+            | WindowRequest::Activate
+            | WindowRequest::Desktop(_)
+            | WindowRequest::Raise
+                if !lp
+                    .inner
+                    .comp
+                    .registry
+                    .get(id)
+                    .is_some_and(|record| record.role().managed_toplevel()) => {}
+            // An X11 `Reorder::Top` ConfigureRequest: a raise, no focus.
+            // Through the raise command, so the band rules apply.
+            WindowRequest::Raise => {
+                let _ = window(
+                    lp,
+                    &WindowOp::Raise {
+                        id: window_id,
+                        generation,
+                    },
+                );
+            }
+            // `WM_CHANGE_STATE` NormalState: a restore (switches to the
+            // window's workspace when allowed).
+            WindowRequest::Unminimize => {
+                let _ = window(
+                    lp,
+                    &WindowOp::Restore {
+                        target: Some((window_id, generation)),
+                        activate: true,
+                    },
+                );
+            }
+            // `_NET_ACTIVE_WINDOW`: activate (focus with raise; rule 6
+            // brings it on screen).
+            WindowRequest::Activate => {
+                let _ = window(
+                    lp,
+                    &WindowOp::Focus {
+                        id: window_id,
+                        generation,
+                        raise: true,
+                    },
+                );
+            }
+            // `_NET_WM_DESKTOP`: a move without a
+            // switch. All-desktops (sticky) and an index past the count are
+            // refused (decision §8.6.2).
+            WindowRequest::Desktop(desktop) => {
+                let Some(desktop) =
+                    policy::x11::desktop_request_target(desktop, lp.inner.comp.workspaces.count)
+                else {
+                    continue;
+                };
+                let index = comp_model::request::WorkspaceIndex::Absolute(desktop + 1);
+                let _ = window(
+                    lp,
+                    &WindowOp::SendToWorkspace {
+                        id: window_id,
+                        generation,
+                        index,
+                        follow: false,
+                    },
+                );
+            }
+        }
+    }
+    // `_NET_CURRENT_DESKTOP`: a switch,
+    // refused past the count and under a lock.
+    for desktop in lp.inner.comp.take_desktop_requests() {
+        if desktop >= lp.inner.comp.workspaces.count {
+            continue;
+        }
+        let index = comp_model::request::WorkspaceIndex::Absolute(desktop + 1);
+        let _ = window(
+            lp,
+            &WindowOp::SwitchWorkspace {
+                output: None,
+                index,
+                wrap: false,
+            },
+        );
+    }
+}
+
+/// The binding chords queued since the last pass, run through the same code as the commands they
+/// mirror. A refusal is a no-op: a key press has nobody to reply to.
+pub fn apply_bindings(lp: &mut Loop) {
+    use comp_model::request::WorkspaceIndex;
+    use policy::bindings::BindingAction;
+    for fire in lp.inner.comp.bindings.take_comp_fires() {
+        run_user_fire(lp, &fire);
+    }
+    for action in lp.inner.comp.bindings.take_pending() {
+        match action {
+            BindingAction::TileFocused(direction) => {
+                if let Some((id, generation)) = focused_window(lp) {
+                    let _ = window(
+                        lp,
+                        &WindowOp::TileKey {
+                            id,
+                            generation,
+                            direction,
+                        },
+                    );
+                }
+            }
+            BindingAction::ToggleMaximizeFocused | BindingAction::MinimizeFocused => {
+                if let Some((id, generation)) = focused_window(lp) {
+                    let op = match action {
+                        BindingAction::ToggleMaximizeFocused => WindowOp::PlaceAs {
+                            id,
+                            generation,
+                            placement: if lp.inner.comp.placement(SurfaceId(id)).maximized() {
+                                comp_model::request::PlacementKind::Floating
+                            } else {
+                                comp_model::request::PlacementKind::Maximized
+                            },
+                            output: None,
+                        },
+                        BindingAction::MinimizeFocused => WindowOp::Minimize { id, generation },
+                        _ => unreachable!(),
+                    };
+                    let _ = window(lp, &op);
+                }
+            }
+            BindingAction::RestoreFocused => {
+                if let Some((id, generation)) = focused_window(lp) {
+                    let Some(target) = window_of(lp, SurfaceId(id)) else {
+                        continue;
+                    };
+                    if let Some(op) = crate::geometry::restore_focused_op(
+                        &lp.inner.comp,
+                        SurfaceId(id),
+                        generation,
+                        &target,
+                    ) {
+                        let _ = window(lp, &op);
+                    }
+                    let _ = window(
+                        lp,
+                        &WindowOp::Focus {
+                            id,
+                            generation,
+                            raise: true,
+                        },
+                    );
+                }
+            }
+            BindingAction::RequestCloseFocused => {
+                if let Some((id, generation)) = focused_window(lp) {
+                    let _ = window(lp, &WindowOp::Close { id, generation });
+                }
+            }
+            BindingAction::RestoreMostRecentlyMinimized => {
+                let _ = window(
+                    lp,
+                    &WindowOp::Restore {
+                        target: None,
+                        activate: true,
+                    },
+                );
+            }
+            BindingAction::WorkspaceJump(n) => {
+                let index = WorkspaceIndex::Absolute(u32::from(n));
+                let _ = window(
+                    lp,
+                    &WindowOp::SwitchWorkspace {
+                        output: None,
+                        index,
+                        wrap: true,
+                    },
+                );
+            }
+            BindingAction::WorkspaceStep { prev } => {
+                let index = if prev {
+                    WorkspaceIndex::Prev
+                } else {
+                    WorkspaceIndex::Next
+                };
+                let _ = window(
+                    lp,
+                    &WindowOp::SwitchWorkspace {
+                        output: None,
+                        index,
+                        wrap: true,
+                    },
+                );
+            }
+            // D18: never under an exclusive layer (the policy's gate
+            // refuses the follow there); a refused move changes nothing.
+            BindingAction::WorkspaceMove(n) => {
+                if let Some((id, generation)) = focused_window(lp)
+                    && !crate::input::exclusive_layer(lp)
+                {
+                    let index = WorkspaceIndex::Absolute(u32::from(n));
+                    let _ = window(
+                        lp,
+                        &WindowOp::SendToWorkspace {
+                            id,
+                            generation,
+                            index,
+                            follow: true,
+                        },
+                    );
+                }
+            }
+            BindingAction::CycleWindow { reverse } => cycle_window(lp, reverse),
+            // Run where they were decided (`world::comp::bindings::key`).
+            BindingAction::Screenshot(_)
+            | BindingAction::ToggleInterception
+            | BindingAction::SwitchVt(_)
+            | BindingAction::ExitNestedCompositor
+            | BindingAction::SendBusKey => {}
+        }
+    }
+}
+
+/// A user key's `comp.*` command: parsed by the Bus path's own `classify` and
+/// run by the code the matching command runs (the engine's `set`, `window` and
+/// `input`), so `comp.workspace.switch {index:"next"}` from a key is exactly
+/// the Bus request. A command that replies later or reads (`window.wait`,
+/// `motion.run`, `panel.*`, the reads) has no meaning without a caller and
+/// is not run. A refusal is a no-op: a key press has nobody to reply to.
+fn run_user_fire(lp: &mut Loop, fire: &policy::user_keys::UserFire) {
+    use comp_model::request::{Request, classify};
+    match classify(fire.command, &fire.body, false) {
+        Ok(Request::Window(op)) => {
+            let _ = window(lp, &op);
+        }
+        Ok(Request::Set {
+            path,
+            value,
+            generation,
+        }) => {
+            let _ = set(lp, &path, &value, generation);
+        }
+        Ok(Request::Input(op)) => {
+            let _ = crate::input::input(lp, &op);
+        }
+        Ok(_) => model::warn!(
+            "user key: {} is not a one-shot comp command; not run",
+            fire.command
+        ),
+        Err((rc, body)) => model::warn!("user key: {} refused ({rc}): {body}", fire.command),
+    }
+}
+
+/// The window holding the human keyboard (its root, for a popup), as
+/// `{id, generation}`.
+fn focused_window(lp: &Loop) -> Option<(u64, u64)> {
+    world::comp::bindings::focused_window(lp)
+}
+
+/// The mapped, unminimised managed windows on the
+/// current workspace in creation order; the one after (or before) the
+/// focused one is focused and raised. Nothing under an exclusive layer.
+fn cycle_window(lp: &mut Loop, reverse: bool) {
+    if crate::input::exclusive_layer(lp) {
+        return;
+    }
+    let comp = &lp.inner.comp;
+    let current = comp.current_workspace();
+    let mut candidates: Vec<(u64, u64)> = comp
+        .registry
+        .surface_rows()
+        .filter(|record| {
+            record.mapped()
+                && !record.minimized()
+                && record.role().managed_toplevel()
+                && record.workspace() == Some(current)
+        })
+        .map(|record| (record.id().0, record.generation()))
+        .collect();
+    candidates.sort_unstable_by_key(|(id, _)| *id);
+    if candidates.is_empty() {
+        return;
+    }
+    let focused = focused_window(lp);
+    let position = candidates
+        .iter()
+        .position(|candidate| Some(*candidate) == focused);
+    let len = candidates.len();
+    let index = match (position, reverse) {
+        (Some(index), true) => (index + len - 1) % len,
+        (Some(index), false) => (index + 1) % len,
+        (None, true) => len - 1,
+        (None, false) => 0,
+    };
+    let (id, generation) = candidates[index];
+    let _ = focus(lp, id, generation, true);
+}
+
+/// What a force-close kill took: the client's pid (when known) and the ids
+/// of every managed window it had.
+pub type Killed = (Option<i32>, Vec<u64>);
+
+/// The force-close kill: the window's own client goes (every window it had
+/// with it). An xdg window's Wayland client is disconnected; an X11
+/// window's X client is cut off by the X server (`KillClient` through the
+/// window manager), never Xwayland, which every X11 window shares.
+///
+/// `Err(reason)` (nothing killed) when no client can be attributed to the
+/// window, or the one found is compd itself or Xwayland.
+pub fn kill_client(lp: &Loop, id: SurfaceId, via: KillVia) -> Result<Killed, &'static str> {
+    let window = window_of(lp, id).ok_or("client_unattributed")?;
+    match via {
+        KillVia::WaylandClient => kill_wayland_client(lp, &window),
+        KillVia::X11Client => kill_x11_client(lp, &window),
+    }
+}
+
+/// The managed-window ids among the world's windows that `owned` picks.
+fn owned_windows(lp: &Loop, owned: impl Fn(&Window) -> bool) -> Vec<u64> {
+    let comp = &lp.inner.comp;
+    lp.inner
+        .all_world_spaces()
+        .iter()
+        .flat_map(|space| space.state.elements())
+        .filter(|candidate| owned(candidate))
+        .filter_map(SurfaceHandle::of_window)
+        .filter_map(|handle| comp.registry.id_for_handle(&handle))
+        .map(|id| id.0)
+        .collect()
+}
+
+fn kill_x11_client(lp: &Loop, window: &Window) -> Result<Killed, &'static str> {
+    let x11 = window.x11_surface().ok_or("x11_client_unattributed")?;
+    let base = x11.x_client_base().ok_or("x11_disconnected")?;
+    let display = &lp.inner.loader.display_handle;
+    // The X server's own answer (XRes, SO_PEERCRED), else _NET_WM_PID:
+    // reported, and checked against compd and Xwayland, never signalled.
+    let pid = protocols::window::ident::pid(window, display);
+    let xwayland_pid = x11
+        .wl_surface()
+        .and_then(|surface| surface.client())
+        .and_then(|client| client.get_credentials(display).ok())
+        .map(|credentials| credentials.pid as u32);
+    if pid == Some(std::process::id()) {
+        return Err("client_is_compd");
+    }
+    if pid.is_some() && pid == xwayland_pid {
+        return Err("client_is_xwayland");
+    }
+    let windows = owned_windows(lp, |candidate| {
+        candidate
+            .x11_surface()
+            .is_some_and(|other| other.x_client_base() == Some(base))
+    });
+    x11.kill_client().map_err(|error| match error {
+        X11KillError::Disconnected => "x11_disconnected",
+        X11KillError::ServerOwned => "x11_server_owned",
+        X11KillError::OwnConnection => "client_is_compd",
+        X11KillError::Connection(_) => "x11_connection_error",
+    })?;
+    Ok((pid.and_then(|pid| i32::try_from(pid).ok()), windows))
+}
+
+fn kill_wayland_client(lp: &Loop, window: &Window) -> Result<Killed, &'static str> {
+    let client = window
+        .toplevel()
+        .and_then(|toplevel| toplevel.wl_surface().client())
+        .ok_or("client_unattributed")?;
+    if client.get_data::<XWaylandClientData>().is_some() {
+        return Err("client_is_xwayland");
+    }
+    let display = &lp.inner.loader.display_handle;
+    let pid = client
+        .get_credentials(display)
+        .ok()
+        .map(|credentials| credentials.pid);
+    if pid.is_some_and(|pid| pid as u32 == std::process::id()) {
+        return Err("client_is_compd");
+    }
+    let windows = owned_windows(lp, |candidate| {
+        candidate
+            .toplevel()
+            .and_then(|toplevel| toplevel.wl_surface().client())
+            .is_some_and(|owner| owner.id() == client.id())
+    });
+    client.kill(
+        display,
+        ProtocolError {
+            code: 0,
+            object_id: 0,
+            object_interface: "wl_display".into(),
+            message: "killed by compd: comp.window.close {force} deadline passed".into(),
+        },
+    );
+    Ok((pid, windows))
+}
+
+/// The settle, reduced to the keyboard: if the focused window is hidden
+/// (or `prefer` names a shown one), focus `prefer`, else the topmost shown
+/// managed window on the current workspace, else nothing.
+fn settle(lp: &mut Loop, prefer: Option<SurfaceId>) {
+    let comp = &lp.inner.comp;
+    let shown = |id: SurfaceId| {
+        comp.registry
+            .get(id)
+            .is_some_and(|record| record.mapped() && record.role().managed_toplevel())
+            && !comp.hidden_id(id)
+    };
+    let focused_shown = comp.focused().is_some_and(shown);
+    let preferred = prefer.filter(|id| shown(*id));
+    if focused_shown && preferred.is_none() {
+        return;
+    }
+    let target = preferred.or_else(|| {
+        lp.inner
+            .drawable_order()
+            .into_iter()
+            .filter_map(|uuid| comp.registry.id_for_uuid(uuid))
+            .find(|id| shown(*id))
+    });
+    match target {
+        Some(id) => activate(lp, id),
+        None => {
+            lp.inner.set_activated_exclusive(None);
+            if let Some(keyboard) = lp.state.seat.seat.get_keyboard() {
+                keyboard.set_focus(&mut lp.state, None, SERIAL_COUNTER.next_serial());
+            }
+        }
+    }
+}
+
+/// Whether a window would be drawn now (through the draw's own predicate).
+pub fn drawn(lp: &Loop, window: &Window) -> bool {
+    window.visible(lp) && protocols::window::ident::is_drawn(window)
+}
+
+#[cfg(test)]
+mod unmaximize_tests {
+    use super::{WindowState, untiled_by_unmaximize};
+
+    #[test]
+    fn unmaximize_of_a_tile_reports_a_change() {
+        assert!(untiled_by_unmaximize(
+            WindowState::Maximized,
+            false,
+            true,
+            false
+        ));
+        // Already floating: nothing changed.
+        assert!(!untiled_by_unmaximize(
+            WindowState::Maximized,
+            false,
+            false,
+            false
+        ));
+        // Maximise (enable) keeps the maximised-flag comparison.
+        assert!(!untiled_by_unmaximize(
+            WindowState::Maximized,
+            true,
+            true,
+            true
+        ));
+        // Fullscreen is untouched by this rule.
+        assert!(!untiled_by_unmaximize(
+            WindowState::Fullscreen,
+            false,
+            true,
+            false
+        ));
+    }
+}

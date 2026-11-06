@@ -1,0 +1,117 @@
+-- Track B1 lab oracle import. Run once in a clean lab worktree.
+-- usage: mix tools/import_engine_split_comp.mix SOURCE REV STAGE
+$a = args()
+if len($a) != 3 then
+  raise("USAGE", "SOURCE REV STAGE")
+end
+$src = $a[0]
+$rev = trim(run_argv_must(["git", "-C", $src, "rev-parse", $a[1]]))
+$stage = $a[2]
+$root = path_join(dirname(realpath(script_path())), "..")
+if is_dir($stage) then
+  raise("STAGE_EXISTS", $stage)
+end
+$mapping = []
+for $n in ["action", "assets", "buildinfo", "bus", "config", "design", "edit", "editor", "editor-model", "expr", "files", "icons", "logging", "macros", "mimedb", "mix", "paths", "props", "scene", "settings", "strict", "syntax", "test-broker", "thumbs", "toolkit"]
+  push($mapping, ["libs/" .. $n, "libraries/" .. $n])
+end
+push($mapping, ["services/compd", "engines/compd"])
+for $n in ["inputd-core", "inputd-schema"]
+  push($mapping, ["services/inputd/crates/" .. $n, "libraries/" .. $n])
+end
+for $n in ["mesh", "mesh-trust"]
+  push($mapping, ["services/noded/crates/" .. $n, "libraries/" .. $n])
+end
+for $n in ["smithay", "calloop", "input", "msedit/lsh", "msedit/stdext", "eframe", "egui-wgpu", "dirs-sys", "README.md"]
+  push($mapping, ["vendor/" .. $n, "vendor/" .. $n])
+end
+for $n in ["admission", "authority", "native_ingress", "noded", "observe", "props", "props_reservation", "protection", "routing", "spec", "spec_release", "subscription"]
+  push($mapping, ["services/noded/src/" .. $n .. ".rs", "libraries/test-broker/noded/" .. $n .. ".rs"])
+end
+for $p in ["tests/lib", "docs/docs/spec/bus/commands.conf.mix", "share/scenes", "services/settingsd/src", "apps/ced/src/main.rs", "apps/dopus/src/main.rs", "apps/dopus/src/choose/presenter.rs", "apps/email/src/lib.rs", "apps/email/src/composer.rs", "apps/monitor/src/main.rs", "apps/prefs/src/main.rs", "apps/screenshot/src/main.rs", "apps/term/src/main.rs", "apps/workshop/src/main.rs"]
+  push($mapping, [$p, $p])
+end
+mkdir($stage, {parents: true})
+$tar = path_join($stage, "closure.tar")
+$cmd = ["git", "-C", $src, "archive", "--format=tar", "-o", $tar, $rev]
+for $m in $mapping
+  push($cmd, $m[0])
+end
+run_argv_must($cmd)
+$ex = path_join($stage, "x")
+mkdir($ex)
+run_argv_must(["tar", "-xf", $tar, "-C", $ex])
+$entries = []
+for $m in $mapping
+  $s = path_join($ex, $m[0])
+  $d = path_join($root, $m[1])
+  $files = if is_dir($s) then walk($s) else [$s] end
+  for $f in $files
+    $rel = substr($f, len($s))
+    $original = hash_file($f, "sha256")
+    $adapt = nil
+    if ends_with($f, ".rs") or ends_with($f, ".toml") then
+      $t = read_file($f)
+      $v = replace($t, "\"../../../../libs/", "\"../../../../libraries/")
+      $v = replace($v, "\"../../../libs/", "\"../../../libraries/")
+      $v = replace($v, "\"../../libs/", "\"../../libraries/")
+      $v = replace($v, "\"../../../services/noded/src/", "\"../noded/")
+      $v = replace($v, "\"../../../vendor/", "\"../../vendor/")
+      if $v != $t then
+        write_file($f, $v)
+        $adapt = "relative paths remapped to mixviu layout"
+      end
+    end
+    push($entries, {source: $m[0] .. $rel, destination: $m[1] .. $rel,
+      source_sha256: $original, destination_sha256: hash_file($f, "sha256"), adaptation: $adapt})
+  end
+  if is_dir($d) or is_file($d) then
+    run_argv_must(["rm", "-rf", $d])
+  end
+  mkdir(dirname($d), {parents: true})
+  run_argv_must(["mv", $s, $d])
+end
+-- Derive root manifest, retaining multiline non-path dependency tables.
+$manifest = run_argv_must(["git", "-C", $src, "show", $rev .. ":Cargo.toml"])
+$members = ["libraries/*", "engines/compd", "engines/compd/crates/*"]
+$out = []
+$section = ""
+for $line in lines($manifest)
+  if starts_with($line, "[") then
+    $section = trim($line)
+  end
+  if starts_with($section, "[patch") then
+    continue
+  end
+  if starts_with($line, "members =") then
+    push($out, "members = " .. json_encode($members))
+    continue
+  end
+  if starts_with($line, "exclude =") then
+    push($out, "exclude = [\"vendor\", \"vendor/msedit/lsh\", \"vendor/msedit/stdext\"]")
+    continue
+  end
+  if $section == "[workspace.dependencies]" and contains($line, "path = \"") then
+    for $m in $mapping
+      if contains($line, "path = \"" .. $m[0] .. "\"") or starts_with($m[0], "services/compd") and contains($line, "path = \"services/compd/") then
+        push($out, replace($line, $m[0], $m[1]))
+        break
+      end
+    end
+    continue
+  end
+  push($out, $line)
+end
+push($out, "[patch.crates-io]")
+for $n in ["eframe", "egui-wgpu", "dirs-sys", "calloop", "input"]
+  push($out, $n .. " = { path = \"vendor/" .. $n .. "\" }")
+end
+push($out, "[workspace.lints.clippy]\nmod_module_files = \"deny\"")
+write_file(path_join($root, "Cargo.toml"), join($out, "\n") .. "\n")
+write_file(path_join($root, "Cargo.lock"), run_argv_must(["git", "-C", $src, "show", $rev .. ":Cargo.lock"]))
+write_file(path_join($root, "provenance/engine-split-comp-imports.json"), json_encode({
+  source_repository: "https://github.com/markc/mixos", source_revision: $rev,
+  purpose: "Track B lab unchanged-behaviour compd oracle closure",
+  licence: "Original per-file and vendor licences retained", entries: $entries
+}, true) .. "\n")
+print("imported " .. to_string(len($entries)) .. " files")
