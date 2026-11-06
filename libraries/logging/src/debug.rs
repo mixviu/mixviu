@@ -31,6 +31,16 @@ pub(crate) const FAILURE_TARGET: &str = "logging::failure";
 
 /// Own targets use Rust crate names (hyphens become underscores).
 const WORKSPACE_TARGETS: &[&str] = &[
+    "viu_gallery",
+    "viu_dopus",
+    "ui_surface",
+    "overlays",
+    "theme",
+    "viud",
+    "mixd",
+    "viu_engine",
+    "furniture",
+    "viu",
     "action",
     "annotation",
     "assets",
@@ -488,7 +498,7 @@ mod tests {
             }
         }
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for kind in ["apps", "libs", "services", "cli"] {
+        for kind in ["apps", "libraries", "services", "engines"] {
             check(&root.join(kind));
         }
         for line in include_str!("../../../Cargo.lock").lines() {
