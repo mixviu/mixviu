@@ -54,14 +54,14 @@ on ced.command
 end
 on ced.draft
   if $state.busy then raise("BUSY","Wait for the pending operation") end
-  if type($event.args.text)!="string" or len($event.args.text)>65536 then raise("SIZE","Draft limited to 64 KiB") end
+  if type($event.args.text)!="string" or byte_length($event.args.text)>65536 then raise("SIZE","Draft limited to 64 KiB") end
   $t=current($state);$state.tabs[$state.active].draft=$event.args.text;publish_ced($state);reply(0,"{}")
 end
 on ced.intent
   $a=$event.args
   if $state.busy then raise("BUSY","Wait for the pending operation") end
   if $a.id=="editor" then
-    if type($a.value)!="string" or len($a.value)>65536 then raise("SIZE","Editor values must be text within 64 KiB") end
+    if type($a.value)!="string" or byte_length($a.value)>65536 then raise("SIZE","Editor values must be text within 64 KiB") end
     $t=current($state);$state.tabs[$state.active].draft=$a.value
   elif $a.id=="path" then $state.path=$a.value
   elif $a.id=="tabs" then
@@ -81,7 +81,7 @@ on viu.job.completed
         $state.tabs=filter($state.tabs,fn($t)=$t.buffer!=$state.pending.payload.buffer);$state.active=0
       else
         $t=$d.body
-        if type($t.text)!="string" or len($t.text)>65536 or $t.truncated or $t.next!=nil then raise("SIZE","Partial snapshots cannot be edited") end
+        if type($t.text)!="string" or byte_length($t.text)>65536 or $t.truncated or $t.next!=nil then raise("SIZE","Partial snapshots cannot be edited") end
         $t.draft=$t.text
         $found=false
         for $i=0 to len($state.tabs)-1
