@@ -397,7 +397,7 @@ impl Host {
         if !self.facilities.native_ui() {
             self.drive_answers.extend(toolkit::drive::logic(ctx));
         }
-        if self.inflight.is_empty() {
+        if self.inflight.is_empty() && self.view.current_revision_drawn() {
             while let Some(answer) = self.drive_answers.pop_front() {
                 if let Some(reply) = self.drive_replies.remove(&answer.id) {
                     let _ = reply.send((answer.rc, answer.body));
@@ -725,16 +725,12 @@ impl Host {
                 Err(_) => break,
             }
         }
-        while let Some(request) = self.held_requests.front() {
+        while !self.held_requests.is_empty() {
             if self.ready && !self.view.current_revision_drawn() {
                 ctx.request_repaint();
                 break;
             }
-            let queues = request
-                .command
-                .strip_prefix(&format!("{}.", self.app))
-                .is_some_and(toolkit::drive::queues);
-            if toolkit::drive::pending(ctx) && !queues {
+            if toolkit::drive::pending(ctx) || !self.drive_answers.is_empty() {
                 break;
             }
             let request = self.held_requests.pop_front().unwrap();

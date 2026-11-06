@@ -94,7 +94,7 @@ end
 fn model($s)
   $browser=$pages.browser($s)
   $dialog=$actions.dialog_form($s)
-  return {browser:{id:"browser",kind:"settings-browser",label:"",initial:$browser},dialog:{id:"dialog",kind:"dialog-form",label:"",initial:$dialog,properties:{style:"gold"}},values:{browser:$browser,dialog:$dialog}}
+  return {browser:{id:"browser",kind:"settings-browser",label:"",initial:$browser},dialog:{id:"dialog",kind:"dialog-form",label:"",initial:$dialog,properties:{style:"gold",presentation:"form"}},values:{browser:$browser,dialog:$dialog}}
 end
 
 fn info($s)
