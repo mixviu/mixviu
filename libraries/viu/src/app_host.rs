@@ -205,7 +205,8 @@ impl Host {
                         .and_then(|output| model["surfaces"].get(output))
                         .unwrap_or(&model)
                         .clone();
-                    let appearance = if self.framed && self.session_appearance.is_none()
+                    let appearance = if self.framed
+                        && self.session_appearance.is_none()
                         && (!self.loaded || self.model["appearance"] != model["appearance"])
                     {
                         crate::appearance::resolve(&model["appearance"]).map(Some)
@@ -216,7 +217,12 @@ impl Host {
                         if self.loaded {
                             self.view.apply_model(projected)
                         } else {
-                            (if self.framed { crate::gold_frame::mount(&self.scene_source, projected) } else { SceneView::with_model(&self.scene_source, projected) }).map(|view| {
+                            (if self.framed {
+                                crate::gold_frame::mount(&self.scene_source, projected)
+                            } else {
+                                SceneView::with_model(&self.scene_source, projected)
+                            })
+                            .map(|view| {
                                 self.view = view;
                                 self.loaded = true;
                             })
@@ -258,7 +264,9 @@ impl Host {
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
-                    if let Some(session) = &mut self.session { session.hint(&n.command, &n.args); }
+                    if let Some(session) = &mut self.session {
+                        session.hint(&n.command, &n.args);
+                    }
                     let _ = self
                         .runtime
                         .notify_with_headers(n.command, n.args, n.headers);
@@ -290,7 +298,11 @@ impl Host {
             if let Some(session) = &mut self.session {
                 if let Some(snapshot) = session.poll() {
                     let appearance = snapshot["appearance"].clone();
-                    match crate::appearance::install_session(ui.ctx(), &snapshot["state"]["values"], &self.service) {
+                    match crate::appearance::install_session(
+                        ui.ctx(),
+                        &snapshot["state"]["values"],
+                        &self.service,
+                    ) {
                         Ok(()) => {
                             self.session_appearance = Some(appearance);
                             self.session_window = Some(snapshot["state"]["values"].clone());
@@ -298,10 +310,16 @@ impl Host {
                         Err(error) => self.error = error,
                     }
                 }
-                if let Some(at) = session.deadline() { ui.ctx().request_repaint_after(at.saturating_duration_since(Instant::now())); }
+                if let Some(at) = session.deadline() {
+                    ui.ctx()
+                        .request_repaint_after(at.saturating_duration_since(Instant::now()));
+                }
             }
             if self.framed {
-                let settings = self.session_window.clone().unwrap_or_else(|| self.model["window_settings"].clone());
+                let settings = self
+                    .session_window
+                    .clone()
+                    .unwrap_or_else(|| self.model["window_settings"].clone());
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 self.window_frame
                     .show_with_header(ui, &self.title, &settings, true);
@@ -405,7 +423,15 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .join("viu-captures");
     Host {
         service: bundle.manifest.service.clone(),
-        session: bundle.manifest.frame.as_ref().map(|_| crate::session::Session::embedded(&bundle.manifest.service, &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_| "default".into()), wake.clone(), bus.backend_maker()).expect("embedded session worker")),
+        session: bundle.manifest.frame.as_ref().map(|_| {
+            crate::session::Session::embedded(
+                &bundle.manifest.service,
+                &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_| "default".into()),
+                wake.clone(),
+                bus.backend_maker(),
+            )
+            .expect("embedded session worker")
+        }),
         session_appearance: None,
         session_window: None,
         framed: bundle.manifest.frame.is_some(),

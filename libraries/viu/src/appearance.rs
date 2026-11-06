@@ -30,22 +30,35 @@ pub fn install(ctx: &egui::Context) {
 /// app overrides, auto mode, geometry, font choices and tunables.
 pub fn install_session(ctx: &egui::Context, values: &Value, app: &str) -> Result<(), String> {
     use settings::view::View;
-    let values: settings::registry::Values = serde_json::from_value(values.clone()).map_err(|e| e.to_string())?;
+    let values: settings::registry::Values =
+        serde_json::from_value(values.clone()).map_err(|e| e.to_string())?;
     let look = settings::view::Look::of(&values);
     let theme = toolkit::session_look::look_or(&look, Some(app), &toolkit::Theme::embedded());
     toolkit::install(ctx, &theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();
     for role in resolve(&serde_json::json!({}))?.colours.keys() {
-        if let Some(colour) = chrome.palette.get(role) { colours.insert(role.clone(), colour); }
+        if let Some(colour) = chrome.palette.get(role) {
+            colours.insert(role.clone(), colour);
+        }
     }
     let m = chrome.metrics;
     ctx.data_mut(|d| {
-        d.insert_temp(egui::Id::unique("viu-design-colours"), std::sync::Arc::new(colours));
-        d.insert_temp(egui::Id::unique("viu-window-metrics"), crate::window_frame::Metrics {
-            height:m.title_bar_height,caption_width:m.caption_width,caption_glyph:m.caption_glyph,
-            title_size:m.title_size,resize_edge:m.resize_edge,resize_corner:m.resize_corner,
-        });
+        d.insert_temp(
+            egui::Id::unique("viu-design-colours"),
+            std::sync::Arc::new(colours),
+        );
+        d.insert_temp(
+            egui::Id::unique("viu-window-metrics"),
+            crate::window_frame::Metrics {
+                height: m.title_bar_height,
+                caption_width: m.caption_width,
+                caption_glyph: m.caption_glyph,
+                title_size: m.title_size,
+                resize_edge: m.resize_edge,
+                resize_corner: m.resize_corner,
+            },
+        );
     });
     crate::icons::install(ctx);
     Ok(())

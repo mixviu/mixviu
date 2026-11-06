@@ -97,8 +97,7 @@ impl Bundle {
                 .replace("${", "\\${"),
             std::fs::read_to_string(&path).map_err(|e| e.to_string())?
         );
-        let scene =
-            std::fs::read_to_string(root.join("scene.mix")).map_err(|e| e.to_string())?;
+        let scene = std::fs::read_to_string(root.join("scene.mix")).map_err(|e| e.to_string())?;
         let program = crate::runtime::Program {
             path,
             source,

@@ -5,9 +5,7 @@ use std::{
     sync::{Arc, mpsc},
     time::Duration,
 };
-use viu::{
-    runtime::{Program, Runtime},
-};
+use viu::runtime::{Program, Runtime};
 
 #[test]
 fn mix_frame_preserves_application_content_and_intent_identity() {
@@ -53,7 +51,9 @@ fn mix_frame_preserves_application_content_and_intent_identity() {
     assert!(view.geometry["content"].bottom() <= view.geometry["gold-status"].top());
     assert!(view.admit_intent("content", "set", &json!(50)).is_ok());
 
-    assert!(viu::gold_frame::mount(&source.replace("content", "gold-title"), model.clone()).is_err());
+    assert!(
+        viu::gold_frame::mount(&source.replace("content", "gold-title"), model.clone()).is_err()
+    );
     let control_root = source.replace(
         "root:{widget:\"column\",children:[\"content\"]},content:",
         "root:",
@@ -82,9 +82,32 @@ fn mounted_root_control_delivers_its_original_native_intent() {
     let mut input = viu::input::Input::default();
     let mut events = Vec::new();
     for step in 0..5 {
-        if step == 2 { input.queue("click", &json!({"id":"root"}), &mut view).unwrap(); }
-        let native = if !input.now.is_empty() {std::mem::take(&mut input.now)} else {input.later.pop_front().unwrap_or_default()};
-        ctx.run_ui(egui::RawInput {screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1040.0,680.0))), events:native,..Default::default()}, |ui| {events.extend(view.show(ui));}).drop_without_applying_deltas();
+        if step == 2 {
+            input
+                .queue("click", &json!({"id":"root"}), &mut view)
+                .unwrap();
+        }
+        let native = if !input.now.is_empty() {
+            std::mem::take(&mut input.now)
+        } else {
+            input.later.pop_front().unwrap_or_default()
+        };
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1040.0, 680.0),
+                )),
+                events: native,
+                ..Default::default()
+            },
+            |ui| {
+                events.extend(view.show(ui));
+            },
+        )
+        .drop_without_applying_deltas();
     }
-    assert!(events.iter().any(|event| event.command == "app.intent" && event.body["id"] == "root" && event.body["action"] == "activate"));
+    assert!(events.iter().any(|event| event.command == "app.intent"
+        && event.body["id"] == "root"
+        && event.body["action"] == "activate"));
 }
