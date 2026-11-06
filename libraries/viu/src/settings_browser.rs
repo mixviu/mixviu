@@ -671,6 +671,9 @@ pub(crate) fn draw(
                 .auto_shrink([false, false])
                 .show(&mut body, |ui| {
                     ui.set_width(width);
+                    for notice in array(&value["notices"]).filter_map(Value::as_str) {
+                        browser_notice(ui, &look, notice);
+                    }
                     if let Some(notice) = value["notice"].as_str().filter(|s| !s.is_empty()) {
                         browser_notice(ui, &look, notice);
                     }
