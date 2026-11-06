@@ -941,6 +941,10 @@ impl SceneView {
                 }
                 "bottom" => {
                     rect.min.y = rect.max.y - size;
+                    if placement["size"]=="design.status_height" {
+                        use egui::emath::GuiRounding;
+                        rect=rect.round_ui();
+                    }
                     remaining.max.y = rect.min.y;
                 }
                 _ => {}

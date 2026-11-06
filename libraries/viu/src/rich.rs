@@ -544,18 +544,18 @@ pub(crate) fn draw(
             } else {
                 ui.allocate_ui_with_layout(
                     ui.available_size_before_wrap(),
-                    egui::Layout::left_to_right(egui::Align::Center),
+                    if gold {egui::Layout::right_to_left(egui::Align::Center)} else {egui::Layout::left_to_right(egui::Align::Center)},
                     |ui| {
                         if widget.properties["style"] == "gold" {
                             let chrome = toolkit::chrome::Chrome::of(ui.ctx());
                             if chrome.band.actions.alignment()
-                                == design::title_band::Alignment::Left
+                                == design::title_band::Alignment::Right
                             {
                                 let pad = if crate::window_frame::client_of(ui.ctx())
                                     && chrome
                                         .captions
                                         .alignment(design::title_band::Alignment::Right)
-                                        == design::title_band::Alignment::Left
+                                        == design::title_band::Alignment::Right
                                 {
                                     chrome.metrics.caption_gap
                                 } else {
@@ -567,13 +567,10 @@ pub(crate) fn draw(
                                 .style
                                 .title_control_spacing
                                 as f32;
-                            ui.add_space(
-                                toolkit::chrome::Chrome::of(ui.ctx())
-                                    .style
-                                    .title_control_spacing as f32,
-                            );
                         }
-                        for item in value.as_array().into_iter().flatten() {
+                        let mut items=value.as_array().into_iter().flatten().collect::<Vec<_>>();
+                        if gold {items.reverse();}
+                        for item in items {
                             if item["separator"] == true {
                                 ui.separator();
                                 continue;

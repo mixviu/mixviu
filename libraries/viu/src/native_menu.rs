@@ -16,7 +16,7 @@ impl NativeMenu {
         value: &Value,
         events: &mut Vec<crate::widgets::Intent>,
     ) -> egui::Response {
-        let response = draw(ui, value, false, None);
+        let response = draw(ui, value, false, widget.properties["header_icon"].as_str());
         if let Some(command) = picked(ui.ctx()) {
             events.push(crate::widgets::Intent {
                 id: widget.id.clone(),
