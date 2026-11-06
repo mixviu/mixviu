@@ -61,13 +61,27 @@ pub fn install_session_choice(
         file,
         last_ui,
     );
-    let theme = theme.with_choice(&toolkit::theme_menu::Choice {
-        scheme: choice["scheme"].as_str().and_then(design::Scheme::from_name),
-        mode: choice["mode"].as_str().and_then(design::Mode::from_name),
-        style: choice["style"].as_str().map(|name| if name == "own" { None } else { design::Style::from_name(name) }),
-        decorations: choice["decorations"].as_str().and_then(design::RequestedDecorations::from_name),
-        captions: choice["caption_side"].as_str().and_then(design::CaptionSide::from_name),
-    }).map_err(|error| error.to_string())?;
+    let theme = theme
+        .with_choice(&toolkit::theme_menu::Choice {
+            scheme: choice["scheme"]
+                .as_str()
+                .and_then(design::Scheme::from_name),
+            mode: choice["mode"].as_str().and_then(design::Mode::from_name),
+            style: choice["style"].as_str().map(|name| {
+                if name == "own" {
+                    None
+                } else {
+                    design::Style::from_name(name)
+                }
+            }),
+            decorations: choice["decorations"]
+                .as_str()
+                .and_then(design::RequestedDecorations::from_name),
+            captions: choice["caption_side"]
+                .as_str()
+                .and_then(design::CaptionSide::from_name),
+        })
+        .map_err(|error| error.to_string())?;
     let ui = if lost {
         last_ui.clone()
     } else {

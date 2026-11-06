@@ -15,6 +15,7 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    deferred_replies: BTreeMap<String, (u64, Instant, Reply)>,
     drive_replies: BTreeMap<u64, Reply>,
     drive_answers: std::collections::VecDeque<toolkit::drive::Answer>,
     drive_serial: u64,
@@ -306,7 +307,9 @@ impl Host {
                     });
                     match result {
                         Ok(()) => {
-                            if self.model["theme_choice"] != model["theme_choice"] { self.session_dirty = true; }
+                            if self.model["theme_choice"] != model["theme_choice"] {
+                                self.session_dirty = true;
+                            }
                             if let Some(style) = appearance.expect("validated appearance") {
                                 crate::appearance::install_style(
                                     ui.ctx(),
@@ -321,7 +324,19 @@ impl Host {
                     }
                 }
             }
+            for answer in done.answers {
+                if let Some((generation, _, reply)) = self.deferred_replies.remove(&answer.token) {
+                    if generation == done.generation { let _=reply.send((answer.reply.rc,answer.reply.body)); }
+                    else { let _=reply.send((10,json!({"error_code":"STALE_GENERATION","message":"deferred request owner changed"}))); }
+                }
+            }
             if let Some(reply) = self.pending.remove(&done.sequence) {
+                if self.error.is_empty() && let Some(token) = done.deferred {
+                    if self.deferred_replies.len()>=32 || self.deferred_replies.contains_key(&token) {
+                        let _=reply.send((10,json!({"error_code":"BUSY","message":"deferred request budget or token collision"})));
+                    } else { self.deferred_replies.insert(token,(done.generation,Instant::now()+Duration::from_secs(30),reply)); }
+                    continue;
+                }
                 let answer = if !self.error.is_empty() {
                     (10, json!({"error":self.error}))
                 } else if let Some(r) = done.reply {
@@ -331,6 +346,13 @@ impl Host {
                 };
                 let _ = reply.send(answer);
             }
+        }
+        let expired:Vec<_>=self.deferred_replies.iter().filter(|(_,(_,at,_))|*at<=Instant::now()).map(|(key,_)|key.clone()).collect();
+        for key in expired {
+            if let Some((_,_,reply))=self.deferred_replies.remove(&key) {let _=reply.send((20,json!({"error_code":"TIMEOUT","message":"deferred request expired"})));}
+        }
+        if let Some(deadline) = self.deferred_replies.values().map(|(_,at,_)|*at).min() {
+            ui.ctx().request_repaint_after(deadline.saturating_duration_since(Instant::now()));
         }
         for _ in 0..32 {
             if toolkit::drive::pending(ui.ctx()) || !self.drive_answers.is_empty() {
@@ -398,8 +420,13 @@ impl Host {
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
                             let mut window = snapshot["state"]["values"].clone();
-                            for (axis, key) in [("decorations","window.decorations"),("caption_side","window.caption_side")] {
-                                if self.model["theme_choice"][axis].is_string() { window[key] = self.model["theme_choice"][axis].clone(); }
+                            for (axis, key) in [
+                                ("decorations", "window.decorations"),
+                                ("caption_side", "window.caption_side"),
+                            ] {
+                                if self.model["theme_choice"][axis].is_string() {
+                                    window[key] = self.model["theme_choice"][axis].clone();
+                                }
                             }
                             self.session_window = Some(window);
                         }
@@ -491,6 +518,9 @@ fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {
 }
 impl Drop for Host {
     fn drop(&mut self) {
+        for (_, (_, _, reply)) in std::mem::take(&mut self.deferred_replies) {
+            let _ = reply.send((20, json!({"error_code":"APP_CLOSED","message":"request owner closed"})));
+        }
         if let Err(error) = self.macros.shutdown() {
             tracing::warn!(%error, "macro shutdown");
         }
@@ -562,6 +592,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        deferred_replies: BTreeMap::new(),
         drive_replies: BTreeMap::new(),
         drive_answers: Default::default(),
         drive_serial: 0,

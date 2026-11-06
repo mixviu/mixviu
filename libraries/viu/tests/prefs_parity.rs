@@ -139,3 +139,17 @@ fn browser_refuses_hidden_disabled_removed_and_unknown_choice_rows() {
         viu::settings_browser::admit(&value, "edit", &json!({"row":"choice","value":"a"})).is_ok()
     );
 }
+
+#[test]
+fn email_uses_native_registry_admission_and_redacts_credentials() {
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(8, Arc::new(move || { let _=tx.send(()); }), None);
+    runtime.load(viu::runtime::Program {
+        path:PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/prefs/email-test.mix"),
+        scene:"prefs".into(),citizen:"prefs".into(),
+        source:include_str!("../../../apps/prefs/email-test.mix").into(),
+    }).unwrap();
+    rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    let done = runtime.try_completion().unwrap();
+    assert!(done.error.is_none(), "{:?}\n{}\n{}",done.error,done.stdout,done.stderr);
+}

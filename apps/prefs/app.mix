@@ -6,6 +6,7 @@ $nav=require("navigation.mix")
 $pages=require("pages.mix")
 $actions=require("actions.mix")
 $look=require("look.mix")
+$email=require("email.mix")
 $state=$core.initial($app_args[0] ?? env("MIXOS_INSTANCE","desktop"))
 fn publish_prefs($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
@@ -109,6 +110,23 @@ fn hint_prefs($s)
   if not $s.busy then return refresh_prefs($s) end
   return $s
 end
+fn query_email($s)
+  if $s.email.accounts_owner!=nil then return $s end
+  $s.email.serial=$s.email.serial+1;$s.email.accounts_owner=$s.email.serial
+  $path=path_join(dirname(script_path()),"email-job.mix")
+  send "viu-local" "jobs.start" id="prefs-email-accounts" owner=$s.email.serial path=$path source=read_file($path) command="job.run" args={kind:"accounts",command:"email.accounts",body:{},launch:false}
+  if $rc!=0 then $s.email.accounts_owner=nil end
+  return $s
+end
+fn email_task($s,$kind,$id,$command,$body,$launch,$token)
+  if $s.email.task!=nil or not $s.connected or $s.quitting then raise("BUSY",$nav.text_for("busy")) end
+  $s.email.serial=$s.email.serial+1
+  $path=path_join(dirname(script_path()),"email-job.mix")
+  send "viu-local" "jobs.start" id="prefs-email-task" owner=$s.email.serial path=$path source=read_file($path) command="job.run" args={kind:$kind,command:$command,body:$body,launch:$launch}
+  if $rc!=0 then raise("BUSY","An Email task could not start") end
+  $s.email.task={action:$kind,account:$id,stage:"sending"};$s.email.task_owner=$s.email.serial;$s.email.reply_token=$token
+  return $s
+end
 publish_prefs($state)
 on viu.tick
   if not $state.subscribed then
@@ -157,8 +175,46 @@ end
 on prefs.info
   reply(0,json_encode($core.info($state)))
 end
-on prefs.registry.info
-  reply(0,json_encode($state))
+on prefs.email
+  reply(0,json_encode($email.view($state)))
+end
+on prefs.email.set
+  try
+    if $state.revision==nil then raise("NOT_READY",$nav.text_for("email-not-ready")) end
+    if not $email.view($state).can_edit then raise("BUSY",$nav.text_for("busy")) end
+    if $event.args.op=="remove" and $state.email.service!="absent" then
+      if $email.account($state,$event.args.id)==nil then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
+      $token=uuid()
+      $state=email_task($state,"remove",$event.args.id,"email.account.remove",{id:$event.args.id},false,$token)
+      send "viu-local" "requests.defer" token=$token
+      publish_prefs($state);return
+    end
+    $plan=$email.plan($state,$event.args)
+    $state.queue_changes=merge($state.queue_changes,$plan.changes);$state.email.added=$plan.added
+    if $event.args.op=="remove" then $state.email.removed={id:$event.args.id} end
+    $state=queued_prefs($state);publish_prefs($state)
+    $body=$email.view($state);$body.applying=len(keys($plan.changes))>0
+    if $body.applying then $body.id=$plan.added end
+    reply(0,json_encode($body))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.email.password
+  try
+    $a=$event.args
+    if type($a.id)!="string" or not re_match($a.id,"^[a-z0-9-]{1,64}$") then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
+    if contains(keys($a),"forget") and type($a.forget)!="bool" then raise("ARGUMENT","forget must be true or false") end
+    $forget=$a.forget ?? false
+    if $forget and contains(keys($a),"password") then raise("ARGUMENT","give password or forget, not both") end
+    if not $forget then
+      if type($a.password)!="string" then raise("ARGUMENT","password must be a string") end
+      if $a.password=="" then raise("ARGUMENT",$nav.text_for("email-password-empty")) end
+      if $state.revision!=nil and $email.account($state,$a.id)==nil then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
+    end
+    $token=uuid()
+    $state=email_task($state,if $forget then "forget" else "password" end,$a.id,"email.account.password.set",{id:$a.id,password:if $forget then "" else $a.password end},true,$token)
+    send "viu-local" "requests.defer" token=$token
+    publish_prefs($state)
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on prefs.appearance
   reply(0,json_encode($look.view($state)))
@@ -228,6 +284,30 @@ end
 on viu.job.completed
   $d=$event.args
   $answer=$d.body.answer ?? {}
+  if $d.tag.id=="prefs-email-accounts" and $d.tag.owner==$state.email.accounts_owner then
+    $state.email.accounts_owner=nil
+    if $d.rc==0 and $d.body.rc==0 then
+      $state.email.service="running";$state.email.passwords={}
+      for $a in $answer.accounts ?? [] $state.email.passwords[$a.id]=$a.has_password end
+    else $state.email.service=if $d.body.absent ?? false then "absent" else "unsupported" end end
+    publish_prefs($state);return
+  end
+  if $d.tag.id=="prefs-email-task" and $d.tag.owner==$state.email.task_owner then
+    $task=$state.email.task;$token=$state.email.reply_token
+    $state.email.task=nil;$state.email.reply_token=nil
+    if $task.action=="remove" and ($d.body.absent ?? false) then
+      $plan=$email.plan($state,{op:"remove",id:$task.account})
+      $state.queue_changes=merge($state.queue_changes,$plan.changes);$state.email.removed={id:$task.account}
+      $state=queued_prefs($state)
+      $body=$email.view($state);$body.applying=true;$body.id=nil;$code=0
+    else
+      $body=$answer;$code=if $d.rc==0 then $d.body.rc else 20 end
+      $state.email.outcome={text:if $code==0 then "Email operation completed" else $answer.message ?? "Email operation failed" end,failed:$code!=0}
+      if $code==0 and $task.action=="remove" then $state=hint_prefs($state) end
+    end
+    if $token!=nil then send "viu-local" "requests.reply" token=$token rc=$code value=$body end
+    $state=query_email($state);publish_prefs($state);return
+  end
   if $d.tag.id=="prefs-look" then
     if $state.look.job!=nil and $d.tag.owner==$state.look.serial then
       $state.look=$look.finished($state.look,$d.rc,$answer)
@@ -261,6 +341,7 @@ on viu.job.completed
       $state.catalog=filter($b.catalog.keys,fn($k)=not contains($k.path,"<"))
       $state.values=$b.read.values;$state.revision=$b.read.revision;$state.incarnation=$b.read.incarnation
       $state.look=$look.observe($state.look,$b.read)
+      $state=$email.observed($state)
       $state.role=$b.status.role ?? "unknown";$state.stale=$b.status.stale ?? false;$state.uncertain=false
       $state.status="Settings read"
       if len($state.catalog)>0 then

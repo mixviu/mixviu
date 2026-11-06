@@ -7,6 +7,31 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+/// Pure settings admission/defaults through the retained native registry.
+/// The caller owns navigation, edits, fences, service traffic and retries.
+pub(crate) fn settings_values() -> mix::evaluator::ExtFn {
+    mix::sync_ext(move |args| {
+        let fail = || MixError::RuntimeError { msg: "viu_settings expects default/path or apply/values/changes/reset".into(), span: None };
+        match args.as_slice() {
+            [Value::String(op), Value::String(path)] if op == "default" => {
+                crate::runtime::from_json(settings::registry::domain_default(path)
+                    .or_else(|| settings::registry::effective(&Default::default(), path))
+                    .unwrap_or(serde_json::Value::Null))
+            }
+            [Value::String(op), values, changes, reset] if op == "apply" => {
+                let values = serde_json::from_value(crate::runtime::to_json(values)?).map_err(|_| fail())?;
+                let changes = serde_json::from_value(crate::runtime::to_json(changes)?).map_err(|_| fail())?;
+                let reset = serde_json::from_value::<Vec<String>>(crate::runtime::to_json(reset)?).map_err(|_| fail())?;
+                crate::runtime::from_json(match settings::registry::apply(&values, &changes, &reset) {
+                    Ok(values) => serde_json::json!({"ok":true,"values":values,"diagnostics":[]}),
+                    Err(diagnostics) => serde_json::json!({"ok":false,"diagnostics":diagnostics}),
+                })
+            }
+            _ => Err(fail()),
+        }
+    })
+}
+
 /// Bounded image metadata and exclusive PNG encoding; callers own naming,
 /// storage directories, save policy and document lifetime.
 pub(crate) fn image_file() -> mix::evaluator::ExtFn {

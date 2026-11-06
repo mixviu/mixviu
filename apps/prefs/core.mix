@@ -5,9 +5,10 @@ $nav=require("navigation.mix")
 $pages=require("pages.mix")
 $actions=require("actions.mix")
 $look=require("look.mix")
+$email=require("email.mix")
 $sections=[{id:"appearance",label:"Appearance",prefixes:["appearance."]},{id:"text_and_fonts",label:"Text & Fonts",prefixes:["appearance.font","appearance.mono"]},{id:"wallpaper",label:"Wallpaper",prefixes:["wallpaper."]},{id:"windows",label:"Windows",prefixes:["window."]},{id:"accessibility",label:"Accessibility",prefixes:["accessibility."]},{id:"apps_term",label:"Terminal",prefixes:["terminal."]},{id:"apps_ced",label:"Editor",prefixes:["ced."]},{id:"all",label:"All described settings",prefixes:[""]}]
 fn initial($instance)
-  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil,ui:$nav.initial_ui(),nav:$nav.initial_nav(),apps:[],notes:nil,notes_error:nil,notes_owner:nil,releases:"unknown",release_status:"Connecting to the Bus…",release_failed:false,release_busy:false,release_serial:0,release_owner:nil,release_started:false,quitting:false,needs_read:true,subscribed:false,connected:false,queue_changes:{},inflight_changes:{},look:$look.initial(),failed:false}
+  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil,ui:$nav.initial_ui(),nav:$nav.initial_nav(),apps:[],notes:nil,notes_error:nil,notes_owner:nil,releases:"unknown",release_status:"Connecting to the Bus…",release_failed:false,release_busy:false,release_serial:0,release_owner:nil,release_started:false,quitting:false,needs_read:true,subscribed:false,connected:false,queue_changes:{},inflight_changes:{},look:$look.initial(),email:$email.initial(),failed:false}
 end
 
 fn framed($s)
@@ -85,5 +86,5 @@ fn model($s)
 end
 
 fn info($s)
-  return {schema:"prefs.v1",app_id:"dev.mixos.prefs",version:"0.1.2",pid:pid(),connected:$s.connected,releases:$s.releases,busy:$s.release_busy or $s.notes_owner!=nil or $s.look.job!=nil,working:$s.release_op ?? nil,uncertain:$s.release_uncertain ?? nil,status:$s.status,failed:$s.failed ?? false,release_status:$s.release_status,release_failed:$s.release_failed,apps:$s.apps,notes:$s.notes,notes_error:$s.notes_error,appearance:$look.view($s),gallery:$s.gallery ?? {},email:$s.email ?? {},section:$s.ui.section,category:$nav.section($s.ui.section).category,ui:$s.ui,nav:$s.nav,store:$pages.store_view($s)}
+  return {schema:"prefs.v1",app_id:"dev.mixos.prefs",version:"0.1.2",pid:pid(),connected:$s.connected,releases:$s.releases,busy:$s.release_busy or $s.notes_owner!=nil or $s.look.job!=nil or $s.email.task!=nil,working:$s.release_op ?? nil,uncertain:$s.release_uncertain ?? nil,status:$s.status,failed:$s.failed ?? false,release_status:$s.release_status,release_failed:$s.release_failed,apps:$s.apps,notes:$s.notes,notes_error:$s.notes_error,appearance:$look.view($s),gallery:$s.gallery ?? {},email:$email.view($s),section:$s.ui.section,category:$nav.section($s.ui.section).category,ui:$s.ui,nav:$s.nav,store:$pages.store_view($s)}
 end
