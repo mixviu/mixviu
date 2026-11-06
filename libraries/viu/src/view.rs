@@ -881,7 +881,11 @@ impl SceneView {
                 continue;
             }
             if edge == "fill" && placement["native_panel"] == true {
-                egui::CentralPanel::default().frame(toolkit::bars::dock_frame(ui.ctx())).show(ui, |ui| self.node(ui, child, nodes, route, depth + 1, events));
+                egui::CentralPanel::default()
+                    .frame(toolkit::bars::dock_frame(ui.ctx()))
+                    .show(ui, |ui| {
+                        self.node(ui, child, nodes, route, depth + 1, events)
+                    });
                 continue;
             }
             if placement["minimum_window_width"]
