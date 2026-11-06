@@ -20,6 +20,7 @@ end
 fn set_prefs($s,$key,$value)
   return start_prefs($s,{op:"write",request:$core.admitted($s,$key,$value)})
 end
+$state=refresh_prefs($state)
 publish_prefs($state)
 on viu.tick
   if not $state.busy and not $state.uncertain and not $state.dirty and monotonic()>$state.read_at+5 then $state=refresh_prefs($state);publish_prefs($state) end

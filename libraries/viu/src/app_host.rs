@@ -255,7 +255,7 @@ impl Host {
             }
         }
         if let Some(tick) = self.tick {
-            if self.ready && Instant::now() >= self.next_tick && self.inflight.is_empty() {
+            if self.ready && Instant::now() >= self.next_tick {
                 self.dispatch("viu.tick".into(), json!({}), BTreeMap::new(), None);
                 self.next_tick = Instant::now() + tick;
             }
