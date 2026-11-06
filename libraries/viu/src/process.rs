@@ -17,7 +17,9 @@ fn parse_start_time(stat: &str) -> Result<String, String> {
 }
 fn start_time(pid: i32) -> Result<String, String> {
     parse_start_time(&std::fs::read_to_string(format!("/proc/{pid}/stat"))
-        .map_err(|e| e.to_string())?)
+        .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound {
+            std::io::Error::from_raw_os_error(libc::ESRCH).to_string()
+        } else { e.to_string() })?)
 }
 pub fn command(command: &str, args: &Value) -> Result<Value, String> {
     match command {
@@ -42,7 +44,9 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
                 Ok(value) => value,
                 Err(error) => return Ok(json!({"ok":false,"error":error})),
             };
-            if args["start_time"].as_str() != Some(live.as_str()) {
+            let expected = args["start_time"].as_str().map(str::to_owned)
+                .or_else(|| args["start_time"].as_u64().map(|n| n.to_string()));
+            if expected.as_deref() != Some(live.as_str()) {
                 return Ok(json!({"ok":false,"pid_reused":true,"error":"pid reused"}));
             }
             // SAFETY: positive PID only; kernel applies the caller's credentials.
