@@ -338,6 +338,18 @@ fn gold_dialog_surface_reads_opens_refuses_and_answers_the_window() {
 }
 
 #[test]
+fn open_location_suffix_focuses_the_existing_document_and_ignores_invalid_positions() {
+    let mut app = App::new();
+    for (path, offset) in [("/tmp/contract.rs:2:2", 8), ("/tmp/contract.rs:9999", 8), ("/tmp/contract.rs:1:2", 2)] {
+        let (rc, reply) = app.answered("ced.open", json!({"paths":[path]}));
+        assert_eq!(rc, 0);
+        assert_eq!(reply["tabs"], json!([{"tab":1,"buffer":"b1_12345678","path":"/tmp/contract.rs"}]));
+        assert_eq!(app.docs.call("state", "1", json!({})).unwrap()["selection"]["head"]["offset"], offset);
+        assert_eq!(app.answered("ced.tabs", json!({})).1["tabs"].as_array().unwrap().len(), 1);
+    }
+}
+
+#[test]
 fn header_form_rejects_hidden_read_only_and_unoffered_choices() {
     let value = json!({"enabled":true,"fields":[{"id":"to","label":"To","value":"","visible":true,"actions":[]},{"id":"thread","label":"Thread","value":"fixed","visible":true,"read_only":true,"actions":[]},{"id":"cc","label":"Cc","value":"","visible":false,"actions":[]}],"attachments":[],"attachment_label":"Attachments","attach_label":"Attach…","remove_label":"Remove","chooser":{"open":false,"title":"Attach…","directory":"/"}});
     let widget = viu::widgets::Widget::new("headers", "header-form", "Headers", value.clone());
