@@ -4,7 +4,25 @@
 $core=require("core.mix");$ctx=viu_context()
 $state=$core.initial($app_args[0] ?? env("MIXOS_INSTANCE","desktop"))
 fn publish_prefs($s)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.model($s)}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
+end
+
+on viu.frame.close
+  if not $state.busy then
+    $model=$core.framed($state);$model.window_close=true
+    send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+  end
+end
+on viu.frame.intent
+  $id=$event.args.value.command
+  if $id=="view.refresh" then $state.dirty=false;$state=refresh_prefs($state)
+  elif $id=="file.quit" and not $state.busy then
+    $model=$core.framed($state);$model.window_close=true
+    send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+    reply(0,"{}");return
+  elif $id=="view.search" then $state.search=""
+  else raise("ACTION","Frame action not implemented yet") end
+  publish_prefs($state);reply(0,"{}")
 end
 fn start_prefs($s,$payload)
   if $s.busy then raise("BUSY","A settings operation is active") end

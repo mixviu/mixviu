@@ -1,1 +1,1 @@
-{"host":{"service":"prefs","title":"Preferences — Mix on Viu","size":[980,760],"tick_ms":2000,"commands":["prefs.ping","prefs.info","prefs.refresh","prefs.section","prefs.search","prefs.select","prefs.set","prefs.reset","prefs.intent"]}}
+{"host":{"service":"prefs","title":"Preferences","frame":"gold","size":[1040,680],"tick_ms":2000,"commands":["prefs.ping","prefs.info","prefs.refresh","prefs.section","prefs.search","prefs.select","prefs.set","prefs.reset","prefs.intent","viu.frame.close","viu.frame.intent"]}}
