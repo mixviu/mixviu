@@ -351,7 +351,7 @@ impl Host {
                         let base = if let Some(snapshot) = snapshot {
                             crate::appearance::session_base(
                                 &snapshot,
-                                &self.service,
+                                self.drive.as_deref().unwrap_or(&self.service),
                                 &self.file_theme,
                                 &self.last_ui,
                             )?
@@ -558,7 +558,7 @@ impl Host {
                     match crate::appearance::install_session_choice(
                         ctx,
                         &snapshot,
-                        &self.service,
+                        self.drive.as_deref().unwrap_or(&self.service),
                         &self.file_theme,
                         &self.last_ui,
                         &self.model["theme_choice"],
@@ -572,7 +572,7 @@ impl Host {
                                     )
                                 {
                                     let keymap =
-                                        settings::view::Keymaps::of(&values).app(&self.service);
+                                        settings::view::Keymaps::of(&values).app(self.drive.as_deref().unwrap_or(&self.service));
                                     let _ = self
                                         .runtime
                                         .notify("viu.keymap.changed".into(), json!(keymap));
@@ -588,7 +588,7 @@ impl Host {
                                 {
                                     if let Ok((base, _)) = crate::appearance::session_base(
                                         &snapshot,
-                                        &self.service,
+                                        self.drive.as_deref().unwrap_or(&self.service),
                                         &self.file_theme,
                                         &self.last_ui,
                                     ) {
@@ -873,7 +873,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         session_notice: None,
         session: bundle.manifest.frame.as_ref().map(|_| {
             crate::session::Session::embedded(
-                &bundle.manifest.service,
+                bundle.manifest.drive.as_deref().unwrap_or(&bundle.manifest.service),
                 &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_| "default".into()),
                 wake.clone(),
                 bus.backend(),
