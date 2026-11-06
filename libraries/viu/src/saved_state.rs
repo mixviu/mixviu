@@ -142,7 +142,13 @@ impl Saved {
         }
         self.store.window.capture(ctx);
         for (name, share) in std::mem::take(&mut self.pending_panels) {
-            if self.store.widgets.panels.get(&name).is_none_or(|old| (*old-share).abs()>f32::EPSILON) {
+            if self
+                .store
+                .widgets
+                .panels
+                .get(&name)
+                .is_none_or(|old| (*old - share).abs() > f32::EPSILON)
+            {
                 toolkit::saved::widgets::set_panel(ctx, &name, share);
             }
         }

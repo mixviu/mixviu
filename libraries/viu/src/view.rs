@@ -876,6 +876,14 @@ impl SceneView {
             }
             let placement = &placements[child];
             let edge = placement["edge"].as_str().unwrap_or("fill");
+            if edge == "fill" && placement["passthrough"] == true {
+                self.node(ui, child, nodes, route, depth + 1, events);
+                continue;
+            }
+            if edge == "fill" && placement["native_panel"] == true {
+                egui::CentralPanel::default().frame(toolkit::bars::dock_frame(ui.ctx())).show(ui, |ui| self.node(ui, child, nodes, route, depth + 1, events));
+                continue;
+            }
             if placement["minimum_window_width"]
                 .as_f64()
                 .is_some_and(|w| (area.width() as f64) < w)
@@ -902,17 +910,29 @@ impl SceneView {
                     "right" => egui::Panel::right(name),
                     "top" => egui::Panel::top(name),
                     _ => egui::Panel::bottom(name),
-                }.frame(toolkit::bars::dock_frame(ui.ctx()));
+                }
+                .frame(toolkit::bars::dock_frame(ui.ctx()));
                 if placement["resizable"] == true {
-                    let (_, changed) = toolkit::saved::widgets::panel(ui, name, panel, dimension,
+                    let (_, changed) = toolkit::saved::widgets::panel(
+                        ui,
+                        name,
+                        panel,
+                        dimension,
                         placement["fraction"].as_f64().unwrap_or(0.2) as f32,
-                        placement["minimum"].as_f64().unwrap_or(0.05) as f32..=placement["maximum"].as_f64().unwrap_or(0.8) as f32,
-                        horizontal, |ui| self.node(ui, child, nodes, route, depth + 1, events));
-                    if let (Some(fraction), Some(command)) = (changed, node.ports["on_change"].as_str()) {
+                        placement["minimum"].as_f64().unwrap_or(0.05) as f32
+                            ..=placement["maximum"].as_f64().unwrap_or(0.8) as f32,
+                        horizontal,
+                        |ui| self.node(ui, child, nodes, route, depth + 1, events),
+                    );
+                    if let (Some(fraction), Some(command)) =
+                        (changed, node.ports["on_change"].as_str())
+                    {
                         events.push(Event { command: command.into(), body: json!({"node":key,"kind":"dock","value":{"child":child,"fraction":fraction}}) });
                     }
                 } else {
-                    panel.resizable(false).exact_size(requested).show(ui, |ui| self.node(ui, child, nodes, route, depth + 1, events));
+                    panel.resizable(false).exact_size(requested).show(ui, |ui| {
+                        self.node(ui, child, nodes, route, depth + 1, events)
+                    });
                 }
                 remaining = ui.available_rect_before_wrap();
                 continue;

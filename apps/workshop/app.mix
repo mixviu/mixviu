@@ -118,7 +118,7 @@ on viu.saved.loaded
 end
 on workshop.layout
   $a=$event.args
-  if $a.node=="inspector" then $state.split=clamp($a.value,0.1,0.8)
+  if $a.node=="inspector" then $state.split=$model.share(clamp(if type($a.value)=="map" then $a.value.fraction else $a.value end,0.1,0.8))
   elif $a.value.child=="traffic" then
     if $model.effective_dock($state)=="right" then $state.dock_width=clamp($a.value.fraction,0.2,0.5)
     else $state.dock_height=clamp($a.value.fraction,0.12,0.5) end

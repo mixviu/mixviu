@@ -27,7 +27,7 @@ fn project($s)
   $stats=if $self then $snap.local else $link end;$services=[];$commands=[]
   if $stats!=nil then
     for $pair in [["top_services","Top services"],["top_commands","Top commands"]]
-      $rows=[{id:"label",kind:"text",text:$pair[1],small:true}]
+      $rows=[{id:"label",kind:"text",text:$pair[1],strong:true}]
       for $entry in $stats[$pair[0]] push($rows,{id:$entry.name,kind:"text",text:$entry.name.." × "..to_string($entry.count)}) end
       if $pair[0]=="top_services" then $services=$rows else $commands=$rows end
     end
