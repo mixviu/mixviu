@@ -2,7 +2,10 @@
 -- version: 0.1.0
 on job.run
   $a=$event.args
-  if $a.op=="write" then
+  if $a.op=="release" then
+    send "releases" $a.command body=$a.body timeout=8
+    reply(if $rc==0 then 0 else 10 end,json_encode({op:"release",command:$a.command,peer_rc:$rc,answer:$reply}))
+  elif $a.op=="write" then
     send "settingsd" "settings.apply" body=$a.request timeout=8
     reply(if $rc==0 then 0 else 10 end,json_encode({op:"write",peer_rc:$rc,answer:$reply}))
   else

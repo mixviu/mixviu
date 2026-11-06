@@ -1,9 +1,11 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 $frame=require("../../libraries/viu/mix/gold-frame.mix")
+$nav=require("navigation.mix")
+$pages=require("pages.mix")
 $sections=[{id:"appearance",label:"Appearance",prefixes:["appearance."]},{id:"text_and_fonts",label:"Text & Fonts",prefixes:["appearance.font","appearance.mono"]},{id:"wallpaper",label:"Wallpaper",prefixes:["wallpaper."]},{id:"windows",label:"Windows",prefixes:["window."]},{id:"accessibility",label:"Accessibility",prefixes:["accessibility."]},{id:"apps_term",label:"Terminal",prefixes:["terminal."]},{id:"apps_ced",label:"Editor",prefixes:["ced."]},{id:"all",label:"All described settings",prefixes:[""]}]
 fn initial($instance)
-  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil}
+  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil,ui:$nav.initial_ui(),nav:$nav.initial_nav(),apps:[],notes:nil,notes_error:nil,notes_owner:nil,releases:"unknown",release_status:"Connecting to the Bus…",release_failed:false,release_busy:false,release_serial:0,release_owner:nil,release_started:false,quitting:false}
 end
 
 fn framed($s)
@@ -12,7 +14,7 @@ fn framed($s)
   $refresh={id:"view.refresh",label:"Refresh",icon:"refresh-cw",enabled:$available}
   $search={id:"view.search",label:"Search",icon:"search",enabled:$available}
   $menus=[{id:"file",label:"File",enabled:true,children:[{id:"file.quit",label:"Quit",enabled:$available}]},{id:"view",label:"View",enabled:true,children:[$refresh,$search]},{id:"help",label:"Help",enabled:true,children:[{id:"help.shortcuts",label:"Keyboard shortcuts",enabled:$available},{id:"help.about",label:"About Preferences",enabled:$available}]}]
-  return $frame.apply($model,{icon:"settings",title:"Preferences",menus:$menus,toolbar:[$search,$refresh],status:$model.status})
+  return $frame.apply($model,{icon:"settings",title:"Preferences",menus:$menus,toolbar:[$search,$refresh],status:nil})
 end
 fn key_info($s,$key)
   $found=filter($s.catalog,fn($k)=$k.path==$key)
@@ -52,8 +54,8 @@ fn admitted($s,$key,$value)
   end
   return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:uuid(),changes:$changes,reset:$reset}
 end
-fn model($s)
-  $section=filter($sections,fn($x)=$x.id==$s.section)[0]
+fn registry_model($s)
+  $section=filter($sections,fn($x)=$x.id==$s.section)[0] ?? {prefixes:[]}
   $rows=[]
   for $k in $s.catalog
     if any($section.prefixes,fn($prefix)=starts_with($k.path,$prefix)) and contains(lower($k.path),lower($s.search)) then
@@ -69,4 +71,9 @@ fn model($s)
     elif $s.draft_kind=="checkbox" then $editor.properties={text:$s.key} end
   end
   return {status:$s.status.." · "..$s.role.." · revision "..to_string($s.revision),selected_label:$s.key.." · "..if $s.draft_kind=="field" then "Edit JSON; Apply writes only this setting" else "Choose value, then Apply" end,section_control:{id:"section",kind:"combo",label:"Section",initial:"appearance",properties:{choices:map($sections,fn($x)=$x.id)}},table:{id:"table",kind:"tree-table",label:"Settings",initial:{key:"settings",rows:$rows,columns:[{id:"key",label:"Setting"},{id:"kind",label:"Type"},{id:"value",label:"Value"},{id:"class",label:"Class"}]},properties:{height:430,name_min:250}},editor:$editor,values:{section:$s.section,search:$s.search,editor:$s.draft}}
+end
+
+fn model($s)
+  $browser=$pages.browser($s)
+  return {browser:{id:"browser",kind:"settings-browser",label:"",initial:$browser},values:{browser:$browser}}
 end

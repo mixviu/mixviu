@@ -2,6 +2,8 @@
 -- version: 0.1.0
 -- lint: globals app_args
 $core=require("core.mix");$ctx=viu_context()
+$nav=require("navigation.mix")
+$pages=require("pages.mix")
 $state=$core.initial($app_args[0] ?? env("MIXOS_INSTANCE","desktop"))
 fn publish_prefs($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
@@ -35,11 +37,21 @@ end
 fn refresh_prefs($s)
   return start_prefs($s,{op:"read",binding:$s.binding})
 end
+fn release_request($s,$command,$body)
+  $s.release_serial=$s.release_serial+1
+  if $command=="releases.notes" then $s.notes_owner=$s.release_serial
+  else $s.release_busy=true;$s.release_owner=$s.release_serial end
+  $path=path_join(dirname(script_path()),"job.mix")
+  send "viu-local" "jobs.start" id=if $command=="releases.notes" then "prefs-notes" else "prefs-releases" end owner=$s.release_serial path=$path source=read_file($path) command="job.run" args={op:"release",command:$command,body:$body}
+  if $rc!=0 then raise("JOB",to_string($result)) end
+  return $s
+end
 fn set_prefs($s,$key,$value)
   return start_prefs($s,{op:"write",request:$core.admitted($s,$key,$value)})
 end
 publish_prefs($state)
 on viu.tick
+  if not $state.release_started then $state.release_started=true;$state=release_request($state,"releases.list",{}) end
   if not $state.busy and not $state.uncertain and not $state.dirty and monotonic()>$state.read_at+5 then $state=refresh_prefs($state);publish_prefs($state) end
 end
 on prefs.ping
@@ -53,18 +65,51 @@ on prefs.refresh
   $state=refresh_prefs($state);publish_prefs($state);reply(0,json_encode({accepted:true}))
 end
 on prefs.section
-  if not any($core.sections,fn($x)=$x.id==$event.args.name) then raise("SECTION","Unknown section") end
-  $state.section=$event.args.name;publish_prefs($state);reply(0,"{}")
+  try
+    $state=$nav.set_section($state,$event.args);publish_prefs($state)
+    reply(0,json_encode({section:$state.ui.section,category:$nav.section($state.ui.section).category,ui:$state.ui}))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on prefs.search
-  if type($event.args.query)!="string" or len($event.args.query)>256 then raise("SEARCH","Search limit 256") end
-  $state.search=$event.args.query;publish_prefs($state);reply(0,"{}")
+  try reply(0,json_encode($nav.search_view($state,$event.args.query)))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on prefs.select
+  try
+    $previous=$state.ui.selected
+    $state=$nav.select_app($state,$event.args.app)
+    if $previous!=$state.ui.selected or ($state.notes==nil and $state.notes_owner==nil) then
+      $state.notes=nil;$state.notes_error=nil
+      $state=release_request($state,"releases.notes",{app:$state.ui.selected})
+    end
+    publish_prefs($state);reply(0,json_encode($nav.apps_view($state)))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.apps
+  reply(0,json_encode($nav.apps_view($state)))
+end
+on prefs.pages
+  reply(0,json_encode($pages.pages_view($state)))
+end
+on prefs.page
+  try reply(0,json_encode($pages.page_view($state,$event.args.page)))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.page.open
+  try
+    $state=$pages.open_page($state,$event.args.page,$event.args.row);publish_prefs($state)
+    reply(0,json_encode({page:$state.nav.page,row:$event.args.row,drawer:$state.nav.drawer}))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.registry.select
   $state=$core.choose($state,$event.args.key);publish_prefs($state);reply(0,"{}")
 end
 on prefs.set
-  $state=set_prefs($state,$event.args.key,$event.args.value);publish_prefs($state);reply(0,json_encode({accepted:true}))
+  try
+    $control=$pages.control_for($state,$event.args.key)
+    $state=set_prefs($state,$event.args.key,$event.args.value);publish_prefs($state)
+    reply(0,json_encode({key:$event.args.key,value:$event.args.value,writing:true}))
+  catch $message, $error reply(10,json_encode({error_code:"FAILED",message:$message})) end
 end
 on prefs.reset
   $state=set_prefs($state,$event.args.key,nil);publish_prefs($state);reply(0,json_encode({accepted:true}))
@@ -72,6 +117,23 @@ end
 on viu.job.completed
   $d=$event.args
   $answer=$d.body.answer ?? {}
+  if $d.body.op=="release" then
+    if $d.body.command=="releases.notes" and $d.tag.owner==$state.notes_owner then
+      $state.notes_owner=nil
+      if $d.rc==0 then $state.notes=$answer;$state.notes_error=nil
+      else $state.notes_error=$answer.message ?? "Release notes could not be loaded" end
+    elif $d.tag.owner==$state.release_owner then
+      $state.release_busy=false;$state.release_owner=nil
+      if $d.rc==0 and type($answer)=="list" then
+        $state.apps=$answer;$state.releases="available"
+        $state.release_status="Applications read";$state.release_failed=false
+        if $state.ui.selected!=nil and not any($nav.apps_view($state).visible,fn($r)=$r.app==$state.ui.selected) then $state=$nav.clear_selection($state) end
+      else
+        $state.releases="missing";$state.release_status="The releases service is not running";$state.release_failed=true
+      end
+    end
+    publish_prefs($state);return
+  end
   if $state.busy and $d.tag.owner==$state.serial then
     $state.busy=false;$state.read_at=monotonic()
     if $state.pending.op=="read" then $state.stale=true end
@@ -99,6 +161,26 @@ on viu.job.completed
 end
 on prefs.intent
   $a=$event.args
+  if $a.id=="browser" then
+    if $a.action=="navigate" then $state=$pages.open_page($state,$a.value.page,$a.value.row)
+    elif $a.action=="query" then
+      $state.nav.query=$a.value;$state.nav.searching=$a.value!="";$state.ui.search_focus=false
+    elif $a.action=="drawer.close" then $state.nav.drawer=nil
+    elif contains(["edit","activate"],$a.action) then
+      $p=$nav.page($state.nav.page);$r=$pages.row_for($p,$a.value.row)
+      $why=$pages.row_blocked($state,$p,$r)
+      if $why!=nil then raise("FAILED",$why) end
+      if $a.action=="activate" and $r.control.control=="drawer" then $state.nav.drawer=$r.control.drawer
+      elif $a.action=="edit" then
+        $v=$a.value.value
+        if $r.control.control=="flag" then $v=if $v then $r.control.on else $r.control.off end
+        elif $r.control.control=="auto_mode" then $v=if $v then "auto" else "dark" end
+        elif $r.control.control=="hint_accent" then $v=if $v then "accent" else "#63cddd" end end
+        $state=set_prefs($state,$r.key,$v)
+      end
+    end
+    publish_prefs($state);reply(0,"{}");return
+  end
   if $state.busy then raise("BUSY","Wait for the current settings operation") end
   if $a.id=="section" then $state.section=$a.value
   elif $a.id=="search" then $state.search=$a.value

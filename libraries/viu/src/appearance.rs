@@ -13,6 +13,10 @@ pub struct ResolvedAppearance {
     pub icon_mask: [u8; 4],
     pub frame: crate::window_frame::Metrics,
 }
+pub fn session_theme(ctx: &egui::Context) -> toolkit::Theme {
+    ctx.data(|d| d.get_temp::<toolkit::Theme>(egui::Id::unique("viu-session-theme")))
+        .unwrap_or_else(toolkit::Theme::embedded)
+}
 pub fn colour(ctx: &egui::Context, name: &str) -> Option<Color32> {
     ctx.data(|d| {
         d.get_temp::<std::sync::Arc<std::collections::BTreeMap<String, Color32>>>(egui::Id::unique(
@@ -53,6 +57,7 @@ pub fn install_session(
         toolkit::session_look::ui(&look, Some(app))
     };
     toolkit::install(ctx, &theme);
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("viu-session-theme"), theme.clone()));
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();
     for role in resolve(&serde_json::json!({}))?.colours.keys() {

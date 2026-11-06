@@ -1,0 +1,24 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$n=require("navigation.mix")
+$s={values:{},ui:$n.initial_ui(),nav:$n.initial_nav(),section:"appearance",apps:[{app:"demo",category:"creative"},{app:"server",category:"mixos-server"}],notes:nil,notes_error:nil,notes_owner:nil,releases:"available",release_status:"",release_failed:false,release_busy:false,quitting:false}
+$before=$s
+$hits=$n.search_view($s,"DENSITY")
+if $hits.query!="DENSITY" or not any($hits.hits,fn($h)=$h.page=="appearance" and $h.row=="density") then raise("SEARCH","Gold page-row target missing") end
+if not deep_eq($s,$before) then raise("SEARCH","Read-only search changed state") end
+if len($n.search_view($s,"   ").hits)!=0 or len($n.search_view($s,"terminal.").hits)!=0 then raise("SEARCH","Gold empty/key-only queries must have no hits") end
+$s.ui.dialog="about"
+$h=$n.search_view($s,"density")
+if len($h.hits)==0 then raise("SEARCH","Search must work under a dialog") end
+$s.ui.dialog=nil
+$s=$n.select_app($s,"server")
+if $s.ui.section!="software" or $s.nav.page!="software" or $s.ui.software_group!="mixos-server" or $s.ui.selected!="server" then raise("SELECT","Software selection did not open the app's group") end
+$v=$n.apps_view($s)
+if len($v.visible)!=1 or $v.visible[0].app!="server" then raise("GROUP","Software group filtering failed") end
+$s=$n.set_section($s,{name:"apps_term"})
+if $s.ui.selected!=nil or $s.nav.page!="term" then raise("SECTION","Leaving software must clear selection") end
+for $a in [{name:"themes"},{name:"apps_term",group:"creative"},{name:"software",group:"unknown"}]
+  $refused=false
+  try $n.set_section($s,$a) catch $message $refused=true end
+  if not $refused then raise("SECTION","Invalid section/group accepted") end
+end
+print("prefs navigation: read-only page-row search, software selection/groups and section refusals pass")

@@ -4,19 +4,5 @@ name: prefs
 citizen: prefs
 ---
 ```mix
-{
-root:{widget:"column",children:["title","status","navigation","table","selected","editor","buttons"],gap:8},
-title:{widget:"text",text:"Preferences · Mix on Viu · settingsd registry"},
-status:{widget:"text",text:"= $model.status"},
-navigation:{widget:"grid",columns:2,children:["section","search"],column_gap:12},
-section:{widget:"control",definition:"= $model.section_control",on_intent:"prefs.intent"},
-search:{widget:"control",definition:{id:"search",kind:"field",label:"Search",initial:"",properties:{placeholder:"Search setting names"}},on_intent:"prefs.intent"},
-table:{widget:"control",definition:"= $model.table",on_intent:"prefs.intent"},
-selected:{widget:"text",text:"= $model.selected_label"},
-editor:{widget:"control",definition:"= $model.editor",on_intent:"prefs.intent"},
-buttons:{widget:"row",children:["apply","reset","refresh"],gap:8},
-apply:{widget:"control",definition:{id:"apply",kind:"button",label:"",initial:"",properties:{text:"Apply selected value"}},on_intent:"prefs.intent"},
-reset:{widget:"control",definition:{id:"reset",kind:"button",label:"",initial:"",properties:{text:"Reset to default"}},on_intent:"prefs.intent"},
-refresh:{widget:"control",definition:{id:"refresh",kind:"button",label:"",initial:"",properties:{text:"Refresh settings"}},on_intent:"prefs.intent"}
-}
+{root:{widget:"control",definition:"= $model.browser",on_intent:"prefs.intent"}}
 ```
