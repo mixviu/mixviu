@@ -14,20 +14,20 @@ end
 $a=$cli.parse_cli($argv)
 export MIXOS_NODED_URL=$a.url
 fn forward($a)
-  send $a.service "screenshot.ping" body={} timeout=5
+  send $a.service "screenshot.ping" body=json_encode({}) timeout=5
   if $rc!=0 or $reply.comp!=$a.comp then raise("COMPOSITOR","the running instance does not serve "..$a.comp) end
   if $a.headless then raise("BUSY","the headless service already runs") end
   if $a.capture!=nil then
     $body={mode:$a.capture,comp:$a.comp}
     if $a.window!=nil then $body.window=$a.window end
-    send $a.service "screenshot.take" body=$body timeout=15
+    send $a.service "screenshot.take" body=json_encode($body) timeout=15
     if $rc!=0 then raise("FAILED",to_string($result)) end
   else
     if $a.path!=nil then
-      send $a.service "screenshot.open" body={path:$a.path} timeout=90
+      send $a.service "screenshot.open" body=json_encode({path:$a.path}) timeout=90
       if $rc!=0 then raise("FAILED",to_string($result)) end
     end
-    send $a.service "screenshot.show" body={} timeout=30
+    send $a.service "screenshot.show" body=json_encode({}) timeout=30
     if $rc!=0 then raise("FAILED",to_string($result)) end
   end
 end
