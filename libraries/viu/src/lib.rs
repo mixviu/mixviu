@@ -22,6 +22,7 @@ mod local_ui;
 pub mod macro_host;
 pub mod native_bus;
 pub mod native_menu;
+mod native_events;
 mod native_primitives;
 mod native_theme;
 pub mod rich;

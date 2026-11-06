@@ -43,6 +43,12 @@ fn refresh_monitor($s)
 end
 fn navigate_monitor($s) return $fetch.navigate($s) end
 fn requery_monitor($s) return $fetch.requery($s) end
+fn watch_monitor($s,$node)
+  if $s.node==$node then return $s end
+  for $kind in ["snapshot","processes","history","connections"] $s=$fetch.cancel($s,$kind) end
+  $s.node=$node;$s.node_draft=$node;$s.snapshot=nil;$s.processes=[];$s.processes_loaded=false;$s.total=0;$s.history=[];$s.rings={};$s.history_seeded=false;$s.connections=nil;$s.connections_error=nil;$s.selected=nil;$s.error=nil;$s.status="Connecting to monitord…"
+  return $fetch.poll($s)
+end
 publish_monitor($state)
 on viu.tick
   if not $state.paused then $state=$fetch.poll($state);publish_monitor($state) end
@@ -70,9 +76,7 @@ on monitor.node
   $node=$event.args.node ?? ""
   if $event.args.node!=nil and not re_match($node,"^[a-zA-Z0-9_-]{1,63}$") then reply(10,json_encode({error_code:"ARGUMENT",message:"Not a node name"}));return end
   if $node==$state.node then reply(0,json_encode({node:$event.args.node,target:$core.target($node)}));return end
-  for $kind in ["snapshot","processes","history","connections"] $state=$fetch.cancel($state,$kind) end
-  $state.node=$node;$state.node_draft=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.rings={};$state.history_seeded=false;$state.connections=nil;$state.connections_error=nil;$state.selected=nil
-  $state=$fetch.poll($state);publish_monitor($state)
+  $state=watch_monitor($state,$node);publish_monitor($state)
   reply(0,json_encode({node:$event.args.node,target:$core.target($node)}))
 end
 on monitor.sort
@@ -116,17 +120,17 @@ on monitor.intent
   elif $a.id=="tree" then $out=execute_monitor($state,"view.tree","ui");$state=$out.state
   elif $a.id=="refresh" then $state=refresh_monitor($state)
   elif $a.id=="pause" then $state.paused=$a.value
-  elif $a.id=="filter" then $state.filter=$a.value;$state=refresh_monitor($state)
+  elif $a.id=="filter" then $state.filter=$a.value;$state=$fetch.requery($state)
   elif $a.id=="node" then
     $state.node_draft=$a.value
     if $a.action=="submit" or $a.action=="set" then
       $node=if $a.value=="This node" then "" else $a.value end
-      $checked=$core.target($node);$state.node=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.rings={};$state.history_seeded=false;$state.connections=nil;$state.connections_error=nil;$state.selected=nil;$state=refresh_monitor($state)
+      $checked=$core.target($node);$state=watch_monitor($state,$node)
     end
   elif $a.id=="processes" then
     if $a.action=="sort" then
       $state.reverse=if $state.sort==$a.value.column then not $state.reverse else false end
-      $state.sort=$a.value.column;$state=refresh_monitor($state)
+      $state.sort=$a.value.column;$state=$fetch.requery($state)
     elif $a.action=="select" then $state.selected=to_number($a.value.key) end
   end
   publish_monitor($state);reply(0,"{}")
@@ -148,17 +152,18 @@ fn signal_monitor($s,$a)
   if $s.node!="" or $s.dialog!=nil or $s.selected==nil or $pid!=$s.selected then
     return {state:$s,rc:10,body:{error_code:"DISABLED",message:"Command is disabled"}}
   end
-  $expected=$a.start_time ?? $s.start_times[to_string($pid)]
+  $expected=if contains(keys($a),"start_time") then $a.start_time else $s.start_times[to_string($pid)] end
   $answer=viu_process("signal",{pid:$pid,signal:$a.signal,start_time:$expected})
   if $answer.pid_reused==true or $answer.ok then
     $s=$fetch.cancel($s,"snapshot");$s=$fetch.cancel($s,"processes")
   end
   if $answer.pid_reused==true then $s=refresh_monitor($s) end
   if not $answer.ok then
-    $s.error=$answer.error
+    $s.error=$answer.error;$s.status="Could not signal"
     return {state:$s,rc:10,body:{error_code:"SIGNAL",message:$answer.error}}
   end
   $s=refresh_monitor($s)
+  $s.status=if contains(["SIGTERM","TERM",15],$a.signal) then "Asked to end" else "Killed" end
   return {state:$s,rc:0,body:{pid:$pid,signal:$a.signal}}
 end
 on monitor.signal
@@ -192,14 +197,14 @@ fn execute_monitor($s,$id,$origin)
     $out=signal_monitor($s,{pid:$s.selected,signal:if $id=="process.end" then "SIGTERM" else "SIGKILL" end});$s=$out.state
   elif $id=="file.refresh" then $s=$fetch.poll($s)
   elif $id=="file.quit" then $s.quitting=true;$s.window_close=$origin!="bus"
-  elif $id=="view.pause" then $s.paused=not $s.paused;$s.status=if $s.paused then "Paused" else "Live" end
+  elif $id=="view.pause" then $s.paused=not $s.paused;$s.status=if $s.paused then "Paused" else "Live" end;if not $s.paused then $s=$fetch.poll($s) end
   elif $id=="view.processes" then $s.tab="Processes";$s=navigate_monitor($s)
   elif $id=="view.performance" then $s.tab="Performance";$s=navigate_monitor($s)
-  elif $id=="view.tree" then $s.tree=not $s.tree;$s=refresh_monitor($s)
+  elif $id=="view.tree" then $s.tree=not $s.tree;$s=$fetch.requery($s)
   elif $id=="help.macros" then $s.macros_open=not $s.macros_open
   elif $id=="help.about" then $s.dialog="about"
   elif $id=="help.shortcuts" then $s.dialog="shortcuts"
-  elif $id=="view.search" then $s.tab="Processes";$s.focus_serial=$s.focus_serial+1
+  elif $id=="view.search" then $s.tab="Processes";$s=$fetch.navigate($s);$s.focus_serial=$s.focus_serial+1
   elif $id=="process.copy" then
     $p=filter($s.processes,fn($p)=$p.pid==$s.selected)[0]
     send "viu-local" "native.copy" body={text:$p.cmdline ?? $p.name}

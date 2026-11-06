@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::BTreeMap,
     sync::{Arc, mpsc},
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
@@ -24,11 +24,10 @@ pub struct Facilities {
     complete: mpsc::Sender<(Reply, macros::commands::Answer)>,
     finished: mpsc::Receiver<Value>,
     subscriber: Option<u64>,
-    hints: VecDeque<Value>,
     wake: crate::runtime::Wake,
     journal: toolkit::executed::Journal,
-    action_hints: VecDeque<Value>,
-    lost: u64,
+    events:crate::native_events::Events,
+    publishing:Option<(String,Value)>,
 }
 impl Facilities {
     pub fn new(manifest: &Manifest, wake: crate::runtime::Wake) -> Self {
@@ -74,34 +73,14 @@ impl Facilities {
             complete,
             finished,
             subscriber,
-            hints: VecDeque::new(),
             wake,
             journal: Default::default(),
-            action_hints: VecDeque::new(),
-            lost: 0,
+            events:Default::default(),publishing:None,
         }
     }
     pub fn prepare(&mut self, ctx: &egui::Context, bus: &Endpoint) {
-        let (records, lost) = self.journal.take();
-        self.lost += lost;
-        for record in records {
-            if self.action_hints.len() >= toolkit::executed::QUEUE {
-                self.action_hints.pop_front();
-                self.lost += 1;
-            }
-            self.action_hints.push_back(record.body());
-        }
-        while let Some(body) = self.action_hints.front_mut() {
-            body["dropped"] = json!(self.lost);
-            if bus
-                .hint(toolkit::executed::topic(&self.app), body.clone())
-                .is_err()
-            {
-                break;
-            }
-            self.action_hints.pop_front();
-            self.lost = 0;
-        }
+        let (records,lost)=self.journal.take();self.events.lost_batch(lost);
+        for record in records {self.events.push(toolkit::executed::topic(&self.app),record.body(),0);}
         if self.ui && !self.installed {
             toolkit::drive::install(ctx, &self.app);
             self.installed = true;
@@ -113,18 +92,8 @@ impl Facilities {
         while let Ok((reply, answer)) = self.completed.try_recv() {
             let _ = reply.send(macro_answer(answer));
         }
-        while let Ok(body) = self.finished.try_recv() {
-            self.hints.push_back(body);
-        }
-        while let Some(body) = self.hints.front() {
-            if bus
-                .hint(format!("{}.macros.finished", self.app), body.clone())
-                .is_err()
-            {
-                break;
-            }
-            self.hints.pop_front();
-        }
+        while let Ok(body)=self.finished.try_recv(){self.events.push(format!("{}.macros.finished",self.app),body,0);}
+        if self.publishing.is_none() {if let Some((topic,body))=self.events.front() {if bus.hint(topic.clone(),body.clone()).is_ok(){self.events.accepted();self.publishing=Some((topic,body));}}}
         self.answers(ctx, toolkit::drive::logic(ctx));
     }
     pub fn record(&mut self, args: &Value) -> Result<Value, String> {
@@ -145,6 +114,13 @@ impl Facilities {
         self.journal
             .record(id, origin, args["params"].clone(), args["result"].clone());
         Ok(json!({"recorded":true}))
+    }
+    pub fn notice(&mut self,command:&str,args:&Value) {
+        if command=="bus.hint.completed" && self.publishing.as_ref().is_some_and(|(topic,_)|args["topic"]==topic.as_str()) {
+            let (_,body)=self.publishing.take().unwrap();
+            if args["ok"]!=true {self.events.failed(&body);}
+            (self.wake)();
+        }
     }
     fn answers(&mut self, ctx: &egui::Context, answers: Vec<toolkit::drive::Answer>) {
         for mut answer in answers {

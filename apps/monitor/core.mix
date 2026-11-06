@@ -73,8 +73,8 @@ end
 fn status_line($s)
   $right=[]
   if $s.snapshot!=nil and $s.snapshot.uptime_s!=nil then push($right,"Up time "..gold_uptime($s.snapshot.uptime_s)) end
-  if $s.snapshot!=nil then push($right,to_string(len($s.processes)).." of "..to_string($s.total).." processes") end
-  return {left:if $s.snapshot==nil then "Connecting to monitord…" elif $s.error!=nil then "monitord is not answering" elif $s.paused then "Paused" else "Live" end,icon:if $s.error==nil then "plug" else "unplug" end,error:$s.error!=nil,message:$s.error,right:$right}
+  if $s.processes_loaded then push($right,to_string(len($s.processes)).." of "..to_string($s.total).." processes") end
+  return {left:$s.status,icon:if $s.connected and $s.error==nil then "plug" else "unplug" end,error:not $s.connected or $s.error!=nil,message:$s.error,right:$right}
 end
 fn gold_uptime($seconds)
   $s=floor(max(0,$seconds));$d=floor($s/86400);$h=floor(($s%86400)/3600);$m=floor(($s%3600)/60)

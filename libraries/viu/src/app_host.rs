@@ -348,6 +348,7 @@ impl Host {
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
+                    self.facilities.notice(&n.command,&n.args);
                     if n.command == "theme.changed" {
                         self.file_theme = toolkit::Theme::load();
                         self.session_dirty = true;
