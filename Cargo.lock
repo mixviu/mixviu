@@ -10052,6 +10052,7 @@ name = "viu"
 version = "0.1.2"
 dependencies = [
  "action",
+ "buildinfo",
  "bus",
  "chrono",
  "config",
