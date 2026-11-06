@@ -866,6 +866,15 @@ impl SceneView {
                 continue;
             }
             let horizontal = ["left", "right"].contains(&edge);
+            // A top strip may follow its intrinsic content height. This keeps
+            // forms and search rows correct when live typography changes.
+            if edge == "top" && placement["size"] == "content" {
+                let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining).layout(egui::Layout::top_down(egui::Align::Min)));
+                child_ui.set_clip_rect(remaining.intersect(ui.clip_rect()));
+                self.node(&mut child_ui, child, nodes, route, depth + 1, events);
+                remaining.min.y = child_ui.min_rect().bottom().clamp(remaining.top(), remaining.bottom());
+                continue;
+            }
             let dimension = if horizontal {
                 area.width()
             } else {
@@ -1086,6 +1095,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                         "max_fraction",
                     ] {
                         if let Some(v) = p.get(key) {
+                            if key == "size" && v == "content" && edge == "top" { continue; }
                             if key == "size" && design_length(v, None).is_some() {
                                 continue;
                             }

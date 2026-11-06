@@ -18,6 +18,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui",$event_params=
   if $index!=nil and $index>=0 then $s.active=$index end
   $has=len($s.tabs)>0;$t=if $has then current($s) else nil end
   if $has and $s.mail[$t.document]!=nil then
+    $s=mail_commit($s,$t.document)
     $m=$s.mail[$t.document]
     if $id=="file.reload" then raise("CONFLICT","Close and reopen this mail document to reload it") end
     if contains(["edit.undo","edit.redo"],$id) then

@@ -55,6 +55,20 @@ fn mail_headers($s,$key,$headers)
   end
   $s.mail[$key]=$m;return $s
 end
+fn mail_preview($s,$key,$changes)
+  $m=$s.mail[$key]
+  if $m.saving or $m.sending then return $s end
+  if $m.preview_before==nil then $m.preview_before=$m.headers end
+  $m.headers=merge($m.headers,$changes);$s.mail[$key]=$m;return $s
+end
+fn mail_commit($s,$key)
+  $m=$s.mail[$key]
+  if $m!=nil and $m.preview_before!=nil then
+    $headers=$m.headers;$s.mail[$key].headers=$m.preview_before;$s.mail[$key].preview_before=nil
+    $s=mail_headers($s,$key,$headers)
+  end
+  return $s
+end
 fn mail_pump($s)
   for $tab in $s.tabs
     $key=$tab.document;$m=$s.mail[$key]

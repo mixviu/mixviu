@@ -43,6 +43,7 @@ pub mod platform;
 pub mod ui_state;
 
 pub mod editor_controls;
+pub mod header_controls;
 
 pub mod process;
 

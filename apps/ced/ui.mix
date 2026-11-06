@@ -59,17 +59,29 @@ fn ced_ui_model($s,$model)
   if $model.problems_text=="" then $model.problems_text="No problems" end
   $model.values["problems-list"]=if $has then viu_document("problems",$t.document,{}) else [] end
   $model.output_text="No output yet."
-  $model.mail_fields=[];$model.show_mail=$has and $s.mail[$t.document]!=nil
+  $model.mail_fields={enabled:true,fields:[],attachments:[],attachment_label:"Attachments",attach_label:"Attach…",remove_label:"Remove",chooser:{open:false,title:"Attach…",directory:"/"}};$model.show_mail=$has and $s.mail[$t.document]!=nil
   if $model.show_mail then
     $m=$s.mail[$t.document]
-    for $key in ["from","to","cc","bcc","reply_to","subject"] $model.mail_fields=push($model.mail_fields,{id:$key,label:({from:"From",to:"To",cc:"Cc",bcc:"Bcc",reply_to:"Reply-To",subject:"Subject"})[$key],value:$m.headers[$key],focus:$m.focus==$key,focus_instance:$m.focus_instance ?? 0,read_only:$m.saving or $m.sending}) end
+    $fields=[]
+    for $key in ["from","to","cc","bcc","reply_to","subject"]
+      $actions=[]
+      if $key=="to" then
+        for $row in [{id:"cc",label:"Show Cc",icon:"copy"},{id:"bcc",label:"Show Bcc",icon:"eye-off"},{id:"reply_to",label:"Show Reply-To",icon:"reply"}]
+          $row.selected=($m.shown[$row.id] ?? false) or $m.headers[$row.id]!="";push($actions,$row)
+        end
+      end
+      push($fields,{id:$key,label:({from:"From",to:"To",cc:"Cc",bcc:"Bcc",reply_to:"Reply-To",subject:"Subject"})[$key],value:$m.headers[$key],visible:contains(["from","to","subject"],$key) or ($m.shown[$key] ?? false) or $m.headers[$key]!="",focus:$m.focus==$key,actions:$actions,read_only:false})
+    end
+    if $m.headers.in_reply_to!=nil then push($fields,{id:"in_reply_to",label:"In-Reply-To",value:$m.headers.in_reply_to,visible:true,read_only:true,actions:[]}) end
+    if len($m.headers.references)>0 then push($fields,{id:"references",label:"References",value:join($m.headers.references," "),visible:true,read_only:true,actions:[]}) end
+    $model.mail_fields={identity:$t.document,enabled:not $m.saving and not $m.sending,fields:$fields,attachments:$m.headers.attachments,attachment_label:"Attachments",attach_label:"Attach…",remove_label:"Remove",focus_instance:$m.focus_instance ?? 0,notice:$m.notice,chooser:{open:$m.chooser ?? false,title:"Attach…",directory:if $m.path!=nil then dirname($m.path) else "/" end,instance:$m.chooser_instance ?? 0}}
   end
   $model.values["mail-fields"]=$model.mail_fields
   $model.top_height=if $has then 32 else 0 end
   if $model.find_open then $model.top_height=$model.top_height+if $s.find.replace then 84 else 42 end end
   if $model.show_notice then $model.top_height=$model.top_height+64 end
   if $model.show_mail then $model.top_height=$model.top_height+180 end
-  $model.placements={"top-controls":{edge:"top",size:$model.top_height},"problems-panel":{edge:"bottom",size:140},"output-panel":{edge:"bottom",size:120},body:{edge:"fill"}}
+  $model.placements={"top-controls":{edge:"top",size:"content"},"problems-panel":{edge:"bottom",size:140,resizable:true,max_fraction:0.3},"output-panel":{edge:"bottom",size:120,resizable:true,max_fraction:0.3},body:{edge:"fill"}}
   return $model
 end
 fn ced_ui_intent($s,$a)
@@ -98,9 +110,20 @@ fn ced_ui_intent($s,$a)
   elif $a.id=="macros-dialog" then
     $s.macros_open=false
   elif $a.id=="mail-fields" then
-    $t=current($s);$h=$s.mail[$t.document].headers
-    for $row in $a.value $h[$row.id]=$row.value end
-    $s=mail_headers($s,$t.document,$h)
+    $t=current($s);$key=$t.document
+    if $a.action=="edit" then $s=mail_preview($s,$key,$a.value)
+    elif $a.action=="commit" then $s=mail_commit($s,$key)
+    elif $a.action=="command" then
+      $s=mail_commit($s,$key)
+      if $a.value=="attach" then $s.mail[$key].chooser=true;$s.mail[$key].chooser_instance=($s.mail[$key].chooser_instance ?? 0)+1
+      else $s.mail[$key].shown=merge($s.mail[$key].shown ?? {},{($a.value):true}) end
+    elif $a.action=="cancel" then $s.mail[$key].chooser=false
+    elif $a.action=="picked" or $a.action=="remove" then
+      $s=mail_commit($s,$key);$h=$s.mail[$key].headers
+      if $a.action=="picked" then $h.attachments=concat($h.attachments,$a.value);$s.mail[$key].chooser=false
+      else $h.attachments=concat(slice($h.attachments,0,$a.value),slice($h.attachments,$a.value+1)) end
+      $s=mail_headers($s,$key,$h)
+    end
   elif $a.id=="notice-actions" then $s=operation($s,$a.value.command,{})
   end
   return pump($s)
