@@ -21,6 +21,7 @@ for $file in ["app","core","document","document-test","schedule","schedule-test"
   if not $result.ok then exit($result.exit_code ?? 1) end
 end
 for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--lib","raster"],["cargo","test","--locked","-p","viu","--test","app_ports","--test","backdrop"],["cargo","clippy","--locked","-p","viu","--all-targets"]]
+  if contains(args(),"--prepare") and $argv[1]=="fmt" then continue end
   $result=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"4"}})
   print($result)
   if not $result.ok then exit($result.exit_code ?? 124) end
