@@ -2385,6 +2385,19 @@ pub fn main_with_args(args: Vec<std::ffi::OsString>) -> process::ExitCode {
 }
 
 pub fn main() -> process::ExitCode {
+    // Reached through a mix -> mixd handoff, yet this is not the service
+    // engine: the installed `mixd` is a shell-profile build. Refuse before
+    // argv is interpreted (the handoff's leading `run` is not a filename).
+    if mix::builtins::engine_profile() != "service" && env::var_os(ENGINE_HANDOFF_ENV).is_some() {
+        eprintln!(
+            "mix: handed off to a shell-profile binary ({}); the installed mixd is not the \
+             service engine",
+            std::env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+        );
+        return process::ExitCode::from(126);
+    }
     // `--version` answers from a COLD process, before anything below runs:
     // no base-env capture, no session lane, no Bus dispatch, no evaluation
     // thread, no prelude, no rc. Mark's contract (2026-09-21) is that a

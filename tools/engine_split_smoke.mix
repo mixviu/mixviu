@@ -2,8 +2,8 @@
 -- mixd; mixd runs the same script; doctor reports each profile.
 -- usage: mix tools/engine_split_smoke.mix MIX_BIN MIXD_BIN
 $a = args()
-$mix = $a[0]
-$mixd = $a[1]
+$mix = realpath($a[0])
+$mixd = realpath($a[1])
 $dir = trim(run_argv_must(["mktemp", "-d"]))
 $script = path_join($dir, "svc.mix")
 write_file($script, "print(markdown(\"# hi\"))\n")
