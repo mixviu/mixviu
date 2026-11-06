@@ -70,6 +70,7 @@ fn scene_control_binding_rejects_bad_model_transactionally() {
     assert!(view.apply_model(json!([])).is_err());
     let bad = json!({"control":{"id":"root","kind":"icon","label":"","initial":{"name":"copy"}}});
     assert!(view.apply_model(bad).is_err());
+    assert!(view.apply_model(json!({"control":null})).is_err());
     assert_eq!(view.revision, 0);
     assert_eq!(view.model(), &good);
     let mut wrong = good.clone();
