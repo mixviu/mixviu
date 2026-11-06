@@ -365,13 +365,19 @@ impl App {
             "dopus.ui.menu.form" => {
                 let _ = reply.send((0, viu::rich::menu_form(ctx)));
             }
+            "dopus.ui.titlebar.form" => {
+                let _ = reply.send((0,self.window_frame.form(&self.session.snapshot["state"]["values"],Some(&format!("dopus-{}",self.mode)))));
+            }
             "dopus.ui.menu.popup" => {
                 if self.input_wait {
-                    let _ = reply.send((10,json!({"error_code":"BUSY"})));
+                    let _ = reply.send((10, json!({"error_code":"BUSY"})));
                 } else {
-                    match viu::rich::menu_popup(ctx,"menu",&args) {
+                    match viu::rich::menu_popup(ctx, "menu", &args) {
                         Ok(()) => self.replies_after_frame.push(reply),
-                        Err(error) => { let _ = reply.send((10,json!({"error_code":"ARGUMENT","message":error}))); }
+                        Err(error) => {
+                            let _ =
+                                reply.send((10, json!({"error_code":"ARGUMENT","message":error})));
+                        }
                     }
                 }
             }
@@ -867,7 +873,11 @@ impl eframe::App for App {
             0.0,
             viu::appearance::colour(ctx, "dock").unwrap_or(ui.visuals().panel_fill),
         );
-        viu::rich::configure_menu(ui.ctx(), &self.session.snapshot["state"]["values"], Some(&format!("dopus-{}",self.mode)));
+        viu::rich::configure_menu(
+            ui.ctx(),
+            &self.session.snapshot["state"]["values"],
+            Some(&format!("dopus-{}", self.mode)),
+        );
         self.window_frame.show_with_header(
             ui,
             &self.title,
@@ -1031,6 +1041,7 @@ fn commands() -> Vec<String> {
         "dopus.ui.menu.close",
         "dopus.ui.menu.popup",
         "dopus.ui.menu.form",
+        "dopus.ui.titlebar.form",
         "dopus.ui.focus",
         "dopus.ui.click",
         "dopus.ui.pointer",

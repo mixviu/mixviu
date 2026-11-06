@@ -2,7 +2,7 @@
 //! Shared native window controls. The compositor retains movement, resize,
 //! focus and presentation authority; this sends the usual viewport commands.
 use egui::{Rect, Ui, ViewportCommand as Command, pos2, vec2};
-use serde_json::Value;
+use serde_json::{Value,json};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy)]
@@ -38,6 +38,19 @@ pub struct WindowFrame {
     pub close_requested: bool,
 }
 impl WindowFrame {
+    /// Describe the controls actually drawn by this adapter. Requested hosted
+    /// actions remain in the application row until native hosting is wired.
+    pub fn form(&self, settings: &Value, service: Option<&str>) -> Value {
+        json!({
+            "place":settings["window.actions_place"].as_str().unwrap_or("row"),
+            "effective":"row","hosted":false,"service":service,
+            "title_align":"center","actions_align":"right","menu_side":"left",
+            "caption_side":if settings["window.caption_side"]=="left" {"left"} else {"right"},
+            "requested":{"title_align":settings["window.title_align"].as_str().unwrap_or("auto"),"caption_side":settings["window.caption_side"].as_str().unwrap_or("auto")},
+            "decorations":if self.client {"csd"}else{"ssd"},
+            "bar":{"revision":0,"items":[]}
+        })
+    }
     pub fn show(&mut self, ui: &mut Ui, title: &str, settings: &Value) {
         self.show_with_header(ui, title, settings, false);
     }

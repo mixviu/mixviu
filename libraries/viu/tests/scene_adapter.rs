@@ -233,33 +233,85 @@ fn host_slots_reuse_scene_composition_without_consuming_the_fallback_dock_edge()
 #[test]
 fn compact_and_requested_vertical_menus_keep_native_paths_and_report_the_effective_form() {
     let menus = json!([{"id":"View","label":"View","enabled":true,"children":[{"id":"Dark","label":"Dark","enabled":true}]}]);
-    let source = scene(json!({"root":{"widget":"column","children":["menu"]},"menu":{"widget":"control","definition":{"id":"menu","kind":"menubar","label":"","initial":menus}}}));
-    let mut view = SceneView::with_model(&source,json!({"values":{"menu":menus}})).unwrap();
+    let source = scene(
+        json!({"root":{"widget":"column","children":["menu"]},"menu":{"widget":"control","definition":{"id":"menu","kind":"menubar","label":"","initial":menus}}}),
+    );
+    let mut view = SceneView::with_model(&source, json!({"values":{"menu":menus}})).unwrap();
     let ctx = egui::Context::default();
     viu::appearance::install(&ctx);
-    viu::rich::configure_menu(&ctx,&json!({"window.menu_style":"titlebar","window.menu_side":"right"}),Some("example"));
-    assert_eq!(viu::rich::menu_form(&ctx)["effective"],"button");
-    assert_eq!(viu::rich::menu_form(&ctx)["hosted"],false);
+    viu::rich::configure_menu(
+        &ctx,
+        &json!({"window.menu_style":"titlebar","window.menu_side":"right"}),
+        Some("example"),
+    );
+    assert_eq!(viu::rich::menu_form(&ctx)["effective"], "button");
+    assert_eq!(viu::rich::menu_form(&ctx)["hosted"], false);
     let mut input = viu::input::Input::default();
     for frame in 0..24 {
-        let mut raw=egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(800.0,400.0))),time:Some(frame as f64*0.05),..Default::default()};
+        let mut raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 400.0),
+            )),
+            time: Some(frame as f64 * 0.05),
+            ..Default::default()
+        };
         raw.events.append(&mut input.now);
-        let mut out=ctx.run_ui(raw,|ui|{view.show(ui);});out.textures_delta.clear();
-        if frame==0 { input.queue("menu.open",&json!({"menu":"View"}),&mut view).unwrap(); }
-        else if let Some(next)=input.later.pop_front(){input.now=next;}
-        else if let Some(result)=input.advance_menu(&mut view){result.unwrap();}
+        let mut out = ctx.run_ui(raw, |ui| {
+            view.show(ui);
+        });
+        out.textures_delta.clear();
+        if frame == 0 {
+            input
+                .queue("menu.open", &json!({"menu":"View"}), &mut view)
+                .unwrap();
+        } else if let Some(next) = input.later.pop_front() {
+            input.now = next;
+        } else if let Some(result) = input.advance_menu(&mut view) {
+            result.unwrap();
+        }
     }
     assert!(view.geometry.contains_key("menu.command.Dark"));
     egui::Popup::close_all(&ctx);
-    for args in [json!({"side":"invalid"}),json!({"x":"bad"}),json!({"x":1e100}),json!([])] {assert!(viu::rich::menu_popup(&ctx,"menu",&args).is_err());}
-    viu::rich::menu_popup(&ctx,"menu",&json!({"side":"right","x":1e6})).unwrap();
-    for _ in 0..3 { let mut out=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(800.0,400.0))),..Default::default()},|ui|{view.show(ui);});out.textures_delta.clear(); }
+    for args in [
+        json!({"side":"invalid"}),
+        json!({"x":"bad"}),
+        json!({"x":1e100}),
+        json!([]),
+    ] {
+        assert!(viu::rich::menu_popup(&ctx, "menu", &args).is_err());
+    }
+    viu::rich::menu_popup(&ctx, "menu", &json!({"side":"right","x":1e6})).unwrap();
+    for _ in 0..3 {
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 400.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        );
+        out.textures_delta.clear();
+    }
     assert!(view.geometry.contains_key("menu.menu.View"));
-    assert_eq!(viu::rich::menu_snapshot(&menus,"menu",&view.geometry)["open"],true);
+    assert_eq!(
+        viu::rich::menu_snapshot(&menus, "menu", &view.geometry)["open"],
+        true
+    );
     egui::Popup::close_all(&ctx);
-    let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
+    out.textures_delta.clear();
     assert!(!view.geometry.contains_key("menu.menu.View"));
-    assert_eq!(viu::rich::menu_snapshot(&menus,"menu",&view.geometry)["open"],false);
+    assert_eq!(
+        viu::rich::menu_snapshot(&menus, "menu", &view.geometry)["open"],
+        false
+    );
 }
 
 #[test]
