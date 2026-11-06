@@ -66,7 +66,12 @@ end
         json!({"commands":[{"name":"echo", "description":"x".repeat(262145)}]}),
         json!({"unexpected":[]}),
     ] {
-        runtime.event("probe".into(), json!({"catalogue":invalid,"command":"echo","text":"{}"})).unwrap();
+        runtime
+            .event(
+                "probe".into(),
+                json!({"catalogue":invalid,"command":"echo","text":"{}"}),
+            )
+            .unwrap();
         assert_eq!(completion(&runtime, &rx).reply.unwrap().rc, 10);
     }
 }
