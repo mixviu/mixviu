@@ -4,7 +4,7 @@ $frame=require("../../libraries/viu/mix/gold-frame.mix")
 fn request($a)
   if type($a)!="map" then raise("ARGUMENT","Capture requires a map") end
   for $k in keys($a) if not contains(["mode","output","window","region","cursor","delay"],$k) then raise("ARGUMENT","Unknown capture field: "..$k) end end
-  $r={mode:$a.mode ?? "screen",cursor:$a.cursor ?? false,delay:$a.delay ?? 0}
+  $r={mode:if has_key($a,"mode") then $a.mode else "screen" end,cursor:if has_key($a,"cursor") then $a.cursor else false end,delay:if has_key($a,"delay") then $a.delay else 0 end}
   if not contains(["screen","window","region"],$r.mode) or type($r.cursor)!="bool" or type($r.delay)!="number" then raise("ARGUMENT","Invalid mode, cursor or delay") end
   if $r.delay<0 or $r.delay>10 or floor($r.delay)!=$r.delay then raise("DELAY","Delay must be integer 0..10") end
   if $a.output!=nil then
@@ -14,7 +14,7 @@ fn request($a)
   if $r.mode=="window" then
     if type($a.window)!="map" then raise("WINDOW","Choose an id and generation") end
     for $key in ["id","generation"] if type($a.window[$key])!="number" or $a.window[$key]<0 or floor($a.window[$key])!=$a.window[$key] then raise("WINDOW","Invalid window identity") end end
-    if len(keys($a.window))!=2 or $a.output!=nil then raise("WINDOW","Window target must stand alone") end
+    if len(keys($a.window))!=2 then raise("WINDOW","Unknown window target fields") end
     $r.window=$a.window
   elif $a.window!=nil then raise("WINDOW","Window applies only to window mode") end
   if $a.region!=nil then
@@ -23,7 +23,11 @@ fn request($a)
       $n=$a.region[$key]
       if type($n)!="number" or floor($n)!=$n or $n<0 or $n>2147483647 then raise("REGION","Invalid rectangle") end
     end
-    if $a.region.width==0 or $a.region.height==0 or $a.region.x+$a.region.width>2147483647 or $a.region.y+$a.region.height>2147483647 or len(keys($a.region))!=4 then raise("REGION","Invalid extent or fields") end
+    if $a.region.width==0 or $a.region.height==0 or $a.region.x+$a.region.width>2147483647 or $a.region.y+$a.region.height>2147483647 or any(keys($a.region),fn($k)=not contains(["x","y","width","height","output"],$k)) then raise("REGION","Invalid extent or fields") end
+    if $a.region.output!=nil then
+      if type($a.region.output)!="string" or len($a.region.output)==0 or len($a.region.output)>256 then raise("REGION","Invalid region output name") end
+      if $r.output!=nil and $r.output!=$a.region.output then raise("REGION","region.output and output name different outputs") end
+    end
     $r.region=$a.region
   end
   return $r

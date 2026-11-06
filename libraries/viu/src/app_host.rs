@@ -301,7 +301,12 @@ impl Host {
             if !self.runtime.accepts(&done) {
                 continue;
             }
-            self.error = done.error.unwrap_or_default();
+            if let Some(error) = done.error.as_ref() {
+                eprintln!("viu callback {}: {error}", done.sequence);
+                self.error = error.clone();
+            } else if done.model.is_some() {
+                self.error.clear();
+            }
             if self.error.is_empty() {
                 if let Some(model) = done.model {
                     self.session_dirty |= self.model["theme_choice"] != model["theme_choice"];

@@ -62,20 +62,21 @@ impl Documents {
                 scalar(args, "dy")?,
             )?,
             "delete" => doc.delete(number(args, "id")?)?,
+            "restyle" => {
+                let colour: [u8; 4] = serde_json::from_value(args["colour"].clone())
+                    .map_err(|e| e.to_string())?;
+                doc.restyle(number(args, "id")?, colour, scalar(args, "width")?)?;
+            }
             "crop" => {
                 let crop: Option<Crop> =
                     serde_json::from_value(args["crop"].clone()).map_err(|e| e.to_string())?;
                 doc.set_crop(crop)?;
             }
             "undo" => {
-                if !doc.undo() {
-                    return Err("nothing to undo".into());
-                }
+                doc.undo();
             }
             "redo" => {
-                if !doc.redo() {
-                    return Err("nothing to redo".into());
-                }
+                doc.redo();
             }
             "saved" => doc.mark_saved(),
             "hit" => {
@@ -91,11 +92,29 @@ impl Documents {
             "export" => {
                 let snapshot = doc.clone();
                 drop(docs);
-                let path = args["path"].as_str().ok_or("expected path")?;
+                let paths: Vec<&str> = if let Some(paths) = args["paths"].as_array() {
+                    if paths.is_empty() || paths.len() > 1000 {
+                        return Err("expected 1..1000 destination candidates".into());
+                    }
+                    paths.iter().map(|p| p.as_str().ok_or("expected path")).collect::<Result<_, _>>()?
+                } else {
+                    vec![args["path"].as_str().ok_or("expected path")?]
+                };
                 let face =
                     paint::Face::new(include_bytes!("../../assets/fonts/Inter-Regular.ttf"))?;
-                snapshot.export(std::path::Path::new(path), &face)?;
-                return Ok(json!({"path":path,"document":snapshot.info()}));
+                for path in paths {
+                    // The document publishes with no-replace semantics. A raced
+                    // candidate may be retried; every other error is final.
+                    if std::path::Path::new(path).symlink_metadata().is_ok() {
+                        continue;
+                    }
+                    match snapshot.export(std::path::Path::new(path), &face) {
+                        Ok(()) => return Ok(json!({"path":path,"document":snapshot.info()})),
+                        Err(_) if std::path::Path::new(path).symlink_metadata().is_ok() => continue,
+                        Err(e) => return Err(e),
+                    }
+                }
+                return Err("destination already exists".into());
             }
             _ => return Err("unknown document operation".into()),
         }

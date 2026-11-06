@@ -1,0 +1,28 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$states=require("state.mix")
+$registry=require("registry.mix")
+$core=require("core.mix")
+$model=require("model.mix")
+$tmp=path_join("/var/tmp","screenshot-policy-"..uuid())
+try
+  $s=$states.initial("comp",path_join($tmp,"saved"),path_join($tmp,"raw"))
+  $view=$model.render($s)
+  if $view.values.preview.colour!="design.canvas" then raise("PREFS","canvas must follow the live design") end
+  if $registry.entry($s,"capture.mode.region").checked!=true then raise("REGISTRY","gold starts in region mode") end
+  if $registry.entry($s,"file.save").enabled!=false then raise("REGISTRY","empty document cannot save") end
+  $s.document={dirty:true,undo:1,redo:0,crop:nil,objects:[]}
+  if not $registry.entry($s,"edit.undo").enabled or not $registry.entry($s,"file.save").enabled then raise("REGISTRY","document actions were not enabled") end
+  $s.busy=true;$s.job="capture"
+  if $registry.entry($s,"file.save").enabled or not $registry.entry($s,"capture.cancel").enabled then raise("REGISTRY","busy admission differs from gold") end
+  $r=$core.request({mode:"region",output:"DP-1",region:{x:0,y:0,width:20,height:10,output:"DP-1"}})
+  $core.request({mode:"window",window:{id:1,generation:2},output:"DP-1"})
+  for $a in [{mode:nil},{delay:nil},{cursor:nil},{mode:"region",output:"DP-1",region:{x:0,y:0,width:20,height:10,output:"DP-2"}}]
+    $refused=false
+    try $core.request($a) catch $m $refused=true end
+    if not $refused then raise("ARGUMENT","invalid capture request accepted") end
+  end
+  print("Screenshot gold initial registry, document/busy admission and corrected capture shapes pass")
+finally
+  if is_dir($tmp) then remove_dir($tmp) end
+end

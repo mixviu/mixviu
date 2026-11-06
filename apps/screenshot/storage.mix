@@ -1,0 +1,101 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+fn absolute_env($key)
+  $p=env($key,"")
+  return if starts_with($p,"/") then $p else nil end
+end
+fn state_directory()
+  $base=absolute_env("MIXOS_APP_HOME")
+  if $base!=nil then return $base end
+  $base=absolute_env("MIXOS_APPS_HOME")
+  if $base!=nil then return path_join($base,"screenshot") end
+  $base=absolute_env("MIXOS_VAR")
+  if $base!=nil then return path_join($base,"apps/screenshot") end
+  $base=absolute_env("XDG_STATE_HOME")
+  if $base!=nil then return path_join($base,"mixos/apps/screenshot") end
+  $base=absolute_env("HOME")
+  if $base==nil then raise("FAILED","no absolute application state directory") end
+  return path_join($base,".local/state/mixos/apps/screenshot")
+end
+fn screenshots_directory()
+  $base=absolute_env("MIXOS_SCREENSHOTS_DIR")
+  if $base!=nil then return $base end
+  $home=absolute_env("HOME")
+  if $home==nil then raise("FAILED","HOME is not an absolute path") end
+  $config=absolute_env("XDG_CONFIG_HOME") ?? path_join($home,".config")
+  $pictures=path_join($home,"Pictures")
+  try
+    for $line in split(read_file(path_join($config,"user-dirs.dirs")),"\n")
+      $line=trim($line)
+      if starts_with($line,"XDG_PICTURES_DIR=") then
+        $value=trim(trim(slice($line,17)),"\"")
+        if starts_with($value,"$HOME") then $value=path_join($home,trim(slice($value,5),"/")) end
+        if starts_with($value,"/") and $value!=$home then $pictures=$value end
+        break
+      end
+    end
+  catch $message
+    $pictures=path_join($home,"Pictures")
+  end
+  return path_join($pictures,"Screenshots")
+end
+fn secure_directory($path)
+  mkdir($path,{parents:true})
+  $meta=stat($path,{follow_symlinks:false})
+  if $meta.is_symlink or not $meta.is_dir or $meta.uid!=uid() then raise("FAILED","the capture directory must be an owned directory, not a symlink") end
+  chmod($path,0o700)
+end
+fn raw_capture($root,$path)
+  return dirname($path)==$root and starts_with(basename($path),"capture-") and ends_with($path,".png")
+end
+fn forget_capture($root,$path)
+  if $path!=nil and raw_capture($root,$path) then
+    try
+      if stat($path,{follow_symlinks:false}).is_file then remove($path) end
+    catch $message end
+  end
+end
+fn prune($root)
+  $files=[]
+  for $name in ls($root)
+    $p=path_join($root,$name)
+    if raw_capture($root,$p) then
+      $m=stat($p,{follow_symlinks:false})
+      if $m.is_file and not $m.is_symlink then push($files,{path:$p,mtime:$m.mtime}) end
+    end
+  end
+  $files=reverse(sort_by($files,fn($f)=$f.mtime))
+  for $i=0 to len($files)-1
+    if $i>=20 or $files[$i].mtime<time()-604800 then forget_capture($root,$files[$i].path) end
+  end
+end
+fn recent($state,$limit)
+  $records=[]
+  try
+    $file=viu_read_optional(path_join($state,"saved.jsonl"))
+    if $file.found then
+      for $line in reverse(split($file.text,"\n"))
+        try
+          $shot=json_parse($line)
+          if type($shot.path)=="string" and is_file($shot.path) and not any($records,fn($r)=$r.path==$shot.path) then push($records,$shot) end
+        catch $m end
+        if len($records)>=$limit then break end
+      end
+    end
+  catch $m end
+  return $records
+end
+fn append_saved($state,$saved)
+  secure_directory($state)
+  $path=path_join($state,"saved.jsonl");$lock=$path..".lock"
+  if not flock($lock,{wait:5}) then raise("FAILED","ledger lock timed out") end
+  try
+    $old=viu_read_optional($path)
+    $text=if $old.found then $old.text else "" end
+    $text=$text..json_encode($saved).."\n"
+    if byte_length($text)>524288 then $text=join(take(reverse(split(trim($text),"\n")),500),"\n");$text=join(reverse(split($text,"\n")),"\n").."\n" end
+    viu_atomic_replace($path,$text)
+  finally
+    funlock($lock)
+  end
+end

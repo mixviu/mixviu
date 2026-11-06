@@ -1,0 +1,44 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$storage=require("storage.mix")
+fn initial($comp,$folder,$raw)
+  $state_dir=$storage.state_directory()
+  $raw=$raw ?? path_join($state_dir,"captures")
+  $storage.secure_directory($raw);$storage.prune($raw)
+  return {comp:$comp,folder:$folder ?? $storage.screenshots_directory(),state_dir:$state_dir,raw:$raw,status:"Ready",document:nil,handle:nil,source:nil,saved:nil,capture:nil,capture_file:nil,preview:nil,windows:[],outputs:[],windows_error:nil,busy:false,job:nil,serial:0,own:nil,restore_failed:false,pending:nil,pending_reply:nil,quitting:false,close_after:false,connected:true,look:{scheme:nil,mode:nil,style:nil,decorations:nil,captions:nil},effective:{scheme:"studio",mode:"dark"},keymap:{},ui:{macros_open:false,tool:"arrow",colour:[194,23,37,255],width:4,text:"",text_size:24,zoom:1,pan:{x:0,y:0},mode:"region",delay:0,cursor:false,output:nil,window:nil,dialog:nil,path:"",selected:nil}}
+end
+fn info($s)
+  return {schema:"screenshot.v1",app_id:"dev.mixos.screenshot",version:"0.1.2",pid:pid(),headless:false,connected:$s.connected,comp:$s.comp,busy:$s.busy,job:$s.job,status:$s.status,document:$s.document,source:$s.source,saved:$s.saved,capture:$s.capture,windows:$s.windows,outputs:$s.outputs,windows_error:$s.windows_error,ui:$s.ui}
+end
+fn idle($s)
+  if $s.quitting then raise("BUSY","Screenshot is closing") end
+  if $s.ui.dialog!=nil then raise("DIALOG","A dialog is open in the window") end
+  if $s.busy then raise("BUSY","Another operation is still running") end
+end
+fn require_document($s)
+  if $s.document==nil then raise("NO_IMAGE","no image") end
+end
+fn clean($s)
+  if $s.document!=nil and $s.document.dirty then raise("UNSAVED","save, export or undo the unsaved annotations first") end
+end
+fn path($value)
+  if type($value)!="string" then raise("ARGUMENT","expected path") end
+  if starts_with($value,"~/") then $value=path_join(env("HOME"),slice($value,2)) end
+  if not starts_with($value,"/") then raise("ARGUMENT","the path must be absolute") end
+  return $value
+end
+fn check_fields($a,$allowed)
+  if type($a)!="map" then raise("ARGUMENT","arguments must be a JSON object") end
+  for $key in keys($a) if not contains($allowed,$key) then raise("ARGUMENT","unknown field "..$key) end end
+end
+fn dispose($s)
+  if $s.handle!=nil then viu_document("close",{handle:$s.handle}) end
+  if $s.preview!=nil then try remove($s.preview) catch $m end end
+  $storage.forget_capture($s.raw,$s.capture_file)
+end
+fn replace_document($s,$handle,$doc,$source,$capture,$raw,$preview)
+  dispose($s)
+  $s.handle=$handle;$s.document=$doc;$s.source=$source;$s.capture=$capture;$s.capture_file=$raw;$s.saved=nil;$s.preview=$preview
+  $s.ui.selected=nil;$s.ui.zoom=1;$s.ui.pan={x:0,y:0}
+  return $s
+end
