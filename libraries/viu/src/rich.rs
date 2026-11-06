@@ -416,7 +416,7 @@ fn menu_roots(
         }
     }
 }
-fn native_entries(value: &Value) -> Vec<toolkit::menu::Entry> {
+fn native_entries(ctx: &egui::Context, value: &Value) -> Vec<toolkit::menu::Entry> {
     value
         .as_array()
         .into_iter()
@@ -425,7 +425,7 @@ fn native_entries(value: &Value) -> Vec<toolkit::menu::Entry> {
             if item["separator"] == true {
                 return toolkit::menu::Entry::Separator;
             }
-            let children = native_entries(&item["children"]);
+            let children = native_entries(ctx, &item["children"]);
             toolkit::menu::Entry::Row(toolkit::menu::Row {
                 id: if item["children"].is_array() {
                     None
@@ -433,7 +433,7 @@ fn native_entries(value: &Value) -> Vec<toolkit::menu::Entry> {
                     Some(text(item, "id").to_owned().into())
                 },
                 label: text(item, "label").into(),
-                shortcut: item["shortcut"].as_str().map(str::to_owned),
+                shortcut: crate::native_menu::shortcut(Some(ctx), item),
                 enabled: item["enabled"] == true,
                 checked: item["checked"].as_bool(),
                 children,
@@ -455,7 +455,7 @@ fn native_menu(
         .flatten()
         .map(|item| toolkit::menu::Menu {
             title: text(item, "label").into(),
-            entries: native_entries(&item["children"]),
+            entries: native_entries(ui.ctx(), &item["children"]),
         })
         .collect();
     let search = menus

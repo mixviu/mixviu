@@ -49,6 +49,15 @@ pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
     })?;
     Some(slots()[index])
 }
+pub(crate) fn shortcut(ctx: Option<&egui::Context>, item: &Value) -> Option<String> {
+    if item.get("shortcut_binding").is_some() {
+        item["shortcut_binding"].as_str()
+            .and_then(toolkit::keymap::parse_chord)
+            .and_then(|shortcut| ctx.map(|ctx| ctx.format_shortcut(&shortcut)))
+    } else {
+        item["shortcut"].as_str().map(str::to_owned)
+    }
+}
 fn entries(
     value: &Value,
     ids: &mut Vec<String>,
@@ -80,14 +89,7 @@ fn entries(
             Ok(Entry::Row(Row {
                 id,
                 label: item["label"].as_str().unwrap_or("").into(),
-                shortcut: if item.get("shortcut_binding").is_some() {
-                    item["shortcut_binding"]
-                        .as_str()
-                        .and_then(toolkit::keymap::parse_chord)
-                        .and_then(|shortcut| ctx.map(|ctx| ctx.format_shortcut(&shortcut)))
-                } else {
-                    item["shortcut"].as_str().map(str::to_owned)
-                },
+                shortcut: shortcut(ctx, item),
                 enabled: item["enabled"] == true,
                 checked: item["checked"].as_bool(),
                 children,
