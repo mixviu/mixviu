@@ -39,7 +39,6 @@ fn open_document($s,$app,$doc)
   if $doc.catalogue!=nil then $s.catalogues[$app]=$doc.catalogue end
   $s.document=$doc;$s.macro_draft=$s.macro_drafts[$app..":"..$doc.id];$s.macro_saved_text=nil
   $s.focus_id="macro-source";$s.focus_serial=$s.focus_serial+1;$s.macro_confirm_delete=false
-  $s.reveal_key=$s.row_key;$s.reveal_serial=$s.reveal_serial+1
   return $s
 end
 fn received($s,$task,$d)

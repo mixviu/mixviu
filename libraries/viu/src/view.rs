@@ -1171,6 +1171,10 @@ fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
         "design.dock_margin" => Some(ctx.map_or(2.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.dock_margin
         })),
+        "design.collapsed_dock" => Some(ctx.map_or(42.0, |ctx| {
+            let chrome = toolkit::chrome::Chrome::of(ctx);
+            chrome.style.icon_button as f32 + 2.0 * chrome.metrics.dock_margin
+        })),
         "design.options_height" => Some(ctx.map_or(42.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.bars.options
         })),

@@ -1,34 +1,13 @@
-# Workshop parity round 2 — in progress
+# Workshop parity round 3 — in progress
 
-W1 is resolved: pinned gold wins. Format matches gold JSON pretty-printing,
-65,536-byte body refusal and 1,000,000-byte UTF-8 reply bound. Gold/inventory
-disagreements are corrected without stopping. No deviation is proposed.
+Pinned gold: 8779f33284b7d3f1178c3d57a699efb9b0867b22. W1 follows gold; no proposed deviation. Shared frame, full Mix feature implementation, native panels, bounded traffic/Mesh, agents/macros and passive saved arrangement are implemented. Final native acceptance remains open.
 
-The shared frame checkpoint is committed (93c1578, receipt 47d91e1). The
-feature pass now includes the node/service/command tree, asynchronous discovery,
-raw native replies, deferred requests, macro storage and routing, agent session
-and transcript policy, bounded traffic, Mesh tallies and observation/probe wiring.
-Application policy remains in Mix; reusable native facilities share the existing
-in-process runtime and Bus connection. Full panels and feature acceptance remain
-in progress. Other jobs still own the shared editor and bulk primitives.
+CBC 20261107-085318-997cbc39-a1 passed at 442801a88f445642254804f92b45c45c6e2b8f58: Workshop and ports integration tests, native bridge/launch tests, all 72 scene tests and debug binary. Complete log: ~/.cache/mixos/cbc-build/20261107-085318-cbc2-442801a88f44-20261107-085318-997cbc39-a1-36e86fde.log. Returned formatting applied in this checkpoint. Earlier 20261107-084148-2f27ec84-a1 hit the known 100-row parse wall-clock flake; unchanged rerun 20261107-084321-bf2eb64e-a1 passed. No test relaxed.
 
-CBC 20261107-074633-c12acdca-a1 at 548c177 passed: five Viu integration tests,
-four native bridge tests and 72 scene tests; debug binary SHA-256
-0250265519b51d810aebaf3704b11be299d541171e86426d3128f2fe69d23cba.
-Earlier jobs: 20261107-065902-b38ad05a-a1 passed;
-20261107-071445-a62d3e27-a1 found compile errors subsequently fixed;
-20261107-073743-b4f1a848-a1 found a test reply outside a handler, fixed.
-The next gate includes every policy test in the embedded runtime and launch tests.
+Private evidence: ~/.viu/_var/workshop-parity-20261107/. Five paired native 1040×680 captures completed in pair-debug.lvTAIy (command/About/Shortcuts/Mesh/Agents), exact debug source 442801a. Header and status were already pixel-identical in the previous five-state run; content inspection found extra selection scrolling and a short collapsed Traffic dock, repaired in this checkpoint. These captures are diagnostic, not release acceptance.
 
-Private exploratory native smoke headless.sXZzWK passed on an owned noded:
-discovery, selection, Format, native fixture call/reply, macro/agent reads and
-clean shutdown. It used debug 548c177 with revised Mix sources and is diagnostic,
-not acceptance evidence. It exposed an unavailable sum() helper, now replaced
-with reduce(). Private artefacts: ~/.viu/_var/workshop-parity-20261107/.
+Native Bus run bus-cases.KJVSHu records 99 paired cases: 97 structured matches, action ordering repaired here; remaining traffic comparison includes true broker IDs and wall-clock timestamps requiring explicit field comparison. Includes null/type refusals, Format, UTF-8 limits, raw nonzero replies, observation provenance and quit. Full HELP descriptors match. All owned native processes stopped; closure receipts retained.
 
-Pending: complete Mesh/macro/agent presentation, saved arrangement, full Bus
-negative/race checks, exact release gate, live Prefs and matched captures/diffs.
-Pinned gold is 8779f33284b7d3f1178c3d57a699efb9b0867b22. No install/VT work.
-Overall NOT ACCEPTED; work continues without a Fable question.
+Open: regenerate/inspect all five content differences, native persistence restart checks, agent/macro panel interactions and full Bus cases, live Prefs matrix and authority recovery, exact release/full gate, final acceptance record. Shared native_document editor/new-macro field support awaits Opus merge of accepted shared editor checkpoint d665443 from lab/gold-parity; request sent while independent work continues. No desktop/VT/install changes.
 
-Branch lab/parity-workshop; head SHA 548c17772198257e73fb4ee7f071c31d49fffe5d (previous tested checkpoint; current checkpoint is the commit containing this record); features/Bus incomplete, headless diagnostic pass, Prefs pending, SSIM/regions unmeasured; CBC jobs 20261107-065902-b38ad05a-a1 PASS, 20261107-071445-a62d3e27-a1 fixed, 20261107-073743-b4f1a848-a1 fixed, 20261107-074633-c12acdca-a1 PASS.
+Branch lab/parity-workshop; head SHA 442801a88f445642254804f92b45c45c6e2b8f58 (tested code; current receipt commit contains pending repairs); OPEN content regions, native persistence/panels, full Bus/Prefs and release acceptance; CBC jobs 20261107-082936-25ef644a-a1 PASS, 20261107-084148-2f27ec84-a1 FLAKE, 20261107-084321-bf2eb64e-a1 PASS, 20261107-085318-997cbc39-a1 PASS.

@@ -40,7 +40,6 @@ fn select_row($s,$key)
   $r=$tree.find_row($s,$key)
   if $r==nil then return refused($s,"ARGUMENT","no row has that key") end
   $s.row_key=$key;$s.selection=$r.selection
-  $s.reveal_key=$key;$s.reveal_serial=$s.reveal_serial+1
   if $r.kind=="command" then $s.service=$r.selection.service;$s.command=$r.selection.command end
   if $r.kind!="macro" then $s.macro_selected=nil end
   if $r.kind=="macro" then $s=$macros.enqueue($s,"macros.open",{app:$r.app,id:$r.macro_id},nil) end

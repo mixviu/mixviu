@@ -40,13 +40,28 @@ impl Facilities {
             let commands = surface["commands"]
                 .as_array_mut()
                 .expect("validated Bus surface");
-            let mut native=Vec::new();
-            if manifest.native_ui {native.extend(toolkit::drive::describe(&app));}
-            if manifest.native_debug {native.extend(toolkit::debug::describe(&app));}
-            if manifest.native_macros {native.extend(macros::commands::describe(&app));}
-            let overrides:std::collections::BTreeMap<_,_>=commands.iter().filter(|c|native.iter().any(|n|n["name"]==c["name"])).map(|c|(c["name"].as_str().unwrap().to_owned(),c.clone())).collect();
-            commands.retain(|c|!overrides.contains_key(c["name"].as_str().unwrap()));
-            commands.extend(native.into_iter().map(|c|overrides.get(c["name"].as_str().unwrap()).cloned().unwrap_or(c)));
+            let mut native = Vec::new();
+            if manifest.native_ui {
+                native.extend(toolkit::drive::describe(&app));
+            }
+            if manifest.native_debug {
+                native.extend(toolkit::debug::describe(&app));
+            }
+            if manifest.native_macros {
+                native.extend(macros::commands::describe(&app));
+            }
+            let overrides: std::collections::BTreeMap<_, _> = commands
+                .iter()
+                .filter(|c| native.iter().any(|n| n["name"] == c["name"]))
+                .map(|c| (c["name"].as_str().unwrap().to_owned(), c.clone()))
+                .collect();
+            commands.retain(|c| !overrides.contains_key(c["name"].as_str().unwrap()));
+            commands.extend(native.into_iter().map(|c| {
+                overrides
+                    .get(c["name"].as_str().unwrap())
+                    .cloned()
+                    .unwrap_or(c)
+            }));
             let mut names = std::collections::BTreeSet::new();
             commands.retain(|c| names.insert(c["name"].as_str().unwrap_or_default().to_owned()));
         }
@@ -175,8 +190,15 @@ impl Facilities {
         }
     }
     pub fn request(&mut self, mut r: Request, ctx: &egui::Context) -> Option<Request> {
-        if self.surface.is_some() && !r.command.starts_with(&format!("{}.macros.",self.app)) && !r.args.is_object() {
-            let _=r.reply.send((10,json!({"error_code":"ARGUMENT","message":"arguments must be a JSON object"})));return None;
+        if self.surface.is_some()
+            && !r.command.starts_with(&format!("{}.macros.", self.app))
+            && !r.args.is_object()
+        {
+            let _ = r.reply.send((
+                10,
+                json!({"error_code":"ARGUMENT","message":"arguments must be a JSON object"}),
+            ));
+            return None;
         }
         // Empty native bodies are normalised by the transport adapter.
         if r.command == "app.describe" || r.command == "HELP" {

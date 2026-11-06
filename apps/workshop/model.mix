@@ -61,10 +61,9 @@ fn select_target($s,$target)
       $identity=$s.snapshot.identities[$target.service] ?? {}; $name=$identity.name ?? $target.service
       $s.row_key="command:"..$node.name..":"..$name..":"..$target.command
       if not contains($s.expanded,"node:"..$node.name) then $s.expanded=push($s.expanded,"node:"..$node.name) end
-      $s.reveal_key=$s.row_key;$s.reveal_serial=$s.reveal_serial+1;return $s
+      return $s
     end
   end
   $s.row_key="command:"..$target.service..":"..$target.command
-  $s.reveal_key=$s.row_key;$s.reveal_serial=$s.reveal_serial+1
   return $s
 end

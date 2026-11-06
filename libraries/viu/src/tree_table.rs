@@ -600,78 +600,100 @@ fn draw_outline(
     let area = egui::ScrollArea::vertical()
         .id_salt((id, "outline"))
         .auto_shrink([false, false]);
-    let mut draw=|ui:&mut Ui| {
-            for row in value["rows"].as_array().into_iter().flatten() {
-                let key = text(row, "key");
-                let response = ui.horizontal(|ui| {
-                    ui.add_space(number(row, "depth", 0.) * ui.spacing().indent);
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                    let colour = ui.visuals().text_color();
-                    if row["branch"] == true {
-                        let icon = if row["expanded"] == true {
-                            crate::icons::Icon::ChevronDown
-                        } else {
-                            crate::icons::Icon::ChevronRight
-                        };
-                        let toggle = ui.add(
-                            egui::Button::image(crate::icons::image_of(
-                                ui.ctx(),
-                                icon,
-                                14.,
-                                colour,
-                            ))
-                            .frame(false),
-                        );
-                        toggle.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,ui.is_enabled(),text(row,"toggle_label")));
-                        geometry.insert(format!("{id}.expand.{key}"), toggle.rect);
-                        if toggle.clicked() {
-                            emit(
-                                events,
-                                id,
-                                "expand",
-                                json!({"key":key,"open":row["expanded"]!=true}),
-                            );
-                        }
+    let mut draw = |ui: &mut Ui| {
+        for row in value["rows"].as_array().into_iter().flatten() {
+            let key = text(row, "key");
+            let response = ui.horizontal(|ui| {
+                ui.add_space(number(row, "depth", 0.) * ui.spacing().indent);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                let colour = ui.visuals().text_color();
+                if row["branch"] == true {
+                    let icon = if row["expanded"] == true {
+                        crate::icons::Icon::ChevronDown
                     } else {
-                        ui.add_space(14. + ui.spacing().item_spacing.x);
+                        crate::icons::Icon::ChevronRight
+                    };
+                    let toggle = ui.add(
+                        egui::Button::image(crate::icons::image_of(ui.ctx(), icon, 14., colour))
+                            .frame(false),
+                    );
+                    toggle.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Button,
+                            ui.is_enabled(),
+                            text(row, "toggle_label"),
+                        )
+                    });
+                    geometry.insert(format!("{id}.expand.{key}"), toggle.rect);
+                    if toggle.clicked() {
+                        emit(
+                            events,
+                            id,
+                            "expand",
+                            json!({"key":key,"open":row["expanded"]!=true}),
+                        );
                     }
-                    if let Some(icon) = row["icon"].as_str().and_then(crate::icons::Icon::from_name)
-                    {
-                        ui.add(crate::icons::image_of(
-                            ui.ctx(),
-                            icon,
-                            14.,
-                            ui.visuals().weak_text_color(),
-                        ));
+                } else {
+                    ui.add_space(14. + ui.spacing().item_spacing.x);
+                }
+                if let Some(icon) = row["icon"].as_str().and_then(crate::icons::Icon::from_name) {
+                    ui.add(crate::icons::image_of(
+                        ui.ctx(),
+                        icon,
+                        14.,
+                        ui.visuals().weak_text_color(),
+                    ));
+                }
+                let mut label = egui::RichText::new(row["cells"][0].as_str().unwrap_or(""));
+                if row["mono"] == true {
+                    label = label.monospace();
+                }
+                if row["bold"] == true {
+                    label = label.strong();
+                }
+                if row["weak"] == true {
+                    label = label.weak();
+                }
+                if row["error"] == true {
+                    label = label.color(ui.visuals().error_fg_color);
+                }
+                let r = toolkit::selectable(ui, row["selected"] == true, label)
+                    .on_hover_text(text(row, "tooltip"));
+                if widget.properties["reveal_row"] == key {
+                    let marker = ui.scope_id().with((id, "revealed"));
+                    let serial = widget.properties["reveal_serial"].clone();
+                    let changed = ui.ctx().data_mut(|d| {
+                        if d.get_temp::<Value>(marker).as_ref() != Some(&serial) {
+                            d.insert_temp(marker, serial);
+                            true
+                        } else {
+                            false
+                        }
+                    });
+                    if changed {
+                        r.scroll_to_me(Some(egui::Align::Center));
                     }
-                    let mut label = egui::RichText::new(row["cells"][0].as_str().unwrap_or(""));
-                    if row["mono"] == true {
-                        label = label.monospace();
-                    }
-                    if row["bold"]==true {label=label.strong();}
-                    if row["weak"] == true {
-                        label = label.weak();
-                    }
-                    if row["error"] == true {
-                        label = label.color(ui.visuals().error_fg_color);
-                    }
-                    let r = toolkit::selectable(ui, row["selected"] == true, label)
-                        .on_hover_text(text(row, "tooltip"));
-                    if widget.properties["reveal_row"]==key {
-                        let marker=ui.scope_id().with((id,"revealed"));let serial=widget.properties["reveal_serial"].clone();
-                        let changed=ui.ctx().data_mut(|d|{if d.get_temp::<Value>(marker).as_ref()!=Some(&serial){d.insert_temp(marker,serial);true}else{false}});
-                        if changed {r.scroll_to_me(Some(egui::Align::Center));}
-                    }
-                    geometry.insert(format!("{id}.key.{key}"), r.rect);
-                    if r.clicked() {
-                        emit(events, id, "select", json!({"key":key}));
-                    }
-                });
-                geometry.insert(format!("{id}.row.{key}"), response.response.rect);
-            }
-        };
-    let rect=if let Some(name)=widget.properties["saved_scroll"].as_str() {
-        toolkit::saved::widgets::scroll(ui,name,None,widget.properties["scroll_ready"]!=false,area,&mut draw).inner_rect
-    }else{area.show(ui,&mut draw).inner_rect};
+                }
+                geometry.insert(format!("{id}.key.{key}"), r.rect);
+                if r.clicked() {
+                    emit(events, id, "select", json!({"key":key}));
+                }
+            });
+            geometry.insert(format!("{id}.row.{key}"), response.response.rect);
+        }
+    };
+    let rect = if let Some(name) = widget.properties["saved_scroll"].as_str() {
+        toolkit::saved::widgets::scroll(
+            ui,
+            name,
+            None,
+            widget.properties["scroll_ready"] != false,
+            area,
+            &mut draw,
+        )
+        .inner_rect
+    } else {
+        area.show(ui, &mut draw).inner_rect
+    };
     ui.interact(rect, ui.scope_id().with((id, "outline")), Sense::hover())
 }
