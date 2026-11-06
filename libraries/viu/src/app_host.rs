@@ -559,7 +559,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
 
 pub fn run(args: Vec<String>) -> eframe::Result {
     if args.first().is_some_and(|p| p.ends_with(".mix")) {
-        std::process::exit(crate::macro_host::run(args[0].clone().into(), args[1..].to_vec()));
+        std::process::exit(crate::macro_host::run(
+            args[0].clone().into(),
+            args[1..].to_vec(),
+        ));
     }
     if args.first().map(String::as_str) != Some("run") || args.len() < 2 {
         eprintln!("usage: viu run APP_DIR [ARGS]");
