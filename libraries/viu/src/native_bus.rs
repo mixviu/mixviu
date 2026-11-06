@@ -205,7 +205,7 @@ impl Endpoint {
                     let (reply,response)=oneshot::channel();
                     let close_after_reply=Arc::new(AtomicBool::new(false));
                     let delivery=Arc::new(AtomicU8::new(0));
-                    let request=Request{from:command.from.clone(),command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
+                    let request=Request{from:command.from.clone(),command:command.command.clone(),args:if command.body.is_empty(){json!({})}else{command.args.clone()},headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
                     let admitted=tx.try_send(request).is_ok();
                     if admitted{wake();}
                     let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;

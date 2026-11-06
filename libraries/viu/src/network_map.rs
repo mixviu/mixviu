@@ -592,7 +592,11 @@ pub fn draw(
             label: plate,
         } = positions[i];
         let hit = Rect::from_center_size(at, Vec2::splat(radius * 2.5)).union(plate);
-        let r = ui.interact(hit, ui.scope_id().with((id, text(node, "id"))), Sense::click());
+        let r = ui.interact(
+            hit,
+            ui.scope_id().with((id, text(node, "id"))),
+            Sense::click(),
+        );
         r.widget_info(|| {
             egui::WidgetInfo::labeled(
                 egui::Role::Button,

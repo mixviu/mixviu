@@ -25,7 +25,7 @@ fn service_rows($s,$node)
     end
     if not $match and len($children)==0 then continue end
     if $found.Err!=nil then $child=row("error:"..$route,"error","Unavailable descriptions",[],$s);$child.error=$found.Err;push($children,$child) end
-    $r=row($key,"service",service_label($s,$route),$children,$s);$r.identity=$identity
+    $r=row($key,"service",service_label($s,$route),$children,$s);$r.identity=$s.snapshot.identities[$route];$r.route=$route
     if $s.selection!=nil and $s.selection.service==$route then $r.expanded=true end
     push($rows,$r)
   end
@@ -57,12 +57,24 @@ fn tree($s)
       for $ni=0 to len($rows[0].children)-1
         for $si=0 to len($rows[0].children[$ni].children)-1
           $service=$rows[0].children[$ni].children[$si]
-          if $service.kind=="service" and $service.identity.name==$app then
+          $described=$s.snapshot.services[$service.route ?? ""] ?? {}
+          if $service.kind=="service" and (($service.identity!=nil and $service.identity.name==$app) or any($described.Ok ?? [],fn($c)=$c.name==$app..".macros.list")) then
             $rows[0].children[$ni].children[$si].children=push($rows[0].children[$ni].children[$si].children,$r);$placed=true
+            break
           end
         end
+        if $placed then break end
       end
-      if not $placed then push($rows,$r) end
+      if not $placed then
+        for $ni=0 to len($rows[0].children)-1
+          $parent=$rows[0].children[$ni]
+          if $parent.kind=="node" and any($s.snapshot.nodes,fn($n)=$n.local and "node:"..$n.name==$parent.key) then
+            $service=row("service:"..strip_prefix($parent.key,"node:")..":"..$app,"service",$app,[$r],$s);$service.identity=nil
+            $rows[0].children[$ni].children=push($rows[0].children[$ni].children,$service);$placed=true;break
+          end
+        end
+        if not $placed then push($rows,$r) end
+      end
     end
   end
   return $rows
@@ -76,7 +88,7 @@ fn flatten_rows($rows,$depth,$visible)
   return $out
 end
 fn rows($s)
-  return map(flatten_rows(tree($s),0,true),fn($r)=delete(delete($r,"app"),"macro_id"))
+  return map(flatten_rows(tree($s),0,true),fn($r)=delete(delete(delete($r,"app"),"macro_id"),"route"))
 end
 fn find_row($s,$key)
   $found=filter(flatten_rows(tree($s),0,false),fn($r)=$r.key==$key)

@@ -642,6 +642,9 @@ impl SceneView {
                                 if node.family == "row" {
                                     if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) {
                                         ui.horizontal_wrapped(|ui| draw(ui));
+                                    } else if text(node,"justify")=="between" {
+                                        let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
+                                        ui.horizontal(|ui| {if let Some(first)=active.first(){self.node(ui,first,nodes,route,depth+1,events);ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{for child in active.iter().skip(1).rev(){self.node(ui,child,nodes,route,depth+1,events);}});}});
                                     } else if children(node).any(|child|nodes.get(child).is_some_and(|n|num(n,"grow").unwrap_or(0.)>0.)) {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
                                         let fixed:Vec<_>=active.iter().map(|child|{let n=&nodes[*child];if num(n,"grow").unwrap_or(0.)>0.{0.}else{num(n,"width").or(num(n,"min_width")).unwrap_or_else(||if n.family=="control"{Widget::decode(&n.ports["definition"]).and_then(|w|w.intrinsic_width(ui,&self.tree.model)).unwrap_or(0.)}else{0.})}}).collect();

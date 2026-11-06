@@ -14,14 +14,14 @@ fn bounded($body)
   return substr($body,0,$lo).."\n[Reply truncated at 1,000,000 bytes]"
 end
 fn format_body($body)
-  if byte_length($body)>65536 then return {ok:false,body:$body,status:"JSON body exceeds 65,536 bytes; edit refused"} end
+  if byte_length($body)>65536 then return {ok:false,body:$body,status:"Invalid JSON; no call sent: JSON body exceeds 65536 bytes"} end
   try
     if trim($body)!="" then $parsed=json_parse($body) end
     $formatted=pretty($body)
     if byte_length($formatted)>65536 then return {ok:false,body:$body,status:"JSON body exceeds 65,536 bytes; edit refused"} end
     return {ok:true,body:$formatted}
   catch $message
-    return {ok:false,body:$body,status:"Invalid JSON; no call sent: "..$message}
+    return {ok:false,body:$body,status:"Invalid JSON; no call sent: "..strip_prefix($message,"json_parse: ")}
   end
 end
 fn render($service,$command,$reply)

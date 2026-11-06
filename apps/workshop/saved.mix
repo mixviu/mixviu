@@ -56,7 +56,7 @@ fn reconcile($s)
       $found=$s.snapshot.services[$p.selected.service] ?? {}
       if any($found.Ok ?? [],fn($c)=$c.name==$p.selected.command) then $s.selection=$p.selected end
     end
-    $p.row_key=nil;$p.selected=nil;$p.shown=true
+    $p.row_key=nil;$p.selected=nil;$p.shown=true;$s.reveal_key=$s.row_key;$s.reveal_serial=$s.reveal_serial+1
   end
   if $s.snapshot.error==nil and $s.macro_pending==0 and $s.snapshot.progress!=nil and $s.snapshot.progress.finished then
     $s.expanded=filter($s.expanded,fn($k)=contains($keys,$k));$p.row_key=nil;$p.selected=nil;$p.done=true

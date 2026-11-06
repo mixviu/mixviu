@@ -174,10 +174,18 @@ impl Widget {
             );
         }
         self.validate_model(model)?;
-        if self.kind=="button" && ["primary","secondary"].contains(&self.text("style")) {
-            let chrome=toolkit::chrome::Chrome::of(ui.ctx());
-            let font=toolkit::fonts::bound(ui.ctx(),toolkit::fonts::medium(chrome.style.push_label_size as f32));
-            return Ok(ui.painter().layout_no_wrap(self.text("text").into(),font,Color32::PLACEHOLDER).size().x+chrome.style.button_push_padding as f32);
+        if self.kind == "button" && ["primary", "secondary"].contains(&self.text("style")) {
+            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+            let font = toolkit::fonts::bound(
+                ui.ctx(),
+                toolkit::fonts::medium(chrome.style.push_label_size as f32),
+            );
+            return Ok(ui
+                .painter()
+                .layout_no_wrap(self.text("text").into(), font, Color32::PLACEHOLDER)
+                .size()
+                .x
+                + chrome.style.button_push_padding as f32);
         }
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
@@ -694,7 +702,11 @@ impl Widgets {
                 }
             }
             "divider" => {
-                if widget.properties["axis"]=="horizontal" {let rect=toolkit::bars::hairline(ui);let r=ui.interact(rect,ui.make_persistent_id(id),Sense::hover());return self.remember(ui,id,&r);}
+                if widget.properties["axis"] == "horizontal" {
+                    let rect = toolkit::bars::hairline(ui);
+                    let r = ui.interact(rect, ui.make_persistent_id(id), Sense::hover());
+                    return self.remember(ui, id, &r);
+                }
                 toolkit::bars::divider(ui, ui.available_height().min(18.0));
                 ui.response()
             }
@@ -883,8 +895,14 @@ impl Widgets {
                 }
             }
             "button" => {
-                let r = if widget.properties["style"]=="icon" {
-                    ui.add(toolkit::button::IconButton::new(crate::icons::Icon::from_name(widget.text("icon")).expect("validated icon")).tooltip(&widget.label))
+                let r = if widget.properties["style"] == "icon" {
+                    ui.add(
+                        toolkit::button::IconButton::new(
+                            crate::icons::Icon::from_name(widget.text("icon"))
+                                .expect("validated icon"),
+                        )
+                        .tooltip(&widget.label),
+                    )
                 } else if widget.properties["style"] == "primary" {
                     ui.add(toolkit::button::PushButton::primary(widget.text("text")))
                 } else if widget.properties["style"] == "secondary" {
@@ -916,7 +934,11 @@ impl Widgets {
                 // cannot generate edits, even through keyboard/paste input.
                 let mut text = value.as_str().unwrap_or_default();
                 let rows = whole(&widget.properties["rows"]).unwrap_or(24) as f32;
-                let height = if widget.properties["fill_height"]==true {ui.available_height()}else{rows * ui.text_style_height(&egui::TextStyle::Monospace) + 8.0};
+                let height = if widget.properties["fill_height"] == true {
+                    ui.available_height()
+                } else {
+                    rows * ui.text_style_height(&egui::TextStyle::Monospace) + 8.0
+                };
                 let output = egui::ScrollArea::vertical()
                     .id_salt((id, "read-only"))
                     .max_height(height)

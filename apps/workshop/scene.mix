@@ -15,7 +15,7 @@ details:{widget:"column",scroll:true,scroll_key:"= $model.details_key",reserve_p
 "command-panel":{widget:"column",group_title:"Details",group_key:"details",hidden:"= !$model.show_command",background:"design.dock",padding:8,children:["description","details-divider","body-actions","body","reply-title","reply"],gap:6},
 description:{widget:"control",definition:{id:"description",kind:"label",label:"",initial:"",properties:{scroll_lines:6,max_bytes:8388608}}},
 "details-divider":{widget:"control",definition:{id:"details-divider",kind:"divider",label:"",initial:nil,properties:{axis:"horizontal"}}},
-"body-actions":{widget:"row",children:["body-title","clear","call"],gap:6},
+"body-actions":{widget:"row",justify:"between",children:["body-title","clear","call"],gap:6},
 "body-title":{widget:"control",grow:1,definition:{id:"body-title",kind:"label",label:"",initial:"JSON body (optional)",properties:{role:"section"}}},
 clear:{widget:"control",definition:"= $model.clear_button",on_intent:"workshop.intent"},
 call:{widget:"control",definition:"= $model.call_button",on_intent:"workshop.intent"},

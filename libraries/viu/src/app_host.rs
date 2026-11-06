@@ -284,11 +284,15 @@ impl Host {
                         Ok(json!({"replied":id}))
                     }),
                 "native.executed" => self.facilities.record(&request.args),
-                "native.saved" => self.saved.as_mut().ok_or("saved state is not enabled".into()).map(|saved| {
-                    saved.apply(&request.args);
-                    saved.tick(ctx,&self.app,false);
-                    saved.store.describe()
-                }),
+                "native.saved" => self
+                    .saved
+                    .as_mut()
+                    .ok_or("saved state is not enabled".into())
+                    .map(|saved| {
+                        saved.apply(&request.args);
+                        saved.tick(ctx, &self.app, false);
+                        saved.store.describe()
+                    }),
                 "native.bindings" => crate::shortcuts::resolve(&request.args),
                 "native.copy" => match request.args["text"]
                     .as_str()
@@ -405,7 +409,11 @@ impl Host {
                             }
                             self.ready = true;
                             self.model = model;
-                            if let Some(saved)=&mut self.saved { if saved.announced {saved.apply(&self.model);} }
+                            if let Some(saved) = &mut self.saved {
+                                if saved.announced {
+                                    saved.apply(&self.model);
+                                }
+                            }
                         }
                         Err(e) => self.error = e,
                     }
@@ -427,12 +435,21 @@ impl Host {
                 let _ = reply.send(answer);
             }
         }
-        if let Some(saved)=&mut self.saved {
+        if let Some(saved) = &mut self.saved {
             if self.ready && !saved.announced {
-                saved.store.widgets.install(ctx);saved.store.install_windows(ctx,&self.app);
-                if self.runtime.notify("viu.saved.loaded".into(),saved.notice()).is_ok(){saved.announced=true;}
+                saved.store.widgets.install(ctx);
+                saved.store.install_windows(ctx, &self.app);
+                if self
+                    .runtime
+                    .notify("viu.saved.loaded".into(), saved.notice())
+                    .is_ok()
+                {
+                    saved.announced = true;
+                }
             }
-            if saved.announced { saved.tick(ctx,&self.app,self.model["window_close"]==true); }
+            if saved.announced {
+                saved.tick(ctx, &self.app, self.model["window_close"] == true);
+            }
         }
         for _ in self.held_requests.len()..32 {
             match self.bus.requests.try_recv() {
@@ -717,10 +734,17 @@ impl Host {
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
-    let saved=bundle.manifest.saved_version.map(|v|crate::saved_state::Saved::load(bundle.manifest.app(),v,bundle.launch["headless"]==true));
-    let native_choice=saved.as_ref().map(|saved|{
-        let mut v=serde_json::to_value(&saved.store.window.theme).unwrap();v["caption_side"]=v["captions"].take();v
-    }).unwrap_or_else(||json!({}));
+    let saved = bundle.manifest.saved_version.map(|v| {
+        crate::saved_state::Saved::load(bundle.manifest.app(), v, bundle.launch["headless"] == true)
+    });
+    let native_choice = saved
+        .as_ref()
+        .map(|saved| {
+            let mut v = serde_json::to_value(&saved.store.window.theme).unwrap();
+            v["caption_side"] = v["captions"].take();
+            v
+        })
+        .unwrap_or_else(|| json!({}));
     let facilities = crate::app_facilities::Facilities::new(&bundle.manifest, wake.clone());
     let mut commands = bundle.manifest.commands.clone();
     if let Some(surface) = &facilities.surface {
@@ -930,13 +954,16 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         .and_then(|s| s["app_id"].as_str())
         .map(str::to_owned)
         .unwrap_or_else(|| format!("mixviu.{service}"));
-    let mut viewport=egui::ViewportBuilder::default()
-                .with_transparent(bundle.manifest.frame.is_some())
-                .with_decorations(bundle.manifest.frame.is_none())
-                .with_inner_size(size)
-                .with_app_id(app_id);
-    if let Some(version)=bundle.manifest.saved_version {
-        viewport=crate::saved_state::Saved::load(bundle.manifest.app(),version,false).store.window.viewport(viewport);
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_transparent(bundle.manifest.frame.is_some())
+        .with_decorations(bundle.manifest.frame.is_none())
+        .with_inner_size(size)
+        .with_app_id(app_id);
+    if let Some(version) = bundle.manifest.saved_version {
+        viewport = crate::saved_state::Saved::load(bundle.manifest.app(), version, false)
+            .store
+            .window
+            .viewport(viewport);
     }
     eframe::run_native(
         &title,

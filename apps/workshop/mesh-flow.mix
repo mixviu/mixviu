@@ -82,9 +82,10 @@ fn disconnect($s)
 end
 fn observed($s,$event)
   $a=$event.args.args;$headers=$event.headers
-  if $headers.type!="event" or $s.subscription==nil or $a.subscription_id!=$s.subscription then
+  if $headers.type!="event" or $s.subscription==nil or $headers.subscription_id!=$s.subscription then
     $s.ignored_observations=$counter.add($s.ignored_observations,1);return $s
   end
+  $a.subscription_id=$headers.subscription_id
   $a.dropped_count=$counter.extract($event.body,["args","dropped_count"])
   $s.mesh=$mesh.add_event($s.mesh,$a,$mesh.now_ms())
   $traffic=require("traffic.mix");$s=$traffic.observed($s,$a)

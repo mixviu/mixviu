@@ -201,15 +201,16 @@ fn received($s,$task,$d)
   if $d.rc!=0 then $transport=$d.body.transport_error ?? json_encode($d.body)
   else
     $code=$d.body.rc
-    try $body=$counter.decode($d.body.body) catch $why $body={message:$d.body.error ?? $d.body.body} end
+    try $body=$counter.decode($d.body.body) catch $why $body=nil end
   end
+  $data=if type($body)=="map" then $body else {} end
   if $task.acting then
-    if $transport!=nil then $body={error_code:"UNAVAILABLE",message:$transport};$code=10 end
+    if $transport!=nil then $body={error_code:"UNAVAILABLE",message:$transport};$data=$body;$code=10 end
     if $command=="agent.session.prompt" then $s.agents.prompting=false end
-    $s.agents.error=if $code!=0 then $body.message else nil end
-    if $code==0 and $command=="agent.session.new" and type($body.session)=="string" then
+    $s.agents.error=if $code!=0 then $data.message else nil end
+    if $code==0 and $command=="agent.session.new" and type($data.session)=="string" then
       for $key in ["agents","agents:node:"..$node] if not contains($s.expanded,$key) then $s.expanded=push($s.expanded,$key) end end
-      $s.row_key="agent:"..$node..":"..$body.session;$s=select_session($s,$node,$body.session)
+      $s.row_key="agent:"..$node..":"..$data.session;$s=select_session($s,$node,$data.session)
       if $task.reply==nil then $s.agents.new_cwd="" end
     end
     $work.answer($task.reply,$code,$body);$s=refresh_node($s,$node)
@@ -221,13 +222,13 @@ fn received($s,$task,$d)
     if $ticket!=$s.agents.read_ticket then return $s end
     $s.agents.read_ticket=nil
     if $transport!=nil or $code!=0 then
-      $s.agents.transcript.filling=false;$s.agents.error=if $transport!=nil then "agent.session.read: "..$transport else $body.message end;return $s
+      $s.agents.transcript.filling=false;$s.agents.error=if $transport!=nil then "agent.session.read: "..$transport else $data.message end;return $s
     end
-    $row=$body.session ?? {}
+    $row=$data.session ?? {}
     if type($row.session)!="string" or not selected($s,$node,$row.session) then return $s end
     $s=update_row($s,$node,session_row($row,$node));$before=$s.agents.transcript.seq
-    for $event in $body.events ?? [] $s.agents=$transcript.take_event($s.agents,$event) end
-    if $counter.compare($s.agents.transcript.seq,$before)>0 and ($body.more==true or $counter.compare($s.agents.transcript.seen,$s.agents.transcript.seq)>0) then return read_transcript($s) end
+    for $event in $data.events ?? [] $s.agents=$transcript.take_event($s.agents,$event) end
+    if $counter.compare($s.agents.transcript.seq,$before)>0 and ($data.more==true or $counter.compare($s.agents.transcript.seen,$s.agents.transcript.seq)>0) then return read_transcript($s) end
     $s.agents.transcript.seen=$s.agents.transcript.seq;$s.agents.transcript.filling=false;return $s
   end
   if ($command=="agent.session.list" and $entry.list_ticket!=$ticket) or ($command=="agent.agents" and $entry.instances_ticket!=$ticket) then return $s end
@@ -239,11 +240,11 @@ fn received($s,$task,$d)
     $s=node_answered($s,$node)
     if $command=="agent.agents" then $s.agents.nodes[$node].instances=$body
     elif $command=="agent.session.list" then
-      $rows=filter(map($body.sessions ?? [],fn($r)=session_row($r,$node)),fn($r)=$r!=nil)
+      $rows=filter(map($data.sessions ?? [],fn($r)=session_row($r,$node)),fn($r)=$r!=nil)
       $s.agents.nodes[$node].sessions=concat(filter($rows,fn($r)=$r.status!="ended"),filter($rows,fn($r)=$r.status=="ended"))
     end
   else
-    $message=$body.message ?? ("agentd answered rc "..to_string($code));$s.agents.nodes[$node].error=$message
+    $message=$data.message ?? ("agentd answered rc "..to_string($code));$s.agents.nodes[$node].error=$message
     if $code==10 and contains($message,"not found") then
       $s.agents.nodes[$node].available=false;$s.agents.nodes[$node].sessions=[];$s.agents.nodes[$node].instances=nil
     end
@@ -266,7 +267,7 @@ fn topic($s,$topic,$body)
   elif contains(["agent.session.ended","agent.permission.requested"],$topic) then $s=refresh_node($s,$node) end
   return $s
 end
-fn row_label($row) return $row.agent.." · "..basename($row.cwd) end
+fn row_label($row) return if $row.title!=nil then $row.title else $row.agent.." · "..basename($row.cwd) end end
 fn badge($row) return if $row.open_permissions>0 and $row.status!="ended" then "question" else $row.status end end
 fn make_row($s,$key,$kind,$label,$children)
   return {key:$key,kind:$kind,label:$label,children:$children,expanded:contains($s.expanded,$key),selected:$s.row_key==$key}

@@ -597,10 +597,10 @@ fn draw_outline(
     events: &mut Vec<Intent>,
 ) -> egui::Response {
     let id = &widget.id;
-    let rect = egui::ScrollArea::vertical()
+    let area = egui::ScrollArea::vertical()
         .id_salt((id, "outline"))
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
+        .auto_shrink([false, false]);
+    let mut draw=|ui:&mut Ui| {
             for row in value["rows"].as_array().into_iter().flatten() {
                 let key = text(row, "key");
                 let response = ui.horizontal(|ui| {
@@ -622,6 +622,7 @@ fn draw_outline(
                             ))
                             .frame(false),
                         );
+                        toggle.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,ui.is_enabled(),text(row,"toggle_label")));
                         geometry.insert(format!("{id}.expand.{key}"), toggle.rect);
                         if toggle.clicked() {
                             emit(
@@ -647,6 +648,7 @@ fn draw_outline(
                     if row["mono"] == true {
                         label = label.monospace();
                     }
+                    if row["bold"]==true {label=label.strong();}
                     if row["weak"] == true {
                         label = label.weak();
                     }
@@ -655,6 +657,11 @@ fn draw_outline(
                     }
                     let r = toolkit::selectable(ui, row["selected"] == true, label)
                         .on_hover_text(text(row, "tooltip"));
+                    if widget.properties["reveal_row"]==key {
+                        let marker=ui.scope_id().with((id,"revealed"));let serial=widget.properties["reveal_serial"].clone();
+                        let changed=ui.ctx().data_mut(|d|{if d.get_temp::<Value>(marker).as_ref()!=Some(&serial){d.insert_temp(marker,serial);true}else{false}});
+                        if changed {r.scroll_to_me(Some(egui::Align::Center));}
+                    }
                     geometry.insert(format!("{id}.key.{key}"), r.rect);
                     if r.clicked() {
                         emit(events, id, "select", json!({"key":key}));
@@ -662,7 +669,9 @@ fn draw_outline(
                 });
                 geometry.insert(format!("{id}.row.{key}"), response.response.rect);
             }
-        })
-        .inner_rect;
+        };
+    let rect=if let Some(name)=widget.properties["saved_scroll"].as_str() {
+        toolkit::saved::widgets::scroll(ui,name,None,widget.properties["scroll_ready"]!=false,area,&mut draw).inner_rect
+    }else{area.show(ui,&mut draw).inner_rect};
     ui.interact(rect, ui.scope_id().with((id, "outline")), Sense::hover())
 }
