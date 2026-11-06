@@ -441,7 +441,13 @@ fn native_entries(value: &Value) -> Vec<toolkit::menu::Entry> {
         .collect()
 }
 
-fn native_menu(ui: &mut Ui, value: &Value, id: &str, mark: Option<&str>, events: &mut Vec<Intent>) -> egui::Response {
+fn native_menu(
+    ui: &mut Ui,
+    value: &Value,
+    id: &str,
+    mark: Option<&str>,
+    events: &mut Vec<Intent>,
+) -> egui::Response {
     let menus: Vec<_> = value
         .as_array()
         .into_iter()
@@ -461,13 +467,25 @@ fn native_menu(ui: &mut Ui, value: &Value, id: &str, mark: Option<&str>, events:
         |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             let form = toolkit::menu::form(ui.ctx());
-            let hosted=form["hosted"]==true;
-            crate::native_menu::header_mark(ui,mark,hosted);
+            let hosted = form["hosted"] == true;
+            crate::native_menu::header_mark(ui, mark, hosted);
             let picked = if hosted {
-                let rect=ui.ctx().content_rect();
-                let side=toolkit::chrome::Chrome::of(ui.ctx()).menu_side;
-                let x=match side {design::MenuSide::Left=>rect.left(),design::MenuSide::Center=>rect.center().x,design::MenuSide::Right=>rect.right()};
-                toolkit::menu::data_picked_with_origin(ui,&menus,search.as_ref(),Some(egui::Rect::from_min_size(egui::pos2(x,rect.top()),egui::Vec2::ZERO)))
+                let rect = ui.ctx().content_rect();
+                let side = toolkit::chrome::Chrome::of(ui.ctx()).menu_side;
+                let x = match side {
+                    design::MenuSide::Left => rect.left(),
+                    design::MenuSide::Center => rect.center().x,
+                    design::MenuSide::Right => rect.right(),
+                };
+                toolkit::menu::data_picked_with_origin(
+                    ui,
+                    &menus,
+                    search.as_ref(),
+                    Some(egui::Rect::from_min_size(
+                        egui::pos2(x, rect.top()),
+                        egui::Vec2::ZERO,
+                    )),
+                )
             } else if form["effective"] == "bar" {
                 toolkit::menu::data_picked_with_origin(ui, &menus, search.as_ref(), None)
             } else {
@@ -510,13 +528,30 @@ pub(crate) fn draw(
     match widget.kind.as_str() {
         "settings-browser" => crate::settings_browser::draw(ui, id, value, geometry, events),
         "menubar" => {
-            if widget.properties["native_menu"] == true { return native_menu(ui, value, id, widget.properties["header_icon"].as_str(), events); }
-            let gold=widget.properties["style"]=="gold";
-            let form=if gold {toolkit::menu::form(ui.ctx())}else{menu_form(ui.ctx())};
-            let response=if form["hosted"]==true && !gold {
+            if widget.properties["native_menu"] == true {
+                return native_menu(
+                    ui,
+                    value,
+                    id,
+                    widget.properties["header_icon"].as_str(),
+                    events,
+                );
+            }
+            let gold = widget.properties["style"] == "gold";
+            let form = if gold {
+                toolkit::menu::form(ui.ctx())
+            } else {
+                menu_form(ui.ctx())
+            };
+            let response = if form["hosted"] == true && !gold {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else if widget.properties["style"] == "gold" {
-                let response = crate::native_menu::draw(ui, value, form["effective"] != "bar",widget.properties["header_icon"].as_str());
+                let response = crate::native_menu::draw(
+                    ui,
+                    value,
+                    form["effective"] != "bar",
+                    widget.properties["header_icon"].as_str(),
+                );
                 if let Some(command) = crate::native_menu::picked(ui.ctx()) {
                     emit(events, id, "command", command);
                 }
@@ -590,7 +625,19 @@ pub(crate) fn draw(
                         Some(toolkit::titlebar::IconBarItem {
                             command: crate::native_menu::native_id(ui.ctx(), item["id"].as_str()?)?,
                             icon: crate::icons::Icon::from_name(item["icon"].as_str()?)?,
-                            tooltip: item["shortcut"].as_str().and_then(toolkit::keymap::parse_chord).map_or_else(||text(item,"label").into(),|s|format!("{} ({})",text(item,"label"),ui.ctx().format_shortcut(&s))),
+                            tooltip: item["shortcut"]
+                                .as_str()
+                                .and_then(toolkit::keymap::parse_chord)
+                                .map_or_else(
+                                    || text(item, "label").into(),
+                                    |s| {
+                                        format!(
+                                            "{} ({})",
+                                            text(item, "label"),
+                                            ui.ctx().format_shortcut(&s)
+                                        )
+                                    },
+                                ),
                             enabled: item["enabled"] == true,
                             toggled: item["checked"] == true,
                         })
@@ -608,9 +655,20 @@ pub(crate) fn draw(
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         if widget.properties["style"] == "gold" {
-                            let chrome=toolkit::chrome::Chrome::of(ui.ctx());
-                            if chrome.band.actions.alignment()==design::title_band::Alignment::Left {
-                                let pad=if crate::window_frame::client_of(ui.ctx()) && chrome.captions.alignment(design::title_band::Alignment::Right)==design::title_band::Alignment::Left { chrome.metrics.caption_gap } else { chrome.metrics.title_bar_margin };
+                            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                            if chrome.band.actions.alignment()
+                                == design::title_band::Alignment::Left
+                            {
+                                let pad = if crate::window_frame::client_of(ui.ctx())
+                                    && chrome
+                                        .captions
+                                        .alignment(design::title_band::Alignment::Right)
+                                        == design::title_band::Alignment::Left
+                                {
+                                    chrome.metrics.caption_gap
+                                } else {
+                                    chrome.metrics.title_bar_margin
+                                };
                                 ui.add_space(pad);
                             }
                             ui.spacing_mut().item_spacing.x = toolkit::chrome::Chrome::of(ui.ctx())
@@ -758,7 +816,17 @@ pub(crate) fn draw(
                                     egui::Grid::new((id, "shortcuts")).show(ui, |ui| {
                                         for row in rows {
                                             ui.label(text(row, "label"));
-                                            let keys = row["keys"].as_array().map(|keys|keys.iter().filter_map(Value::as_str).filter_map(toolkit::keymap::parse_chord).map(|s|ui.ctx().format_shortcut(&s)).collect::<Vec<_>>().join(", ")).unwrap_or_else(||text(row,"shortcut").into());
+                                            let keys = row["keys"]
+                                                .as_array()
+                                                .map(|keys| {
+                                                    keys.iter()
+                                                        .filter_map(Value::as_str)
+                                                        .filter_map(toolkit::keymap::parse_chord)
+                                                        .map(|s| ui.ctx().format_shortcut(&s))
+                                                        .collect::<Vec<_>>()
+                                                        .join(", ")
+                                                })
+                                                .unwrap_or_else(|| text(row, "shortcut").into());
                                             ui.weak(keys);
                                             ui.end_row();
                                         }

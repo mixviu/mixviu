@@ -10,7 +10,7 @@ thread_local! {
 }
 
 /// The toolkit message `key`.
-pub(crate) fn own(key: &str) -> String {
+pub fn own(key: &str) -> String {
     OWN.with(|s| s.get(key))
 }
 

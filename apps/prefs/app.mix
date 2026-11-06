@@ -134,12 +134,14 @@ fn execute_origin($s,$id,$params,$origin)
     $r=$actions.selected($s)
     $s=if $r.installed!=nil then release_request($s,"releases.update",{apps:[$r.app]}) else release_request($s,"releases.install",{app:$r.app}) end
   elif $id=="view.mode" then $s=$actions.choose_theme($s,{mode:if $actions.theme_view($s).effective.mode=="light" then "dark" else "light" end})
+  elif starts_with($id,"view.section.") then $s=$nav.set_section($s,{name:substr($id,13)})
   elif starts_with($id,"view.") then
     $parts=split($id,".");$axis={theme:"scheme",style:"style",mode:"mode",decorations:"decorations",captions:"caption_side"}[$parts[1]]
     if $axis==nil then raise("UNKNOWN_COMMAND","Unknown theme action") end
     $choice={};$choice[$axis]=if $parts[2]=="session" then nil else $parts[2] end
     $s=$actions.choose_theme($s,$choice)
   else raise("UNKNOWN_COMMAND","Action implementation pending: "..$id) end
+  $s=enter_page($s)
   send "viu-local" "native.executed" body={id:$id,origin:$origin,params:if contains(["page.open","set","item"],$id) then $params else nil end,result:$pages.action_result($s,$id,$params)}
   $recorded=$rc
   return $s
@@ -162,6 +164,15 @@ fn gallery_action($s,$action,$value)
   $plan=$gallery.action($s,$action,$value);$s=$plan.state
   if len(keys($plan.changes))>0 then $s=queue_keys($s,$plan.changes) end
   return scan_gallery($s)
+end
+fn enter_page($s)
+  if $s.nav.page=="wallpaper" then
+    if not ($s.gallery.entered ?? false) and ($s.gallery.error!=nil or monotonic()-($s.gallery.scanned_at ?? 0)>=60) then $s.gallery.scanned=nil end
+    $s.gallery.entered=true;$s=scan_gallery($s)
+  else $s.gallery.entered=false end
+  if $s.nav.page=="email" and not ($s.email.queried ?? false) then $s.email.queried=true;$s=query_email($s)
+  elif $s.nav.page!="email" then $s.email.queried=false end
+  return $s
 end
 fn scan_gallery($s)
   $folder=$gallery.folder($s)
@@ -527,7 +538,7 @@ on prefs.intent
     $state=confirm_dialog($state,$a.value.choice);publish_prefs($state);reply(0,"{}");return
   end
   if $a.id=="browser" then
-    if $a.action=="navigate" then $state=$pages.open_page($state,$a.value.page,$a.value.row)
+    if $a.action=="navigate" then $state=enter_page($pages.open_page($state,$a.value.page,$a.value.row))
     elif $a.action=="query" then
       $state.nav.query=$a.value;$state.nav.searching=$a.value!="";$state.ui.search_focus=false
     elif $a.action=="drawer.close" then $state.nav.drawer=nil

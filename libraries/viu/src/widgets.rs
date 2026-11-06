@@ -106,12 +106,43 @@ impl Widget {
         if self.kind == "menubar" && self.properties["style"] == "gold" {
             let c = toolkit::chrome::Chrome::of(ui.ctx());
             let form = toolkit::menu::form(ui.ctx());
-            if form["hosted"] == true { return Ok(0.0); }
+            if form["hosted"] == true {
+                return Ok(0.0);
+            }
             let width = if form["effective"] == "bar" {
-                self.value(model).as_array().into_iter().flatten().map(|menu|ui.painter().layout_no_wrap(menu["label"].as_str().unwrap_or("").into(), toolkit::chrome::Chrome::menu_font(ui.style()),c.palette.text).size().x+2.0*c.metrics.menu_title_padding.x).sum()
-            } else { c.style.icon_button as f32 };
-            let mark = if crate::window_frame::client_of(ui.ctx()) && self.properties["header_icon"].is_string() { c.metrics.mark+c.metrics.mark_gap } else { 0.0 };
-            return Ok(width + mark + if c.menu_side != design::MenuSide::Center { c.metrics.title_bar_margin } else { 0.0 });
+                self.value(model)
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|menu| {
+                        ui.painter()
+                            .layout_no_wrap(
+                                menu["label"].as_str().unwrap_or("").into(),
+                                toolkit::chrome::Chrome::menu_font(ui.style()),
+                                c.palette.text,
+                            )
+                            .size()
+                            .x
+                            + 2.0 * c.metrics.menu_title_padding.x
+                    })
+                    .sum()
+            } else {
+                c.style.icon_button as f32
+            };
+            let mark = if crate::window_frame::client_of(ui.ctx())
+                && self.properties["header_icon"].is_string()
+            {
+                c.metrics.mark + c.metrics.mark_gap
+            } else {
+                0.0
+            };
+            return Ok(width
+                + mark
+                + if c.menu_side != design::MenuSide::Center {
+                    c.metrics.title_bar_margin
+                } else {
+                    0.0
+                });
         }
         if self.kind == "command-bar" && self.properties["style"] == "gold" {
             if toolkit::titlebar::hosting::hosted(ui.ctx()) {
@@ -724,9 +755,17 @@ impl Widgets {
             "label" => {
                 let text = label_text(ui, widget, value);
                 if widget.properties["role"] == "title" {
-                    let (rect,response)=ui.allocate_exact_size(ui.available_size_before_wrap(),Sense::hover());
-                    let chrome=toolkit::chrome::Chrome::of(ui.ctx());
-                    toolkit::titlebar::window_title(ui,&chrome,value.as_str().unwrap_or(""),rect,rect.left()+chrome.metrics.title_gap,rect.right()-chrome.metrics.title_gap);
+                    let (rect, response) =
+                        ui.allocate_exact_size(ui.available_size_before_wrap(), Sense::hover());
+                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    toolkit::titlebar::window_title(
+                        ui,
+                        &chrome,
+                        value.as_str().unwrap_or(""),
+                        rect,
+                        rect.left() + chrome.metrics.title_gap,
+                        rect.right() - chrome.metrics.title_gap,
+                    );
                     response.widget_info(|| {
                         egui::WidgetInfo::labeled(
                             egui::Role::Label,

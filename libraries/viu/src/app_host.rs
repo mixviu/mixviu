@@ -491,8 +491,7 @@ impl Host {
             }
         }
         if let Some(deadline) = self.deferred_replies.values().map(|(_, at, _)| *at).min() {
-            ctx
-                .request_repaint_after(deadline.saturating_duration_since(Instant::now()));
+            ctx.request_repaint_after(deadline.saturating_duration_since(Instant::now()));
         }
         for _ in 0..32 {
             if toolkit::drive::pending(ctx) || !self.drive_answers.is_empty() {
@@ -566,9 +565,16 @@ impl Host {
                             self.session_key = refresh_key.cloned().unwrap_or(Value::Null);
                             use settings::view::View;
                             if snapshot["state"]["lost"] != true {
-                                if let Ok(values) = serde_json::from_value::<settings::registry::Values>(snapshot["state"]["values"].clone()) {
-                                    let keymap = settings::view::Keymaps::of(&values).app(&self.service);
-                                    let _ = self.runtime.notify("viu.keymap.changed".into(), json!(keymap));
+                                if let Ok(values) =
+                                    serde_json::from_value::<settings::registry::Values>(
+                                        snapshot["state"]["values"].clone(),
+                                    )
+                                {
+                                    let keymap =
+                                        settings::view::Keymaps::of(&values).app(&self.service);
+                                    let _ = self
+                                        .runtime
+                                        .notify("viu.keymap.changed".into(), json!(keymap));
                                 }
                             }
                             self.last_ui = common_ui;
