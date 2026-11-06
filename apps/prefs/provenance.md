@@ -17,6 +17,12 @@ The pinned canonical `prefs.search` returns `{query, hits}` with page/row
 targets. The older section search helper and prose describing `matches`
 are superseded by this handler. Search does not alter window state.
 
+`menus.json` preserves the pinned native public menu readback (titles, rows,
+separators, shortcuts and theme submenus). Mix supplies current enablement and
+checks from its action registry; the reusable native toolkit draws it and
+answers menu queries with the original command identities. The generic host
+leaves explicitly declared HELP replies to the application.
+
 Specialised Terminal, Ced, Email, Software and wallpaper composition and
 reducers follow the same pinned engine's terminal, text, email, store,
 appearance and wallpaper modules and native shell/view code. Pending controls
