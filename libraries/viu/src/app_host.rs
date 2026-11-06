@@ -1189,15 +1189,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
                 .filter_map(|c| c["name"].as_str().map(str::to_owned)),
         );
     }
-    if bundle.manifest.native_drive {
-        commands.extend(
-            toolkit::drive::COMMANDS
-                .iter()
-                .map(|suffix| format!("{service}.{suffix}")),
-        );
-        commands.push(format!("{service}.debug"));
-        commands.extend(["set", "recent"].map(|suffix| format!("{service}.debug.{suffix}")));
-    }
+    let app = bundle.manifest.app();
+    commands.extend(toolkit::drive::COMMANDS.map(|suffix| format!("{app}.{suffix}")));
+    commands.extend(macros::commands::SUFFIXES.map(|suffix| format!("{app}.macros.{suffix}")));
+    commands.extend(["debug", "debug.set", "debug.recent"].map(|suffix| format!("{app}.{suffix}")));
     commands.extend(
         [
             "viu.state",
