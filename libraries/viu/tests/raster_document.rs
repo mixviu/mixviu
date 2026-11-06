@@ -142,6 +142,6 @@ fn image_canvas_admission_rejects_invalid_gestures_and_tracks_live_enabled_state
 #[test]
 fn scene_normalized_integral_control_data_keeps_its_native_types() {
     let widget = viu::widgets::Widget::decode(&json!({"id":"inks","kind":"swatches","label":"Colour","initial":[194.0,23.0,37.0,255.0],"properties":{"items":[{"id":"red","label":"Red","colour":[194.0,23.0,37.0,255.0]}]}})).unwrap();
-    assert_eq!(widget.initial, json!([194,23,37,255]));
+    assert_eq!(widget.initial, json!([194, 23, 37, 255]));
     assert!(viu::widgets::Widget::decode(&json!({"id":"inks","kind":"swatches","label":"Colour","initial":[194.5,23.0,37.0,255.0],"properties":{"items":[]}})).is_err());
 }

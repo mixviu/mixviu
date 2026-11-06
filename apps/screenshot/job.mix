@@ -30,15 +30,17 @@ fn capture_image($a)
     $deadline=monotonic()+$r.delay
     while monotonic()<$deadline check_cancelled();sleep(min(0.05,max(0,$deadline-monotonic()))) end
     check_cancelled()
-    send $a.comp "comp.window.wait" body={match:{app_id:"dev.mixos.screenshot"},until:"mapped",timeout_ms:10000} timeout=12
-    if $rc!=0 then raise("FAILED",to_string($result)) end
-    send $a.comp "comp.windows.list" body={} timeout=5
-    if $rc!=0 then raise("FAILED",to_string($result)) end
-    $rows=filter($reply.windows,fn($w)=$w.app_id=="dev.mixos.screenshot" and $w.pid==$a.pid)
-    if len($rows)!=1 then raise("FAILED","own window is not mapped") end
-    $own={id:$rows[0].id,generation:$rows[0].generation}
-    send $a.comp "comp.window.minimize" body=$own timeout=5
-    if $rc!=0 or $reply.minimized!=true then raise("FAILED","Compositor did not confirm minimisation") end
+    if $a.hide then
+      send $a.comp "comp.window.wait" body={match:{app_id:"dev.mixos.screenshot"},until:"mapped",timeout_ms:10000} timeout=12
+      if $rc!=0 then raise("FAILED",to_string($result)) end
+      send $a.comp "comp.windows.list" body={} timeout=5
+      if $rc!=0 then raise("FAILED",to_string($result)) end
+      $rows=filter($reply.windows,fn($w)=$w.app_id=="dev.mixos.screenshot" and $w.pid==$a.pid)
+      if len($rows)!=1 then raise("FAILED","own window is not mapped") end
+      $own={id:$rows[0].id,generation:$rows[0].generation}
+      send $a.comp "comp.window.minimize" body=$own timeout=5
+      if $rc!=0 or $reply.minimized!=true then raise("FAILED","Compositor did not confirm minimisation") end
+    end
     check_cancelled()
     $frame={path:$a.path,cursor:$r.cursor}
     if $r.mode=="window" then $frame.window=$r.window
@@ -102,7 +104,7 @@ on job.run
         $out.clipboard=$copy.body
       end
     else raise("FAILED","Unknown work operation") end
-    if $out.rc==0 and contains(["capture","open"],$out.op) then
+    if $out.rc==0 and $a.hide and contains(["capture","open"],$out.op) then
       try
         $rendered=viu_document("export",{handle:$out.handle,path:$a.preview});$out.preview=$a.preview
       catch $message

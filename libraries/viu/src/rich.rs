@@ -148,7 +148,7 @@ fn entries(value: &Value, depth: usize, ids: &mut BTreeSet<String>) -> Result<()
         }
         if let Some(icon) = entry["icon"].as_str() {
             if crate::icons::Icon::from_name(icon).is_none() {
-                return Err("unknown command icon".into());
+                return Err(format!("unknown command icon {icon}"));
             }
         }
         if entry.get("children").is_some() {

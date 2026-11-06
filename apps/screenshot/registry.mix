@@ -6,7 +6,7 @@ $tools=["select","crop","arrow","line","rectangle","ellipse","pen","highlighter"
 $inks={"amber":[199,150,0,255],"black":[0,38,49,255],"green":[0,104,24,255],"red":[194,23,37,255],"teal":[0,111,135,255],"white":[243,250,252,255]}
 $widths={thin:2,medium:4,thick:8,heavy:16}
 $sizes={small:16,medium:24,large:40,huge:64}
-$icons={"file.open":"folder-open","file.save":"save","file.copy":"copy","capture.take":"camera","capture.mode.region":"square-dashed","capture.mode.screen":"monitor","capture.mode.window":"app-window","tool.select":"mouse-pointer-2","tool.crop":"crop","tool.arrow":"move-up-right","tool.line":"minus","tool.rectangle":"square","tool.ellipse":"circle","tool.pen":"pencil","tool.highlighter":"highlighter","tool.redact":"eye-off","tool.text":"type","tool.number":"hash","edit.undo":"undo-2","edit.redo":"redo-2","edit.delete_selected":"trash-2","help.macros":"scroll-text","help.shortcuts":"keyboard","view.mode":"sun"}
+$icons={"file.open":"folder-open","file.save":"save","file.copy":"copy","capture.take":"camera","capture.mode.region":"square-dashed","capture.mode.screen":"monitor","capture.mode.window":"app-window","tool.select":"mouse-pointer-2","tool.crop":"crop","tool.arrow":"move-up-right","tool.line":"minus","tool.rectangle":"square","tool.ellipse":"circle","tool.pen":"pencil","tool.highlighter":"highlighter","tool.redact":"eye-off","tool.text":"type","tool.number":"hash","edit.undo":"undo-2","edit.redo":"redo-2","edit.delete_selected":"trash","help.macros":"scroll-text","help.shortcuts":"keyboard","view.mode":"sun"}
 fn reason($s,$id)
   $modal=$s.ui.dialog!=nil;$doc=$s.document!=nil
   $idle=not $s.busy and not $modal and not $s.quitting
@@ -20,7 +20,8 @@ fn reason($s,$id)
     return nil
   end
   $enabled=true
-  if $id=="file.open" then $enabled=$idle
+  if $id=="file.open" then $enabled=$idle and not ($s.headless ?? false)
+  elif $id=="file.save_as" then $enabled=$editable and not ($s.headless ?? false)
   elif contains(["file.save","file.save_as","file.copy"],$id) then $enabled=$editable
   elif $id=="file.quit" then $enabled=not $modal and not $s.quitting
   elif $id=="edit.delete_selected" then $enabled=$editable and $s.ui.selected!=nil
@@ -33,8 +34,8 @@ fn reason($s,$id)
   elif starts_with($id,"capture.") then $enabled=not $modal
   elif starts_with($id,"tool.") or contains(["view.zoom_in","view.zoom_out","view.fit"],$id) then $enabled=$doc and not $modal
   elif starts_with($id,"annotate.") or starts_with($id,"view.") then $enabled=not $modal
-  elif contains(["help.shortcuts","help.about"],$id) then $enabled=$idle
-  elif $id=="help.macros" then $enabled=$s.ui.macros_open or not $modal
+  elif contains(["help.shortcuts","help.about"],$id) then $enabled=$idle and not ($s.headless ?? false)
+  elif $id=="help.macros" then $enabled=$s.ui.macros_open or not $modal and not ($s.headless ?? false)
   end
   return if $enabled then nil else "disabled" end
 end

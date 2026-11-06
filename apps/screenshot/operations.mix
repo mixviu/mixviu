@@ -27,6 +27,7 @@ fn work($s,$payload,$hold)
   if contains(["capture","open"],$payload.op) then $s.after=nil end
   $s.job=if $payload.op=="export" then "save" else $payload.op end
   $payload.pid=pid();$payload.comp=$s.comp
+  $payload.hide=not ($s.headless ?? false)
   $payload.preview=path_join($s.raw,"preview-"..to_string(pid()).."-"..to_string($s.serial)..".png")
   $path=path_join(dirname(script_path()),"job.mix")
   send "viu-local" "jobs.start" body={id:"screenshot-work",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:$payload,timeout:180}
@@ -35,6 +36,7 @@ fn work($s,$payload,$hold)
   return $s
 end
 fn render($s)
+  if $s.headless ?? false then return $s end
   $s.revision=($s.revision ?? 0)+1
   if $s.rendering ?? false then return $s end
   if $s.handle==nil then return $s end
@@ -249,7 +251,7 @@ fn dispatch($s,$command,$a)
     if contains(["screenshot.ping","screenshot.info","screenshot.cancel","screenshot.undo","screenshot.redo","screenshot.save","screenshot.actions","screenshot.show","screenshot.quit"],$command) and len(keys($a))>0 then raise("ARGUMENT","this command takes an empty object") end
     if $command=="HELP" then $body=json_parse(read_file(path_join(dirname(script_path()),"surface.json"))).commands
     elif $command=="app.describe" then $body=json_parse(read_file(path_join(dirname(script_path()),"surface.json")))
-    elif $command=="screenshot.ping" then $body={schema:"screenshot.v1",version:"0.1.2",comp:$s.comp,headless:false}
+    elif $command=="screenshot.ping" then $body={schema:"screenshot.v1",version:"0.1.2",comp:$s.comp,headless:$s.headless ?? false}
     elif $command=="screenshot.info" then $body=$state.info($s)
     elif $command=="screenshot.actions" then $body={actions:$registry.describe($s)}
     elif $command=="screenshot.recent" then
@@ -266,6 +268,7 @@ fn dispatch($s,$command,$a)
     elif $command=="screenshot.execute" then
       $state.check_fields($a,["id","params"])
       if type($a.id)!="string" then raise("ARGUMENT","expected command id") end
+      if ($s.headless ?? false) and contains(["file.open","file.save_as","help.about","help.shortcuts","help.macros"],$a.id) then raise("HEADLESS","A headless instance has no window") end
       $r=execute($s,$a.id,$a.params,false);$s=$r.state;$body={executed:$a.id,result:$r.result,status:$s.status,dialog:$s.ui.dialog,job:$s.job}
     elif $command=="screenshot.take" then
       $state.check_fields($a,["mode","window","comp","region"])
@@ -280,6 +283,7 @@ fn dispatch($s,$command,$a)
       if $s.ui.dialog!=nil then $body={state:"asking"}
       elif $s.busy then $s.status=if $s.job=="capture" then "Capture in progress" else "Another operation is still running" end;$body={state:"in_progress",job:$s.job}
       else
+        if ($s.headless ?? false) and $s.document!=nil and $s.document.dirty then raise("UNSAVED","Save or undo the unsaved annotations first") end
         $r=capture_request($s,$mode)
         if has_key($a,"window") then $r.window=$a.window end
         if has_key($a,"region") then $r.region=$a.region;if $a.region.output!=nil then $r.output=$a.region.output end end
@@ -294,6 +298,7 @@ fn dispatch($s,$command,$a)
         if $a.open==nil then $s.ui.dialog=nil;$s.after=nil
         else
           if not contains(["about","shortcuts"],$a.open) then raise("ARGUMENT","open must be about, shortcuts or null") end
+          if $s.headless ?? false then raise("HEADLESS","A headless instance has no window") end
           $state.idle($s);$s=open_dialog($s,$a.open)
         end
       elif has_key($a,"answer") then $s=answer($s,$a)
@@ -316,7 +321,9 @@ fn dispatch($s,$command,$a)
         if $command=="screenshot.export" then $state.check_fields($a,["path"]);$path=$state.path($a.path) end
         $s=save($s,$path,true);$deferred=true
       elif $command=="screenshot.select" then $s=select_ui($s,$a);$body={ui:$s.ui}
-      elif $command=="screenshot.show" then $s=work($s,{op:"show"},true);$deferred=true
+      elif $command=="screenshot.show" then
+        if $s.headless ?? false then raise("HEADLESS","A headless instance has no window") end
+        $s=work($s,{op:"show"},true);$deferred=true
       elif $command=="screenshot.quit" then $state.clean($s);$s.quitting=true;$s.close_after=true;$body={quitting:true}
       elif $command=="screenshot.targets" then $s=refresh($s);$body={windows:$s.windows,outputs:$s.outputs}
       else raise("UNKNOWN_COMMAND","unknown screenshot command") end

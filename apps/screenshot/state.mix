@@ -8,7 +8,7 @@ fn initial($comp,$folder,$raw)
   return {comp:$comp,folder:$folder ?? $storage.screenshots_directory(),state_dir:$state_dir,raw:$raw,status:"Ready",document:nil,handle:nil,source:nil,saved:nil,capture:nil,capture_file:nil,preview:nil,windows:[],outputs:[],windows_error:nil,busy:false,job:nil,serial:0,own:nil,restore_failed:false,pending:nil,pending_reply:nil,quitting:false,close_after:false,connected:true,look:{scheme:nil,mode:nil,style:nil,decorations:nil,captions:nil},effective:{scheme:"studio",mode:"dark"},keymap:{},ui:{macros_open:false,tool:"arrow",colour:[194,23,37,255],width:4,text:"",text_size:24,zoom:1,pan:{x:0,y:0},mode:"region",delay:0,cursor:false,output:nil,window:nil,dialog:nil,path:"",selected:nil}}
 end
 fn info($s)
-  return {schema:"screenshot.v1",app_id:"dev.mixos.screenshot",version:"0.1.2",pid:pid(),headless:false,connected:$s.connected,comp:$s.comp,busy:$s.busy,job:$s.job,status:$s.status,document:$s.document,source:$s.source,saved:$s.saved,capture:$s.capture,windows:$s.windows,outputs:$s.outputs,windows_error:$s.windows_error,ui:$s.ui}
+  return {schema:"screenshot.v1",app_id:"dev.mixos.screenshot",version:"0.1.2",pid:pid(),headless:$s.headless ?? false,connected:$s.connected,comp:$s.comp,busy:$s.busy,job:$s.job,status:$s.status,document:$s.document,source:$s.source,saved:$s.saved,capture:$s.capture,windows:$s.windows,outputs:$s.outputs,windows_error:$s.windows_error,ui:$s.ui}
 end
 fn idle($s)
   if $s.quitting then raise("BUSY","Screenshot is closing") end

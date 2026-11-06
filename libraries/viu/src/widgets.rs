@@ -58,13 +58,23 @@ pub struct Widget {
 fn native_numbers(value: &Value) -> Value {
     match value {
         Value::Number(n) if n.is_f64() => {
-            let n=n.as_f64().unwrap();
-            if n.fract()==0.0 && n.abs()<=9_007_199_254_740_991.0 {
-                if n>=0.0 {json!(n as u64)} else {json!(n as i64)}
-            } else {value.clone()}
-        },
+            let n = n.as_f64().unwrap();
+            if n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0 {
+                if n >= 0.0 {
+                    json!(n as u64)
+                } else {
+                    json!(n as i64)
+                }
+            } else {
+                value.clone()
+            }
+        }
         Value::Array(a) => Value::Array(a.iter().map(native_numbers).collect()),
-        Value::Object(o) => Value::Object(o.iter().map(|(k,v)|(k.clone(),native_numbers(v))).collect()),
+        Value::Object(o) => Value::Object(
+            o.iter()
+                .map(|(k, v)| (k.clone(), native_numbers(v)))
+                .collect(),
+        ),
         _ => value.clone(),
     }
 }

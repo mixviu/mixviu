@@ -4,6 +4,8 @@
 $states=require("state.mix");$op=require("operations.mix");$events=require("events.mix");$model=require("model.mix")
 $ctx=viu_context()
 $state=$states.initial($app_args[0] ?? env("MIXOS_COMP_SERVICE","comp"),$app_args[1],$app_args[2])
+$options=$ctx.options ?? {}
+$state.headless=$options.headless ?? false
 $state=$op.refresh($state)
 fn publish_model($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model.render($s)}

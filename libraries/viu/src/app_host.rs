@@ -15,6 +15,7 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    headless: bool,
     session: Option<crate::session::Session>,
     session_appearance: Option<Value>,
     session_window: Option<Value>,
@@ -115,6 +116,10 @@ impl Host {
         if let Some(prefix) = &self.drive {
             if let Some(command) = r.command.strip_prefix(&format!("{prefix}.")) {
                 if toolkit::drive::COMMANDS.contains(&command) {
+                    if self.headless {
+                        let _ = r.reply.send((10,json!({"error_code":"HEADLESS","message":"A headless instance has no window"})));
+                        return;
+                    }
                     self.drive_sequence += 1;
                     let id = self.drive_sequence;
                     if command == "window" && r.args["action"] == "close" {
@@ -596,7 +601,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let declared = commands.iter().cloned().collect();
     let bus = Endpoint::start(
         service,
-        std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
+        bundle.manifest.url.clone().unwrap_or_else(||std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into())),
         commands
             .into_iter()
             .map(|name| bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false))
@@ -617,6 +622,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let services = crate::runtime::Services {
         clipboard: Some(clipboard),
         macros: Some(macros.clone()),
+        options: json!({"headless":bundle.manifest.surface=="headless"}),
         ..Default::default()
     };
     jobs.set_services(services.clone());
@@ -632,6 +638,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        headless: bundle.manifest.surface=="headless",
         drive: bundle.manifest.drive.clone(),
         drive_pending: BTreeMap::new(),
         drive_sequence: 0,
@@ -696,6 +703,25 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         eprintln!("viu: {e}");
         std::process::exit(2)
     });
+    if bundle.manifest.surface == "headless" {
+        let ctx=egui::Context::default();
+        crate::appearance::install(&ctx);
+        let (tx,rx)=std::sync::mpsc::sync_channel(1);
+        let wake: crate::runtime::Wake=Arc::new(move || {let _=tx.try_send(());});
+        let repaint=wake.clone();
+        ctx.set_request_repaint_callback(move |_| repaint());
+        let size=bundle.manifest.size;
+        let mut host=create(bundle,wake);
+        loop {
+            ctx.run_ui(egui::RawInput {screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(size[0],size[1]))),..Default::default()},|ui|host.frame(ui)).drop_without_applying_deltas();
+            if host.bus.close_requested.load(std::sync::atomic::Ordering::Acquire)
+                || host.model["window_close"]==true && host.wire_deliveries.is_empty() && host.pending.is_empty() {
+                break;
+            }
+            let _=rx.recv_timeout(Duration::from_millis(100));
+        }
+        return Ok(());
+    }
     if bundle.manifest.surface == "background" {
         let mut options = crate::layer::LayerOptions::background(&bundle.manifest.service);
         options.exclusive_zone = 0;

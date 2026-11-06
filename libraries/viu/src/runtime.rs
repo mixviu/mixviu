@@ -27,6 +27,7 @@ pub struct Services {
     pub chooser: Option<crate::chooser::Service>,
     pub documents: crate::annotation::Documents,
     pub clipboard: Option<crate::clipboard::Clipboard>,
+    pub options: Json,
 }
 
 // Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
@@ -228,9 +229,10 @@ impl Runtime {
                         eval.register("viu_reply", mix::sync_ext(move |args| replies.reply_handle(args)));
                         if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
+                        let options=services.options.clone();
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
-                            "loader": "viu-local", "host": "viu-local"
+                            "loader": "viu-local", "host": "viu-local", "options":options
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));

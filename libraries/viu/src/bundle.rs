@@ -16,6 +16,7 @@ pub struct Manifest {
     pub frame: Option<String>,
     pub app_id: Option<String>,
     pub drive: Option<String>,
+    pub url: Option<String>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -30,6 +31,7 @@ impl Default for Manifest {
             frame: None,
             app_id: None,
             drive: None,
+            url: None,
         }
     }
 }
@@ -41,9 +43,16 @@ pub struct Bundle {
 }
 impl Bundle {
     pub fn load(root: &Path, args: &[String]) -> Result<Self, String> {
+        #[derive(Default, Deserialize)]
+        #[serde(default, deny_unknown_fields)]
+        struct Options { service: Option<String>, surface: Option<String>, url: Option<String> }
+        let (options,args) = if args.first().is_some_and(|s|s=="--host-options") {
+            let options: Options=serde_json::from_str(args.get(1).ok_or("host options require JSON")?).map_err(|e|e.to_string())?;
+            (options,&args[2..])
+        } else {(Options::default(),args)};
         let root = root.canonicalize().map_err(|e| e.to_string())?;
         let path = root.join("contract.json");
-        let manifest: Manifest = if path.exists() {
+        let mut manifest: Manifest = if path.exists() {
             let value: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(path).map_err(|e| e.to_string())?)
                     .map_err(|e| e.to_string())?;
@@ -57,6 +66,9 @@ impl Bundle {
         } else {
             Manifest::default()
         };
+        if let Some(service)=options.service {manifest.service=service;}
+        if let Some(surface)=options.surface {manifest.surface=surface;}
+        if let Some(url)=options.url {manifest.url=Some(url);}
         if !manifest
             .size
             .iter()
@@ -71,11 +83,11 @@ impl Bundle {
             || manifest.app_id.as_deref().is_some_and(|id| {
                 id.is_empty() || id.len() > 128 || id.chars().any(char::is_whitespace)
             })
-            || !["window", "background"].contains(&manifest.surface.as_str())
+            || !["window", "background", "headless"].contains(&manifest.surface.as_str())
             || manifest
                 .frame
                 .as_deref()
-                .is_some_and(|frame| frame != "gold" || manifest.surface != "window")
+                .is_some_and(|frame| frame != "gold" || manifest.surface == "background")
             || manifest
                 .tick_ms
                 .is_some_and(|n| !(100..=3_600_000).contains(&n))

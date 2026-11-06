@@ -118,15 +118,31 @@ impl Images {
             response.rect.min + egui::vec2(view.origin.x, view.origin.y),
             egui::vec2(view.width, view.height),
         );
-        let to_view = |p: Point| response.rect.min + egui::vec2(
-            view.origin.x + (p.x - value["crop"]["x"].as_f64().unwrap_or(0.0) as f32) * view.scale,
-            view.origin.y + (p.y - value["crop"]["y"].as_f64().unwrap_or(0.0) as f32) * view.scale,
-        );
-        let selection = serde_json::from_value::<crate::annotation::document::Shape>(value["selection"].clone()).ok();
+        let to_view = |p: Point| {
+            response.rect.min
+                + egui::vec2(
+                    view.origin.x
+                        + (p.x - value["crop"]["x"].as_f64().unwrap_or(0.0) as f32) * view.scale,
+                    view.origin.y
+                        + (p.y - value["crop"]["y"].as_f64().unwrap_or(0.0) as f32) * view.scale,
+                )
+        };
+        let selection = serde_json::from_value::<crate::annotation::document::Shape>(
+            value["selection"].clone(),
+        )
+        .ok();
         let painter = ui.painter_at(response.rect);
         if let Some(shape) = &selection {
-            let (l,t,r,b) = shape.bounds();
-            outline(ui, &painter, egui::Rect::from_two_pos(to_view(Point{x:l,y:t}),to_view(Point{x:r,y:b})).expand((shape.width*view.scale/2.0).max(2.0)));
+            let (l, t, r, b) = shape.bounds();
+            outline(
+                ui,
+                &painter,
+                egui::Rect::from_two_pos(
+                    to_view(Point { x: l, y: t }),
+                    to_view(Point { x: r, y: b }),
+                )
+                .expand((shape.width * view.scale / 2.0).max(2.0)),
+            );
         }
         let gesture_id = egui::Id::unique(("canvas-points", id));
         let mut points = ui.data_mut(|d| d.get_temp::<Vec<Point>>(gesture_id).unwrap_or_default());
@@ -142,7 +158,7 @@ impl Images {
         };
         let scale_id = egui::Id::unique(("canvas-scale", id));
         if ui.data_mut(|d| d.get_temp::<f32>(scale_id)) != Some(view.scale) {
-            ui.data_mut(|d| d.insert_temp(scale_id,view.scale));
+            ui.data_mut(|d| d.insert_temp(scale_id, view.scale));
             emit("viewport", serde_json::json!({"scale":view.scale}));
         }
         if value["enabled"] != true {
@@ -150,7 +166,12 @@ impl Images {
             return response;
         }
         if response.hovered() {
-            ui.ctx().set_cursor_icon(if value["guide_mode"] == "select" {egui::CursorIcon::Default} else {egui::CursorIcon::Crosshair});
+            ui.ctx()
+                .set_cursor_icon(if value["guide_mode"] == "select" {
+                    egui::CursorIcon::Default
+                } else {
+                    egui::CursorIcon::Crosshair
+                });
         }
         if response.hovered() {
             let zoom = ui.input(|i| i.zoom_delta());
@@ -171,7 +192,10 @@ impl Images {
         } else {
             if response.drag_started_by(egui::PointerButton::Primary) {
                 points.clear();
-                if let Some(p) = ui.input(|i| i.pointer.press_origin()).filter(|p|image_rect.contains(*p)) {
+                if let Some(p) = ui
+                    .input(|i| i.pointer.press_origin())
+                    .filter(|p| image_rect.contains(*p))
+                {
                     points.push(point(p));
                 }
             }
@@ -194,7 +218,10 @@ impl Images {
                 points.clear();
             }
             if response.clicked_by(egui::PointerButton::Primary) {
-                if let Some(p) = response.interact_pointer_pos().filter(|p|image_rect.contains(*p)) {
+                if let Some(p) = response
+                    .interact_pointer_pos()
+                    .filter(|p| image_rect.contains(*p))
+                {
                     emit(
                         "pick",
                         serde_json::json!({"point":point(p),"scale":view.scale}),
@@ -203,18 +230,34 @@ impl Images {
             }
         }
         if points.len() > 1 {
-            let a=to_view(points[0]);let b=to_view(*points.last().unwrap());
-            let boxed=egui::Rect::from_two_pos(a,b);
+            let a = to_view(points[0]);
+            let b = to_view(*points.last().unwrap());
+            let boxed = egui::Rect::from_two_pos(a, b);
             match value["guide_mode"].as_str() {
-                Some("select") => if let Some(shape)=&selection {
-                    let (l,t,r,bottom)=shape.bounds();
-                    outline(ui,&painter,egui::Rect::from_two_pos(to_view(Point{x:l,y:t}),to_view(Point{x:r,y:bottom})).translate(b-a));
-                },
-                Some("crop") => outline(ui,&painter,boxed),
-                _ => if let Ok(mut shape)=serde_json::from_value::<crate::annotation::document::Shape>(value["guide"].clone()) {
-                    shape.points=points.clone();
-                    draw_guide(&painter,&shape,a,b,view.scale,&to_view);
-                },
+                Some("select") => {
+                    if let Some(shape) = &selection {
+                        let (l, t, r, bottom) = shape.bounds();
+                        outline(
+                            ui,
+                            &painter,
+                            egui::Rect::from_two_pos(
+                                to_view(Point { x: l, y: t }),
+                                to_view(Point { x: r, y: bottom }),
+                            )
+                            .translate(b - a),
+                        );
+                    }
+                }
+                Some("crop") => outline(ui, &painter, boxed),
+                _ => {
+                    if let Ok(mut shape) = serde_json::from_value::<
+                        crate::annotation::document::Shape,
+                    >(value["guide"].clone())
+                    {
+                        shape.points = points.clone();
+                        draw_guide(&painter, &shape, a, b, view.scale, &to_view);
+                    }
+                }
             }
         }
         ui.data_mut(|d| d.insert_temp(gesture_id, points));
@@ -391,37 +434,79 @@ fn document_point_limit() -> usize {
     crate::annotation::document::MAX_POINTS - 1
 }
 fn outline(ui: &Ui, painter: &egui::Painter, rect: egui::Rect) {
-    painter.rect_stroke(rect,0.0,egui::Stroke::new(3.0,ui.visuals().panel_fill),egui::StrokeKind::Outside);
-    painter.rect_stroke(rect,0.0,egui::Stroke::new(1.0,ui.visuals().text_color()),egui::StrokeKind::Outside);
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(3.0, ui.visuals().panel_fill),
+        egui::StrokeKind::Outside,
+    );
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(1.0, ui.visuals().text_color()),
+        egui::StrokeKind::Outside,
+    );
 }
-fn draw_guide(painter: &egui::Painter, shape: &crate::annotation::document::Shape, a:egui::Pos2,b:egui::Pos2,scale:f32,view:&impl Fn(crate::annotation::document::Point)->egui::Pos2) {
+fn draw_guide(
+    painter: &egui::Painter,
+    shape: &crate::annotation::document::Shape,
+    a: egui::Pos2,
+    b: egui::Pos2,
+    scale: f32,
+    view: &impl Fn(crate::annotation::document::Point) -> egui::Pos2,
+) {
     use crate::annotation::document::Kind;
-    let [r,g,bl,al]=shape.colour;
-    let ink=egui::Color32::from_rgba_unmultiplied(r,g,bl,al);
-    let stroke=egui::Stroke::new((shape.width*scale).max(1.0),ink);
-    let boxed=egui::Rect::from_two_pos(a,b);
+    let [r, g, bl, al] = shape.colour;
+    let ink = egui::Color32::from_rgba_unmultiplied(r, g, bl, al);
+    let stroke = egui::Stroke::new((shape.width * scale).max(1.0), ink);
+    let boxed = egui::Rect::from_two_pos(a, b);
     match shape.kind {
-        Kind::Redact => {painter.rect_filled(boxed,0.0,ink.to_opaque());},
-        Kind::Rectangle|Kind::Text => {painter.rect_stroke(boxed,0.0,stroke,egui::StrokeKind::Middle);},
-        Kind::Ellipse|Kind::Number => {painter.add(egui::Shape::ellipse_stroke(boxed.center(),boxed.size()/2.0,stroke));},
-        Kind::Pen|Kind::Highlighter => {
-            let stroke=if shape.kind==Kind::Highlighter {egui::Stroke::new(stroke.width,ink.gamma_multiply(80.0/255.0))}else{stroke};
-            painter.add(egui::Shape::line(shape.points.iter().copied().map(view).collect(),stroke));
-        },
-        Kind::Line|Kind::Arrow => {
-            painter.line_segment([a,b],stroke);
-            if shape.kind==Kind::Arrow {
-                let angle=(b.y-a.y).atan2(b.x-a.x);let length=(shape.width*4.0).max(12.0)*scale;
-                for offset in [-0.5_f32,0.5] {let tip=egui::pos2(b.x-length*(angle+offset).cos(),b.y-length*(angle+offset).sin());painter.line_segment([tip,b],stroke);}
+        Kind::Redact => {
+            painter.rect_filled(boxed, 0.0, ink.to_opaque());
+        }
+        Kind::Rectangle | Kind::Text => {
+            painter.rect_stroke(boxed, 0.0, stroke, egui::StrokeKind::Middle);
+        }
+        Kind::Ellipse | Kind::Number => {
+            painter.add(egui::Shape::ellipse_stroke(
+                boxed.center(),
+                boxed.size() / 2.0,
+                stroke,
+            ));
+        }
+        Kind::Pen | Kind::Highlighter => {
+            let stroke = if shape.kind == Kind::Highlighter {
+                egui::Stroke::new(stroke.width, ink.gamma_multiply(80.0 / 255.0))
+            } else {
+                stroke
+            };
+            painter.add(egui::Shape::line(
+                shape.points.iter().copied().map(view).collect(),
+                stroke,
+            ));
+        }
+        Kind::Line | Kind::Arrow => {
+            painter.line_segment([a, b], stroke);
+            if shape.kind == Kind::Arrow {
+                let angle = (b.y - a.y).atan2(b.x - a.x);
+                let length = (shape.width * 4.0).max(12.0) * scale;
+                for offset in [-0.5_f32, 0.5] {
+                    let tip = egui::pos2(
+                        b.x - length * (angle + offset).cos(),
+                        b.y - length * (angle + offset).sin(),
+                    );
+                    painter.line_segment([tip, b], stroke);
+                }
             }
-        },
+        }
     }
 }
 pub fn validate_canvas(value: &Value) -> Result<(), String> {
     validate_fill(value)?;
-    for key in ["selection","guide"] {
+    for key in ["selection", "guide"] {
         if !value[key].is_null() {
-            let shape: crate::annotation::document::Shape = serde_json::from_value(value[key].clone()).map_err(|e|e.to_string())?;
+            let shape: crate::annotation::document::Shape =
+                serde_json::from_value(value[key].clone()).map_err(|e| e.to_string())?;
             shape.validate()?;
         }
     }
@@ -455,7 +540,9 @@ pub fn admit_canvas(current: &Value, action: &str, payload: &Value) -> Result<()
         })
     };
     let valid = match action {
-        "viewport" => payload["scale"].as_f64().is_some_and(|n|n.is_finite() && n>0.0),
+        "viewport" => payload["scale"]
+            .as_f64()
+            .is_some_and(|n| n.is_finite() && n > 0.0),
         "pan" => point(payload),
         "zoom" => payload["factor"]
             .as_f64()
