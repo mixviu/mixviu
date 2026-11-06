@@ -1,0 +1,26 @@
+-- CBC only; owned headless processes and exact binaries, never a desktop/VT.
+fn gate_run($cmd)
+  print("STEP_BEGIN "..join($cmd," "))
+  $r=run_argv(concat(["env","CARGO_BUILD_JOBS=6"],$cmd),{timeout:7000,max_output:64000000})
+  print($r.stdout)
+  print($r.stderr)
+  print("STEP_RC="..to_string($r.exit_code))
+  if $r.exit_code!=0 then exit($r.exit_code) end
+end
+$scratch="/tmp/engine-split-furniture-"..uuid()
+mkdir($scratch,{parents:true})
+gate_run(["cargo","build","-p","compd","--no-default-features","--features","backend-native,backend-headless"])
+$meta=json_parse(run_argv_must(["cargo","metadata","--no-deps","--format-version","1","--locked"]))
+$target=$meta.target_directory.."/debug/"
+run_argv_must(["cp","--",$target.."compd",$scratch.."/viud-v0"])
+gate_run(["cargo","build","-p","compd","--features","backend-all","--locked"])
+run_argv_must(["cp","--",$target.."compd",$scratch.."/compd-inproc"])
+gate_run(["cargo","build","-p","viu","--locked"])
+print({commit:trim(run_argv_must(["git","rev-parse","HEAD"])),native_sha256:hash_file($scratch.."/viud-v0","sha256"),inproc_sha256:hash_file($scratch.."/compd-inproc","sha256"),viu_sha256:hash_file($target.."viu","sha256")})
+gate_run(["env","COMPD_NATIVE_TEST_BINARY="..$scratch.."/viud-v0","COMPD_INPROC_TEST_BINARY="..$scratch.."/compd-inproc","cargo","test","-p","viu","--test","furniture","--locked","--","--ignored","--nocapture","--test-threads=1"])
+$tree=run_argv(["cargo","tree","-p","compd","--no-default-features","--features","backend-native,backend-headless","-e","normal","--locked"],{max_output:64000000})
+print($tree.stderr)
+$matches=filter(lines($tree.stdout),fn($l)=contains($l,"egui"))
+print("EGUI_MATCH_LINES="..to_string(len($matches)))
+print("TREE_RC="..to_string($tree.exit_code))
+if $tree.exit_code!=0 or len($matches)!=0 then exit(1) end

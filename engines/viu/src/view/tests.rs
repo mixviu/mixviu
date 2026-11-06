@@ -107,7 +107,7 @@ fn row_of(rt: &UiRuntime<SceneUi>, list: &str, item: &str) -> egui::Rect {
 }
 
 fn long_toast() -> String {
-    include_str!("../../../../../../share/scenes/toast/scene.mix")
+    include_str!("../../../../share/scenes/toast/scene.mix")
         // Exercise the original single title too: the behaviour guard must
         // not mask the renderer regression.
         .replace("t_sum: {\"children\":[\"s_l0\",\"s_l1\",\"s_l2\"],\"gap\":2,\"widget\":\"column\"}", "t_sum: {\"bold\":true,\"elide\":true,\"fill\":true,\"size\":14,\"text\":\"= $model.summary\",\"widget\":\"text\"}")
@@ -118,7 +118,7 @@ fn long_toast() -> String {
 }
 
 fn guarded_toast() -> String {
-    include_str!("../../../../../../share/scenes/toast/scene.mix")
+    include_str!("../../../../share/scenes/toast/scene.mix")
         .replace(
             "\"summary_lines\":[\"\",\"\",\"\"]",
             &format!(
@@ -363,7 +363,7 @@ fn mono_wrapping_uses_the_same_line_pitch_as_paint() {
 }
 
 fn launcher_fixture() -> String {
-    include_str!("../../../../../../share/scenes/launcher/scene.mix").replace(
+    include_str!("../../../../share/scenes/launcher/scene.mix").replace(
         "\"rows\":[]",
         &format!(
             "\"rows\":[{{\"id\":\"example.desktop\",\"cells\":[\"{}\",\"Text editor\",\"\"]}}]",
@@ -373,7 +373,7 @@ fn launcher_fixture() -> String {
 }
 
 fn editor_fixture() -> String {
-    include_str!("../../../../../../share/scenes/editor/scene.mix").replace(
+    include_str!("../../../../share/scenes/editor/scene.mix").replace(
         "\"templates\":[]",
         &format!("\"templates\":[{{\"id\":\"example\",\"background\":\"#00000000\",\"cells\":[\"{}\",\"A template description\",\"bottom\",\"Installed\"]}}]", "Example template ".repeat(12)),
     )

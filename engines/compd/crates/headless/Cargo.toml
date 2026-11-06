@@ -17,6 +17,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+ledger.workspace = true
 smithay = { workspace = true }
 model = { workspace = true }
 world = { workspace = true }

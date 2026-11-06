@@ -7660,6 +7660,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "viu"
+version = "0.1.2"
+dependencies = [
+ "bus",
+ "comp-model",
+ "config",
+ "decor",
+ "design",
+ "edges",
+ "egui",
+ "egui_kittest",
+ "image",
+ "paths",
+ "resvg",
+ "scene",
+ "serde",
+ "serde_json",
+ "settings",
+ "sha2 0.10.9",
+ "taffy",
+ "tempfile",
+ "test-broker",
+ "tokio",
+ "toolkit",
+ "tracing",
+ "ui",
+]
+
+[[package]]
 name = "wait-timeout"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

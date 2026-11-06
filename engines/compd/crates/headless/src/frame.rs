@@ -106,6 +106,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
     if !state.state.redraw.needs(&key) {
         return;
     }
+    let _cpu = ledger::frame_trace::span("headless_frame_cpu", 0);
     ctx.last = Some(Instant::now());
     state.state.redraw.rendering(&key);
     state.state.redraw.begin_render();

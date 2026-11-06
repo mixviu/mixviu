@@ -83,7 +83,7 @@ impl LayerProgram for Program {
         if model.wake()==PanelWake::Animate {ctx.request_repaint_after(Duration::from_millis(16));}
         let offset=((1.0-snap.visible_fraction)*snap.thickness_px).round() as i32;
         let margin=match self.edge.as_str() {"left"=>(0,0,0,-offset),"right"=>(0,-offset,0,0),"top"=>(-offset,0,0,0),_=>(0,0,-offset,0)};
-        LayerPresentation {visible:has_content&&snap.mapped, exclusive_zone:Some(snap.exclusive_zone_px.round() as i32),
+        LayerPresentation {visible:has_content&&snap.mapped&&snap.visible_fraction>0.0, exclusive_zone:Some(snap.exclusive_zone_px.round() as i32),
             size:Some(if self.edge=="left"||self.edge=="right" {(snap.thickness_px as u32,0)} else {(0,snap.thickness_px as u32)}),
             layer:Some(if snap.mode==PanelMode::Docked {Layer::Top} else {Layer::Overlay}),margin:Some(margin)}
     }

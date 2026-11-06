@@ -240,7 +240,7 @@ mod tests {
     fn manifest_query_flags_match_the_registry() {
         let entries = SceneCommand::manifest("shell");
         assert_eq!(entries, SceneCommand::manifest("shell"));
-        let registry = include_str!("../../../../../docs/docs/spec/bus/commands.conf.mix");
+        let registry = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
         for entry in entries.into_iter().skip(2) {
             let row = registry
                 .lines()
