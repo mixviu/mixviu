@@ -685,7 +685,10 @@ fn run_gui() -> i32 {
     // OS argv unchanged (any non-UTF-8 argv would already have aborted the
     // process at the initial env::args() collection — a pre-existing,
     // binary-wide limitation, not something --gui can widen).
-    let forwarded = env::args_os().skip_while(|arg| arg != "--gui").skip(1);
+    let forwarded = process_args_os()
+        .into_iter()
+        .skip_while(|arg| arg != "--gui")
+        .skip(1);
     let mut command = process::Command::new(&frontend);
     command.args(forwarded);
     // "Open here": a terminal launched from a shell opens in that shell's
@@ -2233,6 +2236,37 @@ fn check_syntax(source: &str, filename: &str) -> i32 {
 const MAIN_STACK_SIZE: usize = 64 * 1024 * 1024;
 
 /// The whole shell program. `cli/system` runs it for the `mix` personality.
+/// argv as this process should see it. An engine binary that carries the
+/// shell (`mixd run FILE`, `mixd serve FILE`) rewrites its own argv once,
+/// before `main`, through [`main_with_args`]; every reader below goes through
+/// here rather than `std::env::args`.
+static ARGS_OVERRIDE: std::sync::OnceLock<Vec<std::ffi::OsString>> = std::sync::OnceLock::new();
+
+pub fn process_args_os() -> Vec<std::ffi::OsString> {
+    ARGS_OVERRIDE
+        .get()
+        .cloned()
+        .unwrap_or_else(|| env::args_os().collect())
+}
+
+/// `process_args_os` as UTF-8, panicking on non-UTF-8 like `env::args`.
+pub fn process_args() -> Vec<String> {
+    process_args_os()
+        .into_iter()
+        .map(|arg| {
+            arg.into_string()
+                .unwrap_or_else(|arg| panic!("invalid unicode in argument: {arg:?}"))
+        })
+        .collect()
+}
+
+/// Run the shell with a rewritten argv (argv[0] included). Used by engines
+/// that carry the shell under another name; `main` reads the real argv.
+pub fn main_with_args(args: Vec<std::ffi::OsString>) -> process::ExitCode {
+    let _ = ARGS_OVERRIDE.set(args);
+    main()
+}
+
 pub fn main() -> process::ExitCode {
     // `--version` answers from a COLD process, before anything below runs:
     // no base-env capture, no session lane, no Bus dispatch, no evaluation
@@ -2242,7 +2276,7 @@ pub fn main() -> process::ExitCode {
     // case that made the old placement wrong: the arm lived inside
     // `real_main`, so `mix --version` had already started a native session.
     {
-        let args: Vec<String> = env::args().collect();
+        let args: Vec<String> = process_args();
         if let Some(text) = meta::version_request(&args, VERSION) {
             println!("{text}");
             return process::ExitCode::SUCCESS;
@@ -2355,7 +2389,7 @@ fn real_main() -> i32 {
     // Freeze the process-wide kill-switch decision before any prelude or rc
     // code can mutate the environment.
     let _ = stats_io::stats_enabled();
-    let args: Vec<String> = env::args().collect();
+    let args: Vec<String> = process_args();
 
     // A1 step 1 (TODO-mix strict-arity sweep): `MIX_STRICT_ARITY=1` is the
     // env-level equivalent of `--strict-arity` — the knob scripts and

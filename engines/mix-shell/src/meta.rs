@@ -1086,6 +1086,22 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
     } else {
         println!("  ✓ features   {}", feats.join(" "));
     }
+    // Engine profile: which engine's builtin set this binary is. A shell
+    // profile names what it lacks and the engine that carries it.
+    let profile = mix::builtins::engine_profile();
+    let missing: Vec<&str> = mix::builtins::SERVICE_PROFILE_FEATURES
+        .iter()
+        .copied()
+        .filter(|f| !feats.contains(f))
+        .collect();
+    if missing.is_empty() {
+        println!("  ✓ profile    {profile} (mixd)");
+    } else {
+        println!(
+            "  ✓ profile    {profile} (mix); service-profile features in mixd: {}",
+            missing.join(" ")
+        );
+    }
 
     // 3. Prelude — the load flag itself (not a name probe), so a user prelude
     //    override that doesn't define sum/avg still reads as loaded, and
@@ -1419,7 +1435,7 @@ fn cmd_config(version: &str) {
     // strict send land with the strict-arity sweep (TODO-mix A1/B4);
     // until then the per-invocation flag is the whole story, and saying
     // so beats printing a knob that does not exist.
-    let argv0 = std::env::args().next().unwrap_or_default();
+    let argv0 = crate::process_args().into_iter().next().unwrap_or_default();
     // A login shell is signalled by a '-' prefix on the basename
     // (`-mix`); a full path like mixos:prefix/bin/-mix still ends in the
     // prefixed name, so check the file name, not the whole argv[0].

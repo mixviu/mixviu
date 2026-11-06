@@ -1057,7 +1057,7 @@ impl Stage {
 
 /// Private argv entry, dispatched before runtime/evaluator/startup hooks.
 pub fn stage_entry() {
-    let args: Vec<_> = std::env::args_os().collect();
+    let args: Vec<_> = crate::process_args_os();
     if args.get(1).is_none_or(|v| v != STAGE_ARG) {
         return;
     }

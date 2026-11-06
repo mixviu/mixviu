@@ -1,0 +1,24 @@
+[package]
+name = "mixd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "The service engine: the Mix service profile plus headless personalities, chosen by argv[0]"
+
+# Lab (mixviu engine-split decision, 2026-11-06). Inverts MixOS cli/system:
+# no `mix` personality; `mixd run`/`mixd serve` run scripts under the service
+# profile. Personalities (noded, maild, ...) join as optional deps later.
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[[bin]]
+name = "mixd"
+path = "src/main.rs"
+
+[dependencies]
+mix-shell = { path = "../mix-shell", features = ["service-builtins"] }
+mimalloc.workspace = true

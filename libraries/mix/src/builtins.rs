@@ -678,10 +678,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         #[cfg(feature = "mime")]
         "mime_type" => builtin_mime_type(args),
         #[cfg(not(feature = "mime"))]
-        "mime_type" => Err(MixError::RuntimeError {
-            span: None,
-            msg: "mime_type() requires the `mime` feature (mimedb)".to_string(),
-        }),
+        "mime_type" => Err(service_profile_refusal("mime_type", "mime")),
         // Strict-data serializer pair — core (no feature gate): both
         // `Value::to_mix_data_string` and `parse_data` are unconditional.
         "data_encode" => builtin_data_encode(args),
@@ -735,10 +732,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         // Registry lists both unconditionally; without the feature, fail
         // loudly rather than fall through to the silent-nil catch-all.
         #[cfg(not(feature = "yaml"))]
-        name @ ("yaml_parse" | "yaml_encode") => Err(MixError::RuntimeError {
-            span: None,
-            msg: format!("{name}() requires the `yaml` feature (yaml-rust2)"),
-        }),
+        name @ ("yaml_parse" | "yaml_encode") => Err(service_profile_refusal(name, "yaml")),
         #[cfg(feature = "datetime")]
         "date_format" => builtin_date_format(args),
         #[cfg(feature = "datetime")]
@@ -782,10 +776,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         // build without the feature would otherwise fall through to the generic
         // `_ => Ok(None)` and silently return nil. Fail loudly instead.
         #[cfg(not(feature = "markdown"))]
-        "markdown" => Err(MixError::RuntimeError {
-            span: None,
-            msg: "markdown() requires the `markdown` feature (pulldown-cmark)".to_string(),
-        }),
+        "markdown" => Err(service_profile_refusal("markdown", "markdown")),
         #[cfg(feature = "datastar")]
         "ds_patch_elements" => builtin_ds_patch_elements(args),
         #[cfg(feature = "datastar")]
@@ -796,10 +787,9 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         // without the feature, fail loudly rather than fall through to the
         // generic `_ => Ok(None)` silent-nil (mirrors `markdown` above).
         #[cfg(not(feature = "datastar"))]
-        "ds_patch_elements" | "ds_patch_signals" | "ds_sse" => Err(MixError::RuntimeError {
-            span: None,
-            msg: format!("{name}() requires the `datastar` feature"),
-        }),
+        "ds_patch_elements" | "ds_patch_signals" | "ds_sse" => {
+            Err(service_profile_refusal(name, "datastar"))
+        }
         "html_escape" => builtin_html_escape(args),
         "sanitize" => builtin_sanitize(args),
         "csv_parse" => builtin_csv_parse(args),
@@ -810,10 +800,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         // without the feature, fail loudly rather than fall through to the
         // generic `_ => Ok(None)` silent-nil (mirrors `markdown` above).
         #[cfg(not(feature = "xml"))]
-        "xml_parse" => Err(MixError::RuntimeError {
-            span: None,
-            msg: "xml_parse() requires the `xml` feature (quick-xml)".to_string(),
-        }),
+        "xml_parse" => Err(service_profile_refusal("xml_parse", "xml")),
         #[cfg(feature = "url")]
         "url_parse" => builtin_url_parse(args),
         // url_decode/url_encode are hand-rolled percent-coding (no `url`
@@ -883,6 +870,8 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "uuid" => builtin_uuid(args),
         #[cfg(feature = "dkim")]
         "dkim_keygen" => builtin_dkim_keygen(args),
+        #[cfg(not(feature = "dkim"))]
+        "dkim_keygen" => Err(service_profile_refusal("dkim_keygen", "dkim")),
         #[cfg(feature = "http")]
         "http_get" => builtin_http_get(args),
         #[cfg(feature = "http")]
@@ -1004,10 +993,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         #[cfg(feature = "dns")]
         "dns_query" => crate::dns::builtin_dns_query(args),
         #[cfg(not(feature = "dns"))]
-        "dns_query" => Err(MixError::RuntimeError {
-            span: None,
-            msg: "dns_query() requires the `dns` feature (hickory-proto)".to_string(),
-        }),
+        "dns_query" => Err(service_profile_refusal("dns_query", "dns")),
         #[cfg(not(feature = "archive"))]
         name @ ("tar_list" | "tar_unpack" | "tar_pack") => Err(MixError::RuntimeError {
             span: None,
@@ -1150,6 +1136,34 @@ pub fn compiled_features() -> Vec<&'static str> {
     feat!("ws");
     feat!("mime");
     f
+}
+
+/// Features only the service profile (`mixd`) carries. The shell profile
+/// (`mix`) is everything else; see the mixviu engine-split decision.
+pub const SERVICE_PROFILE_FEATURES: &[&str] =
+    &["markdown", "dkim", "datastar", "xml", "yaml", "mime", "dns", "serde"];
+
+/// The engine profile this interpreter was built as: "service" when every
+/// service-profile feature is compiled in, otherwise "shell".
+pub fn engine_profile() -> &'static str {
+    let have = compiled_features();
+    if SERVICE_PROFILE_FEATURES.iter().all(|f| have.contains(f)) {
+        "service"
+    } else {
+        "shell"
+    }
+}
+
+/// The refusal a shell-profile `mix` gives for a service-profile builtin. It
+/// names the engine that has it, so the caller knows what to run instead.
+fn service_profile_refusal(name: &str, feature: &str) -> MixError {
+    MixError::RuntimeError {
+        span: None,
+        msg: format!(
+            "{name}() is a service-profile builtin (feature `{feature}`), not in this \
+             shell-profile mix: run the script with `mixd run FILE` (or add `-- host: mixd`)"
+        ),
+    }
 }
 
 /// The `mix man` topic whose page best documents builtin `name`, for the
