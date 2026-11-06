@@ -860,8 +860,9 @@ fn band_groups(node: &Node) -> Result<Vec<design::title_band::Group>,String> {
         let group=groups.get(child).ok_or("band child missing group")?;
         let length=|name:&str|group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length"));
         let align=match group["align"].as_str(){Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center or right".into())};
-        let shrink=if group["shrink"].is_null(){None}else{Some(group["shrink"].as_u64().filter(|n|*n<=255).ok_or("band shrink priority must be 0..255 or null")? as u8)};
-        let order=group["order"].as_u64().filter(|n|*n<=255).ok_or("band order must be 0..255")? as u8;
+        let integer=|name:&str|group[name].as_f64().filter(|n|n.is_finite()&&n.fract()==0.0&&(0.0..=255.0).contains(n)).map(|n|n as u8).ok_or_else(||format!("band {name} must be an integer 0..255"));
+        let shrink=if group["shrink"].is_null(){None}else{Some(integer("shrink")?)};
+        let order=integer("order")?;
         Ok(Group{preferred:length("preferred")?,minimum:length("minimum")?,align,shrink,order})
     }).collect()
 }

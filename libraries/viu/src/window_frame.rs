@@ -44,7 +44,9 @@ impl WindowFrame {
         json!({
             "place":settings["window.actions_place"].as_str().unwrap_or("row"),
             "effective":"row","hosted":false,"service":service,
-            "title_align":"center","actions_align":"right","menu_side":"left",
+            "title_align":design::TitleAlign::resolve(settings["window.title_align"].as_str().unwrap_or("auto")).alignment(design::WindowStyle::resolve(settings["window.style"].as_str().unwrap_or("mac")).title_alignment()).name(),
+            "actions_align":design::ActionsAlign::resolve(settings["window.actions_align"].as_str().unwrap_or("right")).name(),
+            "menu_side":design::MenuSide::resolve(settings["window.menu_side"].as_str().unwrap_or("left")).name(),
             "caption_side":if settings["window.caption_side"]=="left" {"left"} else {"right"},
             "requested":{"title_align":settings["window.title_align"].as_str().unwrap_or("auto"),"caption_side":settings["window.caption_side"].as_str().unwrap_or("auto")},
             "decorations":if self.client {"csd"}else{"ssd"},
