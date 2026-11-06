@@ -67,7 +67,7 @@ fn admitted($s,$key,$value)
     $writes=$gallery.writes($s,$key,$value);$changes={};$reset=[]
     for $path in keys($writes) if $writes[$path]==nil then push($reset,$path) else $changes[$path]=$writes[$path] end end
   end
-  $validation=viu_settings("apply",$s.values,$changes,$reset)
+  $validation=viu_settings("check",$changes)
   if not $validation.ok then raise("FAILED",join(map($validation.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
   return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:viu_token(),changes:$changes,reset:$reset}
 end

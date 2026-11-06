@@ -130,7 +130,7 @@ fn plan($s,$args)
       if $to>=0 and $to<len($list) then $a=$list[$at];$list[$at]=$list[$to];$list[$to]=$a;$changes["email.accounts"]=$list end
     end
   end
-  $checked=viu_settings("apply",$s.values,$changes,[])
+  $checked=viu_settings("check",$changes)
   if not $checked.ok then raise("ARGUMENT",join(map($checked.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
   $different={}
   for $key in keys($changes)

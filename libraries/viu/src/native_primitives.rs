@@ -70,7 +70,7 @@ pub(crate) fn token() -> mix::evaluator::ExtFn {
 pub(crate) fn settings_values() -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
         let fail = || MixError::RuntimeError {
-            msg: "viu_settings expects default/path or apply/values/changes/reset".into(),
+            msg: "viu_settings expects default/path, check/changes or apply/values/changes/reset".into(),
             span: None,
         };
         match args.as_slice() {
@@ -80,6 +80,11 @@ pub(crate) fn settings_values() -> mix::evaluator::ExtFn {
                         .or_else(|| settings::registry::effective(&Default::default(), path))
                         .unwrap_or(serde_json::Value::Null),
                 )
+            }
+            [Value::String(op), changes] if op == "check" => {
+                let changes:settings::registry::Values=serde_json::from_value(crate::runtime::to_json(changes)?).map_err(|_|fail())?;
+                let diagnostics:Vec<_>=changes.iter().filter(|(_,value)|!value.is_null()).filter_map(|(path,value)|settings::registry::check_value(path,value).err()).collect();
+                crate::runtime::from_json(serde_json::json!({"ok":diagnostics.is_empty(),"diagnostics":diagnostics}))
             }
             [Value::String(op), values, changes, reset] if op == "apply" => {
                 let values =

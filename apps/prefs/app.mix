@@ -155,7 +155,7 @@ fn queue_keys($s,$changes)
   if $pages.store_blocked($s)!=nil or not $s.connected or $s.quitting then raise("FAILED",$nav.text_for("store-unreachable")) end
   $reset=[];$values={}
   for $key in keys($changes) if $changes[$key]==nil then push($reset,$key) else $values[$key]=$changes[$key] end end
-  $checked=viu_settings("apply",$s.values,$values,$reset)
+  $checked=viu_settings("check",$values)
   if not $checked.ok then raise("FAILED",join(map($checked.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
   $s.store_error=nil
   $s.queue_changes=merge($s.queue_changes,$changes)
