@@ -4,12 +4,10 @@
 -- consumed by both language drivers; no native file-manager reducer is called.
 $dp=require("core.mix")
 fn dp_rows($pane)
-  $rows=[]
-  for $r in $pane.entries
-    $r.expanded=$pane.expanded[$r.path] ?? false
-    push($rows,{key:$r.path,cells:[$r.name,if $r.dir then $dp.dp_count($r.child_count) else $dp.dp_size($r.size) end,$dp.dp_date($r.modified)],depth:$r.depth,branch:$r.dir,expanded:$r.expanded,selected:false,focused:false,icon:dp_icon($r)})
-  end
-  return $rows
+  $expanded=$pane.expanded
+  -- File-manager choices are data and expressions owned by this Mix app.
+  $icons={png:"file-image",jpg:"file-image",jpeg:"file-image",gif:"file-image",webp:"file-image",svg:"file-image",avif:"file-image",mp3:"file-music",flac:"file-music",wav:"file-music",ogg:"file-music",mp4:"file-video-camera",m4v:"file-video-camera",mkv:"file-video-camera",webm:"file-video-camera",zip:"file-archive",gz:"file-archive",tar:"file-archive","7z":"file-archive",rs:"file-code",mix:"file-code",c:"file-code",h:"file-code",toml:"file-code",yaml:"file-code",yml:"file-code",json:"file-code",txt:"file-text",log:"file-text",conf:"file-text",md:"file-text",html:"file-text",htm:"file-text",css:"file-text",csv:"file-text",xml:"file-text",pdf:"file-text"}
+  return rows_project($pane.entries,fn($r)={key:$r.path,cells:[$r.name,$r.dir ? ($r.child_count==nil ? "" : to_string($r.child_count)..($r.child_count==1 ? " item" : " items")) : ($r.size==nil ? "—" : $r.size<1024 ? fmt("%d B",$r.size) : $r.size<1048576 ? fmt("%.1f KiB",$r.size/1024) : $r.size<1073741824 ? fmt("%.1f MiB",$r.size/1048576) : fmt("%.1f GiB",$r.size/1073741824)),$r.modified==nil ? "—" : date_format($r.modified,"%d/%m/%y %H:%M")],depth:$r.depth,branch:$r.dir,expanded:$expanded[$r.path] ?? false,selected:false,focused:false,icon:$r.dir ? (($expanded[$r.path] ?? false) ? "folder-open" : "folder") : (len(split($r.name,"."))>1 ? ($icons[lower(split($r.name,".")[len(split($r.name,"."))-1])] ?? "file") : "file")})
 end
 fn dp_prepare_rows($state,$cache)
   for $i=0 to 1

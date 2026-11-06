@@ -12,10 +12,7 @@ fn rows($messages,$bulk)
   if $bulk then
     return jq($messages,'map({key:.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[(.subject // ""),(.from[0].email // ""),(.receivedAt // ""),(.preview // "")]})')
   end
-  $rows=[]
-  for $m in $messages
-    push($rows,{key:$m.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[$m.subject ?? "",if len($m.from ?? [])>0 then $m.from[0].email ?? "" else "" end,$m.receivedAt ?? "",$m.preview ?? ""]})
-  end
+  $rows=rows_project($messages,fn($m)={key:$m.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[$m.subject ?? "",len($m.from ?? [])>0 ? ($m.from[0].email ?? "") : "",$m.receivedAt ?? "",$m.preview ?? ""]})
   if $profile then print(json_encode({profile:"email",phase:"projection",ms:(monotonic()-$unique)*1000})) end
   return $rows
 end

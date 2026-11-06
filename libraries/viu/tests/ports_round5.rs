@@ -50,6 +50,9 @@ fn email_list_fixture_equivalence_bounds_and_2000_row_cost() {
             let result = done(&runtime, &rx);
             assert!(result.error.is_none(), "{:?}", result.error);
             let ack_ms = start.elapsed().as_secs_f64() * 1000.0;
+            if std::env::var_os("VIU_BULK_PROFILE").is_some() {
+                print!("{}", result.stdout);
+            }
             let model = result.model.unwrap();
             assert_eq!(
                 model["table"]["initial"]["rows"].as_array().unwrap().len(),

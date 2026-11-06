@@ -111,11 +111,14 @@ fn dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$remaining,$max_d
   $names=dp_names($path)
   if len($names)>$remaining then raise("SCAN_BUDGET","Pane scan total enumeration budget exceeded") end
   $remaining=$remaining-len($names)
-  for $entry in $names
+  $native=all($names,fn($n)=not starts_with($n.path,"file://"))
+  $stats=if $native then stat_many(map($names,fn($n)=$n.path),{follow_symlinks:false}) else [] end
+  for $index=0 to len($names)-1
+    $entry=$names[$index]
     $name=$entry.name
     if $hidden or not starts_with($name,".") then
       $full=$entry.path
-      $st=dp_lstat($full)
+      $st=if $native then $stats[$index] else dp_lstat($full) end
       if $st!=nil then
         $count=nil
         if $st.is_dir then
