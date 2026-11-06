@@ -1,0 +1,82 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Tree policy adapted from pinned gold inspector/engine.rs.
+fn row($key,$kind,$label,$children,$s)
+  return {key:$key,kind:$kind,label:$label,children:$children,expanded:contains($s.expanded,$key) or $s.filter!="",selected:$s.row_key==$key}
+end
+fn service_label($s,$route)
+  $i=$s.snapshot.identities[$route]
+  if $i==nil then return $route end
+  return $i.name..(if $i.version!=nil then "  "..$i.version else "" end)..(if $i.git_sha!=nil then " · "..substr($i.git_sha,0,8) else "" end)
+end
+fn service_rows($s,$node)
+  $rows=[];$filter=lower($s.filter)
+  if contains(lower($node.name),$filter) then $filter="" end
+  for $route in sort($node.services)
+    $identity=$s.snapshot.identities[$route] ?? {};$name=$identity.name ?? $route
+    $key="service:"..$node.name..":"..$name
+    $match=contains(lower($route),$filter);$children=[];$found=$s.snapshot.services[$route] ?? {}
+    for $c in $found.Ok ?? []
+      if $match or contains(lower($c.name.." "..$c.args.." "..$c.description),$filter) then
+        $child=row("command:"..$node.name..":"..$name..":"..$c.name,"command",$c.name,[],$s)
+        $child.selection={service:$route,command:$c.name};$child.expanded=false
+        push($children,$child)
+      end
+    end
+    if not $match and len($children)==0 then continue end
+    if $found.Err!=nil then $child=row("error:"..$route,"error","Unavailable descriptions",[],$s);$child.error=$found.Err;push($children,$child) end
+    $r=row($key,"service",service_label($s,$route),$children,$s);$r.identity=$identity
+    if $s.selection!=nil and $s.selection.service==$route then $r.expanded=true end
+    push($rows,$r)
+  end
+  return $rows
+end
+fn tree($s)
+  $nodes=[row("nodes:mesh","mesh_map","Mesh",[],$s)]
+  for $node in $s.snapshot.nodes
+    $children=service_rows($s,$node)
+    if $node.error!=nil then $r=row("node:"..$node.name..":error","error","Unavailable descriptions",[],$s);$r.error=$node.error;push($children,$r) end
+    $label=$node.name..(if $node.error!=nil then " — unreachable: "..$node.error else "" end)
+    $r=row("node:"..$node.name,"node",$label,$children,$s);$r.error=$node.error
+    push($nodes,$r)
+  end
+  $rows=[row("nodes","nodes","Nodes",$nodes,$s)]
+  $agent_rows=$s.agent_tree ?? [row("agents:down","agents_down","agentd is not running on any reachable node",[],$s)]
+  push($rows,row("agents","agents","Agents",$agent_rows,$s))
+  for $app in sort(keys($s.catalogues))
+    $children=[]
+    for $m in $s.catalogues[$app].macros ?? []
+      if $s.filter=="" or contains(lower(json_encode($m)),lower($s.filter)) then
+        $r=row("macro:"..$app..":"..$m.id,"macro",$m.title.." · "..$m.tier,[],$s);$r.app=$app;$r.macro_id=$m.id;push($children,$r)
+      end
+    end
+    $r=row("macros:"..$app,"macros",if $app=="global" then "Macros (global)" elif $s.catalogues[$app].running==false then $app.." · not running" else "Macros" end,$children,$s)
+    $r.app=$app
+    if $app=="global" then push($rows,$r)
+    else
+      $placed=false
+      for $ni=0 to len($rows[0].children)-1
+        for $si=0 to len($rows[0].children[$ni].children)-1
+          $service=$rows[0].children[$ni].children[$si]
+          if $service.kind=="service" and $service.identity.name==$app then
+            $rows[0].children[$ni].children[$si].children=push($rows[0].children[$ni].children[$si].children,$r);$placed=true
+          end
+        end
+      end
+      if not $placed then push($rows,$r) end
+    end
+  end
+  return $rows
+end
+fn flatten_rows($rows,$depth,$visible)
+  $out=[]
+  for $row in $rows
+    $children=$row.children;$row.children=len($children);$row.depth=$depth;push($out,$row)
+    if not $visible or $row.expanded then $out=concat($out,flatten_rows($children,$depth+1,$visible)) end
+  end
+  return $out
+end
+fn rows($s) return flatten_rows(tree($s),0,true) end
+fn find_row($s,$key)
+  $found=filter(flatten_rows(tree($s),0,false),fn($r)=$r.key==$key)
+  return if len($found)>0 then $found[0] else nil end
+end

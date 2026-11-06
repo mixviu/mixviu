@@ -65,6 +65,7 @@ struct Host {
     view: SceneView,
     bus: Endpoint,
     pending: BTreeMap<u64, Reply>,
+    deferred: BTreeMap<u64, Reply>,
     held_requests: std::collections::VecDeque<Request>,
     inflight: BTreeSet<u64>,
     input: Input,
@@ -75,6 +76,7 @@ struct Host {
     error: String,
     tick: Option<Duration>,
     next_tick: Instant,
+    last_viewport: Option<[f32; 3]>,
 }
 impl Host {
     fn window_settings(&self, model: &Value) -> Value {
@@ -237,8 +239,24 @@ impl eframe::App for Host {
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
         self.facilities.prepare(ctx, &self.bus);
+        self.deferred.retain(|_, reply| !reply.is_closed());
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
+                "native.defer" => request.args["id"].as_u64()
+                    .ok_or("request id must be an integer".into())
+                    .and_then(|id| {
+                        let reply = self.pending.remove(&id).ok_or("request is not pending")?;
+                        self.deferred.insert(id, reply);
+                        Ok(json!({"deferred":id}))
+                    }),
+                "native.reply" => request.args["id"].as_u64()
+                    .zip(request.args["rc"].as_u64().filter(|rc| *rc <= 255))
+                    .ok_or("request id and byte rc required".into())
+                    .and_then(|(id, rc)| {
+                        let reply = self.deferred.remove(&id).ok_or("request is not deferred")?;
+                        reply.send((rc as u8, request.args["value"].clone())).map_err(|_| "request was cancelled".to_owned())?;
+                        Ok(json!({"replied":id}))
+                    }),
                 "native.executed" => self.facilities.record(&request.args),
                 "native.bindings" => crate::shortcuts::resolve(&request.args),
                 "native.copy" => match request.args["text"]
@@ -359,6 +377,11 @@ impl Host {
                         }
                         Err(e) => self.error = e,
                     }
+                }
+            }
+            if !self.error.is_empty() {
+                if let Some(reply) = self.deferred.remove(&done.sequence) {
+                    let _ = reply.send((10, json!({"error":self.error})));
                 }
             }
             if let Some(reply) = self.pending.remove(&done.sequence) {
@@ -528,6 +551,11 @@ impl Host {
         }
     }
     fn frame(&mut self, ui: &mut egui::Ui) {
+        let rect=ui.ctx().content_rect();
+        let viewport=[rect.width(),rect.height(),ui.ctx().pixels_per_point()];
+        if self.last_viewport!=Some(viewport) && self.runtime.notify("viu.viewport.changed".into(),json!({"width":viewport[0],"height":viewport[1],"scale":viewport[2]})).is_ok() {
+            self.last_viewport=Some(viewport);
+        }
         if self.ready {
             if self.framed {
                 ui.painter().rect_filled(
@@ -674,7 +702,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         wake.clone(),
         facilities.surface.as_ref().map(|s| s["commands"].clone()),
     );
-    let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
+    // Twelve native read slots plus mutation/activation lanes. Apps schedule
+    // within this ceiling; the native connection retains its own admission.
+    let mut jobs = crate::jobs::Jobs::new(16, wake.clone());
     let local_ui = crate::local_ui::LocalUi::new(wake.clone());
     jobs.set_native_backend(bus.backend_maker());
     let services = crate::runtime::Services {
@@ -735,6 +765,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         view: loading_view(),
         bus,
         pending: BTreeMap::new(),
+        deferred: BTreeMap::new(),
         held_requests: std::collections::VecDeque::new(),
         inflight: BTreeSet::new(),
         input: Input::default(),
@@ -745,6 +776,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         error: String::new(),
         tick: bundle.manifest.tick_ms.map(Duration::from_millis),
         next_tick: Instant::now(),
+        last_viewport: None,
     }
 }
 

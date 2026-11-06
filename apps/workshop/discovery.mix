@@ -1,0 +1,109 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$work=require("work.mix");$model=require("model.mix")
+fn begin($s,$reply)
+  if $s.discovery!=nil then
+    if $reply!=nil then $work.answer($reply,10,{error_code:"BUSY",message:"An operation is already running"}) end
+    return $s
+  end
+  $s.generation=$s.generation+1
+  $s.discovery={generation:$s.generation,reply:$reply,peers_done:false,nodes:{local:{local:true,info_done:false,list_done:false,descriptions:0,node:{name:"local",local:true,services:[],info:nil,error:nil}}}}
+  $s.status="Discovering services and commands…"
+  for $item in [["info","noded.info"],["list","noded.list"],["peers","noded.peers"]]
+    $s=$work.enqueue($s,{owner:"discovery",op:$item[0],node:"local",service:"noded",command:$item[1],lane:"local"})
+  end
+  return $work.launch($s)
+end
+fn decoded($d)
+  if $d.rc!=0 then raise("TRANSPORT",$d.body.transport_error ?? json_encode($d.body)) end
+  if $d.body.rc>=10 then raise("PEER","rc = "..to_string($d.body.rc)..": "..($d.body.error ?? "").." "..$d.body.body) end
+  return json_parse($d.body.body)
+end
+fn snapshot($s)
+  $d=$s.discovery
+  if $d==nil then return $s end
+  $nodes=[];$completed=0
+  for $key in sort(keys($d.nodes))
+    $n=$d.nodes[$key];push($nodes,$n.node)
+    if $n.info_done and $n.list_done and $n.descriptions==0 then $completed=$completed+1 end
+  end
+  $nodes=sort_by($nodes,fn($n)=if $n.local then "0" else "1"..$n.name end)
+  $finished=$d.peers_done and $completed==len($nodes)
+  $s.snapshot.nodes=$nodes;$s.snapshot.progress={total:len($nodes),completed:$completed,finished:$finished}
+  $s.status=to_string($completed).." of "..to_string(len($nodes)).." nodes"..(if $finished then "" else "…" end)..", "..to_string(len(filter($nodes,fn($n)=$n.error!=nil))).." unreachable"
+  if $s.snapshot.error!=nil then $s.status="Discovery failed: "..$s.snapshot.error end
+  if $s.snapshot.peer_error!=nil then $s.status=$s.status.." · noded.peers: "..$s.snapshot.peer_error end
+  if $finished then
+    $s.discovery=nil
+    if $s.selection!=nil and $model.command($s,$s.selection)==nil then
+      $existing=$s.snapshot.services[$s.selection.service] ?? {}
+      if $existing.Err==nil and $s.snapshot.error==nil then $s.selection=nil;$s.row_key=nil end
+    end
+    $work.answer($d.reply,if $s.snapshot.error!=nil then 10 else 0 end,$model.info($s,viu_context()))
+  end
+  return $s
+end
+fn received($s,$task,$d)
+  if $s.discovery==nil or $task.generation!=$s.discovery.generation then return $s end
+  $error=nil;$value=nil
+  try
+    $value=if $task.op=="describe" then $d.body else decoded($d) end
+    if $task.op=="describe" and $d.rc!=0 then raise("DESCRIPTION",$d.body.transport_error ?? json_encode($d.body)) end
+  catch $message $error=$message end
+  if $task.op=="peers" then
+    $s.discovery.peers_done=true
+    if $error!=nil then $s.snapshot.peer_error=$error
+    else
+      $peers=if type($value)=="list" then $value else $value.peers end
+      if type($peers)!="list" then $s.snapshot.peer_error="noded.peers is not an array"
+      else
+        $names=[]
+        for $peer in $peers
+          $name=if type($peer)=="string" then $peer else $peer.name end
+          if type($name)=="string" and not contains($names,$name) then push($names,$name) end
+        end
+        $s.snapshot.peers=sort($names)
+        for $name in $s.snapshot.peers
+          $s.discovery.nodes[$name]={local:false,info_done:false,list_done:false,descriptions:0,node:{name:$name,local:false,services:[],info:nil,error:nil}}
+          for $op in [["info","noded.info"],["list","noded.list"]]
+            $s=$work.enqueue($s,{owner:"discovery",op:$op[0],node:$name,service:"noded."..$name..".bus",command:$op[1],lane:"remote"})
+          end
+        end
+      end
+    end
+  elif $task.op=="info" then
+    $s.discovery.nodes[$task.node].info_done=true
+    if $error==nil then
+      $s.discovery.nodes[$task.node].node.info=$value
+      if $task.node=="local" then $s.discovery.nodes.local.node.name=$value.name ?? $value.node ?? "local" end
+    else $s.discovery.nodes[$task.node].node.error="noded.info: "..$error end
+  elif $task.op=="list" then
+    $s.discovery.nodes[$task.node].list_done=true
+    $local=$task.node=="local"
+    if $error==nil and type($value)!="list" then $error="noded.list is not an array" end
+    if $error!=nil then
+      $s.discovery.nodes[$task.node].node.error="noded.list: "..$error
+      if $local then $s.snapshot.error="noded.list: "..$error end
+    else
+      $services=[]
+      for $identity in $value
+        $route=if $local then $identity.name else $identity.name.."."..$task.node..".bus" end
+        push($services,$route);$s.snapshot.identities[$route]=$identity
+      end
+      if not contains($services,$task.service) then push($services,$task.service) end
+      $s.discovery.nodes[$task.node].node.services=$services
+      for $i=0 to len($services)-1
+        $route=$services[$i]
+        $s.snapshot.services[$route]={Err:if $i<64 then "description phase deadline exceeded" else "not described (limit)" end}
+        if $i<64 then
+          $s.discovery.nodes[$task.node].descriptions=$s.discovery.nodes[$task.node].descriptions+1
+          $s=$work.enqueue($s,{owner:"discovery",op:"describe",node:$task.node,service:$route,lane:if $local then "local" else "remote" end})
+        end
+      end
+    end
+  elif $task.op=="describe" then
+    $s.discovery.nodes[$task.node].descriptions=max(0,$s.discovery.nodes[$task.node].descriptions-1)
+    $s.snapshot.services[$task.service]=if $error==nil then $value else {Err:$error} end
+  end
+  $s=snapshot($s)
+  return $work.launch($s)
+end

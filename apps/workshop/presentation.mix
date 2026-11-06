@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$model=require("model.mix");$tree=require("tree.mix")
+fn description($s)
+  $c=$model.command($s,$s.selection)
+  if $c!=nil then
+    return $s.selection.service.."  "..$c.name.."\nArguments: "..(if $c.args=="" then "Not specified" else $c.args end).."\nRead only: "..(if $c.read_only==true then "Yes" elif $c.read_only==false then "No" else "Unknown (legacy service)" end).."\n\n"..(if $c.description=="" then "Description unavailable on this service" else $c.description end)
+  end
+  $r=$tree.find_row($s,$s.row_key)
+  if $r!=nil then
+    if $r.kind=="error" then return $r.error
+    elif $r.kind=="service" then return json_encode($r.identity,true)
+    elif $r.kind=="node" then
+      for $n in $s.snapshot.nodes if $r.key=="node:"..$n.name then return json_encode($n.info,true) end end
+    end
+  end
+  return "Select a service and command to inspect its signature."
+end
+fn project($s)
+  $rows=[]
+  for $r in $tree.rows($s)
+    push($rows,{key:$r.key,cells:[$r.label],depth:$r.depth,branch:$r.children>0,selected:$r.selected,focused:false,expanded:$r.expanded,icon:if $r.kind=="service" then "server" else nil end,mono:$r.kind=="command",weak:contains(["agents_down","no_peers","agents_ended"],$r.kind),error:$r.kind=="error",tooltip:$r.error ?? $r.label})
+  end
+  $side=$model.effective_dock($s)
+  $placement=if $s.dock_open then {edge:$side,fraction:if $side=="right" then $s.dock_width else $s.dock_height end,resizable:true,minimum:if $side=="right" then 0.2 else 0.12 end,maximum:0.5} else {edge:"bottom",size:36} end
+  $values={body:$s.body,reply:$s.answer,filter:$s.filter,description:description($s),"traffic-state":$s.observe.." · "..to_string($s.dropped).." dropped","traffic-pause":$s.traffic_paused,"traffic-filter":$s.traffic_filter}
+  return {values:$values,split:$s.split,axis:if $s.window_width<640 then "vertical" else "horizontal" end,placements:{traffic:$placement,inspector:{edge:"fill"}},tree:{id:"services-tree",kind:"tree-table",label:"Nodes and services",initial:{key:"services",rows:$rows,columns:[{id:"name",label:"",min_width:0}]},properties:{style:"outline"}},body_editor:{id:"body",kind:"editor",label:"JSON body (optional)",initial:$s.body,properties:{rows:7,placeholder:"JSON body (optional)",enabled:$s.call==nil and $s.dialog==nil}},call_button:{id:"call",kind:"button",label:"Call command",initial:"",properties:{text:"Call command",style:"primary",enabled:not $model.busy($s) and $s.connected and $s.dialog==nil and $model.command($s,$s.selection)!=nil}},clear_button:{id:"clear",kind:"button",label:"Clear body",initial:"",properties:{text:"Clear body",style:"secondary",enabled:not $model.busy($s) and $s.dialog==nil}},traffic_hidden:not $s.dock_open}
+end

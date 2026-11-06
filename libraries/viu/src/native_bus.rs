@@ -201,7 +201,7 @@ impl Endpoint {
                     let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;
                     responses.spawn(async move{
                         let ack=Delivery{state:delivery,wake:wake.clone()};
-                        let answer=if admitted{match tokio::time::timeout(Duration::from_secs(10),response).await{Ok(Ok(value))=>value,_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
+                        let answer=if admitted{match tokio::time::timeout(Duration::from_secs(90),response).await{Ok(Ok(value))=>value,_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
                         let sent=matches!(tokio::time::timeout(Duration::from_secs(2),native.respond(&command,answer.0,&answer.1.to_string())).await,Ok(Ok(())));
                         ack.state.store(if sent{1}else{2},Ordering::Release);wake();
                         if (quit||close_after_reply.load(Ordering::Acquire))&&answer.0==0&&sent{close.store(true,Ordering::Release);wake();}
@@ -349,7 +349,8 @@ impl Bridge {
         let body = if header_route {
             if let Some(map) = args.as_object() {
                 for (key, value) in map {
-                    if key != "body" && key != "timeout" && key != "reply_mode" && !value.is_null() {
+                    if key != "body" && key != "timeout" && key != "reply_mode" && !value.is_null()
+                    {
                         headers.insert(
                             key.clone(),
                             value
@@ -469,7 +470,11 @@ impl BusHandler for Bridge {
 // Keep Mix's established result/reply distinction and exact peer rc. Header
 // routing preserves structured refusals; JSON-body RPC preserves its message
 // result. Both retain every parsed field in $reply, including JSON strings.
-fn raw_reply_parts(rc: u8, body: String, error: Option<String>) -> MixResult<(i32, MixValue, MixValue)> {
+fn raw_reply_parts(
+    rc: u8,
+    body: String,
+    error: Option<String>,
+) -> MixResult<(i32, MixValue, MixValue)> {
     let envelope = crate::runtime::from_json(json!({"rc":rc,"body":body,"error":error}))?;
     Ok((i32::from(rc), envelope.clone(), envelope))
 }
@@ -536,13 +541,15 @@ mod tests {
     #[test]
     fn raw_reply_envelope_preserves_whitespace_and_error_separately() {
         for body in [" { \"x\" : 1 } \n", "permission denied\n", "", "\"text\""] {
-            let (rc, result, reply) = raw_reply_parts(17, body.into(), Some("refused".into())).unwrap();
+            let (rc, result, reply) =
+                raw_reply_parts(17, body.into(), Some("refused".into())).unwrap();
             assert_eq!(rc, 17);
             let value = crate::runtime::to_json(&reply).unwrap();
             assert_eq!(value, json!({"rc":17,"body":body,"error":"refused"}));
             assert_eq!(crate::runtime::to_json(&result).unwrap(), value);
         }
-        let args = crate::runtime::from_json(json!({"body":"{}","reply_mode":"raw","timeout":30})).unwrap();
+        let args = crate::runtime::from_json(json!({"body":"{}","reply_mode":"raw","timeout":30}))
+            .unwrap();
         let (headers, body, route) = Bridge::payload("echo", &args).unwrap();
         assert!(route);
         assert_eq!(body, "{}");

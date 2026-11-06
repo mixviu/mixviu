@@ -1,0 +1,29 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$path=path_join(dirname(script_path()),"rpc-job.mix");$source=read_file($path)
+fn enqueue($s,$task)
+  $task.generation=$s.generation;$task.queued=monotonic();$s.queue=push($s.queue,$task)
+  return $s
+end
+fn launch($s)
+  $waiting=[]
+  for $task in $s.queue
+    $lane=$task.lane ?? "local"
+    $used=len(filter(values($s.jobs),fn($j)=($j.lane ?? "local")==$lane))
+    if $used>=6 or len($s.jobs)>=15 then push($waiting,$task);continue end
+    $s.serial=$s.serial+1;$id="workshop-"..to_string($s.serial)
+    send "viu-local" "jobs.start" id=$id owner=$task.generation path=$path source=$source command="job.run" args=$task
+    if $rc!=0 then push($waiting,$task);continue end
+    $s.jobs[$id]=$task
+  end
+  $s.queue=$waiting
+  return $s
+end
+fn defer($event)
+  $id=to_number($event.headers.id)
+  send "viu-local" "native.defer" body={id:$id}
+  if $rc!=0 then raise("DEFER",to_string($result)) end
+  return $id
+end
+fn answer($id,$rc,$value)
+  if $id!=nil then send "viu-local" "native.reply" body={id:$id,rc:$rc,value:$value} end
+end

@@ -476,6 +476,22 @@ impl SceneView {
                     ui.spacing_mut().item_spacing=Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0));
                 }
                 match node.family.as_str() {
+                    "column" if !text(node,"group_title").is_empty() => {
+                        let title=text(node,"group_title");
+                        let draw=|ui:&mut egui::Ui| {
+                            ui.spacing_mut().item_spacing=ui.ctx().style().spacing.item_spacing;
+                            toolkit::bars::dock_frame(ui.ctx()).show(ui,|ui| toolkit::panel::group(ui, &key, &[title], |ui,_| {
+                                for child in children(node) {
+                                    self.node(ui, child, nodes, route, depth+1, events);
+                                }
+                            })).response.rect
+                        };
+                        let rect=if node.ports.get("scroll").and_then(Value::as_bool)==Some(true) {
+                            let mut draw=draw;
+                            egui::ScrollArea::vertical().id_salt((&key,"group-scroll")).auto_shrink([false,false]).show(ui,|ui| draw(ui)).inner
+                        } else { let mut draw=draw; draw(ui) };
+                        ui.interact(rect,ui.id().with((&key,"group")),Sense::hover())
+                    }
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
                     "band"=>{
                         let area=ui.available_rect_before_wrap();
