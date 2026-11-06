@@ -87,4 +87,16 @@ fn email_empty_frame_draws_and_primary_button_keeps_native_intent() {
         model["native_overlays"][0]["definition"]["initial"]["title"],
         "About Email"
     );
+    runtime.event("email.dialog".into(), json!({"open":"shortcuts"})).unwrap();
+    let model=complete(&runtime,&rx).model.unwrap();
+    let widget=viu::widgets::Widget::decode(&model["native_overlays"][0]["definition"]).unwrap();
+    assert!(widget.initial["grid"].as_array().unwrap().len()>12);
+    let mut overlays=viu::widgets::Widgets::default();
+    for _ in 0..3 {
+        ctx.run_ui(egui::RawInput {
+            screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1040.0,680.0))),
+            ..Default::default()
+        },|ui| { overlays.widget(ui,&widget,&model); }).drop_without_applying_deltas();
+    }
+    assert!(overlays.geometry["email-help"].height()>400.0,"shortcut rows were not drawn");
 }
