@@ -472,6 +472,8 @@ impl SceneView {
                 if let Some(width) = num(node, "width").or(num(node, "min_width")) {
                     ui.set_width(width);
                 }
+                if let Some(height) = num(node, "max_height") { ui.set_max_height(height); }
+                if let Some(height) = num(node, "min_height") { ui.set_min_height(height); }
                 if node.family!="control" {
                     ui.spacing_mut().item_spacing=Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0));
                 }
@@ -626,7 +628,9 @@ impl SceneView {
                                     }
                                 };
                                 if node.family == "row" {
-                                    ui.horizontal(|ui| draw(ui));
+                                    if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) {
+                                        ui.horizontal_wrapped(|ui| draw(ui));
+                                    } else { ui.horizontal(|ui| draw(ui)); }
                                 } else {
                                     ui.vertical(|ui| draw(ui));
                                 }

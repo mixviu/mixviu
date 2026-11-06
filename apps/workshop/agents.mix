@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
-$work=require("work.mix");$transcript=require("transcript.mix")
+$work=require("work.mix");$transcript=require("transcript.mix");$counter=require("counter.mix")
 fn refused($s,$rc,$code,$message) return {state:$s,rc:$rc,body:{error_code:$code,message:$message},deferred:false} end
 fn answer($s,$body) return {state:$s,rc:0,body:$body,deferred:false} end
 fn local_name($s)
@@ -56,7 +56,7 @@ fn read_transcript($s)
   $s=$r.state;$s.agents.read_ticket=$r.ticket;return $work.launch($s)
 end
 fn select_session($s,$node,$session)
-  if selected($s,$node,$session) and $s.agents.transcript.seq>0 then return $s end
+  if selected($s,$node,$session) and $counter.compare($s.agents.transcript.seq,0)>0 then return $s end
   $s.agents.selected={node:$node,session:$session}
   $s.agents.transcript={session:$session,events:[],items:[],seq:0,bytes:0,seen:0,evicted:false,gap:false,filling:false}
   $s.agents.config_options=nil;$s.agents.modes=nil;$s.agents.draft="";$s.agents.prompting=false
@@ -201,7 +201,7 @@ fn received($s,$task,$d)
   if $d.rc!=0 then $transport=$d.body.transport_error ?? json_encode($d.body)
   else
     $code=$d.body.rc
-    try $body=json_parse($d.body.body) catch $why $body={message:$d.body.error ?? $d.body.body} end
+    try $body=$counter.decode($d.body.body) catch $why $body={message:$d.body.error ?? $d.body.body} end
   end
   if $task.acting then
     if $transport!=nil then $body={error_code:"UNAVAILABLE",message:$transport};$code=10 end
@@ -227,7 +227,7 @@ fn received($s,$task,$d)
     if type($row.session)!="string" or not selected($s,$node,$row.session) then return $s end
     $s=update_row($s,$node,session_row($row,$node));$before=$s.agents.transcript.seq
     for $event in $body.events ?? [] $s.agents=$transcript.take_event($s.agents,$event) end
-    if $s.agents.transcript.seq>$before and ($body.more==true or $s.agents.transcript.seen>$s.agents.transcript.seq) then return read_transcript($s) end
+    if $counter.compare($s.agents.transcript.seq,$before)>0 and ($body.more==true or $counter.compare($s.agents.transcript.seen,$s.agents.transcript.seq)>0) then return read_transcript($s) end
     $s.agents.transcript.seen=$s.agents.transcript.seq;$s.agents.transcript.filling=false;return $s
   end
   if ($command=="agent.session.list" and $entry.list_ticket!=$ticket) or ($command=="agent.agents" and $entry.instances_ticket!=$ticket) then return $s end
@@ -259,9 +259,9 @@ fn topic($s,$topic,$body)
     if not $known or contains(["prompt","ready","stop","error","resumed","resume_failed","permission_answered","ended"],$body.kind) then $s=refresh_node($s,$node) end
     if not selected($s,$node,$body.session) then return $s end
     $seq=$body.seq ?? 0
-    if $s.agents.transcript.filling then $s.agents.transcript.seen=max($s.agents.transcript.seen,$seq);return $s end
-    if $seq<=$s.agents.transcript.seq then return $s end
-    if $seq>$s.agents.transcript.seq+1 or $body.truncated==true then $s.agents.transcript.seen=$seq;return read_transcript($s) end
+    if $s.agents.transcript.filling then $s.agents.transcript.seen=$counter.maximum($s.agents.transcript.seen,$seq);return $s end
+    if $counter.compare($seq,$s.agents.transcript.seq)<=0 then return $s end
+    if $counter.compare($seq,$counter.add($s.agents.transcript.seq,1))>0 or $body.truncated==true then $s.agents.transcript.seen=$seq;return read_transcript($s) end
     $s.agents=$transcript.take_event($s.agents,$body)
   elif contains(["agent.session.ended","agent.permission.requested"],$topic) then $s=refresh_node($s,$node) end
   return $s

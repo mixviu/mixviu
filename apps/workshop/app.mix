@@ -95,10 +95,18 @@ on viu.frame.close
   $state.quitting=true;publish_workshop($state)
 end
 on workshop.dialog.intent
-  if $event.args.value.instance==$state.dialog then $state.dialog=nil;publish_workshop($state) end
+  $a=$event.args
+  if $state.dialog=="new_macro" and $a.action=="edit" then $state.macro_new_title=$a.value
+  elif $a.value.instance==$state.dialog then
+    if $state.dialog=="new_macro" and $a.value.choice=="create" and trim($state.macro_new_title)!="" then
+      $macros=require("macro.mix");$state=$macros.enqueue($state,"macros.new",{app:$macros.app($state),title:$state.macro_new_title},nil)
+    end
+    $state.dialog=nil
+  end
+  publish_workshop($state)
 end
 on viu.viewport.changed
-  $state.window_width=$event.args.width;publish_workshop($state)
+  $state.window_width=$event.args.width;$state.window_height=$event.args.height;publish_workshop($state)
 end
 on workshop.layout
   $a=$event.args
@@ -113,6 +121,23 @@ on workshop.intent
   $a=$event.args
   if $state.dialog!=nil then reply(10,json_encode({error_code:"BUSY",message:"An operation is already running"}));return end
   if $a.id=="filter" then $state.filter=$a.value
+  elif $a.id=="mesh-canvas" then
+    if $a.action=="inspect" then $state.mesh_inspected=$a.value
+    elif $a.action=="edge" then $state.traffic_filter=$a.value.id;$state.dock_open=true
+    elif $a.action=="node" then $state.row_key="node:"..$a.value;$state.selection=nil;$state.macro_selected=nil end
+  elif $a.id=="mesh-ping" or $a.id=="mesh-start" then $out=$controller.execute($state,if $a.id=="mesh-ping" then "mesh.ping" else "bus.observe" end,"ui");$state=$out.state
+  elif starts_with($a.id,"agent-") then $agent_ui=require("agent-ui.mix");$state=$agent_ui.intent($state,$a,$event.headers)
+  elif $a.id=="macro-source" then
+    if byte_length($a.value)<=262144 then
+      $state.macro_draft=$a.value
+      if $state.macro_selected!=nil then $state.macro_drafts[$state.macro_selected[0]..":"..$state.macro_selected[1]]=$a.value end
+    end
+  elif $a.id=="macro-target" then $state.macro_target=if $a.value=="Target app" then "" else $a.value end
+  elif $a.id=="macro-destination" then $state.macro_destination=if $a.value=="Move to app" then "" else $a.value end
+  elif $a.id=="macro-new" then $out=$controller.execute($state,"macro.new","ui");$state=$out.state
+  elif $a.id=="macro-delete-cancel" then $state.macro_confirm_delete=false
+  elif $a.id=="macro-delete-confirm" then $macros=require("macro.mix");$state.macro_confirm_delete=false;$state=$macros.invoke($state,"macros.remove",{},nil)
+  elif starts_with($a.id,"macro-") then $macros=require("macro.mix");$state=$macros.ui_command($state,"macros."..strip_prefix($a.id,"macro-"))
   elif $a.id=="body" then
     if $state.call==nil and byte_length($a.value)<=65536 then $state.body=$a.value end
   elif $a.id=="services-tree" then
@@ -150,6 +175,7 @@ on viu.job.completed
 end
 on viu.tick
   $state=$controller.follow_up($state)
+  if $state.row_key=="nodes:mesh" or ($state.row_key!=nil and starts_with($state.row_key,"agent:")) then publish_workshop($state) end
 end
 on workshop.agents
   $out=handle($state,$event);$state=$out.state;publish_workshop($state)

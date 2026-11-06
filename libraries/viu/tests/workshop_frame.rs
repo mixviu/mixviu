@@ -100,14 +100,24 @@ fn workshop_embedded_text_budget_retains_gold_sized_utf8_replies() {
 #[test]
 fn workshop_policy_contracts_run_inside_the_embedded_runtime() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
-    for name in ["tree", "agents", "traffic", "transcript", "counter", "mesh"] {
+    for name in ["tree", "agents", "traffic", "transcript", "counter", "mesh", "view"] {
         let (tx, rx) = mpsc::channel();
-        let mut runtime = Runtime::new(8, Arc::new(move || { let _ = tx.send(()); }), None);
+        let mut runtime = Runtime::new(
+            8,
+            Arc::new(move || {
+                let _ = tx.send(());
+            }),
+            None,
+        );
         let path = root.join(format!("{name}-test.mix"));
-        runtime.load(viu::runtime::Program {
-            source: std::fs::read_to_string(&path).unwrap(), path,
-            scene: format!("workshop-{name}"), citizen: format!("workshop-{name}"),
-        }).unwrap();
+        runtime
+            .load(viu::runtime::Program {
+                source: std::fs::read_to_string(&path).unwrap(),
+                path,
+                scene: format!("workshop-{name}"),
+                citizen: format!("workshop-{name}"),
+            })
+            .unwrap();
         rx.recv_timeout(Duration::from_secs(20)).unwrap();
         let done = runtime.try_completion().unwrap();
         assert!(done.error.is_none(), "{name}: {:?}", done.error);

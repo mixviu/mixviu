@@ -35,10 +35,10 @@ fn ping($s)
   $code=nil;$message=""
   if $s.quitting then $code="BUSY";$message="Workshop is closing"
   elif not $s.connected then $code="DISCONNECTED";$message="Disconnected — requests are never replayed"
-  elif $s.mesh.ping_ticket!=nil then $code="BUSY";$message="A peer ping is already running"
+  elif $s.mesh.ping_ticket!=nil then $code="BUSY";$message="A peer ping round is already running."
   else
     $peers=map(filter($s.mesh.nodes,fn($n)=not $n.self),fn($n)=$n.name)
-    if len($peers)==0 then $code="UNAVAILABLE";$message="No peers"
+    if len($peers)==0 then $code="UNAVAILABLE";$message="No mesh peers"
     else $s.mesh.ping_queue=$peers;return {state:next_ping($s),rc:0,body:{pinging:$peers},deferred:false} end
   end
   return {state:$s,rc:10,body:{error_code:$code,message:$message},deferred:false}
@@ -70,7 +70,7 @@ fn received($s,$task,$d)
     $s.mesh.observe_ticket=nil
     if $d.rc==0 and $body.error_code==nil then $s.subscription=$body.subscription_id end
     $s.mesh=$mesh.set_observing($s.mesh,$s.subscription!=nil,$body.message)
-    $s.observe=if $body.error_code!=nil then ($body.message ?? "unavailable") elif $s.subscription!=nil then "Observing" else "Stopped" end
+    $s.observe=if $body.error_code!=nil then ($body.message ?? "") elif $task.args.on==false then "observe off" else $body.warning ?? $body.body ?? "redacted" end
   end
   $work.answer($task.reply,$d.rc,$body)
   return $work.launch($s)

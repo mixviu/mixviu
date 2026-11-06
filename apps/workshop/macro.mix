@@ -15,10 +15,11 @@ fn running($s)
   return $out
 end
 fn enqueue($s,$op,$args,$reply)
-  $s.macro_next_ticket=$s.macro_next_ticket+1;$ticket=$s.macro_next_ticket
+  $native_only=starts_with($op,"macros.") and not has_key($args,"app") and not contains(["macros.open","macros.new","macros.ced","macros.dopus"],$op)
+  if not $native_only then $s.macro_next_ticket=$s.macro_next_ticket+1 end
+  $ticket=$s.macro_next_ticket
   if contains(["macros.open","macros.new"],$op) then $s.macro_latest_open=$ticket end
   if $op=="catalogues" then $s.macro_latest_catalogues=$ticket end
-  $native_only=starts_with($op,"macros.") and not has_key($args,"app") and not contains(["macros.open","macros.new","macros.ced","macros.dopus"],$op)
   if not $native_only then $s.macro_pending=$s.macro_pending+1 end
   $s=$work.enqueue($s,{owner:"macros",op:$op,args:$args,reply:$reply,ticket:$ticket,running:running($s),lane:"macros",job:"macro-job.mix",native_only:$native_only})
   return $work.launch($s)
@@ -36,7 +37,8 @@ fn open_document($s,$app,$doc)
   $s.selection=nil;$s.macro_selected=[$app,$doc.id];$s.row_key="macro:"..$app..":"..$doc.id
   if not contains($s.expanded,"macros:"..$app) then $s.expanded=push($s.expanded,"macros:"..$app) end
   if $doc.catalogue!=nil then $s.catalogues[$app]=$doc.catalogue end
-  $s.document=$doc;$s.macro_draft=nil;$s.macro_saved_text=nil
+  $s.document=$doc;$s.macro_draft=$s.macro_drafts[$app..":"..$doc.id];$s.macro_saved_text=nil
+  $s.focus_id="macro-source";$s.focus_serial=$s.focus_serial+1;$s.macro_confirm_delete=false
   return $s
 end
 fn received($s,$task,$d)
@@ -67,6 +69,7 @@ fn received($s,$task,$d)
     if $task.op=="macros.put" and not $failed and $s.macro_selected!=nil and $s.macro_selected[0]==($task.args.app ?? "global") and $s.macro_selected[1]==$task.args.id then
       $s.macro_saved_text=$task.args.text;$s.document.text=$task.args.text
       if $s.macro_draft==$s.macro_saved_text then $s.macro_draft=nil end
+      $s.macro_drafts=delete($s.macro_drafts,$s.macro_selected[0]..":"..$s.macro_selected[1])
     end
     if not $failed and contains(["macros.put","macros.move","macros.remove","macros.copy"],$task.op) then $s=enqueue($s,"catalogues",{},nil) end
   end

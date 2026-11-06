@@ -64,7 +64,7 @@ fn execute($s,$id,$origin)
   elif $id=="macro.new" then $s.dialog="new_macro";$s.macro_new_title=""
   elif starts_with($id,"macro.") then $s=$macros.ui_command($s,replace_first($id,"macro.","macros."))
   elif $id=="help.macros" then $s.macros_open=not $s.macros_open
-  elif $id=="view.search" then $s.focus_serial=$s.focus_serial+1
+  elif $id=="view.search" then $s.focus_id="filter";$s.focus_serial=$s.focus_serial+1
   elif $id=="help.about" then $s.dialog="about"
   elif $id=="help.shortcuts" then $s.dialog="shortcuts"
   elif $id=="view.traffic" then $s.dock_open=not $s.dock_open
@@ -218,11 +218,13 @@ fn notice($s,$event)
     $s.connected=true;$s.status="Connected"
     for $topic in ["noded.props.changed","agent.session.updated","agent.session.ended","agent.permission.requested",viu_context().citizen..".macros.finished"] subscribe($topic) end
     $s=$discovery.begin($s,nil);$s=$agents.refresh($s);$s=$macros.enqueue($s,"catalogues",{},nil);$s=$mesh_flow.refresh($s)
-    if $s.mesh.resume_observe then $s=$mesh_flow.ensure($s) end
+    if $s.mesh.resume_observe or not $s.mesh.ever_connected then $s=$mesh_flow.ensure($s) end
+    $s.mesh.ever_connected=true
     if $s.startup_macro!=nil then $s=$macros.enqueue($s,"macros.open",$s.startup_macro,nil);$s.startup_macro=nil end
   elif $cmd=="bus.disconnected" then
     $s.connected=false;$s.status="Disconnected — requests are never replayed";$s=$mesh_flow.disconnect($s)
-  elif contains(["agent.session.updated","agent.session.ended","agent.permission.requested"],$cmd) then $s=$agents.topic($s,$cmd,$a)
+  elif contains(["agent.session.updated","agent.session.ended","agent.permission.requested"],$cmd) then
+    $a=$counter.decode($event.body).args;$s=$agents.topic($s,$cmd,$a)
   elif $cmd=="noded.props.changed" then
     if $a.path=="services.registered" then
       $entry=$s.agents.nodes[$agents.local_name($s)]

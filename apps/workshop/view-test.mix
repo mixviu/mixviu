@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix");$view=require("presentation.mix");$agent=require("agent-ui.mix");$a=require("agent-view.mix")
+fn check($v,$why) if not $v then raise("VIEW_TEST",$why) end end
+$s=$m.initial();$p=$view.project($s)
+check($p.show_command and not $p.show_macro and not $p.show_agents,"initial inspector")
+$s.catalogues={global:{macros:[{id:"example",title:"Example",tier:"user-global",targets:["echo"]}]},echo:{macros:[],running:true}}
+$s.macro_selected=["global","example"];$s.document={id:"example",text:"print(1)",tier:"user-global",path:"/home/user/.config/mixos/macros/example.mix"}
+$p=$view.project($s);check($p.show_macro and $p.macro_target_visible and not $p.macro_dirty,"macro projection")
+$s.macro_draft="print(2)";$p=$view.project($s);check($p.macro_dirty and $p.macro_editor.properties.native_document,"native editor and dirty state")
+$s.macro_selected=nil;$s.row_key="agents:new:local";$p=$view.project($s)
+check($p.show_agents and $p.agent_new and not $p.agent_start.properties.enabled,"new session waits for instances and form")
+$s.agents.nodes.local={available:true,error:nil,sessions:[{session:"s1",node:"local",agent:"example",cwd:"/home/user",status:"ready",title:nil,open_permissions:1,permissions:[]}],instances:{agents:[{agent:"example",roots:["/home/user"]}],live:1,max_live:2}}
+$s.agents.selected={node:"local",session:"s1"};$s.row_key="agent:local:s1";$s.agents.draft="hello"
+$p=$view.project($s);check($p.agent_session and $p.agent_send.properties.enabled,"ready composer")
+$s=$agent.intent($s,{id:"agent-permissions",value:{value:{request:"1",option:"allow"}}},{viu_input:"bus"})
+check(starts_with($s.agents.error,"HUMAN_ONLY") and len($s.queue)==0,"automated permission click never dispatches")
+$s=$agent.intent($s,{id:"agent-send"},{viu_input:"bus",broker_origin:"local",from:"mcp-s-ab1234-x"})
+check(starts_with($s.agents.error,"USE_AGENT") and len($s.queue)==0,"MCP-driven acting click never dispatches")
+$blocks=$a.blocks([{item:"prompt",text:"Hi"},{item:"thought",text:"Thinking…"},{item:"tool",title:"Read",tool:"read",status:"done",raw:{path:"/home/user"}},{item:"stop",reason:"end_turn"}])
+check(len(filter($blocks,fn($b)=$b.kind=="collapse"))==2,"thought and tool collapsible blocks")
+$mesh=require("mesh.mix");$s=$m.initial();$now=$mesh.now_ms();$s.mesh=$mesh.set_nodes($s.mesh,{name:"alpha"},{peers:[{name:"beta"}]})
+$s.mesh=$mesh.add_event($s.mesh,{direction:"mesh_out",peer:"beta",size:100,command:"echo",message_type:"request"},$now);$s.row_key="nodes:mesh";$p=$view.project($s)
+check($p.show_mesh and len($p.mesh_canvas.initial.nodes)==2 and $p.mesh_counts.initial[1][1].text=="1","Mesh projects exact counts and topology")
+check($p.traffic_view.kind=="cell-grid","bottom traffic table")
+$s.dock_side="right";$p=$view.project($s);check($p.traffic_view.kind=="block-list","right traffic cards")
+print("Workshop view contracts PASS")

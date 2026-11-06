@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$traffic=require("traffic.mix");$model=require("model.mix")
+fn text($v) return if $v==nil then "" elif type($v)=="string" then $v else json_encode($v) end end
+fn non_empty($values,$separator) return join(filter($values,fn($v)=$v!=""),$separator) end
+fn project($s)
+  $rows=$traffic.rows($s,100,$s.traffic_filter);$blocks=[];$table=[map(["Time (UTC)","Direction","From","Service","Command","rc","ms"],fn($v)={text:$v,small:true})];$index=0
+  for $r in $rows
+    $body=json_encode($r,true);$id=to_string($index);$index=$index+1
+    push($blocks,{id:$id,kind:"collapse",title:non_empty(map([$r.ts,$r.command,$r.rc,$r.ms],fn($v)=text($v))," · "),subtitle:non_empty([non_empty([text($r.from),text($r.service)]," → "),text($r.direction)]," · "),mono:true,text:$body,body_style:{mono:true}})
+    $cells=map([$r.ts,$r.direction,$r.from,$r.service],fn($v)={text:text($v),mono:true});push($cells,{text:text($r.command),mono:true,collapse:$body,max_width:420});push($cells,{text:text($r.rc),mono:true});push($cells,{text:text($r.ms),mono:true});push($table,$cells)
+  end
+  $right=$model.effective_dock($s)=="right"
+  return {traffic_view:if $right then {id:"traffic-content",kind:"block-list",label:"Traffic",initial:$blocks,properties:{stick_to_bottom:true}} else {id:"traffic-content",kind:"cell-grid",label:"Traffic",initial:$table,properties:{scroll:true,stick_to_bottom:true}} end,traffic_toggle:{id:"traffic-toggle",kind:"toggle",label:"Traffic",initial:$s.dock_open,properties:{text:"Traffic",style:"selectable"}},traffic_side:{id:"traffic-side",kind:"button",label:if $right then "Move Traffic to the bottom" else "Move Traffic to the right" end,initial:"",properties:{icon:if $right then "panel-bottom" else "panel-right" end,text:""}}}
+end

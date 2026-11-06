@@ -177,6 +177,15 @@ impl Facilities {
         }
     }
     pub fn request(&mut self, mut r: Request, ctx: &egui::Context) -> Option<Request> {
+        // Introspection accepts an empty wire body, as native gold citizens do.
+        if r.command == "app.describe" || r.command == "HELP" {
+            if let Some(surface) = &self.surface {
+                let _ = r.reply.send((0, if r.command == "HELP" {
+                    surface["commands"].clone()
+                } else { surface.clone() }));
+                return None;
+            }
+        }
         if self.surface.is_some()
             && !r.command.starts_with(&format!("{}.macros.", self.app))
             && !r.args.is_object()
@@ -193,19 +202,6 @@ impl Facilities {
                 .and_then(|id| crate::native_menu::application_id(ctx, id))
             {
                 r.args["id"] = json!(id);
-            }
-        }
-        if r.command == "app.describe" || r.command == "HELP" {
-            if let Some(surface) = &self.surface {
-                let _ = r.reply.send((
-                    0,
-                    if r.command == "HELP" {
-                        surface["commands"].clone()
-                    } else {
-                        surface.clone()
-                    },
-                ));
-                return None;
             }
         }
         let prefix = format!("{}.", self.app);

@@ -1,0 +1,89 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$agents=require("agents.mix")
+fn array($v) return if type($v)=="list" then $v else [] end end
+fn string($v,$default) return if type($v)=="string" then $v else $default end end
+fn selected_row($s)
+  if $s.agents.selected==nil then return nil end
+  $p=$s.agents.selected;$n=$s.agents.nodes[$p.node] ?? {}
+  $rows=filter($n.sessions ?? [],fn($r)=$r.session==$p.session)
+  return if len($rows)>0 then $rows[0] else nil end
+end
+fn form_node($s) return if $s.row_key!=nil and starts_with($s.row_key,"agents:new:") then strip_prefix($s.row_key,"agents:new:") else $agents.local_name($s) end end
+fn can_send($s)
+  $r=selected_row($s)
+  return $r!=nil and $r.status=="ready" and not $s.agents.prompting
+end
+fn options($list)
+  $out=[]
+  for $o in array($list)
+    if type($o)!="map" then continue end
+    if type($o.value)=="string" then push($out,{id:$o.value,label:string($o.name,$o.value)})
+    else $out=concat($out,options($o.options)) end
+  end
+  return $out
+end
+fn blocks($items)
+  $out=[];$index=0
+  for $item in $items
+    $id=to_string($index);$index=$index+1;$text=$item.text ?? ""
+    if $item.item=="prompt" then push($out,{id:$id..":label",kind:"text",text:"You",strong:true,space:6});push($out,{id:$id,kind:"text",text:$text})
+    elif $item.item=="message" then push($out,{id:$id,kind:"text",text:$text,space:4})
+    elif $item.item=="thought" then push($out,{id:$id,kind:"collapse",title:"Thinking",weak:true,text:$text,body_style:{weak:true,italic:true}})
+    elif $item.item=="tool" then push($out,{id:$id,kind:"collapse",mono:true,title:(if $item.title!="" then $item.title elif $item.tool!="" then $item.tool else "tool" end).."  ["..$item.status.."]",text:json_encode($item.raw,true),body_style:{mono:true,small:true}})
+    elif $item.item=="plan" then
+      for $j=0 to len($item.entries)-1 push($out,{id:$id..":"..to_string($j),kind:"text",text:$item.entries[$j],small:true}) end
+    elif $item.item=="stop" then push($out,{id:$id,kind:"text",text:"Turn ended: "..$item.reason,weak:true,small:true});push($out,{id:$id..":line",kind:"separator"})
+    elif $item.item=="error" then push($out,{id:$id,kind:"text",text:$item.message,error:true})
+    else push($out,{id:$id,kind:"text",text:($item.kind ?? "").." "..$text,weak:true,small:true}) end
+  end
+  return $out
+end
+fn time_left($seconds)
+  return if $seconds<120 then to_string($seconds).." s left, then refused" elif $seconds<3600 then to_string(floor($seconds/60)).." min left, then refused" else "over an hour left" end
+end
+fn permissions($row)
+  if $row==nil then return [] end
+  $out=[];$index=0
+  for $card in array($row.permissions)
+    if type($card)!="map" then continue end
+    $id=to_string($index);$index=$index+1
+    push($out,{id:$id..":line",kind:"separator"});push($out,{id:$id..":label",kind:"text",text:"Permission asked",strong:true})
+    push($out,{id:$id..":title",kind:"text",text:string($card.title,"")})
+    $label=$row.agent.." · "..$row.cwd
+    if type($card.expires_at)=="number" then $label=$label.."  · "..time_left(floor(max(0,$card.expires_at-time()))) end
+    push($out,{id:$id..":metadata",kind:"text",text:$label,weak:true});$choices=[]
+    for $option in array($card.options)
+      if type($option)!="map" or type($option.optionId)!="string" then continue end
+      push($choices,{id:$option.optionId,label:if string($option.name,"")!="" then $option.name else $option.optionId end,primary:$option.kind=="allow_once",value:{request:if type($card.request)=="string" then $card.request else json_encode($card.request) end,option:$option.optionId}})
+    end
+    push($out,{id:$id,kind:"choices",choices:$choices})
+  end
+  return $out
+end
+fn project($s)
+  $a=$s.agents;$row=selected_row($s);$new=$s.row_key!=nil and starts_with($s.row_key,"agents:new:")
+  $session=$row!=nil and $s.row_key=="agent:"..$row.node..":"..$row.session
+  $header=[];$title="";$live=false;$running=false
+  if $row!=nil then
+    $live=$row.status!="ended";$running=$row.status=="running";$title=if $row.title!=nil then $row.title else $agents.row_label($row) end
+    $header=[{id:"status",label:"Status",value:$agents.badge($row)},{id:"cwd",label:"Working directory",value:$row.cwd,mono:true}]
+    for $o in array($a.config_options)
+      if type($o)=="map" and $o.type=="select" and type($o.id)=="string" then push($header,{id:"option:"..$o.id,label:string($o.name,$o.id),value:string($o.currentValue,""),choices:options($o.options),enabled:$live}) end
+    end
+    if not any(array($a.config_options),fn($o)=type($o)=="map" and $o.category=="mode") and type($a.modes)=="map" then
+      $choices=[]
+      for $o in array($a.modes.availableModes) if type($o)=="map" and type($o.id)=="string" then push($choices,{id:$o.id,label:string($o.name,$o.id)}) end end
+      if len($choices)>0 then push($header,{id:"mode",label:"Mode",value:string($a.modes.currentModeId,""),choices:$choices,enabled:$live}) end
+    end
+  end
+  $node=form_node($s);$entry=$a.nodes[$node] ?? {};$instances=$entry.instances ?? {};$list=array($instances.agents);$choices=[{id:"",label:"Choose an agent"}]
+  for $i in $list if type($i)=="map" and type($i.agent)=="string" then push($choices,{id:$i.agent,label:$i.agent}) end end
+  $chosen=filter($list,fn($i)=type($i)=="map" and $i.agent==$a.new_agent);$roots=if len($chosen)>0 then join(filter(array($chosen[0].roots),fn($r)=type($r)=="string"),", ") else "" end
+  $newform=[{id:"new-agent",label:"Agent",value:$a.new_agent,choices:$choices},{id:"new-cwd",label:"Working directory",value:$a.new_cwd,editable:true,placeholder:$roots}]
+  $cap=if type($instances.live)=="number" and type($instances.max_live)=="number" then to_string($instances.live).." of "..to_string($instances.max_live).." sessions running" else "" end
+  $can_start=$cap!="" and $instances.live<$instances.max_live and trim($a.new_agent)!="" and trim($a.new_cwd)!=""
+  $t=$a.transcript;$blocks=blocks($t.items)
+  if len($blocks)==0 then $blocks=[{id:"empty",kind:"text",text:if $t.filling then "Reading the session log…" else "No events yet." end,weak:true}] end
+  $permission=permissions($row);$ready=can_send($s)
+  return {agent_new:$new,agent_session:$session,agent_intro:not $new and not $session,agent_live:$live,agent_running:$running,agent_ended:$row!=nil and not $live,agent_error:$a.error ?? "",agent_title:$title,agent_header:{id:"agent-header",kind:"form-grid",label:"Agent session",initial:$header},agent_newform:{id:"agent-newform",kind:"form-grid",label:"New session",initial:$newform},agent_cap:$cap,agent_start:{id:"agent-start",kind:"button",label:"Start",initial:"",properties:{text:"Start",style:"primary",enabled:$can_start}},agent_evicted:$t.evicted,agent_gap:$t.gap,agent_transcript:{id:"agent-transcript",kind:"block-list",label:"Transcript",initial:$blocks,properties:{document:$t.session,stick_to_bottom:true,reserve_height:(if $live then 110 else 0 end)+len($permission)*20}},agent_permissions:{id:"agent-permissions",kind:"block-list",label:"Permission questions",initial:$permission,properties:{scroll:false}},agent_composer:{id:"agent-composer",kind:"editor",label:"Ask the agent… (Ctrl+Enter sends)",initial:$a.draft,properties:{rows:3,plain:true,enabled:$ready,placeholder:if $ready then "Ask the agent… (Ctrl+Enter sends)" else "The agent is working; Cancel turn stops it." end,submit_chord:"Ctrl+Enter"}},agent_send:{id:"agent-send",kind:"button",label:"Send",initial:"",properties:{text:"Send",style:"primary",enabled:$ready and trim($a.draft)!=""}}}
+end

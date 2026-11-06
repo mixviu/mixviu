@@ -118,7 +118,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("radius", false, None),
         p("background", "string", false, None),
     ];
-    static ROW: [Port; 11] = [
+    static ROW: [Port; 12] = [
         p("children", "list", true, None),
         pnd("gap", "0", None),
         pnd("padding", "0", None),
@@ -138,6 +138,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("on_click", "string", false, None),
         // A secondary (right) click: the `context` event kind.
         p("on_context", "string", false, None),
+        p("wrap", "bool", false, None),
     ];
     static TEXT: [Port; 12] = [
         p("text", "string", true, None),

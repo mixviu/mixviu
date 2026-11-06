@@ -1,4 +1,34 @@
-# Workshop port inventory
+# Workshop parity — implementation in progress
+
+The current parity job uses pinned gold
+`8779f33284b7d3f1178c3d57a699efb9b0867b22`. Gold wins where the earlier inventory
+disagrees. The bounded specimen described below is historical, not the current
+behaviour or an acceptance claim.
+
+| Gold capability | Current parity work |
+| --- | --- |
+| Shared frame, action registry, menus, keymaps, About/Shortcuts and per-window themes | Wired; native and visual matrix pending |
+| Nodes, identities, remote routes, description fallback and progress | Implemented with separate local/remote read lanes, 64 descriptions per node, queued/phase deadlines, stale generation checks and last-good retention |
+| Command body, Format, Clear, Call and reply | Gold 65,536-byte body bound, 30-second raw native call, deferred outcome, no retry, return code/error/body preservation and 1,000,000-byte UTF-8 reply bound |
+| Traffic observation and dock | Bounded/redacted ring, correlation, loss, pause/filter, Auto/Bottom/Right and native table/card presentation implemented; native matrix pending |
+| Macro manager | Storage, running-app routing, groups, creation, source/drafts, save-before-run, run/stop/copy/move/delete confirmation, target/destination and Ced/Dopus effects implemented; shared editor integration and native matrix pending |
+| Mesh | Bounded totals, time windows, probes and observer replacement/stale fencing implemented; radial canvas and inspector composed with reusable Viu controls; native matrix pending |
+| Agents | Node/session lifecycle, trusted MCP refusal, transcript catch-up/follow, configuration, forms/composer and permission-card policy implemented; native matrix pending |
+| Saved arrangement, complete Bus equivalence, single-instance launch and live Prefs | Completion and acceptance work active |
+| Macro recording/generated forms, SSH/WireGuard pages | Earlier roadmap inventory, absent from pinned gold; not a parity requirement |
+
+W1: Format pretty-prints JSON exactly as gold; reply display is bounded at
+1,000,000 UTF-8 bytes. No proposed deviation is pending. Intra-app traffic stays
+in process. Application policy is Mix; native changes are reusable facilities
+and widgets, with no application reducers in Rust.
+
+CBC `20261107-080757-7c328b78-a1` passed at `b4b4488581258996f484d97e3926acd1b6f0d56d`,
+including embedded Workshop policy tests, launch tests, native bridge tests and
+72 scene tests. The full log was read and its formatting patch applied. The
+debug artefact is exploratory. Exact release, full native, live Prefs and visual
+receipts remain pending. Overall **NOT ACCEPTED**.
+
+## Historical bounded specimen (2026-11-06)
 
 Oracle: MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`,
 `apps/workshop`: inspector model/bus/engine/workshop/mesh/agents, application

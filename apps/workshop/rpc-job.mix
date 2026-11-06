@@ -1,25 +1,32 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
-$model=require("model.mix")
+$model=require("model.mix");$counter=require("counter.mix")
+fn description($service,$command,$timeout)
+  send $service $command body="" timeout=$timeout reply_mode="raw"
+  if $reply.transport_error!=nil then raise("DESCRIPTION",$reply.transport_error) end
+  if $reply.rc>=10 then raise("DESCRIPTION","rc = "..to_string($reply.rc)..": "..($reply.error ?? "").." "..$reply.body) end
+  return $model.catalogue(json_parse($reply.body))
+end
 on job.run
   $a=$event.args
   try
     if $a.op=="describe" then
+      if monotonic()-$a.queued>=10 then raise("DESCRIPTION","discovery capacity deadline exceeded") end
+      if monotonic()>=$a.phase_deadline then raise("DESCRIPTION","description phase deadline exceeded") end
       $started=monotonic();$ok=false;$why=""
       try
-        send $a.service "HELP" body="" timeout=3
-        if $rc>=10 then raise("HELP",to_string($result)) end
-        $commands=$model.catalogue($reply);$ok=true
+        $commands=description($a.service,"HELP",3);$ok=true
       catch $message $why=$message end
       if not $ok then
         $left=3-(monotonic()-$started)
         if $left<0.1 then raise("HELP",$why) end
-        send $a.service "app.describe" body="" timeout=$left
-        if $rc>=10 then raise("DESCRIBE","HELP: "..$why.."\napp.describe: "..to_string($result)) end
-        $commands=$model.catalogue($reply)
+        try $commands=description($a.service,"app.describe",$left)
+        catch $message raise("DESCRIBE","HELP: "..$why.."\napp.describe: "..$message) end
       end
       reply(0,json_encode({Ok:$commands}))
     else
-      send $a.service $a.command body=($a.body ?? "") timeout=($a.timeout ?? 3) reply_mode="raw"
+      $body=$a.body ?? ""
+      if type($body)=="map" then $body=$counter.wire($body) end
+      send $a.service $a.command body=$body timeout=($a.timeout ?? 3) reply_mode="raw"
       reply(if $reply.transport_error!=nil then 20 else 0 end,json_encode($reply))
     end
   catch $message

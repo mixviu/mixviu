@@ -250,7 +250,8 @@ impl eframe::App for Host {
 }
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
-        self.deliveries.retain(|ack| ack.load(std::sync::atomic::Ordering::Acquire) == 0);
+        self.deliveries
+            .retain(|ack| ack.load(std::sync::atomic::Ordering::Acquire) == 0);
         self.facilities.prepare(ctx, &self.bus);
         self.deferred.retain(|_, reply| !reply.is_closed());
         while let Ok(request) = self.local_ui.requests.try_recv() {
@@ -269,8 +270,9 @@ impl Host {
                     .ok_or("request id and byte rc required".into())
                     .and_then(|(id, rc)| {
                         let value = match request.args.get("value_json") {
-                            Some(Value::String(text)) if text.len() <= 16 * 1024 * 1024 =>
-                                serde_json::from_str(text).map_err(|e| e.to_string())?,
+                            Some(Value::String(text)) if text.len() <= 16 * 1024 * 1024 => {
+                                serde_json::from_str(text).map_err(|e| e.to_string())?
+                            }
                             Some(_) => return Err("value_json must be bounded JSON text".into()),
                             None => request.args["value"].clone(),
                         };
