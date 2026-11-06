@@ -1,0 +1,28 @@
+$rc=0
+$prepare=contains(args(),"--prepare")
+if $prepare then print(run_argv(["cargo","fmt","-p","scene","-p","viu","-p","viu-engine"])) end
+try
+  for $a in [["/opt/mixos/bin/mix","apps/screenshot/policy-test.mix"],["cargo","fmt","-p","scene","-p","viu","-p","viu-engine","--","--check"],["cargo","check","--locked","-p","scene","-p","viu","-p","viu-engine","--all-targets"],["cargo","test","--locked","-p","scene","-p","viu","-p","viu-engine"],["cargo","clippy","--locked","-p","scene","-p","viu","-p","viu-engine","--all-targets"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
+    if contains(args(),"--frame-only") and $a[1]=="test" then $a=["cargo","test","--locked","-p","viu","--test","gold_frame"] end
+    if $prepare and $a[1]=="check" then $a=filter($a,fn($arg)=$arg!="--locked") end
+    print({argv:$a})
+    $r=run_argv($a,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}})
+    print($r)
+    if not $r.ok then $rc=$r.exit_code ?? 124;break end
+  end
+  if $rc==0 then
+    $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+    $artifact="/build/gold-parity-artifacts/"..$sha
+    mkdir($artifact,{parents:true})
+    copy("target/debug/viu",$artifact.."/viu")
+    print({artifact:$artifact,sha256:hash_file($artifact.."/viu","sha256")})
+  end
+finally
+  print("GOLD_PARITY_PATCH_BEGIN")
+  $diff=run_argv_must(["git","diff","--binary"])
+  print($diff)
+  if $diff!="" and $rc==0 then $rc=97 end
+  print("GOLD_PARITY_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+end
+exit($rc)
