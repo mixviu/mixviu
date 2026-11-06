@@ -76,10 +76,10 @@ fn project($s)
       if len($choices)>0 then push($header,{id:"mode",label:"Mode",value:string($a.modes.currentModeId,""),choices:$choices,enabled:$live}) end
     end
   end
-  $node=form_node($s);$entry=$a.nodes[$node] ?? {};$instances=$entry.instances ?? {};$list=array($instances.agents);$choices=[{id:"",label:"Choose an agent"}]
+  $node=form_node($s);$entry=$a.nodes[$node] ?? {};$instances=$entry.instances ?? {};$list=array($instances.agents);$choices=[]
   for $i in $list if type($i)=="map" and type($i.agent)=="string" then push($choices,{id:$i.agent,label:$i.agent}) end end
   $chosen=filter($list,fn($i)=type($i)=="map" and $i.agent==$a.new_agent);$roots=if len($chosen)>0 then join(filter(array($chosen[0].roots),fn($r)=type($r)=="string"),", ") else "" end
-  $newform=[{id:"new-agent",label:"Agent",value:$a.new_agent,choices:$choices},{id:"new-cwd",label:"Working directory",value:$a.new_cwd,editable:true,placeholder:$roots}]
+  $newform=[{id:"new-agent",label:"Agent",value:$a.new_agent,choices:$choices,placeholder:"Choose an agent"},{id:"new-cwd",label:"Working directory",value:$a.new_cwd,editable:true,placeholder:$roots}]
   $cap=if type($instances.live)=="number" and type($instances.max_live)=="number" then to_string($instances.live).." of "..to_string($instances.max_live).." sessions running" else "" end
   $can_start=$cap!="" and $instances.live<$instances.max_live and trim($a.new_agent)!="" and trim($a.new_cwd)!=""
   $t=$a.transcript;$blocks=blocks($t.items)
