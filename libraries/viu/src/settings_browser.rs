@@ -204,6 +204,7 @@ pub fn validate(value: &Value) -> Result<(), String> {
                 "previews",
                 "swatches",
                 "number",
+                "slider",
                 "text",
                 "link",
                 "button",
@@ -271,7 +272,7 @@ pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String>
                     "toggle" if !payload["value"].is_boolean() => {
                         return Err("toggle requires boolean".into());
                     }
-                    "number" if !payload["value"].is_number() => {
+                    "number" | "slider" if !payload["value"].is_number() => {
                         return Err("number requires number".into());
                     }
                     "text" | "multitext" | "secret" if !payload["value"].is_string() => {
@@ -587,8 +588,7 @@ pub(crate) fn draw(
             .show(&mut body, |ui| {
                 ui.set_width(width);
                 if let Some(notice) = value["notice"].as_str().filter(|s| !s.is_empty()) {
-                    ui.label(RichText::new(notice).color(look.value));
-                    ui.add_space(look.s);
+                    browser_notice(ui, &look, notice);
                 }
                 if value["pending"].is_object() {
                     egui::Frame::NONE
@@ -679,6 +679,16 @@ fn cards(
             );
             ui.add_space(look.xs);
         }
+        let visible: Vec<_> = array(&section["rows"]).filter(|r| r["shown"] != false).collect();
+        let quiet = visible.len() > 1 && visible.iter().all(|r| r.get("reason").unwrap_or(&r["blocked"]).is_string());
+        if quiet {
+            let mut said = BTreeSet::new();
+            for row in &visible {
+                if let Some(reason) = row.get("reason").unwrap_or(&row["blocked"]).as_str() {
+                    if said.insert(reason) {browser_notice(ui, look, reason);}
+                }
+            }
+        }
         egui::Frame::NONE
             .fill(look.card)
             .corner_radius(Look::radius(look.r_s))
@@ -698,10 +708,23 @@ fn cards(
                         );
                         ui.add_space(1.0);
                     }
-                    draw_row(ui, id, row, look, geometry, events);
+                    if quiet {
+                        let mut row = row.clone();
+                        row["reason"] = Value::Null;
+                        draw_row(ui, id, &row, look, geometry, events);
+                    } else {
+                        draw_row(ui, id, row, look, geometry, events);
+                    }
                 }
             });
     }
+}
+fn browser_notice(ui: &mut Ui, look: &Look, notice: &str) {
+    ui.horizontal_wrapped(|ui| {
+        ui.add(crate::icons::image_of(ui.ctx(),crate::icons::Icon::from_name("circle-alert").unwrap(),16.0,look.warning));
+        ui.label(RichText::new(notice).size(12.0).color(look.text));
+    });
+    ui.add_space(look.xs);
 }
 struct Labels {
     title: std::sync::Arc<egui::Galley>,
@@ -724,7 +747,7 @@ impl Labels {
                 .as_str()
                 .filter(|s| !s.is_empty())
                 .map(|s| lay(s, 12.0, width)),
-            reason: row["blocked"].as_str().map(|s| lay(s, 12.0, width - 16.0)),
+            reason: row.get("reason").unwrap_or(&row["blocked"]).as_str().map(|s| lay(s, 12.0, width - 16.0)),
         }
     }
     fn height(&self) -> f32 {
@@ -878,7 +901,11 @@ fn draw_row(
             let control_width = match kind {
                 "toggle" => 48.0,
                 "link" => 16.0,
-                "number" => 160.0,
+                "number" => 96.0,
+                "slider" => 360.0,
+                "choice" => array(&row["choices"]).map(|c| text_width(ui, text(c,"label"),14.0)).fold(0.0_f32,f32::max)+33.0,
+                "pick" => text_width(ui,text(row,"value"),14.0)+28.0,
+                "info" => text_width(ui,text(row,"value"),14.0),
                 _ => 180.0,
             };
             let beside = !stacked && width - control_width - look.xs >= 200.0;
@@ -903,7 +930,7 @@ fn draw_row(
                     },
                 );
             } else {
-                if kind != "previews" || !row["blocked"].is_null() {
+                if kind != "previews" || !row.get("reason").unwrap_or(&row["blocked"]).is_null() {
                     let labels = Labels::new(ui, row, look, width);
                     let (rect, _) =
                         ui.allocate_exact_size(vec2(width, labels.height()), Sense::hover());
@@ -1154,6 +1181,25 @@ fn draw_control(
                 }
             });
         }
+        "choice" if row["presentation"] == "segmented" => {
+            let (rect,_) = ui.allocate_exact_size(vec2(ui.available_width(),32.0),Sense::hover());
+            ui.painter().rect_filled(rect,Look::radius(look.r_xl),look.field);
+            let each=rect.width()/array(&row["choices"]).count().max(1) as f32;
+            for (index,choice) in array(&row["choices"]).enumerate() {
+                let r=Rect::from_min_size(pos2(rect.left()+each*index as f32,rect.top()),vec2(each,32.0));
+                let response=ui.interact(r,ui.scope_id().with((id,key,index)),Sense::click());
+                let selected=choice["value"]==row["value"];
+                if selected {ui.painter().rect_filled(r.shrink(1.0),Look::radius(look.r_xl),look.sidebar_selected);}
+                let title=if selected {format!("✓ {}",text(choice,"label"))}else{text(choice,"label").to_owned()};
+                ui.painter().text(r.center(),egui::Align2::CENTER_CENTER,title,egui::FontId::proportional(14.0),look.text);
+                response.widget_info(||egui::WidgetInfo::selected(egui::Role::RadioButton,ui.is_enabled(),selected,text(choice,"label")));
+                record(geometry,id,&format!("row.{key}.choice.{index}"),&response);
+                if response.clicked() && !selected {edit=Some(choice["value"].clone());}
+            }
+        }
+        "choice" if row["presentation"] == "images" => {
+            images(ui,id,row,&array(&row["choices"]).collect::<Vec<_>>(),look,events,geometry);
+        }
         "choice" if row["presentation"] != "dropdown" => {
             ui.horizontal_wrapped(|ui| {
                 for (index, choice) in array(&row["choices"]).enumerate() {
@@ -1188,6 +1234,14 @@ fn draw_control(
                 edit = Some(json!(value));
             }
         }
+        "slider" => {
+            let scale=row["scale"].as_f64().unwrap_or(1.0);
+            let value=row["value"].as_f64().unwrap_or(row["min"].as_f64().unwrap_or(0.0));
+            let range=(row["min"].as_f64().unwrap_or(0.0),row["max"].as_f64().unwrap_or(100.0));
+            if let Some(next)=cosmic_slider(ui,(id,key),value*scale,(range.0*scale,range.1*scale),row["step"].as_f64().unwrap_or(0.0)*scale,row["show_value"]==true,row["start"].as_str(),row["end"].as_str(),text(row,"title"),look) {
+                edit=Some(json!(((next/scale*1e6).round()/1e6).clamp(range.0,range.1)));
+            }
+        }
         "text" => {
             let mut value = text(row, "value").to_owned();
             let r = ui.add(
@@ -1200,7 +1254,25 @@ fn draw_control(
                 edit = Some(json!(value));
             }
         }
-        "choice" | "pick" => {
+        "choice" => {
+            let current=array(&row["choices"]).find(|c|c["value"]==row["value"]).map(|c|text(c,"label")).unwrap_or(text(row,"value"));
+            let width=array(&row["choices"]).map(|c|text_width(ui,text(c,"label"),14.0)).fold(text_width(ui,current,14.0),f32::max)+33.0;
+            let (rect,r)=ui.allocate_exact_size(vec2(width,32.0),Sense::click());
+            let ink=if ui.is_enabled(){look.value}else{look.value.gamma_multiply(0.65)};
+            toolkit::button::paint_icon(ui,toolkit::Icon::ChevronDown,pos2(rect.right()-17.0,rect.center().y),16.0,ink);
+            ui.painter().text(pos2(rect.right()-33.0,rect.center().y),egui::Align2::RIGHT_CENTER,current,egui::FontId::proportional(14.0),ink);
+            focus_ring(ui,&r,rect,look.r_s,look);
+            r.widget_info(||egui::WidgetInfo::selected(egui::Role::ComboBox,ui.is_enabled(),false,text(row,"title")));
+            egui::Popup::menu(&r).show(|ui| {
+                ui.set_min_width(width);
+                for choice in array(&row["choices"]) {
+                    let selected=choice["value"]==row["value"];
+                    if toolkit::selectable(ui,selected,text(choice,"label")).clicked() && !selected {edit=Some(choice["value"].clone());ui.close();}
+                }
+            });
+            record(geometry,id,&format!("row.{key}.control"),&r);
+        }
+        "pick" => {
             let (r, value) = picker(ui, id, row);
             record(geometry, id, &format!("row.{key}.control"), &r);
             edit = value;
@@ -1696,3 +1768,195 @@ fn draw_ordered(
         }
     });
 }
+
+#[allow(clippy::too_many_arguments)]
+fn cosmic_slider(
+    ui: &mut Ui,
+    salt: (&str, &str),
+    value: f64,
+    range: (f64, f64),
+    step: f64,
+    show_value: bool,
+    start: Option<&str>,
+    end: Option<&str>,
+    name: &str,
+    look: &Look,
+) -> Option<f64> {
+    let id = ui.scope_id().with(("slider", salt));
+    let held: Option<f64> = ui.data(|d| d.get_temp(id));
+    let shown = held.unwrap_or(value);
+    let mut out = None;
+    ui.spacing_mut().item_spacing.x = look.xs;
+    // Read left to right: the value, the start label, the rail, the end
+    // label, whichever way the row lays it out.
+    let rtl = ui.layout().prefer_right_to_left();
+    let text = |ui: &mut Ui, s: String| {
+        ui.label(RichText::new(s).size(14.0).color(look.text));
+    };
+    let value_text = show_value.then(|| format!("{shown:.0}"));
+    if rtl {
+        if let Some(end) = end {
+            text(ui, end.to_owned());
+        }
+    } else {
+        if let Some(v) = &value_text {
+            text(ui, v.clone());
+        }
+        if let Some(start) = start {
+            text(ui, start.to_owned());
+        }
+    }
+    // Beside its labels the rail is COSMIC's 250; stacked under them it
+    // spans the row, its end label at the card padding.
+    let width = if rtl {
+        250.0_f32.min(ui.available_width() * 0.5).max(120.0)
+    } else {
+        let end_width = end.map_or(0.0, |e| text_width(ui, &e.to_owned(), 14.0) + look.xs);
+        (ui.available_width() - end_width).max(60.0)
+    };
+
+    let (rect, response) = ui.allocate_exact_size(vec2(width, 24.0), Sense::click_and_drag());
+    let span = (range.1 - range.0).max(f64::EPSILON);
+    let rail = Rect::from_center_size(rect.center(), vec2(rect.width() - 20.0, 4.0));
+    let t = ((shown - range.0) / span).clamp(0.0, 1.0) as f32;
+    let x = rail.min.x + t * rail.width();
+    let alpha = if ui.is_enabled() { 1.0 } else { 0.5 };
+    ui.painter().rect_filled(
+        rail,
+        Look::radius(look.r_xs),
+        look.track_off.gamma_multiply(alpha),
+    );
+    ui.painter().rect_filled(
+        Rect::from_min_max(rail.min, pos2(x, rail.max.y)),
+        Look::radius(look.r_xs),
+        look.accent.gamma_multiply(alpha),
+    );
+    ui.painter().circle_filled(
+        pos2(x, rect.center().y),
+        10.0,
+        look.accent.gamma_multiply(alpha),
+    );
+    focus_ring(ui, &response, rect, look.r_m, look);
+    let at = |pos: egui::Pos2| {
+        let t = ((pos.x - rail.min.x) / rail.width()).clamp(0.0, 1.0) as f64;
+        let v = range.0 + t * span;
+        if step > 0.0 {
+            range.0 + ((v - range.0) / step).round() * step
+        } else {
+            v
+        }
+    };
+    if (response.dragged() || response.drag_started())
+        && let Some(pos) = response.interact_pointer_pos()
+    {
+        ui.data_mut(|d| d.insert_temp(id, at(pos)));
+    }
+    // Arrow keys step a focused slider (the Role::Slider promise).
+    if response.has_focus() {
+        let unit = if step > 0.0 { step } else { span / 20.0 };
+        let delta = ui.input(|i| {
+            if i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::ArrowUp) {
+                unit
+            } else if i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::ArrowDown) {
+                -unit
+            } else {
+                0.0
+            }
+        });
+        if delta != 0.0 {
+            out = Some((value + delta).clamp(range.0, range.1));
+        }
+    }
+    if response.drag_stopped() {
+        out = ui.data_mut(|d| d.remove_temp::<f64>(id));
+    } else if response.clicked()
+        && let Some(pos) = response.interact_pointer_pos()
+    {
+        out = Some(at(pos));
+    }
+    response.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), shown, name));
+    if rtl {
+        if let Some(start) = start {
+            text(ui, start.to_owned());
+        }
+        if let Some(v) = value_text {
+            text(ui, v);
+        }
+    } else if let Some(end) = end {
+        text(ui, end.to_owned());
+    }
+    out.filter(|v| (v - value).abs() > f64::EPSILON)
+}
+
+
+fn text_width(ui: &Ui, text: &str, size: f32) -> f32 { ui.painter().layout_no_wrap(text.to_owned(),egui::FontId::proportional(size),Color32::WHITE).size().x }
+
+fn images(
+    ui: &mut Ui,
+    id: &str,
+    row: &Value,
+    options: &[&Value],
+    look: &Look,
+    events: &mut Vec<Intent>,
+    geometry: &mut BTreeMap<String, Rect>,
+) {
+    let key=text(row,"id");
+    let count = options.len().max(1) as f32;
+    let gap = look.xs;
+    // Below three cells' width the images shrink to fit, never clip.
+    let cell = 191.0_f32
+        .min((ui.available_width() - gap * (count - 1.0)) / count)
+        .max(1.0);
+    let total = cell * count + gap * (count - 1.0);
+    let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), 100.0 + 30.0), Sense::hover());
+    let left = area.center().x - total / 2.0;
+    for (i, option) in options.iter().enumerate() {
+        let selected = option["value"]==row["value"];
+        let text = text(option,"label").to_owned();
+        let radius = match option["value"].as_str() {
+            Some("round") => 16.0,
+            Some("slightly_round") => 6.0,
+            _ => 0.0,
+        };
+        let rect = Rect::from_min_size(
+            pos2(left + i as f32 * (cell + gap), area.min.y),
+            vec2(cell, 100.0),
+        );
+        let response = ui.interact(rect, ui.scope_id().with(("image", key, i)), Sense::click());
+        ui.painter()
+            .rect_filled(rect, Look::radius(look.r_s), look.window);
+        let window =
+            Rect::from_min_size(rect.min + vec2(cell * 0.17, 24.0), vec2(cell * 0.66, 60.0));
+        ui.painter()
+            .rect_filled(window, Look::radius(radius), look.card);
+        ui.painter().rect_filled(
+            Rect::from_min_size(window.min + vec2(12.0, 14.0), vec2(48.0, 18.0)),
+            Look::radius(radius.min(9.0)),
+            look.accent,
+        );
+        if selected {
+            ui.painter().rect_stroke(
+                rect,
+                Look::radius(look.r_s),
+                Stroke::new(2.0, look.accent),
+                StrokeKind::Inside,
+            );
+        }
+        focus_ring(ui, &response, rect, look.r_s, look);
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::Role::RadioButton, ui.is_enabled(), selected, &text)
+        });
+        record(geometry,id,&format!("row.{key}.choice.{i}"),&response);
+        if response.clicked() && !selected && ui.is_enabled() {
+            emit(events,id,"edit",json!({"row":key,"value":option["value"]}));
+        }
+        ui.painter().text(
+            pos2(rect.center().x, rect.max.y + 8.0),
+            egui::Align2::CENTER_TOP,
+            &text,
+            egui::FontId::proportional(14.0),
+            look.text,
+        );
+    }
+}
+
