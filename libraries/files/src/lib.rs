@@ -51,3 +51,5 @@ pub mod schema;
 pub mod store;
 
 pub use error::{FilesError, Result};
+
+pub mod local_path;
