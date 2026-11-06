@@ -24,14 +24,14 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 config.workspace = true
-paths.workspace = true
+paths = { path = "../../libraries/paths" }
 edges.workspace = true
 
 [dev-dependencies]
 ui.workspace = true
 egui_kittest.workspace = true
 tempfile.workspace = true
-test-broker.workspace = true
+test-broker = { path = "../../libraries/test-broker" }
 
 [lints.clippy]
 mod_module_files = "deny"
