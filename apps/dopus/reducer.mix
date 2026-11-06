@@ -234,8 +234,8 @@ fn dp_action($s,$contract,$id,$params)
   elif starts_with($id,"theme.style-") then $s.appearance.style=slice($id,len("theme.style-"))
   elif starts_with($id,"theme.scheme-") then $s.appearance.scheme=slice($id,len("theme.scheme-"))
   elif $id=="help.macros" then $s.reply={panel:"macros"}
-  elif $id=="help.shortcuts" then return dp_form($s,"message","Keyboard shortcuts",join(map($contract.actions,fn($a)=join($a.keys,", ").."  "..$a.label),"\n"),nil,{})
-  elif $id=="help.about" then return dp_form($s,"message","About Dopus","Dopus — Mix behaviour with shared native Viu widgets.\nLab comparison implementation.",nil,{})
+  elif $id=="help.shortcuts" then return dp_form($s,"message","Keyboard shortcuts",join(map($contract.actions,fn($a)=join($a.keys,", ").."  "..$a.label),"\n"),nil,{legacy_kind:"shortcuts"})
+  elif $id=="help.about" then return dp_form($s,"message","About Dopus","Dopus — Mix behaviour with shared native Viu widgets.\nLab comparison implementation.",nil,{legacy_kind:"about"})
   elif $id=="search" then
     if $s.form.open then raise("BUSY","Answer the current dialog first") end
     $s=dp_form($s,"search","Search commands","","",{})

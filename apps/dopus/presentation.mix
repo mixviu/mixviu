@@ -90,6 +90,26 @@ fn dp_properties($pane)
   push($fields,{label:"Path",value:$dp.dp_display($path)})
   return $fields
 end
+-- Original typed dialog envelope. Rendering and native automation continue
+-- to consume the same Viu form; old Bus readers retain their named fields.
+fn dp_legacy_view($s)
+  if not $s.form.open then return nil end
+  $kind=$s.reservation.kind
+  $buttons=[]
+  if $kind=="delete" then
+    $buttons=[{id:"yes",label:"Yes",role:"default"},{id:"no",label:"No",role:"cancel"}]
+  elif $kind=="message" then
+    $buttons=[{id:"done",label:"Done",role:"default"}]
+  else
+    for $c in $s.form.choices
+      push($buttons,{id:$c.id,label:$c.label,role:if $c.cancel ?? false then "cancel" elif $c.default ?? false then "default" else "other" end})
+    end
+  end
+  $out={kind:if contains(["mkdir","rename"],$kind) then "name" elif $kind=="message" then $s.reservation.operation.legacy_kind ?? "message" else $kind end,title:$s.form.title,buttons:$buttons,status:$s.info ?? ""}
+  if $s.form.field!=nil then $out.name=$s.form.field else $out.body=$s.form.body end
+  if $kind=="drop" then $out.paths=$s.reservation.operation.sources;$out.path=$s.reservation.operation.destination end
+  return $out
+end
 fn dp_project($state,$contract,$cache)
   $window=$state.window ?? {}
   $title_align=$window["window.title_align"] ?? "auto"
@@ -109,6 +129,7 @@ fn dp_project($state,$contract,$cache)
   $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
   $values={"caption-title":$dp.dp_display($state.panes[$state.active].path),menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
   $values.window={side:$caption_side,enabled:true}
+  $values.form.dialog=dp_legacy_view($state)
   $panes=[]
   for $i=0 to 1
     $p=$state.panes[$i]

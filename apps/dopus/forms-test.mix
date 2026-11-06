@@ -26,4 +26,12 @@ forms_test_check($state.form.open and $state.form.error!="" and $state.reservati
 $refused=false
 try $app.dp_form($state,"mkdir","Another","","new",{}) catch $message $refused=true end
 forms_test_check($refused,"only one name edit can be pending")
-print(json_encode({checks:7,result:"passed"}))
+$view=require("presentation.mix")
+$legacy=$view.dp_legacy_view($state)
+forms_test_check($legacy.kind=="name" and $legacy.name=="../bad","legacy name envelope retains the actual prompt text")
+$state=$app.dp_answer($state,"cancel")
+forms_test_check($view.dp_legacy_view($state)==nil,"closed legacy envelope is nil")
+$state=$app.dp_form($state,"message","About Dopus","About body",nil,{legacy_kind:"about"})
+$legacy=$view.dp_legacy_view($state)
+forms_test_check($legacy.kind=="about" and $legacy.body=="About body" and $legacy.buttons[0].id=="done","legacy message envelope has a typed Done button")
+print(json_encode({checks:10,result:"passed"}))
