@@ -10,9 +10,15 @@ fn next(r:&Runtime, wakes:&mpsc::Receiver<()>)->Completion {
 fn program()->Program {
     Program {path:PathBuf::from("/tmp/deferred.mix"),scene:"deferred".into(),citizen:"deferred".into(),source:r#"
 $handles=[]
+$ctx=viu_context()
 on keep
   $h=viu_reply("keep")
   push($handles,$h)
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:{handle:$h}}
+end
+on keep-and-reply
+  viu_reply("keep")
+  reply(0,"{}")
 end
 on complete
   $h=$handles[$event.args.index]
@@ -74,20 +80,50 @@ fn requests_survive_callbacks_and_reply_to_the_original_caller_once() {
 fn identity_faults_and_caller_loss_do_not_deliver_a_wrong_or_partial_reply() {
     let (mut r,wakes)=setup();
     let sequence=r.event("keep".into(),json!({})).unwrap();
-    assert!(next(&r,&wakes).deferred);
+    let kept=next(&r,&wakes);
+    assert!(kept.deferred);
+    let old_handle=kept.model.unwrap()["handle"].clone();
     r.event("complete".into(),json!({"index":0,"caller":"other"})).unwrap();
     assert!(next(&r,&wakes).error.is_some());
     r.event("complete".into(),json!({"index":0,"fail":true})).unwrap();
     let done=next(&r,&wakes);
     assert!(done.error.is_some());
     assert!(done.answers.is_empty());
-    r.forget_reply(sequence).unwrap();
     r.event("complete".into(),json!({"index":0})).unwrap();
+    let retried=next(&r,&wakes);
+    assert!(retried.error.is_none(),"{:?}",retried.error);
+    assert_eq!(retried.answers[0].0,sequence);
+    let forgotten=r.event("keep".into(),json!({})).unwrap();
+    assert!(next(&r,&wakes).deferred);
+    r.forget_reply(forgotten).unwrap();
+    r.event("complete".into(),json!({"index":1})).unwrap();
     assert!(next(&r,&wakes).error.is_some());
     r.notify("keep".into(),json!({})).unwrap();
     assert!(next(&r,&wakes).error.is_some(),"notifications have no caller to retain");
     r.load(program()).unwrap();
     assert!(next(&r,&wakes).error.is_none());
-    r.event("invalid".into(),json!({"handle":{"handle":format!("1:1:{sequence}"),"caller":"viu-client","request":sequence}})).unwrap();
+    r.event("invalid".into(),json!({"handle":old_handle})).unwrap();
     assert_eq!(next(&r,&wakes).reply.unwrap().rc,10);
+    r.event("keep-and-reply".into(),json!({})).unwrap();
+    let fault=next(&r,&wakes);
+    assert!(fault.error.is_some());
+    assert!(!fault.deferred);
+    assert!(fault.reply.is_none());
+}
+
+#[test]
+fn retained_requests_are_bounded_and_reload_releases_capacity() {
+    let (mut r,wakes)=setup();
+    for _ in 0..32 {
+        r.event("keep".into(),json!({})).unwrap();
+        assert!(next(&r,&wakes).deferred);
+    }
+    r.event("keep".into(),json!({})).unwrap();
+    let done=next(&r,&wakes);
+    assert!(done.error.is_some());
+    assert!(!done.deferred);
+    r.load(program()).unwrap();
+    assert!(next(&r,&wakes).error.is_none());
+    r.event("keep".into(),json!({})).unwrap();
+    assert!(next(&r,&wakes).deferred);
 }
