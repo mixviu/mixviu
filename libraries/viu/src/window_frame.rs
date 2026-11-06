@@ -2,7 +2,7 @@
 //! Shared native window controls. The compositor retains movement, resize,
 //! focus and presentation authority; this sends the usual viewport commands.
 use egui::{Rect, Ui, ViewportCommand as Command, pos2, vec2};
-use serde_json::{Value,json};
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy)]

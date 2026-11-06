@@ -366,7 +366,13 @@ impl App {
                 let _ = reply.send((0, viu::rich::menu_form(ctx)));
             }
             "dopus.ui.titlebar.form" => {
-                let _ = reply.send((0,self.window_frame.form(&self.session.snapshot["state"]["values"],Some(&format!("dopus-{}",self.mode)))));
+                let _ = reply.send((
+                    0,
+                    self.window_frame.form(
+                        &self.session.snapshot["state"]["values"],
+                        Some(&format!("dopus-{}", self.mode)),
+                    ),
+                ));
             }
             "dopus.ui.menu.popup" => {
                 if self.input_wait {
