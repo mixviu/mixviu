@@ -1,0 +1,35 @@
+-- Precise per-run cost via GNU time (elapsed, user+sys CPU, max RSS): median
+-- and p90 over N runs per command. run_argv's own duration is poll-quantised
+-- (~50 ms), so it is not used for timing.
+-- usage: mix tools/engine_split_time.mix N LABEL=CMD... (CMD split on spaces)
+$a = args()
+$n = to_number($a[0])
+fn pct($xs, $p)
+  $s = sort($xs)
+  $i = floor(len($s) * $p)
+  return $s[min($i, len($s) - 1)]
+end
+for $spec in slice($a, 1, len($a))
+  $parts = split_once($spec, "=")
+  $label = $parts[0]
+  $argv = split($parts[1], " ")
+  $el = []
+  $cpu = []
+  $rss = []
+  $okc = 0
+  for $i = 1 to $n
+    $r = run_argv(concat(["/usr/bin/time", "-f", "T=%e %U %S %M"], $argv), {timeout: 300})
+    if $r.ok then
+      $okc = $okc + 1
+    end
+    $m = re_find($r.stderr, "T=([0-9.]+) ([0-9.]+) ([0-9.]+) ([0-9]+)")
+    if len($m) > 0 then
+      $g = $m[0].groups
+      push($el, to_number($g[0]))
+      push($cpu, to_number($g[1]) + to_number($g[2]))
+      push($rss, to_number($g[3]))
+    end
+  end
+  print json_encode({label: $label, runs: $n, ok: $okc, elapsed_med_s: pct($el, 0.5), elapsed_p90_s: pct($el, 0.9),
+    cpu_med_s: pct($cpu, 0.5), cpu_p90_s: pct($cpu, 0.9), rss_med_kb: pct($rss, 0.5)})
+end
