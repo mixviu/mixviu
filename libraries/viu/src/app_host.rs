@@ -211,12 +211,6 @@ impl Host {
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
-        if r.command == format!("{}.quit", self.app)
-            || (r.command == format!("{}.execute", self.app) && r.args["id"] == "file.quit")
-        {
-            r.close_after_reply
-                .store(true, std::sync::atomic::Ordering::Release);
-        }
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,

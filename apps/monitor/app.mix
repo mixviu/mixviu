@@ -204,7 +204,7 @@ fn execute_monitor($s,$id,$origin)
   if contains(["process.end","process.kill"],$id) then
     $out=signal_monitor($s,{pid:$s.selected,signal:if $id=="process.end" then "SIGTERM" else "SIGKILL" end});$s=$out.state
   elif $id=="file.refresh" then $s=$fetch.poll($s)
-  elif $id=="file.quit" then $s.quitting=true;$s.window_close=$origin!="bus"
+  elif $id=="file.quit" then $s.quitting=true;$s.window_close=true
   elif $id=="view.pause" then $s.paused=not $s.paused;$s.status=if $s.paused then "Paused" else "Live" end;if not $s.paused then $s=$fetch.poll($s) end
   elif $id=="view.processes" then $s.tab="Processes";$s=navigate_monitor($s)
   elif $id=="view.performance" then $s.tab="Performance";$s=navigate_monitor($s)
@@ -258,7 +258,7 @@ on monitor.dialog
   $state.dialog=$event.args.open;publish_monitor($state);reply(0,json_encode({dialog:$state.dialog}))
 end
 on monitor.quit
-  $state.quitting=true;reply(0,json_encode({quitting:true}))
+  $state.quitting=true;$state.window_close=true;publish_monitor($state);reply(0,json_encode({quitting:true}))
 end
 on monitor.show
   $comp=$app_launch.comp ?? env("MIXOS_COMP_SERVICE","comp")
