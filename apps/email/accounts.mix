@@ -1,0 +1,73 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold email.* authority and private, poison-pill-protected secrets.
+fn secrets_path()
+  $dirs=viu_app_dirs("email")
+  if $dirs==nil then raise("SECRETS","No application config directory") end
+  return path_join($dirs.config,"secrets.conf.mix")
+end
+fn secrets_read()
+  try
+    $file=viu_read_optional(secrets_path())
+    if not $file.found then return {schema_version:1,passwords:{}} end
+    $v=data_parse($file.text)
+    if $v.schema_version!=1 or type($v.passwords)!="map" or any(keys($v),fn($k)=not contains(["schema_version","passwords"],$k)) or not all(values($v.passwords),fn($p)=type($p)=="string") then raise("SECRETS","Unsupported secrets file") end
+    return $v
+  catch $message
+    -- Parser diagnostics may quote secret data: never propagate them.
+    raise("SECRETS","The secrets file is unreadable and was left untouched")
+  end
+end
+fn password($id)
+  return secrets_read().passwords[$id] ?? ""
+end
+fn save_password($id,$password)
+  $v=secrets_read();$old=$v.passwords[$id]
+  if $password=="" then $v.passwords=delete($v.passwords,$id) else $v.passwords[$id]=$password end
+  if $old!=$v.passwords[$id] then viu_atomic_replace(secrets_path(),data_encode($v)) end
+  return $old!=nil
+end
+fn settings_call($command,$body)
+  send "settingsd" $command body=$body timeout=10
+  if $rc!=0 then raise("SETTINGS",if type($reply)=="map" then $reply.message ?? "Settings service unavailable" else "Settings service unavailable" end) end
+  return $reply
+end
+fn update($command,$a,$binding)
+  if type($a)!="map" then raise("INVALID_ARGUMENT","arguments must be an object") end
+  if contains(keys($a),"password") and type($a.password)!="string" then raise("INVALID_ARGUMENT","password must be a string") end
+  if $command=="email.account.password.set" then
+    if type($a.id)!="string" or type($a.password)!="string" then raise("INVALID_ARGUMENT","id and password must be strings") end
+    if $a.password=="" then return {forgotten:save_password($a.id,"")} end
+    $view=settings_call("settings.get",{binding:$binding,view:"values"})
+    if not any($view.values["email.accounts"] ?? [],fn($e)=$e.id==$a.id) then raise("UNKNOWN_ACCOUNT","No account "..$a.id) end
+    save_password($a.id,$a.password);return {id:$a.id}
+  end
+  $view=settings_call("settings.get",{binding:$binding,view:"values"})
+  $entries=$view.values["email.accounts"] ?? [];$default=$view.values["email.default_account"]
+  $id=$a.id;$changes={};$removed=false
+  if $command=="email.account.set" then
+    if $id==nil then $id="acct-"..substr(replace(uuid(),"-",""),0,16) end
+    $found=filter($entries,fn($e)=$e.id==$id)
+    $entry=if len($found)>0 then $found[0] else {id:$id,name:"",url:"",email:"",ca_path:nil,enabled:true,signature:"",identities:[]} end
+    for $key in ["name","url","email","ca_path","enabled","signature","identities"]
+      if contains(keys($a),$key) then $entry[$key]=$a[$key] end
+    end
+    if len($found)==0 then push($entries,$entry) else $entries=map($entries,fn($e)=if $e.id==$id then $entry else $e end) end
+    $changes["email.accounts"]=$entries
+  elif $command=="email.account.remove" then
+    if not any($entries,fn($e)=$e.id==$id) then raise("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
+    $changes["email.accounts"]=filter($entries,fn($e)=$e.id!=$id);$removed=true
+    if $default==$id then $changes["email.default_account"]=nil end
+  elif $command=="email.account.default" then
+    if $id!=nil and not any($entries,fn($e)=$e.id==$id) then raise("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
+    $changes["email.default_account"]=$id
+  else raise("UNKNOWN_COMMAND","Unknown account change") end
+  $accepted=settings_call("settings.apply",{binding:$binding,expected_incarnation:$view.incarnation,expected_revision:$view.revision,operation_id:uuid(),changes:$changes})
+  if $command=="email.account.set" and contains(keys($a),"password") then
+    save_password($id,$a.password)
+  elif $removed then save_password($id,"") end
+  return {id:$id}
+end
+fn entry($value)
+  -- The compatibility fields keep the measured list and legacy wire tests.
+  return merge($value,{user:$value.email,label:$value.name,ca_file:$value.ca_path,secrets_id:$value.id})
+end

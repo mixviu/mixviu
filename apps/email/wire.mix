@@ -1,0 +1,110 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Native jobs own waits; request receipts remain held across callbacks.
+-- lint: globals ctx entries active session boxes box rows total offset selected message reader account mailbox connected revision serial status fixture c
+$account_policy=require("accounts.mix")
+$wire_sequence=0;$wire_pending={};$wire_sessions={};$wire_views={};$wire_generations={}
+$mail_settings={binding:{instance:env("MIXOS_INSTANCE","default"),profile:"default"},source:"cache",default_account:nil,page_size:100,mark_read_on_open:true,confirm_delete:true,quote_on_reply:true,reply_position:"above",revision:nil}
+fn wire_entry($id)
+  for $e in $entries if $e.id==$id then return $e end end
+  return nil
+end
+fn wire_refuse($code,$message)
+  reply(10,json_encode({error_code:$code,message:$message}))
+end
+fn wire_start($command,$args,$event=nil,$purpose="query")
+  global $wire_sequence,$wire_pending,$wire_views,$wire_sessions,$wire_generations
+  $settings=contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set"],$command)
+  if $settings then $purpose="settings" end
+  $id=$args.account ?? $active;$entry=wire_entry($id)
+  if $command=="email.account.connect" then $id=$args.id;$entry=wire_entry($id) end
+  if not $settings then
+    if $entry==nil then wire_refuse(if $args.account!=nil or $command=="email.account.connect" then "UNKNOWN_ACCOUNT" else "NO_ACCOUNT" end,"No account "..to_string($id));return end
+    if $entry.enabled==false then wire_refuse("NOT_READY","This account is disabled");return end
+    if $command!="email.account.connect" and $wire_sessions[$id]==nil then wire_refuse("NOT_READY","The account is not connected");return end
+  end
+  if len(keys($wire_pending))>=32 then wire_refuse("BUSY","Too many requests pending");return end
+  if $command=="email.account.connect" then $wire_generations[$id]=($wire_generations[$id] ?? 0)+1;$wire_sessions=delete($wire_sessions,$id) end
+  $token=if $event!=nil then $event.headers["viu-call"] else nil end
+  if $token!=nil and not viu_reply("hold",$token,{}) then wire_refuse("BUSY","Request receipt unavailable");return end
+  $wire_sequence=$wire_sequence+1;$job="email-wire-"..to_string($wire_sequence)
+  $owner={id:$job,account:$id,entry:$entry,generation:$wire_generations[$id] ?? 0,command:$command,args:$args,token:$token,purpose:$purpose}
+  $path=path_join(dirname(script_path()),"wire-job.mix")
+  send "viu-local" "jobs.start" id=$job owner={id:$job} path=$path source=read_file($path) command="job.run" args={entry:$entry,command:$command,args:$args,session:if $command=="email.account.connect" then nil else $wire_sessions[$id] end,binding:$mail_settings.binding}
+  if $rc!=0 then
+    if $token!=nil then viu_reply("finish",$token,{rc:10,body:{error_code:"BUSY",message:"Mail worker unavailable"}}) else wire_refuse("BUSY","Mail worker unavailable") end
+    return
+  end
+  $wire_pending[$job]=$owner
+  if $command=="email.account.connect" then $wire_views[$id]={state:"connecting",error:nil,has_password:false} end
+  reply(0,"{}")
+end
+fn wire_accounts()
+  $default=$mail_settings.default_account
+  if $default==nil or not any($entries,fn($e)=$e.id==$default and $e.enabled!=false) then
+    $enabled=filter($entries,fn($e)=$e.enabled!=false);$default=if len($enabled)>0 then $enabled[0].id else nil end
+  end
+  return map($entries,fn($e)=merge({id:$e.id,name:$e.label,url:$e.url,email:$e.user,ca_path:$e.ca_file,enabled:$e.enabled ?? true,signature:$e.signature ?? "",identities:$e.identities ?? [],default:$e.id==$default,has_password:false,state:if $e.enabled==false then "disabled" else "connecting" end,error:nil,session:nil,unread:0,migrating:false},$wire_views[$e.id] ?? {}))
+end
+fn wire_session($update)
+  global $entries,$active,$mail_settings,$wire_sessions,$wire_views,$connected
+  if $fixture then return end
+  $state=$update.state
+  if $state==nil then return end
+  if $state.lost==true then $mail_settings.source="missing";return end
+  $v=$state.values
+  if type($v)!="map" then return end
+  $mail_settings.source="settings";$mail_settings.revision=$state.revision
+  if $state.binding!=nil then $mail_settings.binding=$state.binding end
+  if $update.binding!=nil then $mail_settings.binding=$update.binding end
+  $next=map($v["email.accounts"] ?? [],fn($e)=$account_policy.entry($e))
+  -- Gold keeps a nonempty cache when an authority temporarily advertises [].
+  if len($next)==0 and len($entries)>0 then return end
+  $old=$entries;$entries=$next
+  $mail_settings.default_account=$v["email.default_account"]
+  for $pair in [["page_size",100],["mark_read_on_open",true],["confirm_delete",true],["quote_on_reply",true],["reply_position","above"]]
+    $mail_settings[$pair[0]]=$v["email.mail."..$pair[0]] ?? $v["email.compose."..$pair[0]] ?? $pair[1]
+  end
+  if not any($entries,fn($e)=$e.id==$active) then $active=if len($entries)>0 then $entries[0].id else "" end end
+  for $e in $entries
+    $previous=filter($old,fn($a)=$a.id==$e.id)
+    if len($previous)==0 or $previous[0].url!=$e.url or $previous[0].user!=$e.user or $previous[0].ca_file!=$e.ca_file or $previous[0].enabled!=$e.enabled then
+      $wire_sessions=delete($wire_sessions,$e.id)
+      if $e.enabled!=false then wire_start("email.account.connect",{id:$e.id},nil,"connect") else $wire_views[$e.id]={state:"disabled",error:nil,has_password:false} end
+    end
+  end
+end
+fn wire_completed($d)
+  global $wire_pending,$wire_sessions,$wire_views,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status
+  $id=$d.tag.owner.id;$job=$wire_pending[$id]
+  if $job==nil then return end
+  $wire_pending=delete($wire_pending,$id)
+  $entry=wire_entry($job.account)
+  $answer=if $d.rc==0 then $d.body else {rc:10,body:{error_code:"SERVER",message:"Mail worker failed"}} end
+  if $job.purpose!="settings" and (not deep_eq($entry,$job.entry) or ($wire_generations[$job.account] ?? 0)!=$job.generation) then
+    if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"}}) end
+    return
+  end
+  if $answer.rc==0 and $answer.session!=nil then
+    $wire_sessions[$job.account]=$answer.session
+    $wire_views[$job.account]={state:"ready",error:nil,has_password:true,session:$answer.session.raw,unread:0}
+  end
+  if $job.command=="email.account.connect" then
+    if $answer.rc!=0 then $wire_views[$job.account]={state:if $answer.body.error_code=="NO_PASSWORD" then "no_password" else "failed" end,error:if $answer.body.error_code=="NO_PASSWORD" then nil else $answer.body.message end,has_password:$answer.body.error_code!="NO_PASSWORD"} end
+    if $answer.rc==0 and $job.account==$active then
+      $session={account:$answer.session.account,accounts:map(keys($answer.session.raw.accounts),fn($k)=merge({id:$k},$answer.session.raw.accounts[$k]))}
+      $boxes=map($answer.body.mailboxes,fn($b)=merge($b,{choice:$b.name,total:$b.total_emails,unread:$b.unread_emails}))
+      $connected=true;$account=$entry.label.." · "..$entry.user;$status="Connected";$box="";$rows=[]
+      $inbox=filter($boxes,fn($b)=$b.role=="inbox")
+      if len($inbox)>0 then wire_start("email.list",{mailbox:$inbox[0].id,limit:$mail_settings.page_size},nil,"list") end
+    end
+    $answer.body={id:$job.account}
+  elif $answer.rc==0 and $job.purpose=="list" and $job.account==$active then
+    $raw=map($answer.body.emails,fn($m)={id:$m.id,subject:$m.subject ?? "",from:$m.from ?? [],receivedAt:$m.received_at ?? $m.date ?? "",preview:""})
+    $rows=$c.rows($raw,false);$total=$answer.body.total;$offset=$answer.body.offset;$box=$job.args.mailbox;$revision=$revision+1
+    $match=filter($boxes,fn($b)=$b.id==$box);$mailbox=if len($match)>0 then $match[0].name else "" end
+  elif $answer.rc==0 and $job.command=="email.open" and $job.account==$active then
+    $m=$answer.body;$message=merge($m,{text:$m.text ?? $m.html ?? ""});$selected=$m.id;$reader=reader_text($message)
+  end
+  if $answer.rc==0 and $job.purpose=="settings" and contains(["email.account.set","email.account.password.set"],$job.command) and wire_entry($answer.body.id)!=nil then wire_start("email.account.connect",{id:$answer.body.id},nil,"connect") end
+  if $job.token!=nil then viu_reply("finish",$job.token,{rc:$answer.rc,body:$answer.body}) end
+end

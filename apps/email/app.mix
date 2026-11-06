@@ -56,6 +56,7 @@ fn send_request()
   if re_match($draft.subject,"[\\r\\n\\x00]") or re_match($draft.text,"\\x00") then raise("HEADER","Newlines in subject and NUL in mail are refused") end
   return {operation_id:"email-"..fmt("%.0f",random(0,1000000000000)).."-"..fmt("%.0f",random(0,1000000000000)),account:$e.user,to:$recipients,subject:$draft.subject,text:$draft.text}
 end
+include "wire.mix"
 publish_email()
 on email.ping
   reply(0,"{}")
@@ -229,6 +230,7 @@ on email.dialog.intent
 end
 on viu.job.completed
   $d=$event.args
+  if $d.tag.owner.id!=nil then wire_completed($d);publish_email();return end
   if $busy and $d.tag.owner==$serial then
     $busy=false
     if $d.rc==0 then
@@ -251,4 +253,62 @@ on viu.job.completed
     end
     publish_email()
   end
+end
+
+on viu.session
+  wire_session($event.args);publish_email()
+end
+on email.accounts
+  reply(0,json_encode({accounts:wire_accounts()}))
+end
+on email.account.set
+  wire_start("email.account.set",$event.args,$event)
+end
+on email.account.remove
+  wire_start("email.account.remove",$event.args,$event)
+end
+on email.account.default
+  wire_start("email.account.default",$event.args,$event)
+end
+on email.account.password.set
+  wire_start("email.account.password.set",$event.args,$event)
+end
+on email.account.connect
+  wire_start("email.account.connect",$event.args,nil,"connect");reply(0,json_encode({id:$event.args.id}))
+end
+on email.mailboxes
+  wire_start("email.mailboxes",$event.args,$event)
+end
+on email.list
+  wire_start("email.list",$event.args,$event)
+end
+on email.search
+  wire_start("email.search",$event.args,$event)
+end
+on email.get
+  wire_start("email.get",$event.args,$event)
+end
+on email.open
+  wire_start("email.open",$event.args,$event,"open")
+end
+on email.mark
+  wire_start("email.mark",$event.args,$event)
+end
+on email.move
+  wire_start("email.move",$event.args,$event)
+end
+on email.junk
+  wire_start("email.junk",$event.args,$event)
+end
+on email.delete
+  wire_start("email.delete",$event.args,$event)
+end
+on email.mailbox.create
+  wire_start("email.mailbox.create",$event.args,$event)
+end
+on email.mailbox.rename
+  wire_start("email.mailbox.rename",$event.args,$event)
+end
+on email.mailbox.delete
+  wire_start("email.mailbox.delete",$event.args,$event)
 end
