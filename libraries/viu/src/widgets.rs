@@ -139,7 +139,7 @@ impl Widget {
                     egui::TextStyle::Body,
                 )
                 .size()
-                .x,
+                .x + if self.properties["role"]=="status" && self.value(model).as_str().is_some_and(|s|!s.is_empty()) {2.0*toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as f32}else{0.0},
         )
     }
     fn choices(&self) -> Vec<&str> {

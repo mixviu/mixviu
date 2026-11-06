@@ -22,6 +22,7 @@ pub mod jobs;
 pub mod macro_host;
 pub mod native_bus;
 pub mod native_menu;
+pub mod native_titlebar;
 mod native_primitives;
 pub mod rich;
 pub mod runtime;

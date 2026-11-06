@@ -6,7 +6,7 @@ citizen: gold-frame
 ```mix
 {
 root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placements:{"gold-header":{edge:"top",size:"design.title_bar_height"},"gold-status":{edge:"bottom",size:"design.status_height"},"gold-content":{edge:"fill"}}},
-"gold-header":{widget:"column",background:"design.chrome",padding:4,children:["gold-band"],window_slot:"window.header"},
+"gold-header":{widget:"column",background:"design.chrome",padding:4,children:["gold-band"],window_slot:"window.header",hidden:"= $model.native_header == true"},
 "gold-band":{widget:"band",children:["gold-icon","gold-menu","gold-title","gold-toolbar"],groups:"= $model.frame.groups"},
 "gold-icon":{widget:"control",definition:{id:"gold-icon",kind:"mark",label:"",initial:"monitor"}},
 "gold-menu":{widget:"control",definition:{id:"gold-menu",kind:"menubar",label:"",initial:[]},on_intent:"viu.frame.intent"},

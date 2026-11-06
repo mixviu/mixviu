@@ -23,8 +23,7 @@ fn clean($s)
 end
 fn path($value)
   if type($value)!="string" then raise("ARGUMENT","expected path") end
-  if starts_with($value,"~/") then $value=path_join(env("HOME"),slice($value,2)) end
-  if not starts_with($value,"/") then raise("ARGUMENT","the path must be absolute") end
+  if not starts_with($value,"/") then $value=path_join(cwd(),$value) end
   return $value
 end
 fn check_fields($a,$allowed)

@@ -60,19 +60,22 @@ end
 fn describe($s)
   $rows=[]
   for $definition in $definitions
-    $row=$definition;$row.reason=reason($s,$row.id);$row.enabled=$row.reason==nil;$row.checked=checked($s,$row.id)
-    if $s.keymap[$row.id]!=nil then
-      $chords=$s.keymap[$row.id];$row.shortcut=$chords[0];$row=delete($row,"more")
-      if len($chords)>1 then $row.more=slice($chords,1) end
-    end
-    push($rows,$row)
+    push($rows,described($s,$definition))
   end
   return $rows
 end
+fn described($s,$row)
+  $row.reason=reason($s,$row.id);$row.enabled=$row.reason==nil;$row.checked=checked($s,$row.id)
+  if $s.keymap[$row.id]!=nil then
+    $chords=$s.keymap[$row.id];$row.shortcut=$chords[0];$row=delete($row,"more")
+    if len($chords)>1 then $row.more=slice($chords,1) end
+  end
+  return $row
+end
 fn entry($s,$id)
-  $found=filter(describe($s),fn($row)=$row.id==$id)
+  $found=filter($definitions,fn($row)=$row.id==$id)
   if len($found)==0 then raise("UNKNOWN_ACTION","No such command") end
-  return $found[0]
+  return described($s,$found[0])
 end
 fn item($s,$id,$icons_only)
   $row=entry($s,$id)

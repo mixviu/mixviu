@@ -405,7 +405,7 @@ pub(crate) fn draw(
     let id = &widget.id;
     if widget.kind == "menubar" && crate::native_menu::enabled(ui.ctx()) {
         return ui
-            .scope(|ui| match crate::native_menu::draw(ui, value) {
+            .horizontal(|ui| match crate::native_menu::draw(ui, value) {
                 Ok(Some(command)) => emit(events, id, "command", json!({"command":command})),
                 Ok(None) => {}
                 Err(error) => {

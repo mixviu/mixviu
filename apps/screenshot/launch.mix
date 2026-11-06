@@ -1,0 +1,40 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+$cli=require("launch-core.mix")
+$argv=args()
+if contains($argv,"--help") or contains($argv,"-h") then
+  print("Screenshot — native screenshots and editable annotations\nUsage: mix launch.mix [OPTIONS] [IMAGE]\n--capture region|screen|window  --window ID:GENERATION\n--headless  --service NAME  --comp NAME  --noded-url URL\n--version")
+  exit(0)
+end
+if contains($argv,"--version") then
+  print("Screenshot 0.1.2 · Mix application; host provenance follows")
+  print({host_sha256:hash_file(env("VIU_BIN","/opt/mixos/bin/viu"),"sha256"),entry_sha256:hash_file(path_join(dirname(script_path()),"app.mix"),"sha256")})
+  exit(0)
+end
+$a=$cli.parse_cli($argv)
+export MIXOS_NODED_URL=$a.url
+fn forward($a)
+  send $a.service "screenshot.ping" body={} timeout=5
+  if $rc!=0 or $reply.comp!=$a.comp then raise("COMPOSITOR","the running instance does not serve "..$a.comp) end
+  if $a.headless then raise("BUSY","the headless service already runs") end
+  if $a.capture!=nil then
+    $body={mode:$a.capture,comp:$a.comp}
+    if $a.window!=nil then $body.window=$a.window end
+    send $a.service "screenshot.take" body=$body timeout=15
+    if $rc!=0 then raise("FAILED",to_string($result)) end
+  else
+    if $a.path!=nil then
+      send $a.service "screenshot.open" body={path:$a.path} timeout=90
+      if $rc!=0 then raise("FAILED",to_string($result)) end
+    end
+    send $a.service "screenshot.show" body={} timeout=30
+    if $rc!=0 then raise("FAILED",to_string($result)) end
+  end
+end
+if port_exists($a.service) then forward($a);exit(0) end
+$root=dirname(script_path())
+$options={service:$a.service,surface:if $a.headless then "headless" else "window" end,url:$a.url}
+$launch={path:$a.path,capture:$a.capture,window:$a.window}
+$result=run_argv([env("VIU_BIN","/opt/mixos/bin/viu"),"run",$root,"--host-options",json_encode($options),$a.comp,"--launch",json_encode($launch)],{timeout:0,stdout:"inherit",stderr:"inherit"})
+if not $result.ok and port_exists($a.service) then forward($a);exit(0) end
+exit($result.exit_code ?? 1)

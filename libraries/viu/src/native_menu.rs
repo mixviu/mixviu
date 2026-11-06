@@ -6,8 +6,13 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 // The retained toolkit's command IDs are static. Intern only bounded command
-// identifiers (never labels/data), once per app process, with a fixed ceiling.
+// identifiers and native action labels once per process, with a fixed ceiling
+// of 4096 entries and 2048 bytes per retained string.
 pub(crate) fn command_id(id: &str) -> Result<&'static str, String> {
+    if id.len()>128 {return Err("native command ID budget exceeded".into());}
+    retained_text(id)
+}
+pub(crate) fn retained_text(id: &str) -> Result<&'static str, String> {
     static IDS: OnceLock<Mutex<BTreeMap<String, &'static str>>> = OnceLock::new();
     let mut ids = IDS
         .get_or_init(Default::default)
@@ -16,7 +21,7 @@ pub(crate) fn command_id(id: &str) -> Result<&'static str, String> {
     if let Some(id) = ids.get(id) {
         return Ok(*id);
     }
-    if id.is_empty() || id.len() > 128 || ids.len() >= 4096 {
+    if id.is_empty() || id.len() > 2048 || ids.len() >= 4096 {
         return Err("native menu ID budget exceeded".into());
     }
     let owned: &'static str = Box::leak(id.to_owned().into_boxed_str());

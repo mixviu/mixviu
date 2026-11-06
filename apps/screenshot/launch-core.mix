@@ -1,0 +1,55 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+fn valid_service($s)
+  return type($s)=="string" and re_match($s,"^[a-z][a-z0-9-]{1,30}$")
+end
+fn comp_hash($text)
+  $h=0x811c9dc5
+  for $i=0 to len($text)-1
+    $h=bxor($h,ord(slice($text,$i,$i+1)))
+    -- Split the FNV prime so all arithmetic stays exact in Mix's f64 domain.
+    $h=($h*403+($h % 256)*16777216) % 4294967296
+  end
+  $hex="0123456789abcdef";$out=""
+  for $i=0 to 7 $n=$h % 16;$out=slice($hex,$n,$n+1)..$out;$h=floor($h/16) end
+  return $out
+end
+fn service_name($comp,$headless)
+  $prefix=if $headless then "screenshot-headless" else "screenshot" end
+  if $comp=="comp" then return $prefix end
+  $derived=$prefix.."-"..$comp
+  if len($derived)<=31 and ($headless or not starts_with($derived,"screenshot-headless")) then return $derived end
+  return $prefix.."--"..comp_hash($comp)
+end
+fn parse_cli($args)
+  $out={comp:env("MIXOS_COMP_SERVICE","comp"),service:nil,url:env("MIXOS_NODED_URL","ws://127.0.0.1:4200/ws"),headless:false,path:nil,capture:nil,window:nil}
+  $positional=false;$i=0
+  while $i<len($args)
+    $arg=$args[$i];$i=$i+1
+    if not $positional and $arg=="--" then $positional=true
+    elif not $positional and $arg=="--headless" then $out.headless=true
+    elif not $positional and contains(["--service","--comp","--noded-url","--capture","--window"],$arg) then
+      $value=$args[$i];$i=$i+1
+      if $value==nil or $value=="" then raise("ARGUMENT",$arg.." needs a value") end
+      if $arg=="--service" then $out.service=$value
+      elif $arg=="--comp" then $out.comp=$value
+      elif $arg=="--noded-url" then $out.url=$value
+      elif $arg=="--capture" then
+        if not contains(["region","screen","window"],$value) then raise("ARGUMENT","capture must be region, screen or window") end
+        $out.capture=$value
+      else
+        if not re_match($value,"^[0-9]+:[0-9]+$") then raise("ARGUMENT","window must be ID:GENERATION") end
+        $parts=split($value,":");$out.window={id:to_number($parts[0]),generation:to_number($parts[1])}
+      end
+    elif not $positional and starts_with($arg,"-") then raise("ARGUMENT","unknown option "..$arg)
+    else
+      if $out.path!=nil then raise("ARGUMENT","open one image at a time") end
+      $out.path=if starts_with($arg,"/") then $arg else path_join(cwd(),$arg) end
+    end
+  end
+  if not valid_service($out.comp) or $out.service!=nil and not valid_service($out.service) then raise("ARGUMENT","service and comp must be Bus service names") end
+  if $out.window!=nil and $out.capture!="window" then raise("ARGUMENT","window goes with capture window") end
+  if $out.headless and $out.capture!=nil then raise("ARGUMENT","capture needs the window; agents call screenshot.capture") end
+  $out.service=$out.service ?? service_name($out.comp,$out.headless)
+  return $out
+end

@@ -101,7 +101,7 @@ fn open_dialog($s,$kind)
   return $s
 end
 fn perform($s,$pending)
-  if $pending.op=="quit" then $s.quitting=true;$s.close_after=true
+  if $pending.op=="quit" then $state.dispose($s);$s.quitting=true;$s.close_after=true
   elif $pending.op=="open-dialog" then $s=open_dialog($s,"open")
   elif $pending.op=="open" then $s=work($s,{op:"open",path:$pending.path},false)
   elif $pending.op=="capture" then $s=capture($s,$pending.request,false,true)
@@ -156,7 +156,10 @@ fn answer($s,$a)
   else
     $s.ui.path=$a.path ?? $s.ui.path
     try
-      $path=$state.path($s.ui.path)
+      if trim($s.ui.path)=="" then raise("ARGUMENT","Name a file") end
+      $text=$s.ui.path
+      if re_match($text,"^~/") then $text=path_join(env("HOME"),slice($text,2)) end
+      $path=$state.path($text)
       if $kind=="save_as" and exists($path) then raise("ARGUMENT","destination already exists") end
       $s.ui.dialog=nil
       if $kind=="open" then
@@ -324,7 +327,7 @@ fn dispatch($s,$command,$a)
       elif $command=="screenshot.show" then
         if $s.headless ?? false then raise("HEADLESS","A headless instance has no window") end
         $s=work($s,{op:"show"},true);$deferred=true
-      elif $command=="screenshot.quit" then $state.clean($s);$s.quitting=true;$s.close_after=true;$body={quitting:true}
+      elif $command=="screenshot.quit" then $state.clean($s);$s=perform($s,{op:"quit"});$body={quitting:true}
       elif $command=="screenshot.targets" then $s=refresh($s);$body={windows:$s.windows,outputs:$s.outputs}
       else raise("UNKNOWN_COMMAND","unknown screenshot command") end
     end

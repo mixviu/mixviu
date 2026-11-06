@@ -3,7 +3,9 @@
 -- lint: globals app_args
 $states=require("state.mix");$op=require("operations.mix");$events=require("events.mix");$model=require("model.mix")
 $ctx=viu_context()
-$state=$states.initial($app_args[0] ?? env("MIXOS_COMP_SERVICE","comp"),$app_args[1],$app_args[2])
+$launch={}
+if $app_args[1]=="--launch" then $launch=json_parse($app_args[2]) end
+$state=$states.initial($app_args[0] ?? env("MIXOS_COMP_SERVICE","comp"),if $app_args[1]=="--launch" then nil else $app_args[1] end,if $app_args[1]=="--launch" then nil else $app_args[2] end)
 $options=$ctx.options ?? {}
 $state.headless=$options.headless ?? false
 $state=$op.refresh($state)
@@ -15,6 +17,12 @@ fn command($s,$name,$args)
   publish_model($result.state)
   if not $result.deferred then reply($result.rc,json_encode($result.body)) end
   return $result.state
+end
+if $launch.path!=nil then $state=$op.work($state,{op:"open",path:$launch.path},false)
+elif $launch.capture!=nil then
+  $request=$op.capture_request($state,$launch.capture)
+  if $launch.window!=nil then $request.window=$launch.window end
+  $state=$op.capture($state,$request,false,true)
 end
 publish_model($state)
 on viu.job.completed

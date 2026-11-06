@@ -221,6 +221,10 @@ impl Drop for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
+        if self.ready && self.model["window_close"]!=true && ui.input(|i|i.viewport().close_requested()) {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.dispatch("viu.frame.close".into(),json!({}),BTreeMap::new(),None);
+        }
         self.wire_deliveries
             .retain(|state| state.load(std::sync::atomic::Ordering::Acquire) == 0);
         if self.drive.is_some() {
@@ -505,8 +509,18 @@ impl Host {
                     }
                 }
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
+                if self.model["native_header"]==true {
+                    match crate::native_titlebar::draw(ui,&self.model["values"],self.model["header_search_menu"].as_str()) {
+                        Ok(fired)=>for (command,origin) in fired {self.dispatch("viu.frame.intent".into(),json!({"id":"gold-menu","action":"command","value":{"command":command,"origin":origin}}),BTreeMap::new(),None);},
+                        Err(error)=>self.error=error,
+                    }
+                    if let Err(e)=self.view.set_slots(BTreeMap::new()) {self.error=e;}
+                } else {
+                let gap=ui.spacing().item_spacing.y;
+                ui.spacing_mut().item_spacing.y=0.0;
                 self.window_frame
                     .show_with_header(ui, &self.title, &settings, true);
+                ui.spacing_mut().item_spacing.y=gap;
                 let slots = self
                     .window_frame
                     .geometry
@@ -515,6 +529,7 @@ impl Host {
                     .unwrap_or_default();
                 if let Err(e) = self.view.set_slots(slots) {
                     self.error = e;
+                }
                 }
             }
             for event in self.view.show(ui) {
@@ -530,6 +545,7 @@ impl Host {
                 }
             }
             if self.framed {
+                if self.model["native_header"]==true {toolkit::titlebar::edges(ui);}
                 self.window_frame.edges(ui);
                 self.view
                     .geometry
@@ -601,7 +617,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let declared = commands.iter().cloned().collect();
     let bus = Endpoint::start(
         service,
-        bundle.manifest.url.clone().unwrap_or_else(||std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into())),
+        bundle.manifest.url.clone().unwrap_or_else(|| {
+            std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into())
+        }),
         commands
             .into_iter()
             .map(|name| bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false))
@@ -638,7 +656,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
-        headless: bundle.manifest.surface=="headless",
+        headless: bundle.manifest.surface == "headless",
         drive: bundle.manifest.drive.clone(),
         drive_pending: BTreeMap::new(),
         drive_sequence: 0,
@@ -704,21 +722,39 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         std::process::exit(2)
     });
     if bundle.manifest.surface == "headless" {
-        let ctx=egui::Context::default();
+        let ctx = egui::Context::default();
         crate::appearance::install(&ctx);
-        let (tx,rx)=std::sync::mpsc::sync_channel(1);
-        let wake: crate::runtime::Wake=Arc::new(move || {let _=tx.try_send(());});
-        let repaint=wake.clone();
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let wake: crate::runtime::Wake = Arc::new(move || {
+            let _ = tx.try_send(());
+        });
+        let repaint = wake.clone();
         ctx.set_request_repaint_callback(move |_| repaint());
-        let size=bundle.manifest.size;
-        let mut host=create(bundle,wake);
+        let size = bundle.manifest.size;
+        let mut host = create(bundle, wake);
         loop {
-            ctx.run_ui(egui::RawInput {screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(size[0],size[1]))),..Default::default()},|ui|host.frame(ui)).drop_without_applying_deltas();
-            if host.bus.close_requested.load(std::sync::atomic::Ordering::Acquire)
-                || host.model["window_close"]==true && host.wire_deliveries.is_empty() && host.pending.is_empty() {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(size[0], size[1]),
+                    )),
+                    ..Default::default()
+                },
+                |ui| host.frame(ui),
+            )
+            .drop_without_applying_deltas();
+            if host
+                .bus
+                .close_requested
+                .load(std::sync::atomic::Ordering::Acquire)
+                || host.model["window_close"] == true
+                    && host.wire_deliveries.is_empty()
+                    && host.pending.is_empty()
+            {
                 break;
             }
-            let _=rx.recv_timeout(Duration::from_millis(100));
+            let _ = rx.recv_timeout(Duration::from_millis(100));
         }
         return Ok(());
     }
@@ -745,15 +781,20 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         .app_id
         .clone()
         .unwrap_or_else(|| format!("mixviu.{service}"));
+    let framed=bundle.manifest.frame.is_some();
     eframe::run_native(
         &title,
         eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default()
+            viewport: if framed {toolkit::titlebar::viewport(&app_id,&title).with_inner_size(size)} else {egui::ViewportBuilder::default()
                 .with_inner_size(size)
-                .with_app_id(app_id),
+                .with_app_id(app_id)},
             ..Default::default()
         },
         Box::new(move |cc| {
+            if framed {
+                toolkit::decorations::initialise(cc);
+                toolkit::decorations::initialise_window(&cc.egui_ctx,cc.winit_window().cloned());
+            }
             crate::appearance::install(&cc.egui_ctx);
             if let Some(prefix) = &bundle.manifest.drive {
                 toolkit::drive::install(&cc.egui_ctx, prefix);
