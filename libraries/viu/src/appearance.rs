@@ -254,7 +254,6 @@ pub fn install_style(ctx: &egui::Context, description: &Value, appearance: Resol
     ctx.set_style_of(egui::Theme::Dark, style);
 }
 
-
 pub fn theme_choice(value: &Value) -> Result<toolkit::theme::Choice, String> {
     let mut choice = toolkit::theme::Choice::default();
     if value.is_null() {

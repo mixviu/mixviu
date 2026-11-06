@@ -701,7 +701,8 @@ impl Host {
             if !done.behaviour_available {
                 self.retained.clear();
                 for (_, reply) in std::mem::take(&mut self.pending) {
-                    self.calls.finish(&reply,20,json!({"error_code":"OWNER_CLOSED"}),false);
+                    self.calls
+                        .finish(&reply, 20, json!({"error_code":"OWNER_CLOSED"}), false);
                 }
             }
         }

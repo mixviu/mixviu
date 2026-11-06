@@ -685,7 +685,7 @@ pub(crate) fn draw(
                     },
                     if widget.properties["vertical"] == true {
                         egui::Layout::top_down(egui::Align::Center)
-                    } else if widget.properties["reverse"] == true {
+                    } else if widget.properties["reverse"].as_bool().unwrap_or(gold) {
                         egui::Layout::right_to_left(egui::Align::Center)
                     } else {
                         egui::Layout::left_to_right(egui::Align::Center)
@@ -868,7 +868,7 @@ pub(crate) fn draw(
                     ui.ctx().viewport_id(),
                     id,
                     "gold-dialog",
-                    text(value, "instance"),
+                    text(value, "instance"),\n                    text(value, "title"),
                 ));
                 let mut field = value["field"].as_str().map(str::to_owned);
                 let mut submitted = false;
