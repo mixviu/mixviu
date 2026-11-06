@@ -1696,6 +1696,7 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
 pub(crate) mod compd_test_seat {
     use std::collections::HashMap;
 
+    use crate::backend::input::KeyState;
     use crate::input::{
         Seat, SeatHandler, SeatState,
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
@@ -1709,7 +1710,6 @@ pub(crate) mod compd_test_seat {
             TouchTarget, UpEvent,
         },
     };
-    use crate::backend::input::KeyState;
     use crate::utils::{IsAlive, Serial};
 
     /// A focus target: `id` names the surface, `client` the owning client
@@ -1736,7 +1736,10 @@ pub(crate) mod compd_test_seat {
         }
 
         pub(crate) fn count(&self, event: &str, id: u32) -> usize {
-            self.log.iter().filter(|(e, i)| *e == event && *i == Some(id)).count()
+            self.log
+                .iter()
+                .filter(|(e, i)| *e == event && *i == Some(id))
+                .count()
         }
     }
 
@@ -1767,7 +1770,16 @@ pub(crate) mod compd_test_seat {
         fn leave(&self, _: &Seat<TestState>, data: &mut TestState, _: Serial) {
             data.log.push(("leave", Some(self.id)));
         }
-        fn key(&self, _: &Seat<TestState>, _: &mut TestState, _: KeysymHandle<'_>, _: KeyState, _: Serial, _: u32) {}
+        fn key(
+            &self,
+            _: &Seat<TestState>,
+            _: &mut TestState,
+            _: KeysymHandle<'_>,
+            _: KeyState,
+            _: Serial,
+            _: u32,
+        ) {
+        }
         fn modifiers(&self, _: &Seat<TestState>, _: &mut TestState, _: ModifiersState, _: Serial) {}
     }
 
@@ -1822,8 +1834,8 @@ pub(crate) mod compd_test_seat {
 // compd: guard for "focus-to-None notifies focus_changed"
 #[cfg(test)]
 mod focus_none_tests {
-    use super::compd_test_seat::{Target, TestState};
     use super::XkbConfig;
+    use super::compd_test_seat::{Target, TestState};
     use crate::utils::SERIAL_COUNTER;
 
     #[test]

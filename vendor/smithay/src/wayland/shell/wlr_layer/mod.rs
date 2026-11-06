@@ -642,7 +642,10 @@ mod reset_after_unmap_guard {
         let take = at("std::mem::take(&mut attributes.pending_configures)");
         let reset = at("attributes.reset()");
         let restore = at("attributes.pending_configures = pending_configures");
-        assert!(take < reset && reset < restore, "in-flight configures must survive reset");
+        assert!(
+            take < reset && reset < restore,
+            "in-flight configures must survive reset"
+        );
         assert!(at("layer: initial_layer") < at("*cached.pending() = initial_state"));
         at("*cached.current() = initial_state");
         at("for state in cached.cached()");

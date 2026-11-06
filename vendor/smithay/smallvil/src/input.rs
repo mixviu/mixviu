@@ -1,7 +1,6 @@
 use smithay::{
     backend::input::{
-        KeyState,
-        AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
+        AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent, KeyState,
         KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
     },
     input::{
@@ -12,14 +11,11 @@ use smithay::{
     utils::SERIAL_COUNTER,
 };
 
-use smithay::input::keyboard::{keysyms};
-
+use smithay::input::keyboard::keysyms;
 
 // This is the source of truth for Smithay keys
 
 use crate::state::Smallvil;
-
-
 
 impl Smallvil {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
@@ -55,10 +51,15 @@ impl Smallvil {
                             } else if keysym == keysyms::KEY_Down.into() {
                                 state.camera_pos.y += speed;
                                 return FilterResult::Intercept(());
-                            } else if keysym == keysyms::KEY_plus.into() || keysym == keysyms::KEY_equal.into() || keysym == keysyms::KEY_KP_Add.into() {
+                            } else if keysym == keysyms::KEY_plus.into()
+                                || keysym == keysyms::KEY_equal.into()
+                                || keysym == keysyms::KEY_KP_Add.into()
+                            {
                                 state.zoom *= 1.1;
                                 return FilterResult::Intercept(());
-                            } else if keysym == keysyms::KEY_minus.into() || keysym == keysyms::KEY_KP_Subtract.into() {
+                            } else if keysym == keysyms::KEY_minus.into()
+                                || keysym == keysyms::KEY_KP_Subtract.into()
+                            {
                                 state.zoom /= 1.1;
                                 return FilterResult::Intercept(());
                             }
@@ -208,8 +209,10 @@ impl Smallvil {
                         // 3. Shift the camera to keep the cursor over the exact same logical point
                         let zoom_ratio = old_zoom / self.zoom;
 
-                        self.camera_pos.x = cursor_logical.x - (cursor_logical.x - self.camera_pos.x) * zoom_ratio;
-                        self.camera_pos.y = cursor_logical.y - (cursor_logical.y - self.camera_pos.y) * zoom_ratio;
+                        self.camera_pos.x =
+                            cursor_logical.x - (cursor_logical.x - self.camera_pos.x) * zoom_ratio;
+                        self.camera_pos.y =
+                            cursor_logical.y - (cursor_logical.y - self.camera_pos.y) * zoom_ratio;
                     }
 
                     return;

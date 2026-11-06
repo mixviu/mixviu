@@ -136,8 +136,14 @@ enum Route {
 }
 
 fn route(args: &[OsString]) -> Route {
-    let name = args.first().map(|a| personality_name(a)).unwrap_or_default();
-    if let Some((p, _)) = PERSONALITIES.iter().find(|(p, _)| *p != "mixd" && *p == name) {
+    let name = args
+        .first()
+        .map(|a| personality_name(a))
+        .unwrap_or_default();
+    if let Some((p, _)) = PERSONALITIES
+        .iter()
+        .find(|(p, _)| *p != "mixd" && *p == name)
+    {
         return Route::Personality(p);
     }
     if args.get(1).is_some_and(|first| first == "--personalities") {
@@ -184,7 +190,10 @@ mod tests {
     #[test]
     fn a_personality_keeps_its_own_serve_subcommand() {
         // desk4 P1 regression: `editd serve` hit mixd's usage error.
-        let r = route(&[OsString::from("/opt/mixos/bin/editd"), OsString::from("serve")]);
+        let r = route(&[
+            OsString::from("/opt/mixos/bin/editd"),
+            OsString::from("serve"),
+        ]);
         assert_eq!(r, Route::Personality("editd"));
         let r = route(&[OsString::from("noded"), OsString::from("--personalities")]);
         assert_eq!(r, Route::Personality("noded"));
@@ -192,10 +201,20 @@ mod tests {
 
     #[test]
     fn mixd_itself_routes_run_serve_list_and_usage() {
-        assert_eq!(route(&[OsString::from("mixd"), OsString::from("serve")]), Route::Usage);
-        assert_eq!(route(&[OsString::from("mixd"), OsString::from("--personalities")]), Route::List);
         assert_eq!(
-            route(&[OsString::from("mixd"), OsString::from("run"), OsString::from("a.mix")]),
+            route(&[OsString::from("mixd"), OsString::from("serve")]),
+            Route::Usage
+        );
+        assert_eq!(
+            route(&[OsString::from("mixd"), OsString::from("--personalities")]),
+            Route::List
+        );
+        assert_eq!(
+            route(&[
+                OsString::from("mixd"),
+                OsString::from("run"),
+                OsString::from("a.mix")
+            ]),
             Route::Shell(Some(vec![OsString::from("mixd"), OsString::from("a.mix")]))
         );
     }
@@ -207,7 +226,10 @@ mod tests {
 
     #[test]
     fn run_drops_the_word_and_serve_becomes_the_flag() {
-        assert_eq!(rewrite(&os(&["mixd", "run", "a.mix", "x"])), Some(os(&["mixd", "a.mix", "x"])));
+        assert_eq!(
+            rewrite(&os(&["mixd", "run", "a.mix", "x"])),
+            Some(os(&["mixd", "a.mix", "x"]))
+        );
         assert_eq!(
             rewrite(&os(&["mixd", "serve", "svc.mix"])),
             Some(os(&["mixd", "--serve", "svc.mix"]))

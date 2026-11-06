@@ -2,8 +2,8 @@
 // personality (mixviu engine-split lab). src/main.rs is now a wrapper.
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use clap::{Parser, Subcommand};
 use crate::{local, service::Host};
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]

@@ -176,7 +176,11 @@ impl EventSource for X11Source {
 /// This thread will call wait_for_event(). RustConnection then ensures internally to wake us up
 /// when an event arrives. So far, this seems to be the only safe way to integrate x11rb with
 /// calloop.
-fn run_event_thread(connection: Arc<RustConnection>, sender: Sender<Event>, shutdown_requested: Arc<AtomicBool>) {
+fn run_event_thread(
+    connection: Arc<RustConnection>,
+    sender: Sender<Event>,
+    shutdown_requested: Arc<AtomicBool>,
+) {
     loop {
         let event = match connection.wait_for_event() {
             Ok(event) => event,

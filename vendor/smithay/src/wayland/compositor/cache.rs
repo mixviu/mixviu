@@ -252,7 +252,11 @@ mod cached_access_tests {
             *s = 7;
         }
         assert_eq!(
-            state.cache.iter().map(|(id, s)| (u32::from(*id), *s)).collect::<Vec<_>>(),
+            state
+                .cache
+                .iter()
+                .map(|(id, s)| (u32::from(*id), *s))
+                .collect::<Vec<_>>(),
             vec![(1, 7), (2, 7)],
             "commit ids are untouched; only the states are reset"
         );

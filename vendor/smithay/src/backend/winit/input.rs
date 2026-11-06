@@ -8,8 +8,8 @@ use winit::{
 use crate::backend::input::{
     self, AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Device,
     DeviceCapability, Event, InputBackend, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent,
-    PointerButtonEvent, PointerMotionAbsoluteEvent, PointerMotionEvent, TouchCancelEvent,
-    TouchDownEvent, TouchEvent, TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent,
+    PointerButtonEvent, PointerMotionAbsoluteEvent, PointerMotionEvent, TouchCancelEvent, TouchDownEvent,
+    TouchEvent, TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent,
 };
 
 /// Marker used to define the `InputBackend` types for the winit backend.
