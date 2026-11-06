@@ -683,12 +683,16 @@ impl Host {
             &self.view.geometry,
             self.measurements.snapshot(),
         );
-        self.facilities.finish(ui.ctx());
-        if self.native_drive {
-            for mut answer in toolkit::drive::finish(ui.ctx()) {
-                crate::app_facilities::remap(ui.ctx(), &mut answer.body);
-                if let Some(reply) = self.drive_pending.remove(&answer.id) {
-                    let _ = reply.send((answer.rc, answer.body));
+        if self.bus.close_requested.load(std::sync::atomic::Ordering::Acquire)
+            || self.model["window_close"] == true
+        {
+            self.facilities.finish(ui.ctx());
+            if self.native_drive {
+                for mut answer in toolkit::drive::finish(ui.ctx()) {
+                    crate::app_facilities::remap(ui.ctx(), &mut answer.body);
+                    if let Some(reply) = self.drive_pending.remove(&answer.id) {
+                        let _ = reply.send((answer.rc, answer.body));
+                    }
                 }
             }
         }

@@ -2,12 +2,20 @@
 -- Action registry and execution policy, shared by menus, keys and ced.execute.
 fn action_rows($s)
   $rows=$s.actions
+  $has=len($s.tabs)>0;$t=if $has then current($s) else nil end
+  $live=$has and $t.phase=="live"
+  $modal=$s.open_dialog or $s.save_dialog or $s.goto_dialog or $s.close_dialog!=nil or $s.disk_dialog!=nil or contains(["keys","about"],$s.help) or ($s.recovery_open ?? false)
   for $i=0 to len($rows)-1
-    $rows[$i].enabled=true
+    $id=$rows[$i].id
+    $rows[$i].enabled=$live
+    if contains(["file.new","file.open","file.exit","file.save_all","help.keys","help.macros","help.about","view.zoom_in","view.zoom_out","view.zoom_reset","view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output","view.reload_settings"],$id) then $rows[$i].enabled=true end
+    if contains(["file.close","view.clear_markers","edit.copy","edit.select_all"],$id) then $rows[$i].enabled=$has end
     if starts_with($rows[$i].id,"view.markdown.") then $rows[$i].enabled=len($s.tabs)>0 and current($s).language=="markdown" end
-    if $rows[$i].id=="file.send" or $rows[$i].id=="mail.headers" then $rows[$i].enabled=len($s.tabs)>0 and $s.mail[current($s).document]!=nil end
-    if starts_with($rows[$i].id,"edit.") or starts_with($rows[$i].id,"search.") or contains(["file.save","file.save_as","file.reload","file.close"],$rows[$i].id) then $rows[$i].enabled=len($s.tabs)>0 end
+    if $id=="edit.undo_other" then $rows[$i].enabled=$live and ($t.has_remote ?? false) end
+    if $id=="file.send" or $id=="mail.headers" then $m=if $has then $s.mail[$t.document] else nil end;$rows[$i].enabled=$m!=nil and not $m.saving and not $m.sending end
+    if contains(["tabs.next","tabs.prev"],$id) then $rows[$i].enabled=len($s.tabs)>1 end
     if starts_with($rows[$i].id,"tabs.goto.") then $rows[$i].enabled=to_number(split($rows[$i].id,".")[2])<=len($s.tabs) end
+    if $modal then $rows[$i].enabled=false end
     if $s.keys[$rows[$i].id]!=nil then $rows[$i].keys=$s.keys[$rows[$i].id] end
   end
   return $rows

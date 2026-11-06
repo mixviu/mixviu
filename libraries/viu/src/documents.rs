@@ -171,7 +171,7 @@ impl Document {
             "phase":match m.phase(){Phase::Live=>"live",Phase::Bootstrapping{..}=>"bootstrapping",Phase::Recovering{..}=>"recovering",Phase::Detached{..}=>"detached"},
             "reattach_needed":matches!(m.phase(),Phase::Detached{reason:editor_model::mirror::DetachReason::EpochChanged}),
             "bytes":m.text().len(),"lines":m.text().line_count(),"path":m.meta().path,"language":m.meta().language,
-            "dirty":m.meta().dirty,"pending":m.pending(),"inflight":m.inflight().is_some(),"idle":m.is_idle(),"resyncs":self.resyncs,
+            "dirty":m.meta().dirty,"pending":m.pending(),"inflight":m.inflight().is_some(),"idle":m.is_idle(),"resyncs":self.resyncs,"has_remote":m.last_remote().is_some(),
             "recovered":m.meta().recovered,"recovery_id":m.meta().recovery_id,"saved_rev":m.meta().saved_rev,"disk":m.meta().disk,"bom":m.meta().bom,"eol":m.meta().eol,
             "selection":{"anchor":m.text().point(self.model.sel.anchor),"head":m.text().point(self.model.sel.head)},
             "overwrite":self.model.overwrite,"first_line":self.model.scroll.first_line,"detached_copy":m.detached_copy().is_some(),"conflicts":m.conflicts().len(),"layout":self.layout,"notices":self.notices})
