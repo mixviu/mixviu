@@ -14538,6 +14538,118 @@
       "destination_sha256": "3cef131db8d7f5519586482cac23852f7dc285921223efe9c659b5698c5096fb",
       "source": "tools/test-support/load_guard.rs",
       "source_sha256": "3cef131db8d7f5519586482cac23852f7dc285921223efe9c659b5698c5096fb"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/Inter-Bold.md",
+      "destination_sha256": "20af2660802fbe4ee148f11a3dd1720a4db72566ce6ebb5a0d4d996cfff31227",
+      "source": "libs/toolkit/assets/fonts/Inter-Bold.md",
+      "source_sha256": "20af2660802fbe4ee148f11a3dd1720a4db72566ce6ebb5a0d4d996cfff31227"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/Inter-Bold.ttf",
+      "destination_sha256": "288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f",
+      "source": "libs/toolkit/assets/fonts/Inter-Bold.ttf",
+      "source_sha256": "288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/Inter-Light.ttf",
+      "destination_sha256": "164414f0aacbe98a7e64addc43f7b3bfd2e32f7b90e101feeab227f14c371bda",
+      "source": "libs/toolkit/assets/fonts/Inter-Light.ttf",
+      "source_sha256": "164414f0aacbe98a7e64addc43f7b3bfd2e32f7b90e101feeab227f14c371bda"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/Inter-Medium.ttf",
+      "destination_sha256": "97ad806f526e41546d46365bb3a393145f75b7b1568913db74549ad8b8dba872",
+      "source": "libs/toolkit/assets/fonts/Inter-Medium.ttf",
+      "source_sha256": "97ad806f526e41546d46365bb3a393145f75b7b1568913db74549ad8b8dba872"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/Inter-Regular.ttf",
+      "destination_sha256": "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82",
+      "source": "libs/toolkit/assets/fonts/Inter-Regular.ttf",
+      "source_sha256": "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/Inter-SemiBold.ttf",
+      "destination_sha256": "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3",
+      "source": "libs/toolkit/assets/fonts/Inter-SemiBold.ttf",
+      "source_sha256": "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/JetBrainsMono-Light.ttf",
+      "destination_sha256": "60c18d7dd58d81b3bbd12e8ce32744a8771bfe2b5280574082b0eaed46c60d24",
+      "source": "libs/toolkit/assets/fonts/JetBrainsMono-Light.ttf",
+      "source_sha256": "60c18d7dd58d81b3bbd12e8ce32744a8771bfe2b5280574082b0eaed46c60d24"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/JetBrainsMono-Medium.ttf",
+      "destination_sha256": "31c92d01a8a08528b718a43addf0ad3df0af2ca4b7b3290a452f70f358e14d3d",
+      "source": "libs/toolkit/assets/fonts/JetBrainsMono-Medium.ttf",
+      "source_sha256": "31c92d01a8a08528b718a43addf0ad3df0af2ca4b7b3290a452f70f358e14d3d"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/JetBrainsMono-Regular.ttf",
+      "destination_sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
+      "source": "libs/toolkit/assets/fonts/JetBrainsMono-Regular.ttf",
+      "source_sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/OFL-Inter.txt",
+      "destination_sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a",
+      "source": "libs/toolkit/assets/fonts/OFL-Inter.txt",
+      "source_sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/OFL-JetBrainsMono.txt",
+      "destination_sha256": "30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad",
+      "source": "libs/toolkit/assets/fonts/OFL-JetBrainsMono.txt",
+      "source_sha256": "30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/fallbacks/LICENSE-EmojiIcon.txt",
+      "destination_sha256": "b9d2c1d909aa149996fd4c91dcb92b2362a04431640c1d200959da94caf8cde1",
+      "source": "libs/toolkit/assets/fonts/fallbacks/LICENSE-EmojiIcon.txt",
+      "source_sha256": "b9d2c1d909aa149996fd4c91dcb92b2362a04431640c1d200959da94caf8cde1"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/fallbacks/LICENSE-Hack.txt",
+      "destination_sha256": "47c0cccbeec7e8614548cc485588b28149e7874188df5f41b36efebcee285c87",
+      "source": "libs/toolkit/assets/fonts/fallbacks/LICENSE-Hack.txt",
+      "source_sha256": "47c0cccbeec7e8614548cc485588b28149e7874188df5f41b36efebcee285c87"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/fallbacks/LICENSE-NotoEmoji.txt",
+      "destination_sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+      "source": "libs/toolkit/assets/fonts/fallbacks/LICENSE-NotoEmoji.txt",
+      "source_sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/fallbacks/LICENSE-Ubuntu.txt",
+      "destination_sha256": "2f0015108d68627bd788d313f529c21ff4da2c2c42a5e1f3883acc83480f9002",
+      "source": "libs/toolkit/assets/fonts/fallbacks/LICENSE-Ubuntu.txt",
+      "source_sha256": "2f0015108d68627bd788d313f529c21ff4da2c2c42a5e1f3883acc83480f9002"
+    },
+    {
+      "adaptation": null,
+      "destination": "libraries/toolkit/assets/fonts/fallbacks/README.md",
+      "destination_sha256": "30f72e63f348773332e98ac528023edde66ade037ec69dc30e08c110a05a30f0",
+      "source": "libs/toolkit/assets/fonts/fallbacks/README.md",
+      "source_sha256": "30f72e63f348773332e98ac528023edde66ade037ec69dc30e08c110a05a30f0"
     }
   ],
   "licence": "MIT OR Apache-2.0",
