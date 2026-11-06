@@ -1,0 +1,35 @@
+# Desk4 integration receipts
+
+## Bulk and Monitor integration
+
+Tested source `9643f9235819d33fc8e398ea0abfcc29d84192cf` merges `4c1d7153f6e13da0e1f67317af9c3b4518ff5e09` into `lab/gold-parity`. All four release engines are together on **cbc2**, `/build/es-artifacts/9643f9235819d33fc8e398ea0abfcc29d84192cf/`. SHA256SUMS hash: `2becc4885ba92e1e2ec9164a664911fc01c6f0ea5fa31eff269c64959e4a8869`.
+
+```text
+2dd3b73fb913c32c9106275e63c5a4455966824a5bb81573e6f639d5abe43ca3  mix
+4795719e5b8ff1f8a53e37c431349ad462b85ab7afb26e53f8f4f2757f2ee138  mixd
+f32cc6cfb3162955f67a9938a56dcc9c564ee699be861e55e26c4f1db602e205  viud
+f7c4f97ca82c989340ba7060ad1130aa164de3b0d986dc9ae7680db8d7796a7b  viu
+```
+
+CBC `20261107-064343-f05d5cfb-a1` completed fmt, both isolated-profile Clippy runs, all workspace/shell test stages (10,649 passed, zero failed, 100 existing ignores), four Monitor Mix tests and explicit bulk profiles. It was interrupted during the furniture-oracle build; it is not recorded as an entirely successful job. Continuation `20261107-075258-c6071acd-a1` returned BUILD_RC=0: oracle build, the previously ignored P2 furniture test, Track A SMOKE_FAILS=0, and SHA256SUMS. No tests were weakened.
+
+Monitor's exact release SHA256 is the viu entry above. All 12 native runs pass: 55 visual comparison sets, 46/46 matched structured Bus replies, complete actions/macros/native hosting, disposable-child signals and real daemon, 19 live Prefs states on unchanged PIDs, authority recovery and cleanup. Processes and all seven Performance pages retain whole/header/options/content/status SSIM and RMSE distortion 0; resource rail/dashboard, command line and CPU charts/grids also remain 0. Two Prefs raster cases reproduce the accepted node-chevron/Close antialiasing exactly (maximum whole SSIM distortion 9.74852e-8); content/status remain exact. P1 remains the sole approved non-visual deviation. The previous Monitor acceptance's region rectangles and figures remain applicable. Private receipt: `gold-parity-20261107/integration/9643f9235819d33fc8e398ea0abfcc29d84192cf`.
+
+### Same-worker 2,000-row comparison
+
+CBC `20261107-075901-fe888f44-a1` passed on CBC2 using the saved release bytes for both sources. Thirty warm rounds per cell, Latin-rotated Dopus order and alternating Email order; 510 checked samples. Every sort, selection, revision and row count is checked; refresh creates an actual 2,001st witness row. Original gold is pinned to 8779f33. The private native Bus measures execute acknowledgement, followed separately by verified model readback. These are not physical frame-presentation times.
+
+| Action | 4c1d715 median/p95/p99 ms | Integrated median/p95/p99 ms |
+| --- | ---: | ---: |
+| view.sort-size | 115.03/124.15/126.83 | 113.88/119.34/128.84 |
+| view.sort-name | 108.94/119.92/122.57 | 109.60/118.98/155.30 |
+| view.refresh | 100.00/111.32/112.69 | 100.54/110.52/117.20 |
+| selection.first | 64.78/72.39/76.95 | 62.87/75.00/81.75 |
+| selection.last | 63.61/71.47/73.13 | 64.28/68.85/80.50 |
+| email.list | 114.58/120.64/129.92 | 115.43/132.24/136.31 |
+
+Median changes range from -2.9% to +1.1%; all original bulk hot paths are retained. Tail values are preserved rather than rounded into an equivalence claim. The existing roughly-100 ms viability work remains separate; this merge does not claim a new latency target. An earlier 480-sample witness (`20261107-075542-24a1c263-a1`) also passed and is retained. All benchmark processes and brokers are confirmed stopped; a later audit resolves the broker that was still exiting at the initial cleanup readback.
+
+## Accepted Ced integration
+
+Merged `d4e19db5259e448190f3e877a0021f735195635a` at `4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0`. Only last.md conflicted. Release-byte validation and the second four-engine handoff are in progress.
