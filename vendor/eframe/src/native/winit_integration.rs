@@ -57,7 +57,7 @@ pub enum PassMode {
 
     /// Run a full pass offscreen if a pending action needs pixels, otherwise logic only.
     /// Used when the compositor has withheld a requested redraw. Wgpu only.
-    #[cfg(feature = "wgpu")]
+    #[cfg(feature = "wgpu_no_default_features")]
     Offscreen,
 
     /// Run only [`crate::App::logic`]: no egui pass and no painting.

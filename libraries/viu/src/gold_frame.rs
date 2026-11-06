@@ -14,8 +14,10 @@ pub fn compose(source: &str) -> Result<String, String> {
     // Mounting relocates the layout root. Refuse roots that own controls or
     // emit intents rather than silently changing the application's protocol.
     // A future generic mount must retain that identity before Dopus adopts it.
-    if !matches!(content.widget.as_str(), "column" | "row" | "grid" | "dock" | "split")
-        || content.ports.keys().any(|key| key.starts_with("on_"))
+    if !matches!(
+        content.widget.as_str(),
+        "column" | "row" | "grid" | "dock" | "split"
+    ) || content.ports.keys().any(|key| key.starts_with("on_"))
     {
         return Err("gold frame requires a layout-only root without intent handlers".into());
     }

@@ -56,8 +56,14 @@ fn mix_frame_preserves_application_content_and_intent_identity() {
     assert!(view.admit_intent("content", "set", &json!(50)).is_ok());
     assert!(composed.contains("app.intent"));
     assert!(viu::gold_frame::compose(&source.replace("content", "gold-title")).is_err());
-    let control_root = source.replace("root:{widget:\"column\",children:[\"content\"]},content:", "root:");
+    let control_root = source.replace(
+        "root:{widget:\"column\",children:[\"content\"]},content:",
+        "root:",
+    );
     assert!(viu::gold_frame::compose(&control_root).is_err());
-    let event_root = source.replace("widget:\"column\",children:", "widget:\"column\",on_change:\"app.layout\",children:");
+    let event_root = source.replace(
+        "widget:\"column\",children:",
+        "widget:\"column\",on_change:\"app.layout\",children:",
+    );
     assert!(viu::gold_frame::compose(&event_root).is_err());
 }
