@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Client card renderer and placement, adapted from scene-host/tooltip.rs.
-use std::sync::Arc;
 use crate::view::tip::{self, Tip, TipAt};
+use std::sync::Arc;
 /// Transparent margin around the card for its shadow (logical px).
 pub const MARGIN: f32 = 12.0;
 /// Space between the scene's edge and the card.
@@ -95,13 +95,18 @@ impl TooltipUi {
 impl ui::UiProgram for TooltipUi {
     ui::program_owner!(TooltipUi);
     type Message = Message;
-    fn setup(&mut self, ctx: &egui::Context) { TooltipUi::setup(self, ctx); }
-    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<Message>) { TooltipUi::show(self, ui, emit); }
-    fn update(&mut self, message: Message) { TooltipUi::update(self, message); }
+    fn setup(&mut self, ctx: &egui::Context) {
+        TooltipUi::setup(self, ctx);
+    }
+    fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<Message>) {
+        TooltipUi::show(self, ui, emit);
+    }
+    fn update(&mut self, message: Message) {
+        TooltipUi::update(self, message);
+    }
 }
 
 impl TooltipUi {
-
     pub(crate) fn setup(&mut self, ctx: &egui::Context) {
         // Before the first pass: egui binds new fonts from the NEXT pass on,
         // so a first pass that drew the bold (heading) family before this
@@ -346,5 +351,3 @@ mod tests {
         assert_eq!(x, 1536.0 - 300.0 - EDGE);
     }
 }
-
-

@@ -246,7 +246,10 @@ impl<P: LayerProgram + 'static> State<P> {
                 if desired.input_passthrough {
                     let region = smithay_client_toolkit::compositor::Region::new(&self.compositor)
                         .expect("tooltip input region");
-                    surface.layer.wl_surface().set_input_region(Some(region.wl_region()));
+                    surface
+                        .layer
+                        .wl_surface()
+                        .set_input_region(Some(region.wl_region()));
                 } else {
                     surface.layer.wl_surface().set_input_region(None);
                 }

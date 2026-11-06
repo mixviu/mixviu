@@ -88,7 +88,8 @@ impl Actions {
                 pressed,
                 &|tip| tip::card(tip, size, &measure),
             );
-        }).drop_without_applying_deltas(); // This private context only measures fonts.
+        })
+        .drop_without_applying_deltas(); // This private context only measures fonts.
         match outcome {
             Outcome::Show(at) => {
                 self.shown = Some(("__window_actions".into(), at));

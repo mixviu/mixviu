@@ -70,18 +70,23 @@ fn spawn(root: &Path, binary: &Path, old: bool, url: &str, parent: Option<&Path>
     let file = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
     if let Some(parent) = parent {
-        command.args(["--nested", "--bus-service", "comp-headless"])
+        command
+            .args(["--nested", "--bus-service", "comp-headless"])
             .env("WAYLAND_DISPLAY", parent.join("wayland-furniture-test"));
     } else {
-        command.args([
-            "--headless",
-            "--size",
-            "1280x720",
-            "--render-node",
-            "/dev/dri/renderD128",
-        ]).env_remove("WAYLAND_DISPLAY").env_remove("DISPLAY");
+        command
+            .args([
+                "--headless",
+                "--size",
+                "1280x720",
+                "--render-node",
+                "/dev/dri/renderD128",
+            ])
+            .env_remove("WAYLAND_DISPLAY")
+            .env_remove("DISPLAY");
     }
-    let child = command.args(["--socket", "wayland-furniture-test", "--config-file"])
+    let child = command
+        .args(["--socket", "wayland-furniture-test", "--config-file"])
         .arg(root.join("settings.json"))
         .env("XDG_RUNTIME_DIR", root)
         .env("XDG_CONFIG_HOME", root.join("config"))
@@ -176,7 +181,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
     let start = Instant::now();
     let source = include_str!("fixtures/panel-render.scene.mix");
     let loaded = client
-        .call("shell", "shell.scene.load", json!({"source":source}))
+        .call("shell", "shell.scene.load", json!({"source":source,"output":if parent.is_some() {"winit"} else {"headless-0"}}))
         .await
         .unwrap();
     println!("SCENE_LOAD old={old} {loaded}");
@@ -227,7 +232,8 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             .as_object()
             .unwrap()
             .values()
-            .any(|row| row["usable"]["height"].as_f64().unwrap_or(f64::MAX) < row["height"].as_f64().unwrap_or(0.0))
+            .any(|row| row["usable"]["height"].as_f64().unwrap_or(f64::MAX)
+                < row["height"].as_f64().unwrap_or(0.0))
     );
     if !old && parent.is_some() {
         let before = client
@@ -244,7 +250,14 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             )
             .await
             .unwrap();
-        client.call("comp-headless","comp.input.pointer.button",json!({"seat":"human","action":"click"})).await.unwrap();
+        client
+            .call(
+                "comp-headless",
+                "comp.input.pointer.button",
+                json!({"seat":"human","action":"click"}),
+            )
+            .await
+            .unwrap();
         let until = Instant::now() + Duration::from_secs(5);
         loop {
             let props = client
@@ -252,16 +265,26 @@ async fn exercise(old: bool, parent: Option<&Path>) {
                 .await
                 .unwrap();
             let count = props["corner_events"].as_u64().unwrap();
-            if count > before && ["consumed","clicked","released"].iter().all(|phase| props["corner_phases"].as_array().unwrap().iter().any(|v| v == phase)) {
+            if count > before
+                && ["consumed", "clicked", "released"].iter().all(|phase| {
+                    props["corner_phases"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|v| v == phase)
+                })
+            {
                 println!("SCRIPTED_CORNER_DELIVERED before={before} after={count}");
-                println!("EARLY_CLICK_PHASES {}",props["corner_phases"]);
+                println!("EARLY_CLICK_PHASES {}", props["corner_phases"]);
                 break;
             }
             assert!(Instant::now() < until, "corner topic missing");
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }
-    if parent.is_some() { return; }
+    if parent.is_some() {
+        return;
+    }
     // Keep the furniture idle; a separate shm client requests paced frames.
     let mut pattern = pattern::Pattern::new(UnixStream::connect(&socket).unwrap());
     pattern.wait_callback(0);
