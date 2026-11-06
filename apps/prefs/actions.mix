@@ -109,7 +109,10 @@ fn menu_rows($rows,$all)
     if $row.submenu!=nil then $item.children=menu_rows($row.submenu,$all)
     else
       $a=filter($all,fn($a)=$a.id==$row.id)[0]
-      if $a!=nil then $item.enabled=$a.enabled;$item.checked=$a.checked;$item.shortcut=$a.shortcut end
+      if $a!=nil then
+        $item.enabled=$a.enabled;$item.checked=$a.checked
+        if $s.bindings[$a.id]!=nil then $item.shortcut=$a.shortcut end
+      end
     end
     push($out,$item)
   end

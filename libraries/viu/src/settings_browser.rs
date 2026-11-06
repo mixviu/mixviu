@@ -869,6 +869,15 @@ fn cards(
         if section["shown"] == false {
             continue;
         }
+        if let Some(fraction) = section["height_fraction"].as_f64() {
+            let height = ui.available_height() * fraction.clamp(0.0, 1.0) as f32;
+            let mut inner = section.clone();
+            inner["height_fraction"] = Value::Null;
+            ui.allocate_ui(vec2(ui.available_width(), height), |ui| {
+                ui.vertical(|ui| cards(ui, id, &json!([inner]), look, geometry, events));
+            });
+            continue;
+        }
         if section["native_plain"] == true {
             if section_index > 0 {
                 ui.add_space(look.l);
@@ -2103,9 +2112,15 @@ fn draw_inline_row(
                     if row["separator_before"] == true {
                         toolkit::bars::hairline(ui);
                     }
+                    if row["section_label"] == true {
+                        toolkit::panel::section_label(ui, text(row, "value"));
+                        return;
+                    }
                     let mut label = RichText::new(row["value"].as_str().unwrap_or(""));
                     label = if row["strong"] == true {
                         label.strong()
+                    } else if row["normal"] == true {
+                        label
                     } else {
                         label.weak()
                     };
@@ -2209,6 +2224,9 @@ fn draw_inline_row(
                                 }
                                 ui.label(RichText::new(text(item, "detail")).small().weak());
                                 ui.add_space(ui.spacing().item_spacing.y);
+                            }
+                            if let Some(label) = row["new_label"].as_str() {
+                                toolkit::selectable(ui, true, label);
                             }
                         });
                         if row["split"] == true {
@@ -2403,7 +2421,8 @@ fn draw_inline_row(
                                     }
                                 });
                                 if !text(row, "description").is_empty() {
-                                    ui.label(RichText::new(text(row, "description")).weak());
+                                    let label = RichText::new(text(row, "description")).weak();
+                                    ui.label(if row["description_small"] == true { label.small() } else { label });
                                 }
                             });
                             ui.end_row();
