@@ -264,6 +264,9 @@ mod tail_tests {
         let path = dir.path().join("log");
         std::fs::write(&path, b"old\nnewest\npartial\xff\nlater\n").unwrap();
         let file = std::fs::File::open(path).unwrap();
-        assert_eq!(super::read_tail_lines(file, 1024).unwrap(), b"old\nnewest\n");
+        assert_eq!(
+            super::read_tail_lines(file, 1024).unwrap(),
+            b"old\nnewest\n"
+        );
     }
 }
