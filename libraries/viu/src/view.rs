@@ -42,6 +42,7 @@ pub struct SceneView {
 }
 
 impl SceneView {
+    pub fn set_native_menus(&mut self,enabled:bool){self.widgets.set_native_menus(enabled);}
     pub fn set_documents(&mut self, documents: crate::documents::Documents) {
         self.widgets.set_documents(documents);
     }
@@ -573,6 +574,11 @@ impl SceneView {
         let child = children(node).collect::<Vec<_>>();
         if child.len() != 2 {
             return;
+        }
+        let active=child.iter().filter(|id|nodes.get(**id).is_some_and(|node|node.ports.get("hidden")!=Some(&Value::Bool(true)))).copied().collect::<Vec<_>>();
+        if active.len()<2 {
+            if let Some(child)=active.first(){self.child_rect(ui,child,area,nodes,route,depth,events);}
+            ui.advance_cursor_after_rect(area);return;
         }
         let horizontal = text(node, "axis") != "vertical";
         let divider = num(node, "divider").unwrap_or(6.0).min(

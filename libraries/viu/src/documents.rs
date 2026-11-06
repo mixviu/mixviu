@@ -17,6 +17,7 @@ use std::{
 };
 
 struct Document {
+    preview:Option<(u64,Arc<toolkit::markdown::Document>)>,
     diagnostics: editor_model::diag::Diagnostics,
     matches: Vec<std::ops::Range<usize>>,
     resyncs: u64,
@@ -229,6 +230,14 @@ impl Documents {
         if key.is_empty() || key.len() > 128 {
             return Err("invalid document id".into());
         }
+        if op=="preview" {
+            let (text,generation)={let state=self.0.lock().map_err(|_|"document owner poisoned")?;let doc=state.documents.get(key).ok_or("unknown document")?;
+                let mut text=String::new();doc.mirror.text().read(0..doc.mirror.text().len(),&mut text);(text,doc.mirror.view_gen())};
+            let preview=Arc::new(toolkit::markdown::Document::parse(&text));
+            let mut state=self.0.lock().map_err(|_|"document owner poisoned")?;let doc=state.documents.get_mut(key).ok_or("document closed while parsing")?;
+            if doc.mirror.view_gen()!=generation{return Err("document changed while parsing".into());}
+            doc.preview=Some((generation,preview));return Ok(json!({"view_gen":generation}));
+        }
         let mut state = self.0.lock().map_err(|_| "document owner poisoned")?;
         if op == "stats" {
             return Ok(json!(state.counters));
@@ -249,6 +258,7 @@ impl Documents {
             let (mirror, step) = Mirror::bootstrap(&open).map_err(|e| format!("{e:?}"))?;
             state.next += 1;
             let mut doc = Document {
+                preview:None,
                 diagnostics: Default::default(),
                 matches: Vec::new(),
                 resyncs: 0,
@@ -601,5 +611,15 @@ impl Documents {
             events.push(crate::widgets::Intent::set(&widget.id, after));
         }
         out.response
+    }
+
+    pub fn show_preview(&self,ui:&mut egui::Ui,widget:&crate::widgets::Widget,value:&Value)->egui::Response {
+        let preview={let state=self.0.lock().unwrap();value["document"].as_str().and_then(|key|state.documents.get(key)).and_then(|d|d.preview.as_ref().filter(|(generation,_)|*generation==d.mirror.view_gen()).map(|(_,preview)|preview.clone()))};
+        let palette=crate::editor::native_palette(ui,widget);let view=crate::editor::native_view(ui,widget);
+        egui::Frame::new().fill(palette.background).inner_margin(widget.properties["padding"].as_f64().unwrap_or(8.0) as i8).show(ui,|ui|{
+            ui.set_min_size(ui.available_size());
+            for style in [egui::TextStyle::Body,egui::TextStyle::Monospace]{if let Some(font)=ui.style_mut().text_styles.get_mut(&style){font.size=view.font_size.unwrap_or(13.0);}}
+            egui::ScrollArea::both().id_salt((&widget.id,"markdown")).auto_shrink([false,false]).show(ui,|ui|{if let Some(document)=preview {toolkit::markdown::show(ui,&document);}else{ui.weak("Preparing preview…");}});
+        }).response
     }
 }

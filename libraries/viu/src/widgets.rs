@@ -11,6 +11,7 @@ pub const KINDS: &[&str] = &[
     "field",
     "multiline",
     "editor",
+    "markdown",
     "checkbox",
     "toggle",
     "radio",
@@ -167,7 +168,7 @@ impl Widget {
             "colour" => value.as_array().is_some_and(|v| {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
-            "editor" => {
+            "editor" | "markdown" => {
                 let handle = self.properties["native_document"] == true
                     && value["document"]
                         .as_str()
@@ -409,6 +410,8 @@ impl Intent {
 
 #[derive(Default)]
 pub struct Widgets {
+    native_menu:crate::native_menu::NativeMenu,
+    gold_menus:bool,
     pub geometry: BTreeMap<String, Rect>,
     pub focus: Option<String>,
     pub text_input_active: bool,
@@ -420,6 +423,7 @@ pub struct Widgets {
     documents: crate::documents::Documents,
 }
 impl Widgets {
+    pub fn set_native_menus(&mut self,enabled:bool){self.gold_menus=enabled;}
     pub fn set_documents(&mut self, documents: crate::documents::Documents) {
         self.documents = documents;
     }
@@ -546,6 +550,7 @@ impl Widgets {
                 .get_or_insert_with(crate::image_view::Images::surface)
                 .draw_fill(ui, id, value),
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
+            "menubar" if self.gold_menus => self.native_menu.draw(ui,widget,value,events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" => {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
@@ -573,6 +578,7 @@ impl Widgets {
                 }
                 r
             }
+            "markdown" => self.documents.show_preview(ui,widget,value),
             "editor" if widget.properties["native_document"] == true => {
                 let selection = if self.focus.as_deref() == Some(id) {
                     self.focus_selection.take()

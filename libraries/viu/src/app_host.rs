@@ -396,6 +396,7 @@ impl Host {
                             SceneView::with_model(&self.scene_source, projected).map(|view| {
                                 self.view = view;
                                 self.view.set_documents(self.documents.clone());
+                                self.view.set_native_menus(self.native_drive);
                                 self.loaded = true;
                             })
                         }
@@ -468,7 +469,7 @@ impl Host {
             }
         }
         if self.ready {
-            if let Some(bindings) = self.model["shortcuts"].as_array() {
+            if let Some(bindings) = self.model["shortcuts"].as_array().filter(|_|!toolkit::menu::is_open(ui.ctx())) {
                 let bindings = bindings.clone();
                 for binding in bindings {
                     if binding["enabled"] == false {
@@ -488,6 +489,13 @@ impl Host {
             if self.framed {
                 let settings = self.model["window_settings"].clone();
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
+                if self.native_drive {
+                    let mut chrome=toolkit::chrome::Chrome::of(ui.ctx());
+                    let style=ui.ctx().global_style();chrome.palette=toolkit::chrome::Palette::from_visuals(&style.visuals);chrome.mode=if style.visuals.dark_mode {design::Mode::Dark}else{design::Mode::Light};chrome.metrics=toolkit::chrome::Metrics::from_egui(&style,&chrome.style);
+                    chrome.menu_style=design::MenuStyle::resolve(settings["window.menu_style"].as_str().unwrap_or("bar"));
+                    chrome.menu_side=design::MenuSide::resolve(settings["window.menu_side"].as_str().unwrap_or("left"));
+                    toolkit::chrome::install(ui.ctx(),&chrome);toolkit::chrome::client_side(ui.ctx());
+                }
                 self.window_frame
                     .show_with_header(ui, &self.title, &settings, true);
                 let slots = self

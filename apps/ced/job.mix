@@ -49,7 +49,8 @@ fn open_recovery($a)
 end
 on job.run
   $job=$event.args;$a=$job.payload
-  if $job.kind=="classify" then reply(0,json_encode(classify_document($a.document)));return
+  if $job.kind=="preview" then $v=viu_document("preview",$a.document,{});reply(0,json_encode($v));return
+  elif $job.kind=="classify" then reply(0,json_encode(classify_document($a.document)));return
   elif $job.kind=="mail-hash" then
     $state=viu_document("state",$a.document,{})
     $text=document_text($a.document,8388608)

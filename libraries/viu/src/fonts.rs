@@ -67,6 +67,10 @@ pub fn install(ctx: &egui::Context, body: u16, heading: u16) {
             .families
             .insert(FontFamily::Name(family.into()), stack);
     }
+    for (alias,primary) in [("medium","viu-medium"),("heading","viu-heading")] {
+        let stack=fonts.families[&FontFamily::Name(primary.into())].clone();
+        fonts.families.insert(FontFamily::Name(alias.into()),stack);
+    }
     ctx.set_fonts(fonts);
     ctx.data_mut(|d| d.insert_temp::<(u16, u16)>(key, (body, heading)));
 }

@@ -9,7 +9,7 @@ include "actions.mix"
 include "mail.mix"
 $state={tabs:[],active:0,busy:false,serial:0,next_tab:0,queue:[],running:{},timers:{},outcomes:{},last_op:nil,status:"Open a UTF-8 document",path:"",wrap:false,line_numbers:true,window_close:false,open_dialog:false,event_seq:nil,look:{appearance:{scheme:"studio",mode:"dark"},values:{},revision:nil}}
 $state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_loaded=false;$state.session_dirty=false;$state.session_seen=nil;$state.restore={};$state.restore_active=nil;$state.exit_after_save=false;$state.edit={epoch:nil,version:nil,volatile:nil}
-$state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=filter(json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).host.commands,fn($c)=not contains(["ced.command","ced.draft","ced.debug","ced.intent"],$c));$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:true,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
+$state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=filter(json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).host.commands,fn($c)=not contains(["ced.command","ced.draft","ced.debug","ced.intent"],$c));$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:true,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.preview_requested={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
 publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
@@ -93,6 +93,7 @@ on viu.job.completed
       end
     else
       $state.status="Failed: "..json_encode($event.args.body)
+      if $job.kind=="preview" then $state.preview_requested=delete($state.preview_requested,$job.payload.document) end
       if $job.kind=="open" then $state.restore=delete($state.restore,$job.payload.document);$state.open_errors[$job.payload.document]=$event.args.body end
       if $job.kind=="reattach" then $state.reattach_wait[$job.payload.document]=true;viu_timer($job.payload.document..":reattach",30000,{kind:"reattach",document:$job.payload.document}) end
       if $job.kind=="session-save" then $state.session_dirty=true;$state.exit_after_save=false end
