@@ -7,7 +7,7 @@ fn target($node)
   return "monitord."..$node..".bus"
 end
 fn initial()
-  return {node:"",node_draft:"",paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,snapshot:nil,processes:[],history:[],error:nil,serial:0}
+  return {node:"",node_draft:"",paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
 end
 fn query($s)
   return {sort:$s.sort,reverse:$s.reverse,filter:$s.filter,tree:$s.tree,limit:2001}

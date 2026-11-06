@@ -16,6 +16,7 @@ fn refresh_monitor($s)
     if $rc!=0 then raise("PROCESSES",to_string($result)) end
     if type($reply.rows)!="list" or len($reply.rows)>2000 or ($reply.total ?? 0)>2000 then raise("PROCESS_BUDGET","Process limit 2000 exceeded; no partial state") end
     $s.snapshot=$snapshot;$s.processes=$reply.rows
+    $s.start_times=if $s.node=="" then viu_process("snapshot",{pids:map($s.processes,fn($p)=$p.pid)}) else {} end
     $s.history=push($s.history,$snapshot.cpu.busy)
     if len($s.history)>60 then $s.history=slice($s.history,len($s.history)-60) end
     $s.error=nil;$s.serial=$s.serial+1
@@ -106,4 +107,20 @@ on viu.frame.intent
     reply(0,"{}");return
   else raise("ACTION","Unknown frame action") end
   publish_monitor($state);reply(0,"{}")
+end
+
+on monitor.signal
+  $pid=$event.args.pid
+  if $state.node!="" or $state.dialog!=nil or $state.selected==nil or $pid!=$state.selected then
+    reply(10,json_encode({error_code:"DISABLED",message:"Command is disabled"}));return
+  end
+  $expected=$event.args.start_time ?? $state.start_times[to_string($pid)]
+  $answer=viu_process("signal",{pid:$pid,signal:$event.args.signal,start_time:$expected})
+  if $answer.pid_reused==true then $state=refresh_monitor($state) end
+  if not $answer.ok then
+    $state.error=$answer.error;publish_monitor($state)
+    reply(10,json_encode({error_code:"SIGNAL",message:$answer.error}));return
+  end
+  $state=refresh_monitor($state);publish_monitor($state)
+  reply(0,json_encode({pid:$pid,signal:$event.args.signal}))
 end
