@@ -4,9 +4,9 @@ Gold is MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`. Branch:
 `lab/parity-screenshot`. Tested candidate code: `5c3f3852bdd5d0705881a266a20db30c833f6f72`; receipt-only
 documentation and provenance changes follow that code commit.
 
-Overall verdict: **OPEN — S2, truthful About build provenance**. Functional,
-Bus and live Prefs evidence is complete. The visual gate remains open for the
-source stamp described below; no Fable approval is claimed.
+Overall verdict: **ACCEPTED**. Functional, Bus, live Prefs and visual parity
+are complete. Opus resolved S2 on 2026-11-07: the truthful About source stamp
+is runtime data, with gold's layout, format and position preserved.
 
 ## Inventory
 
@@ -25,7 +25,7 @@ also accepts `viu run apps/screenshot [COMPOSITOR_SERVICE [SAVE_FOLDER
 | Capture/open/export/save completion replies | Identity-bound deferred replies; retained-request, duplicate/stale/fault/reload/caller-loss/capacity tests; native request retained beyond 22 seconds on the final release |
 | Arrow, line, rectangle, ellipse, pen, highlighter, redact, text, number | Equal document replies and byte-identical final PNG; native rectangle pointer callback and scroll witness |
 | Selection, move/delete, crop, undo/redo, zoom/pan/fit and guides | Native document/viewport tests, compatibility replay and matched selection/guide/narrow captures |
-| Open, Save As, discard, About and shortcuts | Native keyboard path entry and caption-close prompt; matched dialogs; About source stamp is S2 |
+| Open, Save As, discard, About and shortcuts | Native keyboard path entry and caption-close prompt; matched dialogs; About source stamp is truthful runtime data under S2 |
 | PNG/JPEG/WebP and exclusive PNG export; clipboard | Native decoders, overwrite refusal and actual Wayland clipboard PNG readback |
 | Paths, XDG Pictures, collision names, recent ledger and pruning | XDG user dirs, `_3` no-clobber save, newest-20/seven-day raw policy, protected symlink, >1 MiB ledger, typed/malformed/UTF-8-prefix cases and bounded compaction |
 | HELP, describe, actions, execute and deprecated edit aliases | All 55 command descriptors and initial registry match; 53 structured compatibility cases plus lifecycle/headless/files/macros/debug/UI/window witnesses |
@@ -232,15 +232,19 @@ with native control widths differing by about 1/32 logical pixel; there is
 no missing control, changed
 label or shifted content. The native drag guide has only edge anti-aliasing.
 
-## S2 — About build provenance (decision required)
+## S2 — About build provenance (resolved)
 
 Gold displays `0.1.2 (8779f33284b7)`; the port displays
 `0.1.2 (5c3f3852bdd5)`, its actual built source. Layout and the rest of the dialog
-match. This text is not anti-aliasing and is not silently excluded or masked.
+match. The source stamp region is runtime data; its raw metrics above remain
+unaltered and unmasked.
 
-Proposed deviation: retain the truthful candidate source stamp in gold's
-layout. Options: **A**, approve this provenance-only difference and accept
-the visual gate; **B**, leave the visual gate open pending a different
-provenance policy. Evidence is the unaltered About pair and its full/region
-figures above. Owner: Opus to relay S2 to Fable. Answer/rationale: **pending**.
-Functional, Bus and Prefs results do not substitute for that decision.
+Decision: **Opus, 2026-11-07 — keep the truthful About source stamp**.
+The standing brief now classifies build stamps, versions, SHAs, timestamps,
+PIDs, hostnames and live readings as runtime data, not parity differences,
+when their layout, format and position match gold. Never fake gold's values.
+The original options were to retain truthful provenance or hold the visual
+gate pending a provenance policy; this ruling resolves that policy and closes
+S2. Evidence is the unaltered About pair and its full/region figures above.
+No acceptance items remain open. This documentation-only update reuses the
+exact-source release gate and native evidence recorded above.

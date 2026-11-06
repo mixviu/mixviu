@@ -1,3 +1,28 @@
+# Screenshot round 5 — ACCEPTED
+
+Opus resolved S2 on 2026-11-07: **keep the truthful About source stamp**.
+Build stamps, versions, SHAs, timestamps, PIDs, hostnames and live readings
+are runtime data, not parity differences, when layout, format and position
+match gold. The standing brief now records this rule. Screenshot's About
+stamp meets it; its original captures and raw metrics remain unchanged.
+
+Overall verdict: **ACCEPTED** — features, all 55 Bus commands, live Prefs and
+visual parity. No open acceptance items remain. The acceptance record is
+[docs/ports/screenshot.md](docs/ports/screenshot.md).
+
+Exact tested code remains `5c3f3852bdd5d0705881a266a20db30c833f6f72`;
+round-four evidence receipt is `08fdc7d80b8de11f9605919980027ae55619abde`.
+CBC `20261107-083150-1cb4a226-a1` passed with an empty worker diff; its full
+saved log was read. The release-byte evidence remains 35 capture pairs,
+12 additional overlay comparisons, twelve live Prefs variants and all eleven
+native runs with confirmed process cleanup. This round changes documentation
+only; no code, captures, metrics or build artifacts changed and no new CBC
+job was required. Documentation diff checks passed.
+
+Earlier checkpoint receipts below are historical. This ruling supersedes
+their pending S2 question and OPEN verdicts.
+
+
 # Screenshot round 4 — acceptance record, S2 decision required
 
 Overall verdict: **OPEN — S2 only**. Implementation, Bus compatibility and
@@ -855,3 +880,5 @@ branch lab/parity-screenshot; head SHA 2cdba49 (implementation; receipt-only com
 
 
 branch lab/parity-screenshot | head 5c3f3852bdd5d0705881a266a20db30c833f6f72 (tested code; receipt-only commit follows) | OPEN: S2 About provenance only; features/55 Bus/Prefs pass, 35 pairs + 12 overlay comparisons | CBC 20261107-083150-1cb4a226-a1
+
+branch lab/parity-screenshot | head SHA 08fdc7d80b8de11f9605919980027ae55619abde (acceptance base; documentation-only receipt follows) | ACCEPTED | CBC job ids 20261107-083150-1cb4a226-a1
