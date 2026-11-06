@@ -11,4 +11,3 @@ pub static CAPTURE_REGISTRY_MUT: TokenMut<Option<CaptureRegistry>> =
     TokenMut::new(&CAPTURE_REGISTRY);
 pub static CAPTURE: Token<CaptureState> = Token::new();
 pub static CAPTURE_MUT: TokenMut<CaptureState> = TokenMut::new(&CAPTURE);
-

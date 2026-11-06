@@ -474,4 +474,3 @@ mod tests {
         assert!(corners.contact().is_none());
     }
 }
-

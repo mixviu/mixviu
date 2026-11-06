@@ -9,4 +9,5 @@ dispatcher.workspace = true
 graphics.workspace = true
 smithay.workspace = true
 serde.workspace = true
-thiserror.workspace = trueledger.workspace = true
+thiserror.workspace = true
+ledger.workspace = true

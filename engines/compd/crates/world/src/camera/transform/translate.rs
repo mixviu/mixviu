@@ -62,4 +62,3 @@ pub mod transform;
 // For example:
 // 1. Pointer.getCurrentLocation
 // 2. window_bbox() and element_location() function from Space<Window>
-

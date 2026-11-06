@@ -140,4 +140,3 @@ pub fn surface_map(space: &Space<Window>, surface: &WlSurface) -> Option<Surface
         extent,
     })
 }
-

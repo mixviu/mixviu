@@ -43,4 +43,3 @@ impl FingerScrollRamp {
         self.count = 0;
     }
 }
-

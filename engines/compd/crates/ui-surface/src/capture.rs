@@ -98,7 +98,7 @@ pub enum CaptureMessage {
     SetCountdown(u32),
 }
 
-use ui::TypedSurfaces as _;
+
 
 /// Committed setup state, read synchronously after input has been applied.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

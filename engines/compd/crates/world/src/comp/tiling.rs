@@ -604,4 +604,3 @@ mod tests {
         assert!(inner.left && inner.top && !inner.right);
     }
 }
-

@@ -21,4 +21,3 @@ pub fn pump(state: &mut Loop) {
         worlds.active_mut().dispatch(kernel);
     }
 }
-

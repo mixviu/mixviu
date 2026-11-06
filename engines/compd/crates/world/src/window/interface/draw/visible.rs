@@ -16,4 +16,3 @@ impl DrawWindow for Window {
         SurfaceHandle::of_window(self).is_none_or(|handle| !_loop.inner.comp.hidden(&handle))
     }
 }
-

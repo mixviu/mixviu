@@ -2,4 +2,3 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 pub mod capture;
 pub mod settings;
-

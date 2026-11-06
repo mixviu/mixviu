@@ -189,4 +189,3 @@ pub fn update_floating(views: &mut OutputViews, phys: Point<f64, Physical>) -> b
 pub fn end_floating(views: &mut OutputViews) {
     views.floating_drag = None;
 }
-

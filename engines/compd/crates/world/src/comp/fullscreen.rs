@@ -189,4 +189,3 @@ fn record_id(lp: &Loop, window: &Window) -> Option<SurfaceId> {
     SurfaceHandle::of_window(window)
         .and_then(|handle| lp.inner.comp.registry.id_for_handle(&handle))
 }
-

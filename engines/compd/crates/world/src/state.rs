@@ -1605,4 +1605,3 @@ impl CoordinateTrait for Loop {
 
 /// The compositor loop: protocol state (`Dispatch`) + the orchestrator.
 pub type Loop = Wire<Orchestrator>;
-

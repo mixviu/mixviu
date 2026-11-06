@@ -294,4 +294,3 @@ impl Viewports {
         self.camera_of_mut(id).expect("first_leaf always resolves")
     }
 }
-

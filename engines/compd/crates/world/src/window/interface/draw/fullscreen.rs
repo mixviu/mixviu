@@ -157,4 +157,3 @@ fn focused_window(_loop: &Loop) -> Option<Window> {
         .find(|w| find::is_surface(w, &focus))
         .cloned()
 }
-

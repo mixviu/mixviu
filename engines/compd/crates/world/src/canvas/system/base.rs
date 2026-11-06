@@ -120,4 +120,3 @@ impl System for CanvasSystem {
         }
     }
 }
-

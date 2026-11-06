@@ -935,4 +935,3 @@ where
         Rectangle::new(frame.loc - bounds.loc, frame.size),
     ))
 }
-

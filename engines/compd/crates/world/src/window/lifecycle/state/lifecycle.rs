@@ -17,4 +17,3 @@ impl WindowLifecycle {
         Self { incoming: vec![] }
     }
 }
-

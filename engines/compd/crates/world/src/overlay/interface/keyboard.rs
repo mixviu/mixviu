@@ -301,4 +301,3 @@ fn notify_test(state: &mut Loop) {
         format!("Test notification #{n}"),
     );
 }
-

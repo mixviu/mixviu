@@ -475,4 +475,3 @@ mod tests {
         assert!(requests().is_empty());
     }
 }
-

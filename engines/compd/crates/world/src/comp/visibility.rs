@@ -47,4 +47,3 @@ pub fn sync_hidden(lp: &Loop) -> bool {
     }
     changed
 }
-

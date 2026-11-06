@@ -75,4 +75,3 @@ mod tests {
         assert_eq!(causes.resolve("windows.s3.maximized"), None);
     }
 }
-

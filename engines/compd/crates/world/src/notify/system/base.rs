@@ -92,4 +92,3 @@ impl NotifySystem {
         cx.write(&NOTIFY_BUF, NotifyCmd::Queue(message.clone()));
     }
 }
-

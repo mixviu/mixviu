@@ -133,4 +133,3 @@ mod tests {
         assert_eq!(Reserved::default().shrink(whole), whole);
     }
 }
-

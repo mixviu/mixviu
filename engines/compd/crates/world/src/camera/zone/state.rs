@@ -16,4 +16,3 @@ pub enum ZoneSpecifier {
     Element { uuid: Vec<Uuid> },
     Camera { position: (f64, f64), zoom: f64 },
 }
-

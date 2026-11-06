@@ -41,4 +41,3 @@ pub fn overlay(
 ) -> World {
     World::build(id, name, systems, kernel)
 }
-

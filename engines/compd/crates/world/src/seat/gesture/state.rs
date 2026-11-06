@@ -51,4 +51,3 @@ impl GestureAccumulator {
         *self = Self::default();
     }
 }
-

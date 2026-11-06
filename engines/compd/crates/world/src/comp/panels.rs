@@ -82,4 +82,3 @@ pub fn set_concealed(surface: &WlSurface, on: bool) {
         }
     });
 }
-

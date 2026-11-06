@@ -79,4 +79,3 @@ impl LoopWindow for Window {
         dispatcher::wayland::xdg::activation::dispatch::wire::activations(&surface)
     }
 }
-

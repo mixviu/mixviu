@@ -284,4 +284,3 @@ pub fn hit(lp: &Loop, position_world: Point<f64, Logical>) -> Option<Option<Surf
     });
     Some(found)
 }
-

@@ -37,4 +37,3 @@ define_channel!(pub NOTIFY_REQUEST, NOTIFY_REQUEST_TX: String);
 pub fn announce(channels: &mut ChannelRouter, message: impl Into<String>) {
     channels.send(&NOTIFY_REQUEST_TX, message.into());
 }
-

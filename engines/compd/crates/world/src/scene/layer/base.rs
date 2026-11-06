@@ -14,4 +14,3 @@ bitflags! {
         const PICKER_SCENE              = 1 << 6; // <-- World-selection screen (own overlay world, like LOCK_SCENE)
     }
 }
-

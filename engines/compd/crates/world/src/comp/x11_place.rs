@@ -58,4 +58,3 @@ pub fn initial(
     }
     Some((Point::from(placed.origin), Size::from(placed.size)))
 }
-

@@ -73,4 +73,3 @@ pub struct SnapMap {
     pub vertical: Vec<f64>,
     pub horizontal: Vec<f64>,
 }
-

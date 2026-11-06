@@ -26,4 +26,3 @@ pub fn layer_surface_position(
         .current_location();
     layer_surface_position_core(cursor, _loop.size_ctx_all(), layer, output_size)
 }
-

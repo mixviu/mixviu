@@ -76,4 +76,3 @@ fn the_slot_tracks_buttons_and_stamps_only_the_edge_it_saw() {
         p::ANY.count_ones()
     );
 }
-

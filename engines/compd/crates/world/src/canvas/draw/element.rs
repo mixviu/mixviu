@@ -12,4 +12,3 @@ smithay::render_elements! {
     Window = WindowElement<R>,
     SolidBox = SolidColorRenderElement,
 }
-

@@ -103,4 +103,3 @@ mod tests {
         assert_eq!(state.seen, [1, 10, 2, 20]);
     }
 }
-

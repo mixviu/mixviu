@@ -127,4 +127,3 @@ pub fn centre_pointer_once(lp: &mut crate::state::Loop) {
     lp.state
         .schedule_redraw(dispatcher::state::RedrawReason::Cursor);
 }
-

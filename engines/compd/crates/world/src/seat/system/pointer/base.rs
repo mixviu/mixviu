@@ -22,4 +22,3 @@ impl System for PointerSystem {
         builder.storage.insert(&POINTER, PointerState::new());
     }
 }
-

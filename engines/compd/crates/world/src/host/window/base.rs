@@ -17,4 +17,3 @@ pub trait WindowHost {
     /// Mutable access for mapping/restacking/geometry updates.
     fn space_mut(&mut self) -> &mut Space<Window>;
 }
-

@@ -33,4 +33,3 @@ pub struct CursorSnapshot {
     /// The seat pointer's world location.
     pub location: Point<f64, Logical>,
 }
-

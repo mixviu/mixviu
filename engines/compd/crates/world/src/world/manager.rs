@@ -139,4 +139,3 @@ impl WorldManager {
         self.worlds[inc].enable(kernel);
     }
 }
-

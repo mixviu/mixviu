@@ -166,4 +166,3 @@ mod tests {
         assert_eq!(comp.scenes.focus, None);
     }
 }
-

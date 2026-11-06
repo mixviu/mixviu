@@ -37,4 +37,3 @@ pub mod event {
 pub fn broadcast(channels: &mut ChannelRouter, change: OutputChange) {
     channels.send(&event::OUTPUT_CHANGED_TX, change);
 }
-

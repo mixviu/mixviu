@@ -31,4 +31,3 @@ impl WindowHost for SpaceHost {
         &mut self.inner.state
     }
 }
-

@@ -260,4 +260,3 @@ pub fn human_input<I: InputBackend>(lp: &mut Loop, event: &InputEvent<I>) -> boo
     }
     true
 }
-
