@@ -211,6 +211,7 @@ impl Runtime {
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
+                            "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
                             "loader": "viu-local", "host": "viu-local"
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));

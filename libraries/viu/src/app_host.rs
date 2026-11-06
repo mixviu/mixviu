@@ -15,6 +15,7 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    facilities: crate::app_facilities::Facilities,
     session: Option<crate::session::Session>,
     session_appearance: Option<Value>,
     session_window: Option<Value>,
@@ -86,6 +87,7 @@ impl Host {
         }
     }
     fn request(&mut self, r: Request, ctx: &egui::Context) {
+        let Some(r)=self.facilities.request(r,ctx) else {return;};
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
@@ -161,6 +163,7 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
+        self.facilities.prepare(ui.ctx(),&self.bus);
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
                 let result = if let Some(image) = image {
@@ -366,6 +369,7 @@ impl Host {
                     self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
                 }
                 if self.model["window_close"] == true {
+                    self.facilities.finish(ui.ctx());
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
@@ -405,7 +409,9 @@ impl Host {
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
+    let facilities=crate::app_facilities::Facilities::new(&bundle.manifest,wake.clone());
     let mut commands = bundle.manifest.commands.clone();
+    if let Some(surface)=&facilities.surface {commands.extend(surface["commands"].as_array().unwrap().iter().filter_map(|c|c["name"].as_str().map(str::to_owned)));}
     commands.extend(
         [
             "viu.state",
@@ -424,7 +430,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .map(String::from),
     );
     let declared = commands.iter().cloned().collect();
-    let bus = Endpoint::start(
+    let bus = Endpoint::start_described(
         service,
         std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
         commands
@@ -433,16 +439,20 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             .collect(),
         "viu.quit".into(),
         wake.clone(),
+        facilities.surface.as_ref().map(|s|s["commands"].clone()),
     );
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
     jobs.set_native_backend(bus.backend_maker());
-    let mut runtime = Runtime::new(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))));
+    let services=crate::runtime::Services {macros:facilities.macros.clone(),..Default::default()};
+    jobs.set_services(services.clone());
+    let mut runtime = Runtime::with_services(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))),services);
     runtime.load(bundle.program).expect("load behaviour");
     let capture_root = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        facilities,
         service: bundle.manifest.service.clone(),
         file_theme: toolkit::Theme::load(),
         last_ui: settings::model::CommonUi::default(),
