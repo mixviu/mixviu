@@ -7,6 +7,8 @@ $actions=require("actions.mix")
 $email=require("email.mix")
 fn value_of($s,$key)
   $value=$s.values[$key] ?? viu_settings("default",$key)
+  if contains(keys($s.queue_changes ?? {}),$key) then $value=$s.queue_changes[$key] ?? viu_settings("default",$key)
+  elif contains(keys($s.inflight_changes ?? {}),$key) then $value=$s.inflight_changes[$key] ?? viu_settings("default",$key) end
   if $value==nil and ends_with($key,".font.size") then return 14.667 end
   return $value
 end

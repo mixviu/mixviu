@@ -69,6 +69,7 @@ end
 fn action_list($s)
   $out=[]
   for $a in $registry
+    if $s.bindings[$a.id]!=nil then $a.shortcut=$s.bindings[$a.id].shortcut end
     $a.enabled=enabled($s,$a.id);$a.reason=if $a.enabled then nil else "disabled" end;$a.checked=nil
     $parts=split($a.id,".")
     if len($parts)==3 and $parts[0]=="view" then
@@ -82,6 +83,16 @@ fn action_list($s)
     push($out,$a)
   end
   return {actions:$out}
+end
+fn binding_defaults() return $registry end
+fn shortcuts($s)
+  $out=[]
+  for $a in action_list($s).actions
+    $bound=$s.bindings[$a.id] ?? {}
+    $keys=$bound.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+    for $key in $keys $entry=$a;$entry.shortcut=$key;push($out,$entry) end
+  end
+  return $out
 end
 fn menus($s)
   $all=action_list($s).actions;$out=[]
@@ -98,7 +109,7 @@ fn menu_rows($rows,$all)
     if $row.submenu!=nil then $item.children=menu_rows($row.submenu,$all)
     else
       $a=filter($all,fn($a)=$a.id==$row.id)[0]
-      if $a!=nil then $item.enabled=$a.enabled;$item.checked=$a.checked end
+      if $a!=nil then $item.enabled=$a.enabled;$item.checked=$a.checked;$item.shortcut=$a.shortcut end
     end
     push($out,$item)
   end
@@ -111,7 +122,10 @@ fn dialog_form($s)
   if $d=="about" then return {open:true,title:$n.text_for("about"),body:$n.text_for("about-body"),choices:$choices} end
   if $d=="shortcuts" then
     $rows=[]
-    for $a in action_list($s).actions if $a.shortcut!=nil then push($rows,{label:$a.label,shortcut:$a.shortcut,keys:[$a.shortcut]}) end end
+    for $a in action_list($s).actions
+      $keys=($s.bindings[$a.id] ?? {}).keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+      if len($keys)>0 then push($rows,{label:$a.label,shortcut:$a.shortcut,keys:$keys}) end
+    end
     return {open:true,title:$n.text_for("shortcuts"),body:"",grid:$rows,choices:$choices}
   end
   $prefix="remove";$arg="{ $app }";$name=if type($d)=="map" then $d.remove else nil end

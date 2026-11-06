@@ -32,6 +32,10 @@ end
 on viu.macros.closed
   $state.ui.macros_open=false;publish_prefs($state)
 end
+on viu.keymap.changed
+  send "viu-local" "native.bindings" body={defaults:$actions.binding_defaults(),overrides:$event.args}
+  if $rc==0 then $state.bindings=$reply.bindings;publish_prefs($state) end
+end
 on viu.frame.intent
   $id=$event.args.value.command
   $state=execute_origin($state,$id,{},$event.args.value.origin ?? "menu")
@@ -570,7 +574,7 @@ on prefs.intent
     elif contains(["edit","activate"],$a.action) then
       $browser=$pages.browser($state)
       viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,$a.action,$a.value)
-      if $a.action=="edit" and $nav.page($state.nav.page).kind=="custom" then
+      if $a.action=="edit" and $nav.page($a.value.page ?? $state.nav.page).kind=="custom" then
         $browser=$pages.browser($state)
         viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,"edit",$a.value)
         $key=$a.value.row;$v=$a.value.value

@@ -34,8 +34,8 @@ fn item_action($s,$params)
   raise("FAILED",replace($n.text_for("item-unknown"),"{ $item }",$params.source))
 end
 fn stored($s,$key)
-  if contains(keys($s.queue_changes ?? {}),$key) and $s.queue_changes[$key]!=nil then return $s.queue_changes[$key] end
-  if contains(keys($s.inflight_changes ?? {}),$key) and $s.inflight_changes[$key]!=nil then return $s.inflight_changes[$key] end
+  if contains(keys($s.queue_changes ?? {}),$key) then return $s.queue_changes[$key] ?? viu_settings("default",$key) end
+  if contains(keys($s.inflight_changes ?? {}),$key) then return $s.inflight_changes[$key] ?? viu_settings("default",$key) end
   if contains(keys($s.values),$key) and $s.values[$key]!=nil then return $s.values[$key] end
   $found=filter($s.catalog,fn($k)=$k.path==$key)
   return if len($found)==1 then $found[0].default else nil end

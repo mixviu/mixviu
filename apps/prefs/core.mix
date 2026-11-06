@@ -9,7 +9,7 @@ $email=require("email.mix")
 $gallery=require("gallery.mix")
 $sections=[{id:"appearance",label:"Appearance",prefixes:["appearance."]},{id:"text_and_fonts",label:"Text & Fonts",prefixes:["appearance.font","appearance.mono"]},{id:"wallpaper",label:"Wallpaper",prefixes:["wallpaper."]},{id:"windows",label:"Windows",prefixes:["window."]},{id:"accessibility",label:"Accessibility",prefixes:["accessibility."]},{id:"apps_term",label:"Terminal",prefixes:["terminal."]},{id:"apps_ced",label:"Editor",prefixes:["ced."]},{id:"all",label:"All described settings",prefixes:[""]}]
 fn initial($instance)
-  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil,ui:$nav.initial_ui(),nav:$nav.initial_nav(),apps:[],notes:nil,notes_error:nil,notes_owner:nil,releases:"unknown",release_status:"Connecting to the Bus…",release_failed:false,release_busy:false,release_serial:0,release_owner:nil,release_started:false,quitting:false,needs_read:true,subscribed:false,connected:false,queue_changes:{},inflight_changes:{},look:$look.initial(),email:$email.initial(),gallery:$gallery.initial(),live:{outputs:[],options:{}},failed:false}
+  return {bindings:{},binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil,ui:$nav.initial_ui(),nav:$nav.initial_nav(),apps:[],notes:nil,notes_error:nil,notes_owner:nil,releases:"unknown",release_status:"Connecting to the Bus…",release_failed:false,release_busy:false,release_serial:0,release_owner:nil,release_started:false,quitting:false,needs_read:true,subscribed:false,connected:false,queue_changes:{},inflight_changes:{},look:$look.initial(),email:$email.initial(),gallery:$gallery.initial(),live:{outputs:[],options:{}},failed:false}
 end
 
 fn framed($s)
@@ -18,7 +18,7 @@ fn framed($s)
   $refresh={id:"view.refresh",label:"Refresh",icon:"refresh-cw",enabled:$available}
   $search={id:"view.search",label:"Search preferences",icon:"search",icon_only:true,plain:true,enabled:$s.ui.dialog==nil}
   $toolbar=[{id:"sidebar.toggle",label:"Sidebar",icon:"panel-left",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},{id:"help.macros",label:"Macros",icon:"scroll-text",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},$search,{id:"help.shortcuts",label:"Keyboard shortcuts",icon:"keyboard",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},{id:"view.mode",label:"Light or dark interface",icon:if ($look.shown($s.look) ?? {}).mode=="light" then "moon" else "sun" end,icon_only:true,plain:true,enabled:true}]
-  $toolbar=map($toolbar,fn($b)=merge($b,{shortcut:(filter($actions.registry,fn($a)=$a.id==$b.id)[0] ?? {}).shortcut}))
+  $toolbar=map($toolbar,fn($b)=merge($b,{shortcut:(filter($actions.action_list($s).actions,fn($a)=$a.id==$b.id)[0] ?? {}).shortcut}))
   $model=$frame.apply($model,{icon:"settings",title:"Preferences",menus:$actions.menus($s),toolbar:$toolbar,status:nil})
   $model.frame.menu.properties.native_menu=true
   $model.theme_choice=$actions.theme_choice($s)
@@ -26,7 +26,7 @@ fn framed($s)
   $model.theme_refresh_key=[$model.theme_choice,$look.shown($s.look),$s.look.custom_source,$s.values["appearance.font_weight"],$s.values["appearance.font_size"]]
   $model.theme_values=$look.preview_values($s)
   $model.macros_open=$s.ui.macros_open
-  $model.shortcuts=filter($actions.action_list($s).actions,fn($a)=$a.shortcut!=nil)
+  $model.shortcuts=$actions.shortcuts($s)
   $model.window_close=$s.quitting and not $s.busy and not $s.release_busy and $s.notes_owner==nil and $s.look.job==nil and $s.email.task==nil and len(keys($s.queue_changes))==0
   return $model
 end
@@ -70,7 +70,7 @@ fn admitted($s,$key,$value)
   end
   $validation=viu_settings("admit",$s.values,$changes,$reset)
   if not $validation.ok then raise("FAILED",join(map($validation.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
-  return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:viu_token(),changes:$changes,reset:$reset}
+  return {bindings:{},binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:viu_token(),changes:$changes,reset:$reset}
 end
 fn registry_model($s)
   $section=filter($sections,fn($x)=$x.id==$s.section)[0] ?? {prefixes:[]}
