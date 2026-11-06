@@ -544,7 +544,11 @@ pub(crate) fn draw(
             } else {
                 ui.allocate_ui_with_layout(
                     ui.available_size_before_wrap(),
-                    if gold {egui::Layout::right_to_left(egui::Align::Center)} else {egui::Layout::left_to_right(egui::Align::Center)},
+                    if gold {
+                        egui::Layout::right_to_left(egui::Align::Center)
+                    } else {
+                        egui::Layout::left_to_right(egui::Align::Center)
+                    },
                     |ui| {
                         if widget.properties["style"] == "gold" {
                             let chrome = toolkit::chrome::Chrome::of(ui.ctx());
@@ -568,8 +572,10 @@ pub(crate) fn draw(
                                 .title_control_spacing
                                 as f32;
                         }
-                        let mut items=value.as_array().into_iter().flatten().collect::<Vec<_>>();
-                        if gold {items.reverse();}
+                        let mut items = value.as_array().into_iter().flatten().collect::<Vec<_>>();
+                        if gold {
+                            items.reverse();
+                        }
                         for item in items {
                             if item["separator"] == true {
                                 ui.separator();
