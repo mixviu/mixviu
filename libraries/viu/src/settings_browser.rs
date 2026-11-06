@@ -344,7 +344,7 @@ fn search_query(ctx: &egui::Context, key: egui::Id, accepted: &str) -> String {
             return accepted.to_owned();
         };
         if accepted != base {
-            if let Some(at) = writes.iter().rposition(|value| value == accepted) {
+            if let Some(at) = writes.iter().position(|value| value == accepted) {
                 writes.drain(..=at);
                 base = accepted.to_owned();
             } else {
@@ -433,6 +433,30 @@ mod search_input_tests {
             reset
                 .iter()
                 .any(|event| event.action == "query" && event.value == "new")
+        );
+        value["query"] = json!("new");
+        frame(&value, vec![]);
+        for _ in 0..2 {
+            frame(&value, vec![egui::Event::Text("x".into())]);
+            let backspace = [true, false].into_iter().map(|pressed| egui::Event::Key {
+                key: egui::Key::Backspace,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }).collect();
+            frame(&value, backspace);
+        }
+        frame(&value, vec![egui::Event::Text("y".into())]);
+        for accepted in ["newx", "new", "newx", "new", "newy"] {
+            value["query"] = json!(accepted);
+            frame(&value, vec![]);
+        }
+        let cycled = frame(&value, vec![egui::Event::Text("!".into())]);
+        assert!(
+            cycled
+                .iter()
+                .any(|event| event.action == "query" && event.value == "newy!")
         );
     }
 }
