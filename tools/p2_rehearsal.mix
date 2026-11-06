@@ -79,6 +79,9 @@ try
   for $scene in ["panel","launcher","toast"]
     checked("shell","shell.scene.load",{source:read_file($root.."/share/scenes/"..$scene.."/scene.mix"),output:"winit"})
   end
+  $audio=launch([$bin.."/mixd","serve",$root.."/tools/p2-audio.mix","--name","audio-fixture"],"audio-fixture",{})
+  push($children,$audio)
+  await_service("audio-fixture","snapshot")
   for $app in [{dir:"backdrop",service:"backdrop"},{dir:"gallery",service:"gallery-mix"},{dir:"monitor",service:"monitor"},{dir:"quoin/volume",service:"quoin-volume"},{dir:"dopus",service:"dopus-mix"}]
     $cold=monotonic()
     $p=launch([$bin.."/viu","run",$root.."/apps/"..$app.dir],$app.service,{})
