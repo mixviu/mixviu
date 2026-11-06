@@ -511,6 +511,10 @@ pub(crate) fn draw(
         let mut drawer = ui.new_child(
             egui::UiBuilder::new()
                 .id_salt((id, "drawer"))
+                .ui_stack_info(
+                    egui::UiStackInfo::new(egui::UiKind::RightPanel)
+                        .with_frame(egui::Frame::NONE.fill(look.window)),
+                )
                 .max_rect(inner.shrink2(vec2(look.l, look.s)))
                 .layout(Layout::top_down(Align::Min)),
         );
