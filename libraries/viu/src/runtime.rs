@@ -235,6 +235,7 @@ impl Runtime {
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "loader": "viu-local", "host": "viu-local", "options":options,
                             "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
+                            "build":serde_json::from_str::<serde_json::Value>(&buildinfo::build_info!().json()).expect("build provenance JSON"),
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));

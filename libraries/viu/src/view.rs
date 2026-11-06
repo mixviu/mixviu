@@ -588,7 +588,7 @@ impl SceneView {
                     "row" | "column" => {
                         if text(node,"packing")=="toolbar" {
                             ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.allocate_ui_with_layout(ui.available_size_before_wrap(),egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let end=text(node,"end");
                                 if nodes.get(end).is_some_and(|n|n.ports.get("hidden")!=Some(&json!(true))) {
                                     self.node(ui,end,nodes,route,depth+1,events);

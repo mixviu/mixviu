@@ -306,7 +306,9 @@ fn dispatch($s,$command,$a)
         $r=capture_request($s,$mode)
         if has_key($a,"window") then $r.window=$a.window end
         if has_key($a,"region") then $r.region=$a.region;if $a.region.output!=nil then $r.output=$a.region.output end end
-        $r=$core.request($r);$s=request($s,{op:"capture",request:$r})
+        $r=$core.request($r);$s.ui.mode=$mode
+        if has_key($a,"window") then $s.ui.window=$a.window end
+        $s=request($s,{op:"capture",request:$r})
         $body={state:if $s.busy then "capturing" else "asking" end}
       end
     elif $command=="screenshot.dialog" then

@@ -19,6 +19,7 @@ fn dialog_form($s)
   elif $kind=="about" then
     $form.title="About Screenshot";$form.body="Native screenshots and editable annotations for MixOS. Shots are saved to Pictures/Screenshots, and agents find them with screenshot.recent."
     $form.choices=[{id:"done",label:"Done",enabled:true,default:true,cancel:true}]
+    $form.note="0.1.2 ("..($s.build.git_sha ?? "unknown")..")"
   else
     $form.title="Keyboard shortcuts"
     $rows=filter($registry.describe($s),fn($r)=$r.shortcut!=nil)
@@ -59,6 +60,7 @@ fn render($s)
   end
   if len($window_choices)==0 then $window_choices=["none"];$window_labels={none:"No windows to capture"} end
   $window_value=if $s.ui.window==nil then $window_choices[0] else to_string($s.ui.window.id)..":"..to_string($s.ui.window.generation) end
+  if not contains($window_choices,$window_value) then $window_value=$window_choices[0] end
   $swatches=[]
   for $name in ["red","amber","green","teal","black","white"] push($swatches,{id:$name,label:upper(left($name,1))..slice($name,1),colour:$registry.inks[$name]}) end
   $width_name=filter(keys($registry.widths),fn($name)=$registry.widths[$name]==$s.ui.width)[0] ?? "medium"

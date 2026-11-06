@@ -522,7 +522,7 @@ pub(crate) fn draw(
                     if widget.properties["hostable"] == false
                         && widget.properties["vertical"] != true
                     {
-                        egui::Vec2::ZERO
+                        egui::vec2(0.0,ui.available_height())
                     } else {
                         ui.available_size_before_wrap()
                     },

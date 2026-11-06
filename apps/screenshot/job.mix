@@ -58,7 +58,7 @@ fn capture_image($a)
     end
     check_cancelled()
     send $a.comp "comp.capture.frame" body=$frame timeout=8
-    if $rc!=0 then raise("FAILED",to_string($result)) end
+    if $rc!=0 then raise("FAILED","comp.capture.frame refused (rc "..to_string($rc).."): "..json_encode($reply)) end
     $out.metadata=$reply
     check_cancelled();chmod($a.path,0o600)
     $opened=viu_document("open",{path:$a.path})
@@ -94,6 +94,7 @@ on job.run
       if $rc!=0 or $reply.focused!=true then raise("FAILED","window focus failed") end
       $out={op:"show",rc:0,result:{shown:true,target:$reply}}
     elif $a.op=="render" or $a.op=="export" or $a.op=="copy" then
+      if $a.op=="export" and $a.paths==nil and exists($a.path,{follow_symlinks:false}) then raise("FAILED",$a.path.." already exists") end
       $dest={handle:$a.handle,path:$a.path}
       if $a.paths!=nil then $dest.paths=$a.paths end
       $rendered=viu_document("export",$dest)
