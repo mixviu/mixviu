@@ -74,15 +74,16 @@ fn ced_ui_model($s,$model)
   $model.mail_fields={enabled:true,fields:[],attachments:[],attachment_label:"Attachments",attach_label:"Attach…",remove_label:"Remove",chooser:{open:false,title:"Attach…",directory:"/"}};$model.show_mail=$has and $s.mail[$t.document]!=nil
   if $model.show_mail then
     $m=$s.mail[$t.document]
+    $shown=$m.shown ?? {}
     $fields=[]
     for $key in ["from","to","cc","bcc","reply_to","subject"]
       $actions=[]
       if $key=="to" then
         for $row in [{id:"cc",label:"Show Cc",icon:"copy"},{id:"bcc",label:"Show Bcc",icon:"eye-off"},{id:"reply_to",label:"Show Reply-To",icon:"reply"}]
-          $row.selected=($m.shown[$row.id] ?? false) or $m.headers[$row.id]!="";push($actions,$row)
+          $row.selected=($shown[$row.id] ?? false) or $m.headers[$row.id]!="";push($actions,$row)
         end
       end
-      push($fields,{id:$key,label:({from:"From",to:"To",cc:"Cc",bcc:"Bcc",reply_to:"Reply-To",subject:"Subject"})[$key],value:$m.headers[$key],visible:contains(["from","to","subject"],$key) or ($m.shown[$key] ?? false) or $m.headers[$key]!="",focus:$m.focus==$key,actions:$actions,read_only:false})
+      push($fields,{id:$key,label:({from:"From",to:"To",cc:"Cc",bcc:"Bcc",reply_to:"Reply-To",subject:"Subject"})[$key],value:$m.headers[$key],visible:contains(["from","to","subject"],$key) or ($shown[$key] ?? false) or $m.headers[$key]!="",focus:$m.focus==$key,actions:$actions,read_only:false})
     end
     if $m.headers.in_reply_to!=nil then push($fields,{id:"in_reply_to",label:"In-Reply-To",value:$m.headers.in_reply_to,visible:true,read_only:true,actions:[]}) end
     if len($m.headers.references)>0 then push($fields,{id:"references",label:"References",value:join($m.headers.references," "),visible:true,read_only:true,actions:[]}) end
