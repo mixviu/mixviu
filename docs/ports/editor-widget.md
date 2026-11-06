@@ -32,7 +32,7 @@ exercise 16/64 MiB files and refusals without copying full text into scenes.
 The host follows the retained settings/theme logic. Ced supplies live editor
 font, scale, padding, light surface and view choices. Nine real settingsd
 variants have paired 1000×720 gold captures. Additional shared controls are
-`document-tabs`, `search-bar`, `header-form`, `diagnostic-list`, `macro-menu`
+`document-tabs`, `search-bar`, `notice-bar`, `header-form`, `diagnostic-list`, `macro-menu`
 and gold-styled modal forms. Header visibility, attachment policy, dialog
 answers, tabs, sessions and mail Send stay in Mix.
 

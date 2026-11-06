@@ -653,3 +653,56 @@ Latest full scoped CBC preparation 20261107-050528-784f2ca5-a1 at 255ffb1488fe3c
 Private evidence roots (round4 receipts will archive the final set): zero fixtures d358237; populated TCP oxsMET; live Prefs KF59G2; state matrix XS4GQw; hosted INxXPt; structured Bus 4AWjrB; macros WTwtHX; signals f4oLqN; real-daemon PRUyUC.
 
 Branch lab/gold-parity; tested code 255ffb1488fe3c00058b18558cc75cf73be590f1; Monitor OPEN, baseline whole/regions SSIM=0 RMSE=0, final rechecks pending; CBC 20261107-050528-784f2ca5-a1, 20261107-045746-b6cdf2e8-a1, 20261107-050113-4d633b99-a1.
+
+## Ced round 4 — accepted
+
+Acceptance record: [docs/ports/ced-acceptance.md](docs/ports/ced-acceptance.md).
+Exact tested code is `5ad8ad4aac6cba0363c28dc90103493842a42c2e`; this final
+checkpoint adds documentation only. The private acceptance receipt records
+the resulting receipt commit separately. The shared frame was merged through
+`5ab4207ab7a0c74aaf4b40592370a69b875e5eed` before the final Ced gate.
+
+The remaining dialog, recovery and conflict interactions are closed. Bus
+Open/Save As/Goto and scratch Save hold replies until native acceptance or
+cancellation, with disk completion before Save success. Native dirty Close,
+Don't Save, Save/Save As, overwrite confirmation and cancellations match
+gold; agent refusals do not create a modal. Recovered Open/Discard/Close,
+native Re-insert/Dismiss and Keep Mine/Take the Service's pass against real
+editd, with the four conflict/disconnected-copy capture pairs exact. Recovery
+notices and the empty window now use gold's labels, controls and layout.
+The shadow-plugin exit-owner repair is **gold-behaviour restoration**: pinned
+gold Quit exits cleanly, and the port now releases its retained window and
+exits within the same native witness. It is not a proposed deviation.
+
+Fable C1 resolves the earlier question: show both Replace rows, preserving
+gold styling and insets. The private `gold-replace-clipping-bug.md`, matched
+gold/port PNGs and full/regional figures retain gold's clipped controls and
+the approved repair. No Fable question remains.
+
+Final native runs cover 61/61 successful actions across text and mail, the
+53-command gold Bus surface, native drive/debug, all macro operations,
+clipboard/IME, mail/attachments/uncertain Send, sessions, recovery, 16/64 MiB
+and gold refusals. Ten suites plus selected-Goto and native recovery-button rechecks produce twelve
+source/hash-checked receipts; all owned processes and brokers are stopped.
+Live Prefs changes stay on one candidate PID through nine paired variants,
+including independent editor typography, scale/density, framing, app
+overrides, auto-mode and settings authority loss/recovery.
+
+Visual acceptance: 35 matched 1000×720 pairs inspected, **31 pixel-identical**.
+Problems/Output differ only in one antialiased separator row; the enlarged
+compact look has small raster-edge differences in Search and the status
+rule. C1's Replace repair is the sole approved design difference. Full and
+regional SSIM/RMSE distortions, capture hashes, native layout/titlebar forms,
+fixtures, cleanup and the source/binary provenance are indexed in the
+acceptance record and private `accepted-5ad8ad4` collection. The final Goto
+capture selects the same `2:2` text in both apps to match caret state.
+
+CBC `20261107-063528-808d3be7`: fmt check, normal Clippy, 29 scoped tests and
+host build passed at the exact tested source, with no worker diff; complete
+saved log read. Preceding exact-source gates `20261107-062747-64d9272f` and
+`20261107-061822-1babe0aa` also passed. Earlier failed gates and native runs
+remain in the private evidence; assertions were preserved, including the
+rendered-field/path-echo guard for synthetic Save input. No local Rust build,
+deployment, VT work or main merge occurred.
+
+branch: lab/viu-editor; head SHA: 5ad8ad4aac6cba0363c28dc90103493842a42c2e (exact tested code before this receipt-only commit); acceptance evidence: docs/ports/ced-acceptance.md, 61/61 actions, 12 native receipts, 35 matched captures (31 exact, three raster-edge-only, C1 Replace approved), nine live Prefs variants, cleanup verified; CBC job ids: 20261107-063528-808d3be7, 20261107-062747-64d9272f, 20261107-061822-1babe0aa.
