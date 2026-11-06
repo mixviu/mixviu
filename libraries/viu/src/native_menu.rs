@@ -121,7 +121,7 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
         .position(|m| m.title == "Help")
         .map(|menu| toolkit::menu::Search {
             menu,
-            hint: "Search commands".into(),
+            hint: "Search menus".into(),
             empty: "No matching commands".into(),
         });
     let shown = ui.allocate_ui_with_layout(
