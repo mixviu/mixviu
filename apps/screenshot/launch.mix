@@ -1,9 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.2.0
+-- version: 0.1.2
 $cli=require("launch-core.mix")
 $argv=args()
 if contains($argv,"--help") or contains($argv,"-h") then
-  print("Screenshot — native screenshots and editable annotations\nUsage: mix launch.mix [OPTIONS] [IMAGE]\n--capture region|screen|window  --window ID:GENERATION\n--headless  --service NAME  --comp NAME  --noded-url URL\n--version")
+  print("screenshot — native screenshots and editable annotations\nUsage: mix launch.mix [OPTIONS] [IMAGE]\n--capture MODE     take region, screen or window at once (as Print Screen does)\n--window ID:GEN    the window to capture (with --capture window)\n--headless         a Bus service with no window, for agents\n--service NAME     register as NAME instead (tests)\n--comp NAME        compositor service (default comp)\n--noded-url URL    broker (default: the session's)\n--version          exact entry and interpreter provenance\nSaved shots go to Pictures/Screenshots; Bus: screenshot.* (screenshot.v1).\n--debug[=LEVEL]: off|error|warn|info|debug|trace; --debug means debug.")
   exit(0)
 end
 if contains($argv,"--version") then
@@ -35,6 +35,8 @@ if port_exists($a.service) then forward($a);exit(0) end
 $root=dirname(script_path())
 $options={service:$a.service,surface:if $a.headless then "headless" else "window" end,url:$a.url}
 $launch={path:$a.path,capture:$a.capture,window:$a.window}
-$result=run_argv([env("VIU_BIN","/opt/mixos/bin/viu"),"run",$root,"--host-options",json_encode($options),$a.comp,"--launch",json_encode($launch)],{timeout:0,stdout:"inherit",stderr:"inherit"})
+$host_argv=[env("VIU_BIN","/opt/mixos/bin/viu"),"run",$root,"--host-options",json_encode($options),$a.comp,"--launch",json_encode($launch)]
+if $a.debug!=nil then push($host_argv,"--debug="..$a.debug) end
+$result=run_argv($host_argv,{timeout:0,stdout:"inherit",stderr:"inherit"})
 if not $result.ok and port_exists($a.service) then forward($a);exit(0) end
 exit($result.exit_code ?? 1)

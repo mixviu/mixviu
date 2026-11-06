@@ -11,7 +11,8 @@ $tmp=path_join("/var/tmp","screenshot-policy-"..uuid())
 try
   if $cli.service_name("comp",false)!="screenshot" or $cli.service_name("comp-nested",true)!="screenshot-headless-comp-nested" then raise("LAUNCH","per-compositor namespace differs") end
   if not starts_with($cli.service_name("headless",false),"screenshot--") then raise("LAUNCH","headless namespace collision") end
-  for $args in [["--comp","bad.name"],["--headless","--capture","region"],["--window","3:1"],["--bogus"],["/tmp/a.png","/tmp/b.png"]]
+  if $cli.parse_cli(["--debug=trace"]).debug!="trace" or $cli.parse_cli(["--debug"]).debug!="debug" then raise("LAUNCH","debug flags lost") end
+  for $args in [["--comp","bad.name"],["--headless","--capture","region"],["--window","3:1"],["--bogus"],["--debug="],["--debug=bad"],["/tmp/a.png","/tmp/b.png"]]
     $refused=false;try $cli.parse_cli($args) catch $m $refused=true end
     if not $refused then raise("LAUNCH","invalid CLI accepted") end
   end

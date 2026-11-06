@@ -22,12 +22,15 @@ fn service_name($comp,$headless)
   return $prefix.."--"..comp_hash($comp)
 end
 fn parse_cli($args)
-  $out={comp:env("MIXOS_COMP_SERVICE","comp"),service:nil,url:env("MIXOS_NODED_URL","ws://127.0.0.1:4200/ws"),headless:false,path:nil,capture:nil,window:nil}
+  $out={comp:env("MIXOS_COMP_SERVICE","comp"),service:nil,url:env("MIXOS_NODED_URL","ws://127.0.0.1:4200/ws"),headless:false,path:nil,capture:nil,window:nil,debug:nil}
   $positional=false;$i=0
   while $i<len($args)
     $arg=$args[$i];$i=$i+1
     if not $positional and $arg=="--" then $positional=true
     elif not $positional and $arg=="--headless" then $out.headless=true
+    elif not $positional and ($arg=="--debug" or starts_with($arg,"--debug=")) then
+      $out.debug=if $arg=="--debug" then "debug" else slice($arg,8) end
+      if not contains(["off","error","warn","info","debug","trace"],$out.debug) then raise("ARGUMENT","invalid debug level") end
     elif not $positional and contains(["--service","--comp","--noded-url","--capture","--window"],$arg) then
       $value=$args[$i];$i=$i+1
       if $value==nil or $value=="" then raise("ARGUMENT",$arg.." needs a value") end
