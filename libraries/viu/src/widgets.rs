@@ -1040,7 +1040,8 @@ impl Widgets {
                         as f32;
                     toolkit::field::search(ui, &mut text, widget.text("placeholder"), width)
                 } else if widget.kind == "field" && widget.properties["native"] == true {
-                    toolkit::field::text(ui,&mut text,widget.text("placeholder"),ui.available_width())
+                    let width = ui.available_width();
+                    toolkit::field::text(ui, &mut text, widget.text("placeholder"), width)
                 } else {
                     let edit = if widget.kind == "field" {
                         egui::TextEdit::singleline(&mut text)
