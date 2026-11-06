@@ -924,6 +924,8 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             ..Default::default()
         },
         Box::new(move |cc| {
+            toolkit::decorations::initialise(cc);
+            toolkit::decorations::initialise_window(&cc.egui_ctx,cc.winit_window().cloned());
             crate::appearance::install(&cc.egui_ctx);
             if native_drive {
                 toolkit::drive::install(&cc.egui_ctx, &service);

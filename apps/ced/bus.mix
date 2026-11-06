@@ -23,8 +23,8 @@ fn caller($headers)
   elif $headers.broker_origin=="mesh" then return "mesh:"..($headers.broker_service ?? "unknown").."@"..($headers.broker_peer ?? "unknown") end
   return "anon"
 end
-fn tab_row($t)
-  return {tab:to_number($t.document),preview:"source",buffer:$t.buffer,epoch:$t.epoch,path:$t.path,name:if $t.path!=nil then basename($t.path) else "untitled-"..$t.document end,language:$t.language,rev:$t.rev,dirty:$t.dirty,disk:$t.disk,pending:$t.pending,conflicts:$t.conflicts,recovered:$t.recovered,phase:$t.phase}
+fn tab_row($t,$preview="source")
+  return {tab:to_number($t.document),preview:$preview,buffer:$t.buffer,epoch:$t.epoch,path:$t.path,name:if $t.path!=nil then basename($t.path) else "untitled-"..$t.document end,language:$t.language,rev:$t.rev,dirty:$t.dirty,disk:$t.disk,pending:$t.pending,conflicts:$t.conflicts,recovered:$t.recovered,phase:$t.phase}
 end
 fn hold_call($s,$e,$wait)
   $token=$e.headers["viu-call"]
@@ -84,7 +84,7 @@ fn bus_command($s,$e)
   if $command=="ced.info" then
     reply(0,json_encode({version:$ctx.version ?? "0.1.2",git_sha:$ctx.git_sha ?? "unknown",build_time:$ctx.build_time ?? "unknown",headless:false,tabs:len($s.tabs),edit:$s.edit,config_path:nil,session_path:$s.session_path}));return $s
   elif $command=="ced.tabs" then
-    reply(0,json_encode({active:if len($s.tabs)>0 then to_number(current($s).document) else nil end,tabs:map($s.tabs,fn($t)=tab_row($t))}));return $s
+    reply(0,json_encode({active:if len($s.tabs)>0 then to_number(current($s).document) else nil end,tabs:map($s.tabs,fn($t)=tab_row($t,if $t.language=="markdown" then $s.previews[$t.document] ?? "source" else "source" end))}));return $s
   elif $command=="ced.open" or $command=="ced.new" then
     $new=$command=="ced.new"
     if not $new and (type($a.paths)!="list" or len($a.paths)==0 or not all($a.paths,fn($p)=type($p)=="string")) then return refused($s,"INVALID_ARGUMENT","ced.open needs paths","bad_args") end
