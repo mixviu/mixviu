@@ -105,6 +105,7 @@ fn dp_sort($rows,$key,$ascending)
   return concat(filter($rows,fn($r)=$r.dir),filter($rows,fn($r)=not $r.dir))
 end
 fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth)
+  $profile=env("VIU_BULK_PROFILE","")=="1";$t=monotonic()
   $rows=[]
   for $entry in dp_names($path)
     $name=$entry.name
@@ -120,13 +121,17 @@ fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth)
       end
     end
   end
+  $listed=monotonic()
+  $ordered=dp_sort($rows,$key,$ascending)
+  $sorted=monotonic()
   $out=[]
-  for $row in dp_sort($rows,$key,$ascending)
+  for $row in $ordered
     push($out,$row)
     if $row.dir and ($expanded[$row.path] ?? false) then
       $out=concat($out,dp_scan($row.path,$hidden,$expanded,$key,$ascending,$depth+1))
     end
   end
+  if $profile then print(json_encode({profile:"dopus",phase:"scan",depth:$depth,rows:len($rows),list_stat_reduce_ms:($listed-$t)*1000,sort_ms:($sorted-$listed)*1000,flatten_ms:(monotonic()-$sorted)*1000})) end
   return $out
 end
 fn dp_refresh($pane)
