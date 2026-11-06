@@ -103,10 +103,16 @@ fn requests_survive_callbacks_and_reply_to_the_original_caller_once() {
 #[test]
 fn reply_receipts_preserve_broker_caller_headers_for_application_lanes() {
     let (mut r, wakes) = setup();
-    let sequence = r.event_with_headers("keep".into(), json!({}), BTreeMap::from([
-        ("from".into(), "stable-editor-agent".into()),
-        ("viu-request-caller".into(), "wire-request-59".into()),
-    ])).unwrap();
+    let sequence = r
+        .event_with_headers(
+            "keep".into(),
+            json!({}),
+            BTreeMap::from([
+                ("from".into(), "stable-editor-agent".into()),
+                ("viu-request-caller".into(), "wire-request-59".into()),
+            ]),
+        )
+        .unwrap();
     let done = next(&r, &wakes);
     assert!(done.error.is_none(), "{:?}", done.error);
     let model = done.model.unwrap();
