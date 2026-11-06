@@ -914,7 +914,9 @@ impl Widgets {
             }
             "image-view" => self.images.draw(ui, id, value),
             "image-fill" => {
-                let images = self.surfaces.get_or_insert_with(crate::image_view::Images::surface);
+                let images = self
+                    .surfaces
+                    .get_or_insert_with(crate::image_view::Images::surface);
                 images.set_rasters(self.rasters.clone());
                 images.draw_fill(ui, id, value)
             }
