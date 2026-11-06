@@ -170,7 +170,7 @@ impl Host {
             return;
         }
         if let Some(prefix) = &self.drive {
-            if let Some(answer) = crate::debug::request(prefix, &r.command, &r.args.to_string()) {
+            if let Some(answer) = toolkit::debug::request_for(&self.service, prefix, &r.command, &r.args.to_string()) {
                 let _ = r.reply.send(answer);
                 return;
             }
