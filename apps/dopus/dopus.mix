@@ -24,9 +24,10 @@ fn dp_publish($state,$contract,$cache)
   if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
   return $cache
 end
-on dopus.initialise
+fn dp_start($initial)
+  global $state, $row_cache
   $row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
-  $state=$app.dp_initialise($event.args)
+  $state=$app.dp_initialise($initial)
   $state.appearance_choice={}
   $state.appearance_session=$state.appearance
   $state.default_keys={}
@@ -35,14 +36,18 @@ on dopus.initialise
   $state.owner=viu_context().generation
   $state=$app.dp_update_previews($state)
   $row_cache=dp_publish($state,$contract,$row_cache)
+end
+on dopus.initialise
+  dp_start($event.args)
   reply(0,json_encode({ready:true}))
 end
-on dopus.call
+fn dp_request($request)
+  global $state, $row_cache, $contract
   if $state==nil then reply(10,json_encode({error_code:"NOT_READY"}))
   else
     try
       $profile_start=if $dopus_profile then monotonic() else 0 end
-      $a=$event.args.args;$name=$event.args.command
+      $a=$request.args;$name=$request.command
       $candidate=$state;$candidate.focus=nil;$candidate.reply={ok:true}
       $candidate.appearance_reset=nil
       if $name=="dopus.execute" then $candidate=$app.dp_action($candidate,$contract,$a.id,$a.params ?? {})
@@ -126,4 +131,14 @@ on dopus.job.completed
     $state=$app.dp_update_previews($state)
     $row_cache=dp_publish($state,$contract,$row_cache)
   end
+end
+
+on dopus.call
+  dp_request($event.args)
+end
+on dopus.intent
+  dp_request({command:"dopus.intent",args:$event.args})
+end
+on dopus.execute
+  dp_request({command:"dopus.execute",args:$event.args})
 end

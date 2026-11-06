@@ -1,0 +1,284 @@
+-- version: 0.1.0
+-- The toast: notifyd's notifications in the top right corner, on the host's
+-- toast seat (shell.toast.show/hide), which never takes keyboard focus and
+-- never competes with a dialog. A question (a notification with buttons)
+-- stays until it has an outcome; the oldest open question shows first, with
+-- "+N more" for the rest. A passive notification shows for FLASH_S seconds,
+-- then the toast hides (it stays on the Notifications page).
+-- A button answers through notify.action; × dismisses a question
+-- (notify.dismiss, never an answer) and only hides a passive one.
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$r = require($LIB .. "/runtime.mix")
+$ctx = $r.scene_context("toast")
+$NOTIFY = env("NOTIFY_SERVICE", "notify")
+$FLASH_S = 6
+-- flash: the passive notification on show and when it hides (time()).
+$state = {ready: false, queued: false, sequence: 0, shown_id: 0, actions: [], visible: false,
+  flash: nil}
+
+fn schedule()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
+  $state.sequence = $state.sequence + 1
+  if $state.ready and not $state.queued then
+    $state.queued = true
+    try
+      emit $ctx.citizen refresh
+    catch $message, $error
+      $state.queued = false
+      raise($error.code, $message, $error.details)
+    end
+  end
+end
+
+-- What to show from the open list: the oldest question, else the passive
+-- notification still within its flash. {note, more} or nil.
+fn pick($open, $flash, $now)
+  $questions = filter($open, fn($n) = len($n.actions ?? []) > 0)
+  if len($questions) > 0 then return {note: $questions[0], more: len($questions) - 1} end
+  if $flash != nil and $flash.until > $now then
+    for each $n in $open
+      if $n.id == $flash.id then return {note: $n, more: 0} end
+    end
+  end
+  return nil
+end
+
+-- The host's text widget draws one line, so the body is broken here: at
+-- word boundaries, about LINE_CHARS a line, at most LINES lines, the last
+-- ending in "…" when the body is longer. Each line also elides on screen.
+$LINE_CHARS = 48
+$LINES = 6
+-- Older hosts only draw single-line text. Keep the title bold, in at most
+-- three 38-character lines at 14px; the body remains independent.
+$SUMMARY_LINE_CHARS = 38
+$SUMMARY_LINES = 3
+
+fn wrap_lines($text, $limit, $count)
+  $lines = []
+  $cur = ""
+  for each $word in split(trim($text), " ")
+    if $word == "" then continue end
+    -- Bound unbroken words too, including URLs and wide test fixtures.
+    while len($word) > $limit
+      $room = $limit
+      if $cur != "" then $room = $limit - len($cur) - 1 end
+      if $room > 0 then
+        if $cur != "" then $cur = $cur .. " " end
+        $cur = $cur .. slice($word, 0, $room)
+        $word = slice($word, $room)
+      end
+      push($lines, $cur)
+      $cur = ""
+      if len($lines) > $count then break end
+    end
+    if len($lines) > $count then break end
+    if $cur == "" then
+      $cur = $word
+    elif len($cur) + 1 + len($word) <= $limit then
+      $cur = $cur .. " " .. $word
+    else
+      push($lines, $cur)
+      $cur = $word
+    end
+  end
+  if $cur != "" then push($lines, $cur) end
+  if len($lines) > $count then
+    $kept = slice($lines, 0, $count)
+    $kept[$count - 1] = trim(slice($kept[$count - 1], 0, $limit - 1)) .. "…"
+    return $kept
+  end
+  return $lines
+end
+
+fn wrap($text)
+  return wrap_lines($text, $LINE_CHARS, $LINES)
+end
+
+fn model_of($note, $more)
+  $labels = ["", "", "", ""]
+  $shown = [false, false, false, false]
+  $i = 0
+  for each $a in $note.actions ?? []
+    if $i < 4 then
+      $labels[$i] = $a.label
+      $shown[$i] = true
+    end
+    $i = $i + 1
+  end
+  $body = $note.body ?? ""
+  $summary = $note.summary ?? ""
+  $summary_wrapped = wrap_lines($summary, $SUMMARY_LINE_CHARS, $SUMMARY_LINES)
+  $summary_lines = ["", "", ""]
+  $summary_shown = [false, false, false]
+  $k = 0
+  for each $l in $summary_wrapped
+    $summary_lines[$k] = $l
+    $summary_shown[$k] = true
+    $k = $k + 1
+  end
+  $wrapped = wrap($body)
+  $lines = ["", "", "", "", "", ""]
+  $line_shown = [false, false, false, false, false, false]
+  $j = 0
+  for each $l in $wrapped
+    $lines[$j] = $l
+    $line_shown[$j] = true
+    $j = $j + 1
+  end
+  return {id: $note.id, app: $note.app ?? "", summary: $summary, body: $body,
+    summary_lines: $summary_lines, summary_shown: $summary_shown, summary_count: len($summary_wrapped),
+    has_body: len($wrapped) > 0, lines: $lines, line_shown: $line_shown, line_count: len($wrapped),
+    labels: $labels, shown: $shown,
+    more: if $more > 0 then "+" .. to_string($more) .. " more" else "" end}
+end
+
+-- The seat height: each body line and the button row add to the bare toast.
+fn height_of($m)
+  -- Padding and header, then only the title lines actually shown.
+  $h = 60 + 20 * $m.summary_count
+  if $m.has_body then $h = $h + 6 + 18 * $m.line_count end
+  if $m.shown[0] then $h = $h + 34 end
+  return $h
+end
+
+fn refresh()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
+  if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
+  $sequence = $state.sequence
+  $out = $r.call($NOTIFY, "notify.list", {})
+  if not $out.ok then return $out end
+  if type($out.value) != "list" then return $r.failure("notify_invalid_reply", "notify.list must return a list") end
+  if $sequence != $state.sequence then return $r.failure("superseded", "A newer notification event replaced this snapshot") end
+  $choice = pick($out.value, $state.flash, time())
+  if $choice == nil then
+    $state.shown_id = 0
+    $state.actions = []
+    if $state.visible then
+      $state.visible = false
+      return $r.call($ctx.host, "shell.toast.hide", {scene: $ctx.name})
+    end
+    return {ok: true, rc: 0, value: {}}
+  end
+  $model = model_of($choice.note, $choice.more)
+  $published = $r.publish_model($ctx, $model)
+  if not $published.ok then return $published end
+  $shown = $r.call($ctx.host, "shell.toast.show", {scene: $ctx.name, h: height_of($model)})
+  if $shown.ok then
+    $state.shown_id = $model.id
+    $state.actions = $choice.note.actions ?? []
+    $state.visible = true
+  else
+    -- Not on screen: no button may answer it. The next event retries.
+    $state.shown_id = 0
+    $state.actions = []
+    $state.visible = false
+  end
+  return $shown
+end
+
+-- One refresh at a time: queued stays set while it runs (it yields at every
+-- Bus call), so events only bump the sequence; a bump during the run
+-- schedules one more refresh at the end. An older refresh can never
+-- overwrite a newer one's shown id, so a button always answers the
+-- question on screen.
+on refresh async
+  $start = $state.sequence
+  try
+    $out = refresh()
+  catch $message
+    $out = $r.failure("scene_refresh", to_string($message))
+  finally
+    -- A disconnect during an RPC must not leave the queue latched forever.
+    $state.queued = false
+    if $state.sequence != $start then
+      try
+        schedule()
+      catch $message
+        $out = $r.failure("scene_refresh", to_string($message))
+      end
+    end
+  end
+  $r.respond($out)
+end
+
+-- A new passive notification flashes; the hide is a local timer task.
+on notification.created
+  $a = $r.event_args($event)
+  if type($a.id) == "number" and len($a.actions ?? []) == 0 then
+    $state.flash = {id: $a.id, until: time() + $FLASH_S}
+    task_start("toast.flash_end", json_encode({id: $a.id}))
+  end
+  schedule()
+end
+on notification.answered
+  schedule()
+end
+on notification.closed
+  schedule()
+end
+
+on toast.flash_end async
+  sleep($FLASH_S)
+end
+on toast.flash_end
+  $id = $r.event_args($event).id
+  if $state.flash != nil and $state.flash.id == $id and $state.flash.until <= time() then
+    $state.flash = nil
+  end
+  schedule()
+end
+
+fn press($index)
+  if $state.shown_id < 1 or $index >= len($state.actions) then
+    return $r.failure("not_shown", "no button " .. to_string($index) .. " is showing")
+  end
+  $out = $r.call($NOTIFY, "notify.action", {id: $state.shown_id, action: $state.actions[$index].id})
+  schedule()
+  return $out
+end
+
+on toast.press0 async
+  $r.respond(press(0))
+end
+on toast.press1 async
+  $r.respond(press(1))
+end
+on toast.press2 async
+  $r.respond(press(2))
+end
+on toast.press3 async
+  $r.respond(press(3))
+end
+
+on toast.dismiss async
+  if $state.shown_id < 1 then $r.respond($r.failure("not_shown", "no notification is showing")); return end
+  if len($state.actions) > 0 then
+    $out = $r.call($NOTIFY, "notify.dismiss", {id: $state.shown_id})
+    schedule()
+    $r.respond($out)
+  else
+    $state.flash = nil
+    schedule()
+    reply(0, "{}")
+  end
+end
+
+on props.changed
+  $a = $r.event_args($event)
+  if $event.headers.from == env("NODED_SERVICE", "noded") and $a.path != "services.registered" then return end
+  schedule()
+end
+
+on bus.connected
+  $state.ready = false
+  $ready = $r.ready($ctx)
+  $state.ready = $ready.ok
+  schedule()
+end
+
+subscribe($NOTIFY .. ".changed")
+subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
+$ready = $r.ready($ctx)
+if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
+$state.ready = true
+schedule()

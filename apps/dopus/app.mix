@@ -1,0 +1,5 @@
+-- version: 0.1.0
+include "dopus.mix"
+$profile=$app_args[0] ?? path_join(env("XDG_CONFIG_HOME",path_join(env("HOME"),".config")),"dopus")
+mkdir($profile,{parents:true})
+dp_start({app_dir:dirname(script_path()),profile:$profile})

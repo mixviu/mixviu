@@ -1,0 +1,1 @@
+{"host":{"behaviour":"viu.mix","commands":["volume.open","volume.close","volume.state","vol_out_set","vol_out_mute"],"service":"quoin-volume","size":[440,680],"title":"Quoin volume — safe audio fixture"}}
