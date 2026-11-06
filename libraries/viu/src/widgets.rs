@@ -3,6 +3,7 @@
 //! this module draws and reports intents, never executes application policy.
 use egui::{Color32, Id, Rect, Sense, Vec2};
 use serde_json::{Value, json};
+use egui::emath::GuiRounding;
 use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
@@ -531,12 +532,14 @@ impl Widgets {
                 let mut row = |ui: &mut egui::Ui| {
                     for item in value["left"].as_array().unwrap() {
                         let child = Widget::decode(item).expect("validated row child");
-                        if child.kind=="tabs" {
-                            let selected=model["values"].get(&child.id).unwrap_or(&child.initial);
+                        if child.kind == "tabs" {
+                            let selected = model["values"].get(&child.id).unwrap_or(&child.initial);
                             for option in child.choices() {
-                                let response=toolkit::selectable(ui,selected==option,option);
-                                self.remember(ui,&format!("{}.{}",child.id,option),&response);
-                                if response.clicked(){events.push(Intent::set(&child.id,json!(option)));}
+                                let response = toolkit::selectable(ui, selected == option, option);
+                                self.remember(ui, &format!("{}.{}", child.id, option), &response);
+                                if response.clicked() {
+                                    events.push(Intent::set(&child.id, json!(option)));
+                                }
                             }
                             continue;
                         }
@@ -618,7 +621,9 @@ impl Widgets {
                     crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
                         .expect("validated mark"),
                     size,
-                    if widget.properties["weak"] == true {
+                    if widget.properties["header_mark"] == true {
+                        toolkit::chrome::Chrome::of(ui.ctx()).palette.icon
+                    } else if widget.properties["weak"] == true {
                         ui.visuals().weak_text_color()
                     } else {
                         ui.visuals().text_color()
@@ -686,6 +691,14 @@ impl Widgets {
             }
             "label" => {
                 let text = label_text(ui, widget, value);
+                if widget.properties["role"]=="title" {
+                    let galley=ui.painter().layout_no_wrap(value.as_str().unwrap_or("").to_owned(),crate::fonts::emphasis(ui.ctx(),egui::FontId::proportional(crate::window_frame::Metrics::of(ui.ctx()).title_size)),toolkit::chrome::Chrome::of(ui.ctx()).palette.text_dim);
+                    let (rect,response)=ui.allocate_exact_size(ui.available_size_before_wrap(),Sense::hover());
+                    let position=(rect.center()-galley.size()/2.0).round_to_pixels(ui.pixels_per_point());
+                    ui.painter().galley(position,galley,toolkit::chrome::Chrome::of(ui.ctx()).palette.text_dim);
+                    response.widget_info(||egui::WidgetInfo::labeled(egui::Role::Label,ui.is_enabled(),value.as_str().unwrap_or("")));
+                    return self.remember(ui,id,&response);
+                }
                 let mut label = egui::Label::new(text);
                 if widget.properties["truncate"] == true {
                     label = label.truncate();

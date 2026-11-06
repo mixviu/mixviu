@@ -152,6 +152,13 @@ fn mix_signal_api_uses_snapshot_and_refuses_reuse_then_refreshes_without_prompt(
     .drop_without_applying_deltas();
     assert!(view.geometry.contains_key(&format!("processes.key.{pid}")));
     assert!(view.geometry.contains_key("processes.column.cmdline"));
+    let before_navigation=*keep.lock().unwrap();
+    event(&mut runtime,&rx,"monitor.pause",json!({"on":true}));
+    event(&mut runtime,&rx,"monitor.tab",json!({"tab":"performance"}));
+    event(&mut runtime,&rx,"monitor.section",json!({"section":"tcp"}));
+    assert_eq!(*keep.lock().unwrap(),before_navigation,"paused navigation must not fetch TCP or process readings");
+    event(&mut runtime,&rx,"monitor.tab",json!({"tab":"processes"}));
+    assert_eq!(*keep.lock().unwrap(),before_navigation,"paused return must preserve the held table");
     event(&mut runtime, &rx, "monitor.select", json!({"pid":pid}));
     let before = *keep.lock().unwrap();
     let refused = event(

@@ -698,6 +698,10 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         eprintln!("viu: {e}");
         std::process::exit(2)
     });
+    let mut logging_args:Vec<String>=std::env::args().collect();
+    let _logging=toolkit::debug::init(&bundle.manifest.service,"warn",&mut logging_args).unwrap_or_else(|error| {
+        eprintln!("viu logging: {error}");std::process::exit(2)
+    });
     if bundle.manifest.surface == "background" {
         let mut options = crate::layer::LayerOptions::background(&bundle.manifest.service);
         options.exclusive_zone = 0;
