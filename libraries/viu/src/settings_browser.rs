@@ -856,9 +856,11 @@ fn cards(
         }
         if section["standalone"] == true {
             for row in array(&section["rows"]).filter(|r| r["shown"] != false) {
-                let response = ui.add_enabled_ui(row["blocked"].is_null(), |ui| {
-                    standard_button(ui, text(row, "title"), look)
-                }).inner;
+                let response = ui
+                    .add_enabled_ui(row["blocked"].is_null(), |ui| {
+                        standard_button(ui, text(row, "title"), look)
+                    })
+                    .inner;
                 record(geometry, id, &format!("row.{}", text(row, "id")), &response);
                 if response.clicked() {
                     emit(events, id, "activate", json!({"row":row["id"]}));
