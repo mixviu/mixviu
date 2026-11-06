@@ -536,7 +536,9 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
-        if self.properties["enabled"] == false || (self.kind=="swatches" && self.properties["read_only"]==true) {
+        if self.properties["enabled"] == false
+            || (self.kind == "swatches" && self.properties["read_only"] == true)
+        {
             return Err("DISABLED".into());
         }
         if self.kind == "image-canvas" {
@@ -1219,7 +1221,7 @@ impl Widgets {
                         response.widget_info(|| {
                             egui::WidgetInfo::selected(
                                 egui::Role::Button,
-                                ui.is_enabled() && widget.properties["read_only"]!=true,
+                                ui.is_enabled() && widget.properties["read_only"] != true,
                                 selected,
                                 name,
                             )
@@ -1244,7 +1246,9 @@ impl Widgets {
                             .rect_stroke(rect, 3.0, outline, egui::StrokeKind::Inside);
                         self.geometry
                             .insert(format!("{id}.{}", item["id"].as_str().unwrap()), rect);
-                        if response.on_hover_text(name).clicked() && widget.properties["read_only"]!=true {
+                        if response.on_hover_text(name).clicked()
+                            && widget.properties["read_only"] != true
+                        {
                             events.push(Intent {
                                 id: id.into(),
                                 action: "select".into(),
