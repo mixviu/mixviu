@@ -848,7 +848,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .extend(["debug", "debug.recent", "debug.set"].map(|suffix| format!("{service}.{suffix}")));
     let declared = commands.iter().cloned().collect();
     let bus = Endpoint::start_described(
-        service,
+        std::env::var("VIU_SERVICE").unwrap_or(service),
         std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
         commands
             .into_iter()
@@ -1038,7 +1038,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     }
     if let Some(command) = &bundle.manifest.activation {
         match crate::native_bus::activate_existing(
-            &bundle.manifest.service,
+            &std::env::var("VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
             command,
             &std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
         ) {

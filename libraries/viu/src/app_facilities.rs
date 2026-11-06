@@ -101,7 +101,7 @@ impl Facilities {
             self.context = Some(ctx.clone());
         }
         if self.ui {
-            toolkit::drive::set_service(ctx, bus.client().as_ref().map(|_| self.app.as_str()));
+            toolkit::drive::set_service(ctx, bus.client().as_ref().map(|_| bus.service()));
         }
         while let Ok((reply, answer)) = self.completed.try_recv() {
             let _ = reply.send(macro_answer(answer));

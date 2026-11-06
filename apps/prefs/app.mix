@@ -11,6 +11,11 @@ $software=require("software.mix")
 $gallery=require("gallery.mix")
 $bus_surface=json_parse(read_file(path_join(dirname(script_path()),"bus.json")))
 $state=$core.initial($app_args[0] ?? env("MIXOS_INSTANCE","desktop"))
+if $app_args[0]=="--page" then
+  $state=$core.initial(env("MIXOS_INSTANCE","desktop"))
+  $parts=split($app_args[1],"/")
+  try $state=$pages.open_page($state,$parts[0],$parts[1]) catch $ignored $state.nav=$nav.initial_nav() end
+end
 fn publish_prefs($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
