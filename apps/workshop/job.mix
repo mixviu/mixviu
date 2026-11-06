@@ -21,7 +21,6 @@ on job.run
     reply(0,json_encode($commands))
   elif $a.op=="call" then
     send $p.service $p.command body=$p.body timeout=8
-    $peer_rc=$rc;$answer=if $reply!=nil then json_encode($reply) else to_string($result) end
-    reply(0,json_encode({peer_rc:$peer_rc,text:substr($answer,0,900),truncated:len($answer)>900}))
+    reply(0,json_encode($core.call_outcome($rc,$reply,$result)))
   else raise("OP","Unknown Workshop operation") end
 end

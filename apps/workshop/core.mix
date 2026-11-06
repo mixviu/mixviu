@@ -35,6 +35,11 @@ end
 fn body_text($v)
   return text($v,65536)
 end
+fn call_outcome($peer_rc,$reply,$result)
+  if $peer_rc<0 then raise("TRANSPORT","Delivery outcome unknown: "..to_string($result)) end
+  $answer=if $reply!=nil then json_encode($reply) else to_string($result) end
+  return {peer_rc:$peer_rc,text:substr($answer,0,900),truncated:len($answer)>900}
+end
 fn call_payload($s)
   if $s.busy then raise("BUSY","Wait for the pending operation") end
   if not any($s.commands,fn($c)=$c.name==$s.command) or not contains($s.services,$s.service) then raise("SELECTION","Select an advertised command first") end
