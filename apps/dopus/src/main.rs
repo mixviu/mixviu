@@ -70,6 +70,10 @@ impl App {
     fn ready(&self) -> bool {
         self.view.is_some() && self.model["ready"] == true
     }
+    fn window_settings(&self) -> Value {
+        self.model.get("window_settings").filter(|v|v.is_object()).cloned()
+            .unwrap_or_else(||self.session.snapshot["state"]["values"].clone())
+    }
     fn state(&self) -> Value {
         let geometry: BTreeMap<_, _> = self
             .view
@@ -420,7 +424,7 @@ impl App {
             }
             "dopus.ui.titlebar.form" => {
                 let eligible =
-                    viu::hosting::Hosting::eligible(&self.session.snapshot["state"]["values"]);
+                    viu::hosting::Hosting::eligible(&self.window_settings());
                 if eligible
                     && viu::hosting::Hosting::local_owner(
                         &headers,
@@ -432,7 +436,7 @@ impl App {
                 }
                 let mut form = self.hosting.form(
                     self.window_frame.form(
-                        &self.session.snapshot["state"]["values"],
+                        &self.window_settings(),
                         Some(&format!("dopus-{}", self.mode)),
                     ),
                     eligible,
@@ -865,7 +869,7 @@ impl App {
                     .iter()
                     .any(|service| viu::hosting::Hosting::local_owner(&notice.headers, service))
                         && viu::hosting::Hosting::host_available(
-                            &self.session.snapshot["state"]["values"],
+                            &self.window_settings(),
                         )
                     {
                         self.hosting.confirmed = true;
@@ -898,11 +902,11 @@ impl App {
         if let Some(snapshot) = self.session.poll() {
             self.session_pending = Some(snapshot);
         }
-        let settings = &self.session.snapshot["state"]["values"];
-        let hosted = self.hosting.confirmed && viu::hosting::Hosting::eligible(settings);
+        let settings = &self.window_settings();
+        let hosted = self.hosting.confirmed && viu::hosting::Hosting::eligible(&settings);
         let chrome = (
             self.hosting.confirmed
-                && viu::hosting::Hosting::host_available(settings)
+                && viu::hosting::Hosting::host_available(&settings)
                 && settings["window.menu_style"] == "titlebar",
             hosted,
         );
@@ -1016,7 +1020,7 @@ impl eframe::App for App {
         );
         viu::rich::configure_menu(
             ui.ctx(),
-            &self.session.snapshot["state"]["values"],
+            &self.window_settings(),
             Some(&format!("dopus-{}", self.mode)),
         );
         viu::rich::configure_hosting(ctx, self.chrome_state.0, self.chrome_state.1);
@@ -1030,12 +1034,12 @@ impl eframe::App for App {
             &self.bus,
             &format!("dopus-{}", self.mode),
             &std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()),
-            viu::hosting::Hosting::eligible(&self.session.snapshot["state"]["values"]),
+            viu::hosting::Hosting::eligible(&self.window_settings()),
         );
         self.window_frame.show_with_chrome(
             ui,
             &self.title,
-            &self.session.snapshot["state"]["values"],
+            &self.window_settings(),
             self.view
                 .as_ref()
                 .is_some_and(|view| view.has_slot("window.header")),

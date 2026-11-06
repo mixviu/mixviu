@@ -28,7 +28,7 @@ fn dp_initialise($a)
   $config=$loaded.value;$save=$loaded.save_allowed;$warning=$loaded.warning
   $panes=[$dp.dp_pane($config.left),$dp.dp_pane($config.right)]
   $places=$configuration.dp_places($config)
-  return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.15,0.1,0.3),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.3),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"studio",style:"default"},appearance_choice:{},appearance_session:{mode:"dark",scheme:"studio",style:"default"},busy:false,job:nil,effect_jobs:{},form_queue:[],form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Select a file or folder" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
+  return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.15,0.1,0.3),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.3),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"studio",style:"default"},window_choice:{},appearance_choice:{},appearance_session:{mode:"dark",scheme:"studio",style:"default"},busy:false,job:nil,effect_jobs:{},form_queue:[],form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Select a file or folder" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
 end
 fn dp_update_previews($s)
   if $s.preview_slots==nil then $s.preview_slots=[{key:nil,job:nil,value:{phase:"none"}},{key:nil,job:nil,value:{phase:"none"}}] end
@@ -229,6 +229,8 @@ fn dp_action($s,$contract,$id,$params)
     $s.appearance_choice=delete($s.appearance_choice,$key)
     $s.appearance[$key]=$s.appearance_session[$key]
     $s.appearance_reset=$key
+  elif starts_with($id,"theme.decorations-") then $s.window_choice["window.decorations"]=slice($id,len("theme.decorations-"))
+  elif starts_with($id,"theme.captions-") then $s.window_choice["window.caption_side"]=slice($id,len("theme.captions-"))
   elif $id=="theme.mode-toggle" then $s.appearance.mode=if $s.appearance.mode=="dark" then "light" else "dark" end
   elif starts_with($id,"theme.mode-") then $s.appearance.mode=slice($id,len("theme.mode-"))
   elif starts_with($id,"theme.style-") then $s.appearance.style=slice($id,len("theme.style-"))

@@ -50,7 +50,7 @@ fn dp_command($state,$contract,$id)
   $a.enabled=dp_enabled($state,$id)
   $a.shortcut=join($a.keys," / ")
   $p=$state.panes[$state.active]
-  $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open elif contains(["theme.scheme-session","theme.mode-session","theme.style-session"],$id) then $state.appearance_choice[replace(slice($id,len("theme.")),"-session","")]==nil elif starts_with($id,"theme.scheme-") then $state.appearance_choice.scheme==slice($id,13) elif starts_with($id,"theme.style-") then $state.appearance_choice.style==slice($id,12) elif starts_with($id,"theme.mode-") then $state.appearance_choice.mode==slice($id,11) else false end
+  $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open elif contains(["theme.scheme-session","theme.mode-session","theme.style-session"],$id) then $state.appearance_choice[replace(slice($id,len("theme.")),"-session","")]==nil elif starts_with($id,"theme.decorations-") then ($state.window_choice["window.decorations"] ?? "auto")==slice($id,len("theme.decorations-")) elif starts_with($id,"theme.captions-") then ($state.window_choice["window.caption_side"] ?? "auto")==slice($id,len("theme.captions-")) elif starts_with($id,"theme.scheme-") then $state.appearance_choice.scheme==slice($id,13) elif starts_with($id,"theme.style-") then $state.appearance_choice.style==slice($id,12) elif starts_with($id,"theme.mode-") then $state.appearance_choice.mode==slice($id,11) else false end
   return $a
 end
 fn dp_menus($state,$contract)
@@ -112,6 +112,9 @@ fn dp_legacy_view($s)
 end
 fn dp_project($state,$contract,$cache)
   $window=$state.window ?? {}
+  for $key in keys($state.window_choice ?? {})
+    if $state.window_choice[$key]!="auto" then $window[$key]=$state.window_choice[$key] end
+  end
   $title_align=$window["window.title_align"] ?? "auto"
   if not contains(["left","center","right"],$title_align) then $title_align=if $window["window.style"]=="win11" then "left" else "center" end end
   $menu_side=$window["window.menu_side"] ?? "left"
@@ -151,5 +154,5 @@ fn dp_project($state,$contract,$cache)
   $values.places={key:"places",revision:0,active:false,columns:[{id:"name",label:"Places"}],rows:$place_rows,context:[],background_context:[]}
   $values.preview=if $state.preview_slots==nil then {phase:"none"} else $state.preview_slots[$state.active].value end
   $layout={form:{edge:"top",size:0},topbar:{edge:"top",size:34},"status-pane":{edge:"bottom",size:32},"places-pane":{edge:"left",fraction:$state.places_width,resizable:true,min_fraction:0.1,max_fraction:0.3,minimum_window_width:640},"properties-pane":{edge:"right",fraction:$state.properties_width,resizable:true,min_fraction:0.1,max_fraction:0.3,minimum_window_width:640},"center-pane":{edge:"fill"}}
-  return {topbar_hidden:($window["viu.hosted-menu"] ?? false) and ($window["viu.hosted-actions"] ?? false),actions:map($contract.actions,fn($a)=dp_command($state,$contract,$a.id)),values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,header_groups:$header_groups,caption_control:$caption_control,pane_outlines:{left:if $state.active==0 then "design.accent" else nil end,right:if $state.active==1 then "design.accent" else nil end},places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
+  return {window_settings:$window,topbar_hidden:($window["viu.hosted-menu"] ?? false) and ($window["viu.hosted-actions"] ?? false),actions:map($contract.actions,fn($a)=dp_command($state,$contract,$a.id)),values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,header_groups:$header_groups,caption_control:$caption_control,pane_outlines:{left:if $state.active==0 then "design.accent" else nil end,right:if $state.active==1 then "design.accent" else nil end},places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
 end

@@ -70,6 +70,24 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(2));
     }
+    // Per-window choices survive profile changes; Auto resumes following.
+    for (command, args, decorations, captions) in [
+        ("dopus.session", json!({"appearance":{},"keymap":{},"window":{"window.decorations":"csd","window.caption_side":"left"}}), "csd", "left"),
+        ("dopus.execute", json!({"id":"theme.decorations-ssd"}), "ssd", "left"),
+        ("dopus.execute", json!({"id":"theme.captions-right"}), "ssd", "right"),
+        ("dopus.session", json!({"appearance":{},"keymap":{},"window":{"window.decorations":"csd","window.caption_side":"center"}}), "ssd", "right"),
+        ("dopus.execute", json!({"id":"theme.decorations-auto"}), "csd", "right"),
+        ("dopus.execute", json!({"id":"theme.captions-auto"}), "csd", "center"),
+    ] {
+        let seq=runtime.event("dopus.call".into(),json!({"command":command,"args":args})).unwrap();
+        let completion=wait(&runtime,&mut jobs,seq).0;
+        assert_eq!(completion.reply.unwrap().rc,0,"{command} {args}");
+        native.call(command,&args).unwrap();
+        for model in [completion.model.unwrap(),native.model()] {
+            assert_eq!(model["window_settings"]["window.decorations"],decorations);
+            assert_eq!(model["window_settings"]["window.caption_side"],captions);
+        }
+    }
     for (args, rc, open) in [
         (json!({"open":"about"}), 0, true),
         (json!({"open":"shortcuts"}), 10, true),
