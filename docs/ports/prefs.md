@@ -160,3 +160,64 @@ the native build, returning formatting now applied. Complete saved logs
 were read. The typo checkout queue job `20261107-044157-09b52b69` did not
 run (rc75); it was requeued correctly, not counted as a failed test.
 The full exact-source app gate remains required. No deviation is proposed.
+
+## Prefs round three: thirty accepted pages, shared frame through 9a6cfd8
+
+Merged the advanced shared frame at `8c52cd1`, including logic-only native
+Bus polling, hosted chrome, single-instance activation and native key bindings.
+Prefs retains owned menu IDs, its request queue, explicit HELP and optional
+status. The merge's private toolkit-string call was corrected at `4d736a8`.
+CBC `20261107-050018-d95872b5-a1` caught that compile issue;
+`20261107-050310-4e784986-a1` then passed the complete scoped checks,
+clippy, tests, native build and 64 menu tests. Its sole formatting patch is
+applied. Complete saved logs were read. This is preparation, not the final
+exact-source gate after the subsequent repairs.
+
+The complete pair `prefs-parity-20261107/pair.nnxBpc` tests
+`39c9a762f6dc5658958494dc5fa0ffdee1b202e7`, candidate binary SHA256
+`dacad78fd9b9001f14175a5057521ff17132218ef4de70a340f7118963690460`.
+Gold revision/binary, native 1040×680 dimensions, scale and services follow
+the preceding record. All 42 baseline pairs and 17 live variants per app
+completed; both PIDs stayed unchanged. All seven owned process IDs, including
+the restarted private settingsd processes, are confirmed stopped.
+
+Thirty baseline pages now have full/header/sidebar/content SSIM **and RMSE
+distortion zero**. The newly accepted pages are Network & wireless, Wi-Fi,
+Magnifier, Desktop, Input devices, Applications, Time & language, Region &
+language, System & accounts and Software. Their originals, side-by-side
+figures and zero-difference contact sheet were inspected; the earlier twenty
+remain pixel-identical. `acceptance.json` names every accepted and open page.
+All 42 header and sidebar regions are pixel-identical. HELP (55), describe,
+actions, page tree, full menus and the four menu paths still match exactly.
+
+The twelve remaining baseline pages are Accessibility, Wallpaper, Appearance,
+Panel, Dock, Window management, Workspaces, Power, Keyboard, Term, Email and
+Ced. Inspection locates most differences in the bottom scroll fade, caused
+by the candidate's transparent UI stack background; the native panel frame
+is now supplied. Wallpaper layout matches apart from thumbnail rendering:
+the candidate now uses the native thumbnail pool, cache sizes and rounded
+texture mesh. Ced retains the tiny slider-edge residue. These fixes require
+new captures; none is silently accepted by a threshold.
+
+The paired native authority probe reveals gold's precise behaviour: local
+settingsd absence retains the accepted role/revision/stale state and look,
+reports the missing service, and can queue a valid control write. A transport
+failure is distinct from a mirror reporting authority_unreachable. The
+candidate's stale/error state and validation of effective defaults differed;
+repairs now check only proposed values through a reusable native registry
+binding. A regression test includes effective defaults and nulls. Recovery
+and queued-write parity still need native verification.
+
+The independent native functional pair `pair.BI8UOc` matched 28/40 direct
+requests exactly, including macro queries/refusals and debug. Twelve typed
+refusal/code/wording differences were recorded and corrected from gold;
+About and shortcut dialogs now use the existing native toolkit dialog and
+gold strings. Full mutation, topic, native-input, populated Software/Email,
+drawer and variant visual acceptance remain open. No deviation is proposed.
+
+CBC `20261107-045438-a29b5928-a1`, `20261107-051345-3457782c-a1` and
+`20261107-052000-ee775a89-a1` passed all 15 scoped widget/Prefs tests and
+build, with formatting applied. `20261107-050905-9b06833f-a1` caught a
+gallery popup call error; `20261107-051013-204dc482-a1` passed at the tested
+capture source with no worker diff. New exact-source repair job
+`20261107-052621-6dd8b9e9` is pending. Overall acceptance remains **OPEN**.
