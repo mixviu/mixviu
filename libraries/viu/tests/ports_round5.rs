@@ -14,9 +14,9 @@ fn done(r: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
     rx.recv_timeout(Duration::from_secs(20)).unwrap();
     r.try_completion().unwrap()
 }
-fn median(mut v: Vec<f64>) -> f64 {
+fn stats(mut v: Vec<f64>) -> Value {
     v.sort_by(f64::total_cmp);
-    v[v.len() / 2]
+    json!({"median":v[v.len()/2],"p95":v[(v.len()*95).div_ceil(100)-1],"p99":v[(v.len()*99).div_ceil(100)-1],"raw_sorted":v})
 }
 #[test]
 fn email_list_fixture_equivalence_bounds_and_2000_row_cost() {
@@ -90,7 +90,7 @@ fn email_list_fixture_equivalence_bounds_and_2000_row_cost() {
         }
         println!(
             "EMAIL_2000 {}",
-            json!({"bulk_jq":bulk,"samples":21,"callback_ms":median(callback),"mailbox_ack_ms":median(ack),"fresh_adapter_ms":median(adapter),"cold_context_draw_ms":median(draw)})
+            json!({"bulk_jq":bulk,"samples":21,"callback_ms":stats(callback),"mailbox_ack_ms":stats(ack),"fresh_adapter_ms":stats(adapter),"cold_context_draw_ms":stats(draw)})
         );
     }
     for bad in [
