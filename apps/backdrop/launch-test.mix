@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$l=require("launch.mix")
+fn check($value,$message)
+  if not $value then raise("LAUNCH_TEST",$message) end
+end
+for $arguments in [["--colour"],["--config",""],["--bogus"],["--probe","--colour","#000000"],["--colour","#000000","--image","a.png"],["--fit","fit"],["--image","a.png","--fit","zoom"],["--colour","red"]]
+  $refused=false
+  try $l.options($arguments,"/home/user") catch $message $refused=true end
+  check($refused,"accepted invalid flags: "..json_encode($arguments))
+end
+$options=$l.options(["--config","backdrop.mx","--image","a.png","--fit","fit"],"/home/user")
+check($options.config=="/home/user/backdrop.mx" and $options.image=="/home/user/a.png","relative paths resolved without requiring existence")
+$doc=$l.override({schema:1,outputs:{"DP-1":{colour:"#ffffff"}}},$options)
+check($doc.default.fit=="fit" and $doc.outputs["DP-1"].colour=="#ffffff","CLI overrides only default")
+$outputs={}
+for $i=0 to 3 $outputs["DP-"..to_string($i)]={image:"/w/"..to_string($i)..".png"} end
+$refused=false
+try $l.override({schema:1,outputs:$outputs},$options) catch $message $refused=true end
+check($refused,"CLI default counts toward resident-source cap")
+check($l.options(["--probe"],"/home/user").probe,"probe alone")
+print("backdrop launch: strict flags, relative paths, default-only override and combined resident cap pass")

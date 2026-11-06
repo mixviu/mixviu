@@ -92,8 +92,16 @@ fn backdrop_colours_modes_outputs_and_refusals_use_mix() {
         .unwrap();
     wakes.recv_timeout(Duration::from_secs(10)).unwrap();
     let failed = runtime.try_completion().unwrap();
-    assert!(failed.error.is_some());
+    assert!(failed.error.is_none(), "a refusal is a normal Bus reply");
     assert!(failed.model.is_none());
+    let reply = failed.reply.unwrap();
+    assert_eq!(reply.rc, 10);
+    assert_eq!(reply.body["error_code"], "ARGUMENT");
+    assert!(
+        reply.body["message"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty())
+    );
     runtime.event("backdrop.state".into(), json!({})).unwrap();
     assert_eq!(
         completion(&runtime, &wakes).reply.unwrap().body["revision"],

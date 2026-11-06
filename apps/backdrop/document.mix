@@ -1,0 +1,78 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Pure gold document contract. Does not touch the filesystem or decode pixels.
+fn invalid($field,$reason)
+  raise("ARGUMENT",$field..": "..$reason)
+end
+fn shape($value,$allowed,$field)
+  if type($value)!="map" then invalid($field,"expected a map") end
+  for $key in keys($value)
+    if not contains($allowed,$key) then invalid($field.."."..$key,"unknown field") end
+  end
+end
+fn rgb($text)
+  if type($text)!="string" or not re_match($text,"^#[0-9a-fA-F]{6}$") then invalid("colour","expected #RRGGBB") end
+  $out=[];$digits="0123456789abcdef";$text=lower($text)
+  for $i in [1,3,5] push($out,index_of($digits,substr($text,$i,1))*16+index_of($digits,substr($text,$i+1,1))) end
+  return $out
+end
+fn path($value,$field)
+  if type($value)!="string" then invalid($field,"expected an absolute path") end
+  if not starts_with($value,"/") or byte_length($value)>4096 or contains($value,"\u{0000}") then invalid($field,"expected an absolute path of at most 4096 bytes without NUL") end
+  return $value
+end
+fn slideshow($value,$field)
+  shape($value,["folder","images","interval_s","shuffle"],$field)
+  if ($value.folder!=nil)==($value.images!=nil) then invalid($field,"name exactly one of folder or images") end
+  $interval=if contains(keys($value),"interval_s") then $value.interval_s else 600 end
+  if type($interval)!="number" or $interval<5 or floor($interval)!=$interval or $interval>=18446744073709551616 then invalid($field..".interval_s","expected an integer of at least 5") end
+  $shuffle=if contains(keys($value),"shuffle") then $value.shuffle else false end
+  if type($shuffle)!="bool" then invalid($field..".shuffle","expected a boolean") end
+  $result={interval_s:$interval,shuffle:$shuffle}
+  if $value.folder!=nil then $result.folder=path($value.folder,$field..".folder")
+  else
+    if type($value.images)!="list" or len($value.images)==0 or len($value.images)>4096 then invalid($field..".images","expected 1 to 4096 paths") end
+    $result.images=[]
+    for $image in $value.images $result.images=push($result.images,path($image,$field..".images")) end
+  end
+  return $result
+end
+fn fill($value,$field)
+  shape($value,["colour","image","fallback","fit","slideshow"],$field)
+  $sources=0
+  for $key in ["colour","image","slideshow"] if $value[$key]!=nil then $sources=$sources+1 end end
+  if $sources!=1 then invalid($field,"name exactly one of colour, image or slideshow") end
+  if $value.colour!=nil then
+    if $value.fallback!=nil or $value.fit!=nil then invalid($field,"fallback and fit require an image or slideshow") end
+    $checked=rgb($value.colour)
+    return {colour:lower($value.colour)}
+  end
+  $out={}
+  if $value.fallback!=nil then $checked=rgb($value.fallback);$out.fallback=lower($value.fallback) end
+  $fit=$value.fit ?? "fill"
+  if not contains(["fill","fit","centre","tile","stretch"],$fit) then invalid($field..".fit","expected fill, fit, centre, tile or stretch") end
+  if $fit!="fill" then $out.fit=$fit end
+  if $value.image!=nil then $out.image=path($value.image,$field..".image")
+  else $out.slideshow=slideshow($value.slideshow,$field..".slideshow") end
+  return $out
+end
+fn document($value)
+  shape($value,["schema","default","outputs"],"document")
+  if type($value.schema)!="number" or $value.schema!=1 then invalid("schema","must be 1") end
+  $out={schema:1};$fills=[];$images=[];$streams=0
+  if $value.default!=nil then $out.default=fill($value.default,"default");push($fills,$out.default) end
+  $outputs=if contains(keys($value),"outputs") then $value.outputs else {} end
+  if type($outputs)!="map" or len(keys($outputs))>64 then invalid("outputs","expected at most 64 outputs") end
+  if len(keys($outputs))>0 then $out.outputs={} end
+  for $name in keys($outputs)
+    if not re_match($name,"^[A-Za-z0-9_.-]{1,64}$") or contains([".",".."],$name) then invalid("outputs","invalid output name: "..$name) end
+    $out.outputs[$name]=fill($outputs[$name],"outputs."..$name)
+    push($fills,$out.outputs[$name])
+  end
+  for $item in $fills
+    if $item.slideshow!=nil then $streams=$streams+1 end
+    if $item.image!=nil and not contains($images,$item.image) then push($images,$item.image) end
+  end
+  if len($images)+$streams>4 then invalid("document","at most 4 distinct images or slideshow streams") end
+  return $out
+end

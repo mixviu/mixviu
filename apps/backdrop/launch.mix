@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$document=require("document.mix")
+fn absolute($path,$cwd)
+  if starts_with($path,"/") then return $path end
+  return path_join($cwd,$path)
+end
+-- Generic host consumes --service/--comp/--noded-url before this parser.
+fn options($arguments,$cwd)
+  $out={config:nil,colour:nil,image:nil,fit:nil,probe:false};$i=0
+  while $i<len($arguments)
+    $flag=$arguments[$i];$i=$i+1
+    if $flag=="--probe" then $out.probe=true
+    elif contains(["--config","--colour","--image","--fit"],$flag) then
+      if $i>=len($arguments) or $arguments[$i]=="" then raise("ARGUMENT",$flag.." needs a value") end
+      $out[substr($flag,2)]=$arguments[$i];$i=$i+1
+    else raise("ARGUMENT","unknown option "..$flag.." (see --help)") end
+  end
+  if $out.probe and len($arguments)!=1 then raise("ARGUMENT","--probe runs alone: no wallpaper or service option goes with it") end
+  if $out.colour!=nil and $out.image!=nil then raise("ARGUMENT","--colour and --image each set the default: use one") end
+  if $out.fit!=nil and $out.image==nil then raise("ARGUMENT","--fit goes with --image") end
+  if $out.config!=nil then $out.config=absolute($out.config,$cwd) end
+  if $out.image!=nil then
+    $out.image=absolute($out.image,$cwd)
+    $checked=$document.fill({image:$out.image,fit:$out.fit},"command line")
+  end
+  if $out.colour!=nil then $checked=$document.rgb($out.colour) end
+  return $out
+end
+fn override($value,$options)
+  if $options.colour!=nil then $value.default={colour:$options.colour}
+  elif $options.image!=nil then
+    $value.default={image:$options.image}
+    if $options.fit!=nil then $value.default.fit=$options.fit end
+  end
+  return $document.document($value)
+end

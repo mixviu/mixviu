@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- CBC only. Contract checkpoint, not full app or visual acceptance.
+for $case in ["core","document","schedule","launch"]
+  $result=run_argv(["/opt/mixos/bin/mix","apps/backdrop/"..$case.."-test.mix"])
+  print($result)
+  if not $result.ok then exit($result.exit_code ?? 1) end
+end
+for $file in ["app","core","document","document-test","schedule","schedule-test","launch","launch-test"]
+  $result=run_argv(["/opt/mixos/bin/mix","lint","apps/backdrop/"..$file..".mix","--allow-function","viu_context","--allow-function","viu_app_dirs","--allow-function","viu_read_optional"])
+  print($result)
+  if not $result.ok then exit($result.exit_code ?? 1) end
+end
+$result=run_argv(["cargo","test","--locked","-p","viu","--test","app_ports"],{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"4"}})
+print($result)
+exit($result.exit_code ?? 124)

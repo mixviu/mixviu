@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
+$document=require("document.mix")
 fn rgb($text)
   if starts_with($text,"gradient:") then $text=split(substr($text,9),",")[0] end
   if not re_match($text,"^#[0-9a-fA-F]{6}$") then raise("COLOUR","Expected #RRGGBB") end
@@ -8,6 +9,8 @@ fn rgb($text)
   return $out
 end
 fn fill_model($fill)
+  if $fill==nil then return {values:{root:{phase:"none",fit:"fill",colour:[30,30,46]}}} end
+  $fill=$document.fill($fill,"fill")
   if type($fill)!="map" then raise("DOCUMENT","Fill must be a map") end
   for $key in keys($fill)
     if not contains(["colour","image","fallback","fit"],$key) then raise("DOCUMENT","Unsupported fill key: "..$key) end
@@ -23,11 +26,12 @@ fn fill_model($fill)
   return {values:{root:$value}}
 end
 fn document_model($doc)
+  $doc=$document.document($doc)
   if type($doc)!="map" or $doc.schema!=1 then raise("DOCUMENT","Expected schema 1") end
   for $key in keys($doc) if not contains(["schema","default","outputs"],$key) then raise("DOCUMENT","Unknown document key") end end
   $outputs=$doc.outputs ?? {}
   if type($outputs)!="map" or len(keys($outputs))>64 then raise("OUTPUTS","At most 64 output overrides") end
-  $model=fill_model($doc.default ?? {});$model.surfaces={};$images=[]
+  $model=fill_model($doc.default);$model.surfaces={};$images=[]
   if $doc.default.image!=nil then push($images,$doc.default.image) end
   for $name in keys($outputs)
     if len($name)==0 or len($name)>64 then raise("OUTPUTS","Invalid output name") end
@@ -42,7 +46,11 @@ fn settings_document($v)
   $fill={}
   if $v["wallpaper.image"]!=nil then $fill={image:$v["wallpaper.image"],fit:$v["wallpaper.fit"] ?? "fill"}
   elif $v["wallpaper.color"]!=nil then $fill={colour:$v["wallpaper.color"]} end
-  $doc={schema:1,default:$fill,outputs:{}}
+  $doc={schema:1,outputs:{}}
+  if len(keys($fill))>0 then
+    if $fill.colour!=nil and starts_with($fill.colour,"gradient:") then $fill.colour=split(substr($fill.colour,9),",")[0] end
+    $doc.default=$fill
+  end
   if $v["wallpaper.same_on_all"]==false then
     for $key in keys($v)
       if starts_with($key,"wallpaper.outputs.") and ends_with($key,".image") then
