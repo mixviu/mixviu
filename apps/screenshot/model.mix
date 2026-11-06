@@ -82,7 +82,7 @@ fn render($s)
     inks_control:{id:"inks",kind:"swatches",label:"Colour",initial:$s.ui.colour,properties:{items:$swatches,enabled:$editable}},
     width_control:combo("width","Stroke width",["thin","medium","thick","heavy"],{thin:"Thin",medium:"Medium",thick:"Thick",heavy:"Heavy"},96,$editable),
     size_control:combo("text_size","Text size",["small","medium","large","huge"],{small:"Small text",medium:"Medium text",large:"Large text",huge:"Huge text"},96,$editable),
-    text_control:{id:"text",kind:"field",label:"Text",initial:"",properties:{placeholder:"Text, then click or drag on the picture",enabled:$editable}},
+    text_control:{id:"text",kind:"field",label:"Text",initial:"",properties:{native:true,placeholder:"Text, then click or drag on the picture",enabled:$editable}},
     values:{options:$options,tools:$tools,window:$window_value,output:$s.ui.output ?? "pointer",inks:$s.ui.colour,width:$width_name,text_size:$size_name,text:$s.ui.text,preview:$preview,dialog:dialog_form($s),macros:$s.ui.macros_open,file_actions:$files}}
   for $pair in [{field:"decorations",key:"window.decorations"},{field:"captions",key:"window.caption_side"}]
     if $s.look[$pair.field]!=nil then $model.window_overrides[$pair.key]=$s.look[$pair.field] end
