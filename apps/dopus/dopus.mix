@@ -48,7 +48,7 @@ on dopus.call
       if $name=="dopus.execute" then $candidate=$app.dp_action($candidate,$contract,$a.id,$a.params ?? {})
       elif $name=="dopus.dialog" then
         $candidate=$app.dp_legacy_dialog($candidate,$contract,$a)
-        $candidate.reply={dialog:$view.dp_legacy_view($candidate)}
+        $candidate.reply={dialog:$projection.dp_legacy_view($candidate)}
       elif $name=="dopus.intent" then $candidate=$app.dp_intent($candidate,$contract,$a)
       elif $name=="dopus.open" then
         $paths=$a.paths ?? []
