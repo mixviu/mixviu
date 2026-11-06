@@ -185,6 +185,15 @@ fn read_tail_lines(mut file: std::fs::File, limit: usize) -> std::io::Result<Vec
             .map_or(bytes.len(), |i| i + 1);
         bytes.drain(..first);
     }
+    // A line reader retains complete earlier records when a later line has
+    // corrupt UTF-8. Do not turn one damaged append into an empty history.
+    if let Err(error) = std::str::from_utf8(&bytes) {
+        let end = bytes[..error.valid_up_to()]
+            .iter()
+            .rposition(|b| *b == b'\n')
+            .map_or(0, |i| i + 1);
+        bytes.truncate(end);
+    }
     Ok(bytes)
 }
 
@@ -247,5 +256,14 @@ mod tail_tests {
         assert_eq!(super::read_tail_lines(file, 13).unwrap(), b"old\nnewest\n");
         std::os::unix::fs::symlink("log", dir.path().join("link")).unwrap();
         assert!(config::atomic::open_nested(&parent, std::path::Path::new("link")).is_err());
+    }
+
+    #[test]
+    fn line_tail_keeps_records_before_a_corrupt_utf8_append() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("log");
+        std::fs::write(&path, b"old\nnewest\npartial\xff\nlater\n").unwrap();
+        let file = std::fs::File::open(path).unwrap();
+        assert_eq!(super::read_tail_lines(file, 1024).unwrap(), b"old\nnewest\n");
     }
 }
