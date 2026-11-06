@@ -54,7 +54,7 @@ impl Plan {
                     _=>eval.eval_binop(op,&mut a,&b.run(row,eval)?)?,
                 }
             },
-            Self::Call(name,xs)=>crate::builtins::call_builtin(name,xs.iter().map(|p|p.run(row,eval)).collect::<MixResult<_>>()?)?.ok_or_else(||fail("unavailable row builtin"))?,
+            Self::Call(name,xs)=>eval.bulk_call(name,xs.iter().map(|p|p.run(row,eval)).collect::<MixResult<_>>()?)?,
         };
         eval.check_collection_size(&value)?;
         Ok(value)

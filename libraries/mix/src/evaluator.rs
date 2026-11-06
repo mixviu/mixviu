@@ -16556,6 +16556,12 @@ impl Evaluator {
         Ok(())
     }
 
+    pub(crate) fn bulk_call(&self, name: &str, args: Vec<Value>) -> MixResult<Value> {
+        self.check_capability(name)?;
+        self.check_builtin_arity(name,args.len())?;
+        self.check_builtin_args(name,&args,!self.ctx.arity_strict)?;
+        builtins::call_builtin(name,args)?.ok_or_else(||self.runtime_err("unavailable row builtin"))
+    }
     pub(crate) fn bulk_checkpoint(&mut self) -> MixResult<()> {
         if self.deadline_exceeded_throttled() { return Err(self.runtime_err("deadline exceeded")); }
         Ok(())
