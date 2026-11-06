@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC-only repair build for paired capture iterations. Final acceptance uses
+-- apps/prefs/gate.mix and its complete scoped integration gate.
+$rc=0
+try
+  for $command in [["cargo","fmt","-p","viu","-p","viu-engine","-p","toolkit"],["cargo","test","--locked","-p","viu","--test","file_widgets","--test","prefs_parity"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
+    print({argv:$command})
+    $result=run_argv($command,{timeout:1200,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}})
+    print($result)
+    if not $result.ok then $rc=$result.exit_code ?? 124;break end
+  end
+  if $rc==0 then
+    $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+    $artifact="/build/gold-parity-artifacts/"..$sha
+    mkdir($artifact,{parents:true})
+    copy("target/debug/viu",$artifact.."/viu")
+    print({artifact:$artifact,sha256:hash_file($artifact.."/viu","sha256")})
+  end
+finally
+  print("GOLD_PARITY_PATCH_BEGIN")
+  $diff=run_argv_must(["git","diff","--binary"])
+  print($diff)
+  if $diff!="" and $rc==0 then $rc=97 end
+  print("GOLD_PARITY_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+end
+exit($rc)
