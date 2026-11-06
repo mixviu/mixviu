@@ -220,6 +220,9 @@ pub fn draw(
     }
     if kind == "document-tabs" {
         let items = value["items"].as_array().expect("validated tabs");
+        if items.is_empty() {
+            return ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover());
+        }
         let tabs = items
             .iter()
             .map(|i| toolkit::tabs::DocTab {

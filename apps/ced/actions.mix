@@ -49,7 +49,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui",$event_params=
   end
   if $id=="file.new" then $s=operation($s,"new",{})
   elif $id=="file.open" then
-    if $a.paths==nil then $s.open_dialog=true;$kind="dialog"
+    if $a.paths==nil then $s.path=dialog_directory($s);$s.open_dialog=true;$kind="dialog"
     else for $path in $a.paths $s=operation($s,"open",{path:$path}) end end
   elif $id=="file.exit" then $s.exit_after_save=true;$s=save_session(session_changed($s))
   elif $id=="file.save_all" then
@@ -61,7 +61,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui",$event_params=
     if not $has then raise("NOT_FOUND","No tab is open") end
     if $id=="file.close" and not ($a.save ?? false) then
       $a.prompt=$who==nil;$s=operation($s,"close",$a);$kind="close"
-    elif $a.path==nil and ($id=="file.save_as" or ($t.path==nil and contains(["file.save","file.close"],$id))) then $s.save_dialog=true;$s.save_action=$id;$s.save_document=$t.document;$kind="dialog"
+    elif $a.path==nil and ($id=="file.save_as" or ($t.path==nil and contains(["file.save","file.close"],$id))) then $s.save_path=$t.path ?? dialog_directory($s);$s.save_dialog=true;$s.save_action=$id;$s.save_document=$t.document;$kind="dialog"
     else
       $name=if starts_with($id,"file.save") or $id=="file.close" then "save" elif $id=="file.reload" then "reload" elif $id=="edit.redo" then "redo" else "undo" end
       $remote=viu_document("inspect",$t.document,{}).last_remote
@@ -94,7 +94,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui",$event_params=
   elif starts_with($id,"search.") then
     if not $has then raise("NOT_FOUND","No tab is open") end
     if $id=="search.goto_line" then
-      if $a.line==nil then $s.goto_dialog=true;$s.goto_document=$t.document;$kind="dialog"
+      if $a.line==nil then $s.goto_text="";$s.goto_dialog=true;$s.goto_document=$t.document;$kind="dialog"
       else $p={line:$a.line,col:$a.col ?? 1};$v=viu_document("select",$t.document,{anchor:$p,head:$p}) end
     elif $a.pattern==nil then
       $s.find.open=true;$s.find_instance=($s.find_instance ?? 0)+1;$s.find.replace=contains(["search.replace","search.replace_all"],$id)

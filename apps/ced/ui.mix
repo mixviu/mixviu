@@ -34,7 +34,8 @@ fn ced_menus($s)
   return $menus
 end
 fn ced_toolbar($s)
-  return [{id:"help.macros",macro_anchor:true,label:"Macros",icon:"scroll-text",icon_only:true,enabled:true},{id:"view.search",label:"Find",icon:"search",icon_only:true,enabled:true},{id:"help.keys",label:"Keyboard Shortcuts",icon:"keyboard",icon_only:true,enabled:true},{id:"view.mode",label:"Toggle light/dark mode",icon:if $s.look.appearance.mode=="dark" then "sun" else "moon" end,icon_only:true,enabled:true}]
+  $enabled=dialog_view($s)==nil
+  return [{id:"help.macros",macro_anchor:true,label:"Macros",icon:"scroll-text",icon_only:true,enabled:$enabled},{id:"view.search",label:"Find",icon:"search",icon_only:true,enabled:$enabled},{id:"help.keys",label:"Keyboard Shortcuts",icon:"keyboard",icon_only:true,enabled:$enabled},{id:"view.mode",label:"Toggle light/dark mode",icon:if $s.look.appearance.mode=="dark" then "sun" else "moon" end,icon_only:true,enabled:$enabled}]
 end
 fn ced_status($s,$t)
   $right=[]
@@ -48,6 +49,7 @@ fn ced_status($s,$t)
 end
 fn ced_ui_model($s,$model)
   $has=len($s.tabs)>0;$t=if $has then current($s) else {path:nil} end
+  $model.has_document=$has
   $items=[]
   for $i=0 to len($s.tabs)-1
     $tab=$s.tabs[$i]

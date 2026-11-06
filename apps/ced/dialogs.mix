@@ -1,5 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Gold window-dialog wire contract, independent of native input geometry.
+fn dialog_directory($s)
+  $dir=if len($s.tabs)>0 and current($s).path!=nil then dirname(current($s).path) else cwd() end
+  return if ends_with($dir,"/") then $dir else $dir.."/" end
+end
 fn dialog_view($s)
   $kind=if $s.open_dialog then "open" elif $s.save_dialog then "save_as" elif $s.goto_dialog then "goto" elif $s.close_dialog!=nil then "close_dirty" elif $s.disk_dialog!=nil then "disk_modified" elif contains(["keys","about"],$s.help) then $s.help elif $s.recovery_open ?? false then "recovered" else nil end
   if $kind==nil then return nil end
