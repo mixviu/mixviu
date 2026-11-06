@@ -276,7 +276,7 @@ impl SceneView {
                 .ports
                 .get("definition")
                 .and_then(|v| v["kind"].as_str());
-            if !matches!(kind, Some("field" | "multiline")) {
+            if !matches!(kind, Some("field" | "multiline" | "editor")) {
                 return Err("selection target must be a text field".into());
             }
             let widget = Widget::decode(

@@ -61,9 +61,13 @@ on ced.intent
   $a=$event.args
   if $state.busy then raise("BUSY","Wait for the pending operation") end
   if $a.id=="editor" then
+    if type($a.value)!="string" or len($a.value)>65536 then raise("SIZE","Editor values must be text within 64 KiB") end
     $t=current($state);$state.tabs[$state.active].draft=$a.value
   elif $a.id=="path" then $state.path=$a.value
-  elif $a.id=="tabs" then clean_draft($state);$state.active=to_number($a.value)
+  elif $a.id=="tabs" then
+    clean_draft($state);$index=to_number($a.value)
+    if $index<0 or floor($index)!=$index or $index>=len($state.tabs) then raise("TAB","Unknown tab") end
+    $state.active=$index
   elif $a.id=="discard" then $t=current($state);$state.tabs[$state.active].draft=$t.text
   else $state=operation($state,$a.id,{path:if $a.id=="open" then $state.path else nil end}) end
   publish_ced($state);reply(0,"{}")
