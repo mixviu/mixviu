@@ -1180,7 +1180,7 @@ dependencies = [
  "resvg",
  "settings",
  "smithay",
- "toolkit",
+ "theme",
 ]
 
 [[package]]
@@ -6763,6 +6763,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "theme"
+version = "0.1.2"
+dependencies = [
+ "action",
+ "assets",
+ "config",
+ "design",
+ "settings",
+ "tempfile",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7102,6 +7114,7 @@ dependencies = [
  "strict",
  "tempfile",
  "test-broker",
+ "theme",
  "thumbs",
  "tokio",
  "uuid",

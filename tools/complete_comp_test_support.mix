@@ -1,0 +1,21 @@
+-- Complete noded's transitive #[path] closure without reimporting edited crates.
+$rev = "8779f33284b7d3f1178c3d57a699efb9b0867b22"
+$tar = "/var/tmp/comp-noded-support.tar"
+$ex = "/var/tmp/comp-noded-support"
+run_argv_must(["git", "-C", "/home/markc/Projects/mixos", "archive", "-o", $tar, $rev, "services/noded/src"])
+mkdir($ex, {parents: true})
+run_argv_must(["tar", "-xf", $tar, "-C", $ex])
+$p = "provenance/engine-split-comp-imports.json"
+$prov = json_parse(read_file($p))
+$entries = filter($prov.entries, fn($e) = not starts_with($e.source, "services/noded/src/"))
+for $f in walk($ex .. "/services/noded/src")
+  $rel = substr($f, len($ex .. "/services/noded/src/"))
+  $dst = "libraries/test-broker/noded/" .. $rel
+  mkdir(dirname($dst), {parents: true})
+  run_argv_must(["cp", $f, $dst])
+  push($entries, {source: "services/noded/src/" .. $rel, destination: $dst,
+    source_sha256: hash_file($f, "sha256"), destination_sha256: hash_file($dst, "sha256"), adaptation: nil})
+end
+$prov.entries = $entries
+write_file($p, json_encode($prov, true) .. "\n")
+print("noded test support closure completed")
