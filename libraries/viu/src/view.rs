@@ -73,6 +73,14 @@ impl SceneView {
     pub fn model(&self) -> &Value {
         &self.tree.model
     }
+    pub fn control_kind(&self, id: &str) -> Option<&str> {
+        let node=self.tree.nodes.get(id)?;
+        if node.family!="control" { return None; }
+        node.ports.get("definition")?.get("kind")?.as_str()
+    }
+    pub fn has_control_kind(&self, kind: &str) -> bool {
+        self.tree.nodes.keys().any(|id|self.control_kind(id)==Some(kind))
+    }
     pub fn has_slot(&self, name: &str) -> bool {
         self.tree
             .nodes
@@ -292,9 +300,11 @@ impl SceneView {
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
                     "band"=>{
                         let area=ui.available_rect_before_wrap();
-                        let groups=band_groups(node).expect("validated band groups");
+                        let groups=band_groups(node,crate::window_frame::Metrics::of(ui.ctx()).caption_width*3.0).expect("validated band groups");
+                        let active=children(node).zip(groups).filter(|(child,_)|nodes.get(*child).is_some_and(|child|child.ports.get("hidden").and_then(Value::as_bool)!=Some(true)&&child.ports.get("slot_only").and_then(Value::as_str).is_none_or(|name|self.slots.contains_key(name)))).collect::<Vec<_>>();
+                        let groups=active.iter().map(|(_,group)|*group).collect::<Vec<_>>();
                         let rectangles=design::title_band::layout(area.width(),&groups);
-                        for (child,rect) in children(node).zip(rectangles) {
+                        for ((child,_),rect) in active.into_iter().zip(rectangles) {
                             let rect=egui::Rect::from_min_size(egui::pos2(area.left()+rect.x,area.top()),Vec2::new(rect.width,area.height()));
                             self.child_rect(ui,child,rect,nodes,route,depth,events);
                         }
@@ -766,7 +776,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             return Err("scene slots must attach a dock child".into());
         }
         match node.family.as_str() {
-            "band" => { band_groups(node)?; }
+            "band" => { band_groups(node,0.0)?; }
             "split" => {
                 if children(node).count() != 2
                     || num(node, "minimum").unwrap_or(0.1) > num(node, "maximum").unwrap_or(0.9)
@@ -851,14 +861,14 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
     Ok(())
 }
 
-fn band_groups(node: &Node) -> Result<Vec<design::title_band::Group>,String> {
+fn band_groups(node: &Node, caption_width: f32) -> Result<Vec<design::title_band::Group>,String> {
     use design::title_band::{Alignment,Group};
     let groups=node.ports.get("groups").and_then(Value::as_object).ok_or("band groups must be an object")?;
     let children=children(node).collect::<Vec<_>>();
     if groups.len()!=children.len(){return Err("band requires one group per child".into());}
     children.into_iter().map(|child|{
         let group=groups.get(child).ok_or("band child missing group")?;
-        let length=|name:&str|group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length"));
+        let length=|name:&str|if group[name]=="window.captions"{Ok(caption_width)}else{group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length or window.captions metric"))};
         let align=match group["align"].as_str(){Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center or right".into())};
         let integer=|name:&str|group[name].as_f64().filter(|n|n.is_finite()&&n.fract()==0.0&&(0.0..=255.0).contains(n)).map(|n|n as u8).ok_or_else(||format!("band {name} must be an integer 0..255"));
         let shrink=if group["shrink"].is_null(){None}else{Some(integer("shrink")?)};

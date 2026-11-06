@@ -127,7 +127,7 @@ impl App {
         reply: Option<Reply>,
         ctx: &egui::Context,
     ) {
-        if command == "dopus.intent" {
+        if command == "dopus.intent" || command == "viu.window" {
             let admission = self
                 .view
                 .as_ref()
@@ -150,6 +150,14 @@ impl App {
                 }
                 return;
             }
+        }
+        if command=="viu.window" || (command=="dopus.intent" && self.view.as_ref().and_then(|v|v.control_kind(args["id"].as_str().unwrap_or("")))==Some("window-controls")) {
+            match viu::window_frame::apply_control(ctx,args["action"].as_str().unwrap_or("")) {
+                Ok(true) => self.call("dopus.quit".into(),json!({}),headers,reply,ctx),
+                Ok(false) => { if let Some(reply)=reply {self.replies_after_frame.push(reply);}ctx.request_repaint(); },
+                Err(error) => { if let Some(reply)=reply {let _=reply.send((10,json!({"error_code":"INVALID_INTENT","message":error})));} },
+            }
+            return;
         }
         let open_macros = (command == "dopus.execute" && args["id"] == "help.macros")
             || (command == "dopus.intent"
@@ -310,6 +318,7 @@ impl App {
             return;
         }
         if (command == "dopus.execute" && args["id"] == "app.quit")
+            || (command=="dopus.intent" && args["action"]=="close" && self.view.as_ref().and_then(|v|v.control_kind(args["id"].as_str().unwrap_or("")))==Some("window-controls"))
             || (command == "dopus.intent"
                 && ["menu", "toolbar"].iter().any(|id| args["id"] == *id)
                 && args["value"]["command"] == "app.quit")
@@ -884,13 +893,14 @@ impl eframe::App for App {
             &self.session.snapshot["state"]["values"],
             Some(&format!("dopus-{}", self.mode)),
         );
-        self.window_frame.show_with_header(
+        self.window_frame.show_with_chrome(
             ui,
             &self.title,
             &self.session.snapshot["state"]["values"],
             self.view
                 .as_ref()
                 .is_some_and(|view| view.has_slot("window.header")),
+            self.view.as_ref().is_some_and(|view|view.has_slot("window.header") && view.has_control_kind("window-controls")),
         );
         if let Some(view) = self.view.as_mut() {
             let slots = self

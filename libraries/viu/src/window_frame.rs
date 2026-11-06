@@ -47,7 +47,7 @@ impl WindowFrame {
             "title_align":design::TitleAlign::resolve(settings["window.title_align"].as_str().unwrap_or("auto")).alignment(design::WindowStyle::resolve(settings["window.style"].as_str().unwrap_or("mac")).title_alignment()).name(),
             "actions_align":design::ActionsAlign::resolve(settings["window.actions_align"].as_str().unwrap_or("right")).name(),
             "menu_side":design::MenuSide::resolve(settings["window.menu_side"].as_str().unwrap_or("left")).name(),
-            "caption_side":if settings["window.caption_side"]=="left" {"left"} else {"right"},
+            "caption_side":settings["window.caption_side"].as_str().filter(|v|["left","center","right"].contains(v)).unwrap_or("right"),
             "requested":{"title_align":settings["window.title_align"].as_str().unwrap_or("auto"),"caption_side":settings["window.caption_side"].as_str().unwrap_or("auto")},
             "decorations":if self.client {"csd"}else{"ssd"},
             "bar":{"revision":0,"items":[]}
@@ -57,6 +57,9 @@ impl WindowFrame {
         self.show_with_header(ui, title, settings, false);
     }
     pub fn show_with_header(&mut self, ui: &mut Ui, title: &str, settings: &Value, header: bool) {
+        self.show_with_chrome(ui,title,settings,header,false);
+    }
+    pub fn show_with_chrome(&mut self, ui: &mut Ui, title: &str, settings: &Value, header: bool, scene_captions: bool) {
         self.geometry.clear();
         self.close_requested = false;
         let requested = settings["window.decorations"].as_str().unwrap_or("auto");
@@ -91,7 +94,7 @@ impl WindowFrame {
             ),
             vec2(3.0 * caption_width, height),
         );
-        let drag = Rect::from_min_max(
+        let drag = if scene_captions { band } else { Rect::from_min_max(
             pos2(
                 if left { controls.right() } else { band.left() },
                 band.top(),
@@ -100,7 +103,7 @@ impl WindowFrame {
                 if left { band.right() } else { controls.left() },
                 band.bottom(),
             ),
-        );
+        ) };
         self.geometry.insert("window.title".into(), drag);
         if header {
             self.geometry.insert("window.header".into(), drag);
@@ -130,72 +133,12 @@ impl WindowFrame {
                 ui.visuals().text_color(),
             );
         }
-        let names = if left {
-            ["close", "minimize", "maximize"]
-        } else {
-            ["minimize", "maximize", "close"]
-        };
-        for (i, name) in names.into_iter().enumerate() {
-            let rect = Rect::from_min_size(
-                pos2(controls.left() + i as f32 * caption_width, band.top()),
-                vec2(caption_width, height),
-            );
-            self.geometry.insert(format!("window.caption.{name}"), rect);
-            let r = ui.interact(
-                rect,
-                ui.scope_id().with(("viu-caption", name)),
-                egui::Sense::click(),
-            );
-            r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
-            if r.hovered() {
-                ui.painter().rect_filled(
-                    rect,
-                    0.0,
-                    if name == "close" {
-                        ui.visuals().error_fg_color
-                    } else {
-                        ui.visuals().widgets.hovered.weak_bg_fill
-                    },
-                );
-            }
-            let glyph = if name == "close" {
-                "x"
-            } else if name == "minimize" {
-                "minus"
-            } else if maximized {
-                "copy"
-            } else {
-                "square"
-            };
-            if let Some(icon) = crate::icons::Icon::from_name(glyph) {
-                crate::icons::image_of(
-                    ui.ctx(),
-                    icon,
-                    metrics.caption_glyph,
-                    ui.visuals().text_color(),
-                )
-                .paint_at(
-                    ui,
-                    Rect::from_center_size(
-                        rect.center(),
-                        vec2(metrics.caption_glyph, metrics.caption_glyph),
-                    ),
-                );
-            }
-            if r.on_hover_text(name).clicked() {
-                if name == "close" {
-                    self.close_requested = true;
-                } else {
-                    ui.ctx().send_viewport_cmd(if name == "minimize" {
-                        Command::Minimized(true)
-                    } else {
-                        Command::Maximized(!maximized)
-                    });
-                }
-            }
+        if !scene_captions {
+            let (close,geometry)=caption_controls(ui,controls,left,"window");
+            self.close_requested=close;
+            self.geometry.extend(geometry);
         }
-    }
-    pub fn edges(&mut self, ui: &mut Ui) {
+    }    pub fn edges(&mut self, ui: &mut Ui) {
         if !self.client
             || ui.input(|i| {
                 i.viewport().maximized.unwrap_or(false) || i.viewport().fullscreen.unwrap_or(false)
@@ -269,4 +212,93 @@ impl WindowFrame {
             }
         }
     }
+}
+
+/// Shared native caption control. Closing is an owner intent; minimise and
+/// maximise use the existing native viewport commands.
+pub fn caption_controls(ui: &mut Ui, area: Rect, left: bool, id: &str) -> (bool, BTreeMap<String, Rect>) {
+    let metrics=Metrics::of(ui.ctx());
+    let height=area.height();
+    let band=area;
+    let controls=area;
+    let caption_width=area.width()/3.0;
+    let maximized=ui.input(|i|i.viewport().maximized.unwrap_or(false));
+    let mut close_requested=false;
+    let mut geometry=BTreeMap::new();        let names = if left {
+            ["close", "minimize", "maximize"]
+        } else {
+            ["minimize", "maximize", "close"]
+        };
+        for (i, name) in names.into_iter().enumerate() {
+            let rect = Rect::from_min_size(
+                pos2(controls.left() + i as f32 * caption_width, band.top()),
+                vec2(caption_width, height),
+            );
+            geometry.insert(format!("{id}.caption.{name}"), rect);
+            let r = ui.interact(
+                rect,
+                ui.scope_id().with(("viu-caption", id, name)),
+                egui::Sense::click(),
+            );
+            r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+            if r.hovered() {
+                ui.painter().rect_filled(
+                    rect,
+                    0.0,
+                    if name == "close" {
+                        ui.visuals().error_fg_color
+                    } else {
+                        ui.visuals().widgets.hovered.weak_bg_fill
+                    },
+                );
+            }
+            let glyph = if name == "close" {
+                "x"
+            } else if name == "minimize" {
+                "minus"
+            } else if maximized {
+                "copy"
+            } else {
+                "square"
+            };
+            if let Some(icon) = crate::icons::Icon::from_name(glyph) {
+                crate::icons::image_of(
+                    ui.ctx(),
+                    icon,
+                    metrics.caption_glyph,
+                    ui.visuals().text_color(),
+                )
+                .paint_at(
+                    ui,
+                    Rect::from_center_size(
+                        rect.center(),
+                        vec2(metrics.caption_glyph, metrics.caption_glyph),
+                    ),
+                );
+            }
+            if r.on_hover_text(name).clicked() {
+                if name == "close" {
+                    close_requested = true;
+                } else {
+                    ui.ctx().send_viewport_cmd(if name == "minimize" {
+                        Command::Minimized(true)
+                    } else {
+                        Command::Maximized(!maximized)
+                    });
+                }
+            }
+        }
+    (close_requested,geometry)
+}
+
+/// Apply an admitted native window intent. The owner handles close after its
+/// own persistence, cancellation and reply-delivery rules.
+pub fn apply_control(ctx: &egui::Context, action: &str) -> Result<bool,String> {
+    match action {
+        "close" => return Ok(true),
+        "minimize" => ctx.send_viewport_cmd(Command::Minimized(true)),
+        "toggle-maximize" => ctx.send_viewport_cmd(Command::Maximized(!ctx.input(|i|i.viewport().maximized.unwrap_or(false)))),
+        _ => return Err("unknown native window control".into()),
+    }
+    Ok(false)
 }

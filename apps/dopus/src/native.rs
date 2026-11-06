@@ -1010,12 +1010,13 @@ impl Native {
     pub fn model(&self) -> Value {
         let side=|key:&str,fallback:&str|self.window[key].as_str().filter(|v|["left","center","right"].contains(v)).unwrap_or(fallback).to_owned();
         let title_align=side("window.title_align",if self.window["window.style"]=="win11"{"left"}else{"center"});
+        let caption_side=side("window.caption_side","right");
         let compact=[json!("button"),json!("titlebar")].contains(&self.window["window.menu_style"]);
-        let header_groups=json!({"menu":{"preferred":if compact{36}else{180},"minimum":if compact{36}else{120},"align":side("window.menu_side","left"),"shrink":1,"order":0},"toolbar":{"preferred":280,"minimum":80,"align":side("window.actions_align","right"),"shrink":1,"order":2},"caption-title":{"preferred":240,"minimum":0,"align":title_align,"shrink":0,"order":1}});
+        let header_groups=json!({"menu":{"preferred":if compact{36}else{180},"minimum":if compact{36}else{120},"align":side("window.menu_side","left"),"shrink":1,"order":0},"toolbar":{"preferred":280,"minimum":80,"align":side("window.actions_align","right"),"shrink":1,"order":2},"caption-title":{"preferred":240,"minimum":0,"align":title_align,"shrink":0,"order":1},"window":{"preferred":"window.captions","minimum":"window.captions","align":caption_side,"shrink":null,"order":3}});
         let caption_control=json!({"id":"caption-title","kind":"label","label":"","initial":"","properties":{"align":title_align,"emphasis":true,"truncate":true}});
         let core = self.core();
         let config = core.config_snapshot();
-        let mut values = json!({"caption-title":dopus_core::sanitise_display_path(&core.pane(core.active()).path),"menu":self.menus(),"toolbar":self.toolbar(),"status":self.info,"properties":self.properties(),"form":self.form});
+        let mut values = json!({"caption-title":dopus_core::sanitise_display_path(&core.pane(core.active()).path),"window":{"side":caption_side,"enabled":true},"menu":self.menus(),"toolbar":self.toolbar(),"status":self.info,"properties":self.properties(),"form":self.form});
         let mut panes = Vec::new();
         let context = self.contract["context"]
             .as_array()

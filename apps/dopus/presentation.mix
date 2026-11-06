@@ -99,11 +99,14 @@ fn dp_project($state,$contract,$cache)
   $actions_align=$window["window.actions_align"] ?? "right"
   if not contains(["left","center","right"],$actions_align) then $actions_align="right" end
   $compact=contains(["button","titlebar"],$window["window.menu_style"])
-  $header_groups={menu:{preferred:if $compact then 36 else 180 end,minimum:if $compact then 36 else 120 end,align:$menu_side,shrink:1,order:0},toolbar:{preferred:280,minimum:80,align:$actions_align,shrink:1,order:2},"caption-title":{preferred:240,minimum:0,align:$title_align,shrink:0,order:1}}
+  $caption_side=$window["window.caption_side"] ?? "right"
+  if not contains(["left","center","right"],$caption_side) then $caption_side="right" end
+  $header_groups={menu:{preferred:if $compact then 36 else 180 end,minimum:if $compact then 36 else 120 end,align:$menu_side,shrink:1,order:0},toolbar:{preferred:280,minimum:80,align:$actions_align,shrink:1,order:2},"caption-title":{preferred:240,minimum:0,align:$title_align,shrink:0,order:1},window:{preferred:"window.captions",minimum:"window.captions",align:$caption_side,shrink:nil,order:3}}
   $caption_control={id:"caption-title",kind:"label",label:"",initial:"",properties:{align:$title_align,emphasis:true,truncate:true}}
   $context=map($contract.context,fn($id)=dp_command($state,$contract,$id))
   $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
   $values={"caption-title":$dp.dp_display($state.panes[$state.active].path),menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
+  $values.window={side:$caption_side,enabled:true}
   $panes=[]
   for $i=0 to 1
     $p=$state.panes[$i]
