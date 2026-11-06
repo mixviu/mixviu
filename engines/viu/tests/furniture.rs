@@ -320,6 +320,17 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+        for (mode, want_mapped) in [("hidden", false), ("pinned", true)] {
+            client.call("shell", "shell.panel.mode", json!({"edge":"left","output":"winit","mode":mode})).await.unwrap();
+            let until = Instant::now() + Duration::from_secs(10);
+            loop {
+                let surfaces = client.call("comp-headless", "comp.props.get", json!({"path":"surfaces"})).await.unwrap();
+                let visible = surfaces.as_object().unwrap().values().any(|s| s["mapped"] == true && s["role"] == "layer" && s["width"] == 440.0 && (!want_mapped || s["focused"] == true));
+                if visible == want_mapped { println!("LAUNCHER_REMAP mode={mode} {surfaces}"); break; }
+                assert!(Instant::now() < until, "launcher remap failed mode={mode}: {surfaces}");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
     }
     if parent.is_some() {
         return;

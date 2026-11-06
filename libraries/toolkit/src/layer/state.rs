@@ -559,7 +559,7 @@ impl<P: LayerProgram + 'static> State<P> {
         timing::shortest(self.surfaces.iter().map(|s| {
             if s.frame_pending {
                 timing::surface_wait(s.pending_since, None, now)
-            } else if s.configured && s.dirty {
+            } else if s.visible && s.configured && s.dirty {
                 // A skipped frame waits for its retry deadline.
                 timing::surface_wait(
                     None,
