@@ -75,6 +75,9 @@ impl State {
         }
     }
     fn wake(&self) {
+        if std::env::var_os("VIU_TRACE_LAYERS").is_some() {
+            eprintln!("VIU_WAKE contexts={:?}", self.contexts.keys().collect::<Vec<_>>());
+        }
         for ctx in self.contexts.values() {
             ctx.request_repaint();
         }
@@ -221,8 +224,8 @@ impl LayerProgram for Program {
         }
         let _ = model.tick(now);
         let snap = model.snapshot();
-        if self.edge == "left" && output == "winit" && std::env::var_os("VIU_TRACE_LAYERS").is_some() {
-            eprintln!("VIU_LAYER content={has_content} minimum={minimum} mapped={} fraction={} mode={}", snap.mapped, snap.visible_fraction, snap.mode.as_str());
+        if self.edge == "left" && std::env::var_os("VIU_TRACE_LAYERS").is_some() {
+            eprintln!("VIU_LAYER output={output} content={has_content} minimum={minimum} mapped={} fraction={} mode={}", snap.mapped, snap.visible_fraction, snap.mode.as_str());
         }
         if model.wake() == PanelWake::Animate {
             ctx.request_repaint_after(Duration::from_millis(16));
