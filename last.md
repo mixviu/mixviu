@@ -998,3 +998,65 @@ gallery popup call error; `20261107-051013-204dc482-a1` passed at the tested
 capture source with no worker diff. New exact-source repair job
 `20261107-052621-6dd8b9e9` is pending. Overall acceptance remains **OPEN**.
 branch lab/parity-prefs; head SHA 9b13b5b2fb29c76136f4b5314caad058d0562230 (code before receipt); pages at acceptance 30/42 at 39c9a76, all full/header/sidebar/content SSIM and RMSE distortions 0 on accepted pages, figures pair.nnxBpc/diff-<page>, comparison-index.json and acceptance.json; Bus HELP 55/full menus/four open paths exact gold, functional 28/40 before latest gold corrections, full mutation/topic acceptance open; CBC job ids 20261107-050310-4e784986-a1 full preparation passed with applied formatting, 20261107-051013-204dc482-a1 repair gate green, 20261107-051345-3457782c-a1 and 20261107-052000-ee775a89-a1 passed with applied formatting, 20261107-052621-6dd8b9e9 pending.
+
+## Prefs round four checkpoint: admission and exact refusal replies
+
+Effective settings readback is now reduced to its authored representation
+before native registry transaction admission. Defaults, nulls and live
+observations are excluded; domain/account and cross-setting validation remain
+in registry::apply. The Email rejection regression and effective-default
+regression both pass without weakening tests.
+
+Native paired functional requests now match **40/40 exactly**, including
+all twelve previous refusal/code/wording differences. Evidence:
+`prefs-parity-20261107/pair.1jvzHj/functional-differences.json` (empty),
+gold/candidate-functional.json and closure.json (all five processes stopped).
+Tested code `6e17e2af265ad6bf22248150a49fbc22d129214f`; candidate binary
+SHA256 `acc0ce1ec168624c55a508fd247efaf7c660e7c070eae8ac3f63c6ec995562f0`.
+
+The same source completed all 42 baseline pairs and 17 live variants in
+`pair.ZQshvb`. Thirty-six baseline pages have full/content/header/sidebar
+SSIM and RMSE distortion zero; originals and side-by-side figures inspected.
+All 42 headers and sidebars match. HELP 55, describe/actions/pages, full
+menus and four menu paths are structurally identical. Service/theme/size
+recipe remains the pinned gold, private native Bus/settingsd/compositor,
+1040×680, scale 1, Studio Dark/comfortable/CSD. ImageMagick 7.1.2-35
+reports distortion: zero identical. Comparison-index.json retains all metrics.
+
+Three further pages, Wallpaper, Email and Ced, are pixel-identical at
+`8f163b122acbdddfa251e65bff91f8cf3cb72350`, artifact SHA256
+`0f90aaa13f409948267a3326d6e98f51dc99bd0d69c36a34b78570060893a40d`.
+`pair.2ABWvc/diff-<page>` retains original/region/difference figures and
+acceptance.json records inspection. Wallpaper uses the native thumbnail
+pool/cache/rounded mesh; an extra background beneath ready textures caused
+the last corner residue. Email/Ced now use gold's 14.667 text default.
+These three PNG pairs have identical hashes. Baseline acceptance is **39/42**.
+
+Appearance, Panel and Dock have only scrollbar differences at their initial
+positions; bottom captures exposed a reset button incorrectly placed in a
+labelled card. The standalone reset composition is corrected at `6d4b6c7`;
+new complete captures are in progress. Live light-mode icon and fractional
+density frame rounding fixes are also awaiting paired acceptance.
+
+Authority loss preserves gold's accepted role/revision/look and a valid set
+returns gold's queued-write reply. The first probe caught a lost write on a
+missing-service reply; retry handling was repaired. The next probe correctly
+kept the write active, exposing a harness assumption that Refresh is always
+enabled. The harness now tolerates gold's DISABLED while writing. Recovery
+must still be verified. Both failed authority runs retained all captures and
+confirmed all seven processes stopped. No deviation is proposed or approved.
+
+CBC `20261107-053534-6bd3db64-a1` passed the complete scoped app gate at
+`55e404cd2032da1dde26f038c04006b6cf350c24` with no worker diff, including
+all Viu/engine tests, check, clippy/build and 64 native menu tests. Complete
+saved log read. Repair jobs `20261107-053304-929180a3-a1`,
+`20261107-053725-ddcd0572-a1` and `20261107-054123-1ae3f7d6-a1` passed
+15 tests/build and returned formatting, now applied. Job
+`20261107-054452-bc7007ff-a1` caught an initial nil-look access, corrected
+without test changes; `20261107-054605-8c5bf1b0-a1` passed 15 tests/build
+with no diff at `6d4b6c7bebaf95255f1c3daeea8bd5d05760eeb4`.
+Full gate `20261107-054646-be78c922` is in progress at code head
+`2dd337a9719e7bc53a4e7c00b84afb91a14a2ded`. Overall **OPEN**: final
+baseline/live variant acceptance, authority recovery and the outstanding
+full mutation/topic/native-input/populated-service matrix.
+branch lab/parity-prefs; head SHA 2dd337a9719e7bc53a4e7c00b84afb91a14a2ded (tested code before receipt); pages 39/42 with all-region SSIM/RMSE 0; functional 40/40 exact; OPEN: three reset-page captures, live variants, authority recovery and full mutation/topic/native-input/populated-service acceptance; CBC job ids 20261107-053534-6bd3db64-a1 full PASS, 20261107-054605-8c5bf1b0-a1 repair PASS, 20261107-054646-be78c922 pending.
