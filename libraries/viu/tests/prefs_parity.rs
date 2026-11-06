@@ -142,6 +142,31 @@ fn browser_refuses_hidden_disabled_removed_and_unknown_choice_rows() {
 }
 
 #[test]
+fn search_controls_are_admitted_only_for_the_current_result_page() {
+    let mut value = json!({"title":"Settings","pages":[],"sections":[],"searching":true,"search_groups":[
+        {"page":"input","sections":[{"rows":[{"id":"enabled","title":"Enabled","kind":"toggle","value":false}]}]}
+    ]});
+    let payload = json!({"page":"input","row":"enabled","value":true});
+    assert!(viu::settings_browser::admit(&value,"edit",&payload).is_ok());
+    assert!(viu::settings_browser::admit(&value,"edit",&json!({"page":"other","row":"enabled","value":true})).is_err());
+    value["searching"] = json!(false);
+    assert!(viu::settings_browser::admit(&value,"edit",&payload).is_err());
+}
+
+#[test]
+fn split_record_details_preserve_disabled_and_current_field_admission() {
+    let value = json!({"title":"Accounts","pages":[],"sections":[{"rows":[
+        {"id":"accounts","title":"Accounts","kind":"records","detail_rows":[
+            {"id":"name","title":"Name","kind":"text","value":""},
+            {"id":"password","title":"Password","kind":"secret","blocked":"busy"}
+        ]}
+    ]}]});
+    assert!(viu::settings_browser::admit(&value,"edit",&json!({"row":"name","value":"Example"})).is_ok());
+    assert!(viu::settings_browser::admit(&value,"edit",&json!({"row":"password","value":"secret"})).is_err());
+    assert!(viu::settings_browser::admit(&value,"edit",&json!({"row":"name","value":false})).is_err());
+}
+
+#[test]
 fn email_uses_native_registry_admission_and_redacts_credentials() {
     let (tx, rx) = mpsc::channel();
     let mut runtime = Runtime::new(
