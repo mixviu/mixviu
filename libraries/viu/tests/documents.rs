@@ -74,7 +74,7 @@ fn large_mirror_stays_out_of_scene_models_and_edits_are_in_process_until_mix_dra
 fn epoch_reattach_preserves_a_differing_local_draft_until_keep_or_take() {
     for keep in [false, true] {
         let docs = Documents::default();
-        let mut old = seed(&docs, "draft", "/tmp/recovery.rs", "old\n");
+        let old = seed(&docs, "draft", "/tmp/recovery.rs", "old\n");
         docs.call("select", "draft", json!({"anchor":0,"head":0}))
             .unwrap();
         docs.call(

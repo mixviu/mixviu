@@ -23,6 +23,7 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 /// Supplying one does not create a Bus citizen, broker or global registry.
 #[derive(Clone, Default)]
 pub struct Services {
+    pub calls: Option<crate::calls::Calls>,
     pub timers: Option<crate::timers::Timers>,
     pub documents: Option<crate::documents::Documents>,
     pub macros: Option<macros::Session>,
@@ -213,6 +214,7 @@ impl Runtime {
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
                         if let Some(documents)=services.documents.clone(){eval.register("viu_document",documents.binding());}
                         if let Some(timers)=services.timers.clone(){eval.register("viu_timer",timers.binding());}
+                        if let Some(calls)=services.calls.clone(){eval.register("viu_reply",calls.binding());}
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "loader": "viu-local", "host": "viu-local"

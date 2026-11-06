@@ -80,6 +80,8 @@ fn decode<T: serde::de::DeserializeOwned>(v: &Value) -> Result<T, String> {
     serde_json::from_value(normalize(v.clone())?).map_err(|e| e.to_string())
 }
 fn point(text: &edit::text::Text, v: &Value) -> Result<usize, String> {
+    if v=="start" { return Ok(0); }
+    if v=="end" { return Ok(text.len()); }
     let offset = if let Some(n) = crate::widgets::whole(v) {
         n as usize
     } else {
@@ -142,7 +144,7 @@ impl Document {
             "selection":{"anchor":m.text().point(self.model.sel.anchor),"head":m.text().point(self.model.sel.head)},
             "first_line":self.model.scroll.first_line,"detached_copy":m.detached_copy().is_some(),"conflicts":m.conflicts().len(),"layout":self.layout,"notices":self.notices})
     }
-    fn command(&mut self, c: EditCommand, view: &View, ids: &mut OpIdGen) -> Result<(), String> {
+    fn command(&mut self, c: EditCommand, view: &View, ids: &mut OpIdGen, intent: Intent) -> Result<(), String> {
         let cfg = EditCfg {
             measure: view.measure(),
             insert_spaces: !matches!(self.mirror.meta().language.as_str(), "go" | "makefile"),
@@ -157,7 +159,7 @@ impl Document {
             let caret = edit.caret_after;
             let step = self
                 .mirror
-                .local_edit(edit, Intent::ui(self.identity), ids)
+                .local_edit(edit, intent, ids)
                 .map_err(|e| format!("{e:?}"))?;
             self.step(step);
             self.model.sel = caret;
@@ -223,6 +225,18 @@ impl Documents {
         let doc = documents.get_mut(key).ok_or("unknown document")?;
         match op {
             "state" => {}
+            "inspect" => {
+                let m=&doc.mirror;
+                if a["text"]==true && m.text().len()>4*1024*1024 {return Err("text exceeds ced.state 4 MiB inline limit".into());}
+                let mut hasher=blake3::Hasher::new();let mut offset=0;let mut text=String::new();
+                while offset<m.text().len(){let chunk=m.text().chunk_at(offset);hasher.update(chunk);if a["text"]==true {text.push_str(std::str::from_utf8(chunk).unwrap());}offset+=chunk.len();}
+                let mut out=doc.state(key);
+                out["text_hash"]=json!(hasher.finalize().to_hex().to_string());
+                out["text"]=if a["text"]==true{json!(text)}else{Value::Null};
+                out["last_remote"]=m.last_remote().map(|r|json!({"origin":r.origin,"lane":r.lane,"rev":r.rev,"kind":r.kind})).unwrap_or(Value::Null);
+                out["conflicts"]=json!(m.conflicts().iter().map(|c|json!({"rev":c.rev,"remote_origin":c.remote_origin,"lines":[c.lines.0,c.lines.1],"texts":c.texts})).collect::<Vec<_>>());
+                return Ok(out);
+            }
             "read" => {
                 if a.get("view_gen")
                     .is_some_and(|g| crate::widgets::whole(g) != Some(doc.mirror.view_gen()))
@@ -358,11 +372,14 @@ impl Documents {
             }
             "command" => {
                 let name = text_arg(&a, "name")?;
+                let intent = a["caller"].as_str().map_or_else(||Intent::ui(doc.identity),|caller|Intent::bus(doc.identity,caller));
                 let command = match name {
                     "insert" => Some(EditCommand::Insert(text_arg(&a, "text")?.into())),
                     "select-all" => Some(EditCommand::SelectAll),
                     "delete" => Some(EditCommand::Delete),
                     "backspace" => Some(EditCommand::Backspace),
+                    "delete-word-left" => Some(EditCommand::DeleteWordLeft),
+                    "delete-word-right" => Some(EditCommand::DeleteWordRight),
                     "duplicate-line" => Some(EditCommand::DuplicateLine),
                     "delete-line" => Some(EditCommand::DeleteLine),
                     "move-line-up" => Some(EditCommand::MoveLineUp),
@@ -373,10 +390,10 @@ impl Documents {
                     _ => None,
                 };
                 if let Some(c) = command {
-                    doc.command(c, &View::default(), ids)?;
+                    doc.command(c, &View::default(), ids, intent)?;
                 } else {
                     let server = match name {
-                        "undo" => ServerOp::Undo { lane: LaneArg::Own },
+                        "undo" => ServerOp::Undo { lane: if a["lane"]=="any"{LaneArg::Any}else if let Some(l)=a["lane"].as_str(){LaneArg::Lane(l.to_owned())}else{LaneArg::Own} },
                         "redo" => ServerOp::Redo { lane: LaneArg::Own },
                         "save" => ServerOp::Save {
                             path: a["path"].as_str().map(str::to_owned),
@@ -387,7 +404,7 @@ impl Documents {
                         },
                         _ => return Err("unknown editor command".into()),
                     };
-                    let (step, op_id) = doc.mirror.server_op(server, Intent::ui(doc.identity), ids);
+                    let (step, op_id) = doc.mirror.server_op(server, intent, ids);
                     doc.step(step);
                     return Ok(json!({"state":doc.state(key),"op_id":op_id}));
                 }
@@ -447,7 +464,7 @@ impl Documents {
         for event in out.events {
             match event {
                 Event::Command(c) => {
-                    if let Err(e) = doc.command(c, &view, ids) {
+                    if let Err(e) = doc.command(c, &view, ids, Intent::ui(doc.identity)) {
                         doc.notices.push(e);
                     }
                 }

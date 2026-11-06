@@ -15,6 +15,7 @@ pub struct Manifest {
     pub surface: String,
     pub frame: Option<String>,
     pub follow_settings: bool,
+    pub macros: bool,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -28,6 +29,7 @@ impl Default for Manifest {
             surface: "window".into(),
             frame: None,
             follow_settings: false,
+            macros: false,
         }
     }
 }
