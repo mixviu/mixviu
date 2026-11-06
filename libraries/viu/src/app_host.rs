@@ -93,10 +93,12 @@ struct Host {
 }
 impl Host {
     fn window_settings(&self, model: &Value) -> Value {
-        let mut settings = self
+        let mut settings = if self.native_drive && model["window_settings"].is_object() {
+            model["window_settings"].clone()
+        } else { self
             .session_window
             .clone()
-            .unwrap_or_else(|| model["window_settings"].clone());
+            .unwrap_or_else(|| model["window_settings"].clone()) };
         for (axis, key) in [
             ("decorations", "window.decorations"),
             ("caption_side", "window.caption_side"),
@@ -185,12 +187,6 @@ impl Host {
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         if self.native_drive {
-            if let Some((rc, body)) =
-                crate::debug::request(&self.service, &r.command, &r.args.to_string())
-            {
-                let _ = r.reply.send((rc, body));
-                return;
-            }
             if r.command == format!("{}.window", self.app) && r.args["action"] == "close" {
                 r.command = "app.quit".into();
             }

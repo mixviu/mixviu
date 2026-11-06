@@ -64,7 +64,7 @@ impl Facilities {
             app,
             service: manifest.service.clone(),
             ui: manifest.native_ui || manifest.native_drive,
-            debug: manifest.native_debug,
+            debug: manifest.native_debug || manifest.native_drive,
             installed: false,
             context: None,
             surface,
