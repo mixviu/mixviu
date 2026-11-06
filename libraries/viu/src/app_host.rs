@@ -1209,7 +1209,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
     let bus = Endpoint::start_described(
-        service,
+        std::env::var("VIU_SERVICE").unwrap_or(service),
         bundle.manifest.bus_url(),
         {
             let mut described = bundle.manifest.command_descriptors.clone();
@@ -1319,7 +1319,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         measurements: Default::default(),
         input_at: None,
         native_drive: bundle.manifest.native_drive,
-        service: bundle.manifest.service.clone(),
+        service: std::env::var("VIU_SERVICE")
+            .unwrap_or_else(|_| bundle.manifest.service.clone()),
         settings_reload: 0,
         session_update: None,
         deferred_replies: BTreeMap::new(),
@@ -1520,8 +1521,9 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     }
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
-    let service = bundle.manifest.service.clone();
-    let live_service = std::env::var("VIU_SERVICE").unwrap_or_else(|_| service.clone());
+    let service = bundle.manifest.app().to_owned();
+    let live_service = std::env::var("VIU_SERVICE")
+        .unwrap_or_else(|_| bundle.manifest.service.clone());
     let app_id = bundle
         .manifest
         .app_id

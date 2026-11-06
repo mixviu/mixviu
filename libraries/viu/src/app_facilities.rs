@@ -68,7 +68,7 @@ impl Facilities {
         let (complete, completed) = mpsc::channel();
         Self {
             app,
-            service: manifest.service.clone(),
+            service: std::env::var("VIU_SERVICE").unwrap_or_else(|_| manifest.service.clone()),
             ui: manifest.native_ui || manifest.native_drive,
             debug: manifest.native_debug || manifest.native_drive,
             installed: false,
