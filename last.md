@@ -1,46 +1,69 @@
-# Monitor round 5: ACCEPTED
+# Workshop parity — Fable question W1 (2026-11-07)
 
-Exact tested code head: `5ab4207ab7a0c74aaf4b40592370a69b875e5eed` on
-`lab/gold-parity`. This following commit records acceptance only. Full record:
-[docs/ports/monitor.md](docs/ports/monitor.md#acceptance-2026-11-07), using
-[parity-method.md](docs/ports/parity-method.md). No open items or Fable question.
+Status: **STOPPED for the job brief's inventory-disagreement ruling**.
+No frame, feature, Bus, Prefs or visual parity is claimed.
 
-Generic `viu run` now consumes gold's `--service`, `--comp` and `--noded-url`
-flags while retaining canonical command/Prefs/macro identity. The native
-window title is static `Monitor`. The shared frame and first-reading states
-match gold; app composition and behaviour remain Mix.
+Inspected candidate: lab/parity-workshop at
+22f4878d954e67c9141a44140aa324511eeb750a (the requested base).
+Pinned gold: 8779f33284b7d3f1178c3d57a699efb9b0867b22.
+Gold evidence was read with git show at that revision, independently of the
+current MixOS checkout. This documentation-only receipt's commit is HEAD.
 
-The **release binary** passed the final isolated native evidence run:
+## W1: resolve the inventory's existing Format/reply deviations
 
-- Processes and all seven Performance pages, including populated TCP:
-  1040×680 whole/header/options/content/status SSIM=0 and RMSE=0.
-  Resource rail/dashboard, command-line column and CPU chart/grid crops: 0.
-- Eleven selected/tree/tab/menu/dialog states and compositor-hosted furniture
-  (1120×788): exact. All 45 action records match gold in every state.
-- Bus structured replies: **46/46**. Complete 51-command catalogue, native UI,
-  macros/topics, activation, hidden restore, launch overrides and close pass.
-- Nineteen live Prefs states on one unchanged PID per app: 17 exact; compact
-  and fonts/scale have only node-chevron/Close antialiasing. Whole SSIM
-  distortion 9.74852e-8 / 7.93036e-8; RMSE 8.50963e-5 / 8.14068e-5.
-  Chrome SSIM 5.52416e-7 / 4.49387e-7; content/status 0. Authority recovery passes.
-- P1 is the sole approved non-visual deviation. Stale-token refusal/refresh
-  and TERM/KILL were verified using disposable children only; real monitord passes.
+Question for Fable via Opus: should this round replace the bounded specimen's
+compact Format and shortened reply rendering with the pinned gold contract,
+or retain either as an explicitly approved deviation?
 
-Private archive: `gold-parity-20261107/round5/5ab4207ab7a0c74aaf4b40592370a69b875e5eed`.
-Its index contains 12 passing runs, 55 comparison sets, inspected figures,
-source/input/binary hashes, executed scripts, native replies and all-stopped
-cleanup receipts. Processes PNG pair SHA256:
-`800c28506c24d9bc9c755c740d4cbca72486ce67aee48597e548461d12da19fc`.
+Options:
 
-CBC `20261107-053306-0497e9c3-a1`: **BUILD_RC=0**, exact source, no worker diff.
-Four Mix tests; Viu/viu-engine fmt/check/tests/clippy; debug and release builds.
-226 Rust tests passed; six existing environment-dependent ignores. Complete
-2,614-line saved log read and archived. Earlier green scoped gate:
-`20261107-051408-7e22145e-a1` at f550c0b. No install or VT work.
+1. **Recommended: match gold.** Pretty-print Format with gold's validation
+   and size behaviour; render replies with gold's headers and JSON formatting,
+   using its 1,000,000-byte UTF-8 boundary and truncation marker. Correct the
+   inventory to distinguish historical specimen behaviour from the target
+   contract, then resume shared-frame adoption and the full port.
+2. Retain compact Format and/or the 900-character reply display. This requires
+   explicit Fable approval and rationale, then paired captures and functional
+   evidence. Neither difference is accepted.
 
-Desk4 handoff: release `viu` and `viu.json` saved on the successful CBC worker
-under `/build/es-artifacts/5ab4207ab7a0c74aaf4b40592370a69b875e5eed/`.
-The captured copy and saved executable have the same SHA256:
-`3ba7412344bcd3c110164d762c0812359ba6fc2908f2943558383883a7bbb046`.
+Evidence:
 
-Branch lab/gold-parity; code head SHA 5ab4207ab7a0c74aaf4b40592370a69b875e5eed (receipt HEAD is the commit containing this file); Monitor ACCEPTED, whole/regions SSIM=0 RMSE=0, Prefs raster-only max whole SSIM=9.74852e-8; artifact /build/es-artifacts/5ab4207ab7a0c74aaf4b40592370a69b875e5eed/viu SHA256 3ba7412344bcd3c110164d762c0812359ba6fc2908f2943558383883a7bbb046; CBC 20261107-053306-0497e9c3-a1, 20261107-051408-7e22145e-a1.
+- docs/ports/workshop.md calls “JSON body editing, clear and format” ported,
+  but records compact JSON instead of original indentation. Its “Reply display
+  bounds” row records a smaller 900-scalar budget and says raw whitespace/error
+  headers are not preserved.
+- Candidate apps/workshop/app.mix Format intent uses
+  json_encode(json_parse($state.body)).
+- Candidate apps/workshop/core.mix call_outcome serialises the parsed reply
+  again and retains substr($answer,0,900), marking longer replies truncated.
+  These are existing specimen differences, not proposed new limits.
+- Pinned gold apps/workshop/crates/inspector/src/model.rs lines 13–14 defines
+  BODY_LIMIT = 65_536 and REPLY_LIMIT = 1_000_000.
+- Pinned gold model.rs lines 161–182: pretty uses
+  serde_json::to_string_pretty and preserves non-JSON text; bounded cuts on a
+  UTF-8 boundary and puts the truncation marker on its own line.
+- Pinned gold apps/workshop/crates/inspector/src/engine.rs lines 622–639:
+  format_body validates first, uses model::pretty and retains the original
+  body if the formatted result exceeds BODY_LIMIT.
+- Pinned gold engine.rs lines 1591–1609: reply rendering includes target,
+  command, rc or transport-error headers before model::bounded.
+
+The standing brief says to correct inventory disagreements and continue.
+The explicit per-app job instead says “Write a Fable question in last.md
+(options + evidence) whenever gold and the inventory disagree or a deviation
+is needed, and stop there.” This handoff follows that explicit instruction.
+Answer and rationale: **pending**; no deviation approved.
+
+## Evidence and next checkpoint
+
+No implementation changed. No CBC job submitted. No app, broker, settings
+authority or compositor launched; there are no owned processes to clean up.
+Workshop binary hashes, captures, SSIM/region metrics, Bus compatibility and
+live Prefs witnesses have not been collected. Inherited Monitor acceptance
+does not attest Workshop. Overall verdict: **NOT ACCEPTED**.
+
+After the ruling, resume shared-frame adoption and its commit/push checkpoint,
+then complete features/Bus/Prefs and isolated matched captures according to
+docs/ports/parity-method.md. Feature and visual checkpoints remain outstanding.
+
+Branch lab/parity-workshop; head SHA 22f4878d954e67c9141a44140aa324511eeb750a (inspected code; receipt commit is HEAD containing this file); frame not adopted; features/Bus/Prefs unverified; SSIM/regions not measured; CBC job ids none; Fable W1 pending.
