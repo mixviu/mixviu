@@ -160,10 +160,21 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
-        let (due,deadline)=self.timers.poll();self.timer_results.extend(due);
-        if let Some(at)=deadline {ui.ctx().request_repaint_after(at.saturating_duration_since(Instant::now()));}
-        while let Some(body)=self.timer_results.front() {
-            if self.runtime.notify("viu.timer".into(),body.clone()).is_err(){ui.ctx().request_repaint();break;}
+        let (due, deadline) = self.timers.poll();
+        self.timer_results.extend(due);
+        if let Some(at) = deadline {
+            ui.ctx()
+                .request_repaint_after(at.saturating_duration_since(Instant::now()));
+        }
+        while let Some(body) = self.timer_results.front() {
+            if self
+                .runtime
+                .notify("viu.timer".into(), body.clone())
+                .is_err()
+            {
+                ui.ctx().request_repaint();
+                break;
+            }
             self.timer_results.pop_front();
         }
         if let Some(session) = &mut self.session {

@@ -15,8 +15,22 @@ mod fixture {
 }
 struct JobsAccepted;
 impl mix::BusHandler for JobsAccepted {
-    fn send<'a>(&'a self,_:&'a str,_:&'a str,_:&'a mix::value::Value)->mix::evaluator::BusFuture<'a,mix::MixResult<(i32,mix::value::Value)>> {
-        Box::pin(async {Ok((0,mix::value::Value::Nil))})
+    fn send<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: &'a mix::value::Value,
+    ) -> mix::evaluator::BusFuture<'a, mix::MixResult<(i32, mix::value::Value)>> {
+        Box::pin(async { Ok((0, mix::value::Value::Nil)) })
+    }
+    fn emit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a mix::value::Value) -> mix::evaluator::BusFuture<'a, mix::MixResult<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn port_exists<'a>(&'a self, _: &'a str) -> mix::evaluator::BusFuture<'a, mix::MixResult<bool>> {
+        Box::pin(async { Ok(false) })
+    }
+    fn next_incoming<'a>(&'a self) -> mix::evaluator::BusFuture<'a, Option<mix::evaluator::IncomingEvent>> {
+        Box::pin(async { None })
     }
 }
 
@@ -32,21 +46,26 @@ fn ced_retains_independent_tab_drafts_and_refuses_dirty_caption_close() {
         &[],
     )
     .unwrap();
-    bundle.program.source.push_str(r#"
+    bundle.program.source.push_str(
+        r#"
 $state.tabs=[viu_document("state","one",{}),viu_document("state","two",{})]
 publish_ced($state)
-"#);
-    let docs=viu::documents::Documents::default();
-    let _one=fixture::seed(&docs,"one","/tmp/one.rs","original");
-    let _two=fixture::seed(&docs,"two","/tmp/two.mix","second");
+"#,
+    );
+    let docs = viu::documents::Documents::default();
+    let _one = fixture::seed(&docs, "one", "/tmp/one.rs", "original");
+    let _two = fixture::seed(&docs, "two", "/tmp/two.mix", "second");
     let (tx, rx) = mpsc::channel();
     let mut runtime = Runtime::with_services(
         8,
         Arc::new(move || {
             let _ = tx.send(());
         }),
-        Some(Box::new(||std::rc::Rc::new(JobsAccepted))),
-        viu::runtime::Services{documents:Some(docs.clone()),..Default::default()},
+        Some(Box::new(|| std::rc::Rc::new(JobsAccepted))),
+        viu::runtime::Services {
+            documents: Some(docs.clone()),
+            ..Default::default()
+        },
     );
     runtime.load(bundle.program).unwrap();
     let initial = done(&runtime, &rx);
@@ -84,21 +103,24 @@ publish_ced($state)
         .unwrap();
     let reopened = done(&runtime, &rx);
     assert!(reopened.error.is_none(), "{:?}", reopened.error);
-    assert_eq!(docs.call("read","one",json!({})).unwrap()["text"], "unsaved λ");
+    assert_eq!(
+        docs.call("read", "one", json!({})).unwrap()["text"],
+        "unsaved λ"
+    );
     runtime
         .event("ced.intent".into(), json!({"id":"tabs","value":"1"}))
         .unwrap();
     let second = done(&runtime, &rx);
     assert!(second.error.is_none(), "{:?}", second.error);
-    assert_eq!(
-        second.model.unwrap()["values"]["editor"]["document"],
-        "two"
-    );
+    assert_eq!(second.model.unwrap()["values"]["editor"]["document"], "two");
     runtime
         .event("ced.intent".into(), json!({"id":"tabs","value":"0"}))
         .unwrap();
     assert_eq!(
-        {assert!(done(&runtime,&rx).error.is_none());docs.call("read","one",json!({})).unwrap()["text"].clone()},
+        {
+            assert!(done(&runtime, &rx).error.is_none());
+            docs.call("read", "one", json!({})).unwrap()["text"].clone()
+        },
         "unsaved λ"
     );
     runtime.event("viu.frame.close".into(), json!({})).unwrap();
@@ -150,7 +172,10 @@ publish_ced($state)
     assert_eq!(model["editor"]["properties"]["font_size"], 27.0);
     assert_eq!(model["editor"]["properties"]["padding"], 14.0);
     assert_eq!(model["editor"]["properties"]["light"], true);
-    assert_eq!(docs.call("read","one",json!({})).unwrap()["text"], "unsaved λ");
+    assert_eq!(
+        docs.call("read", "one", json!({})).unwrap()["text"],
+        "unsaved λ"
+    );
     let appearance = viu::appearance::resolve(&model["appearance"]).unwrap();
     assert_eq!(appearance.body_weight, 700);
     view.apply_model(model).unwrap();

@@ -168,7 +168,10 @@ impl Widget {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
             "editor" => {
-                let handle = self.properties["native_document"] == true && value["document"].as_str().is_some_and(|s| !s.is_empty() && s.len()<=128);
+                let handle = self.properties["native_document"] == true
+                    && value["document"]
+                        .as_str()
+                        .is_some_and(|s| !s.is_empty() && s.len() <= 128);
                 if self.properties.get("font_size").is_some_and(|v| {
                     v.as_f64()
                         .is_none_or(|n| !n.is_finite() || !(3.0..=144.0).contains(&n))
@@ -216,15 +219,17 @@ impl Widget {
                         return Err("invalid editor command".into());
                     }
                 }
-                (handle || value.as_str().is_some_and(|v| {
-                    v.len()
-                        <= if self.properties["native_document"] == true {
-                            64 * 1024 * 1024
-                        } else {
-                            65536
-                        }
-                })) && (self.properties["rows"].is_null()
-                    || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
+                (handle
+                    || value.as_str().is_some_and(|v| {
+                        v.len()
+                            <= if self.properties["native_document"] == true {
+                                64 * 1024 * 1024
+                            } else {
+                                65536
+                            }
+                    }))
+                    && (self.properties["rows"].is_null()
+                        || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
                     && (self.properties["read_only"].is_null()
                         || self.properties["read_only"].is_boolean())
             }

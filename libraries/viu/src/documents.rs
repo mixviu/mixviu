@@ -104,11 +104,16 @@ fn point(text: &edit::text::Text, v: &Value) -> Result<usize, String> {
     Ok(offset)
 }
 fn scalar_offset(text: &edit::text::Text, mut n: usize) -> usize {
-    let mut offset=0;
-    while offset<text.len() {
-        let chunk=std::str::from_utf8(text.chunk_at(offset)).expect("UTF-8 text chunks");
-        for (i,_) in chunk.char_indices() { if n==0{return offset+i;} n-=1; }
-        offset+=chunk.len();
+    let mut offset = 0;
+    while offset < text.len() {
+        let chunk = std::str::from_utf8(text.chunk_at(offset)).expect("UTF-8 text chunks");
+        for (i, _) in chunk.char_indices() {
+            if n == 0 {
+                return offset + i;
+            }
+            n -= 1;
+        }
+        offset += chunk.len();
     }
     text.len()
 }
@@ -384,8 +389,8 @@ impl Documents {
         let before = doc.state(key);
         if let Some([start, end]) = selection {
             doc.model.sel = Selection {
-                anchor: scalar_offset(doc.mirror.text(),start),
-                head: scalar_offset(doc.mirror.text(),end),
+                anchor: scalar_offset(doc.mirror.text(), start),
+                head: scalar_offset(doc.mirror.text(), end),
             };
         }
         let view = crate::editor::native_view(ui, widget);
