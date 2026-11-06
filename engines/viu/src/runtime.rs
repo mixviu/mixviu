@@ -5,7 +5,6 @@ use crate::{
     appearance,
     command::SceneCommand,
     mount,
-    seat::Edge,
     store::{Mounted, SceneMount, SceneStore},
     view::{self, Content, SceneMessage, SceneUi},
 };
@@ -300,7 +299,7 @@ impl LayerProgram for TooltipProgram {
                 card.view.update(crate::tooltip::Message::Appearance(look.clone()));
                 appearance::install(&card.metrics, &look.theme, look.text_scale, false);
             }
-            let _ = card.metrics.run(egui::RawInput::default(), |_| {});
+            card.metrics.run_ui(egui::RawInput::default(), |_| {}).drop_without_applying_deltas();
             card.revision = shared.look_revision;
         }
         let hover = &shared.hover;

@@ -81,14 +81,14 @@ impl Actions {
             (size.x, size.y)
         };
         let mut outcome = Outcome::Same;
-        let _ = ctx.run_ui(Default::default(), |_| {
+        ctx.run_ui(Default::default(), |_| {
             outcome = self.hover.pass(
                 now,
                 candidate.clone().map(|(candidate, _)| candidate),
                 pressed,
                 &|tip| tip::card(tip, size, &measure),
             );
-        });
+        }).drop_without_applying_deltas(); // This private context only measures fonts.
         match outcome {
             Outcome::Show(at) => {
                 self.shown = Some(("__window_actions".into(), at));

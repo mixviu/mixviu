@@ -6,7 +6,7 @@ use std::{
     fs,
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, Command},
     time::{Duration, Instant},
 };
 #[path = "../../compd/crates/headless/tests/support/pattern.rs"]
