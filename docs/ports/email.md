@@ -39,7 +39,7 @@ and cannot contact a server; ordinary launch refuses fixture injection.
 
 | Original capability | Disposition |
 |---|---|
-| Accounts, enabled/default selection, settings.apply fencing, secrets/CA and reconnect | Ported explicit catalogue (up to 32), account selection, password-file/optional CA and explicit reconnect. Deferred settingsd registry/migration, enable/default preferences and token exchange: catalogue is the bounded authority |
+| Accounts, enabled/default selection, settings.apply fencing, secrets/CA and reconnect | Ported explicit catalogue (up to 32), account selection, password-file/optional CA and explicit reconnect. Deferred settingsd registry/migration, enable/default preferences, token exchange and non-primary server-account selection: catalogue/primary account is the bounded authority |
 | JMAP discovery, same-origin endpoints, token exchange, bounded HTTP/blob upload | Ported Basic-auth discovery and same-origin maild /jmap via shared bounded HTTP. Deferred token flow, arbitrary advertised paths and binary/blob upload until their lifecycle contracts are ported |
 | Mailbox roles/counts/hierarchy and selection | Ported Mailbox/get, names/roles/total/unread and selection (up to 256). Deferred hierarchy/tree composition; flat labelled choices retain unique IDs |
 | Paged message list, total, sort/query/search and stale-response fencing | Ported 200-row pages, total, receivedAt descending, explicit refresh/previous/next, busy/generation ownership and exact query/get ID matching/order. Deferred custom sort/search, live push and paginated cross-page selection until authoritative update policy |
@@ -89,6 +89,53 @@ An initial embedded call exposed disabled Tokio I/O; fixed in the shared
 worker with an actual embedded socket regression. Shared tests also cover
 off-origin session refusal, wrong method/call identity, incomplete text,
 query/get ID mismatch and query-order preservation. No test was weakened.
+
+## Final round-6 receipt
+
+Validated implementation source `6429a07f62a7b7d9dc43f2ee9f05f212bce71dc8`,
+CBC `20261106-232952-4d47287e-a1`: 117 tests, fmt-check, locked all-target
+checks, clippy and generic-host debug build passed. Full 58558-character saved
+log read; worker diff empty. Existing clippy warnings remain. Final artifact
+matches the inspected native binary, SHA256
+`e93dec80db970db54990c61de9f8389a13155be8bf0772d944c72189b52d086d`.
+Subsequent reporting changes alter documentation only.
+
+Final gate repeats the same 3-warmup/21-sample measurement on the final bundle:
+
+| Milliseconds median / p95 / p99 | Per-row Mix | lib-mix jq bulk |
+|---|---:|---:|
+| Callback wall time | 388.56 / 392.58 / 392.92 | 454.74 / 462.44 / 508.83 |
+| Runtime mailbox ACK | 392.68 / 396.57 / 396.80 | 458.62 / 466.52 / 512.64 |
+| Fresh adapter admission | 55.53 / 56.60 / 59.12 | 54.62 / 55.72 / 56.25 |
+| Cold context draw | 69.35 / 69.94 / 70.11 | 69.29 / 69.76 / 70.06 |
+
+The changed reader composition is included in this cohort. The conclusion
+against Dopus's 14.99/34.50/237.40 ms reference remains the same: substantial
+cost in a second Mix app, jq slower, exact common cause unproven. Full raw
+samples remain in the saved logs. Live lists use the measured faster loop
+with 200-row pages, not a claim that all 2000 rows are inexpensive.
+
+Private final native witness has 13 result records and 12 inspected captures:
+accounts/mailboxes/list/read; native compose/send and local readback; a dropped
+accepted reply with held draft, concurrent-send/edit refusal and explicit
+same-operation-ID retry without duplicate mail; real paging 200 + 1 across
+201 stored messages; a 23690-byte/700-line Unicode reader scrolled from first
+to last line with unchanged text after native typing; wrong-password refusal
+and explicit recovery. The pinned original reads the same seeded message on
+the same isolated server. It is a comparison oracle, never the new backend.
+All seven owned processes confirmed stopped; no installs/desktop changes.
+Harness input acknowledgements are distinguished from edit admission:
+`viu.ui.text` queues native keystrokes, while immutable-buffer/model assertions
+prove no edit. The direct edit-action refusal test remains.
+
+Per-app Rust added = **0**. Compared with the round-5 reporting head, shared
+production Rust is **+165/-1 lines**: HTTP text transport 134, editor viewport
+28, module registration 1 and worker/binding wiring +2/-1. Shared test diff
+is **+226/-3 lines**, including 41 inline HTTP-test lines. Cargo manifest and
+lockfile each add one dependency line. No Rust app policy, new package/version
+or lib-mix change. Static provenance/import checks and all eight-bundle
+zero-per-app-Rust checks pass. Term requirements remain surveyed separately;
+no Term implementation started.
 
 ## Historical round-5 fixture checkpoint
 

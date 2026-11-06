@@ -133,3 +133,25 @@ overlays preserve popup identity and event routing when a client band is hidden.
 A missing host retains the client controls; probing is bounded and uses the
 same native Bus connection. No icon catalogue dependency or alternate transport
 is introduced.
+
+## Text viewers and bounded HTTP
+
+`editor` accepts 64 KiB UTF-8 with `rows` from 1..100 (default 24).
+`properties.read_only: true` uses an immutable native buffer with selection
+and a vertically scrollable viewport bounded by that row count. It advertises
+no edit actions and emits no edits from typing/paste. Ordinary editable
+editors and field limits are unchanged. Application code owns document
+selection, formatting, persistence and any larger-text paging policy.
+
+Embedded Mix can call `viu_http({url, method, body, headers, timeout, basic,
+ca_pem})`. Only `url` is required. Optional fields are typed: GET/POST method,
+UTF-8 body, string-valued headers, integer timeout 1..30 seconds (default 10),
+`basic:{username,password}` and PEM trust text. HTTPS is required except for
+loopback HTTP. URL credentials/fragments, redirects and ambient proxies are
+refused/disabled. Request body/CA budgets are 1 MiB each; headers are at most
+32/16 KiB, Basic credentials 8 KiB, response text 4 MiB. It returns
+`{status,body}` without interpreting protocol success. Transport/deadline
+failures may leave delivery unknown; the primitive performs no app retries.
+Protocol, endpoint, authentication, secret ownership and retry policy stay in
+Mix. This facility needs the shared worker's Tokio I/O driver; it does not
+change the embedded interpreter or enable its feature-gated HTTP builtins.

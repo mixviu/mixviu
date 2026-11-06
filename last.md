@@ -1,3 +1,50 @@
+# Round 6 Email core completed
+
+Validated implementation: 6429a07f62a7b7d9dc43f2ee9f05f212bce71dc8 on lab/app-ports.
+Email now uses actual authenticated maild JMAP for accounts/mailboxes, 200-row
+paged list and full bounded plain-text read. Native compose/Send uses the
+existing maild.submit Bus wire, with accepted receipts, held draft/operation
+ID on uncertain outcomes and explicit same-ID retry. No automatic replay.
+Mix owns all application policy; per-app Rust added = 0. Shared production
+Rust +165/-1, shared tests +226/-3; reusable HTTP text transport and read-only
+editor viewport only. Existing reqwest reused, lockfile adds only its viu edge.
+Embedded Mix stays 0.117, Dopus and Term unchanged.
+
+Final CBC 20261106-232952-4d47287e-a1 BUILD_RC=0: 117 tests, fmt-check,
+locked all-target checks, clippy and generic-host debug build. Full saved
+58558-character log read, empty worker diff. Existing warnings remain.
+Final fetched artifact is byte-identical to the inspected native witness:
+e93dec80db970db54990c61de9f8389a13155be8bf0772d944c72189b52d086d.
+
+2000-message final-source callback median/p95/p99 in ms: Mix loop
+388.56/392.58/392.92, jq bulk 454.74/462.44/508.83. Runtime ACK
+392.68/396.57/396.80 vs 458.62/466.52/512.64. Method: debug embedded
+Mix 0.117, 3 warmups + 21 retained samples per path, nearest-rank tails,
+identical projected rows. Initial rerun 20261106-225448-9bf578e7-a1 also
+recorded: 387.95 vs 450.90 ms callback medians. Both cohorts and adapter/draw
+tails sit beside Dopus reference medians 14.99/34.50/237.40 in email.md and
+the private Dopus report. Bulk remains slower. Email confirms substantial
+row-scaled cost beyond Dopus; differing operations/builds prevent a direct
+ratio or attribution to the exact same cause. No performance-parity pass.
+
+Final private native.soFAsx: 13 records, 12 inspected captures including
+pinned original reading the same seeded message/server. Verified real wire,
+native compose/send/readback, lost accepted reply and same-ID retry without
+duplicate, 201-message paging (200 + 1), a 23690-byte/700-line Unicode body
+scrolled first-to-last, unchanged reader after typing, auth failure/recovery.
+All seven owned processes confirmed stopped. No installs or desktop changes.
+App archive SHA256 047f6fbb0a36b57bb1b1e1d330e2dada98d68f67b321d77e2f17c6e04746b44f.
+
+Inventories/README describe bounds and explicit deferrals: settings registry/
+account migration, tokens/non-primary JMAP selection, durable drafts/outbox/
+restart reconciliation/quit prompts, richer addresses/compose, attachments,
+HTML/PIM/mutations and full compatibility. Generic native API documentation
+updated. All eight-bundle/provenance/import checks pass. Baseline legacy
+verify_runtime missing jwt fixture remains as previously recorded. Term needs
+inventory stands; no implementation begun.
+
+Earlier checkpoint trail follows.
+
 Round 6 first native mail connect exposed Tokio I/O disabled in shared Mix worker (HTTP primitive unit socket test alone had not covered embedded runtime). Shared worker now enables I/O; added real embedded-JMAP socket regression and origin/method/truncated-body refusals. No test weakened. Full read/compose harness is ready against isolated actual maild and pinned original.
 
 Round 6 maild fixture verified: temporary account created via native CLI, message seeded via maild.submit, authenticated JMAP session returned 200. Mix account/mailbox/page/read jobs and UI controller implemented; generic HTTP Basic transport added. CBC transport adaptation still queued; headless real-mail client verification follows once artifact returns.
@@ -299,3 +346,5 @@ CBC scoped 20261106-231333-dc3fd788-a1 passed actual embedded socket regression,
 transport tests and build; full saved log read, empty worker diff. Final gate
 and uncertainty/retry witness follow. Per-app Rust remains zero.
 
+
+branch: lab/app-ports; head SHA: 6429a07f62a7b7d9dc43f2ee9f05f212bce71dc8 (validated implementation head; reporting-only commit follows); done: Email core account/mailbox/page/read/compose/send with explicit deferrals, zero per-app Rust; measurement: 2000 rows callback median/p95/p99 ms loop 388.56/392.58/392.92, jq 454.74/462.44/508.83; CBC job ids: 20261106-232952-4d47287e-a1 (final green), 20261106-225448-9bf578e7-a1 (measurement green), 20261106-232802-64e46f05-a1, 20261106-232313-c88aa214-a1, 20261106-231333-dc3fd788-a1, 20261106-231002-3759a9be-a1, 20261106-230423-3183d374-a1, 20261106-225705-550866b6-a1 (earlier green), 20261106-231949-9e0c3dae-a1 and 20261106-231146-1a9b7ff2-a1 (adaptation failures fixed).
