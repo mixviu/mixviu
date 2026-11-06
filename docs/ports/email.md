@@ -1,5 +1,33 @@
 # Email inventory and round-5 list experiment
 
+## Round 6 measured list rerun
+
+Step 1 is measured, not merely prepared: CBC
+`20261106-225448-9bf578e7-a1` at `4988d293933406931fd2bb2904ddc7a8c6f3e2ef`
+reran the actual embedded interpreter/scene experiment. Full saved log read;
+worker diff empty. Debug build, 2000 identical JMAP-shaped messages, three
+warmups then 21 retained samples per path, ordered loop then jq; nearest-rank
+p95/p99 (with 21 samples p99 is the maximum). All rows asserted equivalent.
+
+| Milliseconds median / p95 / p99 | Per-row Mix | lib-mix jq bulk |
+|---|---:|---:|
+| Callback wall time | 387.95 / 393.06 / 400.93 | 450.90 / 454.90 / 455.37 |
+| Runtime mailbox ACK | 391.93 / 396.76 / 404.86 | 454.88 / 458.86 / 459.13 |
+| Fresh adapter admission | 53.82 / 54.76 / 54.82 | 53.12 / 54.47 / 55.04 |
+| Cold context draw | 65.52 / 67.94 / 68.94 | 65.68 / 67.18 / 67.34 |
+| Prior native snapshot ACK, raw samples rechecked | 562.13 / 566.52 / 568.02 | 636.96 / 643.48 / 644.36 |
+
+Dopus's recorded 2000-row sort-size ACK medians are original 14.99 ms,
+Viu Rust 34.50 ms, Viu Mix 237.40 ms. Email likewise has substantial
+row-scaled behaviour/publication cost independent of Dopus's file policy;
+existing jq bulk is slower and does not remove it. This supports the shared
+runtime/value-copy/publication concern, but does not isolate the same cause:
+Email replaces a full input snapshot, Dopus sorts retained rows, and the
+Dopus reference cohort is release rather than debug. No direct speed ratio
+or performance gate pass is claimed. Adapter/draw stages are separate fresh
+objects, not live frame latency; callback includes validation/copy/publication.
+Step 2 real mail integration follows; these figures do not replace it.
+
 Oracle: MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`, `apps/email`:
 actions/commands/state/shell, account/mail/compose/calendar/contacts views,
 reader/documents/drafts/attachments/writer and embedded JMAP client.
