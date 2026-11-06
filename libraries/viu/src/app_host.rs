@@ -1053,6 +1053,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
     let service = bundle.manifest.service.clone();
+    let live_service = std::env::var("VIU_SERVICE").unwrap_or_else(|_| service.clone());
     let app_id = bundle
         .manifest
         .app_id
@@ -1081,7 +1082,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             crate::appearance::install(&cc.egui_ctx);
             toolkit::drive::install(&cc.egui_ctx, &service);
-            toolkit::drive::set_service(&cc.egui_ctx, Some(&service));
+            toolkit::drive::set_service(&cc.egui_ctx, Some(&live_service));
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(
                 bundle,
