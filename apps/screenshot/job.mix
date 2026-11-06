@@ -2,7 +2,20 @@
 -- version: 0.1.0
 on job.run
   $a=$event.args
-  if $a.op=="export" then
+  if $a.op=="copy" then
+    $owner="screenshot-copy-"..to_string(pid()).."-"..to_string(time())
+    send "blobd" "blob.put" body={path:$a.source,mime:"image/png",owner:$owner} timeout=8
+    if $rc!=0 then raise("BLOB","Native image ingestion refused") end
+    $blob=$reply
+    try
+      send "clipd" "clipboard.set" body={mime:"image/png",blob:$blob} timeout=8
+      if $rc!=0 then raise("CLIPBOARD","Native clipboard refused image reference") end
+      $copy=$reply
+      reply(0,json_encode({op:"copy",clipboard:$copy,blob:$blob}))
+    finally
+      send "blobd" "blob.unpin" body={blob:$blob.blob,owner:$owner} timeout=5
+    end
+  elif $a.op=="export" then
     $info=viu_image("export",$a.source,$a.path)
     reply(0,json_encode({path:$a.path,image:$info,op:"export"}))
   else
@@ -15,7 +28,9 @@ on job.run
     if $r.window!=nil then $frame.window=$r.window end
     if $r.region!=nil then $frame.region=$r.region
     elif $r.mode=="region" then
-      send $a.comp "comp.region.select" body={output:$r.output,timeout_ms:60000} timeout=70
+      $select={timeout_ms:60000}
+      if $r.output!=nil then $select.output=$r.output end
+      send $a.comp "comp.region.select" body=$select timeout=70
       if $rc!=0 or $reply.status!="selected" then raise("SELECTION",json_encode($reply)) end
       $frame.output=$reply.output;$frame.region=$reply.region;$frame.output_generation=$reply.output_generation
     end

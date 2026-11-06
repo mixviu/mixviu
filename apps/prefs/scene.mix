@@ -17,6 +17,6 @@ editor:{widget:"control",definition:"= $model.editor",on_intent:"prefs.intent"},
 buttons:{widget:"row",children:["apply","reset","refresh"],gap:8},
 apply:{widget:"control",definition:{id:"apply",kind:"button",label:"",initial:"",properties:{text:"Apply selected value"}},on_intent:"prefs.intent"},
 reset:{widget:"control",definition:{id:"reset",kind:"button",label:"",initial:"",properties:{text:"Reset to default"}},on_intent:"prefs.intent"},
-refresh:{widget:"control",definition:{id:"refresh",kind:"button",label:"",initial:"",properties:{text:"Refresh settings"}},on_intent:"prefs.intent"}
+refresh:{widget:"control",definition:{id:"refresh",kind:"button",label:"",initial:"",properties:{text:"Refresh / discard draft"}},on_intent:"prefs.intent"}
 }
 ```

@@ -80,6 +80,7 @@ on screenshot.cancel
   if $state.busy then
     send "viu-local" "jobs.cancel" body={id:"screenshot-work"}
     $state.serial=$state.serial+1;$state.busy=false;$state.status="Cancelled"
+    if $state.pending.op=="capture" and $state.pending.request.mode=="region" and $state.pending.request.region==nil then $state.status="Worker stopped; region selector may remain until Escape/timeout (Track B7 gap)" end
     if $state.pending.op=="capture" and is_file($state.pending.path) then remove($state.pending.path) end
   end
   $state=restored($state);publish_shot($state);reply(0,json_encode({cancelled:true,restore_failed:$state.restore_failed}))
@@ -100,8 +101,7 @@ on screenshot.save
 end
 on screenshot.copy
   if $state.path==nil or $state.busy then raise("EMPTY","No idle image") end
-  send $ctx.citizen "viu.clipboard.image" body={path:$state.path}
-  reply($rc,json_encode($reply))
+  $state=start_job($state,{op:"copy",source:$state.path});publish_shot($state);reply(0,json_encode({accepted:true}))
 end
 on screenshot.recent
   reply(0,json_encode({folder:$state.folder,shots:$state.recent}))
@@ -112,6 +112,8 @@ on viu.job.completed
     $state.busy=false
     if $d.rc==0 then
       if $d.body.op=="capture" then $state.path=$d.body.path;$state.image=$d.body.image;$state.status="Captured PNG"
+      elif $d.body.op=="copy" then
+        $state.status=if $d.body.clipboard.applied==true then "Image copied through blobd + clipd" else "Clipboard ownership pending" end
       else
         $shot={path:$d.body.path,width:$d.body.image.width,height:$d.body.image.height,annotated:false,saved_at:time()}
         $state.recent=concat([$shot],slice($state.recent,0,99));$state.status="Saved: "..$d.body.path
@@ -134,8 +136,7 @@ on screenshot.intent
   elif $a.id=="save" then $state=save_shot($state)
   elif $a.id=="copy" then
     if $state.path==nil then raise("EMPTY","No image") end
-    send $ctx.citizen "viu.clipboard.image" body={path:$state.path}
-    $state.status=if $rc==0 then "Image submitted to native clipboard" else to_string($result) end
+    $state=start_job($state,{op:"copy",source:$state.path})
   elif $a.id=="refresh" then $state=targets($state)
   elif $a.id=="cancel" then
     send "viu-local" "jobs.cancel" body={id:"screenshot-work"}

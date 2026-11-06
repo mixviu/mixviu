@@ -66,3 +66,6 @@ Branch: lab/app-ports; head SHA: de075ba9c09ffd4ba9b8f6162959c02aaa2f9f0e; apps 
 
 CBC 20261106-210513-b604d880-a1 did not reach tests: worker compiler tempfs exhausted. Full saved log read and fmt patch applied. Read-only df confirms ample build-volume space; next job uses a job-owned temporary directory there and disables its compiler wrapper, without touching shared caches or other sessions. Term-needs inventory added; no Term implementation.
 Branch: lab/app-ports; head SHA: b77bd167a4d4d5a7fd29bdd222f567ac7fc01e17; apps done: screenshot/prefs prototypes, acceptance pending; CBC job ids: 20261106-210513-b604d880-a1 (infrastructure space failure).
+
+CBC 20261106-210914-2b236015-a1 passed scoped round-2 render/export tests and binary build. Full saved log read; empty adaptation diff. Screenshot copy now follows native blobd + clipd references in Mix after source inspection showed egui image copy unavailable in the current host feature profile. No dependency/interpreter changes. Private native harness prepared against real settingsd, original apps and compositor commands.
+Branch: lab/app-ports; head SHA: 78949427c03ff9b019bc546acefaefb5ea174866; apps done: screenshot/prefs implemented, native acceptance pending; CBC job ids: 20261106-210914-2b236015-a1 (scoped green).

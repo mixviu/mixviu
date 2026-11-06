@@ -17,8 +17,6 @@ type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
     jobs: crate::jobs::Jobs,
     job_results: std::collections::VecDeque<Value>,
-    clipboard: crate::thumbnail::Decoder<String>,
-    clipboard_reply: Option<Reply>,
     commands: BTreeSet<String>,
     scene_source: String,
     loaded: bool,
@@ -90,21 +88,6 @@ impl Host {
             "viu.quit" => {
                 let _ = r.reply.send((0, json!({"ok":true})));
             }
-            "viu.clipboard.image" => {
-                let path = r.args["path"].as_str().unwrap_or("");
-                if self.clipboard_reply.is_some()
-                    || !std::path::Path::new(path).is_absolute()
-                    || !self
-                        .clipboard
-                        .replace(&path.to_owned(), std::path::Path::new(path), ctx)
-                {
-                    let _ = r
-                        .reply
-                        .send((10, json!({"error":"clipboard busy or invalid image path"})));
-                } else {
-                    self.clipboard_reply = Some(r.reply);
-                }
-            }
             _ if !self.ready => {
                 let _ = r.reply.send((10, json!({"error_code":"NOT_READY"})));
             }
@@ -151,20 +134,6 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
-        for (_, image) in self.clipboard.drain() {
-            if let Some(reply) = self.clipboard_reply.take() {
-                let result = if let Some(image) = image {
-                    ui.ctx().copy_image(image);
-                    (
-                        0,
-                        json!({"submitted":true,"endpoint":"native clipboard submission; readback is separate"}),
-                    )
-                } else {
-                    (10, json!({"error":"image decode refused"}))
-                };
-                let _ = reply.send(result);
-            }
-        }
         for done in self.jobs.poll() {
             self.job_results.push_back(
                 json!({"tag":done.tag,"rc":done.rc,"body":done.body,"elapsed_us":done.elapsed_us}),
@@ -316,7 +285,6 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             "viu.ui.drag",
             "viu.capture",
             "viu.quit",
-            "viu.clipboard.image",
         ]
         .map(String::from),
     );
@@ -340,11 +308,6 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
-        clipboard: crate::thumbnail::Decoder::with_decoder(
-            "viu-clipboard-decode",
-            crate::image_view::decode_surface,
-        ),
-        clipboard_reply: None,
         jobs,
         job_results: std::collections::VecDeque::new(),
         commands: declared,

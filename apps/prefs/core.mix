@@ -2,7 +2,7 @@
 -- version: 0.1.0
 $sections=[{id:"appearance",label:"Appearance",prefixes:["appearance."]},{id:"text_and_fonts",label:"Text & Fonts",prefixes:["appearance.font","appearance.mono"]},{id:"wallpaper",label:"Wallpaper",prefixes:["wallpaper."]},{id:"windows",label:"Windows",prefixes:["window."]},{id:"accessibility",label:"Accessibility",prefixes:["accessibility."]},{id:"apps_term",label:"Terminal",prefixes:["terminal."]},{id:"apps_ced",label:"Editor",prefixes:["ced."]},{id:"all",label:"All described settings",prefixes:[""]}]
 fn initial($instance)
-  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil}
+  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",dirty:false,status:"Waiting for settingsd",read_at:0,pending:nil}
 end
 fn key_info($s,$key)
   $found=filter($s.catalog,fn($k)=$k.path==$key)
@@ -14,7 +14,7 @@ fn value_of($s,$k)
   return $k.default
 end
 fn choose($s,$key)
-  $k=key_info($s,$key);$s.key=$key
+  $k=key_info($s,$key);$s.key=$key;$s.dirty=false
   $v=value_of($s,$k)
   if $k.kind=="bool" then $s.draft_kind="checkbox";$s.draft=$v ?? false
   elif $k.kind=="enum" and contains($k.variants,$v) then $s.draft_kind="combo";$s.draft=$v
@@ -40,7 +40,7 @@ fn admitted($s,$key,$value)
     $changes["wallpaper.slideshow.enabled"]=false
     push($reset,if $key=="wallpaper.image" then "wallpaper.color" else "wallpaper.image" end)
   end
-  return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:uuid(),changes:$changes,reset:$reset}
+  return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:"prefs-mix-"..to_string(pid()).."-"..to_string(time()).."-"..to_string($s.serial+1),changes:$changes,reset:$reset}
 end
 fn model($s)
   $section=filter($sections,fn($x)=$x.id==$s.section)[0]
