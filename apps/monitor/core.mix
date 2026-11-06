@@ -1,3 +1,4 @@
+$commands=require("actions.mix")
 $performance=require("performance.mix")
 $frame=require("../../libraries/viu/mix/gold-frame.mix")
 -- SPDX-License-Identifier: MIT OR Apache-2.0
@@ -8,7 +9,7 @@ fn target($node)
   return "monitord."..$node..".bus"
 end
 fn initial()
-  return {node:"",node_draft:"",tab:"Processes",section:"cpu",rings:{},history_seeded:false,connections:nil,connections_error:nil,peers:[],total:0,paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
+  return {theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark",style:"studio"},processes_loaded:false,focus_serial:0,macros_open:false,quitting:false,window_close:false,connected:true,status:"Connecting to monitord…",node:"",node_draft:"",tab:"Processes",section:"cpu",rings:{},history_seeded:false,connections:nil,connections_error:nil,peers:[],total:0,paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
 end
 fn query($s)
   return {sort:$s.sort,reverse:$s.reverse,filter:$s.filter,tree:$s.tree,limit:2001}
@@ -44,8 +45,18 @@ end
 
 fn framed($s)
   $model=project($s)
-  $actions=[{id:"file.refresh",label:"Refresh now",icon:"refresh-cw",icon_only:true,enabled:true}]
-  $menus=[{id:"File",label:"File",enabled:true,children:[{id:"file.refresh",label:"Refresh now",enabled:true},{id:"file.quit",label:"Quit",enabled:true}]},{id:"View",label:"View",enabled:true,children:[{id:"view.pause",label:"Pause updates",enabled:true,checked:$s.paused},{id:"view.tree",label:"Show as tree",enabled:true,checked:$s.tree}]},{id:"Process",label:"Process",enabled:true,children:[{id:"process.end",label:"End task",enabled:$s.node=="" and $s.selected!=nil and $s.dialog==nil},{id:"process.kill",label:"Kill",enabled:$s.node=="" and $s.selected!=nil and $s.dialog==nil}]},{id:"Help",label:"Help",enabled:true,children:[]}]
+  $actions=$commands.toolbar($s)
+  $menus=$commands.menus($s)
+  $model.window_close=$s.window_close
+  $model.shortcuts=$commands.registry($s)
+  $model.macros_open=$s.macros_open
+  $model.native_focus={id:"filter",serial:$s.focus_serial}
+  $model.native_overlays=[]
+  if $s.dialog!=nil then
+    $definition={id:"monitor-dialog",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Monitor" else "Keyboard shortcuts" end,body:"Processes and performance for this node or any node on the mesh, read from monitord. End task and Kill act only on this node"..chr(39).."s processes, as you.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
+    if $s.dialog=="shortcuts" then $definition.initial.grid=filter($commands.registry($s),fn($a)=$a.shortcut!=nil) end
+    $model.native_overlays=[{definition:$definition,command:"monitor.dialog.intent"}]
+  end
   return $frame.apply($model,{icon:"monitor",title:"Monitor — "..(if $s.snapshot!=nil then $s.snapshot.host ?? "This node" else "This node" end),menus:$menus,toolbar:$actions,status:status_line($s)})
 end
 

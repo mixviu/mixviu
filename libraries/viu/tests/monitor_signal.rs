@@ -170,7 +170,7 @@ fn mix_signal_api_uses_snapshot_and_refuses_reuse_then_refreshes_without_prompt(
         "refusal must refresh both list inputs"
     );
     assert!(child.try_wait().unwrap().is_none());
-    let info = event(&mut runtime, &rx, "monitor.info", json!({}))
+    let info = event(&mut runtime, &rx, "monitor.debug.state", json!({}))
         .reply
         .unwrap();
     assert!(info.body["dialog"].is_null());

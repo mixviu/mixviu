@@ -562,6 +562,29 @@ pub(crate) fn draw(
             .response
         }
         "dialog-form" => {
+            if widget.properties["style"] == "gold" {
+                let dialog_id=egui::Id::unique((ui.ctx().viewport_id(),id,"gold-dialog"));
+                let choices:Vec<_>=value["choices"].as_array().unwrap().iter().map(|c|toolkit::dialog::Choice::new(text(c,"label"),
+                    if c["default"]==true {toolkit::dialog::Role::Default}else if c["cancel"]==true {toolkit::dialog::Role::Cancel}else{toolkit::dialog::Role::Other}).enabled(c["enabled"]==true)).collect();
+                let shown=toolkit::dialog::Dialog::new(dialog_id,text(value,"title")).buttons(choices).show(ui.ctx(),|ui| {
+                    if let Some(rows)=value["grid"].as_array() {
+                        egui::ScrollArea::vertical().max_height(360.0).show(ui,|ui| {
+                            egui::Grid::new((id,"shortcuts")).show(ui,|ui| {
+                                for row in rows {ui.label(text(row,"label"));ui.weak(text(row,"shortcut"));ui.end_row();}
+                            });
+                        });
+                    } else {ui.add(egui::Label::new(text(value,"body")).wrap());}
+                });
+                if let Some(index)=shown.chosen {
+                    let choice=&value["choices"][index];
+                    emit(events,id,"answer",json!({"choice":choice["id"],"instance":value["instance"]}));
+                    toolkit::dialog::Dialog::reset(ui.ctx(),dialog_id);
+                } else if shown.dismissed {
+                    emit(events,id,"answer",json!({"choice":"close","instance":value["instance"]}));
+                    toolkit::dialog::Dialog::reset(ui.ctx(),dialog_id);
+                }
+                return ui.interact(shown.rect,dialog_id.with("receipt"),egui::Sense::hover());
+            }
             let mut field = value["field"].as_str().map(str::to_owned);
             let modal = egui::Modal::new(egui::Id::unique((ui.ctx().viewport_id(), id, "modal")))
                 .show(ui.ctx(), |ui| {

@@ -14,9 +14,24 @@ use std::{
     time::{Duration, Instant},
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
+fn validate_overlays(model:&Value)->Result<(),String> {
+    if let Some(overlays)=model.get("native_overlays") {
+        let overlays=overlays.as_array().filter(|a|a.len()<=16).ok_or("native overlays exceed budget")?;
+        let mut ids=BTreeSet::new();
+        for overlay in overlays {
+            if !overlay["command"].is_string() {return Err("overlay requires an intent command".into());}
+            let widget=crate::widgets::Widget::decode(&overlay["definition"])?;
+            if !ids.insert(widget.id.clone()) {return Err("duplicate overlay identity".into());}
+            widget.validate_model(model)?;
+        }
+    }
+    Ok(())
+}
 struct Host {
-    local_ui:crate::local_ui::LocalUi,
-    native_choice:Value,
+    local_ui: crate::local_ui::LocalUi,
+    native_choice: Value,
+    overlays:crate::widgets::Widgets,
+    focus_serial:Value,
     facilities: crate::app_facilities::Facilities,
     session: Option<crate::session::Session>,
     session_appearance: Option<Value>,
@@ -92,8 +107,11 @@ impl Host {
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
-        if r.command==format!("{}.quit",self.service) || (r.command==format!("{}.execute",self.service) && r.args["id"]=="file.quit") {
-            r.close_after_reply.store(true,std::sync::atomic::Ordering::Release);
+        if r.command == format!("{}.quit", self.service)
+            || (r.command == format!("{}.execute", self.service) && r.args["id"] == "file.quit")
+        {
+            r.close_after_reply
+                .store(true, std::sync::atomic::Ordering::Release);
         }
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
@@ -171,24 +189,49 @@ impl eframe::App for Host {
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
         self.facilities.prepare(ui.ctx(), &self.bus);
-        while let Ok(request)=self.local_ui.requests.try_recv() {
-            let answer=match request.command.as_str() {
-                "native.copy"=>match request.args["text"].as_str().filter(|s|s.len()<=1_048_576) {
-                    Some(text)=>{ui.ctx().copy_text(text.into());Ok(json!({"copied":true}))},None=>Err("text must be bounded text".into())},
-                "native.focus"=>request.args["id"].as_str().ok_or("id required".into()).and_then(|id|self.view.request_focus(id)).map(|_|json!({"focused":true})),
-                "native.theme"=>{
-                    let snapshot=self.session.as_ref().map(|s|s.snapshot.clone());
+        while let Ok(request) = self.local_ui.requests.try_recv() {
+            let answer = match request.command.as_str() {
+                "native.copy" => match request.args["text"]
+                    .as_str()
+                    .filter(|s| s.len() <= 1_048_576)
+                {
+                    Some(text) => {
+                        ui.ctx().copy_text(text.into());
+                        Ok(json!({"copied":true}))
+                    }
+                    None => Err("text must be bounded text".into()),
+                },
+                "native.focus" => request.args["id"]
+                    .as_str()
+                    .ok_or("id required".into())
+                    .and_then(|id| self.view.request_focus(id))
+                    .map(|_| json!({"focused":true})),
+                "native.theme" => {
+                    let snapshot = self.session.as_ref().map(|s| s.snapshot.clone());
                     crate::native_theme::choice(&request.args).and_then(|choice| {
-                        let base=if let Some(snapshot)=snapshot {crate::appearance::session_base(&snapshot,&self.service,&self.file_theme,&self.last_ui)?.0}else{self.file_theme.clone()};
-                        let theme=base.with_choice(&choice).map_err(|e|e.to_string())?;
-                        crate::appearance::install_theme(ui.ctx(),&theme)?;
-                        self.native_choice=request.args.clone();
+                        let base = if let Some(snapshot) = snapshot {
+                            crate::appearance::session_base(
+                                &snapshot,
+                                &self.service,
+                                &self.file_theme,
+                                &self.last_ui,
+                            )?
+                            .0
+                        } else {
+                            self.file_theme.clone()
+                        };
+                        let theme = base.with_choice(&choice).map_err(|e| e.to_string())?;
+                        crate::appearance::install_theme(ui.ctx(), &theme)?;
+                        self.native_choice = request.args.clone();
                         Ok(crate::native_theme::describe(&theme))
                     })
-                },
-                _=>Err("unknown native operation".into())
+                }
+                _ => Err("unknown native operation".into()),
             };
-            let _=request.reply.send(match answer {Ok(body)=>(0,body),Err(message)=>(10,json!({"error_code":"ARGUMENT","message":message}))});
+            let _ = request.reply.send(match answer {
+                Ok(body) => (0, body),
+                Err(message) => (10, json!({"error_code":"ARGUMENT","message":message})),
+            });
         }
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
@@ -246,6 +289,7 @@ impl Host {
                         Ok(None)
                     };
                     let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
+                        validate_overlays(&projected)?;
                         if self.loaded {
                             self.view.apply_model(projected)
                         } else {
@@ -344,14 +388,21 @@ impl Host {
                         &self.file_theme,
                         &self.last_ui,
                     ) {
-                        Ok(ui) => {
-                            self.last_ui = ui;
+                        Ok(common_ui) => {
+                            self.last_ui = common_ui;
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
                             self.session_window = Some(snapshot["state"]["values"].clone());
-                            if let Ok(choice)=crate::native_theme::choice(&self.native_choice) {
-                                if let Ok((base,_))=crate::appearance::session_base(&snapshot,&self.service,&self.file_theme,&self.last_ui) {
-                                    if let Ok(theme)=base.with_choice(&choice) {let _=crate::appearance::install_theme(ui.ctx(),&theme);}
+                            if let Ok(choice) = crate::native_theme::choice(&self.native_choice) {
+                                if let Ok((base, _)) = crate::appearance::session_base(
+                                    &snapshot,
+                                    &self.service,
+                                    &self.file_theme,
+                                    &self.last_ui,
+                                ) {
+                                    if let Ok(theme) = base.with_choice(&choice) {
+                                        let _ = crate::appearance::install_theme(ui.ctx(), &theme);
+                                    }
                                 }
                             }
                         }
@@ -373,8 +424,13 @@ impl Host {
                     .session_window
                     .clone()
                     .unwrap_or_else(|| self.model["window_settings"].clone());
-                for (axis,key) in [("decorations","window.decorations"),("caption_side","window.caption_side")] {
-                    if !self.native_choice[axis].is_null() {settings[key]=self.native_choice[axis].clone();}
+                for (axis, key) in [
+                    ("decorations", "window.decorations"),
+                    ("caption_side", "window.caption_side"),
+                ] {
+                    if !self.native_choice[axis].is_null() {
+                        settings[key] = self.native_choice[axis].clone();
+                    }
                 }
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 self.window_frame
@@ -391,6 +447,32 @@ impl Host {
             }
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
+            }
+            self.overlays.begin_frame();
+            for overlay in self.model["native_overlays"].as_array().into_iter().flatten().cloned().collect::<Vec<_>>() {
+                let widget=crate::widgets::Widget::decode(&overlay["definition"]).expect("validated overlay");
+                let command=overlay["command"].as_str().unwrap();
+                for intent in self.overlays.widget(ui,&widget,&self.model) {
+                    self.dispatch(command.into(),intent.encode(),BTreeMap::new(),None);
+                }
+            }
+            self.view.geometry.extend(self.overlays.geometry.clone());
+            if self.facilities.macros.is_some() && toolkit::macros::show_app(ui.ctx(),&self.service,self.model["macros_open"]==true) {
+                self.dispatch("viu.macros.changed".into(),json!({"open":false}),BTreeMap::new(),None);
+            }
+            if self.model["native_focus"]["serial"]!=self.focus_serial && self.model["native_focus"]["id"].is_string() {
+                if let Some(id)=self.model["native_focus"]["id"].as_str() {let _=self.view.request_focus(id);}
+                self.focus_serial=self.model["native_focus"]["serial"].clone();ui.ctx().request_repaint();
+            }
+            if !toolkit::menu::is_open(ui.ctx()) {
+                for action in self.model["shortcuts"].as_array().into_iter().flatten().cloned().collect::<Vec<_>>() {
+                    if action["enabled"]!=true {continue;}
+                    if let Some(shortcut)=action["shortcut"].as_str().and_then(toolkit::keymap::parse_chord) {
+                        if ui.ctx().input_mut(|input|input.consume_shortcut(&shortcut)) {
+                            self.dispatch("viu.frame.intent".into(),json!({"id":"shortcut","value":{"command":action["id"],"origin":"shortcut"}}),BTreeMap::new(),None);
+                        }
+                    }
+                }
             }
             if self.framed {
                 let reserved = self.view.allocated_region("gold-captions");
@@ -484,7 +566,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         facilities.surface.as_ref().map(|s| s["commands"].clone()),
     );
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
-    let local_ui=crate::local_ui::LocalUi::new(wake.clone());
+    let local_ui = crate::local_ui::LocalUi::new(wake.clone());
     jobs.set_native_backend(bus.backend_maker());
     let services = crate::runtime::Services {
         macros: facilities.macros.clone(),
@@ -504,7 +586,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .join("viu-captures");
     Host {
         local_ui,
-        native_choice:json!({}),
+        native_choice: json!({}),
+        overlays:Default::default(),
+        focus_serial:Value::Null,
         facilities,
         service: bundle.manifest.service.clone(),
         file_theme: toolkit::Theme::load(),
@@ -580,12 +664,13 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
     let service = bundle.manifest.service.clone();
+    let app_id=bundle.manifest.bus_surface.as_ref().and_then(|s|s["app_id"].as_str()).map(str::to_owned).unwrap_or_else(||format!("mixviu.{service}"));
     eframe::run_native(
         &title,
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size(size)
-                .with_app_id(format!("mixviu.{service}")),
+                .with_app_id(app_id),
             ..Default::default()
         },
         Box::new(move |cc| {

@@ -35,13 +35,16 @@ pub fn install_session(
     file: &toolkit::Theme,
     last_ui: &settings::model::CommonUi,
 ) -> Result<settings::model::CommonUi, String> {
-    let (theme,ui)=session_base(snapshot,app,file,last_ui)?;
-    install_theme(ctx,&theme)?;
+    let (theme, ui) = session_base(snapshot, app, file, last_ui)?;
+    install_theme(ctx, &theme)?;
     Ok(ui)
 }
 pub fn session_base(
-    snapshot:&Value, app:&str, file:&toolkit::Theme, last_ui:&settings::model::CommonUi,
-) -> Result<(toolkit::Theme,settings::model::CommonUi),String> {
+    snapshot: &Value,
+    app: &str,
+    file: &toolkit::Theme,
+    last_ui: &settings::model::CommonUi,
+) -> Result<(toolkit::Theme, settings::model::CommonUi), String> {
     use settings::view::View;
     let values: settings::registry::Values =
         serde_json::from_value(snapshot["state"]["values"].clone()).map_err(|e| e.to_string())?;
@@ -59,9 +62,9 @@ pub fn session_base(
     } else {
         toolkit::session_look::ui(&look, Some(app))
     };
-    Ok((theme,ui))
+    Ok((theme, ui))
 }
-pub fn install_theme(ctx:&egui::Context,theme:&toolkit::Theme)->Result<(),String> {
+pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), String> {
     toolkit::install(ctx, theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();
