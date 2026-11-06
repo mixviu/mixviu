@@ -63,6 +63,16 @@ fn save_shot($s)
   end
   return export_shot($s,$path)
 end
+fn cancel_shot($s)
+  if $s.busy then
+    send "viu-local" "jobs.cancel" id="screenshot-work"
+    if $rc!=0 then raise("CANCEL","Worker cancellation refused") end
+    $s.serial=$s.serial+1;$s.busy=false;$s.status="Cancelled"
+    if $s.pending.op=="capture" and $s.pending.request.mode=="region" and $s.pending.request.region==nil then $s.status="Worker stopped; region selector may remain until Escape/timeout (Track B7 gap)" end
+    if $s.pending.op=="capture" and is_file($s.pending.path) then remove($s.pending.path) end
+  end
+  return restored($s)
+end
 publish_shot($state)
 on screenshot.ping
   reply(0,json_encode({comp:$comp,ready:true,schema:"screenshot.mix.lab.v1"}))
@@ -77,13 +87,7 @@ on screenshot.capture
   $state=capture_shot($state,$event.args);publish_shot($state);reply(0,json_encode({accepted:true,job:$state.serial}))
 end
 on screenshot.cancel
-  if $state.busy then
-    send "viu-local" "jobs.cancel" id="screenshot-work"
-    $state.serial=$state.serial+1;$state.busy=false;$state.status="Cancelled"
-    if $state.pending.op=="capture" and $state.pending.request.mode=="region" and $state.pending.request.region==nil then $state.status="Worker stopped; region selector may remain until Escape/timeout (Track B7 gap)" end
-    if $state.pending.op=="capture" and is_file($state.pending.path) then remove($state.pending.path) end
-  end
-  $state=restored($state);publish_shot($state);reply(0,json_encode({cancelled:true,restore_failed:$state.restore_failed}))
+  $state=cancel_shot($state);publish_shot($state);reply(0,json_encode({cancelled:true,restore_failed:$state.restore_failed}))
 end
 on screenshot.restore
   $state=restored($state);publish_shot($state);reply(0,json_encode({restore_failed:$state.restore_failed}))
@@ -139,8 +143,7 @@ on screenshot.intent
     $state=start_job($state,{op:"copy",source:$state.path})
   elif $a.id=="refresh" then $state=targets($state)
   elif $a.id=="cancel" then
-    send "viu-local" "jobs.cancel" id="screenshot-work"
-    $state.serial=$state.serial+1;$state.busy=false;$state.status="Cancelled";$state=restored($state)
+    $state=cancel_shot($state)
   elif contains(["mode","cursor","output","window"],$a.id) then $state[$a.id]=$a.value end
   publish_shot($state);reply(0,"{}")
 end
