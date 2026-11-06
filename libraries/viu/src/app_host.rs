@@ -15,6 +15,7 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    settings_reload: u64,
     facilities: crate::app_facilities::Facilities,
     platform: crate::platform::Platform,
     paste_waits: std::collections::VecDeque<String>,
@@ -503,6 +504,8 @@ impl Host {
             }
         }
         if self.ready {
+            let reload=self.model["settings_reload"].as_u64().unwrap_or(0);
+            if reload!=self.settings_reload {self.settings_reload=reload;self.file_theme=toolkit::Theme::load();if let Some(session)=&mut self.session {session.hint("theme.changed",&json!({}));}ui.ctx().request_repaint();}
             if let Some(bindings) = self.model["shortcuts"]
                 .as_array()
                 .filter(|_| !toolkit::menu::is_open(ui.ctx()))
@@ -760,6 +763,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        settings_reload: 0,
         facilities,
         platform,
         paste_waits: Default::default(),

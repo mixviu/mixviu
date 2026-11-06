@@ -31,6 +31,12 @@ const SLOTS: [&str; 15] = [
     "macro.slot.13",
     "macro.slot.14",
 ];
+
+/// Anchor the shared macro popup to an application-authored toolbar control.
+pub fn anchor(ctx: &egui::Context, rect: egui::Rect) {
+    let key=crate::window_id(ctx.viewport_id(), "macro-anchor");
+    ctx.data_mut(|d|d.insert_temp(key,rect));
+}
 type Completion = Result<
     (Catalogue, Option<editor::local::Document>, Option<Entry>),
     (String, Option<editor::local::Document>),

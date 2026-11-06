@@ -77,7 +77,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
   elif $id=="view.zoom_in" then $s.zoom=min(30,$s.zoom+1)
   elif $id=="view.zoom_out" then $s.zoom=max(-7,$s.zoom-1)
   elif contains(["view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output"],$id) then $key=split($id,".")[1];$s[$key]=not $s[$key]
-  elif $id=="view.reload_settings" then $s=request_probe($s)
+  elif $id=="view.reload_settings" then $s.settings_reload=($s.settings_reload ?? 0)+1
   elif starts_with($id,"view.markdown.") then $s.previews[$t.document]=split($id,".")[2]
   elif $id=="view.search" then $s.find.open=true;$s.find_instance=($s.find_instance ?? 0)+1
   elif $id=="view.mode" then $s.look.appearance.mode=if $s.look.appearance.mode=="dark" then "light" else "dark" end

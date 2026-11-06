@@ -18,7 +18,7 @@ fn ced_menus($s)
   return $menus
 end
 fn ced_toolbar($s)
-  return [{id:"help.macros",label:"Macros",icon:"scroll-text",icon_only:true,enabled:true},{id:"view.search",label:"Find",icon:"search",icon_only:true,enabled:true},{id:"help.keys",label:"Keyboard Shortcuts",icon:"keyboard",icon_only:true,enabled:true},{id:"view.mode",label:"Toggle light/dark mode",icon:if $s.look.appearance.mode=="dark" then "sun" else "moon" end,icon_only:true,enabled:true}]
+  return [{id:"help.macros",macro_anchor:true,label:"Macros",icon:"scroll-text",icon_only:true,enabled:true},{id:"view.search",label:"Find",icon:"search",icon_only:true,enabled:true},{id:"help.keys",label:"Keyboard Shortcuts",icon:"keyboard",icon_only:true,enabled:true},{id:"view.mode",label:"Toggle light/dark mode",icon:if $s.look.appearance.mode=="dark" then "sun" else "moon" end,icon_only:true,enabled:true}]
 end
 fn ced_status($s,$t)
   $right=[]
@@ -38,6 +38,7 @@ fn ced_ui_model($s,$model)
     push($items,{id:to_string($i),name:basename($tab.path ?? "untitled-"..$tab.document),title:$tab.path ?? "untitled-"..$tab.document,meta:$tab.language,dirty:$tab.dirty,opening:$tab.phase=="bootstrapping"})
   end
   $model.tabs={id:"tabs",kind:"document-tabs",label:"Documents",initial:{items:$items,selected:to_string($s.active)}}
+  $model.settings_reload=$s.settings_reload ?? 0
   $model.find_open=$s.find.open;$model.values["find-bar"]=merge($s.find,{instance:$s.find_instance ?? 0})
   $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Save changes?",body:"Save this document before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
   $model.values["save-dialog"]=ui_form($s.save_dialog,"Save As","File path",$s.save_path ?? ($t.path ?? ""),$s.dialog_instance ?? 0)
