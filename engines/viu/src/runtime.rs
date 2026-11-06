@@ -35,7 +35,6 @@ struct State {
     store: SceneStore,
     panels: BTreeMap<Key, PanelStateMachine>,
     contexts: BTreeMap<Key, egui::Context>,
-    wakes: Vec<Arc<dyn Fn() + Send + Sync>>,
     started: Instant,
     look: Option<Arc<appearance::Look>>,
     look_revision: u64,
@@ -57,7 +56,6 @@ impl State {
             store: SceneStore::default(),
             panels: BTreeMap::new(),
             contexts: BTreeMap::new(),
-            wakes: Vec::new(),
             started: Instant::now(),
             look: None,
             look_revision: 0,
@@ -77,9 +75,6 @@ impl State {
         }
     }
     fn wake(&self) {
-        for wake in &self.wakes {
-            wake();
-        }
         for ctx in self.contexts.values() {
             ctx.request_repaint();
         }
@@ -180,9 +175,6 @@ struct Program {
     cold_frame: bool,
 }
 impl LayerProgram for Program {
-    fn set_waker(&mut self, wake: Arc<dyn Fn() + Send + Sync>) {
-        self.state.lock().unwrap().wakes.push(wake);
-    }
     fn setup(&mut self, ctx: &egui::Context) {
         toolkit::install(ctx, &toolkit::Theme::embedded());
     }
@@ -229,6 +221,9 @@ impl LayerProgram for Program {
         }
         let _ = model.tick(now);
         let snap = model.snapshot();
+        if self.edge == "left" && output == "winit" && std::env::var_os("VIU_TRACE_LAYERS").is_some() {
+            eprintln!("VIU_LAYER content={has_content} minimum={minimum} mapped={} fraction={} mode={}", snap.mapped, snap.visible_fraction, snap.mode.as_str());
+        }
         if model.wake() == PanelWake::Animate {
             ctx.request_repaint_after(Duration::from_millis(16));
         }

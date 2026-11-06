@@ -84,9 +84,6 @@ pub struct SurfaceInfo {
 
 /// An egui program drawn on layer surfaces.
 pub trait LayerProgram {
-    /// Wake presentation state even before a hidden surface has run egui.
-    /// This is event-driven and does not request continuous rendering.
-    fn set_waker(&mut self, _wake: std::sync::Arc<dyn Fn() + Send + Sync>) {}
     /// The compositor completed this surface's frame callback.
     fn frame(&mut self, _surface: &SurfaceInfo, _time_ms: u32) {}
     /// Client presentation requested after a repaint wake, before any draw.

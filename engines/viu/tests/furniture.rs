@@ -166,6 +166,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             .env("XDG_DATA_HOME", root.path().join("data"))
             .env("MIXOS_NODED_URL", &broker.url)
             .env("VIU_COMP_SERVICE", "comp-headless")
+            .env("VIU_TRACE_LAYERS", "1")
             .env_remove("DISPLAY")
             .env_remove("NOTIFY_SOCKET")
             .env_remove("MIXOS_VT")
@@ -288,6 +289,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
                 println!("SCRIPTED_CORNER_DELIVERED before={before} after={count}");
                 println!("EARLY_CLICK_PHASES {}", props["corner_phases"]);
                 println!("CORNER_FURNITURE_STATE {props}");
+                println!("LAUNCHER_SCENE {}", client.call("shell", "shell.scene.get", json!({"scene":"launcher"})).await.unwrap());
                 break;
             }
             assert!(Instant::now() < until, "corner topic missing: {props}");
