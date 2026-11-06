@@ -72,12 +72,23 @@ impl Host {
         reply: Option<Reply>,
     ) {
         // Only the host supplies this receipt. A Bus caller cannot forge it.
-        let token = if let Some(reply)=reply {
-            match self.calls.begin(reply,Arc::new(std::sync::atomic::AtomicBool::new(false))) {
-                Ok(token)=>Some(token),Err(reply)=>{let _=reply.send((10,json!({"error_code":"BUSY"})));return;}
+        let token = if let Some(reply) = reply {
+            match self
+                .calls
+                .begin(reply, Arc::new(std::sync::atomic::AtomicBool::new(false)))
+            {
+                Ok(token) => Some(token),
+                Err(reply) => {
+                    let _ = reply.send((10, json!({"error_code":"BUSY"})));
+                    return;
+                }
             }
-        }else{headers.get("viu-call").cloned()};
-        if let Some(token)=&token {headers.insert("viu-call".into(),token.clone());}
+        } else {
+            headers.get("viu-call").cloned()
+        };
+        if let Some(token) = &token {
+            headers.insert("viu-call".into(), token.clone());
+        }
         match self.runtime.event_with_headers(command, body, headers) {
             Ok(seq) => {
                 self.inflight.insert(seq);
@@ -87,7 +98,12 @@ impl Host {
             }
             Err(e) => {
                 if let Some(token) = token {
-                    self.calls.finish(&token,10, json!({"error_code":"BUSY","error":format!("{e:?}")}),false);
+                    self.calls.finish(
+                        &token,
+                        10,
+                        json!({"error_code":"BUSY","error":format!("{e:?}")}),
+                        false,
+                    );
                 }
             }
         }
@@ -150,10 +166,14 @@ impl Host {
                     }
                 }
             }
-            _ => {
-                match self.calls.begin(r.reply,r.close_after_reply) {
-                    Ok(token)=>{let mut headers=r.headers;headers.insert("viu-call".into(),token);self.dispatch(r.command,r.args,headers,None);}
-                    Err(reply)=>{let _=reply.send((10,json!({"error_code":"BUSY"})));}
+            _ => match self.calls.begin(r.reply, r.close_after_reply) {
+                Ok(token) => {
+                    let mut headers = r.headers;
+                    headers.insert("viu-call".into(), token);
+                    self.dispatch(r.command, r.args, headers, None);
+                }
+                Err(reply) => {
+                    let _ = reply.send((10, json!({"error_code":"BUSY"})));
                 }
             },
         }
@@ -173,7 +193,11 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
-        for token in self.calls.cancelled() {let _=self.runtime.notify("viu.call.cancelled".into(),json!({"token":token}));}
+        for token in self.calls.cancelled() {
+            let _ = self
+                .runtime
+                .notify("viu.call.cancelled".into(), json!({"token":token}));
+        }
         let (due, deadline) = self.timers.poll();
         self.timer_results.extend(due);
         if let Some(at) = deadline {
@@ -308,7 +332,7 @@ impl Host {
                 } else {
                     (0, self.state())
                 };
-                self.calls.complete(&token,answer.0,answer.1);
+                self.calls.complete(&token, answer.0, answer.1);
             }
         }
         for _ in 0..32 {
@@ -452,8 +476,13 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let calls = crate::calls::Calls::default();
     let services = crate::runtime::Services {
         macros: bundle.manifest.macros.then(|| {
-            let roots=macros::Roots::resolve().map(|mut roots| { if let Ok(exe)=std::env::current_exe(){roots.mix=exe;}roots });
-            macros::Session::with_roots(&bundle.manifest.service,roots)
+            let roots = macros::Roots::resolve().map(|mut roots| {
+                if let Ok(exe) = std::env::current_exe() {
+                    roots.mix = exe;
+                }
+                roots
+            });
+            macros::Session::with_roots(&bundle.manifest.service, roots)
         }),
         calls: Some(calls.clone()),
         timers: Some(timers.clone()),
@@ -529,8 +558,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
 }
 
 pub fn run(args: Vec<String>) -> eframe::Result {
-    if args.first().is_some_and(|p|p.ends_with(".mix")) {
-        std::process::exit(crate::macro_host::run(args[0].into(),args[1..].to_vec()));
+    if args.first().is_some_and(|p| p.ends_with(".mix")) {
+        std::process::exit(crate::macro_host::run(args[0].clone().into(), args[1..].to_vec()));
     }
     if args.first().map(String::as_str) != Some("run") || args.len() < 2 {
         eprintln!("usage: viu run APP_DIR [ARGS]");

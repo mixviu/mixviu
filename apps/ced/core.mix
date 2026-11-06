@@ -42,7 +42,7 @@ fn pump($s)
     if $rc!=0 then $s.queue=concat([$job],$s.queue);viu_timer("drain",25,{kind:"drain"});break end
     $s.running[$job.id]=$job
   end
-  return session_changed(refresh_tabs($s))
+  return check_calls(session_changed(refresh_tabs($s)))
 end
 fn operation($s,$op,$a)
   if $op=="open" or $op=="new" then

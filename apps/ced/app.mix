@@ -4,13 +4,18 @@
 $ctx=viu_context();$frame=require("../../libraries/viu/mix/gold-frame.mix")
 include "core.mix"
 include "session.mix"
+include "bus.mix"
 $state={tabs:[],active:0,busy:false,serial:0,next_tab:0,queue:[],running:{},timers:{},outcomes:{},last_op:nil,status:"Open a UTF-8 document",path:"",wrap:false,line_numbers:true,window_close:false,open_dialog:false,event_seq:nil,look:{appearance:{scheme:"studio",mode:"dark"},values:{},revision:nil}}
 $state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_loaded=false;$state.session_dirty=false;$state.session_seen=nil;$state.restore={};$state.restore_active=nil;$state.exit_after_save=false;$state.edit={epoch:nil,version:nil,volatile:nil}
+$state.waits={};$state.open_errors={}
 publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
 end
 on ced.info
+  $state=bus_command($state,$event)
+end
+on ced.debug
   $state=refresh_tabs($state);reply(0,json_encode($state))
 end
 on ced.command
@@ -56,6 +61,7 @@ on viu.job.completed
   $job=$event.args.tag.owner
   if $state.running[$job.id]!=nil then
     $state.running=delete($state.running,$job.id)
+    if $job.kind=="macro" then $state=finish_call($state,$job.payload.call,if $event.args.rc==0 then $event.args.body.rc else 10 end,if $event.args.rc==0 then $event.args.body.body else $event.args.body end) end
     if $event.args.rc==0 then
       if $job.kind=="io" and $event.args.body.deadline_after_ms!=nil then
         viu_timer($job.payload.document..":deadline:"..$job.payload.request.op_id,$event.args.body.deadline_after_ms,{document:$job.payload.document,kind:"deadline",op_id:$job.payload.request.op_id})
@@ -78,7 +84,7 @@ on viu.job.completed
       end
     else
       $state.status="Failed: "..json_encode($event.args.body)
-      if $job.kind=="open" then $state.restore=delete($state.restore,$job.payload.document) end
+      if $job.kind=="open" then $state.restore=delete($state.restore,$job.payload.document);$state.open_errors[$job.payload.document]=$event.args.body end
       if $job.kind=="reattach" then $state.reattach_wait[$job.payload.document]=true;viu_timer($job.payload.document..":reattach",30000,{kind:"reattach",document:$job.payload.document}) end
       if $job.kind=="session-save" then $state.session_dirty=true;$state.exit_after_save=false end
     end
@@ -109,7 +115,9 @@ on bus.overflow
 end
 on viu.timer
   $t=$event.args.value
-  if $t.kind=="session-save" then $state=save_session($state)
+  if $t.kind=="call" then
+    if $state.waits[$t.token]!=nil then $state=finish_call($state,$t.token,10,{error_code:"CONFLICT",message:"Command timed out",reason:"timeout"}) end
+  elif $t.kind=="session-save" then $state=save_session($state)
   elif $t.kind=="reattach" then
     $state.reattach_wait=delete($state.reattach_wait,$t.document)
     for $tab in $state.tabs if $tab.document==$t.document then $state=request_reattach($state,$tab) end end
@@ -123,4 +131,56 @@ on viu.session
   $state.look.appearance=$event.args.appearance;$state.look.revision=$event.args.state.revision
   if not $event.args.state.lost then $state.look.values=$event.args.state.values end
   publish_ced($state)
+end
+
+on viu.call.cancelled
+  $state.waits=delete($state.waits,$event.args.token)
+end
+on bus.disconnected
+  for $token in keys($state.waits) $state=finish_call($state,$token,10,{error_code:"CONFLICT",message:"Bus disconnected",reason:"cancelled"}) end
+end
+on ced.open
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.new
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.tabs
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.focus
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.state
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.select
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.type
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.wait
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.list
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.reload
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.run
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.status
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.output
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.stop
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.new
+  $state=bus_command($state,$event);publish_ced($state)
 end

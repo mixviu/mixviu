@@ -38,7 +38,9 @@ fn open_recovery($a)
 end
 on job.run
   $job=$event.args;$a=$job.payload
-  if $job.kind=="session-load" then reply(0,json_encode(load_session()));return
+  if $job.kind=="macro" then
+    reply(0,json_encode(viu_macros($a.command,$a.args)));return
+  elif $job.kind=="session-load" then reply(0,json_encode(load_session()));return
   elif $job.kind=="session-save" then
     mkdir(dirname($a.path),{parents:true})
     viu_atomic_replace($a.path,json_encode($a.value))

@@ -80,8 +80,12 @@ fn decode<T: serde::de::DeserializeOwned>(v: &Value) -> Result<T, String> {
     serde_json::from_value(normalize(v.clone())?).map_err(|e| e.to_string())
 }
 fn point(text: &edit::text::Text, v: &Value) -> Result<usize, String> {
-    if v=="start" { return Ok(0); }
-    if v=="end" { return Ok(text.len()); }
+    if v == "start" {
+        return Ok(0);
+    }
+    if v == "end" {
+        return Ok(text.len());
+    }
     let offset = if let Some(n) = crate::widgets::whole(v) {
         n as usize
     } else {
@@ -144,7 +148,13 @@ impl Document {
             "selection":{"anchor":m.text().point(self.model.sel.anchor),"head":m.text().point(self.model.sel.head)},
             "first_line":self.model.scroll.first_line,"detached_copy":m.detached_copy().is_some(),"conflicts":m.conflicts().len(),"layout":self.layout,"notices":self.notices})
     }
-    fn command(&mut self, c: EditCommand, view: &View, ids: &mut OpIdGen, intent: Intent) -> Result<(), String> {
+    fn command(
+        &mut self,
+        c: EditCommand,
+        view: &View,
+        ids: &mut OpIdGen,
+        intent: Intent,
+    ) -> Result<(), String> {
         let cfg = EditCfg {
             measure: view.measure(),
             insert_spaces: !matches!(self.mirror.meta().language.as_str(), "go" | "makefile"),
@@ -226,14 +236,32 @@ impl Documents {
         match op {
             "state" => {}
             "inspect" => {
-                let m=&doc.mirror;
-                if a["text"]==true && m.text().len()>4*1024*1024 {return Err("text exceeds ced.state 4 MiB inline limit".into());}
-                let mut hasher=blake3::Hasher::new();let mut offset=0;let mut text=String::new();
-                while offset<m.text().len(){let chunk=m.text().chunk_at(offset);hasher.update(chunk);if a["text"]==true {text.push_str(std::str::from_utf8(chunk).unwrap());}offset+=chunk.len();}
-                let mut out=doc.state(key);
-                out["text_hash"]=json!(hasher.finalize().to_hex().to_string());
-                out["text"]=if a["text"]==true{json!(text)}else{Value::Null};
-                out["last_remote"]=m.last_remote().map(|r|json!({"origin":r.origin,"lane":r.lane,"rev":r.rev,"kind":r.kind})).unwrap_or(Value::Null);
+                let m = &doc.mirror;
+                if a["text"] == true && m.text().len() > 4 * 1024 * 1024 {
+                    return Err("text exceeds ced.state 4 MiB inline limit".into());
+                }
+                let mut hasher = blake3::Hasher::new();
+                let mut offset = 0;
+                let mut text = String::new();
+                while offset < m.text().len() {
+                    let chunk = m.text().chunk_at(offset);
+                    hasher.update(chunk);
+                    if a["text"] == true {
+                        text.push_str(std::str::from_utf8(chunk).unwrap());
+                    }
+                    offset += chunk.len();
+                }
+                let mut out = doc.state(key);
+                out["text_hash"] = json!(hasher.finalize().to_hex().to_string());
+                out["text"] = if a["text"] == true {
+                    json!(text)
+                } else {
+                    Value::Null
+                };
+                out["last_remote"] = m
+                    .last_remote()
+                    .map(|r| json!({"origin":r.origin,"lane":r.lane,"rev":r.rev,"kind":r.kind}))
+                    .unwrap_or(Value::Null);
                 out["conflicts"]=json!(m.conflicts().iter().map(|c|json!({"rev":c.rev,"remote_origin":c.remote_origin,"lines":[c.lines.0,c.lines.1],"texts":c.texts})).collect::<Vec<_>>());
                 return Ok(out);
             }
@@ -372,7 +400,10 @@ impl Documents {
             }
             "command" => {
                 let name = text_arg(&a, "name")?;
-                let intent = a["caller"].as_str().map_or_else(||Intent::ui(doc.identity),|caller|Intent::bus(doc.identity,caller));
+                let intent = a["caller"].as_str().map_or_else(
+                    || Intent::ui(doc.identity),
+                    |caller| Intent::bus(doc.identity, caller),
+                );
                 let command = match name {
                     "insert" => Some(EditCommand::Insert(text_arg(&a, "text")?.into())),
                     "select-all" => Some(EditCommand::SelectAll),
@@ -393,7 +424,15 @@ impl Documents {
                     doc.command(c, &View::default(), ids, intent)?;
                 } else {
                     let server = match name {
-                        "undo" => ServerOp::Undo { lane: if a["lane"]=="any"{LaneArg::Any}else if let Some(l)=a["lane"].as_str(){LaneArg::Lane(l.to_owned())}else{LaneArg::Own} },
+                        "undo" => ServerOp::Undo {
+                            lane: if a["lane"] == "any" {
+                                LaneArg::Any
+                            } else if let Some(l) = a["lane"].as_str() {
+                                LaneArg::Lane(l.to_owned())
+                            } else {
+                                LaneArg::Own
+                            },
+                        },
                         "redo" => ServerOp::Redo { lane: LaneArg::Own },
                         "save" => ServerOp::Save {
                             path: a["path"].as_str().map(str::to_owned),

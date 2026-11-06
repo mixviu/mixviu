@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use serde_json::{Value,json};
+use std::{collections::BTreeMap,path::PathBuf,sync::{Arc,mpsc,atomic::AtomicBool},time::Duration};
+use viu::{bundle::Bundle,runtime::{Runtime,Services}};
+mod fixture {include!("support/documents.rs");}
+struct Accepted;
+impl mix::BusHandler for Accepted {
+    fn send<'a>(&'a self,_:&'a str,_:&'a str,_:&'a mix::value::Value)->mix::evaluator::BusFuture<'a,mix::MixResult<(i32,mix::value::Value)>>{Box::pin(async{Ok((0,mix::value::Value::Nil))})}
+    fn emit<'a>(&'a self,_:&'a str,_:&'a str,_:&'a mix::value::Value)->mix::evaluator::BusFuture<'a,mix::MixResult<()>>{Box::pin(async{Ok(())})}
+    fn port_exists<'a>(&'a self,_:&'a str)->mix::evaluator::BusFuture<'a,mix::MixResult<bool>>{Box::pin(async{Ok(false)})}
+    fn next_incoming<'a>(&'a self)->mix::evaluator::BusFuture<'a,Option<mix::evaluator::IncomingEvent>>{Box::pin(async{None})}
+}
+struct App { runtime:Runtime, ready:mpsc::Receiver<()>,calls:viu::calls::Calls,timers:viu::timers::Timers,docs:viu::documents::Documents }
+impl App {
+    fn new()->Self {
+        let mut bundle=Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/ced"),&[]).unwrap();
+        bundle.program.source.push_str("\n$state.tabs=[viu_document(\"state\",\"1\",{})]\n$state.next_tab=1\npublish_ced($state)\n");
+        let docs=viu::documents::Documents::default();fixture::seed(&docs,"1","/tmp/contract.rs","λ one\ntwo\n");
+        let calls=viu::calls::Calls::default();let timers=viu::timers::Timers::default();let(tx,ready)=mpsc::channel();
+        let mut runtime=Runtime::with_services(16,Arc::new(move||{let _=tx.send(());}),Some(Box::new(||std::rc::Rc::new(Accepted))),Services{documents:Some(docs.clone()),calls:Some(calls.clone()),timers:Some(timers.clone()),..Default::default()});runtime.load(bundle.program).unwrap();
+        ready.recv_timeout(Duration::from_secs(5)).unwrap();assert!(runtime.try_completion().unwrap().error.is_none());Self{runtime,ready,calls,timers,docs}
+    }
+    fn command(&self,name:&str,body:Value)->tokio::sync::oneshot::Receiver<(u8,Value)> {
+        let(tx,rx)=tokio::sync::oneshot::channel();let token=self.calls.begin(tx,Arc::new(AtomicBool::new(false))).unwrap();
+        self.runtime.event_with_headers(name.into(),body,BTreeMap::from([("viu-call".into(),token.clone()),("from".into(),"contract-agent".into()),("broker_origin".into(),"local".into())])).unwrap();
+        self.ready.recv_timeout(Duration::from_secs(5)).unwrap();let done=self.runtime.try_completion().unwrap();assert!(done.error.is_none(),"{name}: {:?}",done.error);let r=done.reply.unwrap();self.calls.complete(&token,r.rc,r.body);rx
+    }
+    fn answered(&self,name:&str,body:Value)->(u8,Value){self.command(name,body).try_recv().expect("synchronous reply")}
+}
+#[test]
+fn gold_info_tabs_state_unicode_selection_and_refusal_shapes() {
+    let app=App::new();
+    let(rc,info)=app.answered("ced.info",json!({}));assert_eq!(rc,0);assert_eq!(info["tabs"],1);assert!(info["edit"].is_object());assert_eq!(info["headless"],false);
+    let(_,tabs)=app.answered("ced.tabs",json!({}));assert_eq!(tabs["active"],1);assert_eq!(tabs["tabs"][0]["preview"],"source");
+    let(rc,state)=app.answered("ced.state",json!({"text":true}));assert_eq!(rc,0);assert_eq!(state["text"],"λ one\ntwo\n");assert_eq!(state["text_hash"],blake3::hash("λ one\ntwo\n".as_bytes()).to_hex().to_string());assert!(state["conflicts"].is_array());
+    let(rc,selected)=app.answered("ced.select",json!({"anchor":{"line":1,"col":2},"head":"end"}));assert_eq!(rc,0);assert_eq!(selected["selection"]["anchor"]["offset"],2);
+    let(rc,bad)=app.answered("ced.select",json!({"anchor":1,"head":0}));assert_eq!(rc,10);assert_eq!(bad["error_code"],"INVALID_ARGUMENT");assert_eq!(bad["reason"],"bad_position");
+    let(rc,missing)=app.answered("ced.focus",json!({"tab":999}));assert_eq!(rc,10);assert_eq!(missing["error_code"],"NOT_FOUND");assert!(missing["reason"].is_null());
+    let(rc,typed)=app.answered("ced.type",json!({"text":" replaced"}));assert_eq!(rc,0);assert_eq!(typed["tab"],1);assert!(typed["pending"].as_u64().unwrap()>0);
+    assert_eq!(app.docs.call("read","1",json!({})).unwrap()["text"],"λ replaced");
+}
+#[test]
+fn gold_waits_are_deferred_and_event_driven_and_validate_exactly_one_condition() {
+    let app=App::new();
+    let(rc,ready)=app.answered("ced.wait",json!({"idle":true,"timeout_ms":1000}));assert_eq!(rc,0);assert_eq!(ready["tab"],1);assert_eq!(ready["phase"],"live");
+    let(rc,bad)=app.answered("ced.wait",json!({"idle":true,"rev":1,"timeout_ms":1000}));assert_eq!(rc,10);assert_eq!(bad["error_code"],"INVALID_ARGUMENT");
+    let mut waiting=app.command("ced.wait",json!({"rev":100,"timeout_ms":0}));assert!(waiting.try_recv().is_err());
+    let(due,_)=app.timers.poll();assert_eq!(due.len(),1);app.runtime.event("viu.timer".into(),due[0].clone()).unwrap();app.ready.recv_timeout(Duration::from_secs(5)).unwrap();assert!(app.runtime.try_completion().unwrap().error.is_none());let(rc,body)=waiting.try_recv().unwrap();assert_eq!(rc,10);assert_eq!(body["error_code"],"CONFLICT");assert_eq!(body["reason"],"timeout");
+}
