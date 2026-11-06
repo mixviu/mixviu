@@ -852,6 +852,7 @@ dependencies = [
  "native",
  "nested",
  "outputs",
+ "overlays",
  "policy",
  "policy-host",
  "protocols",
@@ -2035,7 +2036,7 @@ dependencies = [
  "seat",
  "slots",
  "smithay",
- "ui",
+ "ui-surface",
  "uuid",
  "world",
 ]
@@ -4671,6 +4672,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "overlays"
+version = "0.1.2"
+dependencies = [
+ "dispatcher",
+ "egui",
+ "graphics",
+ "model",
+ "slots",
+ "smithay",
+ "theme",
+ "toolkit",
+ "ui",
+ "ui-surface",
+ "world",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4905,6 +4923,7 @@ dependencies = [
  "serde_json",
  "smithay",
  "surfaces",
+ "ui-surface",
  "world",
  "x11-wm",
 ]
@@ -5453,7 +5472,7 @@ dependencies = [
  "graphics",
  "model",
  "smithay",
- "ui",
+ "ui-surface",
  "uuid",
  "world",
 ]
@@ -5875,6 +5894,7 @@ dependencies = [
  "egui_kittest",
  "futures-util",
  "image",
+ "overlays",
  "paths",
  "resvg",
  "scene",
@@ -5904,7 +5924,7 @@ dependencies = [
  "seat",
  "slots",
  "smithay",
- "ui",
+ "ui-surface",
  "world",
 ]
 
@@ -5973,7 +5993,7 @@ dependencies = [
  "slots",
  "smithay",
  "tracing",
- "ui",
+ "ui-surface",
  "uuid",
  "world",
 ]
@@ -7403,6 +7423,7 @@ version = "0.1.2"
 dependencies = [
  "dispatcher",
  "graphics",
+ "ledger",
  "serde",
  "smithay",
  "thiserror 2.0.20",
@@ -8752,7 +8773,6 @@ dependencies = [
  "decor",
  "dispatcher",
  "drivers",
- "egui",
  "graphics",
  "ledger",
  "logging",
@@ -8765,8 +8785,8 @@ dependencies = [
  "slots",
  "smithay",
  "surfaces",
- "toolkit",
- "ui",
+ "theme",
+ "ui-surface",
  "uuid",
  "xcursor",
 ]

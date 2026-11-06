@@ -417,6 +417,25 @@ mod tests {
     use design::{DesignContext, Scheme};
 
     #[test]
+    fn native_region_roles_match_the_existing_visuals_in_every_shipped_context() {
+        for scheme in Scheme::ALL {
+            for mode in Mode::ALL {
+                for style in design::Style::ALL {
+                    let theme = Theme::for_context(DesignContext { scheme, mode, style: Some(style), ..Default::default() });
+                    let visuals = visuals(&theme);
+                    let native = theme::region::colours(&theme);
+                    let ring = theme.dictionary().colours.non_text.get("ring")
+                        .map(|ring| colour(ring.value)).unwrap_or(visuals.selection.bg_fill);
+                    assert_eq!(native.outline, ring.to_srgba_unmultiplied(), "{scheme:?} {mode:?} {style:?}: outline");
+                    assert_eq!(native.back, visuals.window_fill.to_srgba_unmultiplied(), "{scheme:?} {mode:?} {style:?}: background");
+                    assert_eq!(native.edge, visuals.window_stroke.color.to_srgba_unmultiplied(), "{scheme:?} {mode:?} {style:?}: edge");
+                    assert_eq!(native.text, visuals.strong_text_color().to_srgba_unmultiplied(), "{scheme:?} {mode:?} {style:?}: text");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn every_hue_context_maps_without_falling_back_on_the_core_pairs() {
         for scheme in Scheme::ALL.into_iter().filter(|s| !s.is_chrome_scheme()) {
             for mode in Mode::ALL {

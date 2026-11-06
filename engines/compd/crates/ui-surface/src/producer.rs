@@ -88,5 +88,5 @@ pub trait UiProducer {
     fn request_resize(&mut self, new_size: Size<i32, Physical>, scale_factor: f32);
     fn pending_resize(&self) -> Option<(Size<i32, Physical>, f32)>;
     fn pointer_leave(&mut self);
-    fn as_any_mut(&mut self) -> &mut dyn Any;
+
 }
