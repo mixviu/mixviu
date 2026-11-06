@@ -1,19 +1,19 @@
 -- CBC-only checkpoint: format patch, compile, clippy and dependency measurement.
-fn command($cmd) {
+fn checkpoint_exec($cmd) {
   $r = run_argv(concat(["env", "CARGO_BUILD_JOBS=6"], $cmd), {timeout: 7000, max_output: 64000000})
   print($r.stdout)
   print($r.stderr)
   print("COMMAND_RC=" .. to_string($r.exit_code) .. " " .. join($cmd, " "))
   return $r.exit_code
 }
-$fmt = command(["cargo", "fmt", "-p", "theme", "-p", "toolkit", "-p", "decor"])
+$fmt = checkpoint_exec(["cargo", "fmt", "-p", "theme", "-p", "toolkit", "-p", "decor"])
 print("FORMAT_DIFF_BEGIN")
 print(run_argv_must(["git", "diff", "--", "libraries/theme", "libraries/toolkit", "engines/compd/crates/decor"]))
 print("FORMAT_DIFF_END")
 -- These are this job's formatter changes, in this job's locked checkout.
 run_argv_must(["git", "checkout", "-q", "--", "libraries/theme", "libraries/toolkit", "engines/compd/crates/decor"])
-$build = command(["cargo", "build", "-p", "compd", "--features", "backend-all", "--locked"])
-$clippy = command(["cargo", "clippy", "-p", "theme", "-p", "decor", "-p", "toolkit", "--lib", "--locked"])
+$build = checkpoint_exec(["cargo", "build", "-p", "compd", "--features", "backend-all", "--locked"])
+$clippy = checkpoint_exec(["cargo", "clippy", "-p", "theme", "-p", "decor", "-p", "toolkit", "--lib", "--locked"])
 $tree = run_argv(["cargo", "tree", "-p", "compd", "--no-default-features", "--features", "backend-native,backend-headless", "-e", "normal", "--locked"], {max_output: 64000000})
 print($tree.stderr)
 $matches = filter(lines($tree.stdout), fn($line) = contains($line, "egui"))
