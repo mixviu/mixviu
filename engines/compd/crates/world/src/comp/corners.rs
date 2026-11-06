@@ -34,11 +34,13 @@ use smithay::utils::{Physical, Point};
 use smithay::wayland::pointer_constraints::with_pointer_constraint;
 
 use crate::state::Loop;
-use std::collections::BTreeMap;
 use smithay::reexports::wayland_server::backend::ClientId;
+use std::collections::BTreeMap;
 type PanelClaim = (String, String, ClientId, Option<u64>);
 static PANEL_INPUT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-pub fn enable_panel_input() { PANEL_INPUT.store(true, std::sync::atomic::Ordering::Release); }
+pub fn enable_panel_input() {
+    PANEL_INPUT.store(true, std::sync::atomic::Ordering::Release);
+}
 
 /// The corner state of the compd host.
 #[derive(Debug)]
@@ -163,14 +165,24 @@ impl Corners {
             let after = self.detector.contact_corner();
             if after != before {
                 if let Some(corner) = after {
-                    self.topics.push(CornerTopic::Input { output: output.into(), corner,
-                        phase: "engaged", button: None, consumed: false });
+                    self.topics.push(CornerTopic::Input {
+                        output: output.into(),
+                        corner,
+                        phase: "engaged",
+                        button: None,
+                        consumed: false,
+                    });
                 }
             }
             for event in events.iter().flatten() {
                 if let CornerEvent::Entered { corner, .. } = event {
-                    self.topics.push(CornerTopic::Input { output: output.into(), corner: *corner,
-                        phase: "dwelled", button: None, consumed: false });
+                    self.topics.push(CornerTopic::Input {
+                        output: output.into(),
+                        corner: *corner,
+                        phase: "dwelled",
+                        button: None,
+                        consumed: false,
+                    });
                 }
             }
         }
@@ -203,11 +215,21 @@ impl Corners {
     pub fn press(&mut self, button: u32, modifiers: Vec<&'static str>, session_lock: bool) -> bool {
         self.press_with_contact(button, modifiers, session_lock, false)
     }
-    fn press_with_contact(&mut self, button: u32, modifiers: Vec<&'static str>, session_lock: bool, panel: bool) -> bool {
+    fn press_with_contact(
+        &mut self,
+        button: u32,
+        modifiers: Vec<&'static str>,
+        session_lock: bool,
+        panel: bool,
+    ) -> bool {
         let engaged = self.region.as_ref().and_then(|(output, _)| {
             Some((
                 output.clone(),
-                if panel { self.detector.contact_corner()? } else { self.detector.engaged_corner()? },
+                if panel {
+                    self.detector.contact_corner()?
+                } else {
+                    self.detector.engaged_corner()?
+                },
                 self.detector.engaged_dwell_ms().unwrap_or(0),
             ))
         });
@@ -357,49 +379,107 @@ fn activate_pending_constraint(lp: &mut Loop) {
 
 fn panel_claim(lp: &Loop, output: &str, corner: Corner) -> Option<PanelClaim> {
     let edge = corner.summoned_edge();
-    let holder = lp.inner.comp.panels.holders.get(&(output.into(), edge.into()))?;
-    if holder.stalled || holder.id.is_none() || holder.reporter.is_none() { return None; }
-    Some((output.into(), edge.into(), holder.owner.clone()?, holder.generation))
+    let holder = lp
+        .inner
+        .comp
+        .panels
+        .holders
+        .get(&(output.into(), edge.into()))?;
+    if holder.stalled || holder.id.is_none() || holder.reporter.is_none() {
+        return None;
+    }
+    Some((
+        output.into(),
+        edge.into(),
+        holder.owner.clone()?,
+        holder.generation,
+    ))
 }
 
 /// Early ownership is compositor authority, bound to a live panel incarnation.
 /// Every owned release is consumed even after departure, disconnect or lock;
 /// losing the claim cancels the action, never the ownership of the release.
 pub fn panel_button(lp: &mut Loop, button: u32, pressed: bool) -> bool {
-    if !PANEL_INPUT.load(std::sync::atomic::Ordering::Acquire) { return false; }
+    if !PANEL_INPUT.load(std::sync::atomic::Ordering::Acquire) {
+        return false;
+    }
     use crate::state::CoordinateTrait as _;
     let point = lp.inner.pointer_mut().motion;
     let screen = lp.size_ctx_all().screen_size_physical;
     sample(lp, Point::from((point.x, point.y)), screen, (0.0, 0.0));
     if !pressed {
-        let Some((claim, corner)) = lp.inner.comp.corners.panel_presses.remove(&button) else { return false; };
-        if panel_claim(lp, &claim.0, corner).as_ref() != Some(&claim) || super::session_lock::active(lp) {
+        let Some((claim, corner)) = lp.inner.comp.corners.panel_presses.remove(&button) else {
+            return false;
+        };
+        if panel_claim(lp, &claim.0, corner).as_ref() != Some(&claim)
+            || super::session_lock::active(lp)
+        {
             lp.inner.comp.corners.presses.cancel(button);
         }
         let corners = &mut lp.inner.comp.corners;
         let clicked = corners.presses.owes_click(button);
         corners.release(button);
-        if clicked { corners.topics.push(CornerTopic::Input { output: claim.0.clone(), corner,
-            phase: "clicked", button: Some(button), consumed: true }); }
-        corners.topics.push(CornerTopic::Input { output: claim.0, corner,
-            phase: "released", button: Some(button), consumed: true });
+        if clicked {
+            corners.topics.push(CornerTopic::Input {
+                output: claim.0.clone(),
+                corner,
+                phase: "clicked",
+                button: Some(button),
+                consumed: true,
+            });
+        }
+        corners.topics.push(CornerTopic::Input {
+            output: claim.0,
+            corner,
+            phase: "released",
+            button: Some(button),
+            consumed: true,
+        });
         return true;
     }
-    if lp.inner.comp.corners.panel_presses.contains_key(&button) { return true; }
-    let Some(corner) = lp.inner.comp.corners.contact() else { return false; };
-    let Some(output) = lp.inner.comp.corners.output().map(str::to_owned) else { return false; };
-    let Some(claim) = panel_claim(lp, &output, corner) else { return false; };
+    if lp.inner.comp.corners.panel_presses.contains_key(&button) {
+        return true;
+    }
+    let Some(corner) = lp.inner.comp.corners.contact() else {
+        return false;
+    };
+    let Some(output) = lp.inner.comp.corners.output().map(str::to_owned) else {
+        return false;
+    };
+    let Some(claim) = panel_claim(lp, &output, corner) else {
+        return false;
+    };
     let locked = super::session_lock::active(lp);
-    let modifiers = lp.state.seat.seat.get_keyboard().map(|keyboard| {
-        let state = keyboard.modifier_state();
-        [(state.shift,"shift"),(state.ctrl,"ctrl"),(state.alt,"alt"),(state.logo,"super")]
-            .into_iter().filter_map(|(on,name)| on.then_some(name)).collect()
-    }).unwrap_or_default();
+    let modifiers = lp
+        .state
+        .seat
+        .seat
+        .get_keyboard()
+        .map(|keyboard| {
+            let state = keyboard.modifier_state();
+            [
+                (state.shift, "shift"),
+                (state.ctrl, "ctrl"),
+                (state.alt, "alt"),
+                (state.logo, "super"),
+            ]
+            .into_iter()
+            .filter_map(|(on, name)| on.then_some(name))
+            .collect()
+        })
+        .unwrap_or_default();
     let corners = &mut lp.inner.comp.corners;
-    if !corners.press_with_contact(button, modifiers, locked, true) { return false; }
+    if !corners.press_with_contact(button, modifiers, locked, true) {
+        return false;
+    }
     corners.panel_presses.insert(button, (claim, corner));
-    corners.topics.push(CornerTopic::Input { output, corner,
-        phase: "consumed", button: Some(button), consumed: true });
+    corners.topics.push(CornerTopic::Input {
+        output,
+        corner,
+        phase: "consumed",
+        button: Some(button),
+        consumed: true,
+    });
     true
 }
 
@@ -448,22 +528,35 @@ mod tests {
     #[test]
     fn panel_authority_owns_a_fast_click_before_dwell_and_its_release() {
         let mut corners = Corners::default();
-        corners.sample("test", (1000.0,800.0), (2.0,2.0), (0.0,0.0), false);
+        corners.sample("test", (1000.0, 800.0), (2.0, 2.0), (0.0, 0.0), false);
         assert!(corners.contact().is_some());
         assert!(corners.engaged().is_none());
-        assert!(!corners.press(0x110, Vec::new(), false), "legacy dwell-only path remains unchanged");
+        assert!(
+            !corners.press(0x110, Vec::new(), false),
+            "legacy dwell-only path remains unchanged"
+        );
         assert!(corners.press_with_contact(0x110, Vec::new(), false, true));
         assert!(corners.release(0x110));
-        assert!(corners.take_topics().iter().any(|topic| matches!(topic, CornerTopic::Clicked { dwell_ms: 0, .. })));
+        assert!(
+            corners
+                .take_topics()
+                .iter()
+                .any(|topic| matches!(topic, CornerTopic::Clicked { dwell_ms: 0, .. }))
+        );
     }
     #[test]
     fn lost_panel_claim_cancels_action_but_keeps_release_owned() {
         let mut corners = Corners::default();
-        corners.sample("test", (1000.0,800.0), (2.0,2.0), (0.0,0.0), false);
+        corners.sample("test", (1000.0, 800.0), (2.0, 2.0), (0.0, 0.0), false);
         assert!(corners.press_with_contact(0x110, Vec::new(), false, true));
         corners.presses.cancel(0x110);
         assert!(corners.release(0x110));
-        assert!(!corners.take_topics().iter().any(|topic| matches!(topic, CornerTopic::Clicked { .. })));
+        assert!(
+            !corners
+                .take_topics()
+                .iter()
+                .any(|topic| matches!(topic, CornerTopic::Clicked { .. }))
+        );
         assert!(!corners.release(0x110));
     }
 

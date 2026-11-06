@@ -270,7 +270,11 @@ mod tests {
                 let original = build(&snapshot).unwrap();
                 let native = decor::appearance::build(&snapshot).unwrap();
                 for style in ChromeStyle::ALL {
-                    assert_eq!(original.chrome(style), native.chrome(style), "{scheme:?} {mode:?} {style:?}");
+                    assert_eq!(
+                        original.chrome(style),
+                        native.chrome(style),
+                        "{scheme:?} {mode:?} {style:?}"
+                    );
                 }
             }
         }

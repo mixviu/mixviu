@@ -214,8 +214,12 @@ impl PortService {
         while let Ok(command) = self.source.try_recv() {
             match command {
                 PortCommand::Chrome(update) => {
-                    if let Some(look) = update.look() { engine.native_chrome_theme(look); }
-                    if update.apply() { engine.native_chrome_changed(); }
+                    if let Some(look) = update.look() {
+                        engine.native_chrome_theme(look);
+                    }
+                    if update.apply() {
+                        engine.native_chrome_changed();
+                    }
                 }
                 PortCommand::ServicesLive(live) => engine.services_live(&live),
                 PortCommand::Snapshot(request) => {

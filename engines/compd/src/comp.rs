@@ -159,9 +159,6 @@ pub(crate) fn reconcile_scene_geometry(lp: &mut Loop) {
         // client buffer can remove a letterbox after scene geometry settled;
         // the commit observer requests the same reconciliation in that case.
         refresh_scene_surfaces(lp);
-        #[cfg(not(feature = "inproc-ui"))]
-        comp_service::chrome::targets(lp.inner.all_world_spaces().iter()
-            .flat_map(|space| space.state.elements()).filter_map(decor::window::action_service).collect());
         if policy_host::input::try_retarget_pointer(lp) {
             lp.inner.comp.clear_input_geometry_dirty();
         }
@@ -490,6 +487,12 @@ impl Bus {
         refresh_scene_reserved(lp);
         // ... and its surfaces and keyboard focus, for comp.props.
         refresh_scene_surfaces(lp);
+        #[cfg(not(feature = "inproc-ui"))]
+        {
+            use dispatcher::wire::trait_::wire_trait::WireTrait;
+            comp_service::chrome::targets(lp.inner.all_world_spaces().iter()
+                .flat_map(|space| space.state.elements()).filter_map(decor::window::action_service).collect());
+        }
         // Layer exclusive zones: each output's usable area; maximised windows
         // follow it when it moves.
         policy_host::control::refresh_usable(lp);
@@ -556,7 +559,9 @@ impl Bus {
             let hover = policy_host::chrome::hover(lp);
             if hover != self.chrome_hover {
                 self.chrome_hover = hover.clone();
-                self.producer.offer_next(move |event_seq| comp_model::observation::ObservationRecord::ChromeHover { hover, event_seq });
+                self.producer.offer_next(move |event_seq| {
+                    comp_model::observation::ObservationRecord::ChromeHover { hover, event_seq }
+                });
             }
         }
         // The corner topics the pointer path earned, then the dwell timer for
@@ -1076,7 +1081,9 @@ impl CompEngine for Engine<'_> {
         }
     }
     fn native_chrome_changed(&mut self) {
-        self.lp.state.schedule_redraw(dispatcher::state::RedrawReason::Publish);
+        self.lp
+            .state
+            .schedule_redraw(dispatcher::state::RedrawReason::Publish);
     }
     fn snapshot(&mut self, scopes: &ReadScopes) -> Option<CompSnapshot> {
         let mut snapshot = policy_host::project(
@@ -1148,7 +1155,9 @@ impl CompEngine for Engine<'_> {
     fn services_live(&mut self, live: &BTreeSet<String>) {
         #[cfg(not(feature = "inproc-ui"))]
         if decor::window::menu_services(live.clone()) {
-            self.lp.state.schedule_redraw(dispatcher::state::RedrawReason::Publish);
+            self.lp
+                .state
+                .schedule_redraw(dispatcher::state::RedrawReason::Publish);
         }
         policy_host::panel::services_live(self.lp, live);
     }

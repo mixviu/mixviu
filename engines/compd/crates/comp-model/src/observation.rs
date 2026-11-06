@@ -393,8 +393,18 @@ impl TopicMessage {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ObservationRecord {
-    ChromeHover { hover: Value, event_seq: u64 },
-    CornerInput { output: String, corner: Corner, phase: &'static str, button: Option<u32>, consumed: bool, event_seq: u64 },
+    ChromeHover {
+        hover: Value,
+        event_seq: u64,
+    },
+    CornerInput {
+        output: String,
+        corner: Corner,
+        phase: &'static str,
+        button: Option<u32>,
+        consumed: bool,
+        event_seq: u64,
+    },
     PlacementChanged {
         id: u64,
         generation: u64,
@@ -516,7 +526,9 @@ impl ObservationRecord {
     /// the outbox numbers each one as it is offered (`offer_next`).
     pub fn with_event_seq(mut self, seq: u64) -> Self {
         match &mut self {
-            Self::ChromeHover { event_seq, .. } | Self::CornerInput { event_seq, .. } => *event_seq = seq,
+            Self::ChromeHover { event_seq, .. } | Self::CornerInput { event_seq, .. } => {
+                *event_seq = seq
+            }
             Self::PlacementChanged { event_seq, .. } => *event_seq = seq,
             Self::SessionChanged { event_seq, .. }
             | Self::PanelCommand { event_seq, .. }

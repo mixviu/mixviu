@@ -6,11 +6,22 @@
 //! apps draw with), its text scale, the panel preferences, and the
 //! server-side decoration themes `decor` draws window frames with.
 use settings::view::{Accessibility, Appearance, View, Window};
-struct Profile { window: Window, appearance: Appearance, accessibility: Accessibility }
-impl Profile { fn read(snapshot: &Snapshot) -> Result<Self, Diagnostic> {
-settings::registry::validate(&snapshot.values).map_err(|errors| errors.into_iter().next().expect("validation error"))?;
-Ok(Self { window: Window::of(&snapshot.values), appearance: Appearance::of(&snapshot.values), accessibility: Accessibility::of(&snapshot.values) })
-} }
+struct Profile {
+    window: Window,
+    appearance: Appearance,
+    accessibility: Accessibility,
+}
+impl Profile {
+    fn read(snapshot: &Snapshot) -> Result<Self, Diagnostic> {
+        settings::registry::validate(&snapshot.values)
+            .map_err(|errors| errors.into_iter().next().expect("validation error"))?;
+        Ok(Self {
+            window: Window::of(&snapshot.values),
+            appearance: Appearance::of(&snapshot.values),
+            accessibility: Accessibility::of(&snapshot.values),
+        })
+    }
+}
 use crate::{
     ChromeTheme, Palette,
     layout::{ChromeStyle, DecoFontFamily, DecoFontWeight},
@@ -206,11 +217,15 @@ pub(crate) fn page(theme: &Theme, dialog: bool) -> Palette {
     palette
 }
 
-
 fn stroke_width(theme: &Theme) -> f32 {
-    theme.overlay().stroke.unwrap_or_else(|| theme.dictionary().metrics.get("icon.stroke_width")
-        .filter(|metric| metric.kind == design::ResolvedMetricKind::Px && metric.value > 0.0)
-        .map_or(theme::icons::DEFAULT_STROKE, |metric| metric.value as f32))
+    theme.overlay().stroke.unwrap_or_else(|| {
+        theme
+            .dictionary()
+            .metrics
+            .get("icon.stroke_width")
+            .filter(|metric| metric.kind == design::ResolvedMetricKind::Px && metric.value > 0.0)
+            .map_or(theme::icons::DEFAULT_STROKE, |metric| metric.value as f32)
+    })
 }
 
 #[cfg(test)]
@@ -224,11 +239,21 @@ mod tests {
         let values = settings::migrate::migrate(&desktop).unwrap().values;
         let snapshot = Snapshot {
             schema: settings::SCHEMA,
-            binding: settings::Binding { instance: "test".into(), profile: "test".into() },
-            incarnation: "test".into(), revision: settings::Revision(1), design_revision: settings::Revision(1),
+            binding: settings::Binding {
+                instance: "test".into(),
+                profile: "test".into(),
+            },
+            incarnation: "test".into(),
+            revision: settings::Revision(1),
+            design_revision: settings::Revision(1),
             source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
-            effective: settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE).unwrap(),
-            desktop: settings::migrate::reverse(&values).desktop, values,
+            effective: settings::resolve::values::resolve(
+                &values,
+                settings::EMBEDDED_DEFAULT_SOURCE,
+            )
+            .unwrap(),
+            desktop: settings::migrate::reverse(&values).desktop,
+            values,
         };
         let look = build(&snapshot).unwrap();
         assert_eq!(look.theme.mode(), Mode::Light);

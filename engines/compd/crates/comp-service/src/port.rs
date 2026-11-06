@@ -355,7 +355,9 @@ pub struct PortIngress {
 
 impl PortIngress {
     pub(crate) fn chrome(&self, update: crate::chrome::Update) -> bool {
-        self.sender.try_send(PortCommand::Chrome(Box::new(update))).is_ok()
+        self.sender
+            .try_send(PortCommand::Chrome(Box::new(update)))
+            .is_ok()
     }
     pub fn request_panel(&self, op: PanelRequest) -> Result<ControlAdmission, QueueFull> {
         let (reply, receive) = tokio::sync::oneshot::channel();
@@ -929,7 +931,9 @@ where
 type WorkerFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 trait WorkerClient: Send + Sync + 'static {
-    fn chrome_client(&self) -> Option<&SupervisedClient> { None }
+    fn chrome_client(&self) -> Option<&SupervisedClient> {
+        None
+    }
     fn incoming(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>>;
     fn state(&self) -> ConnState;
     fn subscribe_state(&self) -> watch::Receiver<ConnState>;
@@ -954,7 +958,9 @@ trait WorkerClient: Send + Sync + 'static {
 }
 
 impl WorkerClient for SupervisedClient {
-    fn chrome_client(&self) -> Option<&SupervisedClient> { Some(self) }
+    fn chrome_client(&self) -> Option<&SupervisedClient> {
+        Some(self)
+    }
     fn incoming(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>> {
         SupervisedClient::incoming(self)
     }
@@ -1097,8 +1103,12 @@ async fn worker_loop<F, Fut, C>(
     };
     let mut states = client.subscribe_state();
     let (chrome_sender, chrome_receiver) = tokio_mpsc::channel(64);
-    let chrome_live = Arc::new(AtomicU64::new(client.chrome_client()
-        .and_then(settings::native::live_generation).unwrap_or(0)));
+    let chrome_live = Arc::new(AtomicU64::new(
+        client
+            .chrome_client()
+            .and_then(settings::native::live_generation)
+            .unwrap_or(0),
+    ));
     let chrome_task = if crate::chrome::enabled() {
         let client = Arc::clone(&client);
         let ingress = ingress.clone();
@@ -1108,7 +1118,9 @@ async fn worker_loop<F, Fut, C>(
                 crate::chrome::run(client, ingress, chrome_receiver, live).await;
             }
         }))
-    } else { None };
+    } else {
+        None
+    };
     apply_connection_state(&broker, *states.borrow());
     let mut responders = JoinSet::new();
     let responder_permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
@@ -1213,7 +1225,9 @@ async fn worker_loop<F, Fut, C>(
 
     registry_task.abort();
     chrome_live.store(0, Ordering::Release);
-    if let Some(task) = chrome_task { task.abort(); }
+    if let Some(task) = chrome_task {
+        task.abort();
+    }
     responders.abort_all();
     while responders.join_next().await.is_some() {}
     drop(reply_sender);
@@ -1966,7 +1980,7 @@ async fn publish_message<C: WorkerClient>(
 ) -> Result<(), ()> {
     let mut headers = BTreeMap::new();
     headers.insert("name".to_string(), topic.to_string());
-    headers.insert("retain".to_string(), "false".to_string());
+    headers.insert("retain".to_string(), if topic.ends_with(".chrome.action.hover") { "true" } else { "false" }.to_string());
     let wire = message.to_wire();
     match tokio::time::timeout(PUBLISH_TIMEOUT, client.publish(&headers, &wire)).await {
         Ok(Ok(())) => Ok(()),

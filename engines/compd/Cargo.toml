@@ -46,6 +46,7 @@ timing-predict = ["native?/timing-predict"]
 timing-throttle = ["native?/timing-throttle"]
 
 [dependencies]
+decor.workspace = true
 logging.workspace = true
 buildinfo = { workspace = true }
 comp-service = { workspace = true }

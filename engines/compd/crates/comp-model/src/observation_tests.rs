@@ -9,10 +9,17 @@ use super::*;
 #[test]
 fn extension_topics_have_gap_tracking_without_changing_the_frozen_catalogue() {
     let mut affected = AffectedTopics::default();
-    for topic in EXTENSION_TOPIC_SUFFIXES { affected.insert(topic); }
+    for topic in EXTENSION_TOPIC_SUFFIXES {
+        affected.insert(topic);
+    }
     assert_eq!(affected.bits(), 0xc000);
-    assert_eq!(affected.iter().collect::<Vec<_>>(), EXTENSION_TOPIC_SUFFIXES);
-    for topic in EXTENSION_TOPIC_SUFFIXES { affected.remove(topic); }
+    assert_eq!(
+        affected.iter().collect::<Vec<_>>(),
+        EXTENSION_TOPIC_SUFFIXES
+    );
+    for topic in EXTENSION_TOPIC_SUFFIXES {
+        affected.remove(topic);
+    }
     assert!(affected.is_empty());
     assert_eq!(TOPIC_SUFFIXES.len(), 14);
 }
