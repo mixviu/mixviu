@@ -31,6 +31,7 @@ pub struct Event {
 
 pub struct SceneView {
     frame: Option<Box<SceneView>>,
+    regions: BTreeMap<String, egui::Rect>,
     tree: ResolvedScene,
     lists: PreparedLists,
     pub revision: u64,
@@ -62,6 +63,7 @@ impl SceneView {
         validate_controls(&tree)?;
         Ok(Self {
             frame: None,
+            regions: BTreeMap::new(),
             tree,
             lists,
             revision: 0,
@@ -261,7 +263,7 @@ impl SceneView {
     pub fn show(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         if let Some(mut frame) = self.frame.take() {
             let mut events = frame.show(ui);
-            if let Some(rect) = frame.geometry.get("gold-content").copied() {
+            if let Some(rect) = frame.regions.get("gold-content").copied() {
                 events.extend(
                     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                         ui.set_clip_rect(ui.clip_rect().intersect(rect));
@@ -287,6 +289,7 @@ impl SceneView {
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         let mut events = Vec::new();
+        self.regions.clear();
         self.geometry.clear();
         self.widgets.begin_frame();
         let tree = self.tree.clone();
@@ -319,7 +322,10 @@ impl SceneView {
     /// fence input replies on this without claiming GPU or physical display.
     pub fn current_revision_drawn(&self) -> bool {
         self.shown_revision == Some(self.revision)
-            && self.frame.as_ref().is_none_or(|frame| frame.current_revision_drawn())
+            && self
+                .frame
+                .as_ref()
+                .is_none_or(|frame| frame.current_revision_drawn())
     }
     pub fn request_focus(&mut self, id: &str) -> Result<(), String> {
         if let Some(frame) = self
@@ -652,6 +658,7 @@ impl SceneView {
         depth: usize,
         events: &mut Vec<Event>,
     ) {
+        self.regions.insert(id.into(), rect.intersect(ui.clip_rect()));
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(id), |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(rect));
             self.node(ui, id, nodes, route, depth + 1, events);

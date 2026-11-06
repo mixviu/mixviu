@@ -303,7 +303,10 @@ impl Host {
         }
         if self.ready {
             if let Some(session) = &mut self.session {
-                if let Some(snapshot) = session.poll().or_else(|| self.session_dirty.then(|| session.snapshot.clone())) {
+                if let Some(snapshot) = session
+                    .poll()
+                    .or_else(|| self.session_dirty.then(|| session.snapshot.clone()))
+                {
                     let appearance = snapshot["appearance"].clone();
                     match crate::appearance::install_session(
                         ui.ctx(),
