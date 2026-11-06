@@ -217,9 +217,9 @@ fn execute($s,$id,$params,$alias)
     end
     raise("DISABLED","That command cannot run now")
   end
-  $result=nil
+  $action_result=nil
   if contains(["edit.annotate","edit.move","edit.delete","edit.crop","edit.undo","edit.redo"],$id) then
-    $edit=edited($s,slice($id,5),$params);$s=$edit.state;$result=$edit.result
+    $edit=edited($s,slice($id,5),$params);$s=$edit.state;$action_result=$edit.result
   elif $id=="file.open" then $s=request($s,{op:"open-dialog"})
   elif $id=="file.save" then
     if $s.saved!=nil and not $s.document.dirty then $s.status="Already saved to "..$s.saved.path else $s=save($s,nil,false) end
@@ -266,8 +266,8 @@ fn execute($s,$id,$params,$alias)
   elif $id=="help.about" then $s=open_dialog($s,"about")
   elif $id=="help.shortcuts" then $s=open_dialog($s,"shortcuts")
   end
-  if not contains(["edit.annotate","edit.move","edit.delete","edit.crop","edit.undo","edit.redo"],$id) then $s=$journal.record_action($s,$id,$params,$result) end
-  return {state:$s,result:$result}
+  if not contains(["edit.annotate","edit.move","edit.delete","edit.crop","edit.undo","edit.redo"],$id) then $s=$journal.record_action($s,$id,$params,$action_result) end
+  return {state:$s,result:$action_result}
 end
 fn select_ui($s,$a)
   $state.check_fields($a,["tool","mode","window","output"])
