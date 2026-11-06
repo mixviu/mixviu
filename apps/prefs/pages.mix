@@ -163,7 +163,11 @@ fn browser_row($s,$p,$r)
     $v.min_items=1;$v.max_items=8
     $v.move_up=$n.text_for("list-move-up");$v.move_down=$n.text_for("list-move-down");$v.remove_label=$n.text_for("list-remove")
     if $c.add!=nil then $v.add_label=$n.text_for("drawer-"..$p.id.."-"..$c.add) end
-  elif $kind=="append" then $v.kind="pick";$v.choices=concat($s.live.options[$c.source] ?? [],$s.live.options[$c.more] ?? [])
+  elif $kind=="append" then
+    $v.kind="append-list";$v.choices=concat($s.live.options[$c.source] ?? [],$s.live.options[$c.more] ?? [])
+    $v.primary_count=len($s.live.options[$c.source] ?? []);$v.extended=$c.more!=nil;$v.max_items=8
+    $v.more_label=$n.text_for("row-"..$p.id.."-"..$r.id.."-more");$v.search_hint=$n.text_for("search-hint")
+    $v.add_label=$n.text_for("list-add");$v.added_label=$n.text_for("list-added");$v.empty_label=$n.text_for("list-empty")
   elif contains(["drawer","link","page"],$kind) then $v.kind="link"
   elif $kind=="reset" then $v.kind="button" end
   if $kind=="preview" then $v.kind="media-preview";$v.path=$gallery.shown_image($s);$v.colour=stored($s,$c.colour);$v.fit=stored($s,$c.fit) ?? "fill" end
@@ -180,7 +184,7 @@ fn browser_sections($s,$p,$sections)
     if $p.id=="wifi" and contains(["known","visible"],$sec.id) then
       $rows=[{id:$sec.id.."_none",title:$n.text_for("row-wifi-"..$sec.id.."_none"),kind:"info",shown:true,blocked:nil,value:nil}]
     end
-    push($out,{id:$sec.id,title:$sec.title,shown:section_shown($s,$p,$sec),notice:if $p.id=="power" and $sec.id=="devices" then backend_reason("backend-hostd-upower") else nil end,rows:$rows})
+    push($out,{id:$sec.id,title:$sec.title,plain:len($rows)==1 and $rows[0].kind=="append-list",shown:section_shown($s,$p,$sec),notice:if $p.id=="power" and $sec.id=="devices" then backend_reason("backend-hostd-upower") else nil end,rows:$rows})
   end
   return $out
 end

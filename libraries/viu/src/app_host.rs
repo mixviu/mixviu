@@ -55,6 +55,7 @@ struct Host {
     file_theme: toolkit::Theme,
     last_ui: settings::model::CommonUi,
     session_dirty: bool,
+    session_key: Value,
     framed: bool,
     title: String,
     window_frame: crate::window_frame::WindowFrame,
@@ -522,20 +523,28 @@ impl Host {
                 }
             }
             if let Some(session) = &mut self.session {
+                let refresh_key = self.model.get("theme_refresh_key");
+                let key_changed = refresh_key.is_some_and(|key| key != &self.session_key);
                 if let Some(snapshot) = session
                     .poll()
-                    .or_else(|| self.session_dirty.then(|| session.snapshot.clone()))
+                    .or_else(|| (self.session_dirty || key_changed).then(|| session.snapshot.clone()))
                 {
                     let appearance = snapshot["appearance"].clone();
-                    match crate::appearance::install_session_choice(
+                    let installed = if refresh_key.is_none() || key_changed {
+                        crate::appearance::install_session_choice(
                         ui.ctx(),
                         &snapshot,
                         &self.service,
                         &self.file_theme,
                         &self.last_ui,
                         &self.model["theme_choice"],
-                    ) {
+                        )
+                    } else {
+                        Ok(self.last_ui.clone())
+                    };
+                    match installed {
                         Ok(common_ui) => {
+                            self.session_key = refresh_key.cloned().unwrap_or(Value::Null);
                             self.last_ui = common_ui;
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
@@ -549,7 +558,7 @@ impl Host {
                                 }
                             }
                             self.session_window = Some(window);
-                            if self
+                            if (refresh_key.is_none() || key_changed) && self
                                 .native_choice
                                 .as_object()
                                 .is_some_and(|c| !c.is_empty())
@@ -870,6 +879,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         file_theme: toolkit::Theme::load(),
         last_ui: settings::model::CommonUi::default(),
         session_dirty: false,
+        session_key: Value::Null,
         session: bundle.manifest.frame.as_ref().map(|_| {
             crate::session::Session::embedded(
                 &bundle.manifest.service,

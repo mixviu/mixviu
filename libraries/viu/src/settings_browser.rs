@@ -227,6 +227,7 @@ pub fn validate(value: &Value) -> Result<(), String> {
                 "ordered",
                 "pick",
                 "pick-list",
+                "append-list",
                 "colour-editor",
             ]
             .contains(&text(row, "kind"))
@@ -680,7 +681,7 @@ pub(crate) fn draw(
                     toolkit::button::paint_icon(
                         ui,
                         toolkit::Icon::ChevronRight,
-                        pos2(rect.right() - look.m - 10.0, rect.center().y),
+                        pos2(rect.right() - look.m - 18.0, rect.center().y),
                         20.0,
                         look.icon,
                     );
@@ -727,7 +728,9 @@ fn cards(
                 ui.add_space(ui.spacing().item_spacing.y);
             }
             for row in array(&section["rows"]).filter(|r| r["shown"] != false) {
-                if ["tiles", "media-preview", "file-pick"].contains(&text(row, "kind")) {
+                if text(row, "kind") == "append-list" {
+                    append_list(ui, id, row, look, geometry, events);
+                } else if ["tiles", "media-preview", "file-pick"].contains(&text(row, "kind")) {
                     crate::media_gallery::draw(ui, id, row, look, geometry, events);
                 } else {
                     draw_inline_row(ui, id, row, look, geometry, events);
@@ -1177,7 +1180,9 @@ fn draw_control(
                     Look::radius(look.r_xs),
                     look.accent,
                 );
-                let selected = choice["value"] == row["value"];
+                let selected = row["resolved_dark"]
+                    .as_bool()
+                    .map_or(choice["value"] == row["value"], |resolved| dark == resolved);
                 if selected {
                     ui.painter().rect_stroke(
                         rect,
@@ -2082,6 +2087,54 @@ fn draw_inline_row(
     }
 }
 
+fn append_list(ui: &mut Ui, id: &str, row: &Value, look: &Look, geometry: &mut BTreeMap<String, Rect>, events: &mut Vec<Intent>) {
+    let key = text(row, "id");
+    let filter_id = ui.make_persistent_id((id, key, "append-filter"));
+    let more_id = filter_id.with("more");
+    let mut query = ui.data(|d| d.get_temp::<String>(filter_id)).unwrap_or_default();
+    let search = ui.add(egui::TextEdit::singleline(&mut query).hint_text(text(row, "search_hint")).desired_width(ui.available_width()));
+    record(geometry,id,&format!("row.{key}.search"),&search);
+    if search.changed() { ui.data_mut(|d| d.insert_temp(filter_id, query.clone())); }
+    ui.add_space(look.s);
+    let mut extended = ui.data(|d| d.get_temp::<bool>(more_id)).unwrap_or(false);
+    if row["extended"] == true {
+        egui::Frame::NONE.fill(look.card).corner_radius(Look::radius(look.r_s)).show(ui,|ui| {
+            egui::Frame::NONE.inner_margin(egui::Margin::symmetric(look.row_pad() as i8,4)).show(ui,|ui| {
+                ui.set_min_height(32.0); ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {ui.with_layout(Layout::right_to_left(Align::Center),|ui| {
+                    let r=cosmic_switch(ui,extended,look,text(row,"more_label"));
+                    record(geometry,id,&format!("row.{key}.more"),&r);
+                    if r.clicked() {extended=!extended;ui.data_mut(|d|d.insert_temp(more_id,extended));}
+                    ui.with_layout(Layout::left_to_right(Align::Center),|ui| { ui.label(RichText::new(text(row,"more_label")).size(14.0).color(look.text)); });
+                });});
+            });
+        });
+        ui.add_space(look.s);
+    }
+    let query=query.trim().to_lowercase();
+    let choices:Vec<_>=array(&row["choices"]).enumerate().filter(|(i,c)| (extended || *i < row["primary_count"].as_u64().unwrap_or(0) as usize) && text(c,"label").to_lowercase().contains(&query)).collect();
+    egui::Frame::NONE.fill(look.card).corner_radius(Look::radius(look.r_s)).show(ui,|ui| {
+        ui.set_width(ui.available_width()); ui.spacing_mut().item_spacing.y=0.0;
+        if choices.is_empty() {egui::Frame::NONE.inner_margin(egui::Margin::symmetric(look.row_pad() as i8,4)).show(ui,|ui| {ui.set_min_height(32.0);ui.label(RichText::new(text(row,"empty_label")).size(14.0).color(look.text));});}
+        for (position,(index,choice)) in choices.iter().enumerate() {
+            if position>0 {let y=ui.cursor().top();ui.painter().hline(ui.min_rect().x_range(),y,Stroke::new(1.0,look.divider));ui.add_space(1.0);}
+            let (rect,_)=ui.allocate_exact_size(vec2(ui.available_width(),40.0),Sense::hover());
+            if !ui.is_rect_visible(rect) {continue;}
+            let indent=if choice["value"].as_array().and_then(|a|a.last()).and_then(Value::as_str).is_some_and(|s|!s.is_empty()) {look.l}else{0.0};
+            ui.painter().text(rect.left_center()+vec2(look.m+indent,0.0),egui::Align2::LEFT_CENTER,text(choice,"label"),egui::FontId::proportional(14.0),look.text);
+            let have=array(&row["value"]).any(|v|v==&choice["value"]);
+            let full=array(&row["value"]).count()>=row["max_items"].as_u64().unwrap_or(8) as usize;
+            let word=text(row,if have {"added_label"}else{"add_label"});
+            let slot=Rect::from_min_max(pos2(rect.right()-160.0,rect.top()),rect.max-vec2(look.m,0.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(slot).layout(Layout::right_to_left(Align::Center)),|ui| {
+                let r=ui.add_enabled_ui(row["blocked"].is_null()&&!have&&!full,|ui|standard_button(ui,word,look)).inner;
+                r.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,ui.is_enabled()&&!have&&!full,format!("{word} {}",text(choice,"label"))));
+                record(geometry,id,&format!("row.{key}.choice.{index}"),&r);
+                if r.clicked() {emit(events,id,"edit",json!({"row":key,"value":choice["value"]}));}
+            });
+        }
+    });
+}
 fn numeric(ui: &mut Ui, id: &str, row: &Value) -> (Response, Option<Value>) {
     let current = row["value"].as_f64().unwrap_or(0.0);
     let key = ui.make_persistent_id((id, text(row, "id"), "numeric"));
