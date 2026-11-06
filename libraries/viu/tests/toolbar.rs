@@ -59,14 +59,24 @@ fn ordinary_vertical_and_reversed_bars_preserve_authored_item_order() {
         }}});
         let mut view = viu::view::SceneView::new(&format!(
             "---\nscene: 1\nname: order\ncitizen: order\n---\n```mix\n{scene}\n```\n"
-        )).unwrap();
+        ))
+        .unwrap();
         let ctx = egui::Context::default();
         viu::appearance::install(&ctx);
         for _ in 0..3 {
-            ctx.run_ui(egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 400.0))),
-                ..Default::default()
-            }, |ui| { view.show(ui); }).drop_without_applying_deltas();
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800.0, 400.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            )
+            .drop_without_applying_deltas();
         }
         let first = view.geometry["root.command.first"];
         let second = view.geometry["root.command.second"];
