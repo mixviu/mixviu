@@ -52,7 +52,7 @@ pub const WORKSPACE_COUNT_MAX: u32 = 16;
 
 /// Every topic suffix, in `AffectedTopics` bit order. The service publishes
 /// each as `<service>.<suffix>` ([`topic_name`]).
-pub const TOPIC_SUFFIXES: [&str; 16] = [
+pub const TOPIC_SUFFIXES: [&str; 14] = [
     PROPS_TOPIC_SUFFIX,
     SURFACE_MAPPED_TOPIC_SUFFIX,
     SURFACE_UNMAPPED_TOPIC_SUFFIX,
@@ -67,9 +67,9 @@ pub const TOPIC_SUFFIXES: [&str; 16] = [
     WORKSPACE_TOPIC_SUFFIX,
     SESSION_TOPIC_SUFFIX,
     PLACEMENT_TOPIC_SUFFIX,
-    "corner.input",
-    "chrome.action.hover",
 ];
+/// Lab extensions; the frozen base catalogue remains byte-for-byte compatible.
+pub const EXTENSION_TOPIC_SUFFIXES: [&str; 2] = ["corner.input", "chrome.action.hover"];
 
 pub fn topic_name(service: &str, suffix: &str) -> String {
     format!("{service}.{suffix}")
@@ -743,6 +743,7 @@ impl AffectedTopics {
     fn index(suffix: &str) -> usize {
         TOPIC_SUFFIXES
             .iter()
+            .chain(EXTENSION_TOPIC_SUFFIXES.iter())
             .position(|candidate| *candidate == suffix)
             .expect("every observation has a fixed topic suffix")
     }
@@ -775,6 +776,7 @@ impl AffectedTopics {
     pub fn iter(self) -> impl Iterator<Item = &'static str> {
         TOPIC_SUFFIXES
             .into_iter()
+            .chain(EXTENSION_TOPIC_SUFFIXES)
             .enumerate()
             .filter_map(move |(index, suffix)| (self.0 & (1 << index) != 0).then_some(suffix))
     }
