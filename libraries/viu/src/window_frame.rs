@@ -102,10 +102,17 @@ impl WindowFrame {
             0.0,
             crate::appearance::colour(ui.ctx(), "chrome").unwrap_or(ui.visuals().panel_fill),
         );
-        let alignment = design::CaptionSide::resolve(settings["window.caption_side"].as_str().unwrap_or("auto"))
-            .alignment(toolkit::chrome::Chrome::of(ui.ctx()).captions.alignment(design::title_band::Alignment::Right));
+        let alignment = design::CaptionSide::resolve(
+            settings["window.caption_side"].as_str().unwrap_or("auto"),
+        )
+        .alignment(
+            toolkit::chrome::Chrome::of(ui.ctx())
+                .captions
+                .alignment(design::title_band::Alignment::Right),
+        );
         self.caption_alignment = alignment;
-        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("viu-caption-alignment"),alignment));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique("viu-caption-alignment"), alignment));
         let left = alignment == design::title_band::Alignment::Left;
         let caption_width = metrics.caption_width;
         let controls = Rect::from_min_size(
@@ -174,10 +181,18 @@ impl WindowFrame {
     pub fn finish_captions(&mut self, ui: &mut Ui, reserved: Option<Rect>) {
         if let Some(mut area) = self.geometry.get("window.captions").copied() {
             if self.caption_alignment == design::title_band::Alignment::Center {
-                if let Some(rect) = reserved { area.min.x=rect.min.x;area.max.x=rect.max.x; }
+                if let Some(rect) = reserved {
+                    area.min.x = rect.min.x;
+                    area.max.x = rect.max.x;
+                }
             }
-            self.geometry.insert("window.captions".into(),area);
-            let (close, geometry) = caption_controls(ui, area, self.caption_alignment == design::title_band::Alignment::Left, "window");
+            self.geometry.insert("window.captions".into(), area);
+            let (close, geometry) = caption_controls(
+                ui,
+                area,
+                self.caption_alignment == design::title_band::Alignment::Left,
+                "window",
+            );
             self.close_requested |= close;
             self.geometry.extend(geometry);
         }

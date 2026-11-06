@@ -33,7 +33,7 @@ fn scene_header_has_full_band_and_no_extra_content_gap_on_either_caption_side() 
                 } else if side == "right" {
                     assert_eq!(captions.right(), header.right());
                 } else {
-                    assert_eq!(captions.center().x,header.center().x);
+                    assert_eq!(captions.center().x, header.center().x);
                 }
             },
         )

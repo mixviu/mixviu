@@ -45,7 +45,10 @@ pub struct SceneView {
 
 impl SceneView {
     pub fn allocated_region(&self, id: &str) -> Option<egui::Rect> {
-        self.frame.as_ref().and_then(|frame| frame.allocated_region(id)).or_else(|| self.regions.get(id).copied())
+        self.frame
+            .as_ref()
+            .and_then(|frame| frame.allocated_region(id))
+            .or_else(|| self.regions.get(id).copied())
     }
     pub fn new(source: &str) -> Result<Self, String> {
         Self::prepare(source, None)

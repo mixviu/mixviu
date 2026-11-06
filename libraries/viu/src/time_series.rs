@@ -10,7 +10,10 @@ use serde_json::Value;
 use std::{cell::Cell, collections::HashMap};
 use toolkit::graph::{self, Hue};
 pub(crate) fn whole(value: &Value) -> Option<u64> {
-    value.as_f64().filter(|n| n.is_finite() && *n >= 0.0 && *n <= 9007199254740991.0 && n.fract() == 0.0).map(|n| n as u64)
+    value
+        .as_f64()
+        .filter(|n| n.is_finite() && *n >= 0.0 && *n <= 9007199254740991.0 && n.fract() == 0.0)
+        .map(|n| n as u64)
 }
 
 /// Bounded data contract for a Mix-authored interactive time-series widget.
@@ -19,8 +22,7 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
         .as_array()
         .filter(|a| !a.is_empty() && a.len() <= 64)
         .ok_or("expected 1..64 chart series")?;
-    if whole(&value["samples"])
-        .is_none_or(|n| !(2..=6000).contains(&n))
+    if whole(&value["samples"]).is_none_or(|n| !(2..=6000).contains(&n))
         || value["interval_s"]
             .as_f64()
             .is_none_or(|n| !n.is_finite() || n <= 0.0)
@@ -30,8 +32,14 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
     {
         return Err("invalid chart interval, window or height".into());
     }
-    let window=(whole(&value["samples"]).unwrap()-1) as f64*value["interval_s"].as_f64().unwrap();
-    if !window.is_finite() || window>1e12 || value["peak"].as_f64().is_some_and(|n| !n.is_finite() || n.abs()>1e300) {
+    let window =
+        (whole(&value["samples"]).unwrap() - 1) as f64 * value["interval_s"].as_f64().unwrap();
+    if !window.is_finite()
+        || window > 1e12
+        || value["peak"]
+            .as_f64()
+            .is_some_and(|n| !n.is_finite() || n.abs() > 1e300)
+    {
         return Err("chart range exceeds finite renderer bounds".into());
     }
     if !["percent", "bytes", "rate", "count", "count-rate"]
@@ -61,8 +69,9 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
         if !item["name"].is_string()
             || item["values"].as_array().is_none_or(|a| {
                 a.len() > 6000
-                    || a.iter()
-                        .any(|n| !n.is_null() && n.as_f64().is_none_or(|n| !n.is_finite() || n.abs()>1e300))
+                    || a.iter().any(|n| {
+                        !n.is_null() && n.as_f64().is_none_or(|n| !n.is_finite() || n.abs() > 1e300)
+                    })
             })
         {
             return Err("invalid chart series values".into());
@@ -129,8 +138,7 @@ pub(crate) fn draw(ui: &mut Ui, id: &str, value: &serde_json::Value) -> egui::Re
                 "accent-plus" => Hue::AccentPlus,
                 "accent-minus" => Hue::AccentMinus,
                 "warning" => Hue::Warning,
-                _ => whole(&s["hue"])
-                    .map_or(Hue::Accent, |n| Hue::Series(n.min(255) as usize)),
+                _ => whole(&s["hue"]).map_or(Hue::Accent, |n| Hue::Series(n.min(255) as usize)),
             },
         })
         .collect();

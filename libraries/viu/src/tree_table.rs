@@ -477,7 +477,11 @@ fn draw_grid(
             .vscroll(widget.properties["vscroll"] != false)
             .striped(true)
             .resizable(true)
-            .sense(if read_only { Sense::hover() } else { Sense::click() })
+            .sense(if read_only {
+                Sense::hover()
+            } else {
+                Sense::click()
+            })
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
         for column in columns {
             let width = if column["remainder"] == true {

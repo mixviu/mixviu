@@ -203,7 +203,9 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.properties["read_only"] == true && self.kind == "tree-table" {return vec![];}
+        if self.properties["read_only"] == true && self.kind == "tree-table" {
+            return vec![];
+        }
         if self.kind == "dashboard" {
             return vec!["choose"];
         }
