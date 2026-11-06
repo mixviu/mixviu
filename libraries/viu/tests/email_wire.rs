@@ -1,22 +1,54 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use serde_json::{Value, json};
-use std::{io::{Read,Write},path::PathBuf,sync::{Arc,mpsc},time::Duration};
-use viu::runtime::{Program,Runtime};
-fn probe(reply: Value, call: &str) -> (i32, Value) {
-    let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let url=format!("http://{}",listener.local_addr().unwrap());
-    let body=reply.to_string().replace("ORIGIN",&url);
-    let server=std::thread::spawn(move || {
-        let (mut socket,_)=listener.accept().unwrap();
-        socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        let mut bytes=Vec::new();let mut buf=[0;4096];
-        loop {let n=socket.read(&mut buf).unwrap();bytes.extend_from_slice(&buf[..n]);if bytes.windows(4).any(|w|w==b"\r\n\r\n") {break;}}
+use std::{
+    io::{Read, Write},
+    path::PathBuf,
+    sync::{Arc, mpsc},
+    time::Duration,
+};
+use viu::runtime::{Program, Runtime};
+fn probe(reply: Value, call: &str) -> (u8, Value) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let body = reply.to_string().replace("ORIGIN", &url);
+    let server = std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut bytes = Vec::new();
+        let mut buf = [0; 4096];
+        loop {
+            let n = socket.read(&mut buf).unwrap();
+            bytes.extend_from_slice(&buf[..n]);
+            if bytes.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+        }
         assert!(String::from_utf8_lossy(&bytes).contains("Basic dXNlcjpzZWNyZXQ="));
-        write!(socket,"HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+        write!(
+            socket,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
     });
-    let scratch=tempfile::tempdir().unwrap();let password=scratch.path().join("password");std::fs::write(&password,"secret\n").unwrap();
-    let (tx,rx)=mpsc::channel();let mut runtime=Runtime::new(8,Arc::new(move ||{let _=tx.send(());}),None);
-    runtime.load(Program{path:PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email/probe.mix"),source:format!(r#"
+    let scratch = tempfile::tempdir().unwrap();
+    let password = scratch.path().join("password");
+    std::fs::write(&password, "secret\n").unwrap();
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(
+        8,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+    );
+    runtime
+        .load(Program {
+            path: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email/probe.mix"),
+            source: format!(
+                r#"
 $m=require("mail.mix")
 on probe
   try
@@ -27,20 +59,51 @@ on probe
     reply(10,json_encode({{code:$err.code}}))
   end
 end
-"#),scene:"email".into(),citizen:"email".into()}).unwrap();
-    rx.recv_timeout(Duration::from_secs(10)).unwrap();assert!(runtime.try_completion().unwrap().error.is_none());
-    runtime.event("probe".into(),json!({"entry":{"url":url,"user":"user","password_file":password}})).unwrap();
-    rx.recv_timeout(Duration::from_secs(15)).unwrap();let done=runtime.try_completion().unwrap();assert!(done.error.is_none(),"{:?}",done.error);
-    let reply=done.reply.unwrap();server.join().unwrap();(reply.rc,reply.body)
+"#
+            ),
+            scene: "email".into(),
+            citizen: "email".into(),
+        })
+        .unwrap();
+    rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(runtime.try_completion().unwrap().error.is_none());
+    runtime
+        .event(
+            "probe".into(),
+            json!({"entry":{"url":url,"user":"user","password_file":password}}),
+        )
+        .unwrap();
+    rx.recv_timeout(Duration::from_secs(15)).unwrap();
+    let done = runtime.try_completion().unwrap();
+    assert!(done.error.is_none(), "{:?}", done.error);
+    let reply = done.reply.unwrap();
+    server.join().unwrap();
+    (reply.rc, reply.body)
 }
 #[test]
 fn embedded_jmap_session_uses_io_and_refuses_off_origin_endpoints() {
-    let session=json!({"apiUrl":"ORIGIN/jmap","accounts":{"1":{"name":"One"}},"primaryAccounts":{"urn:ietf:params:jmap:mail":"1"}});
-    let (rc,reply)=probe(session,"$m.session($e)");assert_eq!(rc,0);assert_eq!(reply["account"],"1");
-    let (rc,reply)=probe(json!({"apiUrl":"https://example.test/jmap"}),"$m.session($e)");assert_eq!(rc,10);assert_eq!(reply["code"],"ORIGIN");
+    let session = json!({"apiUrl":"ORIGIN/jmap","accounts":{"1":{"name":"One"}},"primaryAccounts":{"urn:ietf:params:jmap:mail":"1"}});
+    let (rc, reply) = probe(session, "$m.session($e)");
+    assert_eq!(rc, 0);
+    assert_eq!(reply["account"], "1");
+    let (rc, reply) = probe(
+        json!({"apiUrl":"https://example.test/jmap"}),
+        "$m.session($e)",
+    );
+    assert_eq!(rc, 10);
+    assert_eq!(reply["code"], "ORIGIN");
 }
 #[test]
 fn embedded_jmap_refuses_unmatched_methods_and_partial_message_bodies() {
-    let (rc,_)=probe(json!({"methodResponses":[["Wrong/get",{},"c0"]]}),"$m.call($e,\"Mailbox/get\",{accountId:\"1\"})");assert_eq!(rc,10);
-    let (rc,reply)=probe(json!({"methodResponses":[["Email/get",{"list":[{"id":"x","textBody":[{"partId":"p"}],"bodyValues":{"p":{"value":"partial","isTruncated":true}}}]},"c0"]]}),"$m.message($e,\"1\",\"x\")");assert_eq!(rc,10);assert_eq!(reply["code"],"BODY");
+    let (rc, _) = probe(
+        json!({"methodResponses":[["Wrong/get",{},"c0"]]}),
+        "$m.call($e,\"Mailbox/get\",{accountId:\"1\"})",
+    );
+    assert_eq!(rc, 10);
+    let (rc, reply) = probe(
+        json!({"methodResponses":[["Email/get",{"list":[{"id":"x","textBody":[{"partId":"p"}],"bodyValues":{"p":{"value":"partial","isTruncated":true}}}]},"c0"]]}),
+        "$m.message($e,\"1\",\"x\")",
+    );
+    assert_eq!(rc, 10);
+    assert_eq!(reply["code"], "BODY");
 }
