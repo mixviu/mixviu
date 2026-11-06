@@ -1,0 +1,91 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- JMAP protocol policy. Only the generic HTTP transport is native.
+fn accounts($path)
+  if type($path)!="string" or not starts_with($path,"/") then raise("CONFIG","Absolute account catalogue path required") end
+  $file=viu_read_optional($path)
+  if not $file.found then raise("CONFIG","Account catalogue not found") end
+  $raw=json_parse($file.text)
+  if type($raw.accounts)!="list" or len($raw.accounts)>32 then raise("CONFIG","At most 32 configured accounts") end
+  $out=[];$ids=[]
+  for $a in $raw.accounts
+    if type($a.id)!="string" or not re_match($a.id,"^[A-Za-z0-9_-]{1,64}$") or contains($ids,$a.id) then raise("CONFIG","Account IDs must be unique") end
+    if type($a.url)!="string" or not re_match($a.url,"^https?://[A-Za-z0-9.\\[\\]:-]+$") then raise("CONFIG","Account URL must be an HTTP(S) origin without path or credentials") end
+    if type($a.user)!="string" or byte_length($a.user)>256 or type($a.password_file)!="string" or not starts_with($a.password_file,"/") then raise("CONFIG","User and absolute password_file required") end
+    if $a.password!=nil then raise("CONFIG","Inline passwords are not accepted") end
+    $label=$a.label ?? $a.id
+    if type($label)!="string" or byte_length($label)>256 then raise("CONFIG","Account label exceeds budget") end
+    if $a.submit_service!=nil and (type($a.submit_service)!="string" or not re_match($a.submit_service,"^[A-Za-z0-9_.-]{1,128}$")) then raise("CONFIG","Invalid submission Bus route") end
+    push($ids,$a.id);push($out,{id:$a.id,label:$label,url:$a.url,user:$a.user,password_file:$a.password_file,ca_file:$a.ca_file,submit_service:$a.submit_service})
+  end
+  return $out
+end
+fn secret($path)
+  $file=viu_read_optional($path)
+  if not $file.found or byte_length($file.text)>4096 then raise("AUTH","Password file unavailable or oversized") end
+  return re_replace($file.text,"\\r?\\n$","")
+end
+fn request($entry,$path,$method,$body)
+  $req={url:$entry.url..$path,method:$method,body:$body,headers:{"Content-Type":"application/json"},basic:{username:$entry.user,password:secret($entry.password_file)},timeout:8}
+  if $entry.ca_file!=nil then
+    $ca=viu_read_optional($entry.ca_file)
+    if not $ca.found then raise("TLS","CA file unavailable") end
+    $req.ca_pem=$ca.text
+  end
+  $answer=viu_http($req)
+  if $answer.status!=200 then raise("HTTP","Mail server returned HTTP "..to_string($answer.status)) end
+  return json_parse($answer.body)
+end
+fn session($entry)
+  $s=request($entry,"/.well-known/jmap","GET","")
+  if $s.apiUrl!=$entry.url.."/jmap" then raise("ORIGIN","Only the same-origin maild /jmap endpoint is supported") end
+  if type($s.accounts)!="map" or len(keys($s.accounts))>32 then raise("SESSION","Invalid JMAP account catalogue") end
+  $primary=$s.primaryAccounts["urn:ietf:params:jmap:mail"]
+  if type($primary)!="string" or $s.accounts[$primary]==nil then raise("SESSION","No primary mail account") end
+  return {account:$primary,accounts:jq($s.accounts,'to_entries | map({id:.key,name:.value.name,isReadOnly:(.value.isReadOnly // false)})')}
+end
+fn call($entry,$method,$args)
+  $answer=request($entry,"/jmap","POST",json_encode({using:["urn:ietf:params:jmap:core","urn:ietf:params:jmap:mail"],methodCalls:[[$method,$args,"c0"]]}))
+  if type($answer.methodResponses)!="list" or len($answer.methodResponses)!=1 then raise("JMAP","Invalid method response count") end
+  $r=$answer.methodResponses[0]
+  if len($r)!=3 or $r[0]!=$method or $r[2]!="c0" or type($r[1])!="map" then raise("JMAP","Mail method refused or response did not match request") end
+  return $r[1]
+end
+fn mailboxes($entry,$account)
+  $r=call($entry,"Mailbox/get",{accountId:$account})
+  if type($r.list)!="list" or len($r.list)>256 then raise("MAILBOXES","Mailbox list exceeds budget") end
+  if not jq($r.list,'all(.[]; (.id|type)=="string" and (.id|length)>0 and (.id|length)<=128 and (.name|type)=="string" and (.name|length)<=256)') or jq($r.list,'map(.id)|unique|length')!=len($r.list) then raise("MAILBOXES","Invalid mailbox identity or label") end
+  $out=[];$i=0
+  for $b in $r.list
+    $i=$i+1
+    push($out,{id:$b.id,name:$b.name,role:$b.role,total:$b.totalEmails ?? 0,unread:$b.unreadEmails ?? 0,choice:to_string($i).." · "..$b.name.." · "..to_string($b.unreadEmails ?? 0).." unread"})
+  end
+  return $out
+end
+fn page($entry,$account,$mailbox,$offset)
+  $q=call($entry,"Email/query",{accountId:$account,filter:{inMailbox:$mailbox},sort:[{property:"receivedAt",isAscending:false}],position:$offset,limit:200,calculateTotal:true})
+  if type($q.ids)!="list" or len($q.ids)>200 or not jq($q.ids,'all(.[]; type=="string" and length>0 and length<=128)') or len(unique($q.ids))!=len($q.ids) then raise("QUERY","Invalid message query identities or page budget") end
+  if not jq($q,'(.total|type)=="number" and .total>=0 and (.total|floor)==.total') then raise("QUERY","Invalid message total") end
+  if len($q.ids)==0 then return {messages:[],total:$q.total ?? 0,offset:$offset} end
+  $r=call($entry,"Email/get",{accountId:$account,ids:$q.ids,properties:["id","subject","from","receivedAt","preview"]})
+  if type($r.list)!="list" or len($r.list)!=len($q.ids) or len($r.notFound ?? [])>0 then raise("SNAPSHOT","Message page changed; refresh explicitly") end
+  if not deep_eq(sort(map($r.list,fn($m)=$m.id)),sort($q.ids)) then raise("SNAPSHOT","Message identities did not match the query") end
+  -- Email/get need not preserve Email/query order.
+  $by_id={};for $m in $r.list $by_id[$m.id]=$m end
+  $r.list=map($q.ids,fn($id)=$by_id[$id])
+  $messages=jq($r.list,'map({id:.id,subject:((.subject // "")[0:1024]),from:[{email:((if (.from|type)=="string" then .from elif (.from[0]|type)=="string" then .from[0] else .from[0].email end // "")[0:1024])}],receivedAt:(.receivedAt // ""),preview:((.preview // "")[0:1024])})')
+  return {messages:$messages,total:$q.total ?? len($messages),offset:$offset}
+end
+fn message($entry,$account,$id)
+  $r=call($entry,"Email/get",{accountId:$account,ids:[$id],properties:["id","subject","from","to","receivedAt","textBody","bodyValues"],fetchTextBodyValues:true,maxBodyValueBytes:65536})
+  if type($r.list)!="list" or len($r.list)!=1 or $r.list[0].id!=$id then raise("MESSAGE","Message no longer exists") end
+  $m=$r.list[0];$text=""
+  if len($m.textBody ?? [])>0 then
+    $part=$m.bodyValues[$m.textBody[0].partId]
+    if type($part)!="map" or type($part.value)!="string" then raise("BODY","Message text part unavailable") end
+    if $part.isTruncated or $part.isEncodingProblem then raise("BODY","Incomplete message body refused") end
+    $text=$part.value ?? ""
+  end
+  if type($text)!="string" or byte_length($text)>65536 then raise("BODY","Plain text exceeds 64 KiB") end
+  return {id:$id,subject:$m.subject ?? "",from:$m.from,to:$m.to,date:$m.receivedAt,text:$text}
+end

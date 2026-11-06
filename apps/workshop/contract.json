@@ -1,0 +1,1 @@
+{"host":{"service":"workshop","title":"Workshop — Mix on Viu","size":[1100,860],"commands":["workshop.ping","workshop.info","workshop.refresh","workshop.select","workshop.body","workshop.call","workshop.filter","workshop.intent"]}}

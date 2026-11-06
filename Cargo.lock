@@ -10056,6 +10056,7 @@ dependencies = [
  "mix",
  "png 0.18.1",
  "raw-window-handle",
+ "reqwest",
  "scene",
  "serde",
  "serde_json",

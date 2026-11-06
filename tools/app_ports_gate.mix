@@ -1,0 +1,32 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- CBC only. Formatting/lock adaptations are returned as a patch, never hidden.
+$rc=0
+$temporary=path_join(dirname(cwd()),".app-ports-tmp-"..to_string(pid()))
+mkdir($temporary)
+try
+  for $a in [["cargo","fmt","-p","viu","-p","viu-engine","--","--check"],["cargo","check","--locked","--all-targets","-p","viu","-p","viu-engine"],["cargo","test","--locked","-p","viu","-p","viu-engine","--","--nocapture"],["cargo","clippy","--locked","--all-targets","-p","viu","-p","viu-engine"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
+    print({argv:$a})
+    $r=run_argv($a,{env:{CARGO_BUILD_JOBS:"6",TMPDIR:$temporary,RUSTC_WRAPPER:""},timeout:1800,max_output:8000000})
+    print($r)
+    if not $r.ok then $rc=$r.exit_code ?? 124;break end
+  end
+  if $rc==0 then
+    $metadata=json_parse(run_argv_must(["cargo","metadata","--locked","--format-version","1"]))
+    print({new_dependencies:map(filter($metadata.packages,fn($p)=contains(["futures","futures-executor","image-webp","xkbcommon"],$p.name) or ($p.name=="memmap2" and $p.version=="0.8.0")),fn($p)={name:$p.name,version:$p.version,licence:$p.license,build_scripts:filter($p.targets,fn($t)=contains($t.kind,"custom-build"))})})
+    $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+    $artifact="/var/tmp/viu-app-ports-"..$sha
+    mkdir($artifact,{parents:true})
+    copy("target/debug/viu",$artifact.."/viu")
+    print({artifact:$artifact,sha256:hash_file($artifact.."/viu","sha256")})
+  end
+finally
+  $diff=run_argv_must(["git","diff","--binary"])
+  print("APP_PORTS_PATCH_BEGIN")
+  print($diff)
+  print("APP_PORTS_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+  if $diff!="" then $rc=97 end
+  remove_dir($temporary)
+end
+exit($rc)

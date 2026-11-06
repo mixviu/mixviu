@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+on job.run
+  $a=$event.args;$op=$a.op
+  if $op!="refresh" then
+    $command="edit."..if $op=="apply" then "replace" else $op end
+    send "edit" $command body=$a.payload timeout=8
+    if $rc!=0 then raise("EDIT",json_encode($reply ?? $result)) end
+    $answer=$reply
+  else $answer=$a.payload end
+  if $op=="close" then reply(0,"{}")
+  else
+    $buffer=$answer.buffer ?? $a.payload.buffer
+    send "edit" "edit.get" body={buffer:$buffer,range:"all",max_bytes:65536} timeout=8
+    if $rc!=0 then raise("READ",json_encode($reply ?? $result)) end
+    $read=$reply
+    if $read.truncated or $read.next!=nil or type($read.text)!="string" or byte_length($read.text)>65536 then raise("SIZE","Partial or oversized snapshots cannot be edited") end
+    send "edit" "edit.info" body={buffer:$buffer} timeout=8
+    if $rc!=0 then raise("INFO",json_encode($reply ?? $result)) end
+    $read.path=$reply.path ?? $answer.path ?? "Untitled"
+    reply(0,json_encode($read))
+  end
+end

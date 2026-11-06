@@ -12,6 +12,7 @@ pub mod elide;
 pub mod file_data;
 pub mod fonts;
 pub mod hosting;
+pub mod http;
 pub mod icons;
 pub mod image_view;
 pub mod jobs;

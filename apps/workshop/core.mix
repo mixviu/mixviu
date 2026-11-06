@@ -1,0 +1,58 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+fn initial()
+  return {services:[],commands:[],service:"",command:"",body:"{}",filter:"",busy:false,serial:0,pending:nil,status:"Refresh to discover local Bus services",answer:"No calls yet",history:[]}
+end
+fn text($v,$limit)
+  if type($v)!="string" or byte_length($v)>$limit then raise("TEXT","Text exceeds byte limit "..to_string($limit)) end
+  return $v
+end
+fn membership($v)
+  if type($v)!="list" or len($v)>512 then raise("SERVICES","Expected at most 512 services; no partial catalogue") end
+  $names=["noded"]
+  for $entry in $v
+    $name=text($entry.name,256)
+    if $name=="" then raise("SERVICE","Empty service name") end
+    if not contains($names,$name) then push($names,$name) end
+  end
+  return sort($names)
+end
+fn catalogue($v)
+  if byte_length(json_encode($v))>262144 then raise("COMMANDS","Description exceeds 256 KiB; no partial catalogue") end
+  $entries=if type($v)=="list" then $v else $v.commands end
+  if type($entries)!="list" or len($entries)>512 then raise("COMMANDS","Expected at most 512 commands; no partial catalogue") end
+  $commands=[];$seen=[]
+  for $entry in $entries
+    $name=text(if type($entry)=="string" then $entry else $entry.name end,256)
+    if $name=="" then raise("COMMAND","Empty command name") end
+    if not contains($seen,$name) then
+      push($seen,$name)
+      push($commands,{name:$name,description:if type($entry)=="map" then substr(to_string($entry.description ?? ""),0,1000) else "" end,args:if type($entry)=="map" then substr(json_encode($entry.args ?? {}),0,2000) else "{}" end})
+    end
+  end
+  return sort_by($commands,fn($c)=$c.name)
+end
+fn body_text($v)
+  return text($v,65536)
+end
+fn call_outcome($peer_rc,$reply,$result)
+  if $peer_rc<0 then raise("TRANSPORT","Delivery outcome unknown: "..to_string($result)) end
+  $answer=if $reply!=nil then json_encode($reply) else to_string($result) end
+  return {peer_rc:$peer_rc,text:substr($answer,0,900),truncated:len($answer)>900}
+end
+fn call_payload($s)
+  if $s.busy then raise("BUSY","Wait for the pending operation") end
+  if not any($s.commands,fn($c)=$c.name==$s.command) or not contains($s.services,$s.service) then raise("SELECTION","Select an advertised command first") end
+  $body=body_text($s.body)
+  if trim($body)!="" then $parsed=json_parse($body) end
+  return {service:$s.service,command:$s.command,body:$body}
+end
+fn project($s)
+  $names=filter($s.services,fn($name)=contains(lower($name),lower($s.filter)))
+  if not contains($names,$s.service) then $names=concat(["Select service"],$names) end
+  $description="Select a service and command"
+  for $c in $s.commands
+    if $c.name==$s.command then $description=substr($c.description.."\nArguments: "..$c.args,0,900) end
+  end
+  return {status:$s.status,service:{id:"service",kind:"combo",label:"Local service",initial:if contains($names,$s.service) then $s.service else "Select service" end,properties:{choices:$names}},command:{id:"command",kind:"combo",label:"Advertised command",initial:if $s.command!="" then $s.command else "Select command" end,properties:{choices:if len($s.commands)>0 then map($s.commands,fn($c)=$c.name) else ["Select command"] end}},description:$description,answer:$s.answer,history:substr(join(map(reverse($s.history),fn($r)=to_string($r.serial).." · "..$r.service.." / "..$r.command.." · "..$r.outcome),"\n"),0,900),values:{body:$s.body,filter:$s.filter}}
+end

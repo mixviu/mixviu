@@ -10,6 +10,7 @@ pub const KINDS: &[&str] = &[
     "button",
     "field",
     "multiline",
+    "editor",
     "checkbox",
     "toggle",
     "radio",
@@ -166,6 +167,13 @@ impl Widget {
             "colour" => value.as_array().is_some_and(|v| {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
+            "editor" => {
+                value.as_str().is_some_and(|v| v.len() <= 65536)
+                    && (self.properties["rows"].is_null()
+                        || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
+                    && (self.properties["read_only"].is_null()
+                        || self.properties["read_only"].is_boolean())
+            }
             _ => value.as_str().is_some_and(|v| v.len() <= 4096),
         };
         if valid {
@@ -175,6 +183,9 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind == "editor" && self.properties["read_only"] == true {
+            return vec![];
+        }
         if self.kind == "window-controls" {
             return vec!["close", "minimize", "toggle-maximize"];
         }
@@ -203,7 +214,7 @@ impl Widget {
         {
             actions.push("activate");
         }
-        if ["field", "multiline"].contains(&self.kind.as_str()) {
+        if ["field", "multiline", "editor"].contains(&self.kind.as_str()) {
             actions.push("submit");
             if self.properties["cancel_on_escape"] == true {
                 actions.push("cancel");
@@ -227,7 +238,7 @@ impl Widget {
         if !self.actions().contains(&action) {
             return Err("unsupported widget action".into());
         }
-        if matches!(self.kind.as_str(), "field" | "multiline")
+        if matches!(self.kind.as_str(), "field" | "multiline" | "editor")
             && action == "cancel"
             && !value.is_null()
         {
@@ -278,7 +289,7 @@ impl Widget {
             return Err("invalid widget definition".into());
         }
         self.validate(self.value(model))?;
-        if ["field", "multiline"].contains(&self.kind.as_str())
+        if ["field", "multiline", "editor"].contains(&self.kind.as_str())
             && ["cancel_on_escape", "notify_blur"]
                 .iter()
                 .any(|key| self.properties.get(*key).is_some_and(|v| !v.is_boolean()))
@@ -498,7 +509,30 @@ impl Widgets {
                 }
                 r
             }
-            "field" | "multiline" => {
+            "editor" if widget.properties["read_only"] == true => {
+                // An immutable native text buffer permits selection/copy but
+                // cannot generate edits, even through keyboard/paste input.
+                let mut text = value.as_str().unwrap_or_default();
+                let rows = whole(&widget.properties["rows"]).unwrap_or(24) as f32;
+                let height = rows * ui.text_style_height(&egui::TextStyle::Monospace) + 8.0;
+                let output = egui::ScrollArea::vertical()
+                    .id_salt((id, "read-only"))
+                    .max_height(height)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut text)
+                                .code_editor()
+                                .desired_rows(rows as usize)
+                                .desired_width(ui.available_width())
+                                .id_salt(id),
+                        )
+                    });
+                let mut response = output.inner;
+                response.rect = response.rect.intersect(output.inner_rect);
+                self.text_input_active |= response.has_focus();
+                response
+            }
+            "field" | "multiline" | "editor" => {
                 let mut text = value.as_str().unwrap_or_default().to_owned();
                 if self.focus.as_deref() == Some(id) {
                     if let Some(range) = &mut self.focus_selection {
@@ -507,8 +541,14 @@ impl Widgets {
                         range[1] = range[1].min(len);
                     }
                 }
+                let rows = whole(&widget.properties["rows"]).unwrap_or(24) as usize;
                 let edit = if widget.kind == "field" {
                     egui::TextEdit::singleline(&mut text)
+                } else if widget.kind == "editor" {
+                    egui::TextEdit::multiline(&mut text)
+                        .code_editor()
+                        .desired_rows(rows)
+                        .char_limit(16384)
                 } else {
                     egui::TextEdit::multiline(&mut text).desired_rows(1)
                 };
