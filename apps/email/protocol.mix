@@ -88,6 +88,7 @@ fn batch($e,$s,$command,$a)
   if type($ids)!="list" or len($ids)==0 or not all($ids,fn($id)=type($id)=="string" and $id!="") then raise("INVALID_ARGUMENT","ids must be an email id or nonempty list") end
   $ids=unique($ids);$patch={};$done=[];$failed=[];$destroy=$command=="email.delete" and ($a.destroy ?? false)
   if $command=="email.mark" then
+    if not contains(keys($a),"read") and not contains(keys($a),"flagged") then raise("INVALID_ARGUMENT","read or flagged is required") end
     for $pair in [["read","keywords/$seen"],["flagged","keywords/$flagged"]]
       if contains(keys($a),$pair[0]) then
         if type($a[$pair[0]])!="bool" then raise("INVALID_ARGUMENT","read and flagged must be boolean") end
@@ -95,6 +96,7 @@ fn batch($e,$s,$command,$a)
       end
     end
   elif not $destroy then
+    if $command=="email.junk" and type($a.junk)!="bool" then raise("INVALID_ARGUMENT","junk must be boolean") end
     $destination=$a.mailbox
     if $command=="email.delete" or $command=="email.junk" then
       $role=if $command=="email.delete" then "trash" elif $a.junk==true then "junk" else "inbox" end
@@ -114,7 +116,7 @@ fn batch($e,$s,$command,$a)
     try
       $r=call($e,$s,"Email/set",$args)
       for $id in $part
-        $error=if $destroy then $r.notDestroyed[$id] else $r.notUpdated[$id] end
+        $error=if $destroy then ($r.notDestroyed ?? {})[$id] else ($r.notUpdated ?? {})[$id] end
         if $error!=nil then push($failed,{id:$id,reason:to_string($error.type)..(if $error.description!=nil then ": "..$error.description else "" end)}) else push($done,$id) end
       end
     catch $message
@@ -138,7 +140,7 @@ fn mailbox_write($e,$s,$command,$a)
   if $command=="email.mailbox.rename" then $args.update={};$args.update[$a.id]={name:$a.name}
   else $args.destroy=[$a.id] end
   $r=call($e,$s,"Mailbox/set",$args)
-  $error=if $command=="email.mailbox.rename" then $r.notUpdated[$a.id] else $r.notDestroyed[$a.id] end
+  $error=if $command=="email.mailbox.rename" then ($r.notUpdated ?? {})[$a.id] else ($r.notDestroyed ?? {})[$a.id] end
   if $error!=nil then raise(if $error.type=="notFound" then "NOT_FOUND" else "SERVER" end,to_string($error.type)..": "..to_string($error.description ?? "")) end
   if $command=="email.mailbox.rename" and not contains(keys($r.updated ?? {}),$a.id) then raise("SERVER","Mailbox rename was not confirmed") end
   if $command=="email.mailbox.delete" and not contains($r.destroyed ?? [],$a.id) then raise("SERVER","Mailbox delete was not confirmed") end
