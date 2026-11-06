@@ -1,4 +1,36 @@
-# Ced round-3 inventory
+# Ced parity inventory
+
+Current checkpoint: reusable gold editor integration, **not full parity**.
+Gold reference remains MixOS 8779f3328. No deviation below is approved.
+
+| Capability | Current evidence / remaining work |
+|---|---|
+| Editing, cursor, selection, undo/redo | Retained editor/model, native Unicode typing and local undo regression pass. UI Undo/Redo stay local; legacy ced.command undo/redo still target editd history. |
+| Clipboard, IME, Unicode and mouse/keyboard bindings | Gold widget code reused; Unicode selection/input tested. OS clipboard, native IME and complete binding acceptance remain open. |
+| Syntax, gutter, wrap | Gold syntax/model/rendering wired; Rust highlighting inspected, wrap and line-number options supplied by Mix. |
+| Find/replace | Literal find, wrap-around Next and single replace. Regex, case/word options, all-replace and gold navigation remain open. |
+| Large files | Widget admits 64 MiB and uses gold visible-row rendering. Ced still refuses snapshots/drafts above 64 KiB. Paged loading, delta publication, bounded search and representative performance remain open. |
+| Tabs, open/save | Named tabs retain independent drafts; reopening preserves drafts/fences. Open dialog, explicit Apply, Save/Save As and authoritative language/dirty metadata. Tab close furniture and gold chooser/prompt behaviour remain open. |
+| Shared frame | Gold frame adopted with Mix-authored menus, toolbar and status; no frame implementation changed. Menu/action completeness and status details remain open. |
+| Collaboration, sessions and recovery | Revision-fenced Apply retained. Gold mirror reconciliation, remote cursors, reply-loss recovery, session restore and persisted local drafts remain open. |
+| Prefs | Widget resolves palette/style each frame; Ced uses gold's default 13-point editor text. Live settings subscription, font selection, text scaling and keymap compatibility remain open. |
+| Other gold views | Diagnostics/problems/output, previews, mail documents/send, macros and complete dialogs remain open. |
+
+Gold Bus surface still to reproduce compatibly: ced.open/new/tabs/focus/show,
+ced.state/type/select/execute/actions/wait/layout/stats/diagnostics/problems,
+ced.macros.list/reload/run/status/output/stop/new, app.describe/quit, window
+drive/debug commands, command manifests, topics and properties. Existing
+ced.ping/info responses also retain specimen shapes rather than gold DTOs.
+ced.command/draft/intent are specimen interfaces, not compatibility aliases.
+
+Paired 1000x720 gold/Mix captures were inspected with perceptual-difference
+figures. They remain visibly different; header, tabs, editor inset and status
+regions are open. Private receipts retain the captures. No full functional,
+Bus, Prefs, visual or large-file acceptance is claimed.
+
+Reusable widget contract and limits: [editor-widget.md](editor-widget.md).
+
+## Historical round-3 inventory
 
 Oracle: MixOS 8779f3328, apps/ced actions/app/view/bus/mail and edit wire
 fixtures. Inventory committed before implementation. Per-app Rust: zero.
