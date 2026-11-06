@@ -124,7 +124,10 @@ impl WindowFrame {
                 },
                 band.top(),
             ),
-            vec2(3.0 * caption_width, (height-ui.visuals().widgets.noninteractive.bg_stroke.width).max(0.0)),
+            vec2(
+                3.0 * caption_width,
+                (height - ui.visuals().widgets.noninteractive.bg_stroke.width).max(0.0),
+            ),
         );
         self.geometry.insert("window.captions".into(), controls);
         let drag = if scene_captions {
@@ -144,9 +147,10 @@ impl WindowFrame {
         self.geometry.insert("window.title".into(), drag);
         if header {
             self.geometry.insert("window.header".into(), drag);
-            let mut content=drag;
-            content.max.y-=ui.visuals().widgets.noninteractive.bg_stroke.width;
-            self.geometry.insert("window.header.content".into(),content);
+            let mut content = drag;
+            content.max.y -= ui.visuals().widgets.noninteractive.bg_stroke.width;
+            self.geometry
+                .insert("window.header.content".into(), content);
         }
         let response = ui.interact(
             drag,

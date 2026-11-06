@@ -446,7 +446,15 @@ impl Host {
                     .window_frame
                     .geometry
                     .get("window.header")
-                    .map(|rect| {let key=if self.view.has_slot("window.header.content") {"window.header.content"} else {"window.header"}; let rect=self.window_frame.geometry.get(key).unwrap_or(rect); BTreeMap::from([(key.into(), *rect)])})
+                    .map(|rect| {
+                        let key = if self.view.has_slot("window.header.content") {
+                            "window.header.content"
+                        } else {
+                            "window.header"
+                        };
+                        let rect = self.window_frame.geometry.get(key).unwrap_or(rect);
+                        BTreeMap::from([(key.into(), *rect)])
+                    })
                     .unwrap_or_default();
                 if let Err(e) = self.view.set_slots(slots) {
                     self.error = e;
@@ -725,7 +733,7 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         },
         Box::new(move |cc| {
             toolkit::decorations::initialise(cc);
-            toolkit::decorations::initialise_window(&cc.egui_ctx,cc.winit_window().cloned());
+            toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             crate::appearance::install(&cc.egui_ctx);
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(

@@ -149,7 +149,9 @@ fn blocks(ui: &mut Ui, id: &str, items: &Value, interval: f64, events: &mut Vec<
             "small" => {
                 ui.small(text(block, "text"));
             }
-            "weak" => { ui.weak(text(block,"text")); }
+            "weak" => {
+                ui.weak(text(block, "text"));
+            }
             "chips" => {
                 ui.horizontal_wrapped(|ui| {
                     for item in block["items"].as_array().unwrap() {

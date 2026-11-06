@@ -90,29 +90,36 @@ on monitor.node
   reply(0,json_encode({node:$state.node}))
 end
 on monitor.sort
-  if not contains(["name","pid","user","cpu","memory","io"],$event.args.column) then raise("SORT","Unknown column") end
-  $state.sort=$event.args.column;$state.reverse=$event.args.reverse ?? false
-  $state=refresh_monitor($state);publish_monitor($state)
-  reply(0,"{}")
+  if busy_monitor($state) then return end
+  if not contains(["name","pid","user","cpu","memory","io"],$event.args.column) then reply(10,json_encode({error_code:"ARGUMENT",message:"column must be name, pid, user, cpu, memory or io"}));return end
+  if contains(keys($event.args),"reverse") and type($event.args.reverse)!="bool" then reply(10,json_encode({error_code:"ARGUMENT",message:"reverse must be a bool"}));return end
+  $state.reverse=$event.args.reverse ?? (if $state.sort==$event.args.column then not $state.reverse else false end);$state.sort=$event.args.column
+  $state=requery_monitor($state);publish_monitor($state)
+  reply(0,json_encode({sort:$state.sort,reverse:$state.reverse}))
 end
 on monitor.filter
-  if type($event.args.text)!="string" or len($event.args.text)>256 then raise("FILTER","At most 256 characters") end
-  $state.filter=$event.args.text;$state=refresh_monitor($state);publish_monitor($state)
-  reply(0,"{}")
+  if busy_monitor($state) then return end
+  if type($event.args.text)!="string" then reply(10,json_encode({error_code:"ARGUMENT",message:"text must be a string"}));return end
+  if $state.filter!=$event.args.text then $state.filter=$event.args.text;$state=requery_monitor($state);publish_monitor($state) end
+  reply(0,json_encode({filter:$state.filter}))
 end
 on monitor.tree
-  if type($event.args.on)!="bool" then raise("TREE","Boolean required") end
-  $state.tree=$event.args.on;$state=refresh_monitor($state);publish_monitor($state)
-  reply(0,"{}")
+  if busy_monitor($state) then return end
+  if type($event.args.on)!="bool" then reply(10,json_encode({error_code:"ARGUMENT",message:"on must be a bool"}));return end
+  if $state.tree!=$event.args.on then $state.tree=$event.args.on;$state=requery_monitor($state);publish_monitor($state) end
+  reply(0,json_encode({tree:$state.tree}))
 end
 on monitor.pause
   if type($event.args.on)!="bool" then raise("PAUSE","Boolean required") end
   $state.paused=$event.args.on;publish_monitor($state);reply(0,"{}")
 end
 on monitor.select
+  if busy_monitor($state) then return end
+  if not contains(keys($event.args),"pid") then reply(10,json_encode({error_code:"ARGUMENT",message:"pid is required"}));return end
   $pid=$event.args.pid
-  if $pid!=nil and not any($state.processes,fn($p)=$p.pid==$pid) then raise("PID","Process is not in the current table") end
-  $state.selected=$pid;publish_monitor($state);reply(0,"{}")
+  if $pid!=nil and (type($pid)!="number" or $pid<0 or $pid>4294967295 or floor($pid)!=$pid) then reply(10,json_encode({error_code:"ARGUMENT",message:"pid must be a process id or null"}));return end
+  if $pid!=nil and not any($state.processes,fn($p)=$p.pid==$pid) then reply(10,json_encode({error_code:"ARGUMENT",message:"No such process in the table"}));return end
+  $state.selected=$pid;publish_monitor($state);reply(0,json_encode({selected:$pid}))
 end
 on monitor.intent
   $a=$event.args
@@ -171,15 +178,21 @@ on monitor.signal
 end
 
 on monitor.tab
-  if not contains(["processes","performance"],$event.args.tab) then raise("ARGUMENT","tab must be processes or performance") end
+  if busy_monitor($state) then return end
+  if not contains(["processes","performance"],$event.args.tab) then reply(10,json_encode({error_code:"ARGUMENT",message:"tab must be processes or performance"}));return end
   $state.tab=if $event.args.tab=="processes" then "Processes" else "Performance" end
   $state=navigate_monitor($state);publish_monitor($state)
   reply(0,json_encode({tab:$event.args.tab}))
 end
 on monitor.section
-  if not contains($performance.keys_for($state.snapshot),$event.args.section) then raise("ARGUMENT","No such section") end
+  if busy_monitor($state) then return end
+  if not contains($performance.keys_for($state.snapshot),$event.args.section) then reply(10,json_encode({error_code:"ARGUMENT",message:"No such section"}));return end
   $state.section=$event.args.section;$state=navigate_monitor($state);publish_monitor($state)
   reply(0,json_encode({section:$state.section}))
+end
+fn busy_monitor($s)
+  if $s.dialog!=nil or $s.quitting then reply(10,json_encode({error_code:"BUSY",message:"Not now: a dialog is open"}));return true end
+  return false
 end
 
 fn execute_monitor($s,$id,$origin)

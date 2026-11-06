@@ -989,17 +989,25 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
         }
         match node.family.as_str() {
             "band" => {
-                band_groups(node, 0.0, design::title_band::Alignment::Right, None, &|_| 0.0)?;
+                band_groups(
+                    node,
+                    0.0,
+                    design::title_band::Alignment::Right,
+                    None,
+                    &|_| 0.0,
+                )?;
                 for child in children(node) {
                     let group = &node.ports["groups"][child];
                     if group["preferred"] == "content" || group["minimum"] == "content" {
                         let child = &tree.nodes[child];
                         if child.family != "text"
                             && !(child.family == "control"
-                                && child
-                                    .ports
-                                    .get("definition")
-                                    .is_some_and(|definition| matches!(definition["kind"].as_str(),Some("label"|"command-bar"))))
+                                && child.ports.get("definition").is_some_and(|definition| {
+                                    matches!(
+                                        definition["kind"].as_str(),
+                                        Some("label" | "command-bar")
+                                    )
+                                }))
                         {
                             return Err(
                                 "intrinsic band content requires a text or label child".into()
@@ -1108,7 +1116,10 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
 
 fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
     match value.as_str()? {
-        "design.mark_slot" => Some(ctx.map_or(44.0,|ctx|{let c=toolkit::chrome::Chrome::of(ctx);c.metrics.mark+c.metrics.mark_gap+c.metrics.title_bar_margin})),
+        "design.mark_slot" => Some(ctx.map_or(44.0, |ctx| {
+            let c = toolkit::chrome::Chrome::of(ctx);
+            c.metrics.mark + c.metrics.mark_gap + c.metrics.title_bar_margin
+        })),
         "design.title_bar_height" => {
             Some(ctx.map_or(38.0, |ctx| crate::window_frame::Metrics::of(ctx).height))
         }
@@ -1129,7 +1140,7 @@ fn band_groups(
     node: &Node,
     caption_width: f32,
     caption_side: design::title_band::Alignment,
-    ctx:Option<&egui::Context>,
+    ctx: Option<&egui::Context>,
     content_width: &dyn Fn(&str) -> f32,
 ) -> Result<Vec<design::title_band::Group>, String> {
     use design::title_band::{Alignment, Group};
