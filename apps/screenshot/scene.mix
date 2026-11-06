@@ -1,0 +1,24 @@
+---
+scene: 1
+name: screenshot
+citizen: screenshot
+---
+```mix
+{
+ root:{widget:"column",children:["title","status","toolbar","options","destination","preview"],gap:8},
+ title:{widget:"text",text:"Screenshot · Mix on Viu"},status:{widget:"text",text:"= $model.status"},
+ toolbar:{widget:"row",children:["capture","cancel","save","copy","refresh"],gap:8},
+ capture:{widget:"control",definition:{id:"capture",kind:"button",label:"",initial:"",properties:{text:"Take screenshot"}},on_intent:"screenshot.intent"},
+ cancel:{widget:"control",definition:{id:"cancel",kind:"button",label:"",initial:"",properties:{text:"Cancel / restore"}},on_intent:"screenshot.intent"},
+ save:{widget:"control",definition:{id:"save",kind:"button",label:"",initial:"",properties:{text:"Save PNG"}},on_intent:"screenshot.intent"},
+ copy:{widget:"control",definition:{id:"copy",kind:"button",label:"",initial:"",properties:{text:"Copy image"}},on_intent:"screenshot.intent"},
+ refresh:{widget:"control",definition:{id:"refresh",kind:"button",label:"",initial:"",properties:{text:"Refresh targets"}},on_intent:"screenshot.intent"},
+ options:{widget:"grid",columns:4,children:["mode","output","window","cursor"],column_gap:8,min_column_width:120},
+ mode:{widget:"control",definition:{id:"mode",kind:"combo",label:"Mode",initial:"screen",properties:{choices:["screen","window","region"]}},on_intent:"screenshot.intent"},
+ output:{widget:"control",definition:"= $model.output_control",on_intent:"screenshot.intent"},
+ window:{widget:"control",definition:"= $model.window_control",on_intent:"screenshot.intent"},
+ cursor:{widget:"control",definition:{id:"cursor",kind:"checkbox",label:"Pointer",initial:false,properties:{text:"Include pointer"}},on_intent:"screenshot.intent"},
+ destination:{widget:"text",text:"= $model.destination"},
+ preview:{widget:"control",definition:{id:"preview",kind:"image-fill",label:"",initial:{phase:"none",colour:[25,28,32],fit:"fit"}}}
+}
+```

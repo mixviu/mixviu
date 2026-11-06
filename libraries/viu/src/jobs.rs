@@ -99,11 +99,12 @@ impl Jobs {
                 let _ = start.reply.send((10, json!({"error_code":"BUSY"})));
                 continue;
             }
-            let mut runtime = Runtime::with_services(
+            let mut runtime = Runtime::with_deadline(
                 2,
                 self.wake.clone(),
                 self.native_backend.as_ref().map(|f| f()),
                 self.services.clone(),
+                std::time::Duration::from_secs(90),
             );
             let program = Program {
                 path: PathBuf::from(path.unwrap()),

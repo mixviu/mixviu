@@ -1,0 +1,92 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- lint: globals app_args
+$core=require("core.mix");$ctx=viu_context()
+$state=$core.initial($app_args[0] ?? env("MIXOS_INSTANCE","desktop"))
+fn publish_prefs($s)
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.model($s)}
+end
+fn start_prefs($s,$payload)
+  if $s.busy then raise("BUSY","A settings operation is active") end
+  $s.serial=$s.serial+1;$s.busy=true;$s.pending=$payload;$s.status="Settings request in progress"
+  $path=path_join(dirname(script_path()),"job.mix")
+  send "viu-local" "jobs.start" body={id:"prefs-work",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:$payload}
+  if $rc!=0 then raise("JOB",to_string($result)) end
+  return $s
+end
+fn refresh_prefs($s)
+  return start_prefs($s,{op:"read",binding:$s.binding})
+end
+fn set_prefs($s,$key,$value)
+  return start_prefs($s,{op:"write",request:$core.admitted($s,$key,$value)})
+end
+publish_prefs($state)
+on viu.tick
+  if not $state.busy and not $state.uncertain and monotonic()>$state.read_at+5 then $state=refresh_prefs($state);publish_prefs($state) end
+end
+on prefs.ping
+  reply(0,json_encode({schema:"prefs.mix.lab.v1"}))
+end
+on prefs.info
+  reply(0,json_encode($state))
+end
+on prefs.refresh
+  $state=refresh_prefs($state);publish_prefs($state);reply(0,json_encode({accepted:true}))
+end
+on prefs.section
+  if not any($core.sections,fn($x)=$x.id==$event.args.name) then raise("SECTION","Unknown section") end
+  $state.section=$event.args.name;publish_prefs($state);reply(0,"{}")
+end
+on prefs.search
+  if type($event.args.query)!="string" or len($event.args.query)>256 then raise("SEARCH","Search limit 256") end
+  $state.search=$event.args.query;publish_prefs($state);reply(0,"{}")
+end
+on prefs.select
+  $state=$core.choose($state,$event.args.key);publish_prefs($state);reply(0,"{}")
+end
+on prefs.set
+  $state=set_prefs($state,$event.args.key,$event.args.value);publish_prefs($state);reply(0,json_encode({accepted:true}))
+end
+on prefs.reset
+  $state=set_prefs($state,$event.args.key,nil);publish_prefs($state);reply(0,json_encode({accepted:true}))
+end
+on viu.job.completed
+  $d=$event.args
+  $answer=$d.body.answer ?? {}
+  if $state.busy and $d.tag.owner==$state.serial then
+    $state.busy=false;$state.read_at=monotonic()
+    if $d.rc==0 and $d.body.op=="read" then
+      $b=$d.body
+      if type($b.catalog.keys)!="list" or len($b.catalog.keys)>2048 or type($b.read.values)!="map" or type($b.read.revision)!="string" or not re_match($b.read.revision,"^(0|[1-9][0-9]*)$") or type($b.read.incarnation)!="string" then raise("REPLY","Malformed or oversized settings reply") end
+      $state.catalog=filter($b.catalog.keys,fn($k)=not contains($k.path,"<"))
+      $state.values=$b.read.values;$state.revision=$b.read.revision;$state.incarnation=$b.read.incarnation
+      $state.role=$b.status.role ?? "unknown";$state.stale=$b.status.stale ?? false;$state.uncertain=false
+      $state.status="Settings read"
+      if len($state.catalog)>0 then
+        if not any($state.catalog,fn($k)=$k.path==$state.key) then $state.key=$state.catalog[0].path end
+        $state=$core.choose($state,$state.key)
+      end
+    elif $d.rc==0 then
+      $state.status="Write accepted; reading authoritative values";$state=refresh_prefs($state)
+    elif $answer.status=="wrong_target" and not $state.retargeted and ($answer.binding ?? {}).profile=="default" then
+      $state.binding=$answer.binding;$state.retargeted=true;$state=refresh_prefs($state)
+    else
+      $state.status="Settings failed: "..json_encode($d.body)
+      if $state.pending.op=="write" then $state.uncertain=true end
+    end
+    publish_prefs($state)
+  end
+end
+on prefs.intent
+  $a=$event.args
+  if $a.id=="section" then $state.section=$a.value
+  elif $a.id=="search" then $state.search=$a.value
+  elif $a.id=="table" and contains(["select","activate"],$a.action) then $state=$core.choose($state,$a.value.key)
+  elif $a.id=="editor" then $state.draft=$a.value
+  elif $a.id=="apply" then
+    $value=if $state.draft_kind=="field" then json_parse($state.draft) else $state.draft end
+    $state=set_prefs($state,$state.key,$value)
+  elif $a.id=="reset" then $state=set_prefs($state,$state.key,nil)
+  elif $a.id=="refresh" then $state=refresh_prefs($state) end
+  publish_prefs($state);reply(0,"{}")
+end

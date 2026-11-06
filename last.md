@@ -60,3 +60,6 @@ Branch: lab/app-ports; head/source SHA: 14943caf69394c93e66acdd7af878b7634707b7f
 
 Round 2 started from 11945c0. Source-derived screenshot/prefs inventories written before implementation. Embedded mix remains 0.117; no installs or desktop changes.
 Branch: lab/app-ports; head SHA: 11945c0a2f96f1067aab79050b25a9ceeabd93c4; apps done: round-1 specimens, round-2 inventory only; CBC job ids: 20261106-195953-c07e7f58-a1 (round 1).
+
+Round 2 implementation checkpoint: new Mix screenshot/prefs bundles; reusable generic-host jobs, explicit native timeout bounds, bounded image metadata/exclusive PNG export and native clipboard image submission. Pure Mix capture-shape and settings-fence/refusal checks pass. Native build/render gates pending. No libraries/mix changes.
+Branch: lab/app-ports; head SHA: de075ba9c09ffd4ba9b8f6162959c02aaa2f9f0e; apps done: screenshot/prefs prototypes, acceptance pending; CBC job ids: round-2 pending.

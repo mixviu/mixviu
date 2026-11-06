@@ -1,0 +1,19 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+on job.run
+  $a=$event.args
+  if $a.op=="write" then
+    send "settingsd" "settings.apply" body=$a.request timeout=8
+    reply(if $rc==0 then 0 else 10 end,json_encode({op:"write",peer_rc:$rc,answer:$reply}))
+  else
+    send "settingsd" "settings.describe" body={} timeout=5
+    if $rc!=0 then raise("DESCRIBE",to_string($result)) end
+    $catalog=$reply
+    send "settingsd" "settings.get" body={binding:$a.binding,view:"values"} timeout=5
+    if $rc!=0 then reply(10,json_encode({op:"read",stage:"get",peer_rc:$rc,answer:$reply}));return end
+    $read=$reply
+    send "settingsd" "settings.status" body={binding:$a.binding} timeout=5
+    if $rc!=0 then raise("STATUS",to_string($result)) end
+    reply(0,json_encode({op:"read",catalog:$catalog,read:$read,status:$reply}))
+  end
+end

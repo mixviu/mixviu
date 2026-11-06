@@ -198,7 +198,7 @@ pub fn validate_fill(value: &Value) -> Result<(), String> {
     }
     validate(value)
 }
-fn decode_surface(path: &std::path::Path) -> Option<egui::ColorImage> {
+pub(crate) fn decode_surface(path: &std::path::Path) -> Option<egui::ColorImage> {
     let bytes = thumbs::cache::read_regular(path, 32 * 1024 * 1024).ok()?;
     let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()

@@ -325,9 +325,13 @@ impl Bridge {
         args: &MixValue,
     ) -> MixResult<(i32, MixValue, MixValue)> {
         let native = self.native()?;
+        let timeout = crate::runtime::to_json(args)?["timeout"].as_f64().unwrap_or(10.0);
+        if !timeout.is_finite() || !(0.1..=90.0).contains(&timeout) {
+            return Err(failure("native timeout must be 0.1..90 seconds"));
+        }
         let (headers, body, header_route) = Self::payload(command, args)?;
         let (rc, body, error) = native
-            .call_with_headers_raw_within(target, command, &headers, &body, Duration::from_secs(10))
+            .call_with_headers_raw_within(target, command, &headers, &body, Duration::from_secs_f64(timeout))
             .await
             .map_err(failure)?;
         reply_parts(rc, body, error, header_route)

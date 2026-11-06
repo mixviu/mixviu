@@ -157,6 +157,17 @@ impl Runtime {
         backend: Option<BackendFactory>,
         services: Services,
     ) -> Self {
+        Self::with_deadline(capacity, wake, backend, services, Duration::from_secs(20))
+    }
+    /// Dedicated work lanes may wait on a human or native IO. Root UI callbacks
+    /// retain their existing twenty-second ceiling.
+    pub(crate) fn with_deadline(
+        capacity: usize,
+        wake: Wake,
+        backend: Option<BackendFactory>,
+        services: Services,
+        deadline: Duration,
+    ) -> Self {
         assert!(capacity > 0);
         let (tx, commands) = mpsc::sync_channel(capacity);
         // At most capacity queued requests, one in flight and one initial load.
@@ -183,7 +194,7 @@ impl Runtime {
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
                         eval.set_capability_policy(Rc::new(WorkerPolicy));
                         eval.set_interrupt_flag(worker_interrupt.clone());
-                        eval.set_limits(mix::EvalLimits { time_limit: Some(Duration::from_secs(20)), max_string_len: Some(1_048_576), max_list_len: Some(65_536), max_map_len: Some(65_536), ..Default::default() });
+                        eval.set_limits(mix::EvalLimits { time_limit: Some(deadline), max_string_len: Some(1_048_576), max_list_len: Some(65_536), max_map_len: Some(65_536), ..Default::default() });
                         eval.set_entry_script(&program.path.to_string_lossy());
                         eval.set_file(program.path.to_string_lossy().to_string());
                         eval.set_bus_handler(local.clone());
@@ -193,13 +204,14 @@ impl Runtime {
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
+                        eval.register("viu_image",crate::native_primitives::image_file());
                         if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "loader": "viu-local", "host": "viu-local"
                         }))));
-                        let outcome = rt.block_on(bounded(&worker_stop, eval.execute_script_source(&program.source)));
+                        let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));
                         (generation, 0, outcome.map(|_| ()))
                     }
@@ -211,7 +223,7 @@ impl Runtime {
                                 headers.insert("id".into(),sequence.to_string());
                                 let event = IncomingEvent { generation, command, headers, body: args.to_string() };
                                 let tasks = tokio::task::LocalSet::new();
-                                rt.block_on(bounded(&worker_stop, async {
+                                rt.block_on(bounded(&worker_stop, deadline, async {
                                     tasks.run_until(eval.dispatch_event(event)).await?;
                                     tasks.await;
                                     Ok(())
@@ -353,6 +365,7 @@ impl Drop for Runtime {
 
 async fn bounded<T>(
     stop: &AtomicBool,
+    deadline: Duration,
     future: impl std::future::Future<Output = MixResult<T>>,
 ) -> Result<T, RunFailure> {
     tokio::pin!(future);
@@ -361,7 +374,7 @@ async fn bounded<T>(
     tokio::select! {
         result = &mut future => result.map_err(|e| RunFailure::Evaluation(e.to_string())),
         _ = async { loop { tokio::time::sleep(Duration::from_millis(10)).await; if stop.load(Ordering::Acquire) { break; } } } => Err(RunFailure::OwnerDropped),
-        _ = tokio::time::sleep(Duration::from_secs(20)) => Err(RunFailure::Deadline),
+        _ = tokio::time::sleep(deadline) => Err(RunFailure::Deadline),
     }
 }
 

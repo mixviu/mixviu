@@ -7,6 +7,23 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+/// Bounded image metadata and exclusive PNG encoding; callers own naming,
+/// storage directories, save policy and document lifetime.
+pub(crate) fn image_file() -> mix::evaluator::ExtFn {
+    mix::sync_ext(move |args| {
+        let fail=|msg:String|MixError::RuntimeError{msg,span:None};
+        let [Value::String(op),Value::String(source),rest @ ..]=args.as_slice() else{return Err(fail("viu_image expects info/export, source, destination?".into()));};
+        if !["info","export"].contains(&op.as_str()) || (op=="info" && !rest.is_empty()) || (op=="export" && rest.len()!=1){return Err(fail("invalid image operation arguments".into()));}
+        let image=crate::image_view::decode_surface(std::path::Path::new(source)).ok_or_else(||fail("image refused by regular-file/format/byte/pixel budgets".into()))?;
+        if op=="export" {
+            let Value::String(destination)=&rest[0] else{return Err(fail("destination must be a path".into()));};
+            if !std::path::Path::new(destination).is_absolute(){return Err(fail("destination must be absolute".into()));}
+            crate::capture::write_png(std::path::Path::new(destination),&image).map_err(fail)?;
+        }
+        crate::runtime::from_json(serde_json::json!({"width":image.size[0],"height":image.size[1]}))
+    })
+}
+
 /// Reuse native widget type/range/enabled admission from any Mix reducer.
 pub(crate) fn widget_admit() -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {

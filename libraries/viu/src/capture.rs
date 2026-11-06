@@ -125,7 +125,7 @@ impl Drop for Capture {
 }
 // The encoder and exclusive-file contract follow the retained toolkit drive
 // primitive; its origin and the bounded adaptation are in provenance.
-fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
+pub(crate) fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
     use std::os::unix::fs::OpenOptionsExt;
     if image.size[0]
         .checked_mul(image.size[1])
