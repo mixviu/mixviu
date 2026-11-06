@@ -11,6 +11,9 @@ fn probe(reply: Value, call: &str) -> (u8, Value) {
     probe_sequence(vec![reply], call)
 }
 fn probe_sequence(replies: Vec<Value>, call: &str) -> (u8, Value) {
+    probe_module(replies, call, "mail.mix", Vec::new())
+}
+fn probe_module(replies: Vec<Value>, call: &str, module: &str, auth: Vec<&'static str>) -> (u8, Value) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let bodies: Vec<_> = replies
@@ -18,7 +21,7 @@ fn probe_sequence(replies: Vec<Value>, call: &str) -> (u8, Value) {
         .map(|r| r.to_string().replace("ORIGIN", &url))
         .collect();
     let server = std::thread::spawn(move || {
-        for body in bodies {
+        for (index, body) in bodies.into_iter().enumerate() {
             let (mut socket, _) = listener.accept().unwrap();
             socket
                 .set_read_timeout(Some(Duration::from_secs(5)))
@@ -44,7 +47,7 @@ fn probe_sequence(replies: Vec<Value>, call: &str) -> (u8, Value) {
                     }
                 }
             }
-            assert!(String::from_utf8_lossy(&bytes).contains("Basic dXNlcjpzZWNyZXQ="));
+            assert!(String::from_utf8_lossy(&bytes).contains(auth.get(index).copied().unwrap_or("Basic dXNlcjpzZWNyZXQ=")));
             write!(
                 socket,
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -69,7 +72,7 @@ fn probe_sequence(replies: Vec<Value>, call: &str) -> (u8, Value) {
             path: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email/probe.mix"),
             source: format!(
                 r#"
-$m=require("mail.mix")
+$m=require("{module}")
 on probe
   try
     $e=$event.args.entry
@@ -99,6 +102,26 @@ end
     let reply = done.reply.unwrap();
     server.join().unwrap();
     (reply.rc, reply.body)
+}
+
+#[test]
+fn gold_token_session_and_query_preserve_bearer_auth_and_query_order() {
+    let session=json!({"apiUrl":"ORIGIN/api/mail","accounts":{"1":{"name":"One"}},"primaryAccounts":{"urn:ietf:params:jmap:mail":"1"},"capabilities":{"urn:ietf:params:jmap:core":{},"urn:ietf:params:jmap:mail":{}}});
+    let (rc,body)=probe_module(vec![
+        json!({"token":"test-token","accountId":"1"}),session,
+        json!({"methodResponses":[["Email/query",{"ids":["a","b"],"total":2},"c0"]]}),
+        json!({"methodResponses":[["Email/get",{"list":[{"id":"b","subject":"Second"},{"id":"a","subject":"First"}]},"c0"]]})
+    ],r#"if true then $s=$m.connect($e);$m.list($e,$s,{mailbox:"inbox",limit:100}) end"#,"protocol.mix",vec!["Basic dXNlcjpzZWNyZXQ=","Bearer test-token","Bearer test-token","Bearer test-token"]);
+    assert_eq!(rc,0,"{body}");
+    assert_eq!(body["emails"][0]["id"],"a");
+    assert_eq!(body["emails"][1]["id"],"b");
+    assert_eq!(body["emails"][0]["body_values"],Value::Null);
+    let (rc,body)=probe_module(vec![
+        json!({"token":"test-token","accountId":"1"}),
+        json!({"apiUrl":"https://example.test/leak","accounts":{"1":{}},"capabilities":{}})
+    ],"$m.connect($e)","protocol.mix",vec!["Basic dXNlcjpzZWNyZXQ=","Bearer test-token"]);
+    assert_eq!(rc,10);
+    assert_eq!(body["code"],"SERVER");
 }
 #[test]
 fn query_order_is_preserved_and_different_get_identities_are_refused() {
