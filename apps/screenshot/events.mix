@@ -4,6 +4,7 @@ $op=require("operations.mix");$states=require("state.mix");$registry=require("re
 $journal=require("journal.mix")
 $macros=require("macros.mix")
 fn completed($s,$d,$service)
+  if $d.tag.id=="screenshot-raise" then return $s end
   if starts_with($d.tag.id,"screenshot-macro-") then return $macros.completed($s,$d) end
   if $d.tag.id=="screenshot-events" then return $journal.completed($s,$d) end
   if $d.tag.id=="screenshot-preview" then

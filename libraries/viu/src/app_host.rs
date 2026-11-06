@@ -179,7 +179,7 @@ impl Host {
             if let Some(command) = r.command.strip_prefix(&format!("{prefix}.")) {
                 if toolkit::drive::COMMANDS.contains(&command) {
                     if self.headless {
-                        let _ = r.reply.send((10,json!({"error_code":"HEADLESS","message":"A headless instance has no window"})));
+                        let _ = r.reply.send((10,json!({"error_code":"HEADLESS","message":"a headless instance has no window"})));
                         return;
                     }
                     self.drive_sequence += 1;

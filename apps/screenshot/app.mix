@@ -203,3 +203,6 @@ end
 on viu.macros.closed
   $state.ui.macros_open=false;$state=publish_model($state)
 end
+on viu.macros.changed
+  $state.ui.macros_open=$event.args.open;$state=publish_model($state)
+end
