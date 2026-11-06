@@ -522,7 +522,9 @@ impl Widgets {
                 } else {
                     None
                 };
-                self.editors.draw(ui, widget, value, selection, events)
+                let response = self.editors.draw(ui, widget, value, selection, events);
+                self.text_input_active |= response.has_focus();
+                response
             }
             "editor" if widget.properties["read_only"] == true => {
                 // An immutable native text buffer permits selection/copy but

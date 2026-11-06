@@ -410,3 +410,7 @@ branch lab/gold-parity; head: see this checkpoint commit; apps at parity: none; 
 
 
 branch lab/gold-parity; head 0a7ae37937e8b022b38fb5b0adc176a6b83ce97b (tested code; following receipt commit changes documentation only); apps at parity: none; gate evidence: failing Monitor baseline and framed-host pilot retained privately; CBC jobs: 20261107-004421-72b146fc-a1 full scoped gate green, 20261107-004254-ea9ed470-a1 focused gate green.
+
+
+Viu editor integration checkpoint 2026-11-07: reusable opt-in native document control over the retained gold editor/model/syntax, in-process undo and Unicode selection, virtualised gold drawing, literal find/single replace and per-frame style resolution. CBC 20261107-005339-52bd9c89-a1 passed fmt and all 5 text-input tests at e3ff143. Full log read. Initial 20261107-005250-80866903-a1 returned wrapper rc 0 but compilation failed; it is NOT green. Exact worker fmt/lock diff applied, egui API fixed. Ced and visual parity remain open; detailed limits in docs/ports/editor-widget.md.
+branch: lab/viu-editor; head SHA: e3ff14316f16d867adeb27682519061fcacfc3a3 (tested source; checkpoint commit follows); widget features: retained gold input/rendering with local documents, Unicode selection and undo tested; ced parity evidence: inherited bounded specimen only, no new visual acceptance; CBC job ids: 20261107-005339-52bd9c89-a1 green, 20261107-005250-80866903-a1 failed compilation.
