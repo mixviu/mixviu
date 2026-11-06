@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -88,7 +88,7 @@ pub struct Program {
     pub citizen: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Reply {
     pub rc: u8,
     pub body: Json,
@@ -107,6 +107,10 @@ pub struct Completion {
     /// The callback's explicit application reply. A refusal is a normal
     /// response, distinct from an evaluator/handler failure in `error`.
     pub reply: Option<Reply>,
+    /// Keep the native request open after this callback has returned.
+    pub deferred: bool,
+    /// Replies to earlier requests, correlated independently of this callback.
+    pub answers: Vec<(u64, Reply)>,
 }
 
 enum RunFailure {
@@ -127,6 +131,7 @@ impl RunFailure {
 enum Request {
     Load(u64, Program),
     Event(u64, u64, String, Json, bool, BTreeMap<String, String>),
+    Forget(u64, u64),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -184,11 +189,12 @@ impl Runtime {
                 worker_interrupt.store(false, Ordering::Release);
                 if worker_stop.load(Ordering::Acquire) { break; }
                 let start = Instant::now();
+                let retained_before=current.as_ref().map(|(_,_,local,..)|local.requests.borrow().clone());
                 let (generation, sequence, result) = match request {
                     Request::Load(generation, program) => {
                         if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                         // A fresh evaluator never retains old closures or module state.
-                        let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), backend: backend.clone() });
+                        let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), backend: backend.clone(), requests: RefCell::new(BTreeMap::new()), active: RefCell::new(None), deferred: Cell::new(false), answers: RefCell::new(Vec::new()), identity: NEXT_RUNTIME.fetch_add(1,Ordering::Relaxed) });
                         let stdout = SharedBuf::new();
                         let stderr = SharedBuf::new();
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
@@ -206,6 +212,8 @@ impl Runtime {
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_image",crate::native_primitives::image_file());
                         eval.register("viu_http",crate::http::binding());
+                        let replies=local.clone();
+                        eval.register("viu_reply", mix::sync_ext(move |args| replies.reply_handle(args)));
                         if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
@@ -218,8 +226,9 @@ impl Runtime {
                     }
                     Request::Event(generation, sequence, command, args, is_request, mut headers) => {
                         let outcome = match current.as_mut() {
-                            Some((active, eval, ..)) if *active == generation => {
+                            Some((active, eval, local, ..)) if *active == generation => {
                                 headers.entry("from".into()).or_insert_with(||"viu-client".into());
+                                *local.active.borrow_mut()=is_request.then(||(sequence,headers["from"].clone()));
                                 headers.insert("type".into(),if is_request{"request"}else{"event"}.into());
                                 headers.insert("id".into(),sequence.to_string());
                                 let event = IncomingEvent { generation, command, headers, body: args.to_string() };
@@ -235,6 +244,12 @@ impl Runtime {
                         };
                         (generation, sequence, outcome)
                     }
+                    Request::Forget(generation,sequence) => {
+                        if let Some((active,_,local,..))=&current {
+                            if *active==generation { local.requests.borrow_mut().retain(|_,request| request.0!=sequence); }
+                        }
+                        continue;
+                    }
                 };
                 if worker_stop.load(Ordering::Acquire) { break; }
                 let (mut model, stdout, stderr, fault, mut reply) = match current.as_ref() {
@@ -247,7 +262,18 @@ impl Runtime {
                 if (sequence == 0 && result.is_err()) || matches!(&result, Err(RunFailure::Deadline)) {
                     if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                 }
-                let completion = Completion { generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply };
+                let (mut deferred,mut answers)=current.as_ref().map(|(_,_,local,..)| {
+                    *local.active.borrow_mut()=None;
+                    (local.deferred.replace(false),std::mem::take(&mut *local.answers.borrow_mut()))
+                }).unwrap_or_default();
+                if result.is_err() {
+                    deferred=false; answers.clear();
+                    if let Some((_,_,local,..))=&current {
+                        *local.requests.borrow_mut()=retained_before.unwrap_or_default();
+                        local.requests.borrow_mut().retain(|_,r|r.0!=sequence);
+                    }
+                }
+                let completion = Completion { generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply,deferred,answers };
                 if results.send(completion).is_err() { break; }
                 wake();
             }
@@ -336,6 +362,12 @@ impl Runtime {
     pub fn generation(&self) -> u64 {
         self.generation
     }
+    pub fn sequence(&self) -> u64 {self.sequence}
+    /// Retire a caller whose native response receiver has gone away.
+    /// On a full mailbox the owner must retry; no reply handle is reused.
+    pub fn forget_reply(&self, sequence: u64) -> Result<(), Refusal> {
+        self.enqueue(Request::Forget(self.generation,sequence))
+    }
     pub fn try_completion(&self) -> Option<Completion> {
         self.rx.as_ref()?.try_recv().ok()
     }
@@ -393,6 +425,40 @@ struct Local {
     error: RefCell<Option<String>>,
     reply: RefCell<Option<Reply>>,
     backend: Option<Rc<dyn BusHandler>>,
+    identity: u64,
+    requests: RefCell<BTreeMap<String,(u64,String)>>,
+    active: RefCell<Option<(u64,String)>>,
+    deferred: Cell<bool>,
+    answers: RefCell<Vec<(u64,Reply)>>,
+}
+static NEXT_RUNTIME: std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(1);
+impl Local {
+    fn reply_handle(&self,args:Vec<Value>)->MixResult<Value> {
+        let values=args.iter().map(to_json).collect::<MixResult<Vec<_>>>()?;
+        match values.as_slice() {
+            [op] if op=="keep" => {
+                if self.reply.borrow().is_some() || self.deferred.get() {return Err(failure("request already answered or retained"));}
+                let (sequence,caller)=self.active.borrow().clone().ok_or_else(||failure("only a request can be retained"))?;
+                if self.requests.borrow().len()>=32 {return Err(failure("deferred reply capacity exceeded"));}
+                let handle=format!("{}:{}:{}",self.identity,self.generation,sequence);
+                self.requests.borrow_mut().insert(handle.clone(),(sequence,caller.clone()));
+                self.deferred.set(true);
+                from_json(json!({"handle":handle,"request":sequence,"caller":caller}))
+            }
+            [op,handle,rc,body] if op=="send" => {
+                let token=handle["handle"].as_str().ok_or_else(||failure("invalid reply handle"))?;
+                let rc=rc.as_u64().filter(|r|*r<=255).ok_or_else(||failure("reply code must be 0..255"))? as u8;
+                let mut requests=self.requests.borrow_mut();
+                let (sequence,caller)=requests.get(token).ok_or_else(||failure("stale or consumed reply handle"))?;
+                if handle["request"].as_u64()!=Some(*sequence) || handle["caller"].as_str()!=Some(caller.as_str()) {return Err(failure("reply handle identity mismatch"));}
+                if self.active.borrow().as_ref().is_some_and(|r|r.0==*sequence) {return Err(failure("retained reply requires a later callback"));}
+                self.answers.borrow_mut().push((*sequence,Reply{rc,body:body.clone()}));
+                requests.remove(token);
+                from_json(json!({"answered":true}))
+            }
+            _=>Err(failure("viu_reply expects keep, or send/handle/rc/body"))
+        }
+    }
 }
 
 impl ServeRuntime for Local {
@@ -534,7 +600,7 @@ impl BusHandler for Local {
         body: &'a str,
     ) -> BusFuture<'a, MixResult<()>> {
         Box::pin(async move {
-            if self.reply.borrow().is_some() {
+            if self.reply.borrow().is_some() || self.deferred.get() {
                 return Err(failure("callback already replied"));
             }
             let body = serde_json::from_str(body).unwrap_or_else(|_| Json::String(body.into()));

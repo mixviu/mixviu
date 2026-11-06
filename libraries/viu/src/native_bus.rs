@@ -28,6 +28,8 @@ pub struct Request {
     pub close_after_reply: Arc<AtomicBool>,
     /// 0 pending, 1 reply crossed the transport, 2 delivery failed/cancelled.
     pub delivery: Arc<AtomicU8>,
+    /// A Mix owner may retain this request beyond its callback/admission timeout.
+    pub deferred: Arc<AtomicBool>,
 }
 pub struct Notice {
     pub command: String,
@@ -128,7 +130,7 @@ impl Endpoint {
                         _=responses.join_next(),if !responses.is_empty()=>continue,
                         hint=hint_rx.recv(),if publishing.is_none()=>{if let Some(hint)=hint {publishing=Some(Box::pin(send_hint(native.clone(),hint)));}continue;},
                         (topic,ok,probe_ok)=async{publishing.as_mut().expect("guarded hint future").await},if publishing.is_some()=>{publishing=None;post(Notice{command:"bus.hint.completed".into(),args:json!({"topic":topic,"ok":ok,"probe_ok":probe_ok}),headers:BTreeMap::new()});continue;},
-                        changed=state.changed()=>{if changed.is_err(){break;}let connected=native.is_connected();post(Notice{command:if connected{"bus.connected"}else{"bus.disconnected"}.into(),args:json!({"generation":native.connection_generation()}),headers:BTreeMap::new()});continue;},
+                        changed=state.changed()=>{if changed.is_err(){break;}let connected=native.is_connected();if !connected {responses.abort_all();}post(Notice{command:if connected{"bus.connected"}else{"bus.disconnected"}.into(),args:json!({"generation":native.connection_generation()}),headers:BTreeMap::new()});continue;},
                         event=incoming.recv()=>match event{Some(event)=>event,None=>break}
                     };
                     let command=match event{
@@ -141,13 +143,15 @@ impl Endpoint {
                     let (reply,response)=oneshot::channel();
                     let close_after_reply=Arc::new(AtomicBool::new(false));
                     let delivery=Arc::new(AtomicU8::new(0));
-                    let request=Request{from:command.from.clone(),command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
+                    let deferred=Arc::new(AtomicBool::new(false));
+                    let request=Request{from:command.from.clone(),command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone(),deferred:deferred.clone()};
                     let admitted=tx.try_send(request).is_ok();
                     if admitted{wake();}
                     let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;
                     responses.spawn(async move{
                         let ack=Delivery{state:delivery,wake:wake.clone()};
-                        let answer=if admitted{match tokio::time::timeout(Duration::from_secs(10),response).await{Ok(Ok(value))=>value,_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
+                        let mut response=response;
+                        let answer=if admitted{match tokio::time::timeout(Duration::from_secs(10),&mut response).await{Ok(Ok(value))=>value,Err(_) if deferred.load(Ordering::Acquire)=>response.await.unwrap_or((20,json!({"error_code":"OWNER_CLOSED"}))),_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
                         let sent=matches!(tokio::time::timeout(Duration::from_secs(2),native.respond(&command,answer.0,&answer.1.to_string())).await,Ok(Ok(())));
                         ack.state.store(if sent{1}else{2},Ordering::Release);wake();
                         if (quit||close_after_reply.load(Ordering::Acquire))&&answer.0==0&&sent{close.store(true,Ordering::Release);wake();}

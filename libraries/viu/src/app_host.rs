@@ -39,6 +39,7 @@ struct Host {
     view: SceneView,
     bus: Endpoint,
     pending: BTreeMap<u64, Reply>,
+    retained: BTreeMap<u64, Arc<std::sync::atomic::AtomicBool>>,
     inflight: BTreeSet<u64>,
     input: Input,
     input_reply: Option<Reply>,
@@ -85,7 +86,7 @@ impl Host {
             }
         }
     }
-    fn request(&mut self, r: Request, ctx: &egui::Context) {
+    fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
@@ -143,7 +144,13 @@ impl Host {
                     }
                 }
             }
-            _ => self.dispatch(r.command, r.args, r.headers, Some(r.reply)),
+            _ => {
+                r.headers.insert("from".into(),r.from);
+                let before=self.runtime.sequence();
+                self.dispatch(r.command, r.args, r.headers, Some(r.reply));
+                let after=self.runtime.sequence();
+                if after!=before {self.retained.insert(after,r.deferred);}
+            }
         }
     }
 }
@@ -161,6 +168,10 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
+        let gone:Vec<_>=self.pending.iter().filter_map(|(seq,reply)|reply.is_closed().then_some(*seq)).collect();
+        for seq in gone {
+            if self.runtime.forget_reply(seq).is_ok() {self.pending.remove(&seq);self.retained.remove(&seq);}
+        }
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
                 let result = if let Some(image) = image {
@@ -199,6 +210,7 @@ impl Host {
         }
         while let Some(done) = self.runtime.try_completion() {
             self.inflight.remove(&done.sequence);
+            if !self.runtime.accepts(&done) {continue;}
             self.error = done.error.unwrap_or_default();
             if self.error.is_empty() {
                 if let Some(model) = done.model {
@@ -247,7 +259,10 @@ impl Host {
                     }
                 }
             }
-            if let Some(reply) = self.pending.remove(&done.sequence) {
+            if done.deferred && self.error.is_empty() {
+                if let Some(kept)=self.retained.get(&done.sequence) {kept.store(true,std::sync::atomic::Ordering::Release);}
+            } else if let Some(reply) = self.pending.remove(&done.sequence) {
+                self.retained.remove(&done.sequence);
                 let answer = if !self.error.is_empty() {
                     (10, json!({"error":self.error}))
                 } else if let Some(r) = done.reply {
@@ -256,6 +271,16 @@ impl Host {
                     (0, self.state())
                 };
                 let _ = reply.send(answer);
+            }
+            for (sequence,answer) in done.answers {
+                self.retained.remove(&sequence);
+                if let Some(reply)=self.pending.remove(&sequence) {
+                    let _=reply.send(if self.error.is_empty() {(answer.rc,answer.body)}else{(10,json!({"error":self.error}))});
+                }
+            }
+            if !done.behaviour_available {
+                self.retained.clear();
+                for (_,reply) in std::mem::take(&mut self.pending) {let _=reply.send((20,json!({"error_code":"OWNER_CLOSED"})));}
             }
         }
         for _ in 0..32 {
@@ -476,6 +501,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         view: loading_view(),
         bus,
         pending: BTreeMap::new(),
+        retained: BTreeMap::new(),
         inflight: BTreeSet::new(),
         input: Input::default(),
         input_reply: None,
