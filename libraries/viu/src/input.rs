@@ -42,7 +42,8 @@ impl Input {
                     targets.push_front("menu.toggle".into());
                 }
                 let first = targets.pop_front().ok_or("menu path is empty")?;
-                self.queue("click", &serde_json::json!({"id":first}), view)?;
+                if view.geometry.contains_key(&first) {self.queue("click", &serde_json::json!({"id":first}), view)?;}
+                else {targets.push_front(first);}
                 self.menu_path = targets;
                 self.menu_wait_frames = 0;
                 self.menu_depth = depth;

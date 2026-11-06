@@ -59,26 +59,45 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
     let model = first.model.unwrap();
     assert_eq!(model["panes"][0]["rows"], 2);
     assert_eq!(model["panes"][0]["summary"], "1 folder, 1 file (3 B)");
-    let contract:Value=serde_json::from_str(&std::fs::read_to_string(app_dir.join("contract.json")).unwrap()).unwrap();
-    let mut native=native::Native::new(dir.path(),contract,Arc::new(||{}));
-    let ctx_native=egui::Context::default();let until=Instant::now()+Duration::from_secs(5);
-    while native.model()["ready"]!=true {native.poll(&ctx_native);assert!(Instant::now()<until);std::thread::sleep(Duration::from_millis(2));}
-    for (args,rc,open) in [
-        (json!({"open":"about"}),0,true),
-        (json!({"open":"shortcuts"}),10,true),
-        (json!({"answer":"unknown"}),10,true),
-        (json!({"name":"not-a-prompt"}),10,true),
-        (json!({"answer":"done"}),0,false),
-        (json!({"answer":"done"}),10,false),
-        (json!({"open":"shortcuts"}),0,true),
-        (json!({"open":null}),0,false),
-        (json!({"open":null}),0,false),
+    let contract: Value =
+        serde_json::from_str(&std::fs::read_to_string(app_dir.join("contract.json")).unwrap())
+            .unwrap();
+    let mut native = native::Native::new(dir.path(), contract, Arc::new(|| {}));
+    let ctx_native = egui::Context::default();
+    let until = Instant::now() + Duration::from_secs(5);
+    while native.model()["ready"] != true {
+        native.poll(&ctx_native);
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    for (args, rc, open) in [
+        (json!({"open":"about"}), 0, true),
+        (json!({"open":"shortcuts"}), 10, true),
+        (json!({"answer":"unknown"}), 10, true),
+        (json!({"name":"not-a-prompt"}), 10, true),
+        (json!({"answer":"done"}), 0, false),
+        (json!({"answer":"done"}), 10, false),
+        (json!({"open":"shortcuts"}), 0, true),
+        (json!({"open":null}), 0, false),
+        (json!({"open":null}), 0, false),
     ] {
-        let seq=runtime.event("dopus.call".into(),json!({"command":"dopus.dialog","args":args})).unwrap();
-        let completed=wait(&runtime,&mut jobs,seq).0;assert_eq!(completed.reply.unwrap().rc,rc,"{args}");
-        assert_eq!(native.call("dopus.dialog",&args).is_ok(),rc==0,"{args}");
-        assert_eq!(native.model()["values"]["form"]["open"],open);
-        if let Some(model)=completed.model {assert_eq!(model["values"]["form"]["open"],open);}
+        let seq = runtime
+            .event(
+                "dopus.call".into(),
+                json!({"command":"dopus.dialog","args":args}),
+            )
+            .unwrap();
+        let completed = wait(&runtime, &mut jobs, seq).0;
+        assert_eq!(completed.reply.unwrap().rc, rc, "{args}");
+        assert_eq!(
+            native.call("dopus.dialog", &args).is_ok(),
+            rc == 0,
+            "{args}"
+        );
+        assert_eq!(native.model()["values"]["form"]["open"], open);
+        if let Some(model) = completed.model {
+            assert_eq!(model["values"]["form"]["open"], open);
+        }
     }
     let seq = runtime.event("dopus.call".into(), json!({"command":"dopus.intent","args":{"id":"left-tree","action":"activate","value":{"key":left.join("Folder")}}})).unwrap();
     let expanded = wait(&runtime, &mut jobs, seq).0;

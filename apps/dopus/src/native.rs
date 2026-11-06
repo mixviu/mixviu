@@ -872,21 +872,69 @@ impl Native {
             "dopus.execute" => self.action(string(args, "id")?, &args["params"]),
             "dopus.intent" => self.intent(args),
             "dopus.dialog" => {
-                let object=args.as_object().ok_or("Dialog arguments must be an object")?;
-                if object.keys().any(|k|!["open","answer","name"].contains(&k.as_str())) || (object.contains_key("open") && object.len()!=1) || (object.contains_key("name") && !object.contains_key("answer")){return Err("Invalid dialog arguments".into());}
-                if let Some(open)=object.get("open") {
-                    if open.is_null(){if self.form["open"]==true {self.answer("cancel",None)?;}return Ok(json!({"ok":true}));}
-                    let kind=open.as_str().filter(|s|["about","shortcuts"].contains(s)).ok_or("Unknown dialog kind")?;
-                    if self.form["open"]==true{return Err("DIALOG_OPEN: answer the open dialog first".into());}
-                    return self.action(&format!("help.{kind}"),&json!({}));
+                let object = args
+                    .as_object()
+                    .ok_or("Dialog arguments must be an object")?;
+                if object
+                    .keys()
+                    .any(|k| !["open", "answer", "name"].contains(&k.as_str()))
+                    || (object.contains_key("open") && object.len() != 1)
+                    || (object.contains_key("name") && !object.contains_key("answer"))
+                {
+                    return Err("Invalid dialog arguments".into());
                 }
-                if let Some(answer)=object.get("answer") {
-                    if self.form["open"]!=true{return Err("NO_DIALOG: no dialog is open".into());}
-                    let answer=answer.as_str().ok_or("Answer must be text")?;
-                    let choice=match self.form_kind.as_str(){"delete"=>match answer{"yes"=>"ok","no"=>"cancel",_=>return Err("Unknown delete choice".into())},"message"=>if answer=="done"{"ok"}else{return Err("Expected done".into())},_=>{
-                        if !self.form["choices"].as_array().is_some_and(|a|a.iter().any(|c|c["id"]==answer && c["enabled"]==true)){return Err("Unknown dialog choice".into());}answer}};
-                    let name=if let Some(name)=object.get("name"){if !["mkdir","rename"].contains(&self.form_kind.as_str()){return Err("Dialog has no name field".into());}Some(name.as_str().ok_or("Name must be text")?)}else{None};
-                    return self.answer(choice,name);
+                if let Some(open) = object.get("open") {
+                    if open.is_null() {
+                        if self.form["open"] == true {
+                            self.answer("cancel", None)?;
+                        }
+                        return Ok(json!({"ok":true}));
+                    }
+                    let kind = open
+                        .as_str()
+                        .filter(|s| ["about", "shortcuts"].contains(s))
+                        .ok_or("Unknown dialog kind")?;
+                    if self.form["open"] == true {
+                        return Err("DIALOG_OPEN: answer the open dialog first".into());
+                    }
+                    return self.action(&format!("help.{kind}"), &json!({}));
+                }
+                if let Some(answer) = object.get("answer") {
+                    if self.form["open"] != true {
+                        return Err("NO_DIALOG: no dialog is open".into());
+                    }
+                    let answer = answer.as_str().ok_or("Answer must be text")?;
+                    let choice = match self.form_kind.as_str() {
+                        "delete" => match answer {
+                            "yes" => "ok",
+                            "no" => "cancel",
+                            _ => return Err("Unknown delete choice".into()),
+                        },
+                        "message" => {
+                            if answer == "done" {
+                                "ok"
+                            } else {
+                                return Err("Expected done".into());
+                            }
+                        }
+                        _ => {
+                            if !self.form["choices"].as_array().is_some_and(|a| {
+                                a.iter().any(|c| c["id"] == answer && c["enabled"] == true)
+                            }) {
+                                return Err("Unknown dialog choice".into());
+                            }
+                            answer
+                        }
+                    };
+                    let name = if let Some(name) = object.get("name") {
+                        if !["mkdir", "rename"].contains(&self.form_kind.as_str()) {
+                            return Err("Dialog has no name field".into());
+                        }
+                        Some(name.as_str().ok_or("Name must be text")?)
+                    } else {
+                        None
+                    };
+                    return self.answer(choice, name);
                 }
                 Ok(json!({"ok":true}))
             }
@@ -1050,8 +1098,14 @@ impl Native {
         let compact =
             [json!("button"), json!("titlebar")].contains(&self.window["window.menu_style"]);
         let mut header_groups = json!({"menu":{"preferred":if compact{36}else{180},"minimum":if compact{36}else{120},"align":side("window.menu_side","left"),"shrink":1,"order":0},"toolbar":{"preferred":280,"minimum":80,"align":side("window.actions_align","right"),"shrink":1,"order":2},"caption-title":{"preferred":"content","minimum":0,"align":title_align,"shrink":0,"order":1},"window":{"preferred":"window.captions","minimum":"window.captions","align":caption_side,"shrink":null,"order":3}});
-        if self.window["viu.hosted-menu"]==true {header_groups["menu"]["preferred"]=json!(0);header_groups["menu"]["minimum"]=json!(0);}
-        if self.window["viu.hosted-actions"]==true {header_groups["toolbar"]["preferred"]=json!(0);header_groups["toolbar"]["minimum"]=json!(0);}
+        if self.window["viu.hosted-menu"] == true {
+            header_groups["menu"]["preferred"] = json!(0);
+            header_groups["menu"]["minimum"] = json!(0);
+        }
+        if self.window["viu.hosted-actions"] == true {
+            header_groups["toolbar"]["preferred"] = json!(0);
+            header_groups["toolbar"]["minimum"] = json!(0);
+        }
         let caption_control = json!({"id":"caption-title","kind":"label","label":"","initial":"","properties":{"align":title_align,"emphasis":true,"truncate":true}});
         let core = self.core();
         let config = core.config_snapshot();

@@ -36,12 +36,25 @@ pub fn configure_menu(ctx: &egui::Context, settings: &Value, service: Option<&st
 /// Host acknowledgement is supplied by the owning native client, never
 /// inferred from desktop branding alone. A foreign/unavailable host retains
 /// the ordinary controls in the client.
-pub fn configure_hosting(ctx:&egui::Context, menu:bool, actions:bool){
-    let key=presentation_id(ctx);ctx.data_mut(|d|{let p=d.get_temp_mut_or_default::<MenuPresentation>(key);p.hosted_menu=menu;p.hosted_actions=actions;});
+pub fn configure_hosting(ctx: &egui::Context, menu: bool, actions: bool) {
+    let key = presentation_id(ctx);
+    ctx.data_mut(|d| {
+        let p = d.get_temp_mut_or_default::<MenuPresentation>(key);
+        p.hosted_menu = menu;
+        p.hosted_actions = actions;
+    });
 }
-pub fn command_popup(ctx:&egui::Context,id:&str){
-    let key=presentation_id(ctx);ctx.data_mut(|d|d.get_temp_mut_or_default::<MenuPresentation>(key).command_popup=Some(id.into()));
-    egui::Popup::open_id(ctx,egui::Id::unique((ctx.viewport_id(),"viu-hosted-command-popup")));ctx.request_repaint();
+pub fn command_popup(ctx: &egui::Context, id: &str) {
+    let key = presentation_id(ctx);
+    ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<MenuPresentation>(key)
+            .command_popup = Some(id.into())
+    });
+    egui::Popup::open_id(
+        ctx,
+        egui::Id::unique((ctx.viewport_id(), "viu-hosted-command-popup")),
+    );
+    ctx.request_repaint();
 }
 pub fn menu_form(ctx: &egui::Context) -> Value {
     let state = presentation(ctx);
@@ -55,7 +68,9 @@ pub fn menu_form(ctx: &egui::Context) -> Value {
             .as_str()
             .unwrap_or("left"),
     );
-    let effective = if state.hosted_menu { "titlebar" } else if style == design::MenuStyle::Bar && ctx.content_rect().width() >= 640.0 {
+    let effective = if state.hosted_menu {
+        "titlebar"
+    } else if style == design::MenuStyle::Bar && ctx.content_rect().width() >= 640.0 {
         "bar"
     } else {
         "button"
@@ -391,7 +406,9 @@ pub(crate) fn draw(
     match widget.kind.as_str() {
         "menubar" => {
             let form = menu_form(ui.ctx());
-            let response = if form["hosted"]==true {ui.allocate_response(egui::Vec2::ZERO,egui::Sense::hover())} else if form["effective"] == "bar" {
+            let response = if form["hosted"] == true {
+                ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
+            } else if form["effective"] == "bar" {
                 egui::MenuBar::new()
                     .ui(ui, |ui| menu_roots(ui, value, id, geometry, events))
                     .response
@@ -449,47 +466,65 @@ pub(crate) fn draw(
             response
         }
         "command-bar" => {
-            let state=presentation(ui.ctx());
-            let response=if state.hosted_actions {ui.allocate_response(egui::Vec2::ZERO,egui::Sense::hover())}else{ui.horizontal(|ui| {
-                for item in value.as_array().into_iter().flatten() {
-                    if item["separator"] == true {
-                        ui.separator();
-                        continue;
+            let state = presentation(ui.ctx());
+            let response = if state.hosted_actions {
+                ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
+            } else {
+                ui.horizontal(|ui| {
+                    for item in value.as_array().into_iter().flatten() {
+                        if item["separator"] == true {
+                            ui.separator();
+                            continue;
+                        }
+                        let response = if let Some(icon) = item["icon"]
+                            .as_str()
+                            .and_then(crate::icons::Icon::from_name)
+                        {
+                            crate::icons::button(
+                                ui,
+                                icon,
+                                if item["icon_only"] == true {
+                                    ""
+                                } else {
+                                    text(item, "label")
+                                },
+                                16.0,
+                                None,
+                                item["enabled"] == true,
+                                item["checked"] == true,
+                            )
+                        } else {
+                            ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
+                        };
+                        let response = response.on_hover_text(text(item, "label"));
+                        geometry
+                            .insert(format!("{id}.command.{}", text(item, "id")), response.rect);
+                        if item.get("children").is_some() {
+                            egui::Popup::menu(&response)
+                                .show(|ui| menu(ui, &item["children"], id, geometry, events));
+                        } else if response.clicked() {
+                            emit(events, id, "command", json!({"command":item["id"]}));
+                        }
                     }
-                    let response = if let Some(icon) = item["icon"]
-                        .as_str()
-                        .and_then(crate::icons::Icon::from_name)
-                    {
-                        crate::icons::button(
-                            ui,
-                            icon,
-                            if item["icon_only"] == true {
-                                ""
-                            } else {
-                                text(item, "label")
-                            },
-                            16.0,
-                            None,
-                            item["enabled"] == true,
-                            item["checked"] == true,
-                        )
-                    } else {
-                        ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
-                    };
-                    let response = response.on_hover_text(text(item, "label"));
-                    geometry.insert(format!("{id}.command.{}", text(item, "id")), response.rect);
-                    if item.get("children").is_some() {
-                        egui::Popup::menu(&response)
-                            .show(|ui| menu(ui, &item["children"], id, geometry, events));
-                    } else if response.clicked() {
-                        emit(events, id, "command", json!({"command":item["id"]}));
-                    }
-                }
-            })
-            .response};
-            if let Some(target)=state.command_popup.as_deref().and_then(|id|value.as_array()?.iter().find(|item|text(item,"id")==id && item["enabled"]==true && item["children"].is_array())){
-                let bounds=ui.ctx().content_rect();
-                egui::Popup::new(egui::Id::unique((ui.ctx().viewport_id(),"viu-hosted-command-popup")),ui.ctx().clone(),egui::Rect::from_min_size(bounds.right_top(),egui::Vec2::ZERO),ui.layer_id()).kind(egui::PopupKind::Menu).align(egui::RectAlign::BOTTOM_END).open_memory(None).show(|ui|menu(ui,&target["children"],id,geometry,events));
+                })
+                .response
+            };
+            if let Some(target) = state.command_popup.as_deref().and_then(|id| {
+                value.as_array()?.iter().find(|item| {
+                    text(item, "id") == id && item["enabled"] == true && item["children"].is_array()
+                })
+            }) {
+                let bounds = ui.ctx().content_rect();
+                egui::Popup::new(
+                    egui::Id::unique((ui.ctx().viewport_id(), "viu-hosted-command-popup")),
+                    ui.ctx().clone(),
+                    egui::Rect::from_min_size(bounds.right_top(), egui::Vec2::ZERO),
+                    ui.layer_id(),
+                )
+                .kind(egui::PopupKind::Menu)
+                .align(egui::RectAlign::BOTTOM_END)
+                .open_memory(None)
+                .show(|ui| menu(ui, &target["children"], id, geometry, events));
             }
             response
         }

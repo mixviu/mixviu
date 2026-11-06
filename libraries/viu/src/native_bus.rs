@@ -150,10 +150,12 @@ impl Endpoint {
     /// The owner coalesces data and retries a refused/failed hint; no transport
     /// or service identity is created. Completion is a native owner notice.
     pub fn hint(&self, topic: String, body: Value) -> Result<(), String> {
-        if topic.is_empty() || topic.len()>256 || body.to_string().len()>4096 {
+        if topic.is_empty() || topic.len() > 256 || body.to_string().len() > 4096 {
             return Err("hint exceeds topic/body budget".into());
         }
-        self.hints.try_send((topic,body)).map_err(|_|"native hint slot is busy or closed".into())
+        self.hints
+            .try_send((topic, body))
+            .map_err(|_| "native hint slot is busy or closed".into())
     }
 }
 struct Delivery {
