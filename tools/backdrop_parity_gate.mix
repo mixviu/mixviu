@@ -1,6 +1,13 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- CBC only. Contract checkpoint, not full app or visual acceptance.
+if contains(args(),"--prepare") then
+  print(run_argv(["cargo","fmt","-p","viu"]))
+  print("==LOCKDIFF==")
+  print(run_argv_must(["git","diff","--binary"]))
+  print("==ENDLOCKDIFF==")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+end
 for $case in ["core","document","schedule","launch"]
   $result=run_argv(["/opt/mixos/bin/mix","apps/backdrop/"..$case.."-test.mix"])
   print($result)
@@ -11,6 +18,8 @@ for $file in ["app","core","document","document-test","schedule","schedule-test"
   print($result)
   if not $result.ok then exit($result.exit_code ?? 1) end
 end
-$result=run_argv(["cargo","test","--locked","-p","viu","--test","app_ports"],{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"4"}})
-print($result)
-exit($result.exit_code ?? 124)
+for $argv in [["cargo","test","--locked","-p","viu","--lib","raster"],["cargo","test","--locked","-p","viu","--test","app_ports"]]
+  $result=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"4"}})
+  print($result)
+  if not $result.ok then exit($result.exit_code ?? 124) end
+end

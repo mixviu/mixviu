@@ -644,8 +644,12 @@ pub struct Widgets {
     surfaces: Option<crate::image_view::Images>,
     editors: crate::editor::Editors,
     documents: crate::documents::Documents,
+    rasters: Option<crate::raster::Rasters>,
 }
 impl Widgets {
+    pub fn set_rasters(&mut self, rasters: crate::raster::Rasters) {
+        self.rasters = Some(rasters);
+    }
     pub fn set_native_menus(&mut self, enabled: bool) {
         self.gold_menus = enabled;
     }
@@ -909,10 +913,11 @@ impl Widgets {
                 response
             }
             "image-view" => self.images.draw(ui, id, value),
-            "image-fill" => self
-                .surfaces
-                .get_or_insert_with(crate::image_view::Images::surface)
-                .draw_fill(ui, id, value),
+            "image-fill" => {
+                let images = self.surfaces.get_or_insert_with(crate::image_view::Images::surface);
+                images.set_rasters(self.rasters.clone());
+                images.draw_fill(ui, id, value)
+            }
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" => {

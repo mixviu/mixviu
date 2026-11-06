@@ -19,6 +19,8 @@ pub mod hosting;
 pub mod http;
 pub mod icons;
 pub mod image_view;
+pub mod raster;
+pub mod raster_decode;
 pub mod jobs;
 mod launch;
 mod local_ui;
