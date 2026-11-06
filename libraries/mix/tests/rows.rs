@@ -24,8 +24,13 @@ fn project($rows)
 end
 print(project([{id:"a",text:"λ",n:2},{id:"b",text:nil,n:0}]))
 print(project([]))
+fn joined($rows)
+  $sizes=[7,9]
+  return rows_project($rows,fn($r,$i)={id:$r,index:$i,size:$sizes[$i]})
+end
+print(deep_eq(joined(["a","b"]),[{id:"a",index:0,size:7},{id:"b",index:1,size:9}]))
 "#;
-    assert_eq!(run(s).await.unwrap(), "true\ntrue\n");
+    assert_eq!(run(s).await.unwrap(), "true\ntrue\ntrue\n");
 }
 #[tokio::test]
 async fn unsupported_effects_and_mid_batch_failures_never_return_partial_rows() {

@@ -117,6 +117,23 @@ fn dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$remaining,$max_d
   $remaining=$remaining-len($names)
   $native=all($names,fn($n)=not starts_with($n.path,"file://"))
   $stats=if $native then stat_many(map($names,fn($n)=$n.path),{follow_symlinks:false}) else [] end
+  if $native then
+    -- The app owns row shape/display policy; the engine projects the expression
+    -- and joins aligned stat results by the optional row index.
+    $raw=rows_project($names,fn($entry,$index)=$stats[$index]==nil or (not $hidden and starts_with($entry.name,".")) ? nil : {path:$entry.path,name:re_replace(to_string($entry.name),"\\p{Cc}","�"),dir:$stats[$index].is_dir,file:$stats[$index].is_file,symlink:$stats[$index].is_symlink,size:$stats[$index].is_dir ? nil : $stats[$index].size,modified:$stats[$index].mtime,child_count:nil,depth:$depth})
+    $rows=filter($raw,fn($r)=$r!=nil)
+    -- Only directories need the app-owned child enumeration/count policy.
+    for $index in filter(range(0,len($rows)-1),fn($i)=$rows[$i].dir)
+      try
+        $children=dp_names($rows[$index].path,$remaining)
+        if len($children)>$remaining then raise("SCAN_BUDGET","Pane scan child-count work budget exceeded") end
+        $remaining=$remaining-len($children)
+        $rows[$index].child_count=len(filter($children,fn($n)=$hidden or not starts_with($n.name,".")))
+      catch $message,$error
+        if $error.code=="SCAN_BUDGET" then raise("SCAN_BUDGET",$message) end
+      end
+    end
+  else
   for $index=0 to len($names)-1
     $entry=$names[$index]
     $name=$entry.name
@@ -139,6 +156,7 @@ fn dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$remaining,$max_d
         push($rows,{path:$full,name:dp_display($name),dir:$st.is_dir,file:$st.is_file,symlink:$st.is_symlink,size:if $st.is_dir then nil else $st.size end,modified:$st.mtime,child_count:$count,depth:$depth})
       end
     end
+  end
   end
   $listed=monotonic()
   $ordered=dp_sort($rows,$key,$ascending)

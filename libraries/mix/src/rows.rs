@@ -14,6 +14,7 @@ fn fail(s: impl Into<String>) -> MixError {
 enum Plan {
     Literal(Value),
     Row,
+    Position,
     Field(Box<Plan>, String, bool),
     Index(Box<Plan>, Box<Plan>),
     Map(Vec<(String, Plan)>),
@@ -25,6 +26,7 @@ enum Plan {
 fn compile(
     e: &Expr,
     param: &str,
+    index_param: Option<&str>,
     captures: Option<&std::collections::HashMap<String, Value>>,
     depth: usize,
     nodes: &mut usize,
@@ -34,9 +36,10 @@ fn compile(
     if depth > 64 || *nodes > 512 {
         return Err(fail("row expression exceeds 64 levels / 512 nodes"));
     }
-    let mut sub = |e: &Expr| compile(e, param, captures, depth + 1, nodes, eval);
+    let mut sub = |e: &Expr| compile(e, param, index_param, captures, depth + 1, nodes, eval);
     Ok(match e {
         Expr::Variable(n) if n==param => Plan::Row,
+        Expr::Variable(n) if index_param==Some(n.as_str()) => Plan::Position,
         Expr::Variable(n) => Plan::Literal(captures.and_then(|m|m.get(n)).ok_or_else(||fail(format!("uncaptured variable ${n}; pass constants through the lambda's lexical capture")))?.clone()),
         Expr::StringLiteral(s)|Expr::EscapedQuoteStringLiteral(s)=>Plan::Literal(Value::String(s.clone())),
         Expr::NumberLiteral(n)=>Plan::Literal(Value::Number(*n)),Expr::BoolLiteral(b)=>Plan::Literal(Value::Bool(*b)),Expr::NilLiteral=>Plan::Literal(Value::Nil),
@@ -54,11 +57,12 @@ fn compile(
     })
 }
 impl Plan {
-    fn run(&self, row: &Value, eval: &Evaluator) -> MixResult<Value> {
+    fn run(&self, row: &Value, position: usize, eval: &Evaluator) -> MixResult<Value> {
         let value = match self {
             Self::Literal(v) => v.clone(),
             Self::Row => row.clone(),
-            Self::Field(p, key, optional) => match p.run(row, eval)? {
+            Self::Position => Value::Number(position as f64),
+            Self::Field(p, key, optional) => match p.run(row, position, eval)? {
                 Value::Map(ref m) => m.get(key).cloned().unwrap_or(Value::Nil),
                 Value::Nil if *optional => Value::Nil,
                 v => {
@@ -69,39 +73,39 @@ impl Plan {
                 }
             },
             Self::Index(p, i) => {
-                Evaluator::index_value_clone(&p.run(row, eval)?, &i.run(row, eval)?)?
+                Evaluator::index_value_clone(&p.run(row, position, eval)?, &i.run(row, position, eval)?)?
             }
             Self::List(xs) => Value::list(
                 xs.iter()
-                    .map(|p| p.run(row, eval))
+                    .map(|p| p.run(row, position, eval))
                     .collect::<MixResult<_>>()?,
             ),
             Self::Map(xs) => Value::map(
                 xs.iter()
-                    .map(|(k, p)| Ok((k.clone(), p.run(row, eval)?)))
+                    .map(|(k, p)| Ok((k.clone(), p.run(row, position, eval)?)))
                     .collect::<MixResult<IndexMap<_, _>>>()?,
             ),
             Self::Choose(c, a, b) => {
-                if c.run(row, eval)?.is_truthy() {
-                    a.run(row, eval)?
+                if c.run(row, position, eval)?.is_truthy() {
+                    a.run(row, position, eval)?
                 } else {
-                    b.run(row, eval)?
+                    b.run(row, position, eval)?
                 }
             }
             Self::Binary(a, op, b) => {
-                let mut a = a.run(row, eval)?;
+                let mut a = a.run(row, position, eval)?;
                 match op {
                     BinOp::NilCoalesce if !matches!(a, Value::Nil) => a,
                     BinOp::And if !a.is_truthy() => a,
                     BinOp::Or if a.is_truthy() => a,
-                    BinOp::NilCoalesce | BinOp::And | BinOp::Or => b.run(row, eval)?,
-                    _ => eval.eval_binop(op, &mut a, &b.run(row, eval)?)?,
+                    BinOp::NilCoalesce | BinOp::And | BinOp::Or => b.run(row, position, eval)?,
+                    _ => eval.eval_binop(op, &mut a, &b.run(row, position, eval)?)?,
                 }
             }
             Self::Call(name, xs) => eval.bulk_call(
                 name,
                 xs.iter()
-                    .map(|p| p.run(row, eval))
+                    .map(|p| p.run(row, position, eval))
                     .collect::<MixResult<_>>()?,
             )?,
         };
@@ -117,8 +121,8 @@ pub(crate) fn project<'a>(
         let [Value::List(rows), Value::Function(f)] = args.as_slice() else {
             return Err(fail("rows_project(rows, fn(row) = expression)"));
         };
-        if rows.len() > 65536 || f.params.len() != 1 {
-            return Err(fail("at most 65536 rows; exactly one lambda parameter"));
+        if rows.len() > 65536 || !(1..=2).contains(&f.params.len()) {
+            return Err(fail("at most 65536 rows; one row parameter and optional zero-based index parameter"));
         }
         let FunctionBody::Expression(expr) = &f.body else {
             return Err(fail("expression lambda required"));
@@ -126,6 +130,7 @@ pub(crate) fn project<'a>(
         let plan = compile(
             expr,
             &f.params[0].name,
+            f.params.get(1).map(|p| p.name.as_str()),
             f.captures.as_ref(),
             0,
             &mut 0,
@@ -133,12 +138,12 @@ pub(crate) fn project<'a>(
         )?;
         let flag = eval.interrupt_flag();
         let mut out = Vec::with_capacity(rows.len());
-        for row in rows.iter() {
+        for (position, row) in rows.iter().enumerate() {
             if flag.load(Ordering::Acquire) {
                 return Err(fail("row operation interrupted"));
             }
             eval.bulk_checkpoint()?;
-            let value = plan.run(row, eval)?;
+            let value = plan.run(row, position, eval)?;
             eval.check_collection_size(&value)?;
             out.push(value);
         }

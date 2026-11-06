@@ -26,7 +26,11 @@ extension, IO, shell or Bus calls inside a plan. Unsupported shapes raise
 `ROW_EXPRESSION` before any row is processed, including for an empty list.
 Use ordinary `map` for unrestricted Mix behaviour.
 
-A call accepts at most 65,536 rows and a one-parameter expression lambda.
+A call accepts at most 65,536 rows and an expression lambda with a row
+parameter and optional second, zero-based index parameter. For example,
+`rows_project($names, fn($name, $i) = {name:$name, size:$stats[$i].size})`
+joins aligned batches without an interpreted loop. The caller owns the join
+and field-selection policy.
 Plans are bounded to 512 syntax nodes and 64 levels. Interruption and the
 evaluator deadline are checked between rows, and normal value-size limits
 apply during projection. This bounds interpreter work, not the elapsed time
