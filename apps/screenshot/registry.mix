@@ -30,10 +30,12 @@ fn reason($s,$id)
   elif contains(["capture.take","capture.region","capture.screen"],$id) then $enabled=$idle and $s.connected
   elif $id=="capture.window" then $enabled=$idle and $s.connected and $s.ui.window!=nil
   elif $id=="capture.cancel" then $enabled=$s.busy and $s.job=="capture"
-  elif $id=="capture.output.next" then $enabled=not $modal and len($s.outputs)>1
-  elif starts_with($id,"capture.") then $enabled=not $modal
+  elif $id=="capture.output.next" then $enabled=not $s.busy and not $modal and len($s.outputs)>1
+  elif $id=="capture.pointer" then $enabled=not $s.busy and not $modal
+  elif $id=="capture.refresh" then $enabled=$s.connected
+  elif starts_with($id,"capture.") then $enabled=true
   elif starts_with($id,"tool.") or contains(["view.zoom_in","view.zoom_out","view.fit"],$id) then $enabled=$doc and not $modal
-  elif starts_with($id,"annotate.") or starts_with($id,"view.") then $enabled=not $modal
+  elif starts_with($id,"annotate.") or starts_with($id,"view.") then $enabled=true
   elif contains(["help.shortcuts","help.about"],$id) then $enabled=$idle and not ($s.headless ?? false)
   elif $id=="help.macros" then $enabled=$s.ui.macros_open or not $modal and not ($s.headless ?? false)
   end

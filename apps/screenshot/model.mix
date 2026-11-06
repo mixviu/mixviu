@@ -47,6 +47,7 @@ fn render($s)
   for $id in ["capture.take","help.macros","help.shortcuts","view.mode"] push($header,$registry.item($s,$id,true)) end
   $header[3].icon=if ($s.look.mode ?? $s.effective.mode)=="light" then "moon" else "sun" end
   $header[3].checked=false
+  $header[3].id=if ($s.look.mode ?? $s.effective.mode)=="light" then "view.mode.dark" else "view.mode.light" end
   $files=[]
   for $id in ["file.save","file.copy"]
     $item=delete($registry.item($s,$id,false),"icon")
@@ -79,7 +80,7 @@ fn render($s)
   $model={native_header:true,native_status:true,header_search_menu:"Help",native_menus:true,keyboard_events:true,theme_choice:$s.look,window_overrides:{},hide_window:$s.ui.mode!="window",hide_output:$s.ui.mode=="window" or len($s.outputs)<=1,hide_ink:not $has,hide_size:not $has or not contains(["text","number"],$s.ui.tool),hide_text:not $has or $s.ui.tool!="text",hide_file:not $has,
     window_control:combo("window","Window",$window_choices,$window_labels,180,not $s.busy),
     output_control:combo("output","Output",concat(["pointer"],$s.outputs),{pointer:"Output under the pointer"},180,not $s.busy),
-    inks_control:{id:"inks",kind:"swatches",label:"Colour",initial:$s.ui.colour,properties:{items:$swatches,enabled:$editable}},
+    inks_control:{id:"inks",kind:"swatches",label:"Colour",initial:$s.ui.colour,properties:{items:$swatches,read_only:not $editable}},
     width_control:combo("width","Stroke width",["thin","medium","thick","heavy"],{thin:"Thin",medium:"Medium",thick:"Thick",heavy:"Heavy"},96,$editable),
     size_control:combo("text_size","Text size",["small","medium","large","huge"],{small:"Small text",medium:"Medium text",large:"Large text",huge:"Huge text"},96,$editable),
     text_control:{id:"text",kind:"field",label:"Text",initial:"",properties:{native:true,placeholder:"Text, then click or drag on the picture",enabled:$editable}},
