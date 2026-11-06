@@ -431,9 +431,15 @@ fn type_matches(v: &JsonValue, t: &str) -> bool {
     match t {
         "string" => v.is_string(),
         "number" => v.is_number(),
-        "length" => v.as_f64().is_some_and(|n| n.is_finite() && n >= 0.0)
-            || v.as_str().is_some_and(|s| matches!(s,
-                "design.bar_inset" | "design.bar_padding_y" | "design.tool_margin")),
+        "length" => {
+            v.as_f64().is_some_and(|n| n.is_finite() && n >= 0.0)
+                || v.as_str().is_some_and(|s| {
+                    matches!(
+                        s,
+                        "design.bar_inset" | "design.bar_padding_y" | "design.tool_margin"
+                    )
+                })
+        }
         "bool" => v.is_boolean(),
         "list" => v.is_array(),
         "object" => v.is_object(),

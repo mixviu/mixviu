@@ -63,6 +63,15 @@ fn render($s)
   $size_name=filter(keys($registry.sizes),fn($name)=$registry.sizes[$name]==$s.ui.text_size)[0] ?? "medium"
   $preview={phase:if $s.preview==nil then "none" else "ready" end,canvas:true,enabled:$has and $editable and not $s.busy,colour:"design.canvas",fit:"fit",zoom:$s.ui.zoom,pan:$s.ui.pan,crop:if $has then $s.document.crop else nil end,empty_text:if $s.busy then "Taking a screenshot…" else "Take a screenshot (Ctrl+N) or open an image (Ctrl+O)." end}
   if $s.preview!=nil then $preview.path=$s.preview;$preview.width=$s.document.width;$preview.height=$s.document.height end
+  if $has then
+    $selected=filter($s.document.objects,fn($o)=$o.id==$s.ui.selected)[0]
+    $preview.selection=if $selected==nil then nil else $selected.shape end
+    $preview.guide_mode=if contains(["select","crop"],$s.ui.tool) then $s.ui.tool else "draw" end
+    $preview.guide={kind:if contains(["select","crop"],$s.ui.tool) then "rectangle" else $s.ui.tool end,points:[{x:0,y:0},{x:1,y:1}],colour:$s.ui.colour,width:clamp($s.ui.width/($s.view_scale ?? 1),0.5,512)}
+    if contains(["number","text"],$s.ui.tool) then $preview.guide.size=clamp($s.ui.text_size/($s.view_scale ?? 1),8,1024) end
+    if $s.ui.tool=="text" then $preview.guide.text=if trim($s.ui.text)=="" then "Text" else $s.ui.text end end
+    if $s.ui.tool=="number" then $preview.guide.number=1 end
+  end
   $model={native_menus:true,keyboard_events:true,theme_choice:$s.look,window_overrides:{},hide_window:$s.ui.mode!="window",hide_output:$s.ui.mode=="window" or len($s.outputs)<=1,hide_ink:not $has,hide_size:not $has or not contains(["text","number"],$s.ui.tool),hide_text:not $has or $s.ui.tool!="text",hide_file:not $has,
     window_control:combo("window","Window",$window_choices,$window_labels,180,not $s.busy),
     output_control:combo("output","Output",concat(["pointer"],$s.outputs),{pointer:"Output under the pointer"},180,not $s.busy),

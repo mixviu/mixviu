@@ -23,7 +23,6 @@ fn completed($s,$d,$service)
       $s=$states.replace_document($s,$out.handle,$out.document,$out.path,if $out.op=="capture" then $out.metadata else nil end,if $out.op=="capture" then $out.path else nil end,$out.preview)
       $s.revision=($s.revision ?? 0)+1
       $s.status=if $out.op=="capture" then "Screenshot ready" else "Ready" end
-      $s.after=nil
     elif $out.op=="export" then
       $doc=viu_document("saved",{handle:$s.handle});$s.document=$doc.document
       $saved={path:$out.path,width:$out.document.width,height:$out.document.height,annotated:$out.document.annotated,saved_at:date_format(time(),"%Y-%m-%dT%H:%M:%S%:z")}

@@ -24,6 +24,7 @@ end
 fn work($s,$payload,$hold)
   if $s.busy then raise("BUSY","Another operation is still running") end
   $s.serial=$s.serial+1;$s.pending=$payload;$s.busy=true
+  if contains(["capture","open"],$payload.op) then $s.after=nil end
   $s.job=if $payload.op=="export" then "save" else $payload.op end
   $payload.pid=pid();$payload.comp=$s.comp
   $payload.preview=path_join($s.raw,"preview-"..to_string(pid()).."-"..to_string($s.serial)..".png")
@@ -106,7 +107,8 @@ fn perform($s,$pending)
   return $s
 end
 fn request($s,$pending)
-  if $s.busy then
+  if $s.ui.dialog!=nil then $s.after=$pending
+  elif $s.busy then
     if $pending.op=="quit" then
       $s.after=$pending
       if $s.job=="capture" then $s=cancel($s) end
@@ -142,7 +144,10 @@ fn answer($s,$a)
   $view=dialog_view($s)
   if not any($view.buttons,fn($b)=$b.id==$a.answer) then raise("ARGUMENT","the "..$kind.." dialog has no button "..$a.answer) end
   if $s.busy and not contains(["keep","cancel","done"],$a.answer) then raise("BUSY","Another operation is still running") end
-  if contains(["keep","cancel","done"],$a.answer) then $s.ui.dialog=nil;$s.after=nil
+  if contains(["keep","cancel","done"],$a.answer) then
+    $s.ui.dialog=nil
+    if $a.answer=="keep" then $s.after=nil
+    elif $s.after!=nil then $pending=$s.after;$s.after=nil;$s=request($s,$pending) end
   elif $a.answer=="discard" then
     $s.ui.dialog=nil;$pending=$s.after;$s.after=nil;$s=perform($s,$pending)
   elif $kind=="discard" and $a.answer=="save" then $s.ui.dialog=nil;$s=save($s,nil,false)
@@ -295,7 +300,9 @@ fn dispatch($s,$command,$a)
       elif has_key($a,"path") then raise("ARGUMENT","path goes with answer") end
       $body={dialog:dialog_view($s)}
     else
-      $state.idle($s)
+      if $command=="screenshot.show" then
+        if $s.busy or $s.quitting then raise("BUSY","Another operation is still running") end
+      else $state.idle($s) end
       if contains(["screenshot.annotate","screenshot.move","screenshot.delete","screenshot.crop","screenshot.undo","screenshot.redo"],$command) then
         $state.require_document($s);$r=execute($s,"edit."..slice($command,11),$a,true);$s=$r.state;$body=$r.result
       elif $command=="screenshot.capture" then

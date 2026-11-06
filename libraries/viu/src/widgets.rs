@@ -55,6 +55,19 @@ pub struct Widget {
     pub initial: Value,
     pub properties: Value,
 }
+fn native_numbers(value: &Value) -> Value {
+    match value {
+        Value::Number(n) if n.is_f64() => {
+            let n=n.as_f64().unwrap();
+            if n.fract()==0.0 && n.abs()<=9_007_199_254_740_991.0 {
+                if n>=0.0 {json!(n as u64)} else {json!(n as i64)}
+            } else {value.clone()}
+        },
+        Value::Array(a) => Value::Array(a.iter().map(native_numbers).collect()),
+        Value::Object(o) => Value::Object(o.iter().map(|(k,v)|(k.clone(),native_numbers(v))).collect()),
+        _ => value.clone(),
+    }
+}
 impl Widget {
     pub fn new(id: &str, kind: &str, label: &str, initial: Value) -> Self {
         Self {
@@ -66,6 +79,9 @@ impl Widget {
         }
     }
     pub fn decode(value: &Value) -> Result<Self, String> {
+        // Scene numbers deliberately resolve as f64. Typed native payloads
+        // (RGBA bytes, IDs and pixel extents) still require integral JSON.
+        let value = native_numbers(value);
         let field = |name| {
             value[name]
                 .as_str()
@@ -224,7 +240,7 @@ impl Widget {
             return vec!["close"];
         }
         if self.kind == "image-canvas" {
-            return vec!["pan", "zoom", "pick", "gesture"];
+            return vec!["pan", "zoom", "pick", "gesture", "viewport"];
         }
         if self.kind == "mark" {
             return vec![];
