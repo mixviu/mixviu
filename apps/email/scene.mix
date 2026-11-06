@@ -10,7 +10,7 @@ root:{widget:"column",children:["no-accounts","places-split","legacy-core"],gap:
 "empty-actions":{widget:"row",children:["open-settings"]},
 "empty-body":{widget:"control",definition:{id:"empty-body",kind:"label",label:"",initial:"Email has no account yet. Accounts are set up in Prefs, under Email: the server URL, your address, your password, and an optional CA bundle for a server whose certificate is self-issued.",properties:{wrap:true}}},
 "open-settings":{widget:"control",definition:{id:"open-settings",kind:"button",label:"",initial:"",properties:{text:"Open Email Settings",style:"primary"}},on_intent:"email.intent"},
-"places-split":{widget:"split",children:["places-pane","reader-split"],ratio:"= $model.places_ratio",minimum:0.12,maximum:0.35,divider:1,on_change:"email.intent",hidden:"= $model.no_accounts || $model.fixture"},
+"places-split":{widget:"split",children:["places-pane","reader-split"],ratio:"= $model.places_ratio",minimum:0.12,maximum:0.35,divider:1,on_change:"email.intent",hidden:"= $model.no_accounts or $model.fixture"},
 "places-pane":{widget:"section",frame:"dock",titles:["Accounts"],focused:"= $model.pane == 'tree'",children:["account-tree"]},
 "account-tree":{widget:"control",definition:"= $model.navigation",on_intent:"email.intent"},
 "reader-split":{widget:"split",children:["list-pane","reader-pane"],ratio:"= $model.list_ratio",minimum:0.3,maximum:0.8,divider:1,on_change:"email.intent"},
