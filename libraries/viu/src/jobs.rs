@@ -114,15 +114,17 @@ impl Jobs {
                 let _ = start.reply.send((10, json!({"error_code":"BUSY"})));
                 continue;
             }
-            let timeout = start.spec["timeout"]
-                .as_u64()
-                .unwrap_or(timeout.expect("validated job timeout"));
-            if !(1..=3600).contains(&timeout) {
+            if start.spec.get("timeout").is_some_and(|value| {
+                value.as_u64().is_none_or(|seconds| !(1..=3600).contains(&seconds))
+            }) {
                 let _ = start
                     .reply
                     .send((10, json!({"error_code":"INVALID_JOB_TIMEOUT"})));
                 continue;
             }
+            let timeout = start.spec["timeout"]
+                .as_u64()
+                .unwrap_or(timeout.expect("validated job timeout"));
             let mut runtime = Runtime::with_deadline(
                 2,
                 self.wake.clone(),
