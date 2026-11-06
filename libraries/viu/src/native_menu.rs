@@ -16,7 +16,7 @@ impl NativeMenu {
         value: &Value,
         events: &mut Vec<crate::widgets::Intent>,
     ) -> egui::Response {
-        let response = draw(ui, value, false);
+        let response = draw(ui, value, false, None);
         if let Some(command) = picked(ui.ctx()) {
             events.push(crate::widgets::Intent {
                 id: widget.id.clone(),
@@ -124,7 +124,7 @@ pub fn validate(value: &Value) -> Result<(), String> {
 }
 pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>) -> egui::Response {
     let mut ids = vec![];
-    let mut menus: Vec<Menu> = value
+    let menus: Vec<Menu> = value
         .as_array()
         .unwrap()
         .iter()
@@ -134,23 +134,6 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
                 .expect("validated native menu"),
         })
         .collect();
-    fn shortcuts(ctx: &egui::Context, entries: &mut [Entry]) {
-        for entry in entries {
-            if let Entry::Row(row) = entry {
-                if let Some(chord) = row
-                    .shortcut
-                    .as_deref()
-                    .and_then(toolkit::keymap::parse_chord)
-                {
-                    row.shortcut = Some(ctx.format_shortcut(&chord));
-                }
-                shortcuts(ctx, &mut row.children);
-            }
-        }
-    }
-    for menu in &mut menus {
-        shortcuts(ui.ctx(), &mut menu.entries);
-    }
     let key = model_id(ui.ctx());
     let menu_len = ids.len();
     if let Some(old) = ui.ctx().data(|d| d.get_temp::<Model>(key)) {
@@ -230,9 +213,6 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
                         );
                     }
                 }
-                toolkit::menu::compact_picked(ui, &menus, search.as_ref(), response.rect)
-            } else {
-                toolkit::menu::bar_picked(ui, &menus, search.as_ref())
             }
             if hosted {
                 let rect = ui.ctx().content_rect();
