@@ -30,7 +30,7 @@ end
     for command in ["begin","ping","fault","finish","invalid"] {
         runtime.event(command.into(),json!({})).unwrap();rx.recv_timeout(Duration::from_secs(10)).unwrap();let done=runtime.try_completion().unwrap();
         match command {
-            "begin"=>{assert_eq!(done.deferred.as_deref(),Some("owned"));assert!(done.reply.is_none());},
+            "begin"=>{assert!(done.error.is_none(),"{:?} {} {}",done.error,done.stdout,done.stderr);assert_eq!(done.deferred.as_deref(),Some("owned"));assert!(done.reply.is_none());},
             "ping"=>assert_eq!(done.reply.unwrap().body["alive"],true),
             "fault"=>{assert!(done.error.is_some());assert!(done.answers.is_empty());},
             "finish"=>{assert!(done.error.is_none());assert_eq!(done.answers.len(),1);assert_eq!(done.answers[0].reply.rc,10);assert_eq!(done.answers[0].reply.body["error_code"],"REFUSED");},
