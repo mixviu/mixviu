@@ -477,6 +477,7 @@ pub(crate) fn draw(
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
                 ui.horizontal(|ui| {
+                    if widget.properties["style"]=="gold" {ui.spacing_mut().item_spacing.x=toolkit::chrome::Chrome::of(ui.ctx()).style.title_control_spacing as f32;}
                     for item in value.as_array().into_iter().flatten() {
                         if item["separator"] == true {
                             ui.separator();

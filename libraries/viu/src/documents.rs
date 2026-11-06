@@ -230,6 +230,21 @@ impl Documents {
         if key.is_empty() || key.len() > 128 {
             return Err("invalid document id".into());
         }
+        if op=="lex" {
+            let request={
+                let mut state=self.0.lock().map_err(|_|"document owner poisoned")?;
+                let Some(doc)=state.documents.get_mut(key) else {return Ok(Value::Null);};
+                let m=&doc.mirror;
+                let tag=editor_model::highlight::ResultTag{epoch:m.epoch().into(),buffer:m.buffer().into(),view_gen:m.view_gen(),language:m.meta().language.clone(),cfg:0};
+                doc.highlight.mix_request(m.text(),tag)
+            };
+            if let Some((tag,source))=request {
+                let spans=editor_model::highlight::run_mix(&tag.language,&source);
+                let mut state=self.0.lock().map_err(|_|"document owner poisoned")?;
+                if let Some(doc)=state.documents.get_mut(key) {doc.highlight.mix_result(tag,spans);}
+            }
+            return Ok(Value::Null);
+        }
         if op == "preview" {
             let (text, generation) = {
                 let state = self.0.lock().map_err(|_| "document owner poisoned")?;

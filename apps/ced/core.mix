@@ -27,6 +27,9 @@ fn refresh_tabs($s)
     end
   end
   for $t in $s.tabs
+    if $t.phase=="live" and contains(["mix","scene","mix-data"],$t.language) and $s.lex_requested[$t.document]!=$t.view_gen then
+      $s.lex_requested[$t.document]=$t.view_gen;viu_timer($t.document..":lex",150,{kind:"lex",document:$t.document})
+    end
     if $t.phase=="live" and $t.language=="markdown" and ($s.previews[$t.document] ?? "source")!="source" and $s.preview_requested[$t.document]!=$t.view_gen then
       $s.preview_requested[$t.document]=$t.view_gen
       $s=queue_job($s,"preview",{document:$t.document})
