@@ -133,7 +133,7 @@ fn tcp($s)
     end
     $columns=[]
     for $p in [["remote","Remote",200],["port","Port",0.09],["state","State",0.13],["rx","Rx/s",0.12],["tx","Tx/s",0.12],["rtt","RTT",0.09],["retx","Retx",0.09],["user","User",0.10]]
-      push($columns,{id:$p[0],label:$p[1],width:200,fraction:if $p[0]=="remote" then nil else $p[2] end,min_width:if $p[0]=="remote" then 80 else 0 end,remainder:$p[0]=="remote",leading_gap:$p[0]=="user",sortable:false,align:if contains(["rx","tx","rtt","retx"],$p[0]) then "right" else "left" end})
+      push($columns,{id:$p[0],label:$p[1],tooltip:if $p[0]=="port" then "Local port" elif $p[0]=="rx" then "Received bytes per second" elif $p[0]=="tx" then "Sent bytes per second" elif $p[0]=="rtt" then "Round-trip time" elif $p[0]=="retx" then "Retransmits" else $p[1] end,width:200,fraction:if $p[0]=="remote" then nil else $p[2] end,min_width:if $p[0]=="remote" then 80 else 0 end,remainder:$p[0]=="remote",leading_gap:$p[0]=="user",sortable:false,align:if contains(["rx","tx","rtt","retx"],$p[0]) then "right" else "left" end})
     end
     push($blocks,{kind:"table",row_padding:4,table:{key:"tcp-connections",rows:$rows,columns:$columns}})
   end

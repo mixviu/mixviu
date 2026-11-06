@@ -10,3 +10,5 @@ if len($rings["cpu.busy"])!=60 or $rings["cpu.busy"][0]!=5 then raise("WINDOW","
 $rings=$h.seed({"mem.used":[9]}, {series:{"mem.used":[[1,1,0,2],[2,2,1,3]]}})
 if not deep_eq($rings["mem.used"],[1,2,9]) then raise("SEED","Seed must precede held readings") end
 print("Monitor history: aligned gaps, seeding and 60-sample bounds pass")
+if not deep_eq($h.seed({"mem.used":[9]},{series:{"mem.used":[nil,[],[1,"bad"],[2,2]],"tcp.in_segs":"bad"}})["mem.used"],[2,9]) then raise("MALFORMED","Gold seed must ignore malformed points") end
+if not deep_eq($h.seed({"mem.used":[9]},{series:5}),{"mem.used":[9]}) then raise("MALFORMED","Invalid history changed rings") end

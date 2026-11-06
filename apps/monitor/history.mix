@@ -31,12 +31,14 @@ fn record($rings,$s)
   return $rings
 end
 fn seed($rings,$reply)
+  if type($reply)!="map" or type($reply.series)!="map" then return $rings end
   $series=$reply.series ?? {};$times=[]
   for $name in keys($series)
+    $points=if type($series[$name])=="list" then filter($series[$name],fn($p)=type($p)=="list") else [] end
     if starts_with($name,"tcp.") then
-      for $p in $series[$name] push($times,$p[0]) end
+      for $p in $points if len($p)>0 and type($p[0])=="number" then push($times,$p[0]) end end
     else
-      $values=map(filter($series[$name],fn($p)=$p[1]!=nil),fn($p)=$p[1])
+      $values=map(filter($points,fn($p)=len($p)>1 and type($p[1])=="number"),fn($p)=$p[1])
       $rings[$name]=bounded(concat($values,$rings[$name] ?? []))
     end
   end
@@ -46,10 +48,10 @@ fn seed($rings,$reply)
     if $seen[$key]!=true then push($unique,$t);$seen[$key]=true end
   end
   for $key in tcp_keys()
-    $name="tcp."..$key;$points=$series[$name] ?? [];$values=[]
+    $name="tcp."..$key;$points=if type($series[$name])=="list" then filter($series[$name],fn($p)=type($p)=="list" and len($p)>0) else [] end;$values=[]
     for $t in $unique
       $matches=filter($points,fn($p)=$p[0]==$t)
-      push($values,if len($matches)>0 then $matches[0][1] else nil end)
+      push($values,if len($matches)>0 and len($matches[0])>1 and type($matches[0][1])=="number" then $matches[0][1] else nil end)
     end
     $rings[$name]=bounded(concat($values,$rings[$name] ?? []))
   end

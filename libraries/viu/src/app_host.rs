@@ -182,6 +182,7 @@ impl Host {
     }
 }
 impl eframe::App for Host {
+    fn logic(&mut self,ctx:&egui::Context,_:&mut eframe::Frame){self.pump(ctx);}
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
         if !self.input.now.is_empty() {
             raw.events.append(&mut self.input.now);
@@ -194,8 +195,8 @@ impl eframe::App for Host {
     }
 }
 impl Host {
-    fn frame(&mut self, ui: &mut egui::Ui) {
-        self.facilities.prepare(ui.ctx(), &self.bus);
+    fn pump(&mut self, ctx:&egui::Context) {
+        self.facilities.prepare(ctx, &self.bus);
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
                 "native.executed" => self.facilities.record(&request.args),
@@ -204,7 +205,7 @@ impl Host {
                     .filter(|s| s.len() <= 1_048_576)
                 {
                     Some(text) => {
-                        ui.ctx().copy_text(text.into());
+                        ctx.copy_text(text.into());
                         Ok(json!({"copied":true}))
                     }
                     None => Err("text must be bounded text".into()),
@@ -229,7 +230,7 @@ impl Host {
                             self.file_theme.clone()
                         };
                         let theme = base.with_choice(&choice).map_err(|e| e.to_string())?;
-                        crate::appearance::install_theme(ui.ctx(), &theme)?;
+                        crate::appearance::install_theme(ctx, &theme)?;
                         self.native_choice = request.args.clone();
                         Ok(crate::native_theme::describe(&theme))
                     })
@@ -244,7 +245,7 @@ impl Host {
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
                 let result = if let Some(image) = image {
-                    ui.ctx().copy_image(image);
+                    ctx.copy_image(image);
                     (
                         0,
                         json!({"submitted":true,"endpoint":"native clipboard submission; readback is separate"}),
@@ -275,7 +276,7 @@ impl Host {
             .close_requested
             .load(std::sync::atomic::Ordering::Acquire)
         {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         while let Some(done) = self.runtime.try_completion() {
             self.inflight.remove(&done.sequence);
@@ -316,7 +317,7 @@ impl Host {
                         Ok(()) => {
                             if let Some(style) = appearance.expect("validated appearance") {
                                 crate::appearance::install_style(
-                                    ui.ctx(),
+                                    ctx,
                                     &model["appearance"],
                                     style,
                                 );
@@ -341,7 +342,7 @@ impl Host {
         }
         for _ in 0..32 {
             match self.bus.requests.try_recv() {
-                Ok(r) => self.request(r, ui.ctx()),
+                Ok(r) => self.request(r, ctx),
                 Err(_) => break,
             }
         }
@@ -391,7 +392,7 @@ impl Host {
                 {
                     let appearance = snapshot["appearance"].clone();
                     match crate::appearance::install_session(
-                        ui.ctx(),
+                        ctx,
                         &snapshot,
                         &self.service,
                         &self.file_theme,
@@ -410,7 +411,7 @@ impl Host {
                                     &self.last_ui,
                                 ) {
                                     if let Ok(theme) = base.with_choice(&choice) {
-                                        let _ = crate::appearance::install_theme(ui.ctx(), &theme);
+                                        let _ = crate::appearance::install_theme(ctx, &theme);
                                         let _ = self.runtime.notify(
                                             "viu.theme.changed".into(),
                                             crate::native_theme::describe(&theme),
@@ -423,10 +424,44 @@ impl Host {
                     }
                 }
                 if let Some(at) = session.deadline() {
-                    ui.ctx()
+                    ctx
                         .request_repaint_after(at.saturating_duration_since(Instant::now()));
                 }
             }
+        }
+        self.settle(ctx);
+    }
+    fn settle(&mut self,ctx:&egui::Context) {
+        if let Some(error) = self.view.take_focus_error() {
+            self.error = error;
+        }
+        if self.input.now.is_empty() && self.input.later.is_empty() && self.inflight.is_empty() && self.view.current_revision_drawn() {
+            if let Some(reply) = self.input_reply.take() {
+                let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, self.state()));
+            }
+        } else if !self.input.now.is_empty() || !self.input.later.is_empty() {
+            ctx.request_repaint();
+        }
+        if let Some((_, result)) = self.capture.poll(ctx) {
+            if let Some(reply) = self.capture_reply.take() {
+                let _ = reply.send(match result {
+                    Ok(v) => (0, v),
+                    Err(e) => (10, json!({"error":e})),
+                });
+            }
+        }
+        if let Some(tick) = self.tick {
+            if self.ready && Instant::now() >= self.next_tick && self.inflight.is_empty() {
+                self.dispatch("viu.tick".into(), json!({}), BTreeMap::new(), None);
+                self.next_tick = Instant::now() + tick;
+            }
+            let wait = self.next_tick.saturating_duration_since(Instant::now());
+            ctx
+                .request_repaint_after(if wait.is_zero() { tick } else { wait });
+        }
+    }
+    fn frame(&mut self, ui: &mut egui::Ui) {
+        if self.ready {
             if self.framed {
                 ui.painter().rect_filled(
                     ui.max_rect(),
@@ -523,9 +558,7 @@ impl Host {
                         .as_str()
                         .and_then(toolkit::keymap::parse_chord)
                     {
-                        if ui
-                            .ctx()
-                            .input_mut(|input| input.consume_shortcut(&shortcut))
+                        if crate::shortcuts::take(ui.ctx(),&shortcut)
                         {
                             self.dispatch("viu.frame.intent".into(),json!({"id":"shortcut","value":{"command":action["id"],"origin":"shortcut"}}),BTreeMap::new(),None);
                         }
@@ -548,33 +581,7 @@ impl Host {
                 }
             }
         }
-        if let Some(error) = self.view.take_focus_error() {
-            self.error = error;
-        }
-        if self.input.now.is_empty() && self.input.later.is_empty() && self.inflight.is_empty() {
-            if let Some(reply) = self.input_reply.take() {
-                let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, self.state()));
-            }
-        } else if !self.input.now.is_empty() || !self.input.later.is_empty() {
-            ui.ctx().request_repaint();
-        }
-        if let Some((_, result)) = self.capture.poll(ui.ctx()) {
-            if let Some(reply) = self.capture_reply.take() {
-                let _ = reply.send(match result {
-                    Ok(v) => (0, v),
-                    Err(e) => (10, json!({"error":e})),
-                });
-            }
-        }
-        if let Some(tick) = self.tick {
-            if self.ready && Instant::now() >= self.next_tick && self.inflight.is_empty() {
-                self.dispatch("viu.tick".into(), json!({}), BTreeMap::new(), None);
-                self.next_tick = Instant::now() + tick;
-            }
-            let wait = self.next_tick.saturating_duration_since(Instant::now());
-            ui.ctx()
-                .request_repaint_after(if wait.is_zero() { tick } else { wait });
-        }
+        self.settle(ui.ctx());
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
         }
@@ -803,6 +810,7 @@ impl crate::layer::LayerProgram for LayerHost {
         std::mem::swap(&mut host.loaded, loaded);
         host.output = Some(output);
         // Layer hosts use the same owner loop; eframe's Frame is not needed.
+        host.pump(ui.ctx());
         host.frame(ui);
         std::mem::swap(&mut host.view, view);
         std::mem::swap(&mut host.loaded, loaded);
