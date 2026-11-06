@@ -403,12 +403,16 @@ pub(crate) fn draw(
     events: &mut Vec<Intent>,
 ) -> egui::Response {
     let id = &widget.id;
-    if widget.kind=="menubar" && crate::native_menu::enabled(ui.ctx()) {
-        return ui.scope(|ui|match crate::native_menu::draw(ui,value) {
-            Ok(Some(command))=>emit(events,id,"command",json!({"command":command})),
-            Ok(None)=>{},
-            Err(error)=>{ui.colored_label(egui::Color32::RED,error);}
-        }).response;
+    if widget.kind == "menubar" && crate::native_menu::enabled(ui.ctx()) {
+        return ui
+            .scope(|ui| match crate::native_menu::draw(ui, value) {
+                Ok(Some(command)) => emit(events, id, "command", json!({"command":command})),
+                Ok(None) => {}
+                Err(error) => {
+                    ui.colored_label(egui::Color32::RED, error);
+                }
+            })
+            .response;
     }
     match widget.kind.as_str() {
         "menubar" => {
@@ -474,38 +478,51 @@ pub(crate) fn draw(
         }
         "command-bar" => {
             let state = presentation(ui.ctx());
-            let response = if state.hosted_actions && widget.properties["hostable"]!=false {
+            let response = if state.hosted_actions && widget.properties["hostable"] != false {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
-                let vertical=widget.properties["vertical"]==true;
-                let layout=if vertical {egui::Layout::top_down(egui::Align::Center)}else{egui::Layout::left_to_right(egui::Align::Center)};
+                let vertical = widget.properties["vertical"] == true;
+                let layout = if vertical {
+                    egui::Layout::top_down(egui::Align::Center)
+                } else {
+                    egui::Layout::left_to_right(egui::Align::Center)
+                };
                 ui.with_layout(layout, |ui| {
                     for item in value.as_array().into_iter().flatten() {
                         if item["separator"] == true {
                             ui.separator();
                             continue;
                         }
-                        let response = if item["primary"]==true {
-                            ui.add_enabled(item["enabled"]==true,toolkit::button::PushButton::primary(text(item,"label")))
-                        }else if let Some(icon) = item["icon"]
+                        let response = if item["primary"] == true {
+                            ui.add_enabled(
+                                item["enabled"] == true,
+                                toolkit::button::PushButton::primary(text(item, "label")),
+                            )
+                        } else if let Some(icon) = item["icon"]
                             .as_str()
                             .and_then(crate::icons::Icon::from_name)
                         {
-                            if item["icon_only"]==true {
-                                ui.add_enabled(item["enabled"]==true,toolkit::button::IconButton::new(icon).selected(item["checked"]==true))
-                            }else{crate::icons::button(
-                                ui,
-                                icon,
-                                if item["icon_only"] == true {
-                                    ""
-                                } else {
-                                    text(item, "label")
-                                },
-                                16.0,
-                                None,
-                                item["enabled"] == true,
-                                item["checked"] == true,
-                            )}
+                            if item["icon_only"] == true {
+                                ui.add_enabled(
+                                    item["enabled"] == true,
+                                    toolkit::button::IconButton::new(icon)
+                                        .selected(item["checked"] == true),
+                                )
+                            } else {
+                                crate::icons::button(
+                                    ui,
+                                    icon,
+                                    if item["icon_only"] == true {
+                                        ""
+                                    } else {
+                                        text(item, "label")
+                                    },
+                                    16.0,
+                                    None,
+                                    item["enabled"] == true,
+                                    item["checked"] == true,
+                                )
+                            }
                         } else {
                             ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
                         };
