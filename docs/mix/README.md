@@ -40,6 +40,7 @@ rot. `mix man syntax` is the mental model; gotchas is the corrections.
 - **[modules — require/include/source](modules.md)** — `require()` isolated module loading vs the splice loaders.
 - **[lists & maps](collections.md)** — literals, indexing, `push`/`pop`, the base footguns.
 - **[higher-order functions](hof.md)** — `map`/`filter`/`reduce`/`sort_by`/`group_by`/…
+- **[bulk rows](rows.md)** — bounded indexed projections, filtering, sorting and metadata batches.
 - **[errors & exit handling](errors.md)** — `try`/`catch`/`die`/`panic`, `run_rc().rc`, timeouts.
 
 ## Builtins & I/O

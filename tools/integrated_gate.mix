@@ -9,8 +9,8 @@ try
   if contains(args(),"--prepare") then checked_step(["cargo","fmt","--all"]) else checked_step(["cargo","fmt","--all","--","--check"]) end
   checked_step(["cargo","clippy","--locked","--workspace","--exclude","system","--all-targets"])
   checked_step(["cargo","clippy","--locked","-p","system","--all-targets"])
-  checked_step(["cargo","test","--locked","--workspace","--exclude","system"])
-  checked_step(["cargo","test","--locked","-p","system"])
+  checked_step(["cargo","test","--locked","-p","system","--no-fail-fast"])
+  checked_step(["cargo","test","--locked","--workspace","--exclude","system","--no-fail-fast"])
   for $case in ["core-test.mix","history-test.mix","wire-test.mix","fetch-test.mix"] checked_step(["/opt/mixos/bin/mix","apps/monitor/"..$case]) end
   checked_step(["cargo","test","--locked","-p","viu","--test","bulk_profile","--test","ports_round5","--","--nocapture"])
   checked_step(["/opt/mixos/bin/mix","tools/p2_gate.mix","build"])
