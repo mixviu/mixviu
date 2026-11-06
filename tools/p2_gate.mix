@@ -1,0 +1,41 @@
+-- Exact-source CBC integration gates. Invoke each mode through cbc-build.
+$mode=args()[0] ?? "build"
+fn p2_run($argv)
+  print("STEP_BEGIN "..join($argv," "))
+  $r=run_argv($argv,{timeout:7200,max_output:64000000,env:{CARGO_BUILD_JOBS:"6"}})
+  print($r.stdout)
+  print($r.stderr)
+  print("STEP_RC="..to_string($r.exit_code))
+  if not $r.ok then exit($r.exit_code ?? 124) end
+end
+$sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+$art="/build/es-artifacts/"..$sha
+if $mode=="build" then
+  mkdir($art,{parents:true})
+  for $pair in [["system","mix"],["mixd","mixd"],["viud","viud"],["viu-engine","viu"]]
+    p2_run(["cargo","build","--release","--locked","-p",$pair[0]])
+    copy("target/release/"..$pair[1],$art.."/"..$pair[1])
+    $ldd=run_argv_must(["ldd",$art.."/"..$pair[1]])
+    print({engine:$pair[1],sha256:hash_file($art.."/"..$pair[1],"sha256"),ldd:$ldd})
+    if contains(["mix","mixd"],$pair[1]) then
+      for $line in lines($ldd)
+        if contains($line,"=>") and not any(["libc.so","libm.so","libgcc_s.so"],fn($ok)=contains($line,$ok)) then raise("D2_SHARED_LIBRARY",$line) end
+      end
+    end
+  end
+  p2_run(["cargo","build","--release","--locked","-p","compd","--features","backend-all"])
+  copy("target/release/compd",$art.."/compd-oracle")
+elif $mode=="tests" then
+  p2_run(["cargo","test","--locked","-p","mixd","-p","noded"])
+  p2_run(["cargo","test","--locked","-p","viu","-p","viu-engine"])
+  p2_run(["cargo","clippy","--locked","--all-targets","-p","viu","-p","viu-engine"])
+  p2_run(["/opt/mixos/bin/mix","tools/engine_split_smoke.mix",$art.."/mix",$art.."/mixd"])
+elif $mode=="furniture" then
+  p2_run(["env","COMPD_NATIVE_TEST_BINARY="..$art.."/viud","COMPD_INPROC_TEST_BINARY="..$art.."/compd-oracle","cargo","test","--locked","-p","viu-engine","--test","furniture","--","--ignored","--nocapture","--test-threads=1"])
+elif $mode=="native" then
+  p2_run(["/opt/mixos/bin/mix","tools/gate_comp_split.mix","native"])
+elif $mode=="oracle" then
+  p2_run(["/opt/mixos/bin/mix","tools/gate_comp_split.mix","default"])
+else
+  raise("USAGE","p2_gate.mix build|tests|furniture|native|oracle")
+end
