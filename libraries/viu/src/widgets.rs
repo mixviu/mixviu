@@ -512,7 +512,10 @@ impl Widgets {
                 let edit = if widget.kind == "field" {
                     egui::TextEdit::singleline(&mut text)
                 } else if widget.kind == "editor" {
-                    egui::TextEdit::multiline(&mut text).code_editor().desired_rows(24).char_limit(16384)
+                    egui::TextEdit::multiline(&mut text)
+                        .code_editor()
+                        .desired_rows(24)
+                        .char_limit(16384)
                 } else {
                     egui::TextEdit::multiline(&mut text).desired_rows(1)
                 };
