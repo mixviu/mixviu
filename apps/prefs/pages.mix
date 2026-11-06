@@ -41,7 +41,8 @@ fn store_blocked($s)
   return nil
 end
 fn store_view($s)
-  return {role:$s.role,stale:$s.stale,unreachable:$s.uncertain,blocked:store_blocked($s),described:len($s.catalog)>0,revision:$s.revision,writing:$s.busy and ($s.pending ?? {}).op=="write",waiting:[],error:if starts_with($s.status,"Settings failed:") then $s.status else nil end}
+  $waiting=keys(merge($s.inflight_changes ?? {},$s.queue_changes ?? {}))
+  return {role:$s.role,stale:$s.stale,unreachable:$s.uncertain,blocked:store_blocked($s),described:len($s.catalog)>0,revision:$s.revision,writing:len($waiting)>0,waiting:$waiting,error:$s.store_error ?? nil}
 end
 fn row_blocked($s,$p,$r)
   if $p.backend!=nil then return backend_reason($p.backend) end
@@ -172,8 +173,9 @@ fn browser_row($s,$p,$r)
   elif $kind=="reset" then $v.kind="button" end
   if $kind=="preview" then $v.kind="media-preview";$v.path=$gallery.shown_image($s);$v.colour=stored($s,$c.colour);$v.fit=stored($s,$c.fit) ?? "fill" end
   if $kind=="outputs" then
-    $v.kind="choice";$v.inline=true;$v.title="";$v.value=if stored($s,$c.all) ?? true then "all" else $gallery.output($s) end
-    $v.choices=if stored($s,$c.all) ?? true then [{value:"all",label:$n.text_for("opt-all-displays")}] else map($s.live.outputs ?? [],fn($o)={value:$o,label:$o}) end
+    $v.kind="display-picker";$v.inline=true;$v.title="";$v.value=$gallery.output($s)
+    $v.all=stored($s,$c.all) ?? true;$v.all_label=$n.text_for("opt-all-displays")
+    $v.choices=map($s.live.outputs ?? [],fn($o)={value:$o,label:$o})
   end
   return $v
 end
@@ -190,23 +192,29 @@ fn browser_sections($s,$p,$sections)
 end
 fn wallpaper_sections($s,$sections)
   $g=$gallery.view($s);$category=$g.category
-  $sections[0].plain=true
+  $sections[0].native_plain=true
   $choices=[{value:{kind:"wallpapers"},label:$n.text_for("gallery-wallpapers")},{value:{kind:"colours"},label:$n.text_for("gallery-colours")}]
   $choices=concat($choices,map($g.recent,fn($folder)={value:{kind:"folder",folder:$folder},label:basename($folder)}))
   $picker={id:"gallery.images",title:$n.text_for("gallery-add-image"),kind:"file-pick",blocked:nil,shown:$category.kind=="wallpapers",request:{mode:"open",multiple:true,title:$n.text_for("gallery-add-image"),accept_label:$n.text_for("gallery-choose-add"),current_folder:$g.folder ?? env("HOME"),filters:[{name:$n.text_for("gallery-images"),patterns:["*.png","*.jpg","*.jpeg","*.webp"],mime_types:["image/png","image/jpeg","image/webp"]}]}}
   $tiles=if $category.kind=="colours" then map($g.colours,fn($v)={value:$v,label:$v,colour:$v,removable:contains($g.custom_colours,$v)}) else map($g.images,fn($v)={value:$v,label:basename($v),path:$v,removable:contains($g.custom_images,$v)}) end
-  $sections[2]={id:"choose",title:nil,plain:true,shown:true,rows:[
-    {id:"gallery.category",title:$n.text_for("gallery-category"),kind:"choice",inline:true,shown:true,blocked:nil,presentation:"dropdown",choices:$choices,value:$category},$picker,
-    {id:"gallery.folder",title:$n.text_for("gallery-open-folder"),kind:"file-pick",shown:true,blocked:nil,request:{mode:"open",directory:true,title:$n.text_for("gallery-open-folder"),accept_label:$n.text_for("gallery-choose-open"),current_folder:$g.folder ?? env("HOME")}},
-    {id:"gallery.pick",title:"",kind:"tiles",shown:true,blocked:nil,choices:$tiles,value:if $category.kind=="colours" then stored($s,"wallpaper.color") else $gallery.shown_image($s) end,remove_label:$n.text_for("remove")},
-    {id:"gallery.colour",title:$n.text_for("gallery-add-colour"),kind:"colour",shown:$category.kind=="colours",blocked:nil,value:stored($s,"wallpaper.color") ?? "#000000"}]}
+  $tilesrow={id:"gallery.pick",title:"",kind:"tiles",embedded:true,shown:true,blocked:nil,choices:$tiles,value:if $category.kind=="colours" then stored($s,"wallpaper.color") else $gallery.shown_image($s) end,remove_label:$n.text_for("remove")}
+  $chooser={id:"gallery.choose",title:"",kind:"media-chooser",shown:true,blocked:nil,value:$category,categories:$choices,tiles:$tilesrow,
+    display_value:if $category.kind=="folder" then basename($category.folder) else $n.text_for(if $category.kind=="colours" then "gallery-colours" else "gallery-wallpapers" end) end,
+    category_label:$n.text_for("gallery-category"),recent_label:$n.text_for("gallery-recent"),folder_label:$n.text_for("gallery-open-folder"),
+    add_label:if $category.kind=="folder" then "" else $n.text_for(if $category.kind=="colours" then "gallery-add-colour" else "gallery-add-image" end) end,
+    add_request:if $category.kind=="wallpapers" then $picker.request else nil end,
+    folder_request:{mode:"open",directory:true,title:$n.text_for("gallery-open-folder"),accept_label:$n.text_for("gallery-choose-open"),current_folder:$g.folder ?? env("HOME")},
+    empty_label:$n.text_for(if $g.error!=nil then "gallery-unreadable" elif $g.reading then "gallery-reading" else "gallery-empty" end)}
+  $sections[2]={id:"choose",title:nil,native_plain:true,shown:true,rows:[$chooser,$tilesrow]}
   return $sections
 end
 fn browser($s)
   $p=$n.page($s.nav.page);$root=$p
   while $root.parent!=nil $root=$n.page($root.parent) end
   $drawer=nil
-  if $s.nav.drawer!=nil then
+  if $p.id=="wallpaper" and $s.nav.drawer=="gallery.colour" then
+    $drawer={title:$n.text_for("drawer-wallpaper-gallery"),sections:[{id:"add-colour",plain:true,shown:true,rows:[{id:"gallery.colour",title:"",kind:"colour-editor",shown:true,blocked:nil,submit_label:$n.text_for("gallery-add-colour"),hex_label:$n.text_for("colour-hex")}]}]}
+  elif $s.nav.drawer!=nil then
     $ds=filter($p.drawers,fn($d)=$d.id==$s.nav.drawer)
     if len($ds)==1 then $drawer={title:$n.text_for("drawer-"..$p.id.."-"..$ds[0].id),sections:browser_sections($s,$p,$ds[0].sections)} end
     if $drawer==nil then

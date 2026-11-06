@@ -496,7 +496,6 @@ on viu.job.completed
   end
   if $d.tag.id=="prefs-work" and $state.busy and $d.tag.owner==$state.serial then
     $state.busy=false;$state.read_at=monotonic()
-    if $state.pending.op=="read" then $state.stale=true end
     if $d.rc==0 and $d.body.op=="read" then
       $b=$d.body
       if type($b.catalog.keys)!="list" or len($b.catalog.keys)>2048 or type($b.read.values)!="map" or type($b.read.revision)!="string" or not re_match($b.read.revision,"^(0|[1-9][0-9]*)$") or type($b.read.incarnation)!="string" then raise("REPLY","Malformed or oversized settings reply") end
@@ -506,6 +505,7 @@ on viu.job.completed
       $state=$email.observed($state)
       $state.role=$b.status.role ?? "unknown";$state.stale=$b.status.stale ?? false;$state.uncertain=false
       $state.status="Settings read"
+      $state.store_error=nil
       if len($state.catalog)>0 then
         if not any($state.catalog,fn($k)=$k.path==$state.key) then $state.key=$state.catalog[0].path end
         $state=$core.choose($state,$state.key)
@@ -516,6 +516,10 @@ on viu.job.completed
       $state.binding=$answer.binding;$state.retargeted=true;$state=refresh_prefs($state)
     else
       $state.status="Settings failed: "..json_encode($d.body)
+      if $state.pending.op=="read" then
+        $state.store_error=$answer.message ?? json_encode($answer)
+        if contains($state.store_error,"not found") then $state.look.settings="missing" end
+      end
       if $state.pending.op=="write" then
         if contains(["conflict","outcome_unknown","authority_unreachable"],$answer.status) or $d.rc>=20 then
           $state.queue_changes=merge($state.inflight_changes,$state.queue_changes)
@@ -548,11 +552,14 @@ on prefs.intent
       viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,$a.action,$a.value)
       $row=$a.value.row;$v=$a.value.value
       if $row=="display" then $state.nav.output=if $v=="all" then nil else $v end
+      elif $row=="gallery.choose" and $v.action=="colour" then $state.nav.drawer="gallery.colour"
       else
         $action=if $a.action=="remove" then if $gallery.category($state).kind=="colours" then "remove_colour" else "remove_image" end
         elif $row=="gallery.pick" then if $gallery.category($state).kind=="colours" then "pick_colour" else "pick_image" end
         elif $row=="gallery.colour" then "pick_colour" else substr($row,8) end
+        if $row=="gallery.choose" then $action=$v.action;$v=$v.value end
         $state=gallery_action($state,$action,$v)
+        if $row=="gallery.colour" then $state.nav.drawer=nil end
       end
     elif contains(["edit","activate"],$a.action) then
       $browser=$pages.browser($state)
