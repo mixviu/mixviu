@@ -275,7 +275,11 @@ impl Native {
             "view.toggle-places" => self.core().sidebar(Sidebar::Places).open,
             "view.toggle-properties" => self.core().sidebar(Sidebar::Properties).open,
             "theme.scheme-session" | "theme.mode-session" | "theme.style-session" => {
-                let key = id.strip_prefix("theme.").unwrap().strip_suffix("-session").unwrap();
+                let key = id
+                    .strip_prefix("theme.")
+                    .unwrap()
+                    .strip_suffix("-session")
+                    .unwrap();
                 self.appearance_choice.get(key).is_none()
             }
             id if id.starts_with("theme.scheme-") =>
@@ -461,7 +465,11 @@ impl Native {
                     .push_back(json!({"kind":"mail","paths":paths_value(paths)}));
             }
             "theme.scheme-session" | "theme.mode-session" | "theme.style-session" => {
-                let key = id.strip_prefix("theme.").unwrap().strip_suffix("-session").unwrap();
+                let key = id
+                    .strip_prefix("theme.")
+                    .unwrap()
+                    .strip_suffix("-session")
+                    .unwrap();
                 self.appearance_choice.as_object_mut().unwrap().remove(key);
                 self.appearance[key] = self.appearance_session[key].clone();
             }

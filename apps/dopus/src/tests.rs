@@ -230,15 +230,29 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
             .unwrap()["keys"],
         json!(["Ctrl+U"])
     );
-    for (key,expected) in [("scheme","ocean"),("mode","dark"),("style","default")] {
-        let seq=runtime.event("dopus.call".into(),json!({"command":"dopus.execute","args":{"id":format!("theme.{key}-session")}})).unwrap();
-        let reset=wait(&runtime,&mut jobs,seq).0.model.unwrap();
-        assert_eq!(reset["appearance"][key],expected);
-        assert!(reset["actions"].as_array().unwrap().iter().any(|a|a["id"]==format!("theme.{key}-session") && a["checked"]==true));
+    for (key, expected) in [("scheme", "ocean"), ("mode", "dark"), ("style", "default")] {
+        let seq = runtime
+            .event(
+                "dopus.call".into(),
+                json!({"command":"dopus.execute","args":{"id":format!("theme.{key}-session")}}),
+            )
+            .unwrap();
+        let reset = wait(&runtime, &mut jobs, seq).0.model.unwrap();
+        assert_eq!(reset["appearance"][key], expected);
+        assert!(
+            reset["actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["id"] == format!("theme.{key}-session") && a["checked"] == true)
+        );
     }
     let seq=runtime.event("dopus.call".into(),json!({"command":"dopus.session","args":{"appearance":{"scheme":"sunset","mode":"light","style":"plain"},"keymap":{}}})).unwrap();
-    let reset_followed=wait(&runtime,&mut jobs,seq).0.model.unwrap();
-    assert_eq!(reset_followed["appearance"],json!({"scheme":"sunset","mode":"light","style":"plain"}));
+    let reset_followed = wait(&runtime, &mut jobs, seq).0.model.unwrap();
+    assert_eq!(
+        reset_followed["appearance"],
+        json!({"scheme":"sunset","mode":"light","style":"plain"})
+    );
 }
 
 #[test]
@@ -263,16 +277,42 @@ fn native_queued_confirmations_keep_selection_and_core_tokens_across_other_forms
         assert!(Instant::now() < end);
         std::thread::sleep(Duration::from_millis(2));
     }
-    native.call("dopus.theme.set",&json!({"scheme":"forest","mode":"light","style":"plain"})).unwrap();
-    native.call("dopus.session",&json!({"appearance":{"scheme":"ocean","mode":"dark","style":"default"},"keymap":{}})).unwrap();
-    assert_eq!(native.model()["appearance"]["scheme"],"forest");
-    for (key,expected) in [("scheme","ocean"),("mode","dark"),("style","default")] {
-        native.action(&format!("theme.{key}-session"),&json!({})).unwrap();
-        assert_eq!(native.model()["appearance"][key],expected);
-        assert!(native.model()["actions"].as_array().unwrap().iter().any(|a|a["id"]==format!("theme.{key}-session") && a["checked"]==true));
+    native
+        .call(
+            "dopus.theme.set",
+            &json!({"scheme":"forest","mode":"light","style":"plain"}),
+        )
+        .unwrap();
+    native
+        .call(
+            "dopus.session",
+            &json!({"appearance":{"scheme":"ocean","mode":"dark","style":"default"},"keymap":{}}),
+        )
+        .unwrap();
+    assert_eq!(native.model()["appearance"]["scheme"], "forest");
+    for (key, expected) in [("scheme", "ocean"), ("mode", "dark"), ("style", "default")] {
+        native
+            .action(&format!("theme.{key}-session"), &json!({}))
+            .unwrap();
+        assert_eq!(native.model()["appearance"][key], expected);
+        assert!(
+            native.model()["actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["id"] == format!("theme.{key}-session") && a["checked"] == true)
+        );
     }
-    native.call("dopus.session",&json!({"appearance":{"scheme":"sunset","mode":"light","style":"plain"},"keymap":{}})).unwrap();
-    assert_eq!(native.model()["appearance"],json!({"scheme":"sunset","mode":"light","style":"plain"}));
+    native
+        .call(
+            "dopus.session",
+            &json!({"appearance":{"scheme":"sunset","mode":"light","style":"plain"},"keymap":{}}),
+        )
+        .unwrap();
+    assert_eq!(
+        native.model()["appearance"],
+        json!({"scheme":"sunset","mode":"light","style":"plain"})
+    );
     for pane in [json!(1), json!(0)] {
         native
             .action("location.focus", &json!({"pane":pane}))
