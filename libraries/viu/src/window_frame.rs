@@ -143,7 +143,9 @@ impl WindowFrame {
             return;
         }
         let metrics = Metrics::of(ui.ctx());
-        let height = metrics.height;
+        // Native panels round their outer bounds to physical pixels before
+        // reserving the separator. Match that band for fractional densities.
+        let height = (metrics.height * ui.pixels_per_point()).round() / ui.pixels_per_point();
         let gap = ui.spacing().item_spacing.y;
         ui.spacing_mut().item_spacing.y = 0.0;
         let (band, _) =
