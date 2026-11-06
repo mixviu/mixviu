@@ -625,3 +625,12 @@ Bus/mail/clipboard/IME, matched live-Prefs variants and visual acceptance remain
 open. No VT, install or main merge.
 
 branch: lab/viu-editor; head SHA: e17f50729e80bbe01135f1cbec704ec3cffe9930 (source before receipt-only commit); Bus coverage: 61/61 IDs dispatched, 58 success and 3 guarded refusals, complete semantic parity unaccepted; visual evidence: inspected 1000x720 native.n8REKM and live Prefs native.PLwd6J, final captures pending; CBC job ids: 20261107-032501-a694b18a-a1 green, 20261107-032847-c0f88cb8-a1 green, final gate pending.
+
+
+## Ced round 3 — 04:49 implementation checkpoint
+
+Shared frame merged through 0807e73 before editor work. Mix now composes gold menu groups, Markdown and Theme submenus, compact optional mail rows with attachment chips and the retained native chooser, gold modal forms, recovered-buffer Open/Discard, and conflict Reinsert/Dismiss. Scratch Save waits for Save As and disk completion; no-argument Open/Save As/Goto hold native receipts through acceptance or cancellation. Mail header edits persist in Bus-only operation and retain header undo/redo. Action events retain the accepted parameters and quit drains their publication. Clipboard requests are serial with gold’s two-second wait; native caret publication and Mix highlighting use the retained model.
+
+CBC 20261107-043443-92a3cd8c and 20261107-043954-ab21070a: fmt check, normal Clippy, 24 scoped tests and host build passed. Clippy reports style warnings; no warnings-as-errors claim. CBC 20261107-044353-f2af2a64 and 20261107-044629-ed6d8240: preparation tests/build passed, exact formatting applied. Native native.CAmQVq passes mail Save/Save As/Send, outcome-unknown without retry, header undo/redo and crash recovery. native.uupr3I passes 16/64 MiB, editing/undo/save, metadata-only scene and gold byte/line refusals. native.GgsGmn passes real live settingsd changes with three paired 1000×720 gold captures; inspected differences drove fixes to native decoration detection, light tabs, large-font header clipping and status gaps. These captures precede the final appearance fixes.
+
+The expanded action run reaches all 61 actions and successful native scratch Save, but process shutdown exposed retained native shadow window ownership: native.aHN6ht records the post-quit two-thread process. A scoped exit-owner fix is under native verification. Final byte suite and visual acceptance remain open. No parity or Fable approval is claimed.

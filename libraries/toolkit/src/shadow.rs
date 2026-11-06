@@ -175,11 +175,17 @@ pub(crate) fn install(ctx: &egui::Context, window: Arc<winit::window::Window>) {
 // destruction: retaining that Window keeps winit's event loop alive.
 struct ShadowOwner(Option<NativeShadow>);
 impl egui::Plugin for ShadowOwner {
-    fn debug_name(&self) -> &'static str { "Native shadow owner" }
-    fn on_end_pass(&mut self, ui: &mut egui::Ui) {
-        if let Some(shadow)=&mut self.0 { egui::Plugin::on_end_pass(shadow,ui); }
+    fn debug_name(&self) -> &'static str {
+        "Native shadow owner"
     }
-    fn on_exit(&mut self, _: &egui::Context) { self.0.take(); }
+    fn on_end_pass(&mut self, ui: &mut egui::Ui) {
+        if let Some(shadow) = &mut self.0 {
+            egui::Plugin::on_end_pass(shadow, ui);
+        }
+    }
+    fn on_exit(&mut self, _: &egui::Context) {
+        self.0.take();
+    }
 }
 
 impl NativeShadow {

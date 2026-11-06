@@ -270,13 +270,15 @@ pub fn draw(
     let mut replacement = v["replacement"].as_str().unwrap().to_owned();
     let mut regex = v["regex"] == true;
     let mut case = v["case"] == true;
+    ui.spacing_mut().item_spacing.y = 0.0;
     toolkit::bars::options(ui, |ui| {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 let field = toolkit::field::search(ui, &mut pattern, "Find", 220.0);
                 let marker = Id::unique((id, "focus-instance"));
-                if ui.ctx().data(|d| d.get_temp::<Value>(marker)).as_ref()
-                    != Some(&value["instance"])
+                if !ui.is_sizing_pass()
+                    && ui.ctx().data(|d| d.get_temp::<Value>(marker)).as_ref()
+                        != Some(&value["instance"])
                 {
                     field.request_focus();
                     ui.ctx()
@@ -302,8 +304,8 @@ pub fn draw(
             });
             if value["replace"] == true {
                 ui.horizontal(|ui| {
-                    toolkit::field::text(ui, &mut replacement, "Replacement", 220.0);
-                    for (action, label) in [("replace", "Replace"), ("replace-all", "Replace All")]
+                    toolkit::field::text(ui, &mut replacement, "Replace with", 220.0);
+                    for (action, label) in [("replace", "Replace"), ("replace-all", "All")]
                     {
                         if ui.button(label).clicked() {
                             emit(events, action, Value::Null);

@@ -59,7 +59,7 @@ fn ced_ui_model($s,$model)
   $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Save changes?",body:"Save this document before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
   $model.values["save-dialog"]=ui_form($s.save_dialog,"Save As","File path",$s.save_path ?? ($t.path ?? ""),$s.dialog_instance ?? 0)
   $model.values["goto-dialog"]=ui_form($s.goto_dialog,"Go to Line","Line[:column]",$s.goto_text ?? "",$s.dialog_instance ?? 0)
-  $body=if $s.help=="keys" then join(map(action_rows($s),fn($a)=$a.label.."    "..join($a.keys," / ")),"\n") elif $s.help=="about" then "MixOS Editor\nAn editor over the edit Bus service.\nMixOS 0.1.2" else "" end
+  $body=if $s.help=="keys" then "" elif $s.help=="about" then "The MixOS Editor edits buffers shared through the edit service: other people and agents can edit the same document at the same time." else "" end
   $model.values["help-dialog"]=ui_form(contains(["keys","about"],$s.help),if $s.help=="keys" then "Keyboard Shortcuts" else "About MixOS Editor" end,$body)
   $model.values["help-dialog"].choices=[{id:"ok",label:"Close",enabled:true,default:true,cancel:true}]
   if $s.help=="keys" then
@@ -70,7 +70,7 @@ fn ced_ui_model($s,$model)
   for $row in $s.recovered ?? []
     push($items,{label:$row.path ?? $row.name ?? "untitled ("..$row.recovery_id..")",choices:[{id:"recover:"..$row.buffer,label:"Open",enabled:true},{id:"discard:"..$row.buffer,label:"Discard",enabled:true}]})
   end
-  $model.values["recovered-dialog"]={open:$s.recovery_open ?? false,title:"Recovered documents",body:"Unsaved documents were recovered. Open or discard them.",items:$items,choices:[{id:"close",label:"Close",enabled:true,cancel:true}]}
+  $model.values["recovered-dialog"]={open:$s.recovery_open ?? false,title:"Recovered documents",body:"The edit service kept these documents from an earlier session. Open or discard each one.",items:$items,choices:[{id:"close",label:"Close",enabled:true,cancel:true}]}
   $model.values["macros-dialog"]={app:"ced",open:$s.macros_open ?? false}
   $model.values["notice-actions"]=[];$model.notice=""
   if $has then
