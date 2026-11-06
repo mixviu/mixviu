@@ -28,12 +28,14 @@ pub fn install(ctx: &egui::Context) {
 }
 /// Follow the same complete look contract as the gold applications, including
 /// app overrides, auto mode, geometry, font choices and tunables.
-pub fn install_session(ctx: &egui::Context, values: &Value, app: &str) -> Result<(), String> {
+pub fn install_session(ctx: &egui::Context, snapshot: &Value, app: &str, file: &toolkit::Theme, last_ui: &settings::model::CommonUi) -> Result<settings::model::CommonUi, String> {
     use settings::view::View;
     let values: settings::registry::Values =
-        serde_json::from_value(values.clone()).map_err(|e| e.to_string())?;
+        serde_json::from_value(snapshot["state"]["values"].clone()).map_err(|e| e.to_string())?;
     let look = settings::view::Look::of(&values);
-    let theme = toolkit::session_look::look_or(&look, Some(app), &toolkit::Theme::embedded());
+    let lost = snapshot["state"]["lost"] == true;
+    let theme = toolkit::session_look::session_theme(if lost { None } else { Some(&look) }, Some(app), look.appearance.source.is_some(), file, last_ui);
+    let ui = if lost { last_ui.clone() } else { toolkit::session_look::ui(&look, Some(app)) };
     toolkit::install(ctx, &theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();
@@ -62,7 +64,7 @@ pub fn install_session(ctx: &egui::Context, values: &Value, app: &str) -> Result
         );
     });
     crate::icons::install_style(ctx, toolkit::icons::stroke_width(&theme), chrome.style.icon_mask.0);
-    Ok(())
+    Ok(ui)
 }
 pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {
     let mut style = egui::Style::default();

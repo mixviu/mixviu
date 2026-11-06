@@ -19,6 +19,9 @@ struct Host {
     session_appearance: Option<Value>,
     session_window: Option<Value>,
     service: String,
+    file_theme: toolkit::Theme,
+    last_ui: settings::model::CommonUi,
+    session_dirty: bool,
     framed: bool,
     title: String,
     window_frame: crate::window_frame::WindowFrame,
@@ -264,6 +267,10 @@ impl Host {
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
+                    if n.command == "theme.changed" {
+                        self.file_theme = toolkit::Theme::load();
+                        self.session_dirty = true;
+                    }
                     if let Some(session) = &mut self.session {
                         session.hint(&n.command, &n.args);
                     }
@@ -296,14 +303,18 @@ impl Host {
         }
         if self.ready {
             if let Some(session) = &mut self.session {
-                if let Some(snapshot) = session.poll() {
+                if let Some(snapshot) = session.poll().or_else(|| self.session_dirty.then(|| session.snapshot.clone())) {
                     let appearance = snapshot["appearance"].clone();
                     match crate::appearance::install_session(
                         ui.ctx(),
-                        &snapshot["state"]["values"],
+                        &snapshot,
                         &self.service,
+                        &self.file_theme,
+                        &self.last_ui,
                     ) {
-                        Ok(()) => {
+                        Ok(ui) => {
+                            self.last_ui = ui;
+                            self.session_dirty = false;
                             self.session_appearance = Some(appearance);
                             self.session_window = Some(snapshot["state"]["values"].clone());
                         }
@@ -423,6 +434,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .join("viu-captures");
     Host {
         service: bundle.manifest.service.clone(),
+        file_theme: toolkit::Theme::load(),
+        last_ui: settings::model::CommonUi::default(),
+        session_dirty: false,
         session: bundle.manifest.frame.as_ref().map(|_| {
             crate::session::Session::embedded(
                 &bundle.manifest.service,

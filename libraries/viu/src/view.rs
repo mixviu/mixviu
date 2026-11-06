@@ -264,6 +264,7 @@ impl SceneView {
             if let Some(rect) = frame.geometry.get("gold-content").copied() {
                 events.extend(
                     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                        ui.set_clip_rect(ui.clip_rect().intersect(rect));
                         self.show_content(ui)
                     })
                     .inner,
@@ -318,6 +319,7 @@ impl SceneView {
     /// fence input replies on this without claiming GPU or physical display.
     pub fn current_revision_drawn(&self) -> bool {
         self.shown_revision == Some(self.revision)
+            && self.frame.as_ref().is_none_or(|frame| frame.current_revision_drawn())
     }
     pub fn request_focus(&mut self, id: &str) -> Result<(), String> {
         if let Some(frame) = self

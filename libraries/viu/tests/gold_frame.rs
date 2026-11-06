@@ -50,6 +50,9 @@ fn mix_frame_preserves_application_content_and_intent_identity() {
     assert!(view.geometry["content"].top() >= view.geometry["gold-header"].bottom());
     assert!(view.geometry["content"].bottom() <= view.geometry["gold-status"].top());
     assert!(view.admit_intent("content", "set", &json!(50)).is_ok());
+    assert!(view.current_revision_drawn());
+    view.set_slots(std::collections::BTreeMap::from([("window.header".into(), egui::Rect::from_min_size(egui::pos2(0.0,0.0),egui::vec2(900.0,38.0)))])).unwrap();
+    assert!(!view.current_revision_drawn());
 
     assert!(
         viu::gold_frame::mount(&source.replace("content", "gold-title"), model.clone()).is_err()
