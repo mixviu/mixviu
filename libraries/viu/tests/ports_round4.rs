@@ -81,11 +81,21 @@ end
             .unwrap();
         assert_eq!(completion(&runtime, &rx).reply.unwrap().rc, 10);
     }
-    runtime.event("outcome".into(), json!({"rc":17,"body":{"error_code":"REFUSED"}})).unwrap();
+    runtime
+        .event(
+            "outcome".into(),
+            json!({"rc":17,"body":{"error_code":"REFUSED"}}),
+        )
+        .unwrap();
     let refused = completion(&runtime, &rx).reply.unwrap();
     assert_eq!(refused.rc, 0);
     assert_eq!(refused.body["peer_rc"], 17);
-    runtime.event("outcome".into(), json!({"rc":-2,"result":"send timed out"})).unwrap();
+    runtime
+        .event(
+            "outcome".into(),
+            json!({"rc":-2,"result":"send timed out"}),
+        )
+        .unwrap();
     let uncertain = completion(&runtime, &rx).reply.unwrap();
     assert_eq!(uncertain.rc, 10);
     assert_eq!(uncertain.body["code"], "TRANSPORT");
