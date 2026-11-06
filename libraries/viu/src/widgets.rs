@@ -783,7 +783,9 @@ impl Widgets {
                 } else if widget.properties["align"] == "right" {
                     label = label.halign(egui::Align::Max);
                 }
-                if matches!(
+                if widget.properties["centered_justified"] == true {
+                    ui.centered_and_justified(|ui| ui.add(label)).response
+                } else if matches!(
                     widget.properties["role"].as_str(),
                     Some("title" | "status" | "status-band")
                 ) {

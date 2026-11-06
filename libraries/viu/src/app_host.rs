@@ -581,11 +581,7 @@ impl Host {
             }
             self.view.geometry.extend(self.overlays.geometry.clone());
             if self.facilities.macros.is_some()
-                && toolkit::macros::show_app(
-                    ui.ctx(),
-                    &self.app,
-                    self.model["macros_open"] == true,
-                )
+                && toolkit::macros::show_app(ui.ctx(), &self.app, self.model["macros_open"] == true)
             {
                 self.dispatch(
                     "viu.macros.changed".into(),
@@ -757,20 +753,41 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         eprintln!("usage: viu run APP_DIR [ARGS]");
         std::process::exit(2);
     }
-    let root=std::path::Path::new(&args[1]);
-    let preview=Bundle::load(root,&[]).unwrap_or_else(|e|{eprintln!("viu: {e}");std::process::exit(2)});
-    let mut logging_args=std::iter::once("viu".to_owned()).chain(args.iter().cloned()).collect::<Vec<_>>();
-    let _logging=toolkit::debug::init(preview.manifest.app(),"warn",&mut logging_args).unwrap_or_else(|e|{eprintln!("viu logging: {e}");std::process::exit(2)});
-    if matches!(logging_args.get(3).map(String::as_str),Some("--help"|"-h")) {
-        println!("Usage: viu run APP_DIR [--service NAME] [--comp NAME] [--noded-url URL] [APP_ARGS]");
-        println!("{}",toolkit::debug::HELP);
+    let root = std::path::Path::new(&args[1]);
+    let preview = Bundle::load(root, &[]).unwrap_or_else(|e| {
+        eprintln!("viu: {e}");
+        std::process::exit(2)
+    });
+    let mut logging_args = std::iter::once("viu".to_owned())
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>();
+    let _logging = toolkit::debug::init(preview.manifest.app(), "warn", &mut logging_args)
+        .unwrap_or_else(|e| {
+            eprintln!("viu logging: {e}");
+            std::process::exit(2)
+        });
+    if matches!(
+        logging_args.get(3).map(String::as_str),
+        Some("--help" | "-h")
+    ) {
+        println!(
+            "Usage: viu run APP_DIR [--service NAME] [--comp NAME] [--noded-url URL] [APP_ARGS]"
+        );
+        println!("{}", toolkit::debug::HELP);
         return Ok(());
     }
-    if logging_args.get(3).map(String::as_str)==Some("--version") {
-        println!("{} {} (generic viu)",preview.manifest.app(),env!("CARGO_PKG_VERSION"));
+    if logging_args.get(3).map(String::as_str) == Some("--version") {
+        println!(
+            "{} {} (generic viu)",
+            preview.manifest.app(),
+            env!("CARGO_PKG_VERSION")
+        );
         return Ok(());
     }
-    let bundle=crate::launch::load(root,&logging_args[3..]).unwrap_or_else(|e|{eprintln!("viu: {e}");std::process::exit(2)});
+    let bundle = crate::launch::load(root, &logging_args[3..]).unwrap_or_else(|e| {
+        eprintln!("viu: {e}");
+        std::process::exit(2)
+    });
     if bundle.manifest.surface == "background" {
         let mut options = crate::layer::LayerOptions::background(&bundle.manifest.service);
         options.exclusive_zone = 0;
