@@ -93,35 +93,80 @@ fn main() -> ExitCode {
     // SAFETY: first statement of main; no other thread exists yet.
     unsafe { std::env::remove_var(mix_shell::ENGINE_HANDOFF_ENV) };
     let args: Vec<OsString> = std::env::args_os().collect();
+    match route(&args) {
+        Route::Personality(name) => run_personality(name),
+        Route::List => {
+            println!("{}", list());
+            ExitCode::SUCCESS
+        }
+        Route::Usage => {
+            eprintln!("usage: mixd run FILE [ARGS...] | mixd serve FILE [ARGS...]");
+            ExitCode::from(2)
+        }
+        Route::Shell(Some(rewritten)) => mix_shell::main_with_args(rewritten),
+        Route::Shell(None) => mix_shell::main(),
+    }
+}
+
+/// What an invocation runs. Personalities are decided by argv[0] FIRST and
+/// receive their argv untouched: `editd serve` is editd's own subcommand,
+/// never mixd's `serve` (desk4 P1 found this: the usage check ran first).
+#[derive(Debug, PartialEq)]
+enum Route {
+    Personality(&'static str),
+    List,
+    Usage,
+    Shell(Option<Vec<OsString>>),
+}
+
+fn route(args: &[OsString]) -> Route {
+    let name = args.first().map(|a| personality_name(a)).unwrap_or_default();
+    if let Some((p, _)) = PERSONALITIES.iter().find(|(p, _)| *p != "mixd" && *p == name) {
+        return Route::Personality(p);
+    }
     if args.get(1).is_some_and(|first| first == "--personalities") {
-        println!("{}", list());
-        return ExitCode::SUCCESS;
+        return Route::List;
     }
     if matches!(args.get(1).and_then(|a| a.to_str()), Some("run" | "serve")) && args.len() < 3 {
-        eprintln!("usage: mixd run FILE [ARGS...] | mixd serve FILE [ARGS...]");
-        return ExitCode::from(2);
+        return Route::Usage;
     }
-    // Daemon personalities dispatch on argv[0] first. Every other name
-    // (mixd, a dev copy, `mix` from a self re-exec, `exe`) is the service
-    // shell.
-    let personality = args.first().map(|a| personality_name(a)).unwrap_or_default();
-    match personality.as_str() {
+    Route::Shell(rewrite(args))
+}
+
+fn run_personality(name: &str) -> ExitCode {
+    match name {
         #[cfg(feature = "noded")]
         "noded" => noded::main(),
         #[cfg(feature = "settingsd")]
         "settingsd" => exit_of(settingsd::main()),
         #[cfg(feature = "editd")]
         "editd" => exit_of(editd::main()),
-        _ => match rewrite(&args) {
-            Some(rewritten) => mix_shell::main_with_args(rewritten),
-            None => mix_shell::main(),
-        },
+        other => unreachable!("personality {other} is listed but not dispatched"),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{personality_name, rewrite};
+    use super::{Route, personality_name, rewrite, route};
+
+    #[test]
+    fn a_personality_keeps_its_own_serve_subcommand() {
+        // desk4 P1 regression: `editd serve` hit mixd's usage error.
+        let r = route(&[OsString::from("/opt/mixos/bin/editd"), OsString::from("serve")]);
+        assert_eq!(r, Route::Personality("editd"));
+        let r = route(&[OsString::from("noded"), OsString::from("--personalities")]);
+        assert_eq!(r, Route::Personality("noded"));
+    }
+
+    #[test]
+    fn mixd_itself_routes_run_serve_list_and_usage() {
+        assert_eq!(route(&[OsString::from("mixd"), OsString::from("serve")]), Route::Usage);
+        assert_eq!(route(&[OsString::from("mixd"), OsString::from("--personalities")]), Route::List);
+        assert_eq!(
+            route(&[OsString::from("mixd"), OsString::from("run"), OsString::from("a.mix")]),
+            Route::Shell(Some(vec![OsString::from("mixd"), OsString::from("a.mix")]))
+        );
+    }
     use std::ffi::{OsStr, OsString};
 
     fn os(v: &[&str]) -> Vec<OsString> {
