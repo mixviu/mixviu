@@ -16,7 +16,7 @@ fn compact_date($stamp)
   end
 end
 fn gold_rows($emails)
-  return rows_project($emails,fn($m)={key:$m.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[$m.subject ?? "",address_display(($m.from ?? [])[0]),compact_date($m.received_at ?? $m.date)],strong:($m.keywords ?? {})["$seen"]!=true,weak_cells:[false,false,($m.keywords ?? {})["$seen"]==true],markers:[concat(if $m.has_attachment==true then ["paperclip"] else [] end,if ($m.keywords ?? {})["$flagged"]==true then ["flag"] else [] end),[],[]]})
+  return rows_project($emails,fn($m)={key:$m.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[$m.subject ?? "",address_display(($m.from ?? [])[0]),compact_date($m.receivedAt ?? $m.date)],strong:($m.keywords ?? {})["$seen"]!=true,weak_cells:[false,false,($m.keywords ?? {})["$seen"]==true],markers:[concat(if $m.hasAttachment==true then ["paperclip"] else [] end,if ($m.keywords ?? {})["$flagged"]==true then ["flag"] else [] end),[],[]]})
 end
 fn outline_row($key,$depth,$label,$icon,$branch=false,$count=0)
   return {key:$key,depth:$depth,branch:$branch,expanded:not contains($tree_closed,$key),selected:false,focused:false,cells:[$label],icon:$icon,count:$count,strong:$depth==0}
@@ -27,9 +27,9 @@ end
 fn folder_rows($account,$boxes,$parent,$depth,$seen=[])
   $out=[]
   for $b in $boxes
-    if $b.parent_id==$parent and not contains($seen,$b.id) then
-      $key="mailbox:"..$account..":"..$b.id;$branch=any($boxes,fn($child)=$child.parent_id==$b.id)
-      push($out,outline_row($key,$depth,$b.name,mailbox_icon($b.role),$branch,$b.unread_emails))
+    if $b.parentId==$parent and not contains($seen,$b.id) then
+      $key="mailbox:"..$account..":"..$b.id;$branch=any($boxes,fn($child)=$child.parentId==$b.id)
+      push($out,outline_row($key,$depth,$b.name,mailbox_icon($b.role),$branch,$b.unreadEmails))
       if $branch and not contains($tree_closed,$key) then $out=concat($out,folder_rows($account,$boxes,$b.id,$depth+1,concat($seen,[$b.id]))) end
     end
   end
@@ -60,7 +60,7 @@ fn surface_model($m)
   $m.navigation={id:"account-tree",kind:"tree-table",label:"Accounts",initial:{key:"accounts",revision:$revision,rows:$nav,columns:[{id:"name",label:""}],selected_keys:if any($nav,fn($r)=$r.key==$tree_selected) then [$tree_selected] else [] end,focused_key:nil},properties:{style:"outline"}}
   $found=filter($boxes,fn($b)=$b.id==$box);$name=if len($found)>0 then $found[0].name else "Mail" end
   $m.list_titles=concat([$name],if $total>0 then [to_string(len($rows)).." of "..to_string($total)] else [] end)
-  $m.table={id:"emails",kind:"tree-table",label:"emails",initial:{key:"emails",revision:$revision,rows:$rows,columns:[{id:"subject",label:"Subject",fraction:0.55,min_width:120},{id:"from",label:"From",remainder:true,min_width:80},{id:"date",label:"Date",width:90,align:"right"}],state:{sort:$mail_sort,page:floor($offset/$mail_settings.page_size),page_size:$mail_settings.page_size,selection:$mail_selection,focus:$mail_focus,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density},total:$total,empty:if any(values($wire_pending),fn($p)=$p.purpose=="list") then "Loading…" else "No emails" end,select_everything:"Select all "..to_string($total).." in folder",selected_keys:$mail_selection,focused_key:if $mail_focus!=nil then $rows[$mail_focus].key else nil end},properties:{style:"gold"}}
+  $m.native_table={id:"emails",kind:"tree-table",label:"emails",initial:{key:"emails",revision:$revision,rows:$rows,columns:[{id:"subject",label:"Subject",fraction:0.55,min_width:120},{id:"from",label:"From",remainder:true,min_width:80},{id:"date",label:"Date",width:90,align:"right"}],state:{sort:$mail_sort,page:floor($offset/$mail_settings.page_size),page_size:$mail_settings.page_size,selection:$mail_selection,focus:$mail_focus,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density},total:$total,empty:if any(values($wire_pending),fn($p)=$p.purpose=="list") then "Loading…" else "No emails" end,select_everything:"Select all "..to_string($total).." in folder",selected_keys:$mail_selection,focused_key:if $mail_focus!=nil then $rows[$mail_focus].key else nil end},properties:{style:"gold"}}
   $m.reader_actions=map([{id:"mail.reply",label:"Reply",icon:"reply"},{id:"mail.reply_all",label:"Reply All",icon:"reply-all"},{id:"mail.forward",label:"Forward",icon:"forward"},{id:"mail.delete",label:"Delete",icon:"trash"}],fn($a)=merge($a,{enabled:$message!=nil}))
   $m.no_message=$message==nil;$m.message_subject=$opened.subject ?? "";$m.message_from="From: "..join(map($opened.from ?? [],fn($a)=address_display($a)),", ");$m.message_to="To: "..join(map($opened.to ?? [],fn($a)=address_display($a)),", ")
   $m.values["message-body"]=$opened.text ?? $opened.html ?? "";$m.values["message-markdown"]=$opened.text ?? ""
@@ -117,7 +117,7 @@ fn surface_intent($a)
   elif $a.id=="search-mail" then
     $search_text=$a.value
     if $a.action=="submit" then wire_start("email.list",{mailbox:$box,query:$search_text,limit:$mail_settings.page_size},nil,"list") end
-  elif $a.id=="open-settings" then return execute_email("file.accounts","ui")
+  elif contains(["open-settings","open-settings-again"],$a.id) then return execute_email("file.accounts","ui")
   else return wire_refuse("INVALID_ARGUMENT","Unknown mail intent") end
   return {rc:0,body:{}}
 end

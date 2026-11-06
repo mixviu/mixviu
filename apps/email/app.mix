@@ -18,7 +18,7 @@ fn entry()
   raise("ACCOUNT","No configured account selected")
 end
 fn publish_email()
-  $m=$c.model($rows,$selected,$revision,$account,$mailbox,$reader,$draft)
+  $m=$c.model(if $fixture then $rows else [] end,if $fixture then $selected else nil end,$revision,$account,$mailbox,$reader,$draft)
   $m.fixture=$fixture
   $m.status=if $fixture then $m.status else $status.." · "..to_string(len($rows)).." / "..to_string($total).." messages · offset "..to_string($offset) end
   $m.accounts={id:"accounts",kind:"combo",label:"Account",initial:if $active!="" then $active else "No account" end,properties:{choices:if len($entries)>0 then map($entries,fn($e)=$e.id) else ["No account"] end}}

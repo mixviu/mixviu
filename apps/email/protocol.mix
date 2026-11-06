@@ -68,10 +68,10 @@ fn chained($e,$s,$kind,$query)
   return {query:$response[0][1],get:$response[1][1]}
 end
 fn boxes($raw)
-  return jq($raw,'map({id,name,parent_id:(.parentId // null),role:(.role // null),sort_order:(.sortOrder // 0),total_emails:(.totalEmails // 0),unread_emails:(.unreadEmails // 0)})')
+  return jq($raw,'map({id,name,parentId:(.parentId // null),role:(.role // null),sortOrder:(.sortOrder // 0),totalEmails:(.totalEmails // 0),unreadEmails:(.unreadEmails // 0)})')
 end
 fn emails($raw)
-  return jq($raw,'def address: if type=="string" then {name:null,email:.} else {name:(.name // null),email} end; def addresses: if .==null then null elif type=="array" then map(address) else [address] end; map({id,subject:(.subject // null),from:(.from|addresses),to:(.to|addresses),cc:(.cc|addresses),message_id:(.messageId // null),date:(.date // null),received_at:(.receivedAt // null),has_attachment:(.hasAttachment // null),keywords:(.keywords // null),body_values:(.bodyValues // null),text_body:(if .textBody==null then null else [.textBody[]|{part_id:.partId,content_type:(.type // null)}] end),html_body:(if .htmlBody==null then null else [.htmlBody[]|{part_id:.partId,content_type:(.type // null)}] end),attachments:(if .attachments==null then null else [.attachments[]|{part_id:(.partId // null),blob_id:(.blobId // null),size:(.size // 0),name:(.name // null),content_type:(.type // null),disposition:(.disposition // null),cid:(.cid // null),undecodable:(.undecodable // false)}] end)})')
+  return jq($raw,'def address: if type=="string" then {name:null,email:.} else {name:(.name // null),email} end; def addresses: if .==null then null elif type=="array" then map(address) else [address] end; map({id,subject:(.subject // null),from:(.from|addresses),to:(.to|addresses),cc:(.cc|addresses),messageId:(.messageId // null),date:(.date // null),receivedAt:(.receivedAt // null),hasAttachment:(.hasAttachment // null),keywords:(.keywords // null),bodyValues:(.bodyValues // null),textBody:(if .textBody==null then null else [.textBody[]|{partId:.partId,type:(.type // null)}] end),htmlBody:(if .htmlBody==null then null else [.htmlBody[]|{partId:.partId,type:(.type // null)}] end),attachments:(if .attachments==null then null else [.attachments[]|{partId:(.partId // null),blobId:(.blobId // null),size:(.size // 0),name:(.name // null),type:(.type // null),disposition:(.disposition // null),cid:(.cid // null),undecodable:(.undecodable // false)}] end)})')
 end
 fn list($e,$s,$a)
   $filter={}
@@ -91,10 +91,10 @@ fn get($e,$s,$id)
   $r=call($e,$s,"Email/get",{ids:[$id],fetchTextBodyValues:true,fetchHTMLBodyValues:true})
   if len($r.list ?? [])!=1 or $r.list[0].id!=$id then raise("NOT_FOUND","email "..$id.." is gone") end
   $m=emails($r.list)[0];$m.text=nil
-  if len($m.text_body ?? [])>0 then $m.text=$m.body_values[$m.text_body[0].part_id].value end
+  if len($m.textBody ?? [])>0 then $m.text=(($m.bodyValues ?? {})[$m.textBody[0].partId] ?? {}).value end
   if $m.text==nil then
     $m.html=nil
-    if len($m.html_body ?? [])>0 then $m.html=$m.body_values[$m.html_body[0].part_id].value end
+    if len($m.htmlBody ?? [])>0 then $m.html=(($m.bodyValues ?? {})[$m.htmlBody[0].partId] ?? {}).value end
   end
   return $m
 end
