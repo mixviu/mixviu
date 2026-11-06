@@ -1,6 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $e=require("email.mix")
 $s={values:{},ui:{email_account:nil,dialog:nil},email:$e.initial(),look:{settings:"ready"},revision:"1",connected:true,busy:false,quitting:false}
+$errors=$e.field_errors({name:"",url:"http://invalid",email:"invalid",ca_path:"relative",signature:""})
+if len(keys($errors))!=4 or $errors.name!="email-name-refused" or $errors.url!="email-url-refused" or $errors.email!="email-address-refused" or $errors.ca_path!="email-ca-refused" then raise("TEST","Native field refusals lost") end
+$identities=$e.normal_identities([{id:"default",name:"Example",address:"user@example.test",reply_to:nil,signature:""}])
+if contains(keys($identities[0]),"reply_to") then raise("TEST","Absent identity reply-to must be omitted") end
 $p=$e.plan($s,{op:"add",name:" Example ",url:"https://example.test/jmap",email:"user@example.test"})
 if len($p.changes["email.accounts"])!=1 or $p.changes["email.accounts"][0].name!="Example" then raise("TEST","Account add/trim failed") end
 $id=$p.added;$s.values=$p.changes
