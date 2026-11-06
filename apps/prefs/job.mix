@@ -15,7 +15,7 @@ on job.run
     reply($r.rc,json_encode({op:"release",command:$a.command,peer_rc:$r.rc,answer:$r.body,message:$r.message,absent:$app.viu_app_absent($r,"releases"),uncertain:$r.body.error_code=="OUTCOME_UNKNOWN"}))
   elif $a.op=="write" then
     send "settingsd" "settings.apply" body=$a.request timeout=8
-    reply(if $rc==0 then 0 else 10 end,json_encode({op:"write",peer_rc:$rc,answer:$reply}))
+    reply(if $rc==0 then 0 elif $rc<0 then 20 else 10 end,json_encode({op:"write",peer_rc:$rc,answer:$reply ?? {message:to_string($result)}}))
   else
     send "settingsd" "settings.describe" body={} timeout=5
     if $rc!=0 then reply(10,json_encode({op:"read",stage:"describe",peer_rc:$rc,answer:$reply ?? {message:to_string($result)}}));return end

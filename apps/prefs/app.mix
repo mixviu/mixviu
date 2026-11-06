@@ -252,6 +252,7 @@ on viu.tick
   if $state.nav.page=="email" and not ($state.email.queried ?? false) then $state.email.queried=true;$state=query_email($state)
   elif $state.nav.page!="email" then $state.email.queried=false end
   if not $state.busy and $state.needs_read then $state=refresh_prefs($state);publish_prefs($state) end
+  if not $state.busy then $state=queued_prefs($state) end
 end
 on prefs.ping
   reply(0,json_encode({schema:"prefs.v1",version:"0.1.2"}))
@@ -524,7 +525,7 @@ on viu.job.completed
         if contains($state.store_error,"not found") then $state.look.settings="missing" end
       end
       if $state.pending.op=="write" then
-        if contains(["conflict","outcome_unknown","authority_unreachable"],$answer.status) or $d.rc>=20 then
+        if contains(["conflict","outcome_unknown","authority_unreachable"],$answer.status) or $d.rc>=20 or contains($answer.message ?? "","not found") then
           $state.queue_changes=merge($state.inflight_changes,$state.queue_changes)
           if $answer.status=="authority_unreachable" then $state.uncertain=true
           else $state=refresh_prefs($state) end

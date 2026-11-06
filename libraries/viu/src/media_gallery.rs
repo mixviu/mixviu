@@ -536,8 +536,6 @@ pub(crate) fn draw(
                     if is_colour {
                         fill(ui, rect, text(item, "colour"), look.r_s);
                     } else {
-                        ui.painter()
-                            .rect_filled(rect, Look::radius(look.r_s), look.card);
                         let shared = state(ui, id);
                         let mut state = shared.lock().unwrap();
                         if let Some(texture) =
@@ -551,6 +549,8 @@ pub(crate) fn draw(
                                 crop(texture.size_vec2(), size),
                             );
                         } else {
+                            ui.painter()
+                                .rect_filled(rect, Look::radius(look.r_s), look.card);
                             toolkit::button::paint_icon(
                                 ui,
                                 toolkit::Icon::Image,
