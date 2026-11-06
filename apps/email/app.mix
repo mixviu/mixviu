@@ -22,6 +22,7 @@ fn publish_email()
   $chosen=filter($boxes,fn($b)=$b.id==$box)
   $m.mailboxes={id:"mailboxes",kind:"combo",label:"Mailbox",initial:if len($chosen)>0 then $chosen[0].choice else "Select mailbox" end,properties:{choices:concat(["Select mailbox"],map($boxes,fn($b)=$b.choice))}}
   $m.values.view=$view;$m.mail_hidden=$view!="Mail";$m.compose_hidden=$view!="Compose"
+  $m.values["reader-body"]=if $message!=nil then $message.text else "" end
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$m}
 end
 fn begin_mail($op,$data)
@@ -33,7 +34,7 @@ fn begin_mail($op,$data)
   if $rc!=0 then raise("JOB","Mail worker unavailable") end
 end
 fn reader_text($m)
-  return "Subject: "..substr($m.subject,0,120).."\nFrom: "..substr(json_encode($m.from),0,120).."\n"..substr($m.text,0,600)..if len($m.text)>600 then "\n[Display truncated; email.message returns bounded full text]" else "" end
+  return "Subject: "..substr($m.subject,0,120).."\nFrom: "..substr(json_encode($m.from),0,120)
 end
 fn send_request()
   if $fixture or not $connected then raise("CONNECT","Connect a real configured account first") end

@@ -171,6 +171,8 @@ impl Widget {
                 value.as_str().is_some_and(|v| v.len() <= 65536)
                     && (self.properties["rows"].is_null()
                         || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
+                    && (self.properties["read_only"].is_null()
+                        || self.properties["read_only"].is_boolean())
             }
             _ => value.as_str().is_some_and(|v| v.len() <= 4096),
         };
@@ -181,6 +183,9 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind == "editor" && self.properties["read_only"] == true {
+            return vec![];
+        }
         if self.kind == "window-controls" {
             return vec!["close", "minimize", "toggle-maximize"];
         }
@@ -503,6 +508,27 @@ impl Widgets {
                     });
                 }
                 r
+            }
+            "editor" if widget.properties["read_only"] == true => {
+                // An immutable native text buffer permits selection/copy but
+                // cannot generate edits, even through keyboard/paste input.
+                let mut text = value.as_str().unwrap_or_default();
+                let rows = whole(&widget.properties["rows"]).unwrap_or(24) as f32;
+                let height = rows * ui.text_style_height(&egui::TextStyle::Monospace) + 8.0;
+                let output = egui::ScrollArea::vertical()
+                    .id_salt((id, "read-only"))
+                    .max_height(height)
+                    .show(ui, |ui| {
+                        ui.add(egui::TextEdit::multiline(&mut text)
+                            .code_editor()
+                            .desired_rows(rows as usize)
+                            .desired_width(ui.available_width())
+                            .id_salt(id))
+                    });
+                let mut response = output.inner;
+                response.rect = response.rect.intersect(output.inner_rect);
+                self.text_input_active |= response.has_focus();
+                response
             }
             "field" | "multiline" | "editor" => {
                 let mut text = value.as_str().unwrap_or_default().to_owned();

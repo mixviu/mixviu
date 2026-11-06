@@ -31,8 +31,8 @@ retries that same ID. Drafts and pending IDs are in memory: do not quit with
 an unresolved submission. Durable outbox/restart reconciliation is deferred.
 
 Lists page 200 rows at a time through the shared virtual table. Plain message
-bodies are bounded at 64 KiB; the UI shows the first 600 characters with a
-truncation notice, while `email.message` returns the full admitted text.
+bodies are bounded at 64 KiB and shown in a native read-only scrollable editor;
+`email.message` also returns the full admitted text. Header labels are excerpts.
 HTML, attachments and richer reader/compose workflows remain deferred.
 
 `viu run apps/email --fixture` is a separate synthetic-list measurement mode

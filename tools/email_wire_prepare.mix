@@ -2,7 +2,7 @@
 -- version: 0.1.0
 $rc=0
 try
-  for $a in [["cargo","fmt","--all"],["cargo","test","-p","viu","--lib","http::tests","--","--nocapture"],["cargo","test","-p","viu","--test","email_wire","--","--nocapture"],["cargo","build","-p","viu-client","--bin","viu"]]
+  for $a in [["cargo","fmt","--all"],["cargo","test","-p","viu","--lib","http::tests","--","--nocapture"],["cargo","test","-p","viu","--test","email_wire","--test","text_input","--","--nocapture"],["cargo","build","-p","viu-client","--bin","viu"]]
     $r=run_argv($a,{env:{CARGO_BUILD_JOBS:"6",RUSTC_WRAPPER:""},timeout:1800,max_output:8000000});print($r)
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
   end

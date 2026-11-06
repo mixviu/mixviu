@@ -276,6 +276,14 @@ branch: lab/app-ports; head SHA: e330c14a5c7725804ef62614badd7c8b08dd1b69 (valid
 branch: lab/app-ports; head SHA: 7c55df5d2de07b87e0ff6032fb9fade36b6a55b1 (validated source; report-only commit follows); apps done: no new complete app, Email fixture/list budget checkpoint only, Term needs updated; CBC job ids: 20261106-224820-566c0878-a1 (green), 20261106-224144-1545a147-a1 (adaptation failure fixed).
 # Round 6 real-mail checkpoint
 
+Private witness native.MLaov3 also passed a lost accepted-reply: held draft,
+busy-send/edit refusal, explicit same-ID retry, exactly three total Inbox
+messages (seed, first compose, retry specimen), no duplicate. CBC scoped
+20261106-232313-c88aa214-a1 green, full saved log read, empty diff.
+Shared editor read_only/scroll viewport added so the reader can expose the
+entire admitted 64 KiB body instead of a 600-character UI excerpt; tests and
+final-source gate pending.
+
 Added query/get identity/order regression caught unsupported list != in Mix;
 corrected to deep_eq, preserving assertions. CBC 20261106-231949-9e0c3dae-a1
 full saved log read; worker formatting applied. Native lost-receipt fixture

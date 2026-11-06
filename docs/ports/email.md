@@ -43,7 +43,7 @@ and cannot contact a server; ordinary launch refuses fixture injection.
 | JMAP discovery, same-origin endpoints, token exchange, bounded HTTP/blob upload | Ported Basic-auth discovery and same-origin maild /jmap via shared bounded HTTP. Deferred token flow, arbitrary advertised paths and binary/blob upload until their lifecycle contracts are ported |
 | Mailbox roles/counts/hierarchy and selection | Ported Mailbox/get, names/roles/total/unread and selection (up to 256). Deferred hierarchy/tree composition; flat labelled choices retain unique IDs |
 | Paged message list, total, sort/query/search and stale-response fencing | Ported 200-row pages, total, receivedAt descending, explicit refresh/previous/next, busy/generation ownership and exact query/get ID matching/order. Deferred custom sort/search, live push and paginated cross-page selection until authoritative update policy |
-| Open headers/plain text body | Ported listed-ID Email/get and full bounded text (64 KiB); truncated/invalid parts refused. UI excerpt 600 characters with notice, full text via email.message. Deferred rich full-body reader layout/scrolling |
+| Open headers/plain text body | Ported listed-ID Email/get and full bounded text (64 KiB); truncated/invalid parts refused. Native read-only scrollable editor and full text via email.message. Header labels are excerpts; rich reader/layout remains deferred |
 | Compose To/subject/body and explicit send/outcome/uncertainty | Ported native in-memory editor, 1..32 bare ASCII recipients, duplicate/header validation, explicit configured Bus route, accepted receipt, same-ID manual retry and held draft. No automatic retry. Deferred full RFC address parser and durable restart reconciliation |
 | MIME upload, Email/set, submission, Sent filing and partial-failure receipt | Ported existing maild.submit pipeline/receipt; maild owns MIME/Sent/delivery. Deferred client attachment uploads and direct JMAP mutation recipe; no duplicate submission implementation |
 | Separate composers, identities/signatures, Cc/Bcc/Reply-To, suggestions and reply/all/forward/quoting | Deferred richer compose after core |
@@ -72,6 +72,9 @@ The shared worker now enables Tokio I/O as well as timers. No app-specific
 Rust or JMAP handler was added. Existing workspace reqwest 0.12.28 with
 json/rustls-tls is reused; only the viu lockfile dependency edge changes,
 with no new package/version/C build dependency. Embedded lib-mix is untouched.
+The existing reusable editor gains a read_only flag: immutable text buffer,
+selection/copy, bounded scroll height and no edit actions. This serves any
+plain-text viewer; Email-specific reader policy stays in Mix.
 
 Initial private nested/headless witness at `248958af0d3551dfd3b27c647127e1fff444975e`
 passed against actual pinned maild: CLI-created temporary account, seeded local
