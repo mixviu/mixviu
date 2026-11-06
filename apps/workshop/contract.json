@@ -1,1 +1,30 @@
-{"host":{"service":"workshop","title":"Workshop — Mix on Viu","size":[1100,860],"commands":["workshop.ping","workshop.info","workshop.refresh","workshop.select","workshop.body","workshop.call","workshop.filter","workshop.intent"]}}
+{
+  "host": {
+    "commands": [
+      "workshop.ping",
+      "workshop.info",
+      "workshop.refresh",
+      "workshop.select",
+      "workshop.body",
+      "workshop.call",
+      "workshop.filter",
+      "workshop.intent",
+      "viu.frame.close",
+      "viu.frame.intent",
+      "workshop.actions",
+      "workshop.execute",
+      "workshop.theme",
+      "workshop.dialog"
+    ],
+    "frame": "gold",
+    "native_debug": true,
+    "native_macros": true,
+    "native_ui": true,
+    "service": "workshop",
+    "size": [
+      1100,
+      760
+    ],
+    "title": "Workshop"
+  }
+}

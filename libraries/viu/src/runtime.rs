@@ -194,7 +194,9 @@ impl Runtime {
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
                         eval.set_capability_policy(Rc::new(WorkerPolicy));
                         eval.set_interrupt_flag(worker_interrupt.clone());
-                        eval.set_limits(mix::EvalLimits { time_limit: Some(deadline), max_string_len: Some(1_048_576), max_list_len: Some(65_536), max_map_len: Some(65_536), ..Default::default() });
+                        // A bounded one-megabyte text reply can expand sixfold
+                        // when its control characters cross the JSON boundary.
+                        eval.set_limits(mix::EvalLimits { time_limit: Some(deadline), max_string_len: Some(16_777_216), max_list_len: Some(65_536), max_map_len: Some(65_536), ..Default::default() });
                         eval.set_entry_script(&program.path.to_string_lossy());
                         eval.set_file(program.path.to_string_lossy().to_string());
                         eval.set_bus_handler(local.clone());

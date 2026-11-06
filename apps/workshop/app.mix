@@ -1,8 +1,86 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
-$core=require("core.mix");$state=$core.initial();$ctx=viu_context()
+$core=require("core.mix");$frame=require("frame.mix");$text=require("text.mix");$state=$core.initial();$ctx=viu_context()
 fn publish_workshop($s)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.project($s)}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$frame.project($s,$core.project($s))}
+end
+
+fn theme_workshop($s,$args)
+  $theme=require("theme.mix");$edit=$theme.theme_edit($s.theme_choice,$args)
+  if not $edit.ok then return {state:$s,rc:10,body:{error_code:"ARGUMENT",message:$edit.message}} end
+  send "viu-local" "native.theme" body=$edit.choice
+  if $rc!=0 then return {state:$s,rc:$rc,body:$reply} end
+  $s.theme_choice=$edit.choice;$s.theme_effective=$reply
+  $body=$edit.choice;$body.effective=$reply
+  return {state:$s,rc:0,body:$body}
+end
+fn execute_workshop($s,$id,$origin)
+  $found=filter($frame.registry($s),fn($a)=$a.id==$id)
+  if len($found)==0 then return {state:$s,rc:10,body:{error_code:"UNKNOWN_ACTION",message:"Unknown Workshop command"}} end
+  if not $found[0].enabled then return {state:$s,rc:10,body:{error_code:"DISABLED",message:"That command is not available right now"}} end
+  if $id=="file.refresh" then $s=start_workshop($s,"discover",{})
+  elif $id=="file.quit" then $s.quitting=true;$s.window_close=not $s.busy and $origin!="bus"
+  elif $id=="edit.format" then $out=$text.format_body($s.body);$s.body=$out.body;if not $out.ok then $s.status=$out.status end
+  elif $id=="edit.clear" then $s.body=""
+  elif $id=="edit.copy" then send "viu-local" "native.copy" body={text:$s.answer}
+  elif $id=="bus.call" then $s=start_workshop($s,"call",$core.call_payload($s))
+  elif $id=="help.macros" then $s.macros_open=not $s.macros_open
+  elif $id=="view.search" then $s.focus_serial=$s.focus_serial+1
+  elif $id=="help.about" then $s.dialog="about"
+  elif $id=="help.shortcuts" then $s.dialog="shortcuts"
+  elif $id=="view.traffic" then $s.dock_open=not $s.dock_open
+  elif starts_with($id,"view.traffic.") then $parts=split($id,".");$s.dock_side=$parts[2]
+  else
+    $axis=if starts_with($id,"view.theme.") then "scheme" elif starts_with($id,"view.style.") then "style" elif starts_with($id,"view.decorations.") then "decorations" elif starts_with($id,"view.captions.") then "caption_side" else "mode" end
+    $parts=split($id,".");$value=$parts[len($parts)-1]
+    if $id=="view.mode" then $value=if ($s.theme_effective.mode ?? "dark")=="dark" then "light" else "dark" end end
+    $edit={};$edit[$axis]=if $value=="session" then nil else $value end
+    $out=theme_workshop($s,$edit);$s=$out.state
+    if $out.rc!=0 then return $out end
+  end
+  send "viu-local" "native.executed" body={id:$id,origin:$origin,params:nil,result:nil}
+  return {state:$s,rc:0,body:{executed:$id}}
+end
+on viu.frame.intent
+  $out=execute_workshop($state,$event.args.value.command,$event.args.value.origin ?? "ui");$state=$out.state
+  publish_workshop($state);reply($out.rc,json_encode($out.body))
+end
+on viu.frame.close
+  $state.quitting=true;$state.window_close=not $state.busy;publish_workshop($state)
+end
+on workshop.actions
+  reply(0,json_encode({actions:$frame.registry($state)}))
+end
+on workshop.execute
+  $out=execute_workshop($state,$event.args.id,"bus");$state=$out.state;publish_workshop($state);reply($out.rc,json_encode($out.body))
+end
+on workshop.theme
+  $out=theme_workshop($state,$event.args);$state=$out.state;publish_workshop($state);reply($out.rc,json_encode($out.body))
+end
+on workshop.dialog
+  if not contains(keys($event.args),"open") or ($event.args.open!=nil and not contains(["about","shortcuts"],$event.args.open)) then reply(10,json_encode({error_code:"ARGUMENT",message:"open must be about, shortcuts or null"}));return end
+  if $event.args.open!=nil and ($state.dialog!=nil or $state.quitting) then reply(10,json_encode({error_code:"BUSY",message:"Not now: a dialog is open"}));return end
+  $state.dialog=$event.args.open;publish_workshop($state);reply(0,json_encode({dialog:$state.dialog}))
+end
+on workshop.dialog.intent
+  if $event.args.value.instance==$state.dialog then $state.dialog=nil;publish_workshop($state) end
+end
+on viu.theme.changed
+  $state.theme_effective=$event.args;publish_workshop($state)
+end
+on viu.macros.changed
+  $state.macros_open=$event.args.open;publish_workshop($state)
+end
+on viu.keymap.changed
+  $actions=require("actions.mix")
+  send "viu-local" "native.bindings" body={defaults:$actions.defaults(),overrides:$event.args}
+  if $rc==0 then $state.bindings=$reply.bindings;publish_workshop($state) end
+end
+on bus.connected
+  $state.connected=true;$state.status="Connected";publish_workshop($state)
+end
+on bus.disconnected
+  $state.connected=false;$state.status="Disconnected — requests are never replayed";publish_workshop($state)
 end
 fn start_workshop($s,$op,$payload)
   if $s.busy then raise("BUSY","Wait for the pending operation") end
@@ -61,7 +139,7 @@ on workshop.intent
     elif $a.id=="command" then $state=select_command($state,$a.value)
     elif $a.id=="body" then $state.body=$core.body_text($a.value)
     elif $a.id=="clear" then $state.body=""
-    elif $a.id=="format" then $state.body=$core.body_text(json_encode(json_parse($state.body)))
+    elif $a.id=="format" then $out=$text.format_body($state.body);$state.body=$out.body;if not $out.ok then $state.status=$out.status end
     elif $a.id=="call" then $state=start_workshop($state,"call",$core.call_payload($state))
     else raise("INTENT","Unknown Workshop intent") end
   end
@@ -77,8 +155,8 @@ on viu.job.completed
       elif $op=="describe" then
         $state.commands=$d.body;$state.command=if len($d.body)>0 then $d.body[0].name else "" end;$state.status="Commands discovered: "..$state.service
       else
-        $r=$d.body;$state.answer="rc "..to_string($r.peer_rc).." · "..if $r.truncated then "truncated display\n" else "reply\n" end..$r.text
-        $state.status="Call completed · rc "..to_string($r.peer_rc)
+        $r=$d.body;$state.answer=$text.render($state.pending.payload.service,$state.pending.payload.command,$r);$state.last_reply=$r
+        $state.status="Connected"
       end
     else
       $state.status=if $op=="call" then "Call failed; delivery may have occurred. No retry: " else "Discovery failed: " end..substr(json_encode($d.body),0,500)

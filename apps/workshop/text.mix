@@ -1,0 +1,29 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pinned gold inspector/model.rs: formatting and UTF-8 byte boundaries.
+fn pretty($body)
+  if byte_length($body)>1000000 then return $body end
+  try return json_encode(json_parse($body),true) catch $message return $body end
+end
+fn bounded($body)
+  if byte_length($body)<=1000000 then return $body end
+  $lo=0;$hi=min(len($body),1000000)
+  while $lo<$hi
+    $mid=ceil(($lo+$hi)/2)
+    if byte_length(substr($body,0,$mid))<=1000000 then $lo=$mid else $hi=$mid-1 end
+  end
+  return substr($body,0,$lo).."\n[Reply truncated at 1,000,000 bytes]"
+end
+fn format_body($body)
+  if byte_length($body)>65536 then return {ok:false,body:$body,status:"JSON body exceeds 65,536 bytes; edit refused"} end
+  try
+    if trim($body)!="" then $parsed=json_parse($body) end
+    $formatted=pretty($body)
+    if byte_length($formatted)>65536 then return {ok:false,body:$body,status:"JSON body exceeds 65,536 bytes; edit refused"} end
+    return {ok:true,body:$formatted}
+  catch $message
+    return {ok:false,body:$body,status:"Invalid JSON; no call sent: "..$message}
+  end
+end
+fn render($service,$command,$reply)
+  return bounded($service.."  "..$command.."\nReturn code = "..to_string($reply.rc).."\n\n"..pretty($reply.body))
+end

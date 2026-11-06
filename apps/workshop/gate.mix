@@ -1,0 +1,15 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run only under CBC. Return worker changes before clearing our own diff.
+$code=0
+try
+  if contains(args(),"--prepare") then print(run_argv_must(["cargo","fmt","-p","viu"])) end
+  for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--test","workshop_frame","--test","ports_round4"],["cargo","test","--locked","-p","viu","--lib","native_bus::tests"]]
+    print({argv:$argv})
+    $r=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}});print($r)
+    if not $r.ok then $code=$r.exit_code ?? 124;break end
+  end
+finally
+  print("WORKSHOP_PATCH_BEGIN");print(run_argv_must(["git","diff","--binary"]));print("WORKSHOP_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+end
+exit($code)

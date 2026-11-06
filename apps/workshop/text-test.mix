@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$t=require("text.mix")
+fn check($ok,$message) if not $ok then raise("TEXT_TEST",$message) end end
+check($t.pretty('{"z":[1,2],"a":true}')=="{\n  \"a\": true,\n  \"z\": [\n    1,\n    2\n  ]\n}","gold indentation and sorted keys")
+for $v in ["", "  ", "plain error\nnext line", "{broken"]
+  check($t.pretty($v)==$v,"non-JSON reply preserved")
+end
+check($t.format_body("").body=="","blank Format")
+check(not $t.format_body("{broken").ok,"invalid JSON refused")
+check(not $t.format_body(repeat(" ",65537)).ok,"oversized Format refused")
+$small='{"a":['..join(map(range(1,16000),fn($i)="0"),",")..']}'
+$out=$t.format_body($small)
+check(not $out.ok and $out.body==$small,"pretty expansion over BODY_LIMIT preserves original")
+for $char in ["x","é","🦀"]
+  $body=repeat($char,1000000/byte_length($char))
+  check($t.bounded($body)==$body,"exact byte boundary")
+  $out=$t.bounded($body..$char)
+  check($out==$body.."\n[Reply truncated at 1,000,000 bytes]","UTF-8 truncation")
+end
+$body=repeat("x",999999).."🦀"
+check($t.bounded($body)==repeat("x",999999).."\n[Reply truncated at 1,000,000 bytes]","partial codepoint removed")
+check($t.render("echo","echo.call",{rc:17,body:"permission denied\n"})=="echo  echo.call\nReturn code = 17\n\npermission denied\n","headers, rc and plain error")
+print("Workshop gold text contracts PASS")

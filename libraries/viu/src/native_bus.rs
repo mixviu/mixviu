@@ -349,7 +349,7 @@ impl Bridge {
         let body = if header_route {
             if let Some(map) = args.as_object() {
                 for (key, value) in map {
-                    if key != "body" && key != "timeout" && !value.is_null() {
+                    if key != "body" && key != "timeout" && key != "reply_mode" && !value.is_null() {
                         headers.insert(
                             key.clone(),
                             value
@@ -379,6 +379,7 @@ impl Bridge {
         args: &MixValue,
     ) -> MixResult<(i32, MixValue, MixValue)> {
         let native = self.native()?;
+        let raw = crate::runtime::to_json(args)?["reply_mode"] == "raw";
         let timeout = crate::runtime::to_json(args)?["timeout"]
             .as_f64()
             .unwrap_or(10.0);
@@ -396,6 +397,9 @@ impl Bridge {
             )
             .await
             .map_err(failure)?;
+        if raw {
+            return raw_reply_parts(rc, body, error);
+        }
         reply_parts(rc, body, error, header_route)
     }
 }
@@ -465,6 +469,11 @@ impl BusHandler for Bridge {
 // Keep Mix's established result/reply distinction and exact peer rc. Header
 // routing preserves structured refusals; JSON-body RPC preserves its message
 // result. Both retain every parsed field in $reply, including JSON strings.
+fn raw_reply_parts(rc: u8, body: String, error: Option<String>) -> MixResult<(i32, MixValue, MixValue)> {
+    let envelope = crate::runtime::from_json(json!({"rc":rc,"body":body,"error":error}))?;
+    Ok((i32::from(rc), envelope.clone(), envelope))
+}
+
 fn reply_parts(
     rc: u8,
     body: String,
@@ -524,6 +533,22 @@ fn reply_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn raw_reply_envelope_preserves_whitespace_and_error_separately() {
+        for body in [" { \"x\" : 1 } \n", "permission denied\n", "", "\"text\""] {
+            let (rc, result, reply) = raw_reply_parts(17, body.into(), Some("refused".into())).unwrap();
+            assert_eq!(rc, 17);
+            let value = crate::runtime::to_json(&reply).unwrap();
+            assert_eq!(value, json!({"rc":17,"body":body,"error":"refused"}));
+            assert_eq!(crate::runtime::to_json(&result).unwrap(), value);
+        }
+        let args = crate::runtime::from_json(json!({"body":"{}","reply_mode":"raw","timeout":30})).unwrap();
+        let (headers, body, route) = Bridge::payload("echo", &args).unwrap();
+        assert!(route);
+        assert_eq!(body, "{}");
+        assert!(!headers.contains_key("reply_mode"));
+        assert!(!headers.contains_key("timeout"));
+    }
     #[test]
     fn native_reply_routes_preserve_structured_refusals_and_scalar_bodies() {
         let body = json!({"error_code":"INVALID_NAME","message":"try another name","retry":true})

@@ -1,0 +1,19 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$gold=require("../../libraries/viu/mix/gold-frame.mix")
+$actions=require("actions.mix");$menus=require("menus.mix")
+fn registry($s) return $actions.registry($s) end
+fn project($s,$model)
+  $all=registry($s);$toolbar=[]
+  for $pair in [["file.refresh","refresh-cw"],["help.macros","scroll-text"],["view.search","search"],["help.shortcuts","keyboard"],["view.mode",if ($s.theme_effective.mode ?? "dark")=="dark" then "sun" else "moon" end]]
+    $a=filter($all,fn($a)=$a.id==$pair[0])[0];$a.icon=$pair[1];$a.icon_only=true;push($toolbar,$a)
+  end
+  $model.window_close=$s.window_close;$model.macros_open=$s.macros_open
+  $model.native_focus=if $s.focus_serial>0 then {id:"filter",serial:$s.focus_serial} else nil end
+  $model.shortcuts=$all;$model.native_overlays=[]
+  if $s.dialog!=nil then
+    $d={id:"workshop-dialog",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Workshop" else "Keyboard shortcuts" end,body:"Browse native ABP services, inspect command descriptions and mesh membership, and send a JSON body once. Replies retain their return code and plain-text errors.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
+    if $s.dialog=="shortcuts" then $d.initial.grid=filter($all,fn($a)=$a.shortcut!=nil) end
+    $model.native_overlays=[{definition:$d,command:"workshop.dialog.intent"}]
+  end
+  return $gold.apply($model,{icon:"server",title:"Workshop",native_title:"Workshop",menus:$menus.menus($s),toolbar:$toolbar,status:{left:$s.status,icon:if $s.connected then "plug" else "unplug" end,error:not $s.connected,right:[]},appearance:$s.theme_choice})
+end
