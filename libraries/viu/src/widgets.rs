@@ -519,11 +519,13 @@ impl Widgets {
                     .id_salt((id, "read-only"))
                     .max_height(height)
                     .show(ui, |ui| {
-                        ui.add(egui::TextEdit::multiline(&mut text)
-                            .code_editor()
-                            .desired_rows(rows as usize)
-                            .desired_width(ui.available_width())
-                            .id_salt(id))
+                        ui.add(
+                            egui::TextEdit::multiline(&mut text)
+                                .code_editor()
+                                .desired_rows(rows as usize)
+                                .desired_width(ui.available_width())
+                                .id_salt(id),
+                        )
                     });
                 let mut response = output.inner;
                 response.rect = response.rect.intersect(output.inner_rect);
