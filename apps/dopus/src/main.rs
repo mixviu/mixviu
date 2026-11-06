@@ -230,7 +230,11 @@ impl App {
             || (command == "dopus.intent"
                 && ["menu", "toolbar"].iter().any(|id| args["id"] == *id)
                 && args["value"]["command"] == "app.quit");
-        let ui_call = reply.is_none() && self.input_wait && command != "dopus.persist";
+        // Only callbacks emitted by this native gesture belong to its fence.
+        // Profile/job notices can arrive while a gesture is being consumed.
+        let ui_call = reply.is_none()
+            && self.input_wait
+            && matches!(command.as_str(), "dopus.intent" | "dopus.execute" | "dopus.quit");
         let human_close = reply.is_none() && quit;
         if !matches!(
             command.as_str(),
@@ -1133,7 +1137,7 @@ impl eframe::App for App {
                 }
                 ctx.request_repaint();
             } else if self.input_wait
-                && self.inflight.is_empty()
+                && self.ui_sequences.is_empty()
                 && !self.panel.pending()
                 && !self
                     .view
