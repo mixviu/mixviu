@@ -7,6 +7,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+smithay-client-toolkit = "=0.19.2"
+wayland-backend = { version = "=0.3.17", features = ["client_system"] }
+xkbcommon = { version = "0.7", default-features = false }
+futures = "0.3"
+wgpu = { version = "30.0", default-features = false, features = ["std", "vulkan", "gles", "wgsl"] }
+egui-wgpu = { version = "=0.37.0", default-features = false }
 raw-window-handle = "=0.6.2"
 wayland-client = { version = "=0.31.15", default-features = false }
 files = { path = "../files" }
@@ -19,7 +25,7 @@ bus = { path = "../bus", features = ["native"] }
 egui_extras = { version = "=0.37.0", default-features = false, features = ["svg"] }
 mix = { path = "../mix", features = ["regex", "tokio-sleep", "json", "datetime", "mime"] }
 thumbs.workspace = true
-image = { version = "=0.25.10", default-features = false, features = ["png"] }
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
 png = "=0.18.1"
 unicode-segmentation = "=1.13.3"
 scene = { path = "../scene" }
