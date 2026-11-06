@@ -595,7 +595,10 @@ impl Widgets {
                 } else if widget.properties["align"] == "right" {
                     label = label.halign(egui::Align::Max);
                 }
-                if matches!(widget.properties["role"].as_str(), Some("title" | "status" | "status-band")) {
+                if matches!(
+                    widget.properties["role"].as_str(),
+                    Some("title" | "status" | "status-band")
+                ) {
                     ui.allocate_ui_with_layout(
                         ui.available_size_before_wrap(),
                         egui::Layout::left_to_right(egui::Align::Center),
@@ -663,24 +666,30 @@ impl Widgets {
                 }
                 let rows = whole(&widget.properties["rows"]).unwrap_or(24) as usize;
                 let r = if widget.kind == "field" && widget.properties["search"] == true {
-                    toolkit::field::search(ui, &mut text, widget.text("placeholder"), ui.available_width())
+                    toolkit::field::search(
+                        ui,
+                        &mut text,
+                        widget.text("placeholder"),
+                        ui.available_width(),
+                    )
                 } else {
-                let edit = if widget.kind == "field" {
-                    egui::TextEdit::singleline(&mut text)
-                } else if widget.kind == "editor" {
-                    egui::TextEdit::multiline(&mut text)
-                        .code_editor()
-                        .desired_rows(rows)
-                        .char_limit(16384)
-                } else {
-                    egui::TextEdit::multiline(&mut text).desired_rows(1)
+                    let edit = if widget.kind == "field" {
+                        egui::TextEdit::singleline(&mut text)
+                    } else if widget.kind == "editor" {
+                        egui::TextEdit::multiline(&mut text)
+                            .code_editor()
+                            .desired_rows(rows)
+                            .char_limit(16384)
+                    } else {
+                        egui::TextEdit::multiline(&mut text).desired_rows(1)
+                    };
+                    ui.add(
+                        edit.desired_width(ui.available_width())
+                            .hint_text(widget.text("placeholder"))
+                            .password(widget.properties["password"] == true)
+                            .id_salt(id),
+                    )
                 };
-                ui.add(
-                    edit.desired_width(ui.available_width())
-                        .hint_text(widget.text("placeholder"))
-                        .password(widget.properties["password"] == true)
-                        .id_salt(id),
-                ) };
                 // The key which ends editing belongs to the field this frame.
                 self.text_input_active |= r.has_focus()
                     || (r.lost_focus()
@@ -724,9 +733,13 @@ impl Widgets {
                 } else {
                     if widget.properties["style"] == "selectable" {
                         let response = toolkit::selectable(ui, checked, widget.text("text"));
-                        if response.clicked() { checked = !checked; }
+                        if response.clicked() {
+                            checked = !checked;
+                        }
                         response
-                    } else { ui.toggle_value(&mut checked, widget.text("text")) }
+                    } else {
+                        ui.toggle_value(&mut checked, widget.text("text"))
+                    }
                 };
                 if r.changed() || r.clicked() {
                     changed = Some(json!(checked));
@@ -801,10 +814,15 @@ impl Widgets {
             ),
             "combo" => {
                 let choices = widget.choices();
-                let mut selected = choices.iter().position(|option| value == *option).unwrap_or(0);
+                let mut selected = choices
+                    .iter()
+                    .position(|option| value == *option)
+                    .unwrap_or(0);
                 let width = widget.properties["width"].as_f64().map(|v| v as f32);
                 let r = toolkit::combo::show(ui, id, &mut selected, &choices, width);
-                if r.changed() { changed = choices.get(selected).map(|v| json!(v)); }
+                if r.changed() {
+                    changed = choices.get(selected).map(|v| json!(v));
+                }
                 r
             }
             "list" | "table" | "tree" => {
