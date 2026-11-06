@@ -3,6 +3,7 @@
 -- lint: globals app_launch app_args
 $controller=require("controller.mix");$model=require("model.mix");$frame=require("frame.mix");$presentation=require("presentation.mix");$discovery=require("discovery.mix");$work=require("work.mix");$counter=require("counter.mix")
 $saved=require("saved.mix")
+$agent_ui=require("agent-ui.mix")
 $state=$model.initial();$ctx=viu_context();$state.mesh.observer=$ctx.citizen
 try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$launcher.plan($app_args) end
 $state.comp=$launch.comp ?? env("MIXOS_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
@@ -134,7 +135,7 @@ on workshop.intent
     elif $a.action=="edge" then $state.traffic_filter=$a.value.id;$state.dock_open=true
     elif $a.action=="node" then $state.row_key="node:"..$a.value;$state.selection=nil;$state.macro_selected=nil end
   elif $a.id=="mesh-ping" or $a.id=="mesh-start" then $out=$controller.execute($state,if $a.id=="mesh-ping" then "mesh.ping" else "bus.observe" end,"ui");$state=$out.state
-  elif starts_with($a.id,"agent-") then $agent_ui=require("agent-ui.mix");$state=$agent_ui.intent($state,$a,$event.headers)
+  elif starts_with($a.id,"agent-") then $state=$agent_ui.intent($state,$a,$event.headers)
   elif $a.id=="macro-source" then
     if byte_length($a.value)<=262144 then
       $state.macro_draft=$a.value

@@ -6,7 +6,13 @@ use egui::{Rect, Ui, Vec2};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-pub const KINDS: &[&str] = &["block-list", "form-grid", "cell-grid", "history-lines", "label-run"];
+pub const KINDS: &[&str] = &[
+    "block-list",
+    "form-grid",
+    "cell-grid",
+    "history-lines",
+    "label-run",
+];
 fn text<'a>(v: &'a Value, key: &str) -> &'a str {
     v[key].as_str().unwrap_or("")
 }
@@ -144,20 +150,22 @@ pub fn draw(
 ) -> egui::Response {
     let id = &widget.id;
     if widget.kind == "label-run" {
-        return ui.horizontal_wrapped(|ui| {
-            let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
-            for (index, row) in value.as_array().into_iter().flatten().enumerate() {
-                let label = styled(row, text(row, "text"));
-                let response = match text(row, "hue") {
-                    "accent" => ui.colored_label(palette.accent, label),
-                    "warning" => ui.colored_label(palette.warning, label),
-                    "danger" => ui.colored_label(palette.danger, label),
-                    "dim" => ui.colored_label(palette.text_dim, label),
-                    _ => ui.label(label),
-                };
-                geometry.insert(format!("{id}.{index}"), response.rect);
-            }
-        }).response;
+        return ui
+            .horizontal_wrapped(|ui| {
+                let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
+                for (index, row) in value.as_array().into_iter().flatten().enumerate() {
+                    let label = styled(row, text(row, "text"));
+                    let response = match text(row, "hue") {
+                        "accent" => ui.colored_label(palette.accent, label),
+                        "warning" => ui.colored_label(palette.warning, label),
+                        "danger" => ui.colored_label(palette.danger, label),
+                        "dim" => ui.colored_label(palette.text_dim, label),
+                        _ => ui.label(label),
+                    };
+                    geometry.insert(format!("{id}.{index}"), response.rect);
+                }
+            })
+            .response;
     }
     if widget.kind == "history-lines" {
         use toolkit::graph::{self, Hue, Readout};
@@ -335,7 +343,11 @@ pub fn draw(
                     * ui.text_style_height(&egui::TextStyle::Body))
             .max(60.)
         });
-    let scroll = if widget.properties["scroll_both"] == true { egui::ScrollArea::both() } else { egui::ScrollArea::vertical() };
+    let scroll = if widget.properties["scroll_both"] == true {
+        egui::ScrollArea::both()
+    } else {
+        egui::ScrollArea::vertical()
+    };
     let rect = scroll
         .id_salt((id, widget.properties["document"].as_str().unwrap_or("")))
         .auto_shrink([false, false])
