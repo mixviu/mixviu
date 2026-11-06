@@ -79,3 +79,84 @@ fmt/check/test/clippy/build sequence with a returned formatting diff;
 Worker formatting and lock patches were applied locally. The final
 exact-source gate, native functional/Bus/Prefs matrix and further matched
 captures remain required under `parity-method.md`.
+
+## Prefs round three: complete native page pair and first visual acceptance
+
+Tested source `8297a5c474679b4e4049dde11d2d4e4ed9a6f388`, candidate
+SHA256 `dd34591e59f1c6b72bbe57b434020db9ae82c764618324f78c4cfe81a79f9827`.
+Pinned gold is `8779f33284b7d3f1178c3d57a699efb9b0867b22`, installed
+Prefs 0.1.2, binary SHA256
+`18590ca486b4b417b9de5a762f2dcf31b6b13d2351bb3eddd46d66e783fe3c55`.
+Private evidence `prefs-parity-20261107/pair.QUy9dU` contains all 42 paired
+1040×680 client captures, 17 accepted live variants on each unchanged PID,
+the invalid tune refusal and verified cleanup of all five owned processes.
+Gold ran first against the same private settingsd/Bus/headless compositor;
+scale 1, Studio Dark, comfortable, CSD/right captions/bar/row actions.
+
+Native HELP (55 commands), app.describe, actions, pages, full menu and all
+four tested open paths are structurally identical. The preceding successful
+`pair.PC3WBd` also confirms all 42 page replies after normalising only the
+sequential accepted store revision. Full mutation/topic/native-input and
+authority restart acceptance are still open.
+
+ImageMagick 7.1.2-35 uses SSIM distortion (zero identical). Every header and
+sidebar region is pixel-identical. Original pairs, side-by-side figures and
+the zero-difference contact sheet were inspected for the 20 accepted pages.
+Ced's remaining 16×14 slider-edge residue is retained as open, with full
+distortion 0.00000000184564; it is not silently passed by a threshold.
+All remaining page figures are retained under `diff-<page>`.
+| Page | Full SSIM distortion | Content SSIM distortion | Verdict |
+| --- | ---: | ---: | --- |
+| network | 0.000507405 | 0.000500839 | open |
+| vpn | 0 | 0 | accepted |
+| wifi | 0.00538869 | 0.00797843 | open |
+| wired | 0 | 0 | accepted |
+| bluetooth | 0 | 0 | accepted |
+| accessibility | 0.000317218 | 0.000469669 | open |
+| magnifier | 0.00523187 | 0.00774624 | open |
+| osk | 0 | 0 | accepted |
+| desktop | 0.00101478 | 0.00100165 | open |
+| wallpaper | 0.0380345 | 0.0563134 | open |
+| appearance | 0.000260795 | 0.00038613 | open |
+| panel | 0.000124565 | 0.00018443 | open |
+| panel_applets | 0 | 0 | accepted |
+| dock | 0.000136277 | 0.00020177 | open |
+| dock_applets | 0 | 0 | accepted |
+| window_management | 0.000353627 | 0.000523576 | open |
+| workspaces | 0.00880702 | 0.0130396 | open |
+| displays | 0 | 0 | accepted |
+| sound | 0 | 0 | accepted |
+| sound_applications | 0 | 0 | accepted |
+| sound_profiles | 0 | 0 | accepted |
+| power | 0.0488153 | 0.0722754 | open |
+| input | 0.000676554 | 0.000667799 | open |
+| keyboard | 0.000498594 | 0.000738212 | open |
+| keyboard_shortcuts | 0 | 0 | accepted |
+| mouse | 0 | 0 | accepted |
+| tablet | 0 | 0 | accepted |
+| touchpad | 0 | 0 | accepted |
+| applications | 0.00101478 | 0.00100165 | open |
+| default_apps | 0 | 0 | accepted |
+| startup_apps | 0 | 0 | accepted |
+| x11 | 0 | 0 | accepted |
+| term | 0.000197217 | 0.000291998 | open |
+| email | 0.0155522 | 0.0230263 | open |
+| ced | 0.00000000184564 | 0.00000000273264 | open |
+| time | 0.000338261 | 0.000333884 | open |
+| date_time | 0 | 0 | accepted |
+| region | 0.00634753 | 0.00939807 | open |
+| system | 0.000507405 | 0.000500839 | open |
+| users | 0 | 0 | accepted |
+| about | 0 | 0 | accepted |
+| software | 0.031198 | 0.0461913 | open |
+
+The next repair source `e476df87b84fc90c3a5233e84dc2c1af2c98b39a`
+matches gold's authored theme-install trigger, live/empty Wi-Fi controls,
+radio alignment, empty ordered-list separators, searchable append drawers,
+child-link alignment and native Software/Email composition. CBC jobs
+`20261107-044205-93245db2-a1`, `20261107-045001-4c23a9e7-a1` and
+`20261107-045438-a29b5928-a1` passed all 15 scoped widget/Prefs tests and
+the native build, returning formatting now applied. Complete saved logs
+were read. The typo checkout queue job `20261107-044157-09b52b69` did not
+run (rc75); it was requeued correctly, not counted as a failed test.
+The full exact-source app gate remains required. No deviation is proposed.

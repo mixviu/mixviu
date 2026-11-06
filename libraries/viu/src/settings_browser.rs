@@ -593,16 +593,43 @@ pub(crate) fn draw(
                         .rev()
                     {
                         if extra["link"] == true {
-                            let ink = if extra["enabled"] == true {look.accent} else {look.accent.gamma_multiply(0.5)};
-                            let galley=ui.painter().layout_no_wrap(text(extra,"label").into(),egui::FontId::proportional(14.0),ink);
-                            let (rect,response)=ui.allocate_exact_size(vec2(galley.size().x+20.0,24.0),Sense::hover());
-                            ui.painter().galley(pos2(rect.left(),rect.center().y-galley.size().y/2.0),galley,ink);
-                            toolkit::button::paint_icon(ui,toolkit::Icon::MoveUpRight,pos2(rect.right()-8.0,rect.center().y),16.0,ink);
-                            response.widget_info(||egui::WidgetInfo::labeled(egui::Role::Link,extra["enabled"]==true,text(extra,"label")));
+                            let ink = if extra["enabled"] == true {
+                                look.accent
                             } else {
+                                look.accent.gamma_multiply(0.5)
+                            };
+                            let galley = ui.painter().layout_no_wrap(
+                                text(extra, "label").into(),
+                                egui::FontId::proportional(14.0),
+                                ink,
+                            );
+                            let (rect, response) = ui.allocate_exact_size(
+                                vec2(galley.size().x + 20.0, 24.0),
+                                Sense::hover(),
+                            );
+                            ui.painter().galley(
+                                pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
+                                galley,
+                                ink,
+                            );
+                            toolkit::button::paint_icon(
+                                ui,
+                                toolkit::Icon::MoveUpRight,
+                                pos2(rect.right() - 8.0, rect.center().y),
+                                16.0,
+                                ink,
+                            );
+                            response.widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::Role::Link,
+                                    extra["enabled"] == true,
+                                    text(extra, "label"),
+                                )
+                            });
+                        } else {
                             ui.add_enabled_ui(extra["enabled"] == true, |ui| {
                                 standard_button(ui, text(extra, "label"), &look);
-                        });
+                            });
                         }
                     }
                 },
@@ -610,102 +637,106 @@ pub(crate) fn draw(
         }
         body.add_space(look.m);
         if value["scroll_content"] == false {
-            cards(&mut body,id,&value["sections"],&look,geometry,events);
-        } else {egui::ScrollArea::vertical()
-            .id_salt((id, "page", text(value, "page")))
-            .auto_shrink([false, false])
-            .show(&mut body, |ui| {
-                ui.set_width(width);
-                if let Some(notice) = value["notice"].as_str().filter(|s| !s.is_empty()) {
-                    browser_notice(ui, &look, notice);
-                }
-                if value["pending"].is_object() {
-                    egui::Frame::NONE
-                        .fill(look.card)
-                        .corner_radius(Look::radius(look.r_s))
-                        .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
-                        .show(ui, |ui| {
-                            ui.set_width((width - 2.0 * look.row_pad()).max(0.0));
-                            ui.set_min_height(32.0);
-                            ui.spacing_mut().item_spacing.y = 0.0;
-                            ui.vertical(|ui| {
-                                ui.label(
-                                    RichText::new(text(&value["pending"], "title"))
-                                        .size(14.0)
-                                        .color(look.text),
-                                );
-                                ui.label(
-                                    RichText::new(text(&value["pending"], "description"))
-                                        .size(12.0)
-                                        .color(look.text),
-                                );
-                            });
-                        });
-                }
-                for (index, p) in array(&value["children"]).enumerate() {
-                    if index > 0 {
-                        ui.add_space(look.s);
+            cards(&mut body, id, &value["sections"], &look, geometry, events);
+        } else {
+            egui::ScrollArea::vertical()
+                .id_salt((id, "page", text(value, "page")))
+                .auto_shrink([false, false])
+                .show(&mut body, |ui| {
+                    ui.set_width(width);
+                    if let Some(notice) = value["notice"].as_str().filter(|s| !s.is_empty()) {
+                        browser_notice(ui, &look, notice);
                     }
-                    let (rect, r) =
-                        ui.allocate_exact_size(vec2(width, 40.0 + 2.0 * look.s), Sense::click());
-                    ui.painter().rect_filled(
-                        rect,
-                        Look::radius(look.r_s),
-                        if r.hovered() {
-                            look.card_hover
-                        } else {
-                            look.card
-                        },
-                    );
-                    if let Some(glyph) = toolkit::Icon::from_name(text(p, "icon")) {
+                    if value["pending"].is_object() {
+                        egui::Frame::NONE
+                            .fill(look.card)
+                            .corner_radius(Look::radius(look.r_s))
+                            .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
+                            .show(ui, |ui| {
+                                ui.set_width((width - 2.0 * look.row_pad()).max(0.0));
+                                ui.set_min_height(32.0);
+                                ui.spacing_mut().item_spacing.y = 0.0;
+                                ui.vertical(|ui| {
+                                    ui.label(
+                                        RichText::new(text(&value["pending"], "title"))
+                                            .size(14.0)
+                                            .color(look.text),
+                                    );
+                                    ui.label(
+                                        RichText::new(text(&value["pending"], "description"))
+                                            .size(12.0)
+                                            .color(look.text),
+                                    );
+                                });
+                            });
+                    }
+                    for (index, p) in array(&value["children"]).enumerate() {
+                        if index > 0 {
+                            ui.add_space(look.s);
+                        }
+                        let (rect, r) = ui
+                            .allocate_exact_size(vec2(width, 40.0 + 2.0 * look.s), Sense::click());
+                        ui.painter().rect_filled(
+                            rect,
+                            Look::radius(look.r_s),
+                            if r.hovered() {
+                                look.card_hover
+                            } else {
+                                look.card
+                            },
+                        );
+                        if let Some(glyph) = toolkit::Icon::from_name(text(p, "icon")) {
+                            toolkit::button::paint_icon(
+                                ui,
+                                glyph,
+                                pos2(rect.left() + look.m + 18.0, rect.center().y),
+                                20.0,
+                                look.icon,
+                            );
+                        }
+                        let x = rect.left() + look.m + 40.0;
+                        ui.painter().text(
+                            pos2(x, rect.center().y - 1.0),
+                            egui::Align2::LEFT_BOTTOM,
+                            text(p, "title"),
+                            egui::FontId::proportional(14.0),
+                            look.text,
+                        );
+                        if !text(p, "description").is_empty() {
+                            ui.painter().text(
+                                pos2(x, rect.center().y + 1.0),
+                                egui::Align2::LEFT_TOP,
+                                text(p, "description"),
+                                egui::FontId::proportional(12.0),
+                                look.text,
+                            );
+                        }
                         toolkit::button::paint_icon(
                             ui,
-                            glyph,
-                            pos2(rect.left() + look.m + 18.0, rect.center().y),
+                            toolkit::Icon::ChevronRight,
+                            pos2(rect.right() - look.m - 18.0, rect.center().y),
                             20.0,
                             look.icon,
                         );
+                        r.widget_info(|| {
+                            egui::WidgetInfo::labeled(
+                                egui::Role::Link,
+                                ui.is_enabled(),
+                                text(p, "title"),
+                            )
+                        });
+                        focus_ring(ui, &r, rect, look.r_s, &look);
+                        record(geometry, id, &format!("child.{}", text(p, "id")), &r);
+                        if r.clicked() {
+                            emit(events, id, "navigate", json!({"page":p["id"]}));
+                        }
                     }
-                    let x = rect.left() + look.m + 40.0;
-                    ui.painter().text(
-                        pos2(x, rect.center().y - 1.0),
-                        egui::Align2::LEFT_BOTTOM,
-                        text(p, "title"),
-                        egui::FontId::proportional(14.0),
-                        look.text,
-                    );
-                    if !text(p, "description").is_empty() {
-                        ui.painter().text(
-                            pos2(x, rect.center().y + 1.0),
-                            egui::Align2::LEFT_TOP,
-                            text(p, "description"),
-                            egui::FontId::proportional(12.0),
-                            look.text,
-                        );
+                    cards(ui, id, &value["sections"], &look, geometry, events);
+                    if value["end_space"] == true {
+                        ui.add_space(look.m);
                     }
-                    toolkit::button::paint_icon(
-                        ui,
-                        toolkit::Icon::ChevronRight,
-                        pos2(rect.right() - look.m - 18.0, rect.center().y),
-                        20.0,
-                        look.icon,
-                    );
-                    r.widget_info(|| {
-                        egui::WidgetInfo::labeled(
-                            egui::Role::Link,
-                            ui.is_enabled(),
-                            text(p, "title"),
-                        )
-                    });
-                    focus_ring(ui, &r, rect, look.r_s, &look);
-                    record(geometry, id, &format!("child.{}", text(p, "id")), &r);
-                    if r.clicked() {
-                        emit(events, id, "navigate", json!({"page":p["id"]}));
-                    }
-                }
-                cards(ui, id, &value["sections"], &look, geometry, events);
-                if value["end_space"] == true {ui.add_space(look.m);}
-            });}
+                });
+        }
     }
     crate::media_gallery::finish(ui, id, events);
     ui.allocate_rect(area, Sense::hover())
@@ -723,11 +754,16 @@ fn cards(
             continue;
         }
         if section["panel_group"] == true {
-            toolkit::panel::group(ui,text(section,"id"),&[text(section,"title")],|ui,_| {
-                for row in array(&section["rows"]).filter(|r|r["shown"]!=false) {
-                    draw_inline_row(ui,id,row,look,geometry,events);
-                }
-            });
+            toolkit::panel::group(
+                ui,
+                text(section, "id"),
+                &[text(section, "title")],
+                |ui, _| {
+                    for row in array(&section["rows"]).filter(|r| r["shown"] != false) {
+                        draw_inline_row(ui, id, row, look, geometry, events);
+                    }
+                },
+            );
             continue;
         }
         if section["plain"] == true {
@@ -771,7 +807,9 @@ fn cards(
         }
         if let Some(notice) = section["notice"].as_str() {
             browser_notice(ui, look, notice);
-            if array(&section["rows"]).next().is_none() {continue;}
+            if array(&section["rows"]).next().is_none() {
+                continue;
+            }
         }
         let visible: Vec<_> = array(&section["rows"])
             .filter(|r| r["shown"] != false)
@@ -798,7 +836,11 @@ fn cards(
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (index, row) in array(&section["rows"])
                     .filter(|r| r["shown"] != false)
-                    .filter(|r| r["kind"] != "ordered" || array(&r["items"]).next().is_some() || r.get("reason").unwrap_or(&r["blocked"]).is_string())
+                    .filter(|r| {
+                        r["kind"] != "ordered"
+                            || array(&r["items"]).next().is_some()
+                            || r.get("reason").unwrap_or(&r["blocked"]).is_string()
+                    })
                     .enumerate()
                 {
                     if index > 0 {
@@ -1015,20 +1057,26 @@ fn radio_rows(
                     });
                     ui.add_space(look.xs);
                     if text(choice, "description").is_empty() {
-                        ui.label(RichText::new(text(choice,"label")).size(14.0).color(look.text));
-                    } else {ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 2.0;
                         ui.label(
                             RichText::new(text(choice, "label"))
                                 .size(14.0)
                                 .color(look.text),
                         );
-                        if let Some(description) =
-                            choice["description"].as_str().filter(|s| !s.is_empty())
-                        {
-                            ui.label(RichText::new(description).size(12.0).color(look.text));
-                        }
-                    });}
+                    } else {
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.label(
+                                RichText::new(text(choice, "label"))
+                                    .size(14.0)
+                                    .color(look.text),
+                            );
+                            if let Some(description) =
+                                choice["description"].as_str().filter(|s| !s.is_empty())
+                            {
+                                ui.label(RichText::new(description).size(12.0).color(look.text));
+                            }
+                        });
+                    }
                 });
             })
             .response;
@@ -1057,10 +1105,18 @@ fn draw_row(
     events: &mut Vec<Intent>,
 ) {
     if row["kind"] == "plain-row" {
-        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(look.row_pad() as i8,4)).show(ui,|ui| {
-            ui.set_min_height(32.0);
-            ui.vertical(|ui| {ui.label(RichText::new(text(row,"title")).size(14.0).color(look.text));});
-        });
+        egui::Frame::NONE
+            .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
+            .show(ui, |ui| {
+                ui.set_min_height(32.0);
+                ui.vertical(|ui| {
+                    ui.label(
+                        RichText::new(text(row, "title"))
+                            .size(14.0)
+                            .color(look.text),
+                    );
+                });
+            });
         return;
     }
     if row["kind"] == "choice" && row["presentation"] == "radio" {
@@ -1882,10 +1938,12 @@ fn draw_inline_row(
                             }
                         });
                 } else if text(row, "kind") == "info" {
-                    if row["separator_before"] == true {toolkit::bars::hairline(ui);}
+                    if row["separator_before"] == true {
+                        toolkit::bars::hairline(ui);
+                    }
                     ui.label(RichText::new(row["value"].as_str().unwrap_or("")).weak());
-                } else if text(row,"kind")=="choice" && row["standalone"]==true {
-                    edit=inline_choices(ui,id,row,geometry);
+                } else if text(row, "kind") == "choice" && row["standalone"] == true {
+                    edit = inline_choices(ui, id, row, geometry);
                 } else if text(row, "kind") == "records" {
                     if row["split"] == true {
                         toolkit::bars::hairline(ui);
@@ -1937,19 +1995,30 @@ fn draw_inline_row(
                 } else if text(row, "kind") == "buttons" {
                     ui.horizontal_wrapped(|ui| {
                         for (index, item) in array(&row["choices"]).enumerate() {
-                            let mut button = |ui:&mut Ui| {let r = ui.add_enabled(
-                                item["enabled"] != false,
-                                if item["primary"]==true {toolkit::button::PushButton::primary(text(item,"label"))}else{toolkit::button::PushButton::secondary(text(item, "label"))},
-                            );
-                            record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
-                            if r.clicked() {
-                                edit = Some(item["value"].clone());
-                            }
+                            let mut button = |ui: &mut Ui| {
+                                let r = ui.add_enabled(
+                                    item["enabled"] != false,
+                                    if item["primary"] == true {
+                                        toolkit::button::PushButton::primary(text(item, "label"))
+                                    } else {
+                                        toolkit::button::PushButton::secondary(text(item, "label"))
+                                    },
+                                );
+                                record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
+                                if r.clicked() {
+                                    edit = Some(item["value"].clone());
+                                }
                             };
-                            if item["align"]=="right" {ui.with_layout(Layout::right_to_left(Align::Center),button);}else{button(ui);}
+                            if item["align"] == "right" {
+                                ui.with_layout(Layout::right_to_left(Align::Center), button);
+                            } else {
+                                button(ui);
+                            }
                         }
                     });
-                    if row["separator_after"]==true {toolkit::bars::hairline(ui);}
+                    if row["separator_after"] == true {
+                        toolkit::bars::hairline(ui);
+                    }
                 } else {
                     egui::Grid::new("form-row")
                         .num_columns(2)
@@ -2012,7 +2081,7 @@ fn draw_inline_row(
                                             edit = value;
                                             return;
                                         }
-                                        edit=inline_choices(ui,id,row,geometry);
+                                        edit = inline_choices(ui, id, row, geometry);
                                     }
                                     "number" => {
                                         let (r, value) = numeric(ui, id, row);
@@ -2098,17 +2167,34 @@ fn draw_inline_row(
     }
 }
 
-fn inline_choices(ui:&mut Ui,id:&str,row:&Value,geometry:&mut BTreeMap<String,Rect>)->Option<Value> {
-    let mut edited=None;
+fn inline_choices(
+    ui: &mut Ui,
+    id: &str,
+    row: &Value,
+    geometry: &mut BTreeMap<String, Rect>,
+) -> Option<Value> {
+    let mut edited = None;
     ui.horizontal_wrapped(|ui| {
-        for (index,item) in array(&row["choices"]).enumerate() {
-            let selected=item["value"]==row["value"];
-            let response=ui.add_enabled_ui(item["enabled"]!=false,|ui| {
-                if row["presentation"]=="radio" {ui.radio(selected,text(item,"label"))}
-                else {ui.add(egui::Button::selectable(selected,text(item,"label")))}
-            }).inner;
-            record(geometry,id,&format!("row.{}.choice.{index}",text(row,"id")),&response);
-            if response.clicked() {edited=Some(item["value"].clone());}
+        for (index, item) in array(&row["choices"]).enumerate() {
+            let selected = item["value"] == row["value"];
+            let response = ui
+                .add_enabled_ui(item["enabled"] != false, |ui| {
+                    if row["presentation"] == "radio" {
+                        ui.radio(selected, text(item, "label"))
+                    } else {
+                        ui.add(egui::Button::selectable(selected, text(item, "label")))
+                    }
+                })
+                .inner;
+            record(
+                geometry,
+                id,
+                &format!("row.{}.choice.{index}", text(row, "id")),
+                &response,
+            );
+            if response.clicked() {
+                edited = Some(item["value"].clone());
+            }
         }
     });
     edited
