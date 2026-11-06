@@ -2080,56 +2080,60 @@ fn draw_inline_row(
                                 && (!c["value"].is_null() || query.is_empty())
                         })
                         .collect();
-                    egui::Frame::NONE
-                        .fill(look.card)
-                        .corner_radius(Look::radius(look.r_s))
+                    egui::ScrollArea::vertical()
+                        .id_salt((id, key, "pick-scroll"))
                         .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            ui.spacing_mut().item_spacing.y = 0.0;
-                            for (position, (index, choice)) in choices.iter().enumerate() {
-                                if position > 0 {
-                                    let y = ui.cursor().top();
-                                    ui.painter().hline(
-                                        ui.min_rect().x_range(),
-                                        y,
-                                        Stroke::new(1.0, look.divider),
+                        egui::Frame::NONE
+                            .fill(look.card)
+                            .corner_radius(Look::radius(look.r_s))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.spacing_mut().item_spacing.y = 0.0;
+                                for (position, (index, choice)) in choices.iter().enumerate() {
+                                    if position > 0 {
+                                        let y = ui.cursor().top();
+                                        ui.painter().hline(
+                                            ui.min_rect().x_range(),
+                                            y,
+                                            Stroke::new(1.0, look.divider),
+                                        );
+                                        ui.add_space(1.0);
+                                    }
+                                    let (rect, r) = ui.allocate_exact_size(
+                                        vec2(ui.available_width(), 36.0),
+                                        Sense::click(),
                                     );
-                                    ui.add_space(1.0);
-                                }
-                                let (rect, r) = ui.allocate_exact_size(
-                                    vec2(ui.available_width(), 36.0),
-                                    Sense::click(),
-                                );
-                                let selected = choice["value"] == row["value"];
-                                ui.painter().text(
-                                    rect.left_center() + vec2(look.m, 0.0),
-                                    egui::Align2::LEFT_CENTER,
-                                    text(choice, "label"),
-                                    egui::FontId::proportional(14.0),
-                                    look.text,
-                                );
-                                if selected {
-                                    toolkit::button::paint_icon(
-                                        ui,
-                                        toolkit::Icon::Check,
-                                        rect.right_center() - vec2(look.m + 8.0, 0.0),
-                                        16.0,
-                                        look.accent,
-                                    );
-                                }
-                                r.widget_info(|| {
-                                    egui::WidgetInfo::selected(
-                                        egui::Role::RadioButton,
-                                        ui.is_enabled(),
-                                        selected,
+                                    let selected = choice["value"] == row["value"];
+                                    ui.painter().text(
+                                        rect.left_center() + vec2(look.m, 0.0),
+                                        egui::Align2::LEFT_CENTER,
                                         text(choice, "label"),
-                                    )
-                                });
-                                record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
-                                if r.clicked() && !selected {
-                                    edit = Some(choice["value"].clone());
+                                        egui::FontId::proportional(14.0),
+                                        look.text,
+                                    );
+                                    if selected {
+                                        toolkit::button::paint_icon(
+                                            ui,
+                                            toolkit::Icon::Check,
+                                            rect.right_center() - vec2(look.m + 8.0, 0.0),
+                                            16.0,
+                                            look.accent,
+                                        );
+                                    }
+                                    r.widget_info(|| {
+                                        egui::WidgetInfo::selected(
+                                            egui::Role::RadioButton,
+                                            ui.is_enabled(),
+                                            selected,
+                                            text(choice, "label"),
+                                        )
+                                    });
+                                    record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
+                                    if r.clicked() && !selected {
+                                        edit = Some(choice["value"].clone());
+                                    }
                                 }
-                            }
+                            });
                         });
                 } else if text(row, "kind") == "info" {
                     if row["separator_before"] == true {
