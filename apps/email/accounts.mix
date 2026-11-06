@@ -48,9 +48,20 @@ fn update($command,$a,$binding)
   if $command=="email.account.set" then
     if $id==nil then $id="acct-"..substr(replace($identity.mint(),"-",""),0,16) end
     $found=filter($entries,fn($e)=$e.id==$id)
+    if $a.id!=nil and len($found)==0 then raise("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
     $entry=if len($found)>0 then $found[0] else {id:$id,name:"",url:"",email:"",ca_path:nil,enabled:true,signature:"",identities:[]} end
     for $key in ["name","url","email","ca_path","enabled","signature","identities"]
       if contains(keys($a),$key) then $entry[$key]=$a[$key] end
+    end
+    for $key in ["name","url","email"]
+      if type($entry[$key])!="string" then raise("INVALID_ARGUMENT",$key.." must be a string") end
+      $entry[$key]=trim($entry[$key])
+      if $entry[$key]=="" then raise("INVALID_ARGUMENT",$key.." is required") end
+    end
+    $entry.url=rtrim($entry.url,"/")
+    if $entry.ca_path!=nil then
+      if type($entry.ca_path)!="string" then raise("INVALID_ARGUMENT","ca_path must be a string or null") end
+      $entry.ca_path=if trim($entry.ca_path)=="" then nil else trim($entry.ca_path) end
     end
     if len($found)==0 then push($entries,$entry) else $entries=map($entries,fn($e)=if $e.id==$id then $entry else $e end) end
     $changes["email.accounts"]=$entries
@@ -63,7 +74,7 @@ fn update($command,$a,$binding)
     $changes["email.default_account"]=$id
   else raise("UNKNOWN_COMMAND","Unknown account change") end
   $accepted=settings_call("settings.apply",{binding:$binding,expected_incarnation:$view.incarnation,expected_revision:$view.revision,operation_id:$identity.mint(),changes:$changes})
-  if $command=="email.account.set" and contains(keys($a),"password") then
+  if $command=="email.account.set" and contains(keys($a),"password") and $a.password!="" then
     save_password($id,$a.password)
   elif $removed then save_password($id,"") end
   return {id:$id}

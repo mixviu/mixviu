@@ -53,7 +53,7 @@ fn navigation_rows()
   return $out
 end
 fn surface_model($m)
-  $data=$wire_data[$active] ?? {};$state=$wire_views[$active] ?? {}
+  $data=$wire_data[$active] ?? {};$state=$wire_views[$active] ?? {};$opened=$message ?? {}
   $m.places_ratio=$places_ratio;$m.list_ratio=$list_ratio;$m.pane=$pane;$m.ready=$state.state=="ready"
   $tree_selected=if $box!="" then "mailbox:"..$active..":"..$box else "account:"..$active end
   $nav=navigation_rows()
@@ -62,9 +62,9 @@ fn surface_model($m)
   $m.list_titles=concat([$name],if $total>0 then [to_string(len($rows)).." of "..to_string($total)] else [] end)
   $m.table={id:"emails",kind:"tree-table",label:"emails",initial:{key:"emails",revision:$revision,rows:$rows,columns:[{id:"subject",label:"Subject",fraction:0.55,min_width:120},{id:"from",label:"From",remainder:true,min_width:80},{id:"date",label:"Date",width:90,align:"right"}],state:{sort:$mail_sort,page:floor($offset/$mail_settings.page_size),page_size:$mail_settings.page_size,selection:$mail_selection,focus:$mail_focus,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density},total:$total,empty:if any(values($wire_pending),fn($p)=$p.purpose=="list") then "Loading…" else "No emails" end,select_everything:"Select all "..to_string($total).." in folder",selected_keys:$mail_selection,focused_key:if $mail_focus!=nil then $rows[$mail_focus].key else nil end},properties:{style:"gold"}}
   $m.reader_actions=map([{id:"mail.reply",label:"Reply",icon:"reply"},{id:"mail.reply_all",label:"Reply All",icon:"reply-all"},{id:"mail.forward",label:"Forward",icon:"forward"},{id:"mail.delete",label:"Delete",icon:"trash"}],fn($a)=merge($a,{enabled:$message!=nil}))
-  $m.no_message=$message==nil;$m.message_subject=$message.subject ?? "";$m.message_from="From: "..join(map($message.from ?? [],fn($a)=address_display($a)),", ");$m.message_to="To: "..join(map($message.to ?? [],fn($a)=address_display($a)),", ")
-  $m.values["message-body"]=$message.text ?? $message.html ?? "";$m.values["message-markdown"]=$message.text ?? ""
-  $m.html_source=$message!=nil and $message.text==nil and $message.html!=nil;$m.markdown=$reader_markdown and $message.text!=nil
+  $m.no_message=$message==nil;$m.message_subject=$opened.subject ?? "";$m.message_from="From: "..join(map($opened.from ?? [],fn($a)=address_display($a)),", ");$m.message_to="To: "..join(map($opened.to ?? [],fn($a)=address_display($a)),", ")
+  $m.values["message-body"]=$opened.text ?? $opened.html ?? "";$m.values["message-markdown"]=$opened.text ?? ""
+  $m.html_source=$message!=nil and $opened.text==nil and $opened.html!=nil;$m.markdown=$reader_markdown and $opened.text!=nil
   $m.account_state=if $state.state=="no_password" then "No password is saved for this account. Open Email Settings to set one." elif $state.state=="failed" then $state.error ?? "Connection failed" elif $state.state=="disabled" then "This account is disabled." else "Connecting…" end
   $m.values["connection-state"]=$m.account_state;$m.values["message-subject"]=$m.message_subject;$m.values["message-from"]=$m.message_from;$m.values["message-to"]=$m.message_to
   $m.values["search-mail"]=$search_text

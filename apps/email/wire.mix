@@ -2,6 +2,7 @@
 -- Native jobs own waits; request receipts remain held across callbacks.
 -- lint: globals ctx entries active session boxes box rows total offset selected message reader account mailbox connected revision serial status fixture c
 $account_policy=require("accounts.mix")
+$argument_policy=require("arguments.mix")
 $wire_sequence=0;$wire_pending={};$wire_sessions={};$wire_views={};$wire_generations={};$wire_data={}
 $mail_settings={binding:{instance:env("MIXOS_INSTANCE","default"),profile:"default"},source:"cache",default_account:nil,page_size:100,mark_read_on_open:true,confirm_delete:true,quote_on_reply:true,reply_position:"above",revision:nil}
 fn wire_entry($id)
@@ -18,9 +19,13 @@ fn wire_start($command,$args,$event=nil,$purpose="query")
   $id=$args.account ?? $active;$entry=wire_entry($id)
   if $command=="email.account.connect" then $id=$args.id;$entry=wire_entry($id) end
   if not $settings then
-    if $entry==nil then return wire_refuse(if $args.account!=nil or $command=="email.account.connect" then "UNKNOWN_ACCOUNT" else "NO_ACCOUNT" end,"No account "..to_string($id)) end
-    if $entry.enabled==false then return wire_refuse("NOT_READY","This account is disabled") end
-    if $command!="email.account.connect" and $wire_sessions[$id]==nil then return wire_refuse("NOT_READY","The account is not connected") end
+    if $entry==nil then return wire_refuse("UNKNOWN_ACCOUNT",if $id=="" or $id==nil then "No account is selected" else "No account "..to_string($id) end) end
+    if $entry.enabled==false then return wire_refuse("NOT_CONNECTED","Not connected") end
+    if $command!="email.account.connect" and $wire_sessions[$id]==nil then return wire_refuse("NOT_CONNECTED","Not connected") end
+    if $command=="email.list" then $args.mailbox=$args.mailbox ?? ($wire_data[$id] ?? {}).box ?? (if $id==$active then $box else nil end) end
+    if contains(["email.list","email.search"],$command) then $args.limit=$args.limit ?? $mail_settings.page_size end
+    if contains(["email.events","email.event.create"],$command) then $args.calendar=$args.calendar ?? ($wire_data[$id] ?? {}).calendar end
+    if contains(["email.contacts","email.contact.create"],$command) then $args.book=$args.book ?? ($wire_data[$id] ?? {}).book end
   end
   if len(keys($wire_pending))>=32 then return wire_refuse("BUSY","Too many requests pending") end
   if $command=="email.account.connect" then $wire_generations[$id]=($wire_generations[$id] ?? 0)+1;$wire_sessions=delete($wire_sessions,$id) end
@@ -86,13 +91,21 @@ fn wire_completed($d)
   end
   if $answer.rc==0 and $answer.session!=nil then
     $wire_sessions[$job.account]=$answer.session
-    $wire_views[$job.account]={state:"ready",error:nil,has_password:true,session:$answer.session.raw,unread:0}
+    $raw=$answer.session.raw
+    $wire_views[$job.account]={state:"ready",error:nil,has_password:true,session:{account_name:$raw.accounts[$answer.session.account].name ?? "",account_id:$answer.session.account,max_size_upload:($raw.capabilities["urn:ietf:params:jmap:core"] ?? {}).maxSizeUpload},unread:($wire_views[$job.account] ?? {}).unread ?? 0}
   end
   if $answer.rc==0 and $job.purpose!="settings" then
     $wire_data[$job.account]=$wire_data[$job.account] ?? {}
     if $answer.body.mailboxes!=nil then
       $wire_data[$job.account].boxes=$answer.body.mailboxes
       $view=$wire_views[$job.account] ?? {};$view.unread=sum(map($answer.body.mailboxes,fn($b)=$b.unread_emails));$wire_views[$job.account]=$view
+    end
+    for $kind in ["calendars","books"]
+      if $answer.body[$kind]!=nil then
+        $wire_data[$job.account][$kind]=$answer.body[$kind]
+        $first=$answer.body[$kind][0]
+        if $first!=nil then $wire_data[$job.account][if $kind=="calendars" then "calendar" else "book" end]=$first.id end
+      end
     end
   end
   if $job.command=="email.account.connect" then

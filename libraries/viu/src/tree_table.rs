@@ -599,47 +599,122 @@ fn text_value<'a>(v: &'a Value, key: &str) -> &'a str {
 
 // Fixed internal column keys keep toolkit's static catalogue contract without
 // interning or leaking application-authored strings. Mix sees its original ids.
-const COLUMN_KEYS: [&str; 16] = ["c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12", "c13", "c14", "c15"];
-fn draw_gold(ui: &mut Ui, widget: &Widget, value: &Value, events: &mut Vec<Intent>) -> egui::Response {
-    use toolkit::datatable::{Align, Cell, Column, DataTable, Everything, Order, Pick, RowStyle, Rows, SelectionMode, TableEvent, TableState, Total, Width};
-    struct Model<'a> { rows: &'a [Value] }
+const COLUMN_KEYS: [&str; 16] = [
+    "c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12", "c13", "c14",
+    "c15",
+];
+fn draw_gold(
+    ui: &mut Ui,
+    widget: &Widget,
+    value: &Value,
+    events: &mut Vec<Intent>,
+) -> egui::Response {
+    use toolkit::datatable::{
+        Align, Cell, Column, DataTable, Everything, Order, Pick, RowStyle, Rows, SelectionMode,
+        TableEvent, TableState, Total, Width,
+    };
+    struct Model<'a> {
+        rows: &'a [Value],
+    }
     impl Rows for Model<'_> {
-        fn len(&self) -> usize { self.rows.len() }
-        fn key(&self, row: usize) -> String { text(&self.rows[row], "key").into() }
+        fn len(&self) -> usize {
+            self.rows.len()
+        }
+        fn key(&self, row: usize) -> String {
+            text(&self.rows[row], "key").into()
+        }
         fn cell(&self, row: usize, column: &str) -> Cell {
             let index = COLUMN_KEYS.iter().position(|key| *key == column).unwrap();
             let data = &self.rows[row];
-            let mut cell = Cell::new(data["cells"][index].as_str().unwrap_or("")).weak(data["weak_cells"][index] == true);
+            let mut cell = Cell::new(data["cells"][index].as_str().unwrap_or(""))
+                .weak(data["weak_cells"][index] == true);
             for marker in data["markers"][index].as_array().into_iter().flatten() {
-                if let Some(icon) = marker.as_str().and_then(crate::icons::Icon::from_name) { cell = cell.icon(icon); }
+                if let Some(icon) = marker.as_str().and_then(crate::icons::Icon::from_name) {
+                    cell = cell.icon(icon);
+                }
             }
             cell
         }
-        fn style(&self, row: usize) -> RowStyle { RowStyle {strong:self.rows[row]["strong"]==true,weak:self.rows[row]["weak"]==true} }
+        fn style(&self, row: usize) -> RowStyle {
+            RowStyle {
+                strong: self.rows[row]["strong"] == true,
+                weak: self.rows[row]["weak"] == true,
+            }
+        }
     }
     let authored = value["columns"].as_array().unwrap();
     let mut catalogue = String::new();
-    let columns = authored.iter().enumerate().map(|(index, column)| {
-        // Labels are plain text, never application-supplied Fluent source.
-        let label = text(column,"label").replace(['\r','\n','{','}']," ");
-        catalogue.push_str(&format!("{} = {}\n",COLUMN_KEYS[index],label));
-        let min=number(column,"min_width",40.0);
-        let width=if column["remainder"]==true { Width::Remainder{min} }
-            else if let Some(share)=column["fraction"].as_f64(){Width::Share{share:share as f32,min}}
-            else if column["resizable"]==true {Width::Resizable{initial:number(column,"width",90.0),min}}
-            else {Width::Fixed(number(column,"width",90.0))};
-        let mut result=Column::new(COLUMN_KEYS[index],COLUMN_KEYS[index]).width(width).align(if column["align"]=="right"{Align::End}else{Align::Start});
-        if column["sortable"]!=false { result=result.sortable(Order::Ascending); }
-        result
-    }).collect::<Vec<_>>();
-    let mut state: TableState=serde_json::from_value(value["state"].clone()).unwrap_or_default();
-    let external=|key:&str|authored.iter().position(|c|text(c,"id")==key).map(|i|COLUMN_KEYS[i].to_owned());
-    if let Some(sort)=&mut state.sort { if let Some(key)=external(&sort.column){sort.column=key;}else{state.sort=None;} }
-    state.widths=state.widths.into_iter().filter_map(|(k,v)|external(&k).map(|k|(k,v))).collect();
-    state.hidden=state.hidden.into_iter().filter_map(|k|external(&k)).collect();
-    let original=|key:&str|COLUMN_KEYS.iter().position(|k|*k==key).map(|i|text(&authored[i],"id").to_owned()).unwrap_or_default();
-    let rows=Model{rows:value["rows"].as_array().unwrap()};
-    let strings=toolkit::Strings::new(&catalogue);
+    let columns = authored
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            // Labels are plain text, never application-supplied Fluent source.
+            let label = text(column, "label").replace(['\r', '\n', '{', '}'], " ");
+            catalogue.push_str(&format!("{} = {}\n", COLUMN_KEYS[index], label));
+            let min = number(column, "min_width", 40.0);
+            let width = if column["remainder"] == true {
+                Width::Remainder { min }
+            } else if let Some(share) = column["fraction"].as_f64() {
+                Width::Share {
+                    share: share as f32,
+                    min,
+                }
+            } else if column["resizable"] == true {
+                Width::Resizable {
+                    initial: number(column, "width", 90.0),
+                    min,
+                }
+            } else {
+                Width::Fixed(number(column, "width", 90.0))
+            };
+            let mut result = Column::new(COLUMN_KEYS[index], COLUMN_KEYS[index])
+                .width(width)
+                .align(if column["align"] == "right" {
+                    Align::End
+                } else {
+                    Align::Start
+                });
+            if column["sortable"] != false {
+                result = result.sortable(Order::Ascending);
+            }
+            result
+        })
+        .collect::<Vec<_>>();
+    let mut state: TableState = serde_json::from_value(value["state"].clone()).unwrap_or_default();
+    let external = |key: &str| {
+        authored
+            .iter()
+            .position(|c| text(c, "id") == key)
+            .map(|i| COLUMN_KEYS[i].to_owned())
+    };
+    if let Some(sort) = &mut state.sort {
+        if let Some(key) = external(&sort.column) {
+            sort.column = key;
+        } else {
+            state.sort = None;
+        }
+    }
+    state.widths = state
+        .widths
+        .into_iter()
+        .filter_map(|(k, v)| external(&k).map(|k| (k, v)))
+        .collect();
+    state.hidden = state
+        .hidden
+        .into_iter()
+        .filter_map(|k| external(&k))
+        .collect();
+    let original = |key: &str| {
+        COLUMN_KEYS
+            .iter()
+            .position(|k| *k == key)
+            .map(|i| text(&authored[i], "id").to_owned())
+            .unwrap_or_default()
+    };
+    let rows = Model {
+        rows: value["rows"].as_array().unwrap(),
+    };
+    let strings = toolkit::Strings::new(&catalogue);
     ui.scope(|ui| {
         let mut table=DataTable::new(&widget.id,&columns,&state).strings(&strings).keeps_tab(true)
             .selection(if widget.properties["multi"]==false{SelectionMode::Single}else{SelectionMode::Multi})
@@ -668,33 +743,93 @@ fn draw_gold(ui: &mut Ui, widget: &Widget, value: &Value, events: &mut Vec<Inten
 
 /// A theme-native navigation outline. The caller owns hierarchy, expansion,
 /// cursor and selection; this draws only the rows the caller supplies.
-fn draw_outline(ui: &mut Ui, widget: &Widget, value: &Value, geometry: &mut BTreeMap<String,Rect>, events: &mut Vec<Intent>) -> egui::Response {
-    let id=&widget.id;
-    let rows=value["rows"].as_array().unwrap();
-    ui.scope(|ui|{egui::ScrollArea::vertical().id_salt((id,"outline")).auto_shrink(false).show(ui,|ui|{
-        for row in rows {
-            let key=text(row,"key");
-            let shown=ui.scope(|ui|{
-                egui::Sides::new().show(ui,|ui|{
-                    ui.add_space(ui.spacing().indent*number(row,"depth",0.0));
-                    if row["branch"]==true {
-                        let icon=if row["expanded"]==true{crate::icons::Icon::ChevronDown}else{crate::icons::Icon::ChevronRight};
-                        let r=ui.add(crate::icons::image_of(ui.ctx(),icon,12.0,ui.visuals().weak_text_color()).sense(Sense::click()));
-                        geometry.insert(format!("{id}.expand.{key}"),r.rect);
-                        if r.clicked(){emit(events,id,"expand",json!({"key":key}));}
-                    }else{ui.add_space(12.0+ui.spacing().item_spacing.x);}
-                    if let Some(icon)=crate::icons::Icon::from_name(text(row,"icon")){
-                        ui.add(crate::icons::image_of(ui.ctx(),icon,12.0,if row["error"]==true{ui.visuals().error_fg_color}else{ui.visuals().weak_text_color()}));
+fn draw_outline(
+    ui: &mut Ui,
+    widget: &Widget,
+    value: &Value,
+    geometry: &mut BTreeMap<String, Rect>,
+    events: &mut Vec<Intent>,
+) -> egui::Response {
+    let id = &widget.id;
+    let rows = value["rows"].as_array().unwrap();
+    ui.scope(|ui| {
+        egui::ScrollArea::vertical()
+            .id_salt((id, "outline"))
+            .auto_shrink(false)
+            .show(ui, |ui| {
+                for row in rows {
+                    let key = text(row, "key");
+                    let shown = ui.scope(|ui| {
+                        egui::Sides::new().show(
+                            ui,
+                            |ui| {
+                                ui.add_space(ui.spacing().indent * number(row, "depth", 0.0));
+                                if row["branch"] == true {
+                                    let icon = if row["expanded"] == true {
+                                        crate::icons::Icon::ChevronDown
+                                    } else {
+                                        crate::icons::Icon::ChevronRight
+                                    };
+                                    let r = ui.add(
+                                        crate::icons::image_of(
+                                            ui.ctx(),
+                                            icon,
+                                            12.0,
+                                            ui.visuals().weak_text_color(),
+                                        )
+                                        .sense(Sense::click()),
+                                    );
+                                    geometry.insert(format!("{id}.expand.{key}"), r.rect);
+                                    if r.clicked() {
+                                        emit(events, id, "expand", json!({"key":key}));
+                                    }
+                                } else {
+                                    ui.add_space(12.0 + ui.spacing().item_spacing.x);
+                                }
+                                if let Some(icon) = crate::icons::Icon::from_name(text(row, "icon"))
+                                {
+                                    ui.add(crate::icons::image_of(
+                                        ui.ctx(),
+                                        icon,
+                                        12.0,
+                                        if row["error"] == true {
+                                            ui.visuals().error_fg_color
+                                        } else {
+                                            ui.visuals().weak_text_color()
+                                        },
+                                    ));
+                                }
+                                let mut label =
+                                    egui::RichText::new(row["cells"][0].as_str().unwrap_or(""));
+                                if row["strong"] == true || selected(value, row) {
+                                    label = label.strong();
+                                }
+                                if row["weak"] == true {
+                                    label = label.weak();
+                                }
+                                let r = toolkit::selectable(ui, selected(value, row), label);
+                                geometry.insert(format!("{id}.key.{key}"), r.rect);
+                                if r.clicked() {
+                                    emit(events, id, "select", json!({"key":key}));
+                                }
+                            },
+                            |ui| {
+                                if let Some(n) = row["count"].as_u64().filter(|n| *n > 0) {
+                                    ui.label(egui::RichText::new(n.to_string()).strong());
+                                }
+                            },
+                        );
+                    });
+                    if focused(value, row) {
+                        ui.painter().rect_stroke(
+                            shown.response.rect,
+                            ui.visuals().widgets.inactive.corner_radius,
+                            ui.visuals().selection.stroke,
+                            egui::StrokeKind::Inside,
+                        );
                     }
-                    let mut label=egui::RichText::new(row["cells"][0].as_str().unwrap_or(""));
-                    if row["strong"]==true || selected(value,row){label=label.strong();}
-                    if row["weak"]==true{label=label.weak();}
-                    let r=toolkit::selectable(ui,selected(value,row),label);
-                    geometry.insert(format!("{id}.key.{key}"),r.rect);
-                    if r.clicked(){emit(events,id,"select",json!({"key":key}));}
-                },|ui|{if let Some(n)=row["count"].as_u64().filter(|n|*n>0){ui.label(egui::RichText::new(n.to_string()).strong());}});
+                }
             });
-            if focused(value,row){ui.painter().rect_stroke(shown.response.rect,ui.visuals().widgets.inactive.corner_radius,ui.visuals().selection.stroke,egui::StrokeKind::Inside);}
-        }
-    });}).response
+    })
+    .response
 }

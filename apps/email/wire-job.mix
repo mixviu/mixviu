@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
-$protocol=require("protocol.mix");$accounts=require("accounts.mix")
+$protocol=require("protocol.mix");$accounts=require("accounts.mix");$pim=require("pim.mix")
 on job.run
   $a=$event.args
   try
@@ -14,12 +14,16 @@ on job.run
     $command=$a.command;$p=$a.args
     if $command=="email.mailboxes" or $command=="email.account.connect" then
       $answer={mailboxes:$protocol.boxes($protocol.call($e,$s,"Mailbox/get",{}).list)}
+      if $command=="email.account.connect" then
+        $answer=merge($answer,$pim.dispatch($e,$s,"email.calendars",{}),$pim.dispatch($e,$s,"email.books",{}))
+      end
     elif $command=="email.list" or $command=="email.search" then
       if $command=="email.search" then $p.query=$p.text end
       $answer=$protocol.list($e,$s,$p)
     elif $command=="email.get" or $command=="email.open" then $answer=$protocol.get($e,$s,$p.id)
     elif contains(["email.mark","email.move","email.junk","email.delete"],$command) then $answer=$protocol.batch($e,$s,$command,$p)
     elif contains(["email.mailbox.create","email.mailbox.rename","email.mailbox.delete"],$command) then $answer=$protocol.mailbox_write($e,$s,$command,$p)
+    elif contains(["email.calendars","email.events","email.event.get","email.event.create","email.event.update","email.event.delete","email.books","email.contacts","email.contact.get","email.contact.create","email.contact.update","email.contact.delete"],$command) then $answer=$pim.dispatch($e,$s,$command,$p)
     else raise("UNKNOWN_COMMAND","Unknown Email command") end
     reply(0,json_encode({rc:0,body:$answer,session:$s}))
   catch $message,$error

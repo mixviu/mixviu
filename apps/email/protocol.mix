@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- JMAP wire policy, derived from gold 8779f3328. No UI or storage access.
-$legacy=require("mail.mix");$accounts=require("accounts.mix")
+$legacy=require("mail.mix");$accounts=require("accounts.mix");$arguments=require("arguments.mix")
 fn origin($url)
   $u=url_parse($url)
   return lower($u.scheme).."://"..lower($u.host)..":"..to_string($u.port ?? (if $u.scheme=="https" then 443 else 80 end))
@@ -51,6 +51,22 @@ fn call($e,$s,$method,$args)
   if $v[0]!=$method then raise("SERVER","JMAP method did not match request") end
   return $v[1]
 end
+fn chained($e,$s,$kind,$query)
+  $query.accountId=$s.account
+  $get={accountId:$s.account};$get["#ids"]={resultOf:"q0",name:$kind.."/query",path:"/ids"}
+  $calls=[[$kind.."/query",$query,"q0"],[$kind.."/get",$get,"g0"]]
+  $r=http($e,$s.api,"POST",json_encode({using:$s.using,methodCalls:$calls}),$s.token)
+  if $r.status!=200 then raise("SERVER","JMAP HTTP "..to_string($r.status)) end
+  $response=json_parse($r.body).methodResponses
+  if type($response)!="list" or len($response)!=2 then raise("SERVER","Invalid JMAP response count") end
+  for $i=0 to 1
+    $reply=$response[$i]
+    if len($reply)!=3 or $reply[2]!=$calls[$i][2] or type($reply[1])!="map" then raise("SERVER","Invalid JMAP response identity") end
+    if $reply[0]=="error" then raise(if $reply[1].type=="notFound" then "NOT_FOUND" else "SERVER" end,"JMAP "..to_string($reply[1].type)) end
+    if $reply[0]!=$calls[$i][0] then raise("SERVER","JMAP method did not match request") end
+  end
+  return {query:$response[0][1],get:$response[1][1]}
+end
 fn boxes($raw)
   return jq($raw,'map({id,name,parent_id:(.parentId // null),role:(.role // null),sort_order:(.sortOrder // 0),total_emails:(.totalEmails // 0),unread_emails:(.unreadEmails // 0)})')
 end
@@ -61,8 +77,7 @@ fn list($e,$s,$a)
   $filter={}
   if $a.mailbox!=nil then $filter.inMailbox=$a.mailbox end
   if $a.query!=nil and $a.query!="" then $filter.text=$a.query end
-  $offset=$a.offset ?? 0;$limit=$a.limit ?? 100
-  if type($offset)!="number" or $offset<0 or floor($offset)!=$offset or type($limit)!="number" or floor($limit)!=$limit or $limit<1 or $limit>500 then raise("INVALID_ARGUMENT","Invalid offset or limit (1..500)") end
+  $offset=$arguments.number($a,"offset") ?? 0;$limit=min(500,max(1,$arguments.number($a,"limit") ?? 100))
   $q=call($e,$s,"Email/query",{filter:$filter,sort:[{property:$a.sort ?? "receivedAt",isAscending:$a.ascending ?? false}],position:$offset,limit:$limit,calculateTotal:true})
   if type($q.ids)!="list" or len($q.ids)>$limit or len(unique($q.ids))!=len($q.ids) then raise("SERVER","Invalid query identities") end
   if len($q.ids)==0 then return {emails:[],total:$q.total ?? 0,offset:$offset} end
