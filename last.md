@@ -1194,3 +1194,21 @@ matrix stays 40/40 (only sequential accepted revisions are normalised after
 mutation witnesses). No inventory disagreement or proposed deviation blocks
 the work.
 branch lab/parity-prefs; head SHA 5329cebc40d9a4eca47427dd4793e604b2ca025f (code before receipt); pages 42/42, full/header/sidebar/content SSIM and RMSE 0 at pair.nIbtod; functional 40/40; live 17/17 accepted (16 exact, Spacious AA), authority absence/recovery exact; OPEN: populated/native interaction/CLI acceptance and final gate; CBC job ids 20261107-063654-21e3e59d-a1 PASS, 20261107-064033-96555226-a1 PASS, 20261107-064358-480a8017 pending.
+# Prefs round five: drawers closed, release acceptance pending
+
+Code `876f50a85bcb3f299558425969596dc9f4a63d20` fixes the native drawer
+separator inset, scroll fade background and catalogue list scrolling beneath
+its fixed search. `pair.7xWNxT` accepts all ten drawers with full/header/
+sidebar/content SSIM and RMSE zero; paired originals/contact sheet inspected,
+all owned PIDs stopped. `pair.29fCaL` confirms native catalogue font writes
+through private settingsd and restores them. Catalogue figures are being
+reviewed. `pair.6Uttb8` repeats 42/42 baseline pages at zero distortion and
+40/40 functional/refusal cases, plus identical canonical HELP/menu queries.
+
+Heavy CBC `20261107-073545-70c5676f` is queued for the exact code, command
+`mix apps/prefs/gate.mix --release`. Scoped CBC `20261107-073405-f2ebf754`
+passed 17 tests/build; formatting applied. Overall OPEN until the heavy gate
+and release-byte capture/functional/live-Prefs suite complete. No Fable
+deviation is proposed. This receipt commit changes documentation only.
+
+branch lab/parity-prefs; head/code 876f50a85bcb3f299558425969596dc9f4a63d20; OPEN: heavy release gate and release-byte evidence; pages 42/42; functional 40/40; CBC 20261107-073405-f2ebf754, 20261107-073545-70c5676f (queued)

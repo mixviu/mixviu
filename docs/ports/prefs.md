@@ -1,5 +1,41 @@
 # Preferences gold parity inventory
 
+Round-five status: implementation and native drawer repairs are complete;
+overall acceptance remains OPEN pending the heavy exact-source release gate
+and the release-byte evidence set. The historical tables below retain failed
+captures and are superseded by the later receipts, not deleted.
+
+Latest code is `876f50a85bcb3f299558425969596dc9f4a63d20`.
+Private run `prefs-parity-20261107/pair.6Uttb8` repeats 42/42 baseline
+pages with full/header/sidebar/content SSIM and RMSE distortion zero,
+40/40 structured functional/refusal cases, identical HELP (55 commands),
+describe, actions, page tree, menus and four menu paths. Only the sequential
+accepted store revision is normalised in structured state replies.
+
+Round-five `pair.7xWNxT` closes all ten open drawer states with zero SSIM
+and RMSE distortion in every measured region. The native panel separator
+reserves one point before drawer padding; the panel background supplies the
+scroll fade. Originals and the paired contact sheet were inspected. All five
+owned processes were confirmed stopped. `pair.29fCaL` exercises catalogue
+selection through native input and confirms both font-family settings writes
+against real private settingsd before restoration. Its catalogue comparisons
+and the release rerun remain part of the final acceptance record.
+
+The native image chooser is pixel-identical in `pair.96mOt2`. Email's nine
+additional mutation/refusal cases and its inline empty-save errors match in
+`pair.cZAFcS`; password set, forget, forget for a removed account and removal
+through the real private Email process match in `pair.u74dge`. Rebound menu
+queries, macro lifecycle and action/completion event payloads match in
+`pair.dPAr7S`, excluding process-unique IDs, timestamps and broker sequence
+offsets. Existing live-axis and authority-recovery evidence is retained in
+`pair.UWEu2H`; release bytes must repeat it before overall acceptance.
+
+Focused CBC `20261107-073405-f2ebf754` passed all 17 widget/Prefs tests and
+the native build; its formatting patch is applied. Heavy release acceptance
+job `20261107-073545-70c5676f` is queued for the exact code above, running
+`mix apps/prefs/gate.mix --release`. The gate retains a separately hashed
+release executable for the evidence suite. No production install is involved.
+
 Oracle: MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`, including
 `apps/prefs`, its preferences engine and the shared toolkit. Gold wins any
 inventory disagreement. No overall feature, Bus or visual acceptance is
