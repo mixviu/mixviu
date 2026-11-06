@@ -119,6 +119,7 @@ impl Bundle {
         } else {
             Manifest::default()
         };
+        manifest.app = Some(manifest.app().to_owned());
         if let Some(service) = options.service {
             manifest.service = service;
         }

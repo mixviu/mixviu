@@ -236,7 +236,7 @@ impl Facilities {
         }
         if self.debug {
             if let Some(answer) =
-                toolkit::debug::request(&self.app, &r.command, &r.args.to_string())
+                toolkit::debug::request_for(&self.service, &self.app, &r.command, &r.args.to_string())
             {
                 let _ = r.reply.send(answer);
                 return None;
