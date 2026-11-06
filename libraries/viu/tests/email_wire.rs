@@ -13,33 +13,45 @@ fn probe(reply: Value, call: &str) -> (u8, Value) {
 fn probe_sequence(replies: Vec<Value>, call: &str) -> (u8, Value) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
-    let bodies: Vec<_> = replies.iter().map(|r| r.to_string().replace("ORIGIN", &url)).collect();
+    let bodies: Vec<_> = replies
+        .iter()
+        .map(|r| r.to_string().replace("ORIGIN", &url))
+        .collect();
     let server = std::thread::spawn(move || {
-      for body in bodies {
-        let (mut socket, _) = listener.accept().unwrap();
-        socket
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let mut bytes = Vec::new();
-        let mut buf = [0; 4096];
-        loop {
-            let n = socket.read(&mut buf).unwrap();
-            assert!(n > 0, "request ended before its headers/body");
-            bytes.extend_from_slice(&buf[..n]);
-            if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
-                let header = String::from_utf8_lossy(&bytes[..end]);
-                let length = header.lines().find_map(|line| line.to_ascii_lowercase().strip_prefix("content-length:").map(|s| s.trim().parse::<usize>().unwrap())).unwrap_or(0);
-                if bytes.len() >= end + 4 + length { break; }
+        for body in bodies {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut bytes = Vec::new();
+            let mut buf = [0; 4096];
+            loop {
+                let n = socket.read(&mut buf).unwrap();
+                assert!(n > 0, "request ended before its headers/body");
+                bytes.extend_from_slice(&buf[..n]);
+                if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let header = String::from_utf8_lossy(&bytes[..end]);
+                    let length = header
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|s| s.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    if bytes.len() >= end + 4 + length {
+                        break;
+                    }
+                }
             }
+            assert!(String::from_utf8_lossy(&bytes).contains("Basic dXNlcjpzZWNyZXQ="));
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
         }
-        assert!(String::from_utf8_lossy(&bytes).contains("Basic dXNlcjpzZWNyZXQ="));
-        write!(
-            socket,
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        )
-        .unwrap();
-      }
     });
     let scratch = tempfile::tempdir().unwrap();
     let password = scratch.path().join("password");
@@ -64,7 +76,7 @@ on probe
     $r={call}
     reply(0,json_encode($r))
   catch $message, $err
-    reply(10,json_encode({{code:$err.code}}))
+    reply(10,json_encode({{code:$err.code,message:$message}}))
   end
 end
 "#
@@ -92,11 +104,17 @@ end
 fn query_order_is_preserved_and_different_get_identities_are_refused() {
     let query = json!({"methodResponses":[["Email/query",{"ids":["a","b"],"total":2},"c0"]]});
     let get = json!({"methodResponses":[["Email/get",{"list":[{"id":"b","subject":"Second"},{"id":"a","subject":"First"}]},"c0"]]});
-    let (rc, body) = probe_sequence(vec![query.clone(),get], "$m.page($e,\"1\",\"inbox\",0)");
-    assert_eq!(rc, 0);
+    let (rc, body) = probe_sequence(vec![query.clone(), get], "$m.page($e,\"1\",\"inbox\",0)");
+    assert_eq!(rc, 0, "{body}");
     assert_eq!(body["messages"][0]["id"], "a");
     assert_eq!(body["messages"][1]["id"], "b");
-    let (rc, body) = probe_sequence(vec![query,json!({"methodResponses":[["Email/get",{"list":[{"id":"a"},{"id":"other"}]},"c0"]]})], "$m.page($e,\"1\",\"inbox\",0)");
+    let (rc, body) = probe_sequence(
+        vec![
+            query,
+            json!({"methodResponses":[["Email/get",{"list":[{"id":"a"},{"id":"other"}]},"c0"]]}),
+        ],
+        "$m.page($e,\"1\",\"inbox\",0)",
+    );
     assert_eq!(rc, 10);
     assert_eq!(body["code"], "SNAPSHOT");
 }

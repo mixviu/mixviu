@@ -69,7 +69,7 @@ fn page($entry,$account,$mailbox,$offset)
   if len($q.ids)==0 then return {messages:[],total:$q.total ?? 0,offset:$offset} end
   $r=call($entry,"Email/get",{accountId:$account,ids:$q.ids,properties:["id","subject","from","receivedAt","preview"]})
   if type($r.list)!="list" or len($r.list)!=len($q.ids) or len($r.notFound ?? [])>0 then raise("SNAPSHOT","Message page changed; refresh explicitly") end
-  if sort(map($r.list,fn($m)=$m.id))!=sort($q.ids) then raise("SNAPSHOT","Message identities did not match the query") end
+  if not deep_eq(sort(map($r.list,fn($m)=$m.id)),sort($q.ids)) then raise("SNAPSHOT","Message identities did not match the query") end
   -- Email/get need not preserve Email/query order.
   $by_id={};for $m in $r.list $by_id[$m.id]=$m end
   $r.list=map($q.ids,fn($id)=$by_id[$id])
