@@ -580,3 +580,48 @@ Round 3 native checkpoint at bacd117: matched gold/Mix pair at 1040x680 with ide
 branch lab/gold-parity; head bacd11720d20f22a472c7f67cbfa4bdd579e7a7c (tested code; next checkpoint includes visual repairs); Monitor NOT at parity, matched SSIM distortion 0.0678706, header/options/table/Performance/full ABP pending; CBC job ids: 20261107-015349-51192852-a1 (scoped green), 20261107-014915-bbf51126-a1 and 20261107-014455-cb1b2c26-a1 (preparation, formatting returned).
 
 branch lab/gold-parity; head c18677b4207789f4e3ad4b5f4f4a3d3b76c0b6b9 (capture source; receipt/format commit follows); Monitor NOT at full parity, Processes content SSIM distortion 0, full 0.0139849, header/options/status/Performance/full ABP remain; CBC job ids 20261107-024928-e337ff81-a1 (preparation passed, rc97 fmt), 20261107-015349-51192852-a1 (earlier full scoped green).
+
+
+## Ced round 3 integration checkpoint — acceptance still open
+
+Merged shared frame branch through 0807e73 in ee6714a, preserving Ced document,
+receipt and clipboard wiring. The new frame and native menu adapter are shared.
+Ced now composes six menus, gold document tabs, find/replace controls, dialogs,
+Problems/Output surfaces and mail fields in Mix. The gold macro popup is a shared
+widget using the same native macro Session as transport. Gold wins over the
+older inventory: macro transport includes get/put/remove/move/copy as well as
+the original seven operations. Palette and local window mode now use the
+resolved gold theme. Ordinary caption quit retains editd recovery; dirty mail
+remains guarded. A regression parses every worker with its real includes.
+
+Native action witness editor-parity-r2-20261107/native.4wltd3 drove all 61 IDs:
+58 returned success and three exercised guard refusals. This measures dispatch,
+not complete semantic acceptance. Corrected the guard messages subsequently.
+Native platform witness native.L79t43 passed gold application DTOs, file
+edit/save/undo/redo, regex replacement, diagnostics, measured geometry/stats,
+wait timeout, macros, native tree/window/debug, clipboard, IME preedit/commit.
+Native mail witness native.dLjJoB additionally passed inert mail classification,
+header/body save, Save As, unsaved crash recovery, malformed/BOM refusal,
+isolated Email success and uncertain-receipt no-retry (exactly two deliberate
+Send attempts, document-path argument only). No external message was sent.
+Owned process closures are retained with each witness.
+
+Live settings witness native.PLwd6J passed real settingsd changes while running,
+three captured variants, retained edits and editor-family refusal. Matched
+1000x720 native.n8REKM captures were inspected; tab/editor geometry now aligns.
+Header menu spacing, toolbar anchoring, theme icon and syntax palette differed
+and were repaired afterwards; final-byte captures and diff closure remain due.
+The prior paired native.oEtFio metric was PHASH 32.9138, RMSE 0.0250266; this is
+a failed baseline, not acceptance. Its macro modal deviation was removed in
+favour of the gold popup. No deviation approval has been requested or granted.
+
+CBC 20261107-032501-a694b18a-a1 passed 20 scoped tests and host build at
+666e98b; full saved log read and exact fmt applied. 20261107-032847-c0f88cb8-a1
+passed subsequent palette/close changes at b7a72d9; final aggregate log review
+is still pending. Earlier 20261107-032029-66b35f04-a1 green; 031920 and 031303
+failures caught dynamic scene binding and initial empty-tab handling and were
+fixed without weakening assertions. Final actions/topics/panels, same-byte
+Bus/mail/clipboard/IME, matched live-Prefs variants and visual acceptance remain
+open. No VT, install or main merge.
+
+branch: lab/viu-editor; head SHA: e17f50729e80bbe01135f1cbec704ec3cffe9930 (source before receipt-only commit); Bus coverage: 61/61 IDs dispatched, 58 success and 3 guarded refusals, complete semantic parity unaccepted; visual evidence: inspected 1000x720 native.n8REKM and live Prefs native.PLwd6J, final captures pending; CBC job ids: 20261107-032501-a694b18a-a1 green, 20261107-032847-c0f88cb8-a1 green, final gate pending.
