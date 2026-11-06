@@ -42,6 +42,7 @@ pub const KINDS: &[&str] = &[
     "image-view",
     "image-fill",
     "image-canvas",
+    "macro-window",
     "window-controls",
 ];
 
@@ -130,6 +131,7 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
+            "macro-window"=>value.is_boolean()&&self.properties["app"].as_str().is_some_and(|app|!app.is_empty()&&app.len()<=64&&app.bytes().all(|b|b.is_ascii_lowercase()||b.is_ascii_digit()||b==b'-')),
             "mark" => value
                 .as_str()
                 .and_then(crate::icons::Icon::from_name)
@@ -190,6 +192,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind=="macro-window" {return vec!["close"];}
         if self.kind == "image-canvas" {
             return vec!["pan", "zoom", "pick", "gesture"];
         }
@@ -505,6 +508,10 @@ impl Widgets {
                     });
                 }
                 response
+            }
+            "macro-window"=>{
+                if value==true&&toolkit::macros::show_app(ui.ctx(),widget.properties["app"].as_str().unwrap(),true){events.push(Intent{id:id.into(),action:"close".into(),value:Value::Null});}
+                ui.allocate_response(egui::Vec2::ZERO,egui::Sense::hover())
             }
             "image-view" => self.images.draw(ui, id, value),
             "image-canvas" => self

@@ -35,6 +35,12 @@ pub fn install_session(
     file: &toolkit::Theme,
     last_ui: &settings::model::CommonUi,
 ) -> Result<settings::model::CommonUi, String> {
+    install_session_choice(ctx,snapshot,app,file,last_ui,&Value::Null)
+}
+pub fn install_session_choice(
+    ctx:&egui::Context,snapshot:&Value,app:&str,file:&toolkit::Theme,
+    last_ui:&settings::model::CommonUi,choice:&Value,
+) -> Result<settings::model::CommonUi,String> {
     use settings::view::View;
     let values: settings::registry::Values =
         serde_json::from_value(snapshot["state"]["values"].clone()).map_err(|e| e.to_string())?;
@@ -47,6 +53,7 @@ pub fn install_session(
         file,
         last_ui,
     );
+    let theme=theme.with_choice(&theme_choice(choice)?).map_err(|e|e.to_string())?;
     let ui = if lost {
         last_ui.clone()
     } else {
@@ -85,6 +92,25 @@ pub fn install_session(
         chrome.style.icon_mask.0,
     );
     Ok(ui)
+}
+
+pub fn theme_choice(value:&Value)->Result<toolkit::theme::Choice,String> {
+    let mut choice=toolkit::theme::Choice::default();
+    if value.is_null(){return Ok(choice);}
+    let fields=value.as_object().ok_or("theme choice must be an object")?;
+    for (key,value) in fields {
+        if value.is_null(){continue;}
+        let name=value.as_str().ok_or("theme choice axes must be names or null")?;
+        match key.as_str() {
+            "scheme"=>choice.scheme=Some(design::Scheme::from_name(name).ok_or("unknown scheme")?),
+            "mode"=>choice.mode=Some(design::Mode::from_name(name).ok_or("unknown mode")?),
+            "style"=>choice.style=Some(if name=="own"{None}else{Some(design::Style::from_name(name).ok_or("unknown style")?)}),
+            "decorations"=>choice.decorations=Some(design::RequestedDecorations::from_name(name).ok_or("unknown decorations")?),
+            "captions"=>choice.captions=Some(design::CaptionSide::resolve(name)),
+            _=>return Err("unknown theme choice axis".into())
+        }
+    }
+    Ok(choice)
 }
 pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {
     let mut style = egui::Style::default();

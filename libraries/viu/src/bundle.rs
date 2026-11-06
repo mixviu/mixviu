@@ -14,6 +14,8 @@ pub struct Manifest {
     pub tick_ms: Option<u64>,
     pub surface: String,
     pub frame: Option<String>,
+    pub app_id: Option<String>,
+    pub drive: Option<String>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -26,6 +28,8 @@ impl Default for Manifest {
             tick_ms: None,
             surface: "window".into(),
             frame: None,
+            app_id: None,
+            drive: None,
         }
     }
 }
@@ -64,6 +68,7 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
+            || manifest.app_id.as_deref().is_some_and(|id|id.is_empty()||id.len()>128||id.chars().any(char::is_whitespace))
             || !["window", "background"].contains(&manifest.surface.as_str())
             || manifest
                 .frame

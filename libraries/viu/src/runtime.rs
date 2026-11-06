@@ -26,6 +26,7 @@ pub struct Services {
     pub macros: Option<macros::Session>,
     pub chooser: Option<crate::chooser::Service>,
     pub documents: crate::annotation::Documents,
+    pub clipboard: Option<crate::clipboard::Clipboard>,
 }
 
 // Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
@@ -217,6 +218,7 @@ impl Runtime {
                         eval.register("viu_image",crate::native_primitives::image_file());
                         eval.register("viu_http",crate::http::binding());
                         eval.register("viu_document",services.documents.clone().binding());
+                        if let Some(clipboard)=services.clipboard.clone(){eval.register("viu_clipboard",clipboard.binding());}
                         let cancelled=worker_cancel.clone();
                         eval.register("viu_cancelled",mix::sync_ext(move |args| {
                             if !args.is_empty(){return Err(failure("viu_cancelled takes no arguments"));}
