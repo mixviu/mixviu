@@ -837,7 +837,6 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let facilities = crate::app_facilities::Facilities::new(&bundle.manifest, wake.clone());
     let mut commands = bundle.manifest.commands.clone();
     if let Some(surface) = &facilities.surface {
-        if bundle.manifest.native_drive {
         commands.extend(
             surface["commands"]
                 .as_array()
@@ -848,6 +847,12 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     }
     if bundle.manifest.native_drive {
         commands.extend(
+            toolkit::drive::COMMANDS.iter().map(|suffix|format!("{service}.{suffix}")),
+        );
+        commands.push(format!("{service}.debug"));
+        commands.extend(["set","recent"].map(|suffix|format!("{service}.debug.{suffix}")));
+    }
+    commands.extend(
         [
             "viu.state",
             "viu.ui.tree",
