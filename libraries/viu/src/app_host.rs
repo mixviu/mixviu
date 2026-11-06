@@ -15,6 +15,9 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    ui_state: crate::ui_state::UiState,
+    measurements: crate::ui_state::Measurements,
+    input_at: Option<Instant>,
     calls: crate::calls::Calls,
     timers: crate::timers::Timers,
     timer_results: std::collections::VecDeque<Value>,
@@ -186,6 +189,9 @@ impl eframe::App for Host {
         } else if let Some(mut events) = self.input.later.pop_front() {
             raw.events.append(&mut events);
         }
+        let keys=raw.events.iter().filter(|e|matches!(e,egui::Event::Key{pressed:true,..})).count();
+        self.measurements.keys+=keys as u64;
+        if !raw.events.is_empty(){self.input_at=Some(Instant::now());}
     }
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
         self.frame(ui);
@@ -280,6 +286,7 @@ impl Host {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
         while let Some(done) = self.runtime.try_completion() {
+            self.measurements.model(done.elapsed.as_micros().min(u64::MAX as u128) as u64);
             self.inflight.remove(&done.sequence);
             self.error = done.error.unwrap_or_default();
             if self.error.is_empty() {
@@ -391,9 +398,12 @@ impl Host {
                     self.error = e;
                 }
             }
+            let started=Instant::now();
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
             }
+            self.measurements.view(started.elapsed().as_micros() as u64);
+            if let Some(at)=self.input_at.take(){self.measurements.next(at.elapsed().as_micros() as u64);}
             if self.framed {
                 self.window_frame.edges(ui);
                 self.view
@@ -437,6 +447,7 @@ impl Host {
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
         }
+        self.ui_state.set(ui.ctx().content_rect(),&self.view.geometry,self.measurements.snapshot());
     }
 }
 
@@ -474,7 +485,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let documents = crate::documents::Documents::default();
     let timers = crate::timers::Timers::default();
     let calls = crate::calls::Calls::default();
+    let ui_state=crate::ui_state::UiState::default();
     let services = crate::runtime::Services {
+        ui_state: Some(ui_state.clone()),
         macros: bundle.manifest.macros.then(|| {
             let roots = macros::Roots::resolve().map(|mut roots| {
                 if let Ok(exe) = std::env::current_exe() {
@@ -518,6 +531,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        ui_state,
+        measurements:Default::default(),
+        input_at:None,
         calls,
         timers,
         timer_results: Default::default(),
