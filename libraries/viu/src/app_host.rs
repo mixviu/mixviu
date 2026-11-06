@@ -727,6 +727,8 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         &title,
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
+                .with_transparent(bundle.manifest.frame.is_some())
+                .with_decorations(bundle.manifest.frame.is_none())
                 .with_inner_size(size)
                 .with_app_id(app_id),
             ..Default::default()

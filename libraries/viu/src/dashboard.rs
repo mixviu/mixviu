@@ -61,7 +61,7 @@ fn blocks_valid(blocks: &Value, depth: usize, budget: &mut usize) -> Result<(), 
         match text(block, "kind") {
             "chart" => crate::time_series::validate(&block["chart"])?,
             "columns" => blocks_valid(&block["blocks"], depth + 1, budget)?,
-            "heading" | "small" | "weak" | "gap" | "meter" => {}
+            "heading" | "small" | "weak" | "section-label" | "gap" | "meter" => {}
             "figures" | "sparklines" | "meters" | "chips" => {
                 if block["items"].as_array().is_none_or(|a| a.len() > 256) {
                     return Err("dashboard items exceed budget".into());
@@ -152,6 +152,7 @@ fn blocks(ui: &mut Ui, id: &str, items: &Value, interval: f64, events: &mut Vec<
             "weak" => {
                 ui.weak(text(block, "text"));
             }
+            "section-label"=>{toolkit::panel::section_label(ui,text(block,"text"));}
             "chips" => {
                 ui.horizontal_wrapped(|ui| {
                     for item in block["items"].as_array().unwrap() {

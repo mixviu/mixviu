@@ -121,10 +121,10 @@ fn tcp($s)
   for $p in [["In use (v4)",$sock.inuse],["In use (v6)",$sock6.inuse],["Orphans",$sock.orphan],["Time wait",$sock.tw],["Allocated",$sock.alloc],["Buffer pages",$sock.mem]]
     push($chips,$p[0]..": "..(if $p[1]==nil then "—" else to_string($p[1]) end))
   end
-  $blocks=[header("TCP",""),{kind:"columns",blocks:[$segments,$retrans]},{kind:"columns",blocks:[$established,$opens]},{kind:"chips",items:$chips},gap(6),{kind:"weak",text:"Top 20 connections by throughput"}]
+  $blocks=[header("TCP",""),{kind:"columns",blocks:[$segments,$retrans]},{kind:"columns",blocks:[$established,$opens]},{kind:"chips",items:$chips},gap(6),{kind:"section-label",text:"Top 20 connections by throughput"}]
   if $s.connections_error!=nil then push($blocks,{kind:"small",text:$s.connections_error})
-  elif $s.connections==nil then push($blocks,{kind:"small",text:"Waiting for the first reading…"})
-  elif len($s.connections.rows)==0 then push($blocks,{kind:"small",text:"No TCP sockets"})
+  elif $s.connections==nil then push($blocks,{kind:"weak",text:"Waiting for the first reading…"})
+  elif len($s.connections.rows)==0 then push($blocks,{kind:"weak",text:"No TCP sockets"})
   else
     $rows=[]
     for $c in slice($s.connections.rows,0,20)
@@ -146,6 +146,6 @@ fn project($s)
     if not contains($keys,$selected) then $selected="cpu" end
     $items=map($keys,fn($key)=item($s,$key))
     $blocks=if $selected=="cpu" then cpu($s) elif $selected=="memory" then memory($s) elif starts_with($selected,"disk:") then disk($s,slice($selected,5)) elif starts_with($selected,"net:") then network($s,slice($selected,4)) else tcp($s) end
-  else push($blocks,{kind:"small",text:"Waiting for the first reading…"}) end
+  else push($blocks,{kind:"weak",text:"Waiting for the first reading…"}) end
   return {id:"performance",kind:"dashboard",label:"Performance",initial:{sidebar_width:250,compact_width:640,selected:$selected,items:$items,blocks:$blocks,interval_s:if $s.snapshot!=nil then $s.snapshot.interval_s ?? 1 else 1 end},properties:{frame:"dock"}}
 end

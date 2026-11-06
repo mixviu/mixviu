@@ -80,14 +80,19 @@ on monitor.rows
   reply(0,json_encode({rows:$wire.rows($state)}))
 end
 on monitor.refresh
+  if busy_monitor($state) then return end
   $state=refresh_monitor($state);publish_monitor($state)
-  reply(if $state.error==nil then 0 else 10 end,json_encode($state))
+  reply(0,json_encode({refreshing:true}))
 end
 on monitor.node
-  $node=$event.args.node ?? "";$checked=$core.target($node)
+  if busy_monitor($state) then return end
+  if not contains(keys($event.args),"node") or ($event.args.node!=nil and type($event.args.node)!="string") then reply(10,json_encode({error_code:"ARGUMENT",message:"node must be a node name or null"}));return end
+  $node=$event.args.node ?? ""
+  if $event.args.node!=nil and not re_match($node,"^[a-zA-Z0-9_-]{1,63}$") then reply(10,json_encode({error_code:"ARGUMENT",message:"Not a node name"}));return end
+  if $node==$state.node then reply(0,json_encode({node:$event.args.node,target:$core.target($node)}));return end
   $state.node=$node;$state.node_draft=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.rings={};$state.history_seeded=false;$state.connections=nil;$state.connections_error=nil;$state.selected=nil
   $state=refresh_monitor($state);publish_monitor($state)
-  reply(0,json_encode({node:$state.node}))
+  reply(0,json_encode({node:$event.args.node,target:$core.target($node)}))
 end
 on monitor.sort
   if busy_monitor($state) then return end
@@ -111,7 +116,7 @@ on monitor.tree
 end
 on monitor.pause
   if type($event.args.on)!="bool" then raise("PAUSE","Boolean required") end
-  $state.paused=$event.args.on;publish_monitor($state);reply(0,"{}")
+  $state.paused=$event.args.on;$state.status=if $state.paused then "Paused" else "Live" end;publish_monitor($state);reply(0,"{}")
 end
 on monitor.select
   if busy_monitor($state) then return end
@@ -255,6 +260,22 @@ on monitor.dialog
 end
 on monitor.quit
   $state.quitting=true;reply(0,json_encode({quitting:true}))
+end
+on monitor.show
+  $comp=env("MIXOS_COMP_SERVICE","comp")
+  send $comp "comp.window.wait" body={match:{app_id:"dev.mixos.monitor"},until:"mapped",timeout_ms:10000}
+  if $rc!=0 then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
+  send $comp "comp.windows.list" body={}
+  if $rc!=0 then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
+  $windows=filter($reply.windows ?? [],fn($w)=$w.app_id=="dev.mixos.monitor" and $w.pid==$ctx.pid)
+  if len($windows)==0 then reply(10,json_encode({error_code:"ACTIVATION",message:"window not known to compd"}));return end
+  $w=$windows[0];$target={id:$w.id,generation:$w.generation}
+  send $comp "comp.window.restore" body=$target
+  if $rc!=0 or $reply.minimized!=false then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
+  $target.raise=true
+  send $comp "comp.window.focus" body=$target
+  if $rc!=0 or $reply.focused!=true then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
+  reply(0,json_encode($reply))
 end
 on viu.macros.changed
   $state.macros_open=$event.args.open;publish_monitor($state)

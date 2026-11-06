@@ -531,6 +531,15 @@ impl Widgets {
                 let mut row = |ui: &mut egui::Ui| {
                     for item in value["left"].as_array().unwrap() {
                         let child = Widget::decode(item).expect("validated row child");
+                        if child.kind=="tabs" {
+                            let selected=model["values"].get(&child.id).unwrap_or(&child.initial);
+                            for option in child.choices() {
+                                let response=toolkit::selectable(ui,selected==option,option);
+                                self.remember(ui,&format!("{}.{}",child.id,option),&response);
+                                if response.clicked(){events.push(Intent::set(&child.id,json!(option)));}
+                            }
+                            continue;
+                        }
                         events.extend(self.widget(ui, &child, model));
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

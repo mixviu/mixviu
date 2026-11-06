@@ -506,7 +506,7 @@ pub(crate) fn draw(
                                     item["enabled"] == true,
                                     toolkit::button::IconButton::new(icon)
                                         .selected(item["checked"] == true)
-                                        .tooltip(text(item, "label")),
+                                    .tooltip(item["shortcut"].as_str().and_then(toolkit::keymap::parse_chord).map_or_else(||text(item,"label").to_owned(),|s|format!("{} ({})",text(item,"label"),ui.ctx().format_shortcut(&s)))),
                                 )
                             } else if let Some(icon) = item["icon"]
                                 .as_str()
