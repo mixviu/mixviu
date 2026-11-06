@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Session/recovery policy belongs to the application. Native bindings only
+-- resolve paths, hold mirrors and perform bounded durable file replacement.
+fn empty_session()
+  return {version:1,active:nil,tabs:[],recent:[]}
+end
+fn session_value($s)
+  return {version:1,active:if len($s.tabs)>0 then $s.active else nil end,tabs:map($s.tabs,fn($t)={path:$t.path,recovery_id:if $t.path==nil then $t.recovery_id else nil end,caret:$t.selection.head.offset,first_line:max(1,$t.first_line)}),recent:slice($s.recent,0,20)}
+end
+fn session_changed($s)
+  if not $s.session_loaded or len(keys($s.restore))>0 then return $s end
+  $value=session_value($s)
+  if not deep_eq($value,$s.session_seen) then
+    $s.session_seen=$value;$s.session_dirty=true
+    viu_timer("session-save",1000,{kind:"session-save"})
+  end
+  return $s
+end
+fn save_session($s)
+  if $s.session_path==nil or not $s.session_dirty then return $s end
+  $s.queue=filter($s.queue,fn($j)=$j.kind!="session-save")
+  $s.session_dirty=false
+  return queue_job($s,"session-save",{path:$s.session_path,value:session_value($s)})
+end
+fn restore_session($s,$body)
+  $s.session_loaded=true;$s.session_path=$body.path
+  $value=$body.value ?? empty_session();$s.recent=slice($value.recent,0,20)
+  $s.restore_active=$value.active
+  for $i=0 to len($value.tabs)-1
+    $s.next_tab=$s.next_tab+1;$key=to_string($s.next_tab);$tab=$value.tabs[$i]
+    $s.restore[$key]=$tab
+    $s=queue_job($s,"open",{document:$key,args:{path:$tab.path,recovery_id:$tab.recovery_id}})
+  end
+  $s.session_seen=$value
+  return $s
+end
+fn request_probe($s)
+  if not any(concat($s.queue,values($s.running)),fn($j)=$j.kind=="probe") then $s=queue_job($s,"probe",{}) end
+  return $s
+end
+fn request_reattach($s,$t)
+  if $s.reattach_wait[$t.document] then return $s end
+  if not any(concat($s.queue,values($s.running)),fn($j)=$j.kind=="reattach" and $j.payload.document==$t.document) then
+    $s=queue_job($s,"reattach",{document:$t.document,args:{path:$t.path,recovery_id:if $t.path==nil then $t.recovery_id else nil end}})
+  end
+  return $s
+end

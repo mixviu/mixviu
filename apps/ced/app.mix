@@ -3,7 +3,10 @@
 -- lint: globals app_args
 $ctx=viu_context();$frame=require("../../libraries/viu/mix/gold-frame.mix")
 include "core.mix"
+include "session.mix"
 $state={tabs:[],active:0,busy:false,serial:0,next_tab:0,queue:[],running:{},timers:{},outcomes:{},last_op:nil,status:"Open a UTF-8 document",path:"",wrap:false,line_numbers:true,window_close:false,open_dialog:false,event_seq:nil,look:{appearance:{scheme:"studio",mode:"dark"},values:{},revision:nil}}
+$state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_loaded=false;$state.session_dirty=false;$state.session_seen=nil;$state.restore={};$state.restore_active=nil;$state.exit_after_save=false;$state.edit={epoch:nil,version:nil,volatile:nil}
+$state=pump(queue_job($state,"session-load",{}))
 publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
@@ -34,7 +37,7 @@ on ced.intent
       $state.open_dialog=false
     end
   else $state=operation($state,$a.id,$a) end
-  publish_ced($state);reply(0,"{}")
+  $state=session_changed($state);publish_ced($state);reply(0,"{}")
 end
 on viu.frame.intent
   $op=$event.args.value.command
@@ -46,7 +49,9 @@ end
 on viu.frame.close
   $state=refresh_tabs($state)
   if any($state.tabs,fn($t)=not $t.idle or $t.dirty) then raise("DRAFT","Save or confirm discard before quitting") end
-  $state.window_close=true;publish_ced($state);reply(0,"{}")
+  $state.exit_after_save=true;$state=pump(save_session(session_changed($state)))
+  if not any(concat($state.queue,values($state.running)),fn($j)=$j.kind=="session-save") then $state.window_close=true end
+  publish_ced($state);reply(0,"{}")
 end
 on viu.job.completed
   $job=$event.args.tag.owner
@@ -56,15 +61,30 @@ on viu.job.completed
       if $job.kind=="io" and $event.args.body.deadline_after_ms!=nil then
         viu_timer($job.payload.document..":deadline:"..$job.payload.request.op_id,$event.args.body.deadline_after_ms,{document:$job.payload.document,kind:"deadline",op_id:$job.payload.request.op_id})
       end
-      if $job.kind=="open" then
+      if $job.kind=="session-load" then $state=restore_session($state,$event.args.body)
+      elif $job.kind=="probe" then
+        $state.reattach_wait={}
+        $state.edit=$event.args.body
+        for $t in $state.tabs
+          if $t.epoch!=$state.edit.epoch then $v=viu_document("epoch",$t.document,{}) end
+        end
+      elif $job.kind=="open" then
         $t=viu_document("state",$job.payload.document,{})
         $state.tabs=push($state.tabs,$t);$state.active=len($state.tabs)-1
+        $state.tabs=sort_by($state.tabs,fn($t)=to_number($t.document))
+        if $t.path!=nil then $state.recent=slice(concat([$t.path],filter($state.recent,fn($p)=$p!=$t.path)),0,20) end
       elif $job.kind=="close" then
         $v=viu_document("close",$job.payload.document,{})
         $state.tabs=filter($state.tabs,fn($t)=$t.document!=$job.payload.document);$state.active=0
       end
-    else $state.status="Failed: "..json_encode($event.args.body) end
+    else
+      $state.status="Failed: "..json_encode($event.args.body)
+      if $job.kind=="open" then $state.restore=delete($state.restore,$job.payload.document) end
+      if $job.kind=="reattach" then $state.reattach_wait[$job.payload.document]=true;viu_timer($job.payload.document..":reattach",30000,{kind:"reattach",document:$job.payload.document}) end
+      if $job.kind=="session-save" then $state.session_dirty=true;$state.exit_after_save=false end
+    end
     $state=pump($state);publish_ced($state)
+    if $state.exit_after_save and not any(concat($state.queue,values($state.running)),fn($j)=$j.kind=="session-save") then $state.window_close=true;publish_ced($state) end
   end
 end
 on edit.changed
@@ -78,6 +98,8 @@ on edit.changed
 end
 on bus.connected
   subscribe("edit.changed")
+  subscribe("noded.props.changed")
+  $state=request_probe($state)
   for $t in $state.tabs $v=viu_document("suspect",$t.document,{}) end
   $state=pump($state);publish_ced($state)
 end
@@ -87,8 +109,15 @@ on bus.overflow
 end
 on viu.timer
   $t=$event.args.value
-  if $t.kind!="drain" and any($state.tabs,fn($tab)=$tab.document==$t.document) then $v=viu_document($t.kind,$t.document,{op_id:$t.op_id}) end
+  if $t.kind=="session-save" then $state=save_session($state)
+  elif $t.kind=="reattach" then
+    $state.reattach_wait=delete($state.reattach_wait,$t.document)
+    for $tab in $state.tabs if $tab.document==$t.document then $state=request_reattach($state,$tab) end end
+  elif $t.kind!="drain" and any($state.tabs,fn($tab)=$tab.document==$t.document) then $v=viu_document($t.kind,$t.document,{op_id:$t.op_id}) end
   $state=pump($state);publish_ced($state)
+end
+on noded.props.changed
+  if $event.args.path=="services.registered" and contains($event.args.new,"edit") then $state=pump(request_probe($state)) end
 end
 on viu.session
   $state.look.appearance=$event.args.appearance;$state.look.revision=$event.args.state.revision

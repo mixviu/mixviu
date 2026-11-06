@@ -1,11 +1,54 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
+fn load_session()
+  $dirs=viu_app_dirs("ced");$path=if $dirs!=nil then path_join($dirs.state,"session.json") else nil end
+  $empty={version:1,active:nil,tabs:[],recent:[]};$value=$empty
+  try
+    if $path!=nil then
+      $file=viu_read_optional($path)
+      if $file.found then
+        $v=json_parse($file.text)
+        if $v.version==1 and type($v.tabs)=="list" and type($v.recent)=="list" and all($v.recent,fn($p)=type($p)=="string") and all($v.tabs,fn($t)=type($t)=="map" and ($t.path==nil or type($t.path)=="string") and ($t.recovery_id==nil or type($t.recovery_id)=="string") and type($t.caret)=="number" and $t.caret>=0 and floor($t.caret)==$t.caret and type($t.first_line)=="number" and $t.first_line>=0 and floor($t.first_line)==$t.first_line) then
+          $value=$v;$value.recent=slice($value.recent,0,20)
+          if type($value.active)!="number" or $value.active<0 or floor($value.active)!=$value.active or $value.active>=len($value.tabs) then $value.active=nil end
+        end
+      end
+    end
+  catch $message
+    $value=$empty
+  end
+  return {path:$path,value:$value}
+end
+fn open_recovery($a)
+  if $a.recovery_id!=nil then
+    send "edit" "edit.list" body={} timeout=30
+    if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
+    $list=$reply
+    for $b in $list.buffers
+      if $b.recovery_id==$a.recovery_id then
+        $b.epoch=$list.epoch;$b.eol="lf";$b.bom=false;$b.reopened=true;$b.created=false;$b.recovered_from=nil
+        return $b
+      end
+    end
+  end
+  $a=delete($a,"recovery_id")
+  send "edit" "edit.open" body=$a timeout=30
+  if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
+  return $reply
+end
 on job.run
   $job=$event.args;$a=$job.payload
-  if $job.kind=="open" then
-    send "edit" "edit.open" body=$a.args timeout=30
-    if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
-    $state=viu_document("open",$a.document,$reply)
+  if $job.kind=="session-load" then reply(0,json_encode(load_session()));return
+  elif $job.kind=="session-save" then
+    mkdir(dirname($a.path),{parents:true})
+    viu_atomic_replace($a.path,json_encode($a.value))
+  elif $job.kind=="probe" then
+    send "edit" "edit.info" body={} timeout=5
+    if $rc!=0 then raise("PROBE",json_encode($reply ?? $result)) end
+    reply(0,json_encode({epoch:$reply.epoch,version:$reply.version,volatile:$reply.volatile}));return
+  elif $job.kind=="open" or $job.kind=="reattach" then
+    $open=open_recovery($a.args)
+    $state=viu_document(if $job.kind=="open" then "open" else "reattach" end,$a.document,$open)
   elif $job.kind=="close" then
     send "edit" "edit.close" body={buffer:$a.buffer,force:$a.force} timeout=5
     if $rc!=0 then raise("CLOSE",json_encode($reply ?? $result)) end

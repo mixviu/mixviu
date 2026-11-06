@@ -135,6 +135,7 @@ impl Document {
         let m = &self.mirror;
         json!({"document":key,"buffer":m.buffer(),"epoch":m.epoch(),"rev":m.rev(),"view_gen":m.view_gen(),
             "phase":match m.phase(){Phase::Live=>"live",Phase::Bootstrapping{..}=>"bootstrapping",Phase::Recovering{..}=>"recovering",Phase::Detached{..}=>"detached"},
+            "reattach_needed":matches!(m.phase(),Phase::Detached{reason:editor_model::mirror::DetachReason::EpochChanged}),
             "bytes":m.text().len(),"lines":m.text().line_count(),"path":m.meta().path,"language":m.meta().language,
             "dirty":m.meta().dirty,"pending":m.pending(),"inflight":m.inflight().is_some(),"idle":m.is_idle(),
             "recovered":m.meta().recovered,"recovery_id":m.meta().recovery_id,"saved_rev":m.meta().saved_rev,"disk":m.meta().disk,
@@ -327,6 +328,13 @@ impl Documents {
                     head: point(doc.mirror.text(), &a["head"])?,
                 };
                 doc.model.preferred_cells = None;
+            }
+            "restore-view" => {
+                let caret = crate::widgets::whole(&a["caret"]).unwrap_or(0) as usize;
+                let mut caret = caret.min(doc.mirror.text().len());
+                while !doc.mirror.text().is_char_boundary(caret) { caret -= 1; }
+                doc.model.sel = Selection { anchor: caret, head: caret };
+                doc.model.scroll.first_line = (crate::widgets::whole(&a["first_line"]).unwrap_or(1) as usize).max(1).min(doc.mirror.text().line_count());
             }
             "command" => {
                 let name = text_arg(&a, "name")?;

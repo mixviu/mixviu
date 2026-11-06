@@ -7,6 +7,19 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+/// Pure resolution through the shared native application-root contract.
+pub(crate) fn app_dirs() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let [Value::String(component)] = args.as_slice() else {
+            return Err(MixError::RuntimeError { msg: "viu_app_dirs expects an application slug".into(), span: None });
+        };
+        crate::runtime::from_json(match config::AppDirs::resolve(component) {
+            Some(d) => serde_json::json!({"root":d.root(),"config":d.config(),"state":d.state(),"cache":d.cache()}),
+            None => serde_json::Value::Null,
+        })
+    })
+}
+
 /// Bounded image metadata and exclusive PNG encoding; callers own naming,
 /// storage directories, save policy and document lifetime.
 pub(crate) fn image_file() -> mix::evaluator::ExtFn {

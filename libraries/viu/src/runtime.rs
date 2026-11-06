@@ -204,6 +204,7 @@ impl Runtime {
                         eval.register("viu_thumbnail",crate::native_primitives::thumbnail(worker_stop.clone()));
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
+                        eval.register("viu_app_dirs",crate::native_primitives::app_dirs());
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_image",crate::native_primitives::image_file());

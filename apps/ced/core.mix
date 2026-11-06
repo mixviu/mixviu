@@ -8,6 +8,14 @@ fn current($s)
 end
 fn refresh_tabs($s)
   for $i=0 to len($s.tabs)-1 $s.tabs[$i]=viu_document("state",$s.tabs[$i].document,{}) end
+  for $t in $s.tabs
+    if $s.restore[$t.document]!=nil and $t.phase=="live" then
+      $v=viu_document("restore-view",$t.document,$s.restore[$t.document]);$s.restore=delete($s.restore,$t.document)
+    end
+  end
+  if len(keys($s.restore))==0 and $s.restore_active!=nil then
+    $s.active=min(max(0,$s.restore_active),max(0,len($s.tabs)-1));$s.restore_active=nil
+  end
   $s.busy=any($s.tabs,fn($t)=$t.phase!="live" or not $t.idle) or len($s.running)>0 or len($s.queue)>0
   return $s
 end
@@ -19,6 +27,7 @@ end
 fn pump($s)
   $s=refresh_tabs($s)
   for $t in $s.tabs
+    if $t.reattach_needed then $s=request_reattach($s,$t) end
     $effects=viu_document("effects",$t.document,{})
     for $request in $effects.out $s=queue_job($s,"io",{document:$t.document,request:$request}) end
     if $effects.retry_ms!=nil then viu_timer($t.document..":retry",$effects.retry_ms,{document:$t.document,kind:"retry"}) end
@@ -27,12 +36,13 @@ fn pump($s)
   end
   while len($s.queue)>0 and len(keys($s.running))<4
     $job=$s.queue[0];$s.queue=slice($s.queue,1)
+    if $job.kind=="session-save" and any(values($s.running),fn($j)=$j.kind=="session-save") then $s.queue=concat([$job],$s.queue);break end
     $p=path_join(dirname(script_path()),"job.mix")
     send "viu-local" "jobs.start" id=$job.id owner=$job path=$p source=read_file($p) command="job.run" args=$job
     if $rc!=0 then $s.queue=concat([$job],$s.queue);viu_timer("drain",25,{kind:"drain"});break end
     $s.running[$job.id]=$job
   end
-  return refresh_tabs($s)
+  return session_changed(refresh_tabs($s))
 end
 fn operation($s,$op,$a)
   if $op=="open" or $op=="new" then
