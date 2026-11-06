@@ -53,6 +53,7 @@ pub fn install_session(
         toolkit::session_look::ui(&look, Some(app))
     };
     toolkit::install(ctx, &theme);
+    let editor_palette=editor::Palette::from_theme(&theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();
     for role in resolve(&serde_json::json!({}))?.colours.keys() {
@@ -62,6 +63,7 @@ pub fn install_session(
     }
     let m = chrome.metrics;
     ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::unique("viu-gold-editor-palette"),editor_palette);
         d.insert_temp(egui::Id::unique("viu-gold-fonts"), true);
         d.insert_temp(
             egui::Id::unique("viu-design-colours"),

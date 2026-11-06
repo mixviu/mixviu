@@ -231,6 +231,9 @@ pub(crate) fn native_view(ui: &Ui, widget: &Widget) -> editor::View {
 }
 
 pub(crate) fn native_palette(ui: &Ui, widget: &Widget) -> editor::Palette {
+    if widget.properties["light"]==true {return editor::Palette::from_theme(toolkit::content::light_theme());}
+    if let Some(palette)=ui.ctx().data(|d|d.get_temp::<editor::Palette>(egui::Id::unique("viu-gold-editor-palette"))) {return palette;}
+
     let palette = if widget.properties["light"] == true {
         static LIGHT: std::sync::OnceLock<editor::Palette> = std::sync::OnceLock::new();
         LIGHT
