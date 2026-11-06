@@ -44,3 +44,46 @@ intact. Do not use the old Email GUI as the new app's backend, read maild's
 database directly or introduce a parallel transport. Next: wire the existing
 JMAP seam to a reusable upstream and verify list/read/compose with an isolated
 real mail service. No embedded interpreter update is proposed.
+
+## List budget checkpoint results
+
+Validated source `7c55df5d2de07b87e0ff6032fb9fade36b6a55b1`, CBC
+`20261106-224820-566c0878-a1`: 112 tests, fmt/check/clippy/build passed; full
+saved log read, empty worker diff. The initial adaptation job caught missing
+native table flags, fixed in both paths; no test weakened. Existing warnings
+remain. Zero per-app or shared production Rust added; one shared measurement
+test added. Native binary hash matches the CBC artifact.
+
+| 2000 messages, median ms | Mix loop | Existing jq bulk |
+|---|---:|---:|
+| CBC embedded callback wall time | 387.34 | 451.79 |
+| CBC runtime mailbox acknowledgement | 391.30 | 455.80 |
+| Fresh SceneView admission | 53.92 | 54.68 |
+| Cold egui context first draw | 65.71 | 65.46 |
+| Separate native full-snapshot Bus ACK | 562.13 | 636.96 |
+
+CBC method: debug build, actual embedded Mix 0.117, 2000 synthetic JMAP-shaped
+records, 3 warmups then 21 measured iterations per path, loop then bulk.
+Every projected row is compared for equality. Timed callback includes input
+decoding, validation, projection, copying and publication. Adapter and draw
+are separate timings with fresh view/context each iteration, without GPU or
+physical presentation; do not sum medians or call these steady-state frames.
+Native method uses a separate private headless/nested run with 21 warm samples
+per path, full JSON snapshot transfer through generic-host reply. The native
+cohort predates only startup-guard/format/report changes. The final-source
+fixture run also passed selection/native draft input; four owned processes
+stopped and two captures inspected. The pinned original snapshot is a layout
+reference, not an equivalent-content or timing baseline.
+
+Bulk jq is slower in both cohorts. These numbers show substantial full-list
+cost outside Dopus but do not attribute the same bottleneck. Dopus's retained
+2000-row sort-size ACK medians (14.99/34.50/237.40 ms original/Viu Rust/Mix)
+use a different operation and release build; there is no valid speed ratio.
+The private Dopus results now carry this separate cohort beside those numbers.
+
+Next required core work: account/settings/auth, native JMAP session and request
+wiring, mailbox/query/get, explicit compose/send with uncertain outcomes, then
+real isolated mail-service verification. Existing lib-mix HTTP builtins are
+feature-gated and not enabled by Viu here; the JMAP seam has no upstream
+handler. That is remaining implementation, not evidence that Mix cannot do it.
+Do not install this fixture bundle as a replacement Email client.

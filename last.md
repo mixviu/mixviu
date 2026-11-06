@@ -1,3 +1,39 @@
+# Round 5 Email list budget checkpoint
+
+Validated source `7c55df5d2de07b87e0ff6032fb9fade36b6a55b1`, lab/app-ports.
+Email core and viability step 2 remain OPEN. No new app port is complete.
+This checkpoint contains an explicit fixture-only 2000-row virtual message
+table, equivalent Mix-loop/jq projections, selection and an in-memory native
+draft editor. Real accounts/mailboxes/read/send remain required work, not
+optional feature deferrals. No mail service was contacted and no send attempted.
+
+CBC `20261106-224820-566c0878-a1`: rc 0, 112 tests, fmt/check/clippy/build
+passed; full saved log read, worker diff empty. Adaptation job
+`20261106-224144-1545a147-a1` ran earlier source and caught missing table flags;
+fixed without weakening assertions, formatting returned/applied locally.
+Zero per-app Rust and zero shared production Rust added. One shared Rust
+measurement test; no embedded interpreter, dependency or lockfile changes.
+
+2000-row medians (loop / jq bulk): CBC callback 387.34 / 451.79 ms;
+runtime ACK 391.30 / 455.80 ms; fresh adapter 53.92 / 54.68 ms;
+cold-context draw 65.71 / 65.46 ms. Separate native full-snapshot Bus ACK
+562.13 / 636.96 ms. Each cohort uses 3 warmups + 21 samples per path.
+Bulk is slower, not an optimisation win. The Dopus private report now places
+this separate cohort beside its 14.99/34.50/237.40 ms retained-row sort-size
+results, with operation/build/transport differences stated. No parity ratio.
+
+Native final-source fixture run passed, two captures inspected; four owned
+processes confirmed stopped. Pinned original Email saved snapshot inspected
+as a different-data layout reference. No original live-mail comparison or
+Email acceptance. Shared host binary hash matches final CBC artifact:
+f48c8fff1cd637700833d7b584c9fc553ebb763ae54b07176de8f8b7f675594a.
+No installs or desktop changes. `docs/ports/email.md` records scope/deferrals
+and remaining native HTTP/JMAP wiring; `docs/ports/term-needs.md` now surveys
+pinned PTY/parser dependencies, native session/descriptor lifecycle and IME
+ownership. Gold Term remains; no Term implementation started.
+
+Previous checkpoint trail follows.
+
 Round 5 measured native fixture ACK (21 samples after 3 warmups, 2000-row full snapshot over private Bus): Mix loop 562.13 ms, jq bulk 636.96 ms. Bulk is slower on this end-to-end path; no faster-builtin claim. Four owned processes stopped. CBC adaptation job 20261106-224144-1545a147-a1 ran stale pre-fix source and caught missing table flags; full log read, worker formatting applied. Current source fixes flags; exact-source full gate next.
 
 Round 5 native list/draft prototype now maps 2000 explicit fixture rows through the generic host. Initial missing tree-table flags fixed; harness argv-size and JSON framing corrected without changing application admission. Term native session/IME survey committed. CBC adaptation job 20261106-224144-1545a147 is still queued behind occupied heavy workers; no new CBC acceptance yet. Email core and viability step 2 remain open.
@@ -228,3 +264,5 @@ Round-3 final CBC 20261106-220647-449d25c2-a1 BUILD_RC=0: 109 tests, fmt/check/c
 Branch: lab/app-ports; head/source SHA: 6edaf28e63a2192a67ee52feb3398d6349e8179b (validated source; reporting-only commit follows); apps done: Ced bounded specimen, Workshop inventory only; CBC job ids: 20261106-220647-449d25c2-a1 (final green), 20261106-220141-a624f945-a1 (earlier full green), 20261106-215555-cd9f02ee-a1 (scoped green).
 
 branch: lab/app-ports; head SHA: e330c14a5c7725804ef62614badd7c8b08dd1b69 (validated source; report-only commit follows); apps done: Workshop bounded local Bus specimen; Email inventory only; CBC jobs: 20261106-223216-699f3e94-a1 (final green), 20261106-222833-c4cabdf8-a1, 20261106-221954-40c3a368-a1, 20261106-221807-830d4ca7-a1, 20261106-222735-1552df20-a1, 20261106-223118-23ebbff1-a1.
+
+branch: lab/app-ports; head SHA: 7c55df5d2de07b87e0ff6032fb9fade36b6a55b1 (validated source; report-only commit follows); apps done: no new complete app, Email fixture/list budget checkpoint only, Term needs updated; CBC job ids: 20261106-224820-566c0878-a1 (green), 20261106-224144-1545a147-a1 (adaptation failure fixed).
