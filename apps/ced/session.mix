@@ -34,7 +34,11 @@ fn restore_session($s,$body)
   $value=$body.value ?? empty_session();$s.recent=slice($value.recent,0,20)
   $s.restore_active=$value.active
   for $i=0 to len($value.tabs)-1
-    $s.next_tab=$s.next_tab+1;$key=to_string($s.next_tab);$tab=$value.tabs[$i]
+    $tab=$value.tabs[$i]
+    -- An explicit Open may arrive while the startup read is in flight.
+    -- Reuse its live/queued document instead of opening a duplicate tab.
+    if $tab.path!=nil and (any($s.tabs,fn($t)=$t.path==$tab.path) or any(concat($s.queue,values($s.running)),fn($j)=$j.kind=="open" and $j.payload.args.path==$tab.path)) then continue end
+    $s.next_tab=$s.next_tab+1;$key=to_string($s.next_tab)
     $s.restore[$key]=$tab
     $s=restore_mail($s,$key,$tab)
     $s=queue_job($s,"open",{document:$key,args:{path:$tab.path,recovery_id:if $tab.path==nil or $s.mail[$key]!=nil then $tab.recovery_id else nil end,mail:$tab.mail}})

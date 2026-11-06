@@ -24,6 +24,10 @@ pub struct Manifest {
     pub native_ui: bool,
     pub native_macros: bool,
     pub native_debug: bool,
+    pub activation: Option<String>,
+    pub unknown_command: Option<String>,
+    pub app: Option<String>,
+    pub bus_url: Option<String>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -45,7 +49,21 @@ impl Default for Manifest {
             native_ui: false,
             native_macros: false,
             native_debug: false,
+            activation: None,
+            unknown_command: None,
+            app: None,
+            bus_url: None,
         }
+    }
+}
+impl Manifest {
+    pub fn app(&self) -> &str {
+        self.app.as_deref().unwrap_or(&self.service)
+    }
+    pub fn bus_url(&self) -> String {
+        self.bus_url
+            .clone()
+            .unwrap_or_else(bus::client_helpers::resolve_noded_url)
     }
 }
 pub struct Bundle {

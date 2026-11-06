@@ -429,13 +429,23 @@ pub(crate) fn draw(
     }
     match widget.kind.as_str() {
         "menubar" => {
-            let form = menu_form(ui.ctx());
-            let response = if form["hosted"] == true {
+            let gold = widget.properties["style"] == "gold";
+            let form = if gold {
+                toolkit::menu::form(ui.ctx())
+            } else {
+                menu_form(ui.ctx())
+            };
+            let response = if form["hosted"] == true && !gold {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else if widget.properties["style"] == "gold" {
-                let response = crate::native_menu::draw(ui, value, form["effective"] != "bar");
+                let response = crate::native_menu::draw(
+                    ui,
+                    value,
+                    form["effective"] != "bar",
+                    widget.properties["header_icon"].as_str(),
+                );
                 if let Some(command) = crate::native_menu::picked(ui.ctx()) {
-                    emit(events, id, "command", json!({"command":command}));
+                    emit(events, id, "command", command);
                 }
                 response
             } else if form["effective"] == "bar" {
@@ -497,25 +507,71 @@ pub(crate) fn draw(
         }
         "command-bar" => {
             let state = presentation(ui.ctx());
-            let response = if state.hosted_actions {
+            let gold = widget.properties["style"] == "gold";
+            if gold {
+                let items = value
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|item| {
+                        Some(toolkit::titlebar::IconBarItem {
+                            command: crate::native_menu::native_id(ui.ctx(), item["id"].as_str()?)?,
+                            icon: crate::icons::Icon::from_name(item["icon"].as_str()?)?,
+                            tooltip: item["shortcut"]
+                                .as_str()
+                                .and_then(toolkit::keymap::parse_chord)
+                                .map_or_else(
+                                    || text(item, "label").into(),
+                                    |s| {
+                                        format!(
+                                            "{} ({})",
+                                            text(item, "label"),
+                                            ui.ctx().format_shortcut(&s)
+                                        )
+                                    },
+                                ),
+                            enabled: item["enabled"] == true,
+                            toggled: item["checked"] == true,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                toolkit::titlebar::hosting::publish(ui.ctx(), &items);
+            }
+            let response = if state.hosted_actions
+                || (gold && toolkit::titlebar::hosting::hosted(ui.ctx()))
+            {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
-                let height = if widget.properties["style"] == "gold" {
-                    toolkit::chrome::Chrome::of(ui.ctx())
-                        .metrics
-                        .title_bar_height
-                } else {
-                    ui.spacing().interact_size.y
-                };
                 ui.allocate_ui_with_layout(
-                    egui::vec2(ui.available_width(), height),
+                    ui.available_size_before_wrap(),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         if widget.properties["style"] == "gold" {
+                            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                            if chrome.band.actions.alignment()
+                                == design::title_band::Alignment::Left
+                            {
+                                let pad = if crate::window_frame::client_of(ui.ctx())
+                                    && chrome
+                                        .captions
+                                        .alignment(design::title_band::Alignment::Right)
+                                        == design::title_band::Alignment::Left
+                                {
+                                    chrome.metrics.caption_gap
+                                } else {
+                                    chrome.metrics.title_bar_margin
+                                };
+                                ui.add_space(pad);
+                            }
                             ui.spacing_mut().item_spacing.x = toolkit::chrome::Chrome::of(ui.ctx())
                                 .style
                                 .title_control_spacing
                                 as f32;
+                            ui.add_space(
+                                toolkit::chrome::Chrome::of(ui.ctx())
+                                    .style
+                                    .title_control_spacing as f32,
+                            );
                         }
                         for item in value.as_array().into_iter().flatten() {
                             if item["separator"] == true {
@@ -532,7 +588,21 @@ pub(crate) fn draw(
                                     item["enabled"] == true,
                                     toolkit::button::IconButton::new(icon)
                                         .selected(item["checked"] == true)
-                                        .tooltip(text(item, "label")),
+                                        .tooltip(
+                                            item["shortcut"]
+                                                .as_str()
+                                                .and_then(toolkit::keymap::parse_chord)
+                                                .map_or_else(
+                                                    || text(item, "label").to_owned(),
+                                                    |s| {
+                                                        format!(
+                                                            "{} ({})",
+                                                            text(item, "label"),
+                                                            ui.ctx().format_shortcut(&s)
+                                                        )
+                                                    },
+                                                ),
+                                        ),
                                 )
                             } else if let Some(icon) = item["icon"]
                                 .as_str()
@@ -558,9 +628,7 @@ pub(crate) fn draw(
                                 )
                             };
                             let response = response.on_hover_text(text(item, "label"));
-                            if item["macro_anchor"] == true {
-                                toolkit::macros::anchor(ui.ctx(), response.rect);
-                            }
+                            if item["macro_anchor"] == true {toolkit::macros::anchor(ui.ctx(), response.rect);}
                             geometry.insert(
                                 format!("{id}.command.{}", text(item, "id")),
                                 response.rect,
@@ -611,6 +679,81 @@ pub(crate) fn draw(
             .response
         }
         "dialog-form" => {
+            if widget.properties["style"] == "gold" {
+                let dialog_id = egui::Id::unique((
+                    ui.ctx().viewport_id(),
+                    id,
+                    "gold-dialog",
+                    text(value, "instance"),
+                ));
+                let choices: Vec<_> = value["choices"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|c| {
+                        toolkit::dialog::Choice::new(
+                            text(c, "label"),
+                            if c["default"] == true {
+                                toolkit::dialog::Role::Default
+                            } else if c["cancel"] == true {
+                                toolkit::dialog::Role::Cancel
+                            } else {
+                                toolkit::dialog::Role::Other
+                            },
+                        )
+                        .enabled(c["enabled"] == true)
+                    })
+                    .collect();
+                let shown = toolkit::dialog::Dialog::new(dialog_id, text(value, "title"))
+                    .buttons(choices)
+                    .show(ui.ctx(), |ui| {
+                        if let Some(rows) = value["grid"].as_array() {
+                            egui::ScrollArea::vertical()
+                                .max_height(360.0)
+                                .show(ui, |ui| {
+                                    egui::Grid::new((id, "shortcuts")).show(ui, |ui| {
+                                        for row in rows {
+                                            ui.label(text(row, "label"));
+                                            let keys = row["keys"]
+                                                .as_array()
+                                                .map(|keys| {
+                                                    keys.iter()
+                                                        .filter_map(Value::as_str)
+                                                        .filter_map(toolkit::keymap::parse_chord)
+                                                        .map(|s| ui.ctx().format_shortcut(&s))
+                                                        .collect::<Vec<_>>()
+                                                        .join(", ")
+                                                })
+                                                .unwrap_or_else(|| text(row, "shortcut").into());
+                                            ui.weak(keys);
+                                            ui.end_row();
+                                        }
+                                    });
+                                });
+                        } else {
+                            ui.add(egui::Label::new(text(value, "body")).wrap());
+                        }
+                    });
+                if let Some(index) = shown.chosen {
+                    let choice = &value["choices"][index];
+                    emit(
+                        events,
+                        id,
+                        "answer",
+                        json!({"choice":choice["id"],"instance":value["instance"]}),
+                    );
+                    toolkit::dialog::Dialog::reset(ui.ctx(), dialog_id);
+                } else if shown.dismissed {
+                    emit(
+                        events,
+                        id,
+                        "answer",
+                        json!({"choice":"close","instance":value["instance"]}),
+                    );
+                    toolkit::dialog::Dialog::reset(ui.ctx(), dialog_id);
+                }
+                return ui.interact(shown.rect, dialog_id.with("receipt"), egui::Sense::hover());
+            }
             let mut field = value["field"].as_str().map(str::to_owned);
             let modal = egui::Modal::new(egui::Id::unique((ui.ctx().viewport_id(), id, "modal")))
                 .show(ui.ctx(), |ui| {

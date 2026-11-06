@@ -5,6 +5,34 @@ use egui::{Rect, Ui, ViewportCommand as Command, pos2, vec2};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+pub fn is_client(settings: &Value) -> bool {
+    design::decorations::resolve_with_actions(
+        settings["window.decorations"]
+            .as_str()
+            .and_then(design::RequestedDecorations::from_name),
+        design::RequestedDecorations::Auto,
+        design::ActionsPlace::resolve(settings["window.actions_place"].as_str().unwrap_or("row")),
+    )
+    .mode
+        == design::Decorations::Client
+}
+pub fn client_of(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(egui::Id::unique("viu-window-client")))
+        .unwrap_or(true)
+}
+pub fn request_menu(ctx: &egui::Context, position: Option<egui::Pos2>) {
+    if client_of(ctx) && design::decorations::is_wayland() {
+        if let Some(position) = position {
+            ctx.data_mut(|d| {
+                d.insert_temp(
+                    egui::Id::unique(("eframe.window-menu", ctx.viewport_id())),
+                    position,
+                )
+            });
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Metrics {
     pub height: f32,
@@ -87,7 +115,16 @@ impl WindowFrame {
             ui.ctx().send_viewport_cmd(Command::Decorations(server));
             self.server = Some(server);
         }
-        if !self.client {
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique("viu-window-client"), self.client));
+        if !self.client && !header {
+            return;
+        }
+        if !self.client
+            && header
+            && toolkit::menu::form(ui.ctx())["hosted"] == true
+            && toolkit::titlebar::hosting::hosted(ui.ctx())
+        {
             return;
         }
         let metrics = Metrics::of(ui.ctx());
@@ -102,6 +139,19 @@ impl WindowFrame {
             0.0,
             crate::appearance::colour(ui.ctx(), "chrome").unwrap_or(ui.visuals().panel_fill),
         );
+        ui.painter().hline(
+            band.x_range(),
+            band.bottom() - 0.5,
+            ui.visuals().widgets.noninteractive.bg_stroke,
+        );
+        if !self.client {
+            self.geometry.insert("window.header".into(), band);
+            let mut content = band;
+            content.max.y -= ui.visuals().widgets.noninteractive.bg_stroke.width;
+            self.geometry
+                .insert("window.header.content".into(), content);
+            return;
+        }
         let alignment = design::CaptionSide::resolve(
             settings["window.caption_side"].as_str().unwrap_or("auto"),
         )
@@ -124,7 +174,10 @@ impl WindowFrame {
                 },
                 band.top(),
             ),
-            vec2(3.0 * caption_width, height),
+            vec2(
+                3.0 * caption_width,
+                (height - ui.visuals().widgets.noninteractive.bg_stroke.width).max(0.0),
+            ),
         );
         self.geometry.insert("window.captions".into(), controls);
         let drag = if scene_captions {
@@ -144,6 +197,10 @@ impl WindowFrame {
         self.geometry.insert("window.title".into(), drag);
         if header {
             self.geometry.insert("window.header".into(), drag);
+            let mut content = drag;
+            content.max.y -= ui.visuals().widgets.noninteractive.bg_stroke.width;
+            self.geometry
+                .insert("window.header.content".into(), content);
         }
         let response = ui.interact(
             drag,
@@ -151,7 +208,9 @@ impl WindowFrame {
             egui::Sense::click_and_drag(),
         );
         let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
-        if response.double_clicked() {
+        if response.secondary_clicked() {
+            request_menu(ui.ctx(), response.interact_pointer_pos());
+        } else if response.double_clicked() {
             ui.ctx().send_viewport_cmd(Command::Maximized(!maximized));
         } else if response.drag_started() {
             ui.ctx().send_viewport_cmd(Command::StartDrag);
@@ -285,7 +344,11 @@ pub fn caption_controls(
     let height = area.height();
     let band = area;
     let controls = area;
-    let caption_width = area.width() / 3.0;
+    let caption_width = if (area.width() - 3.0 * metrics.caption_width).abs() < 0.001 {
+        metrics.caption_width
+    } else {
+        area.width() / 3.0
+    };
     let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
     let mut close_requested = false;
     let mut geometry = BTreeMap::new();
@@ -305,7 +368,14 @@ pub fn caption_controls(
             ui.scope_id().with(("viu-caption", id, name)),
             egui::Sense::click(),
         );
-        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+        let label_key = match name {
+            "minimize" => "window-minimize",
+            "maximize" if maximized => "window-restore",
+            "maximize" => "window-maximize",
+            _ => "window-close",
+        };
+        let label = toolkit::action::label_text(&toolkit::Strings::new(""), label_key);
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         let chrome = toolkit::chrome::Chrome::of(ui.ctx());
         let pressed = r.is_pointer_button_down_on();
         let hovered = r.hovered() || pressed;
@@ -372,7 +442,7 @@ pub fn caption_controls(
                 painter.line_segment([b.right_top(), b.left_bottom()], line);
             }
         }
-        if r.on_hover_text(name).clicked() {
+        if r.on_hover_text(&label).clicked() {
             if name == "close" {
                 close_requested = true;
             } else {

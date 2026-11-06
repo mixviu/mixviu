@@ -35,6 +35,20 @@ pub fn install_session(
     file: &toolkit::Theme,
     last_ui: &settings::model::CommonUi,
 ) -> Result<settings::model::CommonUi, String> {
+    let (theme, ui) = session_base(snapshot, app, file, last_ui)?;
+    install_theme(ctx, &theme)?;
+    ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::unique("viu-session-theme"), theme);
+        d.remove::<Value>(egui::Id::unique("viu-local-choice"));
+    });
+    Ok(ui)
+}
+pub fn session_base(
+    snapshot: &Value,
+    app: &str,
+    file: &toolkit::Theme,
+    last_ui: &settings::model::CommonUi,
+) -> Result<(toolkit::Theme, settings::model::CommonUi), String> {
     use settings::view::View;
     let values: settings::registry::Values =
         serde_json::from_value(snapshot["state"]["values"].clone()).map_err(|e| e.to_string())?;
@@ -52,13 +66,11 @@ pub fn install_session(
     } else {
         toolkit::session_look::ui(&look, Some(app))
     };
-    toolkit::install(ctx, &theme);
-    ctx.data_mut(|d| {
-        d.insert_temp(egui::Id::unique("viu-resolved-theme"), theme.clone());
-        d.insert_temp(egui::Id::unique("viu-session-theme"), theme.clone());
-        d.remove::<Value>(egui::Id::unique("viu-local-choice"));
-    });
-    let editor_palette = editor::Palette::from_theme(&theme);
+    Ok((theme, ui))
+}
+pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), String> {
+    toolkit::install(ctx, theme);
+    let editor_palette = editor::Palette::from_theme(theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();
     for role in resolve(&serde_json::json!({}))?.colours.keys() {
@@ -73,6 +85,7 @@ pub fn install_session(
     );
     let m = chrome.metrics;
     ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::unique("viu-resolved-theme"), theme.clone());
         d.insert_temp(egui::Id::unique("viu-gold-editor-palette"), editor_palette);
         d.insert_temp(egui::Id::unique("viu-gold-fonts"), true);
         d.insert_temp(
@@ -93,10 +106,10 @@ pub fn install_session(
     });
     crate::icons::install_style(
         ctx,
-        toolkit::icons::stroke_width(&theme),
+        toolkit::icons::stroke_width(theme),
         chrome.style.icon_mask.0,
     );
-    Ok(ui)
+    Ok(())
 }
 
 /// A window choice overlays the live session theme, as in gold clients.

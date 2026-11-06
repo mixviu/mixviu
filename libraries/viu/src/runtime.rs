@@ -445,7 +445,10 @@ impl BusHandler for Local {
         args: &'a Value,
     ) -> BusFuture<'a, MixResult<(i32, Value, Value)>> {
         Box::pin(async move {
-            if target != "viu-local" || ["jobs.start", "jobs.cancel"].contains(&command) {
+            if target != "viu-local"
+                || command.starts_with("native.")
+                || ["jobs.start", "jobs.cancel"].contains(&command)
+            {
                 return match &self.backend {
                     Some(backend) => backend.send_with_reply(target, command, args).await,
                     None => Err(failure("no native Bus backend configured")),
@@ -462,7 +465,10 @@ impl BusHandler for Local {
         args: &'a Value,
     ) -> BusFuture<'a, MixResult<(i32, Value)>> {
         Box::pin(async move {
-            if target != "viu-local" || ["jobs.start", "jobs.cancel"].contains(&command) {
+            if target != "viu-local"
+                || command.starts_with("native.")
+                || ["jobs.start", "jobs.cancel"].contains(&command)
+            {
                 return match &self.backend {
                     Some(backend) => backend.send(target, command, args).await,
                     None => Err(failure("no native Bus backend configured")),

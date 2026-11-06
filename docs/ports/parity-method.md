@@ -22,11 +22,13 @@ Do not use a dirty source checkout as the oracle.
    `monitord-processes.json` fixtures from its gold contract tests. Record
    fixture hashes and every request/reply. A fixture used to measure pixels
    does not replace functional testing against the real daemon.
-4. Capture gold first at 1040×680 logical client pixels and scale 1. Set
+4. Use the same canonical service identity sequentially (Monitor: `monitor`),
+   so per-app Prefs, menu hosting, macros and theme lookup see the same app.
+   Capture gold first at 1040×680 logical client pixels and scale 1. Set
    Processes, default CPU sort, no selection/filter and paused state; wait
    for data and the applied state, then request `monitor.ui.capture`.
-   Retain its PNG and width/height receipt. The current port's corresponding
-   command is `viu.capture`; full ABP parity must also provide the gold name.
+   Retain its PNG and width/height receipt. The generic host also supplies
+   `viu.capture` for diagnostics; acceptance exercises the gold command name.
 5. Stop the gold process, launch the candidate against the same services and
    fixtures, reproduce the state, verify readiness and absence of errors,
    then capture. Check equal decoded image dimensions. Do not resize either
@@ -34,6 +36,9 @@ Do not use a dirty source checkout as the oracle.
 6. Capture every further relevant state: Performance/resource pages, tree,
    sorting, selection/hover/focus, menus/dialogs, narrow windows, overflow and
    both colour modes. Record any state transition used before each capture.
+   Seed a full constant 60-sample history when comparing chart geometry;
+   startup/tick timing must not accidentally become different chart data.
+   Use a separate varied/gapped history to test chart behaviour.
 7. Stop all owned processes in `finally`; verify that every PID and the
    private broker exited. Keep failed runs and logs. Store private scripts,
    captures and receipts in the private hub, outside this public repository.
@@ -159,8 +164,9 @@ Remaining differences belong to the Monitor parity job:
 - Further states: Performance resources/charts, process tree/actions/dialogs,
   node discovery and the complete 50-command ABP surface remain unaccepted.
 
-No difference has Fable approval. The source/inventory disagreement about
-signal admission is question P1 in `last.md`, for Opus to relay to Fable.
+At that historical checkpoint no difference had Fable approval. P1 has since
+been decided; [monitor.md](monitor.md) records the approved invisible process
+identity fence and corrects the old inventory's UID/confirmation claim.
 Five live Prefs variants plus settings authority loss/recovery and Mix-owned
 close passed on one candidate PID; that separate frame test does not grant
 Monitor visual, functional or ABP acceptance. Overall verdict: **FAIL**.

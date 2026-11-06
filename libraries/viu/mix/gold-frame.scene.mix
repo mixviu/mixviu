@@ -5,13 +5,13 @@ citizen: gold-frame
 ---
 ```mix
 {
-root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placements:{"gold-header":{edge:"top",size:"design.title_bar_height"},"gold-status":{edge:"bottom",size:"design.status_height"},"gold-content":{edge:"fill"}}},
-"gold-header":{widget:"column",background:"design.chrome",padding:4,padding_top:"= $model.frame.padding_top",padding_bottom:"= $model.frame.padding_bottom",padding_left:10,padding_right:10,children:["gold-band"],window_slot:"window.header"},
-"gold-band":{widget:"band",children:["gold-captions","gold-icon","gold-menu","gold-title","gold-toolbar"],groups:"= $model.frame.groups"},
-"gold-icon":{hidden:"= $model.frame.identity == false",widget:"control",definition:{id:"gold-icon",kind:"mark",label:"",initial:"monitor",properties:{fill_height:true}}},
-"gold-menu":{widget:"control",definition:{id:"gold-menu",kind:"menubar",label:"",initial:[],properties:{style:"gold"}},on_intent:"viu.frame.intent"},
-"gold-captions":{widget:"spacer",slot_only:"window.header"},
-"gold-title":{hidden:"= $model.frame.identity == false",widget:"control",definition:{id:"gold-title",kind:"label",label:"",initial:"",properties:{role:"title",weak:true}}},
+root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placements:"= {\"gold-header\":{edge:\"top\",size:if $model.__viu_header_hosted == true then 0 else \"design.title_bar_height\" end},\"gold-status\":{edge:\"bottom\",size:\"design.status_height\"},\"gold-content\":{edge:\"fill\"}}"},
+"gold-header":{widget:"column",background:"design.chrome",padding:0,children:["gold-band"],window_slot:"window.header.content"},
+"gold-band":{widget:"band",children:["gold-captions","gold-menu","gold-toolbar","gold-title"],groups:"= $model.frame.groups"},
+"gold-icon":{widget:"control",hidden:"= $model.__viu_window_client == false",definition:{id:"gold-icon",kind:"mark",label:"",initial:"monitor",properties:{fill_height:true,header_mark:true}}},
+"gold-menu":{widget:"control",definition:"= $model.frame.menu ?? {id:\"gold-menu\",kind:\"menubar\",label:\"\",initial:[],properties:{style:\"gold\"}}",on_intent:"viu.frame.intent"},
+"gold-captions":{widget:"spacer",slot_only:"window.header.content",hidden:"= $model.__viu_window_client == false"},
+"gold-title":{widget:"control",hidden:"= $model.__viu_window_client == false",definition:{id:"gold-title",kind:"label",label:"",initial:"",properties:{role:"title",weak:true}}},
 "gold-toolbar":{widget:"control",definition:{id:"gold-toolbar",kind:"command-bar",label:"",initial:[],properties:{style:"gold"}},on_intent:"viu.frame.intent"},
 "gold-status":{widget:"column",background:"design.chrome",padding:0,children:["gold-status-text"]},
 "gold-status-text":{widget:"control",definition:{id:"gold-status-text",kind:"status-line",label:"",initial:{left:"",right:[],icon:"plug"}}},

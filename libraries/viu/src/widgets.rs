@@ -109,6 +109,72 @@ impl Widget {
     /// Untruncated native label width, using exactly the same typography as
     /// drawing. Containers choose whether and how this preferred size shrinks.
     pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
+        if self.kind == "menubar" && self.properties["style"] == "gold" {
+            let c = toolkit::chrome::Chrome::of(ui.ctx());
+            let form = toolkit::menu::form(ui.ctx());
+            if form["hosted"] == true {
+                return Ok(0.0);
+            }
+            let width = if form["effective"] == "bar" {
+                self.value(model)
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|menu| {
+                        ui.painter()
+                            .layout_no_wrap(
+                                menu["label"].as_str().unwrap_or("").into(),
+                                toolkit::chrome::Chrome::menu_font(ui.style()),
+                                c.palette.text,
+                            )
+                            .size()
+                            .x
+                            + 2.0 * c.metrics.menu_title_padding.x
+                    })
+                    .sum()
+            } else {
+                c.style.icon_button as f32
+            };
+            let mark = if crate::window_frame::client_of(ui.ctx())
+                && self.properties["header_icon"].is_string()
+            {
+                c.metrics.mark + c.metrics.mark_gap
+            } else {
+                0.0
+            };
+            return Ok(width
+                + mark
+                + if c.menu_side != design::MenuSide::Center {
+                    c.metrics.title_bar_margin
+                } else {
+                    0.0
+                });
+        }
+        if self.kind == "command-bar" && self.properties["style"] == "gold" {
+            if toolkit::titlebar::hosting::hosted(ui.ctx()) {
+                return Ok(0.0);
+            }
+            let n = model["values"]
+                .get(&self.id)
+                .unwrap_or(&self.initial)
+                .as_array()
+                .ok_or("command bar list required")?
+                .len() as f32;
+            let c = toolkit::chrome::Chrome::of(ui.ctx());
+            return Ok(
+                n * (c.style.icon_button as f32 + c.style.title_control_spacing as f32)
+                    + if c.band.actions.alignment() == design::title_band::Alignment::Center {
+                        0.0
+                    } else if crate::window_frame::client_of(ui.ctx())
+                        && c.band.actions.alignment()
+                            == c.captions.alignment(design::title_band::Alignment::Right)
+                    {
+                        c.metrics.caption_gap
+                    } else {
+                        c.metrics.title_bar_margin
+                    },
+            );
+        }
         self.validate_model(model)?;
         if self.kind == "menubar" && self.properties["style"] == "gold" {
             let chrome = toolkit::chrome::Chrome::of(ui.ctx());
@@ -142,8 +208,19 @@ impl Widget {
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
         }
-        Ok(
-            egui::WidgetText::from(label_text(ui, self, self.value(model)))
+        let extra = if self.properties["role"] == "title" {
+            let c = toolkit::chrome::Chrome::of(ui.ctx());
+            2.0 * c.metrics.title_gap
+                + if c.band.title == design::TitleAlign::Auto {
+                    c.metrics.title_bar_margin
+                } else {
+                    0.0
+                }
+        } else {
+            0.0
+        };
+        Ok(extra
+            + egui::WidgetText::from(label_text(ui, self, self.value(model)))
                 .into_galley(
                     ui,
                     Some(egui::TextWrapMode::Extend),
@@ -151,8 +228,7 @@ impl Widget {
                     egui::TextStyle::Body,
                 )
                 .size()
-                .x,
-        )
+                .x)
     }
     fn choices(&self) -> Vec<&str> {
         self.properties["choices"]
@@ -676,6 +752,17 @@ impl Widgets {
                 let mut row = |ui: &mut egui::Ui| {
                     for item in value["left"].as_array().unwrap() {
                         let child = Widget::decode(item).expect("validated row child");
+                        if child.kind == "tabs" {
+                            let selected = model["values"].get(&child.id).unwrap_or(&child.initial);
+                            for option in child.choices() {
+                                let response = toolkit::selectable(ui, selected == option, option);
+                                self.remember(ui, &format!("{}.{}", child.id, option), &response);
+                                if response.clicked() {
+                                    events.push(Intent::set(&child.id, json!(option)));
+                                }
+                            }
+                            continue;
+                        }
                         events.extend(self.widget(ui, &child, model));
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -755,20 +842,32 @@ impl Widgets {
                     crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
                         .expect("validated mark"),
                     size,
-                    if widget.properties["weak"] == true {
+                    if widget.properties["header_mark"] == true {
+                        toolkit::chrome::Chrome::of(ui.ctx()).palette.icon
+                    } else if widget.properties["weak"] == true {
                         ui.visuals().weak_text_color()
                     } else {
                         ui.visuals().text_color()
                     },
                 );
                 if widget.properties["fill_height"] == true {
+                    let inset = if widget.properties["header_mark"] == true {
+                        toolkit::chrome::Chrome::of(ui.ctx())
+                            .metrics
+                            .title_bar_margin
+                    } else {
+                        0.0
+                    };
                     let (rect, response) = ui.allocate_exact_size(
-                        egui::vec2(size, ui.available_height()),
+                        egui::vec2(size + inset, ui.available_height()),
                         Sense::hover(),
                     );
                     image.paint_at(
                         ui,
-                        egui::Rect::from_center_size(rect.center(), egui::vec2(size, size)),
+                        egui::Rect::from_center_size(
+                            rect.center() + egui::vec2(inset / 2.0, 0.0),
+                            egui::vec2(size, size),
+                        ),
                     );
                     response
                 } else {
@@ -815,6 +914,27 @@ impl Widgets {
             }
             "label" => {
                 let text = label_text(ui, widget, value);
+                if widget.properties["role"] == "title" {
+                    let (rect, response) =
+                        ui.allocate_exact_size(ui.available_size_before_wrap(), Sense::hover());
+                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    toolkit::titlebar::window_title(
+                        ui,
+                        &chrome,
+                        value.as_str().unwrap_or(""),
+                        rect,
+                        rect.left() + chrome.metrics.title_gap,
+                        rect.right() - chrome.metrics.title_gap,
+                    );
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Label,
+                            ui.is_enabled(),
+                            value.as_str().unwrap_or(""),
+                        )
+                    });
+                    return self.remember(ui, id, &response);
+                }
                 let mut label = egui::Label::new(text);
                 if widget.properties["truncate"] == true {
                     label = label.truncate();
@@ -824,7 +944,9 @@ impl Widgets {
                 } else if widget.properties["align"] == "right" {
                     label = label.halign(egui::Align::Max);
                 }
-                if matches!(
+                if widget.properties["centered_justified"] == true {
+                    ui.centered_and_justified(|ui| ui.add(label)).response
+                } else if matches!(
                     widget.properties["role"].as_str(),
                     Some("title" | "status" | "status-band")
                 ) {
@@ -851,6 +973,16 @@ impl Widgets {
                     ui.add(toolkit::button::PushButton::secondary(widget.text("text")))
                 } else {
                     icon_button(ui, widget.text("icon"), widget.text("text"), false)
+                };
+                let r = if let Some(tip) = widget.properties["tooltip"].as_str() {
+                    let shortcut = widget.properties["shortcut"]
+                        .as_str()
+                        .and_then(toolkit::keymap::parse_chord)
+                        .map(|key| ui.ctx().format_shortcut(&key));
+                    let tip = toolkit::tooltip::text(tip, shortcut.as_deref());
+                    r.on_hover_text(tip.clone()).on_disabled_hover_text(tip)
+                } else {
+                    r
                 };
                 if r.clicked() {
                     events.push(Intent {

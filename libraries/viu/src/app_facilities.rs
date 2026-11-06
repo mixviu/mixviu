@@ -6,12 +6,13 @@ use crate::{
 };
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::BTreeMap,
     sync::{Arc, mpsc},
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 pub struct Facilities {
     app: String,
+    service: String,
     ui: bool,
     debug: bool,
     installed: bool,
@@ -24,12 +25,14 @@ pub struct Facilities {
     complete: mpsc::Sender<(Reply, macros::commands::Answer)>,
     finished: mpsc::Receiver<Value>,
     subscriber: Option<u64>,
-    hints: VecDeque<Value>,
     wake: crate::runtime::Wake,
+    journal: toolkit::executed::Journal,
+    events: crate::native_events::Events,
+    publishing: Option<(String, Value)>,
 }
 impl Facilities {
     pub fn new(manifest: &Manifest, wake: crate::runtime::Wake) -> Self {
-        let app = manifest.service.clone();
+        let app = manifest.app().to_owned();
         let mut surface = manifest.bus_surface.clone();
         if let Some(surface) = surface.as_mut() {
             let commands = surface["commands"]
@@ -59,7 +62,8 @@ impl Facilities {
         let (complete, completed) = mpsc::channel();
         Self {
             app,
-            ui: manifest.native_ui,
+            service: manifest.service.clone(),
+            ui: manifest.native_ui || manifest.native_drive,
             debug: manifest.native_debug,
             installed: false,
             context: None,
@@ -71,36 +75,81 @@ impl Facilities {
             complete,
             finished,
             subscriber,
-            hints: VecDeque::new(),
             wake,
+            journal: Default::default(),
+            events: Default::default(),
+            publishing: None,
         }
     }
     pub fn prepare(&mut self, ctx: &egui::Context, bus: &Endpoint) {
+        toolkit::drive::publish_titlebar(ctx, |topic, bodies, lost| {
+            self.events.lost_batch(lost);
+            for body in bodies {
+                self.events.push(topic.into(), body, 0);
+            }
+        });
+        let (records, lost) = self.journal.take();
+        self.events.lost_batch(lost);
+        for record in records {
+            self.events
+                .push(toolkit::executed::topic(&self.app), record.body(), 0);
+        }
         if self.ui && !self.installed {
             toolkit::drive::install(ctx, &self.app);
             self.installed = true;
             self.context = Some(ctx.clone());
         }
         if self.ui {
-            toolkit::drive::set_service(ctx, bus.client().as_ref().map(|_| self.app.as_str()));
+            toolkit::drive::set_service(ctx, bus.client().as_ref().map(|_| self.service.as_str()));
         }
         while let Ok((reply, answer)) = self.completed.try_recv() {
             let _ = reply.send(macro_answer(answer));
         }
         while let Ok(body) = self.finished.try_recv() {
-            self.hints.push_back(body);
+            self.events
+                .push(format!("{}.macros.finished", self.app), body, 0);
         }
-        while let Some(body) = self.hints.front() {
-            if bus
-                .hint(format!("{}.macros.finished", self.app), body.clone())
-                .is_err()
-            {
-                break;
+        if self.publishing.is_none() {
+            if let Some((topic, body)) = self.events.front() {
+                if bus.hint(topic.clone(), body.clone()).is_ok() {
+                    self.events.accepted();
+                    self.publishing = Some((topic, body));
+                }
             }
-            self.hints.pop_front();
         }
-        if self.ui {
-            self.answers(ctx, toolkit::drive::logic(ctx));
+        self.answers(ctx, toolkit::drive::logic(ctx));
+    }
+    pub fn record(&mut self, args: &Value) -> Result<Value, String> {
+        use toolkit::executed::Origin;
+        let origin = match args["origin"].as_str() {
+            Some("menu") => Origin::Menu,
+            Some("shortcut") => Origin::Shortcut,
+            Some("palette") => Origin::Palette,
+            Some("ui") => Origin::Ui,
+            Some("bus") => Origin::Bus,
+            Some("macro") => Origin::Macro,
+            _ => return Err("unknown action origin".into()),
+        };
+        let id = args["id"]
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 128)
+            .ok_or("invalid command id")?;
+        self.journal
+            .record(id, origin, args["params"].clone(), args["result"].clone());
+        Ok(json!({"recorded":true}))
+    }
+    pub fn notice(&mut self, command: &str, args: &Value) {
+        if command == "bus.hint.completed"
+            && self
+                .publishing
+                .as_ref()
+                .is_some_and(|(topic, _)| args["topic"] == topic.as_str())
+        {
+            let (_, body) = self.publishing.take().unwrap();
+            if args["ok"] != true {
+                self.events.failed(&body);
+            }
+            (self.wake)();
         }
     }
     fn answers(&mut self, ctx: &egui::Context, answers: Vec<toolkit::drive::Answer>) {
@@ -111,10 +160,35 @@ impl Facilities {
             }
         }
     }
-    pub fn request(&mut self, r: Request, ctx: &egui::Context) -> Option<Request> {
-        if r.command == "app.describe" {
+    pub fn request(&mut self, mut r: Request, ctx: &egui::Context) -> Option<Request> {
+        if self.surface.is_some()
+            && !r.command.starts_with(&format!("{}.macros.", self.app))
+            && !r.args.is_object()
+        {
+            let _ = r.reply.send((
+                10,
+                json!({"error_code":"ARGUMENT","message":"arguments must be a JSON object"}),
+            ));
+            return None;
+        }
+        if r.command == format!("{}.execute", self.app) {
+            if let Some(id) = r.args["id"]
+                .as_str()
+                .and_then(|id| crate::native_menu::application_id(ctx, id))
+            {
+                r.args["id"] = json!(id);
+            }
+        }
+        if r.command == "app.describe" || r.command == "HELP" {
             if let Some(surface) = &self.surface {
-                let _ = r.reply.send((0, surface.clone()));
+                let _ = r.reply.send((
+                    0,
+                    if r.command == "HELP" {
+                        surface["commands"].clone()
+                    } else {
+                        surface.clone()
+                    },
+                ));
                 return None;
             }
         }
@@ -162,9 +236,7 @@ impl Facilities {
         Some(r)
     }
     pub fn finish(&mut self, ctx: &egui::Context) {
-        if self.ui {
-            self.answers(ctx, toolkit::drive::finish(ctx));
-        }
+        self.answers(ctx, toolkit::drive::finish(ctx));
     }
 }
 fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {

@@ -41,6 +41,49 @@ struct Hint {
     probe: Option<String>,
 }
 type HintFuture = std::pin::Pin<Box<dyn std::future::Future<Output = (String, bool, bool)> + Send>>;
+/// Launch-time activation uses the existing native SDK and compositor path.
+pub fn activate_existing(service: &str, command: &str, url: &str) -> Result<bool, String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+    runtime.block_on(async {
+        let probe = format!("viu-launch-{}", std::process::id());
+        let client = match tokio::time::timeout(
+            Duration::from_secs(2),
+            SupervisedClient::connect_options(&probe, url).connect(),
+        )
+        .await
+        {
+            Ok(Ok(client)) => client,
+            _ => return Ok(false),
+        };
+        let result = async {
+            let services = client.list_services().await.map_err(|e| e.to_string())?;
+            if !services.iter().any(|s| s == service) {
+                return Ok(false);
+            }
+            let (rc, body, error) = client
+                .call_with_headers_raw_within(
+                    service,
+                    command,
+                    &BTreeMap::new(),
+                    "{}",
+                    Duration::from_secs(10),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            if rc == 0 {
+                Ok(true)
+            } else {
+                Err(error.unwrap_or(body))
+            }
+        }
+        .await;
+        client.close().await;
+        result
+    })
+}
 
 async fn send_hint(native: Arc<SupervisedClient>, hint: Hint) -> (String, bool, bool) {
     let mut frame = ::bus::BusMessage::new();
@@ -123,9 +166,9 @@ impl Endpoint {
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
-                let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32);
+                let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
                 let options=if help.is_none(){options.with_commands(commands)}else{options};
-                let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");return;}}};
+                let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");close.store(true,Ordering::Release);wake();return;}}};
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=Some(native.clone());
                 let mut state=native.subscribe_state();
@@ -147,7 +190,6 @@ impl Endpoint {
                         BoundedIncomingEvent::Command(command)=>command
                     };
                     if command.id.is_none(){post(Notice{command:command.topic().unwrap_or(&command.command).to_owned(),args:command.args,headers:command.headers});continue;}
-                    if command.command=="HELP" {if let Some(help)=&help {let _=native.respond(&command,0,&help.to_string()).await;continue;}}
                     if close.load(Ordering::Acquire){let _=native.respond(&command,10,&json!({"error_code":"CLOSING"}).to_string()).await;continue;}
                     if responses.len()>=32{let _=native.respond(&command,10,&json!({"error_code":"BUSY"}).to_string()).await;continue;}
                     let (reply,response)=oneshot::channel();

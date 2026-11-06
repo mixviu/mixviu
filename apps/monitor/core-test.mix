@@ -18,5 +18,9 @@ if $model.table.initial.rows[1999].cells[5]!="—" then raise("IO","Missing rate
 if len($model.table.initial.columns)!=7 or $model.table.initial.rows[0].cells[4]!="1.0 KiB" then raise("TABLE","Gold columns and binary units") end
 $s.processes=push($s.processes,{pid:2001});$refused=false
 try $c.project($s) catch $message $refused=true end
-if not $refused then raise("BUDGET","Unbounded process list accepted") end
+if not $refused then raise("INVALID_ROW","Malformed process row accepted") end
 print(json_encode({result:"pass",rows:2000,project_seconds:$elapsed,boundary:"Installed Mix interpreter, pure projection only; not embedded Viu latency"}))
+
+$s.processes=[]
+for $i=1 to 3000 $s.processes=push($s.processes,{pid:$i,name:"process",user:"user",cpu:0,memory:1,depth:0}) end
+if len($c.project($s).table.initial.rows)!=3000 or $c.query($s).limit!=0 then raise("UNBOUNDED","Gold unlimited query/list was capped") end

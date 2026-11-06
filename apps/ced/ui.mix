@@ -51,7 +51,7 @@ fn ced_ui_model($s,$model)
   $items=[]
   for $i=0 to len($s.tabs)-1
     $tab=$s.tabs[$i]
-    push($items,{id:to_string($i),name:basename($tab.path ?? "untitled-"..$tab.document),title:$tab.path ?? "untitled-"..$tab.document,meta:$tab.language,dirty:$tab.dirty,opening:$tab.phase=="bootstrapping"})
+    push($items,{id:to_string($i),name:basename($tab.path ?? "untitled-"..$tab.document),title:basename($tab.path ?? "untitled-"..$tab.document),meta:$tab.language,dirty:$tab.dirty,opening:$tab.phase=="bootstrapping"})
   end
   $model.tabs={id:"tabs",kind:"document-tabs",label:"Documents",initial:{items:$items,selected:to_string($s.active),light:$model.editor.properties.light}}
   $model.top_background=if $model.editor.properties.light then "design.editor.light-background" else "design.editor.background" end
@@ -62,7 +62,7 @@ fn ced_ui_model($s,$model)
   $close_tabs=filter($s.tabs,fn($t)=$t.document==$s.close_dialog);$disk_tabs=filter($s.tabs,fn($t)=$t.document==$s.disk_dialog)
   $close_name=if len($close_tabs)>0 then basename($close_tabs[0].path ?? "untitled-"..$close_tabs[0].document) else "" end
   $disk_name=if len($disk_tabs)>0 then basename($disk_tabs[0].path ?? "untitled-"..$disk_tabs[0].document) else "" end
-  $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Unsaved changes",body:$close_name.." has changes that are not saved anywhere else. Save them before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
+  $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Unsaved changes",body:$close_name.." has changes that are not saved anywhere else. Save them before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Don't Save",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
   $model.values["disk-dialog"]={open:$s.disk_dialog!=nil,title:"The file changed on disk",body:$disk_name.." was changed on disk since it was opened. Save over it anyway?",choices:[{id:"save",label:"Save Anyway",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
   $model.values["open-dialog"].title="Open";$model.values["open-dialog"].body="Path to a file, optionally :line[:col]"
   $model.values["save-dialog"]=ui_form($s.save_dialog,"Save As","Path to save to",$s.save_path ?? ($t.path ?? ""),$s.dialog_instance ?? 0)

@@ -634,3 +634,22 @@ Shared frame merged through 0807e73 before editor work. Mix now composes gold me
 CBC 20261107-043443-92a3cd8c and 20261107-043954-ab21070a: fmt check, normal Clippy, 24 scoped tests and host build passed. Clippy reports style warnings; no warnings-as-errors claim. CBC 20261107-044353-f2af2a64 and 20261107-044629-ed6d8240: preparation tests/build passed, exact formatting applied. Native native.CAmQVq passes mail Save/Save As/Send, outcome-unknown without retry, header undo/redo and crash recovery. native.uupr3I passes 16/64 MiB, editing/undo/save, metadata-only scene and gold byte/line refusals. native.GgsGmn passes real live settingsd changes with three paired 1000×720 gold captures; inspected differences drove fixes to native decoration detection, light tabs, large-font header clipping and status gaps. These captures precede the final appearance fixes.
 
 The expanded action run reaches all 61 actions and successful native scratch Save, but process shutdown exposed retained native shadow window ownership: native.aHN6ht records the post-quit two-thread process. A scoped exit-owner fix is under native verification. Final byte suite and visual acceptance remain open. No parity or Fable approval is claimed.
+
+
+## Shared frame checkpoint merged for Ced round four
+
+# Monitor round 4 checkpoint
+
+Acceptance remains OPEN while the final exact-source captures and gate run. No Fable question or proposed deviation is pending. P1 is the sole approved non-visual deviation.
+
+The shared frame now matches native menu/title/caption/action alignment, CSD/SSD and hosted chrome; live font/density spacing comes from gold's global style. Application content identities remain intact. Menu measurement, compact menu press behaviour, selected-row tint, Help text/accelerators and per-instance dialog positioning are corrected. Static native window title is Monitor; client title includes the watched host.
+
+Matched witnesses: 1040×680 Processes and all seven Performance pages, including populated TCP, whole/header/options/content/status SSIM and RMSE distortion 0. Selected/tree/menu/About/Shortcuts witnesses and 1120×788 compositor furniture are exact. Nineteen live Prefs states on one PID per app passed; only compact/enlarged-font chevron/caption raster-edge differences remain (whole SSIM distortion 9.74852e-8 and 7.93036e-8), with table/status exact. These are being checked in the final capture set.
+
+Native Bus checks: full 51-command/45-action catalogue, drive input/menus/capture/window/debug, all macro mutations and completion/event sequencing, second-instance activation/minimise/restore; 46 matched gold/Mix structured replies, including malformed input and refusals, have no differences. Disposable-child SIGTERM/SIGKILL fence and real monitord sampling/signalling witnesses passed. Final native rechecks remain.
+
+Latest full scoped CBC preparation 20261107-050528-784f2ca5-a1 at 255ffb1488fe3c00058b18558cc75cf73be590f1 passed all Viu/viu-engine tests/check/clippy/build; rc97 formatting returned/applied. Final no-diff exact-source gate remains required. Recent focused repair jobs: 20261107-045746-b6cdf2e8-a1 and 20261107-050113-4d633b99-a1. No local Rust build, install or VT work. All completed run children were stopped.
+
+Private evidence roots (round4 receipts will archive the final set): zero fixtures d358237; populated TCP oxsMET; live Prefs KF59G2; state matrix XS4GQw; hosted INxXPt; structured Bus 4AWjrB; macros WTwtHX; signals f4oLqN; real-daemon PRUyUC.
+
+Branch lab/gold-parity; tested code 255ffb1488fe3c00058b18558cc75cf73be590f1; Monitor OPEN, baseline whole/regions SSIM=0 RMSE=0, final rechecks pending; CBC 20261107-050528-784f2ca5-a1, 20261107-045746-b6cdf2e8-a1, 20261107-050113-4d633b99-a1.

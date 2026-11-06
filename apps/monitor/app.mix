@@ -1,10 +1,18 @@
+$fetch=require("fetch.mix")
+$wire=require("wire.mix")
+$commands=require("actions.mix")
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
--- lint: globals app_args
+-- lint: globals app_args app_launch
 $history=require("history.mix")
 $performance=require("performance.mix")
 $core=require("core.mix");$state=$core.initial();$ctx=viu_context()
-if len($app_args)>0 then $state.node=$app_args[0];$state.node_draft=$state.node;$checked=$core.target($state.node) end
+if len($app_args)>0 then
+  if len($app_args)==2 and $app_args[0]=="--node" then $state.node=$app_args[1]
+  elif len($app_args)==1 and not starts_with($app_args[0],"--") then $state.node=$app_args[0]
+  else raise("ARGUMENT","Usage: viu run apps/monitor [--node NAME]") end
+  $state.node_draft=$state.node;$checked=$core.target($state.node)
+end
 fn publish_monitor($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
@@ -16,8 +24,8 @@ fn refresh_monitor($s)
     $snapshot=$reply
     send $target "monitord.processes" body=$core.query($s)
     if $rc!=0 then raise("PROCESSES",to_string($result)) end
-    if type($reply.rows)!="list" or len($reply.rows)>2000 or ($reply.total ?? 0)>2000 then raise("PROCESS_BUDGET","Process limit 2000 exceeded; no partial state") end
-    $s.snapshot=$snapshot;$s.processes=$reply.rows;$s.total=$reply.total ?? len($reply.rows)
+    if type($reply.rows)!="list" then raise("PROCESSES","Invalid process list") end
+    $s.processes_loaded=true;$s.snapshot=$snapshot;$s.processes=$reply.rows;$s.total=$reply.total ?? len($reply.rows)
     $s.start_times=if $s.node=="" then viu_process("snapshot",{pids:map($s.processes,fn($p)=$p.pid)}) else {} end
         $s.rings=$history.record($s.rings,$snapshot)
     if not $s.history_seeded then
@@ -32,80 +40,103 @@ fn refresh_monitor($s)
     else $s.connections=nil;$s.connections_error=nil end
     $s.history=push($s.history,$snapshot.cpu.busy)
     if len($s.history)>60 then $s.history=slice($s.history,len($s.history)-60) end
-    $s.error=nil;$s.serial=$s.serial+1
+    $s.error=nil;$s.status=if $s.paused then "Paused" else "Live" end;$s.serial=$s.serial+1
   catch $message
     $s.error=$message
   end
   return $s
 end
+fn navigate_monitor($s) return $fetch.navigate($s) end
+fn requery_monitor($s) return $fetch.requery($s) end
+fn watch_monitor($s,$node)
+  if $s.node==$node then return $s end
+  for $kind in ["snapshot","processes","history","connections"] $s=$fetch.cancel($s,$kind) end
+  $s.node=$node;$s.node_draft=$node;$s.snapshot=nil;$s.processes=[];$s.processes_loaded=false;$s.total=0;$s.history=[];$s.rings={};$s.history_seeded=false;$s.connections=nil;$s.connections_error=nil;$s.selected=nil;$s.error=nil;$s.status="Connecting to monitord…"
+  return $fetch.poll($s)
+end
 publish_monitor($state)
 on viu.tick
-  if not $state.paused then $state=refresh_monitor($state);publish_monitor($state) end
+  if not $state.paused then $state=$fetch.poll($state);publish_monitor($state) end
 end
 on monitor.ping
-  reply(0,json_encode({schema:"monitor.mix.lab.v1"}))
+  reply(0,json_encode({schema:"monitor.v1",version:$ctx.version}))
 end
 on monitor.info
+  reply(0,json_encode($wire.info($state,$ctx)))
+end
+on monitor.debug.state
   reply(0,json_encode($state))
 end
 on monitor.rows
-  reply(0,json_encode({rows:$state.processes}))
+  reply(0,json_encode({rows:$wire.rows($state)}))
 end
 on monitor.refresh
-  $state=refresh_monitor($state);publish_monitor($state)
-  reply(if $state.error==nil then 0 else 10 end,json_encode($state))
+  if busy_monitor($state) then return end
+  $state=$fetch.poll($state);publish_monitor($state)
+  reply(0,json_encode({refreshing:true}))
 end
 on monitor.node
-  $node=$event.args.node ?? "";$checked=$core.target($node)
-  $state.node=$node;$state.node_draft=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.rings={};$state.history_seeded=false;$state.connections=nil;$state.connections_error=nil;$state.selected=nil
-  $state=refresh_monitor($state);publish_monitor($state)
-  reply(0,json_encode({node:$state.node}))
+  if busy_monitor($state) then return end
+  if not contains(keys($event.args),"node") or ($event.args.node!=nil and type($event.args.node)!="string") then reply(10,json_encode({error_code:"ARGUMENT",message:"node must be a node name or null"}));return end
+  $node=$event.args.node ?? ""
+  if $event.args.node!=nil and not re_match($node,"^[a-zA-Z0-9_-]{1,63}$") then reply(10,json_encode({error_code:"ARGUMENT",message:"Not a node name"}));return end
+  if $node==$state.node then reply(0,json_encode({node:$event.args.node,target:$core.target($node)}));return end
+  $state=watch_monitor($state,$node);publish_monitor($state)
+  reply(0,json_encode({node:$event.args.node,target:$core.target($node)}))
 end
 on monitor.sort
-  if not contains(["name","pid","user","cpu","memory","io"],$event.args.column) then raise("SORT","Unknown column") end
-  $state.sort=$event.args.column;$state.reverse=$event.args.reverse ?? false
-  $state=refresh_monitor($state);publish_monitor($state)
-  reply(0,"{}")
+  if busy_monitor($state) then return end
+  if type($event.args.column)!="string" then reply(10,json_encode({error_code:"ARGUMENT",message:"column must be a string"}));return end
+  if not contains(["name","pid","user","cpu","memory","io"],$event.args.column) then reply(10,json_encode({error_code:"ARGUMENT",message:"column must be name, pid, user, cpu, memory or io"}));return end
+  if contains(keys($event.args),"reverse") and type($event.args.reverse)!="bool" then reply(10,json_encode({error_code:"ARGUMENT",message:"reverse must be a bool"}));return end
+  $state.reverse=$event.args.reverse ?? (if $state.sort==$event.args.column then not $state.reverse else false end);$state.sort=$event.args.column
+  $state=requery_monitor($state);publish_monitor($state)
+  reply(0,json_encode({sort:$state.sort,reverse:$state.reverse}))
 end
 on monitor.filter
-  if type($event.args.text)!="string" or len($event.args.text)>256 then raise("FILTER","At most 256 characters") end
-  $state.filter=$event.args.text;$state=refresh_monitor($state);publish_monitor($state)
-  reply(0,"{}")
+  if busy_monitor($state) then return end
+  if type($event.args.text)!="string" then reply(10,json_encode({error_code:"ARGUMENT",message:"text must be a string"}));return end
+  if $state.filter!=$event.args.text then $state.filter=$event.args.text;$state=requery_monitor($state);publish_monitor($state) end
+  reply(0,json_encode({filter:$state.filter}))
 end
 on monitor.tree
-  if type($event.args.on)!="bool" then raise("TREE","Boolean required") end
-  $state.tree=$event.args.on;$state=refresh_monitor($state);publish_monitor($state)
-  reply(0,"{}")
+  if busy_monitor($state) then return end
+  if type($event.args.on)!="bool" then reply(10,json_encode({error_code:"ARGUMENT",message:"on must be a bool"}));return end
+  if $state.tree!=$event.args.on then $state.tree=$event.args.on;$state=requery_monitor($state);publish_monitor($state) end
+  reply(0,json_encode({tree:$state.tree}))
 end
 on monitor.pause
   if type($event.args.on)!="bool" then raise("PAUSE","Boolean required") end
-  $state.paused=$event.args.on;publish_monitor($state);reply(0,"{}")
+  $state.paused=$event.args.on;$state.status=if $state.paused then "Paused" else "Live" end;publish_monitor($state);reply(0,"{}")
 end
 on monitor.select
+  if busy_monitor($state) then return end
+  if not contains(keys($event.args),"pid") then reply(10,json_encode({error_code:"ARGUMENT",message:"pid is required"}));return end
   $pid=$event.args.pid
-  if $pid!=nil and not any($state.processes,fn($p)=$p.pid==$pid) then raise("PID","Process is not in the current table") end
-  $state.selected=$pid;publish_monitor($state);reply(0,"{}")
+  if $pid!=nil and (type($pid)!="number" or $pid<0 or $pid>4294967295 or floor($pid)!=$pid) then reply(10,json_encode({error_code:"ARGUMENT",message:"pid must be a process id or null"}));return end
+  if $pid!=nil and not any($state.processes,fn($p)=$p.pid==$pid) then reply(10,json_encode({error_code:"ARGUMENT",message:"No such process in the table"}));return end
+  $state.selected=$pid;publish_monitor($state);reply(0,json_encode({selected:$pid}))
 end
 on monitor.intent
   $a=$event.args
   if $a.id=="end-task" then
-    $out=signal_monitor($state,{pid:$state.selected,signal:"SIGTERM"});$state=$out.state
-  elif $a.id=="tabs" then $state.tab=$a.value;$state=refresh_monitor($state)
-  elif $a.id=="performance" and $a.action=="choose" then $state.section=$a.value;$state=refresh_monitor($state)
-  elif $a.id=="tree" then $state.tree=$a.value;$state=refresh_monitor($state)
+    $out=execute_monitor($state,"process.end","ui");$state=$out.state
+  elif $a.id=="tabs" then $state.tab=$a.value;$state=navigate_monitor($state)
+  elif $a.id=="performance" and $a.action=="choose" then $state.section=$a.value;$state=navigate_monitor($state)
+  elif $a.id=="tree" then $out=execute_monitor($state,"view.tree","ui");$state=$out.state
   elif $a.id=="refresh" then $state=refresh_monitor($state)
   elif $a.id=="pause" then $state.paused=$a.value
-  elif $a.id=="filter" then $state.filter=$a.value;$state=refresh_monitor($state)
+  elif $a.id=="filter" then $state.filter=$a.value;$state=$fetch.requery($state)
   elif $a.id=="node" then
     $state.node_draft=$a.value
     if $a.action=="submit" or $a.action=="set" then
       $node=if $a.value=="This node" then "" else $a.value end
-      $checked=$core.target($node);$state.node=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.rings={};$state.history_seeded=false;$state.connections=nil;$state.connections_error=nil;$state.selected=nil;$state=refresh_monitor($state)
+      $checked=$core.target($node);$state=watch_monitor($state,$node)
     end
   elif $a.id=="processes" then
     if $a.action=="sort" then
       $state.reverse=if $state.sort==$a.value.column then not $state.reverse else false end
-      $state.sort=$a.value.column;$state=refresh_monitor($state)
+      $state.sort=$a.value.column;$state=$fetch.requery($state)
     elif $a.action=="select" then $state.selected=to_number($a.value.key) end
   end
   publish_monitor($state);reply(0,"{}")
@@ -117,21 +148,9 @@ on viu.frame.close
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
 end
 on viu.frame.intent
-  $id=$event.args.value.command
-  if $id=="process.end" or $id=="process.kill" then
-    $out=signal_monitor($state,{pid:$state.selected,signal:if $id=="process.end" then "SIGTERM" else "SIGKILL" end});$state=$out.state
-    publish_monitor($state);reply($out.rc,json_encode($out.body));return
-  elif $id=="file.refresh" then $state=refresh_monitor($state)
-  elif $id=="view.pause" then $state.paused=not $state.paused
-  elif $id=="view.processes" then $state.tab="Processes";$state=refresh_monitor($state)
-  elif $id=="view.performance" then $state.tab="Performance";$state=refresh_monitor($state)
-  elif $id=="view.tree" then $state.tree=not $state.tree;$state=refresh_monitor($state)
-  elif $id=="file.quit" then
-    $model=$core.framed($state);$model.window_close=true
-    send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
-    reply(0,"{}");return
-  else raise("ACTION","Unknown frame action") end
-  publish_monitor($state);reply(0,"{}")
+  $origin=$event.args.value.origin ?? (if $event.args.id=="gold-menu" then "menu" else "ui" end)
+  $out=execute_monitor($state,$event.args.value.command,$origin);$state=$out.state
+  publish_monitor($state);reply($out.rc,json_encode($out.body))
 end
 
 fn signal_monitor($s,$a)
@@ -139,14 +158,18 @@ fn signal_monitor($s,$a)
   if $s.node!="" or $s.dialog!=nil or $s.selected==nil or $pid!=$s.selected then
     return {state:$s,rc:10,body:{error_code:"DISABLED",message:"Command is disabled"}}
   end
-  $expected=$a.start_time ?? $s.start_times[to_string($pid)]
+  $expected=if contains(keys($a),"start_time") then $a.start_time else $s.start_times[to_string($pid)] end
   $answer=viu_process("signal",{pid:$pid,signal:$a.signal,start_time:$expected})
+  if $answer.pid_reused==true or $answer.ok then
+    $s=$fetch.cancel($s,"snapshot");$s=$fetch.cancel($s,"processes")
+  end
   if $answer.pid_reused==true then $s=refresh_monitor($s) end
   if not $answer.ok then
-    $s.error=$answer.error
+    $s.error=$answer.error;$s.status="Could not signal"
     return {state:$s,rc:10,body:{error_code:"SIGNAL",message:$answer.error}}
   end
   $s=refresh_monitor($s)
+  $s.status=if contains(["SIGTERM","TERM",15],$a.signal) then "Asked to end" else "Killed" end
   return {state:$s,rc:0,body:{pid:$pid,signal:$a.signal}}
 end
 on monitor.signal
@@ -155,13 +178,134 @@ on monitor.signal
 end
 
 on monitor.tab
-  if not contains(["processes","performance"],$event.args.tab) then raise("ARGUMENT","tab must be processes or performance") end
+  if busy_monitor($state) then return end
+  if type($event.args.tab)!="string" then reply(10,json_encode({error_code:"ARGUMENT",message:"tab must be a string"}));return end
+  if not contains(["processes","performance"],$event.args.tab) then reply(10,json_encode({error_code:"ARGUMENT",message:"tab must be processes or performance"}));return end
   $state.tab=if $event.args.tab=="processes" then "Processes" else "Performance" end
-  $state=refresh_monitor($state);publish_monitor($state)
+  $state=navigate_monitor($state);publish_monitor($state)
   reply(0,json_encode({tab:$event.args.tab}))
 end
 on monitor.section
-  if not contains($performance.keys_for($state.snapshot),$event.args.section) then raise("ARGUMENT","No such section") end
-  $state.section=$event.args.section;$state=refresh_monitor($state);publish_monitor($state)
+  if busy_monitor($state) then return end
+  if type($event.args.section)!="string" then reply(10,json_encode({error_code:"ARGUMENT",message:"section must be a string"}));return end
+  if not contains($performance.keys_for($state.snapshot),$event.args.section) then reply(10,json_encode({error_code:"ARGUMENT",message:"No such section"}));return end
+  $state.section=$event.args.section;$state=navigate_monitor($state);publish_monitor($state)
   reply(0,json_encode({section:$state.section}))
+end
+fn busy_monitor($s)
+  if $s.dialog!=nil or $s.quitting then reply(10,json_encode({error_code:"BUSY",message:"Not now: a dialog is open"}));return true end
+  return false
+end
+
+fn execute_monitor($s,$id,$origin)
+  $matches=filter($commands.registry($s),fn($a)=$a.id==$id)
+  if len($matches)==0 then return {state:$s,rc:10,body:{error_code:"UNKNOWN_ACTION",message:"Unknown Monitor command"}} end
+  if not $matches[0].enabled then return {state:$s,rc:10,body:{error_code:"DISABLED",message:"That command is not available right now"}} end
+  if contains(["process.end","process.kill"],$id) then
+    $out=signal_monitor($s,{pid:$s.selected,signal:if $id=="process.end" then "SIGTERM" else "SIGKILL" end});$s=$out.state
+  elif $id=="file.refresh" then $s=$fetch.poll($s)
+  elif $id=="file.quit" then $s.quitting=true;$s.window_close=$origin!="bus"
+  elif $id=="view.pause" then $s.paused=not $s.paused;$s.status=if $s.paused then "Paused" else "Live" end;if not $s.paused then $s=$fetch.poll($s) end
+  elif $id=="view.processes" then $s.tab="Processes";$s=navigate_monitor($s)
+  elif $id=="view.performance" then $s.tab="Performance";$s=navigate_monitor($s)
+  elif $id=="view.tree" then $s.tree=not $s.tree;$s=$fetch.requery($s)
+  elif $id=="help.macros" then $s.macros_open=not $s.macros_open
+  elif $id=="help.about" then $s.dialog="about"
+  elif $id=="help.shortcuts" then $s.dialog="shortcuts"
+  elif $id=="view.search" then $s.tab="Processes";$s=$fetch.navigate($s);$s.focus_serial=$s.focus_serial+1
+  elif $id=="process.copy" then
+    $p=filter($s.processes,fn($p)=$p.pid==$s.selected)[0]
+    send "viu-local" "native.copy" body={text:$p.cmdline ?? $p.name}
+    if $rc!=0 then return {state:$s,rc:$rc,body:$reply} end
+  else
+    $axis=if starts_with($id,"view.theme.") then "scheme" elif starts_with($id,"view.style.") then "style" elif starts_with($id,"view.decorations.") then "decorations" elif starts_with($id,"view.captions.") then "caption_side" else "mode" end
+    $parts=split($id,".");$value=$parts[len($parts)-1]
+    if $id=="view.mode" then
+      send "viu-local" "native.theme" body=$s.theme_choice
+      if $rc!=0 then return {state:$s,rc:$rc,body:$reply} end
+      $value=if $reply.mode=="dark" then "light" else "dark" end
+    end
+    $edit={};$edit[$axis]=if $value=="session" then nil else $value end
+    $answer=theme_monitor($s,$edit);$s=$answer.state
+    if $answer.rc!=0 then return $answer end
+  end
+  send "viu-local" "native.executed" body={id:$id,origin:$origin,params:nil,result:nil}
+  $recorded=$rc
+  return {state:$s,rc:0,body:{executed:$id}}
+end
+fn theme_monitor($s,$args)
+  $edit=$commands.theme_edit($s.theme_choice,$args)
+  if not $edit.ok then return {state:$s,rc:10,body:{error_code:"ARGUMENT",message:$edit.message}} end
+  send "viu-local" "native.theme" body=$edit.choice
+  if $rc!=0 then return {state:$s,rc:$rc,body:$reply} end
+  $s.theme_choice=$edit.choice;$s.theme_effective=$reply
+  $body=$edit.choice;$body.effective=$reply
+  return {state:$s,rc:0,body:$body}
+end
+on monitor.actions
+  reply(0,json_encode({actions:$commands.registry($state)}))
+end
+on monitor.execute
+  if type($event.args.id)!="string" then reply(10,json_encode({error_code:"ARGUMENT",message:"id must be a command id string"}));return end
+  $out=execute_monitor($state,$event.args.id,"bus");$state=$out.state;publish_monitor($state);reply($out.rc,json_encode($out.body))
+end
+on monitor.theme
+  $out=theme_monitor($state,$event.args);$state=$out.state;publish_monitor($state);reply($out.rc,json_encode($out.body))
+end
+on monitor.dialog
+  if not contains(keys($event.args),"open") or ($event.args.open!=nil and not contains(["about","shortcuts"],$event.args.open)) then reply(10,json_encode({error_code:"ARGUMENT",message:"open must be \"about\", \"shortcuts\" or null"}));return end
+  if $event.args.open!=nil and ($state.dialog!=nil or $state.quitting) then reply(10,json_encode({error_code:"BUSY",message:"Not now: a dialog is open"}));return end
+  $state.dialog=$event.args.open;publish_monitor($state);reply(0,json_encode({dialog:$state.dialog}))
+end
+on monitor.quit
+  $state.quitting=true;reply(0,json_encode({quitting:true}))
+end
+on monitor.show
+  $comp=$app_launch.comp ?? env("MIXOS_COMP_SERVICE","comp")
+  send $comp "comp.window.wait" body={match:{app_id:"dev.mixos.monitor"},until:"mapped",timeout_ms:10000}
+  if $rc!=0 then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
+  send $comp "comp.windows.list" body={}
+  if $rc!=0 then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
+  $windows=filter($reply.windows ?? [],fn($w)=$w.app_id=="dev.mixos.monitor" and $w.pid==$ctx.pid)
+  if len($windows)==0 then reply(10,json_encode({error_code:"ACTIVATION",message:"window not known to compd"}));return end
+  $w=$windows[0];$target={id:$w.id,generation:$w.generation}
+  send $comp "comp.window.restore" body=$target
+  if $rc!=0 or $reply.minimized!=false then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
+  $target.raise=true
+  send $comp "comp.window.focus" body=$target
+  if $rc!=0 or $reply.focused!=true then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
+  reply(0,json_encode($reply))
+end
+on viu.macros.changed
+  $state.macros_open=$event.args.open;publish_monitor($state)
+end
+on viu.theme.changed
+  $state.theme_effective=$event.args;publish_monitor($state)
+end
+on viu.keymap.changed
+  send "viu-local" "native.bindings" body={defaults:$commands.binding_defaults(),overrides:$event.args}
+  if $rc==0 then $state.bindings=$reply.bindings;publish_monitor($state) end
+end
+on monitor.dialog.intent
+  if $event.args.value.instance==$state.dialog then $state.dialog=nil;publish_monitor($state) end
+end
+
+on viu.job.completed
+  $state=$fetch.received($state,$event.args);publish_monitor($state)
+end
+on bus.connected
+  subscribe("noded.props.changed")
+  $state.connected=true;$state.status="Connecting to monitord…"
+  $state=$fetch.start($state,"peers","noded.peers",{})
+  $state=$fetch.poll($state);publish_monitor($state)
+end
+on noded.props.changed
+  if $event.args.path=="services.registered" then
+    $state=$fetch.start($state,"peers","noded.peers",{});publish_monitor($state)
+  end
+end
+on bus.disconnected
+  $state.connected=false;$state.status="Disconnected from the Bus"
+  for $kind in ["snapshot","processes","history","connections","peers"] $state=$fetch.cancel($state,$kind) end
+  publish_monitor($state)
 end
