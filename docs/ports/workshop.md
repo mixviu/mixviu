@@ -50,6 +50,23 @@ interpreter version changes.
 
 ## Verification status
 
-CBC job `20261106-221954-40c3a368-a1` passed 111 tests and the scoped full gate
-at source `087b891e47f15fc65ef249d71267db7903acd3ae`. Private native comparison
-is pending. No parity or performance acceptance is claimed.
+CBC job `20261106-223216-699f3e94-a1` passed 111 tests, fmt-check,
+all-target check, clippy and the generic host build at source
+`e330c14a5c7725804ef62614badd7c8b08dd1b69`. The full saved log was read;
+worker diff empty. Existing clippy warnings remain.
+
+Private broker/nested compositor verification passed eight operation records:
+native editor typing and Call, structured peer rc 17, invalid JSON/unadvertised
+command/oversized Unicode refusal before dispatch, bounded reply/history,
+responsive ping and held request while busy, timeout uncertainty with no retry,
+offline call and the original Workshop sending the same Unicode echo request.
+Five captures were inspected: echo, refusal, truncated reply, history/filter
+and original. The new layout is visibly simpler; no pixel or feature parity
+claim follows. The bounded emoji fixture exposes the current font's missing
+glyph fallback; Unicode bytes survive the request/reply path.
+
+The final CBC binary hash matches the native witness. All seven owned harness
+processes were confirmed stopped. Captures and receipts stay in the private
+hub. Shared production Rust is +7/-2 lines; shared tests +121/-1 lines.
+No dependency, lockfile, engine or embedded Mix source changed. Email remains
+inventory-only at this checkpoint. Performance comparison is unmeasured.

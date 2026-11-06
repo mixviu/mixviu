@@ -1,3 +1,55 @@
+# Round 4 Workshop checkpoint
+
+Validated source: `e330c14a5c7725804ef62614badd7c8b08dd1b69` on
+`lab/app-ports`. A report-only commit records this receipt after the gate.
+
+Workshop now runs as `viu run apps/workshop`: local service discovery,
+on-demand HELP/app.describe, advertised command selection/metadata, service
+filtering, JSON body editing/format/clear, explicit native Bus call, peer rc
+and bounded reply/history. Mix owns all policy. Per-app Rust added = 0.
+The only shared native primitive change is editor visible row count (1..100,
+default 24), +7/-2 production Rust lines, +121/-1 shared test lines.
+The embedded interpreter remains Mix 0.117; no dependency/lockfile change.
+
+Workshop is a bounded local browser. Remote discovery/tree identities, live
+broker traffic, macro manager, mesh/agent pages, clipboard, settings/theme,
+saved layout and full old API compatibility are deferred with reasons in
+`docs/ports/workshop.md`. Email is inventoried in `docs/ports/email.md` but
+not implemented: the core list/read/compose path and viability step 2 remain
+open. It needs a reusable native upstream for the existing JMAP seam; the
+original mail data path uses JMAP rather than GUI automation over the Bus.
+
+CBC final job `20261106-223216-699f3e94-a1`: rc 0, 111 tests, fmt-check,
+all-target check, clippy and generic host debug build passed. Full saved log
+read, worker diff empty; existing clippy warnings remain. Earlier green jobs
+were `20261106-221954-40c3a368-a1` and `20261106-222833-c4cabdf8-a1`.
+Preparation `20261106-221807-830d4ca7-a1` found a row integer conversion;
+`20261106-222735-1552df20-a1` and `20261106-223118-23ebbff1-a1` stopped at
+fmt-check. Full logs read and exact worker changes applied; no tests weakened.
+
+Final private native witness `native.nZEvnf`: eight records passed, five
+captures inspected including pinned-original Workshop executing the same
+Unicode echo. Native typing/Call dispatched once; malformed JSON, unknown
+commands and oversized UTF-8 refused; peer rc 17 retained; reply/history
+bounded; busy requests held and ping responsive. A delayed call found Mix
+timeout rc -2 incorrectly labelled a peer completion; fixed in Mix and the
+unchanged native uncertainty/no-retry assertion now passes. All seven owned
+processes confirmed stopped. No install or desktop change.
+
+Final CBC binary SHA-256 matches the native witness:
+`f48c8fff1cd637700833d7b584c9fc553ebb763ae54b07176de8f8b7f675594a`.
+Private app archive SHA-256:
+`7da043f1a3e742aa2a9e077dff6a5b683564645ce1da93e9284d10fb05c71b13`.
+Captures show the simpler layout and a missing-emoji-glyph font fallback;
+no visual/full-feature parity or performance claim.
+
+Static app-port verifier passes all seven bundles. Extra legacy
+`tools/verify_runtime.mix` remains red on the baseline missing
+`libraries/mix/tests/fixtures/jwt-rsa-test.pem` (absent at the round-3 base
+too); verifier and embedded Mix are unchanged.
+
+Earlier checkpoint trail follows.
+
 Workshop timeout fix passes native delayed/busy/no-retry assertions (8 records, all 7 owned processes stopped). CBC 20261106-222833-c4cabdf8-a1 green on pre-fix source 4ffb375; follow-up 20261106-223118-23ebbff1-a1 found formatting only in new timeout regression probe, exact saved diff applied. Final gate pending.
 
 Workshop adversarial native check found send timeout rc -2 labelled as a completed peer reply. Fixed in Mix: negative codes now raise TRANSPORT and retain an explicit uncertain-delivery/no-retry status; native timeout assertion retained. CBC/unit and exact-source native reruns required. Workshop checkpoint remains open; Email inventory only.
@@ -168,3 +220,5 @@ Branch: lab/app-ports; head/source SHA: 6edaf28e63a2192a67ee52feb3398d6349e8179b
 
 Round-3 final CBC 20261106-220647-449d25c2-a1 BUILD_RC=0: 109 tests, fmt/check/clippy/build; full 43894-character log read, empty worker diff. Final artifact fetched and byte-identical to the inspected native witness. Ced is checkpointed with listed deferrals; Workshop remains inventory only.
 Branch: lab/app-ports; head/source SHA: 6edaf28e63a2192a67ee52feb3398d6349e8179b (validated source; reporting-only commit follows); apps done: Ced bounded specimen, Workshop inventory only; CBC job ids: 20261106-220647-449d25c2-a1 (final green), 20261106-220141-a624f945-a1 (earlier full green), 20261106-215555-cd9f02ee-a1 (scoped green).
+
+branch: lab/app-ports; head SHA: e330c14a5c7725804ef62614badd7c8b08dd1b69 (validated source; report-only commit follows); apps done: Workshop bounded local Bus specimen; Email inventory only; CBC jobs: 20261106-223216-699f3e94-a1 (final green), 20261106-222833-c4cabdf8-a1, 20261106-221954-40c3a368-a1, 20261106-221807-830d4ca7-a1, 20261106-222735-1552df20-a1, 20261106-223118-23ebbff1-a1.
