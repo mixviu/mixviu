@@ -2,7 +2,10 @@
 $root=dirname(dirname(script_path()))
 $n=require($root.."/../mixos/tests/desktop/nested_host_lib.mix")
 $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
-$bin="/build/es-artifacts/"..$sha
+if trim(run_argv_must(["git","status","--porcelain"]))!="" then raise("DIRTY_SOURCE","Rehearsal needs committed source") end
+$binary_source=args()[0] ?? $sha
+run_argv_must(["git","diff","--exit-code",$binary_source,$sha,"--","Cargo.toml","Cargo.lock","engines","libraries","services","vendor"])
+$bin="/build/es-artifacts/"..$binary_source
 $run=$n.new_run("/build/es-artifacts/rehearsal-"..$sha)
 $children=[];$records=[]
 for $name in ["noded","settingsd","editd","monitord"]
@@ -58,13 +61,14 @@ fn proc_ticks($p)
   return to_number($fields[11])+to_number($fields[12])
 end
 try
+  push($records,{service:"noded",ping:checked("noded","noded.info",{})})
   $parent=launch([$bin.."/viud","--headless","--size","1440x1000","--socket","p2-parent","--bus-service","comp-parent","--config-file",$run.path.."/settings.json"],"parent",{})
   push($children,$parent)
-  await_service("comp-parent","comp.ping")
+  push($records,{service:"comp-parent",pid:$parent,ping:await_service("comp-parent","comp.ping")})
   $comp=launch([$bin.."/viud","--nested","--socket","p2-desk","--bus-service","comp-p2","--config-file",$run.path.."/settings.json"],"viud",{WAYLAND_DISPLAY:"p2-parent"})
   push($children,$comp)
-  await_service("comp-p2","comp.ping")
-  $env.WAYLAND_DISPLAY="p2-desk";$env.MIXOS_COMP_SERVICE="comp-p2";$env.VIU_COMP_SERVICE="comp-p2"
+  push($records,{service:"comp-p2",pid:$comp,ping:await_service("comp-p2","comp.ping")})
+  $env.WAYLAND_DISPLAY="p2-desk";$env.MIXOS_COMP_SERVICE="comp-p2";$env.VIU_COMP_SERVICE="comp-p2";$env.MIXOS_INSTANCE="example"
   print(run_argv_must([$run.path.."/settingsd","init","--root",$run.path.."/settings","--instance","example"],{env:$env}))
   for $item in [{name:"settingsd",argv:["serve","--root",$run.path.."/settings","--instance","example"],service:"settingsd",ping:"HELP"},{name:"editd",argv:["serve"],service:"edit",ping:"edit.ping"},{name:"monitord",argv:["serve","--db",$run.path.."/monitor.sqlite"],service:"monitord",ping:"monitord.status"}]
     $p=launch(concat([$run.path.."/"..$item.name],$item.argv),$item.name,{})
@@ -74,11 +78,19 @@ try
   $cold=monotonic()
   $host=launch([$bin.."/viu","--host"],"furniture",{})
   push($children,$host)
-  await_service("shell","shell.ping")
-  push($records,{engine:"furniture",cold_to_bus_ms:(monotonic()-$cold)*1000,pid:$host})
+  $ping=await_service("shell","shell.ping")
+  push($records,{engine:"furniture",service:"shell",ping:$ping,cold_to_bus_ms:(monotonic()-$cold)*1000,pid:$host})
   for $scene in ["panel","launcher","toast"]
     checked("shell","shell.scene.load",{source:read_file($root.."/share/scenes/"..$scene.."/scene.mix"),output:"winit"})
   end
+  $mapped=false;$until=monotonic()+20
+  while monotonic()<$until
+    $surfaces=checked("comp-p2","comp.props.get",{path:"surfaces"})
+    if any(values($surfaces),fn($row)=$row.mapped==true and ($row.layer?.exclusive_zone ?? 0)>0) then $mapped=true;break end
+    sleep(0.05)
+  end
+  if not $mapped then raise("PANEL_MAP","Furniture panel did not map and reserve its edge") end
+  push($records,{engine:"furniture",cold_to_mapped_panel_ms:(monotonic()-$cold)*1000})
   $audio=launch([$bin.."/mixd","serve",$root.."/tools/p2-audio.mix","--name","audio-fixture"],"audio-fixture",{})
   push($children,$audio)
   await_service("audio-fixture","snapshot")
@@ -93,6 +105,41 @@ try
   if checked("gallery-mix","viu.state",{}).model.values.slider!=72 then raise("GALLERY_REDUCER","Slider model differs") end
   $monitor=checked("monitor","monitor.refresh",{})
   if $monitor.snapshot==nil or len($monitor.processes)==0 then raise("MONITOR_DATA","No real samples") end
+  if $monitor.processes[0].cpu<$monitor.processes[len($monitor.processes)-1].cpu then raise("SORT_CPU","Default CPU ordering differs") end
+  checked("monitor","monitor.pause",{on:true})
+  $before=checked("monitor","monitor.info",{});sleep(1.2)
+  if checked("monitor","monitor.info",{}).serial!=$before.serial then raise("PAUSE","Sampler advanced while paused") end
+  checked("monitor","viu.ui.focus",{id:"filter"})
+  checked("monitor","viu.ui.text",{text:"monitord"})
+  $filtered=checked("monitor","monitor.info",{})
+  if $filtered.filter!="monitord" or len($filtered.processes)==0 or not all($filtered.processes,fn($p)=contains(lower($p.name.." "..$p.cmdline),"monitord")) then raise("FILTER","Native field callback did not filter real rows") end
+  checked("monitor","monitor.filter",{text:""})
+  checked("monitor","monitor.sort",{column:"memory",reverse:false})
+  $sorted=checked("monitor","monitor.rows",{})
+  if $sorted.rows[0].memory<$sorted.rows[len($sorted.rows)-1].memory then raise("SORT_MEMORY","Memory ordering differs") end
+  checked("monitor","monitor.tree",{on:true})
+  checked("monitor","monitor.tree",{on:false})
+  checked("monitor","monitor.sort",{column:"cpu",reverse:false})
+  checked("monitor","monitor.pause",{on:false})
+  $outputs=keys(checked("backdrop","viu.state",{}).outputs)
+  if len($outputs)!=1 then raise("BACKDROP_OUTPUT","Expected one private nested output") end
+  for $fit in ["fill","fit","centre","tile","stretch"]
+    $doc={schema:1,default:{colour:"#1234ab"},outputs:{}}
+    $doc.outputs[$outputs[0]]={image:$root.."/engines/viu/tests/fixtures/icon.png",fit:$fit,fallback:"#1234ab"}
+    checked("backdrop","backdrop.set",$doc)
+    sleep(0.5)
+    checked("comp-p2","comp.capture.frame",{path:$run.path.."/backdrop-"..$fit..".png",cursor:false})
+  end
+  $binding={instance:"example",profile:"default"}
+  $settings=checked("settingsd","settings.get",{binding:$binding,view:"values"})
+  checked("settingsd","settings.apply",{binding:$binding,expected_incarnation:$settings.incarnation,expected_revision:$settings.revision,operation_id:uuid(),changes:{"wallpaper.color":"#bada55","wallpaper.slideshow.enabled":false},reset:["wallpaper.image"]})
+  checked("backdrop","backdrop.follow",{on:true})
+  $until=monotonic()+10;$followed=false
+  while monotonic()<$until
+    if deep_eq(checked("backdrop","viu.state",{}).model.values.root.colour,[186,218,85]) then $followed=true;break end
+    sleep(0.1)
+  end
+  if not $followed then raise("BACKDROP_FOLLOW","Real settings authority change did not reach wallpaper") end
   checked("dopus-mix","dopus.execute",{id:"view.refresh",params:{}})
   checked("quoin-volume","volume.state",{})
   sleep(2)
@@ -105,7 +152,7 @@ try
   $start=monotonic();sleep(10);$wall=monotonic()-$start
   $hz=to_number(trim(run_argv_must(["getconf","CLK_TCK"])))
   $idle=map($sample,fn($row)={pid:$row.pid,cpu_percent:100*(proc_ticks($row.pid)-$row.ticks)/$hz/$wall})
-  write_file($run.path.."/results.json",json_encode({result:"pass",source:$sha,records:$records,idle:$idle,idle_wall_seconds:$wall,clock_ticks_per_second:$hz,method:"Cold: spawn to Bus ping/model ready, includes polling and IPC; warm filesystem caches. Idle: delta process utime+stime over 10 seconds, percent of one core."}))
+  write_file($run.path.."/results.json",json_encode({result:"pass",source:$sha,binary_source:$binary_source,records:$records,idle:$idle,idle_wall_seconds:$wall,clock_ticks_per_second:$hz,method:"Cold: spawn to Bus ping/model ready or mapped panel, includes polling and IPC; warm filesystem caches. Idle: delta process utime+stime over 10 seconds, percent of one core."}))
   print({result:"pass",run:$run.path})
 finally
   write_file($run.path.."/progress.json",json_encode($records))

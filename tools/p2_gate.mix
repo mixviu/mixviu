@@ -9,7 +9,11 @@ fn p2_run($argv)
   if not $r.ok then exit($r.exit_code ?? 124) end
 end
 $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
-$art="/build/es-artifacts/"..$sha
+$binary_source=args()[1] ?? $sha
+if $mode!="build" then
+  run_argv_must(["git","diff","--exit-code",$binary_source,$sha,"--","Cargo.toml","Cargo.lock","engines","libraries","services","vendor"])
+end
+$art="/build/es-artifacts/"..$binary_source
 if $mode=="build" then
   mkdir($art,{parents:true})
   for $pair in [["system","mix"],["mixd","mixd"],["viud","viud"],["viu-engine","viu"]]
