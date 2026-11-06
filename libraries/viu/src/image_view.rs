@@ -48,8 +48,11 @@ impl Images {
             ..Self::default()
         }
     }
-    pub fn surface_with_capacity(capacity:usize)->Self {
-        Self {capacity:capacity.clamp(1,128),..Self::surface()}
+    pub fn surface_with_capacity(capacity: usize) -> Self {
+        Self {
+            capacity: capacity.clamp(1, 128),
+            ..Self::surface()
+        }
     }
     pub fn states(&self) -> Value {
         serde_json::json!(self.slots.iter().map(|(id,s)|(id.clone(),serde_json::json!({"path":s.path,"phase":if s.texture.is_some(){"ready"}else if s.answered{"failed"}else{"pending"}}))).collect::<BTreeMap<_,_>>())

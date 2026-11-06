@@ -429,11 +429,11 @@ impl Host {
             }
         }
         if self.ready {
-            self.macro_ui.open=self.model["macros_open"]==true;
-            let was_open=self.macro_ui.open;
+            self.macro_ui.open = self.model["macros_open"] == true;
+            let was_open = self.macro_ui.open;
             self.macro_ui.show(ui.ctx());
-            if self.macro_ui.open!=was_open {
-                self.dispatch("viu.macros.closed".into(),json!({}),BTreeMap::new(),None);
+            if self.macro_ui.open != was_open {
+                self.dispatch("viu.macros.closed".into(), json!({}), BTreeMap::new(), None);
             }
             if let Some(session) = &mut self.session {
                 if let Some(snapshot) = session
@@ -653,7 +653,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         drive_replies: BTreeMap::new(),
         drive_answers: Default::default(),
         drive_serial: 0,
-        macro_ui:toolkit::macros::State::for_session(&bundle.manifest.service,macros.clone()),
+        macro_ui: toolkit::macros::State::for_session(&bundle.manifest.service, macros.clone()),
         macros,
         macro_pending: Vec::new(),
         macro_finished,

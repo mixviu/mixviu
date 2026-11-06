@@ -33,5 +33,5 @@ pub mod window_frame;
 pub mod decorations;
 pub mod input;
 pub mod layer;
-pub mod settings_browser;
 mod media_gallery;
+pub mod settings_browser;

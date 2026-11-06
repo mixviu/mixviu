@@ -104,12 +104,15 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
             Ok(json!(entries.into_iter().map(|e|Ok(json!({"path":token(&e.path())?,"name":e.file_name().to_string_lossy(),"leaf":link_value(Path::new(&e.file_name()))}))).collect::<Result<Vec<Value>,String>>()?))
         }
         "entries" => {
-            let p=path(&args["path"])?;
-            let limit=args["limit"].as_u64().filter(|n|(1..=100_000).contains(n)).ok_or("Invalid directory entry budget")? as usize;
-            let mut entries=std::fs::read_dir(p).map_err(|e|e.to_string())?;
-            let mut rows=Vec::new();
+            let p = path(&args["path"])?;
+            let limit = args["limit"]
+                .as_u64()
+                .filter(|n| (1..=100_000).contains(n))
+                .ok_or("Invalid directory entry budget")? as usize;
+            let mut entries = std::fs::read_dir(p).map_err(|e| e.to_string())?;
+            let mut rows = Vec::new();
             for entry in entries.by_ref().take(limit) {
-                let Ok(entry)=entry else {continue};
+                let Ok(entry) = entry else { continue };
                 rows.push(json!({"path":token(&entry.path())?,"name":entry.file_name().to_string_lossy()}));
             }
             Ok(json!({"entries":rows,"truncated":entries.next().is_some()}))

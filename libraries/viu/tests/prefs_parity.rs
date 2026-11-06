@@ -101,7 +101,8 @@ fn prefs_search_is_read_only_and_every_gold_page_mounts() {
         rx.recv_timeout(Duration::from_secs(10)).unwrap();
         let done = runtime.try_completion().unwrap();
         assert!(done.error.is_none(), "{}: {:?}", page["id"], done.error);
-        assert_eq!(done.reply.unwrap().rc, 0);
+        let reply=done.reply.unwrap();
+        assert_eq!(reply.rc, 0,"page {}: {}",page["id"],reply.body);
         let mut view = viu::gold_frame::mount(&bundle.scene, done.model.unwrap()).unwrap();
         ctx.run_ui(
             eframe::egui::RawInput {

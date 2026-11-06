@@ -9,15 +9,33 @@ use std::sync::{
 
 /// Installed font names and the database's monospace flag. Call on an owned
 /// worker; the application chooses ordering, defaults and presentation.
-pub(crate) fn installed_fonts()->mix::evaluator::ExtFn {
+pub(crate) fn installed_fonts() -> mix::evaluator::ExtFn {
     mix::sync_ext(|args| {
-        if !args.is_empty(){return Err(MixError::RuntimeError {msg:"viu_fonts expects no arguments".into(),span:None});}
-        let mut database=fontdb::Database::new();database.load_system_fonts();
-        let mut all=std::collections::BTreeSet::new();let mut mono=std::collections::BTreeSet::new();
-        for face in database.faces(){for (name,_) in &face.families {
-            if name.is_empty()||name.len()>128||name.trim()!=name||name.chars().any(char::is_control){continue;}
-            all.insert(name.clone());if face.monospaced{mono.insert(name.clone());}
-        }}
+        if !args.is_empty() {
+            return Err(MixError::RuntimeError {
+                msg: "viu_fonts expects no arguments".into(),
+                span: None,
+            });
+        }
+        let mut database = fontdb::Database::new();
+        database.load_system_fonts();
+        let mut all = std::collections::BTreeSet::new();
+        let mut mono = std::collections::BTreeSet::new();
+        for face in database.faces() {
+            for (name, _) in &face.families {
+                if name.is_empty()
+                    || name.len() > 128
+                    || name.trim() != name
+                    || name.chars().any(char::is_control)
+                {
+                    continue;
+                }
+                all.insert(name.clone());
+                if face.monospaced {
+                    mono.insert(name.clone());
+                }
+            }
+        }
         crate::runtime::from_json(serde_json::json!({"all":all,"mono":mono}))
     })
 }

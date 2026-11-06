@@ -213,7 +213,12 @@ pub fn validate(value: &Value) -> Result<(), String> {
                 "records",
                 "multitext",
                 "secret",
-                "tiles", "media-preview", "file-pick", "colour", "ordered", "pick",
+                "tiles",
+                "media-preview",
+                "file-pick",
+                "colour",
+                "ordered",
+                "pick",
             ]
             .contains(&text(row, "kind"))
             || array(&row["choices"]).count() > 4096
@@ -238,8 +243,23 @@ pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String>
             if row["shown"] == false || !row["blocked"].is_null() {
                 return Err("browser row is disabled".into());
             }
-            if action=="remove" && !array(&row["choices"]).any(|c|c["value"]==payload["value"]&&c["removable"]==true) {return Err("tile cannot be removed".into());}
-            if row["kind"]=="file-pick" && action=="edit" && !payload["value"].as_array().is_some_and(|paths|paths.len()<=64&&paths.iter().all(|p|p.as_str().is_some_and(|p|p.starts_with('/')))){return Err("picker requires absolute paths".into());}
+            if action == "remove"
+                && !array(&row["choices"])
+                    .any(|c| c["value"] == payload["value"] && c["removable"] == true)
+            {
+                return Err("tile cannot be removed".into());
+            }
+            if row["kind"] == "file-pick"
+                && action == "edit"
+                && !payload["value"].as_array().is_some_and(|paths| {
+                    paths.len() <= 64
+                        && paths
+                            .iter()
+                            .all(|p| p.as_str().is_some_and(|p| p.starts_with('/')))
+                })
+            {
+                return Err("picker requires absolute paths".into());
+            }
             if action == "edit"
                 && !row["choices"].is_null()
                 && !array(&row["choices"]).any(|c| c["value"] == payload["value"])
@@ -268,7 +288,7 @@ pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String>
             Ok(())
         }
         "drawer.close" => Ok(()),
-        "problem" if payload["message"].is_string()=>Ok(()),
+        "problem" if payload["message"].is_string() => Ok(()),
         _ => Err("unknown browser action".into()),
     }
 }
@@ -295,7 +315,7 @@ pub(crate) fn draw(
     events: &mut Vec<Intent>,
 ) -> Response {
     let area = ui.available_rect_before_wrap();
-    crate::media_gallery::begin(ui,id);
+    crate::media_gallery::begin(ui, id);
     let look = Look::of(
         &crate::appearance::session_theme(ui.ctx()),
         &value["settings"],
@@ -509,7 +529,7 @@ pub(crate) fn draw(
                 cards(ui, id, &value["sections"], &look, geometry, events);
             });
     }
-    crate::media_gallery::finish(ui,id,events);
+    crate::media_gallery::finish(ui, id, events);
     ui.allocate_rect(area, Sense::hover())
 }
 fn cards(
@@ -528,9 +548,11 @@ fn cards(
                 ui.add_space(6.0);
             }
             for row in array(&section["rows"]).filter(|r| r["shown"] != false) {
-                if ["tiles","media-preview","file-pick"].contains(&text(row,"kind")) {
-                    crate::media_gallery::draw(ui,id,row,look,geometry,events);
-                } else { draw_inline_row(ui, id, row, look, geometry, events); }
+                if ["tiles", "media-preview", "file-pick"].contains(&text(row, "kind")) {
+                    crate::media_gallery::draw(ui, id, row, look, geometry, events);
+                } else {
+                    draw_inline_row(ui, id, row, look, geometry, events);
+                }
             }
             continue;
         }
@@ -570,8 +592,9 @@ fn draw_row(
     geometry: &mut BTreeMap<String, Rect>,
     events: &mut Vec<Intent>,
 ) {
-    if row["kind"]=="ordered" {
-        draw_ordered(ui,id,row,geometry,events);return;
+    if row["kind"] == "ordered" {
+        draw_ordered(ui, id, row, geometry, events);
+        return;
     }
     let key = text(row, "id");
     let mut edited = None;
@@ -580,10 +603,11 @@ fn draw_row(
         .show(ui, |ui| {
             let width = ui.available_width();
             ui.set_min_width(width);
-            let stacked = row["presentation"]!="dropdown" && matches!(
-                text(row, "kind"),
-                "choice" | "previews" | "swatches" | "image"
-            );
+            let stacked = row["presentation"] != "dropdown"
+                && matches!(
+                    text(row, "kind"),
+                    "choice" | "previews" | "swatches" | "image"
+                );
             let titles = |ui: &mut Ui| {
                 ui.label(RichText::new(text(row, "title")).color(look.text));
                 if !text(row, "description").is_empty() {
@@ -719,15 +743,15 @@ fn draw_row(
                                         edited = Some(json!(v));
                                     }
                                 }
-                                "choice"|"pick"=>{
-                                    let (r,value)=picker(ui,id,row);
-                                    record(geometry,id,&format!("row.{key}.control"),&r);
-                                    edited=value;
+                                "choice" | "pick" => {
+                                    let (r, value) = picker(ui, id, row);
+                                    record(geometry, id, &format!("row.{key}.control"), &r);
+                                    edited = value;
                                 }
-                                "colour"=>{
-                                    let (r,value)=colour_picker(ui,row,look);
-                                    record(geometry,id,&format!("row.{key}.control"),&r);
-                                    edited=value;
+                                "colour" => {
+                                    let (r, value) = colour_picker(ui, row, look);
+                                    record(geometry, id, &format!("row.{key}.control"), &r);
+                                    edited = value;
                                 }
                                 "link" | "button" => {
                                     let r = ui.button(if text(row, "kind") == "link" {
@@ -872,14 +896,16 @@ fn draw_inline_row(
                             ui.vertical(|ui| {
                                 ui.set_width(ui.available_width());
                                 ui.label_inputs_by(title.id, |ui| match text(row, "kind") {
-                                    "colour"=>{
-                                        let (r,value)=colour_picker(ui,row,look);
-                                        record(geometry,id,&format!("row.{key}.control"),&r);edit=value;
-                                    },
-                                    "pick"=>{
-                                        let (r,value)=picker(ui,id,row);
-                                        record(geometry,id,&format!("row.{key}.control"),&r);edit=value;
-                                    },
+                                    "colour" => {
+                                        let (r, value) = colour_picker(ui, row, look);
+                                        record(geometry, id, &format!("row.{key}.control"), &r);
+                                        edit = value;
+                                    }
+                                    "pick" => {
+                                        let (r, value) = picker(ui, id, row);
+                                        record(geometry, id, &format!("row.{key}.control"), &r);
+                                        edit = value;
+                                    }
                                     "toggle" => {
                                         let mut v = row["value"].as_bool().unwrap_or(false);
                                         let r = ui.add(toolkit::toggle::Toggle::new(&mut v, ""));
@@ -897,8 +923,11 @@ fn draw_inline_row(
                                         }
                                     }
                                     "choice" => {
-                                        if row["presentation"]=="dropdown" {
-                                            let (r,value)=picker(ui,id,row);record(geometry,id,&format!("row.{key}.control"),&r);edit=value;return;
+                                        if row["presentation"] == "dropdown" {
+                                            let (r, value) = picker(ui, id, row);
+                                            record(geometry, id, &format!("row.{key}.control"), &r);
+                                            edit = value;
+                                            return;
                                         }
                                         ui.horizontal_wrapped(|ui| {
                                             for (index, item) in array(&row["choices"]).enumerate()
@@ -1016,52 +1045,133 @@ fn draw_inline_row(
     }
 }
 
-fn picker(ui:&mut Ui,id:&str,row:&Value)->(Response,Option<Value>) {
-    let key=text(row,"id");let mut picked=None;
-    let current=array(&row["choices"]).find(|c|c["value"]==row["value"]).map(|c|text(c,"label").to_owned()).unwrap_or_else(||row["value"].as_str().unwrap_or(text(row,"title")).into());
-    let response=egui::ComboBox::from_id_salt((id,key,"pick")).selected_text(current).show_ui(ui,|ui| {
-        let query_id=ui.make_persistent_id("filter");
-        let mut query=ui.ctx().data_mut(|d|d.get_temp::<String>(query_id)).unwrap_or_default();
-        if array(&row["choices"]).count()>20 {let r=ui.text_edit_singleline(&mut query);r.widget_info(||egui::WidgetInfo::labeled(egui::Role::TextInput,ui.is_enabled(),"Search"));ui.ctx().data_mut(|d|d.insert_temp(query_id,query.clone()));}
-        let choices:Vec<_>=array(&row["choices"]).filter(|c|text(c,"label").to_lowercase().contains(&query.to_lowercase())).collect();
-        egui::ScrollArea::vertical().max_height(360.0).show_rows(ui,24.0,choices.len(),|ui,range| {
-            for index in range {let item=choices[index];let r=ui.selectable_label(item["value"]==row["value"],text(item,"label"));if r.clicked(){picked=Some(item["value"].clone());ui.close();}}
-        });
-    }).response;
-    response.widget_info(||egui::WidgetInfo::labeled(egui::Role::ComboBox,ui.is_enabled(),text(row,"title")));
-    (response,picked)
+fn picker(ui: &mut Ui, id: &str, row: &Value) -> (Response, Option<Value>) {
+    let key = text(row, "id");
+    let mut picked = None;
+    let current = array(&row["choices"])
+        .find(|c| c["value"] == row["value"])
+        .map(|c| text(c, "label").to_owned())
+        .unwrap_or_else(|| row["value"].as_str().unwrap_or(text(row, "title")).into());
+    let response = egui::ComboBox::from_id_salt((id, key, "pick"))
+        .selected_text(current)
+        .show_ui(ui, |ui| {
+            let query_id = ui.make_persistent_id("filter");
+            let mut query = ui
+                .ctx()
+                .data_mut(|d| d.get_temp::<String>(query_id))
+                .unwrap_or_default();
+            if array(&row["choices"]).count() > 20 {
+                let r = ui.text_edit_singleline(&mut query);
+                r.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::TextInput, ui.is_enabled(), "Search")
+                });
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(query_id, query.clone()));
+            }
+            let choices: Vec<_> = array(&row["choices"])
+                .filter(|c| {
+                    text(c, "label")
+                        .to_lowercase()
+                        .contains(&query.to_lowercase())
+                })
+                .collect();
+            egui::ScrollArea::vertical().max_height(360.0).show_rows(
+                ui,
+                24.0,
+                choices.len(),
+                |ui, range| {
+                    for index in range {
+                        let item = choices[index];
+                        let r =
+                            ui.selectable_label(item["value"] == row["value"], text(item, "label"));
+                        if r.clicked() {
+                            picked = Some(item["value"].clone());
+                            ui.close();
+                        }
+                    }
+                },
+            );
+        })
+        .response;
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::Role::ComboBox, ui.is_enabled(), text(row, "title"))
+    });
+    (response, picked)
 }
-fn colour_picker(ui:&mut Ui,row:&Value,look:&Look)->(Response,Option<Value>) {
-    let mut value=parse_colour(text(row,"value")).unwrap_or(look.accent);let mut rgb=[value.r(),value.g(),value.b()];
-    let response=ui.horizontal(|ui| {
-        let r=ui.color_edit_button_srgb(&mut rgb);
-        let mut changed=if r.changed(){value=Color32::from_rgb(rgb[0],rgb[1],rgb[2]);Some(json!(format!("#{:02x}{:02x}{:02x}",value.r(),value.g(),value.b())))}else{None};
-        if row["auto_link"]==true && ui.small_button("Auto").clicked(){changed=Some(Value::Null);}
-        (r,changed)
-    }).inner;
-    response.0.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,ui.is_enabled(),text(row,"title")));
+fn colour_picker(ui: &mut Ui, row: &Value, look: &Look) -> (Response, Option<Value>) {
+    let mut value = parse_colour(text(row, "value")).unwrap_or(look.accent);
+    let mut rgb = [value.r(), value.g(), value.b()];
+    let response = ui
+        .horizontal(|ui| {
+            let r = ui.color_edit_button_srgb(&mut rgb);
+            let mut changed = if r.changed() {
+                value = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                Some(json!(format!(
+                    "#{:02x}{:02x}{:02x}",
+                    value.r(),
+                    value.g(),
+                    value.b()
+                )))
+            } else {
+                None
+            };
+            if row["auto_link"] == true && ui.small_button("Auto").clicked() {
+                changed = Some(Value::Null);
+            }
+            (r, changed)
+        })
+        .inner;
+    response.0.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), text(row, "title"))
+    });
     response
 }
-fn draw_ordered(ui:&mut Ui,id:&str,row:&Value,geometry:&mut BTreeMap<String,Rect>,events:&mut Vec<Intent>) {
-    let key=text(row,"id");
-    let items:Vec<_>=array(&row["items"]).collect();
-    ui.add_enabled_ui(row["blocked"].is_null(),|ui| {
-        for (index,item) in items.iter().enumerate(){
+fn draw_ordered(
+    ui: &mut Ui,
+    id: &str,
+    row: &Value,
+    geometry: &mut BTreeMap<String, Rect>,
+    events: &mut Vec<Intent>,
+) {
+    let key = text(row, "id");
+    let items: Vec<_> = array(&row["items"]).collect();
+    ui.add_enabled_ui(row["blocked"].is_null(), |ui| {
+        for (index, item) in items.iter().enumerate() {
             ui.horizontal(|ui| {
-                ui.label(text(item,"label"));
-                for (action,title,enabled) in [("up","↑",index>0),("down","↓",index+1<items.len()),("remove","×",true)] {
-                    let r=ui.add_enabled(enabled,egui::Button::new(title));
-                    r.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,ui.is_enabled(),format!("{action} {}",text(item,"label"))));
-                    geometry.insert(format!("{id}.row.{key}.{index}.{action}"),r.rect);
-                    if r.clicked(){
-                        let mut values:Vec<Value>=items.iter().map(|item|item["value"].clone()).collect();
-                        match action {"up"=>values.swap(index,index-1),"down"=>values.swap(index,index+1),_=>{values.remove(index);}}
-                        emit(events,id,"edit",json!({"row":key,"value":values}));
+                ui.label(text(item, "label"));
+                for (action, title, enabled) in [
+                    ("up", "↑", index > 0),
+                    ("down", "↓", index + 1 < items.len()),
+                    ("remove", "×", true),
+                ] {
+                    let r = ui.add_enabled(enabled, egui::Button::new(title));
+                    r.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Button,
+                            ui.is_enabled(),
+                            format!("{action} {}", text(item, "label")),
+                        )
+                    });
+                    geometry.insert(format!("{id}.row.{key}.{index}.{action}"), r.rect);
+                    if r.clicked() {
+                        let mut values: Vec<Value> =
+                            items.iter().map(|item| item["value"].clone()).collect();
+                        match action {
+                            "up" => values.swap(index, index - 1),
+                            "down" => values.swap(index, index + 1),
+                            _ => {
+                                values.remove(index);
+                            }
+                        }
+                        emit(events, id, "edit", json!({"row":key,"value":values}));
                     }
                 }
             });
         }
-        let r=ui.button(format!("+ {}",text(row,"title")));geometry.insert(format!("{id}.row.{key}.control"),r.rect);
-        if r.clicked(){emit(events,id,"activate",json!({"row":key}));}
+        let r = ui.button(format!("+ {}", text(row, "title")));
+        geometry.insert(format!("{id}.row.{key}.control"), r.rect);
+        if r.clicked() {
+            emit(events, id, "activate", json!({"row":key}));
+        }
     });
 }

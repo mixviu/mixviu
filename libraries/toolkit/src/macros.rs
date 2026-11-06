@@ -140,9 +140,9 @@ impl State {
 
     /// Share an owning host's native catalogue and process runner with the
     /// standard macro menu/editor. The host retains Bus delivery and shutdown.
-    pub fn for_session(app:&str,session: ::macros::Session)->Self {
-        let (notify_tx,notifications)=mpsc::channel();
-        Self::with_session(app,session,notify_tx,notifications)
+    pub fn for_session(app: &str, session: ::macros::Session) -> Self {
+        let (notify_tx, notifications) = mpsc::channel();
+        Self::with_session(app, session, notify_tx, notifications)
     }
 
     fn with_session(
