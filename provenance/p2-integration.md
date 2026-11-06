@@ -62,6 +62,13 @@ explicit event-loop wake, independent of whether egui has run its first pass.
 The compositor sends pending configures after arrangement. The original
 launcher mapping/focus assertion remains and now also checks close/reopen.
 
+The furniture host also presents the existing Mix toast seat over its native
+layer connection in the same process. Show/hide, height validation, appearance,
+frame acknowledgements and scene-authored input use the existing scene/store
+contracts; notification content and behaviour remain Mix-owned. The runtime
+accepts stable compositor output keys as aliases for Wayland output names.
+The process gate covers two toast show/hide cycles and stable-key panel calls.
+
 ## Reproduction
 
 All Rust commands run through CBC. `tools/p2_gate.mix` builds each engine

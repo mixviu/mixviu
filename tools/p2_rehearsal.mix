@@ -175,6 +175,7 @@ try
   if not $shown then raise("TOAST_MAP","The Mix toast scene did not map") end
   checked("comp-p2","comp.capture.frame",{path:$run.path.."/toast.png",cursor:false})
   checked("shell","shell.toast.hide",{scene:"toast",output:"o_winit"})
+  sleep(2)
   $sample=map($children,fn($p)={pid:$p,ticks:proc_ticks($p)})
   $start=monotonic();sleep(10);$wall=monotonic()-$start
   $hz=to_number(trim(run_argv_must(["getconf","CLK_TCK"])))

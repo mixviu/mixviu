@@ -1043,7 +1043,7 @@ fn dispatch(
         _ => {
             return (
                 10,
-                json!({"error_code":"NOT_IMPLEMENTED","message":"Dialog, toast and menu presentation follows the panel client"}),
+                json!({"error_code":"NOT_IMPLEMENTED","message":"Dialog and menu presentation follows the furniture client"}),
             );
         }
     };
