@@ -745,9 +745,22 @@ impl Host {
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
     let saved = bundle.manifest.saved_version.map(|v| {
-        let mut saved = crate::saved_state::Saved::load(bundle.manifest.app(), v, bundle.launch["headless"] == true);
+        let mut saved = crate::saved_state::Saved::load(
+            bundle.manifest.app(),
+            v,
+            bundle.launch["headless"] == true,
+        );
         if bundle.launch["headless"] != true {
-            saved.configure(bundle.manifest.bus_surface.as_ref().and_then(|s| s["app_id"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("mixviu.{service}")), bundle.launch["comp"].as_str().unwrap_or("comp").to_owned());
+            saved.configure(
+                bundle
+                    .manifest
+                    .bus_surface
+                    .as_ref()
+                    .and_then(|s| s["app_id"].as_str())
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("mixviu.{service}")),
+                bundle.launch["comp"].as_str().unwrap_or("comp").to_owned(),
+            );
         }
         saved
     });

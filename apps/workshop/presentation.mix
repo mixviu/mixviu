@@ -24,7 +24,7 @@ fn project($s)
     push($rows,{key:$r.key,cells:[$label],bold:$r.badge=="question",toggle_label:(if $r.expanded then "Collapse " else "Expand " end)..$r.label,depth:$r.depth,branch:$r.children>0,selected:$r.selected,focused:false,expanded:$r.expanded,icon:if $r.kind=="service" then "server" else nil end,mono:$r.kind=="command",weak:contains(["agents_down","no_peers","agents_ended"],$r.kind),error:$r.kind=="error",tooltip:$r.error ?? $r.label})
   end
   $side=$model.effective_dock($s)
-  $placement=if $s.dock_open then {edge:$side,fraction:if $side=="right" then $s.dock_width else $s.dock_height end,resizable:true,minimum:if $side=="right" then 0.2 else 0.12 end,maximum:0.5} else {edge:"bottom",size:"design.collapsed_dock"} end
+  $placement=if $s.dock_open then {edge:$side,native_panel:true,name:if $side=="right" then "traffic-right" else "traffic-bottom" end,fraction:if $side=="right" then $s.dock_width else $s.dock_height end,resizable:true,minimum:if $side=="right" then 0.2 else 0.12 end,maximum:0.5} else {edge:"bottom",native_panel:true,name:"traffic-collapsed",size:"design.collapsed_dock"} end
   $values={body:$s.body,reply:$s.answer,filter:$s.filter,description:description($s),"traffic-state":$s.observe.." · "..to_string($s.dropped).." dropped","traffic-pause":$s.traffic_paused,"traffic-filter":$s.traffic_filter}
   $extra=$macro_view.project($s);$agents=$agent_view.project($s);$mesh=$mesh_view.project($s);$traffic=$traffic_view.project($s)
   for $key in keys($mesh) $extra[$key]=$mesh[$key] end

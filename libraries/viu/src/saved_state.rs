@@ -12,6 +12,7 @@ pub struct Saved {
     restoring: bool,
     captured_exit: bool,
     changed: Arc<tokio::sync::Notify>,
+    pending_panels: std::collections::BTreeMap<String, f32>,
 }
 impl Saved {
     pub fn load(app: &str, version: u32, headless: bool) -> Self {
@@ -30,43 +31,83 @@ impl Saved {
             restoring: false,
             captured_exit: false,
             changed: Arc::new(tokio::sync::Notify::new()),
+            pending_panels: Default::default(),
         }
     }
     pub fn configure(&mut self, app_id: String, comp: String) {
         self.native = Some((app_id, comp));
     }
     pub fn notice_topic(&self, topic: &str) {
-        if self.native.as_ref().is_some_and(|(_, comp)| topic == format!("{comp}.props.changed")) {
+        if self
+            .native
+            .as_ref()
+            .is_some_and(|(_, comp)| topic == format!("{comp}.props.changed"))
+        {
             self.changed.notify_one();
         }
     }
     pub fn restore(&mut self, client: Option<Arc<bus::SupervisedClient>>) {
-        if self.restoring { return; }
-        let (Some((app_id, comp)), Some(client)) = (self.native.clone(), client) else { return; };
+        if self.restoring {
+            return;
+        }
+        let (Some((app_id, comp)), Some(client)) = (self.native.clone(), client) else {
+            return;
+        };
         self.restoring = true;
         let frame = self.store.window.clone();
         let changed = self.changed.clone();
         std::thread::spawn(move || {
-            let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return; };
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            else {
+                return;
+            };
             rt.block_on(async {
-                let _ = client.subscribe_topic(&format!("{comp}.props.changed")).await;
-                frame.restore_with_events(&app_id, |command, args| {
-                    let client = client.clone(); let comp = comp.clone();
-                    async move { native_call(client, &comp, command, args).await }
-                }, || async { changed.notified().await; true }).await;
+                let _ = client
+                    .subscribe_topic(&format!("{comp}.props.changed"))
+                    .await;
+                frame
+                    .restore_with_events(
+                        &app_id,
+                        |command, args| {
+                            let client = client.clone();
+                            let comp = comp.clone();
+                            async move { native_call(client, &comp, command, args).await }
+                        },
+                        || async {
+                            changed.notified().await;
+                            true
+                        },
+                    )
+                    .await;
             });
         });
     }
     pub fn capture_exit(&mut self, client: Option<Arc<bus::SupervisedClient>>) {
-        if self.captured_exit { return; }
-        let (Some((app_id, comp)), Some(client)) = (self.native.clone(), client) else { return; };
+        if self.captured_exit {
+            return;
+        }
+        let (Some((app_id, comp)), Some(client)) = (self.native.clone(), client) else {
+            return;
+        };
         self.captured_exit = true;
-        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return; };
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
+            return;
+        };
         rt.block_on(async {
-            let _ = tokio::time::timeout(Duration::from_millis(700), self.store.window.capture_exit(&app_id, |command, args| {
-                let client = client.clone(); let comp = comp.clone();
-                async move { native_call(client, &comp, command, args).await }
-            })).await;
+            let _ = tokio::time::timeout(
+                Duration::from_millis(700),
+                self.store.window.capture_exit(&app_id, |command, args| {
+                    let client = client.clone();
+                    let comp = comp.clone();
+                    async move { native_call(client, &comp, command, args).await }
+                }),
+            )
+            .await;
         });
     }
     pub fn notice(&self) -> Value {
@@ -83,7 +124,7 @@ impl Saved {
                     .as_f64()
                     .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
                 {
-                    self.store.widgets.panels.insert(name.clone(), share as f32);
+                    self.pending_panels.insert(name.clone(), share as f32);
                 }
             }
         }
@@ -100,6 +141,11 @@ impl Saved {
             return;
         }
         self.store.window.capture(ctx);
+        for (name, share) in std::mem::take(&mut self.pending_panels) {
+            if self.store.widgets.panels.get(&name).is_none_or(|old| (*old-share).abs()>f32::EPSILON) {
+                toolkit::saved::widgets::set_panel(ctx, &name, share);
+            }
+        }
         self.store.widgets.collect(ctx);
         self.store.collect_windows(ctx, app);
         let result = if flush {
@@ -116,8 +162,24 @@ impl Saved {
     }
 }
 
-async fn native_call(client: Arc<bus::SupervisedClient>, comp: &str, command: &str, args: Value) -> Option<Value> {
-    let (rc, body, _) = client.call_with_headers_raw_within(comp, command, &Default::default(), &args.to_string(), Duration::from_secs(10)).await.ok()?;
-    if rc != 0 { return None; }
+async fn native_call(
+    client: Arc<bus::SupervisedClient>,
+    comp: &str,
+    command: &str,
+    args: Value,
+) -> Option<Value> {
+    let (rc, body, _) = client
+        .call_with_headers_raw_within(
+            comp,
+            command,
+            &Default::default(),
+            &args.to_string(),
+            Duration::from_secs(10),
+        )
+        .await
+        .ok()?;
+    if rc != 0 {
+        return None;
+    }
     serde_json::from_str(&body).ok()
 }

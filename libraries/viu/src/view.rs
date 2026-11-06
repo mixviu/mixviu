@@ -475,7 +475,7 @@ impl SceneView {
                 if let Some(height) = num(node, "max_height") { ui.set_max_height(height); }
                 if let Some(height) = num(node, "min_height") { ui.set_min_height(height); }
                 if node.family!="control" {
-                    ui.spacing_mut().item_spacing=Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0));
+                    ui.spacing_mut().item_spacing=if node.ports.get("native_spacing")==Some(&Value::Bool(true)){ui.ctx().global_style().spacing.item_spacing}else{Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0))};
                 }
                 match node.family.as_str() {
                     "column" if !text(node,"group_title").is_empty() => {
@@ -483,11 +483,12 @@ impl SceneView {
                         let group_key=if text(node,"group_key").is_empty(){&key}else{text(node,"group_key")};
                         let draw=|ui:&mut egui::Ui| {
                             ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
-                            toolkit::bars::dock_frame(ui.ctx()).show(ui,|ui| toolkit::saved::widgets::group(ui, group_key, &[title], |ui,_| {
+                            let mut group = |ui: &mut egui::Ui| toolkit::saved::widgets::group(ui, group_key, &[title], |ui,_| {
                                 for child in children(node) {
                                     self.node(ui, child, nodes, route, depth+1, events);
                                 }
-                            })).response.rect
+                            });
+                            if node.ports.get("group_frame")==Some(&Value::Bool(false)){ui.scope(|ui|group(ui)).response.rect}else{toolkit::bars::dock_frame(ui.ctx()).show(ui, |ui| group(ui)).response.rect}
                         };
                         let rect=if node.ports.get("scroll").and_then(Value::as_bool)==Some(true) {
                             let mut draw=draw;
@@ -496,6 +497,7 @@ impl SceneView {
                         ui.interact(rect,ui.scope_id().with((&key,"group")),Sense::hover());
                     }
                     "column" if node.ports.get("scroll").and_then(Value::as_bool)==Some(true) => {
+                        let mut draw_scroll=|ui: &mut egui::Ui| {
                         let height=ui.available_height();
                         let context=node.ports.get("scroll_key").and_then(Value::as_str).filter(|s|!s.is_empty());
                         let ready=node.ports.get("scroll_ready").and_then(Value::as_bool)!=Some(false);
@@ -504,6 +506,9 @@ impl SceneView {
                             ui.set_max_height((height-after).max(0.));
                             for child in children(node){self.node(ui,child,nodes,route,depth+1,events);}
                         }).inner_rect;
+                        rect
+                        };
+                        let rect=if node.ports.get("native_frame")==Some(&Value::Bool(true)){toolkit::bars::dock_frame(ui.ctx()).show(ui,|ui|draw_scroll(ui)).inner}else{draw_scroll(ui)};
                         ui.interact(rect,ui.scope_id().with((&key,"scroll")),Sense::hover());
                     }
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
@@ -890,6 +895,28 @@ impl SceneView {
                 .unwrap_or_else(|| {
                     placement["fraction"].as_f64().unwrap_or(0.2) as f32 * dimension
                 });
+            if placement["native_panel"] == true && edge != "fill" {
+                let name = placement["name"].as_str().unwrap_or(child);
+                let panel = match edge {
+                    "left" => egui::Panel::left(name),
+                    "right" => egui::Panel::right(name),
+                    "top" => egui::Panel::top(name),
+                    _ => egui::Panel::bottom(name),
+                }.frame(toolkit::bars::dock_frame(ui.ctx()));
+                if placement["resizable"] == true {
+                    let (_, changed) = toolkit::saved::widgets::panel(ui, name, panel, dimension,
+                        placement["fraction"].as_f64().unwrap_or(0.2) as f32,
+                        placement["minimum"].as_f64().unwrap_or(0.05) as f32..=placement["maximum"].as_f64().unwrap_or(0.8) as f32,
+                        horizontal, |ui| self.node(ui, child, nodes, route, depth + 1, events));
+                    if let (Some(fraction), Some(command)) = (changed, node.ports["on_change"].as_str()) {
+                        events.push(Event { command: command.into(), body: json!({"node":key,"kind":"dock","value":{"child":child,"fraction":fraction}}) });
+                    }
+                } else {
+                    panel.resizable(false).exact_size(requested).show(ui, |ui| self.node(ui, child, nodes, route, depth + 1, events));
+                }
+                remaining = ui.available_rect_before_wrap();
+                continue;
+            }
             let maximum = (if horizontal {
                 remaining.width()
             } else {
