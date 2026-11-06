@@ -636,20 +636,15 @@ pub(crate) fn draw(
                             };
                             if gold && item["id"] == "help.macros" {
                                 let viewport = ui.ctx().viewport_id();
+                                // Match the toolkit titlebar's viewport-scoped popup keys.
+                                let anchor = egui::Id::unique((viewport, "macro-anchor"));
+                                let busy = egui::Id::unique((viewport, "macro-busy"));
                                 ui.ctx().data_mut(|d| {
-                                    d.insert_temp(
-                                        toolkit::window_id(viewport, "macro-anchor"),
-                                        response.rect,
-                                    )
+                                    d.insert_temp(anchor, response.rect)
                                 });
                                 if ui
                                     .ctx()
-                                    .data(|d| {
-                                        d.get_temp::<bool>(toolkit::window_id(
-                                            viewport,
-                                            "macro-busy",
-                                        ))
-                                    })
+                                    .data(|d| d.get_temp::<bool>(busy))
                                     .unwrap_or(false)
                                 {
                                     let chrome = toolkit::chrome::Chrome::of(ui.ctx());
