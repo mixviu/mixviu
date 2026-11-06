@@ -463,11 +463,20 @@ fn mix_chooser_preserves_raw_save_name_until_the_field_is_edited() {
         let path = app_dir.join("chooser.mix");
         let mut worker = Runtime::new(8, wake.clone(), None);
         let mut jobs = Jobs::new(1, wake.clone());
-        worker.load(Program {
-            source: std::fs::read_to_string(&path).unwrap(), path,
-            scene: "chooser".into(), citizen: "chooser-test".into(),
-        }).unwrap();
-        let seq = worker.event("chooser.open".into(), json!({"id":id,"request":request,"home":dir.path()})).unwrap();
+        worker
+            .load(Program {
+                source: std::fs::read_to_string(&path).unwrap(),
+                path,
+                scene: "chooser".into(),
+                citizen: "chooser-test".into(),
+            })
+            .unwrap();
+        let seq = worker
+            .event(
+                "chooser.open".into(),
+                json!({"id":id,"request":request,"home":dir.path()}),
+            )
+            .unwrap();
         let mut model = wait(&worker, &mut jobs, seq).0.model.unwrap();
         assert_eq!(model["values"]["name"], "new\u{fffd}.txt");
         if edited {
@@ -479,7 +488,18 @@ fn mix_chooser_preserves_raw_save_name_until_the_field_is_edited() {
         let accepted = service.command("accept", &model["effect"]["body"], "test");
         assert_eq!(accepted["rc"], 0, "{accepted}");
         let uri = accepted["outcome"]["uris"][0].as_str().unwrap();
-        assert!(uri.ends_with(if edited { "/new%EF%BF%BD.txt" } else { "/new%FF.txt" }), "{accepted}");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "Choosing a save path must not write it");
+        assert!(
+            uri.ends_with(if edited {
+                "/new%EF%BF%BD.txt"
+            } else {
+                "/new%FF.txt"
+            }),
+            "{accepted}"
+        );
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            0,
+            "Choosing a save path must not write it"
+        );
     }
 }
