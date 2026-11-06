@@ -136,6 +136,12 @@ pub struct Endpoint {
     thread: Option<JoinHandle<()>>,
 }
 impl Endpoint {
+    pub fn offline() -> Self {
+        let (_,requests)=mpsc::sync_channel(1);
+        let (_,notices)=mpsc::sync_channel(1);
+        let (hints,_)=tokio::sync::mpsc::channel(1);
+        Self { requests,notices,close_requested:Arc::new(AtomicBool::new(false)),dropped_notices:Arc::new(AtomicU64::new(0)),client:Arc::new(Mutex::new(None)),hints,stop:None,thread:None }
+    }
     pub fn start(
         name: String,
         url: String,

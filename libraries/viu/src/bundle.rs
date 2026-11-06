@@ -28,6 +28,10 @@ pub struct Manifest {
     pub unknown_command: Option<String>,
     pub app: Option<String>,
     pub bus_url: Option<String>,
+    pub bus: bool,
+    pub forward_output: bool,
+    pub allow_native_overrides: bool,
+    pub launch_variants: std::collections::BTreeMap<String, String>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -53,6 +57,10 @@ impl Default for Manifest {
             unknown_command: None,
             app: None,
             bus_url: None,
+            bus: true,
+            forward_output: false,
+            allow_native_overrides: true,
+            launch_variants: Default::default(),
         }
     }
 }
@@ -76,7 +84,7 @@ impl Bundle {
     pub fn load(root: &Path, args: &[String]) -> Result<Self, String> {
         let root = root.canonicalize().map_err(|e| e.to_string())?;
         let path = root.join("contract.json");
-        let manifest: Manifest = if path.exists() {
+        let mut manifest: Manifest = if path.exists() {
             let value: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(path).map_err(|e| e.to_string())?)
                     .map_err(|e| e.to_string())?;
@@ -90,6 +98,12 @@ impl Bundle {
         } else {
             Manifest::default()
         };
+        if let Some(variant)=args.iter().find_map(|a|manifest.launch_variants.get(a)) {
+            let path=root.join(variant).canonicalize().map_err(|e|e.to_string())?;
+            if !path.starts_with(&root) {return Err("launch variant escapes bundle".into());}
+            let value:serde_json::Value=serde_json::from_str(&std::fs::read_to_string(path).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+            manifest=serde_json::from_value(value["host"].clone()).map_err(|e|e.to_string())?;
+        }
         if !manifest
             .size
             .iter()

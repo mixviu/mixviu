@@ -33,7 +33,7 @@ pub fn validate(value: &Value) -> Result<(), String> {
         for n in nodes {
             let kind = n["kind"].as_str().ok_or("composition node kind required")?;
             if ![
-                "clear", "frame", "heading", "label", "strong", "progress", "columns", "scroll",
+                "clear", "frame", "panel", "centered", "heading", "label", "strong", "progress", "columns", "scroll",
                 "space", "plot", "world",
             ]
             .contains(&kind)
@@ -99,6 +99,7 @@ pub fn validate(value: &Value) -> Result<(), String> {
 }
 #[derive(Default)]
 pub struct Composition {
+    observer: Option<crate::raster::RepaintLease>,
     worlds: BTreeMap<String, crate::cuboids::Cache>,
     stamp: Value,
     started: Option<Instant>,
@@ -118,6 +119,7 @@ fn colour(ui: &Ui, role: &Value) -> Color32 {
 }
 impl Composition {
     pub fn draw(&mut self, ui: &mut Ui, value: &Value, rasters: &Rasters) -> egui::Response {
+        if self.observer.is_none(){self.observer=Some(rasters.observe(ui.ctx()));}
         let transition = &value["transition"];
         if self.stamp != *transition {
             self.stamp = transition.clone();
@@ -178,6 +180,8 @@ impl Composition {
                     };
                     frame.show(ui, |ui| self.nodes(ui, &n["children"], rasters, progress));
                 }
+                "panel" => { egui::CentralPanel::default().show(ui, |ui| self.nodes(ui,&n["children"],rasters,progress)); }
+                "centered" => { ui.vertical_centered(|ui| self.nodes(ui,&n["children"],rasters,progress)); }
                 "heading" => {
                     ui.heading(text(n));
                 }
@@ -220,6 +224,10 @@ impl Composition {
                         .show(ui, |ui| self.nodes(ui, &n["children"], rasters, progress));
                 }
                 "space" => {
+                    if let Some(fraction)=n["fraction"].as_f64() {
+                        ui.add_space(ui.available_height()*fraction as f32);
+                        continue;
+                    }
                     ui.add_space(if let Some(bottom) = n["bottom"].as_f64() {
                         (ui.available_height() - bottom as f32).max(0.)
                     } else {

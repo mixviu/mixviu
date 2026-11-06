@@ -16,11 +16,20 @@ pub const RESIDENT_BYTES: u64 = 512 * 1024 * 1024;
 pub struct TextureLease {
     bytes: u64,
     used: Arc<AtomicU64>,
+    observers: Arc<Mutex<Observers>>,
 }
 impl Drop for TextureLease {
     fn drop(&mut self) {
         self.used.fetch_sub(self.bytes, Ordering::AcqRel);
+        let contexts:Vec<_>=self.observers.lock().unwrap_or_else(|e|e.into_inner()).contexts.values().cloned().collect();
+        for ctx in contexts {ctx.request_repaint();}
     }
+}
+#[derive(Default)]
+struct Observers { next:u64, contexts:BTreeMap<u64,egui::Context> }
+pub struct RepaintLease { observers:Arc<Mutex<Observers>>,id:u64 }
+impl Drop for RepaintLease {
+    fn drop(&mut self) {self.observers.lock().unwrap_or_else(|e|e.into_inner()).contexts.remove(&self.id);}
 }
 
 /// A live renderer reference still consumes the budget after handle release.
@@ -42,6 +51,7 @@ struct State {
 }
 #[derive(Clone, Default)]
 pub struct Rasters {
+    observers:Arc<Mutex<Observers>>,
     state: Arc<Mutex<State>>,
     used: Arc<AtomicU64>,
     textures: Arc<AtomicU64>,
@@ -49,7 +59,13 @@ pub struct Rasters {
     lane: Arc<Mutex<()>>,
 }
 impl Rasters {
-    pub fn texture_bytes(&self) -> u64 { self.textures.load(Ordering::Acquire) }
+    pub fn observe(&self, ctx:&egui::Context)->RepaintLease {
+        let mut observers=self.observers.lock().unwrap_or_else(|e|e.into_inner());observers.next+=1;let id=observers.next;
+        observers.contexts.insert(id,ctx.clone());RepaintLease{observers:self.observers.clone(),id}
+    }
+    pub fn texture_bytes(&self) -> u64 {
+        self.textures.load(Ordering::Acquire)
+    }
     pub fn begin(&self) -> String {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.serial += 1;
@@ -88,6 +104,7 @@ impl Rasters {
         Ok(TextureLease {
             bytes,
             used: self.textures.clone(),
+            observers: self.observers.clone(),
         })
     }
     pub fn get(&self, handle: &str) -> Option<Arc<Pixels>> {

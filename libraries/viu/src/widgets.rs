@@ -715,7 +715,8 @@ impl Widgets {
     /// Call once after drawing an application frame (including individual
     /// `widget` calls). A disappeared target must not latch future replies.
     pub fn finish_frame(&mut self) -> Result<(), String> {
-        self.compositions.retain(|id,_|self.visible_compositions.contains(id));
+        self.compositions
+            .retain(|id, _| self.visible_compositions.contains(id));
         self.images.finish();
         if let Some(images) = &mut self.surfaces {
             images.finish();

@@ -337,16 +337,41 @@ mod tests {
     use super::*;
     #[test]
     fn raster_budget_accounts_targets_buffers_and_queued_resize_overlap() {
-        let budget=Rasters::default();let mut cache=Cache::default();
-        let frame=|cache:&mut Cache,width:f32| {
-            let ctx=egui::Context::default();let mut accepted=false;
-            let mut out=ctx.run_ui(egui::RawInput {screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(width,480.))),..Default::default()},|ui|accepted=cache.draw(ui,&[],1.,&budget));
-            out.textures_delta.clear();(out,accepted)
+        let budget = Rasters::default();
+        let mut cache = Cache::default();
+        let frame = |cache: &mut Cache, width: f32| {
+            let ctx = egui::Context::default();
+            let mut accepted = false;
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(width, 480.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| accepted = cache.draw(ui, &[], 1., &budget),
+            );
+            out.textures_delta.clear();
+            (out, accepted)
         };
-        let (a,ok)=frame(&mut cache,640.);assert!(ok);let first=budget.texture_bytes();assert_eq!(first,allocation_bytes([640,480]));
-        let (b,ok)=frame(&mut cache,800.);assert!(ok);let both=budget.texture_bytes();assert!(both>first);
-        drop(cache);assert_eq!(budget.texture_bytes(),both);drop(a);assert_eq!(budget.texture_bytes(),both-first);drop(b);assert_eq!(budget.texture_bytes(),0);
-        let all=budget.texture(crate::raster::RESIDENT_BYTES).unwrap();
-        let (_,ok)=frame(&mut Cache::default(),640.);assert!(!ok);drop(all);
+        let (a, ok) = frame(&mut cache, 640.);
+        assert!(ok);
+        let first = budget.texture_bytes();
+        assert_eq!(first, allocation_bytes([640, 480]));
+        let (b, ok) = frame(&mut cache, 800.);
+        assert!(ok);
+        let both = budget.texture_bytes();
+        assert!(both > first);
+        drop(cache);
+        assert_eq!(budget.texture_bytes(), both);
+        drop(a);
+        assert_eq!(budget.texture_bytes(), both - first);
+        drop(b);
+        assert_eq!(budget.texture_bytes(), 0);
+        let all = budget.texture(crate::raster::RESIDENT_BYTES).unwrap();
+        let (_, ok) = frame(&mut Cache::default(), 640.);
+        assert!(!ok);
+        drop(all);
     }
 }

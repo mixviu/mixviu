@@ -13,12 +13,26 @@ for $case in ["core","document","schedule","launch","engine","train"]
   print($result)
   if not $result.ok then exit($result.exit_code ?? 1) end
 end
-for $file in ["app","core","document","document-test","schedule","schedule-test","launch","launch-test","engine","engine-test","projection","runtime","decode-job","train","train-test","views","bus","reader","read-job"]
+for $file in ["app","core","document","document-test","schedule","schedule-test","launch","launch-test","engine","engine-test","projection","runtime","decode-job","train","train-test","views","bus","reader","read-job","probe"]
   $argv=["/opt/mixos/bin/mix","lint","apps/backdrop/"..$file..".mix"]
   for $builtin in ["viu_context","viu_app_dirs","viu_read_optional","viu_raster","viu_reply","viu_ui_state","viu_store","viu_timer","viu_action_event"] push($argv,"--allow-function");push($argv,$builtin) end
   $result=run_argv($argv)
   print($result)
   if not $result.ok then exit($result.exit_code ?? 1) end
+end
+if contains(args(),"--artifact") then
+  $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+  $artifact="/build/es-artifacts/"..$sha;mkdir($artifact,{parents:true})
+  for $profile in ["debug","release"]
+    $argv=["cargo","build","--locked","-p","viu-engine","--bin","viu"]
+    if $profile=="release" then push($argv,"--release") end
+    $result=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"4"}});print($result)
+    if not $result.ok then exit($result.exit_code ?? 124) end
+    $name=if $profile=="release" then "viu" else "viu.debug" end
+    copy("target/"..$profile.."/viu",$artifact.."/"..$name)
+    $receipt={source:$sha,profile:$profile,binary:$name,sha256:hash_file($artifact.."/"..$name,"sha256")}
+    write_file($artifact.."/"..$name..".json",json_encode($receipt));print({artifact:$artifact,receipt:$receipt})
+  end
 end
 for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--lib","raster"],["cargo","test","--locked","-p","viu","--test","app_ports","--test","backdrop"],["cargo","clippy","--locked","-p","viu","--all-targets"]]
   if contains(args(),"--prepare") and $argv[1]=="fmt" then continue end
