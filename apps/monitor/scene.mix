@@ -1,0 +1,20 @@
+---
+scene: 1
+name: monitor
+citizen: monitor
+---
+```mix
+{
+root:{widget:"column",children:["title","status","toolbar","summary","history","processes"],gap:8},
+title:{widget:"text",text:"System Monitor · Mix on Viu"},
+status:{widget:"text",text:"= $model.status"},
+toolbar:{widget:"row",children:["refresh","pause","filter","node"],gap:8},
+refresh:{widget:"control",definition:{id:"refresh",kind:"button",label:"",initial:"Refresh",properties:{text:"Refresh"}},on_intent:"monitor.intent"},
+pause:{widget:"control",definition:{id:"pause",kind:"toggle",label:"Pause",initial:false,properties:{text:"Pause"}},on_intent:"monitor.intent"},
+filter:{widget:"control",definition:{id:"filter",kind:"field",label:"Filter processes",initial:""},on_intent:"monitor.intent"},
+node:{widget:"control",definition:{id:"node",kind:"field",label:"Node (empty = local)",initial:""},on_intent:"monitor.intent"},
+summary:{widget:"text",text:"= $model.summary"},
+history:{widget:"control",definition:"= $model.chart"},
+processes:{widget:"control",definition:"= $model.table",on_intent:"monitor.intent"}
+}
+```

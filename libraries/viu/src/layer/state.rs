@@ -222,6 +222,7 @@ pub(super) fn run<P: LayerProgram + 'static>(
             .map_err(|e| format!("dispatch: {e}"))?;
         state.expire_frames();
         state.draw_due(&qh);
+        if state.program.should_close() { break; }
     }
     Ok(())
 }

@@ -14,7 +14,7 @@ fn completion(runtime: &Runtime) -> viu::runtime::Completion {
     }
 }
 fn runtime() -> Runtime {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("gallery.mix");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../gallery/gallery.mix");
     let mut runtime = Runtime::new(32, Arc::new(|| {}), None);
     runtime
         .load(Program {
@@ -165,7 +165,7 @@ fn every_widget_renders_in_shared_native_path() {
     let ctx = egui::Context::default();
     viu::icons::install(&ctx);
     let mut view =
-        SceneView::with_model(include_str!("../scene.mix"), controller::initial()).unwrap();
+        SceneView::with_model(include_str!("../../gallery/scene.mix"), controller::initial()).unwrap();
     let mut output = ctx.run_ui(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -232,7 +232,7 @@ fn disappeared_focus_is_refused_once_without_latching_next_frame() {
 
 #[test]
 fn reload_retires_inflight_request_and_replies_superseded() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("gallery.mix");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../gallery/gallery.mix");
     let mut runtime = Runtime::new(8, Arc::new(|| {}), None);
     runtime
         .load(Program {
@@ -245,10 +245,10 @@ fn reload_retires_inflight_request_and_replies_superseded() {
     completion(&runtime);
     let model = controller::initial();
     let mut gallery = Gallery {
-        view: Some(SceneView::with_model(include_str!("../scene.mix"), model.clone()).unwrap()),
+        view: Some(SceneView::with_model(include_str!("../../gallery/scene.mix"), model.clone()).unwrap()),
         model,
         definitions: controller::composition(),
-        scene_source: include_str!("../scene.mix").into(),
+        scene_source: include_str!("../../gallery/scene.mix").into(),
         runtime: Some(runtime),
         bus: NativeBus::offline(),
         pending: BTreeMap::new(),
@@ -272,7 +272,7 @@ fn reload_retires_inflight_request_and_replies_superseded() {
         .as_mut()
         .unwrap()
         .load(Program {
-            source: include_str!("../gallery.mix").into(),
+            source: include_str!("../../gallery/gallery.mix").into(),
             path,
             scene: "gallery".into(),
             citizen: "gallery-mix".into(),

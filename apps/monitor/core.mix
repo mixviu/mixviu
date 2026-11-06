@@ -1,0 +1,32 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+fn target($node)
+  if $node=="" then return "monitord" end
+  if not re_match($node,"^[a-zA-Z0-9_-]{1,63}$") then raise("NODE","Invalid mesh node") end
+  return "monitord."..$node..".bus"
+end
+fn initial()
+  return {node:"",paused:false,filter:"",sort:"cpu",reverse:true,tree:false,selected:nil,snapshot:nil,processes:[],history:[],error:nil,serial:0}
+end
+fn query($s)
+  return {sort:$s.sort,reverse:$s.reverse,filter:$s.filter,tree:$s.tree,limit:2001}
+end
+fn project($s)
+  $rows=[]
+  if len($s.processes)>2000 then raise("PROCESS_BUDGET","More than 2000 processes; no partial table") end
+  for $p in $s.processes
+    push($rows,{key:to_string($p.pid),depth:min(256,$p.depth ?? 0),branch:false,selected:$p.pid==$s.selected,focused:$p.pid==$s.selected,expanded:false,cells:[$p.name,to_string($p.pid),$p.user,fmt("%.1f",$p.cpu),format_bytes($p.memory),if $p.read_bps==nil and $p.write_bps==nil then "Unavailable" else format_bytes(($p.read_bps ?? 0)+($p.write_bps ?? 0)).."/s" end]})
+  end
+  $columns=[]
+  for $pair in [["name","Name"],["pid","PID"],["user","User"],["cpu","CPU %"],["memory","Memory"],["io","I/O /s"]] push($columns,{id:$pair[0],label:$pair[1]}) end
+  $shapes=[]
+  if len($s.history)>1 then
+    for $i=1 to len($s.history)-1 push($shapes,{kind:"line",from:[($i-1)/59,1-$s.history[$i-1]/100],to:[$i/59,1-$s.history[$i]/100]}) end
+  end
+  $summary="No readings yet"
+  if $s.snapshot!=nil then
+    $v=$s.snapshot
+    $summary=fmt("CPU %.1f%% · %d cores · Memory %s / %s · Swap %s / %s",$v.cpu.busy,$v.cpu.cores,format_bytes($v.memory.used),format_bytes($v.memory.total),format_bytes($v.swap.used),format_bytes($v.swap.total))
+  end
+  return {status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:{column:$s.sort,reverse:$s.reverse}},properties:{height:470}},values:{pause:$s.paused,filter:$s.filter,node:$s.node},serial:$s.serial}
+end

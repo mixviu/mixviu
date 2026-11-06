@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+eframe = { version = "=0.37.0", default-features = false, features = ["default_fonts", "wayland", "wgpu_no_default_features"] }
 smithay-client-toolkit = "=0.19.2"
 wayland-backend = { version = "=0.3.17", features = ["client_system"] }
 xkbcommon = { version = "0.7", default-features = false }

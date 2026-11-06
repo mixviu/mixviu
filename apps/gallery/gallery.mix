@@ -61,6 +61,12 @@ end
 $ctx = viu_context()
 on gallery.execute
   $a = $event.args
+  if $a.action != "reset" then
+    $matches=filter($widgets,fn($w)=$w.id==$a.id)
+    if len($matches)!=1 then raise("UNKNOWN_WIDGET",to_string($a.id)) end
+    viu_widget_admit($matches[0],$state,$a.action,$a.value)
+    if not contains(["set","submit","expand","sort","accept","cancel","activate"],$a.action) then raise("UNKNOWN_ACTION",to_string($a.action)) end
+  end
   if $a.action == "reset" then
     for $widget in $widgets
       $state.values[$widget.id] = $widget.initial
@@ -95,3 +101,10 @@ on gallery.execute
   reply(0,"{}")
 end
 publish_gallery($ctx,$state)
+
+on gallery.state
+  reply(0,json_encode($state))
+end
+on gallery.describe
+  reply(0,json_encode({widgets:$widgets,execute:"gallery.execute {id,action,value}",host:"viu.state / viu.ui.* / viu.capture / viu.quit"}))
+end

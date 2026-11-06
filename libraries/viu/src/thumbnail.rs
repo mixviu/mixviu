@@ -71,6 +71,7 @@ pub struct Decoder<K> {
     rx: mpsc::Receiver<(u64, Decoded<K>)>,
     /// The thread's name.
     name: String,
+    decode: fn(&Path) -> Option<egui::ColorImage>,
     started: bool,
     thread: Option<std::thread::JoinHandle<()>>,
     /// The next request's identity.
@@ -86,6 +87,9 @@ pub struct Decoder<K> {
 impl<K: Clone + PartialEq + Send + 'static> Decoder<K> {
     /// A decoder whose thread (started on the first request) is `name`.
     pub fn new(name: &str) -> Self {
+        Self::with_decoder(name, decode)
+    }
+    pub fn with_decoder(name: &str, decode: fn(&Path) -> Option<egui::ColorImage>) -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
             shared: Arc::new(Shared {
@@ -98,6 +102,7 @@ impl<K: Clone + PartialEq + Send + 'static> Decoder<K> {
             tx,
             rx,
             name: name.to_owned(),
+            decode,
             started: false,
             thread: None,
             next: 0,
@@ -203,9 +208,10 @@ impl<K: Clone + PartialEq + Send + 'static> Decoder<K> {
         }
         let shared = self.shared.clone();
         let tx = self.tx.clone();
+        let decode = self.decode;
         let spawned = std::thread::Builder::new()
             .name(self.name.clone())
-            .spawn(move || decode_requests(&shared, &tx));
+            .spawn(move || decode_requests(&shared, &tx, decode));
         self.thread = spawned.ok();
         self.started = self.thread.is_some();
         self.started
@@ -227,7 +233,7 @@ impl<K> Drop for Decoder<K> {
 
 /// The decoder thread: take the next request, decode it, reply, repaint;
 /// stop when the owner is gone.
-fn decode_requests<K>(shared: &Shared<K>, tx: &mpsc::Sender<(u64, Decoded<K>)>) {
+fn decode_requests<K>(shared: &Shared<K>, tx: &mpsc::Sender<(u64, Decoded<K>)>, decode: fn(&Path) -> Option<egui::ColorImage>) {
     loop {
         let (id, key, path, ctx) = {
             let mut inbox = shared.inbox.lock().unwrap_or_else(|e| e.into_inner());
