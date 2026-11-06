@@ -2126,48 +2126,57 @@ fn draw_inline_row(
                     };
                     ui.add(egui::Label::new(label).wrap());
                 } else if text(row, "kind") == "table" {
-                    let mut draw = |ui: &mut Ui| { egui::Grid::new((id, key, "table"))
-                        .num_columns(array(&row["columns"]).count())
-                        .striped(true)
-                        .spacing([18.0, 6.0])
-                        .show(ui, |ui| {
-                            for column in array(&row["columns"]) {
-                                toolkit::panel::section_label(ui, column.as_str().unwrap_or(""));
-                            }
-                            ui.end_row();
-                            for (index, item) in array(&row["choices"]).enumerate() {
-                                let r = toolkit::selectable(
-                                    ui,
-                                    item["value"] == row["value"],
-                                    text(item, "label"),
-                                );
-                                record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
-                                if r.clicked() {
-                                    edit = Some(item["value"].clone());
-                                }
-                                for cell in array(&item["cells"]) {
-                                    let mut label = RichText::new(text(cell, "text"));
-                                    if cell["mono"] == true {
-                                        label = label.monospace();
-                                    }
-                                    if cell["weak"] == true {
-                                        label = label.weak();
-                                    }
-                                    if cell["tone"] == "warning" {
-                                        label = label.color(ui.visuals().warn_fg_color);
-                                    }
-                                    if cell["tone"] == "error" {
-                                        label = label.color(ui.visuals().error_fg_color);
-                                    }
-                                    ui.label(label).on_hover_text(text(cell, "hint"));
+                    let mut draw = |ui: &mut Ui| {
+                        egui::Grid::new((id, key, "table"))
+                            .num_columns(array(&row["columns"]).count())
+                            .striped(true)
+                            .spacing([18.0, 6.0])
+                            .show(ui, |ui| {
+                                for column in array(&row["columns"]) {
+                                    toolkit::panel::section_label(
+                                        ui,
+                                        column.as_str().unwrap_or(""),
+                                    );
                                 }
                                 ui.end_row();
-                            }
-                        });
+                                for (index, item) in array(&row["choices"]).enumerate() {
+                                    let r = toolkit::selectable(
+                                        ui,
+                                        item["value"] == row["value"],
+                                        text(item, "label"),
+                                    );
+                                    record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
+                                    if r.clicked() {
+                                        edit = Some(item["value"].clone());
+                                    }
+                                    for cell in array(&item["cells"]) {
+                                        let mut label = RichText::new(text(cell, "text"));
+                                        if cell["mono"] == true {
+                                            label = label.monospace();
+                                        }
+                                        if cell["weak"] == true {
+                                            label = label.weak();
+                                        }
+                                        if cell["tone"] == "warning" {
+                                            label = label.color(ui.visuals().warn_fg_color);
+                                        }
+                                        if cell["tone"] == "error" {
+                                            label = label.color(ui.visuals().error_fg_color);
+                                        }
+                                        ui.label(label).on_hover_text(text(cell, "hint"));
+                                    }
+                                    ui.end_row();
+                                }
+                            });
                     };
                     if row["scroll"] == true {
-                        egui::ScrollArea::vertical().id_salt((id,key,"scroll")).auto_shrink(false).show(ui,draw);
-                    } else { draw(ui); }
+                        egui::ScrollArea::vertical()
+                            .id_salt((id, key, "scroll"))
+                            .auto_shrink(false)
+                            .show(ui, draw);
+                    } else {
+                        draw(ui);
+                    }
                 } else if text(row, "kind") == "notes" {
                     if !text(row, "tag").is_empty() {
                         ui.horizontal(|ui| {
