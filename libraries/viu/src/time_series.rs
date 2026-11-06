@@ -3,66 +3,157 @@
 //! The replaceable large-chart renderer. The engine supplies the same rings
 //! used by painted sparklines; plotting types never enter that data path.
 use egui::{Ui, Vec2};
-use serde_json::Value;
 use egui_plot::{
     AxisHints, GridMark, HoverPosition, ItemId, ItemIdSet, Line, Plot, PlotMemory, PlotResponse,
 };
+use serde_json::Value;
 use std::{cell::Cell, collections::HashMap};
 use toolkit::graph::{self, Hue};
 
 /// Bounded data contract for a Mix-authored interactive time-series widget.
 pub fn validate(value: &serde_json::Value) -> Result<(), String> {
-    let series=value["series"].as_array().filter(|a| !a.is_empty() && a.len()<=64).ok_or("expected 1..64 chart series")?;
-    if value["samples"].as_u64().is_none_or(|n| !(2..=6000).contains(&n))
-        || value["interval_s"].as_f64().is_none_or(|n| !n.is_finite() || n<=0.0)
-        || value["height"].as_f64().is_none_or(|n| !n.is_finite() || !(80.0..=2000.0).contains(&n)) {
+    let series = value["series"]
+        .as_array()
+        .filter(|a| !a.is_empty() && a.len() <= 64)
+        .ok_or("expected 1..64 chart series")?;
+    if value["samples"]
+        .as_u64()
+        .is_none_or(|n| !(2..=6000).contains(&n))
+        || value["interval_s"]
+            .as_f64()
+            .is_none_or(|n| !n.is_finite() || n <= 0.0)
+        || value["height"]
+            .as_f64()
+            .is_none_or(|n| !n.is_finite() || !(80.0..=2000.0).contains(&n))
+    {
         return Err("invalid chart interval, window or height".into());
     }
-    if !["percent","bytes","rate","count","count-rate"].contains(&value["format"].as_str().unwrap_or(""))
-        || !["percent","capacity","rate","count"].contains(&value["scale"].as_str().unwrap_or("")) {
+    if !["percent", "bytes", "rate", "count", "count-rate"]
+        .contains(&value["format"].as_str().unwrap_or(""))
+        || !["percent", "capacity", "rate", "count"]
+            .contains(&value["scale"].as_str().unwrap_or(""))
+    {
         return Err("invalid chart units or scale".into());
     }
     for item in series {
-        if !item["name"].is_string() || item["values"].as_array().is_none_or(|a| a.len()>6000 || a.iter().any(|n| !n.is_null() && n.as_f64().is_none_or(|n| !n.is_finite()))) {
+        if !item["name"].is_string()
+            || item["values"].as_array().is_none_or(|a| {
+                a.len() > 6000
+                    || a.iter()
+                        .any(|n| !n.is_null() && n.as_f64().is_none_or(|n| !n.is_finite()))
+            })
+        {
             return Err("invalid chart series values".into());
         }
     }
     Ok(())
 }
 fn bytes(n: f64) -> String {
-    let units=["B","KiB","MiB","GiB","TiB","PiB"];
-    let mut v=n.max(0.0);let mut i=0;
-    while v>=1024.0 && i<5 {v/=1024.0;i+=1;}
-    if i==0 || v>=100.0 {format!("{v:.0} {}",units[i])} else {format!("{v:.1} {}",units[i])}
+    let units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+    let mut v = n.max(0.0);
+    let mut i = 0;
+    while v >= 1024.0 && i < 5 {
+        v /= 1024.0;
+        i += 1;
+    }
+    if i == 0 || v >= 100.0 {
+        format!("{v:.0} {}", units[i])
+    } else {
+        format!("{v:.1} {}", units[i])
+    }
 }
-fn percent(n: f64) -> String {format!("{:.1}%",n.clamp(0.0,100.0))}
-fn rate(n: f64) -> String {format!("{}/s",bytes(n))}
-fn count(n: f64) -> String {format!("{n:.0}")}
-fn count_rate(n: f64) -> String {format!("{n:.1}/s")}
+fn percent(n: f64) -> String {
+    format!("{:.1}%", n.clamp(0.0, 100.0))
+}
+fn rate(n: f64) -> String {
+    format!("{}/s", bytes(n))
+}
+fn count(n: f64) -> String {
+    format!("{n:.0}")
+}
+fn count_rate(n: f64) -> String {
+    format!("{n:.1}/s")
+}
 pub(crate) fn format_value(unit: &str, n: f64) -> String {
-    match unit {"bytes"=>bytes(n),"rate"=>rate(n),"count"=>count(n),"count-rate"=>count_rate(n),_=>percent(n)}
+    match unit {
+        "bytes" => bytes(n),
+        "rate" => rate(n),
+        "count" => count(n),
+        "count-rate" => count_rate(n),
+        _ => percent(n),
+    }
 }
 pub(crate) fn draw(ui: &mut Ui, id: &str, value: &serde_json::Value) -> egui::Response {
-    let raw=value["series"].as_array().expect("validated series");
-    let values:Vec<Vec<f64>>=raw.iter().map(|s| s["values"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap_or(f64::NAN)).collect()).collect();
-    let series:Vec<Series<'_>>=raw.iter().zip(&values).map(|(s,values)| Series {
-        name:s["name"].as_str().unwrap(),legend_label:s["legend"].as_str(),values,
-        hue:match s["hue"].as_str().unwrap_or("accent") {
-            "accent-plus"=>Hue::AccentPlus,"accent-minus"=>Hue::AccentMinus,"warning"=>Hue::Warning,
-            _=>s["hue"].as_u64().map_or(Hue::Accent,|n| Hue::Series(n.min(255) as usize)),
-        },
-    }).collect();
-    set_context(ui.ctx(),value["context"].as_str());
-    let peak=value["peak"].as_f64().unwrap_or(100.0);
-    let scale=match value["scale"].as_str().unwrap() {"capacity"=>Scale::Capacity(peak),"rate"=>Scale::Rate(peak),"count"=>Scale::Count(peak),_=>Scale::Percent};
-    let format=match value["format"].as_str().unwrap() {"bytes"=>bytes,"rate"=>rate,"count"=>count,"count-rate"=>count_rate,_=>percent};
-    let size=Vec2::new(ui.available_width(),value["height"].as_f64().unwrap() as f32);
+    let raw = value["series"].as_array().expect("validated series");
+    let values: Vec<Vec<f64>> = raw
+        .iter()
+        .map(|s| {
+            s["values"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_f64().unwrap_or(f64::NAN))
+                .collect()
+        })
+        .collect();
+    let series: Vec<Series<'_>> = raw
+        .iter()
+        .zip(&values)
+        .map(|(s, values)| Series {
+            name: s["name"].as_str().unwrap(),
+            legend_label: s["legend"].as_str(),
+            values,
+            hue: match s["hue"].as_str().unwrap_or("accent") {
+                "accent-plus" => Hue::AccentPlus,
+                "accent-minus" => Hue::AccentMinus,
+                "warning" => Hue::Warning,
+                _ => s["hue"]
+                    .as_u64()
+                    .map_or(Hue::Accent, |n| Hue::Series(n.min(255) as usize)),
+            },
+        })
+        .collect();
+    set_context(ui.ctx(), value["context"].as_str());
+    let peak = value["peak"].as_f64().unwrap_or(100.0);
+    let scale = match value["scale"].as_str().unwrap() {
+        "capacity" => Scale::Capacity(peak),
+        "rate" => Scale::Rate(peak),
+        "count" => Scale::Count(peak),
+        _ => Scale::Percent,
+    };
+    let format = match value["format"].as_str().unwrap() {
+        "bytes" => bytes,
+        "rate" => rate,
+        "count" => count,
+        "count-rate" => count_rate,
+        _ => percent,
+    };
+    let size = Vec2::new(
+        ui.available_width(),
+        value["height"].as_f64().unwrap() as f32,
+    );
     ui.scope(|ui| {
-        let chart=Chart {series:&series,samples:value["samples"].as_u64().unwrap() as usize,interval_s:value["interval_s"].as_f64().unwrap(),scale,format};
-        if let Some(notes)=value["annotations"].as_array() {
-            show_annotated(ui,id,value["title"].as_str().unwrap_or(""),size,chart,&|steps| notes.get(steps).and_then(Value::as_str).map(str::to_owned));
-        } else { show_titled(ui,id,value["title"].as_str().unwrap_or(""),size,chart); }
-    }).response
+        let chart = Chart {
+            series: &series,
+            samples: value["samples"].as_u64().unwrap() as usize,
+            interval_s: value["interval_s"].as_f64().unwrap(),
+            scale,
+            format,
+        };
+        if let Some(notes) = value["annotations"].as_array() {
+            show_annotated(
+                ui,
+                id,
+                value["title"].as_str().unwrap_or(""),
+                size,
+                chart,
+                &|steps| notes.get(steps).and_then(Value::as_str).map(str::to_owned),
+            );
+        } else {
+            show_titled(ui, id, value["title"].as_str().unwrap_or(""), size, chart);
+        }
+    })
+    .response
 }
 
 #[cfg(test)]
@@ -70,21 +161,40 @@ mod adapter_tests {
     use super::*;
     #[test]
     fn chart_admission_and_missing_samples_never_invent_zeroes() {
-        let value=serde_json::json!({"series":[{"name":"Example","values":[1,null,3]}],"samples":60,"interval_s":1,"height":180,"scale":"percent","format":"percent"});
+        let value = serde_json::json!({"series":[{"name":"Example","values":[1,null,3]}],"samples":60,"interval_s":1,"height":180,"scale":"percent","format":"percent"});
         validate(&value).unwrap();
-        let mut bad=value.clone();bad["height"]=serde_json::json!(0);assert!(validate(&bad).is_err());
-        let mut bad=value.clone();bad["samples"]=serde_json::json!(6001);assert!(validate(&bad).is_err());
-        assert_eq!(points(&[1.0,f64::NAN,3.0],60,1.0),vec![[-2.0,1.0],[0.0,3.0]]);
-        assert_eq!(bytes(1536.0),"1.5 KiB");assert_eq!(bytes(300.0*1024.0*1024.0),"300 MiB");
-        assert_eq!(readout("CPU",12.5,12.0,percent),"CPU: 12.5% · 12 s ago");
+        let mut bad = value.clone();
+        bad["height"] = serde_json::json!(0);
+        assert!(validate(&bad).is_err());
+        let mut bad = value.clone();
+        bad["samples"] = serde_json::json!(6001);
+        assert!(validate(&bad).is_err());
+        assert_eq!(
+            points(&[1.0, f64::NAN, 3.0], 60, 1.0),
+            vec![[-2.0, 1.0], [0.0, 3.0]]
+        );
+        assert_eq!(bytes(1536.0), "1.5 KiB");
+        assert_eq!(bytes(300.0 * 1024.0 * 1024.0), "300 MiB");
+        assert_eq!(readout("CPU", 12.5, 12.0, percent), "CPU: 12.5% · 12 s ago");
     }
     #[test]
     fn capacity_ticks_remain_exact_and_passive_ranges_stay_in_window() {
-        let ticks=YTicks::for_scale(Scale::Capacity(32.0*1024.0*1024.0*1024.0));
-        assert_eq!(ticks.max(),32.0*1024.0*1024.0*1024.0);
-        assert_eq!(ticks.marks().iter().map(|m| tick_label(bytes,m.value)).collect::<Vec<_>>(),["0 B","8 GiB","16 GiB","24 GiB","32 GiB"]);
-        let range=TimeRange{left:-500.0,right:10.0}.clamped(60.0,1.0);
-        assert_eq!(range,TimeRange::full(60.0));
+        let ticks = YTicks::for_scale(Scale::Capacity(32.0 * 1024.0 * 1024.0 * 1024.0));
+        assert_eq!(ticks.max(), 32.0 * 1024.0 * 1024.0 * 1024.0);
+        assert_eq!(
+            ticks
+                .marks()
+                .iter()
+                .map(|m| tick_label(bytes, m.value))
+                .collect::<Vec<_>>(),
+            ["0 B", "8 GiB", "16 GiB", "24 GiB", "32 GiB"]
+        );
+        let range = TimeRange {
+            left: -500.0,
+            right: 10.0,
+        }
+        .clamped(60.0, 1.0);
+        assert_eq!(range, TimeRange::full(60.0));
     }
 }
 
@@ -635,4 +745,3 @@ fn render_custom(
     });
     output
 }
-
