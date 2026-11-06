@@ -15,7 +15,7 @@ $state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_
 $state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).commands;$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:false,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.preview_requested={};$state.lex_requested={};$state.caret_wanted={};$state.caret_published={};$state.caret_at={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
 $state.macro_panel={epoch:0,serial:0,page:"closed",id:nil,filter:"",form:{open:false,title:"",body:"",field:nil,choices:[]}}
 $state.local_theme={};$state.info_commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).info_commands
-$state.recovered=[];$state.recovery_open=false;$state.recovery_checked=false;$state.dialog_call=nil
+$state.recovered=[];$state.recovery_open=false;$state.recovery_checked=false;$state.dialog_call=nil;$state.locations={}
 publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
@@ -102,9 +102,17 @@ on viu.job.completed
         $state.mail=delete($state.mail,$job.payload.document);$state.classified=delete($state.classified,$job.payload.document)
       end
     else
-      $state.status="Failed: "..json_encode($event.args.body)
+      if $job.kind!="close" then $state.status="Failed: "..json_encode($event.args.body) end
       if $job.kind=="preview" then $state.preview_requested=delete($state.preview_requested,$job.payload.document) end
       if $job.kind=="open" then $state.restore=delete($state.restore,$job.payload.document);$state.open_errors[$job.payload.document]=$event.args.body end
+      if $job.kind=="close" then
+        $dirty=$event.args.body.reason=="dirty"
+        if $dirty and ($job.payload.prompt ?? false) then $state.close_dialog=$job.payload.document end
+        for $token in keys($state.waits)
+          $w=$state.waits[$token]
+          if $w.kind=="close" and $w.tab==to_number($job.payload.document) then $state=finish_call($state,$token,10,{error_code:"CONFLICT",message:$event.args.body.message ?? "Close refused",reason:if $dirty then "dirty" else "refused" end}) end
+        end
+      end
       if $job.kind=="reattach" then $state.reattach_wait[$job.payload.document]=true;viu_timer($job.payload.document..":reattach",30000,{kind:"reattach",document:$job.payload.document}) end
       if $job.kind=="session-save" then $state.session_dirty=true;$state.exit_after_save=false end
     end

@@ -6,9 +6,36 @@ fn current($s)
   if len($s.tabs)==0 then raise("EMPTY","Open a document first") end
   return $s.tabs[$s.active]
 end
+fn open_location($raw)
+  $path=$raw;$position=nil
+  if not exists($path) then
+    $tail=rsplit_once($path,":")
+    if $tail!=nil and $tail[0]!="" and re_match($tail[1],"^\\+?[0-9]+$") then
+      $path=$tail[0];$position={line:to_number($tail[1]),col:1}
+      $middle=rsplit_once($path,":")
+      if $middle!=nil and $middle[0]!="" and re_match($middle[1],"^\\+?[0-9]+$") then $path=$middle[0];$position={line:to_number($middle[1]),col:$position.line} end
+    end
+  end
+  return {path:if starts_with($path,"/") then $path else path_join(cwd(),$path) end,position:$position}
+end
+fn locate_open($s,$key,$position)
+  if $position!=nil then
+    $t=viu_document("state",$key,{})
+    if $t.phase=="live" then
+      try
+        $v=viu_document("select",$key,{anchor:$position,head:$position})
+        $v=viu_document("restore-view",$key,{caret:$v.selection.head.offset,first_line:max(1,$position.line-5)})
+      catch $message
+        -- Gold ignores a location outside the opened text.
+      end
+    else $s.locations[$key]=$position end
+  end
+  return $s
+end
 fn refresh_tabs($s)
   for $i=0 to len($s.tabs)-1
     $old=$s.tabs[$i];$s.tabs[$i]=viu_document("state",$old.document,{});$t=$s.tabs[$i]
+    if $t.phase=="live" and $s.locations[$t.document]!=nil then $s=locate_open($s,$t.document,$s.locations[$t.document]);$s.locations=delete($s.locations,$t.document);$s.tabs[$i]=viu_document("state",$t.document,{}) end
     $m=$s.mail[$t.document]
     if $m!=nil then
       $s.tabs[$i].path=$m.path
@@ -87,22 +114,26 @@ fn pump($s)
 end
 fn operation($s,$op,$a)
   if $op=="open" or $op=="new" then
-    if $op=="open" and (type($a.path)!="string" or not starts_with($a.path,"/")) then raise("PATH","Absolute path required") end
+    $position=nil
+    if $op=="open" then
+      if type($a.path)!="string" then raise("PATH","File path required") end
+      $location=open_location($a.path);$a.path=$location.path;$position=$location.position
+    end
     for $i=0 to len($s.tabs)-1
-      if $op=="open" and $s.tabs[$i].path==$a.path then $s.active=$i;$s.last_open=$s.tabs[$i].document;return $s end
+      if $op=="open" and $s.tabs[$i].path==$a.path then $s.active=$i;$s.last_open=$s.tabs[$i].document;return locate_open($s,$s.last_open,$position) end
     end
     for $job in concat($s.queue,values($s.running))
-      if $op=="open" and $job.kind=="open" and $job.payload.args.path==$a.path then $s.last_open=$job.payload.document;return $s end
+      if $op=="open" and $job.kind=="open" and $job.payload.args.path==$a.path then $s.last_open=$job.payload.document;if $position!=nil then $s.locations[$s.last_open]=$position end;return $s end
     end
     $s.next_tab=$s.next_tab+1;$s.last_open=to_string($s.next_tab)
+    if $position!=nil then $s.locations[$s.last_open]=$position end
     return pump(queue_job($s,"open",{document:to_string($s.next_tab),args:if $op=="new" then {text:$a.text ?? "",language:$a.language ?? "text"} else {path:$a.path,create:$a.create ?? false} end}))
   end
   $t=current($s)
   if $op=="apply" then return pump($s) end
   if $op=="refresh" then $v=viu_document("suspect",$t.document,{})
   elif $op=="close" then
-    if (not $t.idle or $t.dirty) and not ($a.force ?? false) then raise("DRAFT","Save the document or explicitly confirm discard") end
-    return pump(queue_job($s,"close",{document:$t.document,buffer:$t.buffer,force:$a.force ?? false}))
+    return pump(queue_job($s,"close",{document:$t.document,buffer:$t.buffer,force:$a.force ?? false,prompt:$a.prompt ?? true}))
   elif contains(["keep-mine","take-theirs"],$op) then $v=viu_document($op,$t.document,{})
   elif contains(["save","reload","undo","redo","duplicate-line","delete-line","move-line-up","move-line-down","toggle-comment","indent","outdent","select-all"],$op) then
     $v=viu_document("command",$t.document,{name:$op,path:$a.path,force:$a.force ?? false})

@@ -60,8 +60,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui",$event_params=
   elif contains(["file.save","file.save_as","file.reload","file.close","edit.undo","edit.redo","edit.undo_any","edit.undo_other"],$id) then
     if not $has then raise("NOT_FOUND","No tab is open") end
     if $id=="file.close" and not ($a.save ?? false) then
-      if ($t.dirty or not $t.idle) and not ($a.force ?? false) then $s.close_dialog=$t.document;if $who!=nil then $kind="dirty-close" end
-      else $s=operation($s,"close",$a);$kind="close" end
+      $a.prompt=$who==nil;$s=operation($s,"close",$a);$kind="close"
     elif $a.path==nil and ($id=="file.save_as" or ($t.path==nil and contains(["file.save","file.close"],$id))) then $s.save_dialog=true;$s.save_action=$id;$s.save_document=$t.document;$kind="dialog"
     else
       $name=if starts_with($id,"file.save") or $id=="file.close" then "save" elif $id=="file.reload" then "reload" elif $id=="edit.redo" then "redo" else "undo" end
