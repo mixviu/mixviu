@@ -6,6 +6,17 @@ use serde_json::{Value, json};
 
 pub fn validate(kind: &str, v: &Value) -> Result<(), String> {
     let valid = match kind {
+        "notice-bar" => v.as_array().is_some_and(|rows| {
+            rows.len() <= 128 && rows.iter().all(|row| {
+                row["label"].as_str().is_some_and(|s| s.len() <= 65536)
+                    && row["choices"].as_array().is_some_and(|choices| {
+                        choices.len() <= 8 && choices.iter().all(|choice| {
+                            choice["id"].is_string() && choice["label"].is_string()
+                                && choice["enabled"].is_boolean()
+                        })
+                    })
+            })
+        }),
         "header-form" => crate::header_controls::validate(v),
         "diagnostic-list" => v.as_array().is_some_and(|rows| {
             rows.len() <= 500
@@ -60,6 +71,13 @@ pub fn validate(kind: &str, v: &Value) -> Result<(), String> {
     }
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
+    if kind == "notice-bar" {
+        return if action == "command" && current.as_array().is_some_and(|rows| {
+            rows.iter().any(|row| row["choices"].as_array().is_some_and(|choices| {
+                choices.iter().any(|choice| choice["id"] == payload["command"] && choice["enabled"] == true)
+            }))
+        }) { Ok(()) } else { Err("invalid notice choice".into()) };
+    }
     if kind == "header-form" {
         return crate::header_controls::admit(current, action, payload);
     }
@@ -133,6 +151,26 @@ pub fn draw(
             value,
         })
     };
+    if kind == "notice-bar" {
+        return toolkit::bars::options(ui, |ui| {
+            ui.vertical(|ui| {
+                for row in value.as_array().unwrap() {
+                    ui.horizontal(|ui| {
+                        let icon = if row["icon"] == "unplug" { crate::icons::Icon::Unplug } else { crate::icons::Icon::Info };
+                        ui.add(crate::icons::image_of(ui.ctx(), icon, 16.0, ui.visuals().warn_fg_color));
+                        ui.label(row["label"].as_str().unwrap());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            for choice in row["choices"].as_array().unwrap().iter().rev() {
+                                if ui.add_enabled(choice["enabled"] == true, egui::Button::new(choice["label"].as_str().unwrap()).small()).clicked() {
+                                    emit(events, "command", json!({"command":choice["id"]}));
+                                }
+                            }
+                        });
+                    });
+                }
+            });
+        }).response;
+    }
     if kind == "diagnostic-list" {
         if value.as_array().unwrap().is_empty() {
             return ui.weak("No problems.");

@@ -83,17 +83,19 @@ fn ced_ui_model($s,$model)
   end
   $model.values["recovered-dialog"]={open:$s.recovery_open ?? false,title:"Recovered documents",body:"The edit service kept these documents from an earlier session. Open or discard each one.",row_layout:"inline",items:$items,choices:[{id:"close",label:"Close",enabled:true,cancel:true}]}
   $model.values["macros-dialog"]={app:"ced",open:$s.macros_open ?? false}
-  $model.values["notice-actions"]=[];$model.notice=""
+  $model.values["notice-actions"]=[]
   if $has then
-    if $t.detached_copy then $model.notice="The document changed while disconnected. Choose which text to keep.";$model.values["notice-actions"]=[{id:"keep-mine",label:"Keep mine",enabled:true},{id:"take-theirs",label:"Take theirs",enabled:true}]
-    elif $t.conflicts>0 then
-      $model.notice="Edits set aside after concurrent changes; "..to_string($t.conflicts).." conflict(s)."
-      for $conflict in viu_document("inspect",$t.document,{}).conflicts
-        $model.values["notice-actions"]=concat($model.values["notice-actions"],[{id:"reinsert:"..to_string($conflict.rev),label:"Reinsert",enabled:$t.phase=="live"},{id:"dismiss:"..to_string($conflict.rev),label:"Dismiss",enabled:true}])
-      end
-    elif $s.notices[$t.document]!=nil then $model.notice=$s.notices[$t.document] end
+    for $conflict in viu_document("inspect",$t.document,{}).conflicts
+      $n=len($conflict.texts)
+      $label=if $n==1 then "An edit could not be applied and was set aside." else to_string($n).." edits could not be applied and were set aside." end
+      $choices=[{id:"reinsert:"..to_string($conflict.rev),label:"Re-insert at Caret",enabled:$t.phase=="live"},{id:"dismiss:"..to_string($conflict.rev),label:"Dismiss",enabled:true}]
+      $model.values["notice-actions"]=push($model.values["notice-actions"],{icon:"info",label:$label,choices:$choices})
+    end
+    if $t.detached_copy then
+      $model.values["notice-actions"]=push($model.values["notice-actions"],{icon:"unplug",label:"This document is no longer attached to the edit service. Your copy is kept.",choices:[{id:"keep-mine",label:"Keep Mine",enabled:true},{id:"take-theirs",label:"Take the Service's",enabled:true}]})
+    end
   end
-  $model.show_notice=$model.notice!=""
+  $model.show_notice=len($model.values["notice-actions"] )>0
   $model.show_problems=$s.problems;$model.show_output=$s.output
   $modal=$s.open_dialog or $s.save_dialog or $s.goto_dialog or $s.close_dialog!=nil or $s.disk_dialog!=nil or contains(["keys","about"],$s.help) or ($s.recovery_open ?? false)
   $model.editor.properties.enabled=not $modal

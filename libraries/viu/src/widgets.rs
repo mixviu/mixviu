@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 pub const KINDS: &[&str] = &[
     "mark",
     "macro-menu",
+    "notice-bar",
     "diagnostic-list",
     "document-tabs",
     "search-bar",
@@ -254,7 +255,8 @@ impl Widget {
             "form-fields",
             "header-form",
             "macro-menu",
-            "diagnostic-list",
+            "notice-bar",
+    "diagnostic-list",
         ]
         .contains(&self.kind.as_str())
         {
@@ -412,6 +414,7 @@ impl Widget {
         if self.kind == "macro-menu" {
             return vec!["close"];
         }
+        if self.kind == "notice-bar" { return vec!["command"]; }
         if self.kind == "diagnostic-list" {
             return vec!["goto"];
         }
@@ -531,7 +534,8 @@ impl Widget {
             "form-fields",
             "header-form",
             "macro-menu",
-            "diagnostic-list",
+            "notice-bar",
+    "diagnostic-list",
         ]
         .contains(&self.kind.as_str())
         {
@@ -745,7 +749,7 @@ impl Widgets {
         let mut changed = None;
         let response = match widget.kind.as_str() {
             "document-tabs" | "search-bar" | "form-fields" | "header-form" | "macro-menu"
-            | "diagnostic-list" => {
+            | "diagnostic-list" | "notice-bar" => {
                 crate::editor_controls::draw(ui, id, &widget.kind, value, events)
             }
             "widget-row" => {

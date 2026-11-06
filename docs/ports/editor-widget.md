@@ -1,40 +1,45 @@
 # Reusable Viu editor
 
-The `editor` control opts into the retained gold editor through
-`properties.native_document: true`. The default control remains compatible
-with the existing mail reader. Gold source reference: MixOS 8779f3328,
-`libs/editor`, `libs/editor-model`, `libs/edit` and `libs/syntax`; these
-libraries were already imported in this repository. No new third-party
-dependency or application Rust controller is introduced.
+Gold reference: MixOS 8779f3328, `libs/editor`, `libs/editor-model`, `libs/edit`
+and `libs/syntax`. Ced composes these facilities from Mix; there is no Ced
+Rust controller or editd connection inside the widget.
 
-The adapter owns one in-process document per `(widget id, document)` pair.
-`document` must identify a tab uniquely. `language` chooses highlighting;
-`soft_wrap`, `line_numbers` and `read_only` select view options. Monospace
-size and palette resolve from the active Viu style on every frame; optional
-`font_size` (8..72 points) overrides the size. The gold
-widget owns mouse selection, grapheme motion, indentation, comments, line
-operations, clipboard events, IME composition and visible-row rendering.
-Undo/redo remain local and survive model echoes. Ctrl+F opens literal find,
-with wrap-around next match and single-selection replace. The find bar also
-opens through `find_bar: true`.
+`editor` with `properties.native_document: true` accepts a model value
+`{document: handle}`. The handle names a retained in-process Mirror and
+EditorModel. Scene updates contain metadata rather than the document text.
+Mix opens/closes handles through `viu_document`, drains outgoing requests,
+chooses when to apply them, and delivers editd replies/events. Root and Jobs
+share the same document owner. Application-local traffic stays in process.
 
-`command: {serial, name}` applies a local command once per increasing serial:
-undo, redo, select-all, duplicate-line, delete-line, move-line-up/down,
-toggle-comment, indent and outdent. Integer-valued Mix numbers are admitted
-without accepting fractional or unsafe serials. Read-only views hold pending
-commands until editing is enabled. These commands never contact editd.
+The retained editor supplies virtualised lines, cursor and selection,
+Unicode/grapheme motion, mouse selection, IME preedit/commit, clipboard events,
+soft wrap, line numbers, overwrite, indentation/comments and line operations.
+The mirror supplies revision fencing, optimistic edits, per-origin undo/redo,
+remote carets, retries, recovery and conflicts. Mix owns their transport and
+the person's recovery decisions. Native clipboard paste is serial and has
+gold's two-second wait.
 
-The only editing output is the existing local `set` intent containing text.
-Mix chooses whether and when to apply it through editd. This adapter performs
-no file or Bus I/O. Model updates acknowledge equal text without replacing
-the document; different text explicitly reloads it. Native document admission
-is bounded at 64 MiB; legacy editor admission remains 64 KiB.
+Syntax highlighting uses the retained language rules. Mix lexing and Markdown
+preview parsing run on Jobs; diagnostics remain source-tagged. Find supports
+literal/regex, case, wrap-around, previous/next, replacement captures and one
+undoable Replace All transaction. Gold's 10,000-operation and 1 MiB replacement
+limits remain in force.
 
-This is an integration checkpoint, not full parity acceptance. Full-text
-intent publication and model comparison still cost O(document bytes) after
-edits; visible-row rendering alone does not establish large-file interaction
-performance. OS clipboard and IME require host acceptance. Regex/all-replace,
-gold find options, closed-tab document eviction, command/state introspection,
-live settings subscription and deterministic paired captures remain open.
-Ced's bounded editd snapshot and explicit Apply policy are unchanged at this
-checkpoint. No visual acceptance is claimed.
+The service's 64 MiB and two-million-line limits apply. Paged reads are fenced
+by view generation; inline `ced.state` text is bounded at 4 MiB. Native tests
+exercise 16/64 MiB files and refusals without copying full text into scenes.
+
+The host follows the retained settings/theme logic. Ced supplies live editor
+font, scale, padding, light surface and view choices. Nine real settingsd
+variants have paired 1000×720 gold captures. Additional shared controls are
+`document-tabs`, `search-bar`, `header-form`, `diagnostic-list`, `macro-menu`
+and gold-styled modal forms. Header visibility, attachment policy, dialog
+answers, tabs, sessions and mail Send stay in Mix.
+
+The legacy string-valued editor remains bounded at 64 KiB for existing callers.
+It is separate from the document-handle flow described here.
+
+The Replace rail measures both rows under Fable C1 instead of reproducing
+gold’s clipped second row. [Ced acceptance](ced-acceptance.md) records the
+matched captures, gold bug note, regional differences, final native witnesses
+and CBC receipt.
