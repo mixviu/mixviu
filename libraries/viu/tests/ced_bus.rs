@@ -365,6 +365,37 @@ fn header_form_rejects_hidden_read_only_and_unoffered_choices() {
 }
 
 #[test]
+fn conflict_choices_reinsert_retained_text_or_dismiss_without_changing_it() {
+    for reinsert in [false, true] {
+        let mut app = App::new();
+        let mut server = fixture::seed(&app.docs, "1", "/tmp/conflict.txt", "hello world\n");
+        app.docs.call("select", "1", json!({"anchor":2,"head":4})).unwrap();
+        app.docs.call("command", "1", json!({"name":"insert","text":"XY"})).unwrap();
+        let effects = app.docs.call("effects", "1", json!({})).unwrap();
+        let request = &effects["out"][0];
+        let body: Value = serde_json::from_str(request["body"].as_str().unwrap()).unwrap();
+        let remote = server.handle("agent", "edit.replace", &json!({"buffer":body["buffer"],"range":[3,5],"text":"Q","origin":"agent:witness"}));
+        assert_eq!(remote.rc, 0);
+        let refused = server.handle("ced", request["command"].as_str().unwrap(), &body);
+        assert_eq!(refused.rc, 10);
+        app.docs.call("reply", "1", json!({"op_id":request["op_id"],"rc":refused.rc,"body":refused.body})).unwrap();
+        for event in server.take_events() {
+            app.docs.call("event", "1", serde_json::to_value(event).unwrap()).unwrap();
+        }
+        fixture::settle(&app.docs, "1", &mut server);
+        let state = app.docs.call("inspect", "1", json!({})).unwrap();
+        assert_eq!(state["conflicts"].as_array().unwrap().len(), 1);
+        assert_eq!(app.docs.call("read", "1", json!({})).unwrap()["text"], "helQ world\n");
+        app.docs.call("select", "1", json!({"anchor":0,"head":0})).unwrap();
+        let choice = format!("{}:{}", if reinsert { "reinsert" } else { "dismiss" }, state["conflicts"][0]["rev"]);
+        assert_eq!(app.answered("ced.intent", json!({"id":"notice-actions","action":"command","value":{"command":choice}})).0, 0);
+        // Mix owns draining; the local choice has already updated its mirror.
+        assert_eq!(app.docs.call("inspect", "1", json!({})).unwrap()["conflicts"], json!([]));
+        assert_eq!(app.docs.call("read", "1", json!({})).unwrap()["text"], if reinsert { "XYhelQ world\n" } else { "helQ world\n" });
+    }
+}
+
+#[test]
 fn bus_mail_header_edits_arm_session_persistence_and_keep_header_undo() {
     let mut app = App::new();
     let headers = json!({"from":"","to":"recipient@example.org","cc":"","bcc":"","reply_to":"","subject":"Before","in_reply_to":null,"references":[],"attachments":[]});

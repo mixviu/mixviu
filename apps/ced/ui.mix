@@ -21,6 +21,7 @@ fn ced_menus($s)
       $row={id:$a.id,label:$a.label,enabled:$a.enabled,shortcut:$a.keys[0] ?? ""}
       if contains(["edit.cut","edit.copy","edit.paste"],$a.id) and len($s.keys[$a.id] ?? [])==0 then $row.shortcut="" end
       if starts_with($a.id,"view.markdown.") then $row.checked=len($s.tabs)>0 and ($s.previews[current($s).document] ?? "source")==split($a.id,".")[2]
+      elif $a.id=="edit.overwrite" then $row.checked=len($s.tabs)>0 and current($s).overwrite
       elif contains(["view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output"],$a.id) then $row.checked=$s[split($a.id,".")[1]] end
       push($children,$row)
     end
@@ -58,10 +59,14 @@ fn ced_ui_model($s,$model)
   $model.local_theme=$s.local_theme ?? {}
   $model.settings_reload=$s.settings_reload ?? 0
   $model.find_open=$s.find.open;$model.values["find-bar"]=merge($s.find,{instance:$s.find_instance ?? 0})
-  $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Unsaved changes",body:"Save this document before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
-  $model.values["disk-dialog"]={open:$s.disk_dialog!=nil,title:"The file changed on disk",body:"The file has changed on disk. Save anyway?",choices:[{id:"save",label:"Save Anyway",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
-  $model.values["save-dialog"]=ui_form($s.save_dialog,"Save As","File path",$s.save_path ?? ($t.path ?? ""),$s.dialog_instance ?? 0)
-  $model.values["goto-dialog"]=ui_form($s.goto_dialog,"Go to Line","Line[:column]",$s.goto_text ?? "",$s.dialog_instance ?? 0)
+  $close_tabs=filter($s.tabs,fn($t)=$t.document==$s.close_dialog);$disk_tabs=filter($s.tabs,fn($t)=$t.document==$s.disk_dialog)
+  $close_name=if len($close_tabs)>0 then basename($close_tabs[0].path ?? "untitled-"..$close_tabs[0].document) else "" end
+  $disk_name=if len($disk_tabs)>0 then basename($disk_tabs[0].path ?? "untitled-"..$disk_tabs[0].document) else "" end
+  $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Unsaved changes",body:$close_name.." has changes that are not saved anywhere else. Save them before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
+  $model.values["disk-dialog"]={open:$s.disk_dialog!=nil,title:"The file changed on disk",body:$disk_name.." was changed on disk since it was opened. Save over it anyway?",choices:[{id:"save",label:"Save Anyway",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
+  $model.values["open-dialog"].title="Open";$model.values["open-dialog"].body="Path to a file, optionally :line[:col]"
+  $model.values["save-dialog"]=ui_form($s.save_dialog,"Save As","Path to save to",$s.save_path ?? ($t.path ?? ""),$s.dialog_instance ?? 0)
+  $model.values["goto-dialog"]=ui_form($s.goto_dialog,"Go to Line","line or line:col",$s.goto_text ?? "",$s.dialog_instance ?? 0)
   $body=if $s.help=="keys" then "" elif $s.help=="about" then "The MixOS Editor edits buffers shared through the edit service: other people and agents can edit the same document at the same time." else "" end
   $model.values["help-dialog"]=ui_form(contains(["keys","about"],$s.help),if $s.help=="keys" then "Keyboard Shortcuts" else "About MixOS Editor" end,$body)
   $model.values["help-dialog"].choices=[{id:"ok",label:"Close",enabled:true,default:true,cancel:true}]
@@ -74,7 +79,7 @@ fn ced_ui_model($s,$model)
   for $row in $s.recovered ?? []
     push($items,{label:$row.path ?? $row.name ?? "untitled ("..$row.recovery_id..")",choices:[{id:"recover:"..$row.buffer,label:"Open",enabled:true},{id:"discard:"..$row.buffer,label:"Discard",enabled:true}]})
   end
-  $model.values["recovered-dialog"]={open:$s.recovery_open ?? false,title:"Recovered documents",body:"The edit service kept these documents from an earlier session. Open or discard each one.",items:$items,choices:[{id:"close",label:"Close",enabled:true,cancel:true}]}
+  $model.values["recovered-dialog"]={open:$s.recovery_open ?? false,title:"Recovered documents",body:"The edit service kept these documents from an earlier session. Open or discard each one.",row_layout:"inline",items:$items,choices:[{id:"close",label:"Close",enabled:true,cancel:true}]}
   $model.values["macros-dialog"]={app:"ced",open:$s.macros_open ?? false}
   $model.values["notice-actions"]=[];$model.notice=""
   if $has then
@@ -93,7 +98,7 @@ fn ced_ui_model($s,$model)
   $model.problems_text=if $has and $s.problems then join(map(viu_document("problems",$t.document,{}),fn($p)=to_string($p.line)..":"..to_string($p.col ?? 1).."  "..$p.severity.."  "..$p.code.."  "..$p.message),"\n") else "" end
   if $model.problems_text=="" then $model.problems_text="No problems" end
   $model.values["problems-list"]=if $has then viu_document("problems",$t.document,{}) else [] end
-  $model.output_text="No output yet."
+  $model.output_text="Nothing has run yet."
   $model.values["output-text"]=$model.output_text
   $model.mail_fields={enabled:true,fields:[],attachments:[],attachment_label:"Attachments",attach_label:"Attach…",remove_label:"Remove",chooser:{open:false,title:"Attach…",directory:"/"}};$model.show_mail=$has and $s.mail[$t.document]!=nil
   if $model.show_mail then

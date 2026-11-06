@@ -500,7 +500,12 @@ pub(crate) fn draw(
             let response = if state.hosted_actions {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
-                ui.horizontal(|ui| {
+                let height = if widget.properties["style"] == "gold" {
+                    toolkit::chrome::Chrome::of(ui.ctx()).metrics.title_bar_height
+                } else {
+                    ui.spacing().interact_size.y
+                };
+                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     if widget.properties["style"] == "gold" {
                         ui.spacing_mut().item_spacing.x = toolkit::chrome::Chrome::of(ui.ctx())
                             .style
@@ -734,6 +739,18 @@ fn gold_dialog(
         }else if !text(value,"body").is_empty(){ui.label(text(value,"body"));}
         if let Some(footer)=value["footer"].as_str(){ui.weak(footer);}
         if let Some(items)=value["items"].as_array(){
+          if value["row_layout"]=="inline" {
+            for row in items {
+              ui.horizontal(|ui|{
+                ui.label(text(row,"label"));
+                for c in row["choices"].as_array().unwrap(){
+                  let response=ui.add_enabled(c["enabled"]==true,egui::Button::new(text(c,"label")));
+                  geometry.insert(format!("{id}.choice.{}",text(c,"id")),response.rect);
+                  if response.clicked(){emit(events,id,"answer",json!({"choice":c["id"],"field":field,"instance":value["instance"]}));}
+                }
+              });
+            }
+          } else {
             egui::ScrollArea::vertical().max_height(360.0).show(ui,|ui|{
                 egui::Grid::new((id,"rows")).striped(true).show(ui,|ui|{
                     for row in items {
@@ -748,6 +765,7 @@ fn gold_dialog(
                     }
                 });
             });
+          }
         }
     });
     let chosen = shown.chosen.or_else(|| {

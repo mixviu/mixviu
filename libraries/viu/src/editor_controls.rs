@@ -322,7 +322,7 @@ pub fn draw(
         }
     };
     if value["replace"] == true {
-        // Proposed gold deviation: the retained fixed-height options rail
+        // Fable C1 approved: the retained fixed-height gold options rail
         // clips its second row. Keep the same chrome and insets, but measure
         // both rows so Replace and All remain visible and reachable.
         let chrome = toolkit::chrome::Chrome::of(ui.ctx());
