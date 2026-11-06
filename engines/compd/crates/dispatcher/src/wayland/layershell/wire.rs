@@ -66,11 +66,15 @@ pub fn arrange_on_commit(space: &protocols::space::state::SpaceState, surface: &
         let mut layer_map = layer_map_for_output(output);
         // `layer_for_surface` borrows the map immutably; `is_some()` drops that borrow
         // before we take the mutable `arrange()` borrow.
-        if layer_map
+        if let Some(layer) = layer_map
             .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
-            .is_some()
+            .cloned()
         {
             layer_map.arrange();
+            // A null-buffer unmap resets the layer role's initial handshake.
+            // arrange() supplies geometry but deliberately leaves the initial
+            // configure to the compositor, including on a remap commit.
+            layer.layer_surface().send_pending_configure();
             arranged = true;
         }
     }

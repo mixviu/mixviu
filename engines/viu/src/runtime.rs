@@ -78,9 +78,6 @@ impl State {
     }
     fn wake(&self) {
         for wake in &self.wakes { wake(); }
-        if std::env::var_os("VIU_TRACE_LAYERS").is_some() {
-            eprintln!("VIU_WAKE native={} contexts={:?}", self.wakes.len(), self.contexts.keys().collect::<Vec<_>>());
-        }
         for ctx in self.contexts.values() {
             ctx.request_repaint();
         }
@@ -230,9 +227,6 @@ impl LayerProgram for Program {
         }
         let _ = model.tick(now);
         let snap = model.snapshot();
-        if self.edge == "left" && std::env::var_os("VIU_TRACE_LAYERS").is_some() {
-            eprintln!("VIU_LAYER output={output} content={has_content} minimum={minimum} mapped={} fraction={} mode={}", snap.mapped, snap.visible_fraction, snap.mode.as_str());
-        }
         if model.wake() == PanelWake::Animate {
             ctx.request_repaint_after(Duration::from_millis(16));
         }

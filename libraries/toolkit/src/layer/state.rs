@@ -180,9 +180,6 @@ pub(super) fn run<P: LayerProgram + 'static>(
         .insert_source(requests, |event, _, state: &mut State<P>| {
             if let ChannelEvent::Msg((id, delay)) = event {
                 if id == u64::MAX {
-                    if std::env::var_os("VIU_TRACE_LAYERS").is_some() {
-                        eprintln!("NATIVE_WAKE {}", state.options.namespace);
-                    }
                     for surface in &mut state.surfaces {
                         surface.dirty = true;
                     }
