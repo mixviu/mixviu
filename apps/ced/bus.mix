@@ -67,9 +67,13 @@ fn check_calls($s)
       end
     elif $w.kind=="outcome" and $s.outcomes[$w.op_id]!=nil then
       $o=$s.outcomes[$w.op_id]
-      if $o.ok then $s=finish_call($s,$token,0,{id:$w.action,ok:true,result:nil})
+      if $o.ok and $w.close_after then
+        $i=tab_index($s,{tab:$w.tab});$old=$s.active;$s.active=$i;$s=operation($s,"close",{});$s.active=min($old,max(0,len($s.tabs)-1));$s.waits[$token].kind="close"
+      elif $o.ok then $s=finish_call($s,$token,0,{id:$w.action,ok:true,result:nil})
       else $s=finish_call($s,$token,10,{error_code:$o.error.error_code,message:$o.error.message,reason:$o.error.reason}) end
     elif $w.kind=="close" and $i<0 then $s=finish_call($s,$token,0,{id:$w.action,ok:true,result:nil})
+    elif $w.kind=="quit" and not any(concat($s.queue,values($s.running)),fn($j)=$j.kind=="session-save") then
+      $s=finish_call($s,$token,0,if $w.action!=nil then {id:$w.action,ok:true,result:nil} else {quitting:true} end,true)
     end
   end
   return $s
@@ -97,6 +101,41 @@ fn bus_command($s,$e)
   elif starts_with($command,"ced.macros.") then
     $s=hold_call($s,$e,{kind:"job",timeout_ms:60000})
     return pump(queue_job($s,"macro",{call:$e.headers["viu-call"],command:replace($command,"ced.macros.",""),args:$a}))
+  elif $command=="ced.actions" then reply(0,json_encode({actions:action_rows($s)}));return $s
+  elif $command=="app.describe" then
+    reply(0,json_encode({contract:"ctk-app-control.v0",app:"ced",title:"MixOS Editor",view:if len($s.tabs)>0 then tab_row(current($s)).name else "" end,engine:"egui",version:$ctx.version ?? "0.1.2",description:"The MixOS Editor: an egui editor over the edit Bus service",controls:[],commands:$s.commands}));return $s
+  elif $command=="app.quit" then
+    $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",timeout_ms:30000}))
+  elif $command=="ced.show" then
+    $s=hold_call($s,$e,{kind:"job",timeout_ms:10000});return pump(queue_job($s,"show",{call:$e.headers["viu-call"]}))
+  elif $command=="ced.stats" then
+    $v=viu_ui_state();reply(0,json_encode(merge($v.stats,viu_document("stats","*",{}))));return $s
+  elif $command=="ced.diagnostics" then
+    if type($a.path)!="string" or not starts_with($a.path,"/") or type($a.source)!="string" or $a.source=="lint" or not re_match($a.source,"^[a-z][a-z0-9-]{0,31}$") or type($a.diagnostics)!="list" or len($a.diagnostics)>500 or byte_length(json_encode($a))>65536 or ($a.digest!=nil and (type($a.digest)!="string" or not re_match($a.digest,"^[0-9a-f]{64}$"))) then return refused($s,"INVALID_ARGUMENT","Invalid diagnostic request","bad_args") end
+    if not all($a.diagnostics,fn($d)=type($d.line)=="number" and $d.line>=1 and floor($d.line)==$d.line and ($d.col==nil or (type($d.col)=="number" and $d.col>=1 and floor($d.col)==$d.col)) and contains(["error","warning","note"],$d.severity) and type($d.code)=="string" and type($d.message)=="string") then return refused($s,"INVALID_ARGUMENT","Invalid diagnostic item","bad_args") end
+    if $s.diagnostics[$a.path]==nil then $s.diagnostics[$a.path]={} end
+    $s.diagnostics[$a.path][$a.source]=$a
+    $s.diag_paths=concat(filter($s.diag_paths,fn($p)=$p!=$a.path),[$a.path])
+    if len($s.diag_paths)>64 then $s.diagnostics=delete($s.diagnostics,$s.diag_paths[0]);$s.diag_paths=slice($s.diag_paths,1) end
+    $docs=map(filter($s.tabs,fn($t)=$t.path==$a.path),fn($t)=$t.document)
+    $s=hold_call($s,$e,{kind:"job",timeout_ms:30000})
+    return pump(queue_job($s,"diagnostics",{call:$e.headers["viu-call"],request:$a,documents:$docs}))
+  elif $command=="ced.execute" then
+    if type($a.id)!="string" or ($a.params!=nil and type($a.params)!="map") then return refused($s,"INVALID_ARGUMENT","id and object params required","bad_args") end
+    $params=$a.params ?? {}
+    if any(keys($params),fn($k)=not contains(["tab","buffer","args"],$k)) then return refused($s,"INVALID_ARGUMENT","Unknown params key","unknown_param") end
+    if not any($s.actions,fn($row)=$row.id==$a.id) then return refused($s,"UNKNOWN_ACTION","Unknown action "..$a.id,"unknown_action") end
+    $index=tab_index($s,$params)
+    if ($params.tab!=nil or $params.buffer!=nil) and $index<0 then return refused($s,"NOT_FOUND","No matching tab") end
+    if $a.id=="file.exit" then
+      $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",action:$a.id,timeout_ms:30000}))
+    end
+    try $out=do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index)
+    catch $message return refused($s,"CONFLICT",$message) end
+    $s=$out.state
+    if $out.op_id!=nil then return check_calls(hold_call($s,$e,{kind:"outcome",tab:if $index>=0 then to_number($s.tabs[$index].document) else nil end,op_id:$out.op_id,action:$a.id,close_after:$a.id=="file.close",timeout_ms:60000}))
+    elif $out.kind=="close" then return check_calls(hold_call($s,$e,{kind:"close",tab:to_number($s.tabs[$index].document),action:$a.id,timeout_ms:60000})) end
+    reply(0,json_encode({id:$a.id,ok:true,result:$out.result}));return $s
   end
   $i=tab_index($s,$a)
   if $i<0 then return refused($s,"NOT_FOUND","No matching tab") end
@@ -125,6 +164,11 @@ fn bus_command($s,$e)
     $conditions=filter(["rev","idle","epoch","phase"],fn($k)=$a[$k]!=nil)
     if len($conditions)!=1 or type($a.timeout_ms)!="number" or $a.timeout_ms<0 or $a.timeout_ms>30000 or floor($a.timeout_ms)!=$a.timeout_ms or ($a.idle!=nil and $a.idle!=true) or ($a.rev!=nil and (type($a.rev)!="number" or $a.rev<0 or floor($a.rev)!=$a.rev)) or ($a.epoch!=nil and type($a.epoch)!="string") or ($a.phase!=nil and not contains(["live","bootstrapping","recovering","detached"],$a.phase)) then return refused($s,"INVALID_ARGUMENT","Exactly one valid condition and timeout_ms <= 30000 required","bad_args") end
     return check_calls(hold_call($s,$e,{kind:"wait",tab:to_number($t.document),condition:$a,timeout_ms:$a.timeout_ms}))
+  elif $command=="ced.layout" then
+    $ui=viu_ui_state();$g=$ui.geometry;$l=$t.layout
+    $rect=fn($r)={x:$r[0] ?? 0,y:$r[1] ?? 0,w:$r[2] ?? 0,h:$r[3] ?? 0}
+    reply(0,json_encode({tab:to_number($t.document),window:$rect($ui.window),menubar:$rect($g["gold-header"]),tabstrip:$rect($g.tabs),editor:$rect($l.editor),gutter_w:$l.gutter_width,line_height:$l.row_height,cell_w:$l.cell_width,first_line:$l.first_line,visible_rows:$l.visible_rows,caret:$rect($l.caret),statusbar:$rect($g["gold-status"])}));return $s
+  elif $command=="ced.problems" then reply(0,json_encode({tab:to_number($t.document),path:$t.path,problems:viu_document("problems",$t.document,{})}));return $s
   end
   return refused($s,"UNKNOWN_COMMAND","Unknown command "..$command)
 end

@@ -221,6 +221,8 @@ pub(crate) fn native_view(ui: &Ui, widget: &Widget) -> editor::View {
             editor::Wrap::None
         },
         line_numbers: widget.properties["line_numbers"] != false,
+        whitespace: widget.properties["whitespace"] == true,
+        remote_carets: widget.properties["remote_carets"] != false,
         read_only: widget.properties["read_only"] == true,
         label: Some(widget.label.clone()),
         ..Default::default()

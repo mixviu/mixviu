@@ -79,8 +79,12 @@ fn publish_ced($s)
   $window={"window.decorations":"client"}
   for $k in keys($prefs) if starts_with($k,"window.") then $window[$k]=$prefs[$k] end end
   $items=map(["save","undo","redo","refresh","close"],fn($op)={id:$op,label:$op,enabled:$has and $t.phase=="live"})
-  $editor={id:"editor",kind:"editor",label:"Editing buffer",initial:"",properties:{native_document:true,font_size:($prefs["ced.editor.font.size"] ?? 13)*($look.text_scale ?? 1),padding:round(($prefs["ced.editor.padding"] ?? 8)*$density),light:$prefs["ced.editor.light"] ?? false,soft_wrap:$s.wrap,line_numbers:$s.line_numbers,read_only:not $has or $t.phase!="live"}}
+  $editor={id:"editor",kind:"editor",label:"Editing buffer",initial:"",properties:{native_document:true,font_size:max(3,min(144,($prefs["ced.editor.font.size"] ?? 13)+($s.zoom ?? 0)))*($look.text_scale ?? 1),padding:round(($prefs["ced.editor.padding"] ?? 8)*$density),light:$prefs["ced.editor.light"] ?? false,soft_wrap:$s.wrap,line_numbers:$s.line_numbers,whitespace:$s.whitespace,remote_carets:$s.remote_carets,read_only:not $has or $t.phase!="live"}}
   $model={editor:$editor,window_close:$s.window_close,tabs:{id:"tabs",kind:"tabs",label:"Documents",initial:if $has then to_string($s.active) else "none" end,properties:{labels:$labels,choices:$choices}},values:{editor:if $has then {document:$t.document} else "" end,"open-dialog":{open:$s.open_dialog,title:"Open file",body:"Absolute UTF-8 file path",field:$s.path,instance:1,choices:[{id:"open",label:"Open",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}}}
+  $model.shortcuts=[];$model.on_shortcut="ced.key"
+  for $action in action_rows($s)
+    for $chord in $action.keys $model.shortcuts=push($model.shortcuts,{chord:$chord,id:$action.id,enabled:$action.enabled}) end
+  end
   $status=if $has then $t.phase.." · rev "..to_string($t.rev).." · "..$t.language.." · pending "..to_string($t.pending) else $s.status end
   $model=$frame.apply($model,{icon:"file-text",title:basename($t.path ?? "Untitled"),menus:[{id:"file-menu",label:"File",enabled:true,children:concat([{id:"new",label:"New",enabled:true},{id:"open",label:"Open",enabled:true}],$items)},{id:"view-menu",label:"View",enabled:true,children:[{id:"wrap",label:"Soft wrap",enabled:true},{id:"line_numbers",label:"Line numbers",enabled:true}]}],toolbar:$items,status:$status,appearance:$look,window:$window})
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}

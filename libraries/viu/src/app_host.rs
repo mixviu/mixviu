@@ -383,6 +383,17 @@ impl Host {
             }
         }
         if self.ready {
+            if let Some(bindings)=self.model["shortcuts"].as_array() {
+                let bindings=bindings.clone();
+                for binding in bindings {
+                    if binding["enabled"]==false {continue;}
+                    if let (Some(chord),Some(id),Some(command))=(binding["chord"].as_str(),binding["id"].as_str(),self.model["on_shortcut"].as_str()) {
+                        if crate::input::consume_chord(ui.ctx(),chord) {
+                            self.dispatch(command.into(),json!({"id":id}),BTreeMap::new(),None);
+                        }
+                    }
+                }
+            }
             if self.framed {
                 let settings = self.model["window_settings"].clone();
                 crate::rich::configure_menu(ui.ctx(), &settings, None);

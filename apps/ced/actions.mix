@@ -1,0 +1,76 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Action registry and execution policy, shared by menus, keys and ced.execute.
+fn action_rows($s)
+  $rows=$s.actions
+  for $i=0 to len($rows)-1
+    $rows[$i].enabled=true
+    if starts_with($rows[$i].id,"view.markdown.") then $rows[$i].enabled=len($s.tabs)>0 and current($s).language=="markdown" end
+    if $rows[$i].id=="file.send" or $rows[$i].id=="mail.headers" then $rows[$i].enabled=len($s.tabs)>0 and $s.mail[current($s).document]!=nil end
+    if starts_with($rows[$i].id,"edit.") or starts_with($rows[$i].id,"search.") or contains(["file.save","file.save_as","file.reload","file.close"],$rows[$i].id) then $rows[$i].enabled=len($s.tabs)>0 end
+    if starts_with($rows[$i].id,"tabs.goto.") then $rows[$i].enabled=to_number(split($rows[$i].id,".")[2])<=len($s.tabs) end
+    if $s.keys[$rows[$i].id]!=nil then $rows[$i].keys=$s.keys[$rows[$i].id] end
+  end
+  return $rows
+end
+fn do_action($s,$id,$a,$who=nil,$index=nil)
+  $result=nil;$op_id=nil;$kind=nil
+  if $index!=nil and $index>=0 then $s.active=$index end
+  $has=len($s.tabs)>0;$t=if $has then current($s) else nil end
+  if $id=="file.new" then $s=operation($s,"new",{})
+  elif $id=="file.open" then
+    if $a.paths==nil then $s.open_dialog=true
+    else for $path in $a.paths $s=operation($s,"open",{path:$path}) end end
+  elif $id=="file.exit" then $s.exit_after_save=true;$s=save_session(session_changed($s))
+  elif $id=="file.save_all" then
+    for $tab in $s.tabs $v=viu_document("command",$tab.document,{name:"save",caller:$who}) end
+  elif contains(["file.save","file.save_as","file.reload","file.close","edit.undo","edit.redo","edit.undo_any","edit.undo_other"],$id) then
+    if not $has then raise("NOT_FOUND","No tab is open") end
+    if $id=="file.close" and not ($a.save ?? false) then
+      $s=operation($s,"close",$a);$kind="close"
+    elif $id=="file.save_as" and $a.path==nil then $s.save_dialog=true
+    else
+      $name=if starts_with($id,"file.save") or $id=="file.close" then "save" elif $id=="file.reload" then "reload" elif $id=="edit.redo" then "redo" else "undo" end
+      $lane=if $id=="edit.undo_any" then "any" elif $id=="edit.undo_other" then viu_document("inspect",$t.document,{}).last_remote.lane else nil end
+      if $id=="edit.undo_other" and $lane==nil then raise("CONFLICT","No other origin has edited this tab") end
+      $v=viu_document("command",$t.document,{name:$name,path:$a.path,force:$a.force ?? false,lane:$lane,caller:$who})
+      $op_id=$v.op_id
+    end
+  elif starts_with($id,"tabs.") then
+    if not $has then raise("NOT_FOUND","No tab is open") end
+    if $id=="tabs.next" then $s.active=($s.active+1)%len($s.tabs)
+    elif $id=="tabs.prev" then $s.active=($s.active+len($s.tabs)-1)%len($s.tabs)
+    else $i=to_number(split($id,".")[2])-1;if $i<0 or $i>=len($s.tabs) then raise("NOT_FOUND","No such tab") end;$s.active=$i end
+  elif starts_with($id,"edit.") then
+    if not $has then raise("NOT_FOUND","No tab is open") end
+    if contains(["edit.copy","edit.cut"],$id) then
+      $result=viu_document("selected",$t.document,{}).text
+      if $result!=nil then
+        $s=queue_job($s,"clipboard",{operation:"copy",text:$result})
+        if $id=="edit.cut" then $v=viu_document("command",$t.document,{name:"delete",caller:$who}) end
+      end
+    elif $id=="edit.paste" then $s=queue_job($s,"clipboard",{operation:"paste",document:$t.document,caller:$who})
+    elif $id=="edit.overwrite" then $v=viu_document("overwrite",$t.document,{})
+    else $v=viu_document("command",$t.document,{name:replace(replace($id,"edit.",""),"_","-"),caller:$who}) end
+  elif starts_with($id,"search.") then
+    if not $has then raise("NOT_FOUND","No tab is open") end
+    if $id=="search.goto_line" then
+      if $a.line==nil then $s.goto_dialog=true
+      else $p={line:$a.line,col:$a.col ?? 1};$v=viu_document("select",$t.document,{anchor:$p,head:$p}) end
+    elif $a.pattern==nil then
+      $s.find.open=true;$s.find.replace=contains(["search.replace","search.replace_all"],$id)
+    else
+      $kind=if $id=="search.find_prev" then "prev" elif $id=="search.replace_all" then "replace-all" elif $id=="search.replace" then "replace" else "next" end
+      $s=queue_job($s,"find",{document:$t.document,query:merge($a,{kind:$kind,caller:$who})})
+      $kind=nil
+    end
+  elif $id=="view.clear_markers" then if $has then $v=viu_document("clear-markers",$t.document,{}) end
+  elif $id=="view.zoom_reset" then $s.zoom=0
+  elif $id=="view.zoom_in" then $s.zoom=min(30,$s.zoom+1)
+  elif $id=="view.zoom_out" then $s.zoom=max(-7,$s.zoom-1)
+  elif contains(["view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output"],$id) then $key=split($id,".")[1];$s[$key]=not $s[$key]
+  elif $id=="view.reload_settings" then $s=request_probe($s)
+  elif starts_with($id,"view.markdown.") then $s.previews[$t.document]=split($id,".")[2]
+  elif starts_with($id,"help.") then $s.help=split($id,".")[1]
+  else raise("UNKNOWN_ACTION","Unknown action "..$id) end
+  return {state:pump($s),result:$result,op_id:$op_id,kind:$kind}
+end

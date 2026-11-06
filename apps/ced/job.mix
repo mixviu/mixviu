@@ -38,7 +38,29 @@ fn open_recovery($a)
 end
 on job.run
   $job=$event.args;$a=$job.payload
-  if $job.kind=="macro" then
+  if $job.kind=="diagnostics" then
+    $shown=0;$stale=false
+    for $doc in $a.documents
+      $v=viu_document("diagnostics",$doc,$a.request)
+      $shown=$shown+$v.shown;$stale=$stale or $v.stale
+    end
+    reply(0,json_encode({path:$a.request.path,tabs:map($a.documents,fn($d)=to_number($d)),shown:$shown,stale:$stale}));return
+  elif $job.kind=="show" then
+    $service=env("MIXOS_COMP_SERVICE") ?? "comp"
+    send $service "comp.windows.list" body={} timeout=5
+    if $rc!=0 then raise("ACTIVATION","Cannot list compositor windows") end
+    $windows=filter($reply.windows,fn($w)=$w.pid==pid())
+    if len($windows)==0 then raise("ACTIVATION","No native window") end
+    send $service "comp.window.focus" body={id:$windows[0].id,generation:$windows[0].generation,raise:true} timeout=5
+    if $rc!=0 then raise("ACTIVATION",json_encode($reply ?? $result)) end
+    reply(0,json_encode({shown:true,target:$reply}));return
+  elif $job.kind=="find" then
+    $v=viu_document("find",$a.document,$a.query)
+    reply(0,json_encode($v));return
+  elif $job.kind=="clipboard" then
+    if $a.operation=="copy" then $ok=clip_set($a.text)
+    else $text=clip_get("text/plain");$v=viu_document("command",$a.document,{name:"insert",text:$text,caller:$a.caller}) end
+  elif $job.kind=="macro" then
     reply(0,json_encode(viu_macros($a.command,$a.args)));return
   elif $job.kind=="session-load" then reply(0,json_encode(load_session()));return
   elif $job.kind=="session-save" then
