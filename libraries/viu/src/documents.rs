@@ -174,7 +174,7 @@ impl Document {
             "dirty":m.meta().dirty,"pending":m.pending(),"inflight":m.inflight().is_some(),"idle":m.is_idle(),"resyncs":self.resyncs,
             "recovered":m.meta().recovered,"recovery_id":m.meta().recovery_id,"saved_rev":m.meta().saved_rev,"disk":m.meta().disk,"bom":m.meta().bom,"eol":m.meta().eol,
             "selection":{"anchor":m.text().point(self.model.sel.anchor),"head":m.text().point(self.model.sel.head)},
-            "first_line":self.model.scroll.first_line,"detached_copy":m.detached_copy().is_some(),"conflicts":m.conflicts().len(),"layout":self.layout,"notices":self.notices})
+            "overwrite":self.model.overwrite,"first_line":self.model.scroll.first_line,"detached_copy":m.detached_copy().is_some(),"conflicts":m.conflicts().len(),"layout":self.layout,"notices":self.notices})
     }
     fn command(
         &mut self,

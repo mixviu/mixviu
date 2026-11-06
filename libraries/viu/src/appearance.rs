@@ -26,6 +26,66 @@ pub fn install(ctx: &egui::Context) {
     crate::fonts::install(ctx, 400, 600);
     crate::icons::install(ctx);
 }
+/// Follow the same complete look contract as the gold applications, including
+/// app overrides, auto mode, geometry, font choices and tunables.
+pub fn install_session(
+    ctx: &egui::Context,
+    snapshot: &Value,
+    app: &str,
+    file: &toolkit::Theme,
+    last_ui: &settings::model::CommonUi,
+) -> Result<settings::model::CommonUi, String> {
+    use settings::view::View;
+    let values: settings::registry::Values =
+        serde_json::from_value(snapshot["state"]["values"].clone()).map_err(|e| e.to_string())?;
+    let look = settings::view::Look::of(&values);
+    let lost = snapshot["state"]["lost"] == true;
+    let theme = toolkit::session_look::session_theme(
+        if lost { None } else { Some(&look) },
+        Some(app),
+        look.appearance.source.is_some(),
+        file,
+        last_ui,
+    );
+    let ui = if lost {
+        last_ui.clone()
+    } else {
+        toolkit::session_look::ui(&look, Some(app))
+    };
+    toolkit::install(ctx, &theme);
+    let chrome = toolkit::chrome::Chrome::of(ctx);
+    let mut colours = std::collections::BTreeMap::new();
+    for role in resolve(&serde_json::json!({}))?.colours.keys() {
+        if let Some(colour) = chrome.palette.get(role) {
+            colours.insert(role.clone(), colour);
+        }
+    }
+    let m = chrome.metrics;
+    ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::unique("viu-gold-fonts"), true);
+        d.insert_temp(
+            egui::Id::unique("viu-design-colours"),
+            std::sync::Arc::new(colours),
+        );
+        d.insert_temp(
+            egui::Id::unique("viu-window-metrics"),
+            crate::window_frame::Metrics {
+                height: m.title_bar_height,
+                caption_width: m.caption_width,
+                caption_glyph: m.caption_glyph,
+                title_size: m.title_size,
+                resize_edge: m.resize_edge,
+                resize_corner: m.resize_corner,
+            },
+        );
+    });
+    crate::icons::install_style(
+        ctx,
+        toolkit::icons::stroke_width(&theme),
+        chrome.style.icon_mask.0,
+    );
+    Ok(ui)
+}
 pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {
     let mut style = egui::Style::default();
     style.visuals = if description["mode"] == "light" {
@@ -66,6 +126,7 @@ pub fn resolve(description: &Value) -> Result<ResolvedAppearance, String> {
 }
 
 pub fn install_style(ctx: &egui::Context, description: &Value, appearance: ResolvedAppearance) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("viu-gold-fonts"), false));
     crate::fonts::install(ctx, appearance.body_weight, appearance.heading_weight);
     crate::icons::install_style(ctx, appearance.icon_stroke, appearance.icon_mask);
     let theme = if description["mode"] == "light" {

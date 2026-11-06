@@ -7,6 +7,9 @@ use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
     "mark",
+    "document-tabs",
+    "search-bar",
+    "form-fields",
     "status-line",
     "label",
     "button",
@@ -130,6 +133,7 @@ impl Widget {
         if crate::rich::KINDS.contains(&self.kind.as_str()) {
             return crate::rich::validate(&self.kind, value);
         }
+        if ["document-tabs","search-bar","form-fields"].contains(&self.kind.as_str()) { return crate::editor_controls::validate(&self.kind,value); }
         let valid = match self.kind.as_str() {
             "status-line" => {
                 value["left"].is_string()
@@ -260,6 +264,9 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind=="document-tabs" {return vec!["select","close"];}
+        if self.kind=="form-fields" {return vec!["edit"];}
+        if self.kind=="search-bar" {return vec!["edit","next","prev","replace","replace-all","close"];}
         if self.kind == "mark" || self.kind == "status-line" { return vec![]; }
         if self.kind == "editor" && self.properties["read_only"] == true {
             return vec![];
@@ -345,6 +352,7 @@ impl Widget {
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
         if self.properties["enabled"] == false { return Err("DISABLED".into()); }
+        if ["document-tabs","search-bar","form-fields"].contains(&self.kind.as_str()) {return crate::editor_controls::admit(&self.kind,self.value(model),action,value);}
         self.validate_action(action, value)?;
         if self.kind == "window-controls" && self.value(model)["enabled"] != true {
             return Err("DISABLED".into());
@@ -538,6 +546,7 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
+            "document-tabs" | "search-bar" | "form-fields" => crate::editor_controls::draw(ui,id,&widget.kind,value,events),
             "status-line" => {
                 toolkit::bars::status(ui, |ui| {
                     let colour = if value["error"] == true {

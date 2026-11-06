@@ -212,6 +212,7 @@ impl Runtime {
                         eval.register("viu_maildoc",crate::native_primitives::mail_document());
                         eval.register("viu_editor_write",crate::native_primitives::editor_write());
                         eval.register("viu_digest",crate::native_primitives::digest());
+                        eval.register("viu_action_event",crate::native_primitives::action_event());
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_image",crate::native_primitives::image_file());

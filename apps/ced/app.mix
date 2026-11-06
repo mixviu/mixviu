@@ -7,9 +7,11 @@ include "session.mix"
 include "bus.mix"
 include "actions.mix"
 include "mail.mix"
+include "ui.mix"
 $state={tabs:[],active:0,busy:false,serial:0,next_tab:0,queue:[],running:{},timers:{},outcomes:{},last_op:nil,status:"Open a UTF-8 document",path:"",wrap:false,line_numbers:true,window_close:false,open_dialog:false,event_seq:nil,look:{appearance:{scheme:"studio",mode:"dark"},values:{},revision:nil}}
 $state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_loaded=false;$state.session_dirty=false;$state.session_seen=nil;$state.restore={};$state.restore_active=nil;$state.exit_after_save=false;$state.edit={epoch:nil,version:nil,volatile:nil}
 $state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=filter(json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).host.commands,fn($c)=not contains(["ced.command","ced.draft","ced.debug","ced.intent"],$c));$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:true,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.preview_requested={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
+$state.macro_panel={epoch:0,serial:0,page:"closed",id:nil,filter:"",form:{open:false,title:"",body:"",field:nil,choices:[]}}
 publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
@@ -32,10 +34,12 @@ end
 on ced.intent
   $a=$event.args
   if $a.id=="editor" then $state=pump($state)
+  elif contains(["find-bar","save-dialog","goto-dialog","help-dialog","macros-dialog","mail-fields","notice-actions"],$a.id) then $state=ced_ui_intent($state,$a)
   elif $a.id=="tabs" then
     $i=to_number($a.value)
     if $i<0 or floor($i)!=$i or $i>=len($state.tabs) then raise("TAB","Unknown tab") end
     $state.active=$i
+    if $a.action=="close" then $state=do_action($state,"file.close",{}).state end
   elif $a.id=="open-dialog" then
     $state.path=if $a.action=="edit" then $a.value else $a.value.field end
     if $a.action=="answer" then
@@ -49,7 +53,8 @@ on viu.frame.intent
   $op=$event.args.value.command
   if $op=="open" then $state.open_dialog=true
   elif contains(["wrap","line_numbers"],$op) then $state[$op]=not $state[$op]
-  else $state=operation($state,$op,{}) end
+  elif contains(["save","undo","redo","refresh","close"],$op) then $state=operation($state,$op,{})
+  else $state=do_action($state,$op,{},nil,nil,nil,if $event.args.id=="gold-menu" then "menu" else "ui" end).state end
   publish_ced($state);reply(0,"{}")
 end
 on viu.frame.close
@@ -65,6 +70,7 @@ on viu.job.completed
     $state.running=delete($state.running,$job.id)
     $state=mail_completed($state,$job,$event.args)
     if contains(["show","diagnostics"],$job.kind) and $job.payload.call!=nil then $state=finish_call($state,$job.payload.call,$event.args.rc,$event.args.body) end
+    if $job.kind=="macro-panel" and $event.args.rc==0 then $state.macro_panel=$event.args.body end
     if $job.kind=="macro" then $state=finish_call($state,$job.payload.call,if $event.args.rc==0 then $event.args.body.rc else 10 end,if $event.args.rc==0 then $event.args.body.body else $event.args.body end) end
     if $event.args.rc==0 then
       if $job.kind=="io" and $event.args.body.deadline_after_ms!=nil then
@@ -228,7 +234,7 @@ on app.quit
 end
 
 on ced.key
-  $out=do_action($state,$event.args.id,{});$state=$out.state;publish_ced($state)
+  $out=do_action($state,$event.args.id,{},nil,nil,nil,"shortcut");$state=$out.state;publish_ced($state)
 end
 
 on viu.platform.completed

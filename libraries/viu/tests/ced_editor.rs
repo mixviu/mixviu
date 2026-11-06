@@ -8,7 +8,6 @@ use std::{
 use viu::{
     bundle::Bundle,
     runtime::{Completion, Runtime},
-    view::SceneView,
 };
 mod fixture {
     include!("support/documents.rs");

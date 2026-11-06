@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 include "mail.mix"
+include "../../libraries/viu/mix/macros.mix"
 include "../../libraries/viu/mix/app-call.mix"
 fn load_session()
   $dirs=viu_app_dirs("ced");$path=if $dirs!=nil then path_join($dirs.state,"session.json") else nil end
@@ -49,7 +50,14 @@ fn open_recovery($a)
 end
 on job.run
   $job=$event.args;$a=$job.payload
-  if $job.kind=="preview" then $v=viu_document("preview",$a.document,{});reply(0,json_encode($v));return
+  if $job.kind=="action-publish" then emit "ced.action.executed" body=$a.body;reply(0,"{}");return
+  elif $job.kind=="macro-panel" then
+    $panel=$a.panel
+    if $a.action=="open" then $panel=macro_catalogue($panel)
+    elif $a.action=="edit" then $panel.form.field=$a.value;if $panel.page=="catalogue" then $panel.filter=$a.value;$panel=macro_catalogue($panel) end
+    else $panel.form.field=$a.value.field;$panel=macro_answer($panel,$a.value.choice) end
+    reply(0,json_encode($panel));return
+  elif $job.kind=="preview" then $v=viu_document("preview",$a.document,{});reply(0,json_encode($v));return
   elif $job.kind=="classify" then reply(0,json_encode(classify_document($a.document)));return
   elif $job.kind=="mail-hash" then
     $state=viu_document("state",$a.document,{})

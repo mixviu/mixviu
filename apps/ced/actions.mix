@@ -12,8 +12,9 @@ fn action_rows($s)
   end
   return $rows
 end
-fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil)
+fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
   $result=nil;$op_id=nil;$kind=nil
+  $original_active=$s.active
   if $index!=nil and $index>=0 then $s.active=$index end
   $has=len($s.tabs)>0;$t=if $has then current($s) else nil end
   if $has and $s.mail[$t.document]!=nil and (contains(["file.save","file.save_as","file.send","mail.headers"],$id) or ($id=="file.close" and ($a.save ?? false))) then
@@ -62,7 +63,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil)
       if $a.line==nil then $s.goto_dialog=true
       else $p={line:$a.line,col:$a.col ?? 1};$v=viu_document("select",$t.document,{anchor:$p,head:$p}) end
     elif $a.pattern==nil then
-      $s.find.open=true;$s.find.replace=contains(["search.replace","search.replace_all"],$id)
+      $s.find.open=true;$s.find_instance=($s.find_instance ?? 0)+1;$s.find.replace=contains(["search.replace","search.replace_all"],$id)
     else
       $kind=if $id=="search.find_prev" then "prev" elif $id=="search.replace_all" then "replace-all" elif $id=="search.replace" then "replace" else "next" end
       $s=queue_job($s,"find",{document:$t.document,query:merge($a,{kind:$kind,caller:$who})})
@@ -75,7 +76,12 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil)
   elif contains(["view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output"],$id) then $key=split($id,".")[1];$s[$key]=not $s[$key]
   elif $id=="view.reload_settings" then $s=request_probe($s)
   elif starts_with($id,"view.markdown.") then $s.previews[$t.document]=split($id,".")[2]
+  elif $id=="view.search" then $s.find.open=true;$s.find_instance=($s.find_instance ?? 0)+1
+  elif $id=="view.mode" then $s.look.appearance.mode=if $s.look.appearance.mode=="dark" then "light" else "dark" end
+  elif $id=="help.macros" then $s=queue_job($s,"macro-panel",{panel:$s.macro_panel,action:"open"})
   elif starts_with($id,"help.") then $s.help=split($id,".")[1]
   else raise("UNKNOWN_ACTION","Unknown action "..$id) end
+  if $index!=nil and $index>=0 and not starts_with($id,"tabs.") and not contains(["file.open","file.new"],$id) then $s.active=$original_active end
+  $s=queue_job($s,"action-publish",{body:viu_action_event($id,if $who!=nil then "bus" else $origin end,{args:$a},$result)})
   return {state:pump($s),result:$result,op_id:$op_id,kind:$kind}
 end

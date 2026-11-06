@@ -71,9 +71,12 @@ fn operation($s,$op,$a)
   if $op=="open" or $op=="new" then
     if $op=="open" and (type($a.path)!="string" or not starts_with($a.path,"/")) then raise("PATH","Absolute path required") end
     for $i=0 to len($s.tabs)-1
-      if $op=="open" and $s.tabs[$i].path==$a.path then $s.active=$i;return $s end
+      if $op=="open" and $s.tabs[$i].path==$a.path then $s.active=$i;$s.last_open=$s.tabs[$i].document;return $s end
     end
-    $s.next_tab=$s.next_tab+1
+    for $job in concat($s.queue,values($s.running))
+      if $op=="open" and $job.kind=="open" and $job.payload.args.path==$a.path then $s.last_open=$job.payload.document;return $s end
+    end
+    $s.next_tab=$s.next_tab+1;$s.last_open=to_string($s.next_tab)
     return pump(queue_job($s,"open",{document:to_string($s.next_tab),args:if $op=="new" then {text:$a.text ?? "",language:$a.language ?? "text"} else {path:$a.path,create:$a.create ?? false} end}))
   end
   $t=current($s)
@@ -116,6 +119,7 @@ fn publish_ced($s)
     end
   end
   $status=if $has then $t.phase.." · rev "..to_string($t.rev).." · "..$t.language.." · pending "..to_string($t.pending) else $s.status end
-  $model=$frame.apply($model,{icon:"file-text",title:basename($t.path ?? "Untitled"),menus:[{id:"file-menu",label:"File",enabled:true,children:concat([{id:"new",label:"New",enabled:true},{id:"open",label:"Open",enabled:true}],$items)},{id:"view-menu",label:"View",enabled:true,children:[{id:"wrap",label:"Soft wrap",enabled:true},{id:"line_numbers",label:"Line numbers",enabled:true}]}],toolbar:$items,status:$status,appearance:$look,window:$window})
+  $model=ced_ui_model($s,$model)
+  $model=$frame.apply($model,{icon:"file-text",title:"MixOS Editor",menus:ced_menus($s),toolbar:ced_toolbar($s),status:ced_status($s,$t),appearance:$look,window:$window})
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
 end

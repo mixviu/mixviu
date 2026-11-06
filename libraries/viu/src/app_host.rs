@@ -56,6 +56,9 @@ struct Host {
     tick: Option<Duration>,
     next_tick: Instant,
     session: Option<crate::session::Session>,
+    session_appearance: bool,
+    file_theme: toolkit::Theme,
+    last_ui: settings::model::CommonUi,
     session_update: Option<Value>,
     noticed_drops: u64,
 }
@@ -315,6 +318,10 @@ impl Host {
                 self.noticed_drops = drops;
             }
             if let Some(update) = session.poll() {
+                match crate::appearance::install_session(ui.ctx(), &update, &self.service, &self.file_theme, &self.last_ui) {
+                    Ok(value) => {self.last_ui=value;self.session_appearance=true;}
+                    Err(error) => self.error=error,
+                }
                 self.session_update = Some(update);
             }
             if let Some(at) = session.deadline() {
@@ -382,7 +389,7 @@ impl Host {
                         .and_then(|output| model["surfaces"].get(output))
                         .unwrap_or(&model)
                         .clone();
-                    let appearance = if self.framed
+                    let appearance = if self.framed && !self.session_appearance
                         && (!self.loaded || self.model["appearance"] != model["appearance"])
                     {
                         crate::appearance::resolve(&model["appearance"]).map(Some)
@@ -437,6 +444,7 @@ impl Host {
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
+                    if n.command=="theme.changed" {self.file_theme=toolkit::Theme::load();}
                     if let Some(session) = &mut self.session {
                         session.hint(&n.command, &n.args);
                         ui.ctx().request_repaint();
@@ -491,7 +499,7 @@ impl Host {
             if self.framed {
                 let settings = self.model["window_settings"].clone();
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
-                if self.native_drive {
+                if self.native_drive && !self.session_appearance {
                     let mut chrome=toolkit::chrome::Chrome::of(ui.ctx());
                     let style=ui.ctx().global_style();chrome.palette=toolkit::chrome::Palette::from_visuals(&style.visuals);chrome.mode=if style.visuals.dark_mode {design::Mode::Dark}else{design::Mode::Light};chrome.metrics=toolkit::chrome::Metrics::from_egui(&style,&chrome.style);
                     chrome.menu_style=design::MenuStyle::resolve(settings["window.menu_style"].as_str().unwrap_or("bar"));
@@ -716,6 +724,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         next_tick: Instant::now(),
         session,
         session_update: None,
+        session_appearance: false,
+        file_theme: toolkit::Theme::load(),
+        last_ui: settings::model::CommonUi::default(),
         noticed_drops: 0,
     }
 }

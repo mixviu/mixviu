@@ -40,3 +40,5 @@ pub mod layer;
 pub mod native_menu;
 pub mod platform;
 pub mod ui_state;
+
+pub mod editor_controls;

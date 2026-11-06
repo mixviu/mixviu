@@ -94,7 +94,7 @@ fn bus_command($s,$e)
       for $path in $a.paths
         $s=operation($s,"open",{path:$path})
         $known=filter($s.tabs,fn($t)=$t.path==$path)
-        push($docs,if len($known)>0 then $known[0].document else to_string($s.next_tab) end)
+        push($docs,$s.last_open)
       end
     end
     return check_calls(hold_call($s,$e,{kind:"open",documents:$docs,new:$new,line:$a.line,col:$a.col,timeout_ms:60000}))
@@ -148,7 +148,7 @@ fn bus_command($s,$e)
     if $a.text!=nil and type($a.text)!="bool" then return refused($s,"INVALID_ARGUMENT","text must be boolean","bad_args") end
     try
       $v=viu_document("inspect",$t.document,{text:$a.text ?? false})
-      $body={tab:to_number($t.document),preview:"source",buffer:$v.buffer,rev:$v.rev,view_gen:$v.view_gen,phase:$v.phase,pending:$v.pending,inflight:$v.inflight,text_hash:$v.text_hash,bytes:$v.bytes,lines:$v.lines,selection:$v.selection,first_line:$v.first_line,last_remote:$v.last_remote,conflicts:$v.conflicts,detached_copy:$v.detached_copy,text:$v.text}
+      $body={tab:to_number($t.document),preview:$s.previews[$t.document] ?? "source",buffer:$v.buffer,rev:$v.rev,view_gen:$v.view_gen,phase:$v.phase,pending:$v.pending,inflight:$v.inflight,text_hash:$v.text_hash,bytes:$v.bytes,lines:$v.lines,selection:$v.selection,first_line:$v.first_line,last_remote:$v.last_remote,conflicts:$v.conflicts,detached_copy:$v.detached_copy,text:$v.text}
       if $s.mail[$t.document]!=nil then $m=$s.mail[$t.document];$body.mail={headers:$m.headers,sending:$m.sending,saving:$m.saving,notice:$m.notice} end
       if $s.notices[$t.document]!=nil then $body.document_notice=$s.notices[$t.document] end
       reply(0,json_encode($body));return $s
