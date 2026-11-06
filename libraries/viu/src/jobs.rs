@@ -86,7 +86,10 @@ impl Jobs {
             }
             let path = start.spec["path"].as_str();
             let source = start.spec["source"].as_str();
-            let timeout = start.spec.get("timeout_seconds").map_or(Some(90), Value::as_u64);
+            let timeout = start
+                .spec
+                .get("timeout_seconds")
+                .map_or(Some(90), Value::as_u64);
             if id.is_empty()
                 || id.len() > 128
                 || path.is_none()

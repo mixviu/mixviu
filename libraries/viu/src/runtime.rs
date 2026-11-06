@@ -213,6 +213,7 @@ impl Runtime {
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_settings",crate::native_primitives::settings_values());
                         eval.register("viu_token",crate::native_primitives::token());
+                        eval.register("viu_fonts",crate::native_primitives::installed_fonts());
                         eval.register("viu_image",crate::native_primitives::image_file());
                         eval.register("viu_http",crate::http::binding());
                         if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
@@ -476,16 +477,40 @@ impl BusHandler for Local {
             };
             let result = match command {
                 "requests.defer" => {
-                    let token = body["token"].as_str().filter(|s| !s.is_empty() && s.len()<=128).ok_or_else(|| failure("invalid deferred request token"))?;
-                    if !self.is_request.get() || self.deferred.borrow().is_some() { return Err(failure("only one deferral is allowed on a request callback")); }
-                    *self.deferred.borrow_mut()=Some(token.into());
+                    let token = body["token"]
+                        .as_str()
+                        .filter(|s| !s.is_empty() && s.len() <= 128)
+                        .ok_or_else(|| failure("invalid deferred request token"))?;
+                    if !self.is_request.get() || self.deferred.borrow().is_some() {
+                        return Err(failure(
+                            "only one deferral is allowed on a request callback",
+                        ));
+                    }
+                    *self.deferred.borrow_mut() = Some(token.into());
                     json!({"deferred":true})
                 }
                 "requests.reply" => {
-                    let token = body["token"].as_str().filter(|s| !s.is_empty() && s.len()<=128).ok_or_else(|| failure("invalid deferred request token"))?;
-                    let rc = body["rc"].as_u64().filter(|rc| *rc<=255).ok_or_else(|| failure("invalid deferred reply code"))? as u8;
-                    if self.answers.borrow().len()>=32 || self.answers.borrow().iter().any(|a|a.token==token) { return Err(failure("duplicate or over-budget deferred reply")); }
-                    self.answers.borrow_mut().push(DeferredAnswer { token:token.into(), reply:Reply {rc,body:body["value"].clone()} });
+                    let token = body["token"]
+                        .as_str()
+                        .filter(|s| !s.is_empty() && s.len() <= 128)
+                        .ok_or_else(|| failure("invalid deferred request token"))?;
+                    let rc = body["rc"]
+                        .as_u64()
+                        .filter(|rc| *rc <= 255)
+                        .ok_or_else(|| failure("invalid deferred reply code"))?
+                        as u8;
+                    if self.answers.borrow().len() >= 32
+                        || self.answers.borrow().iter().any(|a| a.token == token)
+                    {
+                        return Err(failure("duplicate or over-budget deferred reply"));
+                    }
+                    self.answers.borrow_mut().push(DeferredAnswer {
+                        token: token.into(),
+                        reply: Reply {
+                            rc,
+                            body: body["value"].clone(),
+                        },
+                    });
                     json!({"queued":true})
                 }
                 "shell.scene.describe" => {

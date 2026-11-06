@@ -71,9 +71,21 @@ impl Bundle {
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
             || !(1..=16).contains(&manifest.job_limit)
-            || manifest.app_id.as_ref().is_some_and(|id| id.is_empty() || id.len()>128 || !id.bytes().all(|b|b.is_ascii_alphanumeric() || b".-_".contains(&b)))
-            || manifest.command_metadata.len()>256
-            || manifest.command_metadata.iter().any(|entry| entry["name"].as_str().is_none_or(|name|name.is_empty() || name.len()>128) || !entry["description"].is_string() || !entry["read_only"].is_boolean())
+            || manifest.app_id.as_ref().is_some_and(|id| {
+                id.is_empty()
+                    || id.len() > 128
+                    || !id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b".-_".contains(&b))
+            })
+            || manifest.command_metadata.len() > 256
+            || manifest.command_metadata.iter().any(|entry| {
+                entry["name"]
+                    .as_str()
+                    .is_none_or(|name| name.is_empty() || name.len() > 128)
+                    || !entry["description"].is_string()
+                    || !entry["read_only"].is_boolean()
+            })
             || !["window", "background"].contains(&manifest.surface.as_str())
             || manifest
                 .frame

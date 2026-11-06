@@ -47,8 +47,9 @@ fn shown($s,$p,$r)
   if $p.id=="appearance" and $r.id=="hint_colour" then return ($s.values["window.hint_colour"] ?? "accent")!="accent" end
   if $p.id=="wallpaper" then
     if $r.id=="slideshow" then return $s.values["wallpaper.color"]==nil end
-    if contains(["interval","random"],$r.id) then return $s.values["wallpaper.slideshow.enabled"] ?? false end
+    if contains(["interval","shuffle"],$r.id) then return $s.values["wallpaper.slideshow.enabled"] ?? false end
   end
+  if $p.id=="power" and $r.id=="suspend_battery" then return $s.live.facts.battery ?? false end
   return true
 end
 fn search_view($s,$query)

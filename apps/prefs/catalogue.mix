@@ -1,0 +1,55 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- xkeyboard-config's two catalogue formats, adapted from pinned xkb.rs.
+fn elements($text,$tag)
+  return map(re_find($text,"(?s)<"..$tag..">(.*?)</"..$tag..">"),fn($m)=$m.groups[0])
+end
+fn item($block)
+  $config=re_find($block,"(?s)<configItem[^>]*>(.*?)</configItem>")[0].groups[0]
+  if $config==nil then return nil end
+  $name=trim(elements($config,"name")[0] ?? "")
+  if $name=="" then return nil end
+  $description=trim(elements($config,"description")[0] ?? $name)
+  for $pair in [["&lt;","<"],["&gt;",">"],["&quot;",'"'],["&apos;","'"],["&amp;","&"]] $description=replace($description,$pair[0],$pair[1]) end
+  return {name:$name,description:$description,variants:[]}
+end
+fn parse_xml($text)
+  $out=[];$list=elements($text,"layoutList")[0] ?? ""
+  for $block in elements($list,"layout")
+    $layout=item($block)
+    if $layout==nil then continue end
+    for $variant in elements(elements($block,"variantList")[0] ?? "","variant")
+      $v=item($variant)
+      if $v!=nil then $layout.variants=concat($layout.variants,[$v]) end
+    end
+    push($out,$layout)
+  end
+  return $out
+end
+fn parse_lst($text)
+  $layouts={};$order=[];$section=""
+  for $line in split($text,"\n")
+    if starts_with($line,"!") then $section=trim(substr($line,1));continue end
+    $parts=re_find(trim($line),"^(\\S+)\\s+(.+)$")[0].groups
+    if $parts==nil then continue end
+    $name=$parts[0];$description=trim($parts[1])
+    if $section=="layout" then
+      push($order,$name);$layouts[$name]={name:$name,description:$description,variants:[]}
+    elif $section=="variant" then
+      $at=index_of($description,": ")
+      if $at<0 then continue end
+      $parent=substr($description,0,$at)
+      if $layouts[$parent]!=nil then $layouts[$parent].variants=concat($layouts[$parent].variants,[{name:$name,description:substr($description,$at+2)}]) end
+    end
+  end
+  return map($order,fn($name)=$layouts[$name])
+end
+fn options($layouts)
+  $rank=fn($l)=if $l.name=="us" then 0 elif $l.name=="custom" then 2 else 1 end
+  $layouts=sort_by(sort_by($layouts,fn($l)=$l.description),$rank);$out=[]
+  for $layout in $layouts
+    push($out,{value:[$layout.name,""],label:$layout.description})
+    for $variant in sort_by($layout.variants,fn($v)=$v.description) push($out,{value:[$layout.name,$variant.name],label:$variant.description}) end
+  end
+  return $out
+end

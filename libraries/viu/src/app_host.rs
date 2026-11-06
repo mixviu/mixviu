@@ -20,6 +20,7 @@ struct Host {
     drive_answers: std::collections::VecDeque<toolkit::drive::Answer>,
     drive_serial: u64,
     macros: macros::Session,
+    macro_ui: toolkit::macros::State,
     macro_pending: Vec<(std::sync::mpsc::Receiver<macros::commands::Answer>, Reply)>,
     macro_finished: std::sync::mpsc::Receiver<Value>,
     session: Option<crate::session::Session>,
@@ -326,15 +327,31 @@ impl Host {
             }
             for answer in done.answers {
                 if let Some((generation, _, reply)) = self.deferred_replies.remove(&answer.token) {
-                    if generation == done.generation { let _=reply.send((answer.reply.rc,answer.reply.body)); }
-                    else { let _=reply.send((10,json!({"error_code":"STALE_GENERATION","message":"deferred request owner changed"}))); }
+                    if generation == done.generation {
+                        let _ = reply.send((answer.reply.rc, answer.reply.body));
+                    } else {
+                        let _=reply.send((10,json!({"error_code":"STALE_GENERATION","message":"deferred request owner changed"})));
+                    }
                 }
             }
             if let Some(reply) = self.pending.remove(&done.sequence) {
-                if self.error.is_empty() && let Some(token) = done.deferred {
-                    if self.deferred_replies.len()>=32 || self.deferred_replies.contains_key(&token) {
+                if self.error.is_empty()
+                    && let Some(token) = done.deferred
+                {
+                    if self.deferred_replies.len() >= 32
+                        || self.deferred_replies.contains_key(&token)
+                    {
                         let _=reply.send((10,json!({"error_code":"BUSY","message":"deferred request budget or token collision"})));
-                    } else { self.deferred_replies.insert(token,(done.generation,Instant::now()+Duration::from_secs(90),reply)); }
+                    } else {
+                        self.deferred_replies.insert(
+                            token,
+                            (
+                                done.generation,
+                                Instant::now() + Duration::from_secs(90),
+                                reply,
+                            ),
+                        );
+                    }
                     continue;
                 }
                 let answer = if !self.error.is_empty() {
@@ -347,12 +364,23 @@ impl Host {
                 let _ = reply.send(answer);
             }
         }
-        let expired:Vec<_>=self.deferred_replies.iter().filter(|(_,(_,at,_))|*at<=Instant::now()).map(|(key,_)|key.clone()).collect();
+        let expired: Vec<_> = self
+            .deferred_replies
+            .iter()
+            .filter(|(_, (_, at, _))| *at <= Instant::now())
+            .map(|(key, _)| key.clone())
+            .collect();
         for key in expired {
-            if let Some((_,_,reply))=self.deferred_replies.remove(&key) {let _=reply.send((20,json!({"error_code":"TIMEOUT","message":"deferred request expired"})));}
+            if let Some((_, _, reply)) = self.deferred_replies.remove(&key) {
+                let _ = reply.send((
+                    20,
+                    json!({"error_code":"TIMEOUT","message":"deferred request expired"}),
+                ));
+            }
         }
-        if let Some(deadline) = self.deferred_replies.values().map(|(_,at,_)|*at).min() {
-            ui.ctx().request_repaint_after(deadline.saturating_duration_since(Instant::now()));
+        if let Some(deadline) = self.deferred_replies.values().map(|(_, at, _)| *at).min() {
+            ui.ctx()
+                .request_repaint_after(deadline.saturating_duration_since(Instant::now()));
         }
         for _ in 0..32 {
             if toolkit::drive::pending(ui.ctx()) || !self.drive_answers.is_empty() {
@@ -401,6 +429,12 @@ impl Host {
             }
         }
         if self.ready {
+            self.macro_ui.open=self.model["macros_open"]==true;
+            let was_open=self.macro_ui.open;
+            self.macro_ui.show(ui.ctx());
+            if self.macro_ui.open!=was_open {
+                self.dispatch("viu.macros.closed".into(),json!({}),BTreeMap::new(),None);
+            }
             if let Some(session) = &mut self.session {
                 if let Some(snapshot) = session
                     .poll()
@@ -519,7 +553,10 @@ fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {
 impl Drop for Host {
     fn drop(&mut self) {
         for (_, (_, _, reply)) in std::mem::take(&mut self.deferred_replies) {
-            let _ = reply.send((20, json!({"error_code":"APP_CLOSED","message":"request owner closed"})));
+            let _ = reply.send((
+                20,
+                json!({"error_code":"APP_CLOSED","message":"request owner closed"}),
+            ));
         }
         if let Err(error) = self.macros.shutdown() {
             tracing::warn!(%error, "macro shutdown");
@@ -558,10 +595,25 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         commands
             .into_iter()
             .map(|name| {
-                if let Some(entry)=bundle.manifest.command_metadata.iter().find(|entry|entry["name"]==name) {
-                    let args=entry["args"].as_object().map(|args|args.keys().map(String::as_str).collect::<Vec<_>>()).unwrap_or_default();
-                    bus::CommandDescriptor::new(&name,&args,entry["description"].as_str().unwrap(),entry["read_only"]==true)
-                } else { bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false) }
+                if let Some(entry) = bundle
+                    .manifest
+                    .command_metadata
+                    .iter()
+                    .find(|entry| entry["name"] == name)
+                {
+                    let args = entry["args"]
+                        .as_object()
+                        .map(|args| args.keys().map(String::as_str).collect::<Vec<_>>())
+                        .unwrap_or_default();
+                    bus::CommandDescriptor::new(
+                        &name,
+                        &args,
+                        entry["description"].as_str().unwrap(),
+                        entry["read_only"] == true,
+                    )
+                } else {
+                    bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false)
+                }
             })
             .collect(),
         "viu.quit".into(),
@@ -601,6 +653,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         drive_replies: BTreeMap::new(),
         drive_answers: Default::default(),
         drive_serial: 0,
+        macro_ui:toolkit::macros::State::for_session(&bundle.manifest.service,macros.clone()),
         macros,
         macro_pending: Vec::new(),
         macro_finished,
@@ -695,7 +748,11 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
     let service = bundle.manifest.service.clone();
-    let app_id=bundle.manifest.app_id.clone().unwrap_or_else(||format!("mixviu.{service}"));
+    let app_id = bundle
+        .manifest
+        .app_id
+        .clone()
+        .unwrap_or_else(|| format!("mixviu.{service}"));
     eframe::run_native(
         &title,
         eframe::NativeOptions {

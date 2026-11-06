@@ -1,0 +1,10 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run only through CBC. Include the shared macro UI constructor in formatting;
+-- the parity gate prints and retires all worker formatting/lockfile changes.
+$format=run_argv(["cargo","fmt","-p","toolkit"])
+print($format)
+if not $format.ok then exit($format.exit_code ?? 124) end
+$gate=run_argv(["/opt/mixos/bin/mix","tools/gold_parity_gate.mix","--prepare"],{timeout:3600,max_output:16000000})
+print($gate)
+exit($gate.exit_code ?? 124)

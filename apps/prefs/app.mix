@@ -8,6 +8,7 @@ $actions=require("actions.mix")
 $look=require("look.mix")
 $email=require("email.mix")
 $software=require("software.mix")
+$gallery=require("gallery.mix")
 $bus_surface=json_parse(read_file(path_join(dirname(script_path()),"bus.json")))
 $state=$core.initial($app_args[0] ?? env("MIXOS_INSTANCE","desktop"))
 fn publish_prefs($s)
@@ -27,6 +28,9 @@ end
 
 on viu.frame.close
   if $state.ui.dialog==nil then $state.quitting=true;publish_prefs($state) end
+end
+on viu.macros.closed
+  $state.ui.macros_open=false;publish_prefs($state)
 end
 on viu.frame.intent
   $id=$event.args.value.command
@@ -90,7 +94,11 @@ fn execute_prefs($s,$id,$params)
   elif $id=="item" then $pages.item_action($s,$params)
   elif $id=="view.refresh" then
     if $s.ui.section=="software" then $s=release_request($s,"releases.list",{})
-    else $s=hint_prefs($s) end
+    else
+      if $s.nav.page=="wallpaper" then $s.gallery.scanned=nil;$s=scan_gallery($s) end
+      if $s.nav.page=="email" then $s=query_email($s) end
+      $s=hint_prefs($s)
+    end
   elif starts_with($id,"appearance.") then $s.look=$look.decide($s.look,split($id,".")[1]);$s=pump_look($s)
   elif $id=="terminal.reset" then
     for $k in $s.catalog if starts_with($k.path,"terminal.") then $s.queue_changes[$k.path]=nil end end
@@ -135,6 +143,29 @@ fn apply_email($s,$args)
   $plan=$email.plan($s,$args)
   $s.queue_changes=merge($s.queue_changes,$plan.changes);$s.email.added=$plan.added
   return queued_prefs($s)
+end
+fn queue_keys($s,$changes)
+  if $pages.store_blocked($s)!=nil or not $s.connected or $s.quitting then raise("FAILED",$nav.text_for("store-unreachable")) end
+  $reset=[];$values={}
+  for $key in keys($changes) if $changes[$key]==nil then push($reset,$key) else $values[$key]=$changes[$key] end end
+  $checked=viu_settings("apply",$s.values,$values,$reset)
+  if not $checked.ok then raise("FAILED",join(map($checked.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
+  $s.queue_changes=merge($s.queue_changes,$changes)
+  return queued_prefs($s)
+end
+fn gallery_action($s,$action,$value)
+  $plan=$gallery.action($s,$action,$value);$s=$plan.state
+  if len(keys($plan.changes))>0 then $s=queue_keys($s,$plan.changes) end
+  return scan_gallery($s)
+end
+fn scan_gallery($s)
+  $folder=$gallery.folder($s)
+  if $folder==nil or $s.quitting or $s.gallery.scanning!=nil or $s.gallery.scanned==$folder then return $s end
+  $s.gallery.serial=$s.gallery.serial+1;$s.gallery.scanning={owner:$s.gallery.serial,folder:$folder}
+  $path=path_join(dirname(script_path()),"gallery-job.mix")
+  send "viu-local" "jobs.start" id="prefs-gallery" owner=$s.gallery.serial path=$path source=read_file($path) command="job.run" args={folder:$folder}
+  if $rc!=0 then $s.gallery.scanning=nil;$s.gallery.error="Folder scan could not start" end
+  return $s
 end
 fn confirm_dialog($s,$answer)
   if $s.ui.dialog==nil then raise("NO_DIALOG","no dialog is open") end
@@ -191,6 +222,15 @@ on viu.tick
     $state.subscribed=true
   end
   if not $state.release_started then $state.release_started=true;$state=release_request($state,"releases.list",{}) end
+  if not ($state.catalogue_started ?? false) then
+    $path=path_join(dirname(script_path()),"catalogue-job.mix")
+    send "viu-local" "jobs.start" id="prefs-catalogues" owner=1 path=$path source=read_file($path) command="job.run" args={}
+    if $rc==0 then $state.catalogue_started=true end
+  end
+  if $state.nav.page=="wallpaper" then
+    if not ($state.gallery.entered ?? false) and ($state.gallery.error!=nil or monotonic()-($state.gallery.scanned_at ?? 0)>=60) then $state.gallery.scanned=nil end
+    $state.gallery.entered=true;$state=scan_gallery($state)
+  else $state.gallery.entered=false end
   if $state.nav.page=="email" and not ($state.email.queried ?? false) then $state.email.queried=true;$state=query_email($state)
   elif $state.nav.page!="email" then $state.email.queried=false end
   if not $state.busy and $state.needs_read then $state=refresh_prefs($state);publish_prefs($state) end
@@ -367,6 +407,21 @@ on prefs.reset
 end
 on viu.job.completed
   $d=$event.args
+  if $d.tag.id=="prefs-catalogues" then
+    if $d.rc==0 then $state.live.options=$d.body.options
+    else $state.status=$d.body.message ?? "Installed catalogues could not be read";$state.failed=true end
+    publish_prefs($state);return
+  end
+  if $d.tag.id=="prefs-gallery" then
+    $scan=$state.gallery.scanning
+    if $scan!=nil and $d.tag.owner==$scan.owner then
+      $state.gallery.scanning=nil;$state.gallery.scanned=$scan.folder;$state.gallery.scanned_at=monotonic()
+      $state.gallery.images=if $d.rc==0 then $d.body.images else [] end
+      $state.gallery.truncated=$d.body.truncated ?? false;$state.gallery.error=if $d.rc==0 then nil else $d.body.message end
+      $state=scan_gallery($state);publish_prefs($state)
+    end
+    return
+  end
   if starts_with($d.tag.id,"prefs-show-") then
     $token=$d.tag.owner
     if contains($state.show_tokens ?? [],$token) then
@@ -470,6 +525,18 @@ on prefs.intent
     elif $a.action=="query" then
       $state.nav.query=$a.value;$state.nav.searching=$a.value!="";$state.ui.search_focus=false
     elif $a.action=="drawer.close" then $state.nav.drawer=nil
+    elif $a.action=="problem" then $state.status=$a.value.message;$state.failed=true
+    elif $state.nav.page=="wallpaper" and ($a.action=="remove" or starts_with($a.value.row ?? "","gallery.") or $a.value.row=="display") then
+      $browser=$pages.browser($state)
+      viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,$a.action,$a.value)
+      $row=$a.value.row;$v=$a.value.value
+      if $row=="display" then $state.nav.output=if $v=="all" then nil else $v end
+      else
+        $action=if $a.action=="remove" then if $gallery.category($state).kind=="colours" then "remove_colour" else "remove_image" end
+        elif $row=="gallery.pick" then if $gallery.category($state).kind=="colours" then "pick_colour" else "pick_image" end
+        elif $row=="gallery.colour" then "pick_colour" else substr($row,8) end
+        $state=gallery_action($state,$action,$v)
+      end
     elif contains(["edit","activate"],$a.action) then
       if $a.action=="edit" and $nav.page($state.nav.page).kind=="custom" then
         $browser=$pages.browser($state)
@@ -496,11 +563,21 @@ on prefs.intent
       $why=$pages.row_blocked($state,$p,$r)
       if $why!=nil then raise("FAILED",$why) end
       if $a.action=="activate" and $r.control.control=="drawer" then $state.nav.drawer=$r.control.drawer
+      elif $a.action=="activate" and $r.control.control=="ordered" then $state.nav.drawer=$r.control.add
+      elif $a.action=="activate" and $r.control.control=="page" then $state=$pages.open_page($state,$r.control.page,nil)
+      elif $a.action=="activate" and $r.control.control=="reset" then
+        $reset={}
+        for $key in $r.control.keys $reset[$key]=nil end
+        $state=queue_keys($state,$reset)
       elif $a.action=="edit" then
         $v=$a.value.value
         if $r.control.control=="flag" then $v=if $v then $r.control.on else $r.control.off end
         elif $r.control.control=="auto_mode" then $v=if $v then "auto" else "dark" end
         elif $r.control.control=="hint_accent" then $v=if $v then "accent" else "#63cddd" end end
+        if $r.control.control=="append" then
+          $list=$pages.stored($state,$r.key) ?? []
+          if not contains($list,$v) then $v=concat($list,[$v]) else $v=$list end
+        end
         $state=set_prefs($state,$r.key,$v)
       end
     end
