@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Shared native widgets. Applications supply their own definitions and model;
 //! this module draws and reports intents, never executes application policy.
+use egui::emath::GuiRounding;
 use egui::{Color32, Id, Rect, Sense, Vec2};
 use serde_json::{Value, json};
-use egui::emath::GuiRounding;
 use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
@@ -691,13 +691,34 @@ impl Widgets {
             }
             "label" => {
                 let text = label_text(ui, widget, value);
-                if widget.properties["role"]=="title" {
-                    let galley=ui.painter().layout_no_wrap(value.as_str().unwrap_or("").to_owned(),crate::fonts::emphasis(ui.ctx(),egui::FontId::proportional(crate::window_frame::Metrics::of(ui.ctx()).title_size)),toolkit::chrome::Chrome::of(ui.ctx()).palette.text_dim);
-                    let (rect,response)=ui.allocate_exact_size(ui.available_size_before_wrap(),Sense::hover());
-                    let position=(rect.center()-galley.size()/2.0).round_to_pixels(ui.pixels_per_point());
-                    ui.painter().galley(position,galley,toolkit::chrome::Chrome::of(ui.ctx()).palette.text_dim);
-                    response.widget_info(||egui::WidgetInfo::labeled(egui::Role::Label,ui.is_enabled(),value.as_str().unwrap_or("")));
-                    return self.remember(ui,id,&response);
+                if widget.properties["role"] == "title" {
+                    let galley = ui.painter().layout_no_wrap(
+                        value.as_str().unwrap_or("").to_owned(),
+                        crate::fonts::emphasis(
+                            ui.ctx(),
+                            egui::FontId::proportional(
+                                crate::window_frame::Metrics::of(ui.ctx()).title_size,
+                            ),
+                        ),
+                        toolkit::chrome::Chrome::of(ui.ctx()).palette.text_dim,
+                    );
+                    let (rect, response) =
+                        ui.allocate_exact_size(ui.available_size_before_wrap(), Sense::hover());
+                    let position = (rect.center() - galley.size() / 2.0)
+                        .round_to_pixels(ui.pixels_per_point());
+                    ui.painter().galley(
+                        position,
+                        galley,
+                        toolkit::chrome::Chrome::of(ui.ctx()).palette.text_dim,
+                    );
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Label,
+                            ui.is_enabled(),
+                            value.as_str().unwrap_or(""),
+                        )
+                    });
+                    return self.remember(ui, id, &response);
                 }
                 let mut label = egui::Label::new(text);
                 if widget.properties["truncate"] == true {

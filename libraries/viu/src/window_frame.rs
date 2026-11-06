@@ -102,7 +102,11 @@ impl WindowFrame {
             0.0,
             crate::appearance::colour(ui.ctx(), "chrome").unwrap_or(ui.visuals().panel_fill),
         );
-        ui.painter().hline(band.x_range(),band.bottom()-0.5,ui.visuals().widgets.noninteractive.bg_stroke);
+        ui.painter().hline(
+            band.x_range(),
+            band.bottom() - 0.5,
+            ui.visuals().widgets.noninteractive.bg_stroke,
+        );
         let alignment = design::CaptionSide::resolve(
             settings["window.caption_side"].as_str().unwrap_or("auto"),
         )

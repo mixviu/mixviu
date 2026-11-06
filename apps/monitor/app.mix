@@ -1,3 +1,4 @@
+$fetch=require("fetch.mix")
 $wire=require("wire.mix")
 $commands=require("actions.mix")
 -- SPDX-License-Identifier: MIT OR Apache-2.0
@@ -18,7 +19,7 @@ fn refresh_monitor($s)
     $snapshot=$reply
     send $target "monitord.processes" body=$core.query($s)
     if $rc!=0 then raise("PROCESSES",to_string($result)) end
-    if type($reply.rows)!="list" or len($reply.rows)>2000 or ($reply.total ?? 0)>2000 then raise("PROCESS_BUDGET","Process limit 2000 exceeded; no partial state") end
+    if type($reply.rows)!="list" then raise("PROCESSES","Invalid process list") end
     $s.processes_loaded=true;$s.snapshot=$snapshot;$s.processes=$reply.rows;$s.total=$reply.total ?? len($reply.rows)
     $s.start_times=if $s.node=="" then viu_process("snapshot",{pids:map($s.processes,fn($p)=$p.pid)}) else {} end
         $s.rings=$history.record($s.rings,$snapshot)
@@ -40,32 +41,11 @@ fn refresh_monitor($s)
   end
   return $s
 end
-fn navigate_monitor($s)
-  $visible=$s.tab=="Performance" and $s.section=="tcp"
-  if not $visible then $s.connections=nil;$s.connections_error=nil
-  elif not $s.paused then
-    $target=$core.target($s.node)
-    send $target "monitord.connections" body={limit:20,sort:"throughput"}
-    if $rc==0 then $s.connections=$reply;$s.connections_error=nil
-    else $s.connections=nil;$s.connections_error=to_string($result) end
-  end
-  if $s.tab=="Processes" and not $s.paused then $s=requery_monitor($s) end
-  return $s
-end
-fn requery_monitor($s)
-  if $s.tab!="Processes" then return $s end
-  $target=$core.target($s.node)
-  send $target "monitord.processes" body=$core.query($s)
-  if $rc==0 and type($reply.rows)=="list" then
-    $s.processes=$reply.rows;$s.total=$reply.total ?? len($reply.rows);$s.processes_loaded=true
-    if $s.selected!=nil and not any($s.processes,fn($p)=$p.pid==$s.selected) then $s.selected=nil end
-    $s.start_times=if $s.node=="" then viu_process("snapshot",{pids:map($s.processes,fn($p)=$p.pid)}) else {} end
-  else $s.error=to_string($result);$s.status="monitord is not answering" end
-  return $s
-end
+fn navigate_monitor($s) return $fetch.navigate($s) end
+fn requery_monitor($s) return $fetch.requery($s) end
 publish_monitor($state)
 on viu.tick
-  if not $state.paused then $state=refresh_monitor($state);publish_monitor($state) end
+  if not $state.paused then $state=$fetch.poll($state);publish_monitor($state) end
 end
 on monitor.ping
   reply(0,json_encode({schema:"monitor.v1",version:$ctx.version}))
@@ -81,7 +61,7 @@ on monitor.rows
 end
 on monitor.refresh
   if busy_monitor($state) then return end
-  $state=refresh_monitor($state);publish_monitor($state)
+  $state=$fetch.poll($state);publish_monitor($state)
   reply(0,json_encode({refreshing:true}))
 end
 on monitor.node
@@ -206,7 +186,7 @@ fn execute_monitor($s,$id,$origin)
   if not $matches[0].enabled then return {state:$s,rc:10,body:{error_code:"DISABLED",message:"That command is not available right now"}} end
   if contains(["process.end","process.kill"],$id) then
     $out=signal_monitor($s,{pid:$s.selected,signal:if $id=="process.end" then "SIGTERM" else "SIGKILL" end});$s=$out.state
-  elif $id=="file.refresh" then $s=refresh_monitor($s)
+  elif $id=="file.refresh" then $s=$fetch.poll($s)
   elif $id=="file.quit" then $s.quitting=true;$s.window_close=$origin!="bus"
   elif $id=="view.pause" then $s.paused=not $s.paused;$s.status=if $s.paused then "Paused" else "Live" end
   elif $id=="view.processes" then $s.tab="Processes";$s=navigate_monitor($s)
@@ -282,4 +262,18 @@ on viu.macros.changed
 end
 on monitor.dialog.intent
   if $event.args.value.instance==$state.dialog then $state.dialog=nil;publish_monitor($state) end
+end
+
+on viu.job.completed
+  $state=$fetch.received($state,$event.args);publish_monitor($state)
+end
+on bus.connected
+  $state.connected=true;$state.status="Connecting to monitord…"
+  $state=$fetch.start($state,"peers","noded.peers",{})
+  $state=$fetch.poll($state);publish_monitor($state)
+end
+on bus.disconnected
+  $state.connected=false;$state.status="Disconnected from the Bus"
+  for $kind in ["snapshot","processes","history","connections","peers"] $state=$fetch.cancel($state,$kind) end
+  publish_monitor($state)
 end

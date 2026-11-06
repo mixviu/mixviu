@@ -83,9 +83,28 @@ fn done(runtime: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
     );
     done
 }
-fn event(runtime: &mut Runtime, rx: &mpsc::Receiver<()>, name: &str, args: Value) -> Completion {
-    runtime.event(name.into(), args).unwrap();
-    done(runtime, rx)
+fn event(runtime: &mut Runtime, rx: &mpsc::Receiver<()>, jobs:&mut viu::jobs::Jobs, name: &str, args: Value) -> Completion {
+    let sequence=runtime.event(name.into(), args).unwrap();
+    let deadline=std::time::Instant::now()+Duration::from_secs(10);
+    let mut answer=None;
+    let mut model=None;
+    let mut barrier=None;
+    loop {
+        for completed in jobs.poll() {
+            runtime.notify("viu.job.completed".into(),json!({"tag":completed.tag,"rc":completed.rc,"body":completed.body})).unwrap();
+        }
+        for mut completed in runtime.drain() {
+            assert!(completed.error.is_none(),"{:?}",completed.error);
+            if completed.model.is_some(){model=completed.model.take();}
+            if completed.sequence==sequence {answer=Some(completed);}
+            else if Some(completed.sequence)==barrier {
+                let mut answer=answer.unwrap();answer.model=model;return answer;
+            }
+        }
+        if answer.is_some() && jobs.pending()==0 && barrier.is_none() {barrier=Some(runtime.event("monitor.debug.state".into(),json!({})).unwrap());}
+        assert!(std::time::Instant::now()<deadline,"native Jobs/reducer timeout");
+        let _=rx.recv_timeout(Duration::from_millis(2));
+    }
 }
 #[test]
 fn mix_signal_api_uses_snapshot_and_refuses_reuse_then_refreshes_without_prompt() {
@@ -99,13 +118,12 @@ fn mix_signal_api_uses_snapshot_and_refuses_reuse_then_refreshes_without_prompt(
     let reads = Arc::new(Mutex::new(0));
     let keep = reads.clone();
     let (tx, rx) = mpsc::channel();
-    let mut runtime = Runtime::new(
-        8,
-        Arc::new(move || {
+    let wake:viu::runtime::Wake=Arc::new(move || {
             let _ = tx.send(());
-        }),
-        Some(Box::new(move || Rc::new(Processes { pid, reads }))),
-    );
+        });
+    let maker:viu::runtime::BackendMaker=Arc::new(move||{let reads=reads.clone();Box::new(move||Rc::new(Processes{pid,reads}))});
+    let mut jobs=viu::jobs::Jobs::new(4,wake.clone());jobs.set_native_backend(maker.clone());
+    let mut runtime=Runtime::new(8,wake,Some(jobs.backend(Some(maker()))));
     let bundle = Bundle::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/monitor"),
         &[],
@@ -117,13 +135,14 @@ fn mix_signal_api_uses_snapshot_and_refuses_reuse_then_refreshes_without_prompt(
     let refused = event(
         &mut runtime,
         &rx,
+        &mut jobs,
         "monitor.signal",
         json!({"pid":pid,"signal":"SIGTERM"}),
     )
     .reply
     .unwrap();
     assert_eq!(refused.body["error_code"], "DISABLED");
-    let model = event(&mut runtime, &rx, "monitor.refresh", json!({}))
+    let model = event(&mut runtime, &rx, &mut jobs, "monitor.refresh", json!({}))
         .model
         .unwrap();
     assert_eq!(
@@ -152,18 +171,39 @@ fn mix_signal_api_uses_snapshot_and_refuses_reuse_then_refreshes_without_prompt(
     .drop_without_applying_deltas();
     assert!(view.geometry.contains_key(&format!("processes.key.{pid}")));
     assert!(view.geometry.contains_key("processes.column.cmdline"));
-    let before_navigation=*keep.lock().unwrap();
-    event(&mut runtime,&rx,"monitor.pause",json!({"on":true}));
-    event(&mut runtime,&rx,"monitor.tab",json!({"tab":"performance"}));
-    event(&mut runtime,&rx,"monitor.section",json!({"section":"tcp"}));
-    assert_eq!(*keep.lock().unwrap(),before_navigation,"paused navigation must not fetch TCP or process readings");
-    event(&mut runtime,&rx,"monitor.tab",json!({"tab":"processes"}));
-    assert_eq!(*keep.lock().unwrap(),before_navigation,"paused return must preserve the held table");
-    event(&mut runtime, &rx, "monitor.select", json!({"pid":pid}));
+    let before_navigation = *keep.lock().unwrap();
+    event(&mut runtime, &rx, &mut jobs, "monitor.pause", json!({"on":true}));
+    event(
+        &mut runtime,
+        &rx,
+        &mut jobs,
+        "monitor.tab",
+        json!({"tab":"performance"}),
+    );
+    event(
+        &mut runtime,
+        &rx,
+        &mut jobs,
+        "monitor.section",
+        json!({"section":"tcp"}),
+    );
+    assert_eq!(
+        *keep.lock().unwrap(),
+        before_navigation,
+        "paused navigation must not fetch TCP or process readings"
+    );
+    event(&mut runtime, &rx, &mut jobs, "monitor.tab", json!({"tab":"processes"}));
+    assert_eq!(
+        *keep.lock().unwrap(),
+        before_navigation,
+        "paused return must preserve the held table"
+    );
+    event(&mut runtime, &rx, &mut jobs, "monitor.select", json!({"pid":pid}));
     let before = *keep.lock().unwrap();
     let refused = event(
         &mut runtime,
         &rx,
+        &mut jobs,
         "monitor.signal",
         json!({"pid":pid,"signal":"SIGTERM","start_time":"0"}),
     )
@@ -177,7 +217,7 @@ fn mix_signal_api_uses_snapshot_and_refuses_reuse_then_refreshes_without_prompt(
         "refusal must refresh both list inputs"
     );
     assert!(child.try_wait().unwrap().is_none());
-    let info = event(&mut runtime, &rx, "monitor.debug.state", json!({}))
+    let info = event(&mut runtime, &rx, &mut jobs, "monitor.debug.state", json!({}))
         .reply
         .unwrap();
     assert!(info.body["dialog"].is_null());
@@ -185,6 +225,7 @@ fn mix_signal_api_uses_snapshot_and_refuses_reuse_then_refreshes_without_prompt(
     let allowed = event(
         &mut runtime,
         &rx,
+        &mut jobs,
         "monitor.signal",
         json!({"pid":pid,"signal":"SIGTERM"}),
     )
