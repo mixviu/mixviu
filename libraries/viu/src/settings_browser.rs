@@ -343,8 +343,8 @@ fn search_draft_id(ctx: &egui::Context, id: &str) -> egui::Id {
 // Keep native edits visible until their owner acknowledges them. Replaying an
 // older model into TextEdit would otherwise clamp its caret back to zero.
 fn search_query(ctx: &egui::Context, id: &str, accepted: &str) -> String {
+    let key = search_draft_id(ctx, id);
     ctx.data_mut(|data| {
-        let key = search_draft_id(ctx, id);
         let Some((mut base, mut writes)) = data.get_temp::<(String, Vec<String>)>(key) else {
             return accepted.to_owned();
         };
@@ -368,8 +368,8 @@ fn search_query(ctx: &egui::Context, id: &str, accepted: &str) -> String {
 }
 
 fn search_edited(ctx: &egui::Context, id: &str, accepted: &str, edited: &str) {
+    let key = search_draft_id(ctx, id);
     ctx.data_mut(|data| {
-        let key = search_draft_id(ctx, id);
         let (base, mut writes) = data.get_temp::<(String, Vec<String>)>(key)
             .unwrap_or_else(|| (accepted.to_owned(), Vec::new()));
         if writes.last().is_none_or(|last| last != edited) {
