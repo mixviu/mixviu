@@ -241,7 +241,10 @@ async fn exercise(old: bool, parent: Option<&Path>) {
                 < row["height"].as_f64().unwrap_or(0.0))
     );
     if !old && parent.is_some() {
-        client.subscribe_topic("comp-headless.corner.clicked.v2").await.unwrap();
+        client
+            .subscribe_topic("comp-headless.corner.clicked.v2")
+            .await
+            .unwrap();
         let mut corner_input = client.incoming().unwrap();
         client.call("shell","shell.scene.load",json!({"source":include_str!("../../../share/scenes/launcher/scene.mix"),"output":"winit"})).await.unwrap();
         let before = client
@@ -267,8 +270,13 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             .await
             .unwrap();
         let clicked = tokio::time::timeout(Duration::from_secs(3), corner_input.recv())
-            .await.unwrap().unwrap();
-        println!("CORNER_CLICK_WIRE headers={:?} body={}", clicked.headers, clicked.body);
+            .await
+            .unwrap()
+            .unwrap();
+        println!(
+            "CORNER_CLICK_WIRE headers={:?} body={}",
+            clicked.headers, clicked.body
+        );
         let until = Instant::now() + Duration::from_secs(5);
         loop {
             let props = client
@@ -319,13 +327,38 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         for (mode, want_mapped) in [("hidden", false), ("pinned", true)] {
-            client.call("shell", "shell.panel.mode", json!({"edge":"left","output":"winit","mode":mode})).await.unwrap();
+            client
+                .call(
+                    "shell",
+                    "shell.panel.mode",
+                    json!({"edge":"left","output":"winit","mode":mode}),
+                )
+                .await
+                .unwrap();
             let until = Instant::now() + Duration::from_secs(10);
             loop {
-                let surfaces = client.call("comp-headless", "comp.props.get", json!({"path":"surfaces"})).await.unwrap();
-                let visible = surfaces.as_object().unwrap().values().any(|s| s["mapped"] == true && s["role"] == "layer" && s["width"] == 440.0 && (!want_mapped || s["focused"] == true));
-                if visible == want_mapped { println!("LAUNCHER_REMAP mode={mode} {surfaces}"); break; }
-                assert!(Instant::now() < until, "launcher remap failed mode={mode}: {surfaces}");
+                let surfaces = client
+                    .call(
+                        "comp-headless",
+                        "comp.props.get",
+                        json!({"path":"surfaces"}),
+                    )
+                    .await
+                    .unwrap();
+                let visible = surfaces.as_object().unwrap().values().any(|s| {
+                    s["mapped"] == true
+                        && s["role"] == "layer"
+                        && s["width"] == 440.0
+                        && (!want_mapped || s["focused"] == true)
+                });
+                if visible == want_mapped {
+                    println!("LAUNCHER_REMAP mode={mode} {surfaces}");
+                    break;
+                }
+                assert!(
+                    Instant::now() < until,
+                    "launcher remap failed mode={mode}: {surfaces}"
+                );
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         }

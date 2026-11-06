@@ -21,6 +21,12 @@ if $mode=="build" then
   $engines=if $group=="headless" then [["system","mix"],["mixd","mixd"]] elif $group=="desktop" then [["viud","viud"],["viu-engine","viu"]] else [["system","mix"],["mixd","mixd"],["viud","viud"],["viu-engine","viu"]] end
   for $pair in $engines
     p2_run(["cargo","build","--release","--locked","-p",$pair[0]])
+    if $pair[1]=="viud" then
+      $tree=run_argv_must(["cargo","tree","--locked","-p","viud","-e","normal"])
+      $egui=filter(lines($tree),fn($line)=contains($line,"egui"))
+      print("VIUD_EGUI_MATCH_LINES="..to_string(len($egui)))
+      if len($egui)!=0 then raise("VIUD_TOOLKIT_DEPENDENCY",join($egui,"\n")) end
+    end
     copy("target/release/"..$pair[1],$art.."/"..$pair[1])
     $ldd=run_argv_must(["ldd",$art.."/"..$pair[1]])
     print({engine:$pair[1],sha256:hash_file($art.."/"..$pair[1],"sha256"),ldd:$ldd})

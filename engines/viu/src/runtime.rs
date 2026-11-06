@@ -77,7 +77,9 @@ impl State {
         }
     }
     fn wake(&self) {
-        for wake in &self.wakes { wake(); }
+        for wake in &self.wakes {
+            wake();
+        }
         for ctx in self.contexts.values() {
             ctx.request_repaint();
         }
