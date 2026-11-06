@@ -21,6 +21,7 @@ fn framed($s)
   $model=$frame.apply($model,{icon:"settings",title:"Preferences",menus:$actions.menus($s),toolbar:$toolbar,status:nil})
   $model.theme_choice=$actions.theme_choice($s)
   $model.macros_open=$s.ui.macros_open
+  $model.shortcuts=filter($actions.action_list($s).actions,fn($a)=$a.shortcut!=nil)
   $model.window_close=$s.quitting and not $s.busy and not $s.release_busy and $s.notes_owner==nil and $s.look.job==nil and $s.email.task==nil and len(keys($s.queue_changes))==0
   return $model
 end

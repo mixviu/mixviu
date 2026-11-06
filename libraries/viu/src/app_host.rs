@@ -547,8 +547,7 @@ impl Host {
                                 }
                             }
                             self.session_window = Some(window);
-                            self.session_window = Some(snapshot["state"]["values"].clone());
-                            if let Ok(choice) = crate::native_theme::choice(&self.native_choice) {
+                            if self.native_choice.as_object().is_some_and(|c|!c.is_empty()) && let Ok(choice) = crate::native_theme::choice(&self.native_choice) {
                                 if let Ok((base, _)) = crate::appearance::session_base(
                                     &snapshot,
                                     &self.service,
