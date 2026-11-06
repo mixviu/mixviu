@@ -72,7 +72,7 @@ end
 fn recent($state,$limit)
   $records=[]
   try
-    $file=viu_read_optional(path_join($state,"saved.jsonl"))
+    $file=viu_read_optional(path_join($state,"saved.jsonl"),{tail_lines:1048576})
     if $file.found then
       for $line in reverse(split($file.text,"\n"))
         try
@@ -90,10 +90,22 @@ fn append_saved($state,$saved)
   $path=path_join($state,"saved.jsonl");$lock=$path..".lock"
   if not flock($lock,{wait:5}) then raise("FAILED","ledger lock timed out") end
   try
-    $old=viu_read_optional($path)
+    $old=viu_read_optional($path,{tail_lines:1048576})
     $text=if $old.found then $old.text else "" end
     $text=$text..json_encode($saved).."\n"
-    if byte_length($text)>524288 then $text=join(take(reverse(split(trim($text),"\n")),500),"\n");$text=join(reverse(split($text,"\n")),"\n").."\n" end
+    if byte_length($text)>524288 then
+      $lines=[];$bytes=0
+      for $line in reverse(split(trim($text),"\n"))
+        try
+          $shot=json_parse($line)
+          if type($shot.path)!="string" then continue end
+          $bytes=$bytes+byte_length($line)+1
+          if len($lines)>=500 or $bytes>262144 then break end
+          push($lines,$line)
+        catch $message end
+      end
+      $text=join(reverse($lines),"\n").."\n"
+    end
     viu_atomic_replace($path,$text)
   finally
     funlock($lock)

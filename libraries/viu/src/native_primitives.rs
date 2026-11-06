@@ -114,9 +114,13 @@ pub(crate) fn atomic_replace() -> mix::evaluator::ExtFn {
 pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
         let fail = |msg: String| MixError::RuntimeError { msg, span: None };
-        let [Value::String(path)] = args.as_slice() else {
-            return Err(fail("viu_read_optional expects one absolute path".into()));
+        let [Value::String(path), options @ ..] = args.as_slice() else {
+            return Err(fail("viu_read_optional expects absolute path and optional tail_lines bound".into()));
         };
+        let tail=if options.is_empty() {None} else if options.len()==1 {
+            let option=crate::runtime::to_json(&options[0])?;
+            Some(option["tail_lines"].as_u64().filter(|n| (1..=1_048_576).contains(n)).ok_or_else(||fail("tail_lines must be 1..1048576 bytes".into()))? as usize)
+        } else {return Err(fail("too many read options".into()));};
         let path = std::path::Path::new(path);
         if !path.is_absolute() {
             return Err(fail("expected an absolute path".into()));
@@ -126,12 +130,15 @@ pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
                 path.parent()
                     .ok_or_else(|| std::io::Error::other("missing parent"))?,
             )?;
-            config::atomic::read_in(
+            if let Some(limit)=tail {
+                let file=config::atomic::open_nested(&parent,std::path::Path::new(path.file_name().ok_or_else(||std::io::Error::other("missing name"))?))?;
+                read_tail_lines(file,limit)
+            } else {config::atomic::read_in(
                 &parent,
                 path.file_name()
                     .ok_or_else(|| std::io::Error::other("missing name"))?,
                 1024 * 1024,
-            )
+            )}
         };
         let value = match read() {
             Ok(bytes) => {
@@ -144,6 +151,35 @@ pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
         };
         crate::runtime::from_json(value)
     })
+}
+fn read_tail_lines(mut file: std::fs::File, limit: usize) -> std::io::Result<Vec<u8>> {
+    use std::io::{Read,Seek,SeekFrom};
+    let skip=file.metadata()?.len().saturating_sub(limit as u64);
+    file.seek(SeekFrom::Start(skip))?;
+    let mut bytes=Vec::new();
+    file.take(limit as u64).read_to_end(&mut bytes)?;
+    if skip>0 {
+        let first=bytes.iter().position(|b|*b==b'\n').map_or(bytes.len(),|i|i+1);
+        bytes.drain(..first);
+    }
+    Ok(bytes)
+}
+
+#[cfg(test)]
+mod tail_tests {
+    #[test]
+    fn line_tail_keeps_newest_complete_records_and_held_inode() {
+        let dir=tempfile::tempdir().unwrap();
+        let path=dir.path().join("log");
+        std::fs::write(&path,"€€€\nold\nnewest\n").unwrap();
+        let parent=config::atomic::open_directory(dir.path()).unwrap();
+        let file=config::atomic::open_nested(&parent,std::path::Path::new("log")).unwrap();
+        std::fs::rename(&path,dir.path().join("old")).unwrap();
+        std::fs::write(&path,"replacement").unwrap();
+        assert_eq!(super::read_tail_lines(file,13).unwrap(),b"old\nnewest\n");
+        std::os::unix::fs::symlink("log",dir.path().join("link")).unwrap();
+        assert!(config::atomic::open_nested(&parent,std::path::Path::new("link")).is_err());
+    }
 }
 pub(crate) fn thumbnail(stop: Arc<AtomicBool>) -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
