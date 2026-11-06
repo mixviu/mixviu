@@ -177,7 +177,7 @@ impl Runtime {
         let worker_interrupt = interrupt.clone();
         let worker_stop = stop.clone();
         let thread = std::thread::Builder::new().name("viu-mix".into()).stack_size(EVALUATOR_STACK).spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
             let backend = backend.map(|make| make());
             let mut current: Option<(u64, Evaluator, Rc<Local>, SharedBuf, SharedBuf)> = None;
             while let Ok(request) = commands.recv() {
