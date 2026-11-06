@@ -477,6 +477,22 @@ fn native_menu(ui: &mut Ui, value: &Value, id: &str, events: &mut Vec<Intent>) -
     })
     .response
 }
+fn native_commands(ui:&mut Ui,value:&Value,id:&str,geometry:&mut BTreeMap<String,Rect>,events:&mut Vec<Intent>)->egui::Response {
+    let chrome=toolkit::chrome::Chrome::of(ui.ctx());
+    let (area,response)=ui.allocate_exact_size(ui.available_size_before_wrap(),egui::Sense::hover());
+    let mut x=area.right()-chrome.metrics.caption_gap;
+    for item in value.as_array().unwrap().iter().rev() {
+        let width=chrome.style.icon_button as f32;
+        let rect=Rect::from_min_max(egui::pos2(x-width,area.top()),egui::pos2(x,area.bottom()));
+        let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        let icon=crate::icons::Icon::from_name(text(item,"icon")).unwrap();
+        let r=cell.add_enabled(item["enabled"]==true,toolkit::button::IconButton::new(icon).selected(item["checked"]==true).tooltip(text(item,"label")));
+        geometry.insert(format!("{id}.command.{}",text(item,"id")),r.rect);
+        if r.clicked() {emit(events,id,"command",json!({"command":item["id"]}));}
+        x-=width+chrome.style.title_control_spacing as f32;
+    }
+    response
+}
 pub(crate) fn draw(
     ui: &mut Ui,
     widget: &Widget,
@@ -559,6 +575,9 @@ pub(crate) fn draw(
         }
         "command-bar" => {
             let state = presentation(ui.ctx());
+            if widget.properties["style"]=="gold" && !state.hosted_actions && value.as_array().is_some_and(|a|a.iter().all(|i|i["icon"].is_string())) {
+                return native_commands(ui,value,id,geometry,events);
+            }
             let response = if state.hosted_actions {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {

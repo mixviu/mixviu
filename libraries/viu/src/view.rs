@@ -999,7 +999,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                                 && child
                                     .ports
                                     .get("definition")
-                                    .is_some_and(|definition| definition["kind"] == "label"))
+                                    .is_some_and(|definition| ["label","mark","menubar","command-bar"].contains(&definition["kind"].as_str().unwrap_or(""))))
                         {
                             return Err(
                                 "intrinsic band content requires a text or label child".into()

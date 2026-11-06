@@ -316,10 +316,19 @@ pub(crate) fn draw(
 ) -> Response {
     let area = ui.available_rect_before_wrap();
     crate::media_gallery::begin(ui, id);
-    let look = Look::of(
+    let mut look = Look::of(
         &crate::appearance::session_theme(ui.ctx()),
         &value["settings"],
     );
+    // The author decides when a palette snapshot changes. Other browsers
+    // continue following the live theme on every frame.
+    if let Some(refresh) = value.get("look_refresh_key") {
+        let key=egui::Id::unique((ui.ctx().viewport_id(),id,"browser-look"));
+        if let Some((previous,cached))=ui.ctx().data(|d|d.get_temp::<(Value,Look)>(key)) {
+            if previous==*refresh {look=cached;}
+        }
+        ui.ctx().data_mut(|d|d.insert_temp(key,(refresh.clone(),look)));
+    }
     ui.painter().rect_filled(area, 0.0, look.window);
     let condensed = area.width() < 648.0;
     let mut content = area;
@@ -418,6 +427,7 @@ pub(crate) fn draw(
                 }
             });
         content.min.x = area.left() + 296.0;
+        ui.painter().vline(content.left()-0.5,area.y_range(),ui.visuals().widgets.noninteractive.bg_stroke);
     }
     if value["drawer"].is_object() {
         let width = (344.0 + 2.0 * look.l).min(content.width());
@@ -937,7 +947,7 @@ fn draw_control(
             }
         }
         "swatches" => {
-            let palette = if look.dark {
+            let palette = if row["resolved_dark"].as_bool().unwrap_or(look.dark) {
                 &design::cosmic_tables::DARK_PALETTE
             } else {
                 &design::cosmic_tables::LIGHT_PALETTE
@@ -1030,7 +1040,7 @@ fn draw_control(
                             look.field
                         },
                     );
-                    if let Some((fill, ink)) = scheme_swatch(text(choice, "value"), look.dark) {
+                    if let Some((fill, ink)) = scheme_swatch(text(choice, "value"), row["resolved_dark"].as_bool().unwrap_or(look.dark)) {
                         let chip = Rect::from_center_size(
                             pos2(rect.left() + 16.0, rect.center().y),
                             vec2(14.0, 14.0),
