@@ -301,7 +301,8 @@ mod retained_tests {
         let decoded = store.load(&path).unwrap();
         std::fs::remove_file(path).unwrap();
         let handle = decoded["handle"].as_str().unwrap();
-        let value = serde_json::json!({"phase":"ready","handle":handle,"colour":[0,0,0],"fit":"centre"});
+        let value =
+            serde_json::json!({"phase":"ready","handle":handle,"colour":[0,0,0],"fit":"centre"});
         validate_fill(&value).unwrap();
         let mut images = Images::surface();
         images.set_rasters(Some(store.clone()));
@@ -321,6 +322,10 @@ mod retained_tests {
         );
         images.begin();
         images.finish();
-        assert_eq!(store.bytes(), 0, "removing a surface drops its raster lease");
+        assert_eq!(
+            store.bytes(),
+            0,
+            "removing a surface drops its raster lease"
+        );
     }
 }
