@@ -297,3 +297,22 @@ fn dock_and_split_validate_bounds_and_expose_live_divider_geometry() {
     bad["root"]["placements"]["heading"]["edge"] = json!("fill");
     assert!(SceneView::new(&scene(bad)).is_err());
 }
+
+#[test]
+fn dock_resize_native_events_and_admission_share_the_declared_fraction_bounds() {
+    let source = scene(json!({"root":{"widget":"dock","on_change":"layout.change","children":["side","body"],"placements":{"side":{"edge":"left","fraction":0.2,"resizable":true,"min_fraction":0.1,"max_fraction":0.3},"body":{"edge":"fill"}}},"side":{"widget":"text","text":"Sidebar"},"body":{"widget":"text","text":"Body"}}));
+    let mut view=SceneView::new(&source).unwrap();
+    for value in [0.1,0.2,0.3] {assert!(view.admit_intent("root","set",&json!({"child":"side","fraction":value})).is_ok());}
+    for value in [0.09,0.31,0.7] {assert!(view.admit_intent("root","set",&json!({"child":"side","fraction":value})).is_err());}
+    let ctx=egui::Context::default();
+    let raw=|events|egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(800.0,400.0))),events,..Default::default()};
+    let mut out=ctx.run_ui(raw(Vec::new()),|ui|{view.show(ui);});out.textures_delta.clear();
+    let start=view.geometry["side.divider"].center();
+    let mut out=ctx.run_ui(raw(vec![egui::Event::PointerMoved(start),egui::Event::PointerButton{pos:start,button:egui::PointerButton::Primary,pressed:true,modifiers:egui::Modifiers::NONE}]),|ui|{view.show(ui);});out.textures_delta.clear();
+    let mut observed=Vec::new();
+    let mut out=ctx.run_ui(raw(vec![egui::Event::PointerMoved(egui::pos2(790.0,start.y))]),|ui|{observed=view.show(ui);});out.textures_delta.clear();
+    assert_eq!(observed.len(),1);
+    let value=&observed[0].body["value"];
+    assert!((value["fraction"].as_f64().unwrap()-0.3).abs()<1e-6);
+    assert!(view.admit_intent("root","set",value).is_ok());
+}

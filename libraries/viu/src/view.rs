@@ -103,12 +103,12 @@ impl SceneView {
                 Widget::decode(&node.ports["definition"])?.admit(&self.tree.model, action, value)
             }
             "split" => {
-                let min = num(node, "minimum").unwrap_or(0.1) as f64;
-                let max = num(node, "maximum").unwrap_or(0.9) as f64;
+                let min = num(node, "minimum").unwrap_or(0.1);
+                let max = num(node, "maximum").unwrap_or(0.9);
                 if action == "set"
                     && value
                         .as_f64()
-                        .is_some_and(|v| v.is_finite() && (min..=max).contains(&v))
+                        .is_some_and(|v| v.is_finite() && (min..=max).contains(&(v as f32)))
                 {
                     Ok(())
                 } else {
@@ -118,13 +118,13 @@ impl SceneView {
             "dock" => {
                 let child = value["child"].as_str().ok_or("dock child required")?;
                 let placement = &node.ports["placements"][child];
-                let min = placement["minimum"].as_f64().unwrap_or(0.05);
-                let max = placement["maximum"].as_f64().unwrap_or(0.5);
+                let min = placement["min_fraction"].as_f64().unwrap_or(0.05) as f32;
+                let max = placement["max_fraction"].as_f64().unwrap_or(0.8) as f32;
                 if action == "set"
                     && placement["resizable"] == true
                     && value["fraction"]
                         .as_f64()
-                        .is_some_and(|v| v.is_finite() && (min..=max).contains(&v))
+                        .is_some_and(|v| v.is_finite() && (min..=max).contains(&(v as f32)))
                 {
                     Ok(())
                 } else {
