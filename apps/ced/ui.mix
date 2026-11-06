@@ -65,6 +65,7 @@ fn ced_ui_model($s,$model)
   if $model.find_open then $model.top_height=$model.top_height+if $s.find.replace then 84 else 42 end end
   if $model.show_notice then $model.top_height=$model.top_height+64 end
   if $model.show_mail then $model.top_height=$model.top_height+180 end
+  $model.placements={"top-controls":{edge:"top",size:$model.top_height},"problems-panel":{edge:"bottom",size:140},"output-panel":{edge:"bottom",size:120},body:{edge:"fill"}}
   return $model
 end
 fn ced_ui_intent($s,$a)

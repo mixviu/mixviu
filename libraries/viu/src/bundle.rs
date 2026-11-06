@@ -84,7 +84,11 @@ impl Bundle {
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
             || manifest.command_descriptors.len() > 256
-            || manifest.command_descriptors.iter().any(|d| !manifest.commands.contains(&d.name) || d.description.len()>8192 || d.args.len()>64)
+            || manifest.command_descriptors.iter().any(|d| {
+                !manifest.commands.contains(&d.name)
+                    || d.description.len() > 8192
+                    || d.args.len() > 64
+            })
             || manifest
                 .max_string_bytes
                 .is_some_and(|n| !(1_048_576..=32 * 1024 * 1024).contains(&n))
@@ -99,8 +103,19 @@ impl Bundle {
         {
             return Err("invalid host size, service, commands or timer budget".into());
         }
-        if let Some(surface)=&manifest.bus_surface {
-            if !surface.is_object() || surface["commands"].as_array().is_none_or(|a|a.len()>128 || a.iter().any(|c|c["name"].as_str().is_none_or(|s|s.is_empty() || s.len()>128) || !c["description"].is_string() || !c["read_only"].is_boolean())) {
+        if let Some(surface) = &manifest.bus_surface {
+            if !surface.is_object()
+                || surface["commands"].as_array().is_none_or(|a| {
+                    a.len() > 128
+                        || a.iter().any(|c| {
+                            c["name"]
+                                .as_str()
+                                .is_none_or(|s| s.is_empty() || s.len() > 128)
+                                || !c["description"].is_string()
+                                || !c["read_only"].is_boolean()
+                        })
+                })
+            {
                 return Err("invalid app Bus surface".into());
             }
         }

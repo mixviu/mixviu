@@ -5099,6 +5099,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "maildoc"
+version = "0.1.2"
+dependencies = [
+ "bus",
+ "proptest",
+ "serde_json",
+]
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10051,10 +10060,14 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "viu"
 version = "0.1.2"
 dependencies = [
+ "blake3",
  "bus",
  "chrono",
  "config",
  "design",
+ "edit",
+ "editor",
+ "editor-model",
  "eframe",
  "egui",
  "egui-wgpu",
@@ -10066,15 +10079,18 @@ dependencies = [
  "image",
  "libc",
  "macros",
+ "maildoc",
  "mimedb",
  "mix",
  "png 0.18.1",
  "raw-window-handle",
+ "regex",
  "reqwest",
  "scene",
  "serde",
  "serde_json",
  "settings",
+ "sha2 0.10.9",
  "smithay-client-toolkit 0.19.2",
  "tempfile",
  "thumbs",

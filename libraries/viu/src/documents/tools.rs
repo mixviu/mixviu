@@ -31,18 +31,38 @@ pub(super) fn find(d: &mut Document, a: &Value, ids: &mut OpIdGen) -> Result<Val
     let kind = a["kind"].as_str().unwrap_or("next");
     let lo = d.model.sel.anchor.min(d.model.sel.head);
     let hi = d.model.sel.anchor.max(d.model.sel.head);
-    let replacing=matches!(kind,"replace"|"replace-all");
-    let mut matches=Vec::new();let mut count=0;let mut first=None;let mut last=None;let mut selected=None;
+    let replacing = matches!(kind, "replace" | "replace-all");
+    let mut matches = Vec::new();
+    let mut count = 0;
+    let mut first = None;
+    let mut last = None;
+    let mut selected = None;
     d.matches.clear();
     for m in regex.find_iter(&text) {
-        let r=m.range();count+=1;
-        if first.is_none(){first=Some(r.clone());}last=Some(r.clone());
-        if d.matches.len()<1000 {d.matches.push(r.clone());}
-        if replacing && (kind=="replace-all" || r==(lo..hi)) {matches.push(r.clone());if kind=="replace-all" && matches.len()>edit::limits::MAX_OPS_PER_TXN {return Err("Too large for one undoable transaction (over 10000 matches)".into());}}
-        if kind=="prev" {if r.end<=lo && r!=(lo..hi){selected=Some(r);}}
-        else if selected.is_none() && r.start>=hi && r!=(lo..hi){selected=Some(r);}
+        let r = m.range();
+        count += 1;
+        if first.is_none() {
+            first = Some(r.clone());
+        }
+        last = Some(r.clone());
+        if d.matches.len() < 1000 {
+            d.matches.push(r.clone());
+        }
+        if replacing && (kind == "replace-all" || r == (lo..hi)) {
+            matches.push(r.clone());
+            if kind == "replace-all" && matches.len() > edit::limits::MAX_OPS_PER_TXN {
+                return Err("Too large for one undoable transaction (over 10000 matches)".into());
+            }
+        }
+        if kind == "prev" {
+            if r.end <= lo && r != (lo..hi) {
+                selected = Some(r);
+            }
+        } else if selected.is_none() && r.start >= hi && r != (lo..hi) {
+            selected = Some(r);
+        }
     }
-    let selected=selected.or(if kind=="prev" {last}else{first});
+    let selected = selected.or(if kind == "prev" { last } else { first });
     let mut items = Vec::new();
     if kind == "replace-all" || (kind == "replace" && hi > lo && matches.contains(&(lo..hi))) {
         if !d.mirror.is_idle() {

@@ -46,14 +46,21 @@ pub struct SceneView {
 impl SceneView {
     pub fn set_native_menus(&mut self, enabled: bool) {
         self.widgets.set_native_menus(enabled);
-        if let Some(frame) = self.frame.as_mut() { frame.set_native_menus(enabled); }
+        if let Some(frame) = self.frame.as_mut() {
+            frame.set_native_menus(enabled);
+        }
     }
     pub fn set_documents(&mut self, documents: crate::documents::Documents) {
         self.widgets.set_documents(documents.clone());
-        if let Some(frame) = self.frame.as_mut() { frame.set_documents(documents); }
+        if let Some(frame) = self.frame.as_mut() {
+            frame.set_documents(documents);
+        }
     }
     pub fn allocated_region(&self, id: &str) -> Option<egui::Rect> {
-        self.frame.as_ref().and_then(|frame| frame.allocated_region(id)).or_else(|| self.regions.get(id).copied())
+        self.frame
+            .as_ref()
+            .and_then(|frame| frame.allocated_region(id))
+            .or_else(|| self.regions.get(id).copied())
     }
     pub fn new(source: &str) -> Result<Self, String> {
         Self::prepare(source, None)

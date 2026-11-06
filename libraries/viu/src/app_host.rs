@@ -320,9 +320,18 @@ impl Host {
                 self.noticed_drops = drops;
             }
             if let Some(update) = session.poll() {
-                match crate::appearance::install_session(ui.ctx(), &update, &self.service, &self.file_theme, &self.last_ui) {
-                    Ok(value) => {self.last_ui=value;self.session_appearance=true;}
-                    Err(error) => self.error=error,
+                match crate::appearance::install_session(
+                    ui.ctx(),
+                    &update,
+                    &self.service,
+                    &self.file_theme,
+                    &self.last_ui,
+                ) {
+                    Ok(value) => {
+                        self.last_ui = value;
+                        self.session_appearance = true;
+                    }
+                    Err(error) => self.error = error,
                 }
                 self.session_update = Some(update);
             }
@@ -391,7 +400,8 @@ impl Host {
                         .and_then(|output| model["surfaces"].get(output))
                         .unwrap_or(&model)
                         .clone();
-                    let appearance = if self.framed && !self.session_appearance
+                    let appearance = if self.framed
+                        && !self.session_appearance
                         && (!self.loaded || self.model["appearance"] != model["appearance"])
                     {
                         crate::appearance::resolve(&model["appearance"]).map(Some)
@@ -402,7 +412,12 @@ impl Host {
                         if self.loaded {
                             self.view.apply_model(projected)
                         } else {
-                            (if self.framed { crate::gold_frame::mount(&self.scene_source, projected) } else { SceneView::with_model(&self.scene_source, projected) }).map(|view| {
+                            (if self.framed {
+                                crate::gold_frame::mount(&self.scene_source, projected)
+                            } else {
+                                SceneView::with_model(&self.scene_source, projected)
+                            })
+                            .map(|view| {
                                 self.view = view;
                                 self.view.set_documents(self.documents.clone());
                                 self.view.set_native_menus(self.native_drive);
@@ -446,7 +461,9 @@ impl Host {
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
-                    if n.command=="theme.changed" {self.file_theme=toolkit::Theme::load();}
+                    if n.command == "theme.changed" {
+                        self.file_theme = toolkit::Theme::load();
+                    }
                     if let Some(session) = &mut self.session {
                         session.hint(&n.command, &n.args);
                         ui.ctx().request_repaint();
@@ -465,7 +482,11 @@ impl Host {
             .or_else(|| self.output.as_ref().map(|_| &self.model))
         {
             if self.ready && !self.loaded {
-                match if self.framed { crate::gold_frame::mount(&self.scene_source, projected.clone()) } else { SceneView::with_model(&self.scene_source, projected.clone()) } {
+                match if self.framed {
+                    crate::gold_frame::mount(&self.scene_source, projected.clone())
+                } else {
+                    SceneView::with_model(&self.scene_source, projected.clone())
+                } {
                     Ok(view) => {
                         self.view = view;
                         self.view.set_documents(self.documents.clone());
@@ -481,7 +502,10 @@ impl Host {
             }
         }
         if self.ready {
-            if let Some(bindings) = self.model["shortcuts"].as_array().filter(|_|!toolkit::menu::is_open(ui.ctx())) {
+            if let Some(bindings) = self.model["shortcuts"]
+                .as_array()
+                .filter(|_| !toolkit::menu::is_open(ui.ctx()))
+            {
                 let bindings = bindings.clone();
                 for binding in bindings {
                     if binding["enabled"] == false {
@@ -502,11 +526,23 @@ impl Host {
                 let settings = self.model["window_settings"].clone();
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 if self.native_drive && !self.session_appearance {
-                    let mut chrome=toolkit::chrome::Chrome::of(ui.ctx());
-                    let style=ui.ctx().global_style();chrome.palette=toolkit::chrome::Palette::from_visuals(&style.visuals);chrome.mode=if style.visuals.dark_mode {design::Mode::Dark}else{design::Mode::Light};chrome.metrics=toolkit::chrome::Metrics::from_egui(&style,&chrome.style);
-                    chrome.menu_style=design::MenuStyle::resolve(settings["window.menu_style"].as_str().unwrap_or("bar"));
-                    chrome.menu_side=design::MenuSide::resolve(settings["window.menu_side"].as_str().unwrap_or("left"));
-                    toolkit::chrome::install(ui.ctx(),&chrome);toolkit::chrome::client_side(ui.ctx());
+                    let mut chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    let style = ui.ctx().global_style();
+                    chrome.palette = toolkit::chrome::Palette::from_visuals(&style.visuals);
+                    chrome.mode = if style.visuals.dark_mode {
+                        design::Mode::Dark
+                    } else {
+                        design::Mode::Light
+                    };
+                    chrome.metrics = toolkit::chrome::Metrics::from_egui(&style, &chrome.style);
+                    chrome.menu_style = design::MenuStyle::resolve(
+                        settings["window.menu_style"].as_str().unwrap_or("bar"),
+                    );
+                    chrome.menu_side = design::MenuSide::resolve(
+                        settings["window.menu_side"].as_str().unwrap_or("left"),
+                    );
+                    toolkit::chrome::install(ui.ctx(), &chrome);
+                    toolkit::chrome::client_side(ui.ctx());
                 }
                 self.window_frame
                     .show_with_chrome(ui, &self.title, &settings, true, true);
@@ -520,7 +556,13 @@ impl Host {
                     self.error = e;
                 }
             }
-            if self.framed { ui.painter().rect_filled(ui.max_rect(), 0.0, toolkit::chrome::Chrome::of(ui.ctx()).palette.dock); }
+            if self.framed {
+                ui.painter().rect_filled(
+                    ui.max_rect(),
+                    0.0,
+                    toolkit::chrome::Chrome::of(ui.ctx()).palette.dock,
+                );
+            }
             let started = Instant::now();
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
@@ -530,7 +572,8 @@ impl Host {
                 self.measurements.next(at.elapsed().as_micros() as u64);
             }
             if self.framed {
-                self.window_frame.finish_captions(ui, self.view.allocated_region("gold-captions"));
+                self.window_frame
+                    .finish_captions(ui, self.view.allocated_region("gold-captions"));
                 self.window_frame.edges(ui);
                 self.view
                     .geometry
@@ -591,9 +634,17 @@ impl Host {
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
-    let facilities=crate::app_facilities::Facilities::new(&bundle.manifest,wake.clone());
+    let facilities = crate::app_facilities::Facilities::new(&bundle.manifest, wake.clone());
     let mut commands = bundle.manifest.commands.clone();
-    if let Some(surface)=&facilities.surface {commands.extend(surface["commands"].as_array().into_iter().flatten().filter_map(|c|c["name"].as_str().map(str::to_owned)));}
+    if let Some(surface) = &facilities.surface {
+        commands.extend(
+            surface["commands"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c["name"].as_str().map(str::to_owned)),
+        );
+    }
     if bundle.manifest.native_drive {
         commands.extend(
             toolkit::drive::COMMANDS
@@ -626,12 +677,37 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         service,
         std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
         {
-            let mut described=bundle.manifest.command_descriptors.clone();
-            let mut native=Vec::new();
-            if bundle.manifest.native_drive {native.extend(toolkit::drive::describe(&bundle.manifest.service));}
-            if bundle.manifest.macros {native.extend(macros::commands::describe(&bundle.manifest.service));}
-            for value in native { described.push(bus::CommandDescriptor {name:value["name"].as_str().unwrap().into(),args:value["args"].as_object().map(|a|a.keys().cloned().collect()).unwrap_or_default(),description:value["description"].as_str().unwrap_or("").into(),read_only:value["read_only"]==true}); }
-            commands.into_iter().map(|name|described.iter().find(|d|d.name==name).cloned().unwrap_or_else(||bus::CommandDescriptor::new(&name,&[],"Mix bundle command",false))).collect()
+            let mut described = bundle.manifest.command_descriptors.clone();
+            let mut native = Vec::new();
+            if bundle.manifest.native_drive {
+                native.extend(toolkit::drive::describe(&bundle.manifest.service));
+            }
+            if bundle.manifest.macros {
+                native.extend(macros::commands::describe(&bundle.manifest.service));
+            }
+            for value in native {
+                described.push(bus::CommandDescriptor {
+                    name: value["name"].as_str().unwrap().into(),
+                    args: value["args"]
+                        .as_object()
+                        .map(|a| a.keys().cloned().collect())
+                        .unwrap_or_default(),
+                    description: value["description"].as_str().unwrap_or("").into(),
+                    read_only: value["read_only"] == true,
+                });
+            }
+            commands
+                .into_iter()
+                .map(|name| {
+                    described
+                        .iter()
+                        .find(|d| d.name == name)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false)
+                        })
+                })
+                .collect()
         },
         "viu.quit".into(),
         wake.clone(),
@@ -642,7 +718,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let ui_state = crate::ui_state::UiState::default();
     let platform = crate::platform::Platform::default();
     let services = crate::runtime::Services {
-        max_string_bytes:bundle.manifest.max_string_bytes,
+        max_string_bytes: bundle.manifest.max_string_bytes,
         platform: Some(platform.clone()),
         ui_state: Some(ui_state.clone()),
         macros: bundle.manifest.macros.then(|| {

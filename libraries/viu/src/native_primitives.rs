@@ -102,14 +102,32 @@ pub(crate) fn digest() -> mix::evaluator::ExtFn {
 
 /// The retained gold event codec; the Mix owner chooses when to publish it.
 pub(crate) fn action_event() -> mix::evaluator::ExtFn {
-    let journal=std::sync::Mutex::new(toolkit::executed::Journal::new(1));
+    let journal = std::sync::Mutex::new(toolkit::executed::Journal::new(1));
     mix::sync_ext(move |args| {
-        let fail=||MixError::RuntimeError{msg:"viu_action_event expects id, origin, params, result".into(),span:None};
-        let [Value::String(id),Value::String(origin),params,result]=args.as_slice() else {return Err(fail());};
+        let fail = || MixError::RuntimeError {
+            msg: "viu_action_event expects id, origin, params, result".into(),
+            span: None,
+        };
+        let [Value::String(id), Value::String(origin), params, result] = args.as_slice() else {
+            return Err(fail());
+        };
         use toolkit::executed::Origin;
-        let origin=match origin.as_str(){"menu"=>Origin::Menu,"shortcut"=>Origin::Shortcut,"palette"=>Origin::Palette,"ui"=>Origin::Ui,"bus"=>Origin::Bus,"macro"=>Origin::Macro,_=>return Err(fail())};
-        let mut journal=journal.lock().map_err(|_|fail())?;
-        journal.record(id,origin,crate::runtime::to_json(params)?,crate::runtime::to_json(result)?);
+        let origin = match origin.as_str() {
+            "menu" => Origin::Menu,
+            "shortcut" => Origin::Shortcut,
+            "palette" => Origin::Palette,
+            "ui" => Origin::Ui,
+            "bus" => Origin::Bus,
+            "macro" => Origin::Macro,
+            _ => return Err(fail()),
+        };
+        let mut journal = journal.lock().map_err(|_| fail())?;
+        journal.record(
+            id,
+            origin,
+            crate::runtime::to_json(params)?,
+            crate::runtime::to_json(result)?,
+        );
         crate::runtime::from_json(journal.take().0.remove(0).body())
     })
 }
