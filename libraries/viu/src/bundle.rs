@@ -97,11 +97,8 @@ impl Bundle {
                 .replace("${", "\\${"),
             std::fs::read_to_string(&path).map_err(|e| e.to_string())?
         );
-        let mut scene =
+        let scene =
             std::fs::read_to_string(root.join("scene.mix")).map_err(|e| e.to_string())?;
-        if manifest.frame.is_some() {
-            scene = crate::gold_frame::compose(&scene)?;
-        }
         let program = crate::runtime::Program {
             path,
             source,

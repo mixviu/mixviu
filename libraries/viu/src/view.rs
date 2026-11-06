@@ -30,6 +30,7 @@ pub struct Event {
 }
 
 pub struct SceneView {
+    frame: Option<Box<SceneView>>,
     tree: ResolvedScene,
     lists: PreparedLists,
     pub revision: u64,
@@ -60,6 +61,7 @@ impl SceneView {
         let lists = validate_templates(&tree).map_err(|e| e.to_string())?;
         validate_controls(&tree)?;
         Ok(Self {
+            frame: None,
             tree,
             lists,
             revision: 0,
@@ -74,6 +76,20 @@ impl SceneView {
 
     pub fn model(&self) -> &Value {
         &self.tree.model
+    }
+    /// Mount independently resolved scenes, preserving every application ID.
+    /// The frame authors the content rectangle; no app node is rewritten.
+    pub fn with_frame(source: &str, model: Value, frame_source: &str) -> Result<Self, String> {
+        let mut view = Self::with_model(source, model.clone())?;
+        let frame = Self::with_model(frame_source, model)?;
+        if !frame.tree.nodes.contains_key("gold-content") {
+            return Err("frame must declare gold-content".into());
+        }
+        if frame.tree.nodes.keys().any(|id| id != "root" && view.tree.nodes.contains_key(id)) {
+            return Err("frame and application node identities overlap".into());
+        }
+        view.frame = Some(Box::new(frame));
+        Ok(view)
     }
     /// Hosted controls retain the same identity, model and intent dispatch.
     /// Their popup layers draw independently of the detached client layout.
@@ -92,6 +108,9 @@ impl SceneView {
         Ok(())
     }
     pub fn control_kind(&self, id: &str) -> Option<&str> {
+        if let Some(kind) = self.frame.as_ref().and_then(|frame| frame.control_kind(id)) {
+            return Some(kind);
+        }
         let node = self.tree.nodes.get(id)?;
         if node.family != "control" {
             return None;
@@ -99,12 +118,14 @@ impl SceneView {
         node.ports.get("definition")?.get("kind")?.as_str()
     }
     pub fn has_control_kind(&self, kind: &str) -> bool {
+        if self.frame.as_ref().is_some_and(|frame| frame.has_control_kind(kind)) { return true; }
         self.tree
             .nodes
             .keys()
             .any(|id| self.control_kind(id) == Some(kind))
     }
     pub fn has_slot(&self, name: &str) -> bool {
+        if self.frame.as_ref().is_some_and(|frame| frame.has_slot(name)) { return true; }
         self.tree
             .nodes
             .values()
@@ -119,6 +140,11 @@ impl SceneView {
         {
             return Err("invalid or undeclared scene slot".into());
         }
+        let slots = if let Some(frame) = self.frame.as_mut() {
+            let (outer, inner) = slots.into_iter().partition(|(name, _)| frame.has_slot(name));
+            frame.set_slots(outer)?;
+            inner
+        } else { slots };
         if self.slots != slots {
             self.slots = slots;
             self.shown_revision = None;
@@ -128,6 +154,9 @@ impl SceneView {
     /// Shared control admission uses the currently rendered definition/model.
     /// Applications still own the meaning and execution of admitted intents.
     pub fn admit_intent(&self, id: &str, action: &str, value: &Value) -> Result<(), String> {
+        if let Some(frame) = self.frame.as_ref().filter(|frame| id != "root" && frame.tree.nodes.contains_key(id)) {
+            return frame.admit_intent(id, action, value);
+        }
         let node = self.tree.nodes.get(id).ok_or("unknown scene node")?;
         match node.family.as_str() {
             "control" => {
@@ -195,6 +224,7 @@ impl SceneView {
                 return Err("hosted overlay control changed to an incompatible kind".into());
             }
         }
+        if let Some(frame) = self.frame.as_mut() { frame.apply_model(model)?; }
         self.tree = candidate;
         self.lists = lists;
         self.revision += 1;
@@ -202,6 +232,21 @@ impl SceneView {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        if let Some(mut frame) = self.frame.take() {
+            let mut events = frame.show(ui);
+            if let Some(rect) = frame.geometry.get("gold-content").copied() {
+                events.extend(ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| self.show_content(ui)).inner);
+            } else {
+                self.geometry.clear();
+                self.shown_revision = None;
+            }
+            self.geometry.extend(frame.geometry.iter().filter(|(id, _)| id.as_str() != "root").map(|(id, rect)| (id.clone(), *rect)));
+            self.frame = Some(frame);
+            return events;
+        }
+        self.show_content(ui)
+    }
+    fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         let mut events = Vec::new();
         self.geometry.clear();
         self.widgets.begin_frame();
@@ -237,6 +282,7 @@ impl SceneView {
         self.shown_revision == Some(self.revision)
     }
     pub fn request_focus(&mut self, id: &str) -> Result<(), String> {
+        if let Some(frame) = self.frame.as_mut().filter(|frame| frame.control_kind(id).is_some()) { return frame.request_focus(id); }
         if !self.geometry.contains_key(id) {
             return Err("focus target not visible".into());
         }
@@ -246,6 +292,8 @@ impl SceneView {
     /// Renderer-neutral character selection. The application chooses the
     /// range; it carries no filename, path or other application interpretation.
     pub fn request_focus_value(&mut self, value: &Value) -> Result<(), String> {
+        let target = value.as_str().or_else(|| value["id"].as_str());
+        if let Some(frame) = self.frame.as_mut().filter(|frame| target.is_some_and(|id| frame.control_kind(id).is_some())) { return frame.request_focus_value(value); }
         if let Some(id) = value.as_str() {
             return self.request_focus(id);
         }
@@ -298,13 +346,13 @@ impl SceneView {
         Ok(())
     }
     pub fn take_focus_error(&mut self) -> Option<String> {
-        self.focus_error.take()
+        self.focus_error.take().or_else(|| self.frame.as_mut().and_then(|frame| frame.take_focus_error()))
     }
     pub fn focus_pending(&self) -> bool {
-        self.widgets.focus.is_some()
+        self.widgets.focus.is_some() || self.frame.as_ref().is_some_and(|frame| frame.focus_pending())
     }
     pub fn text_input_active(&self) -> bool {
-        self.widgets.text_input_active
+        self.widgets.text_input_active || self.frame.as_ref().is_some_and(|frame| frame.text_input_active())
     }
     pub fn image_states(&self) -> Value {
         self.widgets.image_states()
