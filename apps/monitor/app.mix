@@ -15,7 +15,7 @@ fn refresh_monitor($s)
     send $target "monitord.processes" body=$core.query($s)
     if $rc!=0 then raise("PROCESSES",to_string($result)) end
     if type($reply.rows)!="list" or len($reply.rows)>2000 or ($reply.total ?? 0)>2000 then raise("PROCESS_BUDGET","Process limit 2000 exceeded; no partial state") end
-    $s.snapshot=$snapshot;$s.processes=$reply.rows
+    $s.snapshot=$snapshot;$s.processes=$reply.rows;$s.total=$reply.total ?? len($reply.rows)
     $s.start_times=if $s.node=="" then viu_process("snapshot",{pids:map($s.processes,fn($p)=$p.pid)}) else {} end
     $s.history=push($s.history,$snapshot.cpu.busy)
     if len($s.history)>60 then $s.history=slice($s.history,len($s.history)-60) end
@@ -75,13 +75,18 @@ on monitor.select
 end
 on monitor.intent
   $a=$event.args
-  if $a.id=="refresh" then $state=refresh_monitor($state)
+  if $a.id=="end-task" then
+    $out=signal_monitor($state,{pid:$state.selected,signal:"SIGTERM"});$state=$out.state
+  elif $a.id=="tabs" then $state.tab=$a.value
+  elif $a.id=="tree" then $state.tree=$a.value;$state=refresh_monitor($state)
+  elif $a.id=="refresh" then $state=refresh_monitor($state)
   elif $a.id=="pause" then $state.paused=$a.value
   elif $a.id=="filter" then $state.filter=$a.value;$state=refresh_monitor($state)
   elif $a.id=="node" then
     $state.node_draft=$a.value
     if $a.action=="submit" then
-      $checked=$core.target($a.value);$state.node=$a.value;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.selected=nil;$state=refresh_monitor($state)
+      $node=if $a.value=="This node" then "" else $a.value end
+      $checked=$core.target($node);$state.node=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.selected=nil;$state=refresh_monitor($state)
     end
   elif $a.id=="processes" then
     if $a.action=="sort" then
@@ -99,9 +104,13 @@ on viu.frame.close
 end
 on viu.frame.intent
   $id=$event.args.value.command
-  if $id=="monitor.refresh" then $state=refresh_monitor($state)
-  elif $id=="monitor.pause" then $state.paused=not $state.paused
-  elif $id=="monitor.close" then
+  if $id=="process.end" or $id=="process.kill" then
+    $out=signal_monitor($state,{pid:$state.selected,signal:if $id=="process.end" then "SIGTERM" else "SIGKILL" end});$state=$out.state
+    publish_monitor($state);reply($out.rc,json_encode($out.body));return
+  elif $id=="file.refresh" then $state=refresh_monitor($state)
+  elif $id=="view.pause" then $state.paused=not $state.paused
+  elif $id=="view.tree" then $state.tree=not $state.tree;$state=refresh_monitor($state)
+  elif $id=="file.quit" then
     $model=$core.framed($state);$model.window_close=true
     send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
     reply(0,"{}");return
@@ -109,18 +118,22 @@ on viu.frame.intent
   publish_monitor($state);reply(0,"{}")
 end
 
-on monitor.signal
-  $pid=$event.args.pid
-  if $state.node!="" or $state.dialog!=nil or $state.selected==nil or $pid!=$state.selected then
-    reply(10,json_encode({error_code:"DISABLED",message:"Command is disabled"}));return
+fn signal_monitor($s,$a)
+  $pid=$a.pid
+  if $s.node!="" or $s.dialog!=nil or $s.selected==nil or $pid!=$s.selected then
+    return {state:$s,rc:10,body:{error_code:"DISABLED",message:"Command is disabled"}}
   end
-  $expected=$event.args.start_time ?? $state.start_times[to_string($pid)]
-  $answer=viu_process("signal",{pid:$pid,signal:$event.args.signal,start_time:$expected})
-  if $answer.pid_reused==true then $state=refresh_monitor($state) end
+  $expected=$a.start_time ?? $s.start_times[to_string($pid)]
+  $answer=viu_process("signal",{pid:$pid,signal:$a.signal,start_time:$expected})
+  if $answer.pid_reused==true then $s=refresh_monitor($s) end
   if not $answer.ok then
-    $state.error=$answer.error;publish_monitor($state)
-    reply(10,json_encode({error_code:"SIGNAL",message:$answer.error}));return
+    $s.error=$answer.error
+    return {state:$s,rc:10,body:{error_code:"SIGNAL",message:$answer.error}}
   end
-  $state=refresh_monitor($state);publish_monitor($state)
-  reply(0,json_encode({pid:$pid,signal:$event.args.signal}))
+  $s=refresh_monitor($s)
+  return {state:$s,rc:0,body:{pid:$pid,signal:$a.signal}}
+end
+on monitor.signal
+  $out=signal_monitor($state,$event.args);$state=$out.state;publish_monitor($state)
+  reply($out.rc,json_encode($out.body))
 end

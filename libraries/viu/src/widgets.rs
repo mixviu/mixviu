@@ -654,7 +654,7 @@ impl Widgets {
                         }
                     })
                     .response;
-                if widget.kind == "tabs" {
+                if widget.kind == "tabs" && widget.properties["pages"].is_object() {
                     ui.small(
                         widget.properties["pages"][value.as_str().unwrap_or("")]
                             .as_str()

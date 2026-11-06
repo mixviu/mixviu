@@ -7,7 +7,7 @@ fn target($node)
   return "monitord."..$node..".bus"
 end
 fn initial()
-  return {node:"",node_draft:"",paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
+  return {node:"",node_draft:"",tab:"Processes",peers:[],total:0,paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
 end
 fn query($s)
   return {sort:$s.sort,reverse:$s.reverse,filter:$s.filter,tree:$s.tree,limit:2001}
@@ -16,10 +16,10 @@ fn project($s)
   $rows=[]
   if len($s.processes)>2000 then raise("PROCESS_BUDGET","More than 2000 processes; no partial table") end
   for $p in $s.processes
-    push($rows,{key:to_string($p.pid),depth:min(256,$p.depth ?? 0),branch:false,selected:$p.pid==$s.selected,focused:$p.pid==$s.selected,expanded:false,cells:[$p.name,to_string($p.pid),$p.user,fmt("%.1f",$p.cpu),format_bytes($p.memory),if $p.read_bps==nil and $p.write_bps==nil then "Unavailable" else format_bytes(($p.read_bps ?? 0)+($p.write_bps ?? 0)).."/s" end]})
+    push($rows,{key:to_string($p.pid),depth:min(256,$p.depth ?? 0),branch:false,selected:$p.pid==$s.selected,focused:$p.pid==$s.selected,expanded:false,cells:[$p.name,to_string($p.pid),$p.user,fmt("%.1f",$p.cpu),gold_bytes($p.memory),if $p.read_bps==nil and $p.write_bps==nil then "—" else gold_bytes(($p.read_bps ?? 0)+($p.write_bps ?? 0)).."/s" end,$p.cmdline ?? ""]})
   end
   $columns=[]
-  for $pair in [["name","Name"],["pid","PID"],["user","User"],["cpu","CPU %"],["memory","Memory"],["io","I/O /s"]] push($columns,{id:$pair[0],label:$pair[1]}) end
+  for $pair in [["name","Name"],["pid","PID"],["user","User"],["cpu","CPU %"],["memory","Memory"],["io","I/O"],["cmdline","Command line"]] push($columns,{id:$pair[0],label:$pair[1],width:if $pair[0]=="name" then 240 elif $pair[0]=="pid" or $pair[0]=="cpu" then 70 elif $pair[0]=="user" then 100 else 90 end,min_width:if $pair[0]=="name" or $pair[0]=="cmdline" then 120 elif $pair[0]=="user" or $pair[0]=="memory" or $pair[0]=="io" then 60 else 50 end,remainder:$pair[0]=="cmdline",sortable:$pair[0]!="cmdline",weak:$pair[0]=="cmdline",align:if contains(["pid","cpu","memory","io"],$pair[0]) then "right" else "left" end}) end
   $shapes=[]
   if len($s.history)>1 then
     for $i=1 to len($s.history)-1 push($shapes,{kind:"line",from:[($i-1)/59,1-$s.history[$i-1]/100],to:[$i/59,1-$s.history[$i]/100]}) end
@@ -29,13 +29,21 @@ fn project($s)
     $v=$s.snapshot
     $summary=fmt("CPU %.1f%% · %d cores · Memory %s / %s · Swap %s / %s",$v.cpu.busy,$v.cpu.cores,format_bytes($v.memory.used),format_bytes($v.memory.total),format_bytes($v.swap.used),format_bytes($v.swap.total))
   end
-  $model={status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:$s.sort,ascending:if contains(["name","pid","user"],$s.sort) then not $s.reverse else $s.reverse end},properties:{height:470}},values:{pause:$s.paused,filter:$s.filter,node:$s.node_draft},serial:$s.serial}
+  $model={status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:$s.sort,reverse:$s.reverse,ascending:if contains(["name","pid","user"],$s.sort) then not $s.reverse else $s.reverse end},properties:{style:"grid"}},options:{tabs:{preferred:190,minimum:160,align:"left",order:0},node:{preferred:150,minimum:100,align:"left",order:1},filter:{preferred:220,minimum:120,align:"right",order:2},tree:{preferred:50,minimum:40,align:"right",order:3},"end-task":{preferred:90,minimum:80,align:"right",order:4}},performance:$s.tab=="Performance",values:{tabs:$s.tab,tree:$s.tree,pause:$s.paused,filter:$s.filter,node:if $s.node=="" then "This node" else $s.node end},serial:$s.serial}
   return $model
 end
 
 fn framed($s)
   $model=project($s)
-  $actions=[{id:"monitor.refresh",label:"Refresh",icon:"refresh-cw",icon_only:true,enabled:true},{id:"monitor.pause",label:"Pause",checked:$s.paused,enabled:true}]
-  $menus=[{id:"File",label:"File",enabled:true,children:concat($actions,[{id:"monitor.close",label:"Close",enabled:true}])}]
-  return $frame.apply($model,{icon:"monitor",title:"Monitor",menus:$menus,toolbar:$actions,status:$model.status})
+  $actions=[{id:"file.refresh",label:"Refresh",icon:"refresh-cw",icon_only:true,enabled:true},{id:"view.pause",label:"Pause",checked:$s.paused,enabled:true}]
+  $menus=[{id:"File",label:"File",enabled:true,children:[{id:"file.refresh",label:"Refresh",enabled:true},{id:"file.quit",label:"Quit",enabled:true}]},{id:"View",label:"View",enabled:true,children:[{id:"view.pause",label:"Pause",enabled:true,checked:$s.paused},{id:"view.tree",label:"Process tree",enabled:true,checked:$s.tree}]},{id:"Process",label:"Process",enabled:true,children:[{id:"process.end",label:"End task",enabled:$s.node=="" and $s.selected!=nil and $s.dialog==nil},{id:"process.kill",label:"Kill",enabled:$s.node=="" and $s.selected!=nil and $s.dialog==nil}]},{id:"Help",label:"Help",enabled:true,children:[]}]
+  return $frame.apply($model,{icon:"monitor",title:"Monitor — "..(if $s.snapshot!=nil then $s.snapshot.host ?? "This node" else "This node" end),menus:$menus,toolbar:$actions,status:$model.status})
+end
+
+fn gold_bytes($n)
+  $units=["B","KiB","MiB","GiB","TiB","PiB"];$i=0;$v=max(0,$n)
+  while $v>=1024 and $i<5
+    $v=$v/1024;$i=$i+1
+  end
+  return (if $i==0 or $v>=100 then fmt("%.0f",$v) else fmt("%.1f",$v) end).." "..$units[$i]
 end
