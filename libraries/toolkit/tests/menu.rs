@@ -1087,7 +1087,7 @@ fn search_ranks_label_prefix_word_prefix_contains_then_path() {
         },
     ];
     let ids: Vec<_> = menu::matching(&menus, "canvas")
-        .iter()
+        .into_iter()
         .map(|r| r.id.unwrap())
         .collect();
     assert_eq!(ids, ["b", "a", "c", "d"]);
