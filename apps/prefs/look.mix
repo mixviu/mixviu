@@ -1,0 +1,145 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Appearance draft/fence/receipt state, adapted from gold appearance.rs.
+$paths={scheme:"appearance.scheme",style:"appearance.style",mode:"appearance.mode",contrast:"appearance.contrast",decorations:"window.decorations",caption_side:"window.caption_side",window_style:"window.style",menu_style:"window.menu_style",menu_side:"window.menu_side",actions_place:"window.actions_place",actions_align:"window.actions_align",title_align:"window.title_align",font_family:"appearance.font_family",mono_family:"appearance.mono_family",text_scale:"accessibility.text_scale",density:"appearance.density",reduced_motion:"accessibility.reduced_motion"}
+$defaults={scheme:"mixos",style:nil,mode:"dark",contrast:"normal",decorations:"auto",caption_side:"auto",window_style:"mac",menu_style:"bar",menu_side:"left",actions_place:"row",actions_align:"right",title_align:"auto",font_family:nil,mono_family:nil,text_scale:1,density:1,reduced_motion:false}
+fn initial()
+  return {current:nil,base:nil,edited:{},conflicts:[],sent:nil,uncertain:nil,confirm:false,accepted:false,hold:false,syncing:false,incarnation:nil,revision:nil,job:nil,serial:0,read:false,settings:"unknown",custom_source:false,problem:nil,problem_source:nil,tries:0}
+end
+fn drop_axes($value,$skip)
+  $out={}
+  for $key in keys($value) if not contains($skip,$key) then $out[$key]=$value[$key] end end
+  return $out
+end
+fn current_of($values)
+  $out=$defaults
+  for $axis in keys($paths)
+    if contains(keys($values),$paths[$axis]) then $out[$axis]=$values[$paths[$axis]] end
+  end
+  $d=$out.density
+  if type($d)=="string" then $out.density=if $d=="compact" then 0.85 elif $d=="spacious" then 1.2 else 1 end end
+  if $out.mode=="auto" then $out.mode=$values["state.appearance.mode"] ?? "dark" end
+  return $out
+end
+fn expected($l)
+  if $l.current==nil then return nil end
+  return if $l.sent!=nil then merge($l.current,$l.sent.axes) else $l.current end
+end
+fn shown($l)
+  $e=expected($l)
+  return if $e==nil then nil else merge($e,$l.edited) end
+end
+fn density_step($value)
+  return if $value<0.925 then "compact" elif $value<=1.1 then "comfortable" else "spacious" end
+end
+fn plain_name($v,$limit)
+  return type($v)=="string" and len($v)>0 and len($v)<=$limit and trim($v)==$v and not re_match($v,"[\\x00-\\x1f\\x7f]")
+end
+fn checked_axes($args)
+  $out={}
+  $enums={scheme:["mixos","ocean","crimson","stone","forest","sunset","mono","pro","studio","classic","breeze","adwaita"],style:["own","plain","pro","studio","classic","breeze","adwaita"],mode:["light","dark"],contrast:["normal","high"],decorations:["auto","csd","ssd"]}
+  for $axis in keys($paths)
+    if not contains(keys($args),$axis) then continue end
+    $v=$args[$axis]
+    if contains(keys($enums),$axis) then
+      if not contains($enums[$axis],$v) then raise("ARGUMENT","unknown "..$axis.." "..json_encode($v)) end
+      if $axis=="style" and $v=="own" then $v=nil end
+    elif contains(["font_family","mono_family"],$axis) then
+      if $v!=nil and not plain_name($v,128) then raise("ARGUMENT",$axis.." must be a family name or null") end
+    elif contains(["text_scale","density"],$axis) then
+      if type($v)!="number" or $v<0.5 or $v>if $axis=="density" then 2 else 3 end then raise("ARGUMENT",$axis.." outside its range") end
+    elif $axis=="reduced_motion" then
+      if type($v)!="bool" then raise("ARGUMENT","reduced_motion must be a boolean") end
+    elif not plain_name($v,64) then raise("ARGUMENT",$axis.." must be a plain name of up to 64 bytes") end
+    $out[$axis]=$v
+  end
+  return $out
+end
+fn edit($l,$args)
+  if $l.current==nil then raise("NOT_READY","The session appearance has not been read yet") end
+  $axes=checked_axes($args)
+  $e=expected($l)
+  if $l.base==nil then $l.base=$e end
+  for $axis in keys($axes)
+    $l.edited[$axis]=$axes[$axis]
+    if deep_eq($axes[$axis],$e[$axis]) then $l.edited=drop_axes($l.edited,[$axis]) end
+  end
+  $l.conflicts=filter($l.conflicts,fn($axis)=contains(keys($l.edited),$axis))
+  return $l
+end
+fn unsend($l)
+  if $l.sent!=nil then
+    $l.edited=merge($l.sent.axes,$l.edited)
+    $l.base=$l.sent.base
+    $l.sent=nil
+  end
+  return $l
+end
+fn observe($l,$reply)
+  $c=current_of($reply.values)
+  $l.settings="available";$l.custom_source=$reply.values["appearance.source"]!=nil
+  $l.incarnation=$reply.incarnation;$l.revision=$reply.revision
+  if $l.confirm and $l.sent!=nil then
+    if all(keys($l.sent.axes),fn($axis)=deep_eq($c[$axis],$l.sent.axes[$axis])) then $l.accepted=true
+    else $l=unsend($l);$l.hold=true;$l.problem="Preferences could not confirm the appearance change: the session does not show it. Apply tries again." end
+    $l.confirm=false
+  end
+  if $l.accepted then $l.sent=nil;$l.accepted=false end
+  $l.current=$c;$l.syncing=false;$l.read=false
+  $conflicts=[]
+  for $axis in keys($l.edited)
+    if deep_eq($l.edited[$axis],$c[$axis]) and $l.sent==nil then $l.edited=drop_axes($l.edited,[$axis])
+    elif $l.base!=nil and not deep_eq($l.base[$axis],$c[$axis]) and not deep_eq($l.edited[$axis],$c[$axis]) then push($conflicts,$axis) end
+  end
+  $l.conflicts=$conflicts
+  if len(keys($l.edited))==0 and $l.sent==nil then $l.hold=false;$l.problem=nil;$l.problem_source=nil;$l.base=nil end
+  return $l
+end
+fn prepare($l,$binding,$dialog)
+  if $l.job!=nil then return $l end
+  $command=nil;$body=nil
+  if $l.uncertain!=nil and $l.read then
+    $command="settings.status";$body={binding:$binding,operation_id:$l.uncertain}
+    $l.read=false
+  elif $l.current!=nil and len(keys($l.edited))>0 and not $dialog and not $l.hold and not $l.syncing and $l.uncertain==nil and len($l.conflicts)==0 and $l.sent==nil then
+    $changes={}
+    for $axis in keys($l.edited) $changes[$paths[$axis]]=if $axis=="density" then density_step($l.edited[$axis]) else $l.edited[$axis] end end
+    $operation="prefs-look-"..uuid()
+    $l.sent={operation:$operation,axes:$l.edited,base:$l.base ?? $l.current}
+    $l.edited={};$l.base=nil
+    $command="settings.apply";$body={binding:$binding,expected_incarnation:$l.incarnation,expected_revision:$l.revision,operation_id:$operation,changes:$changes,reset:[]}
+  end
+  if $command!=nil then $l.serial=$l.serial+1;$l.job={serial:$l.serial,command:$command,body:$body} end
+  return $l
+end
+fn finished($l,$rc,$answer)
+  $job=$l.job;$l.job=nil
+  if $job.command=="settings.apply" then
+    if $rc==0 then $l.accepted=true;$l.syncing=true;$l.read=true
+    elif $answer.status=="conflict" then $l=unsend($l);$l.syncing=true;$l.read=true
+    elif $answer.status=="outcome_unknown" or $rc>=20 then $l.uncertain=$l.sent.operation;$l.read=true;$l.tries=0
+    else $l=unsend($l);$l.hold=true;$l.problem=$answer.message ?? json_encode($answer);$l.problem_source="appearance" end
+  else
+    if $rc==0 and $answer.status=="current" and ($answer.receipt ?? {}).operation_id==$l.uncertain then
+      $l.uncertain=nil;$l.accepted=true;$l.syncing=true;$l.read=true
+    elif $rc==0 and $answer.status=="unknown_operation" and ($answer.recovering ?? false)!=true then
+      $l.uncertain=nil;$l.confirm=true;$l.syncing=true;$l.read=true
+    else $l.tries=$l.tries+1;$l.problem="Appearance change is uncertain; Check again asks for its receipt.";$l.problem_source="appearance" end
+  end
+  return $l
+end
+fn decide($l,$action)
+  if $action=="revert" then $l.edited={};$l.conflicts=[];$l.hold=false;$l.problem=nil;$l.problem_source=nil;$l.base=nil
+  elif $action=="keep" then $l.base=$l.current;$l.conflicts=[];$l.hold=false
+  elif $action=="apply" then $l.hold=false
+  elif $action=="recheck" then $l.read=true end
+  return $l
+end
+fn effective($look)
+  if $look==nil then return nil end
+  return {scheme:$look.scheme,style:$look.style ?? $look.scheme,mode:$look.mode,contrast:$look.contrast,decorations:if $look.decorations=="auto" then "csd" else $look.decorations end,decorations_reason:if $look.decorations=="auto" then "no_server_protocol" else "choice" end,caption_side:$look.caption_side,window_style:$look.window_style,menu_style:$look.menu_style,menu_side:$look.menu_side,title_align:$look.title_align,actions_align:$look.actions_align,actions_place:$look.actions_place}
+end
+fn view($s)
+  $l=$s.look
+  return {section:$s.ui.section,category:if contains(["appearance","text_and_fonts","wallpaper"],$s.ui.section) then "appearance" elif $s.ui.section=="windows" then "desktop" elif starts_with($s.ui.section,"apps_") then "apps" else "system" end,settings:$l.settings,binding:$s.binding,revision:$l.revision,current:$l.current,draft:if len(keys($l.edited))>0 then shown($l) else nil end,edits:keys($l.edited),conflicts:$l.conflicts,shown:shown($l),effective:effective(shown($l)),expected:expected($l),sent:if $l.sent==nil then nil else keys($l.sent.axes) end,hold:$l.hold,problem:$l.problem,problem_source:$l.problem_source,custom_source:$l.custom_source,uncertain:$l.uncertain,working:($l.job ?? {}).command,can_apply:len(keys($l.edited))>0 and $l.job==nil and not $l.syncing and len($l.conflicts)==0,can_revert:len(keys($l.edited))>0 or $l.hold,can_keep:len($l.conflicts)>0,can_recheck:$l.uncertain!=nil and $l.job==nil}
+end

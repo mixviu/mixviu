@@ -4,26 +4,30 @@
 $core=require("core.mix");$ctx=viu_context()
 $nav=require("navigation.mix")
 $pages=require("pages.mix")
+$actions=require("actions.mix")
+$look=require("look.mix")
 $state=$core.initial($app_args[0] ?? env("MIXOS_INSTANCE","desktop"))
 fn publish_prefs($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
+fn pump_look($s)
+  $before=$s.look.serial
+  $s.look=$look.prepare($s.look,$s.binding,$s.ui.dialog!=nil)
+  if $s.look.serial!=$before then
+    $path=path_join(dirname(script_path()),"job.mix")
+    send "viu-local" "jobs.start" id="prefs-look" owner=$s.look.serial path=$path source=read_file($path) command="job.run" args={op:"look",command:$s.look.job.command,body:$s.look.job.body}
+    if $rc!=0 then raise("JOB",to_string($result)) end
+  end
+  if $s.look.read and $s.look.uncertain==nil and not $s.busy then $s=refresh_prefs($s) end
+  return $s
+end
 
 on viu.frame.close
-  if not $state.busy then
-    $model=$core.framed($state);$model.window_close=true
-    send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
-  end
+  if $state.ui.dialog==nil then $state.quitting=true;publish_prefs($state) end
 end
 on viu.frame.intent
   $id=$event.args.value.command
-  if $id=="view.refresh" then $state.dirty=false;$state=refresh_prefs($state)
-  elif $id=="file.quit" and not $state.busy then
-    $model=$core.framed($state);$model.window_close=true
-    send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
-    reply(0,"{}");return
-  elif $id=="view.search" then $state.search=""
-  else raise("ACTION","Frame action not implemented yet") end
+  $state=execute_prefs($state,$id,{})
   publish_prefs($state);reply(0,"{}")
 end
 fn start_prefs($s,$payload)
@@ -48,12 +52,48 @@ fn queued_prefs($s)
   return start_prefs($s,{op:"write",request:{binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:uuid(),changes:$changes,reset:$reset}})
 end
 fn release_request($s,$command,$body)
+  if $command=="releases.notes" then send "viu-local" "jobs.cancel" id="prefs-notes" end
   $s.release_serial=$s.release_serial+1
   if $command=="releases.notes" then $s.notes_owner=$s.release_serial
   else $s.release_busy=true;$s.release_owner=$s.release_serial end
   $path=path_join(dirname(script_path()),"job.mix")
   send "viu-local" "jobs.start" id=if $command=="releases.notes" then "prefs-notes" else "prefs-releases" end owner=$s.release_serial path=$path source=read_file($path) command="job.run" args={op:"release",command:$command,body:$body}
   if $rc!=0 then raise("JOB",to_string($result)) end
+  return $s
+end
+fn execute_prefs($s,$id,$params)
+  if not any($actions.registry,fn($a)=$a.id==$id) then raise("NOT_FOUND","Unknown command "..to_string($id)) end
+  if not $actions.enabled($s,$id) then raise("DISABLED",$nav.text_for("command-disabled")) end
+  if $id=="file.quit" then $s.quitting=true
+  elif $id=="view.search" then $s.nav.searching=true;$s.ui.search_focus=true
+  elif $id=="sidebar.toggle" then $s.nav.sidebar=not $s.nav.sidebar
+  elif $id=="page.back" then $s=$pages.open_page($s,$nav.page($s.nav.page).parent,nil)
+  elif $id=="page.open" then $s=$pages.open_page($s,$params.page,$params.row)
+  elif $id=="set" then $c=$pages.control_for($s,$params.key);$s=set_prefs($s,$params.key,$params.value)
+  elif $id=="view.refresh" then
+    if $s.ui.section=="software" then $s=release_request($s,"releases.list",{})
+    else $s=hint_prefs($s) end
+  elif starts_with($id,"appearance.") then $s.look=$look.decide($s.look,split($id,".")[1]);$s=pump_look($s)
+  elif $id=="terminal.reset" then
+    for $k in $s.catalog if starts_with($k.path,"terminal.") then $s.queue_changes[$k.path]=nil end end
+    $s=queued_prefs($s)
+  elif $id=="help.about" then $s.ui.dialog="about"
+  elif $id=="help.shortcuts" then $s.ui.dialog="shortcuts"
+  elif $id=="help.macros" then $s.ui.macros_open=not $s.ui.macros_open
+  elif $id=="apps.remove" then $s.ui.dialog={remove:$s.ui.selected}
+  elif $id=="apps.check" then $s=release_request($s,"releases.check",{})
+  elif $id=="apps.update_all" then $s=release_request($s,"releases.update",{apps:map(filter($nav.apps_view($s).visible,fn($r)=$r.installed!=nil),fn($r)=$r.app)})
+  elif $id=="apps.rollback" then $s=release_request($s,"releases.rollback",{app:$s.ui.selected})
+  elif $id=="apps.install" then
+    $r=$actions.selected($s)
+    $s=if $r.installed!=nil then release_request($s,"releases.update",{apps:[$r.app]}) else release_request($s,"releases.install",{app:$r.app}) end
+  elif $id=="view.mode" then $s=$actions.choose_theme($s,{mode:if $actions.theme_view($s).effective.mode=="light" then "dark" else "light" end})
+  elif starts_with($id,"view.") then
+    $parts=split($id,".");$axis={theme:"scheme",style:"style",mode:"mode",decorations:"decorations",captions:"caption_side"}[$parts[1]]
+    if $axis==nil then raise("UNKNOWN_COMMAND","Unknown theme action") end
+    $choice={};$choice[$axis]=if $parts[2]=="session" then nil else $parts[2] end
+    $s=$actions.choose_theme($s,$choice)
+  else raise("UNKNOWN_COMMAND","Action implementation pending: "..$id) end
   return $s
 end
 fn set_prefs($s,$key,$value)
@@ -64,6 +104,7 @@ fn set_prefs($s,$key,$value)
   return queued_prefs($s)
 end
 fn hint_prefs($s)
+  if $s.look.uncertain!=nil then $s.look.read=true;return pump_look($s) end
   $s.needs_read=true
   if not $s.busy then return refresh_prefs($s) end
   return $s
@@ -79,10 +120,56 @@ on viu.tick
   if not $state.busy and $state.needs_read then $state=refresh_prefs($state);publish_prefs($state) end
 end
 on prefs.ping
-  reply(0,json_encode({schema:"prefs.mix.lab.v1"}))
+  reply(0,json_encode({schema:"prefs.v1",version:"0.1.2"}))
+end
+on prefs.actions
+  reply(0,json_encode($actions.action_list($state)))
+end
+on prefs.execute
+  try
+    $state=execute_prefs($state,$event.args.id,$event.args.params ?? {});publish_prefs($state)
+    reply(0,json_encode({executed:$event.args.id}))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.quit
+  $state.quitting=true;publish_prefs($state);reply(0,json_encode({quitting:true}))
+end
+on prefs.theme
+  try
+    $state=$actions.choose_theme($state,$event.args);publish_prefs($state);reply(0,json_encode($actions.theme_view($state)))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.dialog
+  try
+    $a=$event.args
+    if contains(keys($a),"answer") then
+      if contains(keys($a),"open") then raise("ARGUMENT","give open or answer, not both") end
+      if $state.ui.dialog==nil then raise("NO_DIALOG","no dialog is open") end
+      if not contains(["confirm","cancel"],$a.answer) then raise("ARGUMENT","answer must be confirm or cancel") end
+      $d=$state.ui.dialog
+      if $a.answer=="confirm" and type($d)=="map" and contains(keys($d),"remove") then $state=release_request($state,"releases.remove",{app:$d.remove}) end
+      $state.ui.dialog=nil
+    elif contains(keys($a),"open") and contains(["about","shortcuts",nil],$a.open) then $state.ui.dialog=$a.open
+    else raise("ARGUMENT","open must be about, shortcuts or null") end
+    publish_prefs($state);reply(0,json_encode({dialog:$state.ui.dialog}))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on prefs.info
+  reply(0,json_encode($core.info($state)))
+end
+on prefs.registry.info
   reply(0,json_encode($state))
+end
+on prefs.appearance
+  reply(0,json_encode($look.view($state)))
+end
+on prefs.appearance.set
+  try
+    if $state.ui.dialog!=nil or $state.quitting then raise("BUSY",$nav.text_for("busy")) end
+    $state.look=$look.edit($state.look,$event.args)
+    $state=pump_look($state);publish_prefs($state)
+    reply(0,json_encode($look.view($state)))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on prefs.refresh
   $state.dirty=false
@@ -141,6 +228,13 @@ end
 on viu.job.completed
   $d=$event.args
   $answer=$d.body.answer ?? {}
+  if $d.tag.id=="prefs-look" then
+    if $state.look.job!=nil and $d.tag.owner==$state.look.serial then
+      $state.look=$look.finished($state.look,$d.rc,$answer)
+      $state=pump_look($state);publish_prefs($state)
+    end
+    return
+  end
   if $d.body.op=="release" then
     if $d.body.command=="releases.notes" and $d.tag.owner==$state.notes_owner then
       $state.notes_owner=nil
@@ -166,6 +260,7 @@ on viu.job.completed
       if type($b.catalog.keys)!="list" or len($b.catalog.keys)>2048 or type($b.read.values)!="map" or type($b.read.revision)!="string" or not re_match($b.read.revision,"^(0|[1-9][0-9]*)$") or type($b.read.incarnation)!="string" then raise("REPLY","Malformed or oversized settings reply") end
       $state.catalog=filter($b.catalog.keys,fn($k)=not contains($k.path,"<"))
       $state.values=$b.read.values;$state.revision=$b.read.revision;$state.incarnation=$b.read.incarnation
+      $state.look=$look.observe($state.look,$b.read)
       $state.role=$b.status.role ?? "unknown";$state.stale=$b.status.stale ?? false;$state.uncertain=false
       $state.status="Settings read"
       if len($state.catalog)>0 then
@@ -189,11 +284,16 @@ on viu.job.completed
     end
     if not $state.busy and $state.needs_read then $state=refresh_prefs($state) end
     if not $state.busy then $state=queued_prefs($state) end
+    $state=pump_look($state)
     publish_prefs($state)
   end
 end
 on prefs.intent
   $a=$event.args
+  if $a.id=="dialog" and $a.action=="answer" then
+    if $a.value.choice=="confirm" and type($state.ui.dialog)=="map" and contains(keys($state.ui.dialog),"remove") then $state=release_request($state,"releases.remove",{app:$state.ui.dialog.remove}) end
+    $state.ui.dialog=nil;publish_prefs($state);reply(0,"{}");return
+  end
   if $a.id=="browser" then
     if $a.action=="navigate" then $state=$pages.open_page($state,$a.value.page,$a.value.row)
     elif $a.action=="query" then

@@ -19,3 +19,6 @@ $s.stale=true;$refused=false
 try $c.admitted($s,"appearance.mode","light") catch $message $refused=true end
 if not $refused then raise("STALE","Mirror must inhibit writes") end
 print("prefs: exact revision fence, type/range/owner and stale refusals pass")
+
+$model=$c.framed($c.initial("example"))
+if $model.values["gold-title"]!="Preferences" or $model.browser.kind!="settings-browser" then raise("FRAME","Prefs must publish the shared frame and page browser") end

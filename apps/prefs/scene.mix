@@ -4,5 +4,5 @@ name: prefs
 citizen: prefs
 ---
 ```mix
-{root:{widget:"column",children:["browser"]},browser:{widget:"control",definition:"= $model.browser",on_intent:"prefs.intent"}}
+{root:{widget:"column",children:["browser","dialog"]},browser:{widget:"control",definition:"= $model.browser",on_intent:"prefs.intent"},dialog:{widget:"control",definition:"= $model.dialog",on_intent:"prefs.intent"}}
 ```

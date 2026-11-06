@@ -2,7 +2,12 @@
 -- version: 0.1.0
 on job.run
   $a=$event.args
-  if $a.op=="release" then
+  if $a.op=="look" then
+    try
+      send "settingsd" $a.command body=$a.body timeout=8
+      reply(if $rc==0 then 0 elif $rc<0 then 20 else 10 end,json_encode({op:"look",command:$a.command,peer_rc:$rc,answer:$reply}))
+    catch $message reply(20,json_encode({op:"look",answer:{message:$message}})) end
+  elif $a.op=="release" then
     send "releases" $a.command body=$a.body timeout=8
     reply(if $rc==0 then 0 else 10 end,json_encode({op:"release",command:$a.command,peer_rc:$rc,answer:$reply}))
   elif $a.op=="write" then

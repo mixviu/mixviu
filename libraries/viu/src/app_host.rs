@@ -99,14 +99,19 @@ impl Host {
             ));
             return;
         }
-        if let Some((rc, body)) = crate::debug::request(&self.service, &r.command, &r.args.to_string()) {
+        if let Some((rc, body)) =
+            crate::debug::request(&self.service, &r.command, &r.args.to_string())
+        {
             let _ = r.reply.send((rc, body));
             return;
         }
         let prefix = format!("{}.", self.service);
         if let Some(suffix) = r.command.strip_prefix(&prefix) {
             if toolkit::drive::COMMANDS.contains(&suffix) {
-                if suffix == "window" && r.args["action"] == "close" && r.args.get("viewport").is_none() {
+                if suffix == "window"
+                    && r.args["action"] == "close"
+                    && r.args.get("viewport").is_none()
+                {
                     self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
                     let _ = r.reply.send((0, json!({"action":"close"})));
                     return;
@@ -122,8 +127,12 @@ impl Host {
             }
             if let Some(command) = suffix.strip_prefix("macros.") {
                 match macros::commands::handle(&self.macros, command, &r.args) {
-                    macros::commands::Reply::Immediate(answer) => { let _ = r.reply.send(macro_answer(answer)); }
-                    macros::commands::Reply::Deferred(answer) => self.macro_pending.push((answer, r.reply)),
+                    macros::commands::Reply::Immediate(answer) => {
+                        let _ = r.reply.send(macro_answer(answer));
+                    }
+                    macros::commands::Reply::Deferred(answer) => {
+                        self.macro_pending.push((answer, r.reply))
+                    }
                 }
                 return;
             }
@@ -207,14 +216,23 @@ impl Host {
         let mut waiting = Vec::new();
         for (receiver, reply) in self.macro_pending.drain(..) {
             match receiver.try_recv() {
-                Ok(answer) => { let _ = reply.send(macro_answer(answer)); }
+                Ok(answer) => {
+                    let _ = reply.send(macro_answer(answer));
+                }
                 Err(std::sync::mpsc::TryRecvError::Empty) => waiting.push((receiver, reply)),
-                Err(_) => { let _ = reply.send((10, json!({"error_code":"INTERNAL","message":"macro worker closed"}))); }
+                Err(_) => {
+                    let _ = reply.send((
+                        10,
+                        json!({"error_code":"INTERNAL","message":"macro worker closed"}),
+                    ));
+                }
             }
         }
         self.macro_pending = waiting;
         while let Ok(body) = self.macro_finished.try_recv() {
-            let _ = self.bus.hint(format!("{}.macros.finished", self.service), body);
+            let _ = self
+                .bus
+                .hint(format!("{}.macros.finished", self.service), body);
         }
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
@@ -288,6 +306,7 @@ impl Host {
                     });
                     match result {
                         Ok(()) => {
+                            if self.model["theme_choice"] != model["theme_choice"] { self.session_dirty = true; }
                             if let Some(style) = appearance.expect("validated appearance") {
                                 crate::appearance::install_style(
                                     ui.ctx(),
@@ -314,7 +333,9 @@ impl Host {
             }
         }
         for _ in 0..32 {
-            if toolkit::drive::pending(ui.ctx()) || !self.drive_answers.is_empty() { break; }
+            if toolkit::drive::pending(ui.ctx()) || !self.drive_answers.is_empty() {
+                break;
+            }
             match self.bus.requests.try_recv() {
                 Ok(r) => self.request(r, ui.ctx()),
                 Err(_) => break,
@@ -364,18 +385,23 @@ impl Host {
                     .or_else(|| self.session_dirty.then(|| session.snapshot.clone()))
                 {
                     let appearance = snapshot["appearance"].clone();
-                    match crate::appearance::install_session(
+                    match crate::appearance::install_session_choice(
                         ui.ctx(),
                         &snapshot,
                         &self.service,
                         &self.file_theme,
                         &self.last_ui,
+                        &self.model["theme_choice"],
                     ) {
                         Ok(ui) => {
                             self.last_ui = ui;
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
-                            self.session_window = Some(snapshot["state"]["values"].clone());
+                            let mut window = snapshot["state"]["values"].clone();
+                            for (axis, key) in [("decorations","window.decorations"),("caption_side","window.caption_side")] {
+                                if self.model["theme_choice"][axis].is_string() { window[key] = self.model["theme_choice"][axis].clone(); }
+                            }
+                            self.session_window = Some(window);
                         }
                         Err(error) => self.error = error,
                     }
@@ -465,7 +491,9 @@ fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {
 }
 impl Drop for Host {
     fn drop(&mut self) {
-        if let Err(error) = self.macros.shutdown() { tracing::warn!(%error, "macro shutdown"); }
+        if let Err(error) = self.macros.shutdown() {
+            tracing::warn!(%error, "macro shutdown");
+        }
     }
 }
 
@@ -491,7 +519,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     );
     commands.extend(toolkit::drive::COMMANDS.map(|suffix| format!("{service}.{suffix}")));
     commands.extend(macros::commands::SUFFIXES.map(|suffix| format!("{service}.macros.{suffix}")));
-    commands.extend(["debug", "debug.recent", "debug.set"].map(|suffix| format!("{service}.{suffix}")));
+    commands
+        .extend(["debug", "debug.recent", "debug.set"].map(|suffix| format!("{service}.{suffix}")));
     let declared = commands.iter().cloned().collect();
     let bus = Endpoint::start(
         service,
@@ -512,10 +541,21 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let macros = macros::Session::with_roots(&bundle.manifest.service, roots);
     let (macro_tx, macro_finished) = std::sync::mpsc::channel();
     let macro_wake = wake.clone();
-    macros.add_finish_hook(Arc::new(move |body| { let _ = macro_tx.send(body); macro_wake(); }));
-    let services = crate::runtime::Services { macros: Some(macros.clone()), ..Default::default() };
+    macros.add_finish_hook(Arc::new(move |body| {
+        let _ = macro_tx.send(body);
+        macro_wake();
+    }));
+    let services = crate::runtime::Services {
+        macros: Some(macros.clone()),
+        ..Default::default()
+    };
     jobs.set_services(services.clone());
-    let mut runtime = Runtime::with_services(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))), services);
+    let mut runtime = Runtime::with_services(
+        32,
+        wake.clone(),
+        Some(jobs.backend(Some(bus.backend()))),
+        services,
+    );
     runtime.load(bundle.program).expect("load behaviour");
     let capture_root = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
@@ -581,10 +621,16 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         std::process::exit(2);
     }
     if args.first().is_some_and(|arg| arg == "--macro") {
-        let Some(path) = args.get(1) else { eprintln!("usage: viu --macro SCRIPT [ARG...]"); std::process::exit(2); };
+        let Some(path) = args.get(1) else {
+            eprintln!("usage: viu --macro SCRIPT [ARG...]");
+            std::process::exit(2);
+        };
         std::process::exit(crate::macro_host::run(path.into(), args[2..].to_vec()));
     }
-    if let Some(path) = args.first().filter(|path| path.ends_with(".mix") && std::path::Path::new(path).is_file()) {
+    if let Some(path) = args
+        .first()
+        .filter(|path| path.ends_with(".mix") && std::path::Path::new(path).is_file())
+    {
         std::process::exit(crate::macro_host::run(path.into(), args[1..].to_vec()));
     }
     if args.first().map(String::as_str) != Some("run") || args.len() < 2 {

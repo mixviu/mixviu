@@ -3,9 +3,11 @@
 $frame=require("../../libraries/viu/mix/gold-frame.mix")
 $nav=require("navigation.mix")
 $pages=require("pages.mix")
+$actions=require("actions.mix")
+$look=require("look.mix")
 $sections=[{id:"appearance",label:"Appearance",prefixes:["appearance."]},{id:"text_and_fonts",label:"Text & Fonts",prefixes:["appearance.font","appearance.mono"]},{id:"wallpaper",label:"Wallpaper",prefixes:["wallpaper."]},{id:"windows",label:"Windows",prefixes:["window."]},{id:"accessibility",label:"Accessibility",prefixes:["accessibility."]},{id:"apps_term",label:"Terminal",prefixes:["terminal."]},{id:"apps_ced",label:"Editor",prefixes:["ced."]},{id:"all",label:"All described settings",prefixes:[""]}]
 fn initial($instance)
-  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil,ui:$nav.initial_ui(),nav:$nav.initial_nav(),apps:[],notes:nil,notes_error:nil,notes_owner:nil,releases:"unknown",release_status:"Connecting to the Bus…",release_failed:false,release_busy:false,release_serial:0,release_owner:nil,release_started:false,quitting:false,needs_read:true,subscribed:false,connected:false,queue_changes:{},inflight_changes:{}}
+  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil,ui:$nav.initial_ui(),nav:$nav.initial_nav(),apps:[],notes:nil,notes_error:nil,notes_owner:nil,releases:"unknown",release_status:"Connecting to the Bus…",release_failed:false,release_busy:false,release_serial:0,release_owner:nil,release_started:false,quitting:false,needs_read:true,subscribed:false,connected:false,queue_changes:{},inflight_changes:{},look:$look.initial(),failed:false}
 end
 
 fn framed($s)
@@ -13,8 +15,11 @@ fn framed($s)
   $available=not $s.busy
   $refresh={id:"view.refresh",label:"Refresh",icon:"refresh-cw",enabled:$available}
   $search={id:"view.search",label:"Search",icon:"search",enabled:$available}
-  $menus=[{id:"file",label:"File",enabled:true,children:[{id:"file.quit",label:"Quit",enabled:$available}]},{id:"view",label:"View",enabled:true,children:[$refresh,$search]},{id:"help",label:"Help",enabled:true,children:[{id:"help.shortcuts",label:"Keyboard shortcuts",enabled:$available},{id:"help.about",label:"About Preferences",enabled:$available}]}]
-  return $frame.apply($model,{icon:"settings",title:"Preferences",menus:$menus,toolbar:[$search,$refresh],status:nil})
+  $toolbar=[{id:"sidebar.toggle",label:"Sidebar",icon:"panel-left",icon_only:true,enabled:$s.ui.dialog==nil},$search,{id:"help.shortcuts",label:"Keyboard shortcuts",icon:"keyboard",icon_only:true,enabled:$s.ui.dialog==nil},{id:"view.mode",label:"Light or dark interface",icon:"sun",icon_only:true,enabled:$s.ui.dialog==nil}]
+  $model=$frame.apply($model,{icon:"settings",title:"Preferences",menus:$actions.menus($s),toolbar:$toolbar,status:nil})
+  $model.theme_choice=$actions.theme_choice($s)
+  $model.window_close=$s.quitting and not $s.busy and not $s.release_busy and $s.notes_owner==nil and len(keys($s.queue_changes))==0
+  return $model
 end
 fn key_info($s,$key)
   $found=filter($s.catalog,fn($k)=$k.path==$key)
@@ -75,5 +80,10 @@ end
 
 fn model($s)
   $browser=$pages.browser($s)
-  return {browser:{id:"browser",kind:"settings-browser",label:"",initial:$browser},values:{browser:$browser}}
+  $dialog=$actions.dialog_form($s)
+  return {browser:{id:"browser",kind:"settings-browser",label:"",initial:$browser},dialog:{id:"dialog",kind:"dialog-form",label:"",initial:$dialog},values:{browser:$browser,dialog:$dialog}}
+end
+
+fn info($s)
+  return {schema:"prefs.v1",app_id:"dev.mixos.prefs",version:"0.1.2",pid:pid(),connected:$s.connected,releases:$s.releases,busy:$s.release_busy or $s.notes_owner!=nil or $s.look.job!=nil,working:$s.release_op ?? nil,uncertain:$s.release_uncertain ?? nil,status:$s.status,failed:$s.failed ?? false,release_status:$s.release_status,release_failed:$s.release_failed,apps:$s.apps,notes:$s.notes,notes_error:$s.notes_error,appearance:$look.view($s),gallery:$s.gallery ?? {},email:$s.email ?? {},section:$s.ui.section,category:$nav.section($s.ui.section).category,ui:$s.ui,nav:$s.nav,store:$pages.store_view($s)}
 end
