@@ -62,6 +62,10 @@ Require the montage command to succeed. Compare exit code 1 means differences;
 it is not a tool failure. Other failures must be diagnosed. Save raw metric
 output, tool version and the normalised metric in the receipt; ImageMagick
 can print a quantum-scaled value followed by the normalised value in brackets.
+The installed ImageMagick 7.1.2-35 reports SSIM as distortion: identical images
+return `0 (0)`. Record that convention explicitly; lower is better for these
+receipts. Do not relabel the raw normalised distortion as a similarity score
+or compare it to a threshold defined for mathematical SSIM similarity.
 
 Inspect the originals, side-by-side figure and difference figure. Repeat the
 comparison for separately cropped regions: header/menu/actions/captions,

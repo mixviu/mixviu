@@ -35,7 +35,7 @@ for $name in keys($regions)
     $raw=trim($result.stderr..$result.stdout)
     $parts=split($raw,"(")
     $value=to_number(trim(if len($parts)>1 then replace($parts[len($parts)-1],")","") else $raw end))
-    $metrics[$metric]={raw:$raw,normalised:$value,exit_code:$result.exit_code}
+    $metrics[$metric]={raw:$raw,normalised_distortion:$value,exit_code:$result.exit_code}
   end
   push($records,{region:$name,rect:$rect,metrics:$metrics})
 end

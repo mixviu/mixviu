@@ -35,7 +35,7 @@ end
 
 fn framed($s)
   $model=project($s)
-  $actions=[{id:"monitor.refresh",label:"Refresh",icon:"refresh-cw",icon_only:true,enabled:true},{id:"monitor.pause",label:"Pause",icon:"pause",icon_only:true,checked:$s.paused,enabled:true}]
+  $actions=[{id:"monitor.refresh",label:"Refresh",icon:"refresh-cw",icon_only:true,enabled:true},{id:"monitor.pause",label:"Pause",checked:$s.paused,enabled:true}]
   $menus=[{id:"File",label:"File",enabled:true,children:concat($actions,[{id:"monitor.close",label:"Close",enabled:true}])}]
   return $frame.apply($model,{icon:"monitor",title:"Monitor",menus:$menus,toolbar:$actions,status:$model.status})
 end
