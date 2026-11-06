@@ -32,7 +32,7 @@ fn document_model($doc)
   $outputs=$doc.outputs ?? {}
   if type($outputs)!="map" or len(keys($outputs))>64 then raise("OUTPUTS","At most 64 output overrides") end
   $model=fill_model($doc.default);$model.surfaces={};$images=[]
-  if $doc.default.image!=nil then push($images,$doc.default.image) end
+  if $doc.default!=nil and $doc.default.image!=nil then push($images,$doc.default.image) end
   for $name in keys($outputs)
     if len($name)==0 or len($name)>64 then raise("OUTPUTS","Invalid output name") end
     $model.surfaces[$name]=fill_model($outputs[$name])
