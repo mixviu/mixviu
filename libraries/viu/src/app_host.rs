@@ -914,9 +914,11 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
 }
 
 pub fn run(mut args: Vec<String>) -> eframe::Result {
-    if let Err(error) = crate::debug::init("warn", &mut args) {
-        eprintln!("viu: {error}");
-        std::process::exit(2);
+    if args.first().map(String::as_str) != Some("run") {
+        if let Err(error) = crate::debug::init("warn", &mut args) {
+            eprintln!("viu: {error}");
+            std::process::exit(2);
+        }
     }
     if args.first().is_some_and(|arg| arg == "--macro") {
         let Some(path) = args.get(1) else {
@@ -935,16 +937,26 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         eprintln!("usage: viu run APP_DIR [ARGS]");
         std::process::exit(2);
     }
-    let bundle = Bundle::load(std::path::Path::new(&args[1]), &args[2..]).unwrap_or_else(|e| {
+    let mut bundle = Bundle::load(std::path::Path::new(&args[1]), &args[2..]).unwrap_or_else(|e| {
         eprintln!("viu: {e}");
         std::process::exit(2)
     });
-    let mut logging_args: Vec<String> = std::env::args().collect();
-    let _logging = toolkit::debug::init(&bundle.manifest.service, "warn", &mut logging_args)
-        .unwrap_or_else(|error| {
+    let _logging = if bundle.manifest.native_debug {
+        Some(toolkit::debug::init(&bundle.manifest.service, "warn", &mut args).unwrap_or_else(|error| {
+            eprintln!("viu logging: {error}");
+            std::process::exit(2)
+        }))
+    } else {
+        crate::debug::init("warn", &mut args).unwrap_or_else(|error| {
             eprintln!("viu logging: {error}");
             std::process::exit(2)
         });
+        None
+    };
+    bundle = Bundle::load(std::path::Path::new(&args[1]), &args[2..]).unwrap_or_else(|e| {
+        eprintln!("viu: {e}");
+        std::process::exit(2)
+    });
     if bundle.manifest.surface == "background" {
         let mut options = crate::layer::LayerOptions::background(&bundle.manifest.service);
         options.exclusive_zone = 0;
