@@ -77,8 +77,10 @@ pub fn install_session_choice(
     choice: &Value,
 ) -> Result<settings::model::CommonUi, String> {
     let (base, ui) = session_base(snapshot, app, file, last_ui)?;
+    let empty = serde_json::json!({});
+    let choice = if choice.is_null() { &empty } else { choice };
     let theme = base
-        .with_choice(&crate::native_theme::choice(if choice.is_null() {&serde_json::json!({})} else {choice})?)
+        .with_choice(&crate::native_theme::choice(choice)?)
         .map_err(|e| e.to_string())?;
     install_theme(ctx, &theme)?;
     Ok(ui)
