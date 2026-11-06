@@ -16,20 +16,20 @@ mod tests {
         assert!(minimum.x <= 640.0 && minimum.y <= 320.0);
         // Guard the actual native builder call sites against app overrides.
         for source in [
-            include_str!("../../../apps/ced/src/main.rs"),
-            include_str!("../../../apps/dopus/src/main.rs"),
-            include_str!("../../../apps/dopus/src/choose/presenter.rs"),
-            include_str!("../../../apps/email/src/lib.rs"),
-            include_str!("../../../apps/monitor/src/main.rs"),
-            include_str!("../../../apps/prefs/src/main.rs"),
-            include_str!("../../../apps/screenshot/src/main.rs"),
-            include_str!("../../../apps/workshop/src/main.rs"),
-            include_str!("../../../apps/email/src/composer.rs"),
+            include_str!("../../../provenance/compd-oracle/apps/ced/src/main.rs"),
+            include_str!("../../../provenance/compd-oracle/apps/dopus/src/main.rs"),
+            include_str!("../../../provenance/compd-oracle/apps/dopus/src/choose/presenter.rs"),
+            include_str!("../../../provenance/compd-oracle/apps/email/src/lib.rs"),
+            include_str!("../../../provenance/compd-oracle/apps/monitor/src/main.rs"),
+            include_str!("../../../provenance/compd-oracle/apps/prefs/src/main.rs"),
+            include_str!("../../../provenance/compd-oracle/apps/screenshot/src/main.rs"),
+            include_str!("../../../provenance/compd-oracle/apps/workshop/src/main.rs"),
+            include_str!("../../../provenance/compd-oracle/apps/email/src/composer.rs"),
         ] {
             assert!(source.contains("titlebar::viewport("));
             assert!(!source.contains(".with_min_inner_size("));
         }
-        let term = include_str!("../../../apps/term/src/main.rs");
+        let term = include_str!("../../../provenance/compd-oracle/apps/term/src/main.rs");
         assert!(term.contains(".with_min_inner_size(term::MIN_SIZE)"));
     }
 }
