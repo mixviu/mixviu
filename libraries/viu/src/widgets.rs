@@ -112,7 +112,7 @@ impl Widget {
                 value.as_array().into_iter().flatten().map(|m|ui.painter().layout_no_wrap(m["label"].as_str().unwrap_or("").into(),toolkit::chrome::Chrome::menu_font(ui.style()),chrome.palette.text).size().x+2.0*chrome.metrics.menu_title_padding.x).sum()
             } else {chrome.style.icon_button as f32});
         }
-        if self.kind=="command-bar" {return Ok(value.as_array().map_or(0,Vec::len) as f32*(chrome.style.icon_button+chrome.style.title_control_spacing) as f32+chrome.metrics.caption_gap);}
+        if self.kind=="command-bar" {let count=value.as_array().map_or(0,Vec::len);return Ok(if count==0 {0.0}else{count as f32*(chrome.style.icon_button+chrome.style.title_control_spacing) as f32+chrome.metrics.caption_gap});}
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
         }
