@@ -58,6 +58,18 @@ fn mix_frame_preserves_application_content_and_intent_identity() {
     .unwrap();
     assert!(!view.current_revision_drawn());
 
+    let mut server_model = model.clone();
+    server_model["__viu_window_client"] = json!(false);
+    view.apply_model(server_model).unwrap();
+    for _ in 0..2 {
+        ctx.run_ui(egui::RawInput::default(), |ui| { view.show(ui); }).drop_without_applying_deltas();
+    }
+    assert!(!view.geometry.contains_key("gold-icon"));
+    assert!(!view.geometry.contains_key("gold-title"));
+    assert!(!view.geometry.contains_key("gold-captions"));
+    assert!(view.geometry.contains_key("gold-menu"));
+    assert!(view.admit_intent("content", "set", &json!(50)).is_ok());
+
     assert!(
         viu::gold_frame::mount(&source.replace("content", "gold-title"), model.clone()).is_err()
     );

@@ -5,6 +5,17 @@ use egui::{Rect, Ui, ViewportCommand as Command, pos2, vec2};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+pub fn is_client(settings: &Value) -> bool {
+    design::decorations::resolve_with_actions(
+        settings["window.decorations"].as_str().and_then(design::RequestedDecorations::from_name),
+        design::RequestedDecorations::Auto,
+        design::ActionsPlace::resolve(settings["window.actions_place"].as_str().unwrap_or("row")),
+    ).mode == design::Decorations::Client
+}
+pub fn client_of(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(egui::Id::unique("viu-window-client"))).unwrap_or(true)
+}
+
 #[derive(Clone, Copy)]
 pub struct Metrics {
     pub height: f32,
@@ -87,7 +98,8 @@ impl WindowFrame {
             ui.ctx().send_viewport_cmd(Command::Decorations(server));
             self.server = Some(server);
         }
-        if !self.client {
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("viu-window-client"), self.client));
+        if !self.client && !header {
             return;
         }
         let metrics = Metrics::of(ui.ctx());
@@ -107,6 +119,13 @@ impl WindowFrame {
             band.bottom() - 0.5,
             ui.visuals().widgets.noninteractive.bg_stroke,
         );
+        if !self.client {
+            self.geometry.insert("window.header".into(), band);
+            let mut content = band;
+            content.max.y -= ui.visuals().widgets.noninteractive.bg_stroke.width;
+            self.geometry.insert("window.header.content".into(), content);
+            return;
+        }
         let alignment = design::CaptionSide::resolve(
             settings["window.caption_side"].as_str().unwrap_or("auto"),
         )

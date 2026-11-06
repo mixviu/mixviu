@@ -42,20 +42,46 @@ struct Hint {
 }
 type HintFuture = std::pin::Pin<Box<dyn std::future::Future<Output = (String, bool, bool)> + Send>>;
 /// Launch-time activation uses the existing native SDK and compositor path.
-pub fn activate_existing(service:&str,command:&str,url:&str)->Result<bool,String> {
-    let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e|e.to_string())?;
+pub fn activate_existing(service: &str, command: &str, url: &str) -> Result<bool, String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
     runtime.block_on(async {
-        let probe=format!("viu-launch-{}",std::process::id());
-        let client=match tokio::time::timeout(Duration::from_secs(2),SupervisedClient::connect_options(&probe,url).connect()).await {
-            Ok(Ok(client))=>client,_=>return Ok(false),
+        let probe = format!("viu-launch-{}", std::process::id());
+        let client = match tokio::time::timeout(
+            Duration::from_secs(2),
+            SupervisedClient::connect_options(&probe, url).connect(),
+        )
+        .await
+        {
+            Ok(Ok(client)) => client,
+            _ => return Ok(false),
         };
-        let result=async {
-            let services=client.list_services().await.map_err(|e|e.to_string())?;
-            if !services.iter().any(|s|s==service){return Ok(false);}
-            let(rc,body,error)=client.call_with_headers_raw_within(service,command,&BTreeMap::new(),"{}",Duration::from_secs(10)).await.map_err(|e|e.to_string())?;
-            if rc==0 {Ok(true)}else{Err(error.unwrap_or(body))}
-        }.await;
-        client.close().await;result
+        let result = async {
+            let services = client.list_services().await.map_err(|e| e.to_string())?;
+            if !services.iter().any(|s| s == service) {
+                return Ok(false);
+            }
+            let (rc, body, error) = client
+                .call_with_headers_raw_within(
+                    service,
+                    command,
+                    &BTreeMap::new(),
+                    "{}",
+                    Duration::from_secs(10),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            if rc == 0 {
+                Ok(true)
+            } else {
+                Err(error.unwrap_or(body))
+            }
+        }
+        .await;
+        client.close().await;
+        result
     })
 }
 

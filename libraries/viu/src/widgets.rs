@@ -113,7 +113,7 @@ impl Widget {
             let c = toolkit::chrome::Chrome::of(ui.ctx());
             return Ok(
                 n * (c.style.icon_button as f32 + c.style.title_control_spacing as f32)
-                    + c.metrics.caption_gap,
+                    + if crate::window_frame::client_of(ui.ctx()) { c.metrics.caption_gap } else { c.metrics.title_bar_margin },
             );
         }
         self.validate_model(model)?;

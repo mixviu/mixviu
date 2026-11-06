@@ -75,6 +75,20 @@ struct Host {
     next_tick: Instant,
 }
 impl Host {
+    fn window_settings(&self, model: &Value) -> Value {
+        let mut settings = self.session_window.clone().unwrap_or_else(|| model["window_settings"].clone());
+        for (axis, key) in [("decorations", "window.decorations"), ("caption_side", "window.caption_side")] {
+            if !self.native_choice[axis].is_null() { settings[key] = self.native_choice[axis].clone(); }
+        }
+        settings
+    }
+    fn projection(&self, model: &Value) -> Value {
+        let mut projected = self.output.as_ref().and_then(|output| model["surfaces"].get(output)).unwrap_or(model).clone();
+        if self.framed {
+            projected["__viu_window_client"] = json!(crate::window_frame::is_client(&self.window_settings(model)));
+        }
+        projected
+    }
     fn state(&self) -> Value {
         let geometry: serde_json::Map<String, Value> = self
             .view
@@ -182,7 +196,9 @@ impl Host {
     }
 }
 impl eframe::App for Host {
-    fn logic(&mut self,ctx:&egui::Context,_:&mut eframe::Frame){self.pump(ctx);}
+    fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        self.pump(ctx);
+    }
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
         if !self.input.now.is_empty() {
             raw.events.append(&mut self.input.now);
@@ -195,7 +211,7 @@ impl eframe::App for Host {
     }
 }
 impl Host {
-    fn pump(&mut self, ctx:&egui::Context) {
+    fn pump(&mut self, ctx: &egui::Context) {
         self.facilities.prepare(ctx, &self.bus);
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
@@ -283,12 +299,7 @@ impl Host {
             self.error = done.error.unwrap_or_default();
             if self.error.is_empty() {
                 if let Some(model) = done.model {
-                    let projected = self
-                        .output
-                        .as_ref()
-                        .and_then(|output| model["surfaces"].get(output))
-                        .unwrap_or(&model)
-                        .clone();
+                    let projected = self.projection(&model);
                     let appearance = if self.framed
                         && self.session_appearance.is_none()
                         && (!self.loaded || self.model["appearance"] != model["appearance"])
@@ -316,11 +327,7 @@ impl Host {
                     match result {
                         Ok(()) => {
                             if let Some(style) = appearance.expect("validated appearance") {
-                                crate::appearance::install_style(
-                                    ctx,
-                                    &model["appearance"],
-                                    style,
-                                );
+                                crate::appearance::install_style(ctx, &model["appearance"], style);
                             }
                             self.ready = true;
                             self.model = model;
@@ -349,7 +356,7 @@ impl Host {
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
-                    self.facilities.notice(&n.command,&n.args);
+                    self.facilities.notice(&n.command, &n.args);
                     if n.command == "theme.changed" {
                         self.file_theme = toolkit::Theme::load();
                         self.session_dirty = true;
@@ -424,18 +431,27 @@ impl Host {
                     }
                 }
                 if let Some(at) = session.deadline() {
-                    ctx
-                        .request_repaint_after(at.saturating_duration_since(Instant::now()));
+                    ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
                 }
+            }
+        }
+        if self.ready && self.framed {
+            let projected = self.projection(&self.model);
+            if self.view.model() != &projected {
+                if let Err(error) = self.view.apply_model(projected) { self.error = error; }
             }
         }
         self.settle(ctx);
     }
-    fn settle(&mut self,ctx:&egui::Context) {
+    fn settle(&mut self, ctx: &egui::Context) {
         if let Some(error) = self.view.take_focus_error() {
             self.error = error;
         }
-        if self.input.now.is_empty() && self.input.later.is_empty() && self.inflight.is_empty() && self.view.current_revision_drawn() {
+        if self.input.now.is_empty()
+            && self.input.later.is_empty()
+            && self.inflight.is_empty()
+            && self.view.current_revision_drawn()
+        {
             if let Some(reply) = self.input_reply.take() {
                 let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, self.state()));
             }
@@ -456,8 +472,7 @@ impl Host {
                 self.next_tick = Instant::now() + tick;
             }
             let wait = self.next_tick.saturating_duration_since(Instant::now());
-            ctx
-                .request_repaint_after(if wait.is_zero() { tick } else { wait });
+            ctx.request_repaint_after(if wait.is_zero() { tick } else { wait });
         }
     }
     fn frame(&mut self, ui: &mut egui::Ui) {
@@ -468,17 +483,9 @@ impl Host {
                     0.0,
                     crate::appearance::colour(ui.ctx(), "dock").unwrap_or(ui.visuals().panel_fill),
                 );
-                let mut settings = self
-                    .session_window
-                    .clone()
-                    .unwrap_or_else(|| self.model["window_settings"].clone());
-                for (axis, key) in [
-                    ("decorations", "window.decorations"),
-                    ("caption_side", "window.caption_side"),
-                ] {
-                    if !self.native_choice[axis].is_null() {
-                        settings[key] = self.native_choice[axis].clone();
-                    }
+                let settings = self.window_settings(&self.model);
+                if let Some(title) = self.model["window_title"].as_str() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Title(title.into()));
                 }
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 self.window_frame
@@ -558,8 +565,7 @@ impl Host {
                         .as_str()
                         .and_then(toolkit::keymap::parse_chord)
                     {
-                        if crate::shortcuts::take(ui.ctx(),&shortcut)
-                        {
+                        if crate::shortcuts::take(ui.ctx(), &shortcut) {
                             self.dispatch("viu.frame.intent".into(),json!({"id":"shortcut","value":{"command":action["id"],"origin":"shortcut"}}),BTreeMap::new(),None);
                         }
                     }
@@ -732,9 +738,18 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         }
         return Ok(());
     }
-    if let Some(command)=&bundle.manifest.activation {
-        match crate::native_bus::activate_existing(&bundle.manifest.service,command,&std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_|"ws://127.0.0.1:4200/ws".into())) {
-            Ok(true)=>return Ok(()),Ok(false)=>{},Err(error)=>{eprintln!("viu activation: {error}");std::process::exit(1);}
+    if let Some(command) = &bundle.manifest.activation {
+        match crate::native_bus::activate_existing(
+            &bundle.manifest.service,
+            command,
+            &std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
+        ) {
+            Ok(true) => return Ok(()),
+            Ok(false) => {}
+            Err(error) => {
+                eprintln!("viu activation: {error}");
+                std::process::exit(1);
+            }
         }
     }
     let title = bundle.manifest.title.clone();

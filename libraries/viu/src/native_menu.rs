@@ -104,6 +104,9 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
+            if !crate::window_frame::client_of(ui.ctx()) {
+                ui.add_space(toolkit::chrome::Chrome::of(ui.ctx()).metrics.title_bar_margin);
+            }
             if compact {
                 let response = ui.add(toolkit::button::IconButton::new(
                     crate::icons::Icon::from_name("menu").unwrap(),
