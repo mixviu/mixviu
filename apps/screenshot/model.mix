@@ -87,7 +87,8 @@ fn render($s)
   if $has then $right=to_string($s.document.width).." × "..to_string($s.document.height).." · "..to_string(round($s.ui.zoom*100)).."% · "..if $s.document.dirty or $s.saved==nil then "Not saved" else "Saved" end end
   $path=if $s.saved!=nil then $s.saved.path else $s.source end
   $title=if $path==nil then "Screenshot" else basename($path).." — Screenshot" end
-  $model=$frame.apply($model,{icon:"camera",title:$title,menus:$registry.menus($s),toolbar:$header,status:{left:$s.status,right:if $right=="" then [] else [$right] end,icon:"camera"},native_title:$title})
+  $model=$frame.apply($model,{icon:"camera",title:$title,menus:$registry.menus($s),toolbar:$header,status:{left:$s.status,right:if $right=="" then [] else [$right] end,icon:nil},native_title:$title})
+  $model.macros_open=$s.ui.macros_open;$model.values.macros=false
   $model.values["gold-actions"]=$registry.describe($s)
   if $s.close_after and not ($s.action_publishing ?? false) and len($s.action_queue ?? [])==0 then $model.window_close=true end
   return $model

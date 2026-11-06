@@ -198,3 +198,7 @@ end
 on screenshot.macros.copy
   $state=$macros.request_macro($state,"copy",$event.args);$state=publish_model($state)
 end
+
+on viu.macros.closed
+  $state.ui.macros_open=false;$state=publish_model($state)
+end

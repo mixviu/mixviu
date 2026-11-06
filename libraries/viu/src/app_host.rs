@@ -709,7 +709,7 @@ impl Host {
             if self.facilities.macros.is_some()
                 && toolkit::macros::show_app(
                     ui.ctx(),
-                    &self.service,
+                    self.drive.as_deref().unwrap_or(&self.service),
                     self.model["macros_open"] == true,
                 )
             {
@@ -872,7 +872,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         window_frame: crate::window_frame::WindowFrame::default(),
         clipboard: crate::thumbnail::Decoder::with_decoder(
             "viu-clipboard-decode",
-            crate::image_view::decode_surface,
+            crate::image_view::decode_document,
         ),
         clipboard_reply: None,
         local_clipboard,
