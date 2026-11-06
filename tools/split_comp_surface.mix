@@ -1,0 +1,154 @@
+-- Lab B3: move wire/geometry types and generate an object-safe surface interface.
+$base = "engines/compd/crates/"
+$dst = $base .. "ui-surface/"
+mkdir($dst .. "src", {parents: true})
+write_file($dst .. "Cargo.toml", <<EOF
+[package]
+name = "ui-surface"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+[dependencies]
+dispatcher.workspace = true
+graphics.workspace = true
+smithay.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+EOF
+)
+for $name in ["space", "element", "error"]
+  write_file($dst .. "src/" .. $name .. ".rs", read_file($base .. "ui/src/" .. $name .. ".rs"))
+end
+$handle = read_file($base .. "ui/src/handle.rs")
+$handle = split(split($handle, "/// Opaque, type-erased instance identifier.")[1], "/// Typed handle.")[0]
+write_file($dst .. "src/handle.rs", "// SPDX-License-Identifier: MIT OR Apache-2.0\n// Copyright 2026 Mark Constable <mc@mixos.dev>\n/// Opaque, type-erased instance identifier." .. $handle)
+$p = $base .. "ui/src/handle.rs"
+$s = read_file($p)
+$s = substr($s, 0, index_of($s, "/// Opaque, type-erased instance identifier.")) .. "pub use ui_surface::HandleId;\n\n/// Typed handle." .. split($s, "/// Typed handle.")[1]
+write_file($p, $s)
+$input = read_file($base .. "ui/src/input.rs")
+$modifier = split(split($input, "    fn egui(self)")[1], "/// A scroll amount")[0]
+$native = split($input, "/// xkb keysym → egui key.")[0]
+$native = replace_must($native, "    fn egui(self)" .. $modifier, "}\n\n")
+write_file($dst .. "src/input.rs", $native)
+-- Keep egui translation private to ui, using the moved plain input types.
+$adapter = "// SPDX-License-Identifier: MIT OR Apache-2.0\npub use ui_surface::input::*;\ntrait EguiModifiers { fn egui(self) -> egui::Modifiers; }\nimpl EguiModifiers for Modifiers {\n    fn egui(self)" .. split($modifier, "\n}\n")[0] .. "\n}\n\n/// xkb keysym → egui key." .. split($input, "/// xkb keysym → egui key.")[1]
+write_file($base .. "ui/src/input.rs", $adapter)
+for $name in ["space", "element", "error"]
+  write_file($base .. "ui/src/" .. $name .. ".rs", "// SPDX-License-Identifier: MIT OR Apache-2.0\npub use ui_surface::" .. $name .. "::*;\n")
+end
+-- A view copies exactly the item geometry used by the existing hit-test code.
+$inst = read_file($base .. "ui/src/instance.rs")
+$geometry = split(split($inst, "    pub fn world_zoom(")[1], "    // ── Untyped passthrough")[0]
+$geometry = "    pub fn world_zoom(" .. $geometry
+$geometry = replace($geometry, "self.inner.location()", "self.location")
+$geometry = replace($geometry, "self.inner.size()", "self.size")
+$geometry = replace($geometry, "self.inner.scale_factor()", "self.scale_factor")
+$view = <<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! A read-only snapshot, in registry draw order (back to front).
+//! Bounds retain their original world-times-scale / physical coordinate marker.
+//! Project only with the caller's pane camera; never cache a global camera here.
+use crate::{HandleId, Transform, UiSpace};
+use smithay::utils::{Physical, Point, Rectangle, Size};
+#[derive(Clone, Debug)]
+pub struct UiItemView {
+    pub id: HandleId,
+    pub space: UiSpace,
+    pub location: Point<i32, Physical>,
+    pub size: Size<i32, Physical>,
+    pub scale_factor: f32,
+    pub zoom_lock: Option<f32>,
+    pub output: Option<String>,
+    pub layer: u64,
+    pub draw_order: usize,
+    pub visible: bool,
+    pub passthrough: bool,
+    pub keyboard_transparent: bool,
+}
+impl UiItemView {
+    pub fn handle_id(&self) -> HandleId { self.id }
+    pub fn space(&self) -> UiSpace { self.space }
+    pub fn location(&self) -> Point<i32, Physical> { self.location }
+    pub fn size(&self) -> Size<i32, Physical> { self.size }
+    pub fn output(&self) -> Option<&str> { self.output.as_deref() }
+    pub fn is_visible(&self) -> bool { self.visible }
+    pub fn is_passthrough(&self) -> bool { self.passthrough }
+    pub fn is_keyboard_transparent(&self) -> bool { self.keyboard_transparent }
+EOF
+$view = $view .. "\n" .. $geometry .. "\n}\n"
+write_file($dst .. "src/view.rs", $view)
+-- Generate only nongeneric compositor operations. Typed owner APIs never enter
+-- this trait, nor does any downcast/access-to-concrete-registry escape hatch.
+$reg = read_file($base .. "ui/src/registry.rs")
+$skip = ["new", "translate_keyboard", "iter", "iter_mut", "get", "get_mut"]
+$trait = []
+$impl = []
+for $m in re_find($reg, "pub fn ([a-z_]+)\\(")
+  $name = $m.groups[0]
+  if contains($skip, $name) then continue end
+  $tail = substr($reg, $m.start)
+  $sig = trim(split($tail, "{")[0])
+  $sig = replace($sig, "pub fn ", "fn ")
+  -- No impl-Iterator signatures survive this filter.
+  $params = split(split($sig, "(")[1], ")")[0]
+  $names = []
+  for $param in split($params, ",")
+    $param = trim($param)
+    if contains($param, ":") then push($names, trim(split($param, ":")[0])) end
+  end
+  push($trait, "    " .. $sig .. ";")
+  push($impl, "    " .. $sig .. " { UiRegistry::" .. $name .. "(self, " .. join($names, ", ") .. ") }")
+end
+$imports = <<EOF
+use std::time::Instant;
+use graphics::surface::WgpuGlContext;
+use std::sync::Arc;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::utils::{Physical, Point, Rectangle, Size};
+use crate::{HandleId, Transform, UiSpace, UiRenderElement, UiItemView};
+use crate::input::{Input, Modifiers};
+use crate::error::{DispatchError, ResizeError};
+#[derive(Clone, Copy, Debug)]
+pub struct PaneView { pub transform: Transform, pub rect: Rectangle<i32, Physical> }
+EOF
+write_file($dst .. "src/interface.rs", "// SPDX-License-Identifier: MIT OR Apache-2.0\n" .. $imports .. "\n/// World-facing compositor surface operations. No typed programs or toolkit values.\npub trait UiSurfaces {\n    fn items(&self) -> Vec<UiItemView>;\n    fn get(&self, id: HandleId) -> Option<UiItemView> { self.items().into_iter().find(|item| item.id == id) }\n" .. join($trait,"\n") .. "\n}\n")
+$itemview = <<EOF
+    pub fn view(&self, draw_order: usize) -> ui_surface::UiItemView {
+        ui_surface::UiItemView {
+            id: self.handle_id(), space: self.space(), location: self.location(),
+            size: self.size(), scale_factor: self.inner.scale_factor(),
+            zoom_lock: self.zoom_lock(), output: self.output.clone(), layer: self.layer,
+            draw_order, visible: self.is_visible(), passthrough: self.is_passthrough(),
+            keyboard_transparent: self.is_keyboard_transparent(),
+        }
+    }
+EOF
+write_file($base .. "ui/src/instance.rs", replace_must($inst, "impl UiItem {", "impl UiItem {\n" .. $itemview))
+$pane = split(split($reg,"#[derive(Clone, Copy, Debug)]\npub struct PaneView")[1], "/// Area of `base`")[0]
+$reg = replace_must($reg, "#[derive(Clone, Copy, Debug)]\npub struct PaneView" .. $pane, "pub use ui_surface::PaneView;\n\n")
+$reg = $reg .. "\nimpl ui_surface::UiSurfaces for UiRegistry {\n    fn items(&self) -> Vec<ui_surface::UiItemView> { self.iter().enumerate().map(|(order, item)| item.view(order)).collect() }\n" .. join($impl,"\n") .. "\n}\n"
+write_file($base .. "ui/src/registry.rs", $reg)
+write_file($dst .. "src/lib.rs", <<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Plain compositor UI surface and future capture Bus contracts.
+pub mod element;
+pub mod error;
+pub mod handle;
+pub mod input;
+pub mod interface;
+pub mod space;
+pub mod view;
+pub use element::UiRenderElement;
+pub use handle::HandleId;
+pub use interface::{UiSurfaces, PaneView};
+pub use space::{Transform, UiSpace};
+pub use view::UiItemView;
+EOF
+)
+write_file("Cargo.toml", replace_must(read_file("Cargo.toml"), "[workspace.dependencies]", "[workspace.dependencies]\nui-surface = { path = \"engines/compd/crates/ui-surface\" }"))
+$p = $base .. "ui/Cargo.toml"
+write_file($p, replace_must(read_file($p), "[dependencies]", "[dependencies]\nui-surface.workspace = true"))
+print("plain surface types and object-safe adapter extracted")

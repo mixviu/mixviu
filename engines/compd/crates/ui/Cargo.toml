@@ -20,6 +20,7 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+ui-surface.workspace = true
 dispatcher = { workspace = true }
 egui = { workspace = true }
 # FrameSource: the per-frame report content sources (src/source.rs) hand the presentation ledger.

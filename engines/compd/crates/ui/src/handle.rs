@@ -15,22 +15,7 @@ use std::marker::PhantomData;
 
 use crate::engine::UiProgram;
 
-/// Opaque, type-erased instance identifier. Stable for the lifetime of
-/// the instance — destroying and recreating returns a new id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct HandleId(pub u64);
-
-impl HandleId {
-    pub fn raw(self) -> u64 {
-        self.0
-    }
-}
-
-impl std::fmt::Display for HandleId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ui#{}", self.0)
-    }
-}
+pub use ui_surface::HandleId;
 
 /// Typed handle. Carries the UI type as a phantom so that operations
 /// requiring `U::Message` can be checked at compile time.

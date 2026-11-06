@@ -1,0 +1,12 @@
+[package]
+name = "ui-surface"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+[dependencies]
+dispatcher.workspace = true
+graphics.workspace = true
+smithay.workspace = true
+serde.workspace = true
+thiserror.workspace = true

@@ -396,6 +396,15 @@ pub struct UiItem {
 }
 
 impl UiItem {
+    pub fn view(&self, draw_order: usize) -> ui_surface::UiItemView {
+        ui_surface::UiItemView {
+            id: self.handle_id(), space: self.space(), location: self.location(),
+            size: self.size(), scale_factor: self.inner.scale_factor(),
+            zoom_lock: self.zoom_lock(), output: self.output.clone(), layer: self.layer,
+            draw_order, visible: self.is_visible(), passthrough: self.is_passthrough(),
+            keyboard_transparent: self.is_keyboard_transparent(),
+        }
+    }
     pub(crate) fn new<U: UiProgram>(inst: UiInstance<U>, space: UiSpace, layer: u64) -> Self {
         Self {
             type_id: TypeId::of::<UiInstance<U>>(),

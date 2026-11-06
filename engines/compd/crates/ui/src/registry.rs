@@ -76,11 +76,7 @@ const MIN_VISIBLE_PERCENT: i64 = 1;
 /// the camera it is drawn through and the physical sub-rect it occupies. World
 /// UI surfaces are composited once per pane; [`UiRegistry::manage_backings`]
 /// judges visibility from the union of these.
-#[derive(Clone, Copy, Debug)]
-pub struct PaneView {
-    pub transform: Transform,
-    pub rect: Rectangle<i32, Physical>,
-}
+pub use ui_surface::PaneView;
 
 /// Area of `base` left uncovered after subtracting `occluders` (axis-aligned
 /// rectangle subtraction). Exact; used for the ≥1%-visible test.
@@ -1474,4 +1470,125 @@ pub fn translate_keyboard(
 ) -> Input {
     let pressed = matches!(key_state, SmithayKeyState::Pressed);
     crate::input::key(code, keysym_raw, utf8, pressed, is_repeat)
+}
+
+impl ui_surface::UiSurfaces for UiRegistry {
+    fn items(&self) -> Vec<ui_surface::UiItemView> { self.iter().enumerate().map(|(order, item)| item.view(order)).collect() }
+    fn set_dealloc_enabled(&mut self, enabled: bool) { UiRegistry::set_dealloc_enabled(self, enabled) }
+    fn set_draw_order(&mut self, topmost_first: &[HandleId]) { UiRegistry::set_draw_order(self, topmost_first) }
+    fn len(&self) -> usize { UiRegistry::len(self, ) }
+    fn is_empty(&self) -> bool { UiRegistry::is_empty(self, ) }
+    fn contains(&self, id: HandleId) -> bool { UiRegistry::contains(self, id) }
+    fn set_instance_scale(&mut self, scale: f32) { UiRegistry::set_instance_scale(self, scale) }
+    fn destroy_by_id(&mut self, id: HandleId) -> bool { UiRegistry::destroy_by_id(self, id) }
+    fn set_location_by_id(&mut self, id: HandleId, location: Point<i32, Physical>) -> bool { UiRegistry::set_location_by_id(self, id, location) }
+    fn raise(&mut self, id: HandleId) { UiRegistry::raise(self, id) }
+    fn lower(&mut self, id: HandleId) { UiRegistry::lower(self, id) }
+    fn location_of(&self, id: HandleId) -> Option<Point<i32, Physical>> { UiRegistry::location_of(self, id) }
+    fn size_of(&self, id: HandleId) -> Option<Size<i32, Physical>> { UiRegistry::size_of(self, id) }
+    fn space_of(&self, id: HandleId) -> Option<UiSpace> { UiRegistry::space_of(self, id) }
+    fn request_resize_by_id(&mut self, id: HandleId, new_size: Size<i32, Physical>) -> bool { UiRegistry::request_resize_by_id(self, id, new_size) }
+    fn set_zoom_lock_by_id(&mut self, id: HandleId, lock: Option<f32>) -> bool { UiRegistry::set_zoom_lock_by_id(self, id, lock) }
+    fn request_resize_scaled_by_id(
+        &mut self,
+        id: HandleId,
+        new_size: Size<i32, Physical>,
+        scale_factor: f32,
+    ) -> bool { UiRegistry::request_resize_scaled_by_id(self, id, new_size, scale_factor) }
+    fn apply_pending_resizes(
+        &mut self,
+        render_node: &str,
+        gles: &mut GlesRenderer,
+    ) -> Result<usize, ResizeError> { UiRegistry::apply_pending_resizes(self, render_node, gles) }
+    fn dispatch_input(&mut self, id: HandleId, input: Input) -> Result<(), DispatchError> { UiRegistry::dispatch_input(self, id, input) }
+    fn route_pointer_to(
+        &mut self,
+        target: Option<HandleId>,
+        screen_point: Point<f64, Physical>,
+        transform: &Transform,
+        output_size: Size<f64, Physical>,
+    ) { UiRegistry::route_pointer_to(self, target, screen_point, transform, output_size) }
+    fn dispatch_pointer_at(
+        &mut self,
+        point: Point<f64, Physical>,
+        transform: &Transform,
+        output_size: Size<f64, Physical>,
+    ) -> Option<HandleId> { UiRegistry::dispatch_pointer_at(self, point, transform, output_size) }
+    fn pointer_global_leave(&mut self) { UiRegistry::pointer_global_leave(self, ) }
+    fn pointer_target(&self) -> Option<HandleId> { UiRegistry::pointer_target(self, ) }
+    fn set_keyboard_focus(&mut self, target: Option<HandleId>) { UiRegistry::set_keyboard_focus(self, target) }
+    fn keyboard_focus(&self) -> Option<HandleId> { UiRegistry::keyboard_focus(self, ) }
+    fn release_all_modifiers(&mut self) { UiRegistry::release_all_modifiers(self, ) }
+    fn modifier_changed(&mut self, modifier: Modifiers, pressed: bool) { UiRegistry::modifier_changed(self, modifier, pressed) }
+    fn effective_modifiers(&self) -> Modifiers { UiRegistry::effective_modifiers(self, ) }
+    fn dispatch_axis(
+        &mut self,
+        target: Option<HandleId>,
+        discrete_x: i32,
+        discrete_y: i32,
+        pixel_x: f64,
+        pixel_y: f64,
+        source: crate::input::ScrollSource,
+    ) { UiRegistry::dispatch_axis(self, target, discrete_x, discrete_y, pixel_x, pixel_y, source) }
+    fn dispatch_button(&mut self, target: Option<HandleId>, button_code: u32, pressed: bool) { UiRegistry::dispatch_button(self, target, button_code, pressed) }
+    fn pointer_grab(&self) -> Option<HandleId> { UiRegistry::pointer_grab(self, ) }
+    fn hit_test(
+        &self,
+        point: Point<f64, Physical>,
+        transform: &Transform,
+        output_size: Size<f64, Physical>,
+    ) -> Option<HandleId> { UiRegistry::hit_test(self, point, transform, output_size) }
+    fn process_frame(&mut self, render_node: &str, gles: &mut GlesRenderer) { UiRegistry::process_frame(self, render_node, gles) }
+    fn manage_backings(
+        &mut self,
+        render_node: &str,
+        gles: &mut GlesRenderer,
+        output_size: Size<f64, Physical>,
+        panes: &[PaneView],
+    ) { UiRegistry::manage_backings(self, render_node, gles, output_size, panes) }
+    fn release_all_backings(&mut self) -> usize { UiRegistry::release_all_backings(self, ) }
+    fn elements(
+        &self,
+        transform: &Transform,
+        output_size: Size<f64, Physical>,
+        layer: u64,
+    ) -> Vec<UiRenderElement> { UiRegistry::elements(self, transform, output_size, layer) }
+    fn render_all(
+        &mut self,
+        render_node: &str,
+        gles: &mut GlesRenderer,
+        transform: Transform,
+        output_size: Size<f64, Physical>,
+        layer: u64,
+    ) -> Result<Vec<UiRenderElement>, ResizeError> { UiRegistry::render_all(self, render_node, gles, transform, output_size, layer) }
+    fn prepare_frame(
+        &mut self,
+        render_node: &str,
+        gles: &mut GlesRenderer,
+        transform: Transform,
+        output_size: Size<f64, Physical>,
+    ) -> Result<(), ResizeError> { UiRegistry::prepare_frame(self, render_node, gles, transform, output_size) }
+    fn element_of(
+        &self,
+        id: HandleId,
+        transform: &Transform,
+        output_size: Size<f64, Physical>,
+    ) -> Option<UiRenderElement> { UiRegistry::element_of(self, id, transform, output_size) }
+    fn is_visible(&self, id: HandleId) -> bool { UiRegistry::is_visible(self, id) }
+    fn set_visible_by_id(&mut self, id: HandleId, visible: bool) -> bool { UiRegistry::set_visible_by_id(self, id, visible) }
+    fn retain_backing_by_id(&mut self, id: HandleId, retain: bool) -> bool { UiRegistry::retain_backing_by_id(self, id, retain) }
+    fn set_output_affinity_by_id(&mut self, id: HandleId, output: Option<String>) -> bool { UiRegistry::set_output_affinity_by_id(self, id, output) }
+    fn output_affinity(&self, id: HandleId) -> Option<String> { UiRegistry::output_affinity(self, id) }
+    fn set_opaque_occluder_by_id(&mut self, id: HandleId, opaque: bool) -> bool { UiRegistry::set_opaque_occluder_by_id(self, id, opaque) }
+    fn is_passthrough(&self, id: HandleId) -> bool { UiRegistry::is_passthrough(self, id) }
+    fn set_passthrough_by_id(&mut self, id: HandleId, passthrough: bool) -> bool { UiRegistry::set_passthrough_by_id(self, id, passthrough) }
+    fn is_keyboard_transparent(&self, id: HandleId) -> bool { UiRegistry::is_keyboard_transparent(self, id) }
+    fn set_keyboard_transparent_by_id(&mut self, id: HandleId, v: bool) -> bool { UiRegistry::set_keyboard_transparent_by_id(self, id, v) }
+    fn show_tooltip_by_id(&mut self, id: HandleId, at: Point<i32, Physical>) -> bool { UiRegistry::show_tooltip_by_id(self, id, at) }
+    fn hide_tooltip_by_id(&mut self, id: HandleId) -> bool { UiRegistry::hide_tooltip_by_id(self, id) }
+    fn wants_frame(&self) -> bool { UiRegistry::wants_frame(self, ) }
+    fn has_queued(&self) -> bool { UiRegistry::has_queued(self, ) }
+    fn has_input(&self) -> bool { UiRegistry::has_input(self, ) }
+    fn tick_queued(&mut self) { UiRegistry::tick_queued(self, ) }
+    fn next_deadline(&self) -> Option<Instant> { UiRegistry::next_deadline(self, ) }
 }
