@@ -1189,8 +1189,14 @@ impl crate::layer::LayerProgram for LayerHost {
             .get(&output)
             .and_then(|o| o["presented_frames"].as_u64())
             .unwrap_or(0);
-        let state = host.outputs.entry(output.clone()).or_insert_with(|| json!({}));
-        state["width"] = json!(surface.width);state["height"] = json!(surface.height);state["scale"] = json!(surface.scale);state["presented_frames"] = json!(frames);
+        let state = host
+            .outputs
+            .entry(output.clone())
+            .or_insert_with(|| json!({}));
+        state["width"] = json!(surface.width);
+        state["height"] = json!(surface.height);
+        state["scale"] = json!(surface.scale);
+        state["presented_frames"] = json!(frames);
         host.ui_state.set_outputs(&host.outputs);
         let (view, loaded) = self
             .views
@@ -1205,7 +1211,9 @@ impl crate::layer::LayerProgram for LayerHost {
         if let Some(state) = host.outputs.get_mut(host.output.as_ref().unwrap()) {
             let raster = host.view.raster_states();
             if raster["root"].is_object() {
-                for key in ["shows", "error", "fit"] { state[key] = raster["root"][key].clone(); }
+                for key in ["shows", "error", "fit"] {
+                    state[key] = raster["root"][key].clone();
+                }
             }
         }
         std::mem::swap(&mut host.view, view);
@@ -1226,8 +1234,11 @@ impl crate::layer::LayerProgram for LayerHost {
             if let Some(state) = host.outputs.get_mut(&output) {
                 state["presented_frames"] =
                     json!(state["presented_frames"].as_u64().unwrap_or(0) + 1);
-                state["presented_revision"] =
-                    json!(self.views.get(&output).map(|(v, _)| v.model()["serial"].as_u64().unwrap_or(v.revision)));
+                state["presented_revision"] = json!(
+                    self.views
+                        .get(&output)
+                        .map(|(v, _)| v.model()["serial"].as_u64().unwrap_or(v.revision))
+                );
             }
             host.ui_state.set_outputs(&host.outputs);
         }

@@ -20,7 +20,9 @@ impl UiState {
         let state = self.clone();
         mix::sync_ext(move |_| {
             let mut value = state.0.lock().unwrap().clone();
-            if !value.is_object() { value = json!({}); }
+            if !value.is_object() {
+                value = json!({});
+            }
             value["outputs"] = state.1.lock().unwrap().clone();
             crate::runtime::from_json(value)
         })

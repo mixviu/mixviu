@@ -26,8 +26,11 @@ impl Timers {
                 if timers.len() >= 128 && !timers.contains_key(id) {
                     return Err("timer capacity exceeded".into());
                 }
-                let duration = Duration::try_from_secs_f64(ms / 1000.0).map_err(|_| "timer duration overflows")?;
-                let deadline = Instant::now().checked_add(duration).ok_or("timer deadline overflows")?;
+                let duration = Duration::try_from_secs_f64(ms / 1000.0)
+                    .map_err(|_| "timer duration overflows")?;
+                let deadline = Instant::now()
+                    .checked_add(duration)
+                    .ok_or("timer deadline overflows")?;
                 timers.insert(id.into(), (deadline, value));
             }
             _ => return Err("timer delay must be finite nonnegative milliseconds".into()),

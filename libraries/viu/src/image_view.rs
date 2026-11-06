@@ -65,7 +65,12 @@ impl Images {
     }
     pub fn states(&self) -> Value {
         if !self.fills.is_empty() {
-            return serde_json::json!(self.fills.iter().map(|(id,fill)|(id.clone(),fill.status.clone())).collect::<BTreeMap<_,_>>());
+            return serde_json::json!(
+                self.fills
+                    .iter()
+                    .map(|(id, fill)| (id.clone(), fill.status.clone()))
+                    .collect::<BTreeMap<_, _>>()
+            );
         }
         serde_json::json!(self.slots.iter().map(|(id,s)|(id.clone(),serde_json::json!({"path":s.path,"phase":if s.texture.is_some(){"ready"}else if s.answered{"failed"}else{"pending"}}))).collect::<BTreeMap<_,_>>())
     }
@@ -90,7 +95,11 @@ impl Images {
         if value["retained"] == true {
             self.visible.insert(id.into());
             if let Some(rasters) = &self.rasters {
-                return self.fills.entry(id.into()).or_default().draw(ui, value, rasters);
+                return self
+                    .fills
+                    .entry(id.into())
+                    .or_default()
+                    .draw(ui, value, rasters);
             }
             return ui.colored_label(egui::Color32::RED, "retained raster facility unavailable");
         }

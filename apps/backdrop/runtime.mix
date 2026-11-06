@@ -100,21 +100,22 @@ fn advance($s,$keys,$owed)
   $old=$s;$s=$engine.advance($s,$keys,$owed,monotonic());release_obsolete($old,$s)
   $s.pending.scope=viu_raster("begin","");return $s
 end
-fn pump()
-  global $s,$running
-  if $s.pending==nil then arm($s);return end
+fn pump($s,$running)
+  if $s.pending==nil then arm($s);return {state:$s,running:$running} end
   if len($s.pending.jobs)==0 and ($running==nil or $running.revision!=$s.pending.revision) then
-    $s=commit($s);return
+    $s=commit($s);return {state:$s,running:$running}
   end
-  if $running!=nil then return end
+  if $running!=nil then return {state:$s,running:$running} end
   $job=$s.pending.jobs[0];$s.pending.jobs=slice($s.pending.jobs,1)
   $path=path_join(dirname(script_path()),"decode-job.mix")
   $id="backdrop-decode-"..to_string($s.pending.revision)
   send "viu-local" "jobs.start" id=$id owner=$s.pending.revision path=$path source=read_file($path) command="job.run" args={job:$job,scope:$s.pending.scope}
   if $rc!=0 then $s=refuse($s,"IMAGE","decoder worker could not start",nil)
   else $running={id:$id,revision:$s.pending.revision,job:$job} end
+  return {state:$s,running:$running}
 end
-$s=stage($s,$document,{op:"startup",token:nil});show_state($s);pump();show_state($s)
+$s=stage($s,$document,{op:"startup",token:nil});show_state($s)
+$p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
 on backdrop.ping
   reply(0,json_encode({schema:"backdrop.v1",service:$ctx.citizen}))
 end
@@ -124,7 +125,7 @@ end
 on backdrop.set
   try
     $checked=$launch.override($event.args,{colour:nil,image:nil})
-    $s=stage($s,$checked,owed("set"));pump();show_state($s)
+    $s=stage($s,$checked,owed("set"));$p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
     if $event.headers["viu-call"]==nil then reply(0,json_encode({requested:$s.requested,active:$s.active,config_file:$store})) end
   catch $message
     reply(10,json_encode({error_code:"ARGUMENT",message:$message}))
@@ -135,7 +136,7 @@ on backdrop.next
     if type($event.args)!="map" or len(keys($event.args))!=0 then raise("ARGUMENT","body: expected the empty object {}") end
     if len(keys($s.schedules))==0 then raise("NON_SLIDESHOW","the applied backdrop has no slideshow") end
     if $s.pending!=nil then raise("BUSY","a set or advance is pending") end
-    $s=advance($s,keys($s.schedules),owed("next"));pump();show_state($s)
+    $s=advance($s,keys($s.schedules),owed("next"));$p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
   catch $message,$error
     reply(10,json_encode({error_code:$error.code,message:$message}))
   end
@@ -151,7 +152,7 @@ on viu.job.completed
         $s=$engine.received($s,$d.tag.owner,$d.body)
       end
     end
-    pump();show_state($s)
+    $p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
   end
 end
 on viu.timer
@@ -162,6 +163,6 @@ on viu.timer
         if $schedule.due($s.schedules[$key],monotonic()) then $s=advance($s,[$key],{op:"timer",token:nil});break end
       end
     end
-    pump();show_state($s)
+    $p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
   end
 end

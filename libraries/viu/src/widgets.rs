@@ -668,7 +668,9 @@ impl Widgets {
         self.images.states()
     }
     pub fn raster_states(&self) -> Value {
-        self.surfaces.as_ref().map_or(Value::Null, |images| images.states())
+        self.surfaces
+            .as_ref()
+            .map_or(Value::Null, |images| images.states())
     }
     /// Begin exactly once before drawing an application frame. Geometry is
     /// retained after finish_frame for automation until the next begin_frame.

@@ -37,7 +37,12 @@ fn app(name: &str) -> (Bundle, Runtime, mpsc::Receiver<()>) {
             let _ = tx.send(());
         }),
         None,
-        viu::runtime::Services { rasters: Some(Default::default()), timers: Some(Default::default()), ui_state: Some(Default::default()), ..Default::default() },
+        viu::runtime::Services {
+            rasters: Some(Default::default()),
+            timers: Some(Default::default()),
+            ui_state: Some(Default::default()),
+            ..Default::default()
+        },
     );
     (bundle, runtime, rx)
 }

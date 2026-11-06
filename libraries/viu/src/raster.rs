@@ -59,14 +59,23 @@ impl Rasters {
     pub fn close(&self, scope: &str) {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.scopes.remove(scope);
-        let handles: Vec<_> = state.owners.iter().filter(|(_, owner)| *owner == scope).map(|(h, _)| h.clone()).collect();
+        let handles: Vec<_> = state
+            .owners
+            .iter()
+            .filter(|(_, owner)| *owner == scope)
+            .map(|(h, _)| h.clone())
+            .collect();
         for handle in handles {
             state.owners.remove(&handle);
             state.entries.remove(&handle);
         }
     }
     pub fn detach(&self, handle: &str) {
-        self.state.lock().unwrap_or_else(|e| e.into_inner()).owners.remove(handle);
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .owners
+            .remove(handle);
     }
     pub fn texture(&self, bytes: u64) -> Result<TextureLease, String> {
         self.textures
@@ -109,7 +118,9 @@ impl Rasters {
         state.serial += 1;
         let handle = format!("raster:{}", state.serial);
         let result = json!({"handle":handle,"size":decoded.size,"original_size":decoded.original_size,"bytes":bytes});
-        if let Some(scope) = scope { state.owners.insert(handle.clone(), scope.into()); }
+        if let Some(scope) = scope {
+            state.owners.insert(handle.clone(), scope.into());
+        }
         state.entries.insert(
             handle,
             Arc::new(Pixels {
@@ -130,7 +141,14 @@ impl Rasters {
             .lane
             .lock()
             .map_err(|_| "raster decode lane poisoned")?;
-        if scope.is_some_and(|scope| !self.state.lock().unwrap_or_else(|e| e.into_inner()).scopes.contains(scope)) {
+        if scope.is_some_and(|scope| {
+            !self
+                .state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .scopes
+                .contains(scope)
+        }) {
             return Err("raster scope closed".into());
         }
         self.insert(raster_decode::load(path)?, scope)
@@ -142,7 +160,7 @@ impl Rasters {
             let [
                 mix::value::Value::String(op),
                 mix::value::Value::String(value),
-                rest @ ..
+                rest @ ..,
             ] = args.as_slice()
             else {
                 return Err(fail(
@@ -159,8 +177,14 @@ impl Rasters {
                     rasters.load_scoped(Path::new(value), scope).map_err(fail)?
                 }
                 "begin" => json!(rasters.begin()),
-                "close" => { rasters.close(value); Value::Null }
-                "detach" => { rasters.detach(value); Value::Null }
+                "close" => {
+                    rasters.close(value);
+                    Value::Null
+                }
+                "detach" => {
+                    rasters.detach(value);
+                    Value::Null
+                }
                 "folder" => {
                     if !Path::new(value).is_absolute() {
                         return Err(fail("folder path must be absolute".into()));
