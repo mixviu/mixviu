@@ -83,21 +83,36 @@ print($rows[2]==nil)
 async fn empty_projection_still_checks_policy_and_wide_inputs_refuse() {
     struct NoFormat;
     impl mix::evaluator::CapabilityPolicy for NoFormat {
-        fn check_builtin(&self,name:&str)->Result<(),String> {
-            if name=="fmt" {Err("formatter denied by test host".into())} else {Ok(())}
+        fn check_builtin(&self, name: &str) -> Result<(), String> {
+            if name == "fmt" {
+                Err("formatter denied by test host".into())
+            } else {
+                Ok(())
+            }
         }
     }
-    let mut e=Evaluator::new();
+    let mut e = Evaluator::new();
     e.set_capability_policy(std::rc::Rc::new(NoFormat));
-    let err=e.execute_script_source("rows_project([],fn($r)=fmt(\"%s\",$r))").await.unwrap_err();
+    let err = e
+        .execute_script_source("rows_project([],fn($r)=fmt(\"%s\",$r))")
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("formatter denied by test host"));
-    assert_eq!(run("try rows_project(range(0,65536),fn($r)=$r) catch $m,$e print($e.code) end").await.unwrap(),"ROW_EXPRESSION\n");
+    assert_eq!(
+        run("try rows_project(range(0,65536),fn($r)=$r) catch $m,$e print($e.code) end")
+            .await
+            .unwrap(),
+        "ROW_EXPRESSION\n"
+    );
 }
 
 #[tokio::test]
 async fn native_row_calls_honour_strict_argument_types() {
-    let mut e=Evaluator::new();
+    let mut e = Evaluator::new();
     e.set_arity_mode(mix::ArityMode::Strict);
-    let err=e.execute_script_source("rows_project([42],fn($r)=lower($r))").await.unwrap_err();
-    assert!(err.to_string().contains("string"),"{err}");
+    let err = e
+        .execute_script_source("rows_project([42],fn($r)=lower($r))")
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("string"), "{err}");
 }
