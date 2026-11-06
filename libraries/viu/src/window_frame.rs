@@ -192,7 +192,9 @@ impl WindowFrame {
             vec2(
                 3.0 * caption_width,
                 ((height - ui.visuals().widgets.noninteractive.bg_stroke.width)
-                    * ui.pixels_per_point()).round() / ui.pixels_per_point(),
+                    * ui.pixels_per_point())
+                .round()
+                    / ui.pixels_per_point(),
             ),
         );
         self.geometry.insert("window.captions".into(), controls);
