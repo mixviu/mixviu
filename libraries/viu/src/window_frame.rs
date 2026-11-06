@@ -139,15 +139,16 @@ impl WindowFrame {
             0.0,
             crate::appearance::colour(ui.ctx(), "chrome").unwrap_or(ui.visuals().panel_fill),
         );
-        ui.painter().hline(
+        let border = if settings["window.header_seamless"] == true { 0.0 } else {ui.visuals().widgets.noninteractive.bg_stroke.width};
+        if border > 0.0 { ui.painter().hline(
             band.x_range(),
             band.bottom() - 0.5,
             ui.visuals().widgets.noninteractive.bg_stroke,
-        );
+        ); }
         if !self.client {
             self.geometry.insert("window.header".into(), band);
             let mut content = band;
-            content.max.y -= ui.visuals().widgets.noninteractive.bg_stroke.width;
+            content.max.y -= border;
             self.geometry
                 .insert("window.header.content".into(), content);
             return;
@@ -176,7 +177,7 @@ impl WindowFrame {
             ),
             vec2(
                 3.0 * caption_width,
-                (height - ui.visuals().widgets.noninteractive.bg_stroke.width).max(0.0),
+                (height - border).max(0.0),
             ),
         );
         self.geometry.insert("window.captions".into(), controls);
@@ -198,7 +199,7 @@ impl WindowFrame {
         if header {
             self.geometry.insert("window.header".into(), drag);
             let mut content = drag;
-            content.max.y -= ui.visuals().widgets.noninteractive.bg_stroke.width;
+            content.max.y -= border;
             self.geometry
                 .insert("window.header.content".into(), content);
         }

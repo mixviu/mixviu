@@ -162,7 +162,7 @@ fn publish_ced($s)
     $labels[$k]=basename($s.tabs[$i].path ?? "Untitled")..if $s.tabs[$i].dirty or $s.tabs[$i].pending>0 then " *" else "" end
   end
   if not $has then $choices=["none"] end
-  $window={"window.decorations":"ssd"}
+  $window={"window.decorations":"ssd","window.header_seamless":true}
   for $k in keys($prefs) if starts_with($k,"window.") then $window[$k]=$prefs[$k] end end
   $items=map(["save","undo","redo","refresh","close"],fn($op)={id:$op,label:$op,enabled:$has and $t.phase=="live"})
   $mail=$s.mail[$t.document]

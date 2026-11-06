@@ -95,10 +95,11 @@ impl Host {
     fn window_settings(&self, model: &Value) -> Value {
         let mut settings = if self.native_drive && model["window_settings"].is_object() {
             model["window_settings"].clone()
-        } else { self
-            .session_window
-            .clone()
-            .unwrap_or_else(|| model["window_settings"].clone()) };
+        } else {
+            self.session_window
+                .clone()
+                .unwrap_or_else(|| model["window_settings"].clone())
+        };
         for (axis, key) in [
             ("decorations", "window.decorations"),
             ("caption_side", "window.caption_side"),
