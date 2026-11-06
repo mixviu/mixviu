@@ -1,30 +1,70 @@
--- Import single files from MixOS at an exact revision into this worktree at
--- the same relative path, appending to provenance/engine-split-mix-imports.json.
--- Unlike import_engine_split_mix.mix it never touches other files.
--- usage: mix tools/import_extra_files.mix SRC_REPO REV PATH...
+-- Import files or whole directories from MixOS at an exact revision into
+-- this worktree, appending to provenance/engine-split-mix-imports.json.
+-- Each ITEM is SRC or SRC=DST (a file or directory path in the source repo).
+-- libs/X maps to libraries/X unless DST is given. Applies the same relative
+-- path rewrites as import_engine_split_mix.mix to .rs/.toml files. Refuses to
+-- overwrite any existing file, so later lab edits are never clobbered.
+-- usage: mix tools/import_extra_files.mix SRC_REPO REV ITEM...
 $a = args()
 if len($a) < 3 then
-  raise("USAGE", "import_extra_files.mix SRC_REPO REV PATH...")
+  raise("USAGE", "import_extra_files.mix SRC_REPO REV ITEM...")
 end
+$repo = $a[0]
 $root = path_join(dirname(realpath(script_path())), "..")
-$rev = trim(run_argv_must(["git", "-C", $a[0], "rev-parse", $a[1]]))
+$rev = trim(run_argv_must(["git", "-C", $repo, "rev-parse", $a[1]]))
 $prov_path = path_join($root, "provenance/engine-split-mix-imports.json")
 $prov = json_parse(read_file($prov_path))
 if $prov.source_revision != $rev then
   raise("REV_MISMATCH", "provenance is for " .. $prov.source_revision)
 end
-$entries = $prov.entries
-for $p in slice($a, 2, len($a))
-  $text = run_argv_must(["git", "-C", $a[0], "show", $rev .. ":" .. $p])
-  $dst = path_join($root, $p)
-  if is_file($dst) then
-    raise("EXISTS", $p .. " already exists in the worktree")
+$rewrites = [
+  ["\"../../../libs/", "\"../../../libraries/"],
+  ["\"../../libs/", "\"../../libraries/"],
+  ["\"../../../services/noded/src/", "\"../noded/"],
+]
+fn dest_of($src)
+  if starts_with($src, "libs/") then
+    return "libraries/" .. substr($src, 5)
   end
-  mkdir(dirname($dst), {parents: true})
-  write_file($dst, $text)
-  $sha = hash_file($dst, "sha256")
-  push($entries, {source: $p, destination: $p, source_sha256: $sha, destination_sha256: $sha, adaptation: nil})
-  print "imported " .. $p
+  return $src
+end
+$entries = $prov.entries
+$count = 0
+for $item in slice($a, 2, len($a))
+  $parts = split_once($item, "=")
+  $src = if $parts == nil then $item else $parts[0] end
+  $dst_base = if $parts == nil then dest_of($src) else $parts[1] end
+  $files = filter(lines(run_argv_must(["git", "-C", $repo, "ls-tree", "-r", "--name-only", $rev, "--", $src])), fn($l) = $l != "")
+  if len($files) == 0 then
+    raise("MISSING", $src .. " not in " .. $rev)
+  end
+  for $f in $files
+    $rel = substr($f, len($src))
+    $dst_rel = $dst_base .. $rel
+    $dst = path_join($root, $dst_rel)
+    if is_file($dst) then
+      raise("EXISTS", $dst_rel .. " already exists in the worktree")
+    end
+    mkdir(dirname($dst), {parents: true})
+    -- binary-safe copy through git show into the destination file
+    run_argv_must(["git", "-C", $repo, "show", $rev .. ":" .. $f], {stdout: {file: $dst}})
+    $src_sha = hash_file($dst, "sha256")
+    $adapt = nil
+    if ends_with($dst, ".rs") or ends_with($dst, ".toml") then
+      $t = read_file($dst)
+      $t2 = $t
+      for $r in $rewrites
+        $t2 = replace($t2, $r[0], $r[1])
+      end
+      if $t2 != $t then
+        write_file($dst, $t2)
+        $adapt = "relative libs/ paths remapped to libraries/"
+      end
+    end
+    push($entries, {source: $f, destination: $dst_rel, source_sha256: $src_sha, destination_sha256: hash_file($dst, "sha256"), adaptation: $adapt})
+    $count = $count + 1
+  end
 end
 $prov.entries = $entries
 write_file($prov_path, json_encode($prov, true) .. "\n")
+print "imported " .. to_string($count) .. " files"
