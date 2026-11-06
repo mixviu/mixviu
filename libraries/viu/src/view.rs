@@ -658,7 +658,8 @@ impl SceneView {
         depth: usize,
         events: &mut Vec<Event>,
     ) {
-        self.regions.insert(id.into(), rect.intersect(ui.clip_rect()));
+        self.regions
+            .insert(id.into(), rect.intersect(ui.clip_rect()));
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(id), |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(rect));
             self.node(ui, id, nodes, route, depth + 1, events);

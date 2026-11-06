@@ -4,6 +4,14 @@ Oracle: MixOS `8779f3328`, `apps/monitor/src`, `crates/vitals`, original
 README and `docs/monitor/README.md`. Source review includes actions, model,
 query construction and UI documentation. This lab specimen has no parity claim.
 
+Round-two source audit: the signal-policy description in the table below
+conflicts with the pinned implementation. Gold's `Engine::can_signal` checks
+local node, no open dialog and a selected row. Its shell validates a positive
+PID and calls `kill(2)` with SIGTERM/SIGKILL; it has no UID/start-time identity
+fence or confirmation. The earlier inventory instead requires those guards.
+The Fable question and source evidence are recorded in `last.md`; neither
+policy is claimed implemented or accepted by the Mix app yet.
+
 | Original capability | Round 1 status |
 |---|---|
 | Native monitord local/mesh snapshot and processes | Ported in Mix; native read/capture verified; unavailable errors explicit; no fabricated readings |
