@@ -209,15 +209,24 @@ mod tests {
     fn closed_scope_fences_late_decodes_and_detached_active_handles_survive() {
         let store = Rasters::default();
         let scope = store.begin();
-        let image = || Decoded { size:[1,1], original_size:[1,1], rgba:image::RgbaImage::new(1,1) };
-        let a = store.insert(image(),Some(&scope)).unwrap();
-        let b = store.insert(image(),Some(&scope)).unwrap();
+        let image = || Decoded {
+            size: [1, 1],
+            original_size: [1, 1],
+            rgba: image::RgbaImage::new(1, 1),
+        };
+        let a = store.insert(image(), Some(&scope)).unwrap();
+        let b = store.insert(image(), Some(&scope)).unwrap();
         store.detach(a["handle"].as_str().unwrap());
         store.close(&scope);
         assert!(store.get(a["handle"].as_str().unwrap()).is_some());
         assert!(store.get(b["handle"].as_str().unwrap()).is_none());
-        assert!(store.insert(image(),Some(&scope)).unwrap_err().contains("closed"));
-        assert_eq!(store.bytes(),4);
+        assert!(
+            store
+                .insert(image(), Some(&scope))
+                .unwrap_err()
+                .contains("closed")
+        );
+        assert_eq!(store.bytes(), 4);
     }
     #[test]
     fn texture_overlap_is_accounted_and_release_restores_capacity() {

@@ -45,7 +45,11 @@ impl Facilities {
                 commands.extend(macros::commands::describe(&app));
             }
             if manifest.native_debug {
-                commands.extend(toolkit::debug::describe(&app));
+                for descriptor in toolkit::debug::describe(&app) {
+                    if !commands.iter().any(|existing|existing["name"]==descriptor["name"]) {
+                        commands.push(descriptor);
+                    }
+                }
             }
         }
         let macros = manifest
@@ -161,7 +165,7 @@ impl Facilities {
         }
     }
     pub fn request(&mut self, mut r: Request, ctx: &egui::Context) -> Option<Request> {
-        if self.surface.is_some()
+        if self.surface.as_ref().is_some_and(|s|s["arguments_any"]!=true)
             && !r.command.starts_with(&format!("{}.macros.", self.app))
             && !r.args.is_object()
         {
@@ -183,7 +187,7 @@ impl Facilities {
             if let Some(surface) = &self.surface {
                 let _ = r.reply.send((
                     0,
-                    if r.command == "HELP" {
+                    if r.command == "HELP" || surface["describe_list"]==true {
                         surface["commands"].clone()
                     } else {
                         surface.clone()

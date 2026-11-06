@@ -32,6 +32,8 @@ pub mod raster;
 pub mod raster_decode;
 pub mod raster_fill;
 pub mod raster_fit;
+pub mod composition;
+mod cuboids;
 pub mod rich;
 pub mod runtime;
 pub mod session;

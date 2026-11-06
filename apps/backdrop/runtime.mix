@@ -14,6 +14,7 @@ if $store!=nil then
 end
 $document=$launch.override($document,$options)
 $s=$engine.fresh();$running=nil
+$views=require("views.mix");$live=$views.fresh()
 fn snapshot($s)
   $outputs=[];$native=viu_ui_state().outputs ?? {}
   for $name in keys($native)
@@ -140,6 +141,26 @@ on backdrop.next
   catch $message,$error
     reply(10,json_encode({error_code:$error.code,message:$message}))
   end
+end
+on backdrop.view.list
+  if type($event.args)!="map" or len(keys($event.args))!=0 then reply(10,json_encode({error_code:"ARGUMENT",message:"expected {}"}))
+  else reply(0,json_encode({views:["wallpaper","train"],selected:$s.view})) end
+end
+on backdrop.view.set
+  try
+    $candidate=$views.choose_view($live,$event.args)
+    $live=$candidate;$s.view=$event.args.view
+    $result={view:$s.view}
+    publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.set","bus",$event.args,$result)))
+    show_state($s);reply(0,json_encode($result))
+  catch $message reply(10,json_encode({error_code:"ARGUMENT",message:$message})) end
+end
+on backdrop.view.cycle
+  try
+    $s.view=$views.cycle($s.view,$event.args);$result={view:$s.view}
+    publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.cycle","bus",$event.args,$result)))
+    show_state($s);reply(0,json_encode($result))
+  catch $message reply(10,json_encode({error_code:"ARGUMENT",message:$message})) end
 end
 on viu.job.completed
   $d=$event.args

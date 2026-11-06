@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+fn descriptors()
+  return [
+    {name:"HELP",args:[],description:"List every command",read_only:true},
+    {name:"app.describe",args:[],description:"Describe the service commands",read_only:true},
+    {name:"backdrop.ping",args:[],description:"Read service identity",read_only:true},
+    {name:"backdrop.state",args:[],description:"Read wallpaper and output state",read_only:true},
+    {name:"backdrop.set",args:["schema","default?","outputs?"],description:"Apply and store a wallpaper document",read_only:false},
+    {name:"backdrop.next",args:[],description:"Advance the slideshow",read_only:false},
+    {name:"backdrop.view.set",args:["view","args?"],description:"Select a background view",read_only:false},
+    {name:"backdrop.view.list",args:[],description:"List background views",read_only:true},
+    {name:"backdrop.view.cycle",args:["dir"],description:"Cycle background views",read_only:false},
+    {name:"backdrop.debug",args:[],description:"Read live debug state",read_only:true},
+    {name:"backdrop.debug.recent",args:[],description:"Pull recent events; seq is newest, next is the paging cursor",read_only:true},
+    {name:"backdrop.debug.set",args:["level?","on?"],description:"Set level or on shorthand; exactly one required",read_only:false}
+  ]
+end

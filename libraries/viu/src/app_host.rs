@@ -207,7 +207,9 @@ impl Host {
                 10,
                 self.unknown_command.as_ref().map_or_else(
                     || json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
-                    |message| json!({"error_code":"UNKNOWN_COMMAND","message":message}),
+                    |message| if message.contains("{command}") {
+                        json!({"error_code":"UNKNOWN_COMMAND","message":message.replace("{command}",&r.command),"command":r.command})
+                    } else { json!({"error_code":"UNKNOWN_COMMAND","message":message}) },
                 ),
             ));
             return;
@@ -1209,12 +1211,22 @@ impl crate::layer::LayerProgram for LayerHost {
         host.pump(ui.ctx());
         if let Some(session) = &host.session {
             if session.snapshot["state"].is_object() {
-                let stamp = json!([session.snapshot["state"]["incarnation"],session.snapshot["state"]["revision"],session.snapshot["state"]["lost"]]);
+                let stamp = json!([
+                    session.snapshot["state"]["incarnation"],
+                    session.snapshot["state"]["revision"],
+                    session.snapshot["state"]["lost"]
+                ]);
                 let key = egui::Id::unique("viu-layer-look-revision");
-                if ui.ctx().data(|d|d.get_temp::<Value>(key)).as_ref() != Some(&stamp) {
-                    if let Ok(common) = crate::appearance::install_session(ui.ctx(), &session.snapshot, &host.app, &host.file_theme, &host.last_ui) {
+                if ui.ctx().data(|d| d.get_temp::<Value>(key)).as_ref() != Some(&stamp) {
+                    if let Ok(common) = crate::appearance::install_session(
+                        ui.ctx(),
+                        &session.snapshot,
+                        &host.app,
+                        &host.file_theme,
+                        &host.last_ui,
+                    ) {
                         host.last_ui = common;
-                        ui.ctx().data_mut(|d|d.insert_temp(key,stamp));
+                        ui.ctx().data_mut(|d| d.insert_temp(key, stamp));
                     }
                 }
             }

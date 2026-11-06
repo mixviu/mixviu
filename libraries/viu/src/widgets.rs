@@ -54,6 +54,7 @@ pub const KINDS: &[&str] = &[
     "dialog-form",
     "image-view",
     "image-fill",
+    "composition",
     "window-controls",
 ];
 
@@ -305,6 +306,7 @@ impl Widget {
             }
             "image-view" => return crate::image_view::validate(value),
             "image-fill" => return crate::image_view::validate_fill(value),
+            "composition" => return crate::composition::validate(value),
             "tree-table" => return crate::tree_table::validate(value),
             "icon" => {
                 value["name"]
@@ -645,6 +647,7 @@ pub struct Widgets {
     editors: crate::editor::Editors,
     documents: crate::documents::Documents,
     rasters: Option<crate::raster::Rasters>,
+    compositions: BTreeMap<String, crate::composition::Composition>,
 }
 impl Widgets {
     pub fn set_rasters(&mut self, rasters: crate::raster::Rasters) {
@@ -918,6 +921,10 @@ impl Widgets {
                 response
             }
             "image-view" => self.images.draw(ui, id, value),
+            "composition" => {
+                let rasters=self.rasters.clone().unwrap_or_default();
+                self.compositions.entry(id.into()).or_default().draw(ui,value,&rasters)
+            }
             "image-fill" => {
                 let images = self
                     .surfaces
