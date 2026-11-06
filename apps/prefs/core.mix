@@ -1,8 +1,34 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
+$nav=require("navigation.mix")
+$pages=require("pages.mix")
+$actions=require("actions.mix")
+$look=require("look.mix")
+$email=require("email.mix")
+$gallery=require("gallery.mix")
 $sections=[{id:"appearance",label:"Appearance",prefixes:["appearance."]},{id:"text_and_fonts",label:"Text & Fonts",prefixes:["appearance.font","appearance.mono"]},{id:"wallpaper",label:"Wallpaper",prefixes:["wallpaper."]},{id:"windows",label:"Windows",prefixes:["window."]},{id:"accessibility",label:"Accessibility",prefixes:["accessibility."]},{id:"apps_term",label:"Terminal",prefixes:["terminal."]},{id:"apps_ced",label:"Editor",prefixes:["ced."]},{id:"all",label:"All described settings",prefixes:[""]}]
 fn initial($instance)
-  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil}
+  return {bindings:{},binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil,ui:$nav.initial_ui(),nav:$nav.initial_nav(),apps:[],notes:nil,notes_error:nil,notes_owner:nil,releases:"unknown",release_status:"Connecting to the Bus…",release_failed:false,release_busy:false,release_serial:0,release_owner:nil,release_started:false,quitting:false,needs_read:true,subscribed:false,connected:false,queue_changes:{},inflight_changes:{},look:$look.initial(),email:$email.initial(),gallery:$gallery.initial(),live:{outputs:[],options:{}},failed:false}
+end
+
+fn framed($s)
+  $model=model($s)
+  $available=not $s.busy
+  $refresh={id:"view.refresh",label:"Refresh",icon:"refresh-cw",enabled:$available}
+  $search={id:"view.search",label:"Search preferences",icon:"search",icon_only:true,plain:true,enabled:$s.ui.dialog==nil}
+  $toolbar=[{id:"sidebar.toggle",label:"Sidebar",icon:"panel-left",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},{id:"help.macros",label:"Macros",icon:"scroll-text",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},$search,{id:"help.shortcuts",label:"Keyboard shortcuts",icon:"keyboard",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},{id:"view.mode",label:"Light or dark interface",icon:if ($look.shown($s.look) ?? {}).mode=="light" then "moon" else "sun" end,icon_only:true,plain:true,enabled:true}]
+  $toolbar=map($toolbar,fn($b)=merge($b,{shortcut:(filter($actions.action_list($s).actions,fn($a)=$a.id==$b.id)[0] ?? {}).shortcut}))
+  $model=$frame.apply($model,{icon:"settings",title:"Preferences",menus:$actions.menus($s),toolbar:$toolbar,status:nil})
+  $model.frame.menu.properties.native_menu=true
+  $model.theme_choice=$actions.theme_choice($s)
+  -- Gold Shell::wanted: profile installation follows these authored inputs.
+  $model.theme_refresh_key=[$model.theme_choice,$look.shown($s.look),$s.look.custom_source,$s.values["appearance.font_weight"],$s.values["appearance.font_size"]]
+  $model.theme_values=$look.preview_values($s)
+  $model.macros_open=$s.ui.macros_open
+  $model.shortcuts=$actions.shortcuts($s)
+  $model.window_close=$s.quitting and not $s.busy and not $s.release_busy and $s.notes_owner==nil and $s.look.job==nil and $s.email.task==nil and len(keys($s.queue_changes))==0
+  return $model
 end
 fn key_info($s,$key)
   $found=filter($s.catalog,fn($k)=$k.path==$key)
@@ -24,26 +50,30 @@ end
 fn admitted($s,$key,$value)
   if $s.busy or $s.uncertain or $s.revision==nil or $s.incarnation==nil or $s.stale or not contains(["authority","mirror"],$s.role) then raise("NOT_WRITABLE","Refresh a reachable non-stale settings authority before writing") end
   $k=key_info($s,$key)
-  if not contains(["stored","applied"],$k.class) or starts_with($key,"email.") or $k.kind=="list" or contains($key,"<") then raise("READ_ONLY","This key needs its owning service workflow") end
-  if $value!=nil then
+  if not contains(["stored","applied"],$k.class) or contains(["email.accounts","email.default_account"],$key) or contains($key,"<") then raise("READ_ONLY","This key needs its owning service workflow") end
+  if $value!=nil and $k.kind!="domain" then
     if $k.kind=="bool" and type($value)!="bool" then raise("TYPE","Boolean required") end
-    if $k.kind=="enum" and not contains($k.variants,$value) then raise("ENUM","Value is not a described variant") end
+    if $k.kind=="enum" and not contains($k.variants,$value) then raise("ENUM",$key..": expected one of "..join($k.variants,", ")) end
     if contains(["int","number"],$k.kind) then
       if type($value)!="number" then raise("TYPE","Number required") end
-      if ($k.min!=nil and $value<$k.min) or ($k.max!=nil and $value>$k.max) or ($k.kind=="int" and floor($value)!=$value) then raise("RANGE","Number outside described range") end
+      if ($k.min!=nil and $value<$k.min) or ($k.max!=nil and $value>$k.max) or ($k.kind=="int" and floor($value)!=$value) then raise("RANGE",$key..": "..to_string($value).." is outside "..to_string($k.min)..".."..to_string($k.max)) end
       if $k.values!=nil and not contains($k.values,$value) then raise("RANGE","Number is not a described step") end
-    elif not contains(["enum","bool"],$k.kind) and type($value)!="string" then raise("TYPE","Text required; complex controls are deferred") end
+    elif $k.kind=="list" then
+      if type($value)!="list" then raise("TYPE","List required") end
+    elif not contains(["enum","bool"],$k.kind) and type($value)!="string" then raise("TYPE","Text required") end
   end
   $changes={};$reset=[]
   if $value==nil then push($reset,$key) else $changes[$key]=$value end
-  if $value!=nil and contains(["wallpaper.image","wallpaper.color"],$key) then
-    $changes["wallpaper.slideshow.enabled"]=false
-    push($reset,if $key=="wallpaper.image" then "wallpaper.color" else "wallpaper.image" end)
+  if contains(["wallpaper.same_on_all","wallpaper.slideshow.enabled","wallpaper.image","wallpaper.color"],$key) then
+    $writes=$gallery.writes($s,$key,$value);$changes={};$reset=[]
+    for $path in keys($writes) if $writes[$path]==nil then push($reset,$path) else $changes[$path]=$writes[$path] end end
   end
-  return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:uuid(),changes:$changes,reset:$reset}
+  $validation=viu_settings("admit",$s.values,$changes,$reset)
+  if not $validation.ok then raise("FAILED",join(map($validation.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
+  return {bindings:{},binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:viu_token(),changes:$changes,reset:$reset}
 end
-fn model($s)
-  $section=filter($sections,fn($x)=$x.id==$s.section)[0]
+fn registry_model($s)
+  $section=filter($sections,fn($x)=$x.id==$s.section)[0] ?? {prefixes:[]}
   $rows=[]
   for $k in $s.catalog
     if any($section.prefixes,fn($prefix)=starts_with($k.path,$prefix)) and contains(lower($k.path),lower($s.search)) then
@@ -59,4 +89,14 @@ fn model($s)
     elif $s.draft_kind=="checkbox" then $editor.properties={text:$s.key} end
   end
   return {status:$s.status.." · "..$s.role.." · revision "..to_string($s.revision),selected_label:$s.key.." · "..if $s.draft_kind=="field" then "Edit JSON; Apply writes only this setting" else "Choose value, then Apply" end,section_control:{id:"section",kind:"combo",label:"Section",initial:"appearance",properties:{choices:map($sections,fn($x)=$x.id)}},table:{id:"table",kind:"tree-table",label:"Settings",initial:{key:"settings",rows:$rows,columns:[{id:"key",label:"Setting"},{id:"kind",label:"Type"},{id:"value",label:"Value"},{id:"class",label:"Class"}]},properties:{height:430,name_min:250}},editor:$editor,values:{section:$s.section,search:$s.search,editor:$s.draft}}
+end
+
+fn model($s)
+  $browser=$pages.browser($s)
+  $dialog=$actions.dialog_form($s)
+  return {browser:{id:"browser",kind:"settings-browser",label:"",initial:$browser},dialog:{id:"dialog",kind:"dialog-form",label:"",initial:$dialog,properties:{style:"gold"}},values:{browser:$browser,dialog:$dialog}}
+end
+
+fn info($s)
+  return {schema:"prefs.v1",app_id:"dev.mixos.prefs",version:"0.1.2",pid:pid(),connected:$s.connected,releases:$s.releases,busy:$s.release_busy or $s.notes_owner!=nil or $s.look.job!=nil or $s.email.task!=nil or len($s.show_tokens ?? [])>0,working:$s.release_op ?? nil,uncertain:$s.release_uncertain ?? nil,status:$s.status,failed:$s.failed ?? false,release_status:$s.release_status,release_failed:$s.release_failed,apps:$s.apps,notes:$s.notes,notes_error:$s.notes_error,appearance:$look.view($s),gallery:$gallery.view($s),email:$email.view($s),section:$s.ui.section,category:$nav.section($s.ui.section).category,ui:$s.ui,nav:$s.nav,store:$pages.store_view($s)}
 end

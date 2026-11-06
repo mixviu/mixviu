@@ -29,6 +29,7 @@ pub(crate) struct Images {
     decoder: crate::thumbnail::Decoder<Key>,
     slots: BTreeMap<String, Slot>,
     visible: BTreeSet<String>,
+    capacity: usize,
 }
 impl Default for Images {
     fn default() -> Self {
@@ -36,6 +37,7 @@ impl Default for Images {
             decoder: crate::thumbnail::Decoder::new("viu-preview-decode"),
             slots: BTreeMap::new(),
             visible: BTreeSet::new(),
+            capacity: 16,
         }
     }
 }
@@ -44,6 +46,12 @@ impl Images {
         Self {
             decoder: crate::thumbnail::Decoder::with_decoder("viu-surface-decode", decode_surface),
             ..Self::default()
+        }
+    }
+    pub fn surface_with_capacity(capacity: usize) -> Self {
+        Self {
+            capacity: capacity.clamp(1, 128),
+            ..Self::surface()
         }
     }
     pub fn states(&self) -> Value {
@@ -98,7 +106,7 @@ impl Images {
             self.slots.remove(id);
         }
         if !self.slots.contains_key(id) {
-            if self.slots.len() >= 16 {
+            if self.slots.len() >= self.capacity {
                 return ui.label("Preview capacity reached");
             }
             let key = (id.to_owned(), path.to_owned());

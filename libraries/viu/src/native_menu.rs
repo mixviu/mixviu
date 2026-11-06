@@ -71,6 +71,16 @@ pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
     })?;
     Some(slots()[index])
 }
+pub(crate) fn shortcut(ctx: Option<&egui::Context>, item: &Value) -> Option<String> {
+    if item.get("shortcut_binding").is_some() {
+        item["shortcut_binding"]
+            .as_str()
+            .and_then(toolkit::keymap::parse_chord)
+            .and_then(|shortcut| ctx.map(|ctx| ctx.format_shortcut(&shortcut)))
+    } else {
+        item["shortcut"].as_str().map(str::to_owned)
+    }
+}
 fn entries(
     value: &Value,
     ids: &mut Vec<String>,
@@ -97,17 +107,12 @@ fn entries(
                 }
                 let slot = slots()[ids.len()];
                 ids.push(item["id"].as_str().unwrap_or("").into());
-                Some(slot)
+                Some(slot.into())
             };
             Ok(Entry::Row(Row {
                 id,
                 label: item["label"].as_str().unwrap_or("").into(),
-                shortcut: item["shortcut"].as_str().map(|s| {
-                    ctx.and_then(|ctx| {
-                        toolkit::keymap::parse_chord(s).map(|key| ctx.format_shortcut(&key))
-                    })
-                    .unwrap_or_else(|| s.into())
-                }),
+                shortcut: shortcut(ctx, item),
                 enabled: item["enabled"] == true,
                 checked: item["checked"].as_bool(),
                 children,
@@ -162,58 +167,7 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
         |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             let hosted = toolkit::menu::form(ui.ctx())["hosted"] == true;
-            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
-            if !hosted && chrome.menu_side == design::MenuSide::Left {
-                ui.add_space(
-                    toolkit::chrome::Chrome::of(ui.ctx())
-                        .metrics
-                        .title_bar_margin,
-                );
-            }
-            if crate::window_frame::client_of(ui.ctx()) {
-                if let Some(icon) = mark.and_then(crate::icons::Icon::from_name) {
-                    let (area, _) = ui.allocate_exact_size(
-                        egui::vec2(
-                            chrome.metrics.mark + chrome.metrics.mark_gap,
-                            ui.available_height(),
-                        ),
-                        egui::Sense::hover(),
-                    );
-                    let rect = egui::Rect::from_min_size(
-                        egui::pos2(area.left(), area.center().y - chrome.metrics.mark / 2.0),
-                        egui::Vec2::splat(chrome.metrics.mark),
-                    )
-                    .round_to_pixels(ui.pixels_per_point());
-                    toolkit::icons::image_of(
-                        ui.ctx(),
-                        icon,
-                        chrome.metrics.mark,
-                        chrome.palette.icon,
-                    )
-                    .paint_at(ui, rect);
-                    let response = ui.interact(
-                        rect,
-                        ui.scope_id().with("window-menu-mark"),
-                        egui::Sense::click(),
-                    );
-                    response.widget_info(|| {
-                        egui::WidgetInfo::labeled(
-                            egui::Role::Button,
-                            true,
-                            toolkit::action::label_text(
-                                &toolkit::Strings::new(""),
-                                "window-system-menu",
-                            ),
-                        )
-                    });
-                    if response.clicked_by(egui::PointerButton::Primary) {
-                        crate::window_frame::request_menu(
-                            ui.ctx(),
-                            response.interact_pointer_pos(),
-                        );
-                    }
-                }
-            }
+            header_mark(ui, mark, hosted);
             if hosted {
                 let rect = ui.ctx().content_rect();
                 let side = toolkit::chrome::Chrome::of(ui.ctx()).menu_side;
@@ -285,6 +239,50 @@ mod tests {
                 );
             })
             .drop_without_applying_deltas();
+        }
+    }
+}
+
+pub(crate) fn header_mark(ui: &mut egui::Ui, mark: Option<&str>, hosted: bool) {
+    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+    if !hosted && chrome.menu_side == design::MenuSide::Left {
+        ui.add_space(
+            toolkit::chrome::Chrome::of(ui.ctx())
+                .metrics
+                .title_bar_margin,
+        );
+    }
+    if crate::window_frame::client_of(ui.ctx()) {
+        if let Some(icon) = mark.and_then(crate::icons::Icon::from_name) {
+            let (area, _) = ui.allocate_exact_size(
+                egui::vec2(
+                    chrome.metrics.mark + chrome.metrics.mark_gap,
+                    ui.available_height(),
+                ),
+                egui::Sense::hover(),
+            );
+            let rect = egui::Rect::from_min_size(
+                egui::pos2(area.left(), area.center().y - chrome.metrics.mark / 2.0),
+                egui::Vec2::splat(chrome.metrics.mark),
+            )
+            .round_to_pixels(ui.pixels_per_point());
+            toolkit::icons::image_of(ui.ctx(), icon, chrome.metrics.mark, chrome.palette.icon)
+                .paint_at(ui, rect);
+            let response = ui.interact(
+                rect,
+                ui.scope_id().with("window-menu-mark"),
+                egui::Sense::click(),
+            );
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(
+                    egui::Role::Button,
+                    true,
+                    toolkit::strings::own("window-system-menu"),
+                )
+            });
+            if response.clicked_by(egui::PointerButton::Primary) {
+                crate::window_frame::request_menu(ui.ctx(), response.interact_pointer_pos());
+            }
         }
     }
 }

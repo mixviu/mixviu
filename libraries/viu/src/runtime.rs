@@ -99,6 +99,11 @@ pub struct Reply {
     pub rc: u8,
     pub body: Json,
 }
+#[derive(Debug)]
+pub struct DeferredAnswer {
+    pub token: String,
+    pub reply: Reply,
+}
 
 #[derive(Debug)]
 pub struct Completion {
@@ -113,6 +118,8 @@ pub struct Completion {
     /// The callback's explicit application reply. A refusal is a normal
     /// response, distinct from an evaluator/handler failure in `error`.
     pub reply: Option<Reply>,
+    pub deferred: Option<String>,
+    pub answers: Vec<DeferredAnswer>,
 }
 
 enum RunFailure {
@@ -194,7 +201,7 @@ impl Runtime {
                     Request::Load(generation, program) => {
                         if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                         // A fresh evaluator never retains old closures or module state.
-                        let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), backend: backend.clone() });
+                        let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), deferred: RefCell::new(None), answers: RefCell::new(Vec::new()), is_request: std::cell::Cell::new(false), backend: backend.clone() });
                         let stdout = SharedBuf::new();
                         let stderr = SharedBuf::new();
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
@@ -216,6 +223,9 @@ impl Runtime {
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_process",crate::process::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
+                        eval.register("viu_settings",crate::native_primitives::settings_values());
+                        eval.register("viu_token",crate::native_primitives::token());
+                        eval.register("viu_fonts",crate::native_primitives::installed_fonts());
                         eval.register("viu_image",crate::native_primitives::image_file());
                         eval.register("viu_http",crate::http::binding());
                         if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
@@ -237,7 +247,8 @@ impl Runtime {
                     }
                     Request::Event(generation, sequence, command, args, is_request, mut headers) => {
                         let outcome = match current.as_mut() {
-                            Some((active, eval, ..)) if *active == generation => {
+                            Some((active, eval, local, ..)) if *active == generation => {
+                                local.is_request.set(is_request);
                                 headers.entry("from".into()).or_insert_with(||"viu-client".into());
                                 headers.insert("type".into(),if is_request{"request"}else{"event"}.into());
                                 headers.insert("id".into(),sequence.to_string());
@@ -261,12 +272,14 @@ impl Runtime {
                     None => (None, String::new(), String::new(), None,None),
                 };
                 let result = result.and_then(|_| fault.map_or(Ok(()), |error| Err(RunFailure::Evaluation(error))));
+                let (mut deferred, mut answers) = current.as_ref().map(|(_,_,local,_,_)| (local.deferred.borrow_mut().take(), std::mem::take(&mut *local.answers.borrow_mut()))).unwrap_or_default();
+                let result = if deferred.is_some() && reply.is_some() { Err(RunFailure::Evaluation("request cannot both reply and defer".into())) } else { result };
                 // Failed callbacks never publish a partial model to the UI.
-                if result.is_err() { model = None; reply=None; }
+                if result.is_err() { model = None; reply=None; deferred=None; answers.clear(); }
                 if (sequence == 0 && result.is_err()) || matches!(&result, Err(RunFailure::Deadline)) {
                     if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                 }
-                let completion = Completion { generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply };
+                let completion = Completion { generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply,deferred,answers };
                 if results.send(completion).is_err() { break; }
                 wake();
             }
@@ -411,6 +424,9 @@ struct Local {
     model: RefCell<Option<Json>>,
     error: RefCell<Option<String>>,
     reply: RefCell<Option<Reply>>,
+    deferred: RefCell<Option<String>>,
+    answers: RefCell<Vec<DeferredAnswer>>,
+    is_request: std::cell::Cell<bool>,
     backend: Option<Rc<dyn BusHandler>>,
 }
 
@@ -485,6 +501,43 @@ impl BusHandler for Local {
                 value => to_json(value)?,
             };
             let result = match command {
+                "requests.defer" => {
+                    let token = body["token"]
+                        .as_str()
+                        .filter(|s| !s.is_empty() && s.len() <= 128)
+                        .ok_or_else(|| failure("invalid deferred request token"))?;
+                    if !self.is_request.get() || self.deferred.borrow().is_some() {
+                        return Err(failure(
+                            "only one deferral is allowed on a request callback",
+                        ));
+                    }
+                    *self.deferred.borrow_mut() = Some(token.into());
+                    json!({"deferred":true})
+                }
+                "requests.reply" => {
+                    let token = body["token"]
+                        .as_str()
+                        .filter(|s| !s.is_empty() && s.len() <= 128)
+                        .ok_or_else(|| failure("invalid deferred request token"))?;
+                    let rc = body["rc"]
+                        .as_u64()
+                        .filter(|rc| *rc <= 255)
+                        .ok_or_else(|| failure("invalid deferred reply code"))?
+                        as u8;
+                    if self.answers.borrow().len() >= 32
+                        || self.answers.borrow().iter().any(|a| a.token == token)
+                    {
+                        return Err(failure("duplicate or over-budget deferred reply"));
+                    }
+                    self.answers.borrow_mut().push(DeferredAnswer {
+                        token: token.into(),
+                        reply: Reply {
+                            rc,
+                            body: body["value"].clone(),
+                        },
+                    });
+                    json!({"queued":true})
+                }
                 "shell.scene.describe" => {
                     json!([{"path":"flow", "enum":["horizontal","vertical"]}, {"path":"hidden","type":"bool"}])
                 }
@@ -559,6 +612,15 @@ impl BusHandler for Local {
         body: &'a str,
     ) -> BusFuture<'a, MixResult<()>> {
         Box::pin(async move {
+            // Mix synthesises NO_REPLY when a clean handler returns without
+            // reply(). The host now owns that obligation after local deferral.
+            // Explicit replies and fault replies still follow normal admission.
+            if self.deferred.borrow().is_some()
+                && rc == mix::evaluator::NO_REPLY_RC
+                && body == mix::evaluator::NO_REPLY_BODY
+            {
+                return Ok(());
+            }
             if self.reply.borrow().is_some() {
                 return Err(failure("callback already replied"));
             }

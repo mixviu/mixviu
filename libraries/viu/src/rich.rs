@@ -6,7 +6,13 @@ use egui::{Rect, Ui};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const KINDS: &[&str] = &["menubar", "command-bar", "property-grid", "dialog-form"];
+pub const KINDS: &[&str] = &[
+    "menubar",
+    "command-bar",
+    "property-grid",
+    "dialog-form",
+    "settings-browser",
+];
 #[derive(Clone, Default)]
 struct MenuPresentation {
     settings: Value,
@@ -124,6 +130,17 @@ pub fn actions(kind: &str) -> Vec<&'static str> {
     match kind {
         "menubar" | "command-bar" => vec!["set", "command"],
         "dialog-form" => vec!["set", "edit", "answer"],
+        "settings-browser" => vec![
+            "set",
+            "navigate",
+            "query",
+            "edit",
+            "activate",
+            "remove",
+            "problem",
+            "drawer.close",
+            "focus.done",
+        ],
         _ => vec!["set"],
     }
 }
@@ -214,6 +231,7 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             }
             Ok(())
         }
+        "settings-browser" => crate::settings_browser::validate(value),
         _ => Err("unknown rich control".into()),
     }
 }
@@ -290,6 +308,9 @@ pub fn menu_snapshot(value: &Value, id: &str, geometry: &BTreeMap<String, Rect>)
     json!({"open":!path.is_empty() || geometry.contains_key(&format!("{id}.popup")),"path":path})
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
+    if kind == "settings-browser" {
+        return crate::settings_browser::admit(current, action, payload);
+    }
     validate(kind, current)?;
     match action {
         "command" => {
@@ -416,6 +437,108 @@ fn menu_roots(
         }
     }
 }
+fn native_entries(ctx: &egui::Context, value: &Value) -> Vec<toolkit::menu::Entry> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            if item["separator"] == true {
+                return toolkit::menu::Entry::Separator;
+            }
+            let children = native_entries(ctx, &item["children"]);
+            toolkit::menu::Entry::Row(toolkit::menu::Row {
+                id: if item["children"].is_array() {
+                    None
+                } else {
+                    Some(text(item, "id").to_owned().into())
+                },
+                label: text(item, "label").into(),
+                shortcut: crate::native_menu::shortcut(Some(ctx), item),
+                enabled: item["enabled"] == true,
+                checked: item["checked"].as_bool(),
+                children,
+            })
+        })
+        .collect()
+}
+
+fn native_menu(
+    ui: &mut Ui,
+    value: &Value,
+    id: &str,
+    mark: Option<&str>,
+    events: &mut Vec<Intent>,
+) -> egui::Response {
+    let menus: Vec<_> = value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|item| toolkit::menu::Menu {
+            title: text(item, "label").into(),
+            entries: native_entries(ui.ctx(), &item["children"]),
+        })
+        .collect();
+    let search = menus
+        .iter()
+        .position(|m| m.title == "Help")
+        .map(toolkit::menu::Search::new);
+    ui.allocate_ui_with_layout(
+        ui.available_size_before_wrap(),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let form = toolkit::menu::form(ui.ctx());
+            let hosted = form["hosted"] == true;
+            crate::native_menu::header_mark(ui, mark, hosted);
+            let picked = if hosted {
+                let rect = ui.ctx().content_rect();
+                let side = toolkit::chrome::Chrome::of(ui.ctx()).menu_side;
+                let x = match side {
+                    design::MenuSide::Left => rect.left(),
+                    design::MenuSide::Center => rect.center().x,
+                    design::MenuSide::Right => rect.right(),
+                };
+                toolkit::menu::data_picked_with_origin(
+                    ui,
+                    &menus,
+                    search.as_ref(),
+                    Some(egui::Rect::from_min_size(
+                        egui::pos2(x, rect.top()),
+                        egui::Vec2::ZERO,
+                    )),
+                )
+            } else if form["effective"] == "bar" {
+                toolkit::menu::data_picked_with_origin(ui, &menus, search.as_ref(), None)
+            } else {
+                let response = ui.add(
+                    toolkit::button::IconButton::new(toolkit::Icon::Menu).tooltip("Window menu"),
+                );
+                if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
+                    || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary))
+                {
+                    toolkit::menu::toggle(ui.ctx());
+                }
+                toolkit::menu::data_picked_with_origin(
+                    ui,
+                    &menus,
+                    search.as_ref(),
+                    Some(response.rect),
+                )
+            };
+            if let Some((command, palette)) = picked {
+                emit(
+                    events,
+                    id,
+                    "command",
+                    json!({"command":command,"origin":if palette {"palette"}else{"menu"}}),
+                );
+            }
+        },
+    )
+    .response
+}
+
 pub(crate) fn draw(
     ui: &mut Ui,
     widget: &Widget,
@@ -428,7 +551,17 @@ pub(crate) fn draw(
         return gold_dialog(ui, widget, value, geometry, events);
     }
     match widget.kind.as_str() {
+        "settings-browser" => crate::settings_browser::draw(ui, id, value, geometry, events),
         "menubar" => {
+            if widget.properties["native_menu"] == true {
+                return native_menu(
+                    ui,
+                    value,
+                    id,
+                    widget.properties["header_icon"].as_str(),
+                    events,
+                );
+            }
             let gold = widget.properties["style"] == "gold";
             let form = if gold {
                 toolkit::menu::form(ui.ctx())

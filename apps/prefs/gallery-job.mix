@@ -1,0 +1,43 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Bounded traversal is application policy; byte-preserving directory and
+-- metadata operations use the shared native file primitives on this worker.
+on job.run
+  try
+    $root=$event.args.folder
+    if not starts_with($root,"/") then raise("PATH","Wallpaper folder must be absolute") end
+    $canonical=viu_files("canonical",{path:$root})
+    $folders=[{path:$root,depth:0}];$queued=1;$images=[];$truncated=false
+    while len($folders)>0 and len($images)<500
+      $current=$folders[len($folders)-1];$folders=slice($folders,0,len($folders)-1)
+      try $listing=viu_files("entries",{path:$current.path,limit:2048})
+      catch $message
+        if $current.depth==0 then raise("SCAN",$message) end
+        continue
+      end
+      $truncated=$truncated or $listing.truncated
+      for $entry in $listing.entries
+        if starts_with($entry.name,".") then continue end
+        try $meta=viu_files("stat",{path:$entry.path,follow:false}) catch $message continue end
+        if $meta.is_dir then
+          if $current.depth+1<3 then
+            if $queued<128 then push($folders,{path:$entry.path,depth:$current.depth+1});$queued=$queued+1 else $truncated=true end
+          end
+        else
+          $file=$meta.is_file
+          if $meta.is_symlink then
+            try
+              $real=viu_files("canonical",{path:$entry.path})
+              $file=starts_with($real,$canonical.."/") and viu_files("stat",{path:$real}).is_file
+            catch $message $file=false end
+          end
+          if $file and contains(["png","jpg","jpeg","webp"],lower(split($entry.name,".")[len(split($entry.name,"."))-1])) then
+            push($images,$entry.path)
+            if len($images)==500 then $truncated=true;break end
+          end
+        end
+      end
+    end
+    reply(0,json_encode({images:sort_by(sort($images),fn($path)=lower($path)),truncated:$truncated}))
+  catch $message reply(10,json_encode({message:$message})) end
+end

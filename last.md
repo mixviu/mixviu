@@ -18,3 +18,8 @@ f3b3b5d7b22f2c2cfca9ad5a28e5fd5653cdd5ed5bc62964242db9a422e9a659  mixd
 Final CBC `20261107-080318-8bce8633-a1`: BUILD_RC=0, fmt/Clippy, 59 scoped Rust tests, four Monitor Mix tests, all four release builds, no worker diff. Complete saved log read and archived. No new deviation, install, desktop or VT work.
 
 Branch lab/gold-parity; tested head SHA 4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0 (receipt HEAD is the commit containing this file); artifact cbc3:/build/es-artifacts/4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0/ mix=52b7cc69bb445bf95e07649267770b41cbe2aa4b03b91163091a4ae9b6681a41 mixd=f3b3b5d7b22f2c2cfca9ad5a28e5fd5653cdd5ed5bc62964242db9a422e9a659 viud=3fd391f4bed21d0b9cbcd6ed6a674842bd5f232d328c398b50262b967fd21de8 viu=8c2eb07cbef36eed50ddcaacdb8b4664554fdfed999b0b42878aea2e3abe1735 SHA256SUMS=302124de8d98426a199daebd9341535cecd6e20bc7486d18abee81f5fada22b9; gates PASS (first full test stages + furniture/Track A + 510-sample 2,000-row witnesses; merged Ced release acceptance + Monitor quick + scoped CBC); CBC 20261107-064343-f05d5cfb-a1 (interrupted after test stages), 20261107-075258-c6071acd-a1, 20261107-075901-fe888f44-a1, 20261107-080318-8bce8633-a1.
+
+
+Prefs merge checkpoint: shared deferred replies, settings preview, galleries and settings-browser retained alongside Ced and Monitor. Integration gates pending.
+
+Branch lab/gold-parity; head is this Prefs merge checkpoint; per-app revalidation, final artifacts and CBC pending.

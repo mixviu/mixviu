@@ -3,6 +3,10 @@
 //! supplies its chosen mode, accent and metrics; this module owns egui wiring.
 use egui::{Color32, FontFamily, FontId, TextStyle};
 use serde_json::Value;
+pub fn session_theme(ctx: &egui::Context) -> toolkit::Theme {
+    ctx.data(|d| d.get_temp::<toolkit::Theme>(egui::Id::unique("viu-session-theme")))
+        .unwrap_or_else(toolkit::Theme::embedded)
+}
 #[derive(Clone)]
 pub struct ResolvedAppearance {
     pub style: egui::Style,
@@ -68,9 +72,33 @@ pub fn session_base(
     };
     Ok((theme, ui))
 }
+pub fn install_session_choice(
+    ctx: &egui::Context,
+    snapshot: &Value,
+    app: &str,
+    file: &toolkit::Theme,
+    last_ui: &settings::model::CommonUi,
+    choice: &Value,
+) -> Result<settings::model::CommonUi, String> {
+    let (base, ui) = session_base(snapshot, app, file, last_ui)?;
+    let empty = serde_json::json!({});
+    let choice = if choice.is_null() { &empty } else { choice };
+    let theme = base
+        .with_choice(&crate::native_theme::choice(choice)?)
+        .map_err(|e| e.to_string())?;
+    install_theme(ctx, &theme)?;
+    Ok(ui)
+}
 pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), String> {
     toolkit::install(ctx, theme);
     let editor_palette = editor::Palette::from_theme(theme);
+    // Normal clients have the same presentation in debug and release builds.
+    // Fractional spacing is valid; egui's development overlay is opt-in.
+    #[cfg(debug_assertions)]
+    for theme in [egui::Theme::Light, egui::Theme::Dark] {
+        ctx.style_mut_of(theme, |style| style.debug.show_unaligned = false);
+    }
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("viu-session-theme"), theme.clone()));
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();
     for role in resolve(&serde_json::json!({}))?.colours.keys() {

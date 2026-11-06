@@ -126,6 +126,7 @@ async fn send_hint(native: Arc<SupervisedClient>, hint: Hint) -> (String, bool, 
 }
 
 pub struct Endpoint {
+    name: String,
     pub requests: mpsc::Receiver<Request>,
     pub notices: mpsc::Receiver<Notice>,
     pub close_requested: Arc<AtomicBool>,
@@ -163,6 +164,7 @@ impl Endpoint {
         let shared = client.clone();
         let (stop, mut stopped) = oneshot::channel();
         let (hints, mut hint_rx) = tokio::sync::mpsc::channel::<Hint>(1);
+        let service_name = name.clone();
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
@@ -214,6 +216,7 @@ impl Endpoint {
             });
         }).expect("start native Bus owner");
         Self {
+            name: service_name,
             requests,
             notices,
             close_requested,
@@ -242,6 +245,9 @@ impl Endpoint {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+    pub fn service(&self) -> &str {
+        &self.name
     }
     /// One bounded topic-publication slot on this same native connection.
     /// The owner coalesces data and retries a refused/failed hint; no transport
@@ -382,8 +388,8 @@ impl Bridge {
         let timeout = crate::runtime::to_json(args)?["timeout"]
             .as_f64()
             .unwrap_or(10.0);
-        if !timeout.is_finite() || !(0.1..=180.0).contains(&timeout) {
-            return Err(failure("native timeout must be 0.1..180 seconds"));
+        if !timeout.is_finite() || !(0.1..=86_400.0).contains(&timeout) {
+            return Err(failure("native timeout must be 0.1..86400 seconds"));
         }
         let (headers, body, header_route) = Self::payload(command, args)?;
         let (rc, body, error) = native

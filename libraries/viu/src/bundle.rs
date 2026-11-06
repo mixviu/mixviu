@@ -19,6 +19,9 @@ pub struct Manifest {
     pub macros: bool,
     pub native_drive: bool,
     pub max_string_bytes: Option<usize>,
+    pub app_id: Option<String>,
+    pub job_limit: usize,
+    pub command_metadata: Vec<serde_json::Value>,
     /// App-authored compatibility surface; native facilities append descriptors.
     pub bus_surface: Option<serde_json::Value>,
     pub native_ui: bool,
@@ -45,6 +48,9 @@ impl Default for Manifest {
             macros: false,
             native_drive: false,
             max_string_bytes: None,
+            app_id: None,
+            job_limit: 4,
+            command_metadata: vec![],
             bus_surface: None,
             native_ui: false,
             native_macros: false,
@@ -110,6 +116,22 @@ impl Bundle {
             || manifest
                 .max_string_bytes
                 .is_some_and(|n| !(1_048_576..=32 * 1024 * 1024).contains(&n))
+            || !(1..=16).contains(&manifest.job_limit)
+            || manifest.app_id.as_ref().is_some_and(|id| {
+                id.is_empty()
+                    || id.len() > 128
+                    || !id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b".-_".contains(&b))
+            })
+            || manifest.command_metadata.len() > 256
+            || manifest.command_metadata.iter().any(|entry| {
+                entry["name"]
+                    .as_str()
+                    .is_none_or(|name| name.is_empty() || name.len() > 128)
+                    || !entry["description"].is_string()
+                    || !entry["read_only"].is_boolean()
+            })
             || !["window", "background"].contains(&manifest.surface.as_str())
             || manifest
                 .frame

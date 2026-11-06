@@ -1,0 +1,52 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold-compatible Prefs launch policy; the native host owns the connection.
+$nav=require("navigation.mix")
+$service="prefs";$comp=env("MIXOS_COMP_SERVICE","comp")
+$url=env("MIXOS_NODED_URL","ws://127.0.0.1:4200/ws")
+$page=nil;$debug=[];$argv=args();$at=0
+if contains(["--version","-V"],$argv[0]) then print("prefs 0.1.2");exit(0) end
+if contains(["--help","-h"],$argv[0]) then
+  print("prefs — MixOS Preferences\nUsage: prefs [PAGE] [--noded-url URL] [--service NAME] [--comp NAME]\nPAGE is a page id from prefs.pages (appearance, panel, window-management, …), optionally /ROW to land on a row (appearance/density)")
+  print("--debug[=LEVEL]: off|error|warn|info|debug|trace; --debug means debug. Default: the app baseline (usually warn). RUST_LOG overrides the baseline.")
+  exit(0)
+end
+while $at<len($argv)
+  $arg=$argv[$at];$at=$at+1
+  if $arg=="--debug" or starts_with($arg,"--debug=") then push($debug,$arg);continue end
+  if not starts_with($arg,"--") and $page==nil then
+    $name=split($arg,"/")[0]
+    try $valid=$nav.page($name) catch $message print("prefs: no such page: "..$name);exit(1) end
+    $page=$arg;continue
+  end
+  $value=$argv[$at];$at=$at+1
+  if $value==nil or $value=="" then print("prefs: "..$arg.." needs a value");exit(1) end
+  if $arg=="--noded-url" then $url=$value
+  elif $arg=="--service" then $service=$value
+  elif $arg=="--comp" then $comp=$value
+  else print("prefs: unknown option: "..$arg);exit(1) end
+end
+for $name in [$service,$comp]
+  if $name=="" or not re_match($name,"^[A-Za-z0-9_.-]+$") then print("prefs: invalid service name");exit(1) end
+end
+export MIXOS_NODED_URL=$url
+export MIXOS_COMP_SERVICE=$comp
+export VIU_SERVICE=$service
+try
+  send $service "prefs.ping" body="{}" timeout=2
+  if $rc==0 then
+    if $page!=nil then
+      $parts=split($page,"/")
+      send $service "prefs.page.open" body=json_encode({page:$parts[0],row:$parts[1]}) timeout=10
+      if $rc!=0 then print("prefs: "..json_encode($reply));exit(1) end
+    end
+    send $service "prefs.show" body="{}" timeout=10
+    if $rc==0 then exit(0) end
+    print("prefs: "..json_encode($reply));exit(1)
+  end
+catch $not_running $absent=true end
+$launch=concat([env("VIU_BIN",path_join(env("MIXOS_PREFIX","/opt/mixos"),"bin/viu")),"run",dirname(script_path())],$debug)
+if $page!=nil then $launch=concat($launch,["--page",$page]) end
+$result=run_argv($launch,{timeout:0,max_output:1000000})
+print($result.stdout)
+if not $result.ok and $result.stderr!="" then print($result.stderr) end
+exit($result.exit_code ?? 1)

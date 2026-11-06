@@ -45,10 +45,11 @@ fn round_two_bundles_publish_and_draw_through_the_real_embedded_interpreter() {
         runtime.load(bundle.program).unwrap();
         let result = done(&runtime, &rx);
         assert!(result.error.is_none(), "{name}: {:?}", result.error);
+        let model = result.model.unwrap();
         let mut view = if bundle.manifest.frame.is_some() {
-            viu::gold_frame::mount(&bundle.scene, result.model.unwrap())
+            viu::gold_frame::mount(&bundle.scene, model)
         } else {
-            SceneView::with_model(&bundle.scene, result.model.unwrap())
+            SceneView::with_model(&bundle.scene, model)
         }
         .unwrap();
         let ctx = eframe::egui::Context::default();

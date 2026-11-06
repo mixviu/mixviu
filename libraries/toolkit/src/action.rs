@@ -912,7 +912,10 @@ fn context_entries(ui: &mut egui::Ui, entries: &[Entry]) -> Option<&'static str>
                     button = button.shortcut_text(shortcut.as_str());
                 }
                 if ui.add_enabled(row.enabled, button).clicked() {
-                    chosen = row.id;
+                    chosen = row.id.as_ref().and_then(|id| match id {
+                        std::borrow::Cow::Borrowed(id) => Some(*id),
+                        std::borrow::Cow::Owned(_) => None,
+                    });
                     ui.close();
                 }
             }

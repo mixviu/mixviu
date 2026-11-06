@@ -1,0 +1,88 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+$n=require("navigation.mix")
+fn text($key,$args)
+  $v=$n.text_for($key)
+  for $key in keys($args) $v=replace($v,"{ $"..$key.." }",to_string($args[$key])) end
+  return $v
+end
+fn operation($command,$body)
+  $op=split($command,".")[1]
+  if contains(["list","check"],$op) then return {op:$op} end
+  if $op=="update" then
+    if $body.apps==nil then return {op:"update",app:nil} end
+    if len($body.apps)==1 then return {op:"update",app:$body.apps[0]} end
+    return {op:"update_group",app:$body.apps}
+  end
+  return {op:$op,app:$body.app}
+end
+fn subject($op)
+  return if type($op.app)=="list" then join($op.app,", ") else $op.app ?? $n.text_for("all-apps") end
+end
+fn progress($op)
+  $key={list:"listing",check:"checking",install:"installing",update:"updating",update_group:"updating-group",rollback:"rolling-back",remove:"removing"}[$op.op]
+  if $op.op=="update" and $op.app==nil then $key="updating-all" end
+  return text($key,{app:subject($op)})
+end
+fn rows($value)
+  if type($value)!="list" then raise("REPLY","application rows must be an array") end
+  for $r in $value
+    if type($r)!="map" or not all(["app","repo","status"],fn($k)=type($r[$k])=="string") then raise("REPLY","invalid application row") end
+    for $k in ["category","category_label","installed","latest","published"]
+      if $r[$k]!=nil and type($r[$k])!="string" then raise("REPLY","invalid "..$k) end
+    end
+  end
+  return map($value,fn($r)={app:$r.app,repo:$r.repo,category:$r.category,category_label:$r.category_label,installed:$r.installed,latest:$r.latest,published:$r.published,status:$r.status})
+end
+fn summary($value)
+  $results=if type($value)=="list" then $value else [$value] end
+  if len($results)==0 then return $n.text_for("nothing-to-update") end
+  if len($results)==1 then
+    $r=$results[0]
+    if $r.action=="failed" then return text("failed",{message:($r.app ?? "")..": "..($r.error ?? "")}) end
+    return text("result",{app:$r.app ?? "",action:$r.action ?? "",version:$r.version ?? ""})
+  end
+  return text("updated-all",{changed:len(filter($results,fn($r)=$r.action=="installed")),failed:len(filter($results,fn($r)=$r.action=="failed"))})
+end
+fn completed($s,$rc,$body)
+  $op=$s.release_op;$quiet=$s.release_quiet ?? false
+  $s.release_busy=false;$s.release_owner=nil;$s.release_op=nil;$s.release_quiet=false
+  $changes=not contains(["list","check"],$op.op)
+  $s.release_relist=false;$s.reload_notes=false
+  if $rc!=0 then
+    if $body.absent ?? false then
+      $s.releases="missing";$s.apps=[];$s=$n.clear_selection($s);$s.release_status=$n.text_for("releases-missing")
+    elif ($body.uncertain ?? false) and $changes then
+      $s.release_uncertain=$op;$s.release_relist=true
+      $s.release_status=text("uncertain",{app:subject($op),message:$body.message ?? ""})
+    else
+      $message=if type($body.message)=="string" then $body.message elif type($body.answer.error_code)=="string" and type($body.answer.message)=="string" then $body.answer.error_code..": "..$body.answer.message else $body.answer.message ?? json_encode($body.answer) end
+      $s.release_status=text("failed",{message:$message})
+      $s.release_relist=$changes
+    end
+    $s.release_failed=true;return $s
+  end
+  $s.releases="available"
+  if not $changes then
+    try $rows=rows($body.answer)
+    catch $message $s.release_status=text("failed",{message:$message});$s.release_failed=true;return $s end
+    $old=filter($s.apps,fn($r)=$r.app==$s.ui.selected)[0]
+    $s.apps=$rows
+    if ($s.release_uncertain ?? nil)!=nil then
+      $s.release_status=text("settled",{app:subject($s.release_uncertain)});$s.release_failed=false;$s.release_uncertain=nil
+    end
+    if not $quiet then
+      $s.release_status=text(if $op.op=="check" then "checked" else "listed" end,{count:len($rows)});$s.release_failed=false
+    end
+    $new=filter($n.apps_view($s).visible,fn($r)=$r.app==$s.ui.selected)[0]
+    if $s.ui.selected!=nil and $new==nil then $s=$n.clear_selection($s)
+    elif $s.ui.selected!=nil and ($op.op=="check" or $old.latest!=$new.latest) then
+      $s.notes=nil;$s.notes_error=nil;$s.reload_notes=true
+    end
+  else
+    $s.release_status=summary($body.answer)
+    $results=if type($body.answer)=="list" then $body.answer else [$body.answer] end
+    $s.release_failed=any($results,fn($r)=$r.action=="failed");$s.release_relist=true
+  end
+  return $s
+end

@@ -28,6 +28,7 @@ egui-wgpu = { version = "=0.37.0", default-features = false }
 raw-window-handle = "=0.6.2"
 wayland-client = { version = "=0.31.15", default-features = false }
 files = { path = "../files" }
+fontdb = "=0.23.0"
 mimedb.workspace = true
 macros = { path = "../macros" }
 config = { path = "../config" }

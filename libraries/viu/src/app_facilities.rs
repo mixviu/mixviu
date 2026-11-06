@@ -31,6 +31,12 @@ pub struct Facilities {
     publishing: Option<(String, Value)>,
 }
 impl Facilities {
+    pub(crate) fn event(&mut self, topic: String, body: Value) {
+        self.events.push(topic, body, 0);
+    }
+    pub fn native_ui(&self) -> bool {
+        self.ui
+    }
     pub fn new(manifest: &Manifest, wake: crate::runtime::Wake) -> Self {
         let app = manifest.app().to_owned();
         let mut surface = manifest.bus_surface.clone();
@@ -100,7 +106,7 @@ impl Facilities {
             self.context = Some(ctx.clone());
         }
         if self.ui {
-            toolkit::drive::set_service(ctx, bus.client().as_ref().map(|_| self.service.as_str()));
+            toolkit::drive::set_service(ctx, bus.client().as_ref().map(|_| bus.service()));
         }
         while let Ok((reply, answer)) = self.completed.try_recv() {
             let _ = reply.send(macro_answer(answer));
@@ -117,7 +123,9 @@ impl Facilities {
                 }
             }
         }
-        self.answers(ctx, toolkit::drive::logic(ctx));
+        if self.ui {
+            self.answers(ctx, toolkit::drive::logic(ctx));
+        }
     }
     pub fn record(&mut self, args: &Value) -> Result<Value, String> {
         use toolkit::executed::Origin;
@@ -236,7 +244,9 @@ impl Facilities {
         Some(r)
     }
     pub fn finish(&mut self, ctx: &egui::Context) {
-        self.answers(ctx, toolkit::drive::finish(ctx));
+        if self.ui {
+            self.answers(ctx, toolkit::drive::finish(ctx));
+        }
     }
 }
 fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {

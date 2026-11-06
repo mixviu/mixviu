@@ -1,0 +1,86 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+$colours=["#000000","#262626","#4d4d4d","#808080","#d9d9d9","#1e3a5f","#2f6f9f","#2e7d6b","#4f7d2e","#8a7a2a","#a0522d","#8b2e3c","#6a3d7c","#3d3a7c","gradient:#1e3a5f,#6a3d7c@180","gradient:#2e7d6b,#1e3a5f@180","gradient:#a0522d,#8b2e3c@180","gradient:#262626,#4d4d4d@180","gradient:#8a7a2a,#2e7d6b@180"]
+fn initial()
+  return {category:nil,system:path_join(env("MIXOS_PREFIX","/opt/mixos"),"share/wallpapers"),scanned:nil,scanned_at:nil,images:[],truncated:false,scanning:nil,error:nil,serial:0}
+end
+fn value_of($s,$key)
+  if contains(keys($s.queue_changes ?? {}),$key) then return $s.queue_changes[$key] ?? viu_settings("default",$key) end
+  if contains(keys($s.inflight_changes ?? {}),$key) then return $s.inflight_changes[$key] ?? viu_settings("default",$key) end
+  return $s.values[$key] ?? viu_settings("default",$key)
+end
+fn category($s)
+  if $s.gallery.category!=nil then return $s.gallery.category end
+  if value_of($s,"wallpaper.color")!=nil and value_of($s,"wallpaper.image")==nil then return {kind:"colours"} end
+  $current=value_of($s,"wallpaper.folders.current")
+  return if $current!=nil then {kind:"folder",folder:$current} else {kind:"wallpapers"} end
+end
+fn folder($s)
+  $c=category($s)
+  return if $c.kind=="wallpapers" then $s.gallery.system elif $c.kind=="folder" then $c.folder else nil end
+end
+fn images($s)
+  $images=if category($s).kind=="wallpapers" then value_of($s,"wallpaper.custom_images") ?? [] else [] end
+  if $s.gallery.scanned==folder($s) then
+    for $image in $s.gallery.images if not contains($images,$image) then push($images,$image) end end
+  end
+  return $images
+end
+fn output($s)
+  $outputs=$s.live.outputs ?? []
+  if contains($outputs,$s.nav.output) then return $s.nav.output end
+  return filter($outputs,fn($name)=starts_with($name,"eDP-") or starts_with($name,"LVDS-") or starts_with($name,"DSI-"))[0] ?? $outputs[0]
+end
+fn shown_image($s)
+  if not value_of($s,"wallpaper.same_on_all") and output($s)!=nil then
+    $own=value_of($s,"wallpaper.outputs."..output($s)..".image")
+    if $own!=nil then return $own end
+  end
+  return value_of($s,"wallpaper.image") ?? if value_of($s,"wallpaper.slideshow.enabled") then images($s)[0] else nil end
+end
+fn view($s)
+  return {category:category($s),folder:folder($s),output:output($s),recent:value_of($s,"wallpaper.folders.recent") ?? [],images:images($s),colours:concat(value_of($s,"wallpaper.custom_colors") ?? [],$colours),custom_images:value_of($s,"wallpaper.custom_images") ?? [],custom_colours:value_of($s,"wallpaper.custom_colors") ?? [],reading:$s.gallery.scanning!=nil,error:$s.gallery.error,truncated:$s.gallery.truncated}
+end
+fn writes($s,$key,$value)
+  $changes={};$changes[$key]=$value
+  if $key=="wallpaper.same_on_all" and $value==true then
+    for $path in keys($s.values) if starts_with($path,"wallpaper.outputs.") and ends_with($path,".image") then $changes[$path]=nil end end
+  elif $key=="wallpaper.slideshow.enabled" then
+    if $value==true then $changes["wallpaper.slideshow.folder"]=folder($s) ?? value_of($s,"wallpaper.slideshow.folder") ?? value_of($s,"wallpaper.folders.current") ?? $s.gallery.system
+    elif value_of($s,"wallpaper.image")==nil and len(images($s))>0 then $changes["wallpaper.image"]=images($s)[0] end
+  elif contains(["wallpaper.image","wallpaper.color"],$key) and $value!=nil then
+    if $key=="wallpaper.image" and not value_of($s,"wallpaper.same_on_all") and output($s)!=nil then
+      $changes={};$changes["wallpaper.outputs."..output($s)..".image"]=$value;return $changes
+    end
+    $other=if $key=="wallpaper.image" then "wallpaper.color" else "wallpaper.image" end
+    if value_of($s,$other)!=nil then $changes[$other]=nil end
+    if value_of($s,"wallpaper.slideshow.enabled") then $changes["wallpaper.slideshow.enabled"]=false end
+    if $key=="wallpaper.color" then
+      $custom=value_of($s,"wallpaper.custom_colors") ?? [];$colour=lower($value)
+      if not contains($colours,$colour) and not contains($custom,$colour) then $changes["wallpaper.custom_colors"]=concat([$colour],$custom) end
+    end
+  end
+  return $changes
+end
+fn action($s,$action,$value)
+  $changes={}
+  if $action=="category" then
+    if not contains(["wallpapers","colours"],$value.kind) and not ($value.kind=="folder" and type($value.folder)=="string") then raise("ARGUMENT","Unknown gallery category") end
+    $s.gallery.category=$value
+    if $value.kind!="colours" then $changes["wallpaper.folders.current"]=if $value.kind=="folder" then $value.folder else nil end end
+  elif $action=="folder" and len($value)>0 then
+    $folder=$value[0];$recent=value_of($s,"wallpaper.folders.recent") ?? []
+    $changes={"wallpaper.folders.recent":slice(concat([$folder],filter($recent,fn($f)=$f!=$folder)),0,5),"wallpaper.folders.current":$folder}
+    $s.gallery.category={kind:"folder",folder:$folder}
+  elif $action=="images" and len($value)>0 then
+    $changes=writes($s,"wallpaper.image",$value[0]);$old=value_of($s,"wallpaper.custom_images") ?? []
+    $changes["wallpaper.custom_images"]=slice(concat($value,filter($old,fn($p)=not contains($value,$p))),0,64)
+  elif $action=="pick_image" then $changes=writes($s,"wallpaper.image",$value)
+  elif $action=="pick_colour" then $changes=writes($s,"wallpaper.color",$value)
+  elif $action=="remove_image" or $action=="remove_colour" then
+    $key=if $action=="remove_image" then "wallpaper.custom_images" else "wallpaper.custom_colors" end
+    $changes[$key]=filter(value_of($s,$key) ?? [],fn($v)=$v!=$value)
+  elif $action=="output" then $s.nav.output=$value
+  end
+  return {state:$s,changes:$changes}
+end

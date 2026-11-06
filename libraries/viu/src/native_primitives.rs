@@ -363,3 +363,154 @@ pub(crate) fn thumbnail(stop: Arc<AtomicBool>) -> mix::evaluator::ExtFn {
         crate::runtime::from_json(value)
     })
 }
+
+pub(crate) fn installed_fonts() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        if !args.is_empty() {
+            return Err(MixError::RuntimeError {
+                msg: "viu_fonts expects no arguments".into(),
+                span: None,
+            });
+        }
+        let mut database = fontdb::Database::new();
+        database.load_system_fonts();
+        let mut all = std::collections::BTreeSet::new();
+        let mut mono = std::collections::BTreeSet::new();
+        for face in database.faces() {
+            for (name, _) in &face.families {
+                if name.is_empty()
+                    || name.len() > 128
+                    || name.trim() != name
+                    || name.chars().any(char::is_control)
+                {
+                    continue;
+                }
+                all.insert(name.clone());
+                if face.monospaced {
+                    mono.insert(name.clone());
+                }
+            }
+        }
+        crate::runtime::from_json(serde_json::json!({"all":all,"mono":mono}))
+    })
+}
+
+pub(crate) fn token() -> mix::evaluator::ExtFn {
+    mix::sync_ext(move |args| {
+        use std::io::Read;
+        if !args.is_empty() {
+            return Err(MixError::RuntimeError {
+                msg: "viu_token expects no arguments".into(),
+                span: None,
+            });
+        }
+        let mut bytes = [0u8; 16];
+        std::fs::File::open("/dev/urandom")
+            .and_then(|mut file| file.read_exact(&mut bytes))
+            .map_err(|e| MixError::RuntimeError {
+                msg: format!("random token: {e}"),
+                span: None,
+            })?;
+        Ok(Value::String(
+            bytes.iter().map(|b| format!("{b:02x}")).collect(),
+        ))
+    })
+}
+
+pub(crate) fn settings_values() -> mix::evaluator::ExtFn {
+    mix::sync_ext(move |args| {
+        let fail = || MixError::RuntimeError {
+            msg: "viu_settings expects default/path or apply|admit/values/changes/reset".into(),
+            span: None,
+        };
+        match args.as_slice() {
+            [Value::String(op), account] if op == "email-fields" => {
+                let account = crate::runtime::to_json(account)?;
+                if !account.is_object() {
+                    return Err(fail());
+                }
+                let text = |field: &str| account[field].as_str().unwrap_or("");
+                let checks = [
+                    ("name", settings::email::valid_name(text("name"))),
+                    ("url", settings::email::valid_url(text("url"))),
+                    ("email", settings::email::valid_address(text("email"))),
+                    (
+                        "ca_path",
+                        account["ca_path"]
+                            .as_str()
+                            .filter(|s| !s.is_empty())
+                            .is_none_or(settings::email::valid_ca_path),
+                    ),
+                    (
+                        "signature",
+                        settings::email::valid_signature(text("signature")),
+                    ),
+                ];
+                crate::runtime::from_json(serde_json::json!(
+                    checks
+                        .into_iter()
+                        .filter_map(|(field, valid)| (!valid).then_some(field))
+                        .collect::<Vec<_>>()
+                ))
+            }
+            [Value::String(op), Value::String(path)] if op == "default" => {
+                crate::runtime::from_json(
+                    settings::registry::domain_default(path)
+                        .or_else(|| settings::registry::effective(&Default::default(), path))
+                        .unwrap_or(serde_json::Value::Null),
+                )
+            }
+            [Value::String(op), values, changes, reset] if op == "apply" || op == "admit" => {
+                let mut values: settings::registry::Values =
+                    serde_json::from_value(crate::runtime::to_json(values)?).map_err(|_| fail())?;
+                if op == "admit" {
+                    // settings.get's effective view includes defaults, nulls and live
+                    // observations. Restore the authored representation before asking
+                    // the registry to validate the complete proposed transaction.
+                    let mut authored = settings::registry::Values::new();
+                    let mut diagnostics = Vec::new();
+                    for (path, value) in &values {
+                        if value.is_null() {
+                            continue;
+                        }
+                        match settings::registry::lookup(path) {
+                            Ok(m) if m.def.is_live() => continue,
+                            Ok(m) => match settings::registry::check_value(path, value) {
+                                Ok(normal) => {
+                                    let default = settings::registry::domain_default(path)
+                                        .or_else(|| m.default_value());
+                                    if default.as_ref() != Some(&normal) {
+                                        authored.insert(path.clone(), normal);
+                                    }
+                                }
+                                Err(error) => diagnostics.push(error),
+                            },
+                            Err(error) => diagnostics.push(error),
+                        }
+                    }
+                    if !diagnostics.is_empty() {
+                        return crate::runtime::from_json(
+                            serde_json::json!({"ok":false,"diagnostics":diagnostics}),
+                        );
+                    }
+                    values = authored;
+                }
+                let changes = serde_json::from_value(crate::runtime::to_json(changes)?)
+                    .map_err(|_| fail())?;
+                let reset = serde_json::from_value::<Vec<String>>(crate::runtime::to_json(reset)?)
+                    .map_err(|_| fail())?;
+                crate::runtime::from_json(
+                    match settings::registry::apply(&values, &changes, &reset) {
+                        Ok(values) => {
+                            serde_json::json!({"ok":true,"values":values,"diagnostics":[]})
+                        }
+                        Err(diagnostics) => {
+                            serde_json::json!({"ok":false,"diagnostics":diagnostics})
+                        }
+                    },
+                )
+            }
+            _ => Err(fail()),
+        }
+    })
+}

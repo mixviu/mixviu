@@ -1,0 +1,152 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Application-authored controls for gold's custom pages. The shared browser
+-- renders these records; settings and service policy stay here in Mix.
+$n=require("navigation.mix")
+$actions=require("actions.mix")
+$email=require("email.mix")
+fn value_of($s,$key)
+  $value=$s.values[$key] ?? viu_settings("default",$key)
+  if contains(keys($s.queue_changes ?? {}),$key) then $value=$s.queue_changes[$key] ?? viu_settings("default",$key)
+  elif contains(keys($s.inflight_changes ?? {}),$key) then $value=$s.inflight_changes[$key] ?? viu_settings("default",$key) end
+  if $value==nil and ends_with($key,".font.size") then return 14.667 end
+  return $value
+end
+fn row($s,$key,$title,$kind,$options)
+  $meta=filter($s.catalog,fn($k)=$k.path==$key)[0] ?? {}
+  return merge({id:$key,key:$key,title:$n.text_for($title),kind:$kind,inline:true,shown:true,value:value_of($s,$key),blocked:if $s.revision==nil or not $s.connected or $s.busy or $s.ui.dialog!=nil or $s.quitting then $n.text_for("busy") else nil end,min:$meta.min ?? ($meta.domain ?? {}).minimum,max:$meta.max ?? ($meta.domain ?? {}).maximum,step:1},$options)
+end
+fn choices($values,$labels)
+  $out=[]
+  for $i=0 to len($values)-1 push($out,{value:$values[$i],label:$n.text_for($labels[$i] ?? to_string($values[$i]))}) end
+  return $out
+end
+fn buttons($s,$id,$ids)
+  return {id:$id,title:"",kind:"buttons",inline:true,shown:true,blocked:nil,choices:map($ids,fn($id)={value:$id,label:filter($actions.registry,fn($a)=$a.id==$id)[0].label,enabled:$actions.enabled($s,$id)})}
+end
+fn section($id,$title,$rows)
+  return {id:$id,title:if $title==nil then nil else $n.text_for($title) end,plain:true,shown:true,rows:$rows}
+end
+fn text_controls($s,$prefix,$title)
+  $families=if $prefix=="email.reader" then [nil,"Inter","JetBrains Mono"] else [nil,"JetBrains Mono"] end
+  return section($prefix,$title,[
+    row($s,$prefix..".font.family","text-family","choice",{choices:choices($families,concat(["text-family-default"],slice($families,1))),description:if $prefix=="ced.editor" then $n.text_for("text-editor-mono") else "" end}),
+    row($s,$prefix..".font.size","text-size","number",{slider:true,places:1,unit:"px",min:6,max:48}),
+    row($s,$prefix..".padding","text-padding","choice",{choices:choices([1,2,4,8,16],[])}),
+    row($s,$prefix..".light","text-light","toggle",{})])
+end
+fn terminal($s)
+  $family=row($s,"terminal.font.family","terminal-family","text",{hint:replace($n.text_for("terminal-family-system"),"{ $family }",$s.values["appearance.mono_family"] ?? "JetBrains Mono"),commit:true})
+  $family.value=$family.value ?? ""
+  return [section("terminal-actions",nil,[buttons($s,"terminal-actions",["terminal.reset"])]),
+    section("term-text","term-text",[$family,
+      row($s,"terminal.font.size","terminal-size","number",{slider:true,places:1,unit:"px"}),
+      row($s,"terminal.font.weight","terminal-weight","choice",{choices:choices([300,400,500],["terminal-weight-light","terminal-weight-regular","terminal-weight-medium"])}),
+      row($s,"terminal.padding","terminal-padding","choice",{choices:choices([1,2,4,8,16],[])})]),
+    section("term-behaviour","term-behaviour",[
+      row($s,"terminal.scrollback.lines","terminal-scrollback","number",{}),
+      row($s,"terminal.scroll.speed","terminal-scroll-speed","number",{slider:true}),
+      row($s,"terminal.cursor.shape","terminal-cursor-shape","choice",{choices:choices(["block","underline","bar"],["terminal-cursor-block","terminal-cursor-underline","terminal-cursor-bar"])}),
+      row($s,"terminal.cursor.blink","terminal-cursor-blink","toggle",{}),
+      row($s,"terminal.mouse.copy_on_select","terminal-copy-on-select","toggle",{}),
+      row($s,"terminal.clipboard.osc52_read","terminal-osc52-read","toggle",{})]),
+    section("term-advanced","term-advanced",[
+      row($s,"terminal.border.width","terminal-border","choice",{choices:choices([1,2,3,4],[])}),
+      row($s,"terminal.focus.ring","terminal-focus-ring","choice",{choices:choices(["neutral","accent"],["terminal-focus-neutral","terminal-focus-accent"])}),
+      merge(row($s,"terminal.focus.strength","terminal-focus-strength","number",{slider:true,places:2}),{shown:value_of($s,"terminal.focus.ring")=="accent"}),
+      row($s,"terminal.env.term","terminal-term","text",{hint:"xterm-256color",commit:true,description:$n.text_for("terminal-term-note")})])]
+end
+fn software($s)
+  $group={id:"software.group",title:"",kind:"choice",standalone:true,inline:true,value:$s.ui.software_group,blocked:nil,shown:true,choices:choices(["mixos-desktop","mixos-server","creative"],["group-desktop","group-server","group-creative"])}
+  for $o in $group.choices
+    $meta=filter($s.apps,fn($r)=$n.group_of($r)==$o.value and ($r.category_label ?? "")!="")[0]
+    if $meta!=nil then
+      for $i=0 to len($group.choices)-1 if $group.choices[$i].value==$o.value then $group.choices[$i].label=$meta.category_label end end
+    end
+  end
+  if any($s.apps,fn($r)=$n.group_of($r)=="other") then $group.choices=concat($group.choices,choices(["other"],["group-other"])) end
+  $rows=[{id:"software.apps",title:"",kind:"table",scroll:true,inline:true,shown:len($n.apps_view($s).visible)>0,blocked:nil,value:$s.ui.selected,columns:map(["app","installed","latest","published","status"],fn($c)=$n.text_for("col-"..$c)),choices:map($n.apps_view($s).visible,fn($r)=software_row($r))},
+    {id:"software.notice",title:"",kind:"info",inline:true,separator_before:true,shown:true,value:replace($n.text_for("apps-scope"),"{ $prefix }","/opt/mixos"),blocked:nil},
+    {id:"software.availability",title:"",kind:"info",inline:true,shown:$s.releases=="missing" or len($n.apps_view($s).visible)==0,value:if $s.releases=="missing" then $n.text_for("missing") elif len($n.apps_view($s).visible)==0 then $n.text_for("group-empty") else "" end,blocked:nil}]
+  $mutations=buttons($s,"software-mutations",["apps.install","apps.rollback","apps.remove"])
+  $mutations.choices[0].primary=true;$mutations.separator_after=true
+  $notes=section("software-notes",nil,[$mutations,software_notes($s)])
+  $notes.panel_group=true;$notes.title=$s.ui.selected ?? $n.text_for("notes")
+  $upper=section("software-list",nil,concat([buttons($s,"software-actions",["apps.check","apps.update_all"]),$rows[1],$rows[2]],[$rows[0]]));$upper.height_fraction=0.55
+  return [section("software-actions",nil,[$group]),$upper,$notes]
+end
+fn software_row($r)
+  $state=if $r.status=="unchecked" and $r.installed!=nil then "current" elif contains(["current","update","not installed","unchecked"],$r.status) then $r.status else "error" end
+  return {value:$r.app,label:$r.app,cells:[{text:$r.installed ?? "—",mono:true},{text:$r.latest ?? "—",mono:true},{text:$r.published ?? "—"},{text:$n.text_for("status-"..replace($state,"not installed","not-installed")),hint:$r.status,weak:contains(["current","unchecked"],$state),tone:if $state=="update" then "warning" elif $state=="error" then "error" else nil end}]}
+end
+fn software_notes($s)
+  $row={id:"software.notes",title:"",kind:"notes",inline:true,shown:true,blocked:nil,blocks:[]}
+  if $s.ui.selected==nil then $row.blocks=[{text:$n.text_for("select-app"),weak:true}];return $row end
+  if $s.notes_error!=nil then $row.blocks=[{text:replace($n.text_for("notes-failed"),"{ $message }",$s.notes_error),error:true}];return $row end
+  if $s.notes==nil or $s.notes.app!=$s.ui.selected then $row.blocks=[{text:$n.text_for("notes-loading"),weak:true}];return $row end
+  $row.tag=$s.notes.tag;$row.published=if $s.notes.published==nil then nil else substr($s.notes.published,0,10) end;$row.url=$s.notes.url
+  if trim($s.notes.notes)=="" then $row.blocks=[{text:$n.text_for("notes-empty"),weak:true}];return $row end
+  $blocks=[]
+  for $line in split($s.notes.notes,"\n")
+    $line=trim($line)
+    if $line=="" then push($blocks,{kind:"space"})
+    elif starts_with($line,"#") then push($blocks,{kind:"heading",text:trim(re_replace($line,"^#+",""))})
+    elif starts_with($line,"* ") or starts_with($line,"- ") then push($blocks,{text:"•  "..trim(substr($line,2))})
+    else push($blocks,{text:$line}) end
+  end
+  $row.blocks=$blocks;return $row
+end
+fn email_sections($s)
+  $rows=[buttons($s,"email-actions",["email.account.add","email.account.up","email.account.down","email.account.default","email.account.remove","view.refresh"])]
+  $rows[0].choices[5].align="right"
+  push($rows,{id:"email.accounts",title:$n.text_for("email-accounts"),kind:"records",split:true,empty_detail:if $s.email.form!=nil then "" elif len($email.accounts($s))==0 then $n.text_for("email-empty") else $n.text_for("email-select") end,inline:true,shown:true,blocked:nil,value:$s.ui.email_account,choices:map($email.accounts($s),fn($a)={value:$a.id,label:$a.name,weak:not $a.enabled,detail:join(concat([$a.email],concat(if $a.id==$s.values["email.default_account"] then [$n.text_for("email-default")] else [] end,if not $a.enabled then [$n.text_for("email-disabled")] else [] end))," · ")}),empty:$n.text_for("email-no-accounts")})
+  if $s.email.form!=nil then
+    if $s.email.form.id==nil then push($rows,{id:"email.new",title:"",kind:"info",inline:true,shown:true,value:$n.text_for("email-new-account"),normal:true,blocked:nil}) end
+    for $field in ["name","url","email","ca_path","signature"]
+      $title={name:"email-name",url:"email-url",email:"email-address",ca_path:"email-ca",signature:"email-signature"}[$field]
+      push($rows,{id:"email.form."..$field,title:$n.text_for($title),hint:$n.text_for($title.."-hint"),error:if $s.email.form.errors[$field]==nil then nil else $n.text_for($s.email.form.errors[$field]) end,lines:4,space_after:if $field=="signature" and $s.ui.email_account==nil then 0 else 4 end,kind:if $field=="signature" then "multitext" else "text" end,inline:true,shown:true,value:$s.email.form[$field] ?? "",blocked:if $email.view($s).can_edit then nil else $n.text_for("busy") end})
+    end
+    if $s.ui.email_account!=nil then push($rows,{id:"email.enabled",title:$n.text_for("email-enabled"),kind:"toggle",inline:true,shown:true,value:$email.account($s,$s.ui.email_account).enabled,blocked:if $email.view($s).can_edit then nil else $n.text_for("busy") end}) end
+    $save=buttons($s,"email-form-actions",["email.account.save","email.account.revert"]);$save.choices[0].primary=true;$save.separator_after=$s.ui.email_account!=nil;push($rows,$save)
+    if $s.ui.email_account!=nil then
+      $d=$email.identity_draft($s)
+      $identity_choices=[]
+      for $i=0 to len($d.rows)-1 push($identity_choices,{value:$i,label:if $d.rows[$i].name=="" then $d.rows[$i].id else $d.rows[$i].name.." <"..$d.rows[$i].address..">" end}) end
+      push($rows,{id:"email.identity.heading",title:"",kind:"info",separator_before:true,inline:true,shown:true,section_label:true,value:$n.text_for("email-identities"),blocked:nil});
+      push($rows,{id:"email.identity.select",title:"",kind:"choice",standalone:true,inline:true,shown:true,value:$d.selected,blocked:nil,choices:$identity_choices})
+      push($rows,{id:"email-identity-actions",title:"",kind:"buttons",inline:true,shown:true,blocked:nil,choices:[{value:"email.identity.add",label:$n.text_for("email-identity-add")},{value:"email.identity.remove",label:$n.text_for("email-identity-remove"),enabled:len($d.rows)>0}]})
+      if $d.selected<len($d.rows) then
+        for $field in ["name","address","reply_to","signature"]
+          push($rows,{id:"email.identity."..$field,title:$n.text_for("email-identity-"..replace($field,"_","-")),lines:4,kind:if $field=="signature" then "multitext" else "text" end,inline:true,shown:true,value:$d.rows[$d.selected][$field] ?? "",blocked:nil})
+        end
+      end
+      push($rows,{id:"email-identity-save",title:"",kind:"buttons",inline:true,shown:true,blocked:nil,choices:[{value:"email.identity.save",label:$n.text_for("email-identity-save"),enabled:$s.email.identities!=nil},{value:"email.identity.revert",label:$n.text_for("email-identity-revert"),enabled:$s.email.identities!=nil}]})
+      push($rows,{id:"email.password",title:$n.text_for("email-password"),kind:"secret",inline:true,shown:true,value:nil,epoch:$s.email.secret_epoch ?? 0,blocked:if $s.email.task==nil then nil else $n.text_for("busy") end,description_small:true,description:$n.text_for(if $s.email.service=="absent" then "email-password-not-running" elif $s.email.service=="unsupported" then "email-password-unsupported" elif $s.email.service=="unknown" then "email-password-checking" elif $s.email.passwords[$s.ui.email_account]==true then "email-password-is-set" elif $s.email.passwords[$s.ui.email_account]==false then "email-password-not-set" else "email-password-unknown" end),hint:$n.text_for("email-password-hint")})
+      $password_actions=buttons($s,"email-password-actions",["email.password.set","email.account.connect","email.password.forget"]);$password_actions.choices[0].primary=true;push($rows,$password_actions)
+    end
+  end
+  if len($rows)>2 then
+    $details=slice($rows,2)
+    if $s.ui.email_account!=nil then
+      $password=filter($details,fn($r)=contains(["email.password","email-password-actions"],$r.id))
+      $details=concat(filter($details,fn($r)=not starts_with($r.id,"email.identity") and not starts_with($r.id,"email-identity") and not contains(["email.password","email-password-actions"],$r.id)),concat($password,filter($details,fn($r)=starts_with($r.id,"email.identity") or starts_with($r.id,"email-identity"))))
+    end
+    if $s.email.outcome!=nil then
+      $feedback={id:"email.outcome",title:"",kind:"info",inline:true,shown:true,value:$s.email.outcome.text,normal:not $s.email.outcome.failed,error:$s.email.outcome.failed,blocked:nil}
+      $at=index_of(map($details,fn($r)=$r.id),"email.identity.heading")
+      $details=if $at<0 then concat($details,[$feedback]) else concat(slice($details,0,$at),concat([$feedback],slice($details,$at))) end
+    end
+    $rows=slice($rows,0,2);$rows[1].detail_rows=$details
+    if $s.email.form.id==nil then $rows[1].new_label=$n.text_for("email-new-account") end
+  end
+  $reset=buttons($s,"email-reset",["email.reset"]);$reset.trailing_text=$n.text_for("email-note")
+  $mail=[row($s,"email.mail.page_size","email-page-size","number",{slider:true}),row($s,"email.mail.mark_read_on_open","email-mark-read","toggle",{}),row($s,"email.mail.confirm_delete","email-confirm-delete","toggle",{}),row($s,"email.mail.quote_on_reply","email-quote-on-reply","toggle",{}),row($s,"email.mail.reply_position","email-reply-position","choice",{presentation:"radio",choices:choices(["above","below"],["email-reply-above","email-reply-below"])})]
+  return [section("email-accounts",nil,$rows),section("email-mail","email-mail",$mail),text_controls($s,"email.reader","text-reader"),text_controls($s,"email.composer","text-composer"),section("email-reset",nil,[$reset])]
+end
+fn sections($s,$page)
+  if $page=="term" then return terminal($s) end
+  if $page=="ced" then return [text_controls($s,"ced.editor","text-editor")] end
+  if $page=="software" then return software($s) end
+  if $page=="email" then return email_sections($s) end
+  return nil
+end

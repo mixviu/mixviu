@@ -49,6 +49,8 @@ pub mod ui_state;
 
 pub mod editor_controls;
 pub mod header_controls;
+mod media_gallery;
+pub mod settings_browser;
 
 pub mod process;
 

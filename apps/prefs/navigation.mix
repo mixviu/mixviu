@@ -1,0 +1,111 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Adapted from pinned preferences::{navigation,nav,pages}; see provenance.md.
+$pages=json_parse(read_file(path_join(dirname(script_path()),"pages.json")))
+$labels={}
+$last=nil
+for $line in split(read_file(path_join(dirname(script_path()),"strings.ftl")),"\n")
+  $m=re_find($line,"^([a-z][a-z0-9_-]*) = (.*)$")
+  if len($m)==1 then
+    $last=$m[0].groups[0];$labels[$last]=$m[0].groups[1]
+  elif starts_with($line,"    ") and $last!=nil then
+    $labels[$last]=$labels[$last].."\n"..trim($line)
+  else $last=nil end
+end
+$sections=[{id:"appearance",category:"appearance",page:"appearance"},{id:"text_and_fonts",category:"appearance",page:"appearance"},{id:"wallpaper",category:"appearance",page:"wallpaper"},{id:"windows",category:"desktop",page:"window_management"},{id:"apps_email",category:"apps",page:"email"},{id:"apps_term",category:"apps",page:"term"},{id:"apps_ced",category:"apps",page:"ced"},{id:"accessibility",category:"system",page:"accessibility"},{id:"software",category:"system",page:"software"}]
+$groups=["mixos-desktop","mixos-server","creative","other"]
+fn text_for($key)
+  return $labels[$key] ?? $key
+end
+fn translated($key)
+  return $labels[$key] ?? ""
+end
+fn initial_ui()
+  return {macros_open:false,section:"appearance",software_group:"creative",search:"",search_focus:false,selected:nil,email_account:nil,dialog:nil,theme_scheme:nil,theme_mode:nil,theme_style:nil,theme_decorations:nil,theme_captions:nil}
+end
+fn initial_nav()
+  return {page:"desktop",drawer:nil,focus:nil,query:"",searching:false,sidebar:false,output:nil}
+end
+fn page($id)
+  if type($id)!="string" then raise("ARGUMENT","page must be a page name") end
+  $name=replace(trim($id),"-","_")
+  $found=filter($pages,fn($p)=$p.id==$name)
+  if len($found)!=1 then raise("ARGUMENT",$id..": no such page") end
+  return $found[0]
+end
+fn section($name)
+  $found=filter($sections,fn($x)=$x.id==$name)
+  if len($found)!=1 then raise("ARGUMENT","name must be a section name") end
+  return $found[0]
+end
+fn row_sections($p)
+  $all=$p.sections
+  for $d in $p.drawers $all=concat($all,$d.sections) end
+  return $all
+end
+fn shown($s,$p,$r)
+  if $p.id=="appearance" and $r.id=="hint_colour" then return ($s.values["window.hint_colour"] ?? "accent")!="accent" end
+  if $p.id=="wallpaper" then
+    if $r.id=="slideshow" then return $s.values["wallpaper.color"]==nil end
+    if contains(["interval","shuffle"],$r.id) then return $s.values["wallpaper.slideshow.enabled"] ?? false end
+  end
+  if $p.id=="power" and $r.id=="suspend_battery" then return (($s.live ?? {}).facts ?? {}).battery ?? false end
+  return true
+end
+fn search_view($s,$query)
+  if type($query)!="string" then raise("ARGUMENT","query must be a string") end
+  $q=lower(trim($query));$hits=[]
+  if $q=="" then return {query:$query,hits:$hits} end
+  for $p in $pages
+    $page_hit=contains(lower(translated("page-"..$p.id).."\n"..translated("page-"..$p.id.."-desc")),$q)
+    $rows=[]
+    for $sec in row_sections($p)
+      for $r in $sec.rows
+        $text=translated("row-"..$p.id.."-"..$r.id).."\n"..translated("row-"..$p.id.."-"..$r.id.."-desc")
+        if $sec.title!=nil then $text=$text.."\n"..$sec.title end
+        if $r.control.control=="choice" then
+          for $o in $r.control.options
+            $text=$text.."\n"..translated($o.label)
+            if $o.description!=nil then $text=$text.."\n"..translated($o.description) end
+          end
+        end
+        if contains(lower($text),$q) and shown($s,$p,$r) then push($rows,{page:$p.id,section:$sec.id,row:$r.id,item:nil,title:$r.title}) end
+      end
+    end
+    if len($rows)>0 then $hits=concat($hits,$rows)
+    elif $page_hit then push($hits,{page:$p.id,section:nil,row:nil,item:nil,title:$p.title}) end
+  end
+  return {query:$query,hits:$hits}
+end
+fn group_of($row)
+  if $row.category!=nil then return if contains($groups,$row.category) then $row.category else "other" end end
+  return if contains(["mixos-desktop","mixos-server"],$row.app) then $row.app else "other" end
+end
+fn apps_view($s)
+  return {apps:$s.apps,visible:filter($s.apps,fn($r)=$s.ui.section=="software" and group_of($r)==$s.ui.software_group),section:$s.ui.section,group:$s.ui.software_group,selected:$s.ui.selected,notes:$s.notes,notes_error:$s.notes_error,releases:$s.releases,release_status:$s.release_status,release_failed:$s.release_failed}
+end
+fn clear_selection($s)
+  $s.ui.selected=nil;$s.notes=nil;$s.notes_error=nil;$s.notes_owner=nil
+  return $s
+end
+fn set_section($s,$args)
+  $sec=section($args.name)
+  if contains(keys($args),"group") then
+    if not contains($groups,$args.group) then raise("ARGUMENT","group must be a software group name") end
+    if $sec.id!="software" then raise("ARGUMENT","group is only valid for software") end
+  end
+  if $s.ui.dialog!=nil or $s.quitting then raise("BUSY",text_for("busy")) end
+  $s.ui.section=$sec.id;$s.section=$sec.id;$s.nav.page=$sec.page
+  if $args.group!=nil and $args.group!=$s.ui.software_group then $s.ui.software_group=$args.group;$s=clear_selection($s) end
+  if $s.ui.selected!=nil and not any(apps_view($s).visible,fn($r)=$r.app==$s.ui.selected) then $s=clear_selection($s) end
+  return $s
+end
+fn select_app($s,$app)
+  if type($app)!="string" then raise("ARGUMENT","app must be an app name") end
+  $found=filter($s.apps,fn($r)=$r.app==$app)
+  if len($found)==0 then raise("ARGUMENT","no app has that name") end
+  if $s.ui.dialog!=nil or $s.release_busy or $s.quitting then raise("BUSY",text_for("busy")) end
+  $s=set_section($s,{name:"software",group:group_of($found[0])})
+  $s.ui.selected=$app
+  return $s
+end

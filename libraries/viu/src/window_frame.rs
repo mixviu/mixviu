@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Shared native window controls. The compositor retains movement, resize,
 //! focus and presentation authority; this sends the usual viewport commands.
+use egui::emath::GuiRounding;
 use egui::{Rect, Ui, ViewportCommand as Command, pos2, vec2};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -67,6 +68,15 @@ pub struct WindowFrame {
     pub close_requested: bool,
 }
 impl WindowFrame {
+    /// A scene-authored header reserves and draws its own caption group. Keep
+    /// the full band available so its title centres on the window, and avoid
+    /// inheriting the parent Ui's inter-widget gap before application content.
+    pub fn show_scene_frame(&mut self, ui: &mut Ui, title: &str, settings: &Value) {
+        let gap = ui.spacing().item_spacing.y;
+        ui.spacing_mut().item_spacing.y = 0.0;
+        self.show_with_chrome(ui, title, settings, true, true);
+        ui.spacing_mut().item_spacing.y = gap;
+    }
     /// Describe the controls actually drawn by this adapter. Requested hosted
     /// actions remain in the application row until native hosting is wired.
     pub fn form(&self, settings: &Value, service: Option<&str>) -> Value {
@@ -98,6 +108,12 @@ impl WindowFrame {
     ) {
         self.geometry.clear();
         self.close_requested = false;
+        let caption_align = design::CaptionSide::resolve(
+            settings["window.caption_side"].as_str().unwrap_or("auto"),
+        )
+        .alignment(design::title_band::Alignment::Right);
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique("viu-caption-alignment"), caption_align));
         let requested = settings["window.decorations"]
             .as_str()
             .and_then(design::RequestedDecorations::from_name);
@@ -128,7 +144,7 @@ impl WindowFrame {
             return;
         }
         let metrics = Metrics::of(ui.ctx());
-        let height = metrics.height;
+        let height = metrics.height.round_ui();
         let gap = ui.spacing().item_spacing.y;
         ui.spacing_mut().item_spacing.y = 0.0;
         let (band, _) =

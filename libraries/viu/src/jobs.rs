@@ -86,11 +86,16 @@ impl Jobs {
             }
             let path = start.spec["path"].as_str();
             let source = start.spec["source"].as_str();
+            let timeout = start
+                .spec
+                .get("timeout_seconds")
+                .map_or(Some(90), Value::as_u64);
             if id.is_empty()
                 || id.len() > 128
                 || path.is_none()
                 || source.is_none_or(|s| s.len() > 1_048_576)
                 || !start.spec["command"].is_string()
+                || timeout.is_none_or(|seconds| !(1..=86_400).contains(&seconds))
             {
                 let _ = start.reply.send((10, json!({"error_code":"INVALID_JOB"})));
                 continue;
@@ -104,7 +109,7 @@ impl Jobs {
                 self.wake.clone(),
                 self.native_backend.as_ref().map(|f| f()),
                 self.services.clone(),
-                std::time::Duration::from_secs(180),
+                std::time::Duration::from_secs(timeout.expect("validated job timeout")),
             );
             let program = Program {
                 path: PathBuf::from(path.unwrap()),
