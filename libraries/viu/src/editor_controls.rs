@@ -328,7 +328,10 @@ pub fn draw(
         let chrome = toolkit::chrome::Chrome::of(ui.ctx());
         egui::Frame::new()
             .fill(chrome.palette.chrome)
-            .inner_margin(egui::Margin::symmetric(chrome.style.bars_bar_inset as i8, chrome.style.bar_padding_y as i8))
+            .inner_margin(egui::Margin::symmetric(
+                chrome.style.bars_bar_inset as i8,
+                chrome.style.bar_padding_y as i8,
+            ))
             .show(ui, add)
             .response
     } else {
