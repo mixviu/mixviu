@@ -41,6 +41,9 @@ struct Host {
     error: String,
     tick: Option<Duration>,
     next_tick: Instant,
+    session: Option<crate::session::Session>,
+    session_update: Option<Value>,
+    noticed_drops: u64,
 }
 impl Host {
     fn state(&self) -> Value {
@@ -154,6 +157,26 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
+        if let Some(session) = &mut self.session {
+            let drops = self.bus.dropped_notices.load(std::sync::atomic::Ordering::Relaxed);
+            if drops != self.noticed_drops {
+                session.hint("bus.connected", &json!({}));
+                self.noticed_drops = drops;
+            }
+            if let Some(update) = session.poll() {
+                self.session_update = Some(update);
+            }
+            if let Some(at) = session.deadline() {
+                ui.ctx().request_repaint_after(at.saturating_duration_since(Instant::now()));
+            }
+        }
+        if let Some(update) = &self.session_update {
+            if self.runtime.notify("viu.session".into(), update.clone()).is_ok() {
+                self.session_update = None;
+            } else {
+                ui.ctx().request_repaint();
+            }
+        }
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
                 let result = if let Some(image) = image {
@@ -254,6 +277,10 @@ impl Host {
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
+                    if let Some(session) = &mut self.session {
+                        session.hint(&n.command, &n.args);
+                        ui.ctx().request_repaint();
+                    }
                     let _ = self
                         .runtime
                         .notify_with_headers(n.command, n.args, n.headers);
@@ -378,6 +405,16 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         wake.clone(),
     );
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
+    let session = bundle.manifest.follow_settings.then(|| {
+        crate::session::Session::new(
+            bundle.root.join("../../libraries/viu/mix/session-runtime.mix"),
+            &bundle.manifest.service,
+            std::fs::read_to_string("/proc/sys/kernel/hostname")
+                .unwrap_or_else(|_| "host".into()).trim(),
+            wake.clone(),
+            bus.backend(),
+        ).expect("start settings follower")
+    });
     jobs.set_native_backend(bus.backend_maker());
     let mut runtime = Runtime::new(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))));
     runtime.load(bundle.program).expect("load behaviour");
@@ -415,6 +452,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         error: String::new(),
         tick: bundle.manifest.tick_ms.map(Duration::from_millis),
         next_tick: Instant::now(),
+        session,
+        session_update: None,
+        noticed_drops: 0,
     }
 }
 

@@ -14,6 +14,7 @@ pub struct Manifest {
     pub tick_ms: Option<u64>,
     pub surface: String,
     pub frame: Option<String>,
+    pub follow_settings: bool,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -26,6 +27,7 @@ impl Default for Manifest {
             tick_ms: None,
             surface: "window".into(),
             frame: None,
+            follow_settings: false,
         }
     }
 }

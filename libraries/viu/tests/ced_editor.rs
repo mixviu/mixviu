@@ -129,4 +129,15 @@ publish_ced($state)
         done(&runtime, &rx).model.unwrap()["values"]["open-dialog"]["open"],
         false
     );
+    runtime.event("viu.session".into(), json!({"appearance":{"scheme":"ocean","mode":"light","weight":700.0,"density":"compact","roundness":"square","text_scale":1.5},"state":{"revision":"3","lost":false,"values":{"ced.editor.font.size":18,"ced.editor.padding":16,"ced.editor.light":true}}})).unwrap();
+    let changed = done(&runtime, &rx);
+    assert!(changed.error.is_none(), "{:?}", changed.error);
+    let model = changed.model.unwrap();
+    assert_eq!(model["editor"]["properties"]["font_size"], 27.0);
+    assert_eq!(model["editor"]["properties"]["padding"], 14.0);
+    assert_eq!(model["editor"]["properties"]["light"], true);
+    assert_eq!(model["values"]["editor"], "unsaved λ");
+    let appearance = viu::appearance::resolve(&model["appearance"]).unwrap();
+    assert_eq!(appearance.body_weight, 700);
+    view.apply_model(model).unwrap();
 }
