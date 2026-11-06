@@ -91,10 +91,7 @@ end
     assert_eq!(refused.rc, 0);
     assert_eq!(refused.body["peer_rc"], 17);
     runtime
-        .event(
-            "outcome".into(),
-            json!({"rc":-2,"result":"send timed out"}),
-        )
+        .event("outcome".into(), json!({"rc":-2,"result":"send timed out"}))
         .unwrap();
     let uncertain = completion(&runtime, &rx).reply.unwrap();
     assert_eq!(uncertain.rc, 10);
