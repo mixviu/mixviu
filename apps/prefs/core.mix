@@ -42,7 +42,7 @@ end
 fn admitted($s,$key,$value)
   if $s.busy or $s.uncertain or $s.revision==nil or $s.incarnation==nil or $s.stale or not contains(["authority","mirror"],$s.role) then raise("NOT_WRITABLE","Refresh a reachable non-stale settings authority before writing") end
   $k=key_info($s,$key)
-  if not contains(["stored","applied"],$k.class) or starts_with($key,"email.") or $k.kind=="list" or contains($key,"<") then raise("READ_ONLY","This key needs its owning service workflow") end
+  if not contains(["stored","applied"],$k.class) or contains(["email.accounts","email.default_account"],$key) or contains($key,"<") then raise("READ_ONLY","This key needs its owning service workflow") end
   if $value!=nil then
     if $k.kind=="bool" and type($value)!="bool" then raise("TYPE","Boolean required") end
     if $k.kind=="enum" and not contains($k.variants,$value) then raise("ENUM","Value is not a described variant") end
@@ -50,7 +50,9 @@ fn admitted($s,$key,$value)
       if type($value)!="number" then raise("TYPE","Number required") end
       if ($k.min!=nil and $value<$k.min) or ($k.max!=nil and $value>$k.max) or ($k.kind=="int" and floor($value)!=$value) then raise("RANGE","Number outside described range") end
       if $k.values!=nil and not contains($k.values,$value) then raise("RANGE","Number is not a described step") end
-    elif not contains(["enum","bool"],$k.kind) and type($value)!="string" then raise("TYPE","Text required; complex controls are deferred") end
+    elif $k.kind=="list" then
+      if type($value)!="list" then raise("TYPE","List required") end
+    elif not contains(["enum","bool"],$k.kind) and type($value)!="string" then raise("TYPE","Text required") end
   end
   $changes={};$reset=[]
   if $value==nil then push($reset,$key) else $changes[$key]=$value end
@@ -58,6 +60,8 @@ fn admitted($s,$key,$value)
     $changes["wallpaper.slideshow.enabled"]=false
     push($reset,if $key=="wallpaper.image" then "wallpaper.color" else "wallpaper.image" end)
   end
+  $validation=viu_settings("apply",$s.values,$changes,$reset)
+  if not $validation.ok then raise("FAILED",join(map($validation.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
   return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:viu_token(),changes:$changes,reset:$reset}
 end
 fn registry_model($s)

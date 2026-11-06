@@ -25,7 +25,34 @@ end
 fn select_account($s,$id)
   $a=account($s,$id)
   if $a==nil then raise("ARGUMENT",$n.text_for("email-unknown-account")) end
-  $s.ui.email_account=$id;$s.email.form=form_of($a);$s.email.dirty=false;$s.email.identities=nil
+  $s.ui.email_account=$id;$s.email.form=form_of($a);$s.email.dirty=false;$s.email.identities=nil;$s.email.password="";$s.email.secret_epoch=($s.email.secret_epoch ?? 0)+1
+  return $s
+end
+fn identity_draft($s)
+  $a=account($s,$s.ui.email_account)
+  if $s.email.identities!=nil and $s.email.identities.account==$s.ui.email_account then return $s.email.identities end
+  $rows=if $a==nil then [] else $a.identities ?? [{id:"default",name:$a.name,address:$a.email,signature:$a.signature ?? "",reply_to:nil}] end
+  return {account:$s.ui.email_account,rows:$rows,selected:0,error:nil}
+end
+fn identity_action($s,$action,$value)
+  if $s.ui.email_account==nil or not view($s).can_edit then raise("BUSY",$n.text_for("busy")) end
+  if $action=="revert" then $s.email.identities=nil;return $s end
+  $d=identity_draft($s)
+  if $action=="select" then
+    if type($value)!="number" or $value<0 or $value>=len($d.rows) then raise("ARGUMENT","Unknown identity") end
+    $d.selected=$value
+  elif $action=="add" then
+    $num=len($d.rows)+1
+    while any($d.rows,fn($r)=$r.id=="identity-"..to_string($num)) $num=$num+1 end
+    $d.rows=concat($d.rows,[{id:"identity-"..to_string($num),name:"",address:"",signature:"",reply_to:nil}]);$d.selected=len($d.rows)-1
+  elif $action=="remove" then
+    $next=[]
+    for $i=0 to len($d.rows)-1 if $i!=$d.selected then push($next,$d.rows[$i]) end end
+    $d.rows=$next;$d.selected=max(0,min($d.selected,len($next)-1))
+  elif contains(["name","address","signature","reply_to"],$action) and $d.selected<len($d.rows) then
+    $d.rows[$d.selected][$action]=if $action=="reply_to" and $value=="" then nil else $value end
+  else raise("ARGUMENT","Unknown identity operation") end
+  $d.error=nil;$s.email.identities=$d
   return $s
 end
 fn observed($s)
@@ -48,7 +75,7 @@ fn view($s)
     $a.url=redact_url($a.url);$a.has_password=$s.email.passwords[$a.id];$a.default=$a.id==$s.values["email.default_account"]
     push($rows,$a)
   end
-  return {settings:$s.look.settings,revision:$s.revision,read:$s.revision!=nil,accounts:$rows,default_account:$s.values["email.default_account"],mail:if $s.revision==nil then nil else {page_size:value_or($s,"email.mail.page_size",100),mark_read_on_open:value_or($s,"email.mail.mark_read_on_open",true),confirm_delete:value_or($s,"email.mail.confirm_delete",true),quote_on_reply:value_or($s,"email.mail.quote_on_reply",true),reply_position:value_or($s,"email.mail.reply_position","above")} end,email_service:$s.email.service,selected:$s.ui.email_account,form:$form,password_typed:false,task:$s.email.task,outcome:$s.email.outcome,can_edit:$s.revision!=nil and $s.connected and not $s.busy and not $s.quitting and $s.ui.dialog==nil}
+  return {settings:$s.look.settings,revision:$s.revision,read:$s.revision!=nil,accounts:$rows,default_account:$s.values["email.default_account"],mail:if $s.revision==nil then nil else {page_size:value_or($s,"email.mail.page_size",100),mark_read_on_open:value_or($s,"email.mail.mark_read_on_open",true),confirm_delete:value_or($s,"email.mail.confirm_delete",true),quote_on_reply:value_or($s,"email.mail.quote_on_reply",true),reply_position:value_or($s,"email.mail.reply_position","above")} end,email_service:$s.email.service,selected:$s.ui.email_account,form:$form,password_typed:($s.email.password ?? "")!="",task:$s.email.task,outcome:$s.email.outcome,can_edit:$s.revision!=nil and $s.connected and not $s.busy and not $s.quitting and $s.ui.dialog==nil}
 end
 fn patch_account($base,$args)
   for $key in keys($args)

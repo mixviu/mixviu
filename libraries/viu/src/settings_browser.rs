@@ -200,7 +200,7 @@ pub fn validate(value: &Value) -> Result<(), String> {
             || !row["title"].is_string()
             || ![
                 "toggle", "choice", "previews", "swatches", "number", "text", "link", "button",
-                "info", "image",
+                "info", "image", "buttons", "records", "multitext", "secret",
             ]
             .contains(&text(row, "kind"))
             || array(&row["choices"]).count() > 512
@@ -230,6 +230,15 @@ pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String>
                 && !array(&row["choices"]).any(|c| c["value"] == payload["value"])
             {
                 return Err("unknown browser choice".into());
+            }
+            if action == "edit" {
+                match text(row,"kind") {
+                    "toggle" if !payload["value"].is_boolean()=>return Err("toggle requires boolean".into()),
+                    "number" if !payload["value"].is_number()=>return Err("number requires number".into()),
+                    "text"|"multitext"|"secret" if !payload["value"].is_string()=>return Err("field requires text".into()),
+                    _=>{}
+                }
+                if array(&row["choices"]).any(|c|c["value"]==payload["value"] && c["enabled"]==false) { return Err("choice is disabled".into()); }
             }
             Ok(())
         }
@@ -484,6 +493,17 @@ fn cards(
     events: &mut Vec<Intent>,
 ) {
     for section in array(sections).filter(|s| s["shown"] != false) {
+        if section["plain"]==true {
+            if let Some(title)=section["title"].as_str() {
+                ui.separator();
+                ui.label(RichText::new(title).strong());
+                ui.add_space(6.0);
+            }
+            for row in array(&section["rows"]).filter(|r|r["shown"]!=false) {
+                draw_inline_row(ui,id,row,look,geometry,events);
+            }
+            continue;
+        }
         if let Some(title) = section["title"].as_str() {
             ui.label(RichText::new(title).strong().color(look.text));
             ui.add_space(look.s);
@@ -633,9 +653,10 @@ fn draw_row(
                             match text(row, "kind") {
                                 "toggle" => {
                                     let mut v = row["value"].as_bool().unwrap_or(false);
-                                    let r = ui.checkbox(&mut v, "");
+                                    let r = cosmic_switch(ui,v,look,text(row,"title"));
                                     record(geometry, id, &format!("row.{key}.control"), &r);
-                                    if r.changed() {
+                                    if r.clicked() {
+                                        v=!v;
                                         edited = Some(json!(v));
                                     }
                                 }
@@ -695,4 +716,113 @@ fn draw_row(
     if let Some(value) = edited {
         emit(events, id, "edit", json!({"row":key,"value":value}));
     }
+}
+
+fn cosmic_switch(ui:&mut Ui,on:bool,look:&Look,name:&str)->Response {
+    let (rect,response)=ui.allocate_exact_size(vec2(48.0,24.0),Sense::click());
+    let alpha=if ui.is_enabled(){1.0}else{0.5};
+    ui.painter().rect_filled(rect,Look::radius(look.r_xl),if on{look.accent}else{look.track_off}.gamma_multiply(alpha));
+    let x=if on{rect.max.x-12.0}else{rect.min.x+12.0};
+    ui.painter().circle_filled(pos2(x,rect.center().y),10.0,look.knob.gamma_multiply(alpha));
+    if response.hovered()&&ui.is_enabled(){ui.painter().rect_filled(rect,Look::radius(look.r_xl),Color32::from_white_alpha(if look.dark{26}else{0}));}
+    if response.has_focus(){ui.painter().rect_stroke(rect.expand(1.0),Look::radius(look.r_xl),Stroke::new(1.0,look.accent),StrokeKind::Outside);}
+    response.widget_info(||egui::WidgetInfo::selected(egui::Role::Switch,ui.is_enabled(),on,name));
+    response
+}
+
+/// A compact two-column form, authored by the application. It shares native
+/// input, accessibility and stable identities with the card controls above.
+fn draw_inline_row(ui:&mut Ui,id:&str,row:&Value,look:&Look,geometry:&mut BTreeMap<String,Rect>,events:&mut Vec<Intent>) {
+    let key=text(row,"id");
+    let mut edit=None;
+    let response=ui.push_id((id,key),|ui| {
+        ui.add_enabled_ui(row["blocked"].is_null(),|ui| {
+            if text(row,"kind")=="info" {
+                ui.label(RichText::new(row["value"].as_str().unwrap_or("")).weak());
+            } else if text(row,"kind")=="records" {
+                if array(&row["choices"]).next().is_none(){ui.label(RichText::new(text(row,"empty")).weak());}
+                for (index,item) in array(&row["choices"]).enumerate() {
+                    let r=ui.selectable_label(item["value"]==row["value"],format!("{}    {}",text(item,"label"),text(item,"detail")));
+                    record(geometry,id,&format!("row.{key}.choice.{index}"),&r);
+                    if r.clicked(){edit=Some(item["value"].clone());}
+                }
+            } else if text(row,"kind")=="buttons" {
+                ui.horizontal_wrapped(|ui| {
+                    for (index,item) in array(&row["choices"]).enumerate() {
+                        let r=ui.add_enabled(item["enabled"]!=false,egui::Button::new(text(item,"label")));
+                        record(geometry,id,&format!("row.{key}.choice.{index}"),&r);
+                        if r.clicked(){edit=Some(item["value"].clone());}
+                    }
+                });
+            } else {
+                egui::Grid::new("form-row").num_columns(2).spacing([24.0,10.0]).show(ui,|ui| {
+                    let title=ui.allocate_ui_with_layout(vec2(if text(row,"title").is_empty(){0.0}else{144.0},ui.spacing().interact_size.y),Layout::left_to_right(Align::Center),|ui| {
+                        if !text(row,"title").is_empty(){ui.set_min_width(144.0);ui.style_mut().wrap_mode=Some(egui::TextWrapMode::Wrap);ui.label(text(row,"title"));}
+                    }).response;
+                    ui.vertical(|ui| {
+                        ui.set_width(ui.available_width());
+                        ui.label_inputs_by(title.id,|ui| {
+                            match text(row,"kind") {
+                                "toggle"=>{
+                                    let mut v=row["value"].as_bool().unwrap_or(false);
+                                    let r=ui.add(toolkit::toggle::Toggle::new(&mut v,""));
+                                    r.widget_info(||egui::WidgetInfo::selected(egui::Role::CheckBox,ui.is_enabled(),v,text(row,"title")));
+                                    record(geometry,id,&format!("row.{key}.control"),&r);
+                                    if r.changed(){edit=Some(json!(v));}
+                                },
+                                "choice"=>{ui.horizontal_wrapped(|ui| {
+                                    for (index,item) in array(&row["choices"]).enumerate(){
+                                        let r=ui.add_enabled(item["enabled"]!=false,egui::Button::selectable(item["value"]==row["value"],text(item,"label")));
+                                        record(geometry,id,&format!("row.{key}.choice.{index}"),&r);
+                                        if r.clicked(){edit=Some(item["value"].clone());}
+                                    }
+                                });},
+                                "number"=>{
+                                    let mut v=row["value"].as_f64().unwrap_or(0.0);
+                                    let range=row["min"].as_f64().unwrap_or(0.0)..=row["max"].as_f64().unwrap_or(100.0);
+                                    let r=if row["slider"]==true {
+                                        let mut slider=egui::Slider::new(&mut v,range).suffix(text(row,"unit"));
+                                        if let Some(places)=row["places"].as_u64(){slider=slider.fixed_decimals(places as usize);}else{slider=slider.integer();}
+                                        ui.spacing_mut().slider_width=(ui.available_width()-90.0).max(48.0);ui.add(slider)
+                                    }else{ui.add(egui::DragValue::new(&mut v).range(range).speed(row["step"].as_f64().unwrap_or(1.0)))};
+                                    record(geometry,id,&format!("row.{key}.control"),&r);
+                                    if r.changed(){edit=Some(json!(v));}
+                                },
+                                "text"|"multitext"|"secret"=>{
+                                    let field_id=ui.make_persistent_id("field");
+                                    let secret=text(row,"kind")=="secret";
+                                    let keep=secret || row["commit"]==true;
+                                    if secret {
+                                        let epoch=ui.make_persistent_id("secret-epoch");
+                                        let current=row["epoch"].as_u64().unwrap_or(0);
+                                        ui.ctx().data_mut(|d| {
+                                            if d.get_temp::<u64>(epoch)!=Some(current) {
+                                                d.insert_temp(epoch,current);
+                                                d.insert_temp(field_id,String::new());
+                                            }
+                                        });
+                                    }
+                                    let mut v=if keep{ui.ctx().data_mut(|d|d.get_temp::<String>(field_id)).unwrap_or_else(||text(row,"value").into())}else{text(row,"value").into()};
+                                    let mut field=if text(row,"kind")=="multitext"{egui::TextEdit::multiline(&mut v).desired_rows(3)}else{egui::TextEdit::singleline(&mut v)};
+                                    field=field.id(field_id).desired_width(ui.available_width()).hint_text(text(row,"hint")).password(secret);
+                                    let r=ui.add(field);
+                                    record(geometry,id,&format!("row.{key}.control"),&r);
+                                    let commit=r.lost_focus()|| (r.has_focus() && ui.input(|i|i.key_pressed(egui::Key::Enter)));
+                                    if r.changed() || (keep && commit) {
+                                        if keep{ui.ctx().data_mut(|d|d.insert_temp(field_id,v.clone()));}
+                                        if row["commit"]!=true || commit {edit=Some(json!(v));}
+                                    }
+                                },
+                                _=>{ui.label(text(row,"value"));},
+                            }
+                        });
+                        if !text(row,"description").is_empty(){ui.label(RichText::new(text(row,"description")).weak());}
+                    });
+                    ui.end_row();
+                });
+            }
+        });
+    }).response;
+    record(geometry,id,&format!("row.{key}"),&response);
+    if let Some(value)=edit{emit(events,id,"edit",json!({"row":key,"value":value}));}
 }

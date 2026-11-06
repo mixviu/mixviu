@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 $n=require("navigation.mix")
+$email=require("email.mix")
 $registry=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
 fn theme_choice($s)
   return {scheme:$s.ui.theme_scheme,mode:$s.ui.theme_mode,style:$s.ui.theme_style,decorations:$s.ui.theme_decorations,caption_side:$s.ui.theme_captions}
@@ -40,17 +41,26 @@ fn enabled($s,$id)
   if $id=="page.back" then return $free and $n.page($s.nav.page).parent!=nil end
   if starts_with($id,"appearance.") then
     if not $free then return false end
-    if $id=="appearance.revert" then return len(keys($look.draft ?? {}))>0 or ($look.held ?? false) end
+    if $id=="appearance.revert" then return len(keys($look.edited ?? {}))>0 or ($look.hold ?? false) end
     if $id=="appearance.keep" then return len($look.conflicts ?? [])>0 end
     if $id=="appearance.recheck" then return ($look.uncertain ?? nil)!=nil end
-    return len(keys($look.draft ?? {}))>0 and not $s.busy and len($look.conflicts ?? [])==0
+    return len(keys($look.edited ?? {}))>0 and $look.job==nil and not $look.syncing and len($look.conflicts ?? [])==0
   end
   if starts_with($id,"email.") then
     $e=$s.email ?? {}
-    if not $free or not $s.connected or $s.revision==nil or $s.uncertain then return false end
-    if contains(["email.account.add","email.reset"],$id) then return true end
-    if $id=="email.account.save" or $id=="email.account.revert" then return ($e.dirty ?? false) end
-    return $s.ui.email_account!=nil and ($e.task ?? nil)==nil
+    if not $free then return false end
+    if $id=="email.account.add" then return $s.revision!=nil end
+    if $id=="email.account.revert" then return $e.form!=nil and ($e.dirty ?? false) end
+    if contains(["email.password.set","email.password.forget","email.account.connect"],$id) then return $s.ui.email_account!=nil and $s.connected and $e.task==nil and ($id!="email.password.set" or ($e.password ?? "")!="") end
+    if not $email.view($s).can_edit then return false end
+    if $id=="email.reset" then return true end
+    if $id=="email.account.save" then return $e.form!=nil and (($e.dirty ?? false) or $e.form.id==nil) end
+    if $s.ui.email_account==nil then return false end
+    $list=$email.accounts($s);$at=index_of(map($list,fn($a)=$a.id),$s.ui.email_account)
+    if $id=="email.account.up" then return $at>0 end
+    if $id=="email.account.down" then return $at>=0 and $at+1<len($list) end
+    if $id=="email.account.default" then return $s.values["email.default_account"]!=$s.ui.email_account end
+    return $id!="email.account.remove" or $e.task==nil
   end
   if $id=="view.refresh" or $id=="terminal.reset" then return $free and $s.connected and not $s.busy end
   return $free

@@ -1,6 +1,31 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 $n=require("navigation.mix")
+$custom=require("custom.mix")
+fn check_params($params,$allowed,$required)
+  if type($params)!="map" then raise("ARGUMENT","parameters must be an object") end
+  for $key in keys($params) if not contains($allowed,$key) then raise("ARGUMENT","unknown field "..json_encode($key)) end end
+  for $key in $required if not contains(keys($params),$key) then raise("ARGUMENT","missing field "..json_encode($key)) end end
+end
+fn action_result($s,$id,$params)
+  if $id=="page.open" then return {page:$s.nav.page,row:$params.row,drawer:$s.nav.drawer} end
+  if $id=="set" then return {key:$params.key,value:stored($s,$params.key),writing:store_view($s).writing} end
+  if $id=="item" then return {source:$params.source,id:$params.id,action:$params.action} end
+  return nil
+end
+fn item_action($s,$params)
+  check_params($params,["source","id","action"],["source","id","action"])
+  if not all(["source","id","action"],fn($key)=type($params[$key])=="string") then raise("ARGUMENT","source, id and action must be strings") end
+  for $p in $n.pages
+    for $sec in $p.sections
+      if $sec.source==$params.source then
+        if $p.backend!=nil then raise("FAILED",$n.text_for($p.backend)) end
+        raise("FAILED",replace($n.text_for("item-unknown"),"{ $item }",$params.id))
+      end
+    end
+  end
+  raise("FAILED",replace($n.text_for("item-unknown"),"{ $item }",$params.source))
+end
 fn stored($s,$key)
   if contains(keys($s.queue_changes ?? {}),$key) and $s.queue_changes[$key]!=nil then return $s.queue_changes[$key] end
   if contains(keys($s.inflight_changes ?? {}),$key) and $s.inflight_changes[$key]!=nil then return $s.inflight_changes[$key] end
@@ -121,5 +146,5 @@ fn browser($s)
   $notice=if $p.kind=="pending" then $n.text_for("page-pending") elif $p.backend!=nil then $n.text_for($p.backend) else "" end
   $visual={}
   for $key in keys($s.values) if starts_with($key,"appearance.") or starts_with($key,"window.") then $visual[$key]=$s.values[$key] end end
-  return {title:$p.title,page:$p.id,root:$root.id,parent:$p.parent,parent_title:if $p.parent!=nil then $n.page($p.parent).title else "" end,query:$s.nav.query,search_hint:$n.text_for("search-hint"),searching:$s.nav.searching,search_focus:$s.ui.search_focus,sidebar_open:$s.nav.sidebar,results_title:$n.text_for("search-results"),hits:$n.search_view($s,$s.nav.query).hits,pages:map($n.pages,fn($p)={id:$p.id,title:$p.title,parent:$p.parent,icon:$p.icon}),sections:browser_sections($s,$p,$p.sections),children:map(filter($n.pages,fn($x)=$x.parent==$p.id),fn($x)={id:$x.id,title:$x.title,icon:$x.icon,description:$n.translated("page-"..$x.id.."-desc")}),drawer:$drawer,notice:$notice,settings:$visual}
+  return {title:$p.title,page:$p.id,root:$root.id,parent:$p.parent,parent_title:if $p.parent!=nil then $n.page($p.parent).title else "" end,query:$s.nav.query,search_hint:$n.text_for("search-hint"),searching:$s.nav.searching,search_focus:$s.ui.search_focus,sidebar_open:$s.nav.sidebar,results_title:$n.text_for("search-results"),hits:$n.search_view($s,$s.nav.query).hits,pages:map($n.pages,fn($p)={id:$p.id,title:$p.title,parent:$p.parent,icon:$p.icon}),sections:$custom.sections($s,$p.id) ?? browser_sections($s,$p,$p.sections),children:map(filter($n.pages,fn($x)=$x.parent==$p.id),fn($x)={id:$x.id,title:$x.title,icon:$x.icon,description:$n.translated("page-"..$x.id.."-desc")}),drawer:$drawer,notice:$notice,settings:$visual}
 end

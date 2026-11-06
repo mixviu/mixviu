@@ -4,13 +4,13 @@ $s={values:{},ui:{email_account:nil,dialog:nil},email:$e.initial(),look:{setting
 $p=$e.plan($s,{op:"add",name:" Example ",url:"https://example.test/jmap",email:"user@example.test"})
 if len($p.changes["email.accounts"])!=1 or $p.changes["email.accounts"][0].name!="Example" then raise("TEST","Account add/trim failed") end
 $id=$p.added;$s.values=$p.changes
-$p=$e.plan($s,{op:"identities",id:$id,identities:[{id:"main",name:"User",email:"user@example.test",signature:"Regards"}]})
+$p=$e.plan($s,{op:"identities",id:$id,identities:[{id:"main",name:"User",address:"user@example.test",signature:"Regards"}]})
 if len($p.changes["email.accounts"][0].identities)!=1 then raise("TEST","Identities not preserved") end
 $s.values=merge($s.values,$p.changes)
 $p=$e.plan($s,{op:"default",id:$id});$s.values=merge($s.values,$p.changes)
 $p=$e.plan($s,{op:"remove",id:$id})
 if len($p.changes["email.accounts"])!=0 or $p.changes["email.default_account"]!=nil then raise("TEST","Default account not cleared atomically") end
-for $args in [{op:"add",name:"",url:"not a URL",email:"bad"},{op:"update",id:$id,unknown:true},{op:"enable",id:$id,enabled:"yes"},{op:"identities",id:$id,identities:[{id:"same",email:"a@example.test"},{id:"same",email:"b@example.test"}]},{path:"appearance.mode",value:"light"}]
+for $args in [{op:"add",name:"",url:"not a URL",email:"bad"},{op:"update",id:$id,unknown:true},{op:"enable",id:$id,enabled:"yes"},{op:"identities",id:$id,identities:[{id:"same",address:"a@example.test"},{id:"same",address:"b@example.test"}]},{path:"appearance.mode",value:"light"}]
   $refused=false
   try $e.plan($s,$args) catch $message $refused=true end
   if not $refused then raise("TEST","Invalid account edit admitted: "..json_encode($args)) end

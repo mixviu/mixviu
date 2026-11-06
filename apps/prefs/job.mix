@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
-require("../../libraries/viu/mix/app-call.mix")
+$app=require("../../libraries/viu/mix/app-call.mix")
 on job.run
   $a=$event.args
   if $a.op=="look" then
@@ -9,8 +9,9 @@ on job.run
       reply(if $rc==0 then 0 elif $rc<0 then 20 else 10 end,json_encode({op:"look",command:$a.command,peer_rc:$rc,answer:$reply}))
     catch $message reply(20,json_encode({op:"look",answer:{message:$message}})) end
   elif $a.op=="release" then
-    $r=viu_app_raw("releases",$a.command,$a.body)
-    reply($r.rc,json_encode({op:"release",command:$a.command,peer_rc:$r.rc,answer:$r.body,message:$r.message,absent:viu_app_absent($r,"releases"),uncertain:$r.body.error_code=="OUTCOME_UNKNOWN"}))
+    $seconds=if contains(["releases.list","releases.notes","releases.status"],$a.command) then 30 elif $a.command=="releases.check" then 600 else 14400 end
+    $r=$app.viu_app_raw_within("releases",$a.command,$a.body,$seconds)
+    reply($r.rc,json_encode({op:"release",command:$a.command,peer_rc:$r.rc,answer:$r.body,message:$r.message,absent:$app.viu_app_absent($r,"releases"),uncertain:$r.body.error_code=="OUTCOME_UNKNOWN"}))
   elif $a.op=="write" then
     send "settingsd" "settings.apply" body=$a.request timeout=8
     reply(if $rc==0 then 0 else 10 end,json_encode({op:"write",peer_rc:$rc,answer:$reply}))

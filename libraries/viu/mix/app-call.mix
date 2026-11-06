@@ -4,8 +4,11 @@
 -- broker says the service was absent. Never retry a delivered refusal or an
 -- uncertain effect. This module owns no application-specific fallback.
 fn viu_app_raw($service,$command,$body)
+  return viu_app_raw_within($service,$command,$body,30)
+end
+fn viu_app_raw_within($service,$command,$body,$seconds)
   try
-    send $service $command body=$body
+    send $service $command body=$body timeout=$seconds
     if $rc<0 then return {rc:20,body:{error_code:"OUTCOME_UNKNOWN",message:to_string($result)},message:$result} end
     $body=if $reply!=nil then $reply else $result end
     if $rc!=0 and type($body)!="map" then $body={error_code:"REFUSED",message:to_string($result)} end

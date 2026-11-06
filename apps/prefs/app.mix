@@ -68,19 +68,26 @@ fn release_request($s,$command,$body)
     if not ($s.release_quiet ?? false) then $s.release_status=$software.progress($s.release_op);$s.release_failed=false end
   end
   $path=path_join(dirname(script_path()),"job.mix")
-  send "viu-local" "jobs.start" id=if $command=="releases.notes" then "prefs-notes" else "prefs-releases" end owner=$s.release_serial path=$path source=read_file($path) command="job.run" args={op:"release",command:$command,body:$body}
+  send "viu-local" "jobs.start" id=if $command=="releases.notes" then "prefs-notes" else "prefs-releases" end owner=$s.release_serial path=$path source=read_file($path) command="job.run" args={op:"release",command:$command,body:$body} timeout_seconds=14430
   if $rc!=0 then raise("JOB",to_string($result)) end
   return $s
 end
 fn execute_prefs($s,$id,$params)
-  if not any($actions.registry,fn($a)=$a.id==$id) then raise("NOT_FOUND","Unknown command "..to_string($id)) end
+  if not any($actions.registry,fn($a)=$a.id==$id) then raise("UNKNOWN_ACTION",$nav.text_for("unknown-action")) end
   if not $actions.enabled($s,$id) then raise("DISABLED",$nav.text_for("command-disabled")) end
   if $id=="file.quit" then $s.quitting=true
   elif $id=="view.search" then $s.nav.searching=true;$s.ui.search_focus=true
   elif $id=="sidebar.toggle" then $s.nav.sidebar=not $s.nav.sidebar
   elif $id=="page.back" then $s=$pages.open_page($s,$nav.page($s.nav.page).parent,nil)
-  elif $id=="page.open" then $s=$pages.open_page($s,$params.page,$params.row)
-  elif $id=="set" then $c=$pages.control_for($s,$params.key);$s=set_prefs($s,$params.key,$params.value)
+  elif $id=="page.open" then
+    $pages.check_params($params,["page","row"],["page"])
+    if type($params.page)!="string" or ($params.row!=nil and type($params.row)!="string") then raise("ARGUMENT","page and row must be strings") end
+    $s=$pages.open_page($s,$params.page,$params.row)
+  elif $id=="set" then
+    $pages.check_params($params,["key","value"],["key","value"])
+    if type($params.key)!="string" then raise("ARGUMENT","key must be a string") end
+    $c=$pages.control_for($s,$params.key);$s=set_prefs($s,$params.key,$params.value)
+  elif $id=="item" then $pages.item_action($s,$params)
   elif $id=="view.refresh" then
     if $s.ui.section=="software" then $s=release_request($s,"releases.list",{})
     else $s=hint_prefs($s) end
@@ -88,6 +95,23 @@ fn execute_prefs($s,$id,$params)
   elif $id=="terminal.reset" then
     for $k in $s.catalog if starts_with($k.path,"terminal.") then $s.queue_changes[$k.path]=nil end end
     $s=queued_prefs($s)
+  elif $id=="email.account.add" then $s.ui.email_account=nil;$s.email.form=$email.blank_form();$s.email.dirty=false;$s.email.password="";$s.email.secret_epoch=($s.email.secret_epoch ?? 0)+1
+  elif $id=="email.account.save" then
+    $form=$s.email.form
+    $args={op:if $form.id==nil then "add" else "update" end,name:$form.name,url:$form.url,email:$form.email,ca_path:$form.ca_path,signature:$form.signature}
+    if $form.id!=nil then $args.id=$form.id end
+    $s=apply_email($s,$args);$s.email.dirty=false
+  elif $id=="email.account.revert" then $s.email.form=$email.form_of($email.account($s,$s.ui.email_account));$s.email.dirty=false
+  elif $id=="email.account.remove" then $s.ui.dialog={remove_account:$s.ui.email_account}
+  elif $id=="email.account.up" or $id=="email.account.down" then $s=apply_email($s,{op:"move",id:$s.ui.email_account,direction:split($id,".")[2]})
+  elif $id=="email.account.default" then $s=apply_email($s,{op:"default",id:$s.ui.email_account})
+  elif $id=="email.account.enable" then $s=apply_email($s,{op:"enable",id:$s.ui.email_account,enabled:not $email.account($s,$s.ui.email_account).enabled})
+  elif $id=="email.password.forget" then $s.ui.dialog={forget_password:$s.ui.email_account}
+  elif $id=="email.reset" then $s.ui.dialog="reset_email"
+  elif $id=="email.account.connect" then $s=email_task($s,"connect",$s.ui.email_account,"email.account.connect",{id:$s.ui.email_account},true,nil)
+  elif $id=="email.password.set" then
+    $s=email_task($s,"password",$s.ui.email_account,"email.account.password.set",{id:$s.ui.email_account,password:$s.email.password},true,nil)
+    $s.email.password="";$s.email.secret_epoch=($s.email.secret_epoch ?? 0)+1
   elif $id=="help.about" then $s.ui.dialog="about"
   elif $id=="help.shortcuts" then $s.ui.dialog="shortcuts"
   elif $id=="help.macros" then $s.ui.macros_open=not $s.ui.macros_open
@@ -105,6 +129,28 @@ fn execute_prefs($s,$id,$params)
     $choice={};$choice[$axis]=if $parts[2]=="session" then nil else $parts[2] end
     $s=$actions.choose_theme($s,$choice)
   else raise("UNKNOWN_COMMAND","Action implementation pending: "..$id) end
+  return $s
+end
+fn apply_email($s,$args)
+  $plan=$email.plan($s,$args)
+  $s.queue_changes=merge($s.queue_changes,$plan.changes);$s.email.added=$plan.added
+  return queued_prefs($s)
+end
+fn confirm_dialog($s,$answer)
+  if $s.ui.dialog==nil then raise("NO_DIALOG","no dialog is open") end
+  if not contains(["confirm","cancel"],$answer) then raise("ARGUMENT","answer must be confirm or cancel") end
+  $d=$s.ui.dialog
+  if $answer=="cancel" then $s.ui.dialog=nil;return $s end
+  if contains(["about","shortcuts"],$d) then raise("ARGUMENT","this dialog has nothing to confirm; answer cancel") end
+  $s.ui.dialog=nil
+  if $d=="reset_email" then
+    for $k in $s.catalog if starts_with($k.path,"email.") then $s.queue_changes[$k.path]=nil end end
+    $s.email.added=nil;$s=queued_prefs($s)
+  elif $d.remove!=nil then $s=release_request($s,"releases.remove",{app:$d.remove})
+  elif $d.remove_account!=nil then
+    if $s.email.service=="absent" then $s=apply_email($s,{op:"remove",id:$d.remove_account});$s.email.removed={id:$d.remove_account}
+    else $s=email_task($s,"remove",$d.remove_account,"email.account.remove",{id:$d.remove_account},false,nil) end
+  elif $d.forget_password!=nil then $s=email_task($s,"forget",$d.forget_password,"email.account.password.set",{id:$d.forget_password,password:""},true,nil) end
   return $s
 end
 fn set_prefs($s,$key,$value)
@@ -145,6 +191,8 @@ on viu.tick
     $state.subscribed=true
   end
   if not $state.release_started then $state.release_started=true;$state=release_request($state,"releases.list",{}) end
+  if $state.nav.page=="email" and not ($state.email.queried ?? false) then $state.email.queried=true;$state=query_email($state)
+  elif $state.nav.page!="email" then $state.email.queried=false end
   if not $state.busy and $state.needs_read then $state=refresh_prefs($state);publish_prefs($state) end
 end
 on prefs.ping
@@ -161,8 +209,22 @@ on prefs.actions
 end
 on prefs.execute
   try
+    if type($event.args.id)!="string" then raise("ARGUMENT","id must be a command id string") end
     $state=execute_prefs($state,$event.args.id,$event.args.params ?? {});publish_prefs($state)
-    reply(0,json_encode({executed:$event.args.id}))
+    $body={executed:$event.args.id}
+    if $event.args.params!=nil then $body.result=$pages.action_result($state,$event.args.id,$event.args.params) end
+    reply(0,json_encode($body))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.show
+  try
+    if $state.quitting then raise("BUSY",$nav.text_for("busy")) end
+    $token=viu_token();$state.show_tokens=concat($state.show_tokens ?? [],[$token])
+    $path=path_join(dirname(script_path()),"show-job.mix")
+    send "viu-local" "jobs.start" id="prefs-show-"..$token owner=$token path=$path source=read_file($path) command="job.run" args={comp:env("MIXOS_COMP_SERVICE","comp")}
+    if $rc!=0 then raise("SHOW","Window activation could not start") end
+    send "viu-local" "requests.defer" token=$token
+    publish_prefs($state)
   catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on prefs.quit
@@ -181,10 +243,10 @@ on prefs.dialog
       if contains(keys($a),"open") then raise("ARGUMENT","give open or answer, not both") end
       if $state.ui.dialog==nil then raise("NO_DIALOG","no dialog is open") end
       if not contains(["confirm","cancel"],$a.answer) then raise("ARGUMENT","answer must be confirm or cancel") end
-      $d=$state.ui.dialog
-      if $a.answer=="confirm" and type($d)=="map" and contains(keys($d),"remove") then $state=release_request($state,"releases.remove",{app:$d.remove}) end
-      $state.ui.dialog=nil
-    elif contains(keys($a),"open") and contains(["about","shortcuts",nil],$a.open) then $state.ui.dialog=$a.open
+      $state=confirm_dialog($state,$a.answer)
+    elif contains(keys($a),"open") and contains(["about","shortcuts",nil],$a.open) then
+      if $a.open!=nil and ($state.ui.dialog!=nil or $state.quitting) then raise("BUSY",$nav.text_for("busy")) end
+      $state.ui.dialog=$a.open
     else raise("ARGUMENT","open must be about, shortcuts or null") end
     publish_prefs($state);reply(0,json_encode({dialog:$state.ui.dialog}))
   catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
@@ -281,25 +343,39 @@ on prefs.page
 end
 on prefs.page.open
   try
-    $state=$pages.open_page($state,$event.args.page,$event.args.row);publish_prefs($state)
-    reply(0,json_encode({page:$state.nav.page,row:$event.args.row,drawer:$state.nav.drawer}))
-  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+    $state=execute_prefs($state,"page.open",$event.args);publish_prefs($state)
+    reply(0,json_encode({executed:"page.open",result:$pages.action_result($state,"page.open",$event.args)}))
+  catch $message, $error reply(10,json_encode({error_code:if $error.code=="FAILED" then "REFUSED" else $error.code end,message:$message})) end
 end
 on prefs.registry.select
   $state=$core.choose($state,$event.args.key);publish_prefs($state);reply(0,"{}")
 end
 on prefs.set
   try
-    $control=$pages.control_for($state,$event.args.key)
-    $state=set_prefs($state,$event.args.key,$event.args.value);publish_prefs($state)
-    reply(0,json_encode({key:$event.args.key,value:$event.args.value,writing:true}))
-  catch $message, $error reply(10,json_encode({error_code:"FAILED",message:$message})) end
+    $state=execute_prefs($state,"set",$event.args);publish_prefs($state)
+    reply(0,json_encode({executed:"set",result:$pages.action_result($state,"set",$event.args)}))
+  catch $message, $error reply(10,json_encode({error_code:if $error.code=="ARGUMENT" or $error.code=="DISABLED" then $error.code else "REFUSED" end,message:$message})) end
+end
+on prefs.item
+  try
+    $state=execute_prefs($state,"item",$event.args)
+    reply(0,json_encode({executed:"item",result:$pages.action_result($state,"item",$event.args)}))
+  catch $message, $error reply(10,json_encode({error_code:if $error.code=="FAILED" then "REFUSED" else $error.code end,message:$message})) end
 end
 on prefs.reset
   $state=set_prefs($state,$event.args.key,nil);publish_prefs($state);reply(0,json_encode({accepted:true}))
 end
 on viu.job.completed
   $d=$event.args
+  if starts_with($d.tag.id,"prefs-show-") then
+    $token=$d.tag.owner
+    if contains($state.show_tokens ?? [],$token) then
+      $state.show_tokens=filter($state.show_tokens,fn($t)=$t!=$token)
+      send "viu-local" "requests.reply" token=$token rc=$d.rc value=$d.body
+      publish_prefs($state)
+    end
+    return
+  end
   $answer=$d.body.answer ?? {}
   if $d.tag.id=="prefs-email-accounts" and $d.tag.owner==$state.email.accounts_owner then
     $state.email.accounts_owner=nil
@@ -387,8 +463,7 @@ end
 on prefs.intent
   $a=$event.args
   if $a.id=="dialog" and $a.action=="answer" then
-    if $a.value.choice=="confirm" and type($state.ui.dialog)=="map" and contains(keys($state.ui.dialog),"remove") then $state=release_request($state,"releases.remove",{app:$state.ui.dialog.remove}) end
-    $state.ui.dialog=nil;publish_prefs($state);reply(0,"{}");return
+    $state=confirm_dialog($state,$a.value.choice);publish_prefs($state);reply(0,"{}");return
   end
   if $a.id=="browser" then
     if $a.action=="navigate" then $state=$pages.open_page($state,$a.value.page,$a.value.row)
@@ -396,6 +471,27 @@ on prefs.intent
       $state.nav.query=$a.value;$state.nav.searching=$a.value!="";$state.ui.search_focus=false
     elif $a.action=="drawer.close" then $state.nav.drawer=nil
     elif contains(["edit","activate"],$a.action) then
+      if $a.action=="edit" and $nav.page($state.nav.page).kind=="custom" then
+        $browser=$pages.browser($state)
+        viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,"edit",$a.value)
+        $key=$a.value.row;$v=$a.value.value
+        if $key=="software.group" then $state=$nav.set_section($state,{name:"software",group:$v})
+        elif $key=="software.apps" then
+          $state=$nav.select_app($state,$v);$state=release_request($state,"releases.notes",{app:$v})
+        elif $key=="email.accounts" then $state=$email.select_account($state,$v)
+        elif starts_with($key,"email.form.") then $state.email.form[substr($key,11)]=$v;$state.email.dirty=true
+        elif $key=="email.password" then $state.email.password=$v
+        elif $v=="email.identity.save" then
+          $d=$email.identity_draft($state);$state=apply_email($state,{op:"identities",id:$d.account,identities:$d.rows});$state.email.identities=nil
+        elif starts_with(to_string($v),"email.identity.") then $state=$email.identity_action($state,substr($v,15),nil)
+        elif starts_with($key,"email.identity.") then $state=$email.identity_action($state,substr($key,15),$v)
+        elif any($actions.registry,fn($act)=$act.id==$v) then $state=execute_prefs($state,$v,{})
+        else
+          if contains(["terminal.font.family","ced.editor.font.family","email.reader.font.family","email.composer.font.family"],$key) and type($v)=="string" then $v=trim($v);if $v=="" then $v=nil end end
+          $state=set_prefs($state,$key,$v)
+        end
+        publish_prefs($state);reply(0,"{}");return
+      end
       $p=$nav.page($state.nav.page);$r=$pages.row_for($p,$a.value.row)
       $why=$pages.row_blocked($state,$p,$r)
       if $why!=nil then raise("FAILED",$why) end

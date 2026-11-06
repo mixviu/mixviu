@@ -334,7 +334,7 @@ impl Host {
                 if self.error.is_empty() && let Some(token) = done.deferred {
                     if self.deferred_replies.len()>=32 || self.deferred_replies.contains_key(&token) {
                         let _=reply.send((10,json!({"error_code":"BUSY","message":"deferred request budget or token collision"})));
-                    } else { self.deferred_replies.insert(token,(done.generation,Instant::now()+Duration::from_secs(30),reply)); }
+                    } else { self.deferred_replies.insert(token,(done.generation,Instant::now()+Duration::from_secs(90),reply)); }
                     continue;
                 }
                 let answer = if !self.error.is_empty() {

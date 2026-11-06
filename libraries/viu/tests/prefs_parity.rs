@@ -153,3 +153,21 @@ fn email_uses_native_registry_admission_and_redacts_credentials() {
     let done = runtime.try_completion().unwrap();
     assert!(done.error.is_none(), "{:?}\n{}\n{}",done.error,done.stdout,done.stderr);
 }
+
+#[test]
+fn settings_fences_and_appearance_receipts_use_the_embedded_native_path() {
+    for (name,source) in [
+        ("core-test.mix",include_str!("../../../apps/prefs/core-test.mix")),
+        ("look-test.mix",include_str!("../../../apps/prefs/look-test.mix")),
+    ] {
+        let (tx,rx)=mpsc::channel();
+        let mut runtime=Runtime::new(8,Arc::new(move || {let _=tx.send(());}),None);
+        runtime.load(viu::runtime::Program {
+            path:PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/prefs").join(name),
+            scene:"prefs".into(),citizen:"prefs".into(),source:source.into(),
+        }).unwrap();
+        rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        let done=runtime.try_completion().unwrap();
+        assert!(done.error.is_none(),"{name}: {:?}\n{}\n{}",done.error,done.stdout,done.stderr);
+    }
+}
