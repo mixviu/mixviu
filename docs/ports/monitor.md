@@ -17,7 +17,8 @@ query construction and UI documentation. This lab specimen has no parity claim.
 | Disk/filesystem, network and TCP charts / connection table / sockstat | Deferred: snapshot retained for inspection, no equivalent UI yet |
 | Server-seeded history, gaps, interactive plot hover, series toggles, zoom/pan/reset | Deferred: requires reusable graph widget; current canvas is explicitly limited |
 | Peer discovery chooser and offline/reconnect UX | Deferred: explicit node field works without discovery, errors retained |
-| End task / kill / command-line copy | Deferred: original local-only UID/start-time signal admission and confirmations need porting before enabling mutations |
+| End task / kill / command-line column and copy | Deferred: command-line projection/copy still needs wiring; original local-only UID/start-time signal admission and confirmations must be ported before enabling mutations |
+| Uptime, load/task counts and CPU frequency/per-core detail | Deferred: present in the retained snapshot; detailed Mix projection not yet authored |
 | Action catalogue, menu/shortcuts, dialogs, theme axes, macros | Deferred until shared host actions/session integration; no application policy moved to Rust |
 | Original HELP/app.describe/info/rows/show/quit and ui/window wire contracts | Ported info/rows/ping and generic `viu.*`; other compatibility envelopes deferred |
 | Single instance raises existing window, CLI flags, logging registry | Deferred: generic bundle host currently refuses duplicate Bus identity but has no raise relay |
