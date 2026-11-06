@@ -29,7 +29,7 @@ fn save_password($id,$password)
 end
 fn settings_call($command,$body)
   send "settingsd" $command body=$body timeout=10
-  if $rc!=0 then raise("SETTINGS",if type($reply)=="map" then $reply.message ?? "Settings service unavailable" else "Settings service unavailable" end) end
+  if $rc!=0 then raise("SETTINGS",json_encode({command:$command,rc:$rc,reply:$reply,result:$result})) end
   return $reply
 end
 fn update($command,$a,$binding)
