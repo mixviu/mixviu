@@ -336,14 +336,9 @@ fn icon(ui: &Ui, name: &str, at: egui::Pos2, colour: Color32) {
         toolkit::button::paint_icon(ui, icon, at, 16.0, colour);
     }
 }
-fn search_draft_id(ctx: &egui::Context, id: &str) -> egui::Id {
-    egui::Id::unique((ctx.viewport_id(), id, "query-draft"))
-}
-
 // Keep native edits visible until their owner acknowledges them. Replaying an
 // older model into TextEdit would otherwise clamp its caret back to zero.
-fn search_query(ctx: &egui::Context, id: &str, accepted: &str) -> String {
-    let key = search_draft_id(ctx, id);
+fn search_query(ctx: &egui::Context, key: egui::Id, accepted: &str) -> String {
     ctx.data_mut(|data| {
         let Some((mut base, mut writes)) = data.get_temp::<(String, Vec<String>)>(key) else {
             return accepted.to_owned();
@@ -357,7 +352,10 @@ fn search_query(ctx: &egui::Context, id: &str, accepted: &str) -> String {
                 return accepted.to_owned();
             }
         }
-        let shown = writes.last().cloned().unwrap_or_else(|| accepted.to_owned());
+        let shown = writes
+            .last()
+            .cloned()
+            .unwrap_or_else(|| accepted.to_owned());
         if writes.is_empty() {
             data.remove_temp::<(String, Vec<String>)>(key);
         } else {
@@ -367,13 +365,15 @@ fn search_query(ctx: &egui::Context, id: &str, accepted: &str) -> String {
     })
 }
 
-fn search_edited(ctx: &egui::Context, id: &str, accepted: &str, edited: &str) {
-    let key = search_draft_id(ctx, id);
+fn search_edited(ctx: &egui::Context, key: egui::Id, accepted: &str, edited: &str) {
     ctx.data_mut(|data| {
-        let (base, mut writes) = data.get_temp::<(String, Vec<String>)>(key)
+        let (base, mut writes) = data
+            .get_temp::<(String, Vec<String>)>(key)
             .unwrap_or_else(|| (accepted.to_owned(), Vec::new()));
         if writes.last().is_none_or(|last| last != edited) {
-            if writes.len() == 64 { writes.remove(0); }
+            if writes.len() == 64 {
+                writes.remove(0);
+            }
             writes.push(edited.to_owned());
         }
         data.insert_temp(key, (base, writes));
@@ -389,29 +389,51 @@ mod search_input_tests {
         let ctx = egui::Context::default();
         crate::appearance::install(&ctx);
         crate::icons::install(&ctx);
-        let mut value = json!({"query":"","search_focus":true,"pages":[],"sections":[],"title":"Settings"});
+        let mut value =
+            json!({"query":"","search_focus":true,"pages":[],"sections":[],"title":"Settings"});
         let frame = |value: &Value, input: Vec<egui::Event>| {
             let mut events = Vec::new();
-            ctx.run_ui(egui::RawInput {
-                events: input,
-                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1040.0, 680.0))),
-                ..Default::default()
-            }, |ui| {
-                draw(ui, "browser", value, &mut BTreeMap::new(), &mut events);
-            }).drop_without_applying_deltas();
+            ctx.run_ui(
+                egui::RawInput {
+                    events: input,
+                    screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1040.0, 680.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    draw(ui, "browser", value, &mut BTreeMap::new(), &mut events);
+                },
+            )
+            .drop_without_applying_deltas();
             events
         };
         frame(&value, vec![]);
         frame(&value, vec![egui::Event::Text("den".into())]);
         frame(&value, vec![]);
         let second = frame(&value, vec![egui::Event::Text("sity".into())]);
-        assert!(second.iter().any(|event| event.action == "query" && event.value == "density"));
+        assert!(
+            second
+                .iter()
+                .any(|event| event.action == "query" && event.value == "density")
+        );
         value["query"] = json!("den");
         frame(&value, vec![]);
         value["query"] = json!("density");
         frame(&value, vec![]);
         let third = frame(&value, vec![egui::Event::Text("!".into())]);
-        assert!(third.iter().any(|event| event.action == "query" && event.value == "density!"));
+        assert!(
+            third
+                .iter()
+                .any(|event| event.action == "query" && event.value == "density!")
+        );
+        value["query_epoch"] = json!(1);
+        value["query"] = json!("");
+        frame(&value, vec![]);
+        let reset = frame(&value, vec![egui::Event::Text("new".into())]);
+        assert!(
+            reset
+                .iter()
+                .any(|event| event.action == "query" && event.value == "new")
+        );
     }
 }
 
@@ -482,7 +504,13 @@ pub(crate) fn draw(
         );
         side.spacing_mut().item_spacing.y = look.xxs.max(4.0);
         let accepted_query = text(value, "query");
-        let mut query = search_query(ui.ctx(), id, accepted_query);
+        let query_key = egui::Id::unique((
+            ui.ctx().viewport_id(),
+            id,
+            "query-draft",
+            value["query_epoch"].as_u64().unwrap_or(0),
+        ));
+        let mut query = search_query(ui.ctx(), query_key, accepted_query);
         egui::Frame::NONE
             .fill(look.window)
             .corner_radius(Look::radius(look.r_xl))
@@ -507,11 +535,11 @@ pub(crate) fn draw(
                         r.request_focus();
                     }
                     if r.changed() && ui.is_enabled() {
-                        search_edited(ui.ctx(), id, accepted_query, &query);
+                        search_edited(ui.ctx(), query_key, accepted_query, &query);
                         emit(events, id, "query", json!(query));
                     }
                     if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                        search_edited(ui.ctx(), id, accepted_query, "");
+                        search_edited(ui.ctx(), query_key, accepted_query, "");
                         emit(events, id, "query", json!(""));
                         ui.memory_mut(|m| m.surrender_focus(r.id));
                     }
@@ -524,7 +552,7 @@ pub(crate) fn draw(
                             )
                             .clicked()
                         {
-                            search_edited(ui.ctx(), id, accepted_query, "");
+                            search_edited(ui.ctx(), query_key, accepted_query, "");
                             emit(events, id, "query", json!(""));
                         }
                     }
