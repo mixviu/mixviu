@@ -41,6 +41,7 @@ pub const KINDS: &[&str] = &[
     "dialog-form",
     "image-view",
     "image-fill",
+    "image-canvas",
     "window-controls",
 ];
 
@@ -141,6 +142,7 @@ impl Widget {
             }
             "image-view" => return crate::image_view::validate(value),
             "image-fill" => return crate::image_view::validate_fill(value),
+            "image-canvas" => return crate::image_view::validate_canvas(value),
             "tree-table" => return crate::tree_table::validate(value),
             "icon" => {
                 value["name"]
@@ -188,6 +190,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind=="image-canvas" {return vec!["pan","zoom","pick","gesture"];}
         if self.kind == "mark" {
             return vec![];
         }
@@ -274,6 +277,7 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
+        if self.kind=="image-canvas" {return crate::image_view::admit_canvas(self.value(model),action,value);}
         self.validate_action(action, value)?;
         if self.kind == "window-controls" && self.value(model)["enabled"] != true {
             return Err("DISABLED".into());
@@ -365,6 +369,7 @@ pub struct Widgets {
     focus_error: Option<String>,
     images: crate::image_view::Images,
     surfaces: Option<crate::image_view::Images>,
+    canvases: Option<crate::image_view::Images>,
 }
 impl Widgets {
     pub fn request_focus(&mut self, id: &str, selection: Option<[usize; 2]>) -> Result<(), String> {
@@ -385,6 +390,7 @@ impl Widgets {
         self.text_input_active = false;
         self.focus_error = None;
         self.images.begin();
+        if let Some(images)=&mut self.canvases {images.begin();}
         if let Some(images) = &mut self.surfaces {
             images.begin();
         }
@@ -409,6 +415,7 @@ impl Widgets {
     /// `widget` calls). A disappeared target must not latch future replies.
     pub fn finish_frame(&mut self) -> Result<(), String> {
         self.images.finish();
+        if let Some(images)=&mut self.canvases {images.finish();}
         if let Some(images) = &mut self.surfaces {
             images.finish();
         }
@@ -492,6 +499,7 @@ impl Widgets {
                 response
             }
             "image-view" => self.images.draw(ui, id, value),
+            "image-canvas"=>self.canvases.get_or_insert_with(crate::image_view::Images::document).draw_canvas(ui,id,value,events),
             "image-fill" => self
                 .surfaces
                 .get_or_insert_with(crate::image_view::Images::surface)

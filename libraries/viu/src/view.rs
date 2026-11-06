@@ -522,7 +522,7 @@ impl SceneView {
                         }
                     }
                     "text" => {
-                        let colour=color(text(node,"color")).unwrap_or(Color32::WHITE).to_array();
+                        let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
                         let widget=Widget::new(&key,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"colour":colour}));
                         self.widgets.widget(ui,&widget,&json!({}));
                     }

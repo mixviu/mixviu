@@ -25,6 +25,7 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 pub struct Services {
     pub macros: Option<macros::Session>,
     pub chooser: Option<crate::chooser::Service>,
+    pub documents: crate::annotation::Documents,
 }
 
 // Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
@@ -148,6 +149,7 @@ pub struct Runtime {
     thread: Option<JoinHandle<()>>,
     interrupt: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
+    cancel: Arc<AtomicBool>,
     generation: u64,
     sequence: u64,
 }
@@ -179,6 +181,8 @@ impl Runtime {
         let (results, rx) = mpsc::sync_channel(capacity + 2);
         let interrupt = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel=cancel.clone();
         let worker_interrupt = interrupt.clone();
         let worker_stop = stop.clone();
         let thread = std::thread::Builder::new().name("viu-mix".into()).stack_size(EVALUATOR_STACK).spawn(move || {
@@ -212,6 +216,12 @@ impl Runtime {
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_image",crate::native_primitives::image_file());
                         eval.register("viu_http",crate::http::binding());
+                        eval.register("viu_document",services.documents.clone().binding());
+                        let cancelled=worker_cancel.clone();
+                        eval.register("viu_cancelled",mix::sync_ext(move |args| {
+                            if !args.is_empty(){return Err(failure("viu_cancelled takes no arguments"));}
+                            Ok(Value::Bool(cancelled.load(Ordering::Acquire)))
+                        }));
                         let replies=local.clone();
                         eval.register("viu_reply", mix::sync_ext(move |args| replies.reply_handle(args)));
                         if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
@@ -285,6 +295,7 @@ impl Runtime {
             thread: Some(thread),
             interrupt,
             stop,
+            cancel,
             generation: 0,
             sequence: 0,
         }
@@ -365,6 +376,8 @@ impl Runtime {
     pub fn sequence(&self) -> u64 {
         self.sequence
     }
+    /// Cooperative cancellation keeps the work lane alive for native cleanup.
+    pub fn signal_cancel(&self) {self.cancel.store(true,Ordering::Release);}
     /// Retire a caller whose native response receiver has gone away.
     /// On a full mailbox the owner must retry; no reply handle is reused.
     pub fn forget_reply(&self, sequence: u64) -> Result<(), Refusal> {
@@ -529,7 +542,7 @@ impl BusHandler for Local {
         args: &'a Value,
     ) -> BusFuture<'a, MixResult<(i32, Value, Value)>> {
         Box::pin(async move {
-            if target != "viu-local" || ["jobs.start", "jobs.cancel"].contains(&command) {
+            if target != "viu-local" || ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command) {
                 return match &self.backend {
                     Some(backend) => backend.send_with_reply(target, command, args).await,
                     None => Err(failure("no native Bus backend configured")),
@@ -546,7 +559,7 @@ impl BusHandler for Local {
         args: &'a Value,
     ) -> BusFuture<'a, MixResult<(i32, Value)>> {
         Box::pin(async move {
-            if target != "viu-local" || ["jobs.start", "jobs.cancel"].contains(&command) {
+            if target != "viu-local" || ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command) {
                 return match &self.backend {
                     Some(backend) => backend.send(target, command, args).await,
                     None => Err(failure("no native Bus backend configured")),
