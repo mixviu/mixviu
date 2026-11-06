@@ -585,7 +585,13 @@ impl Host {
                             self.last_ui = common_ui;
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
-                            let mut window = snapshot["state"]["values"].clone();
+                            let mut window = if snapshot["state"]["lost"] == true {
+                                self.session_window.clone().unwrap_or_else(|| {
+                                    self.model["window_settings"].clone()
+                                })
+                            } else {
+                                snapshot["state"]["values"].clone()
+                            };
                             for (axis, key) in [
                                 ("decorations", "window.decorations"),
                                 ("caption_side", "window.caption_side"),
