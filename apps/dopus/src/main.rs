@@ -64,6 +64,7 @@ struct App {
     window_frame: viu::window_frame::WindowFrame,
     hosting: viu::hosting::Hosting,
     chrome_state: (bool, bool),
+    host_query: Value,
 }
 impl App {
     fn ready(&self) -> bool {
@@ -316,6 +317,7 @@ impl App {
             ..
         } = r;
         let service = format!("dopus-{}", self.mode);
+        if command==format!("{service}.ui.titlebar.form") {self.host_query=json!({"from":r.from,"broker_service":headers.get("broker_service"),"broker_origin":headers.get("broker_origin")});}
         if let Some(suffix) = command.strip_prefix(&format!("{service}.")) {
             command = format!("dopus.{suffix}");
         }
@@ -422,16 +424,9 @@ impl App {
                     self.hosting.confirmed = true;
                     ctx.request_repaint();
                 }
-                let _ = reply.send((
-                    0,
-                    self.hosting.form(
-                        self.window_frame.form(
-                            &self.session.snapshot["state"]["values"],
-                            Some(&format!("dopus-{}", self.mode)),
-                        ),
-                        eligible,
-                    ),
-                ));
+                let mut form=self.hosting.form(self.window_frame.form(&self.session.snapshot["state"]["values"],Some(&format!("dopus-{}",self.mode))),eligible);
+                form["acknowledged"]=json!(self.hosting.confirmed);form["last_host_query"]=self.host_query.clone();
+                let _ = reply.send((0,form));
             }
             "dopus.ui.menu.popup" => {
                 if self.input_wait {
@@ -1413,6 +1408,7 @@ fn main() -> eframe::Result {
                 notices: VecDeque::new(),
                 hosting: Default::default(),
                 chrome_state: (false, false),
+                host_query:Value::Null,
                 error: String::new(),
                 last_service_us: 0,
                 last_model_at: Instant::now(),
