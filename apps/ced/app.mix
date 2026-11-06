@@ -6,7 +6,6 @@ include "core.mix"
 include "session.mix"
 $state={tabs:[],active:0,busy:false,serial:0,next_tab:0,queue:[],running:{},timers:{},outcomes:{},last_op:nil,status:"Open a UTF-8 document",path:"",wrap:false,line_numbers:true,window_close:false,open_dialog:false,event_seq:nil,look:{appearance:{scheme:"studio",mode:"dark"},values:{},revision:nil}}
 $state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_loaded=false;$state.session_dirty=false;$state.session_seen=nil;$state.restore={};$state.restore_active=nil;$state.exit_after_save=false;$state.edit={epoch:nil,version:nil,volatile:nil}
-$state=pump(queue_job($state,"session-load",{}))
 publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
@@ -97,6 +96,7 @@ on edit.changed
   $state=pump($state);publish_ced($state)
 end
 on bus.connected
+  if not $state.session_loaded and not any(concat($state.queue,values($state.running)),fn($j)=$j.kind=="session-load") then $state=queue_job($state,"session-load",{}) end
   subscribe("edit.changed")
   subscribe("noded.props.changed")
   $state=request_probe($state)

@@ -332,9 +332,17 @@ impl Documents {
             "restore-view" => {
                 let caret = crate::widgets::whole(&a["caret"]).unwrap_or(0) as usize;
                 let mut caret = caret.min(doc.mirror.text().len());
-                while !doc.mirror.text().is_char_boundary(caret) { caret -= 1; }
-                doc.model.sel = Selection { anchor: caret, head: caret };
-                doc.model.scroll.first_line = (crate::widgets::whole(&a["first_line"]).unwrap_or(1) as usize).max(1).min(doc.mirror.text().line_count());
+                while !doc.mirror.text().is_char_boundary(caret) {
+                    caret -= 1;
+                }
+                doc.model.sel = Selection {
+                    anchor: caret,
+                    head: caret,
+                };
+                doc.model.scroll.first_line = (crate::widgets::whole(&a["first_line"]).unwrap_or(1)
+                    as usize)
+                    .max(1)
+                    .min(doc.mirror.text().line_count());
             }
             "command" => {
                 let name = text_arg(&a, "name")?;
