@@ -16,3 +16,4 @@ smithay.workspace = true
 toolkit.workspace = true
 theme.workspace = true
 egui.workspace = true
+uuid.workspace = true

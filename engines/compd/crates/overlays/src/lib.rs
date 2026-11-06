@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 #[macro_use]
 extern crate model;
-pub use world::*;
+pub use ::world::{state, strings, scene, surface, driver, smithay_glue, order};
 pub mod capture;
 pub mod fps;
 pub mod handle;
