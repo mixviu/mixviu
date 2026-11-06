@@ -147,7 +147,8 @@ impl Host {
                         self.drive_next += 1;
                         let id = self.drive_next;
                         let answer = toolkit::drive::request(ctx, id, suffix, &r.args);
-                        if let Some(answer) = answer {
+                        if let Some(mut answer) = answer {
+                            crate::app_facilities::remap(ctx,&mut answer.body);
                             let _ = r.reply.send((answer.rc, answer.body));
                         } else {
                             self.drive_pending.insert(id, r.reply);
@@ -283,7 +284,8 @@ impl Host {
                 ui.ctx(),
                 self.bus.client().as_ref().map(|_| self.service.as_str()),
             );
-            for answer in toolkit::drive::logic(ui.ctx()) {
+            for mut answer in toolkit::drive::logic(ui.ctx()) {
+                crate::app_facilities::remap(ui.ctx(),&mut answer.body);
                 if let Some(reply) = self.drive_pending.remove(&answer.id) {
                     let _ = reply.send((answer.rc, answer.body));
                 }
@@ -628,7 +630,8 @@ impl Host {
         );
         self.facilities.finish(ui.ctx());
         if self.native_drive {
-            for answer in toolkit::drive::finish(ui.ctx()) {
+            for mut answer in toolkit::drive::finish(ui.ctx()) {
+                crate::app_facilities::remap(ui.ctx(),&mut answer.body);
                 if let Some(reply) = self.drive_pending.remove(&answer.id) {
                     let _ = reply.send((answer.rc, answer.body));
                 }

@@ -99,7 +99,7 @@ impl Facilities {
             }
             self.hints.pop_front();
         }
-        self.answers(ctx, toolkit::drive::logic(ctx));
+        if self.ui {self.answers(ctx, toolkit::drive::logic(ctx));}
     }
     fn answers(&mut self, ctx: &egui::Context, answers: Vec<toolkit::drive::Answer>) {
         for mut answer in answers {
@@ -160,7 +160,7 @@ impl Facilities {
         Some(r)
     }
     pub fn finish(&mut self, ctx: &egui::Context) {
-        self.answers(ctx, toolkit::drive::finish(ctx));
+        if self.ui {self.answers(ctx, toolkit::drive::finish(ctx));}
     }
 }
 fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {
@@ -169,7 +169,7 @@ fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {
         Err(e) => (10, json!({"error_code":e.code,"message":e.message})),
     }
 }
-fn remap(ctx: &egui::Context, value: &mut Value) {
+pub(crate) fn remap(ctx: &egui::Context, value: &mut Value) {
     match value {
         Value::Array(values) => {
             for value in values {
