@@ -1,5 +1,9 @@
 # Generic Mix bundle host (lab)
 
+The [gold frame discovery checkpoint](gold-frame.md) records the opt-in shared
+Mix frame prototype and its current root-identity restriction. It is not a
+visual acceptance claim for these application specimens.
+
 `viu run APP_DIR [ARGS]` loads `scene.mix` and `app.mix`. Optional
 `contract.json.host` selects `behaviour`, `service`, `title`, `size`,
 `commands`, `tick_ms` (100 ms minimum) and `surface` (`window` or `background`).

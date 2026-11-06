@@ -1,3 +1,45 @@
+# Gold parity discovery checkpoint — 2026-11-07
+
+**Incomplete. No app is at visual parity.** Work is on `lab/gold-parity`;
+`lab/app-ports` 3e6883a is merged onto the four-engine bf8019e base.
+The final tested code is 0a7ae37937e8b022b38fb5b0adc176a6b83ce97b.
+
+Implemented a lab shared Mix frame scene/model helper with opt-in generic
+bundle composition, existing Viu design/font/icon/menu/toolbar primitives,
+attached native header slots, bottom status and Mix-owned caption close.
+No application selects it yet. Independent survey caught root identity
+relocation and native close bypassing Mix; intent/control roots now refuse
+explicitly, and close requires `viu.frame.close` → `window_close: true`.
+Identity-preserving mounting still needs implementation before Dopus adopts
+the frame. Public contract and limits: `docs/ports/gold-frame.md`.
+
+Exact scoped CBC `20261107-004421-72b146fc-a1`: BUILD_RC=0; fmt, locked
+check, Viu/viu-engine tests, clippy and build; empty worker diff. Focused
+frame gate `20261107-004254-ea9ed470-a1` also passed. Restored the app-port
+minimal-wgpu Offscreen cfg after isolated Viu testing exposed the integrated
+baseline mismatch. The full four-engine release/process gates were not rerun.
+Native binary hash matched the final CBC artifact exactly.
+
+Gold-first Monitor baseline captured through a private headless compositor
+and deterministic native Mix Bus fixture: same 1040×680 size and paused
+six-process state. Side-by-side and SSIM diff figures inspected; normalised
+SSIM 0.137345 and RMSE 0.183086. This is a failed baseline. Missing regions,
+controls, command column, table proportions, striping, units, typography and
+status details are recorded privately; no deviation accepted. A separate
+generic framed-bundle pilot drew successfully and its native caption click
+ran Mix close policy before exiting. All owned processes stopped. Private
+captures, fixtures, hashes, closure and detailed receipt are retained under
+the gold-parity-20261107 hub evidence directory. No VT/install/deploy used.
+
+Outstanding work remains the full brief: finish the shared frame/widgets and
+identity-preserving composition; match Monitor's pages/states first, then
+Prefs, Screenshot, Backdrop, Ced, Workshop, Email; run each visual and behaviour
+gate; complete generic Quoin/Dopus acceptance and retire the Dopus app host.
+Term remains excluded. Interpreter and Dopus/Email hot paths were not edited
+(the merge brings one pre-existing interpreter test).
+
+Earlier app-port checkpoint history follows.
+
 # Round 6 Email core completed
 
 Validated implementation: 6429a07f62a7b7d9dc43f2ee9f05f212bce71dc8 on lab/app-ports.
@@ -365,3 +407,6 @@ branch lab/gold-parity; head: see this checkpoint commit; apps at parity: none; 
 Independent frame survey found root identity relocation and caption-close ownership issues. Prototype now refuses intent-owning/control roots explicitly (Dopus adoption remains blocked on a real identity-preserving mount) and dispatches viu.frame.close to Mix, requiring model.window_close authorisation. New model publication test now includes its mandatory generation token. CBC preparation 20261107-003617-53f60db7-a1 failed that test; 20261107-004118-523dd8fe-a1 exposed inherited eframe Offscreen feature gating when testing Viu without the engine. Restored app-ports correct wgpu_no_default_features cfg, preserving full-wgpu builds and standalone widget tests. Exact CBC formatting patches applied. No app adopted the prototype.
 
 branch lab/gold-parity; head: see this checkpoint commit; apps at parity: none; visual evidence: deterministic gold Monitor 1040x680 captured privately; CBC jobs: 20261107-002827-f4f55dd6-a1 preparation green, 20261107-003617-53f60db7-a1 and 20261107-004118-523dd8fe-a1 failed, repairs queued.
+
+
+branch lab/gold-parity; head 0a7ae37937e8b022b38fb5b0adc176a6b83ce97b (tested code; following receipt commit changes documentation only); apps at parity: none; gate evidence: failing Monitor baseline and framed-host pilot retained privately; CBC jobs: 20261107-004421-72b146fc-a1 full scoped gate green, 20261107-004254-ea9ed470-a1 focused gate green.
