@@ -1,51 +1,66 @@
-# Screenshot round 3 — shared frame and engine profile
+# Screenshot round 3 — feature checkpoint, acceptance running
 
-Overall parity remains **unaccepted**. No deviation from gold is proposed.
+Overall parity remains **unaccepted**. No gold deviation is proposed at this
+checkpoint. Shared frame merged through `158adc5` in `38ca78b`; the Viu
+engine declares the complete lib-mix shell profile with defaults disabled.
+Its isolated dispatch regression passes for all ten profile features.
 
-Merged `origin/lab/gold-parity` through `158adc5` in merge `38ca78b`.
-Screenshot retains reusable deferred replies, raster documents, annotation
-painting and canvas gestures; it now uses the newer shared native frame,
-status control and macro facilities. Compatibility command IDs are remapped
-back from bounded native menu slots. Macro deferred responses retain native
-request ownership and the shared facility publishes completion topics.
+Mix now owns the complete pinned Screenshot controller, action registry,
+annotations, dialogs, storage, launch/headless policy and compatibility surface.
+Reusable Viu facilities provide deferred replies, native raster documents and
+canvas input, native widgets, clipboard, macros and debug controls. All
+intra-app work stays in process. No desktop, VT or installation was changed.
 
-Viu declares `shell-profile` for lib-mix: json, regex, toml, datetime, url,
-crypto, http, sqlite, ws and archive. The engine explicitly selects this
-profile with dependency defaults disabled. This is engine policy, not an
-application switch. Its embedded regression test exercises dispatch for
-every feature without opening network connections.
+Native evidence against gold `8779f33284b7d3f1178c3d57a699efb9b0867b22`,
+retained privately under `screenshot-parity-20261107/`:
 
-Preparation CBC `20261107-050951-a88e1a14-a1` on `2b99cfa5c20374e79b5f472039f7bef743c14bb6`
-passed policy, all-target check, focused raster/controller tests, the engine
-shell-profile test, clippy and build, but returned formatting (BUILD_RC=97).
-Formatting was applied. Saved log:
-`20261107-050951-cbc2-2b99cfa5c203-20261107-050951-a88e1a14-a1-c848c981.log`.
-Its preparation artifact hash is
-`5dc4c4e8f212a45dd6fd85b339a6695ec8197dec7cded244bf00ef4d2b9e9f35`.
-Earlier merge repairs: `20261107-050436-d1bb128b-a1` found a JSON comma;
-`20261107-050541-df786fbc-a1` found duplicate consumption of descriptors.
-Both were fixed. They are not accepted gates.
+- `functional-mix.6C6bls` / `functional-gold.4RiKU8`: all nine annotation
+  kinds, move/delete, crop, undo/redo; equal document replies and byte-identical
+  PNG `f0ea386d7e8aff6f85a731b384d05f174e103be80b6cdf895e4e6069f0aee9f3`.
+- `abp.0z6i17`: 53 native cases; zero structured differences after normalising
+  generated paths, timestamps, PIDs and compositor IDs. All 55 command
+  descriptors and the initial action registry match exactly. Delayed capture
+  cancellation answers the original caller with CANCELLED and restores/focuses
+  the window. The earlier deferred primitive witness held a request for 22.1 s.
+- `lifecycle-nested.TWCRUT`: screen/cursor capture, actual human-seat region
+  selection (300×200), restoration and real Wayland clipboard readback. Gold and
+  Mix clipboard PNGs are byte-identical
+  `ffbe8a30e9541cf595d31fdd36c33695ca62dcbe59f6efb7bfa1cfb85d6f160d`.
+- `advanced.93Va7M`: native drawing and path-dialog keyboard input, macro CRUD,
+  moves and actual execution, six menus and eight live Prefs variants on one
+  PID. Studio Light and Pro Dark are pixel-identical in all six regions.
+  Compact and large-font variants have only caption-edge anti-aliasing
+  (whole SSIM distortion `2.02248e-8`, RMSE `4.09199e-5`). Spacious captures
+  still include debug-only alignment marks; release comparisons are pending.
+- `extras.focfeX` is a diagnostic probe, not an acceptance artifact. It confirms
+  native saved/action/macro-finished topic delivery, F8 remapping, authority
+  loss/recovery, macro stop and dirty caption-close. The ordinary exact-source
+  rerun follows. Debug dispatch and its receipt/completion history were repaired.
+- `files.dsHeLr`: native XDG Pictures discovery, exclusive `_3` naming with
+  existing files preserved, newest-20/seven-day raw pruning, >1 MiB recent
+  history, malformed-record rejection, compaction, CLI handoff and compositor
+  mismatch refusal. The full-tail string-limit defect and CLI JSON encoding
+  defect found by this witness were fixed.
+- `headless.aZl5DI`: native PNG/JPEG/WebP, invalid image, completion capture,
+  dirty refusal, recent-history persistence and headless command discovery.
+  Final launcher and exact release reruns remain.
 
-An explicit-body jobs-envelope defect was found during integration and fixed
-in the reusable jobs backend, with a test checking admission, owner and typed
-payload. The updated focused gate and isolated engine profile test are queued
-as `20261107-051316-4ed4aa20` on `fc774bb`; no result is claimed here.
+The default empty/document light/dark pairs in `matched.ASPXaD` are
+pixel-identical, full image and every region. About uses truthful candidate
+build provenance and still needs a final paired inspection. No arbitrary SSIM
+threshold or visual acceptance is claimed. Metric convention: ImageMagick
+7.1.2-35 SSIM is distortion; zero is identical. Every owned native run has a
+process-cleanup receipt.
 
-Private evidence is in hub `_var/screenshot-parity-20261107/`.
-Gold functional run `functional-gold.4RiKU8` passed all nine annotation kinds,
-move/delete, undo/redo, crop, completion export, overwrite refusal and recent
-history. Candidate conformance and PNG equivalence remain to run against the
-merged exact artifact. Earlier native initial action descriptions matched the
-gold descriptions. Earlier frame Prefs variants and the native 22.1-second
-deferred/cancel witness remain valid only for their recorded revisions below.
-
-Preliminary candidate captures exposed header/menu/content-spacing defects;
-the shared-frame merge replaces the overlapping adapter. Matched captures,
-region differences, full live content Prefs and final app/Bus acceptance are
-still outstanding. The revised Screenshot inventory separates implementation
-from acceptance. No SSIM or region verdict is claimed for round 3.
+CBC full scoped gate `20261107-054705-cd516070-a1` at `28585ae` passed with
+empty worker diff; its full saved log was read. Preparation full gate
+`20261107-062223-3170eca0-a1` passed checks/tests/clippy/build and returned
+formatting, applied in `22262a9`. Release gates are running/queued; the latest
+source is `2cdba49`. Final exact-source gate, expanded native cases and matched
+release captures are required before overall acceptance.
 
 Earlier receipts follow.
+
 
 # Screenshot round 2 — reusable deferred-reply checkpoint
 
@@ -726,3 +741,5 @@ branch lab/parity-screenshot; head 6ed840c8877dff0712a9d8126bd28fd7bb7a33ee (tes
 branch lab/parity-screenshot; head febe71da6958436f9c41d4b04213712a2419385b (tested code; receipt commit follows); frame adopted; features incomplete; Bus deferred primitive passed native 22.1 s + cancel; Prefs frame variants passed previously; SSIM/regions unmeasured; CBC 20261107-031129-f2c1172c-a1 PASS.
 
 branch lab/parity-screenshot; head fc774bb (implementation; gate pending); parity evidence: deferred primitive accepted at its earlier SHA, merged app features/Bus/Prefs not yet accepted, SSIM/regions pending; CBC 20261107-050951-a88e1a14-a1 preparation passed with formatting, 20261107-051316-4ed4aa20 queued.
+
+branch lab/parity-screenshot; head SHA 2cdba49 (implementation; receipt-only commit follows); parity evidence: features/native Bus/Prefs witnesses above, release and final exact-source acceptance pending, default four states SSIM/regions 0; CBC job ids 20261107-054705-cd516070-a1 PASS, 20261107-062223-3170eca0-a1 preparation passed with formatting, 20261107-063549-402316b5-a1 running.
