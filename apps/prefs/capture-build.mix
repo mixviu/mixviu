@@ -3,7 +3,7 @@
 -- apps/prefs/gate.mix and its complete scoped integration gate.
 $rc=0
 try
-  for $command in [["cargo","fmt","-p","viu","-p","viu-engine","-p","toolkit"],["cargo","test","--locked","-p","viu","--test","file_widgets","--test","prefs_parity"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
+  for $command in [["cargo","fmt","-p","viu","-p","viu-engine","-p","toolkit"],["cargo","test","--locked","-p","viu","--lib","search_keeps_caret_through_delayed_and_partial_owner_acknowledgements"],["cargo","test","--locked","-p","viu","--test","file_widgets","--test","prefs_parity"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
     print({argv:$command})
     $result=run_argv($command,{timeout:1200,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}})
     print($result)
