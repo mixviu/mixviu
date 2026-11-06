@@ -159,13 +159,19 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
                         chrome.palette.icon,
                     )
                     .paint_at(ui, rect);
-                    let response =
-                        ui.interact(rect, ui.scope_id().with("window-menu-mark"), egui::Sense::click());
+                    let response = ui.interact(
+                        rect,
+                        ui.scope_id().with("window-menu-mark"),
+                        egui::Sense::click(),
+                    );
                     response.widget_info(|| {
                         egui::WidgetInfo::labeled(
                             egui::Role::Button,
                             true,
-                            toolkit::action::label_text(&toolkit::Strings::new(""), "window-system-menu"),
+                            toolkit::action::label_text(
+                                &toolkit::Strings::new(""),
+                                "window-system-menu",
+                            ),
                         )
                     });
                     if response.clicked_by(egui::PointerButton::Primary) {

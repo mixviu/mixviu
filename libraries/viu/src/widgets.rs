@@ -222,14 +222,13 @@ impl Widget {
                 )
                 .size()
                 .x
-                + if self.properties["role"] == "status"
-                    && self.value(model).as_str().is_some_and(|s| !s.is_empty())
-                {
-                    2.0 * toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as f32
-                } else {
-                    0.0
-                },
-        )
+            + if self.properties["role"] == "status"
+                && self.value(model).as_str().is_some_and(|s| !s.is_empty())
+            {
+                2.0 * toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as f32
+            } else {
+                0.0
+            })
     }
     fn choices(&self) -> Vec<&str> {
         self.properties["choices"]
@@ -364,9 +363,15 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.kind == "swatches" {return vec!["select"];}
-        if self.kind == "macro-window" {return vec!["close"];}
-        if self.kind == "image-canvas" {return vec!["pan","zoom","pick","gesture","viewport"];}
+        if self.kind == "swatches" {
+            return vec!["select"];
+        }
+        if self.kind == "macro-window" {
+            return vec!["close"];
+        }
+        if self.kind == "image-canvas" {
+            return vec!["pan", "zoom", "pick", "gesture", "viewport"];
+        }
         if self.properties["read_only"] == true && self.kind == "tree-table" {
             return vec![];
         }

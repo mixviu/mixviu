@@ -282,11 +282,37 @@ impl Drop for Host {
 }
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
-        self.wire_deliveries.retain(|state|state.load(std::sync::atomic::Ordering::Acquire)==0);
-        if self.drive.is_some() {for answer in toolkit::drive::logic(ctx) {if let Some(reply)=self.drive_pending.remove(&answer.id){let _=reply.send((answer.rc,answer.body));}}}
-        while let Ok(request)=self.local_clipboard.try_recv(){if self.clipboard_reply.is_none() && self.clipboard.replace(&request.path,std::path::Path::new(&request.path),ctx){self.clipboard_reply=Some(request.reply);}else{let _=request.reply.send((10,json!({"error_code":"BUSY"})));}}
-        let gone:Vec<_>=self.pending.iter().filter_map(|(seq,reply)|reply.is_closed().then_some(*seq)).collect();
-        for seq in gone {if self.runtime.forget_reply(seq).is_ok(){self.pending.remove(&seq);self.retained.remove(&seq);}}
+        self.wire_deliveries
+            .retain(|state| state.load(std::sync::atomic::Ordering::Acquire) == 0);
+        if self.drive.is_some() {
+            for answer in toolkit::drive::logic(ctx) {
+                if let Some(reply) = self.drive_pending.remove(&answer.id) {
+                    let _ = reply.send((answer.rc, answer.body));
+                }
+            }
+        }
+        while let Ok(request) = self.local_clipboard.try_recv() {
+            if self.clipboard_reply.is_none()
+                && self
+                    .clipboard
+                    .replace(&request.path, std::path::Path::new(&request.path), ctx)
+            {
+                self.clipboard_reply = Some(request.reply);
+            } else {
+                let _ = request.reply.send((10, json!({"error_code":"BUSY"})));
+            }
+        }
+        let gone: Vec<_> = self
+            .pending
+            .iter()
+            .filter_map(|(seq, reply)| reply.is_closed().then_some(*seq))
+            .collect();
+        for seq in gone {
+            if self.runtime.forget_reply(seq).is_ok() {
+                self.pending.remove(&seq);
+                self.retained.remove(&seq);
+            }
+        }
         self.facilities.prepare(ctx, &self.bus);
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
@@ -464,8 +490,12 @@ impl Host {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
                     self.facilities.notice(&n.command, &n.args);
-                    if self.drive.is_some() && n.command=="bus.connected"{toolkit::drive::set_service(ctx,Some(&self.service));}
-                    if self.drive.is_some() && n.command=="bus.disconnected"{toolkit::drive::set_service(ctx,None);}
+                    if self.drive.is_some() && n.command == "bus.connected" {
+                        toolkit::drive::set_service(ctx, Some(&self.service));
+                    }
+                    if self.drive.is_some() && n.command == "bus.disconnected" {
+                        toolkit::drive::set_service(ctx, None);
+                    }
                     if n.command == "theme.changed" {
                         self.file_theme = toolkit::Theme::load();
                         self.session_dirty = true;
@@ -534,24 +564,25 @@ impl Host {
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
                             self.session_window = Some(snapshot["state"]["values"].clone());
-                            self.session_notice=Some(snapshot.clone());
-                            if !self.native_choice.as_object().is_some_and(|m|m.is_empty()) {
-                            if let Ok(choice) = crate::native_theme::choice(&self.native_choice) {
-                                if let Ok((base, _)) = crate::appearance::session_base(
-                                    &snapshot,
-                                    &self.service,
-                                    &self.file_theme,
-                                    &self.last_ui,
-                                ) {
-                                    if let Ok(theme) = base.with_choice(&choice) {
-                                        let _ = crate::appearance::install_theme(ctx, &theme);
-                                        let _ = self.runtime.notify(
-                                            "viu.theme.changed".into(),
-                                            crate::native_theme::describe(&theme),
-                                        );
+                            self.session_notice = Some(snapshot.clone());
+                            if !self.native_choice.as_object().is_some_and(|m| m.is_empty()) {
+                                if let Ok(choice) = crate::native_theme::choice(&self.native_choice)
+                                {
+                                    if let Ok((base, _)) = crate::appearance::session_base(
+                                        &snapshot,
+                                        &self.service,
+                                        &self.file_theme,
+                                        &self.last_ui,
+                                    ) {
+                                        if let Ok(theme) = base.with_choice(&choice) {
+                                            let _ = crate::appearance::install_theme(ctx, &theme);
+                                            let _ = self.runtime.notify(
+                                                "viu.theme.changed".into(),
+                                                crate::native_theme::describe(&theme),
+                                            );
+                                        }
                                     }
                                 }
-                            }
                             }
                         }
                         Err(error) => self.error = error,
@@ -562,7 +593,15 @@ impl Host {
                 }
             }
         }
-        if let Some(snapshot)=self.session_notice.as_ref(){if self.runtime.notify("viu.session.changed".into(),snapshot.clone()).is_ok(){self.session_notice=None;}}
+        if let Some(snapshot) = self.session_notice.as_ref() {
+            if self
+                .runtime
+                .notify("viu.session.changed".into(), snapshot.clone())
+                .is_ok()
+            {
+                self.session_notice = None;
+            }
+        }
         if self.ready && self.framed {
             let projected = self.projection(&self.model, ctx);
             if self.view.model() != &projected {
@@ -658,7 +697,12 @@ impl Host {
                 }
             }
             self.view.geometry.extend(self.overlays.geometry.clone());
-            if self.model["keyboard_events"]==true {let keys=ui.input(|input|input.events.iter().filter_map(|event|match event{egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=>Some(json!({"key":crate::input::key_name(*key),"ctrl":modifiers.ctrl||modifiers.command,"alt":modifiers.alt,"shift":modifiers.shift,"typing":self.view.text_input_active()})),_=>None}).collect::<Vec<_>>());for key in keys{self.dispatch("viu.key".into(),key,BTreeMap::new(),None);}}
+            if self.model["keyboard_events"] == true {
+                let keys=ui.input(|input|input.events.iter().filter_map(|event|match event{egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=>Some(json!({"key":crate::input::key_name(*key),"ctrl":modifiers.ctrl||modifiers.command,"alt":modifiers.alt,"shift":modifiers.shift,"typing":self.view.text_input_active()})),_=>None}).collect::<Vec<_>>());
+                for key in keys {
+                    self.dispatch("viu.key".into(), key, BTreeMap::new(), None);
+                }
+            }
             if self.facilities.macros.is_some()
                 && toolkit::macros::show_app(
                     ui.ctx(),
@@ -702,7 +746,10 @@ impl Host {
                 if self.window_frame.close_requested {
                     self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
                 }
-                if self.model["window_close"] == true && self.wire_deliveries.is_empty() && self.drive_pending.is_empty() {
+                if self.model["window_close"] == true
+                    && self.wire_deliveries.is_empty()
+                    && self.drive_pending.is_empty()
+                {
                     self.facilities.finish(ui.ctx());
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -762,10 +809,19 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
     let local_ui = crate::local_ui::LocalUi::new(wake.clone());
     jobs.set_native_backend(bus.backend_maker());
-    let (clipboard,local_clipboard)=crate::clipboard::Clipboard::channel(wake.clone());
-    let macros=facilities.macros.clone().unwrap_or_else(||macros::Session::for_app(bundle.manifest.drive.as_deref().unwrap_or(&bundle.manifest.service)));
+    let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
+    let macros = facilities.macros.clone().unwrap_or_else(|| {
+        macros::Session::for_app(
+            bundle
+                .manifest
+                .drive
+                .as_deref()
+                .unwrap_or(&bundle.manifest.service),
+        )
+    });
     let services = crate::runtime::Services {
-        clipboard:Some(clipboard), options:json!({"headless":bundle.manifest.surface=="headless"}),
+        clipboard: Some(clipboard),
+        options: json!({"headless":bundle.manifest.surface=="headless"}),
         macros: Some(macros.clone()),
         ..Default::default()
     };
@@ -930,7 +986,16 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     let service = bundle.manifest.service.clone();
     let app_id = bundle
         .manifest
-        .app_id.clone().or_else(||bundle.manifest.bus_surface.as_ref().and_then(|s|s["app_id"].as_str()).map(str::to_owned))
+        .app_id
+        .clone()
+        .or_else(|| {
+            bundle
+                .manifest
+                .bus_surface
+                .as_ref()
+                .and_then(|s| s["app_id"].as_str())
+                .map(str::to_owned)
+        })
         .unwrap_or_else(|| format!("mixviu.{service}"));
     eframe::run_native(
         &title,
@@ -946,7 +1011,9 @@ pub fn run(args: Vec<String>) -> eframe::Result {
             toolkit::decorations::initialise(cc);
             toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             crate::appearance::install(&cc.egui_ctx);
-            if let Some(prefix)=&bundle.manifest.drive {toolkit::drive::install(&cc.egui_ctx,prefix);}
+            if let Some(prefix) = &bundle.manifest.drive {
+                toolkit::drive::install(&cc.egui_ctx, prefix);
+            }
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(
                 bundle,

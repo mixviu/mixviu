@@ -484,7 +484,7 @@ pub(crate) fn draw(
         "command-bar" => {
             let state = presentation(ui.ctx());
             let gold = widget.properties["style"] == "gold";
-            if gold {
+            if gold && widget.properties["hostable"]!=false {
                 let items = value
                     .as_array()
                     .into_iter()
@@ -513,16 +513,16 @@ pub(crate) fn draw(
                     .collect::<Vec<_>>();
                 toolkit::titlebar::hosting::publish(ui.ctx(), &items);
             }
-            let response = if state.hosted_actions
-                || (gold && toolkit::titlebar::hosting::hosted(ui.ctx()))
+            let response = if widget.properties["hostable"]!=false && (state.hosted_actions
+                || (gold && toolkit::titlebar::hosting::hosted(ui.ctx())))
             {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
                 ui.allocate_ui_with_layout(
                     ui.available_size_before_wrap(),
-                    egui::Layout::left_to_right(egui::Align::Center),
+                    if widget.properties["vertical"]==true {egui::Layout::top_down(egui::Align::Center)}else{egui::Layout::left_to_right(egui::Align::Center)},
                     |ui| {
-                        if widget.properties["style"] == "gold" {
+                        if widget.properties["style"] == "gold" && widget.properties["hostable"]!=false {
                             let chrome = toolkit::chrome::Chrome::of(ui.ctx());
                             if chrome.band.actions.alignment()
                                 == design::title_band::Alignment::Left
@@ -551,10 +551,10 @@ pub(crate) fn draw(
                         }
                         for item in value.as_array().into_iter().flatten() {
                             if item["separator"] == true {
-                                ui.separator();
+                                if widget.properties["vertical"]==true {toolkit::bars::hairline(ui);}else{ui.separator();}
                                 continue;
                             }
-                            let response = if widget.properties["style"] == "gold"
+                            let response = if item["primary"]==true {ui.add_enabled(item["enabled"]==true,toolkit::button::PushButton::primary(text(item,"label")))}else if widget.properties["style"] == "gold"
                                 && item["icon"].as_str().is_some()
                             {
                                 let icon =
