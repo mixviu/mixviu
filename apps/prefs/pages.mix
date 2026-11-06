@@ -58,12 +58,23 @@ fn backend_reason($backend)
   return replace($n.text_for("backend-missing"),"{ $backend }",$n.text_for($backend))
 end
 fn row_view($s,$p,$r)
-  return {id:$r.id,title:$r.title,control:$r.control,key:$r.key,value:if $r.key!=nil then stored($s,$r.key) else nil end,shown:$n.shown($s,$p,$r),blocked:row_blocked($s,$p,$r)}
+  $view={id:$r.id,title:$r.title,control:$r.control,key:$r.key,value:if $r.key!=nil then stored($s,$r.key) else nil end,shown:$n.shown($s,$p,$r),blocked:row_blocked($s,$p,$r)}
+  if $r.control.control=="ordered" then
+    $options=[]
+    for $source in $r.control.sources $options=concat($options,$s.live.options[$source] ?? []) end
+    $view.entries=map($view.value ?? [],fn($value)={value:$value,label:(filter($options,fn($o)=deep_eq($o.value,$value))[0] ?? {}).label ?? json_encode($value)})
+  elif $r.control.control=="gallery" then $view.gallery=$gallery.view($s)
+  elif $p.id=="date_time" and $r.id=="now" then $view.readout=nil end
+  return $view
+end
+fn section_shown($s,$p,$sec)
+  if $p.id=="power" and $sec.id=="battery" then return (($s.live ?? {}).facts ?? {}).battery ?? false end
+  return true
 end
 fn sections_view($s,$p,$sections)
   $out=[]
   for $sec in $sections
-    push($out,{id:$sec.id,title:$sec.title,shown:true,rows:map($sec.rows,fn($r)=row_view($s,$p,$r)),items:if $sec.source==nil then nil else {source:$sec.source,items:[]} end})
+    push($out,{id:$sec.id,title:$sec.title,shown:section_shown($s,$p,$sec),rows:map($sec.rows,fn($r)=row_view($s,$p,$r)),items:if $sec.source==nil then nil else {source:$sec.source,items:[]} end})
   end
   return $out
 end
@@ -154,11 +165,10 @@ fn browser_row($s,$p,$r)
     $v.kind="choice";$v.inline=true;$v.title="";$v.value=if stored($s,$c.all) ?? true then "all" else $gallery.output($s) end
     $v.choices=if stored($s,$c.all) ?? true then [{value:"all",label:$n.text_for("opt-all-displays")}] else map($s.live.outputs ?? [],fn($o)={value:$o,label:$o}) end
   end
-  if $p.id=="date_time" and $r.id=="now" then $v.value=date_format(time(),"%A %d %B %Y · %H:%M") end
   return $v
 end
 fn browser_sections($s,$p,$sections)
-  return map($sections,fn($sec)={id:$sec.id,title:$sec.title,shown:true,rows:map($sec.rows,fn($r)=browser_row($s,$p,$r))})
+  return map($sections,fn($sec)={id:$sec.id,title:$sec.title,shown:section_shown($s,$p,$sec),rows:map($sec.rows,fn($r)=browser_row($s,$p,$r))})
 end
 fn wallpaper_sections($s,$sections)
   $g=$gallery.view($s);$category=$g.category
