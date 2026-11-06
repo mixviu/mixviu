@@ -129,6 +129,7 @@ fn publish_ced($s)
   end
   $status=if $has then $t.phase.." · rev "..to_string($t.rev).." · "..$t.language.." · pending "..to_string($t.pending) else $s.status end
   $model=ced_ui_model($s,$model)
-  $model=$frame.apply($model,{identity:false,icon:"file-text",title:"MixOS Editor",menus:ced_menus($s),toolbar:ced_toolbar($s),status:ced_status($s,$t),appearance:$look,window:$window})
+  $local=$s.local_theme ?? {};if $local.decorations!=nil then $window["window.decorations"]=$local.decorations end;if $local.captions!=nil then $window["window.caption_side"]=$local.captions end
+  $model=$frame.apply($model,{identity:($local.decorations ?? "ssd")!="ssd",icon:"file-text",title:"MixOS Editor",menus:ced_menus($s),toolbar:ced_toolbar($s),status:ced_status($s,$t),appearance:$look,window:$window})
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
 end

@@ -102,7 +102,9 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui",$event_params=
   elif $id=="view.reload_settings" then $s.settings_reload=($s.settings_reload ?? 0)+1
   elif starts_with($id,"view.markdown.") then $s.previews[$t.document]=split($id,".")[2]
   elif $id=="view.search" then $s.find.open=true;$s.find_instance=($s.find_instance ?? 0)+1
-  elif $id=="view.mode" then $s.look.appearance.mode=if $s.look.appearance.mode=="dark" then "light" else "dark" end;$s.local_mode=$s.look.appearance.mode
+  elif $id=="view.mode" then $s.look.appearance.mode=if $s.look.appearance.mode=="dark" then "light" else "dark" end;$s.local_theme.mode=$s.look.appearance.mode
+  elif any(["view.theme.","view.mode.","view.style.","view.decorations.","view.captions."],fn($prefix)=starts_with($id,$prefix)) then
+    $parts=split($id,".");$s.local_theme[$parts[1]]=if $parts[2]=="session" then nil else $parts[2] end
   elif $id=="help.macros" then $s.macros_open=true
   elif starts_with($id,"help.") then $s.help=split($id,".")[1]
   else raise("UNKNOWN_ACTION","Unknown action "..$id) end

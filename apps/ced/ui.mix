@@ -6,12 +6,23 @@ end
 fn ced_menus($s)
   $menus=[];$rows=action_rows($s)
   for $menu in ["File","Edit","Search","View","Tabs","Help"]
-    $children=[]
+    $children=[];$last_group=nil;$markdown=[]
     for $a in filter($rows,fn($a)=$a.menu==$menu)
+      if contains(["mail.headers","help.macros"],$a.id) then continue end
+      if starts_with($a.id,"view.markdown.") then
+        push($markdown,{id:$a.id,label:$a.label,enabled:$a.enabled,checked:len($s.tabs)>0 and ($s.previews[current($s).document] ?? "source")==split($a.id,".")[2]});continue
+      end
+      $group=menu_group($a.id)
+      if $last_group!=nil and $last_group!=$group then push($children,{separator:true}) end
+      $last_group=$group
       $row={id:$a.id,label:$a.label,enabled:$a.enabled,shortcut:join($a.keys," / ")}
       if starts_with($a.id,"view.markdown.") then $row.checked=len($s.tabs)>0 and ($s.previews[current($s).document] ?? "source")==split($a.id,".")[2]
       elif contains(["view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output"],$a.id) then $row.checked=$s[split($a.id,".")[1]] end
       push($children,$row)
+    end
+    if $menu=="View" then
+      push($children,{separator:true});push($children,{id:"markdown",label:"Markdown",enabled:true,children:$markdown})
+      push($children,{separator:true});push($children,{id:"theme",label:"Theme",enabled:true,children:theme_rows($s)})
     end
     push($menus,{id:"menu-"..lower($menu),label:$menu,enabled:true,children:$children})
   end
@@ -39,6 +50,7 @@ fn ced_ui_model($s,$model)
   end
   $model.tabs={id:"tabs",kind:"document-tabs",label:"Documents",initial:{items:$items,selected:to_string($s.active)}}
   $model.local_mode=$s.local_mode
+  $model.local_theme=$s.local_theme ?? {}
   $model.settings_reload=$s.settings_reload ?? 0
   $model.find_open=$s.find.open;$model.values["find-bar"]=merge($s.find,{instance:$s.find_instance ?? 0})
   $model.values["close-dialog"]={open:$s.close_dialog!=nil,title:"Save changes?",body:"Save this document before closing?",choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
@@ -116,7 +128,7 @@ fn ced_ui_intent($s,$a)
     elif $a.action=="command" then
       $s=mail_commit($s,$key)
       if $a.value=="attach" then $s.mail[$key].chooser=true;$s.mail[$key].chooser_instance=($s.mail[$key].chooser_instance ?? 0)+1
-      else $s.mail[$key].shown=merge($s.mail[$key].shown ?? {},{($a.value):true}) end
+      else $shown=$s.mail[$key].shown ?? {};$shown[$a.value]=true;$s.mail[$key].shown=$shown end
     elif $a.action=="cancel" then $s.mail[$key].chooser=false
     elif $a.action=="picked" or $a.action=="remove" then
       $s=mail_commit($s,$key);$h=$s.mail[$key].headers
