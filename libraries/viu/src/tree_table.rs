@@ -473,6 +473,7 @@ fn draw_grid(
 ) -> egui::Response {
     use egui_extras::{Column, TableBuilder};
     let id = &widget.id;
+    let weak = ui.visuals().weak_text_color();
     let rows = value["rows"].as_array().expect("validated rows");
     let columns = value["columns"].as_array().expect("validated columns");
     let height = ui.text_style_height(&TextStyle::Body)
@@ -551,7 +552,7 @@ fn draw_grid(
                             let label =
                                 egui::RichText::new(data["cells"][i].as_str().unwrap_or(""));
                             let label = if column["weak"] == true {
-                                label.color(ui.visuals().weak_text_color())
+                                label.color(weak)
                             } else {
                                 label
                             };

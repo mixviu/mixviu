@@ -49,7 +49,7 @@ pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
     })?;
     Some(slots()[index])
 }
-fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
+fn entries(value: &Value, ids: &mut Vec<String>, ctx: Option<&egui::Context>) -> Result<Vec<Entry>, String> {
     value
         .as_array()
         .ok_or("menu entries must be a list")?
@@ -59,7 +59,7 @@ fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
                 return Ok(Entry::Separator);
             }
             let children = if item["children"].is_array() {
-                entries(&item["children"], ids)?
+                entries(&item["children"], ids, ctx)?
             } else {
                 vec![]
             };
@@ -76,7 +76,7 @@ fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
             Ok(Entry::Row(Row {
                 id,
                 label: item["label"].as_str().unwrap_or("").into(),
-                shortcut: item["shortcut"].as_str().map(str::to_owned),
+                shortcut: item["shortcut"].as_str().map(|s|ctx.and_then(|ctx|toolkit::keymap::parse_chord(s).map(|key|ctx.format_shortcut(&key))).unwrap_or_else(||s.into())),
                 enabled: item["enabled"] == true,
                 checked: item["checked"].as_bool(),
                 children,
@@ -87,7 +87,7 @@ fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
 pub fn validate(value: &Value) -> Result<(), String> {
     let mut ids = vec![];
     for menu in value.as_array().ok_or("menus must be a list")? {
-        entries(&menu["children"], &mut ids)?;
+        entries(&menu["children"], &mut ids, None)?;
     }
     Ok(())
 }
@@ -99,7 +99,7 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
         .iter()
         .map(|item| Menu {
             title: item["label"].as_str().unwrap_or("").into(),
-            entries: entries(&item["children"], &mut ids).expect("validated native menu"),
+            entries: entries(&item["children"], &mut ids, Some(ui.ctx())).expect("validated native menu"),
         })
         .collect();
     let key = model_id(ui.ctx());
@@ -121,7 +121,7 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
         .position(|m| m.title == "Help")
         .map(|menu| toolkit::menu::Search {
             menu,
-            hint: "Search commands".into(),
+            hint: "Search menus".into(),
             empty: "No matching commands".into(),
         });
     let shown = ui.allocate_ui_with_layout(
@@ -159,13 +159,19 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
                         chrome.palette.icon,
                     )
                     .paint_at(ui, rect);
-                    let response =
-                        ui.interact(rect, ui.scope_id().with("window-menu-mark"), egui::Sense::click());
+                    let response = ui.interact(
+                        rect,
+                        ui.scope_id().with("window-menu-mark"),
+                        egui::Sense::click(),
+                    );
                     response.widget_info(|| {
                         egui::WidgetInfo::labeled(
                             egui::Role::Button,
                             true,
-                            toolkit::action::label_text(&toolkit::Strings::new(""), "window-system-menu"),
+                            toolkit::action::label_text(
+                                &toolkit::Strings::new(""),
+                                "window-system-menu",
+                            ),
                         )
                     });
                     if response.clicked_by(egui::PointerButton::Primary) {
