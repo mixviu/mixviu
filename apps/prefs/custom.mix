@@ -7,7 +7,7 @@ $actions=require("actions.mix")
 $email=require("email.mix")
 fn value_of($s,$key)
   $value=$s.values[$key] ?? viu_settings("default",$key)
-  if $value==nil and ends_with($key,".font.size") then return 14.6666666667 end
+  if $value==nil and ends_with($key,".font.size") then return 14.667 end
   return $value
 end
 fn row($s,$key,$title,$kind,$options)
