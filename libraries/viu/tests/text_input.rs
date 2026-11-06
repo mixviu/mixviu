@@ -34,6 +34,41 @@ fn key(key: Key) -> Vec<Event> {
         .collect()
 }
 #[test]
+fn read_only_editor_keeps_full_text_scrollable_and_rejects_native_edits() {
+    let body = "An immutable Unicode line λ\n".repeat(1000);
+    let definition = json!({"id":"body","kind":"editor","label":"","initial":"","properties":{"rows":4,"read_only":true}});
+    let source = format!(
+        "---\nscene: 1\nname: reader\ncitizen: reader\n---\n```mix\n{}\n```\n",
+        json!({"root":{"widget":"column","children":["body"]},"body":{"widget":"control","on_intent":"input","definition":definition}})
+    );
+    let model = json!({"values":{"body":body}});
+    let mut view = SceneView::with_model(&source, model.clone()).unwrap();
+    let ctx = Context::default();
+    draw(&ctx, &mut view, vec![]);
+    assert!(view.geometry["body"].height() < 120.0);
+    assert!(
+        view.admit_intent("body", "set", &json!("replacement"))
+            .is_err()
+    );
+    view.request_focus("body").unwrap();
+    draw(&ctx, &mut view, vec![]);
+    assert!(
+        draw(
+            &ctx,
+            &mut view,
+            vec![
+                Event::Text("replacement".into()),
+                Event::Paste("paste".into())
+            ]
+        )
+        .is_empty()
+    );
+    assert_eq!(view.model(), &model);
+    let invalid = viu::widgets::Widget::new("bad", "editor", "", json!(""))
+        .with_properties(json!({"read_only":"yes"}));
+    assert!(invalid.validate(&json!("")).is_err());
+}
+#[test]
 fn native_text_selection_edits_unicode_stems_and_escape_releases_focus() {
     let source = format!(
         "---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{}\n```\n",

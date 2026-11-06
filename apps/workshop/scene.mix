@@ -1,0 +1,29 @@
+---
+scene: 1
+name: workshop
+citizen: workshop
+---
+```mix
+{
+root:{widget:"column",children:["title","status","refresh","filter-label","filter","selector-label","selectors","description","body-label","body","buttons","answer","history-label","history"],gap:8},
+title:{widget:"text",text:"Workshop · local Bus commands"},
+status:{widget:"text",text:"= $model.status"},
+refresh:{widget:"control",definition:{id:"refresh",kind:"button",label:"",initial:"",properties:{text:"Refresh services"}},on_intent:"workshop.intent"},
+"filter-label":{widget:"text",text:"Filter local services"},
+filter:{widget:"control",definition:{id:"filter",kind:"field",label:"Filter services",initial:"",properties:{placeholder:"Service name"}},on_intent:"workshop.intent"},
+"selector-label":{widget:"text",text:"Service / advertised command"},
+selectors:{widget:"row",children:["service","command"],gap:16},
+service:{widget:"control",definition:"= $model.service",on_intent:"workshop.intent"},
+command:{widget:"control",definition:"= $model.command",on_intent:"workshop.intent"},
+description:{widget:"text",text:"= $model.description"},
+"body-label":{widget:"text",text:"JSON request body (empty or valid JSON)"},
+body:{widget:"control",definition:{id:"body",kind:"editor",label:"JSON request body",initial:"{}",properties:{rows:8}},on_intent:"workshop.intent"},
+buttons:{widget:"row",children:["format","clear","call"],gap:12},
+format:{widget:"control",definition:{id:"format",kind:"button",label:"",initial:"",properties:{text:"Format JSON"}},on_intent:"workshop.intent"},
+clear:{widget:"control",definition:{id:"clear",kind:"button",label:"",initial:"",properties:{text:"Clear body"}},on_intent:"workshop.intent"},
+call:{widget:"control",definition:{id:"call",kind:"button",label:"",initial:"",properties:{text:"Call once"}},on_intent:"workshop.intent"},
+answer:{widget:"text",text:"= $model.answer"},
+"history-label":{widget:"text",text:"Recent call outcomes (last 12; bounded display)"},
+history:{widget:"text",text:"= $model.history"}
+}
+```

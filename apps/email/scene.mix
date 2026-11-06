@@ -1,0 +1,34 @@
+---
+scene: 1
+name: email
+citizen: email
+---
+```mix
+{
+root:{widget:"column",children:["title","status","account-label","accounts","account","connect","view","mail-pane","compose-pane"],gap:6},
+view:{widget:"control",definition:{id:"view",kind:"tabs",label:"View",initial:"Mail",properties:{choices:["Mail","Compose"]}},on_intent:"email.intent"},
+"mail-pane":{widget:"column",children:["mailbox-label","mailboxes","mailbox","paging","messages","reader","reader-body"],gap:6,hidden:"= $model.mail_hidden"},
+"compose-pane":{widget:"column",children:["compose-label","to-label","to","subject-label","subject","compose","send"],gap:6,hidden:"= $model.compose_hidden"},
+title:{widget:"text",text:"Email · Mix on Viu · JMAP"},
+"account-label":{widget:"text",text:"Configured account"},
+accounts:{widget:"control",definition:"= $model.accounts",on_intent:"email.intent"},
+connect:{widget:"control",definition:{id:"connect",kind:"button",label:"",initial:"",properties:{text:"Connect / reconnect"}},on_intent:"email.intent"},
+"mailbox-label":{widget:"text",text:"Mailbox"},
+mailboxes:{widget:"control",definition:"= $model.mailboxes",on_intent:"email.intent"},
+paging:{widget:"row",children:["previous","refresh","next"],gap:12},
+previous:{widget:"control",definition:{id:"previous",kind:"button",label:"",initial:"",properties:{text:"Previous 200"}},on_intent:"email.intent"},
+next:{widget:"control",definition:{id:"next",kind:"button",label:"",initial:"",properties:{text:"Next 200"}},on_intent:"email.intent"},
+refresh:{widget:"control",definition:{id:"refresh",kind:"button",label:"",initial:"",properties:{text:"Refresh page"}},on_intent:"email.intent"},
+status:{widget:"text",text:"= $model.status"},
+account:{widget:"text",text:"= $model.account"},mailbox:{widget:"text",text:"= $model.mailbox"},
+messages:{widget:"control",definition:"= $model.table",on_intent:"email.intent"},
+reader:{widget:"text",text:"= $model.reader"},
+"reader-body":{widget:"control",definition:{id:"reader-body",kind:"editor",label:"Plain text",initial:"",properties:{rows:8,read_only:true}}},
+"compose-label":{widget:"text",text:"Compose plain text · in-memory draft · configured maild route required"},
+send:{widget:"control",definition:{id:"send",kind:"button",label:"",initial:"",properties:{text:"Send / resolve same operation"}},on_intent:"email.intent"},
+"to-label":{widget:"text",text:"To"},"subject-label":{widget:"text",text:"Subject"},
+to:{widget:"control",definition:{id:"to",kind:"field",label:"To",initial:"",properties:{}},on_intent:"email.intent"},
+subject:{widget:"control",definition:{id:"subject",kind:"field",label:"Subject",initial:"",properties:{}},on_intent:"email.intent"},
+compose:{widget:"control",definition:{id:"compose",kind:"editor",label:"Draft body",initial:"",properties:{rows:5}},on_intent:"email.intent"}
+}
+```

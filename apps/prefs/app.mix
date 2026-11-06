@@ -10,7 +10,7 @@ fn start_prefs($s,$payload)
   if $s.busy then raise("BUSY","A settings operation is active") end
   $s.serial=$s.serial+1;$s.busy=true;$s.pending=$payload;$s.status="Settings request in progress"
   $path=path_join(dirname(script_path()),"job.mix")
-  send "viu-local" "jobs.start" body={id:"prefs-work",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:$payload}
+  send "viu-local" "jobs.start" id="prefs-work" owner=$s.serial path=$path source=read_file($path) command="job.run" args=$payload
   if $rc!=0 then raise("JOB",to_string($result)) end
   return $s
 end
@@ -22,7 +22,7 @@ fn set_prefs($s,$key,$value)
 end
 publish_prefs($state)
 on viu.tick
-  if not $state.busy and not $state.uncertain and monotonic()>$state.read_at+5 then $state=refresh_prefs($state);publish_prefs($state) end
+  if not $state.busy and not $state.uncertain and not $state.dirty and monotonic()>$state.read_at+5 then $state=refresh_prefs($state);publish_prefs($state) end
 end
 on prefs.ping
   reply(0,json_encode({schema:"prefs.mix.lab.v1"}))
@@ -31,6 +31,7 @@ on prefs.info
   reply(0,json_encode($state))
 end
 on prefs.refresh
+  $state.dirty=false
   $state=refresh_prefs($state);publish_prefs($state);reply(0,json_encode({accepted:true}))
 end
 on prefs.section
@@ -55,6 +56,7 @@ on viu.job.completed
   $answer=$d.body.answer ?? {}
   if $state.busy and $d.tag.owner==$state.serial then
     $state.busy=false;$state.read_at=monotonic()
+    if $state.pending.op=="read" then $state.stale=true end
     if $d.rc==0 and $d.body.op=="read" then
       $b=$d.body
       if type($b.catalog.keys)!="list" or len($b.catalog.keys)>2048 or type($b.read.values)!="map" or type($b.read.revision)!="string" or not re_match($b.read.revision,"^(0|[1-9][0-9]*)$") or type($b.read.incarnation)!="string" then raise("REPLY","Malformed or oversized settings reply") end
@@ -67,7 +69,7 @@ on viu.job.completed
         $state=$core.choose($state,$state.key)
       end
     elif $d.rc==0 then
-      $state.status="Write accepted; reading authoritative values";$state=refresh_prefs($state)
+      $state.dirty=false;$state.status="Write accepted; reading authoritative values";$state=refresh_prefs($state)
     elif $answer.status=="wrong_target" and not $state.retargeted and ($answer.binding ?? {}).profile=="default" then
       $state.binding=$answer.binding;$state.retargeted=true;$state=refresh_prefs($state)
     else
@@ -79,14 +81,15 @@ on viu.job.completed
 end
 on prefs.intent
   $a=$event.args
+  if $state.busy then raise("BUSY","Wait for the current settings operation") end
   if $a.id=="section" then $state.section=$a.value
   elif $a.id=="search" then $state.search=$a.value
   elif $a.id=="table" and contains(["select","activate"],$a.action) then $state=$core.choose($state,$a.value.key)
-  elif $a.id=="editor" then $state.draft=$a.value
+  elif $a.id=="editor" then $state.draft=$a.value;$state.dirty=true
   elif $a.id=="apply" then
     $value=if $state.draft_kind=="field" then json_parse($state.draft) else $state.draft end
     $state=set_prefs($state,$state.key,$value)
   elif $a.id=="reset" then $state=set_prefs($state,$state.key,nil)
-  elif $a.id=="refresh" then $state=refresh_prefs($state) end
+  elif $a.id=="refresh" then $state.dirty=false;$state=refresh_prefs($state) end
   publish_prefs($state);reply(0,"{}")
 end

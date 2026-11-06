@@ -1,0 +1,93 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$core=require("core.mix");$state=$core.initial();$ctx=viu_context()
+fn publish_workshop($s)
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.project($s)}
+end
+fn start_workshop($s,$op,$payload)
+  if $s.busy then raise("BUSY","Wait for the pending operation") end
+  $serial=$s.serial+1;$path=path_join(dirname(script_path()),"job.mix")
+  send "viu-local" "jobs.start" id="workshop-work" owner=$serial path=$path source=read_file($path) command="job.run" args={op:$op,payload:$payload}
+  if $rc!=0 then raise("JOB",to_string($result)) end
+  $s.serial=$serial;$s.busy=true;$s.pending={op:$op,payload:$payload};$s.status="Working: "..$op
+  return $s
+end
+fn select_service($s,$service)
+  if not contains($s.services,$service) then raise("SERVICE","Service not in current membership") end
+  $s=start_workshop($s,"describe",{service:$service});$s.service=$service;$s.command="";$s.commands=[]
+  return $s
+end
+fn select_command($s,$command)
+  if $s.busy then raise("BUSY","Wait for the pending operation") end
+  if not any($s.commands,fn($c)=$c.name==$command) then raise("COMMAND","Command not advertised") end
+  $s.command=$command;return $s
+end
+publish_workshop($state)
+on workshop.ping
+  reply(0,"{}")
+end
+on workshop.info
+  reply(0,json_encode($state))
+end
+on workshop.refresh
+  $state=start_workshop($state,"discover",{});publish_workshop($state);reply(0,"{}")
+end
+on workshop.select
+  $a=$event.args
+  if $a.service!=nil and $a.service!=$state.service then
+    if $a.command!=nil then raise("SELECT","Select service, wait for discovery, then select command") end
+    $state=select_service($state,$a.service)
+  elif $a.command!=nil then $state=select_command($state,$a.command)
+  else $state=select_service($state,$a.service ?? $state.service) end
+  publish_workshop($state);reply(0,"{}")
+end
+on workshop.body
+  if $state.busy then raise("BUSY","Request body is held by the pending operation") end
+  $state.body=$core.body_text($event.args.text);publish_workshop($state);reply(0,"{}")
+end
+on workshop.filter
+  $state.filter=$core.text($event.args.text,256);publish_workshop($state);reply(0,"{}")
+end
+on workshop.call
+  $state=start_workshop($state,"call",$core.call_payload($state));publish_workshop($state);reply(0,json_encode({accepted:true,serial:$state.serial}))
+end
+on workshop.intent
+  $a=$event.args
+  if $a.id=="filter" then $state.filter=$core.text($a.value,256)
+  else
+    if $state.busy then raise("BUSY","Wait for the pending operation") end
+    if $a.id=="refresh" then $state=start_workshop($state,"discover",{})
+    elif $a.id=="service" then $state=select_service($state,$a.value)
+    elif $a.id=="command" then $state=select_command($state,$a.value)
+    elif $a.id=="body" then $state.body=$core.body_text($a.value)
+    elif $a.id=="clear" then $state.body=""
+    elif $a.id=="format" then $state.body=$core.body_text(json_encode(json_parse($state.body)))
+    elif $a.id=="call" then $state=start_workshop($state,"call",$core.call_payload($state))
+    else raise("INTENT","Unknown Workshop intent") end
+  end
+  publish_workshop($state);reply(0,"{}")
+end
+on viu.job.completed
+  $d=$event.args
+  if $state.busy and $d.tag.owner==$state.serial then
+    $state.busy=false;$op=$state.pending.op
+    if $d.rc==0 then
+      if $op=="discover" then
+        $state.services=$d.body;$state.service="";$state.command="";$state.commands=[];$state.status="Local membership refreshed · select a service"
+      elif $op=="describe" then
+        $state.commands=$d.body;$state.command=if len($d.body)>0 then $d.body[0].name else "" end;$state.status="Commands discovered: "..$state.service
+      else
+        $r=$d.body;$state.answer="rc "..to_string($r.peer_rc).." · "..if $r.truncated then "truncated display\n" else "reply\n" end..$r.text
+        $state.status="Call completed · rc "..to_string($r.peer_rc)
+      end
+    else
+      $state.status=if $op=="call" then "Call failed; delivery may have occurred. No retry: " else "Discovery failed: " end..substr(json_encode($d.body),0,500)
+    end
+    if $op=="call" then
+      $p=$state.pending.payload
+      $state.history=push($state.history,{serial:$state.serial,service:$p.service,command:$p.command,outcome:$state.status})
+      if len($state.history)>12 then $state.history=slice($state.history,len($state.history)-12) end
+    end
+    publish_workshop($state)
+  end
+end
