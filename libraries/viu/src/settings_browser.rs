@@ -500,10 +500,18 @@ pub(crate) fn draw(
     if value["drawer"].is_object() {
         let width = (344.0 + 2.0 * look.l).min(content.width());
         let rect = Rect::from_min_max(pos2(content.right() - width, content.top()), content.max);
+        ui.painter().vline(
+            rect.left() + 0.5,
+            rect.y_range(),
+            ui.visuals().widgets.noninteractive.bg_stroke,
+        );
+        // Native right panels reserve one point for their separator before
+        // handing the remaining rectangle to the drawer's own padding.
+        let inner = Rect::from_min_max(pos2(rect.left() + 1.0, rect.top()), rect.max);
         let mut drawer = ui.new_child(
             egui::UiBuilder::new()
                 .id_salt((id, "drawer"))
-                .max_rect(rect.shrink2(vec2(look.l, look.s)))
+                .max_rect(inner.shrink2(vec2(look.l, look.s)))
                 .layout(Layout::top_down(Align::Min)),
         );
         drawer.horizontal(|ui| {
