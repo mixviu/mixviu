@@ -18,6 +18,7 @@ $main = read_file($main_path)
 $forms = [
   ["\nfn main() -> anyhow::Result<()> {", "\npub fn main() -> anyhow::Result<()> {"],
   ["\nasync fn main() -> anyhow::Result<()> {", "\npub async fn main() -> anyhow::Result<()> {"],
+  ["\nfn main() -> Result<()> {", "\npub fn main() -> Result<()> {"],
 ]
 $lifted = nil
 for $f in $forms

@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS JMAP and DAV socket
+Documentation=https://mixos.dev/maild/
+
+[Socket]
+# Render the listen address from this instance's config in a drop-in.
+# No address is enabled by default. Example: ListenStream=192.0.2.10:8088
+FreeBind=yes
+FileDescriptorName=jmap
+Service=maild@%i.service
+
+[Install]
+WantedBy=sockets.target

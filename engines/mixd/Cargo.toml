@@ -22,7 +22,10 @@ path = "src/main.rs"
 [features]
 # Headless personalities, chosen by argv[0] (a `noded` symlink to mixd runs
 # the broker). Each is its component's library `main`.
-default = ["noded", "settingsd", "editd", "monitord", "dnsd", "blobd", "hostd", "mixtrayd"]
+default = ["noded", "settingsd", "editd", "monitord", "dnsd", "blobd", "hostd", "mixtrayd", "maild", "webd", "indexd"]
+maild = ["dep:maild"]
+webd = ["dep:webd"]
+indexd = ["dep:indexd"]
 monitord = ["dep:monitord"]
 dnsd = ["dep:dnsd"]
 blobd = ["dep:blobd"]
@@ -42,4 +45,7 @@ dnsd = { path = "../../services/dnsd", optional = true }
 blobd = { path = "../../services/blobd", optional = true }
 hostd = { path = "../../services/hostd", optional = true }
 mixtrayd = { path = "../../services/mixtrayd", optional = true }
+maild = { path = "../../services/maild", optional = true }
+webd = { path = "../../services/webd", optional = true }
+indexd = { path = "../../services/indexd", optional = true }
 mimalloc.workspace = true

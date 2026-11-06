@@ -38,6 +38,12 @@ const PERSONALITIES: &[(&str, &str)] = &[
     ("hostd", hostd::COMPONENT_VERSION),
     #[cfg(feature = "mixtrayd")]
     ("mixtrayd", mixtrayd::COMPONENT_VERSION),
+    #[cfg(feature = "maild")]
+    ("maild", maild::COMPONENT_VERSION),
+    #[cfg(feature = "webd")]
+    ("webd", webd::COMPONENT_VERSION),
+    #[cfg(feature = "indexd")]
+    ("indexd", indexd::COMPONENT_VERSION),
 ];
 
 /// A personality whose main returns `anyhow::Result`, reported the way Rust's
@@ -161,6 +167,12 @@ fn run_personality(name: &str) -> ExitCode {
         "hostd" => exit_of(hostd::main()),
         #[cfg(feature = "mixtrayd")]
         "mixtrayd" => exit_of(mixtrayd::main()),
+        #[cfg(feature = "maild")]
+        "maild" => maild::main(),
+        #[cfg(feature = "webd")]
+        "webd" => webd::main(),
+        #[cfg(feature = "indexd")]
+        "indexd" => exit_of(indexd::main()),
         other => unreachable!("personality {other} is listed but not dispatched"),
     }
 }

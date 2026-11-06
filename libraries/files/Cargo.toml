@@ -1,0 +1,35 @@
+[package]
+name = "files"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Shared rooted reads, atomic filesystem operations and file corpus support"
+
+[package.metadata.mixos]
+component = "files"
+kind = "lib"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[features]
+default = []
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+glob.workspace = true
+bus.workspace = true
+blake3.workspace = true
+uuid = { workspace = true, features = ["v4", "v7"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+rusqlite = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true

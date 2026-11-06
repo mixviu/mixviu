@@ -5,7 +5,7 @@
 [workspace]
 resolver = "3"
 # libs/* includes maildoc and every other shared library component.
-members = ["libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","engines/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd"]
+members = ["libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","engines/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd"]
 
 [workspace.package]
 version = "0.1.2"
@@ -132,6 +132,10 @@ mimedb = { path = "libraries/mimedb" }
 design = { path = "libraries/design" }
 edit = { path = "libraries/edit" }
 settings = { path = "libraries/settings" }
+assets = { path = "libraries/assets" }
+davproto = { path = "libraries/davproto" }
+daemon = { path = "libraries/daemon" }
+files = { path = "libraries/files" }
 
 # The compositor (services/compd): smithay with compd's hooks and patches
 # (vendor/smithay/PATCHES.md), and wgpu on the GL backend only, sharing
@@ -172,6 +176,8 @@ mesh-trust = { path = "libraries/mesh-trust" }
 [patch.crates-io]
 # dirs-sys without option-ext (MixOS vendor/README.md).
 dirs-sys = { path = "vendor/dirs-sys" }
+# maild's parser nesting safeguard (MixOS vendor/mail-parser/PATCHES.md).
+mail-parser = { path = "vendor/mail-parser" }
 
 [profile.release]
 codegen-units = 1

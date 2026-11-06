@@ -1,0 +1,2711 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+
+//! Stateful IMAP command dispatch. Preserve rev1 response forms until ENABLE
+//! IMAP4rev2, retain the selected mailbox's visible UID order, and keep saved
+//! search identities independent of changing message sequence numbers.
+
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use anyhow::Result;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::Mutex;
+use tokio::time::timeout;
+
+use crate::auth::basic;
+use crate::db::Db;
+use crate::imap::codec::{self, ReadCommandError, ReadLineError};
+use crate::imap::config::ImapConfig;
+use crate::imap::op;
+use crate::imap::response::{Status, continuation, tagged, untagged_bye, untagged_ok_with_code};
+use crate::imap::sasl::{self, Mechanism};
+use crate::imap::state::State;
+use crate::mailstore::MailStore;
+
+/// Per-account concurrent-connection counter. Wrapped in `Arc` so
+/// every accepted connection shares one map.
+#[derive(Default)]
+pub struct AccountSlots {
+    inner: Mutex<HashMap<i32, u32>>,
+}
+
+impl AccountSlots {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    /// Try to reserve a slot for `account_id`. Returns `true` on
+    /// success; `false` means the cap is reached.
+    pub async fn try_acquire(&self, account_id: i32, cap: u32) -> bool {
+        let mut g = self.inner.lock().await;
+        let entry = g.entry(account_id).or_insert(0);
+        if *entry >= cap {
+            return false;
+        }
+        *entry += 1;
+        true
+    }
+
+    pub async fn release(&self, account_id: i32) {
+        let mut g = self.inner.lock().await;
+        if let Some(v) = g.get_mut(&account_id) {
+            *v = v.saturating_sub(1);
+            if *v == 0 {
+                g.remove(&account_id);
+            }
+        }
+    }
+
+    /// Snapshot the live per-account connection counts as
+    /// `(account_id, count)` pairs. Backs `maild.stats.online` (the
+    /// doveadm `who` analog) — a point-in-time read of who currently
+    /// holds an open IMAP session. Only accounts with ≥1 live
+    /// connection appear: `release` removes an entry once its count
+    /// hits zero, so the map never carries zero-valued rows. The lock
+    /// is held only for the clone, so a snapshot never blocks an
+    /// acquire/release for longer than the copy.
+    pub async fn snapshot(&self) -> Vec<(i32, u32)> {
+        let g = self.inner.lock().await;
+        g.iter().map(|(&id, &n)| (id, n)).collect()
+    }
+}
+
+/// Drives one accepted IMAP connection through its lifetime.
+///
+/// `stream` already has TLS terminated. `peer` is the originating
+/// socket address for tracing. `negotiated_hostname` is the SNI-
+/// resolved identity name the listener chose for this connection (or
+/// the no-SNI fallback identity / `ImapConfig.hostname` if SNI didn't
+/// match anything) — woven into the `* OK` greeting text so a
+/// multi-identity deployment lets the client read back which name it
+/// negotiated.
+// Connection handler: each arg is a distinct injected dependency
+// (stream, peer/local sockets, config, db, store, slots, SNI name).
+#[allow(clippy::too_many_arguments)]
+pub async fn handle_connection<S>(
+    stream: S,
+    peer: SocketAddr,
+    lip: Option<SocketAddr>,
+    cfg: Arc<ImapConfig>,
+    db: Db,
+    mailstore: Arc<dyn MailStore>,
+    slots: Arc<AccountSlots>,
+    negotiated_hostname: String,
+) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    handle_connection_with_shutdown(
+        stream,
+        peer,
+        lip,
+        cfg,
+        db,
+        mailstore,
+        slots,
+        negotiated_hostname,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn handle_connection_with_shutdown<S>(
+    stream: S,
+    peer: SocketAddr,
+    lip: Option<SocketAddr>,
+    cfg: Arc<ImapConfig>,
+    db: Db,
+    mailstore: Arc<dyn MailStore>,
+    slots: Arc<AccountSlots>,
+    negotiated_hostname: String,
+    shutdown: Option<tokio::sync::watch::Receiver<bool>>,
+) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    crate::maillog::imap_connect(peer, lip);
+    let (read_half, write_half) = tokio::io::split(stream);
+    let mut reader = BufReader::with_capacity(8192, read_half);
+    let mut writer = write_half;
+
+    // Every fallible step (greeting write *and* the command loop) is
+    // captured into a single `res` so `handle_connection` emits exactly
+    // one `imap-login: Disconnected` line per connection, regardless of
+    // where the error originated. The caller (`imap/server.rs`) must
+    // NOT log a second disconnect on the returned `Err` — this function
+    // owns disconnect logging end-to-end.
+    let res: Result<()> = async {
+        // Greeting: unsolicited CAPABILITY embedded in the OK banner so
+        // a single round-trip leaves the client knowing what to ask
+        // for. The hostname is the resolver's pick for the negotiated
+        // SNI — Cyrus-style `<host> IMAP ready` so the client sees the
+        // identity the cert was issued under, not just a generic
+        // banner.
+        let caps_body = crate::imap::capabilities::for_config(&cfg);
+        let code = format!("CAPABILITY {caps_body}");
+        let greeting_text = format!("{negotiated_hostname} maild IMAP ready");
+        let greeting = untagged_ok_with_code(&code, &greeting_text);
+        writer.write_all(greeting.as_bytes()).await?;
+        writer.flush().await?;
+
+        let mut session = Session {
+            state: State::NotAuthenticated,
+            cfg: cfg.clone(),
+            db,
+            mailstore,
+            auth_failures: 0,
+            bad_commands: 0,
+            slots: slots.clone(),
+            account_id: None,
+            peer,
+            local: lip,
+            rev2: false,
+            utf8: false,
+            view_version: None,
+            pending_expunge: false,
+            saved_search: Vec::new(),
+            shutdown,
+        };
+
+        let r = session.run(&mut reader, &mut writer).await;
+        if r.is_err() {
+            // Tell a connected peer why this server-initiated close is fatal.
+            // A broken transport may already be unwritable; retain the original
+            // error for logging and still release the account slot below.
+            let _ = writer
+                .write_all(b"* BYE [UNAVAILABLE] session cannot continue\r\n")
+                .await;
+            let _ = writer.flush().await;
+        }
+
+        // Release the slot on normal return and on `Err` propagation
+        // from `run` (the `?` paths in the loop body still pass through
+        // here because `run` is a plain `.await` rather than a
+        // `try_join`). A panic inside `run` will *not* execute this
+        // line — there is no async-Drop guard on `account_id`. Phase 1
+        // wraps every awaited I/O in `Result`, so the panic surface is
+        // narrow (only the tracing macros and the SASL/codec parsers,
+        // all of which use `Result` rather than unwraps). If a panic
+        // ever fires here the slot leak is bounded by the per-account
+        // cap and the operator restart cycle.
+        if let Some(aid) = session.account_id {
+            slots.release(aid).await;
+        }
+        r
+    }
+    .await;
+
+    match &res {
+        Ok(()) => crate::maillog::imap_disconnect(peer, lip, "clean"),
+        Err(e) => crate::maillog::imap_disconnect(peer, lip, &e.to_string()),
+    }
+
+    res
+}
+
+/// Result of a single `read_command` call.
+enum ReadOutcome {
+    /// A clean command frame — caller dispatches on it.
+    Frame(codec::Command),
+    /// Peer closed cleanly (or pre-auth timeout fired). Caller exits.
+    Eof,
+    /// The codec resolved a literal-framing problem while keeping the
+    /// stream in sync. `response` is the pre-formatted tagged BAD/NO
+    /// that the caller writes verbatim before reading the next
+    /// command. The bad-command counter has already been bumped by
+    /// `read_command`.
+    LiteralRejected { response: String },
+}
+
+struct Session {
+    state: State,
+    cfg: Arc<ImapConfig>,
+    db: Db,
+    mailstore: Arc<dyn MailStore>,
+    auth_failures: u32,
+    bad_commands: u32,
+    slots: Arc<AccountSlots>,
+    account_id: Option<i32>,
+    peer: SocketAddr,
+    /// Local (bound) socket the client connected to, for the
+    /// dovecot-style `lip=` field. `None` if `local_addr()` failed.
+    local: Option<SocketAddr>,
+    rev2: bool,
+    utf8: bool,
+    view_version: Option<(u64, u64)>,
+    pending_expunge: bool,
+    saved_search: Vec<u64>,
+    shutdown: Option<tokio::sync::watch::Receiver<bool>>,
+}
+
+impl Session {
+    async fn run<R, W>(&mut self, reader: &mut BufReader<R>, writer: &mut W) -> Result<()>
+    where
+        R: AsyncRead + Unpin,
+        W: AsyncWrite + Unpin,
+    {
+        loop {
+            if self.state.is_logout() {
+                return Ok(());
+            }
+            let mut shutdown = self.shutdown.take();
+            let outcome = tokio::select! {
+                result = self.read_command(reader, writer) => Some(result?),
+                _ = wait_shutdown(&mut shutdown) => None,
+            };
+            self.shutdown = shutdown;
+            let Some(outcome) = outcome else {
+                writer
+                    .write_all(b"* BYE [UNAVAILABLE] server shutting down\r\n")
+                    .await?;
+                writer.flush().await?;
+                return Ok(());
+            };
+            let mut cmd = match outcome {
+                ReadOutcome::Frame(c) => c,
+                ReadOutcome::Eof => return Ok(()),
+                ReadOutcome::LiteralRejected { response } => {
+                    writer.write_all(response.as_bytes()).await?;
+                    writer.flush().await?;
+                    if self.over_bad_command_cap() {
+                        self.emit_bye(writer, "too many bad commands").await?;
+                        return Ok(());
+                    }
+                    continue;
+                }
+            };
+
+            // Rejoin literal arguments as quoted tokens for command parsers.
+            // APPEND keeps message octets separate from its argument strings.
+            if !is_append_line(&cmd.line)
+                && let Err(msg) = splice_literals(&mut cmd)
+            {
+                self.bad_commands += 1;
+                let tag = sniff_tag(&cmd.line).unwrap_or("*".to_string());
+                writer
+                    .write_all(tagged(&tag, Status::Bad, None, msg).as_bytes())
+                    .await?;
+                writer.flush().await?;
+                if self.over_bad_command_cap() {
+                    self.emit_bye(writer, "too many bad commands").await?;
+                    return Ok(());
+                }
+                continue;
+            }
+
+            let mut parsed = match codec::parse_line(&cmd.line) {
+                Ok(p) => p,
+                Err(e) => {
+                    let msg = e.to_string();
+                    self.bad_commands += 1;
+                    let tag = sniff_tag(&cmd.line).unwrap_or("*".to_string());
+                    let resp = tagged(&tag, Status::Bad, None, &msg);
+                    writer
+                        .write_all(
+                            crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes(),
+                        )
+                        .await?;
+                    writer.flush().await?;
+                    if self.over_bad_command_cap() {
+                        self.emit_bye(writer, "too many bad commands").await?;
+                        return Ok(());
+                    }
+                    continue;
+                }
+            };
+
+            let mailbox_command = matches!(
+                parsed.command_upper.as_str(),
+                "LIST"
+                    | "LSUB"
+                    | "CREATE"
+                    | "DELETE"
+                    | "RENAME"
+                    | "SELECT"
+                    | "EXAMINE"
+                    | "STATUS"
+                    | "SUBSCRIBE"
+                    | "UNSUBSCRIBE"
+                    | "COPY"
+                    | "MOVE"
+            ) || (parsed.command_upper == "UID"
+                && parsed
+                    .args
+                    .split_ascii_whitespace()
+                    .next()
+                    .is_some_and(|s| {
+                        s.eq_ignore_ascii_case("COPY") || s.eq_ignore_ascii_case("MOVE")
+                    }));
+            if mailbox_command && !self.utf8 {
+                match crate::imap::mailbox_encoding::map_tokens(&parsed.args, false) {
+                    Ok(args) => parsed.args = args,
+                    Err(e) => {
+                        self.bad_commands += 1;
+                        writer
+                            .write_all(tagged(&parsed.tag, Status::Bad, None, &e).as_bytes())
+                            .await?;
+                        writer.flush().await?;
+                        continue;
+                    }
+                }
+            }
+
+            // Literal-framing arrived for a command that does not accept
+            // one. The codec already consumed the body, so the stream
+            // is in sync; we just refuse the command.
+            if cmd.literal.is_some() && !parsed.command_upper.eq_ignore_ascii_case("APPEND") {
+                self.bad_commands += 1;
+                let resp = tagged(
+                    &parsed.tag,
+                    Status::Bad,
+                    None,
+                    &format!(
+                        "{} has an unconsumed literal argument",
+                        parsed.command_upper
+                    ),
+                );
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
+                writer.flush().await?;
+                if self.over_bad_command_cap() {
+                    self.emit_bye(writer, "too many bad commands").await?;
+                    return Ok(());
+                }
+                continue;
+            }
+
+            if matches!(
+                parsed.command_upper.as_str(),
+                "CAPABILITY" | "NOOP" | "LOGOUT" | "NAMESPACE"
+            ) && !parsed.args.trim().is_empty()
+            {
+                self.bad_commands += 1;
+                writer
+                    .write_all(
+                        tagged(&parsed.tag, Status::Bad, None, "command takes no arguments")
+                            .as_bytes(),
+                    )
+                    .await?;
+                writer.flush().await?;
+                if self.over_bad_command_cap() {
+                    self.emit_bye(writer, "too many bad commands").await?;
+                    return Ok(());
+                }
+                continue;
+            }
+
+            if self.state.selected().is_some()
+                && !matches!(
+                    parsed.command_upper.as_str(),
+                    "SELECT" | "EXAMINE" | "CLOSE" | "UNSELECT" | "LOGOUT" | "IDLE" | "ENABLE"
+                )
+            {
+                let allow_expunge =
+                    !matches!(parsed.command_upper.as_str(), "FETCH" | "STORE" | "SEARCH");
+                self.refresh_view(writer, allow_expunge).await?;
+            }
+
+            tracing::debug!(
+                peer = %self.peer,
+                tag = %parsed.tag,
+                command_name = %parsed.command_upper,
+                state = ?self.state,
+                "imap command"
+            );
+
+            match parsed.command_upper.as_str() {
+                "CAPABILITY" => {
+                    writer
+                        .write_all(op::capability::handle(&parsed.tag, &self.cfg).as_bytes())
+                        .await?;
+                }
+                "NOOP" => {
+                    writer
+                        .write_all(op::noop::handle(&parsed.tag).as_bytes())
+                        .await?;
+                }
+                "LOGOUT" => {
+                    writer
+                        .write_all(op::logout::handle(&parsed.tag).as_bytes())
+                        .await?;
+                    writer.flush().await?;
+                    self.state = State::Logout;
+                    return Ok(());
+                }
+                "ID" => {
+                    writer
+                        .write_all(op::id::handle(&parsed.tag, &parsed.args).as_bytes())
+                        .await?;
+                }
+                "LOGIN" => {
+                    self.handle_login(&parsed.tag, &parsed.args, writer).await?;
+                }
+                "AUTHENTICATE" => {
+                    self.handle_authenticate(&parsed.tag, &parsed.args, reader, writer)
+                        .await?;
+                }
+                "ENABLE" => {
+                    if !self.state.is_authenticated() || self.state.selected().is_some() {
+                        self.bad_commands += 1;
+                        writer
+                            .write_all(
+                                tagged(
+                                    &parsed.tag,
+                                    Status::Bad,
+                                    None,
+                                    "ENABLE requires authenticated state",
+                                )
+                                .as_bytes(),
+                            )
+                            .await?;
+                    } else if parsed.args.trim().is_empty() {
+                        self.bad_commands += 1;
+                        writer
+                            .write_all(
+                                tagged(
+                                    &parsed.tag,
+                                    Status::Bad,
+                                    None,
+                                    "ENABLE requires capabilities",
+                                )
+                                .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        let mut enabled = Vec::new();
+                        for cap in parsed.args.split_ascii_whitespace() {
+                            let cap = cap.to_ascii_uppercase();
+                            match cap.as_str() {
+                                "IMAP4REV2" => {
+                                    self.rev2 = true;
+                                    self.utf8 = true;
+                                    enabled.push("IMAP4rev2");
+                                }
+                                "UTF8=ACCEPT" => {
+                                    self.utf8 = true;
+                                    enabled.push("UTF8=ACCEPT");
+                                }
+                                // CONDSTORE/QRESYNC are deliberately ignored until imap-ext
+                                // registers the complete implementation, per RFC 5161.
+                                _ => {}
+                            }
+                        }
+                        enabled.sort_unstable();
+                        enabled.dedup();
+                        if !enabled.is_empty() {
+                            writer
+                                .write_all(
+                                    format!("* ENABLED {}\r\n", enabled.join(" ")).as_bytes(),
+                                )
+                                .await?;
+                        }
+                        writer
+                            .write_all(
+                                tagged(&parsed.tag, Status::Ok, None, "ENABLE completed")
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    }
+                }
+                "NAMESPACE" => {
+                    if !self.state.is_authenticated() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        writer
+                            .write_all(op::namespace::handle(&parsed.tag).as_bytes())
+                            .await?;
+                    }
+                }
+                "LIST" => {
+                    if !self.state.is_authenticated() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        // `is_authenticated()` already guarantees `account_id`
+                        // was set during LOGIN/AUTHENTICATE — both arms in
+                        // `handle_login` / `handle_authenticate` assign
+                        // `account_id` *before* moving the state. The
+                        // expect is a tripwire if that invariant ever
+                        // breaks; it is not a defensible boundary check.
+                        let aid = self
+                            .account_id
+                            .expect("authenticated session must have account_id");
+                        let resp = op::list::handle_with_limit(
+                            &parsed.tag,
+                            &parsed.args,
+                            aid,
+                            self.mailstore.clone(),
+                            self.cfg.max_literal_bytes,
+                        )
+                        .await;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    }
+                }
+                "LSUB" => {
+                    if !self.state.is_authenticated() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        let aid = self
+                            .account_id
+                            .expect("authenticated session must have account_id");
+                        let resp = op::lsub::handle(
+                            &parsed.tag,
+                            &parsed.args,
+                            aid,
+                            self.mailstore.clone(),
+                        )
+                        .await;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    }
+                }
+                command_name @ ("SELECT" | "EXAMINE") => {
+                    if !self.state.is_authenticated() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        // RFC 9051 §6.3.2 — every SELECT/EXAMINE,
+                        // *including* a failing one, implicitly
+                        // closes the previously selected mailbox.
+                        // Drop to Authenticated *before* the lookup
+                        // so a failed reselect leaves the session
+                        // in a no-selection state, not stuck on the
+                        // old mailbox.
+                        if self.rev2 && self.state.selected().is_some() {
+                            writer
+                                .write_all(b"* OK [CLOSED] previous mailbox closed\r\n")
+                                .await?;
+                        }
+                        self.state = State::Authenticated;
+                        self.saved_search.clear();
+                        let aid = self
+                            .account_id
+                            .expect("authenticated session must have account_id");
+                        let read_only = command_name == "EXAMINE";
+                        let outcome = op::select::handle(
+                            &parsed.tag,
+                            &parsed.args,
+                            aid,
+                            self.mailstore.clone(),
+                            read_only,
+                        )
+                        .await;
+                        let mut response = String::new();
+                        if !self.rev2 && outcome.selected.is_some() {
+                            response.push_str("* 0 RECENT\r\n");
+                        }
+                        for line in outcome.response.lines() {
+                            if (!self.rev2 && line.starts_with("* LIST "))
+                                || (self.rev2 && line.starts_with("* OK [UNSEEN "))
+                            {
+                                continue;
+                            }
+                            response.push_str(line);
+                            response.push_str("\r\n");
+                        }
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&response, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                        if let Some(sm) = outcome.selected {
+                            self.view_version = Some((sm.uid_validity, sm.highest_mod_seq));
+                            self.pending_expunge = false;
+                            self.state = State::Selected(sm);
+                        }
+                    }
+                }
+                "STATUS" => {
+                    if !self.state.is_authenticated() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        let aid = self
+                            .account_id
+                            .expect("authenticated session must have account_id");
+                        let resp = op::status::handle_with_limit(
+                            &parsed.tag,
+                            &parsed.args,
+                            aid,
+                            self.mailstore.clone(),
+                            self.cfg.max_literal_bytes,
+                        )
+                        .await;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    }
+                }
+                "APPEND" => {
+                    if !self.state.is_authenticated() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        // The codec already consumed the literal body
+                        // (or rejected it with a stream-preserving
+                        // BAD/NO before we got here). Missing literal
+                        // means the client framed APPEND without a
+                        // trailing `{N}` marker — RFC 9051 §6.3.12
+                        // mandates a literal, so this is a BAD.
+                        let mut messages = match frame_append(cmd, self.utf8) {
+                            Ok(messages) => messages,
+                            Err(e) => {
+                                self.bad_commands += 1;
+                                let resp = tagged(&parsed.tag, Status::Bad, None, &e);
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
+                                writer.flush().await?;
+                                if self.over_bad_command_cap() {
+                                    self.emit_bye(writer, "too many bad commands").await?;
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+                        };
+                        if !self.utf8 {
+                            let mut failure = None;
+                            for (args, _) in &mut messages {
+                                match crate::imap::mailbox_encoding::decode_first_mailbox(args) {
+                                    Ok(decoded) => *args = decoded,
+                                    Err(e) => {
+                                        failure = Some(e);
+                                        break;
+                                    }
+                                }
+                            }
+                            if let Some(e) = failure {
+                                writer
+                                    .write_all(
+                                        tagged(&parsed.tag, Status::Bad, None, &e).as_bytes(),
+                                    )
+                                    .await?;
+                                writer.flush().await?;
+                                continue;
+                            }
+                        }
+                        let aid = self
+                            .account_id
+                            .expect("authenticated session must have account_id");
+                        match op::append::parse_args_for_dispatch(&messages[0].0) {
+                            Err(e) => {
+                                self.bad_commands += 1;
+                                let resp = tagged(&parsed.tag, Status::Bad, None, &e);
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
+                            }
+                            Ok(()) => {
+                                let resp = op::append::handle_many(
+                                    &parsed.tag,
+                                    messages,
+                                    aid,
+                                    self.mailstore.clone(),
+                                )
+                                .await;
+                                if resp.starts_with(&format!("{} OK", parsed.tag))
+                                    && self.state.selected().is_some()
+                                {
+                                    self.refresh_view(writer, true).await?;
+                                }
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
+                            }
+                        }
+                    }
+                }
+                command_name @ ("CLOSE" | "UNSELECT") => {
+                    // RFC 9051 §6.4.2 / RFC 3691 §2 — both commands
+                    // are zero-argument. Refuse any trailing tokens
+                    // so a typo'd argument is loud rather than
+                    // silently ignored.
+                    if !parsed.args.trim().is_empty() {
+                        self.bad_commands += 1;
+                        let resp =
+                            tagged(&parsed.tag, Status::Bad, None, "command takes no arguments");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else if self.state.selected().is_none() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "no mailbox selected");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        let resp = if command_name == "CLOSE"
+                            && !self.state.selected().unwrap().read_only
+                        {
+                            let sm = self.state.selected().unwrap();
+                            let result = op::expunge::handle(
+                                &parsed.tag,
+                                "",
+                                self.account_id.unwrap(),
+                                sm.container_id,
+                                self.mailstore.clone(),
+                                false,
+                            )
+                            .await;
+                            let completion = result.wire.lines().last().unwrap_or_default();
+                            if !completion.starts_with(&format!("{} OK", parsed.tag)) {
+                                writer
+                                    .write_all(format!("{completion}\r\n").as_bytes())
+                                    .await?;
+                                writer.flush().await?;
+                                continue;
+                            }
+                            op::close::handle_close(&parsed.tag)
+                        } else if command_name == "CLOSE" {
+                            op::close::handle_close(&parsed.tag)
+                        } else {
+                            op::close::handle_unselect(&parsed.tag)
+                        };
+                        // CLOSE has completed any writable purge above;
+                        // UNSELECT only drops the selection.
+                        self.state = State::Authenticated;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    }
+                }
+                "CHECK" => {
+                    // RFC 3501 §6.4.1 — CHECK requests a mailbox
+                    // checkpoint. Like CLOSE/UNSELECT it is a
+                    // zero-argument, Selected-state-only command; unlike
+                    // them it leaves the mailbox selected. We have no
+                    // deferred state to flush, so a successful CHECK is
+                    // a NOOP that returns OK (RFC 3501 sanctions this).
+                    // Thunderbird issues CHECK against every folder it
+                    // touches; without this arm it falls to the
+                    // catch-all and the client surfaces a spurious
+                    // "command not implemented" alert.
+                    if !parsed.args.trim().is_empty() {
+                        self.bad_commands += 1;
+                        let resp =
+                            tagged(&parsed.tag, Status::Bad, None, "command takes no arguments");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else if self.state.selected().is_none() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "no mailbox selected");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        writer
+                            .write_all(op::check::handle(&parsed.tag).as_bytes())
+                            .await?;
+                    }
+                }
+                command_name @ ("CREATE" | "DELETE" | "RENAME" | "SUBSCRIBE" | "UNSUBSCRIBE") => {
+                    if !self.state.is_authenticated() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        let aid = self
+                            .account_id
+                            .expect("authenticated session must have account_id");
+                        let rename_before = if command_name == "RENAME"
+                            || (command_name == "DELETE" && self.state.selected().is_some())
+                        {
+                            let store = self.mailstore.clone();
+                            Some(
+                                tokio::task::spawn_blocking(move || store.list_mailboxes(aid))
+                                    .await??,
+                            )
+                        } else {
+                            None
+                        };
+                        let deleting_selected = command_name == "DELETE"
+                            && self.state.selected().is_some_and(|sm| {
+                                op::delete::parse_args(&parsed.args).is_ok_and(|name| {
+                                    matches!(crate::imap::mailbox_name::resolve(&name, rename_before.as_deref().unwrap_or(&[])),
+                                        crate::imap::mailbox_name::ResolveResult::Found(id) if id == sm.container_id)
+                                })
+                            });
+                        let resp = match command_name {
+                            "CREATE" => {
+                                op::create::handle(
+                                    &parsed.tag,
+                                    &parsed.args,
+                                    aid,
+                                    self.mailstore.clone(),
+                                )
+                                .await
+                            }
+                            "DELETE" => {
+                                op::delete::handle(
+                                    &parsed.tag,
+                                    &parsed.args,
+                                    aid,
+                                    self.mailstore.clone(),
+                                )
+                                .await
+                            }
+                            "RENAME" => {
+                                op::rename::handle(
+                                    &parsed.tag,
+                                    &parsed.args,
+                                    aid,
+                                    self.mailstore.clone(),
+                                )
+                                .await
+                            }
+                            "SUBSCRIBE" => {
+                                op::subscribe::handle(
+                                    &parsed.tag,
+                                    &parsed.args,
+                                    aid,
+                                    self.mailstore.clone(),
+                                    true,
+                                )
+                                .await
+                            }
+                            _ => {
+                                op::subscribe::handle(
+                                    &parsed.tag,
+                                    &parsed.args,
+                                    aid,
+                                    self.mailstore.clone(),
+                                    false,
+                                )
+                                .await
+                            }
+                        };
+                        if deleting_selected && resp.starts_with(&format!("{} OK", parsed.tag)) {
+                            self.state = State::Authenticated;
+                            self.view_version = None;
+                            self.pending_expunge = false;
+                            self.saved_search.clear();
+                            if self.rev2 {
+                                writer
+                                    .write_all(b"* OK [CLOSED] selected mailbox deleted\r\n")
+                                    .await?;
+                            }
+                        }
+                        if command_name == "RENAME"
+                            && resp.starts_with(&format!("{} OK", parsed.tag))
+                        {
+                            let names = op::rename::parse_args(&parsed.args)
+                                .expect("successful RENAME has valid arguments");
+                            let before = crate::imap::mailbox_name::encode_all(
+                                rename_before.as_ref().unwrap(),
+                            );
+                            let mut renamed_ids = std::collections::HashSet::new();
+                            if let crate::imap::mailbox_name::ResolveResult::Found(root) =
+                                crate::imap::mailbox_name::resolve(
+                                    &names.old_name,
+                                    rename_before.as_ref().unwrap(),
+                                )
+                            {
+                                renamed_ids.insert(root);
+                                loop {
+                                    let previous = renamed_ids.len();
+                                    for mailbox in rename_before.as_ref().unwrap() {
+                                        if mailbox
+                                            .parent
+                                            .is_some_and(|parent| renamed_ids.contains(&parent))
+                                        {
+                                            renamed_ids.insert(mailbox.id);
+                                        }
+                                    }
+                                    if renamed_ids.len() == previous {
+                                        break;
+                                    }
+                                }
+                            }
+                            let store = self.mailstore.clone();
+                            let after =
+                                tokio::task::spawn_blocking(move || store.list_mailboxes(aid))
+                                    .await??;
+                            let after = crate::imap::mailbox_name::encode_all(&after);
+                            if let Some(sm) = self.state.selected_mut()
+                                && let Some(mailbox) = after
+                                    .mailboxes
+                                    .iter()
+                                    .find(|mailbox| mailbox.id == sm.container_id)
+                            {
+                                sm.name = mailbox.wire_name.clone();
+                            }
+                            if self.state.selected().is_some() {
+                                self.refresh_view(writer, true).await?;
+                            }
+                            if self.rev2 {
+                                for mailbox in &after.mailboxes {
+                                    let old = before
+                                        .mailboxes
+                                        .iter()
+                                        .find(|old| {
+                                            old.id == mailbox.id
+                                                && renamed_ids.contains(&old.id)
+                                                && old.wire_name != mailbox.wire_name
+                                        })
+                                        .map(|old| old.wire_name.as_str())
+                                        .or_else(|| {
+                                            (names.old_name.eq_ignore_ascii_case("INBOX")
+                                                && mailbox.wire_name
+                                                    == crate::imap::mailbox_name::fold_inbox_prefix(
+                                                        &names.new_name,
+                                                    ))
+                                            .then_some("INBOX")
+                                        });
+                                    if let Some(old) = old {
+                                        let mut attrs =
+                                            crate::imap::mailbox_name::format_attrs(mailbox);
+                                        if mailbox.is_subscribed {
+                                            attrs.push_str(" \\Subscribed");
+                                        }
+                                        writer.write_all(format!("* LIST ({attrs}) \"/\" {} (\"OLDNAME\" ({}))\r\n",
+                                            crate::imap::mailbox_name::quote_mailbox(&mailbox.wire_name),
+                                            crate::imap::mailbox_name::quote_mailbox(old)).as_bytes()).await?;
+                                    }
+                                }
+                            }
+                        }
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    }
+                }
+                command_name @ ("FETCH" | "STORE" | "SEARCH" | "COPY" | "MOVE" | "EXPUNGE"
+                | "UID") => {
+                    if !self.state.is_authenticated() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        // Route to one of seven actions: Fetch(mode),
+                        // Store(mode), Search(mode), Copy(mode),
+                        // Move(mode), Expunge(uid?, args), or BadInner
+                        // (UID with an unimplemented inner command).
+                        // RFC 9051 §6.4.8 — UID is followed by
+                        // FETCH / COPY / MOVE / SEARCH / STORE /
+                        // EXPUNGE. shipped FETCH; added STORE;
+                        // added SEARCH; - add COPY / MOVE /
+                        // EXPUNGE.
+                        enum Action {
+                            Fetch(op::fetch::FetchMode, String),
+                            Store(op::store::StoreMode, String),
+                            Search(op::search::SearchMode, String),
+                            Copy(op::copy::CopyMode, String),
+                            Move(op::mv::MoveMode, String),
+                            Expunge(bool, String),
+                            BadInner,
+                        }
+                        let action = if command_name == "UID" {
+                            let trimmed = parsed.args.trim_start();
+                            let (inner_command, inner_args) = match trimmed.split_once(' ') {
+                                Some((v, a)) => (v, a),
+                                None => (trimmed, ""),
+                            };
+                            if inner_command.eq_ignore_ascii_case("FETCH") {
+                                Action::Fetch(op::fetch::FetchMode::Uid, inner_args.to_string())
+                            } else if inner_command.eq_ignore_ascii_case("STORE") {
+                                Action::Store(op::store::StoreMode::Uid, inner_args.to_string())
+                            } else if inner_command.eq_ignore_ascii_case("SEARCH") {
+                                Action::Search(op::search::SearchMode::Uid, inner_args.to_string())
+                            } else if inner_command.eq_ignore_ascii_case("COPY") {
+                                Action::Copy(op::copy::CopyMode::Uid, inner_args.to_string())
+                            } else if inner_command.eq_ignore_ascii_case("MOVE") {
+                                Action::Move(op::mv::MoveMode::Uid, inner_args.to_string())
+                            } else if inner_command.eq_ignore_ascii_case("EXPUNGE") {
+                                Action::Expunge(true, inner_args.to_string())
+                            } else {
+                                Action::BadInner
+                            }
+                        } else if command_name == "FETCH" {
+                            Action::Fetch(op::fetch::FetchMode::Msn, parsed.args.clone())
+                        } else if command_name == "STORE" {
+                            Action::Store(op::store::StoreMode::Msn, parsed.args.clone())
+                        } else if command_name == "COPY" {
+                            Action::Copy(op::copy::CopyMode::Msn, parsed.args.clone())
+                        } else if command_name == "MOVE" {
+                            Action::Move(op::mv::MoveMode::Msn, parsed.args.clone())
+                        } else if command_name == "EXPUNGE" {
+                            Action::Expunge(false, parsed.args.clone())
+                        } else {
+                            // command == "SEARCH"
+                            Action::Search(op::search::SearchMode::Msn, parsed.args.clone())
+                        };
+
+                        let action = match action {
+                            Action::Fetch(mode, args) => Action::Fetch(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::fetch::FetchMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Store(mode, args) => Action::Store(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::store::StoreMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Copy(mode, args) => Action::Copy(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::copy::CopyMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Move(mode, args) => Action::Move(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::mv::MoveMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Expunge(true, args) => {
+                                Action::Expunge(true, self.expand_saved_set(&args, true).await?)
+                            }
+                            other => other,
+                        };
+
+                        match action {
+                            Action::BadInner => {
+                                self.bad_commands += 1;
+                                let resp =
+                                    tagged(&parsed.tag, Status::Bad, None, "invalid UID command");
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
+                            }
+                            Action::Fetch(mode, args) => {
+                                match self.state.selected() {
+                                    Some(sm) => {
+                                        let container = sm.container_id;
+                                        let aid = self
+                                            .account_id
+                                            .expect("authenticated session must have account_id");
+                                        // Pre-validate so grammar
+                                        // failures bump bad_commands
+                                        // and feed the abuse-cap.
+                                        // `op::fetch::handle` re-parses
+                                        // on its own path; the second
+                                        // parse is pure and trivial.
+                                        match op::fetch::parse_args(&args, mode) {
+                                            Err(e) => {
+                                                self.bad_commands += 1;
+                                                let resp =
+                                                    tagged(&parsed.tag, Status::Bad, None, &e);
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
+                                            }
+                                            Ok(_) => {
+                                                let resp = op::fetch::handle_with_access(
+                                                    &parsed.tag,
+                                                    &args,
+                                                    aid,
+                                                    container,
+                                                    self.mailstore.clone(),
+                                                    mode,
+                                                    sm.read_only,
+                                                    Some(&sm.view_uids),
+                                                )
+                                                .await;
+                                                writer.write_all(&resp).await?;
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        self.bad_commands += 1;
+                                        let resp = tagged(
+                                            &parsed.tag,
+                                            Status::Bad,
+                                            None,
+                                            "no mailbox selected",
+                                        );
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
+                                    }
+                                }
+                            }
+                            Action::Search(mode, args) => {
+                                match self.state.selected() {
+                                    Some(sm) => {
+                                        let container = sm.container_id;
+                                        let aid = self
+                                            .account_id
+                                            .expect("authenticated session must have account_id");
+                                        // Pre-validate so grammar
+                                        // failures bump bad_commands.
+                                        // `op::search::handle` re-parses
+                                        // on its own path; the second
+                                        // parse is pure and trivial.
+                                        match op::search::parse_args_for_session(
+                                            &args, mode, self.utf8,
+                                        ) {
+                                            Err(e) => {
+                                                if op::search::requests_save(&args) {
+                                                    self.saved_search.clear();
+                                                }
+                                                self.bad_commands += 1;
+                                                let resp =
+                                                    tagged(&parsed.tag, Status::Bad, None, &e);
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
+                                            }
+                                            Ok(()) => {
+                                                let resp = op::search::handle_extended(
+                                                    &parsed.tag,
+                                                    &args,
+                                                    aid,
+                                                    container,
+                                                    self.mailstore.clone(),
+                                                    mode,
+                                                    self.rev2,
+                                                    self.utf8,
+                                                    &mut self.saved_search,
+                                                    Some(&sm.view_uids),
+                                                )
+                                                .await;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        self.bad_commands += 1;
+                                        let resp = tagged(
+                                            &parsed.tag,
+                                            Status::Bad,
+                                            None,
+                                            "no mailbox selected",
+                                        );
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
+                                    }
+                                }
+                            }
+                            Action::Store(mode, args) => {
+                                match self.state.selected() {
+                                    Some(sm) if sm.read_only => {
+                                        // EXAMINE selected the mailbox
+                                        // read-only — STORE must not
+                                        // mutate. RFC 9051 §6.3.2:
+                                        // EXAMINE is identical to
+                                        // SELECT but rejects any
+                                        // command that would change
+                                        // mailbox state. Use the
+                                        // CANNOT response code so the
+                                        // client can distinguish this
+                                        // from a transient NO.
+                                        self.bad_commands += 1;
+                                        let resp = tagged(
+                                            &parsed.tag,
+                                            Status::No,
+                                            Some("CANNOT"),
+                                            "mailbox is read-only",
+                                        );
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
+                                    }
+                                    Some(sm) => {
+                                        let container = sm.container_id;
+                                        let aid = self
+                                            .account_id
+                                            .expect("authenticated session must have account_id");
+                                        // Pre-validate so grammar
+                                        // failures bump bad_commands.
+                                        // `op::store::handle` re-parses
+                                        // on its own path; the second
+                                        // parse is pure and trivial.
+                                        match op::store::parse_args_for_dispatch(&args, mode) {
+                                            Err(e) => {
+                                                self.bad_commands += 1;
+                                                let resp =
+                                                    tagged(&parsed.tag, Status::Bad, None, &e);
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
+                                            }
+                                            Ok(()) => {
+                                                let resp = op::store::handle_with_view(
+                                                    &parsed.tag,
+                                                    &args,
+                                                    aid,
+                                                    container,
+                                                    self.mailstore.clone(),
+                                                    mode,
+                                                    Some(&sm.view_uids),
+                                                )
+                                                .await;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        self.bad_commands += 1;
+                                        let resp = tagged(
+                                            &parsed.tag,
+                                            Status::Bad,
+                                            None,
+                                            "no mailbox selected",
+                                        );
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
+                                    }
+                                }
+                            }
+                            Action::Copy(mode, args) => {
+                                // COPY *does* permit read-only source
+                                // (RFC 9051 §6.4.7 — the dest is the
+                                // mutating party). EXAMINE'd mailboxes
+                                // can be copied OUT of safely.
+                                match self.state.selected() {
+                                    Some(sm) => {
+                                        let container = sm.container_id;
+                                        let read_only_src = sm.read_only;
+                                        let aid = self
+                                            .account_id
+                                            .expect("authenticated session must have account_id");
+                                        match op::copy::parse_args_for_dispatch(&args, mode) {
+                                            Err(e) => {
+                                                self.bad_commands += 1;
+                                                let resp =
+                                                    tagged(&parsed.tag, Status::Bad, None, &e);
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
+                                            }
+                                            Ok(()) => {
+                                                let resp = op::copy::handle_with_view(
+                                                    &parsed.tag,
+                                                    &args,
+                                                    aid,
+                                                    container,
+                                                    self.mailstore.clone(),
+                                                    mode,
+                                                    read_only_src,
+                                                    Some(&sm.view_uids),
+                                                )
+                                                .await;
+                                                self.refresh_view(writer, true).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        self.bad_commands += 1;
+                                        let resp = tagged(
+                                            &parsed.tag,
+                                            Status::Bad,
+                                            None,
+                                            "no mailbox selected",
+                                        );
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
+                                    }
+                                }
+                            }
+                            Action::Move(mode, args) => {
+                                match self.state.selected() {
+                                    Some(sm) if sm.read_only => {
+                                        // MOVE removes the source
+                                        // membership — same read-only
+                                        // gate as STORE / EXPUNGE.
+                                        self.bad_commands += 1;
+                                        let resp = tagged(
+                                            &parsed.tag,
+                                            Status::No,
+                                            Some("CANNOT"),
+                                            "mailbox is read-only",
+                                        );
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
+                                    }
+                                    Some(sm) => {
+                                        let container = sm.container_id;
+                                        let aid = self
+                                            .account_id
+                                            .expect("authenticated session must have account_id");
+                                        match op::mv::parse_args_for_dispatch(&args, mode) {
+                                            Err(e) => {
+                                                self.bad_commands += 1;
+                                                let resp =
+                                                    tagged(&parsed.tag, Status::Bad, None, &e);
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
+                                            }
+                                            Ok(()) => {
+                                                let outcome = op::mv::handle_with_view(
+                                                    &parsed.tag,
+                                                    &args,
+                                                    aid,
+                                                    container,
+                                                    self.mailstore.clone(),
+                                                    mode,
+                                                    Some(&sm.view_uids),
+                                                )
+                                                .await;
+                                                self.write_mutation_outcome(
+                                                    writer,
+                                                    &outcome.wire,
+                                                    &outcome.expunged_uids,
+                                                )
+                                                .await?;
+                                                // Prune the session's view UID
+                                                // list in lockstep with the
+                                                // EXPUNGE lines the handler
+                                                // emitted, so a later IDLE
+                                                // entry does not re-diff the
+                                                // same moved-out UIDs.
+                                                if !outcome.expunged_uids.is_empty()
+                                                    && let Some(sm) = self.state.selected_mut()
+                                                {
+                                                    let gone: std::collections::HashSet<u64> =
+                                                        outcome
+                                                            .expunged_uids
+                                                            .iter()
+                                                            .copied()
+                                                            .collect();
+                                                    sm.view_uids.retain(|u| !gone.contains(u));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        self.bad_commands += 1;
+                                        let resp = tagged(
+                                            &parsed.tag,
+                                            Status::Bad,
+                                            None,
+                                            "no mailbox selected",
+                                        );
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
+                                    }
+                                }
+                            }
+                            Action::Expunge(uid_mode, args) => match self.state.selected() {
+                                Some(sm) if sm.read_only => {
+                                    self.bad_commands += 1;
+                                    let resp = tagged(
+                                        &parsed.tag,
+                                        Status::No,
+                                        Some("CANNOT"),
+                                        "mailbox is read-only",
+                                    );
+                                    writer
+                                        .write_all(
+                                            crate::imap::mailbox_encoding::response(
+                                                &resp, self.utf8,
+                                            )
+                                            .as_bytes(),
+                                        )
+                                        .await?;
+                                }
+                                Some(sm) => {
+                                    let container = sm.container_id;
+                                    let aid = self
+                                        .account_id
+                                        .expect("authenticated session must have account_id");
+                                    match op::expunge::parse_args_for_dispatch(&args, uid_mode) {
+                                        Err(e) => {
+                                            self.bad_commands += 1;
+                                            let resp = tagged(&parsed.tag, Status::Bad, None, &e);
+                                            writer
+                                                .write_all(
+                                                    crate::imap::mailbox_encoding::response(
+                                                        &resp, self.utf8,
+                                                    )
+                                                    .as_bytes(),
+                                                )
+                                                .await?;
+                                        }
+                                        Ok(()) => {
+                                            let outcome = op::expunge::handle_with_view(
+                                                &parsed.tag,
+                                                &args,
+                                                aid,
+                                                container,
+                                                self.mailstore.clone(),
+                                                uid_mode,
+                                                Some(&sm.view_uids),
+                                            )
+                                            .await;
+                                            self.write_mutation_outcome(
+                                                writer,
+                                                &outcome.wire,
+                                                &outcome.expunged_uids,
+                                            )
+                                            .await?;
+                                            if !outcome.expunged_uids.is_empty()
+                                                && let Some(sm) = self.state.selected_mut()
+                                            {
+                                                let gone: std::collections::HashSet<u64> =
+                                                    outcome.expunged_uids.iter().copied().collect();
+                                                sm.view_uids.retain(|u| !gone.contains(u));
+                                            }
+                                        }
+                                    }
+                                }
+                                None => {
+                                    self.bad_commands += 1;
+                                    let resp = tagged(
+                                        &parsed.tag,
+                                        Status::Bad,
+                                        None,
+                                        "no mailbox selected",
+                                    );
+                                    writer
+                                        .write_all(
+                                            crate::imap::mailbox_encoding::response(
+                                                &resp, self.utf8,
+                                            )
+                                            .as_bytes(),
+                                        )
+                                        .await?;
+                                }
+                            },
+                        }
+                    }
+                }
+                "IDLE" => {
+                    // RFC 2177 — IDLE is valid in Authenticated and
+                    // Selected states. The handler streams untagged
+                    // EXISTS / EXPUNGE while a notifier subscription
+                    // is active (Selected only) and waits for DONE.
+                    if !self.state.is_authenticated() {
+                        self.bad_commands += 1;
+                        let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        let aid = self
+                            .account_id
+                            .expect("authenticated session must have account_id");
+                        // Pass &mut SelectedMailbox so the handler
+                        // can diff against and update `view_uids` in
+                        // place. The recv loop mutates the very
+                        // same vector the session reads, so the
+                        // next IDLE entry sees a coherent view.
+                        let outcome = op::idle::handle(
+                            &parsed.tag,
+                            &parsed.args,
+                            self.state.selected_mut(),
+                            aid,
+                            self.mailstore.clone(),
+                            reader,
+                            writer,
+                            self.cfg.idle_status_interval,
+                            &mut self.shutdown,
+                        )
+                        .await?;
+                        match outcome {
+                            op::idle::IdleOutcome::Done => {}
+                            op::idle::IdleOutcome::Close => {
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                "STARTTLS" => {
+                    // Implicit TLS only — refuse explicitly per the
+                    // doc rather than letting the catch-all map it to
+                    // "command not implemented".
+                    self.bad_commands += 1;
+                    writer
+                        .write_all(
+                            tagged(
+                                &parsed.tag,
+                                Status::Bad,
+                                None,
+                                "STARTTLS not supported; use implicit TLS on 993",
+                            )
+                            .as_bytes(),
+                        )
+                        .await?;
+                }
+                _ => {
+                    self.bad_commands += 1;
+                    writer
+                        .write_all(
+                            tagged(&parsed.tag, Status::Bad, None, "unknown command").as_bytes(),
+                        )
+                        .await?;
+                }
+            }
+
+            writer.flush().await?;
+
+            if self.over_bad_command_cap() {
+                self.emit_bye(writer, "too many bad commands").await?;
+                return Ok(());
+            }
+            if self.auth_failures >= self.cfg.max_auth_failures {
+                self.emit_bye(writer, "too many auth failures").await?;
+                return Ok(());
+            }
+        }
+    }
+
+    async fn write_mutation_outcome<W: AsyncWrite + Unpin>(
+        &mut self,
+        writer: &mut W,
+        wire: &str,
+        expunged: &[u64],
+    ) -> Result<()> {
+        let wire = wire.trim_end_matches("\r\n");
+        let completion = if let Some((prefix, completion)) = wire.rsplit_once("\r\n") {
+            writer.write_all(prefix.as_bytes()).await?;
+            writer.write_all(b"\r\n").await?;
+            completion
+        } else {
+            wire
+        };
+        if let Some(sm) = self.state.selected_mut() {
+            sm.view_uids.retain(|uid| !expunged.contains(uid));
+        }
+        self.refresh_view(writer, true).await?;
+        writer
+            .write_all(format!("{completion}\r\n").as_bytes())
+            .await?;
+        Ok(())
+    }
+
+    async fn refresh_view<W: AsyncWrite + Unpin>(
+        &mut self,
+        writer: &mut W,
+        allow_expunge: bool,
+    ) -> Result<()> {
+        let sm = self.state.selected().unwrap();
+        let container = sm.container_id;
+        let aid = self.account_id.unwrap();
+        let version_store = self.mailstore.clone();
+        let version =
+            tokio::task::spawn_blocking(move || version_store.imap_mailbox_version(aid, container))
+                .await??;
+        if version.is_some()
+            && version == self.view_version
+            && (!allow_expunge || !self.pending_expunge)
+        {
+            return Ok(());
+        }
+        let store = self.mailstore.clone();
+        let handles = tokio::task::spawn_blocking(move || {
+            store.list_emails_in_mailbox(
+                aid,
+                container,
+                crate::mailstore::ListOpts {
+                    sort_by: crate::mailstore::SortKey::Seq,
+                    limit: u32::MAX,
+                    offset: 0,
+                },
+            )
+        })
+        .await??;
+        let fresh: Vec<u64> = handles.iter().map(|h| h.uid).collect();
+        let sm = self.state.selected_mut().unwrap();
+        if let Some((validity, _)) = version
+            && validity != sm.uid_validity
+        {
+            writer
+                .write_all(
+                    format!("* OK [UIDVALIDITY {validity}] mailbox identity changed\r\n")
+                        .as_bytes(),
+                )
+                .await?;
+            sm.uid_validity = validity;
+        }
+        self.pending_expunge = !allow_expunge
+            && sm
+                .view_uids
+                .iter()
+                .any(|uid| fresh.binary_search(uid).is_err());
+        if allow_expunge {
+            for line in op::idle::diff_lines(&sm.view_uids, &fresh) {
+                writer.write_all(line.as_bytes()).await?;
+            }
+            sm.view_uids = fresh.clone();
+        } else {
+            let old_len = sm.view_uids.len();
+            for uid in &fresh {
+                if sm.view_uids.binary_search(uid).is_err() {
+                    sm.view_uids.push(*uid);
+                }
+            }
+            sm.view_uids.sort_unstable();
+            if sm.view_uids.len() != old_len {
+                writer
+                    .write_all(format!("* {} EXISTS\r\n", sm.view_uids.len()).as_bytes())
+                    .await?;
+            }
+        }
+        sm.exists = sm.view_uids.len() as u64;
+        self.saved_search
+            .retain(|uid| fresh.binary_search(uid).is_ok());
+        self.view_version = version;
+        Ok(())
+    }
+
+    async fn expand_saved_set(&self, args: &str, uid_mode: bool) -> Result<String> {
+        let args = args.trim_start();
+        let (set, tail) = args.split_once(' ').unwrap_or((args, ""));
+        if set != "$" || self.saved_search.is_empty() {
+            return Ok(args.to_string());
+        }
+        let values = if uid_mode {
+            self.saved_search.clone()
+        } else {
+            let Some(sm) = self.state.selected() else {
+                return Ok(args.to_string());
+            };
+            sm.view_uids
+                .iter()
+                .enumerate()
+                .filter(|(_, uid)| self.saved_search.contains(uid))
+                .map(|(i, _)| (i + 1) as u64)
+                .collect()
+        };
+        let set = if values.is_empty() {
+            "$".to_string()
+        } else {
+            op::copy::render_uid_set(&values)
+        };
+        Ok(format!("{set} {tail}"))
+    }
+
+    fn over_bad_command_cap(&self) -> bool {
+        let cap = if self.state.is_authenticated() {
+            self.cfg.max_bad_commands_post_auth
+        } else {
+            self.cfg.max_bad_commands_pre_auth
+        };
+        self.bad_commands >= cap
+    }
+
+    async fn emit_bye<W: AsyncWrite + Unpin>(&self, writer: &mut W, reason: &str) -> Result<()> {
+        let code = if self.state.is_authenticated() {
+            None
+        } else {
+            Some("CLIENTBUG")
+        };
+        let line = match code {
+            Some(c) => format!("* BYE [{c}] {reason}\r\n"),
+            None => untagged_bye(reason),
+        };
+        writer.write_all(line.as_bytes()).await?;
+        let _ = writer.flush().await;
+        Ok(())
+    }
+
+    /// Read one IMAP command (line + optional trailing literal),
+    /// applying the pre-auth idle timeout.
+    ///
+    /// Returns `Ok(ReadOutcome::Eof)` on clean peer close,
+    /// `Ok(ReadOutcome::Frame(cmd))` on a clean read, and
+    /// `Ok(ReadOutcome::LiteralRejected { tag, response })` when the
+    /// codec resolved a literal-framing problem without losing stream
+    /// sync — caller emits `response` and continues.
+    async fn read_command<R, W>(
+        &mut self,
+        reader: &mut BufReader<R>,
+        writer: &mut W,
+    ) -> Result<ReadOutcome>
+    where
+        R: AsyncRead + Unpin,
+        W: AsyncWrite + Unpin,
+    {
+        let max_lit = if self.state.is_authenticated() {
+            self.cfg.max_literal_bytes
+        } else {
+            self.cfg.max_literal_bytes.min(codec::MAX_LINE_BYTES as u64)
+        };
+        // Before authentication, accept only the small literals needed by
+        // LOGIN, ID and AUTHENTICATE. Authenticated commands use general
+        // segmented framing with account-scoped literal and aggregate caps.
+        // Refusals withhold synchronising continuations or safely drain
+        // bounded non-synchronising input; lost framing closes the session.
+        let authed = self.state.is_authenticated();
+        let accept_literals = move |line: &[u8]| -> bool {
+            let mut parts = line.splitn(3, |b| *b == b' ');
+            let _tag = parts.next();
+            let command_name = parts.next().unwrap_or(b"");
+            authed
+                || command_name.eq_ignore_ascii_case(b"LOGIN")
+                || command_name.eq_ignore_ascii_case(b"ID")
+                || command_name.eq_ignore_ascii_case(b"AUTHENTICATE")
+        };
+        let caps = crate::imap::capabilities::for_config(&self.cfg);
+        let non_sync_limit = if caps.split_ascii_whitespace().any(|c| c == "LITERAL+") {
+            u64::MAX
+        } else {
+            4096
+        };
+        let fut = codec::read_command_multi_policy(
+            reader,
+            writer,
+            max_lit,
+            accept_literals,
+            |_| true,
+            non_sync_limit,
+        );
+        let result = if !self.state.is_authenticated() {
+            match timeout(self.cfg.pre_auth_timeout, fut).await {
+                Ok(r) => r,
+                Err(_) => {
+                    tracing::debug!(peer = %self.peer, "imap pre-auth timeout");
+                    return Ok(ReadOutcome::Eof);
+                }
+            }
+        } else {
+            // IDLE has its own keepalive loop; command reads use TCP liveness.
+            fut.await
+        };
+        match result {
+            Ok(cmd) => Ok(ReadOutcome::Frame(cmd)),
+            Err(ReadCommandError::Eof) => Ok(ReadOutcome::Eof),
+            Err(ReadCommandError::LineTooLong) => Err(anyhow::anyhow!("line too long")),
+            Err(ReadCommandError::Io(e)) => Err(anyhow::Error::new(e)),
+            Err(ReadCommandError::MalformedLiteral { line, reason }) => {
+                self.bad_commands += 1;
+                let tag = sniff_tag(&line).unwrap_or_else(|| "*".to_string());
+                let response = tagged(
+                    &tag,
+                    Status::Bad,
+                    None,
+                    &format!("malformed literal: {reason}"),
+                );
+                Ok(ReadOutcome::LiteralRejected { response })
+            }
+            Err(ReadCommandError::SyncLiteralRefused { line, declared }) => {
+                self.bad_commands += 1;
+                let tag = sniff_tag(&line).unwrap_or_else(|| "*".to_string());
+                let authed = self.state.is_authenticated();
+                tracing::debug!(
+                    peer = %self.peer,
+                    declared,
+                    authed,
+                    "imap sync literal refused (pre-auth or command does not take literal)"
+                );
+                let msg = if authed {
+                    "literal not accepted for this command"
+                } else {
+                    "literal not accepted before authentication"
+                };
+                let response = tagged(&tag, Status::Bad, None, msg);
+                Ok(ReadOutcome::LiteralRejected { response })
+            }
+            Err(ReadCommandError::NonSyncLiteralRefused { line, declared }) => {
+                self.bad_commands += 1;
+                let tag = sniff_tag(&line).unwrap_or_else(|| "*".to_string());
+                let authed = self.state.is_authenticated();
+                tracing::debug!(
+                    peer = %self.peer,
+                    declared,
+                    authed,
+                    "imap non-sync literal refused (bytes drained); pre-auth or command does not take literal"
+                );
+                let msg = if authed {
+                    "literal not accepted for this command"
+                } else {
+                    "literal not accepted before authentication"
+                };
+                let response = tagged(&tag, Status::Bad, None, msg);
+                Ok(ReadOutcome::LiteralRejected { response })
+            }
+            Err(ReadCommandError::SyncLiteralTooLarge {
+                line,
+                declared,
+                cap,
+            }) => {
+                self.bad_commands += 1;
+                let tag = sniff_tag(&line).unwrap_or_else(|| "*".to_string());
+                tracing::debug!(
+                    peer = %self.peer,
+                    declared,
+                    cap,
+                    "imap sync literal rejected (over cap)"
+                );
+                let response = tagged(
+                    &tag,
+                    Status::No,
+                    Some("TOOBIG"),
+                    &format!("literal {declared} exceeds server cap {cap}"),
+                );
+                Ok(ReadOutcome::LiteralRejected { response })
+            }
+            Err(ReadCommandError::NonSyncLiteralTooLarge {
+                line,
+                declared,
+                cap,
+            }) => {
+                self.bad_commands += 1;
+                let tag = sniff_tag(&line).unwrap_or_else(|| "*".to_string());
+                tracing::debug!(
+                    peer = %self.peer,
+                    declared,
+                    cap,
+                    "imap non-sync literal rejected (over cap; bytes drained)"
+                );
+                let response = tagged(
+                    &tag,
+                    Status::No,
+                    Some("TOOBIG"),
+                    &format!("literal {declared} exceeds server cap {cap}"),
+                );
+                Ok(ReadOutcome::LiteralRejected { response })
+            }
+            Err(ReadCommandError::FramingLost { line, reason }) => {
+                // The rest of the command is still on the wire and we
+                // can't tell where it ends: answer, then hang up so
+                // none of it runs as a command.
+                let tag = sniff_tag(&line).unwrap_or_else(|| "*".to_string());
+                tracing::debug!(peer = %self.peer, %reason, "imap command framing lost; closing");
+                writer
+                    .write_all(tagged(&tag, Status::Bad, None, &reason).as_bytes())
+                    .await?;
+                self.emit_bye(writer, "command framing lost").await?;
+                Ok(ReadOutcome::Eof)
+            }
+        }
+    }
+
+    async fn handle_login<W: AsyncWrite + Unpin>(
+        &mut self,
+        tag: &str,
+        args: &str,
+        writer: &mut W,
+    ) -> Result<()> {
+        if !self.state.is_not_authenticated() {
+            self.bad_commands += 1;
+            let resp = tagged(tag, Status::Bad, None, "LOGIN only valid before auth");
+            writer
+                .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                .await?;
+            return Ok(());
+        }
+        let (user, pass) = match op::login::parse_args(args) {
+            Ok(t) => t,
+            Err(e) => {
+                self.bad_commands += 1;
+                let msg = format!("invalid LOGIN syntax: {e}");
+                writer
+                    .write_all(tagged(tag, Status::Bad, None, &msg).as_bytes())
+                    .await?;
+                return Ok(());
+            }
+        };
+        self.complete_auth(tag, &user, &pass, "cleartext", writer)
+            .await
+    }
+
+    async fn handle_authenticate<R, W>(
+        &mut self,
+        tag: &str,
+        args: &str,
+        reader: &mut BufReader<R>,
+        writer: &mut W,
+    ) -> Result<()>
+    where
+        R: AsyncRead + Unpin,
+        W: AsyncWrite + Unpin,
+    {
+        if !self.state.is_not_authenticated() {
+            self.bad_commands += 1;
+            let resp = tagged(
+                tag,
+                Status::Bad,
+                None,
+                "AUTHENTICATE only valid before auth",
+            );
+            writer
+                .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                .await?;
+            return Ok(());
+        }
+        let parsed = match op::authenticate::parse_args(args) {
+            Ok(p) => p,
+            Err(e) => {
+                self.bad_commands += 1;
+                let msg = format!("invalid AUTHENTICATE: {e}");
+                writer
+                    .write_all(tagged(tag, Status::Bad, None, &msg).as_bytes())
+                    .await?;
+                return Ok(());
+            }
+        };
+
+        match parsed.mechanism {
+            Mechanism::Plain => {
+                let ir = match parsed.initial_response {
+                    Some(s) => s,
+                    None => {
+                        writer.write_all(continuation("").as_bytes()).await?;
+                        writer.flush().await?;
+                        match self.read_continuation(reader).await? {
+                            Some(s) => s,
+                            None => return Ok(()),
+                        }
+                    }
+                };
+                // RFC 4959 §3 — client may send `*` to abort.
+                if ir.trim() == "*" {
+                    self.auth_failures += 1;
+                    writer
+                        .write_all(
+                            tagged(tag, Status::Bad, None, "AUTHENTICATE aborted").as_bytes(),
+                        )
+                        .await?;
+                    return Ok(());
+                }
+                let creds = match sasl::parse_plain(&ir) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        self.auth_failures += 1;
+                        let msg = format!("PLAIN decode failed: {e}");
+                        writer
+                            .write_all(tagged(tag, Status::Bad, None, &msg).as_bytes())
+                            .await?;
+                        return Ok(());
+                    }
+                };
+                self.complete_auth(tag, &creds.authcid, &creds.password, "PLAIN", writer)
+                    .await
+            }
+            Mechanism::Login => {
+                // SASL-IR (RFC 4959): if the client supplied an
+                // initial response, it stands in for the first
+                // continuation (the base64-encoded username) and we
+                // jump straight to prompting for the password.
+                let user_b64 = match parsed.initial_response {
+                    Some(s) => s,
+                    None => {
+                        // Step 1: "Username:" base64 = "VXNlcm5hbWU6"
+                        writer
+                            .write_all(continuation(&sasl::encode_b64(b"Username:")).as_bytes())
+                            .await?;
+                        writer.flush().await?;
+                        match self.read_continuation(reader).await? {
+                            Some(s) => s,
+                            None => return Ok(()),
+                        }
+                    }
+                };
+                if user_b64.trim() == "*" {
+                    self.auth_failures += 1;
+                    writer
+                        .write_all(
+                            tagged(tag, Status::Bad, None, "AUTHENTICATE aborted").as_bytes(),
+                        )
+                        .await?;
+                    return Ok(());
+                }
+                let user = match sasl::decode_login_field(&user_b64) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        self.auth_failures += 1;
+                        let msg = format!("LOGIN username decode failed: {e}");
+                        writer
+                            .write_all(tagged(tag, Status::Bad, None, &msg).as_bytes())
+                            .await?;
+                        return Ok(());
+                    }
+                };
+                // Step 2: "Password:" base64 = "UGFzc3dvcmQ6"
+                writer
+                    .write_all(continuation(&sasl::encode_b64(b"Password:")).as_bytes())
+                    .await?;
+                writer.flush().await?;
+                let pass_b64 = match self.read_continuation(reader).await? {
+                    Some(s) => s,
+                    None => return Ok(()),
+                };
+                if pass_b64.trim() == "*" {
+                    self.auth_failures += 1;
+                    writer
+                        .write_all(
+                            tagged(tag, Status::Bad, None, "AUTHENTICATE aborted").as_bytes(),
+                        )
+                        .await?;
+                    return Ok(());
+                }
+                let pass = match sasl::decode_login_field(&pass_b64) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        self.auth_failures += 1;
+                        let msg = format!("LOGIN password decode failed: {e}");
+                        writer
+                            .write_all(tagged(tag, Status::Bad, None, &msg).as_bytes())
+                            .await?;
+                        return Ok(());
+                    }
+                };
+                self.complete_auth(tag, &user, &pass, "LOGIN", writer).await
+            }
+            Mechanism::OAuthBearer => {
+                // Provider integration not landed — clear NO, not BAD
+                // (per  SASL note: authentication
+                // refusal is NO, not BAD).
+                self.auth_failures += 1;
+                if parsed.initial_response.is_none() {
+                    // Send empty challenge so a compliant client cancels
+                    // with "*" without us waiting on a real token blob.
+                    writer.write_all(continuation("").as_bytes()).await?;
+                    writer.flush().await?;
+                    let _ = self.read_continuation(reader).await?;
+                }
+                let resp = tagged(
+                    tag,
+                    Status::No,
+                    Some("AUTHENTICATIONFAILED"),
+                    "OAUTHBEARER not configured",
+                );
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
+                Ok(())
+            }
+        }
+    }
+
+    async fn read_continuation<R: AsyncRead + Unpin>(
+        &mut self,
+        reader: &mut BufReader<R>,
+    ) -> Result<Option<String>> {
+        let line_fut = codec::read_line(reader);
+        let mut shutdown = self.shutdown.clone();
+        let outcome = tokio::select! {
+            result = timeout(self.cfg.pre_auth_timeout, line_fut) => result,
+            _ = wait_shutdown(&mut shutdown) => return Ok(None),
+        };
+        let line = match outcome {
+            Ok(Ok(v)) => v,
+            Ok(Err(ReadLineError::Eof)) => return Ok(None),
+            Ok(Err(ReadLineError::LineTooLong)) => {
+                return Err(anyhow::anyhow!("continuation line too long"));
+            }
+            Ok(Err(ReadLineError::Io(e))) => return Err(anyhow::Error::new(e)),
+            Err(_) => return Ok(None),
+        };
+        let text = std::str::from_utf8(&line)
+            .map_err(|_| anyhow::anyhow!("non-UTF8 continuation"))?
+            .trim_end_matches('\r')
+            .to_string();
+        Ok(Some(text))
+    }
+
+    async fn complete_auth<W: AsyncWrite + Unpin>(
+        &mut self,
+        tag: &str,
+        user: &str,
+        pass: &str,
+        method: &str,
+        writer: &mut W,
+    ) -> Result<()> {
+        let aid = match basic::verify(&self.db, user, pass).await {
+            Ok(Some(a)) => a,
+            Ok(None) => {
+                self.auth_failures += 1;
+                crate::maillog::imap_login_fail(
+                    user,
+                    method,
+                    self.peer,
+                    self.local,
+                    self.auth_failures,
+                    "auth failed",
+                );
+                let resp = tagged(
+                    tag,
+                    Status::No,
+                    Some("AUTHENTICATIONFAILED"),
+                    "invalid credentials",
+                );
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
+                return Ok(());
+            }
+            Err(e) => {
+                self.auth_failures += 1;
+                tracing::error!(peer = %self.peer, error = %e, "imap auth lookup failed");
+                crate::maillog::imap_login_fail(
+                    user,
+                    method,
+                    self.peer,
+                    self.local,
+                    self.auth_failures,
+                    "server error",
+                );
+                let resp = tagged(
+                    tag,
+                    Status::No,
+                    Some("UNAVAILABLE"),
+                    "authentication unavailable",
+                );
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
+                return Ok(());
+            }
+        };
+
+        let store = self.mailstore.clone();
+        match tokio::task::spawn_blocking(move || store.prepare_imap_account(aid)).await {
+            Ok(Ok(())) => {}
+            result => {
+                tracing::warn!(?result, "IMAP account preparation failed");
+                writer
+                    .write_all(
+                        tagged(
+                            tag,
+                            Status::No,
+                            Some("UNAVAILABLE"),
+                            "mailbox identities unavailable",
+                        )
+                        .as_bytes(),
+                    )
+                    .await?;
+                return Ok(());
+            }
+        }
+
+        // Reserve a per-account slot before flipping state. Failure
+        // closes the connection with a polite `* BYE [INUSE]`.
+        if !self
+            .slots
+            .try_acquire(aid, self.cfg.max_concurrent_per_account)
+            .await
+        {
+            let resp = tagged(tag, Status::No, Some("INUSE"), "too many connections");
+            writer
+                .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                .await?;
+            self.emit_bye(writer, "concurrent connection limit reached")
+                .await?;
+            // Force the loop to exit.
+            self.state = State::Logout;
+            return Ok(());
+        }
+        self.account_id = Some(aid);
+        self.state = State::Authenticated;
+
+        // Per RFC 9051 §6.2.2 / §6.2.3, embed CAPABILITY in the OK
+        // response code to defeat client-side caching of the pre-auth
+        // capability list.
+        let caps_body = crate::imap::capabilities::for_config(&self.cfg);
+        let code = format!("CAPABILITY {caps_body}");
+        let resp = tagged(tag, Status::Ok, Some(&code), "authenticated");
+        writer
+            .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+            .await?;
+        crate::maillog::imap_login_ok(user, method, self.peer, self.local);
+        Ok(())
+    }
+}
+
+/// Best-effort tag extraction for a structurally malformed command
+/// line (so the `BAD` response can still echo the client's tag).
+fn sniff_tag(line: &[u8]) -> Option<String> {
+    let end = line.iter().position(|b| *b == b' ' || *b == b'\r')?;
+    if end == 0 {
+        return None;
+    }
+    let slice = &line[..end];
+    let tag = std::str::from_utf8(slice).ok()?;
+    codec::is_valid_tag(tag).then(|| tag.to_string())
+}
+
+/// Whether a command line (tag, command, args) is `SEARCH` or
+/// `UID SEARCH`.
+#[cfg(test)]
+fn is_search_line(line: &[u8]) -> bool {
+    let mut parts = line.split(|b| *b == b' ').filter(|p| !p.is_empty());
+    let _tag = parts.next();
+    match parts.next() {
+        Some(c) if c.eq_ignore_ascii_case(b"SEARCH") => true,
+        Some(c) if c.eq_ignore_ascii_case(b"UID") => parts
+            .next()
+            .is_some_and(|c| c.eq_ignore_ascii_case(b"SEARCH")),
+        _ => false,
+    }
+}
+
+fn is_append_line(line: &[u8]) -> bool {
+    line.split(|b| *b == b' ')
+        .nth(1)
+        .is_some_and(|s| s.eq_ignore_ascii_case(b"APPEND"))
+}
+
+pub(crate) async fn wait_shutdown(shutdown: &mut Option<tokio::sync::watch::Receiver<bool>>) {
+    if let Some(rx) = shutdown {
+        while !*rx.borrow_and_update() {
+            if rx.changed().await.is_err() {
+                return std::future::pending().await;
+            }
+        }
+    } else {
+        std::future::pending().await
+    }
+}
+
+/// Literal argument strings and literal message data share framing, but only
+/// message data may contain arbitrary bytes. Rebuild textual args separately.
+fn frame_append(cmd: codec::Command, utf8: bool) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let mut prefix = cmd.line;
+    let mut pieces = vec![(Vec::new(), cmd.literal, cmd.literal8)];
+    pieces.extend(
+        cmd.continuation
+            .into_iter()
+            .map(|s| (s.text, s.literal, s.literal8)),
+    );
+    let mut messages = Vec::new();
+    let mut base = None;
+    let mut wrapper = false;
+    for (mut text, literal, literal8) in pieces {
+        if wrapper {
+            let tail = std::str::from_utf8(&text)
+                .map_err(|_| "invalid APPEND continuation")?
+                .trim_start();
+            let tail = tail
+                .strip_prefix(')')
+                .ok_or("UTF8 APPEND missing closing paren")?;
+            text = tail.as_bytes().to_vec();
+            wrapper = false;
+        }
+        prefix.extend_from_slice(&text);
+        let Some(literal) = literal else {
+            if !text.iter().all(u8::is_ascii_whitespace) {
+                return Err("APPEND trailing data without a message literal".into());
+            }
+            continue;
+        };
+        let mut line = codec::parse_line(&prefix).map_err(|e| e.to_string())?;
+        if line.args.to_ascii_uppercase().ends_with("UTF8 (") {
+            if !utf8 {
+                return Err("UTF8 APPEND requires ENABLE UTF8=ACCEPT or IMAP4rev2".into());
+            }
+            line.args.truncate(line.args.len() - 6);
+            line.args = line.args.trim_end().to_string();
+            wrapper = true;
+        }
+        match op::append::parse_args_for_dispatch(&line.args) {
+            Ok(()) => {
+                if !literal8 && literal.contains(&0) {
+                    return Err("NUL in APPEND requires literal8".into());
+                }
+                if base.is_none() {
+                    let (name, _) = op::list::take_mailbox_name(line.args.trim_start())?;
+                    base = Some(
+                        format!(
+                            "{} APPEND {}",
+                            line.tag,
+                            crate::imap::mailbox_name::quote_mailbox(&name)
+                        )
+                        .into_bytes(),
+                    );
+                }
+                messages.push((line.args, literal));
+                prefix = base.clone().unwrap();
+            }
+            Err(_) if messages.is_empty() && line.args.trim().is_empty() => {
+                push_quoted(&mut prefix, &literal).map_err(str::to_string)?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if wrapper {
+        return Err("UTF8 APPEND missing closing paren".into());
+    }
+    if messages.is_empty() {
+        return Err("APPEND requires a literal message body".into());
+    }
+    Ok(messages)
+}
+
+/// Fold command argument literals back into one line, each as a
+/// quoted string (`OR FROM {4}` `café` ` SUBJECT {4}` `café` →
+/// `OR FROM "café" SUBJECT "café"`), so command parsers see flat
+/// arguments. The codec has already capped the total size
+/// ([`codec::MAX_MULTI_LITERAL_BYTES`]).
+fn splice_literals(cmd: &mut codec::Command) -> Result<(), &'static str> {
+    let Some(first) = cmd.literal.take() else {
+        return Ok(());
+    };
+    push_quoted(&mut cmd.line, &first)?;
+    for seg in std::mem::take(&mut cmd.continuation) {
+        cmd.line.extend_from_slice(&seg.text);
+        if let Some(lit) = seg.literal {
+            push_quoted(&mut cmd.line, &lit)?;
+        }
+    }
+    Ok(())
+}
+
+/// Append ` "<lit>"` to `line`, escaping `"` and `\`.
+fn push_quoted(line: &mut Vec<u8>, lit: &[u8]) -> Result<(), &'static str> {
+    let text = std::str::from_utf8(lit).map_err(|_| "literal argument is not UTF-8")?;
+    // CR and LF are legal in a literal (a multi-line needle); NUL is not
+    // (RFC 9051 CHAR8). The tokenizer keeps line breaks inside quotes.
+    if text.contains('\0') {
+        return Err("literal argument contains NUL");
+    }
+    line.extend_from_slice(b" \"");
+    for c in text.chars() {
+        if c == '"' || c == '\\' {
+            line.push(b'\\');
+        }
+        let mut buf = [0u8; 4];
+        line.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+    }
+    line.push(b'"');
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_search_line_matches_search_and_uid_search() {
+        assert!(is_search_line(b"a1 SEARCH FROM"));
+        assert!(is_search_line(b"a1 uid search CHARSET UTF-8 FROM"));
+        assert!(!is_search_line(b"a1 UID FETCH 1 FLAGS"));
+        assert!(!is_search_line(b"a1 APPEND INBOX"));
+    }
+
+    #[test]
+    fn splice_literals_quotes_and_escapes() {
+        let mut cmd = codec::Command {
+            line: b"a1 UID SEARCH CHARSET UTF-8 FROM".to_vec(),
+            literal: Some("Zoë \"z\\\"".as_bytes().to_vec()),
+            literal8: false,
+            continuation: Vec::new(),
+        };
+        splice_literals(&mut cmd).unwrap();
+        assert!(cmd.literal.is_none());
+        assert_eq!(
+            String::from_utf8(cmd.line).unwrap(),
+            "a1 UID SEARCH CHARSET UTF-8 FROM \"Zoë \\\"z\\\\\\\"\""
+        );
+        let mut bad = codec::Command {
+            line: b"a1 SEARCH BODY".to_vec(),
+            literal: Some(vec![0xff, 0xfe]),
+            literal8: false,
+            continuation: Vec::new(),
+        };
+        assert!(splice_literals(&mut bad).is_err());
+    }
+
+    /// Thunderbird's non-ASCII quick filter: two literals, the second
+    /// followed by a closing paren, end to end through the codec.
+    #[tokio::test]
+    async fn search_with_several_literals_reaches_one_flat_line() {
+        let wire =
+            "a1 UID SEARCH CHARSET UTF-8 (OR FROM {5}\r\ncafé SUBJECT {5+}\r\ncafé) UNDELETED\r\n";
+        let mut reader = tokio::io::BufReader::new(wire.as_bytes());
+        let mut writer: Vec<u8> = Vec::new();
+        let mut cmd =
+            codec::read_command_multi(&mut reader, &mut writer, 1024, |_| true, is_search_line)
+                .await
+                .unwrap();
+        // One continuation request: the first literal is sync, the
+        // second non-sync.
+        assert_eq!(writer, b"+ Ready for literal data\r\n");
+        splice_literals(&mut cmd).unwrap();
+        let line = String::from_utf8(cmd.line.clone()).unwrap();
+        assert_eq!(
+            line,
+            "a1 UID SEARCH CHARSET UTF-8 (OR FROM \"café\" SUBJECT \"café\") UNDELETED"
+        );
+        let parsed = codec::parse_line(&cmd.line).unwrap();
+        let inner = parsed.args.strip_prefix("SEARCH ").unwrap();
+        op::search::parse_args_for_dispatch(inner, op::search::SearchMode::Uid).unwrap();
+    }
+
+    /// An over-cap non-sync literal part-way through a SEARCH can't be
+    /// drained safely (what follows may be more literals), so the
+    /// codec reports lost framing instead of resuming on bytes that
+    /// look like commands.
+    #[tokio::test]
+    async fn over_cap_non_sync_continuation_literal_loses_framing() {
+        let big = "a2 UID EXPUNGE 1:*\r\n".repeat(80); // 1600 bytes
+        let wire = format!(
+            "a1 SEARCH FROM {{1+}}\r\nx SUBJECT {{{}+}}\r\n{big}\r\n",
+            big.len()
+        );
+        let mut reader = tokio::io::BufReader::new(wire.as_bytes());
+        let mut writer: Vec<u8> = Vec::new();
+        let err =
+            codec::read_command_multi(&mut reader, &mut writer, 1024, |_| true, is_search_line)
+                .await
+                .unwrap_err();
+        assert!(
+            matches!(err, codec::ReadCommandError::FramingLost { .. }),
+            "{err}"
+        );
+
+        // Same for the first literal of a multi-literal command.
+        let wire = format!("a1 SEARCH FROM {{{}+}}\r\n{big}\r\n", big.len());
+        let mut reader = tokio::io::BufReader::new(wire.as_bytes());
+        let err =
+            codec::read_command_multi(&mut reader, &mut writer, 1024, |_| true, is_search_line)
+                .await
+                .unwrap_err();
+        assert!(
+            matches!(err, codec::ReadCommandError::FramingLost { .. }),
+            "{err}"
+        );
+
+        // A sync literal over the cap is simply refused: no `+` was
+        // sent, so the client sends nothing more for it.
+        let wire = "a1 SEARCH FROM {1+}\r\nx SUBJECT {5000}\r\n";
+        let mut reader = tokio::io::BufReader::new(wire.as_bytes());
+        let mut writer: Vec<u8> = Vec::new();
+        let err =
+            codec::read_command_multi(&mut reader, &mut writer, 1024, |_| true, is_search_line)
+                .await
+                .unwrap_err();
+        assert!(
+            matches!(err, codec::ReadCommandError::MalformedLiteral { .. }),
+            "{err}"
+        );
+        assert!(writer.is_empty());
+    }
+
+    /// A non-SEARCH command still may not continue after its literal.
+    #[tokio::test]
+    async fn append_rejects_data_after_literal() {
+        let wire = "a1 APPEND INBOX {2+}\r\nhi EXTRA\r\n";
+        let mut reader = tokio::io::BufReader::new(wire.as_bytes());
+        let mut writer: Vec<u8> = Vec::new();
+        let err =
+            codec::read_command_multi(&mut reader, &mut writer, 1024, |_| true, is_search_line)
+                .await
+                .unwrap_err();
+        assert!(
+            matches!(err, codec::ReadCommandError::MalformedLiteral { .. }),
+            "{err}"
+        );
+    }
+
+    /// `snapshot` reflects live acquires, drops to zero-count rows once
+    /// released, and never reports a row whose count reached zero —
+    /// the contract `maild.stats.online` depends on.
+    #[tokio::test]
+    async fn snapshot_reflects_acquire_and_release() {
+        let slots = AccountSlots::new();
+        // Empty before any connection.
+        assert!(slots.snapshot().await.is_empty());
+
+        // Two sessions for account 7, one for account 3 (cap high
+        // enough that none are refused).
+        assert!(slots.try_acquire(7, 10).await);
+        assert!(slots.try_acquire(7, 10).await);
+        assert!(slots.try_acquire(3, 10).await);
+
+        let mut snap = slots.snapshot().await;
+        snap.sort_by_key(|(id, _)| *id);
+        assert_eq!(snap, vec![(3, 1), (7, 2)]);
+
+        // Releasing one of account 7's two sessions leaves it at 1.
+        slots.release(7).await;
+        let mut snap = slots.snapshot().await;
+        snap.sort_by_key(|(id, _)| *id);
+        assert_eq!(snap, vec![(3, 1), (7, 1)]);
+
+        // Releasing account 3's only session drops the row entirely
+        // (no zero-valued rows in the snapshot).
+        slots.release(3).await;
+        let snap = slots.snapshot().await;
+        assert_eq!(snap, vec![(7, 1)]);
+    }
+
+    /// A refused acquire (cap reached) does not inflate the snapshot
+    /// count — only successful reservations are visible.
+    #[tokio::test]
+    async fn snapshot_excludes_refused_acquire() {
+        let slots = AccountSlots::new();
+        assert!(slots.try_acquire(5, 1).await);
+        // Second acquire for account 5 is over the cap of 1 → refused.
+        assert!(!slots.try_acquire(5, 1).await);
+        assert_eq!(slots.snapshot().await, vec![(5, 1)]);
+    }
+}
