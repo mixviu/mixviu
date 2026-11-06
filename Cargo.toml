@@ -231,5 +231,6 @@ egui-wgpu = { path = "vendor/egui-wgpu" }
 dirs-sys = { path = "vendor/dirs-sys" }
 calloop = { path = "vendor/calloop" }
 input = { path = "vendor/input" }
+mail-parser = { path = "vendor/mail-parser" }
 [workspace.lints.clippy]
 mod_module_files = "deny"

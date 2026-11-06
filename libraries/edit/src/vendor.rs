@@ -13,5 +13,5 @@
     clippy::len_without_is_empty,
     stable_features
 )]
-#[path = "../../vendor/msedit/buffer.rs"]
+#[path = "../../../vendor/msedit/buffer.rs"]
 pub(crate) mod msedit;

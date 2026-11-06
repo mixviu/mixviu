@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 #[test]
 fn rounded_frame_patch_and_all_native_transparent_entry_points_survive_refresh() {
-    let painter = include_str!("../../vendor/egui-wgpu/src/winit.rs");
-    let pass = include_str!("../../vendor/egui-wgpu/src/window_frame.rs");
-    let shader = include_str!("../../vendor/egui-wgpu/src/window_frame.wgsl");
+    let painter = include_str!("../../../vendor/egui-wgpu/src/winit.rs");
+    let pass = include_str!("../../../vendor/egui-wgpu/src/window_frame.rs");
+    let shader = include_str!("../../../vendor/egui-wgpu/src/window_frame.wgsl");
     assert!(painter.contains("remove_temp::<(f32, f32, [f32; 4], [f32; 4])>(frame_key)"));
     assert!(painter.contains("egui-wgpu.transparent"));
     assert!(painter.contains("Some((_, _, _, [r, g, b, _])) => [r, g, b, 1.0]"));

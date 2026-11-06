@@ -3,11 +3,11 @@
 
 #[test]
 fn hidden_window_vendor_patch_guard() {
-    let run = include_str!("../../vendor/eframe/src/native/run.rs");
-    let integration = include_str!("../../vendor/eframe/src/native/wgpu_integration.rs");
-    let modes = include_str!("../../vendor/eframe/src/native/winit_integration.rs");
-    let epi = include_str!("../../vendor/eframe/src/native/epi_integration.rs");
-    let painter = include_str!("../../vendor/egui-wgpu/src/winit.rs");
+    let run = include_str!("../../../vendor/eframe/src/native/run.rs");
+    let integration = include_str!("../../../vendor/eframe/src/native/wgpu_integration.rs");
+    let modes = include_str!("../../../vendor/eframe/src/native/winit_integration.rs");
+    let epi = include_str!("../../../vendor/eframe/src/native/epi_integration.rs");
+    let painter = include_str!("../../../vendor/egui-wgpu/src/winit.rs");
     assert!(run.contains("self.winit_app.overdue_pass_mode(window_id)"));
     assert!(run.contains("*repaint_time = (*repaint_time).max(*floor)"));
     assert!(run.contains(".insert(window_id, Instant::now() + MISSED_REDRAW_TIMEOUT)"));

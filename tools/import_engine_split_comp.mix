@@ -22,7 +22,7 @@ end
 for $n in ["mesh", "mesh-trust"]
   push($mapping, ["services/noded/crates/" .. $n, "libraries/" .. $n])
 end
-for $n in ["smithay", "calloop", "input", "msedit/lsh", "msedit/stdext", "eframe", "egui-wgpu", "dirs-sys", "README.md"]
+for $n in ["smithay", "calloop", "input", "msedit", "mail-parser", "eframe", "egui-wgpu", "dirs-sys", "README.md"]
   push($mapping, ["vendor/" .. $n, "vendor/" .. $n])
 end
 for $n in ["admission", "authority", "native_ingress", "noded", "observe", "props", "props_reservation", "protection", "routing", "spec", "spec_release", "subscription"]
@@ -56,7 +56,6 @@ for $m in $mapping
       $v = replace($v, "\"../../../libs/", "\"../../../libraries/")
       $v = replace($v, "\"../../libs/", "\"../../libraries/")
       $v = replace($v, "\"../../../services/noded/src/", "\"../noded/")
-      $v = replace($v, "\"../../../vendor/", "\"../../vendor/")
       if $v != $t then
         write_file($f, $v)
         $adapt = "relative paths remapped to mixviu layout"
@@ -103,7 +102,7 @@ for $line in lines($manifest)
   push($out, $line)
 end
 push($out, "[patch.crates-io]")
-for $n in ["eframe", "egui-wgpu", "dirs-sys", "calloop", "input"]
+for $n in ["eframe", "egui-wgpu", "dirs-sys", "calloop", "input", "mail-parser"]
   push($out, $n .. " = { path = \"vendor/" .. $n .. "\" }")
 end
 push($out, "[workspace.lints.clippy]\nmod_module_files = \"deny\"")
