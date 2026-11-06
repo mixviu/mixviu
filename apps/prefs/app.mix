@@ -157,7 +157,7 @@ fn queue_keys($s,$changes)
   for $key in keys($changes) if $changes[$key]==nil then push($reset,$key) else $values[$key]=$changes[$key] end end
   $checked=viu_settings("admit",$s.values,$values,$reset)
   if not $checked.ok then raise("FAILED",join(map($checked.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
-  $s.store_error=nil
+  if $s.look.settings!="missing" then $s.store_error=nil end
   $s.queue_changes=merge($s.queue_changes,$changes)
   return queued_prefs($s)
 end
@@ -204,7 +204,7 @@ end
 fn set_prefs($s,$key,$value)
   $admission=$s;$admission.busy=false
   $request=$core.admitted($admission,$key,$value)
-  $s.store_error=nil
+  if $s.look.settings!="missing" then $s.store_error=nil end
   $s.queue_changes=merge($s.queue_changes,$request.changes)
   for $key in $request.reset $s.queue_changes[$key]=nil end
   return queued_prefs($s)
@@ -525,6 +525,7 @@ on viu.job.completed
         if contains($state.store_error,"not found") then $state.look.settings="missing" end
       end
       if $state.pending.op=="write" then
+        $state.store_error=$answer.message ?? json_encode($answer)
         if contains(["conflict","outcome_unknown","authority_unreachable"],$answer.status) or $d.rc>=20 or contains($answer.message ?? "","not found") then
           $state.queue_changes=merge($state.inflight_changes,$state.queue_changes)
           if $answer.status=="authority_unreachable" then $state.uncertain=true
