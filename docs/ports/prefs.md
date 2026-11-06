@@ -1,62 +1,66 @@
 # Preferences gold parity inventory
 
-Oracle: MixOS `8779f3328`, apps/prefs preferences navigation/catalog/store/live,
-appearance/pages/email/text/terminal, shell/actions and docs/prefs/README.md.
-Per-app Rust added: 0. Layout and behaviour belong to Mix; the shared
-`settings-browser` widget renders application-supplied page/card data.
-No overall parity acceptance is claimed yet.
+Oracle: MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`, including
+`apps/prefs`, its preferences engine and the shared toolkit. Gold wins any
+inventory disagreement. No overall feature, Bus or visual acceptance is
+claimed. No deviation from gold has approval.
 
-| Original feature | Current parity status |
-|---|---|
-| settings.describe catalogue, settings.get values/defaults | Ported: Mix registry browser/editor over unchanged settingsd wire, placeholder paths excluded |
-| Typed enum/bool/number/text values, reset and validation | Ported: enum/checkbox or JSON text editor, metadata-based type/range admission and reset; service remains authority |
-| Fenced writes, incarnation/revision, wrong-target retarget | Ported: settings.apply, exact decimal revision text, native-admitted operation ID and one read retarget |
-| Stale mirror/unreachable authority write inhibition and visible failures | Ported admission/status checks; failed writes inhibit further writes until explicit refresh, no silent replay |
-| Appearance, fonts, wallpaper, windows, accessibility, terminal and editor settings | Ported prefix/category navigation with generic editors; wallpaper image/colour couples slideshow/reset changes; specialised layouts deferred |
-| Canonical search/section/software selection | Implemented against pinned handlers; runtime comparison pending. Search returns `{query,hits}` with page/row targets without changing the window, including under a dialog; `prefs.select {app}` opens its Software group and requests notes; section replies include category and UI. Registry key selection moved to `prefs.registry.select`. |
-| Topic/reconnect reads, per-page retained problems and receipt recovery | Ported bounded five-second reads while idle; polling pauses during draft edits. Topic subscriptions, exact queued/coalesced retry and receipt recovery deferred |
-| Live output/input/network/power/time/workspace/panel backend pages | Deferred backend-specific controls; registry metadata may remain inspectable |
-| Appearance packages/previews/drafts, pinned source and exact theme inheritance | Deferred specialised composition; generic keys remain subject to service admission |
-| Wallpaper library/folder scan/colour picker/slideshow/per-output drawers | Deferred specialised chooser; direct typed key edits subject to coupled-setting checks |
-| Email account migration/password/reset workflows | Deferred: require Email-owned migration/secret workflows, not a generic key editor |
-| Software catalogues/install/remove/release progress | Deferred: releases service workflows outside settings specimen |
-| Keyboard layout add/search, font discovery, custom assets | Deferred specialised native catalogues/choosers |
-| Original action menus/dialogs/macros/theme/single-instance CLI/wire compatibility | Deferred; generic viu native automation and new Mix commands are explicit |
-| Settings-driven appearance/keymaps of Prefs itself | Deferred with the generic host's session design/keymap follower; editing the authority does not yet restyle this registry browser |
+Application layout, state transitions and service policy live in Mix. Rust
+additions are reusable Viu widgets and host facilities. Intra-app events and
+jobs stay in process; native Bus calls cross process boundaries.
 
-## Corrections from pinned gold (P2 resolved)
+| Gold feature | Implementation and outstanding acceptance |
+| --- | --- |
+| Shared frame, menus, title, actions, captions and close | Shared gold frame adopted; exact-source frame checkpoint `48b5b430f56fd7c2101f199ef15cd2cd89cabdde`. Further generic caption/title geometry repairs are under test. Native menu model/input compatibility remains open. |
+| 42 pages, 11 sidebar roots, children, drawers, search and legacy sections | Mix page descriptors, navigation and read-only page/row search implemented. All 42 pages mount in the embedded runtime test. Native default pages/actions metadata matches gold. Full navigation/input acceptance remains open. |
+| Registry, defaults, typed validation, fenced writes | Native settings registry supplies defaults and validation. Mix queues/coalesces absolute values, retains failed writes and refreshes/replays after conflicts or uncertain results. Topic/reconnect reads replace idle polling. Recovery acceptance remains open. |
+| Appearance drafts, conflict Keep/Revert and uncertain apply receipts | Mix appearance state machine and operation receipt lookup implemented; embedded conflict/receipt tests pass. Native mutation/refusal/restart comparison remains open. |
+| Appearance mode previews, palettes, accent, typography, window composition and accessibility | Controls implemented through data-authored shared widgets. Current matched Appearance capture fails visual acceptance; geometry, bold fonts, previews, palettes and disabled extras remain open. |
+| Wallpaper gallery, bounded folder scan, custom folders/images, native chooser, colours, slideshow and per-output drawer | Mix gallery state/scan jobs and coupled writes implemented; reusable native media widgets added. Native picker, gallery limits, output and visual acceptance remain open. |
+| Terminal and Ced settings | Specialised Mix pages and typed native validation implemented. Passive numeric redraw regression repaired. Full native input/layout comparison remains open. |
+| Email accounts/default, identities, migration, password, connect, reset and mail options | Mix workflows use fenced full-account writes and actual Email replies. Password stays out of public models/settingsd; deferred reply and validation/redaction tests pass. Native Email lifecycle, removal cleanup and UI acceptance remain open. |
+| Software groups, listing/check, notes, install/update/remove/rollback and progress | Mix releases jobs, strict reply admission, stale-note rejection and lost-mutation reconciliation implemented. Native deterministic service cases and real-daemon acceptance remain open. |
+| Keyboard layout/variant picker, font/icon/locale catalogues and asset selection | Worker jobs and searchable reusable pickers implemented; native fontdb catalogue reused. Catalogue parsing, native chooser and representative dataset acceptance remain open. |
+| Backend pages and disabled controls | Gold's pending notices, hidden battery controls and missing-backend refusals are the target. These are not proposed future backend implementations. Native visibility/refusal coverage remains open. |
+| Actions, dialogs, themes, macros and debug | Canonical descriptors and Mix actions/forms implemented; generic native macro editor/session and debug surface reused. Complete action/input/dialog/macro comparison remains open. |
+| Full canonical Bus surface | 55 gold command descriptors preserved; canonical handlers, native drive, macros and debug registered. `app.describe`, `prefs.actions`, `prefs.pages`, default `prefs.appearance` and missing-releases `prefs.apps` match native gold. HELP currently exposes extra host commands and menu queries differ; structured mutation/refusal coverage remains open. |
+| Single-instance CLI, service options and page/row deep links | Outstanding generic launch/host integration. Current lab launch is `viu run apps/prefs [INSTANCE]`. |
+| Live Prefs response of Prefs itself | Shared host follows native session appearance without restart. Per-app complete axes/tune/app-override matrix and authority loss/recovery comparison remain open. |
 
-Gold is authoritative under the updated standing brief. Earlier "Ported"
-labels describe the registry specimen, not accepted gold parity. Every
-"Deferred" entry above is outstanding work, with no approved deviation.
-In particular, the former search mutated the registry filter and replied
-`{}`, and select took `{key}`. Those were incompatible with gold.
-The pinned command handler in `preferences/src/nav.rs` returns
-`{query,hits}`; older prose and `navigation::search` describe a section
-helper, not that canonical command. Native oracle readbacks confirm this.
+## Corrections from pinned gold
 
-Gold exposes 42 pages in COSMIC order, starting at Desktop. Its pending
-pages and disabled backend controls are part of the target too; they must
-retain their notices and refusals. Page/control descriptors, labels,
-navigation and read-only search now have Mix representations. A generic
-registry editor cannot substitute for those pages or their specialised
-workflows. `provenance.md` in the app records the source adaptation.
+The old registry specimen and its “ported” labels did not establish gold
+parity. `prefs.search` returns `{query,hits}` with page/row targets and leaves
+the window unchanged, including beneath a dialog. It does not return the
+older section helper's `matches`. `prefs.select {app}` opens that software
+group, selects the catalogue app and requests notes. Registry key selection
+uses the separate `prefs.registry.select` extension.
 
-The shared frame is adopted and has an exact-source CBC checkpoint at
-`48b5b430f56fd7c2101f199ef15cd2cd89cabdde`; its scoped checks/test/clippy/build
-gate passed. Live Prefs appearance follows the shared host session. Native
-per-app response, full input matrix, gold Bus surface and matched visual
-acceptance are still outstanding; the older deferred self-restyling entry
-above is superseded by frame adoption, not by a full acceptance claim.
+Gold's typed `prefs.page.open`, `prefs.set` and `prefs.item` replies wrap the
+result as `{executed,result}`. Gold's Appearance Import/Export extras and
+several backend controls are disabled pending work; their disabled state,
+notice and refusal belong in parity. Implementing future backends would
+change the target.
 
-settingsd may be a mixd personality; no engine/interpreter migration is part of
-this port. No settings registry or validation is copied into Rust.
+## Evidence and remaining gate
 
-Launch: `viu run apps/prefs [INSTANCE]` (default MIXOS_INSTANCE or desktop).
-The original's transactional wire is settings.apply; unfenced settings.set is
-deliberately unused. Read/write work uses the generic host's owned jobs;
-`prefs.info` reports busy state, role, stale status, fence and visible errors.
-Apply preserves the fence captured before draft editing. Explicit refresh
-discards the draft and recovers after an uncertain outcome without replaying it.
-Generic editors do not imply specialised-page parity or service acceptance of
-every described key; settingsd's typed refusal is displayed.
+The native oracle binary reports `prefs 0.1.2 (8779f33284b7, built
+2026-11-04T19:10:04Z)`. Private capture run `pair.WrTxPr` uses isolated native
+Bus/settingsd/headless compd, gold first, equal 1040×680 clients, scale 1,
+Studio Dark, CSD, right captions, bar menus and row actions. All owned
+processes were confirmed stopped. The candidate artifact comes from tested
+source `f6370e6ce2260b87ec244177048823115b2f056d`.
+
+ImageMagick 7.1.2-35 reports SSIM **distortion**, zero identical: Appearance
+full `0.113842`, header `0.120927`, sidebar `0.0670151`, content `0.131337`.
+Originals, montage and regional differences were inspected. The frame has a
+content gap and displaced title/actions; page headings, preview/card sizes,
+palette chips and disabled controls differ. These are unresolved differences,
+not accepted anti-aliasing differences. Whole-app verdict remains **FAIL**.
+
+Recent CBC evidence: `20261107-024331-ac8cf226-a1` passed the scoped
+fmt/check/test/clippy/build sequence with a returned formatting diff;
+`20261107-030733-1696f3b7-a1` passed six focused Prefs/deferred-request tests.
+Worker formatting and lock patches were applied locally. The final
+exact-source gate, native functional/Bus/Prefs matrix and further matched
+captures remain required under `parity-method.md`.

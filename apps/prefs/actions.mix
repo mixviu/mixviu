@@ -3,6 +3,7 @@
 $n=require("navigation.mix")
 $email=require("email.mix")
 $registry=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
+$menu_template=json_parse(read_file(path_join(dirname(script_path()),"menus.json")))
 fn theme_choice($s)
   return {scheme:$s.ui.theme_scheme,mode:$s.ui.theme_mode,style:$s.ui.theme_style,decorations:$s.ui.theme_decorations,caption_side:$s.ui.theme_captions}
 end
@@ -84,16 +85,22 @@ fn action_list($s)
 end
 fn menus($s)
   $all=action_list($s).actions;$out=[]
-  for $name in ["File","View","Help"]
-    $children=[];$themes=[]
-    for $a in filter($all,fn($a)=$a.menu==$name)
-      $item={id:$a.id,label:$a.label,enabled:$a.enabled}
-      if $a.checked!=nil then $item.checked=$a.checked end
-      if starts_with($a.id,"view.theme.") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.mode.") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.") then push($themes,$item)
-      else push($children,$item) end
+  for $menu in $menu_template.menus
+    push($out,{id:lower($menu.title),label:$menu.title,enabled:true,children:menu_rows($menu.rows,$all)})
+  end
+  return $out
+end
+fn menu_rows($rows,$all)
+  $out=[]
+  for $row in $rows
+    if $row.separator ?? false then push($out,{separator:true});continue end
+    $item={id:$row.id ?? lower($row.label),label:$row.label,enabled:$row.enabled,shortcut:$row.shortcut}
+    if $row.submenu!=nil then $item.children=menu_rows($row.submenu,$all)
+    else
+      $a=filter($all,fn($a)=$a.id==$row.id)[0]
+      if $a!=nil then $item.enabled=$a.enabled;$item.checked=$a.checked end
     end
-    if len($themes)>0 then push($children,{id:"theme",label:"Theme",enabled:true,children:$themes}) end
-    push($out,{id:lower($name),label:$name,enabled:true,children:$children})
+    push($out,$item)
   end
   return $out
 end

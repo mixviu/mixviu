@@ -113,7 +113,11 @@ impl Endpoint {
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
-                let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).with_commands(commands);
+                // An explicitly declared HELP belongs to application policy,
+                // including its public compatibility surface. The host's
+                // private automation commands must not replace that reply.
+                let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32);
+                let options=if commands.iter().any(|entry|entry.name=="HELP"){options}else{options.with_commands(commands)};
                 let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");return;}}};
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=Some(native.clone());

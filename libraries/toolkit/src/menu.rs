@@ -31,7 +31,7 @@ use egui::{
     Area, Color32, Context, Frame, Id, Key, Modifiers, Order, PointerButton, Pos2, Rect, Role,
     ScrollArea, Sense, Stroke, TextEdit, Ui, UiKind, Vec2, WidgetInfo, pos2, text::Galley, vec2,
 };
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 /// The stock submenu arrow, in the shortcut column (§3.5).
 pub const SUBMENU_ARROW: &str = "⏵";
@@ -62,7 +62,7 @@ impl Entry {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
     /// The command run by this row; `None` for a submenu row.
-    pub id: Option<&'static str>,
+    pub id: Option<Cow<'static, str>>,
     pub label: String,
     /// Already formatted for the platform ("Ctrl+Alt+Shift+O").
     pub shortcut: Option<String>,
@@ -82,7 +82,7 @@ impl Row {
         enabled: bool,
     ) -> Self {
         Self {
-            id: Some(id),
+            id: Some(Cow::Borrowed(id)),
             label: label.into(),
             shortcut,
             enabled,
@@ -241,12 +241,12 @@ pub enum NavKey {
 }
 
 /// What a navigation step did.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
     /// The menus are still open (possibly a different one).
     Stay,
     /// The command was chosen; every menu is now closed.
-    Run(&'static str),
+    Run(Cow<'static, str>),
     /// Every menu is now closed.
     Closed,
 }
@@ -417,7 +417,7 @@ impl Nav {
                     enabled: true,
                     ..
                 }) => {
-                    let id = *id;
+                    let id = id.clone();
                     self.close();
                     return Outcome::Run(id);
                 }
@@ -767,7 +767,7 @@ impl Nav {
 
     pub fn activate(&mut self, menus: &[Menu], edit: bool) -> Option<Pick> {
         match self.key(NavKey::Enter, menus) {
-            Outcome::Run(id) => Some(Pick { id, edit }),
+            Outcome::Run(Cow::Borrowed(id)) => Some(Pick { id, edit }),
             _ => None,
         }
     }
@@ -1062,7 +1062,7 @@ pub fn popup(ctx: &Context, side: Option<design::MenuSide>, x: Option<f32>) -> R
     Ok(())
 }
 
-pub(crate) fn toggle(ctx: &Context) {
+pub fn toggle(ctx: &Context) {
     let state_key = state_id(ctx);
     let mut st: State = ctx.data(|d| d.get_temp(state_key)).unwrap_or_default();
     st.popup_anchor = None;
@@ -1268,7 +1268,25 @@ pub fn bar_picked(
     menus: &[Menu],
     search: Option<&Search>,
 ) -> Option<(&'static str, bool)> {
-    render_picked(ui, menus, search, None)
+    render_picked(ui, menus, search, None).and_then(static_pick)
+}
+
+fn static_pick((id, searched): (Cow<'static, str>, bool)) -> Option<(&'static str, bool)> {
+    match id {
+        Cow::Borrowed(id) => Some((id, searched)),
+        Cow::Owned(_) => None,
+    }
+}
+
+/// The same native menu/input/drive path for data-authored command identities.
+/// Owned ids live with the bounded menu model; no strings are leaked or interned.
+pub fn data_picked(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<String> {
+    render_picked(ui, menus, search, None).map(|(id, _)| id.into_owned())
+}
+
+/// Data-authored counterpart of the native compact form.
+pub fn data_compact_picked(ui: &mut Ui, menus: &[Menu], search: Option<&Search>, anchor: Rect) -> Option<String> {
+    render_picked(ui, menus, search, Some(anchor)).map(|(id, _)| id.into_owned())
 }
 
 /// Draw the nested vertical form from a button, or a content-edge anchor.
@@ -1278,7 +1296,7 @@ pub fn compact_picked(
     search: Option<&Search>,
     anchor: Rect,
 ) -> Option<(&'static str, bool)> {
-    render_picked(ui, menus, search, Some(anchor))
+    render_picked(ui, menus, search, Some(anchor)).and_then(static_pick)
 }
 
 fn render_picked(
@@ -1286,7 +1304,7 @@ fn render_picked(
     menus: &[Menu],
     search: Option<&Search>,
     anchor: Option<Rect>,
-) -> Option<(&'static str, bool)> {
+) -> Option<(Cow<'static, str>, bool)> {
     let ctx = ui.ctx().clone();
     let state_key = state_id(&ctx);
     let chrome = Chrome::of(&ctx);
@@ -1564,7 +1582,7 @@ fn render_picked(
                                 .iter()
                                 .filter_map(Entry::row)
                                 .find(|r| r.enabled && r.id.is_some())
-                                .and_then(|r| r.id)
+                                .and_then(|r| r.id.clone())
                         });
                     if let Some(id) = first {
                         fired = Some((id, in_results(&st)));
@@ -1791,7 +1809,7 @@ fn render_picked(
                     ..
                 }) = entries[index].row()
             {
-                fired = Some((*id, in_results(&st)));
+                fired = Some((id.clone(), in_results(&st)));
                 st.nav.close();
                 break;
             }
@@ -1878,7 +1896,7 @@ fn render_picked(
                     ..
                 },
             )) if st.nav.open.is_some() => {
-                fired = Some((*id, in_results(&st)));
+                fired = Some((id.clone(), in_results(&st)));
                 st.nav.close();
             }
             Some((level, index, row)) if row.enabled && st.nav.submenu(row, level) => {
@@ -2241,7 +2259,7 @@ fn level_rows(
                 })
                 .and_then(|tips| {
                     tips.into_iter()
-                        .find(|(id, _)| Some(*id) == row.id)
+                        .find(|(id, _)| Some(*id) == row.id.as_deref())
                         .map(|(_, tip)| tip)
                 })
             {
@@ -2701,7 +2719,7 @@ mod tests {
         );
         nav.key(NavKey::Down, &m);
         nav.key(NavKey::Down, &m);
-        assert_eq!(nav.key(NavKey::Enter, &m), Outcome::Run("open"));
+        assert_eq!(nav.key(NavKey::Enter, &m), Outcome::Run("open".into()));
         assert_eq!(nav.open_menu(), None, "running closes every menu");
         let mut nav = opened();
         nav.hover(0, 1, &m);

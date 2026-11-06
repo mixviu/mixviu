@@ -984,7 +984,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
         }
         match node.family.as_str() {
             "band" => {
-                band_groups(node, 0.0, design::title_band::Alignment::Right,&|_| 0.0)?;
+                band_groups(node, 0.0, design::title_band::Alignment::Right, &|_| 0.0)?;
                 for child in children(node) {
                     let group = &node.ports["groups"][child];
                     if group["preferred"] == "content" || group["minimum"] == "content" {

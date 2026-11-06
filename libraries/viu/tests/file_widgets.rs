@@ -44,6 +44,45 @@ fn frame(
 }
 
 #[test]
+fn data_authored_menus_share_native_model_and_keyboard_activation() {
+    let ctx = egui::Context::default();
+    viu::appearance::install(&ctx);
+    let widget = Widget::new("commands", "menubar", "", json!([
+        {"id":"file","label":"File","enabled":true,"children":[
+            {"id":"runtime.command-42","label":"Run owned command","enabled":true,"shortcut":"Ctrl+R"},
+            {"separator":true},
+            {"id":"disabled","label":"Refused command","enabled":false}
+        ]}
+    ])).with_properties(json!({"native_menu":true}));
+    let mut widgets = Widgets::default();
+    for _ in 0..2 { frame(&ctx, &mut widgets, &widget, vec![]); }
+    let model = toolkit::menu::model(&ctx);
+    assert_eq!(model[0].title, "File");
+    assert_eq!(model[0].entries[0].row().unwrap().id.as_deref(), Some("runtime.command-42"));
+    assert!(!model[0].entries[2].row().unwrap().enabled);
+    toolkit::menu::open_path(&ctx, &["File".into()]).unwrap();
+    let key = |key| egui::Event::Key {
+        key, physical_key:Some(key), pressed:true, repeat:false, modifiers:egui::Modifiers::NONE,
+    };
+    frame(&ctx, &mut widgets, &widget, vec![key(egui::Key::ArrowDown)]);
+    let intents = frame(&ctx, &mut widgets, &widget, vec![key(egui::Key::Enter)]);
+    assert!(intents.iter().any(|i|i.id=="commands" && i.action=="command" && i.value["command"]=="runtime.command-42"), "{intents:?}");
+    assert!(!toolkit::menu::is_open(&ctx));
+}
+
+#[test]
+fn browser_actions_are_admitted_through_the_public_widget_boundary() {
+    let widget = Widget::new("browser", "settings-browser", "", json!({
+        "title":"Settings","pages":[{"id":"page","title":"Page"}],
+        "sections":[{"rows":[{"id":"toggle","title":"Enabled","kind":"toggle","value":false}]}]
+    }));
+    assert!(widget.admit(&json!({}),"edit",&json!({"row":"toggle","value":true})).is_ok());
+    assert!(widget.admit(&json!({}),"navigate",&json!({"page":"page"})).is_ok());
+    assert!(widget.admit(&json!({}),"edit",&json!({"row":"missing","value":true})).is_err());
+    assert!(widget.admit(&json!({}),"edit",&json!({"row":"toggle","value":"true"})).is_err());
+}
+
+#[test]
 fn scene_container_gaps_do_not_change_the_shared_controls_internal_spacing() {
     let ctx = egui::Context::default();
     let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();

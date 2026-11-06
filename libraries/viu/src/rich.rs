@@ -130,7 +130,16 @@ pub fn actions(kind: &str) -> Vec<&'static str> {
     match kind {
         "menubar" | "command-bar" => vec!["set", "command"],
         "dialog-form" => vec!["set", "edit", "answer"],
-        "settings-browser" => vec!["set","navigate","query","edit","activate","remove","problem","drawer.close"],
+        "settings-browser" => vec![
+            "set",
+            "navigate",
+            "query",
+            "edit",
+            "activate",
+            "remove",
+            "problem",
+            "drawer.close",
+        ],
         _ => vec!["set"],
     }
 }
@@ -406,6 +415,47 @@ fn menu_roots(
         }
     }
 }
+
+fn native_entries(value: &Value) -> Vec<toolkit::menu::Entry> {
+    value.as_array().into_iter().flatten().map(|item| {
+        if item["separator"] == true {
+            return toolkit::menu::Entry::Separator;
+        }
+        let children = native_entries(&item["children"]);
+        toolkit::menu::Entry::Row(toolkit::menu::Row {
+            id: if item["children"].is_array() { None } else { Some(text(item, "id").to_owned().into()) },
+            label: text(item, "label").into(),
+            shortcut: item["shortcut"].as_str().map(str::to_owned),
+            enabled: item["enabled"] == true,
+            checked: item["checked"].as_bool(),
+            children,
+        })
+    }).collect()
+}
+
+fn native_menu(ui: &mut Ui, value: &Value, id: &str, events: &mut Vec<Intent>) -> egui::Response {
+    let menus: Vec<_> = value.as_array().into_iter().flatten().map(|item| toolkit::menu::Menu {
+        title: text(item, "label").into(), entries: native_entries(&item["children"]),
+    }).collect();
+    let search = menus.iter().position(|m| m.title == "Help").map(|menu| toolkit::menu::Search {
+        menu, hint: toolkit::strings::own("search-menus"), empty: toolkit::strings::own("no-matching-commands"),
+    });
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let form = menu_form(ui.ctx());
+        let picked = if form["effective"] == "bar" {
+            toolkit::menu::data_picked(ui, &menus, search.as_ref())
+        } else {
+            let response = ui.add(toolkit::IconButton::new(toolkit::Icon::Menu).tooltip("Window menu"));
+            if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
+                || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary)) {
+                toolkit::menu::toggle(ui.ctx());
+            }
+            toolkit::menu::data_compact_picked(ui, &menus, search.as_ref(), response.rect)
+        };
+        if let Some(command) = picked { emit(events, id, "command", json!({"command":command})); }
+    }).response
+}
 pub(crate) fn draw(
     ui: &mut Ui,
     widget: &Widget,
@@ -417,6 +467,9 @@ pub(crate) fn draw(
     match widget.kind.as_str() {
         "settings-browser" => crate::settings_browser::draw(ui, id, value, geometry, events),
         "menubar" => {
+            if widget.properties["native_menu"] == true {
+                return native_menu(ui, value, id, events);
+            }
             let form = menu_form(ui.ctx());
             let response = if form["hosted"] == true {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
@@ -492,23 +545,41 @@ pub(crate) fn draw(
                             .as_str()
                             .and_then(crate::icons::Icon::from_name)
                         {
-                            if item["plain"]==true {
-                                let response=ui.add_enabled(item["enabled"]==true,egui::Button::image(crate::icons::image_of(ui.ctx(),icon,16.0,ui.visuals().weak_text_color())).frame(false).min_size(egui::vec2(28.0,28.0)));
-                                response.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,ui.is_enabled(),text(item,"label")));
+                            if item["plain"] == true {
+                                let response = ui.add_enabled(
+                                    item["enabled"] == true,
+                                    egui::Button::image(crate::icons::image_of(
+                                        ui.ctx(),
+                                        icon,
+                                        16.0,
+                                        ui.visuals().weak_text_color(),
+                                    ))
+                                    .frame(false)
+                                    .min_size(egui::vec2(28.0, 28.0)),
+                                );
+                                response.widget_info(|| {
+                                    egui::WidgetInfo::labeled(
+                                        egui::Role::Button,
+                                        ui.is_enabled(),
+                                        text(item, "label"),
+                                    )
+                                });
                                 response
-                            } else {crate::icons::button(
-                                ui,
-                                icon,
-                                if item["icon_only"] == true {
-                                    ""
-                                } else {
-                                    text(item, "label")
-                                },
-                                16.0,
-                                None,
-                                item["enabled"] == true,
-                                item["checked"] == true,
-                            )}
+                            } else {
+                                crate::icons::button(
+                                    ui,
+                                    icon,
+                                    if item["icon_only"] == true {
+                                        ""
+                                    } else {
+                                        text(item, "label")
+                                    },
+                                    16.0,
+                                    None,
+                                    item["enabled"] == true,
+                                    item["checked"] == true,
+                                )
+                            }
                         } else {
                             ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
                         };

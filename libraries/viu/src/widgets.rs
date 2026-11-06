@@ -478,7 +478,13 @@ impl Widgets {
                     crate::window_frame::caption_controls(
                         ui,
                         area,
-                        value["side"] == "left" || (value["side"]=="auto" && ui.ctx().data(|d|d.get_temp::<design::title_band::Alignment>(Id::unique("viu-caption-alignment")))==Some(design::title_band::Alignment::Left)),
+                        value["side"] == "left"
+                            || (value["side"] == "auto"
+                                && ui.ctx().data(|d| {
+                                    d.get_temp::<design::title_band::Alignment>(Id::unique(
+                                        "viu-caption-alignment",
+                                    ))
+                                }) == Some(design::title_band::Alignment::Left)),
                         &widget.id,
                     )
                 });

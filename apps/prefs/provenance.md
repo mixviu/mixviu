@@ -16,3 +16,15 @@ Navigation and search behaviour in `navigation.mix` follows `nav.rs`,
 The pinned canonical `prefs.search` returns `{query, hits}` with page/row
 targets. The older section search helper and prose describing `matches`
 are superseded by this handler. Search does not alter window state.
+
+Specialised Terminal, Ced, Email, Software and wallpaper composition and
+reducers follow the same pinned engine's terminal, text, email, store,
+appearance and wallpaper modules and native shell/view code. Pending controls
+remain pending where gold has no backend or extra action.
+
+Reusable Viu media controls use the existing toolkit native chooser and image
+decoder. The font catalogue reuses gold's pure-Rust fontdb 0.23 discovery path
+(including its default fontconfig parser); no new native C library or parallel
+service is introduced. Keyboard layout labels and variants come from the
+host's XKB rules data, parsed by Mix worker jobs. Runtime data, private paths,
+captures and service credentials are not shipped in this bundle.

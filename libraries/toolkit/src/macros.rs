@@ -1713,7 +1713,7 @@ mod tests {
             menu.entries
                 .iter()
                 .filter_map(MenuEntry::row)
-                .filter(|r| r.id.is_some_and(|id| SLOTS.contains(&id)))
+                .filter(|r| r.id.as_deref().is_some_and(|id| SLOTS.contains(&id)))
                 .all(|r| !r.enabled)
         );
         assert!(
