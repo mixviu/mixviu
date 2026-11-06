@@ -5,7 +5,7 @@
 [workspace]
 resolver = "3"
 # libs/* includes maildoc and every other shared library component.
-members = ["libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","engines/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd"]
+members = ["engines/compd","engines/compd/crates/*","engines/viu","engines/viud","libraries/viu","libraries/theme","libraries/toolkit","libraries/thumbs","libraries/action","libraries/icons","libraries/editor","libraries/editor-model","libraries/macros","libraries/syntax","libraries/inputd-core","libraries/inputd-schema","libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","engines/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd"]
 
 [workspace.package]
 version = "0.1.2"
@@ -19,6 +19,53 @@ repository = "https://github.com/mixviu/mixviu"
 warnings = "allow"
 
 [workspace.dependencies]
+input = { path = "vendor/input" }
+calloop = { path = "vendor/calloop" }
+inputd-core = { path = "libraries/inputd-core" }
+world = { path = "engines/compd/crates/world" }
+ui = { path = "engines/compd/crates/ui" }
+surfaces = { path = "engines/compd/crates/surfaces" }
+slots = { path = "engines/compd/crates/slots" }
+render-gles = { path = "engines/compd/crates/render-gles" }
+policy = { path = "engines/compd/crates/policy" }
+motion = { path = "engines/compd/crates/motion" }
+model = { path = "engines/compd/crates/model" }
+ledger = { path = "engines/compd/crates/ledger" }
+kms = { path = "engines/compd/crates/kms" }
+graphics = { path = "engines/compd/crates/graphics" }
+testkit = { path = "engines/compd/crates/testkit" }
+seat = { path = "engines/compd/crates/seat" }
+scene-host = { path = "engines/compd/crates/scene-host" }
+scenegraph = { path = "engines/compd/crates/scenegraph" }
+recorder = { path = "engines/compd/crates/recorder" }
+policy-host = { path = "engines/compd/crates/policy-host" }
+outputs = { path = "engines/compd/crates/outputs" }
+headless = { path = "engines/compd/crates/headless" }
+nested = { path = "engines/compd/crates/nested" }
+native = { path = "engines/compd/crates/native" }
+frames = { path = "engines/compd/crates/frames" }
+edges = { path = "engines/compd/crates/edges" }
+x11-wm = { path = "engines/compd/crates/x11-wm" }
+screencopy = { path = "engines/compd/crates/screencopy" }
+protocols = { path = "engines/compd/crates/protocols" }
+effects = { path = "engines/compd/crates/effects" }
+drivers = { path = "engines/compd/crates/drivers" }
+dispatcher = { path = "engines/compd/crates/dispatcher" }
+decor = { path = "engines/compd/crates/decor" }
+comp-service = { path = "engines/compd/crates/comp-service" }
+comp-model = { path = "engines/compd/crates/comp-model" }
+smithay = { path = "vendor/smithay", version = "0.7.0", default-features = false, features = ["backend_drm", "backend_egl", "backend_gbm", "backend_libinput", "backend_session_libseat", "backend_udev", "backend_winit", "desktop", "drm", "gbm", "renderer_gl", "renderer_multi", "renderer_pixman", "use_system_lib", "wayland-egl", "wayland_frontend", "xwayland"] }
+toolkit = { path = "libraries/toolkit" }
+thumbs = { path = "libraries/thumbs" }
+syntax = { path = "libraries/syntax" }
+macros = { path = "libraries/macros" }
+editor-model = { path = "libraries/editor-model", default-features = false }
+editor = { path = "libraries/editor" }
+icons = { path = "libraries/icons" }
+action = { path = "libraries/action" }
+theme = { path = "libraries/theme" }
+ui-surface = { path = "engines/compd/crates/ui-surface" }
+overlays = { path = "engines/compd/crates/overlays" }
 async-stream = "0.3"
 async-trait = "0.1"
 bcrypt = "0.16"
@@ -174,6 +221,10 @@ mesh = { path = "libraries/mesh" }
 mesh-trust = { path = "libraries/mesh-trust" }
 
 [patch.crates-io]
+eframe = { path = "vendor/eframe" }
+egui-wgpu = { path = "vendor/egui-wgpu" }
+calloop = { path = "vendor/calloop" }
+input = { path = "vendor/input" }
 # dirs-sys without option-ext (MixOS vendor/README.md).
 dirs-sys = { path = "vendor/dirs-sys" }
 # maild's parser nesting safeguard (MixOS vendor/mail-parser/PATCHES.md).

@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$edge=require("effects.mix")
+fn effect_test_check($ok,$message)
+  if not $ok then raise("CHECK_FAILED",$message) end
+end
+for $path in ["/tmp/a b.txt","file:///tmp/raw%FF.txt"]
+  effect_test_check(deep_eq($edge.dopus_open_argv($path),["xdg-open",$path]),"opener argv preserves the local path token")
+end
+$refusals=0
+for $bad in [nil,[],"relative","file://remote.example/path","file:///tmp/bad%00name"]
+  $refused=false
+  try $edge.dopus_open_argv($bad) catch $message $refused=true end
+  effect_test_check($refused,"invalid local opener path refuses before any process is started")
+  $refusals=$refusals+1
+end
+print(json_encode({checks:2,refusals:$refusals,result:"passed",spawned:false}))

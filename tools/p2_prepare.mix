@@ -1,0 +1,11 @@
+-- CBC only: resolve the integrated workspace and return lock/fmt changes.
+try
+  print(run_argv_must(["cargo","metadata","--no-deps","--format-version","1"]))
+  print(run_argv_must(["cargo","generate-lockfile"]))
+  print(run_argv_must(["cargo","fmt","--all"]))
+finally
+  print("P2_PATCH_BEGIN")
+  print(run_argv_must(["git","diff","--binary"]))
+  print("P2_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+end

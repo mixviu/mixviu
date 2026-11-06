@@ -1,0 +1,78 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Application-owned schema/default/migration rules, matching the retained
+-- native Dopus config. Unknown fields are retained only by the original file;
+-- malformed documents set a poison pill and are never overwritten.
+fn dp_defaults()
+  $home=env("HOME","/")
+  $right=if is_dir(path_join($home,"Downloads")) then path_join($home,"Downloads") else $home end
+  return {schema_version:2,left:{path:$home,show_hidden:false,sort:"name",ascending:true,previews:true},right:{path:$right,show_hidden:false,sort:"name",ascending:true,previews:true},active_pane:"left",split_ratio:0.5,places:{open:true,width:0.15},properties:{open:true,width:0.22},bookmarks:[],remote_previews:false}
+end
+fn dp_config_type($value,$kind,$name)
+  if type($value)!=$kind then raise("CONFIG_SHAPE","Invalid configuration "..$name) end
+end
+fn dp_parse_config($raw)
+  dp_config_type($raw,"map","root")
+  $out=dp_defaults()
+  if dp_config_has($raw,"schema_version") then
+    if not contains([1,2],$raw.schema_version) then raise("CONFIG_SCHEMA","Unsupported configuration schema") end
+    $out.schema_version=$raw.schema_version
+  end
+  for $side in ["left","right"]
+    if dp_config_has($raw,$side) then
+      dp_config_type($raw[$side],"map",$side)
+      for $key in ["path","show_hidden","sort","ascending","previews"]
+        if dp_config_has($raw[$side],$key) then
+          $value=$raw[$side][$key]
+          dp_config_type($value,if contains(["path","sort"],$key) then "string" else "bool" end,$side.."."..$key)
+          if $key=="sort" and not contains(["name","size","modified"],$value) then raise("CONFIG_SHAPE","Invalid pane sort") end
+          $out[$side][$key]=$value
+        end
+      end
+    end
+  end
+  for $key in ["active_pane","split_ratio","remote_previews"]
+    if dp_config_has($raw,$key) then
+      dp_config_type($raw[$key],if $key=="active_pane" then "string" elif $key=="split_ratio" then "number" else "bool" end,$key)
+      $out[$key]=$raw[$key]
+    end
+  end
+  for $key in ["places","properties"]
+    if dp_config_has($raw,$key) then
+      dp_config_type($raw[$key],"map",$key)
+      if dp_config_has($raw[$key],"open") then dp_config_type($raw[$key].open,"bool",$key..".open");$out[$key].open=$raw[$key].open end
+      if dp_config_has($raw[$key],"width") then dp_config_type($raw[$key].width,"number",$key..".width");$out[$key].width=clamp($raw[$key].width,0.1,0.3) end
+    end
+  end
+  if dp_config_has($raw,"bookmarks") then
+    dp_config_type($raw.bookmarks,"list","bookmarks")
+    for $item in $raw.bookmarks
+      dp_config_type($item,"map","bookmark")
+      dp_config_type($item.name,"string","bookmark.name");dp_config_type($item.path,"string","bookmark.path")
+    end
+    $out.bookmarks=$raw.bookmarks
+  end
+  if $out.schema_version==1 then $defaults=dp_defaults();$out.places=$defaults.places;$out.properties=$defaults.properties end
+  $out.schema_version=2
+  return $out
+end
+fn dp_load_config($path)
+  $config=dp_defaults();$save=true;$warning=""
+  try
+    $read=viu_read_optional($path)
+    if $read.found then $config=dp_parse_config(data_parse($read.text)) end
+  catch $message $save=false;$warning="Configuration retained: "..$message end
+  return {value:$config,save_allowed:$save,warning:$warning}
+end
+
+fn dp_config_has($map,$key)
+  return contains(keys($map),$key)
+end
+
+fn dp_places($config)
+  $home=env("HOME","/");$places=[]
+  for $place in [{name:"Home",path:$home},{name:"Filesystem",path:"/"},{name:"Desktop",path:$home.."/Desktop"},{name:"Documents",path:$home.."/Documents"},{name:"Downloads",path:$home.."/Downloads"},{name:"Music",path:$home.."/Music"},{name:"Pictures",path:$home.."/Pictures"},{name:"Videos",path:$home.."/Videos"}]
+    if $place.path=="/" or $place.name=="Home" or is_dir($place.path) then push($places,$place) end
+  end
+  return concat($places,$config.bookmarks ?? [])
+end

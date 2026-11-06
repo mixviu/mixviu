@@ -1,0 +1,33 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+fn request($a)
+  if type($a)!="map" then raise("ARGUMENT","Capture requires a map") end
+  for $k in keys($a) if not contains(["mode","output","window","region","cursor","delay"],$k) then raise("ARGUMENT","Unknown capture field: "..$k) end end
+  $r={mode:$a.mode ?? "screen",cursor:$a.cursor ?? false,delay:$a.delay ?? 0}
+  if not contains(["screen","window","region"],$r.mode) or type($r.cursor)!="bool" or type($r.delay)!="number" then raise("ARGUMENT","Invalid mode, cursor or delay") end
+  if $r.delay<0 or $r.delay>10 or floor($r.delay)!=$r.delay then raise("DELAY","Delay must be integer 0..10") end
+  if $a.output!=nil then
+    if type($a.output)!="string" or len($a.output)==0 or len($a.output)>256 then raise("OUTPUT","Invalid output name") end
+    $r.output=$a.output
+  end
+  if $r.mode=="window" then
+    if type($a.window)!="map" then raise("WINDOW","Choose an id and generation") end
+    for $key in ["id","generation"] if type($a.window[$key])!="number" or $a.window[$key]<0 or floor($a.window[$key])!=$a.window[$key] then raise("WINDOW","Invalid window identity") end end
+    if len(keys($a.window))!=2 or $a.output!=nil then raise("WINDOW","Window target must stand alone") end
+    $r.window=$a.window
+  elif $a.window!=nil then raise("WINDOW","Window applies only to window mode") end
+  if $a.region!=nil then
+    if $r.mode!="region" or type($a.region)!="map" then raise("REGION","Region applies only to region mode") end
+    for $key in ["x","y","width","height"]
+      $n=$a.region[$key]
+      if type($n)!="number" or floor($n)!=$n or $n<0 or $n>2147483647 then raise("REGION","Invalid rectangle") end
+    end
+    if $a.region.width==0 or $a.region.height==0 or $a.region.x+$a.region.width>2147483647 or $a.region.y+$a.region.height>2147483647 or len(keys($a.region))!=4 then raise("REGION","Invalid extent or fields") end
+    $r.region=$a.region
+  end
+  return $r
+end
+fn model($s)
+  $outputs=concat(["Pointer output"],$s.outputs);$windows=concat(["Choose window"],map($s.windows,fn($w)=to_string($w.id)..":"..to_string($w.generation).." "..$w.title))
+  return {status:$s.status,destination:"Save folder: "..$s.folder.." · "..if $s.path==nil then "No image" else to_string($s.image.width).." × "..to_string($s.image.height).." pixels" end,output_control:{id:"output",kind:"combo",label:"Output",initial:"Pointer output",properties:{choices:$outputs}},window_control:{id:"window",kind:"combo",label:"Window",initial:"Choose window",properties:{choices:$windows}},values:{mode:$s.mode,cursor:$s.cursor,output:$s.output,window:$s.window,preview:if $s.path==nil then {phase:"none",colour:[25,28,32],fit:"fit"} else {phase:"ready",path:$s.path,colour:[25,28,32],fit:"fit"} end}}
+end

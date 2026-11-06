@@ -1,0 +1,55 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+fn rgb($text)
+  if starts_with($text,"gradient:") then $text=split(substr($text,9),",")[0] end
+  if not re_match($text,"^#[0-9a-fA-F]{6}$") then raise("COLOUR","Expected #RRGGBB") end
+  $out=[];$digits="0123456789abcdef";$text=lower($text)
+  for $i in [1,3,5] push($out,index_of($digits,substr($text,$i,1))*16+index_of($digits,substr($text,$i+1,1))) end
+  return $out
+end
+fn fill_model($fill)
+  if type($fill)!="map" then raise("DOCUMENT","Fill must be a map") end
+  for $key in keys($fill)
+    if not contains(["colour","image","fallback","fit"],$key) then raise("DOCUMENT","Unsupported fill key: "..$key) end
+  end
+  if $fill.colour!=nil and $fill.image!=nil then raise("DOCUMENT","Choose colour or image") end
+  $fit=$fill.fit ?? "fill"
+  if not contains(["fill","fit","centre","tile","stretch"],$fit) then raise("FIT","Unknown fit") end
+  $value={phase:"none",fit:$fit,colour:rgb($fill.colour ?? $fill.fallback ?? "#1e1e2e")}
+  if $fill.image!=nil then
+    if type($fill.image)!="string" or not starts_with($fill.image,"/") or len($fill.image)>4096 then raise("IMAGE","Expected absolute image path") end
+    $value.phase="ready";$value.path=$fill.image
+  end
+  return {values:{root:$value}}
+end
+fn document_model($doc)
+  if type($doc)!="map" or $doc.schema!=1 then raise("DOCUMENT","Expected schema 1") end
+  for $key in keys($doc) if not contains(["schema","default","outputs"],$key) then raise("DOCUMENT","Unknown document key") end end
+  $outputs=$doc.outputs ?? {}
+  if type($outputs)!="map" or len(keys($outputs))>64 then raise("OUTPUTS","At most 64 output overrides") end
+  $model=fill_model($doc.default ?? {});$model.surfaces={};$images=[]
+  if $doc.default.image!=nil then push($images,$doc.default.image) end
+  for $name in keys($outputs)
+    if len($name)==0 or len($name)>64 then raise("OUTPUTS","Invalid output name") end
+    $model.surfaces[$name]=fill_model($outputs[$name])
+    if $outputs[$name].image!=nil and not contains($images,$outputs[$name].image) then push($images,$outputs[$name].image) end
+  end
+  if len($images)>4 then raise("IMAGES","At most four distinct images") end
+  return $model
+end
+fn settings_document($v)
+  if $v["wallpaper.slideshow.enabled"]==true then raise("SLIDESHOW_DEFERRED","Slideshow unsupported in this specimen") end
+  $fill={}
+  if $v["wallpaper.image"]!=nil then $fill={image:$v["wallpaper.image"],fit:$v["wallpaper.fit"] ?? "fill"}
+  elif $v["wallpaper.color"]!=nil then $fill={colour:$v["wallpaper.color"]} end
+  $doc={schema:1,default:$fill,outputs:{}}
+  if $v["wallpaper.same_on_all"]==false then
+    for $key in keys($v)
+      if starts_with($key,"wallpaper.outputs.") and ends_with($key,".image") then
+        $name=substr($key,18,len($key)-24)
+        $doc.outputs[$name]={image:$v[$key],fit:$v["wallpaper.fit"] ?? "fill"}
+      end
+    end
+  end
+  return $doc
+end

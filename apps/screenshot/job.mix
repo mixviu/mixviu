@@ -1,0 +1,29 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+on job.run
+  $a=$event.args
+  if $a.op=="export" then
+    $info=viu_image("export",$a.source,$a.path)
+    reply(0,json_encode({path:$a.path,image:$info,op:"export"}))
+  else
+    $r=$a.request
+    if $r.delay>0 then sleep($r.delay) end
+    send $a.comp "comp.window.minimize" body=$a.own timeout=5
+    if $rc!=0 or $reply.minimized!=true then raise("HIDE","Compositor did not confirm minimisation") end
+    $frame={path:$a.path,cursor:$r.cursor}
+    if $r.output!=nil then $frame.output=$r.output end
+    if $r.window!=nil then $frame.window=$r.window end
+    if $r.region!=nil then $frame.region=$r.region
+    elif $r.mode=="region" then
+      send $a.comp "comp.region.select" body={output:$r.output,timeout_ms:60000} timeout=70
+      if $rc!=0 or $reply.status!="selected" then raise("SELECTION",json_encode($reply)) end
+      $frame.output=$reply.output;$frame.region=$reply.region;$frame.output_generation=$reply.output_generation
+    end
+    send $a.comp "comp.capture.frame" body=$frame timeout=8
+    if $rc!=0 then raise("CAPTURE",to_string($result)) end
+    $metadata=$reply
+    chmod($a.path,0o600)
+    $info=viu_image("info",$a.path)
+    reply(0,json_encode({op:"capture",path:$a.path,image:$info,metadata:$metadata}))
+  end
+end

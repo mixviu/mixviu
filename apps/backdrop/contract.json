@@ -1,0 +1,1 @@
+{"host":{"service":"backdrop","title":"Backdrop","surface":"background","tick_ms":1000,"commands":["backdrop.ping","backdrop.state","backdrop.set","backdrop.follow"]}}

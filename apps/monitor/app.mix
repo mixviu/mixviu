@@ -1,0 +1,92 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- lint: globals app_args
+$core=require("core.mix");$state=$core.initial();$ctx=viu_context()
+if len($app_args)>0 then $state.node=$app_args[0];$state.node_draft=$state.node;$checked=$core.target($state.node) end
+fn publish_monitor($s)
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.project($s)}
+end
+fn refresh_monitor($s)
+  try
+    $target=$core.target($s.node)
+    send $target "monitord.snapshot" body={}
+    if $rc!=0 then raise("SNAPSHOT",to_string($result)) end
+    $snapshot=$reply
+    send $target "monitord.processes" body=$core.query($s)
+    if $rc!=0 then raise("PROCESSES",to_string($result)) end
+    if type($reply.rows)!="list" or len($reply.rows)>2000 or ($reply.total ?? 0)>2000 then raise("PROCESS_BUDGET","Process limit 2000 exceeded; no partial state") end
+    $s.snapshot=$snapshot;$s.processes=$reply.rows
+    $s.history=push($s.history,$snapshot.cpu.busy)
+    if len($s.history)>60 then $s.history=slice($s.history,len($s.history)-60) end
+    $s.error=nil;$s.serial=$s.serial+1
+  catch $message
+    $s.error=$message
+  end
+  return $s
+end
+publish_monitor($state)
+on viu.tick
+  if not $state.paused then $state=refresh_monitor($state);publish_monitor($state) end
+end
+on monitor.ping
+  reply(0,json_encode({schema:"monitor.mix.lab.v1"}))
+end
+on monitor.info
+  reply(0,json_encode($state))
+end
+on monitor.rows
+  reply(0,json_encode({rows:$state.processes}))
+end
+on monitor.refresh
+  $state=refresh_monitor($state);publish_monitor($state)
+  reply(if $state.error==nil then 0 else 10 end,json_encode($state))
+end
+on monitor.node
+  $node=$event.args.node ?? "";$checked=$core.target($node)
+  $state.node=$node;$state.node_draft=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.selected=nil
+  $state=refresh_monitor($state);publish_monitor($state)
+  reply(0,json_encode({node:$state.node}))
+end
+on monitor.sort
+  if not contains(["name","pid","user","cpu","memory","io"],$event.args.column) then raise("SORT","Unknown column") end
+  $state.sort=$event.args.column;$state.reverse=$event.args.reverse ?? false
+  $state=refresh_monitor($state);publish_monitor($state)
+  reply(0,"{}")
+end
+on monitor.filter
+  if type($event.args.text)!="string" or len($event.args.text)>256 then raise("FILTER","At most 256 characters") end
+  $state.filter=$event.args.text;$state=refresh_monitor($state);publish_monitor($state)
+  reply(0,"{}")
+end
+on monitor.tree
+  if type($event.args.on)!="bool" then raise("TREE","Boolean required") end
+  $state.tree=$event.args.on;$state=refresh_monitor($state);publish_monitor($state)
+  reply(0,"{}")
+end
+on monitor.pause
+  if type($event.args.on)!="bool" then raise("PAUSE","Boolean required") end
+  $state.paused=$event.args.on;publish_monitor($state);reply(0,"{}")
+end
+on monitor.select
+  $pid=$event.args.pid
+  if $pid!=nil and not any($state.processes,fn($p)=$p.pid==$pid) then raise("PID","Process is not in the current table") end
+  $state.selected=$pid;publish_monitor($state);reply(0,"{}")
+end
+on monitor.intent
+  $a=$event.args
+  if $a.id=="refresh" then $state=refresh_monitor($state)
+  elif $a.id=="pause" then $state.paused=$a.value
+  elif $a.id=="filter" then $state.filter=$a.value;$state=refresh_monitor($state)
+  elif $a.id=="node" then
+    $state.node_draft=$a.value
+    if $a.action=="submit" then
+      $checked=$core.target($a.value);$state.node=$a.value;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.selected=nil;$state=refresh_monitor($state)
+    end
+  elif $a.id=="processes" then
+    if $a.action=="sort" then
+      $state.reverse=if $state.sort==$a.value.column then not $state.reverse else false end
+      $state.sort=$a.value.column;$state=refresh_monitor($state)
+    elif $a.action=="select" then $state.selected=to_number($a.value.key) end
+  end
+  publish_monitor($state);reply(0,"{}")
+end

@@ -1,0 +1,42 @@
+[package]
+name = "viu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+eframe = { version = "=0.37.0", default-features = false, features = ["default_fonts", "wayland", "wgpu_no_default_features"] }
+smithay-client-toolkit = "=0.19.2"
+wayland-backend = { version = "=0.3.17", features = ["client_system"] }
+xkbcommon = { version = "0.7", default-features = false }
+futures = "0.3"
+wgpu = { version = "30.0", default-features = false, features = ["std", "vulkan", "gles", "wgsl"] }
+egui-wgpu = { version = "=0.37.0", default-features = false }
+raw-window-handle = "=0.6.2"
+wayland-client = { version = "=0.31.15", default-features = false }
+files = { path = "../files" }
+mimedb.workspace = true
+macros = { path = "../macros" }
+config = { path = "../config" }
+design = { path = "../design" }
+icons = { path = "../icons" }
+bus = { path = "../bus", features = ["native"] }
+egui_extras = { version = "=0.37.0", default-features = false, features = ["svg"] }
+mix = { path = "../mix", features = ["regex", "tokio-sleep", "json", "datetime", "mime"] }
+thumbs.workspace = true
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
+png = "=0.18.1"
+unicode-segmentation = "=1.13.3"
+scene = { path = "../scene" }
+serde_json = "=1.0.151"
+serde.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["std", "env-filter", "fmt", "registry", "tracing-log"] }
+tokio = { version = "=1.53.1", features = ["rt", "time", "macros", "sync"] }
+egui = { version = "=0.37.0", default-features = false, features = ["default_fonts"] }
+
+[dev-dependencies]
+tempfile.workspace = true

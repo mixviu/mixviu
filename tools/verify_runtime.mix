@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$root = dirname(dirname(script_path()))
+$manifest = json_parse(read_file($root .. "/provenance/runtime-imports.json"))
+$checked = 0
+$removed = 0
+for $entry in $manifest.entries
+  if $entry.retained == false then
+    if is_file($root .. "/" .. $entry.destination) then raise("UNUSED_IMPORT", $entry.destination) end
+    $removed = $removed + 1
+    continue
+  end
+  $expected = $entry.current_sha256 ?? $entry.imported_sha256
+  if hash_file($root .. "/" .. $entry.destination, "sha256") != $expected then raise("IMPORT_CHANGED", $entry.destination) end
+  $checked = $checked + 1
+end
+print("Runtime imports verified: " .. to_string($checked) .. "; removed unused: " .. to_string($removed))

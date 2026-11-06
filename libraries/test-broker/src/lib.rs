@@ -15,29 +15,29 @@
 #[path = "session_fd.rs"]
 pub mod session_fd;
 
-#[path = "../noded/admission.rs"]
+#[path = "../../../services/noded/src/admission.rs"]
 mod admission;
-#[path = "../noded/authority.rs"]
+#[path = "../../../services/noded/src/authority.rs"]
 mod authority;
-#[path = "../noded/native_ingress.rs"]
+#[path = "../../../services/noded/src/native_ingress.rs"]
 mod native_ingress;
-#[path = "../noded/noded.rs"]
+#[path = "../../../services/noded/src/noded.rs"]
 mod noded;
-#[path = "../noded/observe.rs"]
+#[path = "../../../services/noded/src/observe.rs"]
 mod observe;
-#[path = "../noded/props.rs"]
+#[path = "../../../services/noded/src/props.rs"]
 mod props;
-#[path = "../noded/props_reservation.rs"]
+#[path = "../../../services/noded/src/props_reservation.rs"]
 mod props_reservation;
-#[path = "../noded/protection.rs"]
+#[path = "../../../services/noded/src/protection.rs"]
 mod protection;
-#[path = "../noded/routing.rs"]
+#[path = "../../../services/noded/src/routing.rs"]
 mod routing;
-#[path = "../noded/spec.rs"]
+#[path = "../../../services/noded/src/spec.rs"]
 mod spec;
-#[path = "../noded/spec_release.rs"]
+#[path = "../../../services/noded/src/spec_release.rs"]
 mod spec_release;
-#[path = "../noded/subscription.rs"]
+#[path = "../../../services/noded/src/subscription.rs"]
 mod subscription;
 
 use std::path::PathBuf;

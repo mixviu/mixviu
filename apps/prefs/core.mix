@@ -1,0 +1,62 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$sections=[{id:"appearance",label:"Appearance",prefixes:["appearance."]},{id:"text_and_fonts",label:"Text & Fonts",prefixes:["appearance.font","appearance.mono"]},{id:"wallpaper",label:"Wallpaper",prefixes:["wallpaper."]},{id:"windows",label:"Windows",prefixes:["window."]},{id:"accessibility",label:"Accessibility",prefixes:["accessibility."]},{id:"apps_term",label:"Terminal",prefixes:["terminal."]},{id:"apps_ced",label:"Editor",prefixes:["ced."]},{id:"all",label:"All described settings",prefixes:[""]}]
+fn initial($instance)
+  return {binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil}
+end
+fn key_info($s,$key)
+  $found=filter($s.catalog,fn($k)=$k.path==$key)
+  if len($found)!=1 then raise("KEY","Key is not in the described exact-key catalogue") end
+  return $found[0]
+end
+fn value_of($s,$k)
+  if contains(keys($s.values),$k.path) then return $s.values[$k.path] end
+  return $k.default
+end
+fn choose($s,$key)
+  $k=key_info($s,$key);$s.key=$key
+  $v=value_of($s,$k)
+  if $k.kind=="bool" then $s.draft_kind="checkbox";$s.draft=$v ?? false
+  elif $k.kind=="enum" and contains($k.variants,$v) then $s.draft_kind="combo";$s.draft=$v
+  else $s.draft_kind="field";$s.draft=json_encode($v) end
+  return $s
+end
+fn admitted($s,$key,$value)
+  if $s.busy or $s.uncertain or $s.revision==nil or $s.incarnation==nil or $s.stale or not contains(["authority","mirror"],$s.role) then raise("NOT_WRITABLE","Refresh a reachable non-stale settings authority before writing") end
+  $k=key_info($s,$key)
+  if not contains(["stored","applied"],$k.class) or starts_with($key,"email.") or $k.kind=="list" or contains($key,"<") then raise("READ_ONLY","This key needs its owning service workflow") end
+  if $value!=nil then
+    if $k.kind=="bool" and type($value)!="bool" then raise("TYPE","Boolean required") end
+    if $k.kind=="enum" and not contains($k.variants,$value) then raise("ENUM","Value is not a described variant") end
+    if contains(["int","number"],$k.kind) then
+      if type($value)!="number" then raise("TYPE","Number required") end
+      if ($k.min!=nil and $value<$k.min) or ($k.max!=nil and $value>$k.max) or ($k.kind=="int" and floor($value)!=$value) then raise("RANGE","Number outside described range") end
+      if $k.values!=nil and not contains($k.values,$value) then raise("RANGE","Number is not a described step") end
+    elif not contains(["enum","bool"],$k.kind) and type($value)!="string" then raise("TYPE","Text required; complex controls are deferred") end
+  end
+  $changes={};$reset=[]
+  if $value==nil then push($reset,$key) else $changes[$key]=$value end
+  if $value!=nil and contains(["wallpaper.image","wallpaper.color"],$key) then
+    $changes["wallpaper.slideshow.enabled"]=false
+    push($reset,if $key=="wallpaper.image" then "wallpaper.color" else "wallpaper.image" end)
+  end
+  return {binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:uuid(),changes:$changes,reset:$reset}
+end
+fn model($s)
+  $section=filter($sections,fn($x)=$x.id==$s.section)[0]
+  $rows=[]
+  for $k in $s.catalog
+    if any($section.prefixes,fn($prefix)=starts_with($k.path,$prefix)) and contains(lower($k.path),lower($s.search)) then
+      $value=json_encode(value_of($s,$k))
+      push($rows,{key:$k.path,depth:0,branch:false,expanded:false,selected:$k.path==$s.key,focused:$k.path==$s.key,cells:[$k.path,$k.kind,substr($value,0,512),$k.class]})
+    end
+  end
+  $editor={id:"editor",kind:"field",label:"JSON value",initial:"",properties:{placeholder:"Select a setting; enter a JSON value"}}
+  if len($s.catalog)>0 then
+    $k=key_info($s,$s.key)
+    $editor.kind=$s.draft_kind;$editor.initial=$s.draft
+    if $s.draft_kind=="combo" then $editor.properties={choices:$k.variants}
+    elif $s.draft_kind=="checkbox" then $editor.properties={text:$s.key} end
+  end
+  return {status:$s.status.." · "..$s.role.." · revision "..to_string($s.revision),selected_label:$s.key.." · "..if $s.draft_kind=="field" then "Edit JSON; Apply writes only this setting" else "Choose value, then Apply" end,section_control:{id:"section",kind:"combo",label:"Section",initial:"appearance",properties:{choices:map($sections,fn($x)=$x.id)}},table:{id:"table",kind:"tree-table",label:"Settings",initial:{key:"settings",rows:$rows,columns:[{id:"key",label:"Setting"},{id:"kind",label:"Type"},{id:"value",label:"Value"},{id:"class",label:"Class"}]},properties:{height:430,name_min:250}},editor:$editor,values:{section:$s.section,search:$s.search,editor:$s.draft}}
+end

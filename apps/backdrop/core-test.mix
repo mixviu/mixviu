@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$c=require("core.mix")
+if not deep_eq($c.rgb("#1234aB"),[18,52,171]) then raise("RGB","Hex conversion") end
+if not deep_eq($c.rgb("gradient:#abcdef,#000000@45"),[171,205,239]) then raise("GRADIENT","First stop") end
+for $bad in [{schema:2},{schema:1,unknown:1},{schema:1,default:{colour:"red"}},{schema:1,default:{slideshow:{}}},{schema:1,default:{image:"relative.png"}},{schema:1,default:{image:"/tmp/a.png",fit:"bogus"}}]
+  $refused=false
+  try $c.document_model($bad) catch $message $refused=true end
+  if not $refused then raise("REFUSAL",json_encode($bad)) end
+end
+$d=$c.settings_document({"wallpaper.image":"/tmp/default.png","wallpaper.same_on_all":false,"wallpaper.outputs.HEADLESS-2.image":"/tmp/other.png","wallpaper.fit":"stretch"})
+if $d.outputs["HEADLESS-2"].image!="/tmp/other.png" then raise("OUTPUT","Settings connector mapping") end
+if $c.document_model($d).surfaces["HEADLESS-2"].values.root.fit!="stretch" then raise("FIT","Output projection") end
+print("backdrop: RGB, gradient, six refusals and per-output settings projection pass")

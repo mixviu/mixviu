@@ -1,0 +1,2939 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Menu bars and their drop-down menus (chrome specification §3.3–3.6).
+//!
+//! The toolkit draws its menus itself rather than through egui's `MenuBar`,
+//! because the specified behaviour needs things egui's menus do not do: one
+//! highlight shared by pointer and keyboard, menus that open on press and
+//! run an item on a press-drag-release, and hover switching between titles
+//! that a resting pointer cannot undo.
+//!
+//! - [`Menu`], [`Entry`], [`Row`]: the model, built each frame (the command
+//!   registry builds it from its commands, [`crate::action::Registry::menus`]).
+//! - [`Nav`]: which menu is open and which row of each level is highlighted,
+//!   with the keyboard rules of §3.6. Pure data, tested without egui.
+//! - [`bar`]: draws the titles into the current row and each open level as a
+//!   foreground area, and returns the command chosen this frame.
+//!
+//! Pointer rules: a press on a closed title opens its menu at once, and the
+//! release that ends that press never counts as a click outside; releasing
+//! over an enabled row (after a press-drag or a click) runs it; a press
+//! outside every menu closes them; a click inside on anything but an enabled
+//! row closes them too. While a menu is open, moving the pointer onto another
+//! title opens that one instead, and moving onto a row highlights it.
+//!
+//! One menu bar per window: its state lives in the context under one id, so
+//! [`is_open`] can hold back global shortcuts while a menu has the keyboard.
+
+use crate::chrome::Chrome;
+use egui::emath::GuiRounding;
+use egui::{
+    Area, Color32, Context, Frame, Id, Key, Modifiers, Order, PointerButton, Pos2, Rect, Role,
+    ScrollArea, Sense, Stroke, TextEdit, Ui, UiKind, Vec2, WidgetInfo, pos2, text::Galley, vec2,
+};
+use std::sync::Arc;
+
+/// The stock submenu arrow, in the shortcut column (§3.5).
+pub const SUBMENU_ARROW: &str = "⏵";
+
+/// The tick of a ticked choice row, in a gutter before the label (§3.5:
+/// "✔" and a space; every label of a level with choices indents by it).
+pub const TICK: &str = "✔";
+const TICK_GUTTER: &str = "✔ ";
+
+/// One line of a menu.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Entry {
+    Row(Row),
+    /// A hairline between groups (§3.5).
+    Separator,
+}
+
+impl Entry {
+    pub fn row(&self) -> Option<&Row> {
+        match self {
+            Self::Row(row) => Some(row),
+            Self::Separator => None,
+        }
+    }
+}
+
+/// A command row, or a row that opens a submenu.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Row {
+    /// The command run by this row; `None` for a submenu row.
+    pub id: Option<&'static str>,
+    pub label: String,
+    /// Already formatted for the platform ("Ctrl+Alt+Shift+O").
+    pub shortcut: Option<String>,
+    pub enabled: bool,
+    /// A choice row's tick (§3.5, check rows): `Some(true)` ticked,
+    /// `Some(false)` not; `None` for a row that is no choice.
+    pub checked: Option<bool>,
+    /// The submenu's entries; empty for a command row.
+    pub children: Vec<Entry>,
+}
+
+impl Row {
+    pub fn command(
+        id: &'static str,
+        label: impl Into<String>,
+        shortcut: Option<String>,
+        enabled: bool,
+    ) -> Self {
+        Self {
+            id: Some(id),
+            label: label.into(),
+            shortcut,
+            enabled,
+            checked: None,
+            children: Vec::new(),
+        }
+    }
+
+    /// A choice row, ticked when `checked`.
+    pub fn choice(
+        id: &'static str,
+        label: impl Into<String>,
+        shortcut: Option<String>,
+        enabled: bool,
+        checked: bool,
+    ) -> Self {
+        Self {
+            checked: Some(checked),
+            ..Self::command(id, label, shortcut, enabled)
+        }
+    }
+
+    /// A submenu row: enabled when any of its children is (§3.5).
+    pub fn submenu(label: impl Into<String>, children: Vec<Entry>) -> Self {
+        let enabled = children.iter().filter_map(Entry::row).any(|r| r.enabled);
+        Self {
+            id: None,
+            label: label.into(),
+            shortcut: None,
+            enabled,
+            checked: None,
+            children: tidy(children),
+        }
+    }
+
+    pub fn is_submenu(&self) -> bool {
+        !self.children.is_empty()
+    }
+}
+
+/// A top-level menu.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Menu {
+    pub title: String,
+    pub entries: Vec<Entry>,
+}
+
+/// `entries` with every separator that would come first, last or straight
+/// after another removed (§3.5).
+pub fn tidy(entries: Vec<Entry>) -> Vec<Entry> {
+    let mut out: Vec<Entry> = Vec::with_capacity(entries.len());
+    for entry in entries {
+        if entry == Entry::Separator && matches!(out.last(), None | Some(Entry::Separator)) {
+            continue;
+        }
+        out.push(entry);
+    }
+    if out.last() == Some(&Entry::Separator) {
+        out.pop();
+    }
+    out
+}
+
+/// A search field at the top of one top-level menu (§3.5: Help).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Search {
+    /// The index of the menu that carries it.
+    pub menu: usize,
+    pub hint: String,
+    /// Shown, weak, when nothing matches.
+    pub empty: String,
+}
+
+/// The most results a search lists (§3.5).
+pub const SEARCH_RESULTS: usize = 15;
+
+/// Joins a result's menu path (§3.5).
+pub const PATH_SEPARATOR: &str = " › ";
+
+/// The command rows of `menus` matching `query` (case-insensitive), each
+/// labelled with its menu path joined by [`PATH_SEPARATOR`], ranked: the
+/// label starts with the query, then a word of it does, then the label
+/// contains it, then the path does (§3.5). At most [`SEARCH_RESULTS`].
+pub fn matching(menus: &[Menu], query: &str) -> Vec<Row> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return Vec::new();
+    }
+    fn walk<'a>(
+        entries: &'a [Entry],
+        path: &mut Vec<&'a str>,
+        out: &mut Vec<(Vec<&'a str>, &'a Row)>,
+    ) {
+        for row in entries.iter().filter_map(Entry::row) {
+            if row.is_submenu() {
+                path.push(&row.label);
+                walk(&row.children, path, out);
+                path.pop();
+            } else if row.id.is_some() {
+                out.push((path.clone(), row));
+            }
+        }
+    }
+    let mut all = Vec::new();
+    for menu in menus {
+        walk(&menu.entries, &mut vec![menu.title.as_str()], &mut all);
+    }
+    let rank = |path: &[&str], row: &Row| {
+        let label = row.label.to_lowercase();
+        if label.starts_with(&query) {
+            Some(0)
+        } else if label
+            .split_whitespace()
+            .any(|word| word.starts_with(&query))
+        {
+            Some(1)
+        } else if label.contains(&query) {
+            Some(2)
+        } else if path.join(PATH_SEPARATOR).to_lowercase().contains(&query) {
+            Some(3)
+        } else {
+            None
+        }
+    };
+    let mut ranked: Vec<(u8, String, &Row)> = all
+        .into_iter()
+        .filter_map(|(path, row)| {
+            let rank = rank(&path, row)?;
+            let mut shown = path.join(PATH_SEPARATOR);
+            shown.push_str(PATH_SEPARATOR);
+            shown.push_str(&row.label);
+            Some((rank, shown, row))
+        })
+        .collect();
+    // Stable: menu order within a rank.
+    ranked.sort_by_key(|(rank, ..)| *rank);
+    ranked
+        .into_iter()
+        .take(SEARCH_RESULTS)
+        .map(|(_, shown, row)| Row {
+            label: shown,
+            ..row.clone()
+        })
+        .collect()
+}
+
+/// A navigation key (§3.6). Space acts as [`NavKey::Enter`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NavKey {
+    Up,
+    Down,
+    Left,
+    Right,
+    Enter,
+    Escape,
+}
+
+/// What a navigation step did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// The menus are still open (possibly a different one).
+    Stay,
+    /// The command was chosen; every menu is now closed.
+    Run(&'static str),
+    /// Every menu is now closed.
+    Closed,
+}
+
+/// The open menu and its highlight. Level 0 is the top-level menu; level
+/// `n + 1` is the submenu of level `n`'s highlighted row, open while
+/// `highlight` is longer than `n + 1`. `depth` is the level the keyboard
+/// acts on: a submenu opened by hovering leaves it on the parent level.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Nav {
+    open: Option<usize>,
+    highlight: Vec<Option<usize>>,
+    depth: usize,
+    vertical_root: bool,
+}
+
+impl Nav {
+    pub fn key_vertical(&mut self, key: NavKey, menus: &[Menu]) -> Outcome {
+        self.vertical_root = true;
+        match key {
+            NavKey::Left if self.depth == 0 => Outcome::Stay,
+            NavKey::Right
+                if !self
+                    .current(menus)
+                    .is_some_and(|row| row.enabled && self.submenu(row, self.depth)) =>
+            {
+                Outcome::Stay
+            }
+            _ => self.key(key, menus),
+        }
+    }
+
+    fn submenu(&self, row: &Row, level: usize) -> bool {
+        row.is_submenu() || (self.vertical_root && level == 0 && row.id.is_none())
+    }
+
+    /// The open top-level menu.
+    pub fn open_menu(&self) -> Option<usize> {
+        self.open
+    }
+
+    /// The highlighted entry of each open level.
+    pub fn highlight(&self) -> &[Option<usize>] {
+        &self.highlight
+    }
+
+    /// The level the keyboard acts on.
+    pub fn depth(&self) -> usize {
+        self.depth
+    }
+
+    /// Open top-level menu `menu` with nothing highlighted. The highlight is
+    /// per top-level menu: opening any menu starts it afresh.
+    pub fn open(&mut self, menu: usize) {
+        *self = Self {
+            open: Some(menu),
+            highlight: vec![None],
+            depth: 0,
+            vertical_root: self.vertical_root,
+        };
+    }
+
+    pub fn close(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Drop whatever `menus` (rebuilt each frame) no longer has: an open
+    /// menu past the end, a highlight on a row that is gone or disabled, a
+    /// level whose parent row is no longer a submenu, and the levels below.
+    pub fn validate(&mut self, menus: &[Menu]) {
+        let Some(open) = self.open else { return };
+        if open >= menus.len() {
+            self.close();
+            return;
+        }
+        for level in 0..self.highlight.len() {
+            // (enabled, is a submenu) of the level's highlighted row.
+            let lit = self.highlight[level]
+                .and_then(|index| self.level(menus, level)?.get(index)?.row())
+                .map(|r| (r.enabled, self.submenu(r, level)));
+            if self.highlight[level].is_some() && !lit.is_some_and(|(enabled, _)| enabled) {
+                self.highlight[level] = None;
+            }
+            if level + 1 < self.highlight.len() && lit != Some((true, true)) {
+                self.highlight.truncate(level + 1);
+                break;
+            }
+        }
+        self.depth = self.depth.min(self.highlight.len() - 1);
+    }
+
+    /// Close the submenus below level `level`.
+    fn close_below(&mut self, level: usize) {
+        self.highlight.truncate(level + 1);
+        self.depth = self.depth.min(level);
+    }
+
+    /// How many levels are showing.
+    pub fn levels(&self) -> usize {
+        if self.open.is_some() {
+            self.highlight.len()
+        } else {
+            0
+        }
+    }
+
+    /// The entries of open level `level`.
+    pub fn level<'a>(&self, menus: &'a [Menu], level: usize) -> Option<&'a [Entry]> {
+        let mut entries = menus.get(self.open?)?.entries.as_slice();
+        for parent in 0..level {
+            let row = entries.get((*self.highlight.get(parent)?)?)?.row()?;
+            if !self.submenu(row, parent) {
+                return None;
+            }
+            entries = &row.children;
+        }
+        Some(entries)
+    }
+
+    /// Whether level `level`'s highlighted row has its submenu showing.
+    pub fn submenu_open(&self, level: usize) -> bool {
+        self.highlight.len() > level + 1
+    }
+
+    fn current<'a>(&self, menus: &'a [Menu]) -> Option<&'a Row> {
+        let entries = self.level(menus, self.depth)?;
+        entries.get((*self.highlight.get(self.depth)?)?)?.row()
+    }
+
+    /// Apply `key` (§3.6).
+    pub fn key(&mut self, key: NavKey, menus: &[Menu]) -> Outcome {
+        let Some(open) = self.open else {
+            return Outcome::Stay;
+        };
+        let count = menus.len().max(1);
+        match key {
+            NavKey::Down | NavKey::Up => {
+                let Some(entries) = self.level(menus, self.depth) else {
+                    return Outcome::Stay;
+                };
+                let from = self.highlight.get(self.depth).copied().flatten();
+                let next = step(entries, from, key == NavKey::Down);
+                self.highlight.truncate(self.depth + 1);
+                self.highlight[self.depth] = next;
+            }
+            NavKey::Right => {
+                if self
+                    .current(menus)
+                    .is_some_and(|row| row.enabled && self.submenu(row, self.depth))
+                {
+                    self.enter(menus);
+                } else {
+                    self.open((open + 1) % count);
+                }
+            }
+            NavKey::Left => {
+                if self.depth > 0 {
+                    self.highlight.truncate(self.depth);
+                    self.depth -= 1;
+                } else {
+                    self.open((open + count - 1) % count);
+                }
+            }
+            NavKey::Enter => match self.current(menus) {
+                Some(row) if row.enabled && self.submenu(row, self.depth) => self.enter(menus),
+                Some(Row {
+                    id: Some(id),
+                    enabled: true,
+                    ..
+                }) => {
+                    let id = *id;
+                    self.close();
+                    return Outcome::Run(id);
+                }
+                _ => {}
+            },
+            NavKey::Escape => {
+                self.close();
+                return Outcome::Closed;
+            }
+        }
+        Outcome::Stay
+    }
+
+    /// Open the highlighted row's submenu (or move into it, when hovering
+    /// already opened it) and highlight its first enabled row.
+    fn enter(&mut self, menus: &[Menu]) {
+        self.highlight.truncate(self.depth + 1);
+        self.depth += 1;
+        self.highlight.push(None);
+        let first = self
+            .level(menus, self.depth)
+            .and_then(|entries| step(entries, None, true));
+        self.highlight[self.depth] = first;
+    }
+
+    /// The pointer moved onto entry `index` of level `level`: highlight it
+    /// (a disabled row or a separator clears the level's highlight), close
+    /// deeper levels, and show the row's submenu if it has one.
+    pub fn hover(&mut self, level: usize, index: usize, menus: &[Menu]) {
+        if level >= self.levels() {
+            return;
+        }
+        if self.highlight[level] == Some(index) && self.submenu_open(level) {
+            self.depth = level;
+            return;
+        }
+        let row = self
+            .level(menus, level)
+            .and_then(|entries| entries.get(index))
+            .and_then(Entry::row);
+        self.highlight.truncate(level + 1);
+        self.depth = level;
+        match row {
+            Some(row) if row.enabled => {
+                self.highlight[level] = Some(index);
+                if self.submenu(row, level) {
+                    self.highlight.push(None);
+                }
+            }
+            _ => self.highlight[level] = None,
+        }
+    }
+}
+
+/// The next (or previous) enabled row after `from`, wrapping; from nothing,
+/// the first (or last).
+fn step(entries: &[Entry], from: Option<usize>, forward: bool) -> Option<usize> {
+    let n = entries.len();
+    if n == 0 {
+        return None;
+    }
+    let start = from.unwrap_or(if forward { n - 1 } else { 0 });
+    (1..=n)
+        .map(|k| {
+            if forward {
+                (start + k) % n
+            } else {
+                (start + n - k) % n
+            }
+        })
+        .find(|&i| entries[i].row().is_some_and(|row| row.enabled))
+}
+
+/// The open menu as labels, for tests and for UI state over the Bus.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Current {
+    /// The open top-level menu's title.
+    pub menu: String,
+    /// The highlighted row's label at each open level.
+    pub path: Vec<Option<String>>,
+    /// The level the keyboard acts on.
+    pub depth: usize,
+}
+
+#[derive(Clone, Default)]
+struct State {
+    layer: Option<egui::LayerId>,
+    nav: Nav,
+    /// The current press began on a menu title (the opening press).
+    title_press: bool,
+    /// The current press began inside an open menu.
+    inside_press: bool,
+    /// The current press began on a level's scroll bar: its release
+    /// neither runs a row nor closes the menus.
+    scroll_press: bool,
+    /// Each level's frame, last frame: lets the pointer travel diagonally
+    /// to a submenu across other rows.
+    frames: Vec<Rect>,
+    current: Option<Current>,
+    /// The search field's text, cleared each time its menu opens.
+    query: String,
+    /// The search menu just opened: give its field the keyboard once the
+    /// pointer settles.
+    focus_search: bool,
+    /// Keyboard events held back to the next frame: a navigation key typed
+    /// after text in one frame, and the keys and text after it.
+    deferred: Vec<egui::Event>,
+    /// The menu those keys were typed in.
+    deferred_menu: Option<usize>,
+    /// The menus drawn last frame (the whole model, not a search view), for
+    /// the drive commands that list, open and close them.
+    menus: Vec<Menu>,
+    compact: bool,
+    vertical: bool,
+    popup_anchor: Option<Rect>,
+    /// A popup opened for the right side hangs left from its anchor.
+    popup_right: bool,
+    alt_down: bool,
+    alt_used: bool,
+    alt_blocked: bool,
+    search_active: bool,
+}
+
+fn state_id(ctx: &Context) -> Id {
+    crate::window_id(ctx.viewport_id(), "toolkit.menu")
+}
+
+/// Whether a menu is open (and so has the keyboard) on `ctx`.
+pub fn is_open(ctx: &Context) -> bool {
+    let state_key = state_id(ctx);
+    let viewport = ctx.viewport_id();
+    ctx.data(|d| d.get_temp::<bool>(crate::window_id(viewport, "toolkit.anchored-open")))
+        .unwrap_or(false)
+        || ctx
+            .data(|d| d.get_temp::<State>(state_key))
+            .is_some_and(|s| s.nav.open.is_some())
+}
+
+/// A release or keyboard activation from an icon-anchored menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pick {
+    pub id: &'static str,
+    pub edit: bool,
+}
+
+#[derive(Clone)]
+struct AnchoredInput {
+    id: Id,
+    menus: Vec<Menu>,
+    result: Option<Pick>,
+    handled: bool,
+    keyed: bool,
+    frame: Rect,
+    anchor: Rect,
+}
+
+#[derive(Clone, Default)]
+struct TitleInput {
+    bounds: Option<Rect>,
+    enter: bool,
+    close: bool,
+}
+
+/// Like the bar, dismiss on an outside press and leave the pointer event
+/// available to the underlying control. This is deliberately not a modal.
+fn outside_press(ctx: &Context, inside: impl Fn(Pos2) -> bool) -> bool {
+    ctx.input(|i| {
+        i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|pos| !inside(pos))
+    })
+}
+
+pub(crate) fn open_title(ctx: &Context) {
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
+    ctx.data_mut(|d| d.insert_temp(id, TitleInput::default()));
+}
+
+pub(crate) fn title_bounds(ctx: &Context, bounds: Rect) {
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
+    let mut state = ctx
+        .data(|d| d.get_temp::<TitleInput>(id))
+        .unwrap_or_default();
+    state.bounds = Some(bounds);
+    ctx.data_mut(|d| d.insert_temp(id, state));
+}
+
+pub(crate) fn close_title(ctx: &Context) {
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
+    ctx.data_mut(|d| d.remove::<TitleInput>(id));
+}
+
+fn title_keyboard(ctx: &Context) -> bool {
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
+    let Some(mut state) = ctx.data(|d| d.get_temp::<TitleInput>(id)) else {
+        return false;
+    };
+    state.enter |= ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+    state.close |= ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
+    state.close |= state
+        .bounds
+        .is_some_and(|bounds| outside_press(ctx, |pos| bounds.contains(pos)));
+    if state.close {
+        anchored_open(ctx, false);
+    }
+    ctx.data_mut(|d| d.insert_temp(id, state));
+    true
+}
+
+pub(crate) fn title_keys(ctx: &Context) -> (bool, bool) {
+    title_keyboard(ctx);
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
+    let mut state = ctx
+        .data(|d| d.get_temp::<TitleInput>(id))
+        .unwrap_or_default();
+    let keys = (state.enter, state.close);
+    state.enter = false;
+    state.close = false;
+    ctx.data_mut(|d| d.insert_temp(id, state));
+    keys
+}
+
+pub(crate) fn dismiss_anchored(ctx: &Context) {
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-input");
+    if let Some(cache) = ctx.data(|d| d.get_temp::<AnchoredInput>(id)) {
+        ctx.data_mut(|d| d.remove::<Nav>(cache.id));
+    }
+    ctx.data_mut(|d| d.remove::<AnchoredInput>(id));
+    anchored_open(ctx, false);
+}
+
+fn take_keyboard(ctx: &Context) {
+    let viewport = ctx.viewport_id();
+    let input_id = crate::window_id(viewport, "toolkit.anchored-input");
+    let title_id = crate::window_id(viewport, "toolkit.anchored-title");
+    ctx.data_mut(|d| {
+        if let Some(mut cache) = d.get_temp::<AnchoredInput>(input_id) {
+            cache.handled = true;
+            cache.result = None;
+            d.insert_temp(cache.id, Nav::default());
+            d.insert_temp(input_id, cache);
+        }
+        if let Some(mut title) = d.get_temp::<TitleInput>(title_id) {
+            title.close = true;
+            d.insert_temp(title_id, title);
+        }
+    });
+    anchored_open(ctx, false);
+}
+
+/// Called by the title bar before application content gets its keys. The
+/// anchored menu is painted by its owner later, but shares the bar's input
+/// priority. In particular a focused app editor must never eat menu letters.
+pub(crate) fn anchored_keyboard(ctx: &Context) {
+    if title_keyboard(ctx) {
+        return;
+    }
+    let viewport = ctx.viewport_id();
+    let cache_id = crate::window_id(viewport, "toolkit.anchored-input");
+    let Some(mut cache) = ctx.data(|d| d.get_temp::<AnchoredInput>(cache_id)) else {
+        return;
+    };
+    let Some(mut nav) = ctx.data(|d| d.get_temp::<Nav>(cache.id)) else {
+        return;
+    };
+    if nav.open_menu().is_none() {
+        return;
+    }
+    let (result, keyed) =
+        if outside_press(ctx, |p| cache.frame.contains(p) || cache.anchor.contains(p)) {
+            nav.close();
+            (None, false)
+        } else {
+            anchored_keys(ctx, &mut nav, &cache.menus)
+        };
+    anchored_open(ctx, nav.open_menu().is_some());
+    cache.result = result;
+    cache.keyed = keyed;
+    cache.handled = true;
+    ctx.data_mut(|d| {
+        d.insert_temp(cache.id, nav);
+        d.insert_temp(cache_id, cache);
+    });
+}
+
+fn anchored_keys(ctx: &Context, nav: &mut Nav, menus: &[Menu]) -> (Option<Pick>, bool) {
+    let mut pick = None;
+    let mut keyed = false;
+    ctx.input_mut(|input| {
+        input.events.retain(|event| {
+            if nav.open_menu().is_none() {
+                return true;
+            }
+            match event {
+                egui::Event::Text(text) => {
+                    if let Some(ch) = text.chars().next().filter(|c| c.is_alphabetic()) {
+                        nav.jump(ch, menus);
+                        keyed = true;
+                    }
+                    false
+                }
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if !modifiers.ctrl && !modifiers.alt && !modifiers.command => {
+                    let key = match key {
+                        Key::ArrowUp | Key::ArrowLeft if !modifiers.shift => NavKey::Up,
+                        Key::ArrowDown | Key::ArrowRight if !modifiers.shift => NavKey::Down,
+                        Key::Enter => {
+                            pick = nav.activate(menus, modifiers.shift);
+                            return false;
+                        }
+                        Key::Escape => NavKey::Escape,
+                        _ => return true,
+                    };
+                    nav.key(key, menus);
+                    keyed = true;
+                    false
+                }
+                _ => true,
+            }
+        })
+    });
+    (pick, keyed)
+}
+
+impl Nav {
+    /// Jump forward, wrapping, to the next enabled title with this initial.
+    pub fn jump(&mut self, letter: char, menus: &[Menu]) {
+        let Some(entries) = self.level(menus, self.depth) else {
+            return;
+        };
+        let count = entries.len();
+        let from = self.highlight[self.depth].map_or(count.saturating_sub(1), |i| i);
+        let next = (1..=count).map(|n| (from + n) % count).find(|&i| {
+            entries[i].row().is_some_and(|r| {
+                r.enabled
+                    && r.label
+                        .to_lowercase()
+                        .starts_with(letter.to_lowercase().to_string().as_str())
+            })
+        });
+        if let Some(index) = next {
+            self.hover(self.depth, index, menus);
+        }
+    }
+
+    pub fn activate(&mut self, menus: &[Menu], edit: bool) -> Option<Pick> {
+        match self.key(NavKey::Enter, menus) {
+            Outcome::Run(id) => Some(Pick { id, edit }),
+            _ => None,
+        }
+    }
+}
+
+/// Share shortcut ownership with the menu bar, including a transient title field.
+pub fn anchored_open(ctx: &Context, open: bool) {
+    let viewport = ctx.viewport_id();
+    ctx.data_mut(|d| d.insert_temp(crate::window_id(viewport, "toolkit.anchored-open"), open));
+}
+
+pub(crate) fn anchored_rect(anchor: Rect, outer: Vec2, bounds: Rect) -> Rect {
+    let top = anchor.bottom().max(bounds.top());
+    let size = outer.min(vec2(bounds.width(), (bounds.bottom() - top).max(0.0)));
+    let left = if anchor.left() + size.x > bounds.right() {
+        anchor.right() - size.x
+    } else {
+        anchor.left()
+    };
+    Rect::from_min_size(
+        pos2(left.clamp(bounds.left(), bounds.right() - size.x), top),
+        size,
+    )
+}
+
+/// The same measured frame used by the drop-down and its inline title entry.
+pub(crate) fn anchored_menu_rect(ui: &Ui, anchor: Rect, menu: &Menu) -> Rect {
+    let chrome = Chrome::of(ui.ctx());
+    let layout = Layout::new(ui, &chrome, &menu.entries, chrome.metrics.menu_min_width);
+    anchored_content_rect(ui, anchor, layout.size)
+}
+
+fn anchored_content_rect(ui: &Ui, anchor: Rect, content: Vec2) -> Rect {
+    let chrome = Chrome::of(ui.ctx());
+    let margin = Frame::menu(ui.style()).total_margin().sum();
+    let bounds = ui.ctx().content_rect().shrink(chrome.metrics.edge_gap);
+    let mut outer = content + margin;
+    if outer.y > (bounds.bottom() - anchor.bottom()).max(0.0) {
+        outer.x += ui.spacing().scroll.allocated_width();
+    }
+    anchored_rect(anchor, outer, bounds)
+}
+
+/// A single-level menu below an arbitrary icon. Uses the bar's navigation,
+/// layout, painting and scrolling; the caller owns its transient open flag.
+pub fn anchored(
+    ui: &mut Ui,
+    id: Id,
+    anchor: Rect,
+    open: &mut bool,
+    menu: Menu,
+    tooltips: &[(&'static str, String)],
+) -> Option<Pick> {
+    let ctx = ui.ctx().clone();
+    let viewport = ctx.viewport_id();
+    let id = id.with(ctx.viewport_id());
+    let mut nav: Nav = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
+    let cache_id = crate::window_id(viewport, "toolkit.anchored-input");
+    // Read then remove: remove_temp needs Default, which AnchoredInput
+    // (an egui Id plus menus) has no sensible value for.
+    let prior = ctx.data_mut(|d| {
+        let prior = d.get_temp::<AnchoredInput>(cache_id);
+        d.remove::<AnchoredInput>(cache_id);
+        prior
+    });
+    if let Some(prior) = &prior
+        && prior.handled
+        && nav.open_menu().is_none()
+    {
+        *open = false;
+        anchored_open(&ctx, false);
+        return prior.result;
+    }
+    let opening = *open && nav.open_menu().is_none();
+    if !*open {
+        nav.close();
+        ctx.data_mut(|d| d.insert_temp(id, nav));
+        anchored_open(&ctx, false);
+        return None;
+    }
+    if opening {
+        close(&ctx);
+        nav.open(0);
+    }
+    let menus = [menu];
+    nav.validate(&menus);
+    let (mut pick, mut keyed) = anchored_keys(&ctx, &mut nav, &menus);
+    keyed |= prior.as_ref().is_some_and(|p| p.keyed);
+    let mut frame = Rect::NOTHING;
+    if nav.open_menu().is_some() {
+        let chrome = Chrome::of(&ctx);
+        let layout = Layout::new(
+            ui,
+            &chrome,
+            &menus[0].entries,
+            chrome.metrics.menu_min_width,
+        );
+        let margin = Frame::menu(ui.style()).total_margin().sum();
+        let rect = anchored_content_rect(ui, anchor, layout.size);
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                crate::window_id(viewport, "toolkit.anchored-tooltips"),
+                tooltips.to_vec(),
+            )
+        });
+        let shown = show_level(
+            &ctx,
+            &chrome,
+            0,
+            &menus[0].entries,
+            &layout,
+            rect,
+            &mut nav,
+            &menus,
+            View {
+                max_height: (rect.height() - margin.y).max(0.0),
+                max_width: Some((rect.width() - margin.x).max(0.0)),
+                moved: ctx.input(|i| i.pointer.delta() != Vec2::ZERO),
+                keyed,
+                deeper: None,
+            },
+            None,
+        );
+        frame = shown.frame;
+        ctx.data_mut(|d| {
+            d.remove::<Vec<(&'static str, String)>>(crate::window_id(
+                viewport,
+                "toolkit.anchored-tooltips",
+            ))
+        });
+        let (outside, released, secondary) = ctx.input(|i| {
+            (
+                !opening
+                    && i.pointer.primary_pressed()
+                    && i.pointer
+                        .interact_pos()
+                        .is_some_and(|p| !shown.frame.contains(p) && !anchor.contains(p)),
+                i.pointer.button_released(PointerButton::Primary)
+                    || i.pointer.button_released(PointerButton::Secondary),
+                i.pointer.button_released(PointerButton::Secondary),
+            )
+        });
+        if outside {
+            nav.close();
+        } else if ((released && !opening) || shown.activated.is_some())
+            && let Some(index) = shown.activated.or(shown.under)
+            && !ctx.input(|i| {
+                i.pointer
+                    .interact_pos()
+                    .is_some_and(|p| shown.bar.is_some_and(|r| r.contains(p)))
+            })
+        {
+            nav.hover(0, index, &menus);
+            pick = nav.activate(&menus, secondary);
+        }
+    }
+    *open = nav.open_menu().is_some();
+    anchored_open(&ctx, *open);
+    ctx.data_mut(|d| d.insert_temp(id, nav));
+    ctx.data_mut(|d| {
+        d.insert_temp(
+            cache_id,
+            AnchoredInput {
+                id,
+                menus: menus.to_vec(),
+                result: None,
+                handled: false,
+                keyed: false,
+                frame,
+                anchor,
+            },
+        )
+    });
+    pick
+}
+
+/// The open menu and its highlight, as of the last frame.
+pub fn current(ctx: &Context) -> Option<Current> {
+    let state_key = state_id(ctx);
+    ctx.data(|d| d.get_temp::<State>(state_key))
+        .and_then(|s| s.current)
+}
+
+/// The open menu and its highlight as labels.
+fn current_of(nav: &Nav, menus: &[Menu]) -> Option<Current> {
+    nav.open.map(|m| Current {
+        menu: menus[m].title.clone(),
+        path: (0..nav.levels())
+            .map(|level| {
+                let index = nav.highlight().get(level).copied().flatten()?;
+                nav.level(menus, level)?
+                    .get(index)?
+                    .row()
+                    .map(|r| r.label.clone())
+            })
+            .collect(),
+        depth: nav.depth,
+    })
+}
+
+fn current_in_form(nav: &Nav, menus: &[Menu], vertical: bool) -> Option<Current> {
+    let mut current = current_of(nav, menus)?;
+    if vertical && let Some(Some(title)) = current.path.first() {
+        current.menu = title.clone();
+        current.path.remove(0);
+        current.depth = current.depth.saturating_sub(1);
+    }
+    Some(current)
+}
+
+/// The menus drawn last frame: every title, row, shortcut, tick and
+/// submenu, as the drive's `ui.menu.list` reports them.
+pub fn model(ctx: &Context) -> Vec<Menu> {
+    let state_key = state_id(ctx);
+    ctx.data(|d| d.get_temp::<State>(state_key))
+        .map(|s| s.menus)
+        .unwrap_or_default()
+}
+
+/// The same menus, with their titles forming the first vertical level.
+pub fn compact_model(menus: &[Menu]) -> Vec<Menu> {
+    vec![Menu {
+        title: crate::strings::own("window-menu"),
+        entries: menus
+            .iter()
+            .map(|menu| {
+                Entry::Row(Row {
+                    enabled: true,
+                    ..Row::submenu(menu.title.clone(), menu.entries.clone())
+                })
+            })
+            .collect(),
+    }]
+}
+
+pub fn form(ctx: &Context) -> serde_json::Value {
+    let chrome = Chrome::of(ctx);
+    let service = crate::drive::menu_service(ctx);
+    serde_json::json!({
+        "style": chrome.menu_style.name(),
+        "side": chrome.menu_side.name(),
+        "effective": effective(ctx).name(),
+        "hosted": effective(ctx) == design::MenuStyle::Titlebar,
+        "service": service,
+    })
+}
+
+pub(crate) fn effective(ctx: &Context) -> design::MenuStyle {
+    let chrome = Chrome::of(ctx);
+    let style = chrome.menu_style.effective(chrome.decorations);
+    if (style == design::MenuStyle::Bar && ctx.content_rect().width() < 640.0)
+        || (style == design::MenuStyle::Titlebar
+            && (!design::decorations::has_host() || crate::drive::menu_service(ctx).is_none()))
+    {
+        // The existing compact menu keeps every command reachable when a
+        // full menu row would overlap the title-bar controls in a small tile.
+        design::MenuStyle::Button
+    } else {
+        style
+    }
+}
+
+/// Open at the top of the content, independent of the selected menu form.
+pub fn popup(ctx: &Context, side: Option<design::MenuSide>, x: Option<f32>) -> Result<(), String> {
+    let state_key = state_id(ctx);
+    let mut st: State = ctx.data(|d| d.get_temp(state_key)).unwrap_or_default();
+    if st.menus.is_empty() {
+        return Err("this window has no menus".into());
+    }
+    take_keyboard(ctx);
+    let bounds = ctx.content_rect();
+    let side = side.unwrap_or(Chrome::of(ctx).menu_side);
+    let x = x
+        .unwrap_or(match side {
+            design::MenuSide::Left => bounds.left(),
+            design::MenuSide::Center => bounds.center().x,
+            design::MenuSide::Right => bounds.right(),
+        })
+        .clamp(bounds.left(), bounds.right());
+    st.popup_anchor = Some(Rect::from_min_max(
+        pos2(x, bounds.top()),
+        pos2(x, bounds.top()),
+    ));
+    st.popup_right = side == design::MenuSide::Right;
+    st.vertical = true;
+    st.nav.vertical_root = true;
+    st.nav.open(0);
+    st.query.clear();
+    st.current = current_in_form(&st.nav, &compact_model(&st.menus), true);
+    ctx.data_mut(|d| d.insert_temp(state_key, st));
+    ctx.request_repaint();
+    Ok(())
+}
+
+pub(crate) fn toggle(ctx: &Context) {
+    let state_key = state_id(ctx);
+    let mut st: State = ctx.data(|d| d.get_temp(state_key)).unwrap_or_default();
+    st.popup_anchor = None;
+    st.vertical = true;
+    st.nav.vertical_root = true;
+    if st.nav.open_menu().is_some() {
+        st.nav.close();
+    } else {
+        st.nav.open(0);
+        take_keyboard(ctx);
+    }
+    st.title_press = true;
+    ctx.data_mut(|d| d.insert_temp(state_key, st));
+    ctx.request_repaint();
+}
+
+/// Whether two labels name the same menu or row: case and a trailing
+/// ellipsis aside.
+fn same_label(a: &str, b: &str) -> bool {
+    let plain = |s: &str| s.trim().trim_end_matches(['…', '.']).trim().to_lowercase();
+    plain(a) == plain(b)
+}
+
+/// The entry of `entries` labelled `label`: an exact label first, so `New`
+/// and `New…` side by side stay distinct; else the lenient [`same_label`].
+fn find_label(entries: &[Entry], label: &str) -> Option<usize> {
+    let row = |e: &Entry| e.row().map(|r| r.label.clone());
+    entries
+        .iter()
+        .position(|e| row(e).as_deref() == Some(label))
+        .or_else(|| {
+            entries
+                .iter()
+                .position(|e| row(e).is_some_and(|l| same_label(&l, label)))
+        })
+}
+
+/// Open the menu `path` names: a top-level title, then the label of a row
+/// at each level below it. A submenu row opens its submenu; the last row
+/// named is highlighted, and the keyboard acts on the deepest open level.
+/// Answers what is open, as [`current`] will report it.
+///
+/// # Errors
+/// An empty path, a title or label no menu has, a disabled row, or a row
+/// before the last that opens no submenu.
+pub fn open_path(ctx: &Context, path: &[String]) -> Result<Current, String> {
+    let state_key = state_id(ctx);
+    let mut st: State = ctx.data(|d| d.get_temp(state_key)).unwrap_or_default();
+    let vertical = st.compact || st.popup_anchor.is_some();
+    let menus = if vertical {
+        compact_model(&st.menus)
+    } else {
+        st.menus.clone()
+    };
+    let (title, rows) = path.split_first().ok_or("the path names no menu")?;
+    let menu = st
+        .menus
+        .iter()
+        .position(|m| m.title == *title)
+        .or_else(|| st.menus.iter().position(|m| same_label(&m.title, title)))
+        .ok_or_else(|| format!("no menu {title:?}"))?;
+    // A search typed into an open menu would show results, not the rows
+    // named here: opening by path starts without one, as a click does.
+    st.query.clear();
+    st.nav.vertical_root = vertical;
+    st.nav.open(if vertical { 0 } else { menu });
+    st.vertical = vertical;
+    if vertical {
+        st.nav.hover(0, menu, &menus);
+    }
+    for (index_in_path, label) in rows.iter().enumerate() {
+        let level = index_in_path + usize::from(vertical);
+        let entries = st
+            .nav
+            .level(&menus, level)
+            .ok_or_else(|| format!("{label:?}: no submenu is open above it"))?;
+        let index = find_label(entries, label).ok_or_else(|| format!("no row {label:?}"))?;
+        let row = entries[index].row().expect("a row");
+        if !row.enabled {
+            return Err(format!("{label:?} is disabled"));
+        }
+        if index_in_path + 1 < rows.len() && !row.is_submenu() {
+            return Err(format!("{label:?} opens no submenu"));
+        }
+        st.nav.hover(level, index, &menus);
+    }
+    st.nav.depth = st.nav.levels().saturating_sub(1);
+    let current = current_in_form(&st.nav, &menus, vertical).expect("a menu is open");
+    st.current = Some(current.clone());
+    take_keyboard(ctx);
+    ctx.data_mut(|d| d.insert_temp(state_key, st));
+    ctx.request_repaint();
+    Ok(current)
+}
+
+/// Close every open menu. Answers whether one was open.
+pub fn close(ctx: &Context) -> bool {
+    let state_key = state_id(ctx);
+    let mut st: State = ctx.data(|d| d.get_temp(state_key)).unwrap_or_default();
+    let was = st.nav.open.is_some();
+    st.nav.close();
+    st.current = None;
+    st.popup_anchor = None;
+    st.vertical = st.compact;
+    ctx.data_mut(|d| d.insert_temp(state_key, st));
+    ctx.request_repaint();
+    was
+}
+
+const KEYS: [(Key, NavKey); 7] = [
+    (Key::ArrowDown, NavKey::Down),
+    (Key::ArrowUp, NavKey::Up),
+    (Key::ArrowLeft, NavKey::Left),
+    (Key::ArrowRight, NavKey::Right),
+    (Key::Enter, NavKey::Enter),
+    (Key::Space, NavKey::Enter),
+    (Key::Escape, NavKey::Escape),
+];
+
+/// Draw `menus` as a menu bar into the current (left-to-right) row of `ui`
+/// and any open menu above everything, and return the command chosen this
+/// frame. Titles are packed edge to edge (§3.3).
+pub fn bar(ui: &mut Ui, menus: &[Menu]) -> Option<&'static str> {
+    bar_with(ui, menus, None)
+}
+
+/// Whether `event` edits the search field's text.
+fn edits_text(event: &egui::Event) -> bool {
+    match event {
+        egui::Event::Text(_)
+        | egui::Event::Paste(_)
+        | egui::Event::PasteImage(_)
+        | egui::Event::Cut
+        | egui::Event::Ime(_) => true,
+        egui::Event::Key {
+            key, pressed: true, ..
+        } => matches!(key, Key::Backspace | Key::Delete),
+        _ => false,
+    }
+}
+
+/// The results are built from the query before this frame's typing reaches
+/// it, so a navigation key after typing in the same frame would act on the
+/// old results: take it, and the keyboard events after it, out of this
+/// frame to replay first in the next, when the query includes the typing.
+/// Pointer and wheel events stay: egui has already applied them this frame.
+fn defer_after_typing(ui: &mut Ui) -> Vec<egui::Event> {
+    ui.input_mut(|i| {
+        let mut typed = false;
+        let cut = i.events.iter().position(|event| {
+            let navigation = matches!(
+                event,
+                egui::Event::Key {
+                    key: Key::Enter | Key::ArrowUp | Key::ArrowDown,
+                    pressed: true,
+                    ..
+                }
+            );
+            if navigation && typed {
+                return true;
+            }
+            typed |= edits_text(event);
+            false
+        });
+        let Some(at) = cut else { return Vec::new() };
+        let keyboard = |event: &egui::Event| {
+            matches!(
+                event,
+                egui::Event::Key { .. }
+                    | egui::Event::Text(_)
+                    | egui::Event::Paste(_)
+                    | egui::Event::PasteImage(_)
+                    | egui::Event::Cut
+                    | egui::Event::Copy
+                    | egui::Event::Ime(_)
+            )
+        };
+        let tail = i.events.split_off(at);
+        let (deferred, kept): (Vec<_>, Vec<_>) = tail.into_iter().partition(keyboard);
+        i.events.extend(kept);
+        deferred
+    })
+}
+
+/// The id of the search field (§3.5), for focus and tests.
+pub fn search_field_id() -> Id {
+    crate::window_id(egui::ViewportId::ROOT, "toolkit.menu").with("search")
+}
+
+/// [`bar`] with a search field at the top of one menu (§3.5). While the
+/// field has the keyboard, typing, Space, Left and Right edit the query;
+/// Up and Down move the highlight over the results; Enter runs the
+/// highlighted result, else the first enabled one; Escape closes. A click
+/// inside that menu never closes it.
+pub fn bar_with(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Option<&'static str> {
+    bar_picked(ui, menus, search).map(|(id, _)| id)
+}
+
+/// [`bar_with`], also saying whether the command was picked from the
+/// search results (true) or from a menu (false).
+pub fn bar_picked(
+    ui: &mut Ui,
+    menus: &[Menu],
+    search: Option<&Search>,
+) -> Option<(&'static str, bool)> {
+    render_picked(ui, menus, search, None)
+}
+
+/// Draw the nested vertical form from a button, or a content-edge anchor.
+pub fn compact_picked(
+    ui: &mut Ui,
+    menus: &[Menu],
+    search: Option<&Search>,
+    anchor: Rect,
+) -> Option<(&'static str, bool)> {
+    render_picked(ui, menus, search, Some(anchor))
+}
+
+fn render_picked(
+    ui: &mut Ui,
+    menus: &[Menu],
+    search: Option<&Search>,
+    anchor: Option<Rect>,
+) -> Option<(&'static str, bool)> {
+    let ctx = ui.ctx().clone();
+    let state_key = state_id(&ctx);
+    let chrome = Chrome::of(&ctx);
+    let model = menus.to_vec();
+    let lost_focus = ui.input(|i| i.events.contains(&egui::Event::WindowFocused(false)));
+    if lost_focus {
+        ctx.data_mut(|d| {
+            let mut st: State = d.get_temp(state_key).unwrap_or_default();
+            st.alt_down = false;
+            st.alt_used = false;
+            st.alt_blocked = true;
+            d.insert_temp(state_key, st);
+        });
+    }
+    // A covered bar still draws, but cannot replace the menu/drive state
+    // belonging to the dialog above it.
+    // It looks exactly like an idle bar (same colour, rounding and
+    // accessibility labels), so covering it changes no pixel.
+    if !ui.is_enabled() || !ctx.memory(|m| m.allows_interaction(ui.layer_id())) {
+        ctx.data_mut(|d| {
+            if let Some(st) = d.get_temp::<State>(state_key)
+                && st.layer == Some(ui.layer_id())
+                && st.nav.open.is_some()
+            {
+                d.insert_temp(
+                    state_key,
+                    State {
+                        layer: st.layer,
+                        menus: st.menus,
+                        alt_blocked: st.alt_blocked,
+                        ..Default::default()
+                    },
+                );
+            }
+        });
+        let ppp = ctx.pixels_per_point();
+        for menu in menus.iter().filter(|_| anchor.is_none()) {
+            let galley = ui.painter().layout_no_wrap(
+                menu.title.clone(),
+                Chrome::menu_font(ui.style()),
+                Color32::PLACEHOLDER,
+            );
+            let size = vec2(
+                galley.size().x + 2.0 * chrome.metrics.menu_title_padding.x,
+                chrome.metrics.menu_title_height,
+            );
+            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+            response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &menu.title));
+            let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ppp);
+            ui.painter().galley(at, galley, chrome.palette.text_dim);
+        }
+        return None;
+    }
+    let mut st: State = ctx.data(|d| d.get_temp(state_key)).unwrap_or_default();
+    if st.layer.is_some_and(|layer| layer != ui.layer_id()) {
+        st = State {
+            alt_blocked: st.alt_blocked,
+            ..State::default()
+        };
+    }
+    st.layer = Some(ui.layer_id());
+    st.compact = anchor.is_some();
+    let vertical = anchor.is_some() || st.popup_anchor.is_some();
+    if st.vertical != vertical {
+        st.nav.close();
+        st.query.clear();
+    }
+    st.vertical = vertical;
+    if vertical && anchor.is_none() {
+        for (index, menu) in menus.iter().enumerate() {
+            let galley = ui.painter().layout_no_wrap(
+                menu.title.clone(),
+                Chrome::menu_font(ui.style()),
+                chrome.palette.text_dim,
+            );
+            let size = vec2(
+                galley.size().x + 2.0 * chrome.metrics.menu_title_padding.x,
+                chrome.metrics.menu_title_height,
+            );
+            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+            response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &menu.title));
+            if response.hovered() {
+                ui.painter()
+                    .rect_filled(rect, chrome.metrics.radius_sm, chrome.palette.hover);
+            }
+            ui.painter().galley(
+                rect.center() - galley.size() / 2.0,
+                galley,
+                chrome.palette.text_dim,
+            );
+            if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
+                || (response.clicked() && !response.clicked_by(PointerButton::Primary))
+            {
+                st.popup_anchor = None;
+                st.vertical = false;
+                st.nav.open(index);
+                st.title_press = true;
+                st.current = current_of(&st.nav, menus);
+                st.menus = model;
+                ctx.data_mut(|d| d.insert_temp(state_key, st));
+                ctx.request_repaint();
+                return None;
+            }
+        }
+    }
+    let compact;
+    let menus = if vertical {
+        compact = compact_model(menus);
+        compact.as_slice()
+    } else {
+        menus
+    };
+    let search_level = usize::from(vertical);
+    st.nav.vertical_root = vertical;
+    let before = st.nav.clone();
+    let held_alt = ui.input(|i| i.modifiers.alt);
+    st.alt_blocked |= lost_focus;
+    if !lost_focus && !held_alt {
+        st.alt_blocked = false;
+    }
+    let alt = !lost_focus && !st.alt_blocked && held_alt;
+    if alt && !st.alt_down {
+        st.alt_used = false;
+    }
+    st.alt_used |= (alt || st.alt_down)
+        && ui.input(|i| {
+            i.modifiers.ctrl
+                || i.modifiers.command
+                || i.modifiers.shift
+                || i.pointer.any_down()
+                || i.pointer.any_pressed()
+                || i.events.iter().any(|e| {
+                    matches!(
+                        e,
+                        egui::Event::Key { pressed: true, .. }
+                            | egui::Event::Text(_)
+                            | egui::Event::PointerButton { pressed: true, .. }
+                            | egui::Event::MouseWheel { .. }
+                    )
+                })
+        });
+    let open_key = st.alt_down && !alt && !st.alt_used;
+    st.alt_down = alt;
+    if open_key && !menus.is_empty() {
+        if st.nav.open_menu().is_some() {
+            st.nav.close();
+        } else {
+            st.nav.open(0);
+            take_keyboard(&ctx);
+        }
+    }
+    // While a query is typed, the search menu lists its results instead of
+    // its rows; navigation and drawing work on that view of the model.
+    let searching = |st: &State| {
+        search.filter(|s| {
+            if vertical {
+                st.nav.open == Some(0)
+                    && st.nav.highlight.first() == Some(&Some(s.menu))
+                    && st.nav.levels() > 1
+            } else {
+                st.nav.open == Some(s.menu)
+            }
+        })
+    };
+    // Keys held back last frame come first, now that the text typed before
+    // them is in the query; but only into the menu and field they were
+    // typed in. If the menu closed or the field lost the keyboard since,
+    // they are dropped, never replayed into the application.
+    let field_focused = ctx.memory(|m| m.has_focus(state_key.with("search")));
+    let deferred = std::mem::take(&mut st.deferred);
+    if !deferred.is_empty()
+        && st.nav.open == st.deferred_menu
+        && searching(&st).is_some()
+        && field_focused
+    {
+        ui.input_mut(|i| {
+            i.events.splice(0..0, deferred);
+        });
+    }
+    st.deferred_menu = None;
+    if searching(&st).is_some() && field_focused {
+        st.deferred = defer_after_typing(ui);
+        if !st.deferred.is_empty() {
+            st.deferred_menu = st.nav.open;
+            ctx.request_repaint();
+        }
+    }
+    // Whether a pick is one of Help search's results: the search menu is
+    // still the open one (navigation may move within the frame) and a
+    // query was showing results when the frame began.
+    let results = !st.query.trim().is_empty();
+    let in_results = |st: &State| results && searching(st).is_some();
+    let view: Vec<Menu>;
+    let menus = match searching(&st) {
+        Some(s) if !st.query.trim().is_empty() => {
+            let mut changed = menus.to_vec();
+            let results = matching(&model, &st.query)
+                .into_iter()
+                .map(Entry::Row)
+                .collect();
+            if vertical {
+                if let Entry::Row(row) = &mut changed[0].entries[s.menu] {
+                    row.children = results;
+                }
+            } else {
+                changed[s.menu].entries = results;
+            }
+            view = changed;
+            view.as_slice()
+        }
+        _ => menus,
+    };
+    st.nav.validate(menus);
+    let mut fired = None;
+    let typing = searching(&st).is_some() && ctx.memory(|m| m.has_focus(state_key.with("search")));
+    if typing {
+        st.nav.depth = search_level;
+    }
+
+    // The open menu's keys come first: before focused widgets, which are
+    // drawn later in the frame, and before global shortcuts (see `is_open`).
+    // Keys apply in arrival order, each repeat its own step; once the menus
+    // close, later keys are left for the application. The search field
+    // keeps Space, Left and Right for its text.
+    let mut keyed = false;
+    if st.nav.open.is_some() {
+        ui.input_mut(|i| {
+            i.events.retain(|event| {
+                if !typing
+                    && st.nav.open_menu().is_some()
+                    && let egui::Event::Text(text) = event
+                {
+                    if let Some(letter) = text.chars().next().filter(|c| c.is_alphabetic()) {
+                        st.nav.jump(letter, menus);
+                        keyed = true;
+                    }
+                    return false;
+                }
+                let egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } = event
+                else {
+                    return true;
+                };
+                if typing && matches!(key, Key::Space | Key::ArrowLeft | Key::ArrowRight) {
+                    return true;
+                }
+                let nav = KEYS.iter().find(|(k, _)| k == key).map(|&(_, nav)| nav);
+                let Some(nav) = nav.filter(|_| {
+                    st.nav.open.is_some() && modifiers.matches_logically(Modifiers::NONE)
+                }) else {
+                    return true;
+                };
+                keyed = true;
+                if typing
+                    && nav == NavKey::Enter
+                    && st
+                        .nav
+                        .highlight()
+                        .get(search_level)
+                        .copied()
+                        .flatten()
+                        .is_none()
+                {
+                    // Enter with nothing highlighted runs the first enabled
+                    // result (none while the query is empty).
+                    let first = (!st.query.trim().is_empty())
+                        .then(|| st.nav.level(menus, search_level))
+                        .flatten()
+                        .and_then(|entries| {
+                            entries
+                                .iter()
+                                .filter_map(Entry::row)
+                                .find(|r| r.enabled && r.id.is_some())
+                                .and_then(|r| r.id)
+                        });
+                    if let Some(id) = first {
+                        fired = Some((id, in_results(&st)));
+                        st.nav.close();
+                    }
+                } else {
+                    let from_results = in_results(&st);
+                    let outcome = if vertical {
+                        st.nav.key_vertical(nav, menus)
+                    } else {
+                        st.nav.key(nav, menus)
+                    };
+                    if let Outcome::Run(id) = outcome {
+                        fired = Some((id, from_results));
+                    }
+                }
+                false
+            });
+        });
+    }
+
+    let (pressed, released, moved, pointer) = ui.input(|i| {
+        (
+            i.pointer.primary_pressed(),
+            i.pointer.primary_released(),
+            i.pointer.delta() != Vec2::ZERO,
+            i.pointer.interact_pos(),
+        )
+    });
+
+    // Titles: open on press, hover-switch while open.
+    let (palette, metrics) = (chrome.palette, chrome.metrics);
+    let font = Chrome::menu_font(ui.style());
+    let mut titles: Vec<(Rect, Arc<Galley>, bool)> = Vec::with_capacity(menus.len());
+    let mut on_title = false;
+    for (index, menu) in menus.iter().enumerate().filter(|_| !vertical) {
+        let galley =
+            ui.painter()
+                .layout_no_wrap(menu.title.clone(), font.clone(), Color32::PLACEHOLDER);
+        let size = vec2(
+            galley.size().x + 2.0 * metrics.menu_title_padding.x,
+            metrics.menu_title_height,
+        );
+        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &menu.title));
+        let open = st.nav.open == Some(index);
+        if pressed && response.hovered() {
+            on_title = true;
+            st.title_press = true;
+            if open {
+                st.nav.close();
+            } else {
+                st.nav.open(index);
+            }
+        } else if response.clicked() && !response.clicked_by(PointerButton::Primary) {
+            // Keyboard or accessibility activation toggles.
+            if open {
+                st.nav.close()
+            } else {
+                st.nav.open(index)
+            }
+        } else if !open && st.nav.open.is_some() && moved && response.contains_pointer() {
+            // Only while moving, and only when the title is top-most, so a
+            // resting pointer or an overlapping submenu never switches.
+            st.nav.open(index);
+        }
+        titles.push((rect, galley, response.hovered()));
+    }
+    if vertical {
+        let anchor = st
+            .popup_anchor
+            .or(anchor)
+            .unwrap_or_else(|| Rect::from_min_size(ctx.content_rect().min, Vec2::ZERO));
+        let galley = ui
+            .painter()
+            .layout_no_wrap(String::new(), font, Color32::PLACEHOLDER);
+        titles.push((anchor, galley, false));
+        on_title = st.title_press;
+    }
+    // Bar titles and keys open the search menu before its field is drawn.
+    if !vertical
+        && let Some(s) = search
+        && st.nav.open == Some(s.menu)
+        && before.open_menu() != Some(s.menu)
+    {
+        st.query.clear();
+        st.focus_search = true;
+    }
+    // Focus waits for the pointer to settle: egui hands focus back from a
+    // field on the frame of any press or click that lands elsewhere, which
+    // the press on the title would be.
+    if st.focus_search
+        && !ui
+            .input(|i| i.pointer.any_pressed() || i.pointer.any_released() || i.pointer.any_down())
+    {
+        st.focus_search = false;
+        if searching(&st).is_some() {
+            ctx.memory_mut(|m| m.request_focus(state_key.with("search")));
+            st.nav.depth = search_level;
+        }
+    }
+    let ppp = ctx.pixels_per_point();
+    for (index, (rect, galley, hovered)) in titles.iter().enumerate().filter(|_| !vertical) {
+        if *hovered || st.nav.open == Some(index) {
+            ui.painter()
+                .rect_filled(*rect, metrics.radius_sm, palette.hover);
+        }
+        let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ppp);
+        ui.painter().galley(at, galley.clone(), palette.text_dim);
+    }
+
+    // The open levels, outermost first: each level's pointer hover is
+    // applied before the next level is placed, so a hover that closes a
+    // submenu takes effect this frame.
+    let mut frames: Vec<Rect> = Vec::new();
+    let mut bars: Vec<Rect> = Vec::new();
+    let mut under: Option<(usize, usize)> = None;
+    if let Some(open) = st.nav.open {
+        let frame = Frame::menu(ui.style());
+        let margin = frame.total_margin();
+        let anchor = titles[open].0;
+        let bar_bottom = anchor.bottom();
+        let screen = ctx.content_rect();
+        // The frame hangs from the title's bottom edge (measured: its border
+        // starts where the title's hover fill ends).
+        let mut origin = pos2(anchor.left(), anchor.bottom());
+        let bottom = screen.bottom() - metrics.edge_gap;
+        // A level taller than the window below the bar scrolls.
+        let tallest = (bottom - bar_bottom).max(metrics.menu_row_height + margin.sum().y);
+        // In a narrow folded menu, reserve room for parent and child side
+        // by side. An overlapping child can otherwise cover the parent row
+        // between pointer press and release and activate the wrong command.
+        let compact_width = (vertical && screen.width() < 640.0).then(|| {
+            ((screen.width() - 2.0 * metrics.edge_gap - metrics.submenu_gap) * 0.5).max(0.0)
+        });
+        let max_width = compact_width.map(|width| (width - margin.sum().x).max(0.0));
+        let mut level = 0;
+        while level < st.nav.levels() {
+            let Some(entries) = st.nav.level(menus, level) else {
+                break;
+            };
+            let min_width = if level == 0 || (level == search_level && searching(&st).is_some()) {
+                metrics.menu_min_width
+            } else {
+                0.0
+            };
+            let min_width = min_width.min(max_width.unwrap_or(f32::INFINITY));
+            let layout = Layout::new(ui, &chrome, entries, min_width);
+            let mut outer = layout.size + margin.sum();
+            if let Some(width) = compact_width {
+                outer.x = outer.x.min(width);
+            }
+            if level == 0 {
+                let right = match st.popup_anchor {
+                    Some(_) => st.popup_right,
+                    None => chrome.menu_side == design::MenuSide::Right,
+                };
+                if compact_width.is_some() {
+                    // The icon is inset further than the popup edge. Use the
+                    // window edge so both bounded columns actually fit.
+                    origin.x = if right {
+                        screen.right() - metrics.edge_gap - outer.x
+                    } else {
+                        screen.left() + metrics.edge_gap
+                    };
+                } else if vertical && right {
+                    origin.x = anchor.right() - outer.x;
+                }
+                origin.x = origin
+                    .x
+                    .min(screen.right() - metrics.edge_gap - outer.x)
+                    .max(screen.left());
+            }
+            let rect = Rect::from_min_size(origin, outer);
+            // The search menu's field and its separator band sit above the rows.
+            let header = searching(&st).filter(|_| level == search_level);
+            // The field, the separator and their item spacing come to about
+            // one row and a separator band; the no-matches line is a row.
+            let header_height = header.map_or(0.0, |_| {
+                let empty = entries.is_empty() && !st.query.trim().is_empty();
+                metrics.menu_row_height * if empty { 2.0 } else { 1.0 }
+                    + metrics.menu_separator_height
+                    + 6.0
+            });
+            let max_height = (bottom - origin.y).max(metrics.menu_row_height + margin.sum().y)
+                - margin.sum().y
+                - header_height;
+            let deeper = st
+                .frames
+                .get(level + 1)
+                .copied()
+                .filter(|_| st.nav.submenu_open(level));
+            // A key reveals the highlight of every level it acts through, so
+            // a submenu entered by keyboard brings its parent row into view.
+            let view = View {
+                max_height,
+                max_width,
+                moved,
+                keyed: keyed && level <= st.nav.depth(),
+                deeper,
+            };
+            let header = header.map(|s| (s, &mut st.query));
+            let shown = show_level(
+                &ctx,
+                &chrome,
+                level,
+                entries,
+                &layout,
+                rect,
+                &mut st.nav,
+                menus,
+                view,
+                header,
+            );
+            frames.push(shown.frame);
+            bars.extend(shown.bar);
+            if let Some(index) = shown.under {
+                under = Some((level, index));
+            }
+            if let Some(index) = shown.activated
+                && let Some(Row {
+                    id: Some(id),
+                    enabled: true,
+                    ..
+                }) = entries[index].row()
+            {
+                fired = Some((*id, in_results(&st)));
+                st.nav.close();
+                break;
+            }
+            // Place the next level beside this level's highlighted row: its
+            // first row level with that row, else opening upward, else
+            // pressed against the window bottom, never over the bar.
+            let Some(row) = st
+                .nav
+                .highlight()
+                .get(level)
+                .copied()
+                .flatten()
+                .and_then(|i| shown.rows.get(i).copied())
+            else {
+                break;
+            };
+            if !st.nav.submenu_open(level) {
+                break;
+            }
+            // A parent row scrolled out of view takes its submenu with it,
+            // unless a key just opened it: the row comes into view next frame.
+            if !keyed && !shown.view.contains(row.center()) {
+                st.nav.close_below(level);
+                break;
+            }
+            let child = st.nav.level(menus, level + 1).map(|e| {
+                let min_width = if level + 1 == search_level && searching(&st).is_some() {
+                    metrics.menu_min_width
+                } else {
+                    0.0
+                };
+                Layout::new(ui, &chrome, e, min_width).size + margin.sum()
+            });
+            let mut child = child.unwrap_or(Vec2::ZERO);
+            child.y = child.y.min(tallest);
+            if let Some(width) = compact_width {
+                child.x = child.x.min(width);
+            }
+            let mut x = shown.frame.right() + metrics.submenu_gap;
+            if x + child.x > screen.right() - metrics.edge_gap {
+                x = (shown.frame.left() - metrics.submenu_gap - child.x).max(screen.left());
+            }
+            let mut y = row.top() - margin.top;
+            if y + child.y > bottom {
+                let upward = row.bottom() + margin.bottom - child.y;
+                y = if upward >= bar_bottom {
+                    upward
+                } else {
+                    (bottom - child.y).max(bar_bottom)
+                };
+            }
+            origin = pos2(x, y.max(bar_bottom));
+            level += 1;
+        }
+    }
+
+    let inside = |pos: Pos2| frames.iter().any(|f| f.contains(pos));
+    if pressed {
+        st.inside_press = pointer.is_some_and(inside);
+        st.scroll_press = pointer.is_some_and(|p| bars.iter().any(|b| b.contains(p)));
+        if !on_title && outside_press(&ctx, inside) && st.nav.open.is_some() {
+            st.nav.close();
+        }
+    }
+    if released {
+        let row = under
+            .filter(|_| !st.scroll_press)
+            .and_then(|(level, index)| {
+                st.nav
+                    .level(menus, level)
+                    .and_then(|e| e.get(index))
+                    .and_then(Entry::row)
+                    .map(|r| (level, index, r))
+            });
+        match row {
+            // A scroll bar gesture only scrolls.
+            _ if st.scroll_press => {}
+            Some((
+                _,
+                _,
+                Row {
+                    id: Some(id),
+                    enabled: true,
+                    ..
+                },
+            )) if st.nav.open.is_some() => {
+                fired = Some((*id, in_results(&st)));
+                st.nav.close();
+            }
+            Some((level, index, row)) if row.enabled && st.nav.submenu(row, level) => {
+                if st.inside_press {
+                    st.nav.hover(level, index, menus);
+                    st.nav.depth = level;
+                    st.nav.key(NavKey::Right, menus);
+                }
+            }
+            // A click inside the search menu (on its field, say) keeps it
+            // open: only a click outside closes it (§3.5).
+            _ if st.inside_press && pointer.is_some_and(inside) && searching(&st).is_none() => {
+                st.nav.close()
+            }
+            _ => {}
+        }
+        st.title_press = false;
+        st.inside_press = false;
+        st.scroll_press = false;
+    }
+
+    let search_active = searching(&st).is_some();
+    // Vertical hover can open the search level while its parent is drawn.
+    if vertical && search_active && !st.search_active {
+        st.query.clear();
+        st.focus_search = true;
+    }
+    st.search_active = search_active;
+    st.current = current_in_form(&st.nav, menus, vertical);
+    st.menus = model;
+    st.frames = frames;
+    if st.nav.open.is_none() {
+        st.query.clear();
+        st.popup_anchor = None;
+    }
+    if st.nav != before || st.focus_search {
+        ctx.request_repaint();
+    }
+    ctx.data_mut(|d| d.insert_temp(state_key, st));
+    fired
+}
+
+/// A row's laid-out label and its right column (shortcut or arrow).
+type Line = (Arc<Galley>, Option<Arc<Galley>>);
+
+/// One level's text and size, before placement.
+struct Layout {
+    /// Per entry; `None` for a separator.
+    lines: Vec<Option<Line>>,
+    heights: Vec<f32>,
+    /// The content size (inside the frame's margin).
+    size: Vec2,
+    /// The tick's gutter before every label, when the level has choices.
+    gutter: f32,
+    tick: Option<Arc<Galley>>,
+}
+
+impl Layout {
+    /// `min_width` applies to the top level only: a submenu is as wide as
+    /// its rows (measured, §3.5).
+    fn new(ui: &Ui, chrome: &Chrome, entries: &[Entry], min_width: f32) -> Self {
+        let m = &chrome.metrics;
+        let font = Chrome::menu_font(ui.style());
+        let painter = ui.painter();
+        let galley = |text: &str| {
+            painter.layout_no_wrap(text.to_owned(), font.clone(), Color32::PLACEHOLDER)
+        };
+        // A level with any choice gives every label the tick's gutter, so
+        // ticked and unticked labels line up (§3.5).
+        let choices = entries
+            .iter()
+            .filter_map(Entry::row)
+            .any(|r| r.checked.is_some());
+        let (gutter, tick) = if choices {
+            (galley(TICK_GUTTER).size().x, Some(galley(TICK)))
+        } else {
+            (0.0, None)
+        };
+        let mut width: f32 = min_width;
+        let mut lines = Vec::with_capacity(entries.len());
+        let mut heights = Vec::with_capacity(entries.len());
+        for entry in entries {
+            match entry {
+                Entry::Separator => {
+                    lines.push(None);
+                    heights.push(m.menu_separator_height);
+                }
+                Entry::Row(row) => {
+                    let label = galley(&row.label);
+                    let right = if row.is_submenu() {
+                        Some(galley(SUBMENU_ARROW))
+                    } else {
+                        row.shortcut.as_deref().map(galley)
+                    };
+                    // Labels never wrap: the menu widens instead (§3.4).
+                    let right_width = right.as_ref().map_or(0.0, |g| m.shortcut_gap + g.size().x);
+                    width = width
+                        .max(2.0 * m.menu_row_padding.x + gutter + label.size().x + right_width);
+                    let text_height = label
+                        .size()
+                        .y
+                        .max(right.as_ref().map_or(0.0, |g| g.size().y));
+                    lines.push(Some((label, right)));
+                    heights.push(
+                        m.menu_row_height
+                            .max(text_height + 2.0 * m.menu_row_padding.y),
+                    );
+                }
+            }
+        }
+        let size = vec2(width, heights.iter().sum());
+        Self {
+            lines,
+            heights,
+            size,
+            gutter,
+            tick,
+        }
+    }
+}
+
+struct Shown {
+    frame: Rect,
+    /// Each entry's rect (rows touch: zero spacing, §3.5).
+    rows: Vec<Rect>,
+    /// The entry under the pointer.
+    under: Option<usize>,
+    /// An enabled entry activated without the pointer (accessibility).
+    activated: Option<usize>,
+    /// Where the rows show (the scroll area's viewport).
+    view: Rect,
+    /// The scroll bar's strip, while the level scrolls.
+    bar: Option<Rect>,
+}
+
+/// How one level is viewed this frame.
+struct View {
+    /// The tallest the level's content may be; taller content scrolls.
+    max_height: f32,
+    /// Anchored menus constrain oversized content to the native window.
+    max_width: Option<f32>,
+    /// The pointer moved this frame.
+    moved: bool,
+    /// A key moved this level's highlight this frame: scroll it into view.
+    keyed: bool,
+    /// The open submenu's frame, last frame.
+    deeper: Option<Rect>,
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one level's inputs, called from one place"
+)]
+fn show_level(
+    ctx: &Context,
+    chrome: &Chrome,
+    level: usize,
+    entries: &[Entry],
+    layout: &Layout,
+    rect: Rect,
+    nav: &mut Nav,
+    menus: &[Menu],
+    view: View,
+    header: Option<(&Search, &mut String)>,
+) -> Shown {
+    let View {
+        max_height,
+        max_width,
+        moved,
+        keyed,
+        deeper,
+    } = view;
+    let id = state_id(ctx).with(level);
+    let area = Area::new(id)
+        .kind(UiKind::Menu)
+        .order(Order::Foreground)
+        .fixed_pos(rect.min)
+        .constrain(false)
+        .fade_in(false);
+    let area = if max_width.is_some() {
+        area.default_size(rect.size())
+    } else {
+        area
+    };
+    let area = area.show(ctx, |ui| {
+        Frame::menu(ui.style())
+            .show(ui, |ui| {
+                if let Some(width) = max_width {
+                    // Area size is cached between openings. Grow to this
+                    // menu's measured, bounded frame even after a shorter
+                    // catalogue, without forcing scrollbars past its edge.
+                    ui.set_min_size(vec2(width, max_height.min(layout.size.y)));
+                }
+                if let Some((search, query)) = header {
+                    search_header(ui, chrome, search, query, layout.size.x, entries.is_empty());
+                }
+                // At least the rows, up to the window: an egui area
+                // starts at the style's default area size (400 pt high),
+                // and a scroll area alone never grows past its area, so
+                // a long level would scroll in a 400 pt box however tall
+                // the window. Asking for the rows makes the area grow.
+                configure_scroll(ui, chrome);
+                let scroll = if let Some(width) = max_width {
+                    let gutter = if layout.size.y > max_height {
+                        ui.spacing().scroll.allocated_width()
+                    } else {
+                        0.0
+                    };
+                    let scroll = if layout.size.x + gutter > width {
+                        ScrollArea::both()
+                    } else {
+                        ScrollArea::vertical()
+                    };
+                    scroll.max_width(width).min_scrolled_width(0.0)
+                } else {
+                    ScrollArea::vertical()
+                };
+                let out = scroll
+                    .id_salt(id.with("scroll"))
+                    .max_height(max_height)
+                    .min_scrolled_height(if max_width.is_some() {
+                        0.0
+                    } else {
+                        max_height.min(layout.size.y)
+                    })
+                    .auto_shrink([true, true])
+                    .show(ui, |ui| {
+                        level_rows(
+                            ui, chrome, level, entries, layout, nav, menus, moved, keyed, deeper,
+                            id,
+                        )
+                    });
+                let view = out.inner_rect;
+                let bar = (out.content_size.y > view.height() + 0.5).then(|| {
+                    // egui's bar ends at the allocated strip's outer
+                    // margin; a floating bar is wider than its strip and
+                    // reaches back over the rows' right edge.
+                    let s = &ui.spacing().scroll;
+                    let allocated = if s.floating {
+                        s.floating_allocated_width
+                    } else {
+                        s.bar_inner_margin + s.bar_width + s.bar_outer_margin
+                    };
+                    let right = view.right() + allocated;
+                    let left = view.right().min(right - s.bar_outer_margin - s.bar_width);
+                    Rect::from_x_y_ranges(left..=right, view.y_range())
+                });
+                (out.inner, view, bar)
+            })
+            .inner
+    });
+    let ((rows, under, activated), view, bar) = area.inner;
+    Shown {
+        frame: area.response.rect,
+        rows,
+        under,
+        activated,
+        view,
+        bar,
+    }
+}
+
+/// The search menu's field (§3.5): egui's single-line field, 220 wide, in
+/// egui's menu style (so no resting border), then egui's separator, then
+/// the weak "no matches" line when a query found nothing. Measured: the
+/// field spans 35 to 52.5 pt under a 32 pt bar and the rule sits at 62.
+fn search_header(
+    ui: &mut Ui,
+    chrome: &Chrome,
+    search: &Search,
+    query: &mut String,
+    width: f32,
+    empty: bool,
+) {
+    let m = &chrome.metrics;
+    ui.scope(|ui| {
+        egui::containers::menu::menu_style(ui.style_mut());
+        let field = TextEdit::singleline(query)
+            .id(state_id(ui.ctx()).with("search"))
+            .hint_text(search.hint.as_str())
+            .desired_width(width.max(chrome.style.menu_search_width as f32));
+        if ui.add(field).changed() {
+            ui.ctx().request_repaint();
+        }
+    });
+    ui.separator();
+    if empty && !query.trim().is_empty() {
+        let (row, response) =
+            ui.allocate_exact_size(vec2(width, m.menu_row_height), Sense::hover());
+        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &search.empty));
+        let ink = chrome
+            .palette
+            .text
+            .gamma_multiply(chrome.style.weak_alpha as f32);
+        let galley =
+            ui.painter()
+                .layout_no_wrap(search.empty.clone(), Chrome::menu_font(ui.style()), ink);
+        let at = pos2(
+            row.left() + m.menu_row_padding.x,
+            row.center().y - galley.size().y / 2.0,
+        );
+        ui.painter().galley(at, galley, ink);
+    }
+}
+
+/// The rows of one level, inside its scroll area.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one level's inputs, called from one place"
+)]
+fn level_rows(
+    ui: &mut Ui,
+    chrome: &Chrome,
+    level: usize,
+    entries: &[Entry],
+    layout: &Layout,
+    nav: &mut Nav,
+    menus: &[Menu],
+    moved: bool,
+    keyed: bool,
+    deeper: Option<Rect>,
+    id: Id,
+) -> (Vec<Rect>, Option<usize>, Option<usize>) {
+    let viewport = ui.ctx().viewport_id();
+    let (content, _) = ui.allocate_exact_size(layout.size, Sense::hover());
+    let mut rows = Vec::with_capacity(entries.len());
+    let mut y = content.top();
+    for height in &layout.heights {
+        rows.push(Rect::from_x_y_ranges(content.x_range(), y..=y + height));
+        y += height;
+    }
+    let mut under = None;
+    let mut activated = None;
+    for (index, (entry, row_rect)) in entries.iter().zip(&rows).enumerate() {
+        let response = ui.interact(*row_rect, id.with(index), Sense::click());
+        if let Entry::Row(row) = entry {
+            response.widget_info(|| WidgetInfo::labeled(Role::Button, row.enabled, &row.label));
+            if let Some(checked) = row.checked {
+                // A choice is one of a group, ticked or not: a radio menu
+                // item to assistive technology and the drive layer.
+                ui.ctx().accesskit_node_builder(response.id, |node| {
+                    node.set_role(egui::accesskit::Role::MenuItemRadio);
+                    node.set_toggled(if checked {
+                        egui::accesskit::Toggled::True
+                    } else {
+                        egui::accesskit::Toggled::False
+                    });
+                });
+            }
+            if row.enabled && response.clicked() && !response.clicked_by(PointerButton::Primary) {
+                activated = Some(index);
+            }
+            if let Some(tip) = ui
+                .ctx()
+                .data(|d| {
+                    d.get_temp::<Vec<(&'static str, String)>>(crate::window_id(
+                        viewport,
+                        "toolkit.anchored-tooltips",
+                    ))
+                })
+                .and_then(|tips| {
+                    tips.into_iter()
+                        .find(|(id, _)| Some(*id) == row.id)
+                        .map(|(_, tip)| tip)
+                })
+            {
+                response.clone().on_hover_text(tip);
+            }
+        }
+        if response.contains_pointer() {
+            under = Some(index);
+        }
+    }
+    // A moving pointer highlights the row under it, unless it is heading
+    // for the open submenu.
+    let heading = deeper.is_some_and(|r| ui.input(|i| i.pointer.is_moving_towards_rect(&r)));
+    if let Some(index) = under
+        && moved
+        && !heading
+    {
+        nav.hover(level, index, menus);
+    }
+    if keyed
+        && let Some(row) = nav
+            .highlight()
+            .get(level)
+            .copied()
+            .flatten()
+            .and_then(|i| rows.get(i))
+    {
+        // At once, as a native menu does: an animated scroll would leave a
+        // keyboard-opened submenu's row out of view for several frames.
+        ui.scroll_to_rect_animation(*row, None, egui::style::ScrollAnimation::none());
+    }
+    paint(ui, chrome, level, entries, layout, &rows, nav);
+    (rows, under, activated)
+}
+
+fn paint(
+    ui: &Ui,
+    chrome: &Chrome,
+    level: usize,
+    entries: &[Entry],
+    layout: &Layout,
+    rows: &[Rect],
+    nav: &Nav,
+) {
+    let (p, m) = (&chrome.palette, &chrome.metrics);
+    let painter = ui.painter();
+    let ppp = ui.ctx().pixels_per_point();
+    let highlighted = nav.highlight().get(level).copied().flatten();
+    for (index, ((entry, rect), line)) in entries.iter().zip(rows).zip(&layout.lines).enumerate() {
+        match (entry, line) {
+            (Entry::Separator, _) => {
+                let y = painter.round_to_pixel_center(rect.center().y);
+                painter.hline(
+                    rect.x_range(),
+                    y,
+                    Stroke::new(chrome.style.hairline_width as f32, p.separator),
+                );
+            }
+            (Entry::Row(row), Some((label, right))) => {
+                let lit = highlighted == Some(index) && row.enabled;
+                let parent = lit && nav.submenu_open(level);
+                // A row whose submenu is open shows the neutral hover fill;
+                // the highlighted row the menu highlight (§3.5).
+                let (fill, ink) = if parent {
+                    (Some(p.hover), p.text)
+                } else if lit {
+                    (Some(p.menu_highlight), p.menu_highlight_text)
+                } else {
+                    (None, p.text)
+                };
+                if let Some(fill) = fill {
+                    painter.rect_filled(*rect, m.menu_highlight_radius, fill);
+                }
+                let ink = if row.enabled {
+                    ink
+                } else {
+                    ink.gamma_multiply(chrome.style.disabled_alpha as f32)
+                };
+                let x = rect.left() + m.menu_row_padding.x;
+                if row.checked == Some(true)
+                    && let Some(tick) = &layout.tick
+                {
+                    let at = pos2(x, rect.center().y - tick.size().y / 2.0).round_to_pixels(ppp);
+                    painter.galley(at, tick.clone(), ink);
+                }
+                let x = x + layout.gutter;
+                let at = pos2(x, rect.center().y - label.size().y / 2.0).round_to_pixels(ppp);
+                painter.galley(at, label.clone(), ink);
+                if let Some(right) = right {
+                    // The submenu arrow keeps the label's ink; a shortcut is weak.
+                    let tint = if row.is_submenu() {
+                        ink
+                    } else {
+                        ink.gamma_multiply(chrome.style.weak_alpha as f32)
+                    };
+                    let x = rect.right() - m.menu_row_padding.x - right.size().x;
+                    let at = pos2(x, rect.center().y - right.size().y / 2.0).round_to_pixels(ppp);
+                    painter.galley(at, right.clone(), tint);
+                }
+            }
+            (Entry::Row(_), None) => {}
+        }
+    }
+}
+
+// The frame's child UI belongs only to this menu level. Its scroll area
+// and rows inherit this animation; other scroll areas keep egui's default.
+fn configure_scroll(ui: &mut Ui, chrome: &Chrome) {
+    ui.style_mut().scroll_animation.points_per_second = chrome.style.menu_scroll_speed as f32;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_width_bounded_short_menu_keeps_its_measured_height() {
+        let ctx = Context::default();
+        crate::install(&ctx, &crate::Theme::embedded());
+        for pass in 0..5 {
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(420.0, 260.0))),
+                    time: Some(pass as f64),
+                    ..Default::default()
+                },
+                |ui| {
+                    let chrome = Chrome::of(&ctx);
+                    let menus = [Menu {
+                        title: "File".into(),
+                        entries: vec![Entry::Row(Row::command("quit", "Quit", None, true))],
+                    }];
+                    let layout = Layout::new(ui, &chrome, &menus[0].entries, 180.0);
+                    let margin = Frame::menu(ui.style()).total_margin().sum();
+                    let mut nav = Nav::default();
+                    nav.open(0);
+                    let shown = show_level(
+                        &ctx,
+                        &chrome,
+                        0,
+                        &menus[0].entries,
+                        &layout,
+                        Rect::from_min_size(pos2(4.0, 38.0), layout.size + margin),
+                        &mut nav,
+                        &menus,
+                        View {
+                            max_height: 210.0,
+                            max_width: Some(180.0),
+                            moved: false,
+                            keyed: false,
+                            deeper: None,
+                        },
+                        None,
+                    );
+                    if pass > 2 {
+                        assert!(
+                            shown.frame.height() <= layout.size.y + margin.y + 1.0,
+                            "a short menu must not fill the available window height"
+                        );
+                        assert!(shown.bar.is_none());
+                    }
+                },
+            );
+            out.textures_delta.clear();
+        }
+    }
+
+    #[test]
+    fn a_covered_bar_closes_only_its_own_state_and_keeps_the_layer() {
+        for own_layer in [true, false] {
+            let ctx = Context::default();
+            let state_key = state_id(&ctx);
+            crate::install(&ctx, &crate::Theme::embedded());
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let layer = if own_layer {
+                    ui.layer_id()
+                } else {
+                    egui::LayerId::new(egui::Order::Foreground, Id::unique("dialog-menu"))
+                };
+                let mut st = State {
+                    layer: Some(layer),
+                    ..Default::default()
+                };
+                st.nav.open(0);
+                ctx.data_mut(|d| d.insert_temp(state_key, st));
+                ui.disable();
+                let _ = bar(ui, &[]);
+                let st = ctx.data(|d| d.get_temp::<State>(state_key)).unwrap();
+                assert_eq!(st.layer, Some(layer));
+                assert_eq!(st.nav.open, if own_layer { None } else { Some(0) });
+            });
+            out.textures_delta.clear();
+        }
+    }
+
+    #[test]
+    fn a_short_window_keeps_the_menu_below_its_icon_and_only_scrolls_vertically() {
+        let ctx = Context::default();
+        crate::install(&ctx, &crate::Theme::embedded());
+        ctx.global_style_mut(|style| style.spacing.scroll.floating = false);
+        let anchor = Rect::from_min_size(pos2(350.0, 10.0), vec2(24.0, 24.0));
+        let mut open = true;
+        let mut frame = Rect::NOTHING;
+        for pass in 0..40 {
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(400.0, 160.0))),
+                    time: Some(pass as f64),
+                    ..Default::default()
+                },
+                |ui| {
+                    let menu = Menu {
+                        title: "Macros".into(),
+                        entries: (0..20)
+                            .map(|n| {
+                                Entry::Row(Row::command("macro", format!("Macro {n}"), None, true))
+                            })
+                            .collect(),
+                    };
+                    let _ = anchored(
+                        ui,
+                        Id::unique("short-menu"),
+                        anchor,
+                        &mut open,
+                        menu.clone(),
+                        &[],
+                    );
+                    let cache_id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-input");
+                    let cache = ctx.data(|d| d.get_temp::<AnchoredInput>(cache_id)).unwrap();
+                    frame = cache.frame;
+                    // Render this same bounded level directly to inspect its rows
+                    // and scroll viewport, rather than relying on scrollbar paint.
+                    let chrome = Chrome::of(&ctx);
+                    let layout =
+                        Layout::new(ui, &chrome, &menu.entries, chrome.metrics.menu_min_width);
+                    let margin = Frame::menu(ui.style()).total_margin().sum();
+                    let mut nav = Nav::default();
+                    nav.open(0);
+                    let menus = [menu];
+                    let shown = show_level(
+                        &ctx,
+                        &chrome,
+                        1,
+                        &menus[0].entries,
+                        &layout,
+                        frame,
+                        &mut nav,
+                        &menus,
+                        View {
+                            max_height: (frame.height() - margin.y).max(0.0),
+                            max_width: Some((frame.width() - margin.x).max(0.0)),
+                            moved: false,
+                            keyed: false,
+                            deeper: None,
+                        },
+                        None,
+                    );
+                    if pass > 2 {
+                        assert!(shown.bar.is_some(), "vertical overflow must scroll");
+                        assert!(
+                            shown.rows[0].width() <= shown.view.width() + 1.0,
+                            "rows must fit without horizontal scrolling"
+                        );
+                        assert!(
+                            (shown.frame.height() - margin.y - shown.view.height()).abs() < 1.0,
+                            "no horizontal scrollbar gutter"
+                        );
+                    }
+                },
+            );
+            out.textures_delta.clear();
+        }
+        assert!(open);
+        assert_eq!(frame.top(), anchor.bottom());
+        let bounds = ctx.content_rect().shrink(Chrome::of(&ctx).metrics.edge_gap);
+        assert!(frame.bottom() <= bounds.bottom() + 1.0);
+        assert!(frame.right() <= bounds.right() + 1.0);
+    }
+
+    #[test]
+    fn menu_speed_moves_its_area_without_changing_other_scroll_areas() {
+        let sample = |speed: f64, menu: bool| {
+            let mut overlay = crate::theme::Overlay::default();
+            overlay.style.insert(
+                "menu_scroll_speed".into(),
+                design::StyleValueSource::Number(speed),
+            );
+            let ctx = egui::Context::default();
+            crate::install(
+                &ctx,
+                &crate::Theme::embedded().with_overlay(overlay).unwrap(),
+            );
+            let mut offset = 0.0;
+            for (frame, time) in [0.0, 0.025, 0.05].into_iter().enumerate() {
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        time: Some(time),
+                        screen_rect: Some(Rect::from_min_size(
+                            Pos2::ZERO,
+                            egui::vec2(300.0, 200.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        egui::CentralPanel::default().show(ui, |ui| {
+                            ui.scope(|ui| {
+                                if menu {
+                                    configure_scroll(ui, &Chrome::of(&ctx));
+                                }
+                                let out = ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
+                                    let (_, rect) = ui.allocate_space(egui::vec2(200.0, 400.0));
+                                    if frame == 0 {
+                                        ui.scroll_to_rect(
+                                            Rect::from_min_size(
+                                                rect.min + egui::vec2(0.0, 200.0),
+                                                egui::vec2(10.0, 10.0),
+                                            ),
+                                            None,
+                                        );
+                                    }
+                                });
+                                offset = out.state.clamped_offset().y;
+                            });
+                        });
+                    },
+                );
+                output.textures_delta.clear();
+            }
+            assert_eq!(
+                ctx.global_style().scroll_animation,
+                egui::style::ScrollAnimation::default()
+            );
+            offset
+        };
+        let slow = sample(100.0, true);
+        let fast = sample(3000.0, true);
+        assert!(fast > slow + 1.0, "menu offsets: slow={slow}, fast={fast}");
+        assert_eq!(sample(100.0, false), sample(3000.0, false));
+    }
+
+    fn cmd(id: &'static str, enabled: bool) -> Entry {
+        Entry::Row(Row::command(id, id, None, enabled))
+    }
+
+    /// File: new, (disabled), open, [recent ⏵ clear], —, close.
+    /// Edit: undo. Help: about.
+    fn menus() -> Vec<Menu> {
+        vec![
+            Menu {
+                title: "File".into(),
+                entries: vec![
+                    cmd("new", true),
+                    cmd("paste", false),
+                    cmd("open", true),
+                    Entry::Row(Row::submenu(
+                        "recent",
+                        vec![cmd("clear", true), cmd("none", false)],
+                    )),
+                    Entry::Separator,
+                    cmd("close", true),
+                ],
+            },
+            Menu {
+                title: "Edit".into(),
+                entries: vec![cmd("undo", true)],
+            },
+            Menu {
+                title: "Help".into(),
+                entries: vec![cmd("about", true)],
+            },
+        ]
+    }
+
+    fn opened() -> Nav {
+        let mut nav = Nav::default();
+        nav.open(0);
+        nav
+    }
+
+    #[test]
+    fn down_and_up_skip_disabled_rows_and_separators_and_wrap() {
+        let m = menus();
+        let mut nav = opened();
+        let downs: Vec<_> = (0..5)
+            .map(|_| {
+                nav.key(NavKey::Down, &m);
+                nav.highlight()[0]
+            })
+            .collect();
+        assert_eq!(downs, [Some(0), Some(2), Some(3), Some(5), Some(0)]);
+        let mut nav = opened();
+        nav.key(NavKey::Up, &m);
+        assert_eq!(
+            nav.highlight()[0],
+            Some(5),
+            "Up from nothing goes to the last enabled row"
+        );
+        nav.key(NavKey::Up, &m);
+        assert_eq!(nav.highlight()[0], Some(3));
+    }
+
+    #[test]
+    fn right_enters_a_submenu_or_opens_the_next_menu() {
+        let m = menus();
+        let mut nav = opened();
+        nav.key(NavKey::Right, &m);
+        assert_eq!(nav.open_menu(), Some(1), "nothing highlighted: next menu");
+        nav.key(NavKey::Down, &m);
+        nav.key(NavKey::Right, &m);
+        assert_eq!(nav.open_menu(), Some(2), "command row: next menu");
+        nav.key(NavKey::Right, &m);
+        assert_eq!(
+            nav.open_menu(),
+            Some(0),
+            "wraps from the last menu to the first"
+        );
+        assert_eq!(nav.highlight(), [None], "the highlight resets per menu");
+        for _ in 0..3 {
+            nav.key(NavKey::Down, &m);
+        }
+        nav.key(NavKey::Right, &m);
+        assert_eq!(
+            (nav.highlight(), nav.depth()),
+            (&[Some(3), Some(0)][..], 1),
+            "into the submenu, first enabled row"
+        );
+        nav.key(NavKey::Down, &m);
+        assert_eq!(nav.highlight()[1], Some(0), "the only enabled row stays");
+    }
+
+    #[test]
+    fn left_leaves_a_submenu_or_opens_the_previous_menu() {
+        let m = menus();
+        let mut nav = opened();
+        for _ in 0..3 {
+            nav.key(NavKey::Down, &m);
+        }
+        nav.key(NavKey::Right, &m);
+        nav.key(NavKey::Left, &m);
+        assert_eq!(
+            (nav.highlight(), nav.depth()),
+            (&[Some(3)][..], 0),
+            "parent row stays highlighted"
+        );
+        nav.key(NavKey::Left, &m);
+        assert_eq!(nav.open_menu(), Some(2), "wraps to the last menu");
+    }
+
+    #[test]
+    fn enter_runs_enabled_commands_only_and_escape_closes() {
+        let m = menus();
+        let mut nav = opened();
+        assert_eq!(
+            nav.key(NavKey::Enter, &m),
+            Outcome::Stay,
+            "nothing highlighted"
+        );
+        nav.key(NavKey::Down, &m);
+        nav.key(NavKey::Down, &m);
+        assert_eq!(nav.key(NavKey::Enter, &m), Outcome::Run("open"));
+        assert_eq!(nav.open_menu(), None, "running closes every menu");
+        let mut nav = opened();
+        nav.hover(0, 1, &m);
+        assert_eq!(
+            nav.highlight()[0],
+            None,
+            "a disabled row is never highlighted"
+        );
+        assert_eq!(nav.key(NavKey::Enter, &m), Outcome::Stay);
+        nav.hover(0, 3, &m);
+        assert!(
+            nav.submenu_open(0),
+            "hovering a submenu row shows its submenu"
+        );
+        assert_eq!(nav.depth(), 0, "the keyboard stays on the parent level");
+        nav.key(NavKey::Enter, &m);
+        assert_eq!(
+            (nav.depth(), nav.highlight()[1]),
+            (1, Some(0)),
+            "Enter moves into it like Right"
+        );
+        assert_eq!(nav.key(NavKey::Escape, &m), Outcome::Closed);
+        assert_eq!(nav, Nav::default());
+    }
+
+    #[test]
+    fn hover_and_keys_share_one_highlight() {
+        let m = menus();
+        let mut nav = opened();
+        nav.hover(0, 2, &m);
+        nav.key(NavKey::Down, &m);
+        assert_eq!(
+            nav.highlight()[0],
+            Some(3),
+            "keys move on from the hovered row"
+        );
+    }
+
+    #[test]
+    fn anchored_navigation_jumps_wraps_and_distinguishes_edit_activation() {
+        let menus = [Menu {
+            title: "Macros".into(),
+            entries: vec![
+                cmd("alpha", true),
+                cmd("absent", false),
+                Entry::Separator,
+                cmd("another", true),
+                cmd("beta", true),
+            ],
+        }];
+        let mut nav = Nav::default();
+        nav.open(0);
+        nav.jump('A', &menus);
+        assert_eq!(nav.highlight(), [Some(0)]);
+        nav.jump('a', &menus);
+        assert_eq!(nav.highlight(), [Some(3)]);
+        nav.jump('a', &menus);
+        assert_eq!(nav.highlight(), [Some(0)]);
+        assert_eq!(
+            nav.activate(&menus, true),
+            Some(Pick {
+                id: "alpha",
+                edit: true
+            })
+        );
+        assert_eq!(nav.open_menu(), None);
+        nav.open(0);
+        nav.key(NavKey::Up, &menus);
+        assert_eq!(
+            nav.activate(&menus, false),
+            Some(Pick {
+                id: "beta",
+                edit: false
+            })
+        );
+        nav.open(0);
+        assert_eq!(nav.key(NavKey::Escape, &menus), Outcome::Closed);
+    }
+
+    #[test]
+    fn anchored_input_is_taken_before_the_application_draws() {
+        let ctx = Context::default();
+        let viewport = ctx.viewport_id();
+        let id = Id::unique("anchored-test");
+        let scoped = id.with(ctx.viewport_id());
+        let menus = vec![Menu {
+            title: "Macros".into(),
+            entries: vec![cmd("alpha", true), cmd("hello", true)],
+        }];
+        let mut nav = Nav::default();
+        nav.open(0);
+        ctx.data_mut(|d| {
+            d.insert_temp(scoped, nav);
+            d.insert_temp(
+                crate::window_id(viewport, "toolkit.anchored-input"),
+                AnchoredInput {
+                    id: scoped,
+                    menus: menus.clone(),
+                    result: None,
+                    handled: false,
+                    keyed: false,
+                    frame: Rect::NOTHING,
+                    anchor: Rect::NOTHING,
+                },
+            );
+        });
+        let mut open = true;
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                events: vec![
+                    egui::Event::Text("h".into()),
+                    egui::Event::Key {
+                        key: Key::Enter,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: Modifiers::SHIFT,
+                    },
+                ],
+                ..Default::default()
+            },
+            |ui| {
+                anchored_keyboard(&ctx);
+                assert!(
+                    ctx.input(|i| i.events.is_empty()),
+                    "app content sees neither the letter nor Enter"
+                );
+                let pick = anchored(ui, id, Rect::NOTHING, &mut open, menus[0].clone(), &[]);
+                assert_eq!(
+                    pick,
+                    Some(Pick {
+                        id: "hello",
+                        edit: true
+                    })
+                );
+            },
+        );
+        out.textures_delta.clear();
+        assert!(!open);
+        assert!(!is_open(&ctx));
+    }
+
+    #[test]
+    fn validate_drops_what_the_model_lost() {
+        let mut m = menus();
+        let mut nav = opened();
+        nav.hover(0, 3, &m);
+        nav.key(NavKey::Right, &m);
+        assert_eq!((nav.highlight(), nav.depth()), (&[Some(3), Some(0)][..], 1));
+        m[0].entries[3] = cmd("recent", true);
+        nav.validate(&m);
+        assert_eq!(
+            (nav.highlight(), nav.depth()),
+            (&[Some(3)][..], 0),
+            "no longer a submenu: its level closes"
+        );
+        m[0].entries.truncate(2);
+        nav.validate(&m);
+        assert_eq!(nav.highlight(), [None], "the row is gone");
+        m.clear();
+        nav.validate(&m);
+        assert_eq!(nav, Nav::default(), "the menu is gone");
+    }
+
+    #[test]
+    fn a_level_with_choices_gives_every_label_the_tick_gutter() {
+        let ctx = Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let chrome = Chrome::of(ui.ctx());
+            let plain = Layout::new(ui, &chrome, &[cmd("alpha", true), cmd("beta", true)], 0.0);
+            assert_eq!(
+                (plain.gutter, plain.tick.is_some()),
+                (0.0, false),
+                "no choices, no gutter"
+            );
+            let mixed = [
+                Entry::Row(Row::choice("alpha", "alpha", None, true, false)),
+                cmd("beta", true),
+            ];
+            let choices = Layout::new(ui, &chrome, &mixed, 0.0);
+            let tick = ui.painter().layout_no_wrap(
+                TICK_GUTTER.to_owned(),
+                Chrome::menu_font(ui.style()),
+                Color32::PLACEHOLDER,
+            );
+            assert_eq!(
+                choices.gutter,
+                tick.size().x,
+                "\"✔ \" wide, for every row of the level"
+            );
+            assert!(choices.tick.is_some());
+            assert_eq!(
+                choices.size.x,
+                plain.size.x + choices.gutter,
+                "the level widens by the gutter"
+            );
+        });
+        output.textures_delta.clear();
+        assert_eq!(Row::choice("a", "A", None, true, true).checked, Some(true));
+        assert_eq!(Row::command("a", "A", None, true).checked, None);
+    }
+
+    #[test]
+    fn separators_never_lead_trail_or_double() {
+        let s = || Entry::Separator;
+        let tidied = tidy(vec![s(), cmd("a", true), s(), s(), cmd("b", true), s()]);
+        assert_eq!(tidied, vec![cmd("a", true), s(), cmd("b", true)]);
+        assert!(
+            !Row::submenu("x", vec![cmd("a", false)]).enabled,
+            "no enabled child, no enabled submenu"
+        );
+    }
+}
+#[test]
+fn anchored_placement_aligns_to_the_icon_and_clamps_the_full_frame() {
+    let bounds = Rect::from_min_max(pos2(0.0, 0.0), pos2(1275.0, 800.0));
+    let anchor = Rect::from_min_size(pos2(1200.0, 20.0), vec2(24.0, 24.0));
+    let rect = anchored_rect(anchor, vec2(220.0, 100.0), bounds);
+    assert_eq!(rect.right(), anchor.right());
+    assert_eq!(rect.top(), anchor.bottom());
+    assert!(bounds.contains_rect(rect));
+    let oversized = anchored_rect(anchor, vec2(2000.0, 1000.0), bounds);
+    assert_eq!(
+        oversized,
+        Rect::from_min_max(pos2(bounds.left(), anchor.bottom()), bounds.max)
+    );
+    let bottom = anchored_rect(
+        anchor.translate(vec2(0.0, 740.0)),
+        vec2(220.0, 100.0),
+        bounds,
+    );
+    assert!(bounds.contains_rect(bottom));
+    assert_eq!(bottom.top(), 784.0);
+    assert_eq!(bottom.bottom(), bounds.bottom());
+}

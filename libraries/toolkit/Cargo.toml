@@ -1,0 +1,91 @@
+# toolkit: the shared shell for MixOS egui applications — theme, fonts,
+# icons, the command registry and Fluent strings (AGENTS.md §4.1).
+[package]
+name = "toolkit"
+description = "Shared egui application shell: design theme, fonts, Lucide icons, command registry, Fluent strings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "toolkit"
+kind = "lib"
+layer = "desktop"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+theme.workspace = true
+files.workspace = true
+mimedb.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+icons.workspace = true
+logging.workspace = true
+paths = { path = "../../libraries/paths" }
+assets.workspace = true
+bus = { workspace = true, features = ["native"] }
+tokio.workspace = true
+config.workspace = true
+strict.workspace = true
+design.workspace = true
+macros.workspace = true
+editor.workspace = true
+egui.workspace = true
+egui_extras.workspace = true
+action.workspace = true
+# thumbnail: decodes the shared thumbnail cache's PNGs (never a user's file).
+image.workspace = true
+png.workspace = true
+# markdown: CommonMark + GFM parsing into the toolkit's own document.
+pulldown-cmark.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# The settings contract's data types only (no features: no Bus): session_look.
+settings.workspace = true
+# decorations: an independent, bounded registry read, using the client already
+# linked by eframe. raw-window-handle identifies the backend actually in use.
+wayland-client = "=0.31.15"
+# thumbnail: the cache's capped reads and its size limits.
+thumbs.workspace = true
+# layer: egui on wlr-layer-shell surfaces. smithay-client-toolkit 0.19.2, the
+# one eframe's winit 0.30 already links (its calloop 0.13 for timers and
+# wake-ups, xkbcommon for keys). The lock also holds 0.20 for vendored
+# smithay's winit 0.31 dev chain: a known second line, retired when eframe
+# moves to winit 0.31 and this follows it.
+# wgpu's GL backend on the raw wl_surface, and libwayland's display pointer.
+smithay-client-toolkit = { version = "=0.19.2", optional = true }
+wayland-backend = { workspace = true, features = ["client_system"], optional = true }
+wayland-scanner = { workspace = true, optional = true }
+winit = { version = "=0.30.13", default-features = false, features = ["wayland", "rwh_06"], optional = true }
+raw-window-handle = "0.6"
+wgpu = { workspace = true, optional = true }
+egui-wgpu = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+# layer: per-key repeat from the compositor's keymap (the binding sctk links).
+xkbcommon = { version = "0.7", default-features = false, optional = true }
+
+[features]
+default = ["portal", "shadow"]
+shadow = ["dep:wayland-backend", "dep:wayland-scanner", "dep:winit"]
+portal = ["dep:zbus", "dep:futures-util"]
+layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:wgpu", "dep:egui-wgpu", "dep:futures", "dep:xkbcommon"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+rfd = { version = "=0.17.2", default-features = false }
+
+[dev-dependencies]
+test-broker = { path = "../test-broker" }
+anyhow.workspace = true
+libc.workspace = true
+egui_kittest.workspace = true
+tempfile.workspace = true

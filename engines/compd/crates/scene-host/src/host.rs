@@ -1,0 +1,2819 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! The engine-side scene host: drains the port on compd's loop, answers each
+//! request from the store, and sweeps departed owners.
+//!
+//! Runs on the compositor thread only. It does the caller-provenance check, the owner
+//! attestation and the per-request receipt.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+use std::sync::mpsc::Receiver;
+
+use dispatcher::wire::trait_::wire_trait::WireTrait;
+use serde_json::{Value, json};
+use smithay::utils::{Physical, Rectangle};
+
+use crate::command::SceneCommand;
+use crate::port::{HostConfig, Inbound, Port, Request, Waker};
+use crate::render::{Action, Surface, Wiring};
+use crate::store::{SceneMount, SceneStore};
+
+/// What one `service` pass did.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Serviced {
+    /// What is mounted or drawn may have changed: the renderer reconciles
+    /// and the frame is scheduled (`RedrawReason::Publish`).
+    pub changed: bool,
+    /// Requests answered.
+    pub answered: usize,
+    /// `window.gaps` changed: the owner re-places the tiled windows now.
+    pub tile_gap_changed: bool,
+}
+
+/// The host's request semantics, without a Bus: the store, the receipt
+/// sequence and the departure sweep. [`SceneHost`] wraps it with the port.
+#[derive(Default)]
+pub struct Host {
+    pub store: SceneStore,
+    /// Quoin's panel model per output: which page each edge shows.
+    pub panels: crate::panels::Panels,
+    receipt: u64,
+    live: Option<BTreeSet<String>>,
+    /// The seated dialog's last drawn size `(scene, w, h)`: its envelope
+    /// fitted to the usable zone (render.rs `dialog_rect`), which is what
+    /// the dialog notice reports, as Quoin reports its seat after the clamp.
+    dialog_fit: Option<(String, f32, f32)>,
+    /// The conf.mix `shell.panel.order` writes (`None`: Quoin's path,
+    /// [`crate::conf::conf_mix_path`]).
+    pub conf_mix: Option<std::path::PathBuf>,
+    menu_calls: Vec<crate::menu::Extra>,
+    /// The hover tip on screen (`shell.props.get` `tooltip`), `null` when
+    /// none: `{scene, title, subtitle, lines, x, y, width, height}`.
+    pub tooltip: Value,
+    /// The last answer's settings write (a `shell.panel.*` change on a
+    /// settings-owned edge): its reply waits for settingsd and the new look.
+    deferred: Option<crate::panels::SettingsWrite>,
+}
+
+impl Host {
+    /// The settings write the last answer deferred to, if any: the caller
+    /// sends it as `settings.apply` and replies from the outcome instead of
+    /// the answer's placeholder body.
+    pub(crate) fn take_deferred(&mut self) -> Option<crate::panels::SettingsWrite> {
+        self.deferred.take()
+    }
+
+    fn defer(&mut self, write: crate::panels::SettingsWrite) -> Answer {
+        self.deferred = Some(write);
+        Answer {
+            rc: 0,
+            body: json!({"accepted":true, "applied":false, "pending":"settings"}).to_string(),
+            publish: Vec::new(),
+            changed: false,
+        }
+    }
+
+    fn conf_mix(&self) -> std::path::PathBuf {
+        self.conf_mix
+            .clone()
+            .unwrap_or_else(crate::conf::conf_mix_path)
+    }
+
+    /// Take conf.mix's declared page order (host start). A missing file
+    /// declares nothing; an unreadable or invalid one is logged and ignored,
+    /// as Quoin falls back to its defaults.
+    pub fn load_declared(&mut self) {
+        let path = self.conf_mix();
+        self.panels.menu_conf = Some(path.clone());
+        match crate::conf::read_declared(&path)
+            .map_err(|error| error.to_string())
+            .and_then(|declared| {
+                self.panels
+                    .declare(declared)
+                    .map_err(|refusal| refusal.message)
+            }) {
+            Ok(()) => {}
+            Err(error) => tracing::warn!(
+                "scene host: conf.mix {} not applied: {error}",
+                path.display()
+            ),
+        }
+    }
+
+    /// Model visibility precedes the render pass that creates the surface.
+    /// In particular, a newly pinned edge is mapped at fraction zero, when
+    /// render::targets still excludes it. Layout must wait for its surface.
+    fn mapped_output(&self, scene: &str) -> Option<String> {
+        let entry = self.store.scene(scene)?;
+        let tree = entry.tree();
+        if crate::mount::is_toast(tree) {
+            return self
+                .store
+                .toast_seat()
+                .filter(|seat| seat.scene == scene && entry.visible())
+                .map(|seat| seat.output.clone());
+        }
+        if crate::mount::is_dialog(tree) {
+            return self
+                .store
+                .dialog_seat()
+                .filter(|seat| seat.scene == scene && entry.visible())
+                .map(|seat| seat.output.clone());
+        }
+        let page = crate::mount::page_id(tree);
+        let seat = self.store.pages().seat(&page)?;
+        let panel = self
+            .panels
+            .state(&seat.output, crate::mount::scene_edge(tree));
+        (panel["visible"] == true && panel["page"].as_str() == Some(page.as_str()))
+            .then(|| seat.output.clone())
+    }
+}
+
+/// Measures a loaded scene for `shell.scene.layout`: `(store, scene, node)`.
+pub type Layout<'a> = dyn FnMut(&SceneStore, &str, Option<&str>) -> Result<Value, Value> + 'a;
+
+/// One answered request: the reply and the topic wires, in order.
+pub struct Answer {
+    pub rc: u8,
+    pub body: String,
+    pub publish: Vec<String>,
+    pub changed: bool,
+}
+
+impl Host {
+    /// Answer one request for the host output `output`. `live_generation` is
+    /// the port's current connection generation (`None` with no port): a
+    /// request admitted on an earlier connection is refused unapplied, so a
+    /// caller that saw its connection drop and retried never gets its load or
+    /// patch applied twice. `layout` measures a loaded scene for
+    /// `shell.scene.layout` (the renderer's; `Err` is a refusal body).
+    pub fn answer(
+        &mut self,
+        request: &Request,
+        output: &str,
+        live_generation: Option<u64>,
+        layout: &mut Layout<'_>,
+    ) -> Answer {
+        self.answer_with_settings(request, output, live_generation, None, None, layout)
+    }
+
+    /// The live shell contributes the shared consumer's event-loop readback.
+    /// Keep provenance, connection fencing and dotted property lookup common.
+    fn answer_with_settings(
+        &mut self,
+        request: &Request,
+        output: &str,
+        live_generation: Option<u64>,
+        settings: Option<&settings::consumer::Evidence>,
+        cache: Option<crate::lane::native::CacheEvidence<'_>>,
+        layout: &mut Layout<'_>,
+    ) -> Answer {
+        self.deferred = None;
+        if let Err(error) = verify_caller_provenance(request) {
+            let body = json!({"error_code":"SCENE_PROVENANCE", "message":format!("scene caller provenance: {error}")});
+            return Answer {
+                rc: 10,
+                body: body.to_string(),
+                publish: Vec::new(),
+                changed: false,
+            };
+        }
+        if live_generation.is_some_and(|generation| generation != request.generation) {
+            let body = json!({"error_code":"SCENE_STALE_CONNECTION",
+                "message":"scene request belongs to a stale scene host connection"});
+            return Answer {
+                rc: 10,
+                body: body.to_string(),
+                publish: Vec::new(),
+                changed: false,
+            };
+        }
+        self.receipt = self
+            .receipt
+            .checked_add(1)
+            .expect("receipt sequence exhausted");
+        let args: Value = serde_json::from_str(&request.body).unwrap_or(Value::Null);
+        match request.kind {
+            SceneCommand::Frame => {
+                let name = argument(request, &args, "scene").unwrap_or_default();
+                let caller = attested_owner(request, self.receipt);
+                let result = self.store.arm_frame(name, &caller);
+                Answer {
+                    rc: if result.is_ok() { 0 } else { 10 },
+                    body: result
+                        .map_or_else(|error| error, |()| json!({"scene":name,"armed":true}))
+                        .to_string(),
+                    publish: Vec::new(),
+                    changed: false,
+                }
+            }
+            SceneCommand::List => Answer {
+                rc: 0,
+                body: self.store.list(output).to_string(),
+                publish: Vec::new(),
+                changed: false,
+            },
+            SceneCommand::Layout => {
+                let scene = argument(request, &args, "scene").unwrap_or_default();
+                let (rc, body) = if self.store.scene(scene).is_none() {
+                    (
+                        10,
+                        json!({"error_code":"NOT_FOUND", "message":format!("no scene named {scene} is loaded"), "scene":scene}),
+                    )
+                } else {
+                    match layout(&self.store, scene, argument(request, &args, "node")) {
+                        Ok(body) => (0, body),
+                        Err(body) => (10, body),
+                    }
+                };
+                Answer {
+                    rc,
+                    body: body.to_string(),
+                    publish: Vec::new(),
+                    changed: false,
+                }
+            }
+            SceneCommand::NotServed => {
+                let body = json!({"error_code":"UNKNOWN_COMMAND",
+                    "message":format!("{} is not served by compd's scene host yet", request.command)});
+                Answer {
+                    rc: 10,
+                    body: body.to_string(),
+                    publish: Vec::new(),
+                    changed: false,
+                }
+            }
+            SceneCommand::Ping => Answer {
+                rc: 0,
+                body: json!({"service":"shell", "status":"ok"}).to_string(),
+                publish: Vec::new(),
+                changed: false,
+            },
+            SceneCommand::Info => {
+                // Only what this host serves, bare (`dialog.show`), so a loader's
+                // feature check reads the truth.
+                let kinds: Vec<String> = SceneCommand::names("shell")
+                    .into_iter()
+                    .map(|name| name.trim_start_matches("shell.").to_owned())
+                    .collect();
+                let body = json!({"service":"shell", "contract":"shell.v1", "props":["get"], "commands":kinds});
+                Answer {
+                    rc: 0,
+                    body: body.to_string(),
+                    publish: Vec::new(),
+                    changed: false,
+                }
+            }
+            SceneCommand::PropsGet => {
+                let mut snapshot = self
+                    .panels
+                    .snapshot(output, dialog_notice(&self.store, self.dialog_fit.as_ref()));
+                if let Some(settings) = settings {
+                    snapshot["settings"] = json!(settings);
+                }
+                if let Some(cache) = cache {
+                    snapshot["settings_cache"] = json!(cache);
+                }
+                snapshot["tooltip"] = self.tooltip.clone();
+                let path = argument(request, &args, "path").filter(|path| !path.is_empty());
+                let found = match path {
+                    None => Some(snapshot),
+                    Some(path) => path
+                        .split('.')
+                        .try_fold(snapshot, |node, key| node.get(key).cloned()),
+                };
+                match found {
+                    Some(value) => Answer {
+                        rc: 0,
+                        body: value.to_string(),
+                        publish: Vec::new(),
+                        changed: false,
+                    },
+                    None => {
+                        let body = json!({"error_code":"UNKNOWN_PATH", "message":format!("no shell prop at {}", path.unwrap_or_default())});
+                        Answer {
+                            rc: 10,
+                            body: body.to_string(),
+                            publish: Vec::new(),
+                            changed: false,
+                        }
+                    }
+                }
+            }
+            SceneCommand::MenuOpen | SceneCommand::MenuChoose | SceneCommand::MenuClose => {
+                let refused = |code: &str, message: &str| Answer {
+                    rc: 10,
+                    body: json!({"error_code":code, "message":message}).to_string(),
+                    publish: Vec::new(),
+                    changed: false,
+                };
+                let result = if request.kind == SceneCommand::MenuOpen {
+                    let Some(corner) = argument(request, &args, "corner").and_then(|name| {
+                        edges::Corner::ALL
+                            .into_iter()
+                            .find(|corner| crate::menu::corner_name(*corner) == name)
+                    }) else {
+                        return refused(
+                            "BAD_ARGUMENT",
+                            "corner must be top-left, bottom-left, bottom-right or top-right",
+                        );
+                    };
+                    self.panels.menu_conf = Some(self.conf_mix());
+                    self.panels.open_menu(output, corner).map(|_| None)
+                } else {
+                    let Some(serial) = args.get("serial").and_then(Value::as_u64) else {
+                        return refused(
+                            "BAD_ARGUMENT",
+                            "menu serial is required (read props.get menu.serial)",
+                        );
+                    };
+                    let input = if request.kind == SceneCommand::MenuClose {
+                        crate::menu::Input::Close
+                    } else {
+                        let Some(index) = args
+                            .get("index")
+                            .and_then(Value::as_u64)
+                            .and_then(|i| usize::try_from(i).ok())
+                        else {
+                            return refused(
+                                "BAD_ARGUMENT",
+                                "menu choice requires an integer item index",
+                            );
+                        };
+                        crate::menu::Input::Choose(index)
+                    };
+                    self.panels.menu_input(serial, input)
+                };
+                match result {
+                    Ok(extra) => {
+                        self.menu_calls.extend(extra);
+                        Answer { rc: 0, body: json!({"accepted":true, "menu":self.panels.menu().map(crate::menu::Menu::snapshot)}).to_string(),
+                            publish: Vec::new(), changed: true }
+                    }
+                    Err(error) => refused(error.code, &error.message),
+                }
+            }
+            SceneCommand::PanelState | SceneCommand::PanelMode | SceneCommand::PanelPageSet => {
+                let refused = |code: &str, message: &str, panels: Option<&Value>| {
+                    let mut body = json!({"error_code":code, "message":message});
+                    if let Some(panels) = panels {
+                        body["panels"] = panels.clone();
+                    }
+                    Answer {
+                        rc: 10,
+                        body: body.to_string(),
+                        publish: Vec::new(),
+                        changed: false,
+                    }
+                };
+                let Some(edge) =
+                    argument(request, &args, "edge").and_then(crate::panels::parse_edge)
+                else {
+                    return refused(
+                        "BAD_ARGUMENT",
+                        "edge must be left, bottom, right or top",
+                        None,
+                    );
+                };
+                if request.kind == SceneCommand::PanelState {
+                    return Answer {
+                        rc: 0,
+                        body: self.panels.state(output, edge).to_string(),
+                        publish: Vec::new(),
+                        changed: false,
+                    };
+                }
+                let applied = if request.kind == SceneCommand::PanelMode {
+                    let Some(mode) = argument(request, &args, "mode") else {
+                        return refused(
+                            "BAD_ARGUMENT",
+                            "panel.mode requires a mode argument",
+                            None,
+                        );
+                    };
+                    // A settings-owned edge's mode is its record's: write it
+                    // through settingsd (the reply waits for the new look).
+                    match edges::PanelMode::parse(mode)
+                        .and_then(|mode| self.panels.settings_mode_write(edge, mode))
+                    {
+                        Some(Some(write)) => return self.defer(write),
+                        Some(None) => Ok(()),
+                        None => self.panels.set_mode(output, edge, mode),
+                    }
+                } else {
+                    let Some(id) = argument(request, &args, "id") else {
+                        return refused("BAD_ARGUMENT", "page.set requires an id argument", None);
+                    };
+                    self.panels.page_set(output, edge, id)
+                };
+                let panels = self.panels.snapshot(output, Value::Null)["panels"].clone();
+                match applied {
+                    Ok(()) => {
+                        let body = json!({"accepted":true, "applied":true, "panels":panels});
+                        Answer {
+                            rc: 0,
+                            body: body.to_string(),
+                            publish: Vec::new(),
+                            changed: true,
+                        }
+                    }
+                    Err(refusal) => refused(refusal.code, &refusal.message, Some(&panels)),
+                }
+            }
+            SceneCommand::PanelOrder => {
+                // Frozen in shell-commands.json: `{edges}` as written, or
+                // INVALID_ARGUMENT / CONFIG_WRITE. One atomic conf.mix write,
+                // then every carousel takes the merged order.
+                let refused = |body: Value| Answer {
+                    rc: 10,
+                    body: body.to_string(),
+                    publish: Vec::new(),
+                    changed: false,
+                };
+                let order = match crate::conf::parse_order(&args) {
+                    Ok(order) => order,
+                    Err(refusal) => return refused(refusal.body()),
+                };
+                let declared = match crate::conf::write_order(&self.conf_mix(), &order) {
+                    Ok(declared) => declared,
+                    Err(refusal) => return refused(refusal.body()),
+                };
+                if let Err(refusal) = self.panels.declare(declared) {
+                    return refused(json!({"error_code":refusal.code, "message":refusal.message}));
+                }
+                let edges: serde_json::Map<String, Value> = order
+                    .into_iter()
+                    .map(|(edge, pages)| (crate::conf::edge_name(edge).to_owned(), json!(pages)))
+                    .collect();
+                Answer {
+                    rc: 0,
+                    body: json!({"edges": edges}).to_string(),
+                    publish: Vec::new(),
+                    changed: true,
+                }
+            }
+            SceneCommand::PanelResize => {
+                let refused = |body: Value| Answer {
+                    rc: 10,
+                    body: body.to_string(),
+                    publish: Vec::new(),
+                    changed: false,
+                };
+                let Some(edge) =
+                    argument(request, &args, "edge").and_then(crate::panels::parse_edge)
+                else {
+                    return refused(json!({"error":"edge must be left, bottom, right or top"}));
+                };
+                let Some(thickness_px) = number_argument(&args, "thickness_px") else {
+                    return refused(crate::panels::resize_range_refusal(edge));
+                };
+                // A settings-owned edge's thickness is its record's.
+                match self
+                    .panels
+                    .settings_thickness_write(edge, thickness_px as f32)
+                {
+                    Some(Ok(Some(write))) => return self.defer(write),
+                    Some(Ok(None)) => {
+                        let panels = self.panels.snapshot(output, Value::Null)["panels"].clone();
+                        return Answer {
+                            rc: 0,
+                            body: json!({"accepted":true, "applied":true, "panels":panels})
+                                .to_string(),
+                            publish: Vec::new(),
+                            changed: false,
+                        };
+                    }
+                    Some(Err(body)) => return refused(body),
+                    None => {}
+                }
+                match self.panels.resize(output, edge, thickness_px as f32) {
+                    Ok(()) => Answer {
+                        rc: 0,
+                        body: json!({"accepted":true}).to_string(),
+                        publish: Vec::new(),
+                        changed: true,
+                    },
+                    Err(body) => refused(body),
+                }
+            }
+            SceneCommand::Panel { kind, corner } => {
+                // Quoin: corner.hide uses the unified refusal shape, the
+                // older commands `{error}`.
+                let unified = corner && kind == crate::panels::PanelCommand::Hide;
+                let refused = |code: &str, message: &str, extra: Option<(&str, Value)>| {
+                    let mut body = if unified || code != "BAD_ARGUMENT" {
+                        json!({"error_code":code, "message":message})
+                    } else {
+                        json!({"error":message})
+                    };
+                    if let Some((key, value)) = extra {
+                        body[key] = value;
+                    }
+                    Answer {
+                        rc: 10,
+                        body: body.to_string(),
+                        publish: Vec::new(),
+                        changed: false,
+                    }
+                };
+                let edge = if corner {
+                    match argument(request, &args, "corner").and_then(crate::panels::corner_edge) {
+                        Some(edge) => edge,
+                        None => {
+                            let code = if unified {
+                                "INVALID_ARGUMENT"
+                            } else {
+                                "BAD_ARGUMENT"
+                            };
+                            return refused(
+                                code,
+                                "corner must be top-left, bottom-left, bottom-right or top-right",
+                                None,
+                            );
+                        }
+                    }
+                } else {
+                    match argument(request, &args, "edge").and_then(crate::panels::parse_edge) {
+                        Some(edge) => edge,
+                        None => {
+                            return refused(
+                                "BAD_ARGUMENT",
+                                "edge must be left, bottom, right or top",
+                                None,
+                            );
+                        }
+                    }
+                };
+                // Pin, dock and unpin on a settings-owned edge set its
+                // record's mode, through settingsd.
+                if let Some(write) = kind
+                    .settings_mode()
+                    .and_then(|mode| self.panels.settings_mode_write(edge, mode))
+                {
+                    let Some(write) = write else {
+                        let panels = self.panels.snapshot(output, Value::Null)["panels"].clone();
+                        return Answer {
+                            rc: 0,
+                            body: json!({"accepted":true, "applied":true, "panels":panels})
+                                .to_string(),
+                            publish: Vec::new(),
+                            changed: false,
+                        };
+                    };
+                    return self.defer(write);
+                }
+                if let Err(refusal) = self.panels.input(output, edge, kind) {
+                    return refused(
+                        refusal.code,
+                        &refusal.message,
+                        Some(("edge", json!(edge.as_str()))),
+                    );
+                }
+                let applied_pin = !corner && kind == crate::panels::PanelCommand::Pin;
+                if kind != crate::panels::PanelCommand::Hide && !applied_pin {
+                    // Quoin acknowledges these on acceptance; the state is
+                    // read back from props.get / panel.changed.
+                    return Answer {
+                        rc: 0,
+                        body: json!({"accepted":true}).to_string(),
+                        publish: Vec::new(),
+                        changed: true,
+                    };
+                }
+                let panels = self.panels.snapshot(output, Value::Null)["panels"].clone();
+                if (applied_pin
+                    && self.panels.mode(output, edge) == "pinned"
+                    && panels[edge.as_str()]["visible"] == true)
+                    || (!applied_pin && self.panels.hidden(output, edge))
+                {
+                    let body = json!({"accepted":true, "applied":true, "panels":panels});
+                    Answer {
+                        rc: 0,
+                        body: body.to_string(),
+                        publish: Vec::new(),
+                        changed: true,
+                    }
+                } else if applied_pin {
+                    let mut answer = refused(
+                        "PANEL_NOT_APPLIED",
+                        "panel command was superseded or could not apply",
+                        Some(("panels", panels)),
+                    );
+                    answer.changed = true;
+                    answer
+                } else {
+                    // A pinned or docked edge is a persistent mode, which hide
+                    // never changes: say so rather than accept and do nothing.
+                    let name = edge.as_str();
+                    let mode = self.panels.mode(output, edge);
+                    let message = format!(
+                        "the {name} edge is {mode}; {} only conceals a transient reveal. Use shell.panel.mode {{edge:\"{name}\", mode:\"hidden\"}} to hide it",
+                        request.command
+                    );
+                    let mut answer =
+                        refused("PANEL_NOT_APPLIED", &message, Some(("panels", panels)));
+                    answer.changed = true;
+                    answer
+                }
+            }
+            SceneCommand::ToastShow | SceneCommand::ToastHide => {
+                let scene = argument(request, &args, "scene").unwrap_or_default();
+                let visible = request.kind == SceneCommand::ToastShow;
+                let height = if visible && args.get("h").is_some() {
+                    let Some(h) = number_argument(&args, "h") else {
+                        return Answer {
+                            rc: 10,
+                            body: json!({"error_code":"INVALID_HEIGHT", "message":"h must be a finite number"}).to_string(),
+                            publish: Vec::new(),
+                            changed: false,
+                        };
+                    };
+                    Some(h.clamp(60.0, 2048.0) as f32)
+                } else {
+                    None
+                };
+                let output = argument(request, &args, "output")
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(output);
+                match self.store.set_toast_visible(scene, visible, output, height) {
+                    Ok(()) => Answer {
+                        rc: 0,
+                        body: json!({"scene":scene, "visible":visible, "applied":true}).to_string(),
+                        publish: Vec::new(),
+                        changed: true,
+                    },
+                    Err(body) => Answer {
+                        rc: 10,
+                        body: body.to_string(),
+                        publish: Vec::new(),
+                        changed: false,
+                    },
+                }
+            }
+            SceneCommand::DialogShow | SceneCommand::DialogHide => {
+                // Frozen in shell-commands.json: `{scene, visible, applied}`, or
+                // NOT_FOUND / NOT_DIALOG.
+                let scene = argument(request, &args, "scene").unwrap_or_default();
+                let visible = request.kind == SceneCommand::DialogShow;
+                let refused = |body: Value| Answer {
+                    rc: 10,
+                    body: body.to_string(),
+                    publish: Vec::new(),
+                    changed: false,
+                };
+                match self.store.is_dialog(scene) {
+                    None => refused(json!({"error_code":"NOT_FOUND",
+                        "message":format!("no scene named {scene} is loaded"), "scene":scene})),
+                    Some(false) => refused(json!({"error_code":"NOT_DIALOG",
+                        "message":format!("scene {scene} is an edge page, not a dialog"), "scene":scene})),
+                    Some(true) => {
+                        // Shown on the selected output, as Quoin maps it.
+                        if visible {
+                            self.panels.close_menu();
+                            self.store.retarget_dialog(scene, output);
+                        }
+                        self.store.set_dialog_visible(scene, visible);
+                        let body = json!({"scene":scene, "visible":visible, "applied":true});
+                        Answer {
+                            rc: 0,
+                            body: body.to_string(),
+                            publish: Vec::new(),
+                            changed: true,
+                        }
+                    }
+                }
+            }
+            kind => {
+                let owner = attested_owner(request, self.receipt);
+                let mut mount = SceneMount {
+                    output,
+                    owner: &owner,
+                    accepted_at: self.receipt,
+                };
+                let done = self.store.dispatch(kind, &request.body, &args, &mut mount);
+                let changed = done.rc == 0 && kind.mutates();
+                Answer {
+                    rc: done.rc,
+                    body: done.body,
+                    publish: done.publish,
+                    changed,
+                }
+            }
+        }
+    }
+
+    /// A registry diff: every local owner that was registered and no longer
+    /// is loses the scenes it loaded before now. The first diff only sets
+    /// the baseline, so a citizen never seen live is never swept.
+    /// Returns the notices to publish.
+    pub fn services_live(&mut self, live: BTreeSet<String>) -> Vec<String> {
+        let previous = self.live.replace(live);
+        let Some(previous) = previous else {
+            return Vec::new();
+        };
+        let current = self.live.as_ref().expect("just set");
+        let before = self.receipt.saturating_add(1);
+        for owner in self.store.live_owners() {
+            if previous.contains(&owner) && !current.contains(&owner) {
+                let scenes = self.store.unload_owned_before(&owner, before);
+                if !scenes.is_empty() {
+                    tracing::info!(
+                        "scene host: {owner} left the Bus; unloaded {}",
+                        scenes.join(",")
+                    );
+                }
+            }
+        }
+        self.store.take_notices()
+    }
+}
+
+/// The dialog seat as Quoin's `dialog_bus::notice`: `{scene, visible, w, h,
+/// output}`, or null with no dialog loaded. `w`/`h` are the drawn size when
+/// `fit` names this scene (fitted to the usable zone), else the seat's.
+pub fn dialog_notice(store: &SceneStore, fit: Option<&(String, f32, f32)>) -> Value {
+    let Some(seat) = store.dialog_seat() else {
+        return Value::Null;
+    };
+    let visible = store
+        .scene(&seat.scene)
+        .is_some_and(|entry| entry.visible());
+    let (w, h) = match fit {
+        Some((scene, w, h)) if *scene == seat.scene => (json!(w), json!(h)),
+        _ => (json!(seat.w), json!(seat.h)),
+    };
+    json!({"scene":seat.scene, "visible":visible, "w":w, "h":h, "output":seat.output})
+}
+
+/// The engine's scene host: [`Host`] plus its Bus port and its surfaces.
+pub struct SceneHost {
+    pub host: Host,
+    pub(crate) port: Port,
+    service: Option<String>,
+    refused: Option<String>,
+    surfaces: BTreeMap<String, Surface>,
+    /// Layout requests for mapped scenes whose first render is still due.
+    /// Keep the admitted request intact for provenance/reconnect checks.
+    pending_layouts: Vec<Request>,
+    /// Renderer identity -> scene/Quoin connector name. Keep EDID identity
+    /// at the compositor boundary; the shell model and wire use connectors.
+    output_names: BTreeMap<String, String>,
+    /// Each scene's last drawn rect (logical px on its output).
+    placed: BTreeMap<String, (f32, f32, f32, f32)>,
+    wiring: Wiring,
+    actions: Receiver<Action>,
+    menu_surface: Option<crate::menu::Surface>,
+    /// The scene whose hover tip shows, and the tip.
+    tooltip: Option<(String, crate::view::TipAt)>,
+    /// The surface that asked for `tooltip` (its scene's incarnation).
+    tooltip_handle: Option<ui::HandleId>,
+    tooltip_surfaces: crate::tooltip::Surfaces,
+    action_tooltip: crate::tooltip::actions::Actions,
+    settings: crate::lane::native::Ui<Arc<crate::appearance::Look>>,
+    appearance_generation: u64,
+    input_geometry: Option<InputGeometry>,
+    /// Bus callers whose `shell.panel.*` change went to settingsd, by
+    /// operation id: answered when the new look applies, refused when
+    /// settingsd refuses, and answered either way by the deadline.
+    settings_replies: BTreeMap<String, SettingsReply>,
+    settings_operations: u64,
+}
+
+/// How long a settings-owned panel change waits for settingsd and then for
+/// the new look before its caller is answered regardless.
+const SETTINGS_REPLY_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
+/// Bus panel changes in flight to settingsd at once.
+const MAX_SETTINGS_REPLIES: usize = 32;
+
+struct SettingsReply {
+    request: Request,
+    output: String,
+    /// `shell.panels.<id>`.
+    record: String,
+    /// settingsd's receipt `(incarnation, revision)` once it accepted.
+    awaiting: Option<(String, settings::Revision)>,
+    /// What the caller hears about the write: `{record, status, revision}`.
+    receipt: Value,
+    deadline: std::time::Instant,
+}
+
+/// Whether the applied snapshot `(incarnation, revision)` has reached the
+/// revision settingsd's receipt named for `reply`.
+fn settings_reply_applied(
+    reply: &SettingsReply,
+    applied: Option<&(String, settings::Revision)>,
+) -> bool {
+    match (&reply.awaiting, applied) {
+        (Some((incarnation, revision)), Some((now_incarnation, now_revision))) => {
+            incarnation == now_incarnation && now_revision >= revision
+        }
+        _ => false,
+    }
+}
+
+/// `settings.apply` for `write`: its `shell.panels.<id>.*` v2 keys
+/// ([`crate::profile::panel_changes`]), fenced on `snapshot`, the applied
+/// one (the preferences the change was read against), so a change made
+/// meanwhile elsewhere, or a second write before the first lands, is refused
+/// rather than overwritten. `Err` is a `SETTINGS_UNAVAILABLE` (or, from the
+/// profile, `SETTINGS_INVALID`) refusal body.
+pub(crate) fn settings_apply(
+    snapshot: Option<&settings::Snapshot>,
+    write: &crate::panels::SettingsWrite,
+    operation: &str,
+) -> Result<Value, Value> {
+    let Some(snapshot) = snapshot else {
+        return Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
+            "message":"the shell has not applied its settings yet; retry when settingsd is up"}));
+    };
+    let changes = crate::profile::panel_changes(snapshot, &write.id, write.change)?;
+    Ok(json!({
+        "binding": snapshot.binding,
+        "expected_incarnation": snapshot.incarnation,
+        "expected_revision": snapshot.revision,
+        "operation_id": operation,
+        "changes": changes,
+    }))
+}
+
+/// Last rendered input shape. Appearance/revision-only changes do not reroute.
+#[derive(PartialEq)]
+struct InputGeometry {
+    placed: BTreeMap<String, (f32, f32, f32, f32)>,
+    handles: BTreeMap<String, (ui::HandleId, Rectangle<i32, Physical>, f32)>,
+    menu_handle: Option<(ui::HandleId, Rectangle<i32, Physical>, f32)>,
+    outputs: Vec<(String, Vec<SceneSurface>)>,
+}
+
+fn action_services(lp: &world::state::Loop) -> Vec<String> {
+    lp.inner
+        .all_world_spaces()
+        .iter()
+        .flat_map(|space| space.state.elements())
+        .filter_map(decor::window::action_service)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+impl SceneHost {
+    /// Start the port (only when the `scene_host` preference
+    /// is on; the caller decides).
+    pub fn start(config: HostConfig, waker: Waker) -> Result<Self, String> {
+        let mut port = Port::start(config, Arc::clone(&waker))?;
+        let mut settings = port.take_settings_ui();
+        settings.reconcile(port.settings_generation());
+        let (sender, actions) = std::sync::mpsc::channel();
+        let wiring = Wiring {
+            sink: port.event_sink(),
+            actions: sender,
+            waker,
+        };
+        let menu_sink = port.event_sink();
+        decor::window::menu_emitter(move |service, viewport, side, x| {
+            let mut args = json!({"side": side.name(), "x": x});
+            if let Some(viewport) = viewport {
+                args["viewport"] = json!(viewport);
+            }
+            menu_sink.emit(service, &format!("{service}.ui.menu.popup"), args)
+        });
+        let action_sink = port.event_sink();
+        decor::window::action_emitter(move |service, viewport, command| {
+            let mut args = json!({"id":command});
+            if let Some(viewport) = viewport {
+                args["window"] = json!(viewport);
+            }
+            action_sink.emit(service, &format!("{service}.execute"), args)
+        });
+        // conf.mix's page order, as Quoin reads it at start.
+        let mut host = Host::default();
+        host.panels.load_state();
+        host.load_declared();
+        Ok(Self {
+            host,
+            port,
+            service: None,
+            refused: None,
+            surfaces: BTreeMap::new(),
+            pending_layouts: Vec::new(),
+            output_names: BTreeMap::new(),
+            placed: BTreeMap::new(),
+            wiring,
+            actions,
+            menu_surface: None,
+            tooltip: None,
+            tooltip_handle: None,
+            tooltip_surfaces: Default::default(),
+            action_tooltip: Default::default(),
+            settings,
+            appearance_generation: 0,
+            input_geometry: None,
+            settings_replies: BTreeMap::new(),
+            settings_operations: 0,
+        })
+    }
+
+    /// The name the host registered as, once it has.
+    pub fn service(&self) -> Option<&str> {
+        self.service.as_deref()
+    }
+
+    /// Why scene RPCs are unavailable (initial refusal or terminal connection
+    /// loss), while settings resources remain active.
+    pub fn refused(&self) -> Option<&str> {
+        self.refused.as_deref()
+    }
+
+    pub fn store(&self) -> &SceneStore {
+        &self.host.store
+    }
+
+    pub fn store_mut(&mut self) -> &mut SceneStore {
+        &mut self.host.store
+    }
+
+    pub(crate) fn output_name<'a>(&'a self, key: &'a str) -> &'a str {
+        self.output_names.get(key).map_or(key, String::as_str)
+    }
+
+    pub(crate) fn ensure_output(&mut self, key: String, name: &str, logical: (f32, f32)) {
+        self.output_names.insert(key, name.to_owned());
+        self.host.panels.ensure(name, logical);
+        self.host.panels.sync(&self.host.store);
+    }
+
+    /// Send a scene event to a document's citizen (see [`Port::emit`]).
+    pub fn emit(&self, citizen: &str, kind: &str, body: Value) -> bool {
+        self.port.emit(citizen, kind, body)
+    }
+
+    /// Drain everything the worker and the surfaces delivered. Called from
+    /// the loop's post-dispatch hook after the waker fired.
+    pub fn service_port(&mut self, lp: &mut world::state::Loop) -> Serviced {
+        let mut serviced = Serviced::default();
+        if self.port.settings_generation().is_none() {
+            serviced.changed |= decor::window::menu_services(BTreeSet::new());
+        }
+        let panels = &mut self.host.panels;
+        let port = &self.port;
+        let mut gaps = None;
+        for _changed in self.settings.drain_with(
+            || port.settings_generation(),
+            |presentation| {
+                let look = presentation.content();
+                panels.set_preferences(look.preferences.clone());
+                gaps = Some(look.gaps);
+                decor::window::install(look.chrome(look.window_style));
+                // The region-select overlay and the capture panels draw in
+                // the session look too.
+                world::comp::region::follow(&look.theme);
+                overlays::capture::style::follow(look.theme.clone());
+            },
+        ) {
+            self.appearance_generation = self.appearance_generation.wrapping_add(1);
+            serviced.changed = true;
+            // Open capture panels take the new look without waiting for input.
+            overlays::capture::style::restyle(lp);
+        }
+        if let Some(gaps) = gaps {
+            serviced.tile_gap_changed = lp.inner.comp.set_tile_gap(gaps);
+        }
+        // A new look may answer settings-owned panel changes.
+        self.settle_settings_replies();
+        self.port.titlebar_services(action_services(lp));
+        let Some(monitor) =
+            dispatcher::wire::trait_::wire_trait::WireTrait::active_output(&lp.inner)
+        else {
+            return serviced;
+        };
+        let name = monitor.name();
+        let output = name.as_str();
+        // The panel model for this output, at its logical size.
+        {
+            if let Some(mode) = monitor.current_mode() {
+                let size = monitor.current_transform().transform_size(mode.size);
+                let scale = monitor.current_scale().fractional_scale().max(0.1);
+                self.ensure_output(
+                    lp.inner.active_output_key(),
+                    output,
+                    (size.w as f32 / scale as f32, size.h as f32 / scale as f32),
+                );
+            }
+        }
+        while let Ok(action) = self.actions.try_recv() {
+            match action {
+                Action::HideDialog(scene) => {
+                    serviced.changed |= self.host.store.set_dialog_visible(&scene, false)
+                }
+                Action::HideToast(scene) => {
+                    serviced.changed |= self
+                        .host
+                        .store
+                        .set_toast_visible(&scene, false, output, None)
+                        .is_ok()
+                }
+                Action::EscapeEdge(scene) => {
+                    if let Some(surface) = self.surfaces.get(&scene)
+                        && lp
+                            .inner
+                            .surface()
+                            .registry
+                            .as_ref()
+                            .and_then(|r| r.keyboard_focus())
+                            == Some(surface.handle())
+                        && let Some(entry) = self.host.store.scene(&scene)
+                    {
+                        self.host
+                            .panels
+                            .escape(surface.output(), crate::mount::scene_edge(entry.tree()));
+                        crate::render::release_edge_keyboard(lp, &scene);
+                        // Click-focused fields have no autofocus prior to
+                        // restore, but still give up their registry focus.
+                        if let Some(registry) = lp.inner.surface_mut().registry.as_mut()
+                            && registry.keyboard_focus() == Some(surface.handle())
+                        {
+                            registry.set_keyboard_focus(None);
+                        }
+                        serviced.changed = true;
+                    }
+                }
+                Action::EdgeFocus(scene, _) => {
+                    if let Some(surface) = self.surfaces.get(&scene) {
+                        // Read current membership instead of replaying a
+                        // queued event from an earlier focus move.
+                        let focused = lp
+                            .inner
+                            .surface()
+                            .registry
+                            .as_ref()
+                            .and_then(|r| r.keyboard_focus());
+                        if self
+                            .menu_surface
+                            .as_ref()
+                            .is_some_and(|menu| Some(menu.handle) == focused)
+                            && self
+                                .host
+                                .panels
+                                .menu()
+                                .is_some_and(|menu| menu.output == surface.output())
+                        {
+                            // A spawned popup temporarily owns the keyboard;
+                            // keep the panel's focus holder for its return.
+                            continue;
+                        }
+                        let edge = self
+                            .surfaces
+                            .iter()
+                            .find(|(_, other)| {
+                                other.output() == surface.output()
+                                    && Some(other.handle()) == focused
+                            })
+                            .and_then(|(name, _)| self.host.store.scene(name))
+                            .filter(|entry| !crate::mount::is_overlay(entry.tree()))
+                            .filter(|entry| {
+                                let edge = crate::mount::scene_edge(entry.tree());
+                                !self.host.panels.hidden(surface.output(), edge)
+                                    && self.host.panels.state(surface.output(), edge)["page"]
+                                        .as_str()
+                                        == Some(crate::mount::page_id(entry.tree()).as_str())
+                            })
+                            .map(|entry| crate::mount::scene_edge(entry.tree()));
+                        self.host.panels.focus(surface.output(), edge);
+                        serviced.changed = true;
+                    }
+                }
+                Action::Tooltip(scene, asking, at) => {
+                    // A later hide from another scene must not close this
+                    // scene's tip: only the asking scene's own None does.
+                    match at {
+                        Some(at) => {
+                            self.tooltip = Some((scene, at));
+                            self.tooltip_handle = Some(asking);
+                        }
+                        None => {
+                            if self
+                                .tooltip
+                                .as_ref()
+                                .is_some_and(|(shown, _)| *shown == scene)
+                            {
+                                self.tooltip = None;
+                            }
+                        }
+                    }
+                    serviced.changed = true;
+                }
+                Action::Menu(serial, input) => match self.host.panels.menu_input(serial, input) {
+                    Ok(extra) => {
+                        self.host.menu_calls.extend(extra);
+                        serviced.changed = true;
+                    }
+                    Err(error) => {
+                        tracing::debug!("scene host: menu input refused: {}", error.message)
+                    }
+                },
+            }
+        }
+        let mut layouts = std::mem::take(&mut self.pending_layouts).into_iter();
+        while let Some(message) = layouts
+            .next()
+            .map(Inbound::Request)
+            .or_else(|| self.port.try_recv())
+        {
+            match message {
+                Inbound::Registered(name) => self.service = Some(name),
+                Inbound::Repaint => serviced.changed = true,
+                Inbound::Titlebar {
+                    generation,
+                    service,
+                    form,
+                } => {
+                    if self.port.settings_generation() == Some(generation) && !form.is_null() {
+                        let bar = if form["hosted"] == true
+                            && form["service"].as_str() == Some(service.as_str())
+                        {
+                            serde_json::from_value(form["bar"].clone()).unwrap_or_default()
+                        } else {
+                            Default::default()
+                        };
+                        serviced.changed |= decor::window::update_actions(&service, bar);
+                    }
+                }
+                Inbound::Refused(reason) => {
+                    serviced.changed |= decor::window::menu_services(BTreeSet::new());
+                    self.refused = Some(reason);
+                }
+                Inbound::Request(request) => {
+                    let generation = self.port.connection_generation();
+                    if request.kind == SceneCommand::Layout
+                        && verify_caller_provenance(&request).is_ok()
+                        && generation.is_none_or(|live| live == request.generation)
+                    {
+                        let args: Value =
+                            serde_json::from_str(&request.body).unwrap_or(Value::Null);
+                        if let Some(scene) = argument(&request, &args, "scene")
+                            && self.host.mapped_output(scene).is_some()
+                            && !self.surfaces.contains_key(scene)
+                        {
+                            self.pending_layouts.push(request);
+                            serviced.changed = true;
+                            continue;
+                        }
+                    }
+                    let (surfaces, placed) = (&self.surfaces, &self.placed);
+                    let mut layout = |store: &SceneStore, scene: &str, node: Option<&str>| {
+                        crate::render::layout(store, surfaces, placed, &mut *lp, scene, node)
+                    };
+                    self.settings.reconcile(self.port.settings_generation());
+                    let evidence = self.settings.session().host().consumer().evidence();
+                    let answer = self.host.answer_with_settings(
+                        &request,
+                        output,
+                        generation,
+                        Some(&evidence),
+                        Some(self.settings.session().cache_evidence()),
+                        &mut layout,
+                    );
+                    // A load or unload changes the pages the edges carry.
+                    self.host.panels.sync(&self.host.store);
+                    // A pre-empted owner hears before the reply's own caller.
+                    for wire in answer.publish {
+                        self.port.publish(wire);
+                    }
+                    match self.host.take_deferred() {
+                        // A settings-owned edge: settingsd answers first.
+                        Some(write) => self.request_settings_write(request, &write, output),
+                        None => self.port.reply(&request, answer.rc, answer.body),
+                    }
+                    serviced.changed |= answer.changed;
+                    serviced.answered += 1;
+                }
+                Inbound::Settings { operation, outcome } => {
+                    self.settings_answered(&operation, outcome);
+                }
+                Inbound::Live(live) => {
+                    tracing::debug!(
+                        services = ?live,
+                        "scene host: applying live registry to window menus"
+                    );
+                    serviced.changed |= decor::window::menu_services(live.clone());
+                    self.port.titlebar_services(action_services(lp));
+                    let notices = self.host.services_live(live);
+                    self.host.panels.sync(&self.host.store);
+                    serviced.changed |= !notices.is_empty();
+                    for wire in notices {
+                        self.port.publish(wire);
+                    }
+                }
+            }
+        }
+        for extra in self.host.menu_calls.drain(..) {
+            if !self
+                .port
+                .emit(&extra.target, &extra.kind, json!({"args":extra.args}))
+            {
+                tracing::warn!(
+                    "scene host: corner menu Bus call {} to {} not queued",
+                    extra.kind,
+                    extra.target
+                );
+            }
+        }
+        self.settle_settings_replies();
+        self.publish_panels(output);
+        serviced
+    }
+
+    fn operation_id(&mut self, kind: &str) -> String {
+        self.settings_operations = self.settings_operations.wrapping_add(1);
+        format!(
+            "shell-{kind}-{}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_micros()),
+            self.settings_operations
+        )
+    }
+
+    /// The panels snapshot a settings-write reply carries.
+    fn reply_panels(&self, output: &str) -> Value {
+        self.host.panels.snapshot(output, Value::Null)["panels"].clone()
+    }
+
+    fn refuse_settings_write(&self, request: &Request, output: &str, mut body: Value) {
+        body["panels"] = self.reply_panels(output);
+        self.port.reply(request, 10, body.to_string());
+    }
+
+    /// A Bus caller's `shell.panel.*` change on a settings-owned edge: send
+    /// it to settingsd and answer once the outcome (and the new look) is in.
+    fn request_settings_write(
+        &mut self,
+        request: Request,
+        write: &crate::panels::SettingsWrite,
+        output: &str,
+    ) {
+        if self.port.settings_generation().is_none() {
+            return self.refuse_settings_write(
+                &request,
+                output,
+                json!({"error_code":"SETTINGS_UNAVAILABLE",
+                    "message":"the shell's Bus connection is down; settingsd cannot be reached"}),
+            );
+        }
+        if self.settings_replies.len() >= MAX_SETTINGS_REPLIES {
+            return self.refuse_settings_write(
+                &request,
+                output,
+                json!({"error_code":"SETTINGS_BUSY",
+                    "message":format!("{MAX_SETTINGS_REPLIES} panel settings writes are already in flight; retry")}),
+            );
+        }
+        let operation = self.operation_id("panel");
+        let applied = self.settings.session().host().consumer().applied();
+        let body = match settings_apply(applied, write, &operation) {
+            Ok(body) => body,
+            Err(refusal) => return self.refuse_settings_write(&request, output, refusal),
+        };
+        if !self.port.apply_settings(&operation, body) {
+            return self.refuse_settings_write(
+                &request,
+                output,
+                json!({"error_code":"SETTINGS_UNAVAILABLE",
+                    "message":"the shell's Bus worker has stopped"}),
+            );
+        }
+        let record = format!("shell.panels.{}", write.id);
+        self.settings_replies.insert(
+            operation,
+            SettingsReply {
+                request,
+                output: output.to_owned(),
+                receipt: json!({"record": record}),
+                record,
+                awaiting: None,
+                deadline: std::time::Instant::now() + SETTINGS_REPLY_BUDGET,
+            },
+        );
+        self.port
+            .wake_after(SETTINGS_REPLY_BUDGET + std::time::Duration::from_millis(10));
+    }
+
+    /// settingsd answered `operation`: a refusal goes straight back to its
+    /// caller; an accepted change waits for its revision to apply.
+    fn settings_answered(&mut self, operation: &str, outcome: Result<Value, Value>) {
+        let Some(mut reply) = self.settings_replies.remove(operation) else {
+            // Its caller was already answered at the deadline.
+            return;
+        };
+        let body = match outcome {
+            Ok(body) => body,
+            Err(refusal) => {
+                return self.refuse_settings_write(&reply.request, &reply.output, refusal);
+            }
+        };
+        let receipt = &body["receipt"];
+        let incarnation = receipt["incarnation"].as_str().map(str::to_owned);
+        let revision = serde_json::from_value::<settings::Revision>(receipt["revision"].clone());
+        let (Some(incarnation), Ok(revision)) = (incarnation, revision) else {
+            return self.refuse_settings_write(
+                &reply.request,
+                &reply.output,
+                json!({"error_code":"SETTINGS_UNAVAILABLE",
+                    "message":"settingsd accepted the change without a readable receipt",
+                    "settings":body}),
+            );
+        };
+        reply.receipt = json!({"record":reply.record, "status":body["status"],
+            "revision":receipt["revision"], "operation_id":operation});
+        reply.awaiting = Some((incarnation, revision));
+        self.settings_replies.insert(operation.to_owned(), reply);
+    }
+
+    /// Answer every settings write whose revision has applied, or whose
+    /// deadline passed: before settingsd answered, a `SETTINGS_UNAVAILABLE`
+    /// refusal; after, the stored change with `applied: false`.
+    fn settle_settings_replies(&mut self) {
+        if self.settings_replies.is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let applied = self
+            .settings
+            .session()
+            .host()
+            .consumer()
+            .applied()
+            .map(|snapshot| (snapshot.incarnation.clone(), snapshot.revision));
+        let due: Vec<String> = self
+            .settings_replies
+            .iter()
+            .filter(|(_, reply)| {
+                reply.deadline <= now || settings_reply_applied(reply, applied.as_ref())
+            })
+            .map(|(operation, _)| operation.clone())
+            .collect();
+        for operation in due {
+            let reply = self
+                .settings_replies
+                .remove(&operation)
+                .expect("due reply is pending");
+            let panels = self.reply_panels(&reply.output);
+            if reply.awaiting.is_none() {
+                self.refuse_settings_write(
+                    &reply.request,
+                    &reply.output,
+                    json!({"error_code":"SETTINGS_UNAVAILABLE",
+                        "message":"settingsd did not answer settings.apply in time"}),
+                );
+            } else if settings_reply_applied(&reply, applied.as_ref()) {
+                let body = json!({"accepted":true, "applied":true,
+                    "settings":reply.receipt, "panels":panels});
+                self.port.reply(&reply.request, 0, body.to_string());
+            } else {
+                let body = json!({"accepted":true, "applied":false,
+                    "message":"settingsd stored the change; the shell has not applied the new look yet (watch shell.panel.changed)",
+                    "settings":reply.receipt, "panels":panels});
+                self.port.reply(&reply.request, 0, body.to_string());
+            }
+        }
+    }
+
+    /// `<service>.panel.changed` once per change of each output's edges or the
+    /// dialog seat (never on a timer), while the Bus is connected.
+    fn publish_panels(&mut self, output: &str) {
+        let Some(generation) = self.port.connection_generation() else {
+            return;
+        };
+        let dialog = dialog_notice(&self.host.store, self.host.dialog_fit.as_ref());
+        for wire in self.host.panels.notices(output, dialog, Some(generation)) {
+            self.port.publish_panel(wire);
+        }
+    }
+
+    /// A corner click or menu choice on a settings-owned edge, written as
+    /// [`settings_apply`] (fenced on the applied snapshot). The accepted
+    /// change returns as a new look, which moves the edge; a failed write is
+    /// logged by the port.
+    fn write_panel_record(&mut self, write: &crate::panels::SettingsWrite) {
+        let operation = self.operation_id("corner");
+        let applied = self.settings.session().host().consumer().applied();
+        match settings_apply(applied, write, &operation) {
+            Ok(body) => {
+                self.port.emit("settingsd", "settings.apply", body);
+            }
+            Err(refusal) => tracing::warn!(
+                id = %write.id,
+                message = %refusal["message"],
+                "scene host: corner panel change not sent to settingsd"
+            ),
+        }
+    }
+
+    /// Advance the panel model to now (motion, grace): what the frame clock
+    /// owes it next. A changed edge publishes.
+    /// A tick that moved a reserved zone (an edge docked, undocked or resized)
+    /// answers `Animate` at least once, so one more loop pass follows and
+    /// the usable area, read on that pass (`exclusive_zones`), catches up.
+    pub fn tick_panels(&mut self, output: &str) -> crate::panels::Wake {
+        for (owner, name) in self.host.panels.popup_commands() {
+            self.port
+                .emit(&owner, "scenes.toggle", json!({"name": name}));
+        }
+        for write in self.host.panels.settings_writes() {
+            self.write_panel_record(&write);
+        }
+        let before = self.host.panels.zones(output);
+        let wake = self.host.panels.tick();
+        self.publish_panels(output);
+        if wake != crate::panels::Wake::Animate && self.host.panels.zones(output) != before {
+            return crate::panels::Wake::Animate;
+        }
+        wake
+    }
+
+    /// One output's frame: create, update or destroy the scenes' surfaces.
+    pub fn render(
+        &mut self,
+        state: &mut world::state::Loop,
+        renderer: &mut smithay::backend::renderer::gles::GlesRenderer,
+        size: smithay::utils::Size<i32, smithay::utils::Physical>,
+    ) -> bool {
+        // The prepared authority presentation supplies scene/dialog/menu
+        // defaults; embedded scene design remains available during bootstrap.
+        let palette = decor::window::installed()
+            .map(|theme| theme.palette)
+            .unwrap_or_else(|| {
+                decor::ChromeTheme::from_source(decor::ChromeStyle::Mac, None).palette
+            });
+        let prepared = self
+            .settings
+            .session()
+            .host()
+            .presentation()
+            .map(|presentation| Arc::clone(presentation.content()));
+        // Return the old menu's keyboard before a newly shown dialog grabs
+        // it, so that dialog remembers the application's original focus.
+        if self.host.panels.menu().is_none() {
+            crate::menu::reconcile(
+                &mut self.host.panels,
+                &mut self.menu_surface,
+                palette,
+                prepared.clone(),
+                self.appearance_generation,
+                &self.wiring,
+                state,
+                renderer,
+                false,
+            );
+        }
+        let prior: BTreeSet<_> = self.surfaces.values().map(Surface::handle).collect();
+        crate::render::reconcile(
+            &mut self.host.store,
+            &mut self.host.panels,
+            &mut self.surfaces,
+            &mut self.placed,
+            palette,
+            prepared.clone(),
+            self.appearance_generation,
+            &self.wiring,
+            state,
+            renderer,
+            size,
+        );
+        let restack = self
+            .surfaces
+            .values()
+            .any(|surface| !prior.contains(&surface.handle()));
+        crate::menu::reconcile(
+            &mut self.host.panels,
+            &mut self.menu_surface,
+            palette,
+            prepared.clone(),
+            self.appearance_generation,
+            &self.wiring,
+            state,
+            renderer,
+            restack,
+        );
+        // A tip whose scene is gone or unmapped is forgotten, not deferred:
+        // a scene reloaded under the same name starts with no tip.
+        // A menu clears it too: the scene runs no pass while the menu holds
+        // the pointer, so it could not hide its own tip, and the tip must not
+        // pop back when the menu closes (it shows again on the next hover).
+        if self.host.panels.menu().is_some()
+            && let Some((scene, _)) = self.tooltip.take()
+            && let Some(surface) = self.surfaces.get(&scene)
+            && let Some(registry) = state.inner.surface_mut().registry.as_mut()
+        {
+            let _ = registry.dispatch_message(
+                ui::UiHandle::<crate::view::SceneUi>::from_id(surface.handle()),
+                crate::view::SceneMessage::ForgetTip,
+            );
+        }
+        if self.tooltip.as_ref().is_some_and(|(scene, _)| {
+            self.surfaces.get(scene).map(Surface::handle) != self.tooltip_handle
+                || self.host.mapped_output(scene).is_none()
+        }) {
+            self.tooltip = None;
+        }
+        // Each output renders in its own pass: only the tip's own output
+        // places it (any pass may hide it).
+        let current = state.inner.current_output().name();
+        let here = self.tooltip.as_ref().is_none_or(|(scene, _)| {
+            self.surfaces
+                .get(scene)
+                .is_some_and(|surface| surface.output() == current)
+        });
+        if here {
+            let action = self.action_tooltip.update(
+                state,
+                &self.port,
+                prepared.as_deref(),
+                self.appearance_generation,
+                self.tooltip.is_some()
+                    || self.host.panels.menu().is_some()
+                    || self.host.store.dialog_seat().is_some(),
+            );
+            let mut placed = self.placed.clone();
+            if let Some(((key, _), rect)) = &action {
+                placed.insert(key.clone(), *rect);
+            }
+            let action = action.map(|(tip, _)| tip);
+            let tip = self.tooltip.as_ref().or(action.as_ref());
+            self.host.tooltip = crate::tooltip::reconcile(
+                tip,
+                &mut self.tooltip_surfaces,
+                &placed,
+                self.settings
+                    .session()
+                    .host()
+                    .presentation()
+                    .map(|presentation| Arc::clone(presentation.content())),
+                self.appearance_generation,
+                state,
+                renderer,
+                restack,
+            );
+        }
+        let seat = self.host.store.dialog_seat().map(|seat| seat.scene.clone());
+        self.host.dialog_fit =
+            seat.and_then(|scene| self.placed.get(&scene).map(|&(_, _, w, h)| (scene, w, h)));
+        let input_geometry = InputGeometry {
+            placed: self.placed.clone(),
+            handles: self
+                .surfaces
+                .iter()
+                .map(|(name, surface)| (name.clone(), surface.input_geometry()))
+                .collect(),
+            menu_handle: self.menu_surface.as_ref().map(|menu| menu.input_geometry()),
+            outputs: self
+                .output_names
+                .values()
+                .map(|name| (name.clone(), self.surfaces(name)))
+                .collect(),
+        };
+        let input_changed = self.input_geometry.as_ref() != Some(&input_geometry);
+        self.input_geometry = Some(input_geometry);
+        // Read back on the next loop pass, after this frame has applied the
+        // new instance's pending resize/scale and ticked it. A request that
+        // raced panel.state must measure that surface, not an empty layout.
+        if input_changed || !self.pending_layouts.is_empty() {
+            (self.wiring.waker)();
+        }
+        input_changed
+    }
+
+    pub fn finish(self) {
+        decor::window::menu_services(BTreeSet::new());
+        self.port.finish();
+    }
+
+    /// Every scene surface drawn on `output`, as layer surfaces (see
+    /// [`SceneSurface`]), in scene-name order.
+    pub fn surfaces(&self, output: &str) -> Vec<SceneSurface> {
+        let zones = self.host.panels.zones(output);
+        let mut surfaces: Vec<_> = self
+            .surfaces
+            .iter()
+            .filter(|(_, surface)| surface.output() == output || surface.output().is_empty())
+            .filter_map(|(name, _)| {
+                let entry = self.host.store.scene(name)?;
+                entry.mounted()?;
+                let &(x, y, width, height) = self.placed.get(name)?;
+                let dialog = crate::mount::is_dialog(entry.tree());
+                let edge = (!crate::mount::is_overlay(entry.tree()))
+                    .then(|| crate::mount::scene_edge(entry.tree()));
+                // Quoin's layers: the dialog and an undocked (pinned or
+                // sliding) page are Overlay; a docked page is Top and
+                // reserves its thickness.
+                let docked = edge.and_then(|edge| {
+                    zones
+                        .iter()
+                        .find(|(zone, _)| *zone == edge)
+                        .map(|(_, px)| *px)
+                });
+                let interactivity = if dialog || crate::render::takes_keyboard(entry.tree()) {
+                    "on_demand"
+                } else {
+                    "none"
+                };
+                Some(SceneSurface {
+                    id: scene_surface_id(name),
+                    scene: name.clone(),
+                    x,
+                    y,
+                    width,
+                    height,
+                    stratum: if docked.is_some() { "top" } else { "overlay" },
+                    interactivity,
+                    edge,
+                    exclusive_zone: docked.unwrap_or(0.0),
+                })
+            })
+            .collect();
+        if let Some(menu) = self.host.panels.menu().filter(|menu| menu.output == output) {
+            let (x, y, width, height) = menu.rect;
+            surfaces.push(SceneSurface {
+                id: scene_surface_id(crate::menu::SCENE),
+                scene: crate::menu::SCENE.into(),
+                x,
+                y,
+                width,
+                height,
+                stratum: "overlay",
+                interactivity: "exclusive",
+                edge: None,
+                exclusive_zone: 0.0,
+            });
+        }
+        surfaces
+    }
+
+    /// The scene whose surface is `handle`, if any.
+    pub fn scene_of(&self, handle: ui::HandleId) -> Option<&str> {
+        if self
+            .menu_surface
+            .as_ref()
+            .is_some_and(|surface| surface.handle == handle)
+        {
+            return Some(crate::menu::SCENE);
+        }
+        self.surfaces
+            .iter()
+            .find(|(_, surface)| surface.handle() == handle)
+            .map(|(name, _)| name.as_str())
+    }
+}
+
+/// The id a scene surface has in comp.props (`surfaces` rows and
+/// `focus.keyboard`): `scene:<name>`.
+pub fn scene_surface_id(scene: &str) -> String {
+    format!("scene:{scene}")
+}
+
+const WIRE_OWNED_HEADERS: &[&str] = &[
+    "bus",
+    "type",
+    "id",
+    "from",
+    "to",
+    "command",
+    "args",
+    "json",
+    "reply-to",
+    "ttl",
+    "error",
+    "timestamp",
+    "rc",
+];
+
+/// Quoin's argument precedence: caller headers first, transport names only
+/// from the body (in particular, a page id is never the correlation id).
+fn argument<'a>(request: &'a Request, args: &'a Value, name: &str) -> Option<&'a str> {
+    if !WIRE_OWNED_HEADERS
+        .iter()
+        .any(|owned| owned.eq_ignore_ascii_case(name))
+        && let Some(value) = request.headers.get(name)
+    {
+        return Some(value);
+    }
+    args.get(name)?.as_str()
+}
+
+/// Quoin's `number_argument`: the body only, never a header (unlike
+/// [`argument`]); a JSON number or a numeric string, finite.
+fn number_argument(args: &Value, name: &str) -> Option<f64> {
+    let field = args.get(name)?;
+    let number = field
+        .as_f64()
+        .or_else(|| field.as_str().and_then(|text| text.parse::<f64>().ok()))?;
+    number.is_finite().then_some(number)
+}
+
+/// One scene surface, shaped as comp.props reports a layer surface. Quoin
+/// draws scenes on layer surfaces, so its `surfaces` rows and
+/// `focus.keyboard` name them; compd draws them as screen UI surfaces,
+/// and without these rows an agent reading comp.props would not see them
+/// at all, and would read the keyboard as still on the window under a
+/// dialog that holds it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SceneSurface {
+    /// [`scene_surface_id`].
+    pub id: String,
+    pub scene: String,
+    /// Logical px relative to the OUTPUT's origin (add it for global).
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    /// `overlay` (the dialog, an undocked page) or `top` (a docked page).
+    pub stratum: &'static str,
+    /// `on_demand` (the dialog, a scene with a text field) or `none`.
+    pub interactivity: &'static str,
+    /// An edge page's edge; `None` for the dialog.
+    pub edge: Option<crate::seat::Edge>,
+    /// Logical px a docked page reserves, else 0.
+    pub exclusive_zone: f32,
+}
+
+impl SceneSurface {
+    /// The comp.props `surfaces` row, `origin` being the output's logical
+    /// origin. Fields comp.props has and a scene has no answer for (app_id,
+    /// title, decoration, foreign_id) are left to the caller's defaults.
+    pub fn row(&self, origin: (f32, f32)) -> Value {
+        json!({
+            "id": self.id,
+            "role": "layer",
+            "mapped": true,
+            "scene": self.scene,
+            "x": origin.0 + self.x,
+            "y": origin.1 + self.y,
+            "width": self.width,
+            "height": self.height,
+            "layer": {
+                "stratum": self.stratum,
+                "interactivity": self.interactivity,
+                "exclusive_zone": self.exclusive_zone,
+                "binding": "explicit",
+                "namespace": "quoin-scene",
+                "edge": self.edge.map(crate::seat::Edge::as_str),
+            },
+        })
+    }
+}
+
+/// A registered local sender is the broker-restamped `from`; an attested
+/// mesh identity is qualified so a remote service cannot alias a local
+/// owner; an anonymous caller gets a distinct untracked owner per
+/// acceptance. Caller-authored metadata never chooses ownership.
+pub fn attested_owner(request: &Request, receipt: u64) -> String {
+    if let (Some(peer), Some(service)) = (
+        request.headers.get("broker_peer"),
+        request.headers.get("broker_service"),
+    ) {
+        return format!("{service}@{peer}");
+    }
+    if request.from.is_empty() {
+        format!("anonymous@{receipt}")
+    } else {
+        request.from.clone()
+    }
+}
+
+/// Exactly one broker-stamped origin. The mesh lane is open (the mesh is the
+/// trust boundary); a local request that spells the broker's own identity
+/// headers cannot be adjudicated and is refused. Not an authorization gate:
+/// a well-formedness check on who the broker says sent it.
+pub fn verify_caller_provenance(request: &Request) -> Result<(), &'static str> {
+    let origins: Vec<&str> = request
+        .headers
+        .iter()
+        .filter(|(key, _)| key.eq_ignore_ascii_case("broker_origin"))
+        .map(|(_, value)| value.as_str())
+        .collect();
+    if origins == ["mesh"] {
+        return Ok(());
+    }
+    let asserted = request.headers.keys().any(|name| {
+        name.eq_ignore_ascii_case("source_peer")
+            || name.eq_ignore_ascii_case("permissions")
+            || name.eq_ignore_ascii_case("signed_ident")
+    });
+    if asserted {
+        return Err("a local request may not assert the broker's identity headers");
+    }
+    if origins != ["local"] {
+        return Err("no single broker-stamped origin");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    const EDGE: &str = "---\nscene: 1\nname: notes\ncitizen: notes-citizen\nwindow: {\"kind\":\"edge\",\"edge\":\"right\"}\n---\n```mix\nroot: {widget: \"column\", children: []}\n```\n";
+
+    fn request(kind: SceneCommand, from: &str, headers: &[(&str, &str)], body: Value) -> Request {
+        Request {
+            kind,
+            from: from.into(),
+            command: format!("shell.{kind:?}").to_lowercase(),
+            id: Some("1".into()),
+            body: body.to_string(),
+            headers: headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<BTreeMap<_, _>>(),
+            generation: 1,
+        }
+    }
+
+    const LOCAL: &[(&str, &str)] = &[("broker_origin", "local")];
+
+    #[test]
+    fn settings_props_share_root_dotted_reads_and_request_fences() {
+        let mut host = Host::default();
+        let evidence = settings::consumer::Consumer::for_shell(settings::Binding {
+            instance: "fixture".into(),
+            profile: "default".into(),
+        })
+        .unwrap()
+        .evidence();
+        for (path, expected) in [
+            (None, json!(evidence)),
+            (Some("settings"), json!(evidence)),
+            (Some("settings.binding.instance"), json!("fixture")),
+        ] {
+            let request = request(
+                SceneCommand::PropsGet,
+                "agent",
+                LOCAL,
+                json!({"path": path}),
+            );
+            let answer = host.answer_with_settings(
+                &request,
+                "DP-1",
+                Some(1),
+                Some(&evidence),
+                None,
+                &mut no_layout,
+            );
+            assert_eq!(answer.rc, 0);
+            let value: Value = serde_json::from_str(&answer.body).unwrap();
+            assert_eq!(
+                if path.is_none() {
+                    &value["settings"]
+                } else {
+                    &value
+                },
+                &expected
+            );
+        }
+        let receipt = host.receipt;
+        let bad = request(
+            SceneCommand::PropsGet,
+            "agent",
+            &[],
+            json!({"path":"settings"}),
+        );
+        assert_eq!(
+            host.answer_with_settings(&bad, "DP-1", Some(1), Some(&evidence), None, &mut no_layout)
+                .rc,
+            10
+        );
+        let stale = request(
+            SceneCommand::PropsGet,
+            "agent",
+            LOCAL,
+            json!({"path":"settings"}),
+        );
+        assert_eq!(
+            host.answer_with_settings(
+                &stale,
+                "DP-1",
+                Some(2),
+                Some(&evidence),
+                None,
+                &mut no_layout
+            )
+            .rc,
+            10
+        );
+        assert_eq!(host.receipt, receipt);
+    }
+
+    #[test]
+    fn arguments_use_caller_headers_but_never_transport_headers() {
+        let args = json!({"edge":"left", "id":"scene-notes", "thickness_px":240});
+        let request = request(
+            SceneCommand::PanelResize,
+            "x",
+            &[("edge", "right"), ("id", "99"), ("thickness_px", "360")],
+            args.clone(),
+        );
+        assert_eq!(argument(&request, &args, "edge"), Some("right"));
+        assert_eq!(argument(&request, &args, "id"), Some("scene-notes"));
+        assert_eq!(argument(&request, &Value::Null, "id"), None);
+        assert_eq!(
+            number_argument(&args, "thickness_px"),
+            Some(240.0),
+            "a number is read from the body only, as in Quoin"
+        );
+    }
+
+    #[test]
+    fn resize_numbers_accept_strings_and_refuse_non_finite_or_missing_values_with_the_range() {
+        let mut host = Host::default();
+        for value in [json!(240), json!("240")] {
+            let args = json!({"thickness_px":value});
+            assert_eq!(number_argument(&args, "thickness_px"), Some(240.0));
+        }
+        for value in [
+            Value::Null,
+            json!(true),
+            json!("nope"),
+            json!("NaN"),
+            json!("inf"),
+            json!("1e999"),
+            json!(10),
+        ] {
+            let request = request(
+                SceneCommand::PanelResize,
+                "x",
+                LOCAL,
+                json!({"edge":"bottom", "thickness_px":value}),
+            );
+            let answer = host.answer(&request, "DP-1", Some(1), &mut no_layout);
+            assert_eq!((answer.rc, answer.changed), (10, false));
+            assert_eq!(
+                serde_json::from_str::<Value>(&answer.body).unwrap(),
+                json!({
+                    "error":"thickness_px must be a number in 24..=200 for the bottom edge", "range_px":[24.0, 200.0],
+                })
+            );
+        }
+        let missing = request(
+            SceneCommand::PanelResize,
+            "x",
+            &[("broker_origin", "local"), ("edge", "bottom")],
+            Value::Null,
+        );
+        let answer = host.answer(&missing, "DP-1", Some(1), &mut no_layout);
+        assert_eq!(
+            serde_json::from_str::<Value>(&answer.body).unwrap(),
+            crate::panels::resize_range_refusal(crate::seat::Edge::Bottom)
+        );
+        assert_eq!(
+            number_argument(&json!({"thickness_px":240}), "thickness_px"),
+            Some(240.0),
+            "a thickness_px header is ignored"
+        );
+    }
+
+    #[test]
+    fn a_header_routed_pin_returns_the_applied_panels_snapshot() {
+        let mut host = Host::default();
+        host.panels.ensure("DP-1", (1280.0, 800.0));
+        host.answer(
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source":EDGE})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        host.panels.sync(&host.store);
+        let pin = request(
+            SceneCommand::Panel {
+                kind: crate::panels::PanelCommand::Pin,
+                corner: false,
+            },
+            "x",
+            &[("broker_origin", "local"), ("edge", "right")],
+            json!({"edge":"left"}),
+        );
+        let answer = host.answer(&pin, "DP-1", Some(1), &mut no_layout);
+        assert_eq!((answer.rc, answer.changed), (0, true));
+        assert_eq!(
+            serde_json::from_str::<Value>(&answer.body).unwrap(),
+            json!({
+                "accepted":true, "applied":true, "panels":host.panels.snapshot("DP-1", Value::Null)["panels"],
+            })
+        );
+        assert_eq!(host.panels.mode("DP-1", crate::seat::Edge::Right), "pinned");
+    }
+
+    #[test]
+    fn panel_changes_on_a_settings_owned_edge_defer_to_a_settings_write() {
+        use crate::panels::{PanelCommand, RecordChange, SettingsWrite};
+        let mut host = Host::default();
+        host.panels.ensure("DP-1", (1280.0, 800.0));
+        host.answer(
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source":EDGE})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        host.panels.sync(&host.store);
+        host.panels.set_preferences(
+            crate::preferences::Preferences::prepare(&crate::preferences::panels_of(&[])).unwrap(),
+        );
+        let panel = |kind| SceneCommand::Panel {
+            kind,
+            corner: false,
+        };
+        let write = |change| {
+            Some(SettingsWrite {
+                id: "bottom".into(),
+                change,
+            })
+        };
+        for (kind, body, expected) in [
+            (
+                SceneCommand::PanelMode,
+                json!({"edge":"bottom", "mode":"hidden"}),
+                write(RecordChange::Autohide(true)),
+            ),
+            (
+                SceneCommand::PanelMode,
+                json!({"edge":"bottom", "mode":"pinned"}),
+                write(RecordChange::Mode(crate::panels::StoredMode::Overlay)),
+            ),
+            (
+                panel(PanelCommand::Pin),
+                json!({"edge":"bottom"}),
+                write(RecordChange::Mode(crate::panels::StoredMode::Overlay)),
+            ),
+            (
+                panel(PanelCommand::Unpin),
+                json!({"edge":"bottom"}),
+                write(RecordChange::Autohide(true)),
+            ),
+            (
+                SceneCommand::PanelResize,
+                json!({"edge":"bottom", "thickness_px":56}),
+                write(RecordChange::Thickness(56)),
+            ),
+            (
+                SceneCommand::PanelResize,
+                json!({"edge":"bottom", "thickness_px":50}),
+                write(RecordChange::Thickness(56)),
+            ),
+        ] {
+            let answer = host.answer(
+                &request(kind, "agent", LOCAL, body.clone()),
+                "DP-1",
+                Some(1),
+                &mut no_layout,
+            );
+            assert_eq!(answer.rc, 0, "{body}");
+            assert_eq!(host.take_deferred(), expected, "{body}");
+            assert_eq!(
+                host.panels.mode("DP-1", crate::seat::Edge::Bottom),
+                "docked"
+            );
+        }
+        // Already so: answered at once with the panels, nothing written.
+        for (kind, body) in [
+            (
+                SceneCommand::PanelMode,
+                json!({"edge":"bottom", "mode":"docked"}),
+            ),
+            (panel(PanelCommand::Dock), json!({"edge":"bottom"})),
+            (
+                SceneCommand::PanelResize,
+                json!({"edge":"bottom", "thickness_px":40}),
+            ),
+            // A free drag snaps to its step: 40.5 is 40.
+            (
+                SceneCommand::PanelResize,
+                json!({"edge":"bottom", "thickness_px":40.5}),
+            ),
+        ] {
+            let answer = host.answer(
+                &request(kind, "agent", LOCAL, body.clone()),
+                "DP-1",
+                Some(1),
+                &mut no_layout,
+            );
+            let value: Value = serde_json::from_str(&answer.body).unwrap();
+            assert_eq!((answer.rc, &value["applied"]), (0, &json!(true)), "{body}");
+            assert_eq!(value["panels"]["bottom"]["settings"]["record"], "bottom");
+            assert_eq!(host.take_deferred(), None, "{body}");
+        }
+        // Refusals are the caller's at once; an unowned edge keeps the direct path.
+        let answer = host.answer(
+            &request(
+                SceneCommand::PanelResize,
+                "agent",
+                LOCAL,
+                json!({"edge":"bottom", "thickness_px":500}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(answer.rc, 10);
+        assert_eq!(host.take_deferred(), None);
+        let answer = host.answer(
+            &request(
+                panel(PanelCommand::Pin),
+                "agent",
+                LOCAL,
+                json!({"edge":"right"}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(answer.rc, 0);
+        assert_eq!(host.take_deferred(), None);
+        assert_eq!(host.panels.mode("DP-1", crate::seat::Edge::Right), "pinned");
+        // A later answer never carries an earlier deferral.
+        host.answer(
+            &request(
+                SceneCommand::PanelMode,
+                "agent",
+                LOCAL,
+                json!({"edge":"bottom", "mode":"hidden"}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        host.answer(
+            &request(
+                SceneCommand::PanelState,
+                "agent",
+                LOCAL,
+                json!({"edge":"bottom"}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(host.take_deferred(), None);
+    }
+
+    #[test]
+    fn corner_write_after_rebind_uses_the_new_applied_binding() {
+        use crate::panels::{RecordChange, SettingsWrite};
+        let mut snapshot = crate::appearance::snapshot_of(settings::Desktop::default());
+        let mut consumer =
+            settings::consumer::Consumer::for_shell(snapshot.binding.clone()).unwrap();
+        let subscribe = consumer.connected(1).unwrap();
+        let read = consumer.complete(&subscribe, Ok(None)).unwrap();
+        consumer.complete(&read, Ok(Some(snapshot.clone())));
+        assert!(consumer.acknowledge(&consumer.pending().unwrap().clone()));
+        snapshot.binding.instance = "authority".into();
+        snapshot.incarnation = "rebound".into();
+        let read = consumer.refresh().unwrap();
+        let read = consumer
+            .complete(
+                &read,
+                Err(settings::Diagnostic::new(
+                    "wrong_target",
+                    "native",
+                    json!({"status":"wrong_target", "binding":snapshot.binding}).to_string(),
+                )),
+            )
+            .unwrap();
+        consumer.complete(&read, Ok(Some(snapshot.clone())));
+        if let Some(update) = consumer.pending().cloned() {
+            assert!(consumer.acknowledge(&update));
+        }
+        let write = SettingsWrite {
+            id: "bottom".into(),
+            change: RecordChange::Autohide(false),
+        };
+        let body = settings_apply(consumer.applied(), &write, "corner-2").unwrap();
+        let request: settings::ApplyRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(request.binding, snapshot.binding);
+        assert_eq!(request.expected_incarnation, "rebound");
+    }
+
+    #[test]
+    fn settings_writes_carry_v2_keys_fenced_on_the_applied_snapshot() {
+        use crate::panels::{RecordChange, SettingsWrite};
+        let snapshot = crate::appearance::snapshot_of(settings::Desktop::default());
+        let write = SettingsWrite {
+            id: "bottom".into(),
+            change: RecordChange::Thickness(56),
+        };
+        let body = settings_apply(Some(&snapshot), &write, "shell-panel-1").unwrap();
+        assert_eq!(body["expected_incarnation"], "test");
+        assert_eq!(body["expected_revision"], "1");
+        assert_eq!(body["operation_id"], "shell-panel-1");
+        assert_eq!(
+            body["changes"],
+            json!({"shell.panels.bottom.thickness": 56})
+        );
+        let request: settings::ApplyRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(request.binding, snapshot.binding);
+        for (snapshot, id) in [
+            (None, "bottom"),
+            (Some(&snapshot), "nowhere"),
+            (Some(&snapshot), "top"),
+        ] {
+            let write = SettingsWrite {
+                id: id.into(),
+                change: RecordChange::Autohide(true),
+            };
+            assert_eq!(
+                settings_apply(snapshot, &write, "op").unwrap_err()["error_code"],
+                "SETTINGS_UNAVAILABLE"
+            );
+        }
+    }
+
+    #[test]
+    fn a_settings_reply_is_due_once_its_revision_applies_in_the_same_incarnation() {
+        let reply = |awaiting: Option<(&str, u64)>| SettingsReply {
+            request: request(SceneCommand::PanelMode, "agent", LOCAL, Value::Null),
+            output: "DP-1".into(),
+            record: "shell.panels.bottom".into(),
+            awaiting: awaiting.map(|(i, r)| (i.into(), settings::Revision(r))),
+            receipt: Value::Null,
+            deadline: std::time::Instant::now(),
+        };
+        let applied = |i: &str, r| Some((i.to_owned(), settings::Revision(r)));
+        assert!(!settings_reply_applied(
+            &reply(None),
+            applied("a", 9).as_ref()
+        ));
+        assert!(!settings_reply_applied(&reply(Some(("a", 3))), None));
+        assert!(!settings_reply_applied(
+            &reply(Some(("a", 3))),
+            applied("a", 2).as_ref()
+        ));
+        assert!(!settings_reply_applied(
+            &reply(Some(("a", 3))),
+            applied("b", 9).as_ref()
+        ));
+        assert!(settings_reply_applied(
+            &reply(Some(("a", 3))),
+            applied("a", 3).as_ref()
+        ));
+        assert!(settings_reply_applied(
+            &reply(Some(("a", 3))),
+            applied("a", 4).as_ref()
+        ));
+    }
+
+    #[test]
+    fn bus_menu_open_choose_close_reports_state_and_fences_stale_choices() {
+        let mut host = Host::default();
+        host.panels.ensure("DP-1", (1280.0, 800.0));
+        host.answer(
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source":EDGE})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        host.panels.sync(&host.store);
+        let open = request(
+            SceneCommand::MenuOpen,
+            "agent",
+            LOCAL,
+            json!({"corner":"bottom-right"}),
+        );
+        let answer = host.answer(&open, "DP-1", Some(1), &mut no_layout);
+        assert_eq!((answer.rc, answer.changed), (0, true));
+        let body: Value = serde_json::from_str(&answer.body).unwrap();
+        assert_eq!(body["menu"]["edge"], "right");
+        assert_eq!(body["menu"]["items"][2]["checked"], true);
+        let serial = body["menu"]["serial"].as_u64().unwrap();
+        let props = host.answer(
+            &request(
+                SceneCommand::PropsGet,
+                "agent",
+                LOCAL,
+                json!({"path":"menu"}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&props.body).unwrap(),
+            body["menu"]
+        );
+        let choose = request(
+            SceneCommand::MenuChoose,
+            "agent",
+            LOCAL,
+            json!({"serial":serial, "index":1}),
+        );
+        assert_eq!(host.answer(&choose, "DP-1", Some(1), &mut no_layout).rc, 0);
+        assert_eq!(host.panels.mode("DP-1", crate::seat::Edge::Right), "docked");
+        assert!(host.panels.menu().is_none());
+        assert_eq!(host.answer(&choose, "DP-1", Some(1), &mut no_layout).rc, 10);
+        host.answer(&open, "DP-1", Some(1), &mut no_layout);
+        let serial = host.panels.menu().unwrap().serial;
+        let close = request(
+            SceneCommand::MenuClose,
+            "agent",
+            LOCAL,
+            json!({"serial":serial}),
+        );
+        assert_eq!(host.answer(&close, "DP-1", Some(1), &mut no_layout).rc, 0);
+        assert!(host.panels.menu().is_none());
+    }
+
+    fn no_layout(_: &SceneStore, scene: &str, _: Option<&str>) -> Result<Value, Value> {
+        Err(json!({"error_code":"UNIMPLEMENTED", "scene": scene}))
+    }
+
+    #[test]
+    fn mounted_loader_pages_register_the_shared_corner_toggle_route() {
+        for (name, edge, point) in [
+            ("launcher", "left", (1.0, 1.0)),
+            ("calendar", "right", (1279.0, 799.0)),
+        ] {
+            let mut host = Host::default();
+            host.panels.ensure("DP-1", (1280.0, 800.0));
+            let source = EDGE.replace("notes", name).replace("right", edge);
+            let answer = host.answer(
+                &request(
+                    SceneCommand::Load,
+                    "scenes",
+                    LOCAL,
+                    json!({"source":source}),
+                ),
+                "DP-1",
+                Some(1),
+                &mut no_layout,
+            );
+            assert_eq!(answer.rc, 0);
+            host.panels.sync(&host.store);
+            let config = edges::CornerDetectorConfig::new(
+                10.0,
+                std::time::Duration::from_millis(200),
+                1500.0,
+            )
+            .unwrap();
+            host.panels.pointer("DP-1", Some(point), config);
+            assert!(host.panels.pointer_button(0x110, true, false));
+            assert!(host.panels.pointer_button(0x110, false, false));
+            assert_eq!(
+                host.panels.popup_commands(),
+                vec![("scenes".into(), name.into())]
+            );
+            assert_eq!(
+                host.panels
+                    .mode("DP-1", crate::panels::parse_edge(edge).unwrap()),
+                "hidden"
+            );
+        }
+    }
+
+    #[test]
+    fn a_newly_mapped_page_needs_layout_even_before_its_first_render_target() {
+        let mut host = Host::default();
+        host.panels.ensure("DP-1", (1280.0, 800.0));
+        host.answer(
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source": EDGE})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        host.panels.sync(&host.store);
+        assert_eq!(host.mapped_output("notes"), None);
+        host.panels
+            .set_mode("DP-1", crate::seat::Edge::Right, "pinned")
+            .unwrap();
+        assert_eq!(host.mapped_output("notes").as_deref(), Some("DP-1"));
+        assert!(
+            crate::render::targets(&host.store, &host.panels).is_empty(),
+            "fraction zero: no surface can be created yet"
+        );
+
+        let calendar = EDGE.replace("notes", "calendar");
+        host.answer(
+            &request(
+                SceneCommand::Load,
+                "loader",
+                LOCAL,
+                json!({"source": calendar}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        host.panels.sync(&host.store);
+        host.panels
+            .page_set("DP-1", crate::seat::Edge::Right, "scene-calendar")
+            .unwrap();
+        assert_eq!(
+            host.mapped_output("notes"),
+            None,
+            "inactive pages still answer unmapped immediately"
+        );
+        assert_eq!(host.mapped_output("calendar").as_deref(), Some("DP-1"));
+        host.answer(
+            &request(
+                SceneCommand::Unload,
+                "loader",
+                LOCAL,
+                json!({"scene":"calendar"}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(
+            host.mapped_output("calendar"),
+            None,
+            "an unload releases a deferred layout to NOT_FOUND"
+        );
+    }
+
+    #[test]
+    fn provenance_requires_one_broker_origin() {
+        let ok = |headers: &[(&str, &str)]| {
+            verify_caller_provenance(&request(SceneCommand::Get, "a", headers, Value::Null))
+        };
+        assert!(ok(LOCAL).is_ok());
+        assert!(ok(&[("broker_origin", "mesh")]).is_ok());
+        assert!(
+            ok(&[("broker_origin", "mesh"), ("signed_ident", "x")]).is_ok(),
+            "mesh is the trust boundary"
+        );
+        assert!(ok(&[]).is_err());
+        assert!(ok(&[("broker_origin", "local"), ("source_peer", "x")]).is_err());
+        assert!(ok(&[("broker_origin", "remote")]).is_err());
+    }
+
+    #[test]
+    fn a_refused_provenance_spends_no_receipt_and_changes_nothing() {
+        let mut host = Host::default();
+        let answer = host.answer(
+            &request(SceneCommand::Load, "loader", &[], json!({"source": EDGE})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(answer.rc, 10);
+        let body: Value = serde_json::from_str(&answer.body).unwrap();
+        assert_eq!(body["error_code"], "SCENE_PROVENANCE");
+        assert!(
+            host.store.scene("notes").is_none() && !answer.changed && answer.publish.is_empty()
+        );
+        assert_eq!(host.receipt, 0);
+    }
+
+    #[test]
+    fn owners_are_attested_and_each_request_takes_a_receipt() {
+        let mut host = Host::default();
+        let answer = host.answer(
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source": EDGE})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(answer.rc, 0, "{}", answer.body);
+        assert!(answer.changed && answer.publish.len() == 1);
+        let seat = host.store.pages().seat("scene-notes").unwrap();
+        assert_eq!(
+            (seat.owner.as_str(), seat.accepted_at, seat.output.as_str()),
+            ("loader", 1, "DP-1")
+        );
+        let mesh = [
+            ("broker_origin", "mesh"),
+            ("broker_peer", "beta"),
+            ("broker_service", "editor"),
+        ];
+        assert_eq!(
+            attested_owner(&request(SceneCommand::Get, "editor", &mesh, Value::Null), 9),
+            "editor@beta"
+        );
+        assert_eq!(
+            attested_owner(&request(SceneCommand::Get, "", LOCAL, Value::Null), 9),
+            "anonymous@9"
+        );
+        // Reads take a receipt but change nothing.
+        let list = host.answer(
+            &request(SceneCommand::List, "x", LOCAL, Value::Null),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!((list.rc, list.changed), (0, false));
+        assert_eq!(
+            serde_json::from_str::<Value>(&list.body).unwrap()[0]["registered"],
+            true
+        );
+        assert_eq!(host.receipt, 2);
+    }
+
+    #[test]
+    fn a_request_from_an_earlier_connection_is_refused_unapplied() {
+        let mut host = Host::default();
+        let load = request(SceneCommand::Load, "loader", LOCAL, json!({"source": EDGE}));
+        let stale = host.answer(&load, "DP-1", Some(2), &mut no_layout);
+        assert_eq!(stale.rc, 10);
+        assert_eq!(
+            serde_json::from_str::<Value>(&stale.body).unwrap()["error_code"],
+            "SCENE_STALE_CONNECTION"
+        );
+        assert!(host.store.scene("notes").is_none() && !stale.changed && stale.publish.is_empty());
+        assert_eq!(host.receipt, 0, "a stale request spends no receipt");
+        // The same request on the live connection applies.
+        assert_eq!(host.answer(&load, "DP-1", Some(1), &mut no_layout).rc, 0);
+    }
+
+    #[test]
+    fn dialog_show_and_hide_answer_the_frozen_bodies() {
+        let frozen: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/shell-commands.json")).unwrap();
+        let body = |answer: &Answer| serde_json::from_str::<Value>(&answer.body).unwrap();
+        let mut host = Host::default();
+        let missing = host.answer(
+            &request(
+                SceneCommand::DialogShow,
+                "x",
+                LOCAL,
+                json!({"scene":"editor"}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(
+            body(&missing),
+            frozen["shell.dialog.show"]["refusals"]["NOT_FOUND"]
+        );
+        let panel = EDGE.replace("name: notes", "name: panel");
+        host.answer(
+            &request(
+                SceneCommand::Load,
+                "loader",
+                LOCAL,
+                json!({"source": panel}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        let edge = host.answer(
+            &request(
+                SceneCommand::DialogHide,
+                "x",
+                LOCAL,
+                json!({"scene":"panel"}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(
+            body(&edge),
+            frozen["shell.dialog.hide"]["refusals"]["NOT_DIALOG"]
+        );
+        let dialog = frozen["shell.scene.load"]["request"]["source"]
+            .as_str()
+            .unwrap();
+        host.answer(
+            &request(
+                SceneCommand::Load,
+                "scenes",
+                LOCAL,
+                json!({"source": dialog}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert!(
+            !host.store.scene("editor").unwrap().visible(),
+            "a loaded dialog waits unmapped"
+        );
+        for (kind, name) in [
+            (SceneCommand::DialogShow, "shell.dialog.show"),
+            (SceneCommand::DialogHide, "shell.dialog.hide"),
+        ] {
+            let answer = host.answer(
+                &request(kind, "x", LOCAL, json!({"scene":"editor"})),
+                "HDMI-A-1",
+                Some(1),
+                &mut no_layout,
+            );
+            assert_eq!((answer.rc, answer.changed), (0, true));
+            assert_eq!(body(&answer), frozen[name]["reply"]);
+            assert_eq!(
+                host.store.scene("editor").unwrap().visible(),
+                kind == SceneCommand::DialogShow
+            );
+        }
+        assert_eq!(
+            host.store.dialog_seat().unwrap().output,
+            "HDMI-A-1",
+            "shown on the selected output"
+        );
+    }
+
+    #[test]
+    fn toast_commands_show_resize_retarget_refuse_busy_and_hide() {
+        let mut host = Host::default();
+        let body = |answer: &Answer| serde_json::from_str::<Value>(&answer.body).unwrap();
+        let call = |host: &mut Host, kind, args| {
+            host.answer(
+                &request(kind, "loader", LOCAL, args),
+                "DP-1",
+                Some(1),
+                &mut no_layout,
+            )
+        };
+        let missing = call(
+            &mut host,
+            SceneCommand::ToastShow,
+            json!({"scene":"toast-probe"}),
+        );
+        assert_eq!(body(&missing)["error_code"], "NOT_FOUND");
+        call(&mut host, SceneCommand::Load, json!({"source":EDGE}));
+        let edge = call(&mut host, SceneCommand::ToastHide, json!({"scene":"notes"}));
+        assert_eq!(body(&edge)["error_code"], "NOT_TOAST");
+        let source = "---\nscene: 1\nname: toast-probe\ncitizen: c\nwindow: {\"kind\":\"toast\",\"w\":360,\"h\":120}\n---\n```mix\nroot: {widget: \"column\", children: []}\n```\n";
+        for source in [
+            source.to_owned(),
+            source.replace("toast-probe", "other-toast"),
+        ] {
+            assert_eq!(
+                call(&mut host, SceneCommand::Load, json!({"source":source})).rc,
+                0
+            );
+        }
+        let shown = call(
+            &mut host,
+            SceneCommand::ToastShow,
+            json!({"scene":"toast-probe"}),
+        );
+        assert_eq!((shown.rc, shown.changed), (0, true));
+        assert_eq!(
+            body(&shown),
+            json!({"scene":"toast-probe", "visible":true, "applied":true})
+        );
+        assert_eq!(host.mapped_output("toast-probe").as_deref(), Some("DP-1"));
+        assert_eq!(host.store.toast_seat().unwrap().h, 120.0);
+        assert_eq!(
+            call(
+                &mut host,
+                SceneCommand::ToastShow,
+                json!({"scene":"toast-probe", "output":"DP-2", "h":280})
+            )
+            .rc,
+            0
+        );
+        assert_eq!(host.store.toast_seat().unwrap().h, 280.0);
+        assert_eq!(host.store.toast_seat().unwrap().output, "DP-2");
+        let invalid = call(
+            &mut host,
+            SceneCommand::ToastShow,
+            json!({"scene":"toast-probe", "h":"bad"}),
+        );
+        assert_eq!(body(&invalid)["error_code"], "INVALID_HEIGHT");
+        let busy = call(
+            &mut host,
+            SceneCommand::ToastShow,
+            json!({"scene":"other-toast"}),
+        );
+        assert_eq!((busy.rc, busy.changed), (10, false));
+        assert_eq!(body(&busy)["error_code"], "TOAST_BUSY");
+        assert_eq!(host.store.toast_seat().unwrap().h, 280.0);
+        let hidden = call(
+            &mut host,
+            SceneCommand::ToastHide,
+            json!({"scene":"toast-probe"}),
+        );
+        assert_eq!(
+            body(&hidden),
+            json!({"scene":"toast-probe", "visible":false, "applied":true})
+        );
+        assert!(host.store.toast_seat().is_none());
+        assert_eq!(host.mapped_output("toast-probe"), None);
+        assert_eq!(
+            call(
+                &mut host,
+                SceneCommand::ToastShow,
+                json!({"scene":"other-toast"})
+            )
+            .rc,
+            0
+        );
+    }
+
+    #[test]
+    fn layout_refuses_an_unknown_scene_and_asks_the_renderer_for_a_loaded_one() {
+        let mut host = Host::default();
+        let missing = host.answer(
+            &request(SceneCommand::Layout, "x", LOCAL, json!({"scene":"editor"})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        let frozen: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/shell-commands.json")).unwrap();
+        assert_eq!(missing.rc, 10);
+        assert_eq!(
+            serde_json::from_str::<Value>(&missing.body).unwrap(),
+            frozen["shell.scene.layout"]["refusals"]["NOT_FOUND"]
+        );
+        host.answer(
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source": EDGE})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        // A loaded scene is measured by the renderer's reader, narrowed by `node`.
+        let mut asked = Vec::new();
+        let mut reader =
+            |_: &SceneStore, scene: &str, node: Option<&str>| -> Result<Value, Value> {
+                asked.push((scene.to_owned(), node.map(str::to_owned)));
+                Ok(json!({"scene": scene, "visible": true}))
+            };
+        let measured = host.answer(
+            &request(
+                SceneCommand::Layout,
+                "x",
+                LOCAL,
+                json!({"scene":"notes","node":"root"}),
+            ),
+            "DP-1",
+            Some(1),
+            &mut reader,
+        );
+        assert_eq!((measured.rc, measured.changed), (0, false));
+        assert_eq!(
+            serde_json::from_str::<Value>(&measured.body).unwrap()["visible"],
+            true
+        );
+        assert_eq!(asked, [("notes".to_owned(), Some("root".to_owned()))]);
+        let refused = host.answer(
+            &request(SceneCommand::Layout, "x", LOCAL, json!({"scene":"notes"})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(refused.rc, 10);
+    }
+
+    #[test]
+    fn a_scene_surface_row_is_a_layer_row_in_global_coordinates() {
+        let dialog = SceneSurface {
+            id: scene_surface_id("editor"),
+            scene: "editor".into(),
+            x: 200.0,
+            y: 90.0,
+            width: 880.0,
+            height: 620.0,
+            stratum: "overlay",
+            interactivity: "on_demand",
+            edge: None,
+            exclusive_zone: 0.0,
+        };
+        assert_eq!(
+            dialog.row((1280.0, 0.0)),
+            json!({"id":"scene:editor", "role":"layer", "mapped":true, "scene":"editor",
+                "x":1480.0, "y":90.0, "width":880.0, "height":620.0,
+                "layer":{"stratum":"overlay", "interactivity":"on_demand", "exclusive_zone":0.0,
+                    "binding":"explicit", "namespace":"quoin-scene", "edge":null}})
+        );
+        let panel = SceneSurface {
+            edge: Some(crate::seat::Edge::Bottom),
+            stratum: "top",
+            exclusive_zone: 52.0,
+            ..dialog
+        };
+        assert_eq!(panel.row((0.0, 0.0))["layer"]["edge"], "bottom");
+    }
+
+    #[test]
+    fn only_a_seen_owner_that_leaves_is_swept() {
+        let mut host = Host::default();
+        host.answer(
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source": EDGE})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        // The first diff is the baseline even when the owner is absent.
+        assert!(
+            host.services_live(BTreeSet::from(["comp".to_string()]))
+                .is_empty()
+        );
+        assert!(host.store.scene("notes").is_some());
+        assert!(
+            host.services_live(BTreeSet::from(["comp".to_string(), "loader".to_string()]))
+                .is_empty()
+        );
+        let notices = host.services_live(BTreeSet::from(["comp".to_string()]));
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].contains("owner_departed"), "{}", notices[0]);
+        assert!(host.store.scene("notes").is_none());
+        assert!(host.store.pages().seat("scene-notes").is_none());
+    }
+}
+
+use ui::TypedSurfaces as _;

@@ -1,0 +1,21 @@
+-- version: 0.1.0
+$c=require("core.mix")
+$s=$c.initial("example")
+$s.catalog=[{path:"appearance.mode",kind:"enum",variants:["light","dark"],class:"stored",default:"dark"},{path:"accessibility.text_scale",kind:"number",min:0.5,max:3,class:"stored",default:1},{path:"email.accounts",kind:"list",class:"stored",default:[]}]
+$s.role="authority";$s.stale=false;$s.incarnation="inc";$s.revision="9007199254740993"
+$r=$c.admitted($s,"appearance.mode","light")
+if $r.expected_revision!=$s.revision or $r.changes["appearance.mode"]!="light" then raise("FENCE","Revision must remain exact decimal text") end
+for $v in ["bogus",true,1]
+  $refused=false
+  try $c.admitted($s,"appearance.mode",$v) catch $message $refused=true end
+  if not $refused then raise("ENUM","Invalid enum accepted") end
+end
+for $pair in [["accessibility.text_scale",4],["email.accounts",[]],["missing",true]]
+  $refused=false
+  try $c.admitted($s,$pair[0],$pair[1]) catch $message $refused=true end
+  if not $refused then raise("TYPE","Invalid value/owner accepted") end
+end
+$s.stale=true;$refused=false
+try $c.admitted($s,"appearance.mode","light") catch $message $refused=true end
+if not $refused then raise("STALE","Mirror must inhibit writes") end
+print("prefs: exact revision fence, type/range/owner and stale refusals pass")

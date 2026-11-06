@@ -67,6 +67,23 @@ pub(crate) fn reserved_owner(name: &str) -> Option<&str> {
 /// publish side is reserved. Record/audit topics retain their stricter grant
 /// rules through [`reserved_owner`].
 pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
+    // Furniture consumes compositor authority, not authored widget events.
+    // Reserve every such stream and attest its publisher just like props and
+    // pointer events. The imported production helper is shared by the real
+    // embedded broker; integration must carry this into mixd's broker source.
+    for suffix in [
+        ".corner.input",
+        ".corner.entered",
+        ".corner.left",
+        ".corner.clicked.v2",
+        ".corner.clicked",
+        ".panel.command",
+        ".chrome.action.hover",
+    ] {
+        if let Some(owner) = name.strip_suffix(suffix).filter(|owner| !owner.is_empty()) {
+            return Some(owner);
+        }
+    }
     // files outcomes are public but authoritative: only the chooser provider
     // may publish them (file chooser contract, Outcome).
     if name == "files.chosen" {
