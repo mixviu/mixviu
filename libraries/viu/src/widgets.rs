@@ -702,6 +702,9 @@ impl Widgets {
                 }
             }
             "divider" => {
+                if widget.properties["style"] == "native" {
+                    return ui.separator();
+                }
                 if widget.properties["axis"] == "horizontal" {
                     let rect = toolkit::bars::hairline(ui);
                     let r = ui.interact(rect, ui.make_persistent_id(id), Sense::hover());

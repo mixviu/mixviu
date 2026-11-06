@@ -597,6 +597,7 @@ impl Host {
             && self.inflight.is_empty()
             && self.view.current_revision_drawn()
         {
+            self.facilities.settle_answers();
             if let Some(reply) = self.input_reply.take() {
                 let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, self.state()));
             }

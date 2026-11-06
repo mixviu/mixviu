@@ -267,7 +267,7 @@ fn topic($s,$topic,$body)
   elif contains(["agent.session.ended","agent.permission.requested"],$topic) then $s=refresh_node($s,$node) end
   return $s
 end
-fn row_label($row) return if $row.title!=nil then $row.title else $row.agent.." · "..basename($row.cwd) end end
+fn row_label($row) return $row.agent.." · "..basename($row.cwd) end
 fn badge($row) return if $row.open_permissions>0 and $row.status!="ended" then "question" else $row.status end end
 fn make_row($s,$key,$kind,$label,$children)
   return {key:$key,kind:$kind,label:$label,children:$children,expanded:contains($s.expanded,$key),selected:$s.row_key==$key}

@@ -305,12 +305,16 @@ pub fn draw(
     if widget.properties["scroll"] == false {
         return ui.vertical(&mut render).response;
     }
+    if let Some(space) = widget.properties["space_before"].as_f64() {
+        ui.add_space(space as f32);
+    }
     let height = widget.properties["max_height"]
         .as_f64()
         .map(|x| x as f32)
         .unwrap_or_else(|| {
             (ui.available_height()
-                - widget.properties["reserve_height"].as_f64().unwrap_or(0.) as f32)
+                - widget.properties["reserve_height"].as_f64().unwrap_or(0.) as f32
+                - widget.properties["reserve_lines"].as_f64().unwrap_or(0.) as f32 * ui.text_style_height(&egui::TextStyle::Body))
                 .max(60.)
         });
     let rect = egui::ScrollArea::vertical()

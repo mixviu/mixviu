@@ -22,6 +22,7 @@ pub struct Facilities {
     pub macros: Option<macros::Session>,
     next: u64,
     pending: BTreeMap<u64, Reply>,
+    ready_answers: Vec<(Reply, u8, Value)>,
     input_headers: BTreeMap<u64, BTreeMap<String, String>>,
     completed: mpsc::Receiver<(Reply, macros::commands::Answer)>,
     complete: mpsc::Sender<(Reply, macros::commands::Answer)>,
@@ -89,6 +90,7 @@ impl Facilities {
             macros,
             next: 0,
             pending: BTreeMap::new(),
+            ready_answers: Vec::new(),
             input_headers: BTreeMap::new(),
             completed,
             complete,
@@ -182,11 +184,22 @@ impl Facilities {
     }
     fn answers(&mut self, ctx: &egui::Context, answers: Vec<toolkit::drive::Answer>) {
         for mut answer in answers {
-            self.input_headers.remove(&answer.id);
+            let input = self.input_headers.remove(&answer.id).is_some();
             if let Some(reply) = self.pending.remove(&answer.id) {
                 remap(ctx, &mut answer.body);
-                let _ = reply.send((answer.rc, answer.body));
+                if input && answer.rc == 0 {
+                    self.ready_answers.push((reply, answer.rc, answer.body));
+                } else {
+                    let _ = reply.send((answer.rc, answer.body));
+                }
             }
+        }
+    }
+    /// A completed gesture also waits for its in-process application callback
+    /// and the resulting scene revision, just like the native Rust shells.
+    pub fn settle_answers(&mut self) {
+        for (reply, rc, body) in self.ready_answers.drain(..) {
+            let _ = reply.send((rc, body));
         }
     }
     pub fn request(&mut self, mut r: Request, ctx: &egui::Context) -> Option<Request> {
