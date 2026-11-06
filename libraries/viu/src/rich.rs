@@ -716,7 +716,12 @@ fn gold_dialog(
     use toolkit::dialog::{Choice, Dialog, Role};
     let id = &widget.id;
     let choices = value["choices"].as_array().unwrap();
-    let key = egui::Id::unique((ui.ctx().viewport_id(), id, &value["instance"], &value["title"]));
+    let key = egui::Id::unique((
+        ui.ctx().viewport_id(),
+        id,
+        &value["instance"],
+        &value["title"],
+    ));
     let mut field = value["field"].as_str().map(str::to_owned);
     let mut accept = false;
     let shown=Dialog::new(key,text(value,"title")).buttons(choices.iter().map(|c|Choice::new(text(c,"label"),if c["default"]==true {Role::Default}else if c["cancel"]==true{Role::Cancel}else{Role::Other}).enabled(c["enabled"]==true)).collect()).show(ui.ctx(),|ui|{
