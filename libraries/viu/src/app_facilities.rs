@@ -30,6 +30,9 @@ pub struct Facilities {
     publishing: Option<(String, Value)>,
 }
 impl Facilities {
+    pub(crate) fn event(&mut self, topic: String, body: Value) {
+        self.events.push(topic, body, 0);
+    }
     pub fn native_ui(&self) -> bool {
         self.ui
     }

@@ -305,9 +305,9 @@ impl Host {
         }
         self.macro_pending = waiting;
         while let Ok(body) = self.macro_finished.try_recv() {
-            let _ = self
-                .bus
-                .hint(format!("{}.macros.finished", self.service), body);
+            if self.facilities.macros.is_none() {
+                self.facilities.event(format!("{}.macros.finished", self.service), body);
+            }
         }
         self.facilities.prepare(ctx, &self.bus);
         while let Ok(request) = self.local_ui.requests.try_recv() {
