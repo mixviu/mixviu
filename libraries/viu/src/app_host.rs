@@ -333,7 +333,7 @@ impl Host {
                     Ok(value) => {
                         self.last_ui = value;
                         self.session_appearance = true;
-                        update["appearance"]["mode"] = json!(if ui.visuals().dark_mode {
+                        update["appearance"]["mode"] = json!(if ui.ctx().global_style().visuals.dark_mode {
                             "dark"
                         } else {
                             "light"
