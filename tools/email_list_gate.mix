@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$rc=0
+try
+  $fmt=if contains(args(),"--prepare") then ["cargo","fmt","--all"] else ["cargo","fmt","--all","--","--check"] end
+  for $argv in [$fmt,["cargo","test","--locked","-p","viu","--test","ports_round5","--","--nocapture"],["cargo","build","--locked","-p","viu-client","--bin","viu"]]
+    $r=run_argv($argv,{env:{CARGO_BUILD_JOBS:"6",RUSTC_WRAPPER:""},timeout:1800,max_output:8000000});print($r)
+    if not $r.ok then $rc=$r.exit_code ?? 124;break end
+  end
+finally
+  print("EMAIL_PATCH_BEGIN");print(run_argv_must(["git","diff","--binary"]));print("EMAIL_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+end
+exit($rc)
