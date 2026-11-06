@@ -277,9 +277,15 @@ on viu.job.completed
   $state=$fetch.received($state,$event.args);publish_monitor($state)
 end
 on bus.connected
+  subscribe("noded.props.changed")
   $state.connected=true;$state.status="Connecting to monitord…"
   $state=$fetch.start($state,"peers","noded.peers",{})
   $state=$fetch.poll($state);publish_monitor($state)
+end
+on noded.props.changed
+  if $event.args.path=="services.registered" then
+    $state=$fetch.start($state,"peers","noded.peers",{});publish_monitor($state)
+  end
 end
 on bus.disconnected
   $state.connected=false;$state.status="Disconnected from the Bus"

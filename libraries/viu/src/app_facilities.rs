@@ -26,9 +26,9 @@ pub struct Facilities {
     subscriber: Option<u64>,
     hints: VecDeque<Value>,
     wake: crate::runtime::Wake,
-    journal:toolkit::executed::Journal,
-    action_hints:VecDeque<Value>,
-    lost:u64,
+    journal: toolkit::executed::Journal,
+    action_hints: VecDeque<Value>,
+    lost: u64,
 }
 impl Facilities {
     pub fn new(manifest: &Manifest, wake: crate::runtime::Wake) -> Self {
@@ -76,19 +76,31 @@ impl Facilities {
             subscriber,
             hints: VecDeque::new(),
             wake,
-            journal:Default::default(),action_hints:VecDeque::new(),lost:0,
+            journal: Default::default(),
+            action_hints: VecDeque::new(),
+            lost: 0,
         }
     }
     pub fn prepare(&mut self, ctx: &egui::Context, bus: &Endpoint) {
-        let (records,lost)=self.journal.take();self.lost+=lost;
+        let (records, lost) = self.journal.take();
+        self.lost += lost;
         for record in records {
-            if self.action_hints.len()>=toolkit::executed::QUEUE {self.action_hints.pop_front();self.lost+=1;}
+            if self.action_hints.len() >= toolkit::executed::QUEUE {
+                self.action_hints.pop_front();
+                self.lost += 1;
+            }
             self.action_hints.push_back(record.body());
         }
-        while let Some(body)=self.action_hints.front_mut() {
-            body["dropped"]=json!(self.lost);
-            if bus.hint(toolkit::executed::topic(&self.app),body.clone()).is_err(){break;}
-            self.action_hints.pop_front();self.lost=0;
+        while let Some(body) = self.action_hints.front_mut() {
+            body["dropped"] = json!(self.lost);
+            if bus
+                .hint(toolkit::executed::topic(&self.app), body.clone())
+                .is_err()
+            {
+                break;
+            }
+            self.action_hints.pop_front();
+            self.lost = 0;
         }
         if self.ui && !self.installed {
             toolkit::drive::install(ctx, &self.app);
@@ -115,11 +127,23 @@ impl Facilities {
         }
         self.answers(ctx, toolkit::drive::logic(ctx));
     }
-    pub fn record(&mut self,args:&Value)->Result<Value,String> {
+    pub fn record(&mut self, args: &Value) -> Result<Value, String> {
         use toolkit::executed::Origin;
-        let origin=match args["origin"].as_str() {Some("menu")=>Origin::Menu,Some("shortcut")=>Origin::Shortcut,Some("palette")=>Origin::Palette,Some("ui")=>Origin::Ui,Some("bus")=>Origin::Bus,Some("macro")=>Origin::Macro,_=>return Err("unknown action origin".into())};
-        let id=args["id"].as_str().filter(|s|!s.is_empty()&&s.len()<=128).ok_or("invalid command id")?;
-        self.journal.record(id,origin,args["params"].clone(),args["result"].clone());
+        let origin = match args["origin"].as_str() {
+            Some("menu") => Origin::Menu,
+            Some("shortcut") => Origin::Shortcut,
+            Some("palette") => Origin::Palette,
+            Some("ui") => Origin::Ui,
+            Some("bus") => Origin::Bus,
+            Some("macro") => Origin::Macro,
+            _ => return Err("unknown action origin".into()),
+        };
+        let id = args["id"]
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 128)
+            .ok_or("invalid command id")?;
+        self.journal
+            .record(id, origin, args["params"].clone(), args["result"].clone());
         Ok(json!({"recorded":true}))
     }
     fn answers(&mut self, ctx: &egui::Context, answers: Vec<toolkit::drive::Answer>) {

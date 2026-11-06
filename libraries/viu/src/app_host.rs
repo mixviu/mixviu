@@ -198,7 +198,7 @@ impl Host {
         self.facilities.prepare(ui.ctx(), &self.bus);
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
-                "native.executed"=>self.facilities.record(&request.args),
+                "native.executed" => self.facilities.record(&request.args),
                 "native.copy" => match request.args["text"]
                     .as_str()
                     .filter(|s| s.len() <= 1_048_576)
@@ -410,7 +410,10 @@ impl Host {
                                 ) {
                                     if let Ok(theme) = base.with_choice(&choice) {
                                         let _ = crate::appearance::install_theme(ui.ctx(), &theme);
-                                        let _=self.runtime.notify("viu.theme.changed".into(),crate::native_theme::describe(&theme));
+                                        let _ = self.runtime.notify(
+                                            "viu.theme.changed".into(),
+                                            crate::native_theme::describe(&theme),
+                                        );
                                     }
                                 }
                             }

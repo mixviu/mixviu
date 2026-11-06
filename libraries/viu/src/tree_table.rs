@@ -32,6 +32,7 @@ pub fn validate(value: &Value) -> Result<(), String> {
     let mut keys = BTreeSet::new();
     let mut column_keys = BTreeSet::new();
     for column in columns {
+        if !column["fraction"].is_null() && column["fraction"].as_f64().is_none_or(|n|!n.is_finite()||n<=0.0||n>1.0) {return Err("invalid column width fraction".into());}
         if text(column, "id").is_empty()
             || !column_keys.insert(text(column, "id"))
             || !column["label"].is_string()
@@ -468,15 +469,16 @@ fn draw_grid(
     let id = &widget.id;
     let rows = value["rows"].as_array().expect("validated rows");
     let columns = value["columns"].as_array().expect("validated columns");
-    let height = ui.text_style_height(&TextStyle::Body) + 6.0;
+    let height = ui.text_style_height(&TextStyle::Body) + number(&widget.properties,"row_padding",6.0).clamp(0.0,32.0);
     ui.scope(|ui| {
         let read_only = widget.properties["read_only"] == true;
+        let room=(ui.available_width()-ui.spacing().item_spacing.x*(columns.len().saturating_sub(1) as f32)).max(1.0);
         let mut table = TableBuilder::new(ui)
             .id_salt(id)
             .auto_shrink([widget.properties["auto_shrink"] == true; 2])
             .vscroll(widget.properties["vscroll"] != false)
             .striped(true)
-            .resizable(true)
+            .resizable(widget.properties["resizable"]!=false)
             .sense(if read_only {
                 Sense::hover()
             } else {
@@ -486,6 +488,8 @@ fn draw_grid(
         for column in columns {
             let width = if column["remainder"] == true {
                 Column::remainder()
+            } else if let Some(fraction)=column["fraction"].as_f64() {
+                Column::exact(room*fraction as f32)
             } else {
                 Column::initial(number(column, "width", 90.0))
             };
@@ -512,6 +516,7 @@ fn draw_grid(
                         } else {
                             ui.add(egui::Button::new(label).frame(false))
                         };
+                        let response=if let Some(tip)=column["tooltip"].as_str(){response.on_hover_text(tip)}else{response};
                         geometry
                             .insert(format!("{id}.column.{}", text(column, "id")), response.rect);
                         if !read_only && response.clicked() && column["sortable"] != false {
@@ -543,7 +548,9 @@ fn draw_grid(
                                     |ui| ui.label(label),
                                 );
                             } else {
-                                ui.label(label);
+                                if column["leading_gap"]==true {ui.add_space(ui.spacing().item_spacing.x);}
+                                let response=ui.label(label);
+                                if let Some(tip)=data["tooltips"][i].as_str(){response.on_hover_text(tip);}
                             }
                         });
                     }

@@ -126,16 +126,16 @@ fn tcp($s)
   elif $s.connections==nil then push($blocks,{kind:"weak",text:"Waiting for the first reading…"})
   elif len($s.connections.rows)==0 then push($blocks,{kind:"weak",text:"No TCP sockets"})
   else
-    $rows=[]
-    for $c in slice($s.connections.rows,0,20)
+    $rows=[];$index=0
+    for $c in slice(rank($s.connections).rows,0,20)
       $remote=if contains($c.remote,":") then "["..$c.remote.."]" else $c.remote end
-      push($rows,{key:to_string($c.cookie),depth:0,branch:false,selected:false,focused:false,expanded:false,cells:[$remote..":"..to_string($c.remote_port),to_string($c.local_port),replace($c.state,"_"," "),if $c.rx_bps==nil then "—" else $f.rate($c.rx_bps) end,if $c.tx_bps==nil then "—" else $f.rate($c.tx_bps) end,if $c.rtt_us==nil then "—" else fmt("%.1f ms",$c.rtt_us/1000) end,if $c.retransmits==nil then "—" else to_string($c.retransmits) end,$c.user]})
+      push($rows,{key:to_string($index),depth:0,branch:false,selected:false,focused:false,expanded:false,cells:[$remote..":"..to_string($c.remote_port),to_string($c.local_port),state_label($c.state),if $c.rx_bps==nil then "—" else $f.rate($c.rx_bps) end,if $c.tx_bps==nil then "—" else $f.rate($c.tx_bps) end,if $c.rtt_us==nil then "—" else fmt("%.1f ms",$c.rtt_us/1000) end,if $c.retransmits==nil then "—" else to_string($c.retransmits) end,$c.user],tooltips:[$c.local..":"..to_string($c.local_port).." → "..$remote..":"..to_string($c.remote_port),nil,nil,nil,nil,nil,nil,$c.user]});$index=$index+1
     end
     $columns=[]
-    for $p in [["remote","Remote",200],["port","Port",70],["state","State",100],["rx","Rx/s",90],["tx","Tx/s",90],["rtt","RTT",70],["retx","Retx",70],["user","User",90]]
-      push($columns,{id:$p[0],label:$p[1],width:$p[2],min_width:40,remainder:$p[0]=="remote",sortable:false,align:if contains(["rx","tx","rtt","retx"],$p[0]) then "right" else "left" end})
+    for $p in [["remote","Remote",200],["port","Port",0.09],["state","State",0.13],["rx","Rx/s",0.12],["tx","Tx/s",0.12],["rtt","RTT",0.09],["retx","Retx",0.09],["user","User",0.10]]
+      push($columns,{id:$p[0],label:$p[1],width:200,fraction:if $p[0]=="remote" then nil else $p[2] end,min_width:if $p[0]=="remote" then 80 else 0 end,remainder:$p[0]=="remote",leading_gap:$p[0]=="user",sortable:false,align:if contains(["rx","tx","rtt","retx"],$p[0]) then "right" else "left" end})
     end
-    push($blocks,{kind:"table",table:{key:"tcp-connections",rows:$rows,columns:$columns}})
+    push($blocks,{kind:"table",row_padding:4,table:{key:"tcp-connections",rows:$rows,columns:$columns}})
   end
   return $blocks
 end
@@ -148,4 +148,17 @@ fn project($s)
     $blocks=if $selected=="cpu" then cpu($s) elif $selected=="memory" then memory($s) elif starts_with($selected,"disk:") then disk($s,slice($selected,5)) elif starts_with($selected,"net:") then network($s,slice($selected,4)) else tcp($s) end
   else push($blocks,{kind:"weak",text:"Waiting for the first reading…"}) end
   return {id:"performance",kind:"dashboard",label:"Performance",initial:{sidebar_width:250,compact_width:640,selected:$selected,items:$items,blocks:$blocks,interval_s:if $s.snapshot!=nil then $s.snapshot.interval_s ?? 1 else 1 end},properties:{frame:"dock"}}
+end
+
+fn state_label($state)
+  $labels={unknown:"Unknown",established:"Established","syn-sent":"SYN sent","syn-recv":"SYN received","fin-wait-1":"FIN wait 1","fin-wait-2":"FIN wait 2","time-wait":"Time wait",close:"Closed","close-wait":"Close wait","last-ack":"Last ACK",listen:"Listen",closing:"Closing","new-syn-recv":"New SYN received"}
+  return $labels[$state] ?? $state
+end
+fn rank($table)
+  $rows=$table.rows ?? []
+  $rows=sort_by($rows,fn($c)=($c.cookie ?? [0,0])[1])
+  $rows=sort_by($rows,fn($c)=($c.cookie ?? [0,0])[0])
+  $rows=sort_by($rows,fn($c)=if $c.rx_bps==nil and $c.tx_bps==nil then 1 else -(($c.rx_bps ?? 0)+($c.tx_bps ?? 0)) end)
+  $rows=sort_by($rows,fn($c)=if $c.state=="listen" then 1 else 0 end)
+  $table.rows=slice($rows,0,20);$table.count=len($table.rows);return $table
 end

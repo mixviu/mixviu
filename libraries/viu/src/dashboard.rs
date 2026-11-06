@@ -271,7 +271,7 @@ fn blocks(ui: &mut Ui, id: &str, items: &Value, interval: f64, events: &mut Vec<
                     block["table"].clone(),
                 )
                 .with_properties(
-                    json!({"style":"grid","vscroll":false,"auto_shrink":true,"read_only":true}),
+                    json!({"style":"grid","vscroll":false,"auto_shrink":true,"read_only":true,"resizable":false,"row_padding":block["row_padding"].as_f64().unwrap_or(6.0)}),
                 );
                 crate::tree_table::draw(
                     ui,
