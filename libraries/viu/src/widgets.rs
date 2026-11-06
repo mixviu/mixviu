@@ -174,8 +174,25 @@ impl Widget {
                     }
                 }
                 if let Some(command) = self.properties.get("command") {
-                    if !command.is_object() || command["serial"].as_u64().is_none()
-                        || !command["name"].as_str().is_some_and(|v| ["", "undo", "redo", "select-all", "duplicate-line", "delete-line", "move-line-up", "move-line-down", "toggle-comment", "indent", "outdent"].contains(&v)) {
+                    if !command.is_object()
+                        || whole(&command["serial"]).is_none()
+                        || !command["name"].as_str().is_some_and(|v| {
+                            [
+                                "",
+                                "undo",
+                                "redo",
+                                "select-all",
+                                "duplicate-line",
+                                "delete-line",
+                                "move-line-up",
+                                "move-line-down",
+                                "toggle-comment",
+                                "indent",
+                                "outdent",
+                            ]
+                            .contains(&v)
+                        })
+                    {
                         return Err("invalid editor command".into());
                     }
                 }
@@ -336,7 +353,7 @@ impl Widget {
     }
 }
 
-fn whole(v: &Value) -> Option<u64> {
+pub(crate) fn whole(v: &Value) -> Option<u64> {
     v.as_u64().or_else(|| {
         v.as_f64()
             .filter(|n| {

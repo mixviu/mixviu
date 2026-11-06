@@ -111,7 +111,7 @@ impl Editors {
             ..Default::default()
         };
         let before = doc.local.doc().revision;
-        if let Some(serial) = widget.properties["command"]["serial"].as_u64() {
+        if let Some(serial) = crate::widgets::whole(&widget.properties["command"]["serial"]) {
             if serial > doc.command_serial && !view.read_only {
                 doc.command_serial = serial;
                 let name = widget.properties["command"]["name"].as_str().unwrap_or("");

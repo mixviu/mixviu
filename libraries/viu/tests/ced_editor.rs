@@ -62,7 +62,12 @@ publish_ced($state)
         .event("ced.draft".into(), json!({"text":"unsaved λ"}))
         .unwrap();
     assert!(done(&runtime, &rx).error.is_none());
-    runtime.event("ced.command".into(), json!({"op":"open","path":"/tmp/one.rs"})).unwrap();
+    runtime
+        .event(
+            "ced.command".into(),
+            json!({"op":"open","path":"/tmp/one.rs"}),
+        )
+        .unwrap();
     let reopened = done(&runtime, &rx);
     assert!(reopened.error.is_none(), "{:?}", reopened.error);
     assert_eq!(reopened.model.unwrap()["values"]["editor"], "unsaved λ");
