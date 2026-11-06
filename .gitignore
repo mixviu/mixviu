@@ -28,3 +28,6 @@ secrets.*
 
 # Build output (Rust builds run on CBC, never locally)
 /target/
+
+# Local lab job report
+/last.md

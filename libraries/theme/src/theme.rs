@@ -637,7 +637,6 @@ fn axis<T: Default>(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -52,4 +52,3 @@ pub fn weights(theme: &Theme) -> (u16, u16) {
     }
     (ui, display)
 }
-

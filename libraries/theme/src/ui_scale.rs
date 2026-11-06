@@ -172,4 +172,3 @@ pub fn tokens(mut style: ResolvedStyle, ui: &CommonUi) -> ResolvedStyle {
     }
     style
 }
-

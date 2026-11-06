@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-pub use theme::ui_scale::{CommonUi, DENSITY_STEPS, density_step};
 pub(crate) use theme::ui_scale::tokens;
+pub use theme::ui_scale::{CommonUi, DENSITY_STEPS, density_step};
 
 /// The installed desktop values, also used by independently sized content.
 pub fn of(ctx: &egui::Context) -> CommonUi {
