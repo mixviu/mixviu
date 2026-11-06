@@ -275,6 +275,7 @@ impl Host {
         self.facilities.prepare(ui.ctx(), &self.bus);
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
+                "native.executed" => self.facilities.record(&request.args),
                 "native.copy" => match request.args["text"]
                     .as_str()
                     .filter(|s| s.len() <= 1_048_576)
@@ -476,6 +477,7 @@ impl Host {
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
+                    self.facilities.notice(&n.command,&n.args);
                     if n.command == "theme.changed" {
                         self.file_theme = toolkit::Theme::load();
                         self.session_dirty = true;
@@ -561,6 +563,10 @@ impl Host {
                                 ) {
                                     if let Ok(theme) = base.with_choice(&choice) {
                                         let _ = crate::appearance::install_theme(ui.ctx(), &theme);
+                                        let _ = self.runtime.notify(
+                                            "viu.theme.changed".into(),
+                                            crate::native_theme::describe(&theme),
+                                        );
                                     }
                                 }
                             }
@@ -598,7 +604,15 @@ impl Host {
                     .window_frame
                     .geometry
                     .get("window.header")
-                    .map(|rect| BTreeMap::from([("window.header".into(), *rect)]))
+                    .map(|rect| {
+                        let key = if self.view.has_slot("window.header.content") {
+                            "window.header.content"
+                        } else {
+                            "window.header"
+                        };
+                        let rect = self.window_frame.geometry.get(key).unwrap_or(rect);
+                        BTreeMap::from([(key.into(), *rect)])
+                    })
                     .unwrap_or_default();
                 if let Err(e) = self.view.set_slots(slots) {
                     self.error = e;
@@ -925,6 +939,12 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         eprintln!("viu: {e}");
         std::process::exit(2)
     });
+    let mut logging_args: Vec<String> = std::env::args().collect();
+    let _logging = toolkit::debug::init(&bundle.manifest.service, "warn", &mut logging_args)
+        .unwrap_or_else(|error| {
+            eprintln!("viu logging: {error}");
+            std::process::exit(2)
+        });
     if bundle.manifest.surface == "background" {
         let mut options = crate::layer::LayerOptions::background(&bundle.manifest.service);
         options.exclusive_zone = 0;
@@ -945,18 +965,21 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let service = bundle.manifest.service.clone();
     let app_id = bundle
         .manifest
-        .app_id
-        .clone()
+.app_id.clone().or_else(||bundle.manifest.bus_surface.as_ref().and_then(|s|s["app_id"].as_str()).map(str::to_owned))
         .unwrap_or_else(|| format!("mixviu.{service}"));
     eframe::run_native(
         &title,
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
+                .with_transparent(bundle.manifest.frame.is_some())
+                .with_decorations(bundle.manifest.frame.is_none())
                 .with_inner_size(size)
                 .with_app_id(app_id),
             ..Default::default()
         },
         Box::new(move |cc| {
+            toolkit::decorations::initialise(cc);
+            toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             crate::appearance::install(&cc.egui_ctx);
             toolkit::drive::install(&cc.egui_ctx, &service);
             toolkit::drive::set_service(&cc.egui_ctx, Some(&service));

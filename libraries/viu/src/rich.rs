@@ -6,13 +6,7 @@ use egui::{Rect, Ui};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const KINDS: &[&str] = &[
-    "menubar",
-    "command-bar",
-    "property-grid",
-    "dialog-form",
-    "settings-browser",
-];
+pub const KINDS: &[&str] = &["menubar", "command-bar", "property-grid", "dialog-form"];
 #[derive(Clone, Default)]
 struct MenuPresentation {
     settings: Value,
@@ -130,16 +124,6 @@ pub fn actions(kind: &str) -> Vec<&'static str> {
     match kind {
         "menubar" | "command-bar" => vec!["set", "command"],
         "dialog-form" => vec!["set", "edit", "answer"],
-        "settings-browser" => vec![
-            "set",
-            "navigate",
-            "query",
-            "edit",
-            "activate",
-            "remove",
-            "problem",
-            "drawer.close",
-        ],
         _ => vec!["set"],
     }
 }
@@ -216,7 +200,6 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             }
             entries(&value["choices"], 0, &mut BTreeSet::new())
         }
-        "settings-browser" => crate::settings_browser::validate(value),
         _ => Err("unknown rich control".into()),
     }
 }
@@ -293,9 +276,6 @@ pub fn menu_snapshot(value: &Value, id: &str, geometry: &BTreeMap<String, Rect>)
     json!({"open":!path.is_empty() || geometry.contains_key(&format!("{id}.popup")),"path":path})
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
-    if kind == "settings-browser" {
-        return crate::settings_browser::admit(current, action, payload);
-    }
     validate(kind, current)?;
     match action {
         "command" => {
@@ -415,7 +395,6 @@ fn menu_roots(
         }
     }
 }
-
 fn native_entries(value: &Value) -> Vec<toolkit::menu::Entry> {
     value
         .as_array()
@@ -477,43 +456,7 @@ fn native_menu(ui: &mut Ui, value: &Value, id: &str, events: &mut Vec<Intent>) -
     })
     .response
 }
-fn native_commands(
-    ui: &mut Ui,
-    value: &Value,
-    id: &str,
-    geometry: &mut BTreeMap<String, Rect>,
-    events: &mut Vec<Intent>,
-) -> egui::Response {
-    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
-    let (area, response) =
-        ui.allocate_exact_size(ui.available_size_before_wrap(), egui::Sense::hover());
-    let mut x = area.right() - chrome.metrics.caption_gap;
-    for item in value.as_array().unwrap().iter().rev() {
-        let width = chrome.style.icon_button as f32;
-        let rect = Rect::from_min_max(
-            egui::pos2(x - width, area.top()),
-            egui::pos2(x, area.bottom()),
-        );
-        let mut cell = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        let icon = crate::icons::Icon::from_name(text(item, "icon")).unwrap();
-        let r = cell.add_enabled(
-            item["enabled"] == true,
-            toolkit::button::IconButton::new(icon)
-                .selected(item["checked"] == true)
-                .tooltip(text(item, "label")),
-        );
-        geometry.insert(format!("{id}.command.{}", text(item, "id")), r.rect);
-        if r.clicked() {
-            emit(events, id, "command", json!({"command":item["id"]}));
-        }
-        x -= width + chrome.style.title_control_spacing as f32;
-    }
-    response
-}
+
 pub(crate) fn draw(
     ui: &mut Ui,
     widget: &Widget,
@@ -523,18 +466,16 @@ pub(crate) fn draw(
 ) -> egui::Response {
     let id = &widget.id;
     match widget.kind.as_str() {
-        "settings-browser" => crate::settings_browser::draw(ui, id, value, geometry, events),
         "menubar" => {
-            if widget.properties["native_menu"] == true {
-                return native_menu(ui, value, id, events);
-            }
+            if widget.properties["native_menu"] == true {return native_menu(ui,value,id,events);}
+
             let form = menu_form(ui.ctx());
             let response = if form["hosted"] == true {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else if widget.properties["style"] == "gold" {
                 let response = crate::native_menu::draw(ui, value, form["effective"] != "bar");
                 if let Some(command) = crate::native_menu::picked(ui.ctx()) {
-                    emit(events, id, "command", json!({"command":command}));
+                    emit(events, id, "command", command);
                 }
                 response
             } else if form["effective"] == "bar" {
@@ -596,60 +537,59 @@ pub(crate) fn draw(
         }
         "command-bar" => {
             let state = presentation(ui.ctx());
-            if widget.properties["style"] == "gold"
-                && !state.hosted_actions
-                && value
-                    .as_array()
-                    .is_some_and(|a| a.iter().all(|i| i["icon"].is_string()))
-            {
-                return native_commands(ui, value, id, geometry, events);
-            }
             let response = if state.hosted_actions {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
-                ui.horizontal(|ui| {
-                    for item in value.as_array().into_iter().flatten() {
-                        if item["separator"] == true {
-                            ui.separator();
-                            continue;
+                ui.allocate_ui_with_layout(
+                    ui.available_size_before_wrap(),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        if widget.properties["style"] == "gold" {
+                            ui.spacing_mut().item_spacing.x = toolkit::chrome::Chrome::of(ui.ctx())
+                                .style
+                                .title_control_spacing
+                                as f32;
+                            ui.add_space(
+                                toolkit::chrome::Chrome::of(ui.ctx())
+                                    .style
+                                    .title_control_spacing as f32,
+                            );
                         }
-                        let response = if widget.properties["style"] == "gold"
-                            && item["icon"].as_str().is_some()
-                        {
-                            let icon =
-                                crate::icons::Icon::from_name(item["icon"].as_str().unwrap())
-                                    .expect("validated icon");
-                            ui.add_enabled(
-                                item["enabled"] == true,
-                                toolkit::button::IconButton::new(icon)
-                                    .selected(item["checked"] == true)
-                                    .tooltip(text(item, "label")),
-                            )
-                        } else if let Some(icon) = item["icon"]
-                            .as_str()
-                            .and_then(crate::icons::Icon::from_name)
-                        {
-                            if item["plain"] == true {
-                                let response = ui.add_enabled(
+                        for item in value.as_array().into_iter().flatten() {
+                            if item["separator"] == true {
+                                ui.separator();
+                                continue;
+                            }
+                            let response = if widget.properties["style"] == "gold"
+                                && item["icon"].as_str().is_some()
+                            {
+                                let icon =
+                                    crate::icons::Icon::from_name(item["icon"].as_str().unwrap())
+                                        .expect("validated icon");
+                                ui.add_enabled(
                                     item["enabled"] == true,
-                                    egui::Button::image(crate::icons::image_of(
-                                        ui.ctx(),
-                                        icon,
-                                        16.0,
-                                        ui.visuals().weak_text_color(),
-                                    ))
-                                    .frame(false)
-                                    .min_size(egui::vec2(28.0, 28.0)),
-                                );
-                                response.widget_info(|| {
-                                    egui::WidgetInfo::labeled(
-                                        egui::Role::Button,
-                                        ui.is_enabled(),
-                                        text(item, "label"),
-                                    )
-                                });
-                                response
-                            } else {
+                                    toolkit::button::IconButton::new(icon)
+                                        .selected(item["checked"] == true)
+                                        .tooltip(
+                                            item["shortcut"]
+                                                .as_str()
+                                                .and_then(toolkit::keymap::parse_chord)
+                                                .map_or_else(
+                                                    || text(item, "label").to_owned(),
+                                                    |s| {
+                                                        format!(
+                                                            "{} ({})",
+                                                            text(item, "label"),
+                                                            ui.ctx().format_shortcut(&s)
+                                                        )
+                                                    },
+                                                ),
+                                        ),
+                                )
+                            } else if let Some(icon) = item["icon"]
+                                .as_str()
+                                .and_then(crate::icons::Icon::from_name)
+                            {
                                 crate::icons::button(
                                     ui,
                                     icon,
@@ -663,21 +603,26 @@ pub(crate) fn draw(
                                     item["enabled"] == true,
                                     item["checked"] == true,
                                 )
+                            } else {
+                                ui.add_enabled(
+                                    item["enabled"] == true,
+                                    egui::Button::new(label(item)),
+                                )
+                            };
+                            let response = response.on_hover_text(text(item, "label"));
+                            geometry.insert(
+                                format!("{id}.command.{}", text(item, "id")),
+                                response.rect,
+                            );
+                            if item.get("children").is_some() {
+                                egui::Popup::menu(&response)
+                                    .show(|ui| menu(ui, &item["children"], id, geometry, events));
+                            } else if response.clicked() {
+                                emit(events, id, "command", json!({"command":item["id"]}));
                             }
-                        } else {
-                            ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
-                        };
-                        let response = response.on_hover_text(text(item, "label"));
-                        geometry
-                            .insert(format!("{id}.command.{}", text(item, "id")), response.rect);
-                        if item.get("children").is_some() {
-                            egui::Popup::menu(&response)
-                                .show(|ui| menu(ui, &item["children"], id, geometry, events));
-                        } else if response.clicked() {
-                            emit(events, id, "command", json!({"command":item["id"]}));
                         }
-                    }
-                })
+                    },
+                )
                 .response
             };
             if let Some(target) = state.command_popup.as_deref().and_then(|id| {

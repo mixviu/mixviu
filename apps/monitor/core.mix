@@ -9,15 +9,17 @@ fn target($node)
   return "monitord."..$node..".bus"
 end
 fn initial()
-  return {theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark",style:"studio"},processes_loaded:false,focus_serial:0,macros_open:false,quitting:false,window_close:false,connected:true,status:"Connecting to monitord…",node:"",node_draft:"",tab:"Processes",section:"cpu",rings:{},history_seeded:false,connections:nil,connections_error:nil,peers:[],total:0,paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
+  return {theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark",style:"studio"},ticket:0,inflight:{},processes_loaded:false,focus_serial:0,macros_open:false,quitting:false,window_close:false,connected:true,status:"Connecting to monitord…",node:"",node_draft:"",tab:"Processes",section:"cpu",rings:{},history_seeded:false,connections:nil,connections_error:nil,peers:[],total:0,paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
 end
 fn query($s)
-  return {sort:$s.sort,reverse:$s.reverse,filter:$s.filter,tree:$s.tree,limit:2001}
+  $query={sort:$s.sort,reverse:$s.reverse,tree:$s.tree,limit:0}
+  if trim($s.filter)!="" then $query.filter=trim($s.filter) end
+  return $query
 end
 fn project($s)
   $rows=[]
-  if len($s.processes)>2000 then raise("PROCESS_BUDGET","More than 2000 processes; no partial table") end
   for $p in $s.processes
+    if type($p.name)!="string" or type($p.user)!="string" or type($p.cpu)!="number" or type($p.memory)!="number" then raise("PROCESS_ROW","Invalid process row; no partial table") end
     push($rows,{key:to_string($p.pid),depth:min(256,$p.depth ?? 0),branch:false,selected:$p.pid==$s.selected,focused:$p.pid==$s.selected,expanded:false,cells:[$p.name,to_string($p.pid),$p.user,fmt("%.1f",$p.cpu),gold_bytes($p.memory),if $p.read_bps==nil and $p.write_bps==nil then "—" else gold_bytes(($p.read_bps ?? 0)+($p.write_bps ?? 0)).."/s" end,$p.cmdline ?? ""]})
   end
   $columns=[]
@@ -50,7 +52,7 @@ fn framed($s)
   $model.window_close=$s.window_close
   $model.shortcuts=$commands.registry($s)
   $model.macros_open=$s.macros_open
-  $model.native_focus={id:"filter",serial:$s.focus_serial}
+  $model.native_focus=if $s.focus_serial>0 then {id:"filter",serial:$s.focus_serial} else nil end
   $model.native_overlays=[]
   if $s.dialog!=nil then
     $definition={id:"monitor-dialog",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Monitor" else "Keyboard shortcuts" end,body:"Processes and performance for this node or any node on the mesh, read from monitord. End task and Kill act only on this node"..chr(39).."s processes, as you.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
@@ -71,8 +73,8 @@ end
 fn status_line($s)
   $right=[]
   if $s.snapshot!=nil and $s.snapshot.uptime_s!=nil then push($right,"Up time "..gold_uptime($s.snapshot.uptime_s)) end
-  if $s.snapshot!=nil then push($right,to_string(len($s.processes)).." of "..to_string($s.total).." processes") end
-  return {left:if $s.snapshot==nil then "Connecting to monitord…" elif $s.error!=nil then "monitord is not answering" elif $s.paused then "Paused" else "Live" end,icon:if $s.error==nil then "plug" else "unplug" end,error:$s.error!=nil,message:$s.error,right:$right}
+  if $s.processes_loaded then push($right,to_string(len($s.processes)).." of "..to_string($s.total).." processes") end
+  return {left:$s.status,icon:if $s.connected and $s.error==nil then "plug" else "unplug" end,error:not $s.connected or $s.error!=nil,message:$s.error,right:$right}
 end
 fn gold_uptime($seconds)
   $s=floor(max(0,$seconds));$d=floor($s/86400);$h=floor(($s%86400)/3600);$m=floor(($s%3600)/60)

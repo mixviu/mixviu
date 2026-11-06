@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::BTreeMap,
     sync::{Arc, mpsc},
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
@@ -24,8 +24,10 @@ pub struct Facilities {
     complete: mpsc::Sender<(Reply, macros::commands::Answer)>,
     finished: mpsc::Receiver<Value>,
     subscriber: Option<u64>,
-    hints: VecDeque<Value>,
     wake: crate::runtime::Wake,
+    journal: toolkit::executed::Journal,
+    events:crate::native_events::Events,
+    publishing:Option<(String,Value)>,
 }
 impl Facilities {
     pub fn native_ui(&self) -> bool {
@@ -74,11 +76,14 @@ impl Facilities {
             complete,
             finished,
             subscriber,
-            hints: VecDeque::new(),
             wake,
+            journal: Default::default(),
+            events:Default::default(),publishing:None,
         }
     }
     pub fn prepare(&mut self, ctx: &egui::Context, bus: &Endpoint) {
+        let (records,lost)=self.journal.take();self.events.lost_batch(lost);
+        for record in records {self.events.push(toolkit::executed::topic(&self.app),record.body(),0);}
         if self.ui && !self.installed {
             toolkit::drive::install(ctx, &self.app);
             self.installed = true;
@@ -90,20 +95,34 @@ impl Facilities {
         while let Ok((reply, answer)) = self.completed.try_recv() {
             let _ = reply.send(macro_answer(answer));
         }
-        while let Ok(body) = self.finished.try_recv() {
-            self.hints.push_back(body);
-        }
-        while let Some(body) = self.hints.front() {
-            if bus
-                .hint(format!("{}.macros.finished", self.app), body.clone())
-                .is_err()
-            {
-                break;
-            }
-            self.hints.pop_front();
-        }
-        if self.ui {
-            self.answers(ctx, toolkit::drive::logic(ctx));
+        while let Ok(body)=self.finished.try_recv(){self.events.push(format!("{}.macros.finished",self.app),body,0);}
+        if self.publishing.is_none() {if let Some((topic,body))=self.events.front() {if bus.hint(topic.clone(),body.clone()).is_ok(){self.events.accepted();self.publishing=Some((topic,body));}}}
+        if self.ui {self.answers(ctx, toolkit::drive::logic(ctx));}
+    }
+    pub fn record(&mut self, args: &Value) -> Result<Value, String> {
+        use toolkit::executed::Origin;
+        let origin = match args["origin"].as_str() {
+            Some("menu") => Origin::Menu,
+            Some("shortcut") => Origin::Shortcut,
+            Some("palette") => Origin::Palette,
+            Some("ui") => Origin::Ui,
+            Some("bus") => Origin::Bus,
+            Some("macro") => Origin::Macro,
+            _ => return Err("unknown action origin".into()),
+        };
+        let id = args["id"]
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 128)
+            .ok_or("invalid command id")?;
+        self.journal
+            .record(id, origin, args["params"].clone(), args["result"].clone());
+        Ok(json!({"recorded":true}))
+    }
+    pub fn notice(&mut self,command:&str,args:&Value) {
+        if command=="bus.hint.completed" && self.publishing.as_ref().is_some_and(|(topic,_)|args["topic"]==topic.as_str()) {
+            let (_,body)=self.publishing.take().unwrap();
+            if args["ok"]!=true {self.events.failed(&body);}
+            (self.wake)();
         }
     }
     fn answers(&mut self, ctx: &egui::Context, answers: Vec<toolkit::drive::Answer>) {

@@ -1,0 +1,63 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core=require("core.mix");$history=require("history.mix");$wire=require("wire.mix")
+fn start($s,$kind,$command,$body)
+  if $s.inflight[$kind]!=nil or $s.quitting then return $s end
+  $s.ticket=$s.ticket+1;$ticket=$s.ticket;$id="monitor-"..$kind.."-"..to_string($ticket)
+  $path=path_join(dirname(script_path()),"job.mix")
+  send "viu-local" "jobs.start" id=$id owner={kind:$kind,ticket:$ticket,node:$s.node} path=$path source=read_file($path) command="job.run" args={target:if $kind=="peers" then "noded" else $core.target($s.node) end,command:$command,body:$body}
+  if $rc==0 then $s.inflight[$kind]={ticket:$ticket,id:$id} end
+  return $s
+end
+fn cancel($s,$kind)
+  if $s.inflight[$kind]!=nil then
+    send "viu-local" "jobs.cancel" id=$s.inflight[$kind].id
+    $checked=$rc;$s.inflight[$kind]=nil
+  end
+  return $s
+end
+fn connections($s)
+  if $s.tab=="Performance" and $s.section=="tcp" then
+    return start($s,"connections","monitord.connections",{limit:20,sort:"throughput"})
+  end
+  $s=cancel($s,"connections");$s.connections=nil;$s.connections_error=nil;return $s
+end
+fn poll($s)
+  if not $s.history_seeded then
+    $s.history_seeded=true
+    $s=start($s,"history","monitord.history",{series:["cpu.busy","cpu.core.*","mem.used","disk.*","net.*","tcp.*"],since:60,max_points:60})
+  end
+  $s=start($s,"snapshot","monitord.snapshot",{})
+  if $s.tab=="Processes" then $s=start($s,"processes","monitord.processes",$core.query($s)) end
+  return connections($s)
+end
+fn requery($s)
+  if $s.tab!="Processes" then return $s end
+  $s=cancel($s,"processes");return start($s,"processes","monitord.processes",$core.query($s))
+end
+fn navigate($s)
+  if not $s.paused or $s.tab!="Performance" or $s.section!="tcp" then $s=connections($s) end
+  if $s.tab=="Processes" and not $s.paused then $s=start($s,"processes","monitord.processes",$core.query($s)) end
+  return $s
+end
+fn received($s,$d)
+  $tag=$d.tag.owner;$kind=$tag.kind
+  if $tag.node!=$s.node or $s.inflight[$kind]==nil or $s.inflight[$kind].ticket!=$tag.ticket then return $s end
+  $s.inflight[$kind]=nil;$answer=$d.body;$value=$answer.body
+  if $d.rc!=0 or $answer.rc!=0 then
+    if $kind=="connections" then $s.connections=nil;$s.connections_error=$answer.message ?? to_string($d.body)
+    elif contains(["snapshot","processes"],$kind) then $s.error=$answer.message ?? to_string($d.body);$s.status="monitord is not answering" end
+    return $s
+  end
+  if $kind=="snapshot" then
+    if $s.snapshot!=nil and $s.snapshot.host!=$value.host then $s.rings={} end
+    $s.snapshot=$value;$s.rings=$history.record($s.rings,$value);$s.error=nil;$s.status=if $s.paused then "Paused" else "Live" end
+  elif $kind=="processes" then
+    if type($value.rows)!="list" then $s.error="invalid processes reply";return $s end
+    $s.processes=$value.rows;$s.total=$value.total ?? len($value.rows);$s.processes_loaded=true
+    if $s.selected!=nil and not any($s.processes,fn($p)=$p.pid==$s.selected) then $s.selected=nil end
+    $s.start_times=if $s.node=="" then viu_process("snapshot",{pids:map($s.processes,fn($p)=$p.pid)}) else {} end
+  elif $kind=="history" then $s.rings=$history.seed($s.rings,$value)
+  elif $kind=="peers" then $s.peers=$wire.peers($value)
+  elif $kind=="connections" then $s.connections=$value;$s.connections_error=nil end
+  $s.serial=$s.serial+1;return $s
+end
