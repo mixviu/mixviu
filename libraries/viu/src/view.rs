@@ -778,8 +778,8 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             }
             "dock" => {
                 let children = children(node).collect::<Vec<_>>();
-                let placements = node.ports["placements"]
-                    .as_object()
+                let placements = node.ports.get("placements")
+                    .and_then(Value::as_object)
                     .ok_or("dock placements must be an object")?;
                 if placements.len() != children.len() {
                     return Err(format!("dock {id}: each child requires one placement"));
@@ -828,7 +828,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                 }
             }
             "control" => {
-                let widget = Widget::decode(&node.ports["definition"])?;
+                let widget = Widget::decode(node.ports.get("definition").ok_or("control definition is required")?)?;
                 if &widget.id != id {
                     return Err(format!("control ID {} differs from node {id}", widget.id));
                 }
@@ -853,7 +853,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
 
 fn band_groups(node: &Node) -> Result<Vec<design::title_band::Group>,String> {
     use design::title_band::{Alignment,Group};
-    let groups=node.ports["groups"].as_object().ok_or("band groups must be an object")?;
+    let groups=node.ports.get("groups").and_then(Value::as_object).ok_or("band groups must be an object")?;
     let children=children(node).collect::<Vec<_>>();
     if groups.len()!=children.len(){return Err("band requires one group per child".into());}
     children.into_iter().map(|child|{
