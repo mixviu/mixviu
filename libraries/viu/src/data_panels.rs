@@ -314,8 +314,9 @@ pub fn draw(
         .unwrap_or_else(|| {
             (ui.available_height()
                 - widget.properties["reserve_height"].as_f64().unwrap_or(0.) as f32
-                - widget.properties["reserve_lines"].as_f64().unwrap_or(0.) as f32 * ui.text_style_height(&egui::TextStyle::Body))
-                .max(60.)
+                - widget.properties["reserve_lines"].as_f64().unwrap_or(0.) as f32
+                    * ui.text_style_height(&egui::TextStyle::Body))
+            .max(60.)
         });
     let rect = egui::ScrollArea::vertical()
         .id_salt((id, widget.properties["document"].as_str().unwrap_or("")))

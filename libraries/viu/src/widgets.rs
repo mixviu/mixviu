@@ -703,7 +703,8 @@ impl Widgets {
             }
             "divider" => {
                 if widget.properties["style"] == "native" {
-                    return ui.separator();
+                    let r = ui.separator();
+                    return self.remember(ui, id, &r);
                 }
                 if widget.properties["axis"] == "horizontal" {
                     let rect = toolkit::bars::hairline(ui);
