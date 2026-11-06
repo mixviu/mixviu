@@ -455,25 +455,40 @@ fn native_menu(ui: &mut Ui, value: &Value, id: &str, events: &mut Vec<Intent>) -
         .iter()
         .position(|m| m.title == "Help")
         .map(toolkit::menu::Search::new);
-    ui.allocate_ui_with_layout(ui.available_size_before_wrap(),egui::Layout::left_to_right(egui::Align::Center),|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        let form = menu_form(ui.ctx());
-        let picked = if form["effective"] == "bar" {
-            toolkit::menu::data_picked_with_origin(ui, &menus, search.as_ref(), None)
-        } else {
-            let response = ui
-                .add(toolkit::button::IconButton::new(toolkit::Icon::Menu).tooltip("Window menu"));
-            if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
-                || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary))
-            {
-                toolkit::menu::toggle(ui.ctx());
+    ui.allocate_ui_with_layout(
+        ui.available_size_before_wrap(),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let form = menu_form(ui.ctx());
+            let picked = if form["effective"] == "bar" {
+                toolkit::menu::data_picked_with_origin(ui, &menus, search.as_ref(), None)
+            } else {
+                let response = ui.add(
+                    toolkit::button::IconButton::new(toolkit::Icon::Menu).tooltip("Window menu"),
+                );
+                if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
+                    || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary))
+                {
+                    toolkit::menu::toggle(ui.ctx());
+                }
+                toolkit::menu::data_picked_with_origin(
+                    ui,
+                    &menus,
+                    search.as_ref(),
+                    Some(response.rect),
+                )
+            };
+            if let Some((command, palette)) = picked {
+                emit(
+                    events,
+                    id,
+                    "command",
+                    json!({"command":command,"origin":if palette {"palette"}else{"menu"}}),
+                );
             }
-            toolkit::menu::data_picked_with_origin(ui, &menus, search.as_ref(), Some(response.rect))
-        };
-        if let Some((command, palette)) = picked {
-            emit(events, id, "command", json!({"command":command,"origin":if palette {"palette"}else{"menu"}}));
-        }
-    })
+        },
+    )
     .response
 }
 

@@ -1306,7 +1306,12 @@ pub fn data_compact_picked(
 }
 
 /// Data-owned commands with the same palette-origin bit as the static API.
-pub fn data_picked_with_origin(ui: &mut Ui, menus: &[Menu], search: Option<&Search>, anchor: Option<Rect>) -> Option<(String, bool)> {
+pub fn data_picked_with_origin(
+    ui: &mut Ui,
+    menus: &[Menu],
+    search: Option<&Search>,
+    anchor: Option<Rect>,
+) -> Option<(String, bool)> {
     render_picked(ui, menus, search, anchor).map(|(id, palette)| (id.into_owned(), palette))
 }
 
