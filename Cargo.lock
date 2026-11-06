@@ -4685,6 +4685,7 @@ dependencies = [
  "toolkit",
  "ui",
  "ui-surface",
+ "uuid",
  "world",
 ]
 

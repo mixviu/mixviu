@@ -1247,7 +1247,7 @@ pub(crate) fn layout(
     let applied = instance.ui().revision();
     let page = crate::view::hex_of(instance.ui().page());
     let factor = instance.runtime().scale_factor() / scale;
-    let found = crate::layout::Found::of(instance.ui());
+    let found = crate::layout::Found::of(&instance.ui());
     let (nodes, instances, chrome) = crate::layout::measured(tree, &found, factor, node);
     reply["visible"] = json!(true);
     reply["applied_revision"] = json!(applied);

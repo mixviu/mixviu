@@ -13,6 +13,7 @@ pub struct UiItemView {
     pub size: Size<i32, Physical>,
     pub scale_factor: f32,
     pub zoom_lock: Option<f32>,
+    pub pending_resize: Option<(Size<i32, Physical>, f32)>,
     pub output: Option<String>,
     pub layer: u64,
     pub draw_order: usize,
@@ -21,6 +22,7 @@ pub struct UiItemView {
     pub keyboard_transparent: bool,
 }
 impl UiItemView {
+    pub fn pending_resize(&self) -> Option<(Size<i32, Physical>, f32)> { self.pending_resize }
     pub fn handle_id(&self) -> HandleId { self.id }
     pub fn space(&self) -> UiSpace { self.space }
     pub fn location(&self) -> Point<i32, Physical> { self.location }

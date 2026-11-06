@@ -4,7 +4,7 @@ use smithay::utils::{Physical, Point, Size};
 
 fn item(space: UiSpace) -> UiItemView {
     UiItemView { id: HandleId(7), space, location: (140, -30).into(),
-        size: (160, 80).into(), scale_factor: 2.0, zoom_lock: None,
+        size: (160, 80).into(), scale_factor: 2.0, zoom_lock: None, pending_resize: None,
         output: Some("example-output".into()), layer: 4, draw_order: 2,
         visible: true, passthrough: false, keyboard_transparent: false }
 }

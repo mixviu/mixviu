@@ -1467,7 +1467,7 @@ impl ui_surface::UiSurfaces for UiRegistry {
 use crate::TypedSurfaces as _;
 
 impl ui_surface::capture::CaptureUi for UiRegistry {
-    fn setup(&self, id: HandleId) -> Option<ui_surface::capture::CaptureSetup> { self.get(id)?.inner.capture_setup() }
+    fn setup(&self, id: HandleId) -> Option<ui_surface::capture::CaptureSetup> { let item = self.get(id)?; let mut setup = item.inner.capture_setup()?; setup.output = item.output().map(str::to_owned); Some(setup) }
     fn save_choice(&self, id: HandleId) -> Option<ui_surface::capture::SaveChoice> { self.get(id)?.inner.capture_save_choice() }
     fn capture_message(&mut self, id: HandleId, message: ui_surface::capture::CaptureMessage) { if let Some(item) = self.get_mut(id) { item.inner.capture_message(message); } }
     fn open(&mut self, program: ui_surface::capture::CaptureProgram, node: &str, renderer: &mut GlesRenderer, bounds: Rectangle<i32, Physical>, space: UiSpace, layer: u64, emit: ui_surface::capture::EmitCapture) -> Option<HandleId> {
