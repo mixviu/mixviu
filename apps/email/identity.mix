@@ -1,0 +1,6 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- UUID-shaped operation/PIM identifiers, using the host's existing digest.
+fn mint()
+  $hex=viu_digest("sha256",to_string(pid())..":"..to_string(monotonic())..":"..to_string(random(0,1000000000000))..":"..to_string(random(0,1000000000000)))
+  return substr($hex,0,8).."-"..substr($hex,8,4).."-4"..substr($hex,13,3).."-a"..substr($hex,17,3).."-"..substr($hex,20,12)
+end

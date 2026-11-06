@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Gold email.* authority and private, poison-pill-protected secrets.
+$identity=require("identity.mix")
 fn secrets_path()
   $dirs=viu_app_dirs("email")
   if $dirs==nil then raise("SECRETS","No application config directory") end
@@ -45,7 +46,7 @@ fn update($command,$a,$binding)
   $entries=$view.values["email.accounts"] ?? [];$default=$view.values["email.default_account"]
   $id=$a.id;$changes={};$removed=false
   if $command=="email.account.set" then
-    if $id==nil then $id="acct-"..substr(replace(uuid(),"-",""),0,16) end
+    if $id==nil then $id="acct-"..substr(replace($identity.mint(),"-",""),0,16) end
     $found=filter($entries,fn($e)=$e.id==$id)
     $entry=if len($found)>0 then $found[0] else {id:$id,name:"",url:"",email:"",ca_path:nil,enabled:true,signature:"",identities:[]} end
     for $key in ["name","url","email","ca_path","enabled","signature","identities"]
@@ -61,7 +62,7 @@ fn update($command,$a,$binding)
     if $id!=nil and not any($entries,fn($e)=$e.id==$id) then raise("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
     $changes["email.default_account"]=$id
   else raise("UNKNOWN_COMMAND","Unknown account change") end
-  $accepted=settings_call("settings.apply",{binding:$binding,expected_incarnation:$view.incarnation,expected_revision:$view.revision,operation_id:uuid(),changes:$changes})
+  $accepted=settings_call("settings.apply",{binding:$binding,expected_incarnation:$view.incarnation,expected_revision:$view.revision,operation_id:$identity.mint(),changes:$changes})
   if $command=="email.account.set" and contains(keys($a),"password") then
     save_password($id,$a.password)
   elif $removed then save_password($id,"") end
