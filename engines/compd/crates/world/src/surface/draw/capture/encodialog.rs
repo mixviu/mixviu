@@ -65,3 +65,5 @@ impl ui::UiProgram for EncodingDialog {
         });
     }
 }
+
+use ui::TypedSurfaces as _;

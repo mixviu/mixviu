@@ -211,3 +211,5 @@ where
         }
     }
 }
+
+use ui::TypedSurfaces as _;

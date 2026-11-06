@@ -129,7 +129,7 @@ pub fn ensure_registry(storage: &mut Storage, kernel: &Storage) {
         return;
     };
     info!("UI: build per-world UI registry");
-    surface.registry = Some(UiRegistry::new(wgpu));
+    surface.registry = ui_surface::factory::create(wgpu);
 }
 
 /// Owns the surface slot.
@@ -201,3 +201,5 @@ impl SurfaceSystem {
         );
     }
 }
+
+use ui::TypedSurfaces as _;

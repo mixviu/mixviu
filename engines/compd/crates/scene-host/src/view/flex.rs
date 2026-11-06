@@ -1043,3 +1043,5 @@ fn collect(tree: &TaffyTree<Meta>, node: NodeId, origin: Pos2, out: &mut SceneLa
         }
     }
 }
+
+use ui::TypedSurfaces as _;

@@ -79,3 +79,5 @@ impl<U: UiProgram> std::fmt::Debug for UiHandle<U> {
         write!(f, "UiHandle<{}>({})", std::any::type_name::<U>(), self.id)
     }
 }
+
+use crate::TypedSurfaces as _;

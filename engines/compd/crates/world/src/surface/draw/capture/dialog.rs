@@ -61,3 +61,5 @@ impl ui::UiProgram for ContinueDialog {
         });
     }
 }
+
+use ui::TypedSurfaces as _;

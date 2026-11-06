@@ -19,6 +19,7 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+ui-surface.workspace = true
 comp-model.workspace = true
 serde_json.workspace = true
 logging.workspace = true

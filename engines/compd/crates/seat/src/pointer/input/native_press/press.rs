@@ -297,3 +297,5 @@ fn x11_popup_focus(state: &Loop, hit: &SurfaceHit) -> Option<WlSurface> {
     )
     .then(|| surface.clone())
 }
+
+use ui::TypedSurfaces as _;

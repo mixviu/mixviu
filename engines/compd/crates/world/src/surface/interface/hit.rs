@@ -89,7 +89,7 @@ where
     // Items live in physical pixels. Compare bbox in physical.
     let active_output = _loop.inner.active_output_key();
     if let Some(registry) = &_loop.inner.surface().registry {
-        for item in registry.iter().rev() {
+        for item in registry.items().into_iter().rev() {
             if item.space() != UiSpace::Screen {
                 continue;
             }
@@ -226,7 +226,7 @@ where
         // UI World items — stored as world × scale (physical-typed).
         // Compare in physical, where bbox_phys is also.
         if let Some(registry) = &_loop.inner.surface().registry {
-            for item in registry.iter().rev() {
+            for item in registry.items().into_iter().rev() {
                 if item.space() != UiSpace::World {
                     continue;
                 }
@@ -304,3 +304,5 @@ pub fn surfaces_inside_filtered(
         filter,
     )
 }
+
+use ui::TypedSurfaces as _;

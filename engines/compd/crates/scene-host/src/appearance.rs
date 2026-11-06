@@ -445,3 +445,5 @@ mod tests {
         assert_eq!(look.theme.contrast(), Contrast::from_name("high").unwrap());
     }
 }
+
+use ui::TypedSurfaces as _;

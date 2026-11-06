@@ -70,3 +70,5 @@ pub type SettingsSurface = Option<HandleId>;
 
 pub static SETTINGS_SURFACE: Token<SettingsSurface> = Token::new();
 pub static SETTINGS_SURFACE_MUT: TokenMut<SettingsSurface> = TokenMut::new(&SETTINGS_SURFACE);
+
+use ui::TypedSurfaces as _;

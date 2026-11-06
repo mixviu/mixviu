@@ -120,3 +120,5 @@ pub fn tick(
         taken,
     )
 }
+
+use ui::TypedSurfaces as _;

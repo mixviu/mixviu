@@ -89,3 +89,5 @@ pub fn load<T: UiProgram>(
     register(state, handle, space, layer);
     handle
 }
+
+use ui::TypedSurfaces as _;

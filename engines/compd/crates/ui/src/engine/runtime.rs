@@ -551,3 +551,5 @@ mod merge_tests {
         pending.clear();
     }
 }
+
+use crate::TypedSurfaces as _;

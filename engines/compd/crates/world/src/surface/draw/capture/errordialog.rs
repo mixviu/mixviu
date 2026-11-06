@@ -54,3 +54,5 @@ impl ui::UiProgram for ErrorDialog {
         });
     }
 }
+
+use ui::TypedSurfaces as _;

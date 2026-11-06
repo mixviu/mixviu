@@ -23,3 +23,5 @@ pub use wake::register as register_wake;
 
 #[cfg(test)]
 mod tests;
+
+use crate::TypedSurfaces as _;

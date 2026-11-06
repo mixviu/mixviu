@@ -32,3 +32,5 @@ impl ui::UiProgram for StopHud {
         });
     }
 }
+
+use ui::TypedSurfaces as _;

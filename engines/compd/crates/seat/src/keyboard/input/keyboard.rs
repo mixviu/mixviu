@@ -593,3 +593,5 @@ fn ui_handle(state: &mut Loop, key_code: u32, keysym: Keysym, key_state: KeyStat
 //     }
 // }
 // END - Keyboard navigation, currently disabled.
+
+use ui::TypedSurfaces as _;

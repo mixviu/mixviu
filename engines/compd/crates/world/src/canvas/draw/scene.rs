@@ -186,3 +186,5 @@ where
 }
 
 pub use crate::canvas::draw::viewport::context;
+
+use ui::TypedSurfaces as _;

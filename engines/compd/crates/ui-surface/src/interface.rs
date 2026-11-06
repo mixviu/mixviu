@@ -11,6 +11,11 @@ use crate::error::{DispatchError, ResizeError};
 pub struct PaneView { pub transform: Transform, pub rect: Rectangle<i32, Physical> }
 /// World-facing compositor surface operations. No typed programs or toolkit values.
 pub trait UiSurfaces {
+    fn allocate_id(&mut self) -> HandleId;
+    fn gpu(&self) -> Arc<WgpuGlContext>;
+    fn instance_scale(&self) -> f32;
+    fn insert(&mut self, source: Box<dyn crate::producer::UiProducer>, space: UiSpace, layer: u64);
+    fn request_redraw(&mut self, id: HandleId);
     fn items(&self) -> Vec<UiItemView>;
     fn get(&self, id: HandleId) -> Option<UiItemView> { self.items().into_iter().find(|item| item.id == id) }
     fn set_dealloc_enabled(&mut self, enabled: bool);

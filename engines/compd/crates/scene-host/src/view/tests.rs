@@ -1086,3 +1086,5 @@ fn a_dialog_frame_reports_its_close_button_and_puts_the_page_below_the_title_bar
     assert!(rect_of(&rt, "root").top() >= TITLEBAR);
     let _ = PreparedLists::new();
 }
+
+use ui::TypedSurfaces as _;

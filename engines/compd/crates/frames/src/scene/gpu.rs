@@ -123,3 +123,5 @@ fn build(state: &mut Loop, renderer: &mut GlesRenderer) {
         model::abort!("main world UI registry missing after GPU init");
     }
 }
+
+use ui::TypedSurfaces as _;

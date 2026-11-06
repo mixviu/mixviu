@@ -45,3 +45,5 @@ pub trait UiSnapshot: UiProgram {
     type Snapshot: Send + Sync + Clone + 'static;
     fn snapshot(&self) -> Self::Snapshot;
 }
+
+use crate::TypedSurfaces as _;

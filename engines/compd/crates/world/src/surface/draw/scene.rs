@@ -94,3 +94,5 @@ pub fn scene(
 
     (ui_elements, ui_elements_screen, ui_elements_dim)
 }
+
+use ui::TypedSurfaces as _;

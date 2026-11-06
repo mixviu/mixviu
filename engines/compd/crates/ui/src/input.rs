@@ -485,3 +485,5 @@ mod tests {
         );
     }
 }
+
+use crate::TypedSurfaces as _;

@@ -100,9 +100,7 @@ pub fn restyle(lp: &mut Loop) {
             continue;
         };
         for id in &ids {
-            if let Some(item) = registry.get_mut(*id) {
-                item.request_redraw();
-            }
+            registry.request_redraw(*id);
         }
     }
     lp.state
@@ -216,3 +214,5 @@ mod tests {
         assert!(!keep_up(&later));
     }
 }
+
+use ui::TypedSurfaces as _;

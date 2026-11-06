@@ -538,3 +538,5 @@ mod tests {
         assert_eq!(x, 1536.0 - 300.0 - EDGE);
     }
 }
+
+use ui::TypedSurfaces as _;

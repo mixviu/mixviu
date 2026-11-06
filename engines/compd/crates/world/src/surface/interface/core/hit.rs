@@ -345,7 +345,7 @@ fn hit_ui_in_space(
 ) -> Option<SurfaceHit> {
     let reg = hcx.surface().registry.as_ref()?;
     let active_output = hcx.current_output_key();
-    for item in reg.iter().rev() {
+    for item in reg.items().into_iter().rev() {
         if item.space() != space {
             continue;
         }
@@ -838,3 +838,5 @@ pub fn surface_under_filtered_cx(
     }
     check_layer(Layer::Background)
 }
+
+use ui::TypedSurfaces as _;

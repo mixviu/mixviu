@@ -215,3 +215,5 @@ mod tests {
         assert_eq!(wake.deadline(), None);
     }
 }
+
+use crate::TypedSurfaces as _;

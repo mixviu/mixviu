@@ -1892,3 +1892,5 @@ fn destroy_anywhere(state: &mut Loop, ids: &[HandleId]) {
         }
     }
 }
+
+use ui::TypedSurfaces as _;

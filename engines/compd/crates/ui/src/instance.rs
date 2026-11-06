@@ -322,9 +322,10 @@ impl UiItem {
             keyboard_transparent: self.is_keyboard_transparent(),
         }
     }
-    pub(crate) fn new<U: UiProgram>(inst: UiInstance<U>, space: UiSpace, layer: u64) -> Self {
+    pub(crate) fn new<U: UiProgram>(inst: UiInstance<U>, space: UiSpace, layer: u64) -> Self { Self::from_source(Box::new(SharedInstance(UiControl::new(inst))), space, layer) }
+    pub(crate) fn from_source(inner: Box<dyn UiInstanceAny>, space: UiSpace, layer: u64) -> Self {
         Self {
-            inner: Box::new(SharedInstance(UiControl::new(inst))),
+            inner,
             space,
             layer,
             visible: true,
@@ -847,7 +848,7 @@ pub(crate) fn build_instance<U: UiProgram>(
     }
 }
 
-struct SharedInstance<U: UiProgram>(UiControl<U>);
+pub(crate) struct SharedInstance<U: UiProgram>(pub(crate) UiControl<U>);
 impl<U: UiProgram> UiInstanceAny for SharedInstance<U> {
     fn handle_id(&self) -> HandleId { self.0.inner.borrow().handle_id() }
     fn smithay_id(&self) -> Id { self.0.inner.borrow().smithay_id() }
@@ -896,3 +897,5 @@ impl<U: UiProgram> UiInstanceAny for SharedInstance<U> {
     fn pointer_leave(&mut self) { self.0.inner.borrow_mut().pointer_leave() }
     fn as_any_mut(&mut self) -> &mut dyn Any { self.0.inner.borrow_mut().as_any_mut() }
 }
+
+use crate::TypedSurfaces as _;

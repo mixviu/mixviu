@@ -13,3 +13,5 @@ pub use interface::{UiSurfaces, PaneView};
 pub use space::{Transform, UiSpace};
 pub use view::UiItemView;
 pub mod producer;
+
+pub mod factory;

@@ -8,7 +8,7 @@ $names = ["create", "create_screen", "create_in_space_snapshot", "create_in_spac
 $methods = []
 for $name in $names
   $m = rust_method($reg,$name)
-  $method = replace($m.text,"    pub fn ","    fn ")
+  $method = replace($m.text,"pub fn ","fn ")
   if $name == "create_with" then
     $method = $m.sig .. <<EOF
  {

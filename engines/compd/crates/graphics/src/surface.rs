@@ -286,3 +286,5 @@ impl Backing {
         })
     }
 }
+
+use ui::TypedSurfaces as _;

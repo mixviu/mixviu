@@ -127,3 +127,5 @@ impl Painter {
         queue.submit(buffers);
     }
 }
+
+use crate::TypedSurfaces as _;

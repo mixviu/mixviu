@@ -101,3 +101,5 @@ pub fn input_received<I: InputBackend>(
         );
     }
 }
+
+use ui::TypedSurfaces as _;

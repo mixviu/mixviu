@@ -539,3 +539,5 @@ pub fn event_of(message: &SceneMessage) -> Option<(&str, &str, Value)> {
 
 #[cfg(test)]
 mod tests;
+
+use ui::TypedSurfaces as _;

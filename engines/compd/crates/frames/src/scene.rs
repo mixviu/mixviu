@@ -968,3 +968,5 @@ where
         visible_window: canvas_window,
     }
 }
+
+use ui::TypedSurfaces as _;

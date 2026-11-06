@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::sync::mpsc;
-use ui::UiRegistry;
+use ui_surface::UiSurfaces;
 
 pub struct SurfaceState {
     // The wgpu GPU context is shared driver data (kernel `UI_CONTEXT`), not
     // per-world. This world owns only its registry, built lazily from it.
-    pub registry: Option<UiRegistry>,
+    pub registry: Option<Box<dyn UiSurfaces>>,
 
     pub test_dmabuf_done: bool,
     pub test_example_done: bool,
@@ -35,3 +35,5 @@ impl SurfaceState {
         }
     }
 }
+
+use ui::TypedSurfaces as _;

@@ -54,3 +54,5 @@ impl Drop for Frame {
         }
     }
 }
+
+use crate::TypedSurfaces as _;

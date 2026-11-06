@@ -103,3 +103,5 @@ impl ui::UiSnapshot for SaveDialog {
         self.optimized
     }
 }
+
+use ui::TypedSurfaces as _;

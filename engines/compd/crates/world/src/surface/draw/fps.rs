@@ -202,3 +202,5 @@ pub fn per_frame(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, 
         let _ = reg.dispatch_message(UiHandle::<FpsUi>::from_id(id), FpsMessage::Set { fps });
     }
 }
+
+use ui::TypedSurfaces as _;

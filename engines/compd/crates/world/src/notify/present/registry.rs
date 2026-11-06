@@ -106,3 +106,5 @@ pub fn ensure_registry(p: &mut Presenter, kernel: &Storage) -> bool {
     p.registry = Some(UiRegistry::new(wgpu));
     true
 }
+
+use ui::TypedSurfaces as _;

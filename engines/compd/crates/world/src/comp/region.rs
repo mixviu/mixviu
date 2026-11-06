@@ -1091,3 +1091,5 @@ mod tests {
         assert!(hint_image(&text, 1.0, 10.0, &look).is_none());
     }
 }
+
+use ui::TypedSurfaces as _;

@@ -297,37 +297,9 @@ impl UiRegistry {
 
     // ── Lifecycle ─────────────────────────────────────────────────
 
-    pub fn create<U: UiProgram>(
-        &mut self,
-        render_node: &str,
-        ui: U,
-        gles: &mut GlesRenderer,
-        location: Point<i32, Physical>,
-        size: Size<i32, Physical>,
-        layer: u64,
-    ) -> Result<UiHandle<U>, CreateError> {
-        self.create_in_space(render_node, ui, gles, location, size, UiSpace::World, layer)
-    }
 
-    pub fn create_screen<U: UiProgram>(
-        &mut self,
-        render_node: &str,
-        ui: U,
-        gles: &mut GlesRenderer,
-        location: Point<i32, Physical>,
-        size: Size<i32, Physical>,
-        layer: u64,
-    ) -> Result<UiHandle<U>, CreateError> {
-        self.create_in_space(
-            render_node,
-            ui,
-            gles,
-            location,
-            size,
-            UiSpace::Screen,
-            layer,
-        )
-    }
+
+
 
     /// Like [`create_in_space`](Self::create_in_space), for a UI the compositor
     /// reads back synchronously via [`snapshot`](Self::snapshot).
@@ -335,70 +307,15 @@ impl UiRegistry {
     /// Identical to `create_in_space`, since every instance renders
     /// inline; `snapshot` reads the live UI.
     #[allow(clippy::too_many_arguments)] // mirrors create_with: placement + space + layer are all independent
-    pub fn create_in_space_snapshot<U: UiSnapshot>(
-        &mut self,
-        render_node: &str,
-        ui: U,
-        gles: &mut GlesRenderer,
-        location: Point<i32, Physical>,
-        size: Size<i32, Physical>,
-        space: UiSpace,
-        layer: u64,
-    ) -> Result<UiHandle<U>, CreateError> {
-        self.create_with(render_node, ui, gles, location, size, space, layer)
-    }
+
 
     #[allow(clippy::too_many_arguments)] // mirrors create_with: placement + space + layer are all independent
-    pub fn create_in_space<U: UiProgram>(
-        &mut self,
-        render_node: &str,
-        ui: U,
-        gles: &mut GlesRenderer,
-        location: Point<i32, Physical>,
-        size: Size<i32, Physical>,
-        space: UiSpace,
-        layer: u64,
-    ) -> Result<UiHandle<U>, CreateError> {
-        self.create_with(render_node, ui, gles, location, size, space, layer)
-    }
+
 
     #[allow(clippy::too_many_arguments)]
-    fn create_with<U: UiProgram>(
-        &mut self,
-        render_node: &str,
-        ui: U,
-        gles: &mut GlesRenderer,
-        location: Point<i32, Physical>,
-        size: Size<i32, Physical>,
-        space: UiSpace,
-        layer: u64,
-    ) -> Result<UiHandle<U>, CreateError> {
-        let id = HandleId(next_handle_id());
 
-        let surface = UiSurface::allocate(render_node, &self.wgpu_ctx, gles, size)?;
-        let instance = build_instance(
-            id,
-            ui,
-            surface,
-            self.wgpu_ctx.clone(),
-            location,
-            self.instance_scale,
-        );
 
-        trace!(
-            "created UI instance handle={id:?} location={location:?} size={size:?} space={space:?}"
-        );
 
-        let item = UiItem::new(instance, space, layer);
-        let idx = self.items.len();
-        self.items.push(item);
-        self.index.insert(id, idx);
-        Ok(UiHandle::new(id))
-    }
-
-    pub fn destroy<U: UiProgram>(&mut self, handle: UiHandle<U>) -> bool {
-        self.destroy_by_id(handle.id)
-    }
 
     pub fn destroy_by_id(&mut self, id: HandleId) -> bool {
         let Some(idx) = self.index.remove(&id) else {
@@ -436,13 +353,7 @@ impl UiRegistry {
 
     // ── Placement & z-order ────────────────────────────────────────
 
-    pub fn set_location<U: UiProgram>(
-        &mut self,
-        handle: UiHandle<U>,
-        location: Point<i32, Physical>,
-    ) -> bool {
-        self.set_location_by_id(handle.id, location)
-    }
+
 
     pub fn set_location_by_id(&mut self, id: HandleId, location: Point<i32, Physical>) -> bool {
         match self.get_mut(id) {
@@ -502,13 +413,7 @@ impl UiRegistry {
 
     // ── Resize (deferred) ──────────────────────────────────────────
 
-    pub fn request_resize<U: UiProgram>(
-        &mut self,
-        handle: UiHandle<U>,
-        new_size: Size<i32, Physical>,
-    ) -> bool {
-        self.request_resize_by_id(handle.id, new_size)
-    }
+
 
     pub fn request_resize_by_id(&mut self, id: HandleId, new_size: Size<i32, Physical>) -> bool {
         let instance_scale = self.instance_scale;
@@ -580,45 +485,20 @@ impl UiRegistry {
         Ok(())
     }
 
-pub fn dispatch_message<U: UiProgram>(
-        &mut self,
-        handle: UiHandle<U>,
-        message: U::Message,
-    ) -> Result<(), DispatchError> {
- let instance = self.instance_mut(handle).ok_or(DispatchError::UnknownHandle(handle.id))?;
- instance.runtime_mut().queue_message(message);
- Ok(())
- }
+
 
     /// Install the compositor's observer for an instance's messages.
     ///
     /// The handlers dispatch onto compositor channels.
-    pub fn set_message_handler<U: UiProgram>(
-        &mut self,
-        handle: UiHandle<U>,
-        handler: impl FnMut(&U::Message) + Send + 'static,
-    ) -> bool {
-        match self.instance_mut(handle) {
-            Some(inst) => {
-                inst.runtime_mut().set_message_handler(handler);
-                true
-            }
-            None => false,
-        }
-    }
+
 
     /// Read a UI's published state without borrowing it.
     ///
     /// Reads the live UI. See `UiSnapshot`.
-    pub fn snapshot<U: UiSnapshot>(&self, handle: UiHandle<U>) -> Option<U::Snapshot> {
-        self.instance(handle).map(|i| i.ui().snapshot())
-    }
 
-pub fn instance_mut<U: UiProgram>(
-        &mut self,
-        handle: UiHandle<U>,
-    ) -> Option<crate::UiControl<U>> { if !self.contains(handle.id) { return None; } crate::UiControl::lookup(handle.id) }
-pub fn instance<U: UiProgram>(&self, handle: UiHandle<U>) -> Option<crate::UiControl<U>> { if !self.contains(handle.id) { return None; } crate::UiControl::lookup(handle.id) }
+
+
+
 
     /// Route a pointer position to a specific (already-hit-tested) UI item.
     /// Drives Enter/Leave bookkeeping based on the previous target.
@@ -1357,21 +1237,7 @@ pub fn instance<U: UiProgram>(&self, handle: UiHandle<U>) -> Option<crate::UiCon
     /// `dispatch_message` (or by mutating its `ui`), exactly as for any
     /// instance. The `layer` bitmask must be one your per-frame `render_all`
     /// call includes, placed in a band drawn above the annotated surface.
-    pub fn create_tooltip<U: UiProgram>(
-        &mut self,
-        render_node: &str,
-        ui: U,
-        gles: &mut GlesRenderer,
-        size: Size<i32, Physical>,
-        layer: u64,
-    ) -> Result<UiHandle<U>, CreateError> {
-        let handle = self.create_screen(render_node, ui, gles, Point::from((0, 0)), size, layer)?;
-        if let Some(item) = self.get_mut(handle.id) {
-            item.set_passthrough(true);
-            item.set_visible(false);
-        }
-        Ok(handle)
-    }
+
 
     /// Position a tooltip at a screen point, make it visible, and raise it to
     /// the top of the draw order.
@@ -1466,6 +1332,17 @@ pub fn translate_keyboard(
 }
 
 impl ui_surface::UiSurfaces for UiRegistry {
+    fn allocate_id(&mut self) -> HandleId { HandleId(next_handle_id()) }
+    fn gpu(&self) -> Arc<WgpuGlContext> { self.wgpu_ctx.clone() }
+    fn instance_scale(&self) -> f32 { self.instance_scale }
+    fn insert(&mut self, source: Box<dyn ui_surface::producer::UiProducer>, space: UiSpace, layer: u64) {
+        let item = UiItem::from_source(source, space, layer);
+        let id = item.handle_id();
+        assert!(!self.index.contains_key(&id), "duplicate UI handle");
+        self.index.insert(id, self.items.len());
+        self.items.push(item);
+    }
+    fn request_redraw(&mut self, id: HandleId) { if let Some(item) = self.get_mut(id) { item.request_redraw(); } }
     fn items(&self) -> Vec<ui_surface::UiItemView> { self.iter().enumerate().map(|(order, item)| item.view(order)).collect() }
     fn set_dealloc_enabled(&mut self, enabled: bool) { UiRegistry::set_dealloc_enabled(self, enabled) }
     fn set_draw_order(&mut self, topmost_first: &[HandleId]) { UiRegistry::set_draw_order(self, topmost_first) }
@@ -1585,3 +1462,5 @@ impl ui_surface::UiSurfaces for UiRegistry {
     fn tick_queued(&mut self) { UiRegistry::tick_queued(self, ) }
     fn next_deadline(&self) -> Option<Instant> { UiRegistry::next_deadline(self, ) }
 }
+
+use crate::TypedSurfaces as _;

@@ -51,3 +51,5 @@ impl ui::UiProgram for RegionDim {
         );
     }
 }
+
+use ui::TypedSurfaces as _;

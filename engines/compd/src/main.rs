@@ -35,6 +35,7 @@ static WORLD_DIVERGENCE_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ui::register();
     // Answer `--version`/`-V` (and `--version --json`) as
     // `compd <semver> (<sha12>, built <ts>)` BEFORE any side effect, then exit 0.
     buildinfo::exit_on_version!();
@@ -851,3 +852,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 pub mod execution;
 pub mod priority;
+
+use ui::TypedSurfaces as _;

@@ -2,7 +2,7 @@
 -- The registry owns the strong instance; per-program control tables keep Weak
 -- references, so destroy still releases the GPU backing immediately.
 fn rust_method($text, $name)
-  $matches = re_find($text, "(?m)^    (?:pub(?:\\(crate\\))? )?fn " .. $name .. "(?:<|\\()")
+  $matches = re_find($text, "(?m)^ *(?:pub(?:\\(crate\\))? )?fn " .. $name .. "(?:<|\\()")
   if len($matches) == 0 then raise("METHOD", $name) end
   $start = $matches[0].start
   $open = $start + index_of(substr($text, $start), "{")

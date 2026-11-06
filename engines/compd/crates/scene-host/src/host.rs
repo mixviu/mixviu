@@ -2815,3 +2815,5 @@ mod tests {
         assert!(host.store.pages().seat("scene-notes").is_none());
     }
 }
+
+use ui::TypedSurfaces as _;

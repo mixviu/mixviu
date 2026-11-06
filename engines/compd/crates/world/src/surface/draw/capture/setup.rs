@@ -297,3 +297,5 @@ impl ui::UiSnapshot for SetupOverlay {
         }
     }
 }
+
+use ui::TypedSurfaces as _;
