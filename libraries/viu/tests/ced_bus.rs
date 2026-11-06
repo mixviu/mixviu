@@ -16,13 +16,26 @@ mod fixture {
 struct Accepted;
 #[test]
 fn every_ced_worker_program_parses_with_its_real_includes() {
-    let path=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/ced/job.mix");
-    let (tx,rx)=mpsc::channel();
-    let mut runtime=Runtime::new(4,Arc::new(move||{let _=tx.send(());}),None);
-    runtime.load(viu::runtime::Program{source:std::fs::read_to_string(&path).unwrap(),path,scene:"ced-worker".into(),citizen:"ced".into()}).unwrap();
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/ced/job.mix");
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(
+        4,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+    );
+    runtime
+        .load(viu::runtime::Program {
+            source: std::fs::read_to_string(&path).unwrap(),
+            path,
+            scene: "ced-worker".into(),
+            citizen: "ced".into(),
+        })
+        .unwrap();
     rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    let done=runtime.try_completion().unwrap();
-    assert!(done.error.is_none(),"{:?}",done.error);
+    let done = runtime.try_completion().unwrap();
+    assert!(done.error.is_none(), "{:?}", done.error);
 }
 impl mix::BusHandler for Accepted {
     fn send<'a>(

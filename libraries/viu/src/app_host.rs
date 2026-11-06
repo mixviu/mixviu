@@ -721,7 +721,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         max_string_bytes: bundle.manifest.max_string_bytes,
         platform: Some(platform.clone()),
         ui_state: Some(ui_state.clone()),
-        macros: bundle.manifest.macros.then(||macros::Session::for_app(&bundle.manifest.service)),
+        macros: bundle
+            .manifest
+            .macros
+            .then(|| macros::Session::for_app(&bundle.manifest.service)),
         calls: Some(calls.clone()),
         timers: Some(timers.clone()),
         documents: Some(documents.clone()),

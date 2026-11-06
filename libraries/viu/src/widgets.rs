@@ -141,7 +141,9 @@ impl Widget {
             }
             return crate::rich::validate(&self.kind, value);
         }
-        if ["document-tabs", "search-bar", "form-fields", "macro-menu"].contains(&self.kind.as_str()) {
+        if ["document-tabs", "search-bar", "form-fields", "macro-menu"]
+            .contains(&self.kind.as_str())
+        {
             return crate::editor_controls::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
@@ -293,7 +295,9 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.kind=="macro-menu" {return vec!["close"];}
+        if self.kind == "macro-menu" {
+            return vec!["close"];
+        }
         if self.kind == "document-tabs" {
             return vec!["select", "close"];
         }
@@ -401,7 +405,9 @@ impl Widget {
         if self.properties["enabled"] == false {
             return Err("DISABLED".into());
         }
-        if ["document-tabs", "search-bar", "form-fields", "macro-menu"].contains(&self.kind.as_str()) {
+        if ["document-tabs", "search-bar", "form-fields", "macro-menu"]
+            .contains(&self.kind.as_str())
+        {
             return crate::editor_controls::admit(&self.kind, self.value(model), action, value);
         }
         if self.properties["enabled"] == false {
