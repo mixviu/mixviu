@@ -86,7 +86,9 @@ impl Bundle {
         // JSON is valid Mix data except null (arguments are strings only).
         let source = format!(
             "$app_args = json_parse({})\n{}",
-            serde_json::to_string(&serde_json::to_string(args).unwrap()).unwrap().replace("${", "\\${"),
+            serde_json::to_string(&serde_json::to_string(args).unwrap())
+                .unwrap()
+                .replace("${", "\\${"),
             std::fs::read_to_string(&path).map_err(|e| e.to_string())?
         );
         let scene = std::fs::read_to_string(root.join("scene.mix")).map_err(|e| e.to_string())?;

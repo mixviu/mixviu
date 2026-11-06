@@ -15,6 +15,7 @@ use crate::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    commands: BTreeSet<String>,
     scene_source: String,
     loaded: bool,
     model: Value,
@@ -71,6 +72,7 @@ impl Host {
         }
     }
     fn request(&mut self, r: Request, ctx: &egui::Context) {
+        if !self.commands.contains(&r.command) {let _=r.reply.send((10,json!({"error_code":"UNKNOWN_COMMAND","command":r.command})));return;}
         match r.command.as_str() {
             "viu.state" | "viu.ui.tree" => {
                 let _ = r.reply.send((0, self.state()));
@@ -215,6 +217,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
  let service=bundle.manifest.service.clone();
  let mut commands=bundle.manifest.commands.clone();
  commands.extend(["viu.state","viu.ui.tree","viu.ui.click","viu.ui.focus","viu.ui.text","viu.ui.key","viu.ui.hover","viu.ui.scroll","viu.ui.drag","viu.capture","viu.quit"].map(String::from));
+    let declared=commands.iter().cloned().collect();
     let bus = Endpoint::start(
                 service,
                 std::env::var("MIXOS_NODED_URL")
@@ -235,6 +238,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
                 .unwrap_or_else(std::env::temp_dir)
                 .join("viu-captures");
             Host {
+                commands:declared,
                 scene_source:bundle.scene, loaded:false,
                 model: json!({}), output: None, outputs:BTreeMap::new(),
                 runtime,

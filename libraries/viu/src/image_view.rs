@@ -70,7 +70,7 @@ impl Images {
         let rect=ui.available_rect_before_wrap();
         if fill {
             let c=value["colour"].as_array().unwrap();
-            ui.painter().rect_filled(rect,0.0,egui::Color32::from_rgb(c[0].as_u64().unwrap() as u8,c[1].as_u64().unwrap() as u8,c[2].as_u64().unwrap() as u8));
+            ui.painter().rect_filled(rect,0.0,egui::Color32::from_rgb(c[0].as_f64().unwrap() as u8,c[1].as_f64().unwrap() as u8,c[2].as_f64().unwrap() as u8));
         }
         if value["phase"] != "ready" {
             self.slots.remove(id);
@@ -137,7 +137,7 @@ impl Images {
 }
 
 pub fn validate_fill(value: &Value) -> Result<(), String> {
-    if !value["colour"].as_array().is_some_and(|c|c.len()==3 && c.iter().all(|v|v.as_u64().is_some_and(|n|n<=255))) || !["fill","fit","centre","tile","stretch"].contains(&value["fit"].as_str().unwrap_or("")) {return Err("image-fill requires RGB colour and fill/fit/centre/tile/stretch".into());}
+    if !value["colour"].as_array().is_some_and(|c|c.len()==3 && c.iter().all(|v|v.as_f64().is_some_and(|n|n.is_finite() && (0.0..=255.0).contains(&n) && n.fract()==0.0))) || !["fill","fit","centre","tile","stretch"].contains(&value["fit"].as_str().unwrap_or("")) {return Err("image-fill requires RGB colour and fill/fit/centre/tile/stretch".into());}
     validate(value)
 }
 fn decode_surface(path: &std::path::Path) -> Option<egui::ColorImage> {

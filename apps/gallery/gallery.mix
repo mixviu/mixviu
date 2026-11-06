@@ -64,7 +64,7 @@ on gallery.execute
   if $a.action != "reset" then
     $matches=filter($widgets,fn($w)=$w.id==$a.id)
     if len($matches)!=1 then raise("UNKNOWN_WIDGET",to_string($a.id)) end
-    viu_widget_admit($matches[0],$state,$a.action,$a.value)
+    viu_widget_admit($matches[0],{values:$state.values},$a.action,$a.value)
     if not contains(["set","submit","expand","sort","accept","cancel","activate"],$a.action) then raise("UNKNOWN_ACTION",to_string($a.action)) end
   end
   if $a.action == "reset" then
