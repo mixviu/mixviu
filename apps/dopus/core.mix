@@ -154,15 +154,15 @@ fn dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$remaining,$max_d
   if $profile then print(json_encode({profile:"dopus",phase:"scan",depth:$depth,rows:len($rows),list_stat_reduce_ms:($listed-$t)*1000,sort_ms:($sorted-$listed)*1000,flatten_ms:(monotonic()-$sorted)*1000})) end
   return {rows:$out,remaining:$remaining}
 end
-fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth,$budget={rows:100000,depth:64})
-  validate($budget,{rows:{type:"integer",min:1,max:100000},depth:{type:"integer",min:0,max:64}})
+fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth,$budget={rows:65536,depth:64})
+  validate($budget,{rows:{type:"integer",min:1,max:65536},depth:{type:"integer",min:0,max:64}})
   return dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$budget.rows,$budget.depth).rows
 end
 fn dp_refresh($pane)
-  $budget=$pane.scan_budget ?? {rows:100000,depth:64}
-  validate($budget,{rows:{type:"integer",min:1,max:100000},depth:{type:"integer",min:0,max:64}})
+  $budget=$pane.scan_budget ?? {rows:65536,depth:64}
+  validate($budget,{rows:{type:"integer",min:1,max:65536},depth:{type:"integer",min:0,max:64}})
   try
-    $pane.entries=dp_scan($pane.path,$pane.show_hidden,$pane.expanded,$pane.sort,$pane.ascending,0,$pane.scan_budget ?? {rows:100000,depth:64})
+    $pane.entries=dp_scan($pane.path,$pane.show_hidden,$pane.expanded,$pane.sort,$pane.ascending,0,$pane.scan_budget ?? {rows:65536,depth:64})
     $pane.root_entries=filter($pane.entries,fn($r)=$r.depth==0)
     $pane.summary=dp_summary($pane.root_entries)
     $pane.error=nil

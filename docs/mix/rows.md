@@ -43,3 +43,13 @@ UTF-8 path primitive.
 
 These are shared engine primitives. Applications choose fields, labels,
 formatting, file-type icons and error presentation in Mix.
+
+The Dopus Mix pane uses a separate application-owned traversal work budget:
+65,536 enumerated entry visits (matching the embedded evaluator's list
+ceiling), maximum expansion depth 64 with root depth zero. Hidden entries
+and child-count directory reads consume this total; visiting an expanded
+directory again consumes work again. The existing native `viu_files("names")`
+primitive receives the remaining limit and stops before allocating past it.
+`SCAN_BUDGET` propagates before committing a candidate pane. Smaller explicit
+budgets can be supplied by callers/tests; invalid budgets also refuse before
+refresh mutates anything. This is a work limit, not silent truncation.
