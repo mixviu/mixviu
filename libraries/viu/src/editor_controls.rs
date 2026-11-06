@@ -182,6 +182,7 @@ pub fn draw(
                         row["read_only"] != true,
                         egui::TextEdit::singleline(&mut text).desired_width(ui.available_width()),
                     );
+                    if response.has_focus(){ui.ctx().data_mut(|d|d.insert_temp(egui::Id::unique("viu-focused-widget"),id.to_owned()));}
                     changed |= response.changed();
                     row["value"] = json!(text);
                     ui.end_row();

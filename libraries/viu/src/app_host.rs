@@ -530,6 +530,10 @@ impl Host {
             {
                 let bindings = bindings.clone();
                 for binding in bindings {
+                    let editor_focus=ui.ctx().data(|d|d.get_temp::<bool>(egui::Id::unique("viu-editor-focused"))).unwrap_or(false);
+                    let focused=ui.ctx().data(|d|d.get_temp::<String>(egui::Id::unique("viu-focused-widget")));
+                    let allowed=binding["text_scopes"].as_array().is_some_and(|a|focused.as_deref().is_some_and(|id|a.iter().any(|v|v==id)));
+                    if ui.ctx().wants_keyboard_input() && !editor_focus && !allowed {continue;}
                     if binding["enabled"] == false {
                         continue;
                     }

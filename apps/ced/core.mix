@@ -118,7 +118,7 @@ fn publish_ced($s)
   $model.values.preview=if $has then {document:$t.document} else "" end
   for $action in action_rows($s)
     if not contains(["edit.cut","edit.copy","edit.paste"],$action.id) or len($s.keys[$action.id] ?? [])>0 then
-      for $chord in $action.keys $model.shortcuts=push($model.shortcuts,{chord:$chord,id:$action.id,enabled:$action.enabled}) end
+      for $chord in $action.keys $model.shortcuts=push($model.shortcuts,{chord:$chord,id:$action.id,enabled:$action.enabled,text_scopes:if contains(["file.save","file.send"],$action.id) then ["mail-fields"] else [] end}) end
     end
   end
   $status=if $has then $t.phase.." · rev "..to_string($t.rev).." · "..$t.language.." · pending "..to_string($t.pending) else $s.status end
