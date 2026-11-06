@@ -56,7 +56,8 @@ fn completed($s,$rc,$body)
       $s.release_uncertain=$op;$s.release_relist=true
       $s.release_status=text("uncertain",{app:subject($op),message:$body.message ?? ""})
     else
-      $s.release_status=text("failed",{message:$body.message ?? $body.answer.message ?? json_encode($body.answer)})
+      $message=if type($body.message)=="string" then $body.message elif type($body.answer.error_code)=="string" and type($body.answer.message)=="string" then $body.answer.error_code..": "..$body.answer.message else $body.answer.message ?? json_encode($body.answer) end
+      $s.release_status=text("failed",{message:$message})
       $s.release_relist=$changes
     end
     $s.release_failed=true;return $s
