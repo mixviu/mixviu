@@ -437,16 +437,14 @@ fn native_menu(ui: &mut Ui, value: &Value, id: &str, events: &mut Vec<Intent>) -
     let menus: Vec<_> = value.as_array().into_iter().flatten().map(|item| toolkit::menu::Menu {
         title: text(item, "label").into(), entries: native_entries(&item["children"]),
     }).collect();
-    let search = menus.iter().position(|m| m.title == "Help").map(|menu| toolkit::menu::Search {
-        menu, hint: toolkit::strings::own("search-menus"), empty: toolkit::strings::own("no-matching-commands"),
-    });
+    let search = menus.iter().position(|m| m.title == "Help").map(toolkit::menu::Search::new);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         let form = menu_form(ui.ctx());
         let picked = if form["effective"] == "bar" {
             toolkit::menu::data_picked(ui, &menus, search.as_ref())
         } else {
-            let response = ui.add(toolkit::IconButton::new(toolkit::Icon::Menu).tooltip("Window menu"));
+            let response = ui.add(toolkit::button::IconButton::new(toolkit::Icon::Menu).tooltip("Window menu"));
             if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
                 || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary)) {
                 toolkit::menu::toggle(ui.ctx());

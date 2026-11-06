@@ -156,6 +156,13 @@ pub struct Search {
     pub empty: String,
 }
 
+impl Search {
+    /// Toolkit-localised menu search, shared by registry and data-authored bars.
+    pub fn new(menu: usize) -> Self {
+        Self { menu, hint: crate::strings::own("search-menus"), empty: crate::strings::own("no-matching-commands") }
+    }
+}
+
 /// The most results a search lists (§3.5).
 pub const SEARCH_RESULTS: usize = 15;
 
