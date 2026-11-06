@@ -12,7 +12,6 @@
 //! by moving the whole surface (`registry.set_location`) once per frame, one
 //! integer write, where animating inside the UI would re-render the text every
 //! frame for the same result.
-use ui::UiProgram;
 
 /// Compositor → surface. One variant: the text to show.
 #[derive(Clone, Debug)]

@@ -6,7 +6,6 @@
 //! screen-space instance (replaces the save dialog during encoding).
 
 use crate::strings;
-use ui::UiProgram;
 use world::capture::session::message::CaptureMessage;
 
 use crate::capture::style;

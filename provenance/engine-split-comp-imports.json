@@ -23673,7 +23673,7 @@
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/notify/present/base.rs",
-      "destination_sha256": "b9d6f555cd78757324514e283b87a889608f4085b7e37584777a884ad69536f1",
+      "destination_sha256": "864f3c90d220f299fd1012ba9102d40d5566c162a711b9d299d67d235f203dc0",
       "source": "services/compd/crates/world/src/notify/present/base.rs",
       "source_sha256": "160ee32804d9ebfb1a3ad52bd66b68b43058e7a0ac19bee997e41ac7c13172eb"
     },
@@ -23694,7 +23694,7 @@
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/notify/view/base.rs",
-      "destination_sha256": "e6e2d3e42b1205c440a878a02d5a92bc03467bd1090ce650bab242ff16e0f194",
+      "destination_sha256": "40aabcc6c499071b9b1c73df11ed83b6880b34cbacdd1231cd5240b57c255978",
       "source": "services/compd/crates/world/src/notify/view/base.rs",
       "source_sha256": "78df3f14fa9dc28d4b6ebf760262003143f219ef57bc5cac6a6424af48bb8a28"
     },
@@ -23708,42 +23708,42 @@
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/capture/border.rs",
-      "destination_sha256": "c477b9c82844e7ae28395a1bd6d681bdd0e16e0e4bf98ef7ee0b9908135cb6a0",
+      "destination_sha256": "c06e4d22878387bd516b9bc683ed51fbd0289504c4e8e5d87e41241f4b70049d",
       "source": "services/compd/crates/world/src/surface/draw/capture/border.rs",
       "source_sha256": "311e10e0cf51ec17b5b989e9b41e022438cac6faa9c0aa5e277d38485f71a4a2"
     },
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/capture/dialog.rs",
-      "destination_sha256": "f5a897cf04f20ebdcc34e89e59a39d484a016a16adba031392b8fef404b123e7",
+      "destination_sha256": "855c31c24676d7532621837b46a40f7c64a74b58bf35979316a9af1dfdb8cf35",
       "source": "services/compd/crates/world/src/surface/draw/capture/dialog.rs",
       "source_sha256": "2eb6ae172954cb2223e02927deecf18e3d57a9719cd42c07e4cd5ba98d07a695"
     },
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/capture/dim.rs",
-      "destination_sha256": "ba6cb9d381c93c9575ad811d24c20e22472fd52e175d2dd19ea33f613d780720",
+      "destination_sha256": "8e11ebf4e8378efdd83173aca3fc82687e65e715c7144d74f596148153fc72b6",
       "source": "services/compd/crates/world/src/surface/draw/capture/dim.rs",
       "source_sha256": "e1256ad1cc7190e75a5ee5c8fc6871162cbf2cf22b58acf702c21418ccf660ee"
     },
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/capture/encodialog.rs",
-      "destination_sha256": "c2693f380f4de7c6793dd697ef68a229da708e9b10b5d3b97ab5124ca33f960e",
+      "destination_sha256": "12eb1cfd3b3e0630c516b1225dc80637923faae1e8902ea6ca6e495cab356bd3",
       "source": "services/compd/crates/world/src/surface/draw/capture/encodialog.rs",
       "source_sha256": "88073c99fccb1bdb29ff0e41d25115d3c3694634209d03584e23685b185cd096"
     },
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/capture/errordialog.rs",
-      "destination_sha256": "d7b3428944d1b6bd51bc185976f0381fca92e9a2c538cf43bf2cdd6ab1985f53",
+      "destination_sha256": "ee425a97fe9fe11ffdb32bfa0c7298a0b1d2e9f96e6c0f274e21106591266fbf",
       "source": "services/compd/crates/world/src/surface/draw/capture/errordialog.rs",
       "source_sha256": "fafa08006f8e240c51f99d48838feacb435bc945a1261f7ae6a97c6f2680a767"
     },
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/capture/hud.rs",
-      "destination_sha256": "c4c0fbb07bc647ce157af01115649018ba8c421c89b6fe37132736c7a6845e30",
+      "destination_sha256": "ea41bbda0192297ad8e8ea96d05c474cd50b784b82a7935be9e55e0956195de2",
       "source": "services/compd/crates/world/src/surface/draw/capture/hud.rs",
       "source_sha256": "7179897b776a90259991256109685f55d0f59aa2c43b60707685ee48a826b62a"
     },
@@ -23757,14 +23757,14 @@
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/capture/savedialog.rs",
-      "destination_sha256": "bddaab2f6fc5d10423a47cbf67400fb59771368a78268f82b412578cab12df1d",
+      "destination_sha256": "4dac00bbaed1eb7e2bb7fcef14c8d4bc8911c7d78166104366af17465247ac01",
       "source": "services/compd/crates/world/src/surface/draw/capture/savedialog.rs",
       "source_sha256": "2a61b73e22ec8460a9079d0f233f2477a8f7d14bac8adb7d3ab1cef344a47086"
     },
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/capture/setup.rs",
-      "destination_sha256": "dbcd560181031686e21bcc1a9d9ccb12477ec149db0bcc69d77f28dc465b6a34",
+      "destination_sha256": "8b2aa81d86de90909497da884ad0f0d469a4f767f49abb8868a9a9f7615f5187",
       "source": "services/compd/crates/world/src/surface/draw/capture/setup.rs",
       "source_sha256": "46857258c0c130ba692ae0b1c88ba212988fc03e6fd8acf806ab488d72407ae2"
     },
@@ -23778,7 +23778,7 @@
     {
       "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
       "destination": "engines/compd/crates/overlays/src/fps.rs",
-      "destination_sha256": "15d35e893e1de8a92c4a37cddf81443f6a076e7a0006cb270a63192176966808",
+      "destination_sha256": "ab0f263361f9503562f892735af0968bf493933495fc33aa6ec54da3b9bbe103",
       "source": "services/compd/crates/world/src/surface/draw/fps.rs",
       "source_sha256": "4cf33c12ccdc649dbc179729dab005554ee92766da7462db82e1e223c7f377da"
     },
@@ -23816,6 +23816,13 @@
       "destination_sha256": "df4f79b472c2461e12dfd31e934d2aadb3d3a8c814e80b2bb297972c6738ede7",
       "source": "services/compd/crates/world/src/capture/session/message.rs",
       "source_sha256": "9c214c708285ef8f4e56186165e16e2cf43131da690b4d8efa97d6033a2110e2"
+    },
+    {
+      "adaptation": "B4 runtime test: retain first-frame, scheduling and XWayland state assertions; omit obsolete main-thread INFO stderr assertion (tracing routes it to journald on piped stderr)",
+      "destination": "engines/compd/crates/headless/tests/boot.rs",
+      "destination_sha256": "f772a976440e088a5016fff194bd93228c78f40735e889336669c5735d2f9f86",
+      "source": "services/compd/crates/headless/tests/boot.rs",
+      "source_sha256": "24eeae0d9e269e2d0a54751a466ee9ea68d7f56dd18f78f88cc3772231c3a542"
     }
   ],
   "licence": "Original per-file and vendor licences retained",

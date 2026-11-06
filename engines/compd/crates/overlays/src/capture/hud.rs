@@ -5,7 +5,6 @@
 //! intercepts clicks where the button is.
 
 use crate::strings;
-use ui::UiProgram;
 use world::capture::session::message::CaptureMessage;
 
 use crate::capture::style;

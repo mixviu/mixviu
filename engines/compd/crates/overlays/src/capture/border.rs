@@ -4,7 +4,6 @@
 //! everything (screen-space, top layer). Fully transparent except the outline,
 //! and click-through (the interface adds the passthrough layer bit).
 
-use ui::UiProgram;
 use world::capture::session::message::{CaptureMessage, OverlayRect};
 
 use crate::capture::{mask, style};

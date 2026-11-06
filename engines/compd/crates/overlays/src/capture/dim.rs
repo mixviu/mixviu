@@ -4,7 +4,6 @@
 //! Drawn BELOW windows (its own `CAPTURE_DIM` layer) so windows in the region
 //! stay bright while everything else is dimmed. Click-through.
 
-use ui::UiProgram;
 use world::capture::session::message::{CaptureMessage, OverlayRect};
 
 use crate::capture::{mask, style};

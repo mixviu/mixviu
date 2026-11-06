@@ -20,7 +20,6 @@ use std::collections::HashMap;
 use crate::handle::load;
 use crate::scene::layer::base::Layer;
 use crate::state::Loop;
-use ui::UiProgram;
 use ui::{HandleId, UiHandle, UiSpace};
 
 /// Overlay box size (physical px) and its inset from the top-right corner.

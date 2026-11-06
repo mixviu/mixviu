@@ -5,7 +5,6 @@
 //! `background_encoder` setting makes the optimized re-encode automatic).
 
 use crate::strings;
-use ui::UiProgram;
 use world::capture::session::message::CaptureMessage;
 
 use crate::capture::style;

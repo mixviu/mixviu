@@ -21,7 +21,7 @@ use crate::smithay_glue::data::ScreenContext;
 use slots::storage::slot::base::Storage;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::Point;
-use ui::{Transform, UiRenderElement};
+use ui::Transform;
 
 /// How long a message rests on screen, and the slide in/out duration.
 pub const TTL: Duration = Duration::from_secs(5);

@@ -5,7 +5,6 @@
 //! emits [`CaptureMessage::Discard`] (the interface tears the capture down).
 
 use crate::strings;
-use ui::UiProgram;
 use world::capture::session::message::CaptureMessage;
 
 use crate::capture::style;

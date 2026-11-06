@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+#[cfg(test)]
 pub(crate) use theme::ui_scale::tokens;
 pub use theme::ui_scale::{CommonUi, DENSITY_STEPS, density_step};
 

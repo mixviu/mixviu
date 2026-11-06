@@ -5,7 +5,6 @@
 //! stops. Its own small centered screen-space instance.
 
 use crate::strings;
-use ui::UiProgram;
 use world::capture::session::message::CaptureMessage;
 
 use crate::capture::style;

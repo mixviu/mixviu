@@ -11,7 +11,6 @@
 //! itself for the Windows case).
 
 use crate::strings;
-use ui::UiProgram;
 use world::capture::session::message::{
     CaptureMedia, CaptureMessage, OverlayPoint, OverlayRect, TargetKind,
 };
