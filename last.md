@@ -355,3 +355,8 @@ branch: lab/app-ports; head SHA: 6429a07f62a7b7d9dc43f2ee9f05f212bce71dc8 (valid
 Merged app-ports 3e6883a onto the four-engine bf8019e baseline. Retained the integrated engine manifests, full Track A interpreter, Bus/files/icons/macros APIs and gold lock pins. Reconciled the duplicate imports against round two; imported the later Ced, Workshop and Email Mix bundles plus reusable HTTP and reader controls. No app is visually accepted yet. CBC integration gate pending; no install or desktop use.
 
 branch lab/gold-parity; head: pending merge commit; apps at parity: none; visual evidence: none; CBC jobs: pending.
+
+
+Gold frame lab prototype: shared Mix scene/model library with generic scene grafting and existing native window slots/design projection; no app policy moved to Rust. CBC integration preparation 20261107-002827-f4f55dd6-a1 returned 0 with one reqwest lock edge, applied exactly. Prototype fmt/check/test pending. Gold Monitor captured headlessly at 1040x680; private capture and harness receipts retained, all owned processes closed. No paired deterministic capture or parity acceptance yet.
+
+branch lab/gold-parity; head: see this checkpoint commit; apps at parity: none; visual gate evidence: original Monitor capture only (private); CBC jobs: 20261107-002827-f4f55dd6-a1 (preparation, lock adaptation).

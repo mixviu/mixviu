@@ -15,6 +15,9 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    framed: bool,
+    title: String,
+    window_frame: crate::window_frame::WindowFrame,
     jobs: crate::jobs::Jobs,
     job_results: std::collections::VecDeque<Value>,
     clipboard: crate::thumbnail::Decoder<String>,
@@ -198,16 +201,24 @@ impl Host {
                         .and_then(|output| model["surfaces"].get(output))
                         .unwrap_or(&model)
                         .clone();
-                    let result = if self.loaded {
-                        self.view.apply_model(projected)
-                    } else {
-                        SceneView::with_model(&self.scene_source, projected).map(|view| {
-                            self.view = view;
-                            self.loaded = true;
-                        })
-                    };
+                    let appearance = if self.framed && (!self.loaded || self.model["appearance"] != model["appearance"]) {
+                        crate::appearance::resolve(&model["appearance"]).map(Some)
+                    } else { Ok(None) };
+                    let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
+                        if self.loaded {
+                            self.view.apply_model(projected)
+                        } else {
+                            SceneView::with_model(&self.scene_source, projected).map(|view| {
+                                self.view = view;
+                                self.loaded = true;
+                            })
+                        }
+                    });
                     match result {
                         Ok(()) => {
+                            if let Some(style) = appearance.expect("validated appearance") {
+                                crate::appearance::install_style(ui.ctx(), &model["appearance"], style);
+                            }
                             self.ready = true;
                             self.model = model;
                         }
@@ -263,8 +274,24 @@ impl Host {
             }
         }
         if self.ready {
+            if self.framed {
+                let settings = self.model["window_settings"].clone();
+                crate::rich::configure_menu(ui.ctx(), &settings, None);
+                self.window_frame.show_with_header(ui, &self.title, &settings, true);
+                let slots = self.window_frame.geometry.get("window.header")
+                    .map(|rect| BTreeMap::from([("window.header".into(), *rect)]))
+                    .unwrap_or_default();
+                if let Err(e) = self.view.set_slots(slots) { self.error = e; }
+            }
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
+            }
+            if self.framed {
+                self.window_frame.edges(ui);
+                self.view.geometry.extend(self.window_frame.geometry.clone());
+                if self.window_frame.close_requested {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                }
             }
         }
         if let Some(error) = self.view.take_focus_error() {
@@ -340,6 +367,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        framed: bundle.manifest.frame.is_some(),
+        title: bundle.manifest.title.clone(),
+        window_frame: crate::window_frame::WindowFrame::default(),
         clipboard: crate::thumbnail::Decoder::with_decoder(
             "viu-clipboard-decode",
             crate::image_view::decode_surface,
@@ -405,7 +435,7 @@ pub fn run(args: Vec<String>) -> eframe::Result {
             ..Default::default()
         },
         Box::new(move |cc| {
-            crate::icons::install(&cc.egui_ctx);
+            crate::appearance::install(&cc.egui_ctx);
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(
                 bundle,

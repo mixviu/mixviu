@@ -13,6 +13,7 @@ pub struct Manifest {
     pub commands: Vec<String>,
     pub tick_ms: Option<u64>,
     pub surface: String,
+    pub frame: Option<String>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -24,6 +25,7 @@ impl Default for Manifest {
             commands: vec![],
             tick_ms: None,
             surface: "window".into(),
+            frame: None,
         }
     }
 }
@@ -63,6 +65,7 @@ impl Bundle {
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
             || !["window", "background"].contains(&manifest.surface.as_str())
+            || manifest.frame.as_deref().is_some_and(|frame| frame != "gold" || manifest.surface != "window")
             || manifest
                 .tick_ms
                 .is_some_and(|n| !(100..=3_600_000).contains(&n))
@@ -91,7 +94,10 @@ impl Bundle {
                 .replace("${", "\\${"),
             std::fs::read_to_string(&path).map_err(|e| e.to_string())?
         );
-        let scene = std::fs::read_to_string(root.join("scene.mix")).map_err(|e| e.to_string())?;
+        let mut scene = std::fs::read_to_string(root.join("scene.mix")).map_err(|e| e.to_string())?;
+        if manifest.frame.is_some() {
+            scene = crate::gold_frame::compose(&scene)?;
+        }
         let program = crate::runtime::Program {
             path,
             source,

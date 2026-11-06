@@ -1,6 +1,8 @@
 $rc=0
+$prepare=contains(args(),"--prepare")
+if $prepare then print(run_argv(["cargo","fmt","-p","viu","-p","viu-engine"])) end
 try
-  for $a in [["cargo","fmt","-p","viu","-p","viu-engine","--","--check"],["cargo","check","-p","viu","-p","viu-engine","--all-targets"],["cargo","test","--locked","-p","viu","-p","viu-engine"],["cargo","clippy","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
+  for $a in [["cargo","fmt","-p","viu","-p","viu-engine","--","--check"],["cargo","check","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","test","--locked","-p","viu","-p","viu-engine"],["cargo","clippy","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
     print({argv:$a})
     $r=run_argv($a,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}})
     print($r)
@@ -8,7 +10,9 @@ try
   end
 finally
   print("GOLD_PARITY_PATCH_BEGIN")
-  print(run_argv_must(["git","diff","--binary"]))
+  $diff=run_argv_must(["git","diff","--binary"])
+  print($diff)
+  if $diff!="" then $rc=97 end
   print("GOLD_PARITY_PATCH_END")
   print(run_argv_must(["git","checkout","-q","--","."]))
 end
