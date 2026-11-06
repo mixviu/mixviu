@@ -1,0 +1,24 @@
+-- CBC only; restore exactly the Rust files changed by this formatter job.
+$r = run_argv(["cargo", "fmt", "--all"], {timeout: 600, max_output: 64000000})
+print($r.stdout)
+print($r.stderr)
+print("FORMAT_RC=" .. to_string($r.exit_code))
+print("FORMAT_DIFF_BEGIN")
+print(run_argv_must(["git", "diff", "--", "*.rs"]))
+print("FORMAT_DIFF_END")
+$files = filter(lines(run_argv_must(["git", "diff", "--name-only", "--", "*.rs"])), fn($p) = $p != "")
+if len($files) > 0 then run_argv_must(concat(["git", "checkout", "-q", "--"], $files)) end
+if $r.exit_code != 0 then exit($r.exit_code) end
+$failed = false
+for $cmd in [
+  ["/opt/mixos/bin/mix", "tools/check_comp_profiles.mix"],
+  ["cargo", "test", "-p", "ui-surface", "--test", "geometry", "--locked"],
+  ["cargo", "test", "-p", "toolkit", "--lib", "native_region_roles_match_the_existing_visuals_in_every_shipped_context", "--locked"]
+]
+  $r = run_argv(concat(["env", "CARGO_BUILD_JOBS=6"], $cmd), {timeout: 7000, max_output: 64000000})
+  print($r.stdout)
+  print($r.stderr)
+  print("CHECK_RC=" .. to_string($r.exit_code) .. " " .. join($cmd, " "))
+  if $r.exit_code != 0 then $failed = true end
+end
+if $failed then exit(1) end
