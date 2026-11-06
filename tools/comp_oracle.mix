@@ -1,0 +1,11 @@
+-- Worker-only oracle. Always print and restore lock changes in this job.
+$a = args()
+$cmd = if len($a) > 0 then $a else ["cargo", "build", "-p", "compd", "--features", "backend-all"] end
+$r = run_argv(concat(["env", "CARGO_BUILD_JOBS=6"], $cmd), {timeout: 7000, max_output: 64000000})
+print($r.stdout)
+print($r.stderr)
+print("LOCK_DIFF_BEGIN")
+print(run_argv_must(["git", "diff", "--", "Cargo.lock"]))
+print("LOCK_DIFF_END")
+run_argv_must(["git", "checkout", "-q", "--", "Cargo.lock"])
+exit($r.rc)
