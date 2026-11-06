@@ -99,23 +99,27 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
             hint: "Search commands".into(),
             empty: "No matching commands".into(),
         });
-    let shown = ui.allocate_ui_with_layout(ui.available_size_before_wrap(),egui::Layout::left_to_right(egui::Align::Center),|ui| {
-        if compact {
-            let response = ui.add(toolkit::button::IconButton::new(
-                crate::icons::Icon::from_name("menu").unwrap(),
-            ));
-            if response.clicked() {
-                if toolkit::menu::is_open(ui.ctx()) {
-                    toolkit::menu::close(ui.ctx());
-                } else if let Some(first) = menus.first() {
-                    let _ = toolkit::menu::open_path(ui.ctx(), &[first.title.clone()]);
+    let shown = ui.allocate_ui_with_layout(
+        ui.available_size_before_wrap(),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            if compact {
+                let response = ui.add(toolkit::button::IconButton::new(
+                    crate::icons::Icon::from_name("menu").unwrap(),
+                ));
+                if response.clicked() {
+                    if toolkit::menu::is_open(ui.ctx()) {
+                        toolkit::menu::close(ui.ctx());
+                    } else if let Some(first) = menus.first() {
+                        let _ = toolkit::menu::open_path(ui.ctx(), &[first.title.clone()]);
+                    }
                 }
+                toolkit::menu::compact_picked(ui, &menus, search.as_ref(), response.rect)
+            } else {
+                toolkit::menu::bar_picked(ui, &menus, search.as_ref())
             }
-            toolkit::menu::compact_picked(ui, &menus, search.as_ref(), response.rect)
-        } else {
-            toolkit::menu::bar_picked(ui, &menus, search.as_ref())
-        }
-    });
+        },
+    );
     if let Some(pick) = shown.inner {
         if let Some(command) = application_id(ui.ctx(), pick.0) {
             ui.ctx()

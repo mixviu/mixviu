@@ -84,8 +84,19 @@ impl Bundle {
         {
             return Err("invalid host size, service, commands or timer budget".into());
         }
-        if let Some(surface)=&manifest.bus_surface {
-            if !surface.is_object() || surface["commands"].as_array().is_none_or(|a|a.len()>128 || a.iter().any(|c|c["name"].as_str().is_none_or(|s|s.is_empty() || s.len()>128) || !c["description"].is_string() || !c["read_only"].is_boolean())) {
+        if let Some(surface) = &manifest.bus_surface {
+            if !surface.is_object()
+                || surface["commands"].as_array().is_none_or(|a| {
+                    a.len() > 128
+                        || a.iter().any(|c| {
+                            c["name"]
+                                .as_str()
+                                .is_none_or(|s| s.is_empty() || s.len() > 128)
+                                || !c["description"].is_string()
+                                || !c["read_only"].is_boolean()
+                        })
+                })
+            {
                 return Err("invalid app Bus surface".into());
             }
         }

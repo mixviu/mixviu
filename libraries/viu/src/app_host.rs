@@ -87,7 +87,9 @@ impl Host {
         }
     }
     fn request(&mut self, r: Request, ctx: &egui::Context) {
-        let Some(r)=self.facilities.request(r,ctx) else {return;};
+        let Some(r) = self.facilities.request(r, ctx) else {
+            return;
+        };
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
@@ -163,7 +165,7 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
-        self.facilities.prepare(ui.ctx(),&self.bus);
+        self.facilities.prepare(ui.ctx(), &self.bus);
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
                 let result = if let Some(image) = image {
@@ -409,9 +411,17 @@ impl Host {
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
-    let facilities=crate::app_facilities::Facilities::new(&bundle.manifest,wake.clone());
+    let facilities = crate::app_facilities::Facilities::new(&bundle.manifest, wake.clone());
     let mut commands = bundle.manifest.commands.clone();
-    if let Some(surface)=&facilities.surface {commands.extend(surface["commands"].as_array().unwrap().iter().filter_map(|c|c["name"].as_str().map(str::to_owned)));}
+    if let Some(surface) = &facilities.surface {
+        commands.extend(
+            surface["commands"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|c| c["name"].as_str().map(str::to_owned)),
+        );
+    }
     commands.extend(
         [
             "viu.state",
@@ -439,13 +449,21 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             .collect(),
         "viu.quit".into(),
         wake.clone(),
-        facilities.surface.as_ref().map(|s|s["commands"].clone()),
+        facilities.surface.as_ref().map(|s| s["commands"].clone()),
     );
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
     jobs.set_native_backend(bus.backend_maker());
-    let services=crate::runtime::Services {macros:facilities.macros.clone(),..Default::default()};
+    let services = crate::runtime::Services {
+        macros: facilities.macros.clone(),
+        ..Default::default()
+    };
     jobs.set_services(services.clone());
-    let mut runtime = Runtime::with_services(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))),services);
+    let mut runtime = Runtime::with_services(
+        32,
+        wake.clone(),
+        Some(jobs.backend(Some(bus.backend()))),
+        services,
+    );
     runtime.load(bundle.program).expect("load behaviour");
     let capture_root = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)

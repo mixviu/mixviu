@@ -100,11 +100,15 @@ impl Endpoint {
         quit_command: String,
         wake: crate::runtime::Wake,
     ) -> Self {
-        Self::start_described(name,url,commands,quit_command,wake,None)
+        Self::start_described(name, url, commands, quit_command, wake, None)
     }
     pub fn start_described(
-        name: String, url: String, commands: Vec<CommandDescriptor>,
-        quit_command: String, wake: crate::runtime::Wake, help: Option<Value>,
+        name: String,
+        url: String,
+        commands: Vec<CommandDescriptor>,
+        quit_command: String,
+        wake: crate::runtime::Wake,
+        help: Option<Value>,
     ) -> Self {
         let (tx, requests) = mpsc::sync_channel(32);
         let (notice_tx, notices) = mpsc::sync_channel(32);

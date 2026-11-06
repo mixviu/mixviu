@@ -42,3 +42,7 @@ in `last.md`; the rest of Monitor remains unaccepted.
 Per-app Rust added: **0**. All sampling, query, row formatting, state,
 composition and history policy live in Mix. No new bulk builtin is justified
 without measured row cost. Headless captures inspected against the original. Detailed parity is explicitly deferred; final exact-source gate is recorded in last.md.
+
+## Round-three region witnesses
+
+At source `0807e73`, matched native 1040×680 constant-history fixtures have zero SSIM/RMSE distortion in Processes, CPU, Memory, three disk pages and Network content rectangles. Whole-window acceptance remains open: Processes SSIM distortion 0.0064456; header 0.0928214, options 0.0203370, status 0.0016791. TCP content distortion 0.00417085 exposes heading typography and paused fetch-policy differences. Populated TCP tables, interactive states, full Bus contracts and live theme choices remain unaccepted. No visual deviation is approved. Captures, figures, hashes and cleanup receipts are held privately following parity-method.md.
