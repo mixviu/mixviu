@@ -201,9 +201,13 @@ impl Host {
                         .and_then(|output| model["surfaces"].get(output))
                         .unwrap_or(&model)
                         .clone();
-                    let appearance = if self.framed && (!self.loaded || self.model["appearance"] != model["appearance"]) {
+                    let appearance = if self.framed
+                        && (!self.loaded || self.model["appearance"] != model["appearance"])
+                    {
                         crate::appearance::resolve(&model["appearance"]).map(Some)
-                    } else { Ok(None) };
+                    } else {
+                        Ok(None)
+                    };
                     let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
                         if self.loaded {
                             self.view.apply_model(projected)
@@ -217,7 +221,11 @@ impl Host {
                     match result {
                         Ok(()) => {
                             if let Some(style) = appearance.expect("validated appearance") {
-                                crate::appearance::install_style(ui.ctx(), &model["appearance"], style);
+                                crate::appearance::install_style(
+                                    ui.ctx(),
+                                    &model["appearance"],
+                                    style,
+                                );
                             }
                             self.ready = true;
                             self.model = model;
@@ -277,19 +285,30 @@ impl Host {
             if self.framed {
                 let settings = self.model["window_settings"].clone();
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
-                self.window_frame.show_with_header(ui, &self.title, &settings, true);
-                let slots = self.window_frame.geometry.get("window.header")
+                self.window_frame
+                    .show_with_header(ui, &self.title, &settings, true);
+                let slots = self
+                    .window_frame
+                    .geometry
+                    .get("window.header")
                     .map(|rect| BTreeMap::from([("window.header".into(), *rect)]))
                     .unwrap_or_default();
-                if let Err(e) = self.view.set_slots(slots) { self.error = e; }
+                if let Err(e) = self.view.set_slots(slots) {
+                    self.error = e;
+                }
             }
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
             }
             if self.framed {
                 self.window_frame.edges(ui);
-                self.view.geometry.extend(self.window_frame.geometry.clone());
+                self.view
+                    .geometry
+                    .extend(self.window_frame.geometry.clone());
                 if self.window_frame.close_requested {
+                    self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
+                }
+                if self.model["window_close"] == true {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
