@@ -459,9 +459,9 @@ impl Host {
         while let Some(done) = self.runtime.try_completion() {
             if self.forward_output {
                 use std::io::Write;
-                print!("{}",done.stdout);
-                let _=std::io::stdout().flush();
-                eprint!("{}",done.stderr);
+                print!("{}", done.stdout);
+                let _ = std::io::stdout().flush();
+                eprint!("{}", done.stderr);
             }
             self.measurements
                 .model(done.elapsed.as_micros().min(u64::MAX as u128) as u64);
@@ -917,46 +917,50 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let mut command_names = BTreeSet::new();
     commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
-    let bus = if !bundle.manifest.bus { Endpoint::offline() } else { Endpoint::start_described(
-        service,
-        bundle.manifest.bus_url(),
-        {
-            let mut described = bundle.manifest.command_descriptors.clone();
-            let mut native = Vec::new();
-            if bundle.manifest.native_drive {
-                native.extend(toolkit::drive::describe(&bundle.manifest.service));
-            }
-            if bundle.manifest.macros {
-                native.extend(macros::commands::describe(&bundle.manifest.service));
-            }
-            for value in native {
-                described.push(bus::CommandDescriptor {
-                    name: value["name"].as_str().unwrap().into(),
-                    args: value["args"]
-                        .as_object()
-                        .map(|a| a.keys().cloned().collect())
-                        .unwrap_or_default(),
-                    description: value["description"].as_str().unwrap_or("").into(),
-                    read_only: value["read_only"] == true,
-                });
-            }
-            commands
-                .into_iter()
-                .map(|name| {
-                    described
-                        .iter()
-                        .find(|d| d.name == name)
-                        .cloned()
-                        .unwrap_or_else(|| {
-                            bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false)
-                        })
-                })
-                .collect()
-        },
-        "viu.quit".into(),
-        wake.clone(),
-        facilities.surface.as_ref().map(|s| s["commands"].clone()),
-    ) };
+    let bus = if !bundle.manifest.bus {
+        Endpoint::offline()
+    } else {
+        Endpoint::start_described(
+            service,
+            bundle.manifest.bus_url(),
+            {
+                let mut described = bundle.manifest.command_descriptors.clone();
+                let mut native = Vec::new();
+                if bundle.manifest.native_drive {
+                    native.extend(toolkit::drive::describe(&bundle.manifest.service));
+                }
+                if bundle.manifest.macros {
+                    native.extend(macros::commands::describe(&bundle.manifest.service));
+                }
+                for value in native {
+                    described.push(bus::CommandDescriptor {
+                        name: value["name"].as_str().unwrap().into(),
+                        args: value["args"]
+                            .as_object()
+                            .map(|a| a.keys().cloned().collect())
+                            .unwrap_or_default(),
+                        description: value["description"].as_str().unwrap_or("").into(),
+                        read_only: value["read_only"] == true,
+                    });
+                }
+                commands
+                    .into_iter()
+                    .map(|name| {
+                        described
+                            .iter()
+                            .find(|d| d.name == name)
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false)
+                            })
+                    })
+                    .collect()
+            },
+            "viu.quit".into(),
+            wake.clone(),
+            facilities.surface.as_ref().map(|s| s["commands"].clone()),
+        )
+    };
     let documents = crate::documents::Documents::default();
     let rasters = crate::raster::Rasters::default();
     let timers = crate::timers::Timers::default();
@@ -1189,15 +1193,20 @@ impl crate::layer::LayerProgram for LayerHost {
             &mut self.host,
             ctx.data(|d| d.get_temp::<String>(egui::Id::unique("viu-layer-output"))),
         ) {
-            let changed=host.outputs.get(&output).is_none_or(|state|state["visible"]!=visible);
+            let changed = host
+                .outputs
+                .get(&output)
+                .is_none_or(|state| state["visible"] != visible);
             if let Some(state) = host.outputs.get_mut(&output) {
                 state["visible"] = json!(visible);
             }
             host.ui_state.set_outputs(&host.outputs);
-            if changed { let _ = host.runtime.notify(
-                "viu.layer.visibility".into(),
-                json!({"output":output,"visible":visible}),
-            ); }
+            if changed {
+                let _ = host.runtime.notify(
+                    "viu.layer.visibility".into(),
+                    json!({"output":output,"visible":visible}),
+                );
+            }
         }
     }
     fn should_close(&self) -> bool {
@@ -1221,7 +1230,9 @@ impl crate::layer::LayerProgram for LayerHost {
                 }),
             ));
         }
-        if let Some(host)=&self.host { let _=crate::appearance::install_theme(ctx,&host.file_theme); }
+        if let Some(host) = &self.host {
+            let _ = crate::appearance::install_theme(ctx, &host.file_theme);
+        }
     }
     fn show(&mut self, ui: &mut egui::Ui, surface: &crate::layer::SurfaceInfo) {
         let host = self.host.as_mut().unwrap();
@@ -1237,13 +1248,17 @@ impl crate::layer::LayerProgram for LayerHost {
             .outputs
             .entry(output.clone())
             .or_insert_with(|| json!({}));
-        let changed=state["width"]!=surface.width || state["height"]!=surface.height || state["scale"]!=surface.scale;
+        let changed = state["width"] != surface.width
+            || state["height"] != surface.height
+            || state["scale"] != surface.scale;
         state["width"] = json!(surface.width);
         state["height"] = json!(surface.height);
         state["scale"] = json!(surface.scale);
         state["presented_frames"] = json!(frames);
         host.ui_state.set_outputs(&host.outputs);
-        if changed {let _=host.runtime.notify("viu.layer.configure".into(),json!({"output":output,"width":surface.width,"height":surface.height,"scale":surface.scale}));}
+        if changed {
+            let _=host.runtime.notify("viu.layer.configure".into(),json!({"output":output,"width":surface.width,"height":surface.height,"scale":surface.scale}));
+        }
         let (view, loaded) = self
             .views
             .entry(output.clone())
@@ -1253,9 +1268,17 @@ impl crate::layer::LayerProgram for LayerHost {
         host.output = Some(output);
         // Layer hosts use the same owner loop; eframe's Frame is not needed.
         host.pump(ui.ctx());
-        if host.model["layer"]["observe_input"]==true {
-            if let Some(pos)=ui.input(|i|i.pointer.button_pressed(egui::PointerButton::Primary).then(||i.pointer.interact_pos()).flatten()) {
-                let _=host.runtime.notify("viu.layer.input".into(),json!({"output":host.output,"x":pos.x,"y":pos.y}));
+        if host.model["layer"]["observe_input"] == true {
+            if let Some(pos) = ui.input(|i| {
+                i.pointer
+                    .button_pressed(egui::PointerButton::Primary)
+                    .then(|| i.pointer.interact_pos())
+                    .flatten()
+            }) {
+                let _ = host.runtime.notify(
+                    "viu.layer.input".into(),
+                    json!({"output":host.output,"x":pos.x,"y":pos.y}),
+                );
             }
         }
         if let Some(session) = &host.session {
@@ -1297,7 +1320,9 @@ impl crate::layer::LayerProgram for LayerHost {
         self.views.remove(&output);
         if let Some(host) = &mut self.host {
             host.outputs.remove(&output);
-            let _=host.runtime.notify("viu.layer.removed".into(),json!({"output":output}));
+            let _ = host
+                .runtime
+                .notify("viu.layer.removed".into(), json!({"output":output}));
             host.ui_state.set_outputs(&host.outputs);
         }
         self.contexts.lock().unwrap().retain(|c| c != ctx);
@@ -1305,8 +1330,10 @@ impl crate::layer::LayerProgram for LayerHost {
     fn presented(&mut self, surface: &crate::layer::SurfaceInfo) {
         let output = surface.output.clone().unwrap_or_default();
         if let Some(host) = &mut self.host {
-            if host.model["layer"]["observe_presentation"]==true && self.reported.get(&output)!=Some(surface) {
-                self.reported.insert(output.clone(),surface.clone());
+            if host.model["layer"]["observe_presentation"] == true
+                && self.reported.get(&output) != Some(surface)
+            {
+                self.reported.insert(output.clone(), surface.clone());
                 let _=host.runtime.notify("viu.layer.presented".into(),json!({"output":output,"width":surface.width,"height":surface.height,"scale":surface.scale}));
             }
             if let Some(state) = host.outputs.get_mut(&output) {

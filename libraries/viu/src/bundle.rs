@@ -98,11 +98,18 @@ impl Bundle {
         } else {
             Manifest::default()
         };
-        if let Some(variant)=args.iter().find_map(|a|manifest.launch_variants.get(a)) {
-            let path=root.join(variant).canonicalize().map_err(|e|e.to_string())?;
-            if !path.starts_with(&root) {return Err("launch variant escapes bundle".into());}
-            let value:serde_json::Value=serde_json::from_str(&std::fs::read_to_string(path).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
-            manifest=serde_json::from_value(value["host"].clone()).map_err(|e|e.to_string())?;
+        if let Some(variant) = args.iter().find_map(|a| manifest.launch_variants.get(a)) {
+            let path = root
+                .join(variant)
+                .canonicalize()
+                .map_err(|e| e.to_string())?;
+            if !path.starts_with(&root) {
+                return Err("launch variant escapes bundle".into());
+            }
+            let value: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(path).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            manifest = serde_json::from_value(value["host"].clone()).map_err(|e| e.to_string())?;
         }
         if !manifest
             .size

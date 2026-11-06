@@ -100,7 +100,9 @@ fn paint(ui: &Ui, slot: &Slot, rect: Rect, alpha: f32) {
 }
 impl Fill {
     pub fn draw(&mut self, ui: &mut Ui, value: &Value, rasters: &Rasters) -> egui::Response {
-        if self.observer.is_none(){self.observer=Some(rasters.observe(ui.ctx()));}
+        if self.observer.is_none() {
+            self.observer = Some(rasters.observe(ui.ctx()));
+        }
         let rect = ui.available_rect_before_wrap();
         let colour = base(ui, value);
         let handle = value["handle"].as_str();
