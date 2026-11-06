@@ -18,6 +18,13 @@ publication. `src/native.rs` is the separately requested Rust comparator.
 Reusable rendering, input geometry, image decoding and evaluator facilities
 belong to `libraries/viu`; the existing compositor retains window authority.
 
+The header uses app-authored `band` groups over the shared native design solver.
+Menu, title, action and caption alignment follow the desktop profile. Native
+caption widgets and automatic backend framing detection are reusable Viu code;
+the owner retains quit, persistence and reply-delivery rules. Menu form/popup
+queries and native geometry are available through the same Bus surface.
+Compositor-hosted SSD menus/action bars remain an explicit adapter gap.
+
 `HELP`, `dopus.describe`, `dopus.actions` and `dopus.ui.tree` describe the actual
 Bus surface. Semantic intents use `dopus.intent`; native input uses the
 `dopus.ui.*` commands. Application GPU readback and compositor captures are

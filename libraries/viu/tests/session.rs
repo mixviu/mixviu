@@ -222,8 +222,18 @@ fn scene_authored_caption_groups_share_native_controls_and_retire_when_detached(
                 ..Default::default()
             },
             |ui| {
-                frame.show_with_chrome(ui,"Native window",&json!({"window.decorations":"csd"}),true,true);
-                view.set_slots(std::collections::BTreeMap::from([("window.header".into(),frame.geometry["window.header"])] )).unwrap();
+                frame.show_with_chrome(
+                    ui,
+                    "Native window",
+                    &json!({"window.decorations":"csd"}),
+                    true,
+                    true,
+                );
+                view.set_slots(std::collections::BTreeMap::from([(
+                    "window.header".into(),
+                    frame.geometry["window.header"],
+                )]))
+                .unwrap();
                 intents = view.show(ui);
             },
         );

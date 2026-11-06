@@ -80,3 +80,45 @@ Bus ingress bounds, NOT_READY/BUSY and model-ready reply boundaries remain.
 This adapter is isolated lab code. Existing compd, production/reference apps
 and the preserved VT4 binaries remain available. No viud split, replacement
 broker, main merge, production acceptance or performance-parity claim follows.
+
+## File application and window primitives
+
+The Dopus comparison extends the same dispatch with virtual `tree-table`,
+`menubar`, `command-bar`, `property-grid`, `dialog-form`, `image-view` and
+`window-controls`. Navigation, selection, file operations and modal reservations
+remain in the application controller. Native controls emit typed intents and
+expose current subwidget geometry for Bus input automation.
+
+`dock` allocates application-declared edges and a final fill child. Resizable
+edges use `min_fraction` and `max_fraction` for both native dragging and intent
+admission. `split` owns a divider, bounded ratio and double-click reset. Numeric
+admission uses the same native point precision as pointer-generated values.
+
+`band` arranges app-authored `children` using one `groups` entry per child:
+`preferred`, `minimum`, `align` (`left`, `center`, `right`), optional `shrink`
+priority and integer `order`. It reuses the retained renderer-independent design
+solver. Omit `shrink` for a fixed group; authored Mix uses `nil`, while a JSON
+model uses `null`. Lengths are finite nonnegative numbers; `window.captions`
+selects the current theme's three-caption width. Hidden or detached slot-only
+children consume no band space. Malformed model updates refuse transactionally,
+including a required definition, placement or group port removed by a binding.
+
+A scene-declared `window_slot` attaches a dock child to a host-provided rectangle;
+`slot_only` suppresses content while that slot is absent. A native host can use
+`WindowFrame::show_with_chrome` to lend the whole client title band to a scene
+containing `window-controls`. The older `show_with_header` keeps its caption
+group and lends only the remaining title area. Rust callers can use the same
+caption widget through `Widgets::widget` in their own layout.
+
+Caption controls emit an owner `close` intent; minimise/maximise use ordinary
+native viewport commands. The semantic actions are `close`, `minimize` and
+`toggle-maximize`. Owners acknowledge automation and persist/cancel their work
+before closing. Dopus maps these standard window intents without moving file
+policy into Rust. Automatic framing uses the retained native backend detector;
+hosts initialise it with their actual display handle, rather than inferring a
+backend from environment variables alone.
+
+Menu automation opens actual egui popups against fresh geometry. Bar, compact
+button and explicit top-content popup forms share the same application command
+data. Form queries disclose effective fallbacks; compositor-hosted SSD menus
+and action bars are not yet advertised by this adapter.

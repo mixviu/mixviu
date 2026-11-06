@@ -69,9 +69,17 @@ impl WindowFrame {
     ) {
         self.geometry.clear();
         self.close_requested = false;
-        let requested = settings["window.decorations"].as_str().and_then(design::RequestedDecorations::from_name);
-        let actions=design::ActionsPlace::resolve(settings["window.actions_place"].as_str().unwrap_or("row"));
-        let resolved=design::decorations::resolve_with_actions(requested,design::RequestedDecorations::Auto,actions);
+        let requested = settings["window.decorations"]
+            .as_str()
+            .and_then(design::RequestedDecorations::from_name);
+        let actions = design::ActionsPlace::resolve(
+            settings["window.actions_place"].as_str().unwrap_or("row"),
+        );
+        let resolved = design::decorations::resolve_with_actions(
+            requested,
+            design::RequestedDecorations::Auto,
+            actions,
+        );
         self.client = resolved.mode == design::Decorations::Client;
         let server = !self.client;
         if self.server != Some(server) {

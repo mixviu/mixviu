@@ -5230,6 +5230,7 @@ dependencies = [
  "mimedb",
  "mix",
  "png 0.18.1",
+ "raw-window-handle",
  "scene",
  "serde",
  "serde_json",
@@ -5239,6 +5240,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-segmentation",
+ "wayland-client",
 ]
 
 [[package]]
