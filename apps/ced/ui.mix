@@ -35,7 +35,7 @@ fn ced_menus($s)
 end
 fn ced_toolbar($s)
   $enabled=dialog_view($s)==nil
-  return [{id:"help.macros",macro_anchor:true,label:"Macros",icon:"scroll-text",icon_only:true,enabled:$enabled},{id:"view.search",label:"Find",icon:"search",icon_only:true,enabled:$enabled},{id:"help.keys",label:"Keyboard Shortcuts",icon:"keyboard",icon_only:true,enabled:$enabled},{id:"view.mode",label:"Toggle light/dark mode",icon:if $s.look.appearance.mode=="dark" then "sun" else "moon" end,icon_only:true,enabled:$enabled}]
+  return [{id:"help.macros",macro_anchor:true,label:"Macros",icon:"scroll-text",icon_only:true,enabled:$enabled},{id:"view.search",label:"Find",icon:"search",icon_only:true,enabled:$enabled},{id:"help.keys",label:"Keyboard Shortcuts",icon:"keyboard",icon_only:true,enabled:$enabled},{id:"view.mode",label:"Toggle light/dark mode",icon:if $s.look.appearance.mode=="dark" then "sun" else "moon" end,icon_only:true,enabled:true}]
 end
 fn ced_status($s,$t)
   $right=[]
