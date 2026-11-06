@@ -513,12 +513,13 @@ impl Widgets {
                         range[1] = range[1].min(len);
                     }
                 }
+                let rows = whole(&widget.properties["rows"]).unwrap_or(24) as usize;
                 let edit = if widget.kind == "field" {
                     egui::TextEdit::singleline(&mut text)
                 } else if widget.kind == "editor" {
                     egui::TextEdit::multiline(&mut text)
                         .code_editor()
-                        .desired_rows(whole(&widget.properties["rows"]).unwrap_or(24))
+                        .desired_rows(rows)
                         .char_limit(16384)
                 } else {
                     egui::TextEdit::multiline(&mut text).desired_rows(1)

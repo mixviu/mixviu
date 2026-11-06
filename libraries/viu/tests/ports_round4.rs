@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use serde_json::json;
-use std::{path::PathBuf, sync::{Arc, mpsc}, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{Arc, mpsc},
+    time::Duration,
+};
 use viu::runtime::{Completion, Program, Runtime};
 
 fn completion(runtime: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
@@ -11,7 +15,13 @@ fn completion(runtime: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
 #[test]
 fn workshop_core_preserves_discovery_shapes_and_refuses_unsafe_requests() {
     let (tx, rx) = mpsc::channel();
-    let mut runtime = Runtime::new(8, Arc::new(move || { let _ = tx.send(()); }), None);
+    let mut runtime = Runtime::new(
+        8,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+    );
     runtime.load(Program {
         path: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop/probe.mix"),
         source: r#"
@@ -31,7 +41,12 @@ end
     }).unwrap();
     assert!(completion(&runtime, &rx).error.is_none());
     let catalogue = json!(["echo", {"name":"echo"}, {"name":"fail","args":{"text":"string"},"description":"Refuse"}]);
-    runtime.event("probe".into(), json!({"catalogue":catalogue,"command":"echo","text":"{\"text\":\"π\"}"})).unwrap();
+    runtime
+        .event(
+            "probe".into(),
+            json!({"catalogue":catalogue,"command":"echo","text":"{\"text\":\"π\"}"}),
+        )
+        .unwrap();
     let reply = completion(&runtime, &rx).reply.unwrap();
     assert_eq!(reply.rc, 0);
     assert_eq!(reply.body["services"], json!(["echo", "noded"]));
@@ -51,8 +66,20 @@ end
 #[test]
 fn editor_rows_are_bounded_without_changing_text_admission() {
     let editor = viu::widgets::Widget::new("body", "editor", "", json!(""));
-    assert!(editor.clone().with_properties(json!({"rows":8})).validate(&json!("🦀".repeat(16384))).is_ok());
+    assert!(
+        editor
+            .clone()
+            .with_properties(json!({"rows":8}))
+            .validate(&json!("🦀".repeat(16384)))
+            .is_ok()
+    );
     for rows in [json!(0), json!(101), json!(1.5), json!("8")] {
-        assert!(editor.clone().with_properties(json!({"rows":rows})).validate(&json!("")).is_err());
+        assert!(
+            editor
+                .clone()
+                .with_properties(json!({"rows":rows}))
+                .validate(&json!(""))
+                .is_err()
+        );
     }
 }
