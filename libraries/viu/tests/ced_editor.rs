@@ -23,13 +23,23 @@ impl mix::BusHandler for JobsAccepted {
     ) -> mix::evaluator::BusFuture<'a, mix::MixResult<(i32, mix::value::Value)>> {
         Box::pin(async { Ok((0, mix::value::Value::Nil)) })
     }
-    fn emit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a mix::value::Value) -> mix::evaluator::BusFuture<'a, mix::MixResult<()>> {
+    fn emit<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: &'a mix::value::Value,
+    ) -> mix::evaluator::BusFuture<'a, mix::MixResult<()>> {
         Box::pin(async { Ok(()) })
     }
-    fn port_exists<'a>(&'a self, _: &'a str) -> mix::evaluator::BusFuture<'a, mix::MixResult<bool>> {
+    fn port_exists<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> mix::evaluator::BusFuture<'a, mix::MixResult<bool>> {
         Box::pin(async { Ok(false) })
     }
-    fn next_incoming<'a>(&'a self) -> mix::evaluator::BusFuture<'a, Option<mix::evaluator::IncomingEvent>> {
+    fn next_incoming<'a>(
+        &'a self,
+    ) -> mix::evaluator::BusFuture<'a, Option<mix::evaluator::IncomingEvent>> {
         Box::pin(async { None })
     }
 }
