@@ -32,14 +32,14 @@ export MIXOS_NODED_URL=$url
 export MIXOS_COMP_SERVICE=$comp
 export VIU_SERVICE=$service
 try
-  send $service "prefs.ping" body={} timeout=2
+  send $service "prefs.ping" body="{}" timeout=2
   if $rc==0 then
     if $page!=nil then
       $parts=split($page,"/")
-      send $service "prefs.page.open" body={page:$parts[0],row:$parts[1]} timeout=10
+      send $service "prefs.page.open" body=json_encode({page:$parts[0],row:$parts[1]}) timeout=10
       if $rc!=0 then print("prefs: "..json_encode($reply));exit(1) end
     end
-    send $service "prefs.show" body={} timeout=10
+    send $service "prefs.show" body="{}" timeout=10
     if $rc==0 then exit(0) end
     print("prefs: "..json_encode($reply));exit(1)
   end
