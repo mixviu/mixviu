@@ -10,6 +10,8 @@ try
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
   end
   if $rc==0 then
+    $metadata=json_parse(run_argv_must(["cargo","metadata","--locked","--format-version","1"]))
+    print({new_dependencies:map(filter($metadata.packages,fn($p)=contains(["futures","futures-executor","image-webp","xkbcommon"],$p.name) or ($p.name=="memmap2" and $p.version=="0.8.0")),fn($p)={name:$p.name,version:$p.version,licence:$p.license,build_scripts:filter($p.targets,fn($t)=contains($t.kind,"custom-build"))})})
     $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
     $artifact="/var/tmp/viu-app-ports-"..$sha
     mkdir($artifact,{parents:true})

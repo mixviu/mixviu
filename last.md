@@ -40,7 +40,7 @@ pass. Runtime import verifier hits a missing jwt-rsa-test.pem already absent
 at the base revision; no verifier was weakened.
 
 
-CBC 20261106-194851-e7308ce5-a1 passed scoped check/tests/build (118 tests),
+CBC 20261106-194851-e7308ce5-a1 passed scoped check/tests/build (106 tests),
 full log read, worker fmt applied. Artifact SHA256
 47f1e617aa204eba7bc1e9b8bac267247005a543496c4301a9eada3990e7ca3e.
 Owned headless run passed gallery callbacks, real monitord sampling, backdrop
@@ -51,4 +51,13 @@ inspection found hidden empty search fields and reversed CPU sorting; corrected
 in Mix and awaiting fresh harness run. All owned processes confirmed stopped.
 Final gate now requires fmt-check/locked deps and zero worker diff.
 
-Branch: lab/app-ports; head: a6d5e1177e9f712b7589c444e2f60a1b68234c56; steps done: 0/1/2 bounded specimens implemented, final acceptance pending; CBC jobs: 20261106-194851-e7308ce5-a1 green (earlier attempts above).
+
+Fresh headless run passes native focus/text filtering, descending CPU and memory
+sorts, pause stability, refresh while paused and tree query changes. Corrected
+Mix monitor fields are visible in the inspected capture. Backdrop solid and
+five image modes again have AE=0 against original; settings witness captured.
+One native output only; simultaneous multi-output/hotplug acceptance remains
+deferred. A failed intermediate monitor layout used unquoted hyphenated map
+keys; corrected in scene.mix, no tests changed. All owned processes stopped.
+
+Branch: lab/app-ports; head: d1fa11865add9161e0f5ce156ede154ff8127c8d; steps done: 0/1/2 bounded native specimens verified, exact-source final gate pending; CBC jobs: 20261106-194851-e7308ce5-a1 green, 20261106-195718-70b492c0 pending on pre-correction scene.
