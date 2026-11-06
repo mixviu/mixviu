@@ -411,6 +411,12 @@ impl Host {
             if !self.runtime.accepts(&done) {
                 continue;
             }
+            if !done.stderr.is_empty() {
+                tracing::warn!(callback = done.sequence, message = %done.stderr, "Mix callback diagnostic");
+            }
+            if !done.stdout.is_empty() {
+                tracing::info!(callback = done.sequence, message = %done.stdout, "Mix callback output");
+            }
             if let Some(error) = done.error.as_ref() {
                 eprintln!("viu callback {}: {error}", done.sequence);
                 self.error = error.clone();
