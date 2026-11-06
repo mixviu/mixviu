@@ -147,7 +147,8 @@ on chooser.call
       elif $id=="name" then
         if $action=="cancel" then $candidate=ch_effect($candidate,"cancel",{request:$candidate.id})
         else
-          $candidate.name=$v;$candidate.raw_name=nil
+          if $action=="set" or $v!=$candidate.name then $candidate.raw_name=nil end
+          $candidate.name=$v
           if $action=="submit" then $candidate=ch_accept($candidate,false) end
         end
       elif $id=="form" then

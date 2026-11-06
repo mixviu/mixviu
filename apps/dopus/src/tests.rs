@@ -442,3 +442,44 @@ fn mix_chooser_renders_filters_choices_and_pins_replace_acceptance() {
         "A chooser authorises a path; it never writes the file"
     );
 }
+
+#[test]
+fn mix_chooser_preserves_raw_save_name_until_the_field_is_edited() {
+    let dir = tempfile::tempdir().unwrap();
+    let wake: viu::runtime::Wake = Arc::new(|| {});
+    let app_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for edited in [false, true] {
+        let service = viu::chooser::Service::new(
+            7,
+            dir.path().as_os_str().as_encoded_bytes().to_vec(),
+            wake.clone(),
+        )
+        .unwrap();
+        let opened = service.command("choose", &json!({"mode":"save","current_folder":dir.path(),"current_name":{"bytes":"new%FF.txt"}}), "test");
+        assert_eq!(opened["rc"], 0, "{opened}");
+        let id = opened["body"]["request"].as_str().unwrap();
+        let request = service.prepared()[id].open.request.body().unwrap();
+        service.command("ready", &json!({"request":id}), "host");
+        let path = app_dir.join("chooser.mix");
+        let mut worker = Runtime::new(8, wake.clone(), None);
+        let mut jobs = Jobs::new(1, wake.clone());
+        worker.load(Program {
+            source: std::fs::read_to_string(&path).unwrap(), path,
+            scene: "chooser".into(), citizen: "chooser-test".into(),
+        }).unwrap();
+        let seq = worker.event("chooser.open".into(), json!({"id":id,"request":request,"home":dir.path()})).unwrap();
+        let mut model = wait(&worker, &mut jobs, seq).0.model.unwrap();
+        assert_eq!(model["values"]["name"], "new\u{fffd}.txt");
+        if edited {
+            let seq = worker.event("chooser.call".into(), json!({"command":"intent","id":"name","action":"set","value":model["values"]["name"]})).unwrap();
+            model = wait(&worker, &mut jobs, seq).0.model.unwrap();
+        }
+        let seq = worker.event("chooser.call".into(), json!({"command":"intent","id":"name","action":"submit","value":model["values"]["name"]})).unwrap();
+        let model = wait(&worker, &mut jobs, seq).0.model.unwrap();
+        let accepted = service.command("accept", &model["effect"]["body"], "test");
+        assert_eq!(accepted["rc"], 0, "{accepted}");
+        let uri = accepted["outcome"]["uris"][0].as_str().unwrap();
+        assert!(uri.ends_with(if edited { "/new%EF%BF%BD.txt" } else { "/new%FF.txt" }), "{accepted}");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "Choosing a save path must not write it");
+    }
+}
