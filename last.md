@@ -575,3 +575,28 @@ receipt-only checkpoint; the source SHA below is the inspected code, and
 the containing Git commit identifies the hand-off receipt.
 
 branch lab/parity-prefs; head SHA 64e3b7b49707f4e14ac49f6b342315536786db05 (inspected source; receipt-only commit follows); frame not adopted; parity evidence: features/Bus/Prefs unaccepted, P2 contract evidence above, SSIM/regions not measured; CBC job ids: none.
+
+## Prefs frame checkpoint (round 2)
+
+P2 closed by the updated standing brief: pinned gold wins; inventory
+corrections proceed without stopping. The canonical pinned search handler
+returns page/row hits, superseding the older section helper's matches.
+
+Tested source: `48b5b430f56fd7c2101f199ef15cd2cd89cabdde`. Prefs now
+declares the shared gold frame and publishes its frame model; caption close
+is an in-process Mix owner event. CBC `20261107-014533-4e174e67-a1`
+passed locked checks, Viu/viu-engine tests, clippy and build with no worker
+diff. Preparation `20261107-014020-4b3285ad-a1` passed commands but
+returned rc 97 for formatting; its patch was applied.
+Artifact SHA256: `2044c741983b90bdc48ae2bc6ce7c07f461f779341a13dd8df9044ef6659ce51`.
+New embedded test checks real scene mounting and Mix-owned close; existing
+round-two draw test now mounts framed bundles correctly. Mix core tests
+and host-aware lint pass. No complete functional/Bus/live-Prefs/visual
+acceptance is claimed. Feature work continues after this checkpoint.
+
+Native gold exploration retained privately under prefs-parity-20261107:
+42 pages read and captured using private Bus/settingsd/headless compd; all
+four owned PIDs confirmed stopped. Gold Appearance image inspected. This
+is discovery evidence, not a matched candidate acceptance pair.
+
+branch lab/parity-prefs; head SHA 48b5b430f56fd7c2101f199ef15cd2cd89cabdde (tested frame source; receipt-only commit follows); frame adopted; features/Bus/Prefs unaccepted; SSIM/regions not measured; CBC job ids 20261107-014533-4e174e67-a1 green, 20261107-014020-4b3285ad-a1 formatting preparation.
