@@ -30,4 +30,25 @@ mapping; monitor node admission, empty state, 2000-row projection, 2001 refusal.
 Installed-interpreter projection sample: 15.89 ms, not embedded UI latency.
 Private Dopus-style headless harness prepared; not yet run.
 
-Branch: lab/app-ports; head: 1e180c493c45c887c508a0e5fbdeec130f158800; steps done: none accepted; CBC jobs: 20261106-192006-425c8dff-a1 (lock update required), 20261106-192201-8c092192 (queued owner stopped), 20261106-193321-957e2f64-a1 (logging import fix required).
+
+CBC 20261106-194334-64190f42-a1 compiled successfully; 50 library unit tests
+and preliminary integration tests passed. New scene test correctly refused
+f64-normalised image-fill RGB channels. Validator/drawing fixed without
+changing tests; literal bundle argument and backdrop callback tests passed.
+Full saved log read. Static seed, external-pin and native-Bus provenance checks
+pass. Runtime import verifier hits a missing jwt-rsa-test.pem already absent
+at the base revision; no verifier was weakened.
+
+
+CBC 20261106-194851-e7308ce5-a1 passed scoped check/tests/build (118 tests),
+full log read, worker fmt applied. Artifact SHA256
+47f1e617aa204eba7bc1e9b8bac267247005a543496c4301a9eada3990e7ca3e.
+Owned headless run passed gallery callbacks, real monitord sampling, backdrop
+colour/five modes/output override/settings change; screenshots inspected.
+All six original/new backdrop comparison captures have AE=0 at 1280x900.
+Original Monitor inspected; differences are in the feature inventory. Visual
+inspection found hidden empty search fields and reversed CPU sorting; corrected
+in Mix and awaiting fresh harness run. All owned processes confirmed stopped.
+Final gate now requires fmt-check/locked deps and zero worker diff.
+
+Branch: lab/app-ports; head: a6d5e1177e9f712b7589c444e2f60a1b68234c56; steps done: 0/1/2 bounded specimens implemented, final acceptance pending; CBC jobs: 20261106-194851-e7308ce5-a1 green (earlier attempts above).

@@ -3,7 +3,7 @@
 -- CBC only. Formatting/lock adaptations are returned as a patch, never hidden.
 $rc=0
 try
-  for $a in [["cargo","fmt","--all"],["cargo","check","--all-targets","-p","viu","-p","viu-client","-p","viu-gallery"],["cargo","test","--locked","-p","viu","-p","viu-client","-p","viu-gallery"],["cargo","build","--locked","-p","viu-client","--bin","viu"]]
+  for $a in [["cargo","fmt","--all","--","--check"],["cargo","check","--locked","--all-targets","-p","viu","-p","viu-client","-p","viu-gallery"],["cargo","test","--locked","-p","viu","-p","viu-client","-p","viu-gallery"],["cargo","clippy","--locked","--all-targets","-p","viu","-p","viu-client","-p","viu-gallery"],["cargo","build","--locked","-p","viu-client","--bin","viu"]]
     print({argv:$a})
     $r=run_argv($a,{env:{CARGO_BUILD_JOBS:"6"},timeout:1800,max_output:8000000})
     print($r)
@@ -17,9 +17,11 @@ try
     print({artifact:$artifact,sha256:hash_file($artifact.."/viu","sha256")})
   end
 finally
+  $diff=run_argv_must(["git","diff","--binary"])
   print("APP_PORTS_PATCH_BEGIN")
-  print(run_argv_must(["git","diff","--binary"]))
+  print($diff)
   print("APP_PORTS_PATCH_END")
   print(run_argv_must(["git","checkout","-q","--","."]))
+  if $diff!="" then $rc=97 end
 end
 exit($rc)

@@ -6,6 +6,7 @@ $refused=false
 try $c.target("bad.node") catch $message $refused=true end
 if not $refused then raise("TARGET","Invalid node accepted") end
 $s=$c.initial()
+if $c.query($s).reverse!=false or $c.query($s).sort!="cpu" then raise("SORT","Match monitord's default descending CPU contract") end
 if len($c.project($s).table.initial.rows)!=0 then raise("EMPTY","No synthetic process rows") end
 $s.processes=[]
 for $i=1 to 2000

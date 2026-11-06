@@ -49,7 +49,7 @@ on monitor.node
 end
 on monitor.sort
   if not contains(["name","pid","user","cpu","memory","io"],$event.args.column) then raise("SORT","Unknown column") end
-  $state.sort=$event.args.column;$state.reverse=$event.args.reverse ?? true
+  $state.sort=$event.args.column;$state.reverse=$event.args.reverse ?? false
   $state=refresh_monitor($state);publish_monitor($state)
   reply(0,"{}")
 end
@@ -84,7 +84,8 @@ on monitor.intent
     end
   elif $a.id=="processes" then
     if $a.action=="sort" then
-      $state.sort=$a.value.column;$state.reverse=not $state.reverse;$state=refresh_monitor($state)
+      $state.reverse=if $state.sort==$a.value.column then not $state.reverse else false end
+      $state.sort=$a.value.column;$state=refresh_monitor($state)
     elif $a.action=="select" then $state.selected=to_number($a.value.key) end
   end
   publish_monitor($state);reply(0,"{}")

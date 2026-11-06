@@ -21,6 +21,27 @@ It supports fill, fit, centre, tile and stretch. File decoding runs off the UI
 thread with regular-file, byte, dimension and allocation limits. PNG, JPEG and
 WebP use pure Rust decoders. Tiny-image tiling is bounded to 4096 quads.
 
+Native additions are shared: bundle loader 138 lines, host 431 lines, retained
+layer backend 2,211 lines across six files, plus the bounded image-fill and
+decoder-selector/widget-admission extensions. The three bundles add zero Rust.
+No gallery header, catalogue or reducer moved into native code. The original
+layer backend's logging calls use Viu tracing; its new close hook waits for
+native reply delivery. Import hashes and those adaptations are recorded in
+`provenance/app-ports-layer.json`; the thumbnail import retains its earlier hash
+and records the explicit decoder-selector extension in `dopus-native.json`.
+
+New locked packages are futures/futures-executor (native synchronous GPU setup),
+image-webp (pure Rust image decoder), xkbcommon (system keyboard binding) and
+its memmap2 version. These follow the retained layer backend; no C source is
+vendored or compiled by these additions. System Wayland/XKB remain edge
+libraries of Viu; the Mix library gains no desktop dependency.
+
+Layer captures use the compositor's existing capture command; `viu.capture`
+explicitly refuses on layers because the eframe readback applies to windows.
+The native headless reference exposes one output. Real multi-output/hotplug
+acceptance remains open, despite retaining the original per-output backend and
+testing independent Mix output projections.
+
 The old gallery comparator remains under `apps/gallery-reference` to retain
 its tests and independent Rust oracle; it is not used by the bundle host.
 
