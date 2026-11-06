@@ -319,7 +319,7 @@ impl Host {
                 session.hint("bus.connected", &json!({}));
                 self.noticed_drops = drops;
             }
-            if let Some(update) = session.poll() {
+            if let Some(mut update) = session.poll() {
                 match crate::appearance::install_session(
                     ui.ctx(),
                     &update,
@@ -330,6 +330,7 @@ impl Host {
                     Ok(value) => {
                         self.last_ui = value;
                         self.session_appearance = true;
+                        update["appearance"]["mode"]=json!(if ui.visuals().dark_mode {"dark"}else{"light"});
                     }
                     Err(error) => self.error = error,
                 }

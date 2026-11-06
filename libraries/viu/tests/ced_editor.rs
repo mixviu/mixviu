@@ -136,7 +136,10 @@ publish_ced($state)
     runtime.event("viu.frame.close".into(), json!({})).unwrap();
     let refused = done(&runtime, &rx);
     assert!(refused.error.is_none(), "{refused:?}");
-    assert_eq!(docs.call("read", "one", json!({})).unwrap()["text"], "unsaved λ");
+    assert_eq!(
+        docs.call("read", "one", json!({})).unwrap()["text"],
+        "unsaved λ"
+    );
     runtime
         .event(
             "viu.frame.intent".into(),

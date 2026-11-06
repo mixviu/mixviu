@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Shared application frame policy. Apps supply their own actions and state.
 fn apply($model,$options)
-  $model.frame={identity:$options.identity ?? true,icon:"icon:"..$options.icon,groups:{"gold-captions":{preferred:"window.captions",minimum:"window.captions",align:"window.captions",shrink:nil,order:4},"gold-icon":{preferred:40,minimum:40,align:"left",shrink:nil,order:0},"gold-menu":{preferred:320,minimum:280,align:"left",shrink:1,order:1},"gold-title":{preferred:"content",minimum:0,align:"center",shrink:0,order:2},"gold-toolbar":{preferred:180,minimum:36,align:"right",shrink:1,order:3}}}
+  $model.frame={identity:$options.identity ?? true,icon:"icon:"..$options.icon,groups:{"gold-captions":{preferred:"window.captions",minimum:"window.captions",align:"window.captions",shrink:nil,order:4},"gold-icon":{preferred:40,minimum:40,align:"left",shrink:nil,order:0},"gold-menu":{preferred:320,minimum:280,align:"left",shrink:1,order:1},"gold-title":{preferred:"content",minimum:0,align:"center",shrink:0,order:2},"gold-toolbar":{preferred:132,minimum:36,align:"right",shrink:1,order:3}}}
   $values=$model.values ?? {}
   $values["gold-icon"]=$options.icon
   $values["gold-title"]=$options.title
