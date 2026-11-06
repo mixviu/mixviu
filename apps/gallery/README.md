@@ -1,3 +1,13 @@
+# Mix gallery bundle
+
+Run `viu run apps/gallery`. The generic engine loads scene.mix and gallery.mix;
+there is no per-app Rust host in this bundle. Contract metadata supplies only
+launch data and Bus command names. The historical paired comparator and its
+unchanged tests live in apps/gallery-reference. The older commands below
+describe that comparator, not the generic host. Generic native controls use
+`viu.ui.*`, `viu.state`, `viu.capture` and `viu.quit`; semantic behaviour uses
+`gallery.execute`.
+
 # Paired Viu widget galleries
 
 Two lab applications with independent Rust/Mix composition and state reduction,

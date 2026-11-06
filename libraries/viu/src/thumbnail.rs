@@ -233,7 +233,11 @@ impl<K> Drop for Decoder<K> {
 
 /// The decoder thread: take the next request, decode it, reply, repaint;
 /// stop when the owner is gone.
-fn decode_requests<K>(shared: &Shared<K>, tx: &mpsc::Sender<(u64, Decoded<K>)>, decode: fn(&Path) -> Option<egui::ColorImage>) {
+fn decode_requests<K>(
+    shared: &Shared<K>,
+    tx: &mpsc::Sender<(u64, Decoded<K>)>,
+    decode: fn(&Path) -> Option<egui::ColorImage>,
+) {
     loop {
         let (id, key, path, ctx) = {
             let mut inbox = shared.inbox.lock().unwrap_or_else(|e| e.into_inner());

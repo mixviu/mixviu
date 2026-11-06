@@ -15,8 +15,11 @@ use crate::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    scene_source: String,
+    loaded: bool,
     model: Value,
     output: Option<String>,
+    outputs: BTreeMap<String,Value>,
     runtime: Runtime,
     view: SceneView,
     bus: Endpoint,
@@ -44,7 +47,7 @@ impl Host {
                 )
             })
             .collect();
-        json!({"ready":self.ready,"model":self.view.model(),"revision":self.view.revision,"geometry":geometry,"error":self.error})
+        json!({"ready":self.ready,"model":self.view.model(),"revision":self.view.revision,"geometry":geometry,"outputs":self.outputs,"error":self.error})
     }
     fn dispatch(
         &mut self,
@@ -78,6 +81,7 @@ impl Host {
             _ if !self.ready => {
                 let _ = r.reply.send((10, json!({"error_code":"NOT_READY"})));
             }
+            "viu.capture" if self.output.is_some() => {let _=r.reply.send((10,json!({"error_code":"LAYER_CAPTURE_UNAVAILABLE","message":"Use the compositor capture endpoint for layer surfaces"})));}
             "viu.capture" => match self.capture.request(ctx, r.args["name"].as_str()) {
                 Ok(_) => self.capture_reply = Some(r.reply),
                 Err(e) => {
@@ -129,7 +133,10 @@ impl Host {
             if self.error.is_empty() {
                 if let Some(model) = done.model {
                     let projected=self.output.as_ref().and_then(|output|model["surfaces"].get(output)).unwrap_or(&model).clone();
-                    match self.view.apply_model(projected) {
+                    let result=if self.loaded {self.view.apply_model(projected)} else {
+                        SceneView::with_model(&self.scene_source,projected).map(|view|{self.view=view;self.loaded=true;})
+                    };
+                    match result {
                         Ok(()) => {self.ready = true;self.model=model;},
                         Err(e) => self.error = e,
                     }
@@ -163,7 +170,9 @@ impl Host {
             }
         }
         if let Some(projected)=self.output.as_ref().and_then(|output|self.model["surfaces"].get(output)).or_else(||self.output.as_ref().map(|_|&self.model)) {
-            if self.view.model()!=projected {if let Err(e)=self.view.apply_model(projected.clone()){self.error=e;}}
+            if self.ready && !self.loaded {
+                match SceneView::with_model(&self.scene_source,projected.clone()){Ok(view)=>{self.view=view;self.loaded=true;},Err(e)=>self.error=e}
+            } else if self.loaded && self.view.model()!=projected {if let Err(e)=self.view.apply_model(projected.clone()){self.error=e;}}
         }
         if self.ready {
             for event in self.view.show(ui) {
@@ -177,7 +186,7 @@ impl Host {
             if let Some(reply) = self.input_reply.take() {
                 let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, self.state()));
             }
-        } else {
+        } else if !self.input.now.is_empty() || !self.input.later.is_empty() {
             ui.ctx().request_repaint();
         }
         if let Some((_, result)) = self.capture.poll(ui.ctx()) {
@@ -193,8 +202,8 @@ impl Host {
                 self.dispatch("viu.tick".into(), json!({}), BTreeMap::new(), None);
                 self.next_tick = Instant::now() + tick;
             }
-            ui.ctx()
-                .request_repaint_after(self.next_tick.saturating_duration_since(Instant::now()));
+            let wait=self.next_tick.saturating_duration_since(Instant::now());
+            ui.ctx().request_repaint_after(if wait.is_zero(){tick}else{wait});
         }
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
@@ -226,9 +235,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
                 .unwrap_or_else(std::env::temp_dir)
                 .join("viu-captures");
             Host {
-                model: json!({}), output: None,
+                scene_source:bundle.scene, loaded:false,
+                model: json!({}), output: None, outputs:BTreeMap::new(),
                 runtime,
-                view: SceneView::new(&bundle.scene).expect("scene"),
+                view: loading_view(),
                 bus,
                 pending: BTreeMap::new(),
                 inflight: BTreeSet::new(),
@@ -250,8 +260,7 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     if bundle.manifest.surface=="background" {
         let mut options=crate::layer::LayerOptions::background(&bundle.manifest.service);
         options.exclusive_zone=0;
-        let scene=bundle.scene.clone();
-        let layer=LayerHost{bundle:Some(bundle),host:None,scene,views:BTreeMap::new(),contexts:Arc::new(std::sync::Mutex::new(Vec::new()))};
+        let layer=LayerHost{bundle:Some(bundle),host:None,views:BTreeMap::new(),contexts:Arc::new(std::sync::Mutex::new(Vec::new()))};
         if let Err(e)=crate::layer::run(options,layer){eprintln!("viu layer: {e}");std::process::exit(1);}
         return Ok(());
     }
@@ -263,8 +272,8 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     }))
 }
 struct LayerHost {
-    bundle: Option<Bundle>, host: Option<Host>, scene: String,
-    views: BTreeMap<String,SceneView>,
+    bundle: Option<Bundle>, host: Option<Host>,
+    views: BTreeMap<String,(SceneView,bool)>,
     contexts: Arc<std::sync::Mutex<Vec<egui::Context>>>,
 }
 impl crate::layer::LayerProgram for LayerHost {
@@ -280,15 +289,28 @@ impl crate::layer::LayerProgram for LayerHost {
     fn show(&mut self,ui:&mut egui::Ui,surface:&crate::layer::SurfaceInfo){
         let host=self.host.as_mut().unwrap();
         let output=surface.output.clone().unwrap_or_default();
-        let view=self.views.entry(output.clone()).or_insert_with(||SceneView::new(&self.scene).expect("layer scene"));
+        let frames=host.outputs.get(&output).and_then(|o|o["presented_frames"].as_u64()).unwrap_or(0);
+        host.outputs.insert(output.clone(),json!({"width":surface.width,"height":surface.height,"scale":surface.scale,"presented_frames":frames}));
+        let (view,loaded)=self.views.entry(output.clone()).or_insert_with(||(loading_view(),false));
         std::mem::swap(&mut host.view,view);
+        std::mem::swap(&mut host.loaded,loaded);
         host.output=Some(output);
         // Layer hosts use the same owner loop; eframe's Frame is not needed.
         host.frame(ui);
         std::mem::swap(&mut host.view,view);
+        std::mem::swap(&mut host.loaded,loaded);
     }
     fn removed(&mut self,ctx:&egui::Context,surface:&crate::layer::SurfaceInfo){
-        self.views.remove(&surface.output.clone().unwrap_or_default());
+        let output=surface.output.clone().unwrap_or_default();
+        self.views.remove(&output);
+        if let Some(host)=&mut self.host {host.outputs.remove(&output);}
         self.contexts.lock().unwrap().retain(|c|c!=ctx);
     }
+    fn presented(&mut self,surface:&crate::layer::SurfaceInfo){
+        let output=surface.output.clone().unwrap_or_default();
+        if let Some(host)=&mut self.host {if let Some(state)=host.outputs.get_mut(&output){state["presented_frames"]=json!(state["presented_frames"].as_u64().unwrap_or(0)+1);state["presented_revision"]=json!(self.views.get(&output).map(|(v,_)|v.revision));}}
+    }
+}
+fn loading_view()->SceneView {
+    SceneView::new("---\nscene: 1\nname: loading\ncitizen: loading\n---\n```mix\n{root:{widget:\"text\",text:\"Loading…\"}}\n```\n").expect("static loading scene")
 }

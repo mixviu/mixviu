@@ -90,8 +90,8 @@ pub fn initial() -> Value {
         .iter()
         .map(|w| (w.id.clone(), w.initial.clone()))
         .collect();
-    let rows: Value =
-        serde_json::from_str(include_str!("../../gallery/rows.json")).expect("captured gallery dataset");
+    let rows: Value = serde_json::from_str(include_str!("../../gallery/rows.json"))
+        .expect("captured gallery dataset");
     json!({"widgets":widgets.iter().map(Widget::encode).collect::<Vec<_>>(),"datasets":{"examples":rows},"values":values,"expanded":{"tree":true},"sorted":{"table":false},"serial":0,"activations":0,"last_activation":null,"last":"Ready"})
 }
 pub fn apply(model: &mut Value, action: &Value) {

@@ -4,5 +4,5 @@ name: backdrop
 citizen: backdrop
 ---
 ```mix
-{root:{widget:"control",definition:{id:"root",kind:"image-fill",label:"",initial:{phase:"none",colour:[30,30,46],fit:"fill"}},value:"= $model.values.root"}}
+{root:{widget:"control",definition:{id:"root",kind:"image-fill",label:"",initial:{phase:"none",colour:[30,30,46],fit:"fill"}}}}
 ```

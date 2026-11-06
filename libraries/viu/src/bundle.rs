@@ -118,7 +118,7 @@ mod tests {
                 .unwrap()
                 .program
                 .source
-                .contains("a\\\"b")
+                .starts_with("$app_args = json_parse(")
         );
         for host in [
             serde_json::json!({"behaviour":"../app.mix"}),

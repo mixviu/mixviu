@@ -84,7 +84,9 @@ pub struct SurfaceInfo {
 
 /// An egui program drawn on layer surfaces.
 pub trait LayerProgram {
-    fn should_close(&self) -> bool { false }
+    fn should_close(&self) -> bool {
+        false
+    }
     /// Callback withholding/resumption, per surface. No visibility polling.
     fn visibility(&mut self, _ctx: &egui::Context, _visible: bool) {}
     /// Optional host policy for egui requests, including internally generated

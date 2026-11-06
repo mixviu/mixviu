@@ -145,7 +145,8 @@ fn decode_surface(path: &std::path::Path) -> Option<egui::ColorImage> {
     let mut reader=image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
     if !matches!(reader.format(),Some(image::ImageFormat::Png|image::ImageFormat::Jpeg|image::ImageFormat::WebP)){return None;}
     let mut limits=image::Limits::default();limits.max_image_width=Some(8192);limits.max_image_height=Some(8192);limits.max_alloc=Some(128*1024*1024);reader.limits(limits);
-    let image=reader.decode().ok()?.to_rgba8();
+    let image=reader.decode().ok()?;
     if u64::from(image.width())*u64::from(image.height())>16_777_216{return None;}
+    let image=image.to_rgba8();
     Some(egui::ColorImage::from_rgba_unmultiplied([image.width() as usize,image.height() as usize],image.as_raw()))
 }

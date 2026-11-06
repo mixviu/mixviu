@@ -164,8 +164,11 @@ fn shared_widgets_accept_non_gallery_content() {
 fn every_widget_renders_in_shared_native_path() {
     let ctx = egui::Context::default();
     viu::icons::install(&ctx);
-    let mut view =
-        SceneView::with_model(include_str!("../../gallery/scene.mix"), controller::initial()).unwrap();
+    let mut view = SceneView::with_model(
+        include_str!("../../gallery/scene.mix"),
+        controller::initial(),
+    )
+    .unwrap();
     let mut output = ctx.run_ui(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -245,7 +248,9 @@ fn reload_retires_inflight_request_and_replies_superseded() {
     completion(&runtime);
     let model = controller::initial();
     let mut gallery = Gallery {
-        view: Some(SceneView::with_model(include_str!("../../gallery/scene.mix"), model.clone()).unwrap()),
+        view: Some(
+            SceneView::with_model(include_str!("../../gallery/scene.mix"), model.clone()).unwrap(),
+        ),
         model,
         definitions: controller::composition(),
         scene_source: include_str!("../../gallery/scene.mix").into(),

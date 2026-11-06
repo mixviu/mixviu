@@ -10,10 +10,21 @@ use std::sync::{
 /// Reuse native widget type/range/enabled admission from any Mix reducer.
 pub(crate) fn widget_admit() -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
-        let fail=|msg:String|MixError::RuntimeError{msg,span:None};
-        let [definition,model,Value::String(action),value]=args.as_slice() else {return Err(fail("viu_widget_admit expects definition, model, action, value".into()));};
-        let widget=crate::widgets::Widget::decode(&crate::runtime::to_json(definition)?).map_err(fail)?;
-        widget.admit(&crate::runtime::to_json(model)?,action,&crate::runtime::to_json(value)?).map_err(fail)?;
+        let fail = |msg: String| MixError::RuntimeError { msg, span: None };
+        let [definition, model, Value::String(action), value] = args.as_slice() else {
+            return Err(fail(
+                "viu_widget_admit expects definition, model, action, value".into(),
+            ));
+        };
+        let widget =
+            crate::widgets::Widget::decode(&crate::runtime::to_json(definition)?).map_err(fail)?;
+        widget
+            .admit(
+                &crate::runtime::to_json(model)?,
+                action,
+                &crate::runtime::to_json(value)?,
+            )
+            .map_err(fail)?;
         Ok(Value::Bool(true))
     })
 }
