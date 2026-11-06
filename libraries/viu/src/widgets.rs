@@ -426,7 +426,13 @@ impl Widgets {
             .unwrap_or(&definition.initial);
         ui.push_id(&definition.id, |ui| {
             ui.add_enabled_ui(definition.properties["enabled"] != false, |ui| {
-                self.draw(ui, definition, value, model, &mut intents)
+                if definition.properties["frame"] == "dock" {
+                    toolkit::bars::dock_frame(ui.ctx()).show(ui, |ui| {
+                        self.draw(ui, definition, value, model, &mut intents);
+                    });
+                } else {
+                    self.draw(ui, definition, value, model, &mut intents);
+                }
             });
         });
         intents

@@ -16,7 +16,7 @@ node:{widget:"control",definition:"= $model.node_choice",on_intent:"monitor.inte
 filter:{widget:"control",definition:{id:"filter",kind:"field",label:"Filter processes",initial:"",properties:{placeholder:"Filter processes"}},on_intent:"monitor.intent"},
 tree:{widget:"control",definition:{id:"tree",kind:"toggle",label:"Tree",initial:false,properties:{text:"Show as tree"}},on_intent:"monitor.intent"},
 "end-task":{widget:"control",definition:"= $model.end_button",on_intent:"monitor.intent"},
-content:{widget:"column",padding:2,children:["processes","performance"]},
+content:{widget:"column",padding:0,children:["processes","performance"]},
 performance:{widget:"control",hidden:"= $model.performance_hidden",definition:"= $model.performance_view",on_intent:"monitor.intent"},
 processes:{widget:"control",hidden:"= $model.processes_hidden",definition:"= $model.table",on_intent:"monitor.intent"}
 }

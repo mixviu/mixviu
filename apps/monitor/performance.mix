@@ -20,7 +20,7 @@ end
 fn graph($s,$id,$title,$keys,$names,$hues,$format,$scale,$peak,$height)
   $series=[]
   for $i=0 to len($keys)-1 push($series,{name:$names[$i],hue:$hues[$i],values:ring($s,$keys[$i])}) end
-  return {kind:"chart",id:$id,chart:{context:$s.node,title:$title,series:$series,samples:60,interval_s:$s.snapshot.interval_s ?? 1,height:$height,format:$format,scale:$scale,peak:$peak}}
+  return {kind:"chart",id:$id,chart:{context:$s.node,title:$title,series:$series,samples:60,interval_s:$s.snapshot.interval_s ?? 1,height:if $height<1 then 120 else $height end,height_share:if $height<1 then $height else nil end,format:$format,scale:$scale,peak:$peak}}
 end
 fn figures($pairs,$columns) return {kind:"figures",columns:$columns,items:map($pairs,fn($p)={label:$p[0],value:$p[1]})} end
 fn header($title,$detail) return {kind:"heading",title:$title,detail:$detail ?? ""} end
@@ -45,7 +45,7 @@ fn item($s,$key)
 end
 fn cpu($s)
   $v=$s.snapshot;$c=$v.cpu
-  $blocks=[header("CPU",$c.model),{kind:"small",text:"Utilisation % · 60 s"},graph($s,"cpu-main","",["cpu.busy"],["Utilisation"],["accent"],"percent","percent",100,180),gap(8)]
+  $blocks=[header("CPU",$c.model),{kind:"small",text:"Utilisation % · 60 s"},graph($s,"cpu-main","",["cpu.busy"],["Utilisation"],["accent"],"percent","percent",100,0.3),gap(8)]
   $cores=$c.per_core ?? []
   if len($cores)>1 then
     $items=map($cores,fn($c)={name:"CPU "..to_string($c.cpu),values:ring($s,"cpu.core."..to_string($c.cpu)..".busy"),peak:100,hue:"accent",format:"percent"})
@@ -53,7 +53,10 @@ fn cpu($s)
   end
   $pairs=[["Utilisation",$f.percent($c.busy)],["User",$f.percent($c.user)],["System",$f.percent($c.system)],["I/O wait",$f.percent($c.iowait)],["Logical processors",to_string($c.cores)]]
   $mhz=filter(map($cores,fn($c)=$c.mhz),fn($m)=$m!=nil)
-  if len($mhz)>0 then push($pairs,["Speed",$f.mhz(floor(sum($mhz)/len($mhz)))]) end
+  if len($mhz)>0 then
+    $sum=0;for $value in $mhz $sum=$sum+$value end
+    push($pairs,["Speed",$f.mhz(floor($sum/len($mhz)))])
+  end
   if $v.load!=nil then push($pairs,["Load average",fmt("%.2f  %.2f  %.2f",$v.load.one,$v.load.five,$v.load.fifteen)]) end
   if $v.tasks!=nil then push($pairs,["Tasks",to_string($v.tasks.total)]) end
   if $v.uptime_s!=nil then push($pairs,["Up time",$f.uptime($v.uptime_s)]) end
@@ -61,7 +64,7 @@ fn cpu($s)
 end
 fn memory($s)
   $v=$s.snapshot;$m=$v.memory
-  $blocks=[header("Memory",$f.bytes($m.total)),{kind:"small",text:"In use · 60 s"},graph($s,"memory-main","",["mem.used"],["In use"],["accent-plus"],"bytes","capacity",$m.total,240),gap(8),{kind:"meter",share:if $m.total>0 then $m.used/$m.total else 0 end,hue:"accent-plus"},gap(8)]
+  $blocks=[header("Memory",$f.bytes($m.total)),{kind:"small",text:"In use · 60 s"},graph($s,"memory-main","",["mem.used"],["In use"],["accent-plus"],"bytes","capacity",$m.total,0.4),gap(8),{kind:"meter",share:if $m.total>0 then $m.used/$m.total else 0 end,hue:"accent-plus"},gap(8)]
   $pairs=[["In use",$f.bytes($m.used)],["Available",$f.bytes($m.available ?? 0)],["Cached",$f.bytes($m.cached ?? 0)],["Total",$f.bytes($m.total)]]
   if $v.swap.total>0 then push($pairs,["Swap",$f.bytes($v.swap.used).." / "..$f.bytes($v.swap.total)]) end
   push($blocks,figures($pairs,2));return $blocks
@@ -70,7 +73,7 @@ fn disk($s,$name)
   $d=filter($s.snapshot.disks,fn($d)=$d.name==$name)[0]
   $p="disk."..$name
   $top=max(peak(ring($s,$p..".read"),1048576),peak(ring($s,$p..".write"),1048576))
-  $blocks=[header("Disk "..$name,$d.model),{kind:"small",text:"Active time % · 60 s"},graph($s,$p.."-busy","",[$p..".busy"],["Active time"],["warning"],"percent","percent",100,180),gap(8),graph($s,$p.."-rates","Read / Write · "..$f.rate($top).." · 60 s",[$p..".read",$p..".write"],["Read","Write"],["warning","accent-plus"],"rate","rate",$top,150),gap(8),figures([["Active time",if $d.busy==nil then "—" else $f.percent($d.busy) end],["Read",$f.rate($d.read_bps)],["Write",$f.rate($d.write_bps)]],3)]
+  $blocks=[header("Disk "..$name,$d.model),{kind:"small",text:"Active time % · 60 s"},graph($s,$p.."-busy","",[$p..".busy"],["Active time"],["warning"],"percent","percent",100,0.3),gap(8),graph($s,$p.."-rates","Read / Write · "..$f.rate($top).." · 60 s",[$p..".read",$p..".write"],["Read","Write"],["warning","accent-plus"],"rate","rate",$top,0.25),gap(8),figures([["Active time",if $d.busy==nil then "—" else $f.percent($d.busy) end],["Read",$f.rate($d.read_bps)],["Write",$f.rate($d.write_bps)]],3)]
   $mounts=filter($s.snapshot.filesystems ?? [],fn($f)=contains($f.device,$name))
   if len($mounts)>0 then
     push($blocks,gap(10));push($blocks,{kind:"small",text:"Filesystems"})
@@ -81,7 +84,7 @@ end
 fn network($s,$name)
   $n=filter($s.snapshot.net,fn($n)=$n.name==$name)[0];$p="net."..$name
   $top=max(peak(ring($s,$p..".rx"),1024),peak(ring($s,$p..".tx"),1024))
-  $blocks=[header("Network "..$name,$n.state),graph($s,$p.."-rates","Receive / Send · "..$f.rate($top).." · 60 s",[$p..".rx",$p..".tx"],["Receive","Send"],["accent-minus","accent-plus"],"rate","rate",$top,270),gap(8)]
+  $blocks=[header("Network "..$name,$n.state),graph($s,$p.."-rates","Receive / Send · "..$f.rate($top).." · 60 s",[$p..".rx",$p..".tx"],["Receive","Send"],["accent-minus","accent-plus"],"rate","rate",$top,0.45),gap(8)]
   $pairs=[["Receive",$f.rate($n.rx_bps)],["Send",$f.rate($n.tx_bps)],["State",$n.state ?? "—"]]
   if $n.speed_mbps!=nil then push($pairs,["Link speed",to_string($n.speed_mbps).." Mbit/s"]) end
   push($pairs,["Total ↓",$f.bytes($n.rx_bytes)]);push($pairs,["Total ↑",$f.bytes($n.tx_bytes)])
@@ -138,5 +141,5 @@ fn project($s)
     $items=map($keys,fn($key)=item($s,$key))
     $blocks=if $selected=="cpu" then cpu($s) elif $selected=="memory" then memory($s) elif starts_with($selected,"disk:") then disk($s,slice($selected,5)) elif starts_with($selected,"net:") then network($s,slice($selected,4)) else tcp($s) end
   else push($blocks,{kind:"small",text:"Waiting for the first reading…"}) end
-  return {id:"performance",kind:"dashboard",label:"Performance",initial:{sidebar_width:250,compact_width:640,selected:$selected,items:$items,blocks:$blocks,interval_s:if $s.snapshot!=nil then $s.snapshot.interval_s ?? 1 else 1 end},properties:{}}
+  return {id:"performance",kind:"dashboard",label:"Performance",initial:{sidebar_width:250,compact_width:640,selected:$selected,items:$items,blocks:$blocks,interval_s:if $s.snapshot!=nil then $s.snapshot.interval_s ?? 1 else 1 end},properties:{frame:"dock"}}
 end

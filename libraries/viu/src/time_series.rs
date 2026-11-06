@@ -35,6 +35,12 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
     {
         return Err("invalid chart units or scale".into());
     }
+    if !value["height_share"].is_null() && value["height_share"].as_f64().is_none_or(|n| !n.is_finite() || n <= 0.0 || n > 1.0) {
+        return Err("invalid chart height share".into());
+    }
+    if !value["annotations"].is_null() && value["annotations"].as_array().is_none_or(|a| a.len() > 6000 || a.iter().any(|n| !n.is_null() && n.as_str().is_none_or(|s| s.len() > 4096))) {
+        return Err("invalid chart annotations".into());
+    }
     for item in series {
         if !item["name"].is_string()
             || item["values"].as_array().is_none_or(|a| {
@@ -128,10 +134,8 @@ pub(crate) fn draw(ui: &mut Ui, id: &str, value: &serde_json::Value) -> egui::Re
         "count-rate" => count_rate,
         _ => percent,
     };
-    let size = Vec2::new(
-        ui.available_width(),
-        value["height"].as_f64().unwrap() as f32,
-    );
+    let height = value["height_share"].as_f64().map_or(value["height"].as_f64().unwrap() as f32, |share| (ui.available_height()*share as f32).clamp(120.0,320.0));
+    let size = Vec2::new(ui.available_width(),height);
     ui.scope(|ui| {
         let chart = Chart {
             series: &series,
