@@ -561,6 +561,15 @@ impl BusHandler for Local {
         body: &'a str,
     ) -> BusFuture<'a, MixResult<()>> {
         Box::pin(async move {
+            // Mix synthesises NO_REPLY when a clean handler returns without
+            // reply(). The host now owns that obligation after local deferral.
+            // Explicit replies and fault replies still follow normal admission.
+            if self.deferred.borrow().is_some()
+                && rc == mix::evaluator::NO_REPLY_RC
+                && body == mix::evaluator::NO_REPLY_BODY
+            {
+                return Ok(());
+            }
             if self.reply.borrow().is_some() {
                 return Err(failure("callback already replied"));
             }

@@ -147,7 +147,7 @@ impl Endpoint {
                     let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;
                     responses.spawn(async move{
                         let ack=Delivery{state:delivery,wake:wake.clone()};
-                        let answer=if admitted{match tokio::time::timeout(Duration::from_secs(10),response).await{Ok(Ok(value))=>value,_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
+                        let answer=if admitted{match tokio::time::timeout(Duration::from_secs(35),response).await{Ok(Ok(value))=>value,_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
                         let sent=matches!(tokio::time::timeout(Duration::from_secs(2),native.respond(&command,answer.0,&answer.1.to_string())).await,Ok(Ok(())));
                         ack.state.store(if sent{1}else{2},Ordering::Release);wake();
                         if (quit||close_after_reply.load(Ordering::Acquire))&&answer.0==0&&sent{close.store(true,Ordering::Release);wake();}
