@@ -4,12 +4,14 @@ $MAX_LEVEL = 150
 fn snapshot($runtime_dir)
   send "audio-fixture" "snapshot" body="{}"
   if $rc != 0 then return {ok: false, reason: to_string($result)} end
-  return json_parse($result)
+  $body=$reply ?? $result
+  return if type($body)=="string" then json_parse($body) else $body end
 end
 fn write($runtime_dir, $argv)
   send "audio-fixture" "write" body=json_encode({argv: $argv})
   if $rc != 0 then return {ok: false, message: to_string($result)} end
-  return json_parse($result)
+  $body=$reply ?? $result
+  return if type($body)=="string" then json_parse($body) else $body end
 end
 fn percent($level, $max)
   return to_string(max(0, min(round($level), min($max, $MAX_LEVEL)))) .. "%"
