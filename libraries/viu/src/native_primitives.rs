@@ -287,10 +287,17 @@ pub(crate) fn atomic_replace() -> mix::evaluator::ExtFn {
 pub(crate) fn private_directory() -> mix::evaluator::ExtFn {
     mix::sync_ext(|args| {
         let [Value::String(path)] = args.as_slice() else {
-            return Err(MixError::RuntimeError { msg: "viu_private_directory expects an absolute path".into(), span: None });
+            return Err(MixError::RuntimeError {
+                msg: "viu_private_directory expects an absolute path".into(),
+                span: None,
+            });
         };
-        config::atomic::create_directory(std::path::Path::new(path))
-            .map_err(|e| MixError::RuntimeError { msg: format!("Private directory: {e}"), span: None })?;
+        config::atomic::create_directory(std::path::Path::new(path)).map_err(|e| {
+            MixError::RuntimeError {
+                msg: format!("Private directory: {e}"),
+                span: None,
+            }
+        })?;
         Ok(Value::Nil)
     })
 }
