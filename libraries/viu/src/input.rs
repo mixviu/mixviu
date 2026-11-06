@@ -38,6 +38,9 @@ impl Input {
                     crate::rich::menu_targets(&view.model()["values"]["menu"], "menu", a)?;
                 let mut targets: VecDeque<_> = targets.into();
                 let depth = targets.len();
+                if view.geometry.contains_key("menu.toggle") {
+                    targets.push_front("menu.toggle".into());
+                }
                 let first = targets.pop_front().ok_or("menu path is empty")?;
                 self.queue("click", &serde_json::json!({"id":first}), view)?;
                 self.menu_path = targets;

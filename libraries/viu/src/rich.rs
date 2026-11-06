@@ -7,6 +7,53 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const KINDS: &[&str] = &["menubar", "command-bar", "property-grid", "dialog-form"];
+#[derive(Clone, Default)]
+struct MenuPresentation {
+    settings: Value,
+    service: Option<String>,
+    popup: Option<(f32, bool)>,
+}
+fn presentation_id(ctx: &egui::Context) -> egui::Id {
+    egui::Id::unique((ctx.viewport_id(), "viu-menu-presentation"))
+}
+fn presentation(ctx: &egui::Context) -> MenuPresentation {
+    ctx.data(|data| data.get_temp(presentation_id(ctx))).unwrap_or_default()
+}
+/// Native window/menu policy is shared by scene and direct Rust callers.
+/// A compositor-hosted menu is never claimed before a host adapter exists.
+pub fn configure_menu(ctx: &egui::Context, settings: &Value, service: Option<&str>) {
+    ctx.data_mut(|data| {
+        let state = data.get_temp_mut_or_default::<MenuPresentation>(presentation_id(ctx));
+        state.settings = settings.clone();
+        state.service = service.map(str::to_owned);
+    });
+}
+pub fn menu_form(ctx: &egui::Context) -> Value {
+    let state = presentation(ctx);
+    let style = design::MenuStyle::resolve(state.settings["window.menu_style"].as_str().unwrap_or("bar"));
+    let side = design::MenuSide::resolve(state.settings["window.menu_side"].as_str().unwrap_or("left"));
+    let effective = if style == design::MenuStyle::Bar && ctx.content_rect().width() >= 640.0 { "bar" } else { "button" };
+    json!({"style":style.name(),"side":side.name(),"effective":effective,"hosted":false,"service":state.service})
+}
+/// Open the complete vertical menu at the top of this viewport. The normal
+/// popup memory owns dismissal and Escape; no alternate input dispatcher.
+pub fn menu_popup(ctx: &egui::Context, id: &str, args: &Value) -> Result<(), String> {
+    if !args.is_object() { return Err("arguments must be an object".into()); }
+    let state = presentation(ctx);
+    let side = match args.get("side") {
+        None => design::MenuSide::resolve(state.settings["window.menu_side"].as_str().unwrap_or("left")),
+        Some(value) => value.as_str().and_then(design::MenuSide::from_name).ok_or("side must be left, center or right")?,
+    };
+    let bounds = ctx.content_rect();
+    let x = match args.get("x") {
+        None => match side { design::MenuSide::Left => bounds.left(), design::MenuSide::Center => bounds.center().x, design::MenuSide::Right => bounds.right() },
+        Some(value) => value.as_f64().filter(|x| x.is_finite() && (*x as f32).is_finite()).ok_or("x must be finite")? as f32,
+    }.clamp(bounds.left(), bounds.right());
+    ctx.data_mut(|data| data.get_temp_mut_or_default::<MenuPresentation>(presentation_id(ctx)).popup = Some((x,side==design::MenuSide::Right)));
+    egui::Popup::open_id(ctx, egui::Id::unique((ctx.viewport_id(),id,"vertical-menu")));
+    ctx.request_repaint();
+    Ok(())
+}
 pub fn actions(kind: &str) -> Vec<&'static str> {
     match kind {
         "menubar" | "command-bar" => vec!["set", "command"],
@@ -160,7 +207,7 @@ pub fn menu_snapshot(value: &Value, id: &str, geometry: &BTreeMap<String, Rect>)
     }
     let mut path = Vec::new();
     descend(value, id, geometry, &mut path);
-    json!({"open":!path.is_empty(),"path":path})
+    json!({"open":!path.is_empty() || geometry.contains_key(&format!("{id}.popup")),"path":path})
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
     validate(kind, current)?;
@@ -261,6 +308,16 @@ fn menu(
         }
     }
 }
+fn menu_roots(ui: &mut Ui, value: &Value, id: &str, geometry: &mut BTreeMap<String, Rect>, events: &mut Vec<Intent>) {
+    for item in value.as_array().into_iter().flatten() {
+        let shown = ui.add_enabled_ui(item["enabled"] == true, |ui| {
+            ui.menu_button(text(item,"label"), |ui| menu(ui,&item["children"],id,geometry,events))
+        });
+        if ui.is_visible() && !ui.is_sizing_pass() {
+            geometry.insert(format!("{id}.menu.{}",text(item,"id")),shown.inner.response.rect);
+        }
+    }
+}
 pub(crate) fn draw(
     ui: &mut Ui,
     widget: &Widget,
@@ -271,21 +328,30 @@ pub(crate) fn draw(
     let id = &widget.id;
     match widget.kind.as_str() {
         "menubar" => {
-            egui::MenuBar::new()
-                .ui(ui, |ui| {
-                    for item in value.as_array().into_iter().flatten() {
-                        let shown = ui.add_enabled_ui(item["enabled"] == true, |ui| {
-                            ui.menu_button(text(item, "label"), |ui| {
-                                menu(ui, &item["children"], id, geometry, events)
-                            })
-                        });
-                        geometry.insert(
-                            format!("{id}.menu.{}", text(item, "id")),
-                            shown.inner.response.rect,
-                        );
-                    }
-                })
-                .response
+            let form = menu_form(ui.ctx());
+            let response = if form["effective"] == "bar" {
+                egui::MenuBar::new().ui(ui, |ui| menu_roots(ui,value,id,geometry,events)).response
+            } else {
+                let response = crate::icons::button(ui, crate::icons::Icon::from_name("menu").unwrap(), "", 16.0, None, true, false).on_hover_text("Window menu");
+                geometry.insert(format!("{id}.toggle"),response.rect);
+                if let Some(shown) = egui::Popup::menu(&response).show(|ui| { menu_roots(ui,value,id,geometry,events); ui.is_visible() && !ui.is_sizing_pass() }) {
+                    if shown.inner { geometry.insert(format!("{id}.popup"),shown.response.rect); }
+                }
+                response
+            };
+            let popup = presentation(ui.ctx()).popup;
+            if let Some((x,right)) = popup {
+                let popup_id = egui::Id::unique((ui.ctx().viewport_id(),id,"vertical-menu"));
+                if let Some(shown) = egui::Popup::new(popup_id,ui.ctx().clone(),egui::Rect::from_min_max(egui::pos2(x,ui.ctx().content_rect().top()),egui::pos2(x,ui.ctx().content_rect().top())),ui.layer_id())
+                    .kind(egui::PopupKind::Menu)
+                    .layout(egui::Layout::top_down_justified(egui::Align::Min))
+                    .align(if right { egui::RectAlign::BOTTOM_END } else { egui::RectAlign::BOTTOM_START })
+                    .open_memory(None)
+                    .show(|ui| { menu_roots(ui,value,id,geometry,events); ui.is_visible() && !ui.is_sizing_pass() }) {
+                    if shown.inner { geometry.insert(format!("{id}.popup"),shown.response.rect); }
+                }
+            }
+            response
         }
         "command-bar" => {
             ui.horizontal(|ui| {
