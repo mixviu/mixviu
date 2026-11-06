@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Toolkit adapter over egui-free theme values.
 pub use theme::theme::{Choice, Error, Overlay, THEME_FILE, theme_path};
-use design::{CaptionSide, DesignContext, DesignSourceDocument, RequestedDecorations};
+use design::{CaptionSide, DesignContext, RequestedDecorations};
 use std::path::Path;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme(theme::Theme);

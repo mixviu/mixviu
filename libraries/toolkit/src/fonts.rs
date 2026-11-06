@@ -21,7 +21,6 @@
 //! still renders through egui's own fallbacks.
 
 use crate::theme::Theme;
-use design::TypographyRole;
 use egui::{FontData, FontDefinitions, FontFamily, FontId};
 use std::sync::Arc;
 

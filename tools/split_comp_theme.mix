@@ -28,6 +28,7 @@ $tail = "    #[test]\n    fn bad_sources_are_reported()"
 $middle = split(split($t, $start)[1], $tail)[0]
 $t = replace($t, $start .. $middle, "")
 $t = replace($t, "pub(crate) fn", "pub fn")
+$t = replace_must($t, "    fn compile(", "    pub fn compile(")
 write_file($dir .. "/src/theme.rs", $t)
 $scale = split(read_file("libraries/toolkit/src/ui_scale.rs"), "/// The installed desktop values")[0]
 $scale = replace($scale, "pub(crate) fn", "pub fn")
@@ -83,6 +84,7 @@ EOF
 )
 $p = "libraries/toolkit/src/theme.rs"
 write_file($p, read_file($p) .. "\nimpl editor::palette::Theme for Theme {" .. $trait .. "\n")
+write_file($p, read_file($p) .. "\n#[cfg(test)]\nmod tests {\nuse super::*;\nuse design::{SourceIdentity, DesignSourceDocument, DesignContext};\nfn embedded_document() -> DesignSourceDocument { design::parse_design_source(SourceIdentity::new(\"embedded\"), design::EMBEDDED_DEFAULT_SOURCE).unwrap() }\nimpl Theme { fn compile(doc: &DesignSourceDocument, ctx: DesignContext) -> Result<Self, Error> { theme::Theme::compile(doc, ctx).map(Self) } }\n" .. $start .. $middle .. "}\n")
 -- The fonts adapter now reuses the native bytes and weight calculation.
 $before = split($fonts, "/// The body weight")[0]
 $after = "/// The font definitions" .. split($fonts, "/// The font definitions")[1]

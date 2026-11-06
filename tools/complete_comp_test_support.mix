@@ -1,8 +1,12 @@
 -- Complete noded's transitive #[path] closure without reimporting edited crates.
 $rev = "8779f33284b7d3f1178c3d57a699efb9b0867b22"
+$a = args()
+if len($a) != 1 then
+  raise("USAGE", "complete_comp_test_support.mix SOURCE_REPOSITORY")
+end
 $tar = "/var/tmp/comp-noded-support.tar"
 $ex = "/var/tmp/comp-noded-support"
-run_argv_must(["git", "-C", "/home/markc/Projects/mixos", "archive", "-o", $tar, $rev, "services/noded/src"])
+run_argv_must(["git", "-C", $a[0], "archive", "-o", $tar, $rev, "services/noded/src"])
 mkdir($ex, {parents: true})
 run_argv_must(["tar", "-xf", $tar, "-C", $ex])
 $p = "provenance/engine-split-comp-imports.json"
