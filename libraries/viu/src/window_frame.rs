@@ -7,13 +7,18 @@ use std::collections::BTreeMap;
 
 pub fn is_client(settings: &Value) -> bool {
     design::decorations::resolve_with_actions(
-        settings["window.decorations"].as_str().and_then(design::RequestedDecorations::from_name),
+        settings["window.decorations"]
+            .as_str()
+            .and_then(design::RequestedDecorations::from_name),
         design::RequestedDecorations::Auto,
         design::ActionsPlace::resolve(settings["window.actions_place"].as_str().unwrap_or("row")),
-    ).mode == design::Decorations::Client
+    )
+    .mode
+        == design::Decorations::Client
 }
 pub fn client_of(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<bool>(egui::Id::unique("viu-window-client"))).unwrap_or(true)
+    ctx.data(|d| d.get_temp::<bool>(egui::Id::unique("viu-window-client")))
+        .unwrap_or(true)
 }
 
 #[derive(Clone, Copy)]
@@ -98,8 +103,12 @@ impl WindowFrame {
             ui.ctx().send_viewport_cmd(Command::Decorations(server));
             self.server = Some(server);
         }
-        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("viu-window-client"), self.client));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique("viu-window-client"), self.client));
         if !self.client && !header {
+            return;
+        }
+        if !self.client && header && toolkit::menu::form(ui.ctx())["hosted"] == true && toolkit::titlebar::hosting::hosted(ui.ctx()) {
             return;
         }
         let metrics = Metrics::of(ui.ctx());
@@ -123,7 +132,8 @@ impl WindowFrame {
             self.geometry.insert("window.header".into(), band);
             let mut content = band;
             content.max.y -= ui.visuals().widgets.noninteractive.bg_stroke.width;
-            self.geometry.insert("window.header.content".into(), content);
+            self.geometry
+                .insert("window.header.content".into(), content);
             return;
         }
         let alignment = design::CaptionSide::resolve(

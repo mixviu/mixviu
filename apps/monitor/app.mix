@@ -279,6 +279,10 @@ end
 on viu.theme.changed
   $state.theme_effective=$event.args;publish_monitor($state)
 end
+on viu.keymap.changed
+  send "viu-local" "native.bindings" body={defaults:$commands.binding_defaults(),overrides:$event.args}
+  if $rc==0 then $state.bindings=$reply.bindings;publish_monitor($state) end
+end
 on monitor.dialog.intent
   if $event.args.value.instance==$state.dialog then $state.dialog=nil;publish_monitor($state) end
 end

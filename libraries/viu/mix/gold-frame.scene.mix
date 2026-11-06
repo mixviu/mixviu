@@ -5,7 +5,7 @@ citizen: gold-frame
 ---
 ```mix
 {
-root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placements:{"gold-header":{edge:"top",size:"design.title_bar_height"},"gold-status":{edge:"bottom",size:"design.status_height"},"gold-content":{edge:"fill"}}},
+root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placements:"= {\"gold-header\":{edge:\"top\",size:if $model.__viu_header_hosted == true then 0 else \"design.title_bar_height\" end},\"gold-status\":{edge:\"bottom\",size:\"design.status_height\"},\"gold-content\":{edge:\"fill\"}}"},
 "gold-header":{widget:"column",background:"design.chrome",padding:0,children:["gold-band"],window_slot:"window.header.content"},
 "gold-band":{widget:"band",children:["gold-captions","gold-icon","gold-menu","gold-title","gold-toolbar"],groups:"= $model.frame.groups"},
 "gold-icon":{widget:"control",hidden:"= $model.__viu_window_client == false",definition:{id:"gold-icon",kind:"mark",label:"",initial:"monitor",properties:{fill_height:true,header_mark:true}}},

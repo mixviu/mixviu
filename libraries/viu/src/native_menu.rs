@@ -10,10 +10,11 @@ fn slots() -> &'static [&'static str] {
     static SLOTS: OnceLock<Vec<&'static str>> = OnceLock::new();
     SLOTS.get_or_init(|| {
         (0..CAPACITY)
-            .map(|n| &*Box::leak(format!("viu.menu.slot.{n}").into_boxed_str()))
+            .map(|n| &*Box::leak(format!("viu.menu.slot.{n:03}").into_boxed_str()))
             .collect()
     })
 }
+pub fn command_slot(index: usize) -> Option<&'static str> { slots().get(index).copied() }
 #[derive(Clone, Default)]
 struct Model {
     ids: Vec<String>,
@@ -28,6 +29,11 @@ pub fn application_id(ctx: &egui::Context, slot: &str) -> Option<String> {
         .ids
         .get(index)
         .cloned()
+}
+pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
+    let key = model_id(ctx);
+    let index = ctx.data(|d| d.get_temp::<Model>(key))?.ids.iter().position(|id| id == command)?;
+    Some(slots()[index])
 }
 fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
     value
@@ -104,10 +110,20 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
-            if !crate::window_frame::client_of(ui.ctx()) {
-                ui.add_space(toolkit::chrome::Chrome::of(ui.ctx()).metrics.title_bar_margin);
+            let hosted = toolkit::menu::form(ui.ctx())["hosted"] == true;
+            if !hosted && !crate::window_frame::client_of(ui.ctx()) {
+                ui.add_space(
+                    toolkit::chrome::Chrome::of(ui.ctx())
+                        .metrics
+                        .title_bar_margin,
+                );
             }
-            if compact {
+            if hosted {
+                let rect = ui.ctx().content_rect();
+                let side = toolkit::chrome::Chrome::of(ui.ctx()).menu_side;
+                let x = match side { design::MenuSide::Left => rect.left(), design::MenuSide::Center => rect.center().x, design::MenuSide::Right => rect.right() };
+                toolkit::menu::compact_picked(ui, &menus, search.as_ref(), egui::Rect::from_min_size(egui::pos2(x,rect.top()),egui::Vec2::ZERO))
+            } else if compact {
                 let response = ui.add(toolkit::button::IconButton::new(
                     crate::icons::Icon::from_name("menu").unwrap(),
                 ));

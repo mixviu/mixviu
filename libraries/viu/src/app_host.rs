@@ -76,16 +76,31 @@ struct Host {
 }
 impl Host {
     fn window_settings(&self, model: &Value) -> Value {
-        let mut settings = self.session_window.clone().unwrap_or_else(|| model["window_settings"].clone());
-        for (axis, key) in [("decorations", "window.decorations"), ("caption_side", "window.caption_side")] {
-            if !self.native_choice[axis].is_null() { settings[key] = self.native_choice[axis].clone(); }
+        let mut settings = self
+            .session_window
+            .clone()
+            .unwrap_or_else(|| model["window_settings"].clone());
+        for (axis, key) in [
+            ("decorations", "window.decorations"),
+            ("caption_side", "window.caption_side"),
+        ] {
+            if !self.native_choice[axis].is_null() {
+                settings[key] = self.native_choice[axis].clone();
+            }
         }
         settings
     }
-    fn projection(&self, model: &Value) -> Value {
-        let mut projected = self.output.as_ref().and_then(|output| model["surfaces"].get(output)).unwrap_or(model).clone();
+    fn projection(&self, model: &Value, ctx: &egui::Context) -> Value {
+        let mut projected = self
+            .output
+            .as_ref()
+            .and_then(|output| model["surfaces"].get(output))
+            .unwrap_or(model)
+            .clone();
         if self.framed {
-            projected["__viu_window_client"] = json!(crate::window_frame::is_client(&self.window_settings(model)));
+            projected["__viu_window_client"] =
+                json!(crate::window_frame::is_client(&self.window_settings(model)));
+            projected["__viu_header_hosted"] = json!(projected["__viu_window_client"] == false && toolkit::menu::form(ctx)["hosted"] == true && toolkit::titlebar::hosting::hosted(ctx));
         }
         projected
     }
@@ -216,6 +231,7 @@ impl Host {
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
                 "native.executed" => self.facilities.record(&request.args),
+                "native.bindings" => crate::shortcuts::resolve(&request.args),
                 "native.copy" => match request.args["text"]
                     .as_str()
                     .filter(|s| s.len() <= 1_048_576)
@@ -299,7 +315,7 @@ impl Host {
             self.error = done.error.unwrap_or_default();
             if self.error.is_empty() {
                 if let Some(model) = done.model {
-                    let projected = self.projection(&model);
+                    let projected = self.projection(&model, ctx);
                     let appearance = if self.framed
                         && self.session_appearance.is_none()
                         && (!self.loaded || self.model["appearance"] != model["appearance"])
@@ -406,6 +422,13 @@ impl Host {
                         &self.last_ui,
                     ) {
                         Ok(common_ui) => {
+                            use settings::view::View;
+                            if snapshot["state"]["lost"] != true {
+                                if let Ok(values) = serde_json::from_value::<settings::registry::Values>(snapshot["state"]["values"].clone()) {
+                                    let keymap = settings::view::Look::of(&values).keymaps.app(&self.service);
+                                    let _ = self.runtime.notify("viu.keymap.changed".into(), json!(keymap));
+                                }
+                            }
                             self.last_ui = common_ui;
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
@@ -436,9 +459,11 @@ impl Host {
             }
         }
         if self.ready && self.framed {
-            let projected = self.projection(&self.model);
+            let projected = self.projection(&self.model, ctx);
             if self.view.model() != &projected {
-                if let Err(error) = self.view.apply_model(projected) { self.error = error; }
+                if let Err(error) = self.view.apply_model(projected) {
+                    self.error = error;
+                }
             }
         }
         self.settle(ctx);
@@ -485,7 +510,8 @@ impl Host {
                 );
                 let settings = self.window_settings(&self.model);
                 if let Some(title) = self.model["window_title"].as_str() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Title(title.into()));
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::Title(title.into()));
                 }
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 self.window_frame
@@ -551,24 +577,8 @@ impl Host {
                 ui.ctx().request_repaint();
             }
             if !toolkit::menu::is_open(ui.ctx()) {
-                for action in self.model["shortcuts"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                {
-                    if action["enabled"] != true {
-                        continue;
-                    }
-                    if let Some(shortcut) = action["shortcut"]
-                        .as_str()
-                        .and_then(toolkit::keymap::parse_chord)
-                    {
-                        if crate::shortcuts::take(ui.ctx(), &shortcut) {
-                            self.dispatch("viu.frame.intent".into(),json!({"id":"shortcut","value":{"command":action["id"],"origin":"shortcut"}}),BTreeMap::new(),None);
-                        }
-                    }
+                for command in crate::shortcuts::pressed(ui.ctx(), &self.model["shortcuts"]) {
+                    self.dispatch("viu.frame.intent".into(),json!({"id":"shortcut","value":{"command":command,"origin":"shortcut"}}),BTreeMap::new(),None);
                 }
             }
             if self.framed {

@@ -9,7 +9,7 @@ fn target($node)
   return "monitord."..$node..".bus"
 end
 fn initial()
-  return {theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark",style:"studio"},ticket:0,inflight:{},processes_loaded:false,focus_serial:0,macros_open:false,quitting:false,window_close:false,connected:true,status:"Connecting to monitord…",node:"",node_draft:"",tab:"Processes",section:"cpu",rings:{},history_seeded:false,connections:nil,connections_error:nil,peers:[],total:0,paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
+  return {bindings:{},theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark",style:"studio"},ticket:0,inflight:{},processes_loaded:false,focus_serial:0,macros_open:false,quitting:false,window_close:false,connected:true,status:"Connecting to monitord…",node:"",node_draft:"",tab:"Processes",section:"cpu",rings:{},history_seeded:false,connections:nil,connections_error:nil,peers:[],total:0,paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
 end
 fn query($s)
   $query={sort:$s.sort,reverse:$s.reverse,tree:$s.tree,limit:0}
@@ -50,7 +50,7 @@ fn framed($s)
   $actions=$commands.toolbar($s)
   $menus=$commands.menus($s)
   $model.window_close=$s.window_close
-  $model.shortcuts=$commands.registry($s)
+  $model.shortcuts=$commands.shortcuts($s)
   $model.macros_open=$s.macros_open
   $model.native_focus=if $s.focus_serial>0 then {id:"filter",serial:$s.focus_serial} else nil end
   $model.native_overlays=[]

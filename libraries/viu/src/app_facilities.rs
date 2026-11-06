@@ -80,6 +80,10 @@ impl Facilities {
         }
     }
     pub fn prepare(&mut self, ctx: &egui::Context, bus: &Endpoint) {
+        toolkit::drive::publish_titlebar(ctx, |topic, bodies, lost| {
+            self.events.lost_batch(lost);
+            for body in bodies { self.events.push(topic.into(), body, 0); }
+        });
         let (records, lost) = self.journal.take();
         self.events.lost_batch(lost);
         for record in records {
@@ -152,7 +156,12 @@ impl Facilities {
             }
         }
     }
-    pub fn request(&mut self, r: Request, ctx: &egui::Context) -> Option<Request> {
+    pub fn request(&mut self, mut r: Request, ctx: &egui::Context) -> Option<Request> {
+        if r.command == format!("{}.execute", self.app) {
+            if let Some(id) = r.args["id"].as_str().and_then(|id| crate::native_menu::application_id(ctx, id)) {
+                r.args["id"] = json!(id);
+            }
+        }
         if r.command == "app.describe" {
             if let Some(surface) = &self.surface {
                 let _ = r.reply.send((0, surface.clone()));

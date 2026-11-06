@@ -62,7 +62,10 @@ fn mix_frame_preserves_application_content_and_intent_identity() {
     server_model["__viu_window_client"] = json!(false);
     view.apply_model(server_model).unwrap();
     for _ in 0..2 {
-        ctx.run_ui(egui::RawInput::default(), |ui| { view.show(ui); }).drop_without_applying_deltas();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            view.show(ui);
+        })
+        .drop_without_applying_deltas();
     }
     assert!(!view.geometry.contains_key("gold-icon"));
     assert!(!view.geometry.contains_key("gold-title"));
