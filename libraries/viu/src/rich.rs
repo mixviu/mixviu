@@ -547,7 +547,10 @@ pub(crate) fn draw(
     events: &mut Vec<Intent>,
 ) -> egui::Response {
     let id = &widget.id;
-    if widget.kind == "dialog-form" && widget.properties["style"] == "gold" {
+    if widget.kind == "dialog-form"
+        && widget.properties["style"] == "gold"
+        && widget.properties["presentation"] != "form"
+    {
         return gold_dialog(ui, widget, value, geometry, events);
     }
     match widget.kind.as_str() {
@@ -719,7 +722,7 @@ pub(crate) fn draw(
                                 as f32;
                         }
                         let mut items = value.as_array().into_iter().flatten().collect::<Vec<_>>();
-                        if gold {
+                        if gold && widget.properties["hostable"] != false {
                             items.reverse();
                         }
                         for item in items {

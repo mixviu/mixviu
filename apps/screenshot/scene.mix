@@ -7,7 +7,7 @@ citizen: screenshot
 {
 root:{widget:"dock",children:["options-row","tool-rail","preview-stack"],placements:{"options-row":{edge:"top",size:"design.options_height"},"tool-rail":{edge:"left",size:"design.tools_width"},"preview-stack":{edge:"fill"}}},
 "preview-stack":{widget:"column",children:["preview","dialog","macros"]},
-dialog:{widget:"control",definition:{id:"dialog",kind:"dialog-form",label:"",properties:{style:"gold"},initial:{open:false,title:"",body:"",field:nil,choices:[]}},on_intent:"screenshot.intent"},
+dialog:{widget:"control",definition:{id:"dialog",kind:"dialog-form",label:"",properties:{style:"gold",presentation:"form"},initial:{open:false,title:"",body:"",field:nil,choices:[]}},on_intent:"screenshot.intent"},
 macros:{widget:"control",definition:{id:"macros",kind:"macro-window",label:"",initial:false,properties:{app:"screenshot"}},on_intent:"screenshot.intent"},
 "options-row":{widget:"column",bar:"options",children:["options-band"]},
 "options-band":{widget:"row",packing:"toolbar",end:"file_actions",fit:["inks","width","text_size"],flex:"text",children:["options","window","output","inks","width","text_size","text","file_actions"]},

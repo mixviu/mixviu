@@ -115,7 +115,9 @@ impl Jobs {
                 continue;
             }
             if start.spec.get("timeout").is_some_and(|value| {
-                value.as_u64().is_none_or(|seconds| !(1..=3600).contains(&seconds))
+                value
+                    .as_u64()
+                    .is_none_or(|seconds| !(1..=3600).contains(&seconds))
             }) {
                 let _ = start
                     .reply
