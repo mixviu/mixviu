@@ -14,14 +14,21 @@ use std::{
     time::{Duration, Instant},
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
-fn validate_overlays(model:&Value)->Result<(),String> {
-    if let Some(overlays)=model.get("native_overlays") {
-        let overlays=overlays.as_array().filter(|a|a.len()<=16).ok_or("native overlays exceed budget")?;
-        let mut ids=BTreeSet::new();
+fn validate_overlays(model: &Value) -> Result<(), String> {
+    if let Some(overlays) = model.get("native_overlays") {
+        let overlays = overlays
+            .as_array()
+            .filter(|a| a.len() <= 16)
+            .ok_or("native overlays exceed budget")?;
+        let mut ids = BTreeSet::new();
         for overlay in overlays {
-            if !overlay["command"].is_string() {return Err("overlay requires an intent command".into());}
-            let widget=crate::widgets::Widget::decode(&overlay["definition"])?;
-            if !ids.insert(widget.id.clone()) {return Err("duplicate overlay identity".into());}
+            if !overlay["command"].is_string() {
+                return Err("overlay requires an intent command".into());
+            }
+            let widget = crate::widgets::Widget::decode(&overlay["definition"])?;
+            if !ids.insert(widget.id.clone()) {
+                return Err("duplicate overlay identity".into());
+            }
             widget.validate_model(model)?;
         }
     }
@@ -30,8 +37,8 @@ fn validate_overlays(model:&Value)->Result<(),String> {
 struct Host {
     local_ui: crate::local_ui::LocalUi,
     native_choice: Value,
-    overlays:crate::widgets::Widgets,
-    focus_serial:Value,
+    overlays: crate::widgets::Widgets,
+    focus_serial: Value,
     facilities: crate::app_facilities::Facilities,
     session: Option<crate::session::Session>,
     session_appearance: Option<Value>,
@@ -439,7 +446,7 @@ impl Host {
                     .window_frame
                     .geometry
                     .get("window.header")
-                    .map(|rect| BTreeMap::from([("window.header".into(), *rect)]))
+                    .map(|rect| {let key=if self.view.has_slot("window.header.content") {"window.header.content"} else {"window.header"}; let rect=self.window_frame.geometry.get(key).unwrap_or(rect); BTreeMap::from([(key.into(), *rect)])})
                     .unwrap_or_default();
                 if let Err(e) = self.view.set_slots(slots) {
                     self.error = e;
@@ -449,26 +456,63 @@ impl Host {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
             }
             self.overlays.begin_frame();
-            for overlay in self.model["native_overlays"].as_array().into_iter().flatten().cloned().collect::<Vec<_>>() {
-                let widget=crate::widgets::Widget::decode(&overlay["definition"]).expect("validated overlay");
-                let command=overlay["command"].as_str().unwrap();
-                for intent in self.overlays.widget(ui,&widget,&self.model) {
-                    self.dispatch(command.into(),intent.encode(),BTreeMap::new(),None);
+            for overlay in self.model["native_overlays"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+            {
+                let widget = crate::widgets::Widget::decode(&overlay["definition"])
+                    .expect("validated overlay");
+                let command = overlay["command"].as_str().unwrap();
+                for intent in self.overlays.widget(ui, &widget, &self.model) {
+                    self.dispatch(command.into(), intent.encode(), BTreeMap::new(), None);
                 }
             }
             self.view.geometry.extend(self.overlays.geometry.clone());
-            if self.facilities.macros.is_some() && toolkit::macros::show_app(ui.ctx(),&self.service,self.model["macros_open"]==true) {
-                self.dispatch("viu.macros.changed".into(),json!({"open":false}),BTreeMap::new(),None);
+            if self.facilities.macros.is_some()
+                && toolkit::macros::show_app(
+                    ui.ctx(),
+                    &self.service,
+                    self.model["macros_open"] == true,
+                )
+            {
+                self.dispatch(
+                    "viu.macros.changed".into(),
+                    json!({"open":false}),
+                    BTreeMap::new(),
+                    None,
+                );
             }
-            if self.model["native_focus"]["serial"]!=self.focus_serial && self.model["native_focus"]["id"].is_string() {
-                if let Some(id)=self.model["native_focus"]["id"].as_str() {let _=self.view.request_focus(id);}
-                self.focus_serial=self.model["native_focus"]["serial"].clone();ui.ctx().request_repaint();
+            if self.model["native_focus"]["serial"] != self.focus_serial
+                && self.model["native_focus"]["id"].is_string()
+            {
+                if let Some(id) = self.model["native_focus"]["id"].as_str() {
+                    let _ = self.view.request_focus(id);
+                }
+                self.focus_serial = self.model["native_focus"]["serial"].clone();
+                ui.ctx().request_repaint();
             }
             if !toolkit::menu::is_open(ui.ctx()) {
-                for action in self.model["shortcuts"].as_array().into_iter().flatten().cloned().collect::<Vec<_>>() {
-                    if action["enabled"]!=true {continue;}
-                    if let Some(shortcut)=action["shortcut"].as_str().and_then(toolkit::keymap::parse_chord) {
-                        if ui.ctx().input_mut(|input|input.consume_shortcut(&shortcut)) {
+                for action in self.model["shortcuts"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                {
+                    if action["enabled"] != true {
+                        continue;
+                    }
+                    if let Some(shortcut) = action["shortcut"]
+                        .as_str()
+                        .and_then(toolkit::keymap::parse_chord)
+                    {
+                        if ui
+                            .ctx()
+                            .input_mut(|input| input.consume_shortcut(&shortcut))
+                        {
                             self.dispatch("viu.frame.intent".into(),json!({"id":"shortcut","value":{"command":action["id"],"origin":"shortcut"}}),BTreeMap::new(),None);
                         }
                     }
@@ -587,8 +631,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     Host {
         local_ui,
         native_choice: json!({}),
-        overlays:Default::default(),
-        focus_serial:Value::Null,
+        overlays: Default::default(),
+        focus_serial: Value::Null,
         facilities,
         service: bundle.manifest.service.clone(),
         file_theme: toolkit::Theme::load(),
@@ -664,7 +708,13 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
     let service = bundle.manifest.service.clone();
-    let app_id=bundle.manifest.bus_surface.as_ref().and_then(|s|s["app_id"].as_str()).map(str::to_owned).unwrap_or_else(||format!("mixviu.{service}"));
+    let app_id = bundle
+        .manifest
+        .bus_surface
+        .as_ref()
+        .and_then(|s| s["app_id"].as_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("mixviu.{service}"));
     eframe::run_native(
         &title,
         eframe::NativeOptions {
@@ -674,6 +724,8 @@ pub fn run(args: Vec<String>) -> eframe::Result {
             ..Default::default()
         },
         Box::new(move |cc| {
+            toolkit::decorations::initialise(cc);
+            toolkit::decorations::initialise_window(&cc.egui_ctx,cc.winit_window().cloned());
             crate::appearance::install(&cc.egui_ctx);
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(

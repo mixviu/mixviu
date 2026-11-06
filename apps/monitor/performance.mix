@@ -121,7 +121,7 @@ fn tcp($s)
   for $p in [["In use (v4)",$sock.inuse],["In use (v6)",$sock6.inuse],["Orphans",$sock.orphan],["Time wait",$sock.tw],["Allocated",$sock.alloc],["Buffer pages",$sock.mem]]
     push($chips,$p[0]..": "..(if $p[1]==nil then "—" else to_string($p[1]) end))
   end
-  $blocks=[header("TCP",""),{kind:"columns",blocks:[$segments,$retrans]},{kind:"columns",blocks:[$established,$opens]},{kind:"chips",items:$chips},gap(6),{kind:"small",text:"Top 20 connections by throughput"}]
+  $blocks=[header("TCP",""),{kind:"columns",blocks:[$segments,$retrans]},{kind:"columns",blocks:[$established,$opens]},{kind:"chips",items:$chips},gap(6),{kind:"weak",text:"Top 20 connections by throughput"}]
   if $s.connections_error!=nil then push($blocks,{kind:"small",text:$s.connections_error})
   elif $s.connections==nil then push($blocks,{kind:"small",text:"Waiting for the first reading…"})
   elif len($s.connections.rows)==0 then push($blocks,{kind:"small",text:"No TCP sockets"})

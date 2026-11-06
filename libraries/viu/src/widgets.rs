@@ -102,6 +102,11 @@ impl Widget {
     /// Untruncated native label width, using exactly the same typography as
     /// drawing. Containers choose whether and how this preferred size shrinks.
     pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
+        if self.kind=="command-bar" && self.properties["style"]=="gold" {
+            let n=model["values"].get(&self.id).unwrap_or(&self.initial).as_array().ok_or("command bar list required")?.len() as f32;
+            let c=toolkit::chrome::Chrome::of(ui.ctx());
+            return Ok(n*(c.style.icon_button as f32+c.style.title_control_spacing as f32)+c.metrics.caption_gap);
+        }
         self.validate_model(model)?;
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
@@ -603,13 +608,14 @@ impl Widgets {
                     },
                 );
                 if widget.properties["fill_height"] == true {
+                    let inset=if widget.properties["header_mark"]==true {toolkit::chrome::Chrome::of(ui.ctx()).metrics.title_bar_margin}else{0.0};
                     let (rect, response) = ui.allocate_exact_size(
-                        egui::vec2(size, ui.available_height()),
+                        egui::vec2(size+inset, ui.available_height()),
                         Sense::hover(),
                     );
                     image.paint_at(
                         ui,
-                        egui::Rect::from_center_size(rect.center(), egui::vec2(size, size)),
+                        egui::Rect::from_center_size(rect.center()+egui::vec2(inset/2.0,0.0), egui::vec2(size, size)),
                     );
                     response
                 } else {

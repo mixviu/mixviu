@@ -40,6 +40,29 @@ fn refresh_monitor($s)
   end
   return $s
 end
+fn navigate_monitor($s)
+  $visible=$s.tab=="Performance" and $s.section=="tcp"
+  if not $visible then $s.connections=nil;$s.connections_error=nil
+  elif not $s.paused then
+    $target=$core.target($s.node)
+    send $target "monitord.connections" body={limit:20,sort:"throughput"}
+    if $rc==0 then $s.connections=$reply;$s.connections_error=nil
+    else $s.connections=nil;$s.connections_error=to_string($result) end
+  end
+  if $s.tab=="Processes" and not $s.paused then $s=requery_monitor($s) end
+  return $s
+end
+fn requery_monitor($s)
+  if $s.tab!="Processes" then return $s end
+  $target=$core.target($s.node)
+  send $target "monitord.processes" body=$core.query($s)
+  if $rc==0 and type($reply.rows)=="list" then
+    $s.processes=$reply.rows;$s.total=$reply.total ?? len($reply.rows);$s.processes_loaded=true
+    if $s.selected!=nil and not any($s.processes,fn($p)=$p.pid==$s.selected) then $s.selected=nil end
+    $s.start_times=if $s.node=="" then viu_process("snapshot",{pids:map($s.processes,fn($p)=$p.pid)}) else {} end
+  else $s.error=to_string($result);$s.status="monitord is not answering" end
+  return $s
+end
 publish_monitor($state)
 on viu.tick
   if not $state.paused then $state=refresh_monitor($state);publish_monitor($state) end
@@ -95,8 +118,8 @@ on monitor.intent
   $a=$event.args
   if $a.id=="end-task" then
     $out=signal_monitor($state,{pid:$state.selected,signal:"SIGTERM"});$state=$out.state
-  elif $a.id=="tabs" then $state.tab=$a.value;$state=refresh_monitor($state)
-  elif $a.id=="performance" and $a.action=="choose" then $state.section=$a.value;$state=refresh_monitor($state)
+  elif $a.id=="tabs" then $state.tab=$a.value;$state=navigate_monitor($state)
+  elif $a.id=="performance" and $a.action=="choose" then $state.section=$a.value;$state=navigate_monitor($state)
   elif $a.id=="tree" then $state.tree=$a.value;$state=refresh_monitor($state)
   elif $a.id=="refresh" then $state=refresh_monitor($state)
   elif $a.id=="pause" then $state.paused=$a.value
@@ -150,12 +173,12 @@ end
 on monitor.tab
   if not contains(["processes","performance"],$event.args.tab) then raise("ARGUMENT","tab must be processes or performance") end
   $state.tab=if $event.args.tab=="processes" then "Processes" else "Performance" end
-  $state=refresh_monitor($state);publish_monitor($state)
+  $state=navigate_monitor($state);publish_monitor($state)
   reply(0,json_encode({tab:$event.args.tab}))
 end
 on monitor.section
   if not contains($performance.keys_for($state.snapshot),$event.args.section) then raise("ARGUMENT","No such section") end
-  $state.section=$event.args.section;$state=refresh_monitor($state);publish_monitor($state)
+  $state.section=$event.args.section;$state=navigate_monitor($state);publish_monitor($state)
   reply(0,json_encode({section:$state.section}))
 end
 
@@ -168,8 +191,8 @@ fn execute_monitor($s,$id,$origin)
   elif $id=="file.refresh" then $s=refresh_monitor($s)
   elif $id=="file.quit" then $s.quitting=true;$s.window_close=$origin!="bus"
   elif $id=="view.pause" then $s.paused=not $s.paused;$s.status=if $s.paused then "Paused" else "Live" end
-  elif $id=="view.processes" then $s.tab="Processes"
-  elif $id=="view.performance" then $s.tab="Performance"
+  elif $id=="view.processes" then $s.tab="Processes";$s=navigate_monitor($s)
+  elif $id=="view.performance" then $s.tab="Performance";$s=navigate_monitor($s)
   elif $id=="view.tree" then $s.tree=not $s.tree;$s=refresh_monitor($s)
   elif $id=="help.macros" then $s.macros_open=not $s.macros_open
   elif $id=="help.about" then $s.dialog="about"

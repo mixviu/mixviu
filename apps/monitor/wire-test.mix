@@ -17,5 +17,5 @@ if $info.schema!="monitor.v1" or $info.pid!=42 or $info.processes.total!=12 or $
 $row=$w.rows($s)[0]
 if $row.io!=nil or not $row.selected or contains(keys($row),"cmdline") then raise("ROWS","Gold rows projection") end
 $peers=$w.peers({node:"local",authority:{routing_view:[{name:"local"},{name:"peer"},{name:"peer"},{name:"retired",class:"retired"},{name:"transport",class:"transport"},{name:"bad.node"}]}})
-if $peers!=["peer"] then raise("PEERS","Membership filtering") end
+if not deep_eq($peers,["peer"]) then raise("PEERS","Membership filtering") end
 print("Monitor registry, compact wire state, theme atomicity and peers pass")

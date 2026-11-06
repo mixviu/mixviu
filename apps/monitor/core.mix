@@ -50,7 +50,7 @@ fn framed($s)
   $model.window_close=$s.window_close
   $model.shortcuts=$commands.registry($s)
   $model.macros_open=$s.macros_open
-  $model.native_focus={id:"filter",serial:$s.focus_serial}
+  $model.native_focus=if $s.focus_serial>0 then {id:"filter",serial:$s.focus_serial} else nil end
   $model.native_overlays=[]
   if $s.dialog!=nil then
     $definition={id:"monitor-dialog",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Monitor" else "Keyboard shortcuts" end,body:"Processes and performance for this node or any node on the mesh, read from monitord. End task and Kill act only on this node"..chr(39).."s processes, as you.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
