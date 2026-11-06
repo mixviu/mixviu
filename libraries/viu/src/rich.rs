@@ -501,68 +501,79 @@ pub(crate) fn draw(
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
                 let height = if widget.properties["style"] == "gold" {
-                    toolkit::chrome::Chrome::of(ui.ctx()).metrics.title_bar_height
+                    toolkit::chrome::Chrome::of(ui.ctx())
+                        .metrics
+                        .title_bar_height
                 } else {
                     ui.spacing().interact_size.y
                 };
-                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    if widget.properties["style"] == "gold" {
-                        ui.spacing_mut().item_spacing.x = toolkit::chrome::Chrome::of(ui.ctx())
-                            .style
-                            .title_control_spacing
-                            as f32;
-                    }
-                    for item in value.as_array().into_iter().flatten() {
-                        if item["separator"] == true {
-                            ui.separator();
-                            continue;
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), height),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        if widget.properties["style"] == "gold" {
+                            ui.spacing_mut().item_spacing.x = toolkit::chrome::Chrome::of(ui.ctx())
+                                .style
+                                .title_control_spacing
+                                as f32;
                         }
-                        let response = if widget.properties["style"] == "gold"
-                            && item["icon"].as_str().is_some()
-                        {
-                            let icon =
-                                crate::icons::Icon::from_name(item["icon"].as_str().unwrap())
-                                    .expect("validated icon");
-                            ui.add_enabled(
-                                item["enabled"] == true,
-                                toolkit::button::IconButton::new(icon)
-                                    .selected(item["checked"] == true)
-                                    .tooltip(text(item, "label")),
-                            )
-                        } else if let Some(icon) = item["icon"]
-                            .as_str()
-                            .and_then(crate::icons::Icon::from_name)
-                        {
-                            crate::icons::button(
-                                ui,
-                                icon,
-                                if item["icon_only"] == true {
-                                    ""
-                                } else {
-                                    text(item, "label")
-                                },
-                                16.0,
-                                None,
-                                item["enabled"] == true,
-                                item["checked"] == true,
-                            )
-                        } else {
-                            ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
-                        };
-                        let response = response.on_hover_text(text(item, "label"));
-                        if item["macro_anchor"] == true {
-                            toolkit::macros::anchor(ui.ctx(), response.rect);
+                        for item in value.as_array().into_iter().flatten() {
+                            if item["separator"] == true {
+                                ui.separator();
+                                continue;
+                            }
+                            let response = if widget.properties["style"] == "gold"
+                                && item["icon"].as_str().is_some()
+                            {
+                                let icon =
+                                    crate::icons::Icon::from_name(item["icon"].as_str().unwrap())
+                                        .expect("validated icon");
+                                ui.add_enabled(
+                                    item["enabled"] == true,
+                                    toolkit::button::IconButton::new(icon)
+                                        .selected(item["checked"] == true)
+                                        .tooltip(text(item, "label")),
+                                )
+                            } else if let Some(icon) = item["icon"]
+                                .as_str()
+                                .and_then(crate::icons::Icon::from_name)
+                            {
+                                crate::icons::button(
+                                    ui,
+                                    icon,
+                                    if item["icon_only"] == true {
+                                        ""
+                                    } else {
+                                        text(item, "label")
+                                    },
+                                    16.0,
+                                    None,
+                                    item["enabled"] == true,
+                                    item["checked"] == true,
+                                )
+                            } else {
+                                ui.add_enabled(
+                                    item["enabled"] == true,
+                                    egui::Button::new(label(item)),
+                                )
+                            };
+                            let response = response.on_hover_text(text(item, "label"));
+                            if item["macro_anchor"] == true {
+                                toolkit::macros::anchor(ui.ctx(), response.rect);
+                            }
+                            geometry.insert(
+                                format!("{id}.command.{}", text(item, "id")),
+                                response.rect,
+                            );
+                            if item.get("children").is_some() {
+                                egui::Popup::menu(&response)
+                                    .show(|ui| menu(ui, &item["children"], id, geometry, events));
+                            } else if response.clicked() {
+                                emit(events, id, "command", json!({"command":item["id"]}));
+                            }
                         }
-                        geometry
-                            .insert(format!("{id}.command.{}", text(item, "id")), response.rect);
-                        if item.get("children").is_some() {
-                            egui::Popup::menu(&response)
-                                .show(|ui| menu(ui, &item["children"], id, geometry, events));
-                        } else if response.clicked() {
-                            emit(events, id, "command", json!({"command":item["id"]}));
-                        }
-                    }
-                })
+                    },
+                )
                 .response
             };
             if let Some(target) = state.command_popup.as_deref().and_then(|id| {
