@@ -115,11 +115,11 @@ fn mail_action($s,$id,$a,$key,$call=nil)
   $m=$s.mail[$key]
   if $id=="mail.headers" then
     if $a.headers==nil then $s.header_dialog=$key else $s=mail_headers($s,$key,$a.headers) end
-    return {state:$s,result:nil,op_id:nil,kind:nil}
+    return {state:pump($s),result:nil,op_id:nil,kind:nil}
   end
   if $m.saving or $m.sending then raise("CONFLICT","A mail save or Send is already in flight") end
   $path=$a.path ?? $m.path
-  if $path==nil then $s.save_dialog=true;return {state:$s,result:nil,op_id:nil,kind:nil} end
+  if $path==nil then $s.save_dialog=true;return {state:pump($s),result:nil,op_id:nil,kind:nil} end
   $s.mail[$key].saving=true;$s.mail[$key].sending=$id=="file.send";$s.mail[$key].parked=true
   $s.mail[$key].save={path:$path,action:$id,call:$call,send:$id=="file.send",close_after:$id=="file.close"}
   return {state:pump($s),result:nil,op_id:nil,kind:"mail"}
