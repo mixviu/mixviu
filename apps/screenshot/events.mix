@@ -33,8 +33,8 @@ fn completed($s,$d,$service)
       $saved={path:$out.path,width:$out.document.width,height:$out.document.height,annotated:$out.document.annotated,saved_at:date_format(time(),"%Y-%m-%dT%H:%M:%S%:z")}
       $s.saved=$saved;$s.status="Saved to "..shown_path($out.path)
       $store.forget_capture($s.raw,$s.capture_file);$s.capture_file=nil
-      try $store.append_saved($s.state_dir,$saved) catch $message end
-      publish($service..".saved",json_encode($saved))
+      try $store.append_saved($s.state_dir,$saved) catch $message eprint("Screenshot recent history: "..$message) end
+      publish($service..".saved",json_encode(merge($saved,{dropped:0})))
     elif $out.op=="copy" then $s.status="Image copied"
     end
     $body=if $out.op=="show" then $out.result else $states.info($s) end
