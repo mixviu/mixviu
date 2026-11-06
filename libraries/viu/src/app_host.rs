@@ -586,9 +586,9 @@ impl Host {
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
                             let mut window = if snapshot["state"]["lost"] == true {
-                                self.session_window.clone().unwrap_or_else(|| {
-                                    self.model["window_settings"].clone()
-                                })
+                                self.session_window
+                                    .clone()
+                                    .unwrap_or_else(|| self.model["window_settings"].clone())
                             } else {
                                 snapshot["state"]["values"].clone()
                             };

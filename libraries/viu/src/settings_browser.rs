@@ -431,8 +431,14 @@ pub(crate) fn draw(
                         ui.memory_mut(|m| m.surrender_focus(r.id));
                     }
                     if !query.is_empty() {
-                        if ui.add(toolkit::button::IconButton::new(toolkit::Icon::X)
-                            .size(16.0).tooltip(text(value, "search_clear"))).clicked() {
+                        if ui
+                            .add(
+                                toolkit::button::IconButton::new(toolkit::Icon::X)
+                                    .size(16.0)
+                                    .tooltip(text(value, "search_clear")),
+                            )
+                            .clicked()
+                        {
                             emit(events, id, "query", json!(""));
                         }
                     }
@@ -555,7 +561,11 @@ pub(crate) fn draw(
             .auto_shrink([false, false])
             .show(&mut body, |ui| {
                 if array(&value["search_groups"]).next().is_none() {
-                    ui.label(RichText::new(text(value, "search_empty")).size(14.0).color(look.text));
+                    ui.label(
+                        RichText::new(text(value, "search_empty"))
+                            .size(14.0)
+                            .color(look.text),
+                    );
                 }
                 for group in array(&value["search_groups"]) {
                     if let Some(parent) = group["parent_title"].as_str() {
@@ -564,15 +574,31 @@ pub(crate) fn draw(
                             ui.label(RichText::new(parent).size(14.0).color(look.text));
                         });
                     }
-                    let link = ui.add(egui::Label::new(RichText::new(text(group, "title"))
-                        .size(14.0).color(look.text)).sense(Sense::click()));
-                    link.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, text(group, "title")));
+                    let link = ui.add(
+                        egui::Label::new(
+                            RichText::new(text(group, "title"))
+                                .size(14.0)
+                                .color(look.text),
+                        )
+                        .sense(Sense::click()),
+                    );
+                    link.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::Role::Link, true, text(group, "title"))
+                    });
                     if link.clicked() {
-                        emit(events, id, "navigate", json!({"page":group["page"],"row":group["row"]}));
+                        emit(
+                            events,
+                            id,
+                            "navigate",
+                            json!({"page":group["page"],"row":group["row"]}),
+                        );
                     }
                     ui.add_space(8.0);
-                    ui.painter().hline(ui.available_rect_before_wrap().x_range(), ui.cursor().min.y,
-                        Stroke::new(2.0, look.divider));
+                    ui.painter().hline(
+                        ui.available_rect_before_wrap().x_range(),
+                        ui.cursor().min.y,
+                        Stroke::new(2.0, look.divider),
+                    );
                     ui.add_space(2.0 + look.xs);
                     for section in array(&group["sections"]) {
                         let before = events.len();
