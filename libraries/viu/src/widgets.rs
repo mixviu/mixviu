@@ -496,7 +496,12 @@ impl Widgets {
                 } else if widget.properties["align"] == "right" {
                     label = label.halign(egui::Align::Max);
                 }
-                ui.add(label)
+                if matches!(widget.properties["role"].as_str(), Some("title" | "status")) {
+                    ui.allocate_ui_with_layout(ui.available_size_before_wrap(), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        if widget.properties["role"] == "status" { ui.add_space(toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as f32); }
+                        ui.add(label);
+                    }).response
+                } else { ui.add(label) }
             }
             "button" => {
                 let r = icon_button(ui, widget.text("icon"), widget.text("text"), false);
@@ -1056,6 +1061,10 @@ fn icon_button(ui: &mut egui::Ui, name: &str, text: &str, selected: bool) -> egu
 
 fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
+    if widget.properties["role"] == "status" { text = text.small(); }
+    if widget.properties["role"] == "title" {
+        text = text.font(crate::fonts::emphasis(ui.ctx(), egui::FontId::proportional(crate::window_frame::Metrics::of(ui.ctx()).title_size)));
+    }
     if let Some(size) = widget.properties["size"].as_f64() {
         text = text.size(size as f32);
     }

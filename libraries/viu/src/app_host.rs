@@ -330,6 +330,7 @@ impl Host {
                 }
             }
             if self.framed {
+                ui.painter().rect_filled(ui.max_rect(), 0.0, crate::appearance::colour(ui.ctx(), "dock").unwrap_or(ui.visuals().panel_fill));
                 let settings = self
                     .session_window
                     .clone()

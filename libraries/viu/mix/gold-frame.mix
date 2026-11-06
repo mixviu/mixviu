@@ -9,6 +9,6 @@ fn apply($model,$options)
   $values["gold-status-text"]=$options.status
   $model.values=$values
   $model.appearance=$options.appearance ?? {scheme:"studio",mode:"dark"}
-  $model.window_settings=$options.window ?? {"window.decorations":"client"}
+  $model.window_settings=$options.window ?? {"window.decorations":"csd"}
   return $model
 end

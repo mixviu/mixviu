@@ -660,6 +660,11 @@ impl SceneView {
     ) {
         self.regions
             .insert(id.into(), rect.intersect(ui.clip_rect()));
+        if let Some(node) = nodes.get(id) {
+            if let Some(background) = color(text(node, "background")).or_else(|| text(node, "background").strip_prefix("design.").and_then(|role| crate::appearance::colour(ui.ctx(), role))) {
+                ui.painter().rect_filled(rect.intersect(ui.clip_rect()), num(node, "radius").unwrap_or(0.0), background);
+            }
+        }
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(id), |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(rect));
             self.node(ui, id, nodes, route, depth + 1, events);
