@@ -155,6 +155,26 @@ try
     $capture=checked($app,"viu.capture",{name:$app..".png"})
     copy($capture.path,$run.path.."/"..$app..".png")
   end
+  $toast=read_file($root.."/share/scenes/toast/scene.mix")
+  for $line in lines($toast)
+    if starts_with($line,"model: ") then
+      $model=json_parse(slice($line,7))
+      $model.app="P2 rehearsal";$model.summary_lines=["Split engines","Private Bus notification",""]
+      $model.summary_shown=[true,true,false]
+      $toast=replace($toast,$line,"model: "..json_encode($model))
+      break
+    end
+  end
+  checked("shell","shell.scene.load",{source:$toast,output:"o_winit"})
+  checked("shell","shell.toast.show",{scene:"toast",output:"o_winit",h:132})
+  $until=monotonic()+10;$shown=false
+  while monotonic()<$until
+    if any(values(checked("comp-p2","comp.props.get",{path:"surfaces"})),fn($s)=$s.mapped==true and $s.width==360 and $s.height==132) then $shown=true;break end
+    sleep(0.05)
+  end
+  if not $shown then raise("TOAST_MAP","The Mix toast scene did not map") end
+  checked("comp-p2","comp.capture.frame",{path:$run.path.."/toast.png",cursor:false})
+  checked("shell","shell.toast.hide",{scene:"toast",output:"o_winit"})
   $sample=map($children,fn($p)={pid:$p,ticks:proc_ticks($p)})
   $start=monotonic();sleep(10);$wall=monotonic()-$start
   $hz=to_number(trim(run_argv_must(["getconf","CLK_TCK"])))

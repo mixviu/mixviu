@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Client furniture host. No compositor Loop, registry or input hooks.
+mod toast;
 use crate::{
     appearance,
     command::SceneCommand,
@@ -580,6 +581,7 @@ pub fn run(service: String, comp: String) -> Result<(), String> {
         })
         .map_err(|e| e.to_string())?;
     let mut threads = Vec::new();
+    threads.push(toast::start(state.clone(), send.clone()));
     let tip_state = state.clone();
     threads.push(std::thread::spawn(move || {
         let options = LayerOptions {
@@ -890,6 +892,11 @@ fn dispatch(
                 .map(str::to_owned)
         })
         .unwrap_or_default();
+    // Bus callers may use the compositor's stable output key; layer clients
+    // identify that same output by its Wayland name.
+    let output = shared.outputs.get(&output)
+        .and_then(|row| row["name"].as_str())
+        .unwrap_or(&output).to_owned();
     let edge = if matches!(kind, SceneCommand::Panel { corner: true, .. }) {
         match args["corner"].as_str() {
             Some("tl") => "left",
@@ -915,7 +922,7 @@ fn dispatch(
     let result = match kind {
         SceneCommand::Ping => json!({"service":service,"status":"ok","engine":"viu"}),
         SceneCommand::Info => {
-            json!({"service":service,"engine":"viu","commands":SceneCommand::names(service),"pending":["dialogs","toasts","corner menus"],"window_previews":false})
+            json!({"service":service,"engine":"viu","commands":SceneCommand::names(service),"pending":["dialogs","corner menus"],"window_previews":false})
         }
         SceneCommand::List => shared
             .store
@@ -992,6 +999,22 @@ fn dispatch(
                 10,
                 json!({"error_code":"SCENE_NOT_RENDERED","message":"Client layout readback is pending"}),
             );
+        }
+        SceneCommand::ToastShow | SceneCommand::ToastHide => {
+            let name = args["scene"].as_str().unwrap_or_default();
+            let visible = kind == SceneCommand::ToastShow;
+            let height = if visible && args.get("h").is_some() {
+                let Some(h) = args["h"].as_f64().or_else(|| args["h"].as_str().and_then(|h| h.parse::<f64>().ok())).filter(|h| h.is_finite()) else {
+                    return (10, json!({"error_code":"INVALID_HEIGHT","message":"h must be a finite number"}));
+                };
+                Some(h.clamp(60.0, 2048.0) as f32)
+            } else { None };
+            if output.is_empty() { return (10, json!({"error_code":"OUTPUT_NOT_READY"})); }
+            if let Err(error) = shared.store.set_toast_visible(name, visible, &comp_model::snapshot::output_key(&output), height) {
+                return (10, error);
+            }
+            shared.wake();
+            json!({"scene":name,"visible":visible,"applied":true})
         }
         SceneCommand::Load
         | SceneCommand::Validate
