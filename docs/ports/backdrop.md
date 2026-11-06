@@ -60,3 +60,60 @@ Corrections to the round-one inventory (gold wins):
 
 Checkpoint: layer/frame applicability surveyed; **parity remains unaccepted**.
 No new capture or CBC result is claimed by this source-only checkpoint.
+
+## Document and retained-raster checkpoint — 2026-11-07
+
+This is an implementation checkpoint, **not parity acceptance**. No Fable
+deviation is proposed and no item below is waived.
+
+- `document.mix` implements the pinned strict schema, canonical colours and
+  default fit, slideshow defaults/options, 4096-entry lists, 64-output names
+  and four-source accounting. Explicit null for required/defaulted non-Option
+  fields refuses. A missing default projects without a nil-field access.
+- `launch.mix` parses config/colour/image/fit options, resolves relative paths
+  without requiring existence, overrides only the default and revalidates the
+  combined source limit. `app.mix` reads the native app config location or
+  required `--config`; a positional config is no longer the launch contract.
+  Probe **rendering is still missing** and explicitly refuses.
+- `schedule.mix` owns pure independent traversal/deadlines, deduplication,
+  shuffle without cycle-boundary repeats, singleton sleep, and failed-entry
+  skipping while retaining the visible selection. It is **not yet wired to
+  the running wallpaper**. Tests do not substitute for rendered slideshow
+  acceptance, crossfade, native timers or `backdrop.next`.
+- Invalid `backdrop.set` values now receive rc 10 / ARGUMENT without changing
+  the projected model. Successful replies remain the old model-only envelope;
+  durable transactional set and the full gold state envelope remain missing.
+- Shared `raster_decode` retains gold's decoder, downscale, folder discovery
+  and tests with provenance in `provenance/backdrop-raster.md`. Shared
+  `Rasters` exposes in-process retained handles to Mix root/Jobs evaluators.
+  CPU and texture leases account separately against 512 MiB, including held
+  renderer references and replacement overlap. `image-fill` can draw handles
+  without reopening a source and uses original dimensions for native sizing.
+  New layer output views receive the same store. **Backdrop does not yet use
+  these handles**; it still uses the old asynchronous path projection.
+
+Remaining work is required: transaction/worker cancellation ownership,
+supersession and durable store, complete command descriptors/state/replies,
+slideshow controller and crossfade, live theme and event-driven settings,
+probe, train 2D/3D/queues/history/gate/alerts/visibility, simultaneous outputs
+and hotplug, exact release artifacts and all matched captures, whole/region
+diff inspection, Bus/Prefs witnesses and owned-process cleanup.
+
+Current visual evidence is historical six-mode AE=0 only; no new SSIM,
+regions, output/hotplug or live Prefs acceptance is claimed here.
+
+Exact checked code: `d825c2ae665c1d6fe06d73708242f84bb3682774` on
+`lab/parity-backdrop`. CBC `20261107-090116-633bcd47-a1`, cbc3,
+`mix tools/backdrop_parity_gate.mix`: **BUILD_RC=0**. Four Mix suites,
+eight lint checks, rustfmt check, 13 raster-related tests (including the
+renderer source-removal/surface-release witness), three app-port tests and
+normal Clippy all pass. No worker diff. Complete saved log read; existing
+Clippy warnings were not suppressed. No release artifact was built by this
+scoped checkpoint and no native compositor process was launched.
+
+Earlier receipts: `20261107-085433-7d251078-a1` failed on the embedded
+interpreter's nil-field access (fixed); `20261107-085523-b9e3c76c-a1`
+passed the document checkpoint; `20261107-085822-29188e7c-a1` passed the
+raster tests and returned formatting; `20261107-085920-7963d5d5-a1`
+passed formatting/tests/Clippy; `20261107-090016-dbccaea6-a1` refused
+formatting of the new renderer witness (fixed without changing assertions).
