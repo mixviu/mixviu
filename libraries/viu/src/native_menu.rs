@@ -49,7 +49,11 @@ pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
     })?;
     Some(slots()[index])
 }
-fn entries(value: &Value, ids: &mut Vec<String>, ctx: Option<&egui::Context>) -> Result<Vec<Entry>, String> {
+fn entries(
+    value: &Value,
+    ids: &mut Vec<String>,
+    ctx: Option<&egui::Context>,
+) -> Result<Vec<Entry>, String> {
     value
         .as_array()
         .ok_or("menu entries must be a list")?
@@ -77,7 +81,8 @@ fn entries(value: &Value, ids: &mut Vec<String>, ctx: Option<&egui::Context>) ->
                 id,
                 label: item["label"].as_str().unwrap_or("").into(),
                 shortcut: if item.get("shortcut_binding").is_some() {
-                    item["shortcut_binding"].as_str()
+                    item["shortcut_binding"]
+                        .as_str()
                         .and_then(toolkit::keymap::parse_chord)
                         .and_then(|shortcut| ctx.map(|ctx| ctx.format_shortcut(&shortcut)))
                 } else {
@@ -105,7 +110,8 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
         .iter()
         .map(|item| Menu {
             title: item["label"].as_str().unwrap_or("").into(),
-            entries: entries(&item["children"], &mut ids, Some(ui.ctx())).expect("validated native menu"),
+            entries: entries(&item["children"], &mut ids, Some(ui.ctx()))
+                .expect("validated native menu"),
         })
         .collect();
     let key = model_id(ui.ctx());

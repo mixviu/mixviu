@@ -2126,7 +2126,7 @@ fn draw_inline_row(
                     };
                     ui.add(egui::Label::new(label).wrap());
                 } else if text(row, "kind") == "table" {
-                    egui::Grid::new((id, key, "table"))
+                    let mut draw = |ui: &mut Ui| { egui::Grid::new((id, key, "table"))
                         .num_columns(array(&row["columns"]).count())
                         .striped(true)
                         .spacing([18.0, 6.0])
@@ -2164,6 +2164,10 @@ fn draw_inline_row(
                                 ui.end_row();
                             }
                         });
+                    };
+                    if row["scroll"] == true {
+                        egui::ScrollArea::vertical().id_salt((id,key,"scroll")).auto_shrink(false).show(ui,draw);
+                    } else { draw(ui); }
                 } else if text(row, "kind") == "notes" {
                     if !text(row, "tag").is_empty() {
                         ui.horizontal(|ui| {
