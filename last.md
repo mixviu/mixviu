@@ -821,3 +821,34 @@ branch lab/parity-prefs; head SHA 03db134d0a6027fcd622cd6ba7e961c8fc66ff7f (code
 branch lab/gold-parity; head 40d48ab (code; following receipt-only checkpoint); Monitor acceptance OPEN: Processes whole SSIM distortion 0.00202308, Performance 0.00202375, all content/options/status 0, header 0.0374929; CBC job ids 20261107-034243-bf3be532-a1 (preparation passed, rc97 fmt applied), 20261107-033915-8cc83126-a1 (focused green), latest 40d48ab gate pending.
 
 branch lab/gold-parity; head af5654a (latest code; receipt/format commit follows); Monitor acceptance OPEN, matched Processes and seven Performance whole/per-region SSIM distortion 0 and RMSE 0, remaining functional/topic/populated TCP/live matched Prefs/final-source gate evidence pending; CBC job ids 20261107-035522-be012539-a1 (full scoped preparation passed, rc97), 20261107-040200-eac42299-a1 (focused preparation passed, rc97), 20261107-035232-0923c6e8-a1 (focused preparation passed, rc97).
+
+## Prefs round three: shared frame merge and page repairs
+
+Merged the newly advanced `lab/gold-parity` through `15956a6` at `3a3178a`.
+Shared native title rounding, chrome spacing, transparent window and header
+separator fixes replace overlapping local frame work. Prefs retains owned
+menu IDs, explicit HELP, optional status, its own drive request owner and
+application ID. No Monitor policy was edited outside the authorised merge.
+
+CBC `20261107-040306-60d6ff3c-a1` and
+`20261107-041056-1850f5c9-a1` passed the complete scoped checks and 64 native
+menu tests, returning formatting now applied. Job
+`20261107-041404-834c2726-a1` likewise passed at `83d9d12` with formatting
+subsequently covered by the newer patch. Complete saved logs were read.
+Job `20261107-041930-a1c36911-a1` caught lost settings-browser routing after
+the shared merge; `20261107-042649-ef41c654-a1` confirmed the route repair
+and caught its missing decode registration. Both regressions are repaired;
+tests were retained. CBC `20261107-042818-cf12b0c2` checks `00e0e45` through
+the new scoped capture repair build. Final acceptance still uses the full
+`apps/prefs/gate.mix`, with no worker diff.
+
+Repairs cover vertical radio rows, native dropdown widths, segmented/image
+choices, sliders and spin controls, custom form heading/button spacing,
+Email's empty account divider, and removal of duplicate child cards on
+section pages. Native page readbacks in `pair.TD1EvM` match on 34/42 pages
+after normalising the sequentially accepted settings revision. Corrections
+for the other eight cover backend messages, gallery/ordered/readout metadata
+and the hidden battery section; new native verification is required.
+No page is visually accepted. No deviation from gold is proposed.
+
+branch lab/parity-prefs; head SHA 00e0e454ae0787978d9828e39f870930c856e9af (tested code before receipt-only commit); pages at acceptance 0/42, figures pair.TD1EvM/diff-<page>, Appearance full/header/sidebar/content SSIM distortion 0.0734909/0.0883552/0.00161027/0.100063; Bus HELP 55/full menu/four open paths exact gold, 34/42 normalised page replies matched before latest repairs, full mutation matrix open; CBC job ids 20261107-040306-60d6ff3c-a1, 20261107-041056-1850f5c9-a1, 20261107-041404-834c2726-a1 checks passed with formatting, 20261107-041930-a1c36911-a1 and 20261107-042649-ef41c654-a1 caught repaired merge regressions, 20261107-042818-cf12b0c2 pending.

@@ -11,7 +11,7 @@ jobs stay in process; native Bus calls cross process boundaries.
 
 | Gold feature | Implementation and outstanding acceptance |
 | --- | --- |
-| Shared frame, menus, title, actions, captions and close | Shared gold frame adopted; exact-source frame checkpoint `48b5b430f56fd7c2101f199ef15cd2cd89cabdde`. Further generic caption/title geometry repairs are under test. Native menu model/input compatibility remains open. |
+| Shared frame, menus, title, actions, captions and close | Shared gold frame adopted; exact-source frame checkpoint `48b5b430f56fd7c2101f199ef15cd2cd89cabdde`. Shared branch merged through `15956a6`; further paired frame acceptance is open. Native menu model and four open-path replies match gold. |
 | 42 pages, 11 sidebar roots, children, drawers, search and legacy sections | Mix page descriptors, navigation and read-only page/row search implemented. All 42 pages mount in the embedded runtime test. Native default pages/actions metadata matches gold. Full navigation/input acceptance remains open. |
 | Registry, defaults, typed validation, fenced writes | Native settings registry supplies defaults and validation. Mix queues/coalesces absolute values, retains failed writes and refreshes/replays after conflicts or uncertain results. Topic/reconnect reads replace idle polling. Recovery acceptance remains open. |
 | Appearance drafts, conflict Keep/Revert and uncertain apply receipts | Mix appearance state machine and operation receipt lookup implemented; embedded conflict/receipt tests pass. Native mutation/refusal/restart comparison remains open. |
@@ -23,7 +23,7 @@ jobs stay in process; native Bus calls cross process boundaries.
 | Keyboard layout/variant picker, font/icon/locale catalogues and asset selection | Worker jobs and searchable reusable pickers implemented; native fontdb catalogue reused. Catalogue parsing, native chooser and representative dataset acceptance remain open. |
 | Backend pages and disabled controls | Gold's pending notices, hidden battery controls and missing-backend refusals are the target. These are not proposed future backend implementations. Native visibility/refusal coverage remains open. |
 | Actions, dialogs, themes, macros and debug | Canonical descriptors and Mix actions/forms implemented; generic native macro editor/session and debug surface reused. Complete action/input/dialog/macro comparison remains open. |
-| Full canonical Bus surface | 55 gold command descriptors preserved; canonical handlers, native drive, macros and debug registered. `app.describe`, `prefs.actions`, `prefs.pages`, default `prefs.appearance` and missing-releases `prefs.apps` match native gold. HELP currently exposes extra host commands and menu queries differ; structured mutation/refusal coverage remains open. |
+| Full canonical Bus surface | 55 gold command descriptors preserved; canonical handlers, native drive, macros and debug registered. HELP, `app.describe`, `prefs.actions`, `prefs.pages`, full menus and File/View/View → Theme/Help open-path replies match native gold. Host commands are hidden from the explicit HELP surface. Structured mutation/refusal coverage remains open. |
 | Single-instance CLI, service options and page/row deep links | Outstanding generic launch/host integration. Current lab launch is `viu run apps/prefs [INSTANCE]`. |
 | Live Prefs response of Prefs itself | Shared host follows native session appearance without restart. Per-app complete axes/tune/app-override matrix and authority loss/recovery comparison remain open. |
 
@@ -41,6 +41,21 @@ result as `{executed,result}`. Gold's Appearance Import/Export extras and
 several backend controls are disabled pending work; their disabled state,
 notice and refusal belong in parity. Implementing future backends would
 change the target.
+
+Gold's COSMIC page palette is retained across mode/scheme/accent changes until
+density or roundness changes, while header, typography and control swatches
+follow the live effective theme. The pinned shell and native light-mode pair
+confirm this behaviour; the browser follows the same authored refresh key.
+
+Round-three native run `pair.TD1EvM` completed all 42 page pairs, including
+Terminal, and 11 accepted live variants per process with unchanged PIDs.
+Every accepted variant waited for its settings receipt revision. All owned
+processes stopped. The 42 `diff-<page>` figures and regional metrics are in
+that private run's `comparison-index.json`. No page has visual acceptance.
+Appearance SSIM distortion is full `0.0734909`, header `0.0883552`, sidebar
+`0.00161027`, content `0.100063`; Terminal full is `0.0577293`. Later source
+repairs page composition, native controls and shared framing; recapture is
+required. The earlier figures below remain historical failed evidence.
 
 ## Evidence and remaining gate
 
