@@ -2,7 +2,9 @@
 -- version: 0.2.0
 $op=require("operations.mix");$states=require("state.mix");$registry=require("registry.mix");$store=require("storage.mix")
 $journal=require("journal.mix")
+$macros=require("macros.mix")
 fn completed($s,$d,$service)
+  if starts_with($d.tag.id,"screenshot-macro-") then return $macros.completed($s,$d) end
   if $d.tag.id=="screenshot-events" then return $journal.completed($s,$d) end
   if $d.tag.id=="screenshot-preview" then
     if not ($s.rendering ?? false) or $d.tag.owner!=$s.render_revision then return $s end

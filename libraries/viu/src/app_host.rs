@@ -221,9 +221,13 @@ impl Drop for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
-        if self.ready && self.model["window_close"]!=true && ui.input(|i|i.viewport().close_requested()) {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.dispatch("viu.frame.close".into(),json!({}),BTreeMap::new(),None);
+        if self.ready
+            && self.model["window_close"] != true
+            && ui.input(|i| i.viewport().close_requested())
+        {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
         }
         self.wire_deliveries
             .retain(|state| state.load(std::sync::atomic::Ordering::Acquire) == 0);
@@ -509,34 +513,52 @@ impl Host {
                     }
                 }
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
-                if self.model["native_header"]==true {
-                    match crate::native_titlebar::draw(ui,&self.model["values"],self.model["header_search_menu"].as_str()) {
-                        Ok(fired)=>for (command,origin) in fired {self.dispatch("viu.frame.intent".into(),json!({"id":"gold-menu","action":"command","value":{"command":command,"origin":origin}}),BTreeMap::new(),None);},
-                        Err(error)=>self.error=error,
+                if self.model["native_header"] == true {
+                    match crate::native_titlebar::draw(
+                        ui,
+                        &self.model["values"],
+                        self.model["header_search_menu"].as_str(),
+                    ) {
+                        Ok(fired) => {
+                            for (command, origin) in fired {
+                                self.dispatch("viu.frame.intent".into(),json!({"id":"gold-menu","action":"command","value":{"command":command,"origin":origin}}),BTreeMap::new(),None);
+                            }
+                        }
+                        Err(error) => self.error = error,
                     }
-                    if let Err(e)=self.view.set_slots(BTreeMap::new()) {self.error=e;}
+                    if let Err(e) = self.view.set_slots(BTreeMap::new()) {
+                        self.error = e;
+                    }
                 } else {
-                let gap=ui.spacing().item_spacing.y;
-                ui.spacing_mut().item_spacing.y=0.0;
-                self.window_frame
-                    .show_with_header(ui, &self.title, &settings, true);
-                ui.spacing_mut().item_spacing.y=gap;
-                let slots = self
-                    .window_frame
-                    .geometry
-                    .get("window.header")
-                    .map(|rect| BTreeMap::from([("window.header".into(), *rect)]))
-                    .unwrap_or_default();
-                if let Err(e) = self.view.set_slots(slots) {
-                    self.error = e;
+                    let gap = ui.spacing().item_spacing.y;
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    self.window_frame
+                        .show_with_header(ui, &self.title, &settings, true);
+                    ui.spacing_mut().item_spacing.y = gap;
+                    let slots = self
+                        .window_frame
+                        .geometry
+                        .get("window.header")
+                        .map(|rect| BTreeMap::from([("window.header".into(), *rect)]))
+                        .unwrap_or_default();
+                    if let Err(e) = self.view.set_slots(slots) {
+                        self.error = e;
+                    }
                 }
-                }
-                if self.model["native_status"]==true {
-                    let left=self.model["values"]["gold-status-text"].as_str().unwrap_or("");
-                    let right=self.model["values"]["gold-status-right"].as_str().unwrap_or("");
-                    toolkit::bars::status(ui,|ui| {
+                if self.model["native_status"] == true {
+                    let left = self.model["values"]["gold-status-text"]
+                        .as_str()
+                        .unwrap_or("");
+                    let right = self.model["values"]["gold-status-right"]
+                        .as_str()
+                        .unwrap_or("");
+                    toolkit::bars::status(ui, |ui| {
                         ui.small(left);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {if !right.is_empty(){ui.small(right);}});
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if !right.is_empty() {
+                                ui.small(right);
+                            }
+                        });
                     });
                 }
             }
@@ -553,7 +575,9 @@ impl Host {
                 }
             }
             if self.framed {
-                if self.model["native_header"]==true {toolkit::titlebar::edges(ui);}
+                if self.model["native_header"] == true {
+                    toolkit::titlebar::edges(ui);
+                }
                 self.window_frame.edges(ui);
                 self.view
                     .geometry
@@ -789,19 +813,23 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         .app_id
         .clone()
         .unwrap_or_else(|| format!("mixviu.{service}"));
-    let framed=bundle.manifest.frame.is_some();
+    let framed = bundle.manifest.frame.is_some();
     eframe::run_native(
         &title,
         eframe::NativeOptions {
-            viewport: if framed {toolkit::titlebar::viewport(&app_id,&title).with_inner_size(size)} else {egui::ViewportBuilder::default()
-                .with_inner_size(size)
-                .with_app_id(app_id)},
+            viewport: if framed {
+                toolkit::titlebar::viewport(&app_id, &title).with_inner_size(size)
+            } else {
+                egui::ViewportBuilder::default()
+                    .with_inner_size(size)
+                    .with_app_id(app_id)
+            },
             ..Default::default()
         },
         Box::new(move |cc| {
             if framed {
                 toolkit::decorations::initialise(cc);
-                toolkit::decorations::initialise_window(&cc.egui_ctx,cc.winit_window().cloned());
+                toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             }
             crate::appearance::install(&cc.egui_ctx);
             if let Some(prefix) = &bundle.manifest.drive {

@@ -3,6 +3,7 @@
 -- lint: globals app_args
 $states=require("state.mix");$op=require("operations.mix");$events=require("events.mix");$model=require("model.mix")
 $journal=require("journal.mix")
+$macros=require("macros.mix")
 $ctx=viu_context()
 $launch={}
 if $app_args[1]=="--launch" then $launch=json_parse($app_args[2]) end
@@ -11,6 +12,7 @@ $options=$ctx.options ?? {}
 $state.headless=$options.headless ?? false
 $state=$op.refresh($state)
 fn publish_model($s)
+  $s=$macros.flush($s)
   $s=$journal.flush($s,$ctx.citizen)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model.render($s)}
   return $s
@@ -147,4 +149,52 @@ end
 
 on screenshot.dialog
   $state=command($state,"screenshot.dialog",$event.args)
+end
+
+on screenshot.macros.list
+  $state=$macros.request_macro($state,"list",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.reload
+  $state=$macros.request_macro($state,"reload",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.run
+  $state=$macros.request_macro($state,"run",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.status
+  $state=$macros.request_macro($state,"status",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.output
+  $state=$macros.request_macro($state,"output",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.stop
+  $state=$macros.request_macro($state,"stop",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.new
+  $state=$macros.request_macro($state,"new",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.get
+  $state=$macros.request_macro($state,"get",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.put
+  $state=$macros.request_macro($state,"put",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.remove
+  $state=$macros.request_macro($state,"remove",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.move
+  $state=$macros.request_macro($state,"move",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.copy
+  $state=$macros.request_macro($state,"copy",$event.args);$state=publish_model($state)
 end
