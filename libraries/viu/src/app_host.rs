@@ -415,7 +415,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         wake.clone(),
     );
     let documents = crate::documents::Documents::default();
-    let services = crate::runtime::Services { documents: Some(documents.clone()), ..Default::default() };
+    let services = crate::runtime::Services {
+        documents: Some(documents.clone()),
+        ..Default::default()
+    };
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
     jobs.set_services(services.clone());
     let session = bundle.manifest.follow_settings.then(|| {
@@ -433,7 +436,12 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .expect("start settings follower")
     });
     jobs.set_native_backend(bus.backend_maker());
-    let mut runtime = Runtime::with_services(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))), services);
+    let mut runtime = Runtime::with_services(
+        32,
+        wake.clone(),
+        Some(jobs.backend(Some(bus.backend()))),
+        services,
+    );
     runtime.load(bundle.program).expect("load behaviour");
     let capture_root = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)

@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Reusable in-process document/mirror facility. It performs no transport,
 //! storage, tab or session policy. Mix explicitly drains and delivers effects.
-use std::{collections::{BTreeMap, VecDeque}, hash::{BuildHasher, Hasher}, sync::{Arc, Mutex}};
-use editor_model::{highlight::Highlight, mirror::{Mirror, Phase, Step, ServerOp, LaneArg}, model::{EditorModel, EditCfg, line_comment_for}, types::{Intent, OpIdGen, Outgoing}};
 use editor::{Doc, EditCommand, Event, Selection, View};
+use editor_model::{
+    highlight::Highlight,
+    mirror::{LaneArg, Mirror, Phase, ServerOp, Step},
+    model::{EditCfg, EditorModel, line_comment_for},
+    types::{Intent, OpIdGen, Outgoing},
+};
 use serde_json::{Value, json};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    hash::{BuildHasher, Hasher},
+    sync::{Arc, Mutex},
+};
 
 struct Document {
     mirror: Mirror,
@@ -15,11 +24,21 @@ struct Document {
     notices: Vec<String>,
     layout: editor::LayoutReport,
 }
-struct State { documents: BTreeMap<String, Document>, ids: OpIdGen, next: u64 }
+struct State {
+    documents: BTreeMap<String, Document>,
+    ids: OpIdGen,
+    next: u64,
+}
 impl Default for State {
     fn default() -> Self {
-        let run = std::collections::hash_map::RandomState::new().build_hasher().finish() as u32;
-        Self { documents: BTreeMap::new(), ids: OpIdGen::new(run), next: 0 }
+        let run = std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish() as u32;
+        Self {
+            documents: BTreeMap::new(),
+            ids: OpIdGen::new(run),
+            next: 0,
+        }
     }
 }
 #[derive(Clone, Default)]
@@ -31,30 +50,67 @@ fn normalize(value: Value) -> Result<Value, String> {
         Value::Number(n) if n.is_f64() => {
             let f = n.as_f64().unwrap();
             if f.fract() == 0.0 {
-                if f.abs() > 9_007_199_254_740_991.0 { return Err("integer exceeds Mix's exact range".into()); }
-                if f < 0.0 { json!(f as i64) } else { json!(f as u64) }
-            } else { Value::Number(n) }
+                if f.abs() > 9_007_199_254_740_991.0 {
+                    return Err("integer exceeds Mix's exact range".into());
+                }
+                if f < 0.0 {
+                    json!(f as i64)
+                } else {
+                    json!(f as u64)
+                }
+            } else {
+                Value::Number(n)
+            }
         }
-        Value::Array(a) => Value::Array(a.into_iter().map(normalize).collect::<Result<_,_>>()?),
-        Value::Object(a) => Value::Object(a.into_iter().map(|(k,v)| Ok((k,normalize(v)?))).collect::<Result<_,String>>()?),
+        Value::Array(a) => Value::Array(a.into_iter().map(normalize).collect::<Result<_, _>>()?),
+        Value::Object(a) => Value::Object(
+            a.into_iter()
+                .map(|(k, v)| Ok((k, normalize(v)?)))
+                .collect::<Result<_, String>>()?,
+        ),
         v => v,
     })
 }
-fn text_arg<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> { v[key].as_str().ok_or_else(|| format!("{key} requires text")) }
-fn decode<T: serde::de::DeserializeOwned>(v: &Value) -> Result<T, String> { serde_json::from_value(normalize(v.clone())?).map_err(|e| e.to_string()) }
+fn text_arg<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
+    v[key]
+        .as_str()
+        .ok_or_else(|| format!("{key} requires text"))
+}
+fn decode<T: serde::de::DeserializeOwned>(v: &Value) -> Result<T, String> {
+    serde_json::from_value(normalize(v.clone())?).map_err(|e| e.to_string())
+}
 fn point(text: &edit::text::Text, v: &Value) -> Result<usize, String> {
-    let offset = if let Some(n) = crate::widgets::whole(v) { n as usize }
-    else {
+    let offset = if let Some(n) = crate::widgets::whole(v) {
+        n as usize
+    } else {
         let line = crate::widgets::whole(&v["line"]).ok_or("line required")? as usize;
         let col = crate::widgets::whole(&v["col"]).unwrap_or(1) as usize;
         let range = text.line_range(line).ok_or("line out of range")?;
-        let mut s = String::new(); text.read(range.clone(), &mut s);
+        let mut s = String::new();
+        text.read(range.clone(), &mut s);
         let content = s.strip_suffix('\n').unwrap_or(&s);
-        if col == 0 || col > content.chars().count()+1 { return Err("column out of range".into()); }
-        range.start + content.char_indices().nth(col-1).map_or(content.len(), |(i,_)| i)
+        if col == 0 || col > content.chars().count() + 1 {
+            return Err("column out of range".into());
+        }
+        range.start
+            + content
+                .char_indices()
+                .nth(col - 1)
+                .map_or(content.len(), |(i, _)| i)
     };
-    if offset > text.len() || !text.is_char_boundary(offset) { return Err("offset is outside text or a UTF-8 boundary".into()); }
+    if offset > text.len() || !text.is_char_boundary(offset) {
+        return Err("offset is outside text or a UTF-8 boundary".into());
+    }
     Ok(offset)
+}
+fn scalar_offset(text: &edit::text::Text, mut n: usize) -> usize {
+    let mut offset=0;
+    while offset<text.len() {
+        let chunk=std::str::from_utf8(text.chunk_at(offset)).expect("UTF-8 text chunks");
+        for (i,_) in chunk.char_indices() { if n==0{return offset+i;} n-=1; }
+        offset+=chunk.len();
+    }
+    text.len()
 }
 impl Document {
     fn step(&mut self, step: Step) {
@@ -64,8 +120,11 @@ impl Document {
         }
         self.model.clamp(self.mirror.text());
         self.out.extend(step.out);
-        self.notices.extend(step.notices.into_iter().map(|n| format!("{n:?}")));
-        if self.notices.len()>64 { self.notices.drain(..self.notices.len()-64); }
+        self.notices
+            .extend(step.notices.into_iter().map(|n| format!("{n:?}")));
+        if self.notices.len() > 64 {
+            self.notices.drain(..self.notices.len() - 64);
+        }
     }
     fn state(&self, key: &str) -> Value {
         let m = &self.mirror;
@@ -78,11 +137,22 @@ impl Document {
             "first_line":self.model.scroll.first_line,"detached_copy":m.detached_copy().is_some(),"conflicts":m.conflicts().len(),"layout":self.layout,"notices":self.notices})
     }
     fn command(&mut self, c: EditCommand, view: &View, ids: &mut OpIdGen) -> Result<(), String> {
-        let cfg = EditCfg { measure:view.measure(),insert_spaces:!matches!(self.mirror.meta().language.as_str(),"go"|"makefile"),
-            eol:if self.mirror.meta().eol==edit::buffer::Eol::Crlf {"\r\n"}else{"\n"},line_comment:line_comment_for(&self.mirror.meta().language) };
+        let cfg = EditCfg {
+            measure: view.measure(),
+            insert_spaces: !matches!(self.mirror.meta().language.as_str(), "go" | "makefile"),
+            eol: if self.mirror.meta().eol == edit::buffer::Eol::Crlf {
+                "\r\n"
+            } else {
+                "\n"
+            },
+            line_comment: line_comment_for(&self.mirror.meta().language),
+        };
         if let Some(edit) = self.model.command(self.mirror.text(), &cfg, c) {
             let caret = edit.caret_after;
-            let step = self.mirror.local_edit(edit, Intent::ui(self.identity), ids).map_err(|e| format!("{e:?}"))?;
+            let step = self
+                .mirror
+                .local_edit(edit, Intent::ui(self.identity), ids)
+                .map_err(|e| format!("{e:?}"))?;
             self.step(step);
             self.model.sel = caret;
         }
@@ -93,117 +163,280 @@ impl Documents {
     pub fn binding(&self) -> mix::evaluator::ExtFn {
         let docs = self.clone();
         mix::sync_ext(move |args| {
-            let fail = |msg| mix::MixError::RuntimeError{msg,span:None};
-            let [mix::value::Value::String(op),mix::value::Value::String(key),body] = args.as_slice() else { return Err(fail("viu_document expects operation, document id, arguments".into())); };
-            crate::runtime::from_json(docs.call(op,key,crate::runtime::to_json(body)?).map_err(fail)?)
+            let fail = |msg| mix::MixError::RuntimeError { msg, span: None };
+            let [
+                mix::value::Value::String(op),
+                mix::value::Value::String(key),
+                body,
+            ] = args.as_slice()
+            else {
+                return Err(fail(
+                    "viu_document expects operation, document id, arguments".into(),
+                ));
+            };
+            crate::runtime::from_json(
+                docs.call(op, key, crate::runtime::to_json(body)?)
+                    .map_err(fail)?,
+            )
         })
     }
     pub fn call(&self, op: &str, key: &str, a: Value) -> Result<Value, String> {
-        if key.is_empty() || key.len()>128 { return Err("invalid document id".into()); }
-        let mut state = self.0.lock().map_err(|_| "document owner poisoned")?;
-        if op=="open" {
-            if state.documents.contains_key(key) { return Err("document already open".into()); }
-            let open: edit::wire::OpenReply = decode(&a)?;
-            let (mirror, step) = Mirror::bootstrap(&open).map_err(|e|format!("{e:?}"))?;
-            state.next+=1;
-            let mut doc = Document{mirror,model:EditorModel::default(),highlight:Highlight::for_language(&open.language,open.path.as_deref().map(std::path::Path::new)),identity:state.next,out:VecDeque::new(),notices:Vec::new(),layout:Default::default()};
-            doc.step(step); let value=doc.state(key);state.documents.insert(key.into(),doc);return Ok(value);
+        if key.is_empty() || key.len() > 128 {
+            return Err("invalid document id".into());
         }
-        if op=="close" { state.documents.remove(key).ok_or("unknown document")?;return Ok(json!({"closed":true})); }
-        let State{documents,ids,..} = &mut *state;
+        let mut state = self.0.lock().map_err(|_| "document owner poisoned")?;
+        if op == "open" {
+            if state.documents.contains_key(key) {
+                return Err("document already open".into());
+            }
+            let open: edit::wire::OpenReply = decode(&a)?;
+            let (mirror, step) = Mirror::bootstrap(&open).map_err(|e| format!("{e:?}"))?;
+            state.next += 1;
+            let mut doc = Document {
+                mirror,
+                model: EditorModel::default(),
+                highlight: Highlight::for_language(
+                    &open.language,
+                    open.path.as_deref().map(std::path::Path::new),
+                ),
+                identity: state.next,
+                out: VecDeque::new(),
+                notices: Vec::new(),
+                layout: Default::default(),
+            };
+            doc.step(step);
+            let value = doc.state(key);
+            state.documents.insert(key.into(), doc);
+            return Ok(value);
+        }
+        if op == "close" {
+            state.documents.remove(key).ok_or("unknown document")?;
+            return Ok(json!({"closed":true}));
+        }
+        let State { documents, ids, .. } = &mut *state;
         let doc = documents.get_mut(key).ok_or("unknown document")?;
         match op {
-            "state" => {},
+            "state" => {}
             "read" => {
-                if a.get("view_gen").is_some_and(|g| crate::widgets::whole(g)!=Some(doc.mirror.view_gen())) { return Err("document changed during paged read".into()); }
-                let start = point(doc.mirror.text(),a.get("start").unwrap_or(&json!(0)))?;
-                let limit=crate::widgets::whole(&a["max_bytes"]).unwrap_or(1024*1024).min(4*1024*1024) as usize;
-                let mut end=(start+limit).min(doc.mirror.text().len());
-                while !doc.mirror.text().is_char_boundary(end) {end-=1;}
-                let mut text=String::new();doc.mirror.text().read(start..end,&mut text);
-                return Ok(json!({"text":text,"start":start,"next":if end<doc.mirror.text().len(){Some(end)}else{None},"view_gen":doc.mirror.view_gen(),"rev":doc.mirror.rev()}));
+                if a.get("view_gen")
+                    .is_some_and(|g| crate::widgets::whole(g) != Some(doc.mirror.view_gen()))
+                {
+                    return Err("document changed during paged read".into());
+                }
+                let start = point(doc.mirror.text(), a.get("start").unwrap_or(&json!(0)))?;
+                let limit = crate::widgets::whole(&a["max_bytes"])
+                    .unwrap_or(1024 * 1024)
+                    .min(4 * 1024 * 1024) as usize;
+                let mut end = (start + limit).min(doc.mirror.text().len());
+                while !doc.mirror.text().is_char_boundary(end) {
+                    end -= 1;
+                }
+                let mut text = String::new();
+                doc.mirror.text().read(start..end, &mut text);
+                return Ok(
+                    json!({"text":text,"start":start,"next":if end<doc.mirror.text().len(){Some(end)}else{None},"view_gen":doc.mirror.view_gen(),"rev":doc.mirror.rev()}),
+                );
             }
             "hash" => {
-                let mut hasher=blake3::Hasher::new();let mut offset=0;
-                while offset<doc.mirror.text().len(){let chunk=doc.mirror.text().chunk_at(offset);hasher.update(chunk);offset+=chunk.len();}
+                let mut hasher = blake3::Hasher::new();
+                let mut offset = 0;
+                while offset < doc.mirror.text().len() {
+                    let chunk = doc.mirror.text().chunk_at(offset);
+                    hasher.update(chunk);
+                    offset += chunk.len();
+                }
                 return Ok(json!({"hash":hasher.finalize().to_hex().to_string()}));
             }
             "effects" => {
-                while let Some(out)=doc.mirror.next_outgoing(){doc.out.push_back(out);}
+                while let Some(out) = doc.mirror.next_outgoing() {
+                    doc.out.push_back(out);
+                }
                 let out:Vec<_>=doc.out.drain(..).map(|o|json!({"command":o.command,"body":o.body,"op_id":o.op_id,"deadline_ms":o.deadline_ms})).collect();
-                let retry=doc.mirror.take_retry_timer();let echo=doc.mirror.take_echo_timer();
-                let outcomes:Vec<_>=doc.mirror.take_outcomes().into_iter().map(|(id,o)|match o {editor_model::mirror::Outcome::Done=>json!({"op_id":id,"ok":true}),editor_model::mirror::Outcome::Refused(r)=>json!({"op_id":id,"ok":false,"error":r})}).collect();
-                return Ok(json!({"state":doc.state(key),"out":out,"retry_ms":retry,"echo":echo,"outcomes":outcomes}));
+                let retry = doc.mirror.take_retry_timer();
+                let echo = doc.mirror.take_echo_timer();
+                let outcomes: Vec<_> = doc
+                    .mirror
+                    .take_outcomes()
+                    .into_iter()
+                    .map(|(id, o)| match o {
+                        editor_model::mirror::Outcome::Done => json!({"op_id":id,"ok":true}),
+                        editor_model::mirror::Outcome::Refused(r) => {
+                            json!({"op_id":id,"ok":false,"error":r})
+                        }
+                    })
+                    .collect();
+                return Ok(
+                    json!({"state":doc.state(key),"out":out,"retry_ms":retry,"echo":echo,"outcomes":outcomes}),
+                );
             }
             "reply" => {
-                let id=text_arg(&a,"op_id")?;
-                let step=if a["rc"].as_f64()==Some(0.0) { doc.mirror.on_reply(id,Ok(normalize(a["body"].clone())?)) }
-                else { doc.mirror.on_reply(id,Err(decode(&a["body"])?)) };doc.step(step);
+                let id = text_arg(&a, "op_id")?;
+                let step = if a["rc"].as_f64() == Some(0.0) {
+                    doc.mirror.on_reply(id, Ok(normalize(a["body"].clone())?))
+                } else {
+                    doc.mirror.on_reply(id, Err(decode(&a["body"])?))
+                };
+                doc.step(step);
             }
-            "event" => {let event:edit::wire::Event=decode(&a)?;let step=doc.mirror.on_event(&event);doc.step(step);},
-            "suspect" => {let step=doc.mirror.suspect();doc.step(step);},
-            "epoch" => {let step=doc.mirror.epoch_changed();doc.step(step);},
-            "reattach" => {let open=decode(&a)?;let step=doc.mirror.reattach(&open);doc.step(step);},
-            "keep-mine" => {let step=doc.mirror.keep_mine(Intent::ui(doc.identity),ids);doc.step(step);},
-            "take-theirs" => {let step=doc.mirror.take_theirs();doc.step(step);},
-            "deadline" => {let step=doc.mirror.on_deadline(text_arg(&a,"op_id")?);doc.step(step);},
-            "retry" => {let step=doc.mirror.on_retry();doc.step(step);},
-            "echo" => {let step=doc.mirror.on_echo_timeout(text_arg(&a,"op_id")?);doc.step(step);},
+            "event" => {
+                let event: edit::wire::Event = decode(&a)?;
+                let step = doc.mirror.on_event(&event);
+                doc.step(step);
+            }
+            "suspect" => {
+                let step = doc.mirror.suspect();
+                doc.step(step);
+            }
+            "epoch" => {
+                let step = doc.mirror.epoch_changed();
+                doc.step(step);
+            }
+            "reattach" => {
+                let open = decode(&a)?;
+                let step = doc.mirror.reattach(&open);
+                doc.step(step);
+            }
+            "keep-mine" => {
+                let step = doc.mirror.keep_mine(Intent::ui(doc.identity), ids);
+                doc.step(step);
+            }
+            "take-theirs" => {
+                let step = doc.mirror.take_theirs();
+                doc.step(step);
+            }
+            "deadline" => {
+                let step = doc.mirror.on_deadline(text_arg(&a, "op_id")?);
+                doc.step(step);
+            }
+            "retry" => {
+                let step = doc.mirror.on_retry();
+                doc.step(step);
+            }
+            "echo" => {
+                let step = doc.mirror.on_echo_timeout(text_arg(&a, "op_id")?);
+                doc.step(step);
+            }
             "select" => {
-                doc.model.sel=Selection{anchor:point(doc.mirror.text(),&a["anchor"])?,head:point(doc.mirror.text(),&a["head"])?};
-                doc.model.preferred_cells=None;
+                doc.model.sel = Selection {
+                    anchor: point(doc.mirror.text(), &a["anchor"])?,
+                    head: point(doc.mirror.text(), &a["head"])?,
+                };
+                doc.model.preferred_cells = None;
             }
             "command" => {
-                let name=text_arg(&a,"name")?;
-                let command=match name {
-                    "insert"=>Some(EditCommand::Insert(text_arg(&a,"text")?.into())),
-                    "select-all"=>Some(EditCommand::SelectAll),"delete"=>Some(EditCommand::Delete),"backspace"=>Some(EditCommand::Backspace),
-                    "duplicate-line"=>Some(EditCommand::DuplicateLine),"delete-line"=>Some(EditCommand::DeleteLine),
-                    "move-line-up"=>Some(EditCommand::MoveLineUp),"move-line-down"=>Some(EditCommand::MoveLineDown),
-                    "toggle-comment"=>Some(EditCommand::ToggleComment),"indent"=>Some(EditCommand::Tab),"outdent"=>Some(EditCommand::Outdent),
-                    _=>None,
+                let name = text_arg(&a, "name")?;
+                let command = match name {
+                    "insert" => Some(EditCommand::Insert(text_arg(&a, "text")?.into())),
+                    "select-all" => Some(EditCommand::SelectAll),
+                    "delete" => Some(EditCommand::Delete),
+                    "backspace" => Some(EditCommand::Backspace),
+                    "duplicate-line" => Some(EditCommand::DuplicateLine),
+                    "delete-line" => Some(EditCommand::DeleteLine),
+                    "move-line-up" => Some(EditCommand::MoveLineUp),
+                    "move-line-down" => Some(EditCommand::MoveLineDown),
+                    "toggle-comment" => Some(EditCommand::ToggleComment),
+                    "indent" => Some(EditCommand::Tab),
+                    "outdent" => Some(EditCommand::Outdent),
+                    _ => None,
                 };
-                if let Some(c)=command{doc.command(c,&View::default(),ids)?;}
-                else {
-                    let server=match name {"undo"=>ServerOp::Undo{lane:LaneArg::Own},"redo"=>ServerOp::Redo{lane:LaneArg::Own},
-                        "save"=>ServerOp::Save{path:a["path"].as_str().map(str::to_owned),force:a["force"]==true},"reload"=>ServerOp::Reload{force:a["force"]==true},_=>return Err("unknown editor command".into())};
-                    let (step,op_id)=doc.mirror.server_op(server,Intent::ui(doc.identity),ids);doc.step(step);
+                if let Some(c) = command {
+                    doc.command(c, &View::default(), ids)?;
+                } else {
+                    let server = match name {
+                        "undo" => ServerOp::Undo { lane: LaneArg::Own },
+                        "redo" => ServerOp::Redo { lane: LaneArg::Own },
+                        "save" => ServerOp::Save {
+                            path: a["path"].as_str().map(str::to_owned),
+                            force: a["force"] == true,
+                        },
+                        "reload" => ServerOp::Reload {
+                            force: a["force"] == true,
+                        },
+                        _ => return Err("unknown editor command".into()),
+                    };
+                    let (step, op_id) = doc.mirror.server_op(server, Intent::ui(doc.identity), ids);
+                    doc.step(step);
                     return Ok(json!({"state":doc.state(key),"op_id":op_id}));
                 }
             }
-            _=>return Err("unknown document operation".into()),
+            _ => return Err("unknown document operation".into()),
         }
         Ok(doc.state(key))
     }
-    pub fn draw(&self, ui:&mut egui::Ui, widget:&crate::widgets::Widget, value:&Value, selection:Option<[usize;2]>, events:&mut Vec<crate::widgets::Intent>) -> egui::Response {
-        let Some(key)=value["document"].as_str() else{return ui.colored_label(egui::Color32::RED,"missing document handle");};
-        let Ok(mut state)=self.0.lock() else{return ui.colored_label(egui::Color32::RED,"document owner poisoned");};
-        let State{documents,ids,..}=&mut *state;
-        let Some(doc)=documents.get_mut(key)else{return ui.colored_label(egui::Color32::RED,"unknown document handle");};
-        let before=doc.state(key);
-        if let Some([start,end])=selection {
-            let mut s=String::new();doc.mirror.text().read(0..doc.mirror.text().len(),&mut s);
-            let byte=|n|s.char_indices().nth(n).map_or(s.len(),|(i,_)|i);
-            doc.model.sel=Selection{anchor:byte(start),head:byte(end)};
+    pub fn draw(
+        &self,
+        ui: &mut egui::Ui,
+        widget: &crate::widgets::Widget,
+        value: &Value,
+        selection: Option<[usize; 2]>,
+        events: &mut Vec<crate::widgets::Intent>,
+    ) -> egui::Response {
+        let Some(key) = value["document"].as_str() else {
+            return ui.colored_label(egui::Color32::RED, "missing document handle");
+        };
+        let Ok(mut state) = self.0.lock() else {
+            return ui.colored_label(egui::Color32::RED, "document owner poisoned");
+        };
+        let State { documents, ids, .. } = &mut *state;
+        let Some(doc) = documents.get_mut(key) else {
+            return ui.colored_label(egui::Color32::RED, "unknown document handle");
+        };
+        let before = doc.state(key);
+        if let Some([start, end]) = selection {
+            doc.model.sel = Selection {
+                anchor: scalar_offset(doc.mirror.text(),start),
+                head: scalar_offset(doc.mirror.text(),end),
+            };
         }
-        let view=crate::editor::native_view(ui,widget);
-        let palette=crate::editor::native_palette(ui,widget);
-        let padding=widget.properties["padding"].as_f64().unwrap_or(0.0).round() as i8;
-        let out=egui::Frame::new().fill(palette.background).inner_margin(egui::Margin::same(padding)).show(ui,|ui|{
-            editor::show(ui,(&widget.id,key),&Doc{text:doc.mirror.text(),identity:doc.identity,revision:doc.mirror.view_gen(),model:&doc.model,highlight:Some(&doc.highlight),diagnostics:&[]},&palette,&view)
-        }).inner;
+        let view = crate::editor::native_view(ui, widget);
+        let palette = crate::editor::native_palette(ui, widget);
+        let padding = widget.properties["padding"].as_f64().unwrap_or(0.0).round() as i8;
+        let out = egui::Frame::new()
+            .fill(palette.background)
+            .inner_margin(egui::Margin::same(padding))
+            .show(ui, |ui| {
+                editor::show(
+                    ui,
+                    (&widget.id, key),
+                    &Doc {
+                        text: doc.mirror.text(),
+                        identity: doc.identity,
+                        revision: doc.mirror.view_gen(),
+                        model: &doc.model,
+                        highlight: Some(&doc.highlight),
+                        diagnostics: &[],
+                    },
+                    &palette,
+                    &view,
+                )
+            })
+            .inner;
         for event in out.events {
             match event {
-                Event::Command(c)=>{if let Err(e)=doc.command(c,&view,ids){doc.notices.push(e);}},
-                Event::Scrolled(s)=>doc.model.scroll=s,
-                Event::Preedit(p)=>doc.model.set_preedit(!p.is_empty()),
-                Event::Undo|Event::Redo=>{let op=if matches!(event,Event::Undo){ServerOp::Undo{lane:LaneArg::Own}}else{ServerOp::Redo{lane:LaneArg::Own}};let(step,_)=doc.mirror.server_op(op,Intent::ui(doc.identity),ids);doc.step(step);},
-                Event::Layout(l)=>doc.layout=l,
-                _=>{},
+                Event::Command(c) => {
+                    if let Err(e) = doc.command(c, &view, ids) {
+                        doc.notices.push(e);
+                    }
+                }
+                Event::Scrolled(s) => doc.model.scroll = s,
+                Event::Preedit(p) => doc.model.set_preedit(!p.is_empty()),
+                Event::Undo | Event::Redo => {
+                    let op = if matches!(event, Event::Undo) {
+                        ServerOp::Undo { lane: LaneArg::Own }
+                    } else {
+                        ServerOp::Redo { lane: LaneArg::Own }
+                    };
+                    let (step, _) = doc.mirror.server_op(op, Intent::ui(doc.identity), ids);
+                    doc.step(step);
+                }
+                Event::Layout(l) => doc.layout = l,
+                _ => {}
             }
         }
-        let after=doc.state(key);
-        if before!=after{events.push(crate::widgets::Intent::set(&widget.id,after));}
+        let after = doc.state(key);
+        if before != after {
+            events.push(crate::widgets::Intent::set(&widget.id, after));
+        }
         out.response
     }
 }

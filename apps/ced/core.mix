@@ -1,0 +1,77 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- lint: globals frame ctx
+-- Tab, transport and application policy. Text and mirror mechanics remain
+-- in-process; only this Mix owner schedules editd requests.
+fn current($s)
+  if len($s.tabs)==0 then raise("EMPTY","Open a document first") end
+  return $s.tabs[$s.active]
+end
+fn refresh_tabs($s)
+  for $i=0 to len($s.tabs)-1 $s.tabs[$i]=viu_document("state",$s.tabs[$i].document,{}) end
+  $s.busy=any($s.tabs,fn($t)=$t.phase!="live" or not $t.idle) or len($s.running)>0 or len($s.queue)>0
+  return $s
+end
+fn queue_job($s,$kind,$payload)
+  $s.serial=$s.serial+1
+  $s.queue=push($s.queue,{id:"ced-"..to_string($s.serial),kind:$kind,payload:$payload})
+  return $s
+end
+fn pump($s)
+  $s=refresh_tabs($s)
+  for $t in $s.tabs
+    $effects=viu_document("effects",$t.document,{})
+    for $request in $effects.out $s=queue_job($s,"io",{document:$t.document,request:$request}) end
+    if $effects.retry_ms!=nil then $s.timers[$t.document..":retry"]={document:$t.document,kind:"retry",at:monotonic()+$effects.retry_ms/1000} end
+    if $effects.echo!=nil then $s.timers[$t.document..":echo"]={document:$t.document,kind:"echo",op_id:$effects.echo[0],at:monotonic()+$effects.echo[1]/1000} end
+    for $outcome in $effects.outcomes $s.outcomes[$outcome.op_id]=$outcome end
+  end
+  while len($s.queue)>0 and len(keys($s.running))<4
+    $job=$s.queue[0];$s.queue=slice($s.queue,1)
+    $p=path_join(dirname(script_path()),"job.mix")
+    send "viu-local" "jobs.start" id=$job.id owner=$job path=$p source=read_file($p) command="job.run" args=$job
+    if $rc!=0 then $s.queue=concat([$job],$s.queue);break end
+    $s.running[$job.id]=$job
+  end
+  return refresh_tabs($s)
+end
+fn operation($s,$op,$a)
+  if $op=="open" or $op=="new" then
+    if $op=="open" and (type($a.path)!="string" or not starts_with($a.path,"/")) then raise("PATH","Absolute path required") end
+    for $i=0 to len($s.tabs)-1
+      if $op=="open" and $s.tabs[$i].path==$a.path then $s.active=$i;return $s end
+    end
+    $s.next_tab=$s.next_tab+1
+    return pump(queue_job($s,"open",{document:to_string($s.next_tab),args:if $op=="new" then {text:$a.text ?? "",language:$a.language ?? "text"} else {path:$a.path,create:$a.create ?? false} end}))
+  end
+  $t=current($s)
+  if $op=="apply" then return pump($s) end
+  if $op=="refresh" then $v=viu_document("suspect",$t.document,{})
+  elif $op=="close" then
+    if (not $t.idle or $t.dirty) and not ($a.force ?? false) then raise("DRAFT","Save the document or explicitly confirm discard") end
+    return pump(queue_job($s,"close",{document:$t.document,buffer:$t.buffer,force:$a.force ?? false}))
+  elif contains(["keep-mine","take-theirs"],$op) then $v=viu_document($op,$t.document,{})
+  elif contains(["save","reload","undo","redo","duplicate-line","delete-line","move-line-up","move-line-down","toggle-comment","indent","outdent","select-all"],$op) then
+    $v=viu_document("command",$t.document,{name:$op,path:$a.path,force:$a.force ?? false})
+    if $v.op_id!=nil then $s.last_op=$v.op_id end
+  else raise("OP","Unknown edit operation") end
+  return pump($s)
+end
+fn publish_ced($s)
+  $t=if len($s.tabs)>0 then current($s) else {document:"",path:"No document",rev:nil,phase:"empty",language:"text",pending:0,dirty:false} end
+  $has=len($s.tabs)>0;$look=$s.look.appearance;$prefs=$s.look.values
+  $density=if $look.density=="compact" then 0.85 elif $look.density=="spacious" then 1.2 else 1 end
+  $labels={};$choices=[]
+  for $i=0 to len($s.tabs)-1
+    $k=to_string($i);push($choices,$k)
+    $labels[$k]=basename($s.tabs[$i].path ?? "Untitled")..if $s.tabs[$i].dirty or $s.tabs[$i].pending>0 then " *" else "" end
+  end
+  if not $has then $choices=["none"] end
+  $window={"window.decorations":"client"}
+  for $k in keys($prefs) if starts_with($k,"window.") then $window[$k]=$prefs[$k] end end
+  $items=map(["save","undo","redo","refresh","close"],fn($op)={id:$op,label:$op,enabled:$has and $t.phase=="live"})
+  $editor={id:"editor",kind:"editor",label:"Editing buffer",initial:"",properties:{native_document:true,font_size:($prefs["ced.editor.font.size"] ?? 13)*($look.text_scale ?? 1),padding:round(($prefs["ced.editor.padding"] ?? 8)*$density),light:$prefs["ced.editor.light"] ?? false,soft_wrap:$s.wrap,line_numbers:$s.line_numbers,read_only:not $has or $t.phase!="live"}}
+  $model={editor:$editor,window_close:$s.window_close,tabs:{id:"tabs",kind:"tabs",label:"Documents",initial:if $has then to_string($s.active) else "none" end,properties:{labels:$labels,choices:$choices}},values:{editor:if $has then {document:$t.document} else "" end,"open-dialog":{open:$s.open_dialog,title:"Open file",body:"Absolute UTF-8 file path",field:$s.path,instance:1,choices:[{id:"open",label:"Open",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}}}
+  $status=if $has then $t.phase.." · rev "..to_string($t.rev).." · "..$t.language.." · pending "..to_string($t.pending) else $s.status end
+  $model=$frame.apply($model,{icon:"file-text",title:basename($t.path ?? "Untitled"),menus:[{id:"file-menu",label:"File",enabled:true,children:concat([{id:"new",label:"New",enabled:true},{id:"open",label:"Open",enabled:true}],$items)},{id:"view-menu",label:"View",enabled:true,children:[{id:"wrap",label:"Soft wrap",enabled:true},{id:"line_numbers",label:"Line numbers",enabled:true}]}],toolbar:$items,status:$status,appearance:$look,window:$window})
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+end

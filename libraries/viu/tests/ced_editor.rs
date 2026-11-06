@@ -10,6 +10,15 @@ use viu::{
     runtime::{Completion, Runtime},
     view::SceneView,
 };
+mod fixture {
+    include!("support/documents.rs");
+}
+struct JobsAccepted;
+impl mix::BusHandler for JobsAccepted {
+    fn send<'a>(&'a self,_:&'a str,_:&'a str,_:&'a mix::value::Value)->mix::evaluator::BusFuture<'a,mix::MixResult<(i32,mix::value::Value)>> {
+        Box::pin(async {Ok((0,mix::value::Value::Nil))})
+    }
+}
 
 fn done(runtime: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
     rx.recv_timeout(Duration::from_secs(10)).unwrap();
@@ -24,23 +33,28 @@ fn ced_retains_independent_tab_drafts_and_refuses_dirty_caption_close() {
     )
     .unwrap();
     bundle.program.source.push_str(r#"
-$state.tabs=[{buffer:"one",path:"/tmp/one.rs",text:"original",draft:"original",rev:1,language:"rust"},{buffer:"two",path:"/tmp/two.mix",text:"second",draft:"second",rev:2,language:"mix"}]
+$state.tabs=[viu_document("state","one",{}),viu_document("state","two",{})]
 publish_ced($state)
 "#);
+    let docs=viu::documents::Documents::default();
+    let _one=fixture::seed(&docs,"one","/tmp/one.rs","original");
+    let _two=fixture::seed(&docs,"two","/tmp/two.mix","second");
     let (tx, rx) = mpsc::channel();
-    let mut runtime = Runtime::new(
+    let mut runtime = Runtime::with_services(
         8,
         Arc::new(move || {
             let _ = tx.send(());
         }),
-        None,
+        Some(Box::new(||std::rc::Rc::new(JobsAccepted))),
+        viu::runtime::Services{documents:Some(docs.clone()),..Default::default()},
     );
     runtime.load(bundle.program).unwrap();
     let initial = done(&runtime, &rx);
     assert!(initial.error.is_none(), "{:?}", initial.error);
     let model = initial.model.unwrap();
-    assert_eq!(model["editor"]["properties"]["document"], "one");
+    assert_eq!(model["values"]["editor"]["document"], "one");
     let mut view = SceneView::with_model(&bundle.scene, model).unwrap();
+    view.set_documents(docs.clone());
     let ctx = egui::Context::default();
     viu::appearance::install(&ctx);
     ctx.run_ui(
@@ -70,21 +84,21 @@ publish_ced($state)
         .unwrap();
     let reopened = done(&runtime, &rx);
     assert!(reopened.error.is_none(), "{:?}", reopened.error);
-    assert_eq!(reopened.model.unwrap()["values"]["editor"], "unsaved λ");
+    assert_eq!(docs.call("read","one",json!({})).unwrap()["text"], "unsaved λ");
     runtime
         .event("ced.intent".into(), json!({"id":"tabs","value":"1"}))
         .unwrap();
     let second = done(&runtime, &rx);
     assert!(second.error.is_none(), "{:?}", second.error);
     assert_eq!(
-        second.model.unwrap()["editor"]["properties"]["document"],
+        second.model.unwrap()["values"]["editor"]["document"],
         "two"
     );
     runtime
         .event("ced.intent".into(), json!({"id":"tabs","value":"0"}))
         .unwrap();
     assert_eq!(
-        done(&runtime, &rx).model.unwrap()["values"]["editor"],
+        {assert!(done(&runtime,&rx).error.is_none());docs.call("read","one",json!({})).unwrap()["text"].clone()},
         "unsaved λ"
     );
     runtime.event("viu.frame.close".into(), json!({})).unwrap();
@@ -136,7 +150,7 @@ publish_ced($state)
     assert_eq!(model["editor"]["properties"]["font_size"], 27.0);
     assert_eq!(model["editor"]["properties"]["padding"], 14.0);
     assert_eq!(model["editor"]["properties"]["light"], true);
-    assert_eq!(model["values"]["editor"], "unsaved λ");
+    assert_eq!(docs.call("read","one",json!({})).unwrap()["text"], "unsaved λ");
     let appearance = viu::appearance::resolve(&model["appearance"]).unwrap();
     assert_eq!(appearance.body_weight, 700);
     view.apply_model(model).unwrap();

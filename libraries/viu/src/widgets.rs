@@ -168,9 +168,7 @@ impl Widget {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
             "editor" => {
-                if self.properties["native_document"] == true && value.is_object() {
-                    return if value["document"].as_str().is_some_and(|s| !s.is_empty() && s.len()<=128) { Ok(()) } else { Err("invalid document handle".into()) };
-                }
+                let handle = self.properties["native_document"] == true && value["document"].as_str().is_some_and(|s| !s.is_empty() && s.len()<=128);
                 if self.properties.get("font_size").is_some_and(|v| {
                     v.as_f64()
                         .is_none_or(|n| !n.is_finite() || !(3.0..=144.0).contains(&n))
@@ -218,14 +216,14 @@ impl Widget {
                         return Err("invalid editor command".into());
                     }
                 }
-                value.as_str().is_some_and(|v| {
+                (handle || value.as_str().is_some_and(|v| {
                     v.len()
                         <= if self.properties["native_document"] == true {
                             64 * 1024 * 1024
                         } else {
                             65536
                         }
-                }) && (self.properties["rows"].is_null()
+                })) && (self.properties["rows"].is_null()
                     || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
                     && (self.properties["read_only"].is_null()
                         || self.properties["read_only"].is_boolean())
@@ -417,7 +415,9 @@ pub struct Widgets {
     documents: crate::documents::Documents,
 }
 impl Widgets {
-    pub fn set_documents(&mut self, documents: crate::documents::Documents) { self.documents = documents; }
+    pub fn set_documents(&mut self, documents: crate::documents::Documents) {
+        self.documents = documents;
+    }
     pub fn request_focus(&mut self, id: &str, selection: Option<[usize; 2]>) -> Result<(), String> {
         if selection.is_some_and(|[start, end]| start > end || end > 1_048_576) {
             return Err("invalid selection range".into());
@@ -576,7 +576,9 @@ impl Widgets {
                 };
                 let response = if value.is_object() {
                     self.documents.draw(ui, widget, value, selection, events)
-                } else { self.editors.draw(ui, widget, value, selection, events) };
+                } else {
+                    self.editors.draw(ui, widget, value, selection, events)
+                };
                 self.text_input_active |= response.has_focus();
                 response
             }

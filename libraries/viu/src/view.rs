@@ -42,7 +42,9 @@ pub struct SceneView {
 }
 
 impl SceneView {
-    pub fn set_documents(&mut self, documents: crate::documents::Documents) { self.widgets.set_documents(documents); }
+    pub fn set_documents(&mut self, documents: crate::documents::Documents) {
+        self.widgets.set_documents(documents);
+    }
     pub fn new(source: &str) -> Result<Self, String> {
         Self::prepare(source, None)
     }

@@ -1,27 +1,23 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.1.0
+-- version: 0.2.0
 on job.run
-  $a=$event.args;$op=$a.op
-  if $op!="refresh" then
-    $command="edit."..if $op=="apply" then "replace" else $op end
-    send "edit" $command body=$a.payload timeout=8
-    if $rc!=0 then raise("EDIT",json_encode($reply ?? $result)) end
-    $answer=$reply
-  else $answer=$a.payload end
-  if $op=="close" then reply(0,"{}")
-  else
-    $buffer=$answer.buffer ?? $a.payload.buffer
-    send "edit" "edit.get" body={buffer:$buffer,range:"all",max_bytes:65536} timeout=8
-    if $rc!=0 then raise("READ",json_encode($reply ?? $result)) end
-    $read=$reply
-    if $read.truncated or $read.next!=nil or type($read.text)!="string" or byte_length($read.text)>65536 then raise("SIZE","Partial or oversized snapshots cannot be edited") end
-    send "edit" "edit.list" body={} timeout=8
-    if $rc!=0 then raise("INFO",json_encode($reply ?? $result)) end
-    $rows=filter($reply.buffers,fn($b)=$b.buffer==$buffer)
-    if len($rows)!=1 or $rows[0].rev!=$read.rev then raise("CONFLICT","Buffer changed during the read; draft retained") end
-    $read.path=$rows[0].path ?? $answer.path ?? "Untitled"
-    $read.language=$rows[0].language
-    $read.dirty=$rows[0].dirty
-    reply(0,json_encode($read))
-  end
+  $job=$event.args;$a=$job.payload
+  if $job.kind=="open" then
+    send "edit" "edit.open" body=$a.args timeout=30
+    if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
+    $state=viu_document("open",$a.document,$reply)
+  elif $job.kind=="close" then
+    send "edit" "edit.close" body={buffer:$a.buffer,force:$a.force} timeout=5
+    if $rc!=0 then raise("CLOSE",json_encode($reply ?? $result)) end
+  elif $job.kind=="io" then
+    $r=$a.request
+    try
+      send "edit" $r.command body=json_parse($r.body) timeout=$r.deadline_ms/1000
+      if $rc<0 or $rc>=20 then $state=viu_document("deadline",$a.document,{op_id:$r.op_id})
+      else $state=viu_document("reply",$a.document,{op_id:$r.op_id,rc:$rc,body:$reply}) end
+    catch $message
+      $state=viu_document("deadline",$a.document,{op_id:$r.op_id})
+    end
+  else raise("JOB","Unknown document job") end
+  reply(0,"{}")
 end

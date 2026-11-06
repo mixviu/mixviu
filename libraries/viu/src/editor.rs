@@ -208,46 +208,46 @@ impl Editors {
 }
 
 pub(crate) fn native_view(ui: &Ui, widget: &Widget) -> editor::View {
-        let view = editor::View {
-            font_size: Some(
-                widget.properties["font_size"]
-                    .as_f64()
-                    .map(|v| v as f32)
-                    .unwrap_or_else(|| TextStyle::Monospace.resolve(ui.style()).size),
-            ),
-            wrap: if widget.properties["soft_wrap"] == true {
-                editor::Wrap::Words
-            } else {
-                editor::Wrap::None
-            },
-            line_numbers: widget.properties["line_numbers"] != false,
-            read_only: widget.properties["read_only"] == true,
-            label: Some(widget.label.clone()),
-            ..Default::default()
-        };
+    let view = editor::View {
+        font_size: Some(
+            widget.properties["font_size"]
+                .as_f64()
+                .map(|v| v as f32)
+                .unwrap_or_else(|| TextStyle::Monospace.resolve(ui.style()).size),
+        ),
+        wrap: if widget.properties["soft_wrap"] == true {
+            editor::Wrap::Words
+        } else {
+            editor::Wrap::None
+        },
+        line_numbers: widget.properties["line_numbers"] != false,
+        read_only: widget.properties["read_only"] == true,
+        label: Some(widget.label.clone()),
+        ..Default::default()
+    };
     view
 }
 
 pub(crate) fn native_palette(ui: &Ui, widget: &Widget) -> editor::Palette {
-        let palette = if widget.properties["light"] == true {
-            static LIGHT: std::sync::OnceLock<editor::Palette> = std::sync::OnceLock::new();
-            LIGHT
-                .get_or_init(|| {
-                    let resolved = crate::appearance::resolve(
-                        &serde_json::json!({"scheme":"mixos","mode":"light"}),
-                    )
-                    .expect("embedded light design");
-                    struct Light(std::collections::BTreeMap<String, Color32>);
-                    impl editor::palette::Theme for Light {
-                        fn editor_colour(&self, role: &str) -> Color32 {
-                            self.0.get(role).copied().unwrap_or(Color32::BLACK)
-                        }
+    let palette = if widget.properties["light"] == true {
+        static LIGHT: std::sync::OnceLock<editor::Palette> = std::sync::OnceLock::new();
+        LIGHT
+            .get_or_init(|| {
+                let resolved = crate::appearance::resolve(
+                    &serde_json::json!({"scheme":"mixos","mode":"light"}),
+                )
+                .expect("embedded light design");
+                struct Light(std::collections::BTreeMap<String, Color32>);
+                impl editor::palette::Theme for Light {
+                    fn editor_colour(&self, role: &str) -> Color32 {
+                        self.0.get(role).copied().unwrap_or(Color32::BLACK)
                     }
-                    editor::Palette::from_theme(&Light(resolved.colours))
-                })
-                .clone()
-        } else {
-            editor::Palette::from_theme(&Theme(ui))
-        };
+                }
+                editor::Palette::from_theme(&Light(resolved.colours))
+            })
+            .clone()
+    } else {
+        editor::Palette::from_theme(&Theme(ui))
+    };
     palette
 }
