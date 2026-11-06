@@ -100,8 +100,8 @@ impl Hosting {
         Ok(())
     }
     pub fn form(&self, mut form: Value, eligible: bool) -> Value {
-        let hosted=eligible && self.confirmed;
-        form["offered"]=json!(eligible);
+        let hosted = eligible && self.confirmed;
+        form["offered"] = json!(eligible);
         form["hosted"] = json!(hosted);
         form["effective"] = json!(if hosted { "titlebar" } else { "row" });
         form["bar"] = if hosted {
@@ -220,9 +220,12 @@ mod tests {
         let mut host = Hosting::default();
         let toolbar = json!([{"id":"file.copy","label":"Copy","icon":"copy","enabled":false},{"id":"Look","label":"Look","icon":"sun","enabled":true,"children":[{"id":"theme.light","label":"Light","enabled":true}]}]);
         host.update(&toolbar).unwrap();
-        let unacknowledged=host.form(json!({}),true);
-        assert_eq!(unacknowledged["offered"],true);assert_eq!(unacknowledged["hosted"],false);assert_eq!(unacknowledged["effective"],"row");assert_eq!(unacknowledged["bar"]["items"],json!([]));
-        host.confirmed=true;
+        let unacknowledged = host.form(json!({}), true);
+        assert_eq!(unacknowledged["offered"], true);
+        assert_eq!(unacknowledged["hosted"], false);
+        assert_eq!(unacknowledged["effective"], "row");
+        assert_eq!(unacknowledged["bar"]["items"], json!([]));
+        host.confirmed = true;
         let form = host.form(json!({}), true);
         assert_eq!(form["bar"]["items"][0]["command"], "file.copy");
         assert_eq!(form["bar"]["items"][0]["enabled"], false);

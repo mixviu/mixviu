@@ -345,7 +345,7 @@ impl App {
             return;
         }
         if (command == "dopus.execute" && args["id"] == "app.quit")
-            || (command=="viu.window" && args["action"]=="close")
+            || (command == "viu.window" && args["action"] == "close")
             || (command == "dopus.intent"
                 && args["action"] == "close"
                 && self
