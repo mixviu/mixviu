@@ -7,4 +7,11 @@ print($format)
 if not $format.ok then exit($format.exit_code ?? 124) end
 $gate=run_argv(["/opt/mixos/bin/mix","tools/gold_parity_gate.mix","--prepare"],{timeout:3600,max_output:16000000})
 print($gate)
-exit($gate.exit_code ?? 124)
+if not contains([0,97],$gate.exit_code) then exit($gate.exit_code ?? 124) end
+for $argv in [["cargo","test","--locked","-p","toolkit","--lib","menu"],["cargo","test","--locked","-p","toolkit","--test","menu"]]
+  print({argv:$argv})
+  $check=run_argv($argv,{timeout:1200,max_output:16000000})
+  print($check)
+  if not $check.ok then exit($check.exit_code ?? 124) end
+end
+exit($gate.exit_code)

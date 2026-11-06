@@ -563,7 +563,8 @@ on prefs.intent
       $p=$nav.page($state.nav.page);$r=$pages.row_for($p,$a.value.row)
       $why=$pages.row_blocked($state,$p,$r)
       if $why!=nil then raise("FAILED",$why) end
-      if $a.action=="activate" and $r.control.control=="drawer" then $state.nav.drawer=$r.control.drawer
+      if $a.action=="activate" and $r.control.control=="accent" then $state.nav.drawer=$r.id
+      elif $a.action=="activate" and $r.control.control=="drawer" then $state.nav.drawer=$r.control.drawer
       elif $a.action=="activate" and $r.control.control=="ordered" then $state.nav.drawer=$r.control.add
       elif $a.action=="activate" and $r.control.control=="page" then $state=$pages.open_page($state,$r.control.page,nil)
       elif $a.action=="activate" and $r.control.control=="reset" then

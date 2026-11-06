@@ -83,6 +83,22 @@ fn browser_actions_are_admitted_through_the_public_widget_boundary() {
 }
 
 #[test]
+fn passive_numeric_redraws_never_publish_rounded_or_clamped_settings() {
+    let ctx=egui::Context::default();viu::appearance::install(&ctx);
+    let widget=Widget::new("browser","settings-browser","",json!({
+        "title":"Text","pages":[],"settings":{},"sections":[{"plain":true,"rows":[
+            {"id":"size","title":"Font size","kind":"number","inline":true,"value":14.6666666667,"min":4,"max":72,"places":1,"slider":true},
+            {"id":"scrollback","title":"Scrollback","kind":"number","inline":true,"value":1000,"min":0,"max":100000}
+        ]}]
+    }));
+    let mut widgets=Widgets::default();
+    for _ in 0..6 {
+        let events=frame(&ctx,&mut widgets,&widget,vec![]);
+        assert!(!events.iter().any(|e|e.action=="edit"),"passive redraw wrote settings: {events:?}");
+    }
+}
+
+#[test]
 fn scene_container_gaps_do_not_change_the_shared_controls_internal_spacing() {
     let ctx = egui::Context::default();
     let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
