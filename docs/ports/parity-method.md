@@ -118,3 +118,49 @@ Each checkpoint records:
 Update `last.md` at the checkpoint. Its final line carries branch, head SHA,
 frame state, Monitor evidence and CBC job IDs. A receipt-only documentation
 commit must identify the exact tested code SHA separately.
+
+## Monitor round-two record: failed
+
+Tested code: `bb950a59f82ef5c400fe89eaf1175a42bef6f93c`; pinned gold as
+above. Candidate binary SHA256:
+`2044c741983b90bdc48ae2bc6ce7c07f461f779341a13dd8df9044ef6659ce51`.
+CBC `20261107-012348-cc3a95cf-a1` passed the scoped Viu/viu-engine gate
+with no worker diff; the four-engine integration gate was not rerun.
+
+Both captures are 1040×680, scale 1, paused Processes with the same six-row
+native fixture, Studio Dark, CSD, right captions, bar menus, row actions and
+Inter 400 at 14.667. Gold PNG SHA256:
+`800c28506c24d9bc9c755c740d4cbca72486ce67aee48597e548461d12da19fc`;
+Mix PNG SHA256:
+`9121f639c803f49d8f08f210a6e33e4963c67114561e6c4c4adb741cc9c41e69`.
+The private receipt `gold-parity-20261107/round2/matched-monitor-pair`
+contains the native harness, service data, captures, figures and raw metrics.
+All owned processes were confirmed stopped.
+
+ImageMagick 7.1.2-35 reports these normalised **distortions** (zero is identical):
+
+| Region | Rectangle x,y,w,h | SSIM distortion | RMSE distortion |
+| --- | --- | ---: | ---: |
+| Full | 0,0,1040,680 | 0.0957189 | 0.118710 |
+| Header | 0,0,1040,38 | 0.119769 | 0.111125 |
+| Options | 0,38,1040,42 | 0.258504 | 0.199630 |
+| Content | 0,80,1040,570 | 0.0859221 | 0.113603 |
+| Status | 0,650,1040,30 | 0.125844 | 0.147344 |
+
+The side-by-side and full/header/options/status differences were inspected.
+Remaining differences belong to the Monitor parity job:
+
+- Header: missing View/Process/Help menus, gold node-aware title and actions.
+- Options: missing gold tabs, filter/tree/node controls and placement.
+- Content: legacy stacked title/summary/chart, missing command-line column,
+  incorrect table proportions, striping, dividers and typography. Legacy
+  content's hardcoded text colours also need conversion for light mode.
+- Status: missing filtered/total count, uptime and the gold layout.
+- Further states: Performance resources/charts, process tree/actions/dialogs,
+  node discovery and the complete 50-command ABP surface remain unaccepted.
+
+No difference has Fable approval. The source/inventory disagreement about
+signal admission is question P1 in `last.md`, for Opus to relay to Fable.
+Five live Prefs variants plus settings authority loss/recovery and Mix-owned
+close passed on one candidate PID; that separate frame test does not grant
+Monitor visual, functional or ABP acceptance. Overall verdict: **FAIL**.
