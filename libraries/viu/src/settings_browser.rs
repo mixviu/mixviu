@@ -438,13 +438,16 @@ mod search_input_tests {
         frame(&value, vec![]);
         for _ in 0..2 {
             frame(&value, vec![egui::Event::Text("x".into())]);
-            let backspace = [true, false].into_iter().map(|pressed| egui::Event::Key {
-                key: egui::Key::Backspace,
-                physical_key: None,
-                pressed,
-                repeat: false,
-                modifiers: egui::Modifiers::NONE,
-            }).collect();
+            let backspace = [true, false]
+                .into_iter()
+                .map(|pressed| egui::Event::Key {
+                    key: egui::Key::Backspace,
+                    physical_key: None,
+                    pressed,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                })
+                .collect();
             frame(&value, backspace);
         }
         frame(&value, vec![egui::Event::Text("y".into())]);
@@ -457,6 +460,18 @@ mod search_input_tests {
             cycled
                 .iter()
                 .any(|event| event.action == "query" && event.value == "newy!")
+        );
+        value["query_epoch"] = json!(2.0);
+        value["query"] = json!("");
+        frame(&value, vec![]);
+        frame(&value, vec![egui::Event::Text("pending".into())]);
+        value["query_epoch"] = json!(3.0);
+        frame(&value, vec![]);
+        let fresh = frame(&value, vec![egui::Event::Text("fresh".into())]);
+        assert!(
+            fresh
+                .iter()
+                .any(|event| event.action == "query" && event.value == "fresh")
         );
     }
 }
@@ -532,7 +547,7 @@ pub(crate) fn draw(
             ui.ctx().viewport_id(),
             id,
             "query-draft",
-            value["query_epoch"].as_u64().unwrap_or(0),
+            value["query_epoch"].as_f64().unwrap_or(0.0).to_bits(),
         ));
         let mut query = search_query(ui.ctx(), query_key, accepted_query);
         egui::Frame::NONE
