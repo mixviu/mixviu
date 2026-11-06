@@ -1,0 +1,30 @@
+-- Import single files from MixOS at an exact revision into this worktree at
+-- the same relative path, appending to provenance/engine-split-mix-imports.json.
+-- Unlike import_engine_split_mix.mix it never touches other files.
+-- usage: mix tools/import_extra_files.mix SRC_REPO REV PATH...
+$a = args()
+if len($a) < 3 then
+  raise("USAGE", "import_extra_files.mix SRC_REPO REV PATH...")
+end
+$root = path_join(dirname(realpath(script_path())), "..")
+$rev = trim(run_argv_must(["git", "-C", $a[0], "rev-parse", $a[1]]))
+$prov_path = path_join($root, "provenance/engine-split-mix-imports.json")
+$prov = json_parse(read_file($prov_path))
+if $prov.source_revision != $rev then
+  raise("REV_MISMATCH", "provenance is for " .. $prov.source_revision)
+end
+$entries = $prov.entries
+for $p in slice($a, 2, len($a))
+  $text = run_argv_must(["git", "-C", $a[0], "show", $rev .. ":" .. $p])
+  $dst = path_join($root, $p)
+  if is_file($dst) then
+    raise("EXISTS", $p .. " already exists in the worktree")
+  end
+  mkdir(dirname($dst), {parents: true})
+  write_file($dst, $text)
+  $sha = hash_file($dst, "sha256")
+  push($entries, {source: $p, destination: $p, source_sha256: $sha, destination_sha256: $sha, adaptation: nil})
+  print "imported " .. $p
+end
+$prov.entries = $entries
+write_file($prov_path, json_encode($prov, true) .. "\n")
