@@ -148,7 +148,7 @@ impl Host {
                         let id = self.drive_next;
                         let answer = toolkit::drive::request(ctx, id, suffix, &r.args);
                         if let Some(mut answer) = answer {
-                            crate::app_facilities::remap(ctx,&mut answer.body);
+                            crate::app_facilities::remap(ctx, &mut answer.body);
                             let _ = r.reply.send((answer.rc, answer.body));
                         } else {
                             self.drive_pending.insert(id, r.reply);
@@ -285,7 +285,7 @@ impl Host {
                 self.bus.client().as_ref().map(|_| self.service.as_str()),
             );
             for mut answer in toolkit::drive::logic(ui.ctx()) {
-                crate::app_facilities::remap(ui.ctx(),&mut answer.body);
+                crate::app_facilities::remap(ui.ctx(), &mut answer.body);
                 if let Some(reply) = self.drive_pending.remove(&answer.id) {
                     let _ = reply.send((answer.rc, answer.body));
                 }
@@ -333,7 +333,11 @@ impl Host {
                     Ok(value) => {
                         self.last_ui = value;
                         self.session_appearance = true;
-                        update["appearance"]["mode"]=json!(if ui.visuals().dark_mode {"dark"}else{"light"});
+                        update["appearance"]["mode"] = json!(if ui.visuals().dark_mode {
+                            "dark"
+                        } else {
+                            "light"
+                        });
                     }
                     Err(error) => self.error = error,
                 }
@@ -506,9 +510,20 @@ impl Host {
             }
         }
         if self.ready {
-            if let Some(mode)=self.model["local_mode"].as_str() {if let Err(error)=crate::appearance::local_mode(ui.ctx(),mode) {self.error=error;}}
-            let reload=self.model["settings_reload"].as_u64().unwrap_or(0);
-            if reload!=self.settings_reload {self.settings_reload=reload;self.file_theme=toolkit::Theme::load();if let Some(session)=&mut self.session {session.hint("theme.changed",&json!({}));}ui.ctx().request_repaint();}
+            if let Some(mode) = self.model["local_mode"].as_str() {
+                if let Err(error) = crate::appearance::local_mode(ui.ctx(), mode) {
+                    self.error = error;
+                }
+            }
+            let reload = self.model["settings_reload"].as_u64().unwrap_or(0);
+            if reload != self.settings_reload {
+                self.settings_reload = reload;
+                self.file_theme = toolkit::Theme::load();
+                if let Some(session) = &mut self.session {
+                    session.hint("theme.changed", &json!({}));
+                }
+                ui.ctx().request_repaint();
+            }
             if let Some(bindings) = self.model["shortcuts"]
                 .as_array()
                 .filter(|_| !toolkit::menu::is_open(ui.ctx()))
@@ -631,7 +646,7 @@ impl Host {
         self.facilities.finish(ui.ctx());
         if self.native_drive {
             for mut answer in toolkit::drive::finish(ui.ctx()) {
-                crate::app_facilities::remap(ui.ctx(),&mut answer.body);
+                crate::app_facilities::remap(ui.ctx(), &mut answer.body);
                 if let Some(reply) = self.drive_pending.remove(&answer.id) {
                     let _ = reply.send((answer.rc, answer.body));
                 }

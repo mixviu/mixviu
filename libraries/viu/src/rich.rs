@@ -477,7 +477,12 @@ pub(crate) fn draw(
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
                 ui.horizontal(|ui| {
-                    if widget.properties["style"]=="gold" {ui.spacing_mut().item_spacing.x=toolkit::chrome::Chrome::of(ui.ctx()).style.title_control_spacing as f32;}
+                    if widget.properties["style"] == "gold" {
+                        ui.spacing_mut().item_spacing.x = toolkit::chrome::Chrome::of(ui.ctx())
+                            .style
+                            .title_control_spacing
+                            as f32;
+                    }
                     for item in value.as_array().into_iter().flatten() {
                         if item["separator"] == true {
                             ui.separator();
@@ -516,7 +521,9 @@ pub(crate) fn draw(
                             ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
                         };
                         let response = response.on_hover_text(text(item, "label"));
-                        if item["macro_anchor"]==true {toolkit::macros::anchor(ui.ctx(),response.rect);}
+                        if item["macro_anchor"] == true {
+                            toolkit::macros::anchor(ui.ctx(), response.rect);
+                        }
                         geometry
                             .insert(format!("{id}.command.{}", text(item, "id")), response.rect);
                         if item.get("children").is_some() {
