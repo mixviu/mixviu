@@ -100,10 +100,13 @@ fn append_saved($state,$saved)
   try
     $old=viu_read_optional($path,{tail_lines:1048576})
     $text=if $old.found then $old.text else "" end
-    $text=$text..json_encode($saved).."\n"
-    if byte_length($text)>524288 then
+    $line=json_encode($saved)
+    if byte_length($text)+byte_length($line)+1>524288 then
+      -- Join only after compaction: a full tail plus one line can exceed
+      -- the interpreter's string bound even though the retained ledger fits.
+      $entries=split(trim($text),"\n");push($entries,$line)
       $lines=[];$bytes=0
-      for $line in reverse(split(trim($text),"\n"))
+      for $line in reverse($entries)
         try
           $shot=ledger_shot(json_parse($line))
           $line=json_encode($shot)
@@ -113,6 +116,8 @@ fn append_saved($state,$saved)
         catch $message end
       end
       $text=join(reverse($lines),"\n").."\n"
+    else
+      $text=$text..$line.."\n"
     end
     viu_atomic_replace($path,$text)
   finally
