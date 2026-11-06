@@ -48,6 +48,7 @@ pub const KINDS: &[&str] = &[
     "image-view",
     "image-fill",
     "window-controls",
+    "settings-browser",
 ];
 
 #[derive(Clone, Debug)]
@@ -696,7 +697,7 @@ impl Widgets {
                 .get_or_insert_with(crate::image_view::Images::surface)
                 .draw_fill(ui, id, value),
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
-            "menubar" | "command-bar" | "property-grid" | "dialog-form" => {
+            "menubar" | "command-bar" | "property-grid" | "dialog-form" | "settings-browser" => {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
             "label" => {

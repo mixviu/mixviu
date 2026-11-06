@@ -6,7 +6,13 @@ use egui::{Rect, Ui};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const KINDS: &[&str] = &["menubar", "command-bar", "property-grid", "dialog-form", "settings-browser"];
+pub const KINDS: &[&str] = &[
+    "menubar",
+    "command-bar",
+    "property-grid",
+    "dialog-form",
+    "settings-browser",
+];
 #[derive(Clone, Default)]
 struct MenuPresentation {
     settings: Value,
@@ -124,7 +130,16 @@ pub fn actions(kind: &str) -> Vec<&'static str> {
     match kind {
         "menubar" | "command-bar" => vec!["set", "command"],
         "dialog-form" => vec!["set", "edit", "answer"],
-        "settings-browser" => vec!["set", "navigate", "query", "edit", "activate", "remove", "problem", "drawer.close"],
+        "settings-browser" => vec![
+            "set",
+            "navigate",
+            "query",
+            "edit",
+            "activate",
+            "remove",
+            "problem",
+            "drawer.close",
+        ],
         _ => vec!["set"],
     }
 }
@@ -278,7 +293,9 @@ pub fn menu_snapshot(value: &Value, id: &str, geometry: &BTreeMap<String, Rect>)
     json!({"open":!path.is_empty() || geometry.contains_key(&format!("{id}.popup")),"path":path})
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
-    if kind == "settings-browser" {return crate::settings_browser::admit(current,action,payload);}
+    if kind == "settings-browser" {
+        return crate::settings_browser::admit(current, action, payload);
+    }
     validate(kind, current)?;
     match action {
         "command" => {
@@ -469,7 +486,7 @@ pub(crate) fn draw(
 ) -> egui::Response {
     let id = &widget.id;
     match widget.kind.as_str() {
-        "settings-browser" => crate::settings_browser::draw(ui,id,value,geometry,events),
+        "settings-browser" => crate::settings_browser::draw(ui, id, value, geometry, events),
         "menubar" => {
             if widget.properties["native_menu"] == true {
                 return native_menu(ui, value, id, events);
