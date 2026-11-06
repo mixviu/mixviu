@@ -290,6 +290,16 @@ impl SceneView {
                 }
                 match node.family.as_str() {
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
+                    "band"=>{
+                        let area=ui.available_rect_before_wrap();
+                        let groups=band_groups(node).expect("validated band groups");
+                        let rectangles=design::title_band::layout(area.width(),&groups);
+                        for (child,rect) in children(node).zip(rectangles) {
+                            let rect=egui::Rect::from_min_size(egui::pos2(area.left()+rect.x,area.top()),Vec2::new(rect.width,area.height()));
+                            self.child_rect(ui,child,rect,nodes,route,depth,events);
+                        }
+                        ui.allocate_rect(area,Sense::hover());
+                    },
                     "split"=>self.split(ui,&key,node,nodes,route,depth,events),
                     "grid" => {
                         let columns=num(node,"columns").unwrap_or(2.0) as usize;
@@ -756,6 +766,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             return Err("scene slots must attach a dock child".into());
         }
         match node.family.as_str() {
+            "band" => { band_groups(node)?; }
             "split" => {
                 if children(node).count() != 2
                     || num(node, "minimum").unwrap_or(0.1) > num(node, "maximum").unwrap_or(0.9)
@@ -838,6 +849,21 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn band_groups(node: &Node) -> Result<Vec<design::title_band::Group>,String> {
+    use design::title_band::{Alignment,Group};
+    let groups=node.ports["groups"].as_object().ok_or("band groups must be an object")?;
+    let children=children(node).collect::<Vec<_>>();
+    if groups.len()!=children.len(){return Err("band requires one group per child".into());}
+    children.into_iter().map(|child|{
+        let group=groups.get(child).ok_or("band child missing group")?;
+        let length=|name:&str|group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length"));
+        let align=match group["align"].as_str(){Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center or right".into())};
+        let shrink=if group["shrink"].is_null(){None}else{Some(group["shrink"].as_u64().filter(|n|*n<=255).ok_or("band shrink priority must be 0..255 or null")? as u8)};
+        let order=group["order"].as_u64().filter(|n|*n<=255).ok_or("band order must be 0..255")? as u8;
+        Ok(Group{preferred:length("preferred")?,minimum:length("minimum")?,align,shrink,order})
+    }).collect()
 }
 
 fn route_event(

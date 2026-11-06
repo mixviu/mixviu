@@ -220,6 +220,10 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("placements", "object", true, None),
         p("on_change", "string", false, None),
     ];
+    static BAND: [Port; 2] = [
+        p("children", "list", true, None),
+        p("groups", "object", true, None),
+    ];
     static SPLIT: [Port; 7] = [
         p("children", "list", true, None),
         pnd("ratio", "0.5", None),
@@ -243,6 +247,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         "control" => &CONTROL,
         "grid" => &GRID,
         "dock" => &DOCK,
+        "band" => &BAND,
         "split" => &SPLIT,
         _ => return None,
     };

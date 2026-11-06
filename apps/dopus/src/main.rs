@@ -794,7 +794,7 @@ impl App {
                     }
                     self.call(
                         "dopus.session".into(),
-                        json!({"appearance":snapshot["appearance"],"keymap":snapshot["keymap"]}),
+                        json!({"appearance":snapshot["appearance"],"keymap":snapshot["keymap"],"window":snapshot["state"]["values"]}),
                         BTreeMap::new(),
                         None,
                         ctx,

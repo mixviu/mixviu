@@ -30,6 +30,7 @@ on dopus.initialise
   $state.appearance_choice={}
   $state.appearance_session=$state.appearance
   $state.default_keys={}
+  $state.window={}
   for $action in $contract.actions $state.default_keys[$action.id]=$action.keys end
   $state.owner=viu_context().generation
   $state=$app.dp_update_previews($state)
@@ -67,6 +68,7 @@ on dopus.call
         if $a.style!=nil then $candidate.reply.style=$candidate.appearance.style end
         for $key in ["mode","scheme","style"] if $a[$key]!=nil then $candidate.appearance_choice[$key]=$a[$key] end end
       elif $name=="dopus.session" then
+        $candidate.window=$a.window ?? {}
         $appearance={mode:"dark",scheme:"studio",style:"default"}
         for $key in keys($a.appearance) $appearance[$key]=$a.appearance[$key] end
         $candidate.appearance_session=$appearance

@@ -24,6 +24,7 @@ pub struct Native {
     default_keys: Value,
     appearance_choice: Value,
     appearance_session: Value,
+    window: Value,
     pub appearance: Value,
     form: Value,
     form_kind: String,
@@ -120,6 +121,7 @@ impl Native {
             contract,
             appearance_choice: json!({}),
             appearance_session: json!({"mode":"dark","scheme":"studio","style":"default"}),
+            window: json!({}),
             appearance: json!({"mode":"dark","scheme":"studio","style":"default"}),
             form_instance: 0,
             form_queue: VecDeque::new(),
@@ -938,6 +940,7 @@ impl Native {
                 Ok(answer)
             }
             "dopus.session" => {
+                self.window = args.get("window").filter(|v|v.is_object()).cloned().unwrap_or_else(||json!({}));
                 let mut appearance = json!({"mode":"dark","scheme":"studio","style":"default"});
                 for (key, value) in args["appearance"]
                     .as_object()
@@ -1005,6 +1008,11 @@ impl Native {
         }
     }
     pub fn model(&self) -> Value {
+        let side=|key:&str,fallback:&str|self.window[key].as_str().filter(|v|["left","center","right"].contains(v)).unwrap_or(fallback).to_owned();
+        let title_align=side("window.title_align",if self.window["window.style"]=="win11"{"left"}else{"center"});
+        let compact=[json!("button"),json!("titlebar")].contains(&self.window["window.menu_style"]);
+        let header_groups=json!({"menu":{"preferred":if compact{36}else{180},"minimum":if compact{36}else{120},"align":side("window.menu_side","left"),"shrink":1,"order":0},"toolbar":{"preferred":280,"minimum":80,"align":side("window.actions_align","right"),"shrink":1,"order":2},"caption-title":{"preferred":240,"minimum":0,"align":title_align,"shrink":0,"order":1}});
+        let caption_control=json!({"id":"caption-title","kind":"label","label":"","initial":"","properties":{"align":title_align,"emphasis":true,"truncate":true}});
         let core = self.core();
         let config = core.config_snapshot();
         let mut values = json!({"caption-title":dopus_core::sanitise_display_path(&core.pane(core.active()).path),"menu":self.menus(),"toolbar":self.toolbar(),"status":self.info,"properties":self.properties(),"form":self.form});
@@ -1040,7 +1048,7 @@ impl Native {
             Some(dopus_core::thumbs::Preview::Pending) => json!({"phase":"pending"}),
             _ => json!({"phase":"none"}),
         };
-        json!({"actions":self.actions()["actions"],"values":values,"panes":panes,"active":core.active().index(),"split":config.split_ratio,"layout":{"form":{"edge":"top","size":0},"topbar":{"edge":"top","size":34},"status-pane":{"edge":"bottom","size":32},"places-pane":{"edge":"left","fraction":config.places.width,"resizable":true,"min_fraction":0.1,"max_fraction":0.3,"minimum_window_width":640},"properties-pane":{"edge":"right","fraction":config.properties.width,"resizable":true,"min_fraction":0.1,"max_fraction":0.3,"minimum_window_width":640},"center-pane":{"edge":"fill"}},"places_hidden":!config.places.open,"properties_hidden":!config.properties.open,"appearance":self.appearance,"busy":core.availability().operation_running,"serial":self.serial,"focus":self.focus,"info":self.info,"ready":!core.pane(PaneId::Left).listing&&!core.pane(PaneId::Right).listing})
+        json!({"actions":self.actions()["actions"],"values":values,"panes":panes,"active":core.active().index(),"split":config.split_ratio,"header_groups":header_groups,"caption_control":caption_control,"layout":{"form":{"edge":"top","size":0},"topbar":{"edge":"top","size":34},"status-pane":{"edge":"bottom","size":32},"places-pane":{"edge":"left","fraction":config.places.width,"resizable":true,"min_fraction":0.1,"max_fraction":0.3,"minimum_window_width":640},"properties-pane":{"edge":"right","fraction":config.properties.width,"resizable":true,"min_fraction":0.1,"max_fraction":0.3,"minimum_window_width":640},"center-pane":{"edge":"fill"}},"places_hidden":!config.places.open,"properties_hidden":!config.properties.open,"appearance":self.appearance,"busy":core.availability().operation_running,"serial":self.serial,"focus":self.focus,"info":self.info,"ready":!core.pane(PaneId::Left).listing&&!core.pane(PaneId::Right).listing})
     }
 }
 impl Drop for Native {

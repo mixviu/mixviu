@@ -91,6 +91,16 @@ fn dp_properties($pane)
   return $fields
 end
 fn dp_project($state,$contract,$cache)
+  $window=$state.window ?? {}
+  $title_align=$window["window.title_align"] ?? "auto"
+  if not contains(["left","center","right"],$title_align) then $title_align=if $window["window.style"]=="win11" then "left" else "center" end end
+  $menu_side=$window["window.menu_side"] ?? "left"
+  if not contains(["left","center","right"],$menu_side) then $menu_side="left" end
+  $actions_align=$window["window.actions_align"] ?? "right"
+  if not contains(["left","center","right"],$actions_align) then $actions_align="right" end
+  $compact=contains(["button","titlebar"],$window["window.menu_style"])
+  $header_groups={menu:{preferred:if $compact then 36 else 180 end,minimum:if $compact then 36 else 120 end,align:$menu_side,shrink:1,order:0},toolbar:{preferred:280,minimum:80,align:$actions_align,shrink:1,order:2},"caption-title":{preferred:240,minimum:0,align:$title_align,shrink:0,order:1}}
+  $caption_control={id:"caption-title",kind:"label",label:"",initial:"",properties:{align:$title_align,emphasis:true,truncate:true}}
   $context=map($contract.context,fn($id)=dp_command($state,$contract,$id))
   $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
   $values={"caption-title":$dp.dp_display($state.panes[$state.active].path),menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
@@ -115,5 +125,5 @@ fn dp_project($state,$contract,$cache)
   $values.places={key:"places",revision:0,active:false,columns:[{id:"name",label:"Places"}],rows:$place_rows,context:[],background_context:[]}
   $values.preview=if $state.preview_slots==nil then {phase:"none"} else $state.preview_slots[$state.active].value end
   $layout={form:{edge:"top",size:0},topbar:{edge:"top",size:34},"status-pane":{edge:"bottom",size:32},"places-pane":{edge:"left",fraction:$state.places_width,resizable:true,min_fraction:0.1,max_fraction:0.3,minimum_window_width:640},"properties-pane":{edge:"right",fraction:$state.properties_width,resizable:true,min_fraction:0.1,max_fraction:0.3,minimum_window_width:640},"center-pane":{edge:"fill"}}
-  return {actions:map($contract.actions,fn($a)=dp_command($state,$contract,$a.id)),values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
+  return {actions:map($contract.actions,fn($a)=dp_command($state,$contract,$a.id)),values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,header_groups:$header_groups,caption_control:$caption_control,places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
 end
