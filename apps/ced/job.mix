@@ -15,11 +15,13 @@ on job.run
     if $rc!=0 then raise("READ",json_encode($reply ?? $result)) end
     $read=$reply
     if $read.truncated or $read.next!=nil or type($read.text)!="string" or byte_length($read.text)>65536 then raise("SIZE","Partial or oversized snapshots cannot be edited") end
-    send "edit" "edit.info" body={buffer:$buffer} timeout=8
+    send "edit" "edit.list" body={} timeout=8
     if $rc!=0 then raise("INFO",json_encode($reply ?? $result)) end
-    $read.path=$reply.path ?? $answer.path ?? "Untitled"
-    $read.language=$reply.language ?? "text"
-    $read.dirty=$reply.dirty ?? false
+    $rows=filter($reply.buffers,fn($b)=$b.buffer==$buffer)
+    if len($rows)!=1 or $rows[0].rev!=$read.rev then raise("CONFLICT","Buffer changed during the read; draft retained") end
+    $read.path=$rows[0].path ?? $answer.path ?? "Untitled"
+    $read.language=$rows[0].language
+    $read.dirty=$rows[0].dirty
     reply(0,json_encode($read))
   end
 end
