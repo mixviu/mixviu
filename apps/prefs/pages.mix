@@ -160,6 +160,9 @@ fn browser_row($s,$p,$r)
     $v.kind="steps";$v.steps=$c.steps;$v.start=$n.text_for($c.start);$v.end=$n.text_for($c.end)
   elif $kind=="ordered" then
     $v.kind="ordered";$v.items=map($v.value ?? [],fn($value)={value:$value,label:(filter(concat($s.live.options["xkb.layouts"] ?? [],$s.live.options["xkb.layouts.extended"] ?? []),fn($option)=deep_eq($option.value,$value))[0] ?? {}).label ?? json_encode($value)})
+    $v.min_items=1;$v.max_items=8
+    $v.move_up=$n.text_for("list-move-up");$v.move_down=$n.text_for("list-move-down");$v.remove_label=$n.text_for("list-remove")
+    if $c.add!=nil then $v.add_label=$n.text_for("drawer-"..$p.id.."-"..$c.add) end
   elif $kind=="append" then $v.kind="pick";$v.choices=concat($s.live.options[$c.source] ?? [],$s.live.options[$c.more] ?? [])
   elif contains(["drawer","link","page"],$kind) then $v.kind="link"
   elif $kind=="reset" then $v.kind="button" end
@@ -171,7 +174,15 @@ fn browser_row($s,$p,$r)
   return $v
 end
 fn browser_sections($s,$p,$sections)
-  return map($sections,fn($sec)={id:$sec.id,title:$sec.title,shown:section_shown($s,$p,$sec),rows:map($sec.rows,fn($r)=browser_row($s,$p,$r))})
+  $out=[]
+  for $sec in $sections
+    $rows=map($sec.rows,fn($r)=browser_row($s,$p,$r))
+    if $p.id=="wifi" and contains(["known","visible"],$sec.id) then
+      $rows=[{id:$sec.id.."_none",title:$n.text_for("row-wifi-"..$sec.id.."_none"),kind:"info",shown:true,blocked:nil,value:nil}]
+    end
+    push($out,{id:$sec.id,title:$sec.title,shown:section_shown($s,$p,$sec),notice:if $p.id=="power" and $sec.id=="devices" then backend_reason("backend-hostd-upower") else nil end,rows:$rows})
+  end
+  return $out
 end
 fn wallpaper_sections($s,$sections)
   $g=$gallery.view($s);$category=$g.category

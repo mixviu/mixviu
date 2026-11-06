@@ -455,7 +455,7 @@ fn native_menu(ui: &mut Ui, value: &Value, id: &str, events: &mut Vec<Intent>) -
         .iter()
         .position(|m| m.title == "Help")
         .map(toolkit::menu::Search::new);
-    ui.horizontal(|ui| {
+    ui.allocate_ui_with_layout(ui.available_size_before_wrap(),egui::Layout::left_to_right(egui::Align::Center),|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         let form = menu_form(ui.ctx());
         let picked = if form["effective"] == "bar" {

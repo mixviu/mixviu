@@ -694,7 +694,8 @@ fn cards(
     geometry: &mut BTreeMap<String, Rect>,
     events: &mut Vec<Intent>,
 ) {
-    for (section_index, section) in array(sections).filter(|s| s["shown"] != false).enumerate() {
+    for (section_index, section) in array(sections).enumerate() {
+        if section["shown"]==false {continue;}
         if section["plain"] == true {
             if let Some(title) = section["title"].as_str() {
                 if section_index > 0 {
@@ -732,6 +733,7 @@ fn cards(
             );
             ui.add_space(look.xs);
         }
+        if let Some(notice)=section["notice"].as_str() {browser_notice(ui,look,notice);}
         let visible: Vec<_> = array(&section["rows"])
             .filter(|r| r["shown"] != false)
             .collect();
@@ -777,6 +779,16 @@ fn cards(
                     }
                 }
             });
+        for row in &visible {
+            if row["kind"]=="ordered" && row["add_label"].is_string() {
+                ui.add_space(look.xs);
+                ui.with_layout(Layout::right_to_left(Align::Min),|ui| {
+                    if ui.add_enabled_ui(row["blocked"].is_null() && array(&row["items"]).count() < row["max_items"].as_u64().unwrap_or(64) as usize,|ui|standard_button(ui,text(row,"add_label"),look)).inner.clicked() {
+                        emit(events,id,"activate",json!({"row":row["id"]}));
+                    }
+                });
+            }
+        }
     }
 }
 fn browser_notice(ui: &mut Ui, look: &Look, notice: &str) {
@@ -897,6 +909,10 @@ fn radio_rows(
     events: &mut Vec<Intent>,
 ) {
     let key = text(row, "id");
+    if let Some(reason)=row.get("reason").unwrap_or(&row["blocked"]).as_str() {
+        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(look.row_pad() as i8,4)).show(ui,|ui|browser_notice(ui,look,reason));
+        let y=ui.cursor().top();ui.painter().hline(ui.min_rect().x_range(),y,Stroke::new(1.0,look.divider));ui.add_space(1.0);
+    }
     for (index, choice) in array(&row["choices"]).enumerate() {
         if index > 0 {
             let y = ui.cursor().top();
@@ -989,7 +1005,7 @@ fn draw_row(
         return;
     }
     if row["kind"] == "ordered" {
-        draw_ordered(ui, id, row, geometry, events);
+        draw_ordered(ui, id, row, look, geometry, events);
         return;
     }
     let key = text(row, "id");
@@ -1849,6 +1865,9 @@ fn draw_inline_row(
                                         } else {
                                             text(row, "value").into()
                                         };
+                                        let r = if text(row,"kind")=="text" && !secret {
+                                            ui.push_id(field_id,|ui|toolkit::field::text(ui,&mut v,text(row,"hint"),ui.available_width())).inner
+                                        } else {
                                         let mut field = if text(row, "kind") == "multitext" {
                                             egui::TextEdit::multiline(&mut v).desired_rows(3)
                                         } else {
@@ -1859,7 +1878,8 @@ fn draw_inline_row(
                                             .desired_width(ui.available_width())
                                             .hint_text(text(row, "hint"))
                                             .password(secret);
-                                        let r = ui.add(field);
+                                        ui.add(field)
+                                        };
                                         record(geometry, id, &format!("row.{key}.control"), &r);
                                         let commit = r.lost_focus()
                                             || (r.has_focus()
@@ -2036,6 +2056,7 @@ fn draw_ordered(
     ui: &mut Ui,
     id: &str,
     row: &Value,
+    look: &Look,
     geometry: &mut BTreeMap<String, Rect>,
     events: &mut Vec<Intent>,
 ) {
@@ -2043,41 +2064,30 @@ fn draw_ordered(
     let items: Vec<_> = array(&row["items"]).collect();
     ui.add_enabled_ui(row["blocked"].is_null(), |ui| {
         for (index, item) in items.iter().enumerate() {
-            ui.horizontal(|ui| {
-                ui.label(text(item, "label"));
-                for (action, title, enabled) in [
-                    ("up", "↑", index > 0),
-                    ("down", "↓", index + 1 < items.len()),
-                    ("remove", "×", true),
-                ] {
-                    let r = ui.add_enabled(enabled, egui::Button::new(title));
-                    r.widget_info(|| {
-                        egui::WidgetInfo::labeled(
-                            egui::Role::Button,
-                            ui.is_enabled(),
-                            format!("{action} {}", text(item, "label")),
-                        )
-                    });
-                    geometry.insert(format!("{id}.row.{key}.{index}.{action}"), r.rect);
-                    if r.clicked() {
-                        let mut values: Vec<Value> =
-                            items.iter().map(|item| item["value"].clone()).collect();
-                        match action {
-                            "up" => values.swap(index, index - 1),
-                            "down" => values.swap(index, index + 1),
-                            _ => {
-                                values.remove(index);
+            if index>0 {let y=ui.cursor().top();ui.painter().hline(ui.min_rect().x_range(),y,Stroke::new(1.0,look.divider));ui.add_space(1.0);}
+            egui::Frame::NONE.inner_margin(egui::Margin::symmetric(look.row_pad() as i8,4)).show(ui,|ui| {
+                ui.set_min_height(32.0);ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.with_layout(Layout::right_to_left(Align::Center),|ui| {
+                        let more=cosmic_icon_button(ui,toolkit::Icon::EllipsisVertical,true,text(item,"label"),look);
+                        record(geometry,id,&format!("row.{key}.{index}.more"),&more);
+                        egui::Popup::menu(&more).show(|ui| {
+                            ui.set_min_width(160.0);
+                            for (action,title,enabled) in [("up",text(row,"move_up"),index>0),("down",text(row,"move_down"),index+1<items.len()),("remove",text(row,"remove_label"),items.len()>row["min_items"].as_u64().unwrap_or(0) as usize)] {
+                                if action=="remove" {ui.separator();}
+                                let r=ui.add_enabled_ui(enabled,|ui|toolkit::selectable(ui,false,title)).inner;
+                                record(geometry,id,&format!("row.{key}.{index}.{action}"),&r);
+                                if r.clicked() {
+                                    let mut values:Vec<Value>=items.iter().map(|item|item["value"].clone()).collect();
+                                    match action {"up"=>values.swap(index,index-1),"down"=>values.swap(index,index+1),_=>{values.remove(index);}}
+                                    emit(events,id,"edit",json!({"row":key,"value":values}));ui.close();
+                                }
                             }
-                        }
-                        emit(events, id, "edit", json!({"row":key,"value":values}));
-                    }
-                }
+                        });
+                        ui.with_layout(Layout::left_to_right(Align::Center),|ui| {ui.label(RichText::new(text(item,"label")).size(14.0).color(look.text));});
+                    });
+                });
             });
-        }
-        let r = ui.button(format!("+ {}", text(row, "title")));
-        geometry.insert(format!("{id}.row.{key}.control"), r.rect);
-        if r.clicked() {
-            emit(events, id, "activate", json!({"row":key}));
         }
     });
 }
