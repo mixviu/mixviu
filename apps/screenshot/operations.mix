@@ -153,7 +153,7 @@ fn answer($s,$a)
     if type($a.path)!="string" then raise("ARGUMENT","path must be a string") end
   end
   $view=dialog_view($s)
-  if not any($view.buttons,fn($b)=$b.id==$a.answer) then raise("ARGUMENT","the "..$kind.." dialog has no button "..$a.answer) end
+  if not any($view.buttons,fn($b)=$b.id==$a.answer) then raise("ARGUMENT","the "..$kind.." dialog has no button "..json_encode($a.answer).."; it has "..join(map($view.buttons,fn($b)=$b.id),", ")) end
   if $s.busy and not contains(["keep","cancel","done"],$a.answer) then raise("BUSY","Another operation is still running") end
   if contains(["keep","cancel","done"],$a.answer) then
     $s.ui.dialog=nil
@@ -251,10 +251,13 @@ fn execute($s,$id,$params,$alias)
 end
 fn select_ui($s,$a)
   $state.check_fields($a,["tool","mode","window","output"])
-  if has_key($a,"tool") and not contains($registry.tools,$a.tool) then raise("ARGUMENT","unknown tool") end
+  if has_key($a,"tool") and not contains($registry.tools,$a.tool) then raise("ARGUMENT","tool must be select, crop or an annotation kind") end
   if has_key($a,"mode") and not contains(["region","screen","window"],$a.mode) then raise("ARGUMENT","unknown capture mode") end
-  if $a.window!=nil then $core.request({mode:"window",window:$a.window}) end
-  if $a.output!=nil then $core.request({output:$a.output}) end
+  if $a.window!=nil then $core.target($a.window) end
+  if $a.output!=nil then
+    if type($a.output)!="string" then raise("ARGUMENT","output must be a name or null") end
+    $core.request({output:$a.output})
+  end
   if has_key($a,"tool") then $s.ui.tool=$a.tool;if $a.tool!="select" then $s.ui.selected=nil end end
   for $key in ["mode","window","output"] if has_key($a,$key) then $s.ui[$key]=$a[$key] end end
   return $s
@@ -273,11 +276,11 @@ fn dispatch($s,$command,$a)
     elif $command=="screenshot.recent" then
       $limit=if has_key($a,"limit") then $a.limit else 10 end
       if type($limit)!="number" or floor($limit)!=$limit or $limit<1 or $limit>100 then raise("ARGUMENT","limit must be 1..100") end
-      $body={shots:$store.recent($s.state_dir,$limit)}
+      $body={folder:$s.folder,shots:$store.recent($s.state_dir,$limit)}
     elif $command=="screenshot.cancel" then $body={cancelling:$s.busy and $s.job=="capture"};$s=cancel($s);if $body.cancelling then $s=$journal.record_action($s,"capture.cancel",nil,nil) end
     elif $command=="screenshot.theme" then
       for $key in ["scheme","mode"]
-        if has_key($a,$key) and $a[$key]!=nil and not any($registry.definitions,fn($r)=$r.id==(if $key=="scheme" then "view.theme." else "view.mode." end)..to_string($a[$key])) then raise("ARGUMENT","unknown "..$key) end
+        if has_key($a,$key) and $a[$key]!=nil and not any($registry.definitions,fn($r)=$r.id==(if $key=="scheme" then "view.theme." else "view.mode." end)..to_string($a[$key])) then raise("ARGUMENT","unknown "..$key.." "..json_encode($a[$key])) end
       end
       for $key in ["scheme","mode"] if has_key($a,$key) then $s.look[$key]=$a[$key] end end
       $body={scheme:$s.look.scheme,mode:$s.look.mode}
@@ -289,7 +292,7 @@ fn dispatch($s,$command,$a)
     elif $command=="screenshot.take" then
       $state.check_fields($a,["mode","window","comp","region"])
       if has_key($a,"comp") and type($a.comp)!="string" then raise("ARGUMENT","comp must be a string") end
-      if has_key($a,"comp") and $a.comp!=$s.comp then raise("COMPOSITOR","this instance captures through a different compositor") end
+      if has_key($a,"comp") and $a.comp!=$s.comp then raise("COMPOSITOR","this instance captures through compositor "..json_encode($s.comp)..", not "..json_encode($a.comp)) end
       if has_key($a,"mode") and not contains(["screen","window","region"],$a.mode) then raise("ARGUMENT","mode must be screen, window or region") end
       if has_key($a,"window") then $core.request({mode:"window",window:$a.window}) end
       if has_key($a,"region") then $core.request({mode:"region",region:$a.region});if $a.region==nil then raise("ARGUMENT","invalid region") end end
