@@ -154,7 +154,10 @@ impl Host {
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         self.wire_deliveries.push(r.delivery.clone());
-        let Some(owned)=self.facilities.request(r,ctx) else {return;};r=owned;
+        let Some(owned) = self.facilities.request(r, ctx) else {
+            return;
+        };
+        r = owned;
         if self.model["window_close"] == true {
             let _ = r.reply.send((10, json!({"error_code":"CLOSING"})));
             return;
@@ -189,9 +192,10 @@ impl Host {
                             let _ = r.reply.send((answer.rc, answer.body));
                         }
                         self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
-                    } else if let Some(mut answer) = toolkit::drive::request(ctx, id, command, &r.args)
+                    } else if let Some(mut answer) =
+                        toolkit::drive::request(ctx, id, command, &r.args)
                     {
-                        crate::app_facilities::remap(ctx,&mut answer.body);
+                        crate::app_facilities::remap(ctx, &mut answer.body);
                         let _ = r.reply.send((answer.rc, answer.body));
                     } else {
                         self.drive_pending.insert(id, r.reply);
@@ -289,7 +293,7 @@ impl Host {
         if self.drive.is_some() {
             for mut answer in toolkit::drive::logic(ctx) {
                 if let Some(reply) = self.drive_pending.remove(&answer.id) {
-                    crate::app_facilities::remap(ctx,&mut answer.body);
+                    crate::app_facilities::remap(ctx, &mut answer.body);
                     let _ = reply.send((answer.rc, answer.body));
                 }
             }

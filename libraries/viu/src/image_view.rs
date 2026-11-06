@@ -619,7 +619,10 @@ pub(crate) fn decode_surface(path: &std::path::Path) -> Option<egui::ColorImage>
 }
 
 pub(crate) fn decode_document(path: &std::path::Path) -> Option<egui::ColorImage> {
-    let doc=crate::annotation::document::Document::open(path).ok()?;
-    let (w,h)=doc.dimensions();
-    Some(egui::ColorImage::from_rgba_unmultiplied([w as usize,h as usize],doc.original().as_raw()))
+    let doc = crate::annotation::document::Document::open(path).ok()?;
+    let (w, h) = doc.dimensions();
+    Some(egui::ColorImage::from_rgba_unmultiplied(
+        [w as usize, h as usize],
+        doc.original().as_raw(),
+    ))
 }

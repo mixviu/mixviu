@@ -115,7 +115,9 @@ impl Facilities {
                 }
             }
         }
-        if self.ui {self.answers(ctx, toolkit::drive::logic(ctx));}
+        if self.ui {
+            self.answers(ctx, toolkit::drive::logic(ctx));
+        }
     }
     pub fn record(&mut self, args: &Value) -> Result<Value, String> {
         use toolkit::executed::Origin;
@@ -191,7 +193,7 @@ impl Facilities {
                             let _ = r.reply.send(macro_answer(answer));
                         }
                         macros::commands::Reply::Deferred(rx) => {
-                            r.deferred.store(true,std::sync::atomic::Ordering::Release);
+                            r.deferred.store(true, std::sync::atomic::Ordering::Release);
                             let tx = self.complete.clone();
                             let wake = self.wake.clone();
                             std::thread::spawn(move || {
