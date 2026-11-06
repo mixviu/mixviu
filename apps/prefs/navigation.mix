@@ -49,7 +49,7 @@ fn shown($s,$p,$r)
     if $r.id=="slideshow" then return $s.values["wallpaper.color"]==nil end
     if contains(["interval","shuffle"],$r.id) then return $s.values["wallpaper.slideshow.enabled"] ?? false end
   end
-  if $p.id=="power" and $r.id=="suspend_battery" then return $s.live.facts.battery ?? false end
+  if $p.id=="power" and $r.id=="suspend_battery" then return (($s.live ?? {}).facts ?? {}).battery ?? false end
   return true
 end
 fn search_view($s,$query)

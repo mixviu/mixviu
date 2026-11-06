@@ -130,6 +130,7 @@ pub fn actions(kind: &str) -> Vec<&'static str> {
     match kind {
         "menubar" | "command-bar" => vec!["set", "command"],
         "dialog-form" => vec!["set", "edit", "answer"],
+        "settings-browser" => vec!["set","navigate","query","edit","activate","remove","problem","drawer.close"],
         _ => vec!["set"],
     }
 }

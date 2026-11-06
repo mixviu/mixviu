@@ -45,7 +45,7 @@ fn admitted($s,$key,$value)
   if $s.busy or $s.uncertain or $s.revision==nil or $s.incarnation==nil or $s.stale or not contains(["authority","mirror"],$s.role) then raise("NOT_WRITABLE","Refresh a reachable non-stale settings authority before writing") end
   $k=key_info($s,$key)
   if not contains(["stored","applied"],$k.class) or contains(["email.accounts","email.default_account"],$key) or contains($key,"<") then raise("READ_ONLY","This key needs its owning service workflow") end
-  if $value!=nil then
+  if $value!=nil and $k.kind!="domain" then
     if $k.kind=="bool" and type($value)!="bool" then raise("TYPE","Boolean required") end
     if $k.kind=="enum" and not contains($k.variants,$value) then raise("ENUM","Value is not a described variant") end
     if contains(["int","number"],$k.kind) then

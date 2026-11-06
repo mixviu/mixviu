@@ -5,7 +5,9 @@ fn elements($text,$tag)
   return map(re_find($text,"(?s)<"..$tag..">(.*?)</"..$tag..">"),fn($m)=$m.groups[0])
 end
 fn item($block)
-  $config=re_find($block,"(?s)<configItem[^>]*>(.*?)</configItem>")[0].groups[0]
+  $matches=re_find($block,"(?s)<configItem[^>]*>(.*?)</configItem>")
+  if len($matches)==0 then return nil end
+  $config=$matches[0].groups[0]
   if $config==nil then return nil end
   $name=trim(elements($config,"name")[0] ?? "")
   if $name=="" then return nil end
@@ -30,8 +32,9 @@ fn parse_lst($text)
   $layouts={};$order=[];$section=""
   for $line in split($text,"\n")
     if starts_with($line,"!") then $section=trim(substr($line,1));continue end
-    $parts=re_find(trim($line),"^(\\S+)\\s+(.+)$")[0].groups
-    if $parts==nil then continue end
+    $matched=re_find(trim($line),"^(\\S+)\\s+(.+)$")
+    if len($matched)==0 then continue end
+    $parts=$matched[0].groups
     $name=$parts[0];$description=trim($parts[1])
     if $section=="layout" then
       push($order,$name);$layouts[$name]={name:$name,description:$description,variants:[]}

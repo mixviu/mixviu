@@ -135,7 +135,7 @@ fn browser_row($s,$p,$r)
   elif contains(["slider","spin"],$kind) then $v.kind="number";$v.min=$c.min;$v.max=$c.max;$v.step=$c.step
   elif $kind=="steps" then $v.kind="choice";$v.choices=map($c.steps,fn($step)={value:$step,label:to_string($step)})
   elif $kind=="ordered" then
-    $v.kind="ordered";$v.items=map($v.value ?? [],fn($value)={value:$value,label:filter(concat($s.live.options["xkb.layouts"] ?? [],$s.live.options["xkb.layouts.extended"] ?? []),fn($option)=deep_eq($option.value,$value))[0].label ?? json_encode($value)})
+    $v.kind="ordered";$v.items=map($v.value ?? [],fn($value)={value:$value,label:(filter(concat($s.live.options["xkb.layouts"] ?? [],$s.live.options["xkb.layouts.extended"] ?? []),fn($option)=deep_eq($option.value,$value))[0] ?? {}).label ?? json_encode($value)})
   elif $kind=="append" then $v.kind="pick";$v.choices=concat($s.live.options[$c.source] ?? [],$s.live.options[$c.more] ?? [])
   elif contains(["drawer","link","page"],$kind) then $v.kind="link"
   elif $kind=="reset" then $v.kind="button" end

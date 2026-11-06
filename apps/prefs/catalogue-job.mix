@@ -24,8 +24,8 @@ on job.run
   $locales=[]
   for $line in split(optional_text("/usr/share/i18n/SUPPORTED"),"\n")
     if starts_with($line,"#") then continue end
-    $name=re_find(trim($line),"^\\S+")[0].match
-    if $name!=nil and not contains($locales,$name) then push($locales,$name) end
+    $matches=re_find(trim($line),"^\\S+")
+    if len($matches)>0 then $name=$matches[0].match;if not contains($locales,$name) then push($locales,$name) end end
   end
   $options.locales=map(sort($locales),fn($name)={value:$name,label:$name})
   reply(0,json_encode({options:$options}))

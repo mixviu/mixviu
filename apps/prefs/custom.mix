@@ -10,7 +10,7 @@ fn value_of($s,$key)
 end
 fn row($s,$key,$title,$kind,$options)
   $meta=filter($s.catalog,fn($k)=$k.path==$key)[0] ?? {}
-  return merge({id:$key,key:$key,title:$n.text_for($title),kind:$kind,inline:true,shown:true,value:value_of($s,$key),blocked:if $s.revision==nil or not $s.connected or $s.busy or $s.ui.dialog!=nil or $s.quitting then $n.text_for("busy") else nil end,min:$meta.min,max:$meta.max,step:1},$options)
+  return merge({id:$key,key:$key,title:$n.text_for($title),kind:$kind,inline:true,shown:true,value:value_of($s,$key),blocked:if $s.revision==nil or not $s.connected or $s.busy or $s.ui.dialog!=nil or $s.quitting then $n.text_for("busy") else nil end,min:$meta.min ?? ($meta.domain ?? {}).minimum,max:$meta.max ?? ($meta.domain ?? {}).maximum,step:1},$options)
 end
 fn choices($values,$labels)
   $out=[]

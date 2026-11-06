@@ -362,7 +362,7 @@ pub(crate) fn draw(
                     if value["search_focus"] == true {
                         r.request_focus();
                     }
-                    if r.changed() {
+                    if r.changed() && ui.is_enabled() {
                         emit(events, id, "query", json!(query));
                     }
                     if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -727,7 +727,7 @@ fn draw_row(
                                             .speed(row["step"].as_f64().unwrap_or(1.0)),
                                     );
                                     record(geometry, id, &format!("row.{key}.control"), &r);
-                                    if r.changed() {
+                                    if r.changed() && ui.is_enabled() {
                                         edited = Some(json!(v));
                                     }
                                 }
@@ -739,7 +739,7 @@ fn draw_row(
                                             .desired_width(160.0),
                                     );
                                     record(geometry, id, &format!("row.{key}.control"), &r);
-                                    if r.changed() {
+                                    if r.changed() && ui.is_enabled() {
                                         edited = Some(json!(v));
                                     }
                                 }
@@ -918,7 +918,7 @@ fn draw_inline_row(
                                             )
                                         });
                                         record(geometry, id, &format!("row.{key}.control"), &r);
-                                        if r.changed() {
+                                        if r.changed() && ui.is_enabled() {
                                             edit = Some(json!(v));
                                         }
                                     }
@@ -974,7 +974,7 @@ fn draw_inline_row(
                                             )
                                         };
                                         record(geometry, id, &format!("row.{key}.control"), &r);
-                                        if r.changed() {
+                                        if r.changed() && ui.is_enabled() {
                                             edit = Some(json!(v));
                                         }
                                     }
@@ -1104,7 +1104,7 @@ fn colour_picker(ui: &mut Ui, row: &Value, look: &Look) -> (Response, Option<Val
     let response = ui
         .horizontal(|ui| {
             let r = ui.color_edit_button_srgb(&mut rgb);
-            let mut changed = if r.changed() {
+            let mut changed = if r.changed() && ui.is_enabled() {
                 value = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
                 Some(json!(format!(
                     "#{:02x}{:02x}{:02x}",
