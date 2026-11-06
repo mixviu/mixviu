@@ -950,6 +950,22 @@ impl SceneView {
                 _ => {}
             }
             self.child_rect(ui, child, rect, nodes, route, depth, events);
+            if edge == "bottom" && placement["size"] == "design.status_height" {
+                // The native panel rounds its frame and integer margins after
+                // applying live scale. Reserve its painted bounds, rather than
+                // leaving a fractional strip between it and the document.
+                if let Some(top) = nodes
+                    .values()
+                    .filter(|node| node.ports["definition"]["kind"] == "status-line")
+                    .filter_map(|node| node.ports["definition"]["id"].as_str())
+                    .filter_map(|id| self.widgets.geometry.get(id))
+                    .filter(|bounds| bounds.top() >= rect.top() && bounds.bottom() <= rect.bottom())
+                    .map(egui::Rect::top)
+                    .min_by(f32::total_cmp)
+                {
+                    remaining.max.y = top;
+                }
+            }
             if placement["resizable"] == true && edge != "fill" {
                 let line = match edge {
                     "left" => egui::Rect::from_min_max(
