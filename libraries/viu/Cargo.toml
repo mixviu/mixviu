@@ -13,6 +13,7 @@ edit.workspace = true
 blake3.workspace = true
 sha2.workspace = true
 regex.workspace = true
+toolkit.workspace = true
 eframe = { version = "=0.37.0", default-features = false, features = ["default_fonts", "wayland", "wgpu_no_default_features"] }
 smithay-client-toolkit = "=0.19.2"
 wayland-backend = { version = "=0.3.17", features = ["client_system"] }

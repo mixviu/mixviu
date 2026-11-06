@@ -183,3 +183,12 @@ fn gold_waits_are_deferred_and_event_driven_and_validate_exactly_one_condition()
     assert_eq!(body["error_code"], "CONFLICT");
     assert_eq!(body["reason"], "timeout");
 }
+
+#[test]
+fn action_inventory_and_execute_share_native_editor_semantics() {
+    let mut app=App::new();let(rc,rows)=app.answered("ced.actions",json!({}));assert_eq!(rc,0);let rows=rows["actions"].as_array().unwrap();assert_eq!(rows.len(),61);assert_eq!(rows[0]["id"],"file.new");assert_eq!(rows[0]["keys"],json!(["Ctrl+N"]));
+    let(rc,unknown)=app.answered("ced.execute",json!({"id":"edit.unknown"}));assert_eq!(rc,10);assert_eq!(unknown["error_code"],"UNKNOWN_ACTION");
+    let(rc,bad)=app.answered("ced.execute",json!({"id":"edit.unknown","params":{"misspelt":1}}));assert_eq!(rc,10);assert_eq!(bad["reason"],"unknown_param");
+    let(rc,result)=app.answered("ced.execute",json!({"id":"edit.select_all"}));assert_eq!(rc,0);assert_eq!(result,json!({"id":"edit.select_all","ok":true,"result":null}));
+    let(rc,result)=app.answered("ced.execute",json!({"id":"edit.delete_line"}));assert_eq!(rc,0);assert_eq!(result["ok"],true);assert_eq!(app.docs.call("read","1",json!({})).unwrap()["text"],"");
+}

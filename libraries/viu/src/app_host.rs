@@ -15,6 +15,10 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    service:String,
+    native_drive:bool,
+    drive_next:u64,
+    drive_pending:BTreeMap<u64,Reply>,
     ui_state: crate::ui_state::UiState,
     measurements: crate::ui_state::Measurements,
     input_at: Option<Instant>,
@@ -111,13 +115,30 @@ impl Host {
             }
         }
     }
-    fn request(&mut self, r: Request, ctx: &egui::Context) {
+    fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
                 json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
             ));
             return;
+        }
+        if self.native_drive {
+            if let Some((rc,body))=crate::debug::request(&self.service,&r.command,&r.args.to_string()) {let _=r.reply.send((rc,body));return;}
+            let prefix=format!("{}.",self.service);
+            if let Some(suffix)=r.command.strip_prefix(&prefix) {
+                if toolkit::drive::COMMANDS.contains(&suffix) {
+                    if suffix=="window" && r.args["action"]=="close" {
+                        r.command="app.quit".into();
+                    }else{
+                        self.drive_next+=1;let id=self.drive_next;
+                        let answer=toolkit::drive::request(ctx,id,suffix,&r.args);
+                        if let Some(answer)=answer {let _=r.reply.send((answer.rc,answer.body));}
+                        else{self.drive_pending.insert(id,r.reply);ctx.request_repaint();}
+                        return;
+                    }
+                }
+            }
         }
         match r.command.as_str() {
             "viu.state" | "viu.ui.tree" => {
@@ -205,6 +226,10 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
+        if self.native_drive {
+            toolkit::drive::set_service(ui.ctx(),self.bus.client().as_ref().map(|_|self.service.as_str()));
+            for answer in toolkit::drive::logic(ui.ctx()) {if let Some(reply)=self.drive_pending.remove(&answer.id){let _=reply.send((answer.rc,answer.body));}}
+        }
         for token in self.calls.cancelled() {
             let _ = self
                 .runtime
@@ -472,12 +497,17 @@ impl Host {
             &self.view.geometry,
             self.measurements.snapshot(),
         );
+        if self.native_drive {for answer in toolkit::drive::finish(ui.ctx()){if let Some(reply)=self.drive_pending.remove(&answer.id){let _=reply.send((answer.rc,answer.body));}}}
     }
 }
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
     let mut commands = bundle.manifest.commands.clone();
+    if bundle.manifest.native_drive {
+        commands.extend(toolkit::drive::COMMANDS.iter().map(|suffix|format!("{service}.{suffix}")));
+        commands.extend(["state","set","recent"].map(|suffix|format!("{service}.debug.{suffix}")));
+    }
     commands.extend(
         [
             "viu.state",
@@ -555,6 +585,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        service: bundle.manifest.service.clone(),
+        native_drive:bundle.manifest.native_drive,
+        drive_next:0,
+        drive_pending:BTreeMap::new(),
         ui_state,
         measurements: Default::default(),
         input_at: None,
@@ -597,7 +631,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     }
 }
 
-pub fn run(args: Vec<String>) -> eframe::Result {
+pub fn run(mut args: Vec<String>) -> eframe::Result {
+    crate::debug::init("info",&mut args).unwrap_or_else(|e|{eprintln!("viu: {e}");std::process::exit(2)});
     if args.first().is_some_and(|p| p.ends_with(".mix")) {
         std::process::exit(crate::macro_host::run(
             args[0].clone().into(),
@@ -630,6 +665,7 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
     let service = bundle.manifest.service.clone();
+    let native_drive=bundle.manifest.native_drive;
     eframe::run_native(
         &title,
         eframe::NativeOptions {
@@ -640,6 +676,7 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         },
         Box::new(move |cc| {
             crate::appearance::install(&cc.egui_ctx);
+            if native_drive {toolkit::drive::install(&cc.egui_ctx,&service);}
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(
                 bundle,

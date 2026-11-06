@@ -16,6 +16,7 @@ pub struct Manifest {
     pub frame: Option<String>,
     pub follow_settings: bool,
     pub macros: bool,
+    pub native_drive: bool,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -30,6 +31,7 @@ impl Default for Manifest {
             frame: None,
             follow_settings: false,
             macros: false,
+            native_drive: false,
         }
     }
 }
