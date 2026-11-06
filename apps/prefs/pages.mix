@@ -215,6 +215,20 @@ fn wallpaper_sections($s,$sections)
   $sections[2]={id:"choose",title:nil,native_plain:true,shown:true,rows:[$chooser,$tilesrow]}
   return $sections
 end
+fn search_groups($s)
+  $hits=$n.search_view($s,$s.nav.query).hits;$out=[]
+  for $p in $n.pages
+    $matches=filter($hits,fn($h)=$h.page==$p.id)
+    if len($matches)==0 then continue end
+    $sections=[]
+    for $section in $n.row_sections($p)
+      $section.rows=filter($section.rows,fn($r)=any($matches,fn($h)=$h.row==$r.id))
+      if len($section.rows)>0 then push($sections,$section) end
+    end
+    push($out,{page:$p.id,row:$matches[0].row,title:$p.title,parent_title:if $p.parent==nil then nil else $n.page($p.parent).title end,sections:browser_sections($s,$p,$sections)})
+  end
+  return $out
+end
 fn browser($s)
   $p=$n.page($s.nav.page);$root=$p
   while $root.parent!=nil $root=$n.page($root.parent) end
@@ -247,5 +261,5 @@ fn browser($s)
   $sections=$custom.sections($s,$p.id) ?? browser_sections($s,$p,$p.sections)
   if $p.id=="wallpaper" then $sections=wallpaper_sections($s,$sections) end
   $extras=if $p.id=="appearance" then [{label:$n.text_for("extra-appearance-import"),enabled:false},{label:$n.text_for("extra-appearance-export"),enabled:false}] elif $p.id=="wifi" then [{label:$n.text_for("extra-wifi-add_network"),enabled:false,link:true}] else [] end
-  return {notices:if ($s.store_error ?? nil)==nil then [] else [$s.store_error] end,focus_row:if $s.nav.focus!=nil then $s.nav.focus[1] else nil end,end_space:$p.kind!="custom",scroll_content:$p.id!="software",look_refresh_key:[$s.revision!=nil,stored($s,"appearance.density"),stored($s,"appearance.roundness")],title:$p.title,page:$p.id,root:$root.id,parent:$p.parent,parent_title:if $p.parent!=nil then $n.page($p.parent).title else "" end,query:$s.nav.query,search_hint:$n.text_for("search-hint"),searching:$s.nav.searching,search_focus:$s.ui.search_focus,sidebar_open:$s.nav.sidebar,results_title:$n.text_for("search-results"),hits:$n.search_view($s,$s.nav.query).hits,pages:map($n.pages,fn($p)={id:$p.id,title:$p.title,parent:$p.parent,icon:$p.icon}),sections:$sections,children:if $p.kind=="list" then map(filter($n.pages,fn($x)=$x.parent==$p.id),fn($x)={id:$x.id,title:$x.title,icon:$x.icon,description:$n.translated("page-"..$x.id.."-desc")}) else [] end,drawer:$drawer,drawer_close:$n.text_for("drawer-close"),notice:$notice,settings:$visual,extras:$extras,pending:if $p.kind=="pending" then {title:$n.text_for("page-pending"),description:$n.text_for("page-pending-desc")} else nil end}
+  return {search_groups:if $s.nav.searching then search_groups($s) else [] end,search_empty:$n.text_for("search-none"),search_clear:$n.text_for("search-clear"),notices:if ($s.store_error ?? nil)==nil then [] else [$s.store_error] end,focus_row:if $s.nav.focus!=nil then $s.nav.focus[1] else nil end,end_space:$p.kind!="custom",scroll_content:$p.id!="software",look_refresh_key:[$s.revision!=nil,stored($s,"appearance.density"),stored($s,"appearance.roundness")],title:$p.title,page:$p.id,root:$root.id,parent:$p.parent,parent_title:if $p.parent!=nil then $n.page($p.parent).title else "" end,query:$s.nav.query,search_hint:$n.text_for("search-hint"),searching:$s.nav.searching,search_focus:$s.ui.search_focus,sidebar_open:$s.nav.sidebar,results_title:$n.text_for("search-results"),hits:$n.search_view($s,$s.nav.query).hits,pages:map($n.pages,fn($p)={id:$p.id,title:$p.title,parent:$p.parent,icon:$p.icon}),sections:$sections,children:if $p.kind=="list" then map(filter($n.pages,fn($x)=$x.parent==$p.id),fn($x)={id:$x.id,title:$x.title,icon:$x.icon,description:$n.translated("page-"..$x.id.."-desc")}) else [] end,drawer:$drawer,drawer_close:$n.text_for("drawer-close"),notice:$notice,settings:$visual,extras:$extras,pending:if $p.kind=="pending" then {title:$n.text_for("page-pending"),description:$n.text_for("page-pending-desc")} else nil end}
 end

@@ -591,7 +591,8 @@ on prefs.intent
         end
         publish_prefs($state);reply(0,"{}");return
       end
-      $p=$nav.page($state.nav.page);$row_id=$a.value.row
+      $p=$nav.page($a.value.page ?? $state.nav.page);$row_id=$a.value.row
+      if $a.action=="activate" and $a.value.page!=nil then $state.nav.page=$p.id end
       if starts_with($row_id,"pick:") then $row_id=substr($row_id,5) end
       $r=$pages.row_for($p,$row_id)
       $why=$pages.row_blocked($state,$p,$r)

@@ -245,6 +245,21 @@ pub fn validate(value: &Value) -> Result<(), String> {
     Ok(())
 }
 pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String> {
+    let mut selected;
+    let value = if payload["page"].is_string() && ["edit", "activate", "remove"].contains(&action) {
+        if value["searching"] != true {
+            return Err("search results are not open".into());
+        }
+        let group = array(&value["search_groups"])
+            .find(|group| group["page"] == payload["page"])
+            .ok_or("search result is no longer present")?;
+        selected = value.clone();
+        selected["sections"] = group["sections"].clone();
+        selected["drawer"] = Value::Null;
+        &selected
+    } else {
+        value
+    };
     validate(value)?;
     match action {
         "query" if payload.as_str().is_some_and(|q| q.len() <= 65536) => Ok(()),
@@ -415,8 +430,11 @@ pub(crate) fn draw(
                         emit(events, id, "query", json!(""));
                         ui.memory_mut(|m| m.surrender_focus(r.id));
                     }
-                    if !query.is_empty() && ui.small_button("×").clicked() {
-                        emit(events, id, "query", json!(""));
+                    if !query.is_empty() {
+                        if ui.add(toolkit::button::IconButton::new(toolkit::Icon::X)
+                            .size(16.0).tooltip(text(value, "search_clear"))).clicked() {
+                            emit(events, id, "query", json!(""));
+                        }
                     }
                 });
             });
@@ -532,14 +550,46 @@ pub(crate) fn draw(
     );
     body.set_width(width);
     if value["searching"] == true && !text(value, "query").trim().is_empty() {
-        body.heading(text(value, "results_title"));
         egui::ScrollArea::vertical()
             .id_salt((id, "results"))
+            .auto_shrink([false, false])
             .show(&mut body, |ui| {
-                for hit in array(&value["hits"]) {
-                    if ui.button(text(hit, "title")).clicked() {
-                        emit(events, id, "navigate", hit.clone());
+                if array(&value["search_groups"]).next().is_none() {
+                    ui.label(RichText::new(text(value, "search_empty")).size(14.0).color(look.text));
+                }
+                for group in array(&value["search_groups"]) {
+                    if let Some(parent) = group["parent_title"].as_str() {
+                        ui.horizontal(|ui| {
+                            ui.add_space(6.0);
+                            ui.label(RichText::new(parent).size(14.0).color(look.text));
+                        });
                     }
+                    let link = ui.add(egui::Label::new(RichText::new(text(group, "title"))
+                        .size(14.0).color(look.text)).sense(Sense::click()));
+                    link.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, text(group, "title")));
+                    if link.clicked() {
+                        emit(events, id, "navigate", json!({"page":group["page"],"row":group["row"]}));
+                    }
+                    ui.add_space(8.0);
+                    ui.painter().hline(ui.available_rect_before_wrap().x_range(), ui.cursor().min.y,
+                        Stroke::new(2.0, look.divider));
+                    ui.add_space(2.0 + look.xs);
+                    for section in array(&group["sections"]) {
+                        let before = events.len();
+                        ui.horizontal(|ui| {
+                            ui.add_space(look.l);
+                            ui.vertical(|ui| {
+                                cards(ui, id, &json!([section]), &look, geometry, events);
+                            });
+                        });
+                        for event in &mut events[before..] {
+                            if event.value.is_object() {
+                                event.value["page"] = group["page"].clone();
+                            }
+                        }
+                        ui.add_space(look.m);
+                    }
+                    ui.add_space(look.m);
                 }
             });
     } else {
