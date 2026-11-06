@@ -2,6 +2,7 @@
 //! Shared native window controls. The compositor retains movement, resize,
 //! focus and presentation authority; this sends the usual viewport commands.
 use egui::{Rect, Ui, ViewportCommand as Command, pos2, vec2};
+use egui::emath::GuiRounding;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -143,7 +144,7 @@ impl WindowFrame {
             return;
         }
         let metrics = Metrics::of(ui.ctx());
-        let height = metrics.height;
+        let height = metrics.height.round_ui();
         let gap = ui.spacing().item_spacing.y;
         ui.spacing_mut().item_spacing.y = 0.0;
         let (band, _) =
@@ -191,10 +192,7 @@ impl WindowFrame {
             ),
             vec2(
                 3.0 * caption_width,
-                ((height - ui.visuals().widgets.noninteractive.bg_stroke.width)
-                    * ui.pixels_per_point())
-                .round()
-                    / ui.pixels_per_point(),
+                (height - ui.visuals().widgets.noninteractive.bg_stroke.width).max(0.0),
             ),
         );
         self.geometry.insert("window.captions".into(), controls);
@@ -217,7 +215,6 @@ impl WindowFrame {
             self.geometry.insert("window.header".into(), drag);
             let mut content = drag;
             content.max.y -= ui.visuals().widgets.noninteractive.bg_stroke.width;
-            content.max.y = (content.max.y * ui.pixels_per_point()).round() / ui.pixels_per_point();
             self.geometry
                 .insert("window.header.content".into(), content);
         }
