@@ -14,9 +14,9 @@ async fn furniture_events_refuse_foreign_publishers_and_attest_the_compositor() 
         let topic = format!("comp-fixture.{suffix}");
         client.subscribe_topic(&topic).await.unwrap();
         let headers = BTreeMap::from([("name".into(),topic.clone()),("retain".into(),"false".into())]);
-        let (rc, _) = attacker.call_with_headers_raw("noded","topic.publish",&headers,"{\"phase\":\"forged\"}").await.unwrap();
+        let (rc, _, _) = attacker.call_with_headers_raw("noded","topic.publish",&headers,"{\"phase\":\"forged\"}").await.unwrap();
         assert_ne!(rc, 0, "foreign publisher admitted on {topic}");
-        let (rc, _) = owner.call_with_headers_raw("noded","topic.publish",&headers,"{\"phase\":\"consumed\"}").await.unwrap();
+        let (rc, _, _) = owner.call_with_headers_raw("noded","topic.publish",&headers,"{\"phase\":\"consumed\"}").await.unwrap();
         assert_eq!(rc,0,"owner refused on {topic}");
         let delivered = tokio::time::timeout(Duration::from_secs(2),incoming.recv()).await.unwrap().unwrap();
         assert_eq!(delivered.topic(),Some(topic.as_str()));

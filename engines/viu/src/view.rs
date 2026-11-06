@@ -318,6 +318,7 @@ impl SceneUi {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn with_look(content: Arc<Content>, look: Arc<Look>) -> SceneUi {
         let mut ui = Self::new(content);
         ui.look = Some(look);
@@ -387,6 +388,7 @@ impl SceneUi {
     }
 
     /// The latest pass's layout (scroll offsets not applied).
+    #[cfg(test)]
     pub(crate) fn layout(&self) -> &SceneLayout {
         &self.layout
     }

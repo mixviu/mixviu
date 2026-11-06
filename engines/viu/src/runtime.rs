@@ -896,7 +896,7 @@ fn dispatch(
             .store
             .list(&comp_model::snapshot::output_key(&output)),
         SceneCommand::PropsGet => {
-            json!({"panels":shared.panels.iter().map(|((o,e),p)|json!({"output":o,"edge":e,"mode":p.snapshot().mode.as_str(),"mapped":p.snapshot().mapped})).collect::<Vec<_>>(),"corner_events":shared.corner_events,"corner_phases":shared.corner_phases,"window_previews":false})
+            json!({"panels":shared.panels.iter().map(|((o,e),p)|json!({"output":o,"edge":e,"mode":p.snapshot().mode.as_str(),"mapped":p.snapshot().mapped,"settings_owner":shell_edge(e).and_then(|edge|shared.preferences.record(edge)).map(|record|record.id.as_str())})).collect::<Vec<_>>(),"corner_events":shared.corner_events,"corner_phases":shared.corner_phases,"window_previews":false})
         }
         SceneCommand::PanelState => {
             let p = shared.panel(&output, edge).snapshot();

@@ -5,7 +5,6 @@ use design::TypographyRole;
 use settings::{Diagnostic, Snapshot};
 use std::sync::Arc;
 use toolkit::theme::Theme;
-const CONTEXT: &str = "desktop";
 #[derive(Clone, Debug)]
 pub struct Look {
     pub theme: Arc<Theme>,

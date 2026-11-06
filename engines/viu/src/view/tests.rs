@@ -33,7 +33,6 @@ fn runtime(source: &str, size: (u32, u32)) -> UiRuntime<SceneUi> {
 
 #[test]
 fn interface_font_reaches_authored_panel_text_layout_and_scene_frame_titles() {
-    use ui::UiProgram;
     let source = "---\nscene: 1\nname: fonts\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", children: [\"body\", \"clock\", \"mono\"]}\nbody: {widget: \"text\", text: \"Body\"}\nclock: {widget: \"text\", text: \"Clock\", size: 19, bold: true}\nmono: {widget: \"text\", text: \"Mono\", size: 13, mono: true}\n```";
     for size in [None, Some(18.0)] {
         let mut desktop = settings::Desktop::default();
@@ -238,7 +237,6 @@ fn long_toast_keeps_controls_visible_and_clickable() {
 #[test]
 #[ignore = "offscreen snapshot requires a wgpu adapter; layout and pointer tests run headless"]
 fn long_toast_offscreen() {
-    use ui::UiProgram;
     let mut scene = SceneUi::new(content(&long_toast(), None, false));
     let mut setup = false;
     let mut harness = egui_kittest::Harness::builder()
@@ -272,7 +270,6 @@ fn long_toast_offscreen() {
 #[test]
 #[ignore = "offscreen snapshot requires a wgpu adapter; layout and pointer tests run headless"]
 fn guarded_toast_offscreen() {
-    use ui::UiProgram;
     let mut scene = SceneUi::new(content(&guarded_toast(), None, false));
     let mut setup = false;
     let mut harness = egui_kittest::Harness::builder()
@@ -408,7 +405,6 @@ fn shipped_launcher_and_editor_keep_long_list_text_inside_their_rows() {
 #[test]
 #[ignore = "offscreen snapshot requires a wgpu adapter; scene layout assertions run headless"]
 fn launcher_and_editor_offscreen() {
-    use ui::UiProgram;
     for (source, size, variable) in [
         (
             launcher_fixture(),
@@ -446,7 +442,6 @@ fn launcher_and_editor_offscreen() {
 #[test]
 #[ignore = "offscreen snapshot requires a wgpu adapter; crowded panel assertions run headless"]
 fn crowded_panel_offscreen() {
-    use ui::UiProgram;
     let mut scene = SceneUi::new(content(
         include_str!("../../tests/fixtures/panel-render.scene.mix"),
         None,
@@ -1086,5 +1081,3 @@ fn a_dialog_frame_reports_its_close_button_and_puts_the_page_below_the_title_bar
     assert!(rect_of(&rt, "root").top() >= TITLEBAR);
     let _ = PreparedLists::new();
 }
-
-use ui::TypedSurfaces as _;
