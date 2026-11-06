@@ -287,25 +287,66 @@ pub fn caption_controls(
         let hovered = r.hovered() || pressed;
         let palette = &chrome.palette;
         let (fill, glyph) = match name {
-            "close" if pressed => (Some(palette.caption_close.gamma_multiply(chrome.style.close_pressed_alpha as f32)), palette.caption_close_text),
+            "close" if pressed => (
+                Some(
+                    palette
+                        .caption_close
+                        .gamma_multiply(chrome.style.close_pressed_alpha as f32),
+                ),
+                palette.caption_close_text,
+            ),
             "close" if hovered => (Some(palette.caption_close), palette.caption_close_text),
             _ if pressed => (Some(palette.pressed), palette.icon),
             _ if hovered => (Some(palette.hover), palette.icon),
             _ => (None, palette.icon),
         };
         let painter = ui.painter();
-        if let Some(fill) = fill { painter.rect_filled(rect, chrome.style.square_radius, fill); }
-        let b = Rect::from_center_size(rect.center(), vec2(metrics.caption_glyph, metrics.caption_glyph));
+        if let Some(fill) = fill {
+            painter.rect_filled(rect, chrome.style.square_radius, fill);
+        }
+        let b = Rect::from_center_size(
+            rect.center(),
+            vec2(metrics.caption_glyph, metrics.caption_glyph),
+        );
         let line = egui::Stroke::new(chrome.style.hairline_width as f32, glyph);
         match name {
-            "minimize" => { painter.line_segment([b.left_center(), b.right_center()], line); }
-            "maximize" if maximized => {
-                let front = Rect::from_min_max(pos2(b.left(), b.top()+2.0), pos2(b.right()-2.0,b.bottom()));
-                painter.rect_stroke(front,chrome.style.square_radius,line,egui::StrokeKind::Middle);
-                painter.add(egui::Shape::line(vec![pos2(front.left()+2.0,front.top()),pos2(front.left()+2.0,b.top()),b.right_top(),pos2(b.right(),b.bottom()-2.0),pos2(front.right(),b.bottom()-2.0)],line));
+            "minimize" => {
+                painter.line_segment([b.left_center(), b.right_center()], line);
             }
-            "maximize" => { painter.rect_stroke(b,chrome.style.square_radius,line,egui::StrokeKind::Middle); }
-            _ => { painter.line_segment([b.left_top(),b.right_bottom()],line);painter.line_segment([b.right_top(),b.left_bottom()],line); }
+            "maximize" if maximized => {
+                let front = Rect::from_min_max(
+                    pos2(b.left(), b.top() + 2.0),
+                    pos2(b.right() - 2.0, b.bottom()),
+                );
+                painter.rect_stroke(
+                    front,
+                    chrome.style.square_radius,
+                    line,
+                    egui::StrokeKind::Middle,
+                );
+                painter.add(egui::Shape::line(
+                    vec![
+                        pos2(front.left() + 2.0, front.top()),
+                        pos2(front.left() + 2.0, b.top()),
+                        b.right_top(),
+                        pos2(b.right(), b.bottom() - 2.0),
+                        pos2(front.right(), b.bottom() - 2.0),
+                    ],
+                    line,
+                ));
+            }
+            "maximize" => {
+                painter.rect_stroke(
+                    b,
+                    chrome.style.square_radius,
+                    line,
+                    egui::StrokeKind::Middle,
+                );
+            }
+            _ => {
+                painter.line_segment([b.left_top(), b.right_bottom()], line);
+                painter.line_segment([b.right_top(), b.left_bottom()], line);
+            }
         }
         if r.on_hover_text(name).clicked() {
             if name == "close" {

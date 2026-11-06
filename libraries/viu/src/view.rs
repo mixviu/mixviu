@@ -584,7 +584,7 @@ impl SceneView {
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let frame = egui::Frame::new()
                             .fill(background)
-                            .inner_margin(egui::Margin::symmetric(num(node, "padding_x").or(num(node, "padding")).or_else(|| node.ports.get("padding").and_then(|v| design_length(v, Some(ui.ctx())))).unwrap_or(0.0) as i8,num(node, "padding_y").or(num(node, "padding")).or_else(|| node.ports.get("padding").and_then(|v| design_length(v, Some(ui.ctx())))).unwrap_or(0.0) as i8))
+                            .inner_margin(egui::Margin::symmetric(node_padding(node, "padding_x", ui.ctx()) as i8,node_padding(node, "padding_y", ui.ctx()) as i8))
                             .corner_radius(num(node, "radius").unwrap_or(0.0));
                         let response = frame
                             .show(ui, |ui| {
@@ -1108,7 +1108,9 @@ fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
         "design.status_height" => Some(ctx.map_or(30.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.bars.status
         })),
-        "design.dock_margin" => Some(ctx.map_or(2.0, |ctx| toolkit::chrome::Chrome::of(ctx).metrics.dock_margin)),
+        "design.dock_margin" => Some(ctx.map_or(2.0, |ctx| {
+            toolkit::chrome::Chrome::of(ctx).metrics.dock_margin
+        })),
         "design.options_height" => Some(ctx.map_or(42.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.bars.options
         })),
@@ -1178,4 +1180,8 @@ fn color(s: &str) -> Option<Color32> {
         byte(4)?,
         if s.len() == 8 { byte(6)? } else { 255 },
     ))
+}
+
+fn node_padding(node: &Node, axis: &str, ctx: &egui::Context) -> f32 {
+    num(node, axis).or_else(|| (text(node, "design_padding") == "dock").then(|| toolkit::chrome::Chrome::of(ctx).metrics.dock_margin)).or(num(node, "padding")).unwrap_or(0.0)
 }
