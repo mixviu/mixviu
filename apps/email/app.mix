@@ -200,6 +200,13 @@ end
 on viu.theme.changed
   $chrome.theme_effective=$event.args;publish_email()
 end
+on viu.macros.changed
+  $chrome.macros_open=$event.args.open;publish_email()
+end
+on viu.keymap.changed
+  send "viu-local" "native.bindings" body={defaults:$actions.binding_defaults(),overrides:$event.args}
+  if $rc==0 then $chrome.bindings=$reply.bindings;publish_email() end
+end
 on viu.frame.intent
   $out=execute_email($event.args.value.command,$event.args.value.origin ?? "menu")
   reply($out.rc,json_encode($out.body))

@@ -939,9 +939,13 @@ impl Widgets {
                         galley,
                         chrome.palette.text,
                     );
-                    response.widget_info(|| egui::WidgetInfo::labeled(
-                        egui::Role::Label, ui.is_enabled(), value.as_str().unwrap_or_default(),
-                    ));
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Label,
+                            ui.is_enabled(),
+                            value.as_str().unwrap_or_default(),
+                        )
+                    });
                     return self.remember(ui, id, &response);
                 }
                 let text = label_text(ui, widget, value);

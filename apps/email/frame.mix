@@ -11,7 +11,15 @@ fn apply($model,$s)
   $model.native_overlays=[]
   if $s.dialog!=nil then
     $definition={id:"email-help",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Email" else "Keyboard shortcuts" end,body:"A pure JMAP client: mail, calendar and contacts over HTTPS to any RFC 8620/8621-shaped server. Mail is read, composed and sent; calendars and contacts are listed and shown.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
-    if $s.dialog=="shortcuts" then $definition.initial.body="";$definition.initial.grid=filter($actions.registry(merge($s,{dialog:nil})),fn($a)=$a.shortcut!=nil) end
+    if $s.dialog=="shortcuts" then
+      $grid=[]
+      for $a in $actions.registry(merge($s,{dialog:nil}))
+        $binding=$s.bindings[$a.id] ?? {}
+        $a.keys=$binding.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+        if len($a.keys)>0 then push($grid,$a) end
+      end
+      $definition.initial.body="";$definition.initial.grid=$grid
+    end
     $model.native_overlays=[{definition:$definition,command:"email.dialog.intent"}]
   end
   $status=if $model.no_accounts then "" else $s.status end
