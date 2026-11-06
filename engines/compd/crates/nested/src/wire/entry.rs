@@ -105,6 +105,15 @@ pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut E
         mode,
         winit,
     };
+    // A nested compositor has no scanout device, but its EGL sampler can still
+    // name a render node. Clients need that node in linux-dmabuf feedback;
+    // a flat v3 list left Wayland EGL with fd=-1 on the headless nested gate.
+    // Only publish the node reported by this actual EGL display.
+    if let Some(node) = smithay::backend::egl::EGLDevice::device_for_display(
+        contract.winit.winit_backend.renderer().egl_context().display(),
+    ).ok().and_then(|device| device.try_get_render_node().ok().flatten()) {
+        * _loop.inner.kernel.get_mut(&render_gles::format::registrar::COMPOSITE_NODE_MUT) = Some(node);
+    }
     let damage_tracker = scenegraph::state::lifecycle::initialize(
         _loop,
         &output.clone(),

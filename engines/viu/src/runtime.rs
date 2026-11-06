@@ -22,6 +22,10 @@ use toolkit::layer::{
 
 type Shared = Arc<Mutex<State>>;
 type Key = (String, String);
+fn shell_edge(edge: &str) -> Option<edges::Edge> {
+    Some(match edge { "left" => edges::Edge::Left, "right" => edges::Edge::Right,
+        "top" => edges::Edge::Top, "bottom" => edges::Edge::Bottom, _ => return None })
+}
 struct State {
     store: SceneStore,
     panels: BTreeMap<Key, PanelStateMachine>,
@@ -30,27 +34,42 @@ struct State {
     look: Option<Arc<appearance::Look>>,
     look_revision: u64,
     corner_events: u64,
+    corner_phases: Vec<String>,
     comp_state: Value,
     publish: Vec<String>,
     hover: Value,
     tips: BTreeMap<String, (String, view::tip::TipAt)>,
     output_size: BTreeMap<String, (f32, f32)>,
+    preferences: crate::preferences::Preferences,
+    selected: BTreeMap<Key, String>,
 }
 impl State {
+    fn new() -> Self {
+        use settings::view::View;
+        Self {
+            store: SceneStore::default(), panels: BTreeMap::new(), contexts: BTreeMap::new(),
+            started: Instant::now(), look: None, look_revision: 0, corner_events: 0,
+            corner_phases: Vec::new(),
+            comp_state: Value::Null, publish: Vec::new(), hover: Value::Null,
+            tips: BTreeMap::new(), output_size: BTreeMap::new(), selected: BTreeMap::new(),
+            preferences: crate::preferences::Preferences::prepare(&settings::view::Panels::of(&Default::default())).expect("embedded panel defaults"),
+        }
+    }
     fn wake(&self) {
         for ctx in self.contexts.values() {
             ctx.request_repaint();
         }
     }
     fn panel(&mut self, output: &str, edge: &str) -> &mut PanelStateMachine {
+        let pref = shell_edge(edge).and_then(|edge| self.preferences.record(edge)).map(|r| r.preference);
         self.panels
             .entry((output.into(), edge.into()))
             .or_insert_with(|| {
-                let thickness = if edge == "left" || edge == "right" {
+                let thickness = pref.map(|p| p.thickness()).unwrap_or_else(|| if edge == "left" || edge == "right" {
                     440.0
                 } else {
                     40.0
-                };
+                });
                 let mut model = PanelStateMachine::new(
                     PanelConfig::new(
                         thickness,
@@ -62,9 +81,7 @@ impl State {
                 )
                 .unwrap();
                 model.set_holder_plane(true, Duration::ZERO).unwrap();
-                if edge == "bottom" {
-                    model.apply(Duration::ZERO, PanelInput::Dock).unwrap();
-                }
+                model.apply(Duration::ZERO, PanelInput::SetMode(pref.map_or(PanelMode::Hidden, |p| p.mode()))).unwrap();
                 model
             })
     }
@@ -74,7 +91,7 @@ impl State {
         self.wake();
     }
     fn content(&self, output: &str, edge: &str) -> Option<(String, Arc<Content>)> {
-        self.store.scenes().find_map(|(name, entry)| {
+        self.store.scenes().filter_map(|(name, entry)| {
             let tree = entry.tree();
             if mount::is_dialog(tree)
                 || mount::is_toast(tree)
@@ -83,12 +100,13 @@ impl State {
                 return None;
             }
             let page = mount::page_id(tree);
+            if self.selected.get(&(output.into(), edge.into())).is_some_and(|selected| selected != &page) { return None; }
             let seat = self.store.pages().seat(&page)?;
             if seat.output != output && seat.output != comp_model::snapshot::output_key(output) {
                 return None;
             }
-            Some((
-                name.into(),
+            Some((seat.accepted_at,
+                name.to_owned(),
                 Arc::new(Content {
                     tree: tree.clone(),
                     lists: entry.prepared().clone(),
@@ -97,7 +115,7 @@ impl State {
                     dialog: false,
                 }),
             ))
-        })
+        }).min_by_key(|(accepted, name, _)| (*accepted, name.to_string())).map(|(_,name,content)| (name,content))
     }
 }
 enum Outgoing {
@@ -136,18 +154,24 @@ impl LayerProgram for Program {
                 .send
                 .send(Outgoing::Register(output.into(), self.edge.clone()));
         }
-        let has_content = state.content(output, &self.edge).is_some();
+        let content = state.content(output, &self.edge);
+        let has_content = content.is_some();
+        let minimum = content.as_ref().and_then(|(_,c)| mount::mount_config(&c.tree)).and_then(|c| c[if self.edge == "left" || self.edge == "right" { "w" } else { "h" }].as_f64()).unwrap_or(0.0) as f32;
         let size = state.output_size.entry(output.into()).or_default();
         if self.edge == "top" || self.edge == "bottom" { size.0 = info.width as f32; }
         else { size.1 = info.height as f32; }
         let now = state.started.elapsed();
         let model = state.panel(output, &self.edge);
+        if model.snapshot().thickness_px < minimum { let _ = model.restore_thickness(minimum); }
         let _ = model.tick(now);
         let snap = model.snapshot();
         if model.wake() == PanelWake::Animate {
             ctx.request_repaint_after(Duration::from_millis(16));
         }
         let offset = ((1.0 - snap.visible_fraction) * snap.thickness_px).round() as i32;
+        if !has_content || !snap.mapped {
+            if state.tips.get(output).is_some_and(|(edge,_)| edge == &self.edge) { state.tips.remove(output); state.wake(); }
+        }
         let margin = match self.edge.as_str() {
             "left" => (0, 0, 0, -offset),
             "right" => (0, -offset, 0, 0),
@@ -368,20 +392,7 @@ impl LayerProgram for TooltipProgram {
 }
 
 pub fn run(service: String, comp: String) -> Result<(), String> {
-    let state = Arc::new(Mutex::new(State {
-        store: SceneStore::default(),
-        panels: BTreeMap::new(),
-        contexts: BTreeMap::new(),
-        started: Instant::now(),
-        look: None,
-        look_revision: 0,
-        corner_events: 0,
-        comp_state: Value::Null,
-        publish: Vec::new(),
-        hover: Value::Null,
-        tips: BTreeMap::new(),
-        output_size: BTreeMap::new(),
-    }));
+    let state = Arc::new(Mutex::new(State::new()));
     let (send, receive) = tokio::sync::mpsc::unbounded_channel();
     let worker_state = state.clone();
     std::thread::Builder::new()
@@ -506,7 +517,29 @@ async fn worker(
         }
         if let Some(update) = consumer.pending().cloned() {
             if let Ok(look) = appearance::build(update.snapshot()) {
+                use settings::view::View;
+                let preferences = crate::preferences::Preferences::prepare(&settings::view::Panels::of(&update.snapshot().values));
                 let mut shared = state.lock().unwrap();
+                if let Ok(preferences) = preferences {
+                    let now = shared.started.elapsed();
+                    for ((_,edge),panel) in &mut shared.panels {
+                        if let Some(edge) = shell_edge(edge) {
+                            if let Some(record) = preferences.record(edge) {
+                                let _ = panel.restore_thickness(record.preference.thickness());
+                                // Appearance-only updates never undo a user's live mode.
+                                // Settings changes remain the owner's accepted request.
+                            }
+                        }
+                    }
+                    if shared.preferences.values() != preferences.values() {
+                        for ((_,edge),panel) in &mut shared.panels {
+                            if let Some(record) = shell_edge(edge).and_then(|e| preferences.record(e)) {
+                                let _ = panel.apply(now, PanelInput::SetMode(record.preference.mode()));
+                            }
+                        }
+                    }
+                    shared.preferences = preferences;
+                }
                 shared.look = Some(Arc::new(look));
                 shared.look_revision += 1;
                 shared.wake();
@@ -571,6 +604,10 @@ fn topic(state: &Shared, comp: &str, topic: &str, body: &Value) {
     }
     if topic == format!("{comp}.corner.input") {
         shared.corner_events += 1;
+        if let Some(phase) = body["phase"].as_str() {
+            if shared.corner_phases.len() == 16 { shared.corner_phases.remove(0); }
+            shared.corner_phases.push(phase.into());
+        }
         return;
     }
     let key = body["output"].as_str().unwrap_or_default();
@@ -643,7 +680,10 @@ fn dispatch(
         .map(str::to_owned)
         .or_else(|| shared.contexts.keys().next().map(|(o, _)| o.clone()))
         .unwrap_or_else(|| "headless-0".into());
-    let edge = args["edge"].as_str().unwrap_or("bottom");
+    let edge = if matches!(kind, SceneCommand::Panel { corner: true, .. }) {
+        match args["corner"].as_str() { Some("tl") => "left", Some("bl") => "bottom", Some("br") => "right", Some("tr") => "top", _ => return (10,json!({"error_code":"BAD_ARGUMENT","message":"unknown corner"})) }
+    } else { args["edge"].as_str().unwrap_or("bottom") };
+    if shell_edge(edge).is_none() { return (10,json!({"error_code":"BAD_ARGUMENT","message":"unknown edge"})); }
     let result = match kind {
         SceneCommand::Ping => json!({"service":service,"status":"ok","engine":"viu"}),
         SceneCommand::Info => {
@@ -653,11 +693,25 @@ fn dispatch(
             .store
             .list(&comp_model::snapshot::output_key(&output)),
         SceneCommand::PropsGet => {
-            json!({"panels":shared.panels.iter().map(|((o,e),p)|json!({"output":o,"edge":e,"mode":p.snapshot().mode.as_str(),"mapped":p.snapshot().mapped})).collect::<Vec<_>>(),"corner_events":shared.corner_events,"window_previews":false})
+            json!({"panels":shared.panels.iter().map(|((o,e),p)|json!({"output":o,"edge":e,"mode":p.snapshot().mode.as_str(),"mapped":p.snapshot().mapped})).collect::<Vec<_>>(),"corner_events":shared.corner_events,"corner_phases":shared.corner_phases,"window_previews":false})
         }
         SceneCommand::PanelState => {
             let p = shared.panel(&output, edge).snapshot();
             json!({"edge":edge,"mode":p.mode.as_str(),"mapped":p.mapped,"fraction":p.visible_fraction})
+        }
+        SceneCommand::PanelPageSet => {
+            let Some(id) = args["id"].as_str() else { return (10,json!({"error_code":"BAD_ARGUMENT"})); };
+            let known = shared.store.pages().seat(id).is_some_and(|seat| (seat.output == output || seat.output == comp_model::snapshot::output_key(&output)) && seat.edge.as_str() == edge);
+            if !known { return (10,json!({"error_code":"UNKNOWN_PAGE"})); }
+            shared.selected.insert((output.clone(),edge.into()),id.into());
+            shared.wake();
+            json!({"accepted":true,"applied":true,"page":id})
+        }
+        SceneCommand::PanelResize => {
+            let Some(px) = args["thickness_px"].as_f64().filter(|v| v.is_finite()) else { return (10,json!({"error_code":"BAD_ARGUMENT"})); };
+            if shared.panel(&output,edge).resize_thickness(px as f32,edges::resize_thickness_range(shell_edge(edge).unwrap())).is_err() { return (10,json!({"error_code":"PANEL_RESIZE_REJECTED"})); }
+            shared.wake();
+            json!({"accepted":true,"applied":true})
         }
         SceneCommand::PanelMode | SceneCommand::Panel { .. } => {
             let input = match kind {

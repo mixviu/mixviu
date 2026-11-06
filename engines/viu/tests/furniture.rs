@@ -227,7 +227,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             .as_object()
             .unwrap()
             .values()
-            .any(|row| row["usable"]["height"].as_f64().unwrap_or(720.0) < 720.0)
+            .any(|row| row["usable"]["height"].as_f64().unwrap_or(f64::MAX) < row["height"].as_f64().unwrap_or(0.0))
     );
     if !old && parent.is_some() {
         let before = client
@@ -240,20 +240,21 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             .call(
                 "comp-headless",
                 "comp.input.pointer.move",
-                json!({"seat":"human","output":"headless-0","x":1,"y":1,"corners":true}),
+                json!({"seat":"human","output":"winit","x":1,"y":1,"corners":true}),
             )
             .await
             .unwrap();
+        client.call("comp-headless","comp.input.pointer.button",json!({"seat":"human","action":"click"})).await.unwrap();
         let until = Instant::now() + Duration::from_secs(5);
         loop {
-            let count = client
+            let props = client
                 .call("shell", "shell.props.get", json!({}))
                 .await
-                .unwrap()["corner_events"]
-                .as_u64()
                 .unwrap();
-            if count > before {
+            let count = props["corner_events"].as_u64().unwrap();
+            if count > before && ["consumed","clicked","released"].iter().all(|phase| props["corner_phases"].as_array().unwrap().iter().any(|v| v == phase)) {
                 println!("SCRIPTED_CORNER_DELIVERED before={before} after={count}");
+                println!("EARLY_CLICK_PHASES {}",props["corner_phases"]);
                 break;
             }
             assert!(Instant::now() < until, "corner topic missing");

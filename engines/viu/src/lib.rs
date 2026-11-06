@@ -15,3 +15,5 @@ pub use command::SceneCommand;
 pub const DEFAULT_SERVICE: &str = "shell";
 
 pub(crate) mod tooltip;
+
+pub(crate) mod preferences;
