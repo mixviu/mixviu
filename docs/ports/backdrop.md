@@ -25,3 +25,38 @@ and `docs/backdrop/README.md`. This is a bounded lab port, not parity acceptance
 Per-app Rust added: **0**. Shared native additions: retained layer backend,
 generic bundle host, image-fill renderer/decoder, widget admission binding.
 No installation or production acceptance follows.
+
+## Gold survey — 2026-11-07
+
+Contract source: `8779f33284b7d3f1178c3d57a699efb9b0867b22`, inspected
+`apps/backdrop/src/{main,control,program,views}.rs`, the wallpaper schema,
+and the app README and `docs/backdrop/README.md` at that revision.
+
+Backdrop has **no chooser or settings window** at this revision. `main` starts
+only `LayerOptions::background`, or the standalone `--probe` layer program.
+There is no ordinary app window to decorate. The shared window frame therefore
+does not apply to this surface; adding one would diverge from gold. Wallpaper
+selection in Prefs belongs to that app. Backdrop's live train overlay is a
+separate required state, not a chooser.
+
+Corrections to the round-one inventory (gold wins):
+
+- Resident and texture budgets are **512 MiB each**, not 256 MiB. Inputs are
+  32 MiB, headers at most 16384 per side and 32 Mpx, retained sides at most
+  3840. PNG, JPEG and WebP are accepted by the pinned decoder; older prose
+  saying PNG/JPEG only is stale.
+- A present fill requires exactly one source; an omitted default is theme.
+  An empty fill, colour with fit/fallback, invalid slideshow options and wrong
+  types refuse. Four resident sources count static paths once and each
+  slideshow independently; slide lists have at most 4096 entries.
+- Gold owns `backdrop.next` and `backdrop.view.{set,list,cycle}` as well as
+  ping/state/set, HELP/app.describe and debug controls. The train consumes
+  queue/history/gate and retained alert service contracts. These are required.
+- Gold does not expose `backdrop.follow`. Round one's extension is not gold
+  Bus acceptance. Settings wallpaper projection is a separate existing port
+  facility, not evidence of gold's transactional set contract.
+- `--config`, `--colour`, `--image`, `--fit`, `--service` and isolated `--probe`
+  are the gold launch contract. A positional config is a port extension.
+
+Checkpoint: layer/frame applicability surveyed; **parity remains unaccepted**.
+No new capture or CBC result is claimed by this source-only checkpoint.
