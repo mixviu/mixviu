@@ -1009,7 +1009,9 @@ impl<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>> PreparedFrame
     fn is_empty(&self) -> bool {
         // It can happen that we have no changes, but there is a pending commit or
         // we are forced to do a full update in which case we just set the previous state again
-        !self.force && self.kind == PreparedFrameKind::Partial && self.frame.planes.iter().all(|p| p.1.skip)
+        !self.force
+            && self.kind == PreparedFrameKind::Partial
+            && self.frame.planes.iter().all(|p| p.1.skip)
     }
 }
 

@@ -178,32 +178,12 @@ use x11rb::{
         sync::{ConnectionExt as _, Counter},
         xfixes::ConnectionExt as _,
         xproto::{
-            AtomEnum,
-            CONFIGURE_NOTIFY_EVENT,
-            ChangeWindowAttributesAux,
-            Colormap,
-            ColormapAlloc,
-            ConfigWindow,
-            ConfigureNotifyEvent,
-            ConfigureWindowAux,
-            ConnectionExt,
-            CreateGCAux,
-            CreateWindowAux,
-            CursorWrapper,
-            EventMask,
-            FontWrapper,
-            GcontextWrapper,
-            ImageFormat,
-            InputFocus,
+            AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, Colormap, ColormapAlloc,
+            ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux, ConnectionExt, CreateGCAux,
+            CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper, ImageFormat, InputFocus,
             // compd: `NotifyDetail` dropped with the raw FocusOut arm
-            PixmapWrapper,
-            PropMode,
-            Property,
-            QueryExtensionReply,
-            Screen,
-            StackMode,
-            Visualid,
-            WindowClass,
+            PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen, StackMode,
+            Visualid, WindowClass,
         },
     },
     rust_connection::{ConnectionError, DefaultStream, RustConnection},
@@ -1330,6 +1310,8 @@ impl X11Wm {
         )?;
         self.conn.flush()
     }
+
+
 
     /// Whether or not the XSYNC extension is present
     ///
@@ -3380,10 +3362,7 @@ mod compd_ewmh_tests {
             "atoms._NET_WM_STATE_MAXIMIZED_HORZ,",
             "atoms._NET_WM_STATE_MAXIMIZED_VERT,",
         ] {
-            assert!(
-                block.contains(present),
-                "{present} must be in the _NET_SUPPORTED base (compd E1)"
-            );
+            assert!(block.contains(present), "{present} must be in the _NET_SUPPORTED base (compd E1)");
         }
         for absent in [
             "atoms._NET_WM_PING",
@@ -3391,10 +3370,7 @@ mod compd_ewmh_tests {
             "atoms._NET_CURRENT_DESKTOP",
             "atoms._NET_WM_DESKTOP",
         ] {
-            assert!(
-                !block.contains(absent),
-                "{absent} must not be in the default _NET_SUPPORTED base"
-            );
+            assert!(!block.contains(absent), "{absent} must not be in the default _NET_SUPPORTED base");
         }
         assert!(
             block.contains("atoms._NET_WM_MOVERESIZE,"),
@@ -3410,19 +3386,13 @@ mod compd_ewmh_tests {
         // Nothing focused: clear.
         assert_eq!(active_window_publication(own, None), Some(x11rb::NONE));
         // A managed window of this WM: published.
-        assert_eq!(
-            active_window_publication(own, Some((Some(own), 42, false))),
-            Some(42)
-        );
+        assert_eq!(active_window_publication(own, Some((Some(own), 42, false))), Some(42));
         // Another XWM's window, or one with no XWM: never published, clears.
         assert_eq!(
             active_window_publication(own, Some((Some(other), 42, false))),
             Some(x11rb::NONE)
         );
-        assert_eq!(
-            active_window_publication(own, Some((None, 42, false))),
-            Some(x11rb::NONE)
-        );
+        assert_eq!(active_window_publication(own, Some((None, 42, false))), Some(x11rb::NONE));
         // Override-redirect of this WM: never published, and the property is left untouched.
         assert_eq!(active_window_publication(own, Some((Some(own), 42, true))), None);
     }
@@ -3450,16 +3420,10 @@ mod compd_ewmh_tests {
             "state.current_desktop_request(xwm_id, data[0], data[1]);",
             "x if x == xwm.atoms._NET_NUMBER_OF_DESKTOPS && msg.format == 32 =>",
         ] {
-            assert_eq!(
-                source.matches(needle).count(),
-                1,
-                "missing or duplicated: {needle}"
-            );
+            assert_eq!(source.matches(needle).count(), 1, "missing or duplicated: {needle}");
         }
         // The upstream hook stays reachable through `activate_request`'s default.
-        assert!(
-            source.contains("self.active_window_request(xwm, window, timestamp, currently_active_window);")
-        );
+        assert!(source.contains("self.active_window_request(xwm, window, timestamp, currently_active_window);"));
     }
 
     /// The XWM event thread must share the generation's shutdown intent.

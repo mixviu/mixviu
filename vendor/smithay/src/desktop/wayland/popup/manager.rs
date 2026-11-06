@@ -197,12 +197,15 @@ impl PopupManager {
             }
             _ => None,
         };
-        self.unmapped_popups.iter().find_map(matches).or_else(|| {
-            self.popup_trees
-                .iter()
-                .flat_map(|tree| tree.iter_popups())
-                .find_map(|(kind, _)| matches(&kind))
-        })
+        self.unmapped_popups
+            .iter()
+            .find_map(matches)
+            .or_else(|| {
+                self.popup_trees
+                    .iter()
+                    .flat_map(|tree| tree.iter_popups())
+                    .find_map(|(kind, _)| matches(&kind))
+            })
     }
 
     /// Returns the popups and their relative positions for a given toplevel surface, if any.

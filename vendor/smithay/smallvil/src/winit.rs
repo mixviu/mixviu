@@ -9,20 +9,9 @@ use std::time::Duration;
 // use winit::event::{DeviceEvent};
 // use smithay::backend::input::{InputEvent, KeyState};
 // Newer winit uses 'keyboard' module and 'KeyCode'
-use crate::Smallvil;
-use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::{Id, Kind, RenderElement};
-use smithay::backend::renderer::gles::GlesTexProgram;
 use smithay::utils::Point;
-use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Physical, Scale};
-use smithay::{
-    backend::renderer::{
-        element::{Element, UnderlyingStorage},
-        utils::CommitCounter,
-    },
-    utils::Buffer,
-};
 use smithay::{
     backend::{
         renderer::{
@@ -34,6 +23,17 @@ use smithay::{
     reexports::calloop::EventLoop,
     utils::{Rectangle, Transform},
 };
+use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+use smithay::{
+    backend::renderer::{
+        element::{Element,  UnderlyingStorage},
+        utils::CommitCounter,
+    },
+    utils::{Buffer, },
+};
+use smithay::utils::user_data::UserDataMap;
+use smithay::backend::renderer::gles::{GlesTexProgram};
+use crate::Smallvil;
 
 pub fn init_winit(
     event_loop: &mut EventLoop<Smallvil>,
@@ -43,15 +43,15 @@ pub fn init_winit(
     // THE FIX: Bind the EGL display to the Wayland display handle.
     // This allows Alacritty to use the 4090's EGL context.
 
-    // During your compositor initialization:
-    //     let custom_program = backend.renderer()
-    //     .compile_custom_program(
-    //         // The fragment shader source
-    //         include_str!("shaders/window.frag"),
-    //         // A list of the custom uniforms you will pass
-    //         &["u_zoom", "u_time"]
-    //     )
-    //     .expect("Failed to compile custom shader program");
+// During your compositor initialization:
+//     let custom_program = backend.renderer()
+//     .compile_custom_program(
+//         // The fragment shader source
+//         include_str!("shaders/window.frag"),
+//         // A list of the custom uniforms you will pass
+//         &["u_zoom", "u_time"]
+//     )
+//     .expect("Failed to compile custom shader program");
     let mode = Mode {
         size: backend.window_size(),
         refresh: 60_000,
@@ -180,11 +180,7 @@ pub fn init_winit(
                         // Choose color based on focus
                         // let is_active = window.toplevel().map(|t| t.current_state().activated).unwrap_or(false);
                         let is_active = false;
-                        let color = if is_active {
-                            [0.0, 0.5, 1.0, 1.0]
-                        } else {
-                            [0.2, 0.2, 0.2, 1.0]
-                        };
+                        let color = if is_active { [0.0, 0.5, 1.0, 1.0] } else { [0.2, 0.2, 0.2, 1.0] };
 
                         // Helper to convert World -> Screen coordinates
                         let to_screen = |x: f64, y: f64| {
@@ -197,28 +193,22 @@ pub fn init_winit(
                         // Top
                         let top_rect = smithay::utils::Rectangle::from_loc_and_size(
                             to_screen(loc.x as f64 - bw_logical, loc.y as f64 - bw_logical),
-                            (
-                                ((win_w + 2.0 * bw_logical) * state.zoom) as i32,
-                                (bw_logical * state.zoom) as i32,
-                            ),
+                            (((win_w + 2.0 * bw_logical) * state.zoom) as i32, (bw_logical * state.zoom) as i32)
                         );
                         // Bottom
                         let bot_rect = smithay::utils::Rectangle::from_loc_and_size(
                             to_screen(loc.x as f64 - bw_logical, loc.y as f64 + win_h),
-                            (
-                                ((win_w + 2.0 * bw_logical) * state.zoom) as i32,
-                                (bw_logical * state.zoom) as i32,
-                            ),
+                            (((win_w + 2.0 * bw_logical) * state.zoom) as i32, (bw_logical * state.zoom) as i32)
                         );
                         // Left
                         let left_rect = smithay::utils::Rectangle::from_loc_and_size(
                             to_screen(loc.x as f64 - bw_logical, loc.y as f64),
-                            ((bw_logical * state.zoom) as i32, (win_h * state.zoom) as i32),
+                            ((bw_logical * state.zoom) as i32, (win_h * state.zoom) as i32)
                         );
                         // Right
                         let right_rect = smithay::utils::Rectangle::from_loc_and_size(
                             to_screen(loc.x as f64 + win_w, loc.y as f64),
-                            ((bw_logical * state.zoom) as i32, (win_h * state.zoom) as i32),
+                            ((bw_logical * state.zoom) as i32, (win_h * state.zoom) as i32)
                         );
 
                         // 3. Create and push elements
@@ -244,8 +234,8 @@ pub fn init_winit(
 
                         let physical_loc = smithay::utils::Point::from((screen_x as i32, screen_y as i32));
 
-                        let window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = window
-                            .render_elements(
+                        let window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
+                            window.render_elements(
                                 renderer,
                                 physical_loc,
                                 smithay::utils::Scale::from(state.zoom),
@@ -255,15 +245,15 @@ pub fn init_winit(
                         // 2. Wrap them in the ZoomElement before adding them to the main list
                         let zoomed: Vec<_> = window_elements
                             .into_iter()
-                            .map(|e| {
-                                CanvasElement::Window(ZoomElement {
-                                    inner: e,
-                                    zoom: state.zoom,
-                                })
-                            })
+                            .map(|e| CanvasElement::Window(ZoomElement {
+                                inner: e,
+                                zoom: state.zoom,
+                            }))
                             .collect();
 
+
                         elements.extend(zoomed);
+
 
                         // 2. --- HOVER DETECTION ---
                         // Create a logical bounding box for the trigger zone (sitting right on top of the window)
@@ -274,6 +264,7 @@ pub fn init_winit(
 
                         // Check if the logical cursor is inside this trigger zone
                         if trigger_zone.contains(cursor_logical.to_i32_round()) {
+
                             // 3. --- RENDER THE HEADER ---
                             // Calculate physical placement, just like we did for windows
                             let world_offset_x = loc.x as f64 - state.camera_pos.x;
@@ -314,6 +305,8 @@ pub fn init_winit(
 
                     // ... [Inside your render scope, after creating `let mut elements = Vec::new();`] ...
 
+
+
                     // ... [Render the cursor, then call damage_tracker.render_output] ...
                     // Apply the camera math FORWARD to find where the cursor should be on the physical screen
                     let cursor_offset_x = cursor_logical.x - state.camera_pos.x;
@@ -336,22 +329,30 @@ pub fn init_winit(
                     // Create a SolidColorRenderElement (Red: [1.0, 0.0, 0.0, 1.0])
 
                     let cursor_element = SolidColorRenderElement::new(
-                        Id::new(),                // Generate a fresh, unique ID
-                        cursor_rect,              // Your calculated geometry
-                        CommitCounter::default(), // Standard commit state
-                        [1.0, 0.0, 0.0, 1.0],     // Red color
-                        Kind::Unspecified,        // Standard rendering kind for custom elements
+                        Id::new(),                        // Generate a fresh, unique ID
+                        cursor_rect,                      // Your calculated geometry
+                        CommitCounter::default(),         // Standard commit state
+                        [1.0, 0.0, 0.0, 1.0],             // Red color
+                        Kind::Unspecified,                // Standard rendering kind for custom elements
                     );
+
 
                     // Add it to the very end of the elements list so it renders ON TOP of the windows
                     elements.push(CanvasElement::SolidBox(cursor_element));
 
                     // 3. Render via Damage Tracker
                     // You correctly added &mut framebuffer here!
-                    damage_tracker
-                        .render_output(renderer, &mut framebuffer, 0, &elements, [0.1, 0.1, 0.1, 1.0])
-                        .unwrap();
+                    damage_tracker.render_output(
+                        renderer,
+                        &mut framebuffer,
+                        0,
+                        &elements,
+                        [0.1, 0.1, 0.1, 1.0]
+                    ).unwrap();
+
+
                 }
+
 
                 backend.submit(Some(&[damage])).unwrap();
 
@@ -599,6 +600,8 @@ pub fn init_winit(
     Ok(())
 }
 
+
+
 pub struct ZoomElement<E> {
     pub inner: E,
     pub zoom: f64,
@@ -666,13 +669,13 @@ pub enum CanvasElement<R: Renderer> {
     Window(ZoomElement<WaylandSurfaceRenderElement<R>>),
     // ShadedWindow(ShaderZoomElement),
     SolidBox(SolidColorRenderElement), // Renamed from Cursor
-                                       // Cursor(SolidColorRenderElement),
+    // Cursor(SolidColorRenderElement),
 }
 
 // 4. CANVAS ELEMENT - Base Element Trait
 impl<R: Renderer> Element for CanvasElement<R>
 where
-    // This tells Rust to trust that the inner Wayland element is valid
+// This tells Rust to trust that the inner Wayland element is valid
     WaylandSurfaceRenderElement<R>: Element,
 {
     fn id(&self) -> &Id {
@@ -734,7 +737,7 @@ where
 // 5. CANVAS ELEMENT - Render Trait
 impl<R: Renderer> RenderElement<R> for CanvasElement<R>
 where
-    // This fixes the compiler error by ensuring R has the necessary Wayland buffer traits
+// This fixes the compiler error by ensuring R has the necessary Wayland buffer traits
     WaylandSurfaceRenderElement<R>: RenderElement<R>,
 {
     fn draw(
@@ -748,13 +751,9 @@ where
     ) -> Result<(), R::Error> {
         match self {
             // Force the compiler to use our specific `R` via Fully Qualified Syntax
-            CanvasElement::Window(w) => {
-                RenderElement::<R>::draw(w, frame, src, dst, damage, opaque_regions, cache)
-            }
+            CanvasElement::Window(w) => RenderElement::<R>::draw(w, frame, src, dst, damage, opaque_regions, cache),
             // CanvasElement::ShadedWindow(w) => RenderElement::<R>::draw(w, frame, src, dst, damage, opaque_regions, cache),
-            CanvasElement::SolidBox(c) => {
-                RenderElement::<R>::draw(c, frame, src, dst, damage, opaque_regions, cache)
-            }
+            CanvasElement::SolidBox(c) => RenderElement::<R>::draw(c, frame, src, dst, damage, opaque_regions, cache),
         }
     }
 
@@ -845,6 +844,8 @@ where
 //     }
 // }
 
+
+
 // use smithay::backend::renderer::gles::{GlesTexProgram, GlesSolidProgram};
 //
 // // For things with textures (Windows, Background images, Sprite borders)
@@ -862,6 +863,7 @@ where
 //         &["u_time"]
 //     )
 //     .expect("Failed to compile solid shader");
+
 
 // use smithay::{
 //     backend::renderer::{
@@ -932,6 +934,7 @@ where
 //         Some(UnderlyingStorage::Native(self.texture.clone()))
 //     }
 // }
+
 
 // use smithay::wayland::compositor::with_states;
 //

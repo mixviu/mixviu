@@ -1,0 +1,18 @@
+-- CBC only. Format workspace packages, leaving vendored path dependencies intact.
+$a = args()
+if len($a) != 1 or not contains(["write", "check"], $a[0]) then
+  raise("USAGE", "fmt_comp_split.mix write|check")
+end
+$meta = json_parse(run_argv_must(["cargo", "metadata", "--no-deps", "--format-version", "1", "--locked"]))
+$cmd = ["cargo", "fmt"]
+for $package in $meta.packages
+  if contains($meta.workspace_members, $package.id) then
+    push($cmd, "--package")
+    push($cmd, $package.name)
+  end
+end
+if $a[0] == "check" then push($cmd, "--"); push($cmd, "--check") end
+$r = run_argv($cmd, {timeout: 600, max_output: 64000000})
+print($r.stdout)
+print($r.stderr)
+exit($r.exit_code)

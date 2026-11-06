@@ -563,10 +563,9 @@ mod identifier_tests {
             list: ForeignToplevelListState::new::<State>(&dh),
         };
 
-        let stable =
-            state
-                .list
-                .new_toplevel_with_identifier::<State>("compd-nonce-surface-7-gen-2", "title", "app");
+        let stable = state
+            .list
+            .new_toplevel_with_identifier::<State>("compd-nonce-surface-7-gen-2", "title", "app");
         assert_eq!(stable.identifier(), "compd-nonce-surface-7-gen-2");
         assert_eq!(stable.title(), "title");
         assert_eq!(stable.app_id(), "app");

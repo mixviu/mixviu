@@ -56,7 +56,7 @@ fn spawn_client() {
             std::process::Command::new(command).spawn().ok();
         }
         _ => {
-            std::process::Command::new("foot").spawn().ok();
-        } // std::process::Command::new("weston-terminal").spawn().ok();        }
+            std::process::Command::new("foot").spawn().ok();        }
+            // std::process::Command::new("weston-terminal").spawn().ok();        }
     }
 }

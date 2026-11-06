@@ -1,8 +1,5 @@
 use std::{ffi::OsString, sync::Arc};
 
-use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
-use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::{
     desktop::{PopupManager, Space, Window, WindowSurfaceType},
     input::{Seat, SeatState},
@@ -24,8 +21,13 @@ use smithay::{
         socket::ListeningSocketSource,
     },
 };
+use smithay::wayland::dmabuf::{DmabufState, DmabufGlobal, DmabufHandler, ImportNotifier};
+use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::wayland::shell::xdg::ToplevelSurface;
 
-use smithay::wayland::shell::xdg::decoration::{XdgDecorationHandler, XdgDecorationState};
+use smithay::wayland::shell::xdg::decoration::{
+    XdgDecorationState, XdgDecorationHandler
+};
 
 pub struct Smallvil {
     pub start_time: std::time::Instant,
@@ -105,6 +107,7 @@ impl Smallvil {
         let dmabuf_state = DmabufState::new();
         let xdg_decoration_state = XdgDecorationState::new::<Smallvil>(&dh);
 
+
         Self {
             start_time,
             display_handle: dh,
@@ -128,6 +131,7 @@ impl Smallvil {
             zoom: 1.0,
             dmabuf_global: None, // Empty until the GPU starts
             xdg_decoration_state,
+
         }
     }
 
@@ -194,7 +198,7 @@ impl DmabufHandler for Smallvil {
         let _ = notifier.successful::<Smallvil>();
     }
 
-    //     /// The global advertisement for hardware-accelerated buffers.
+//     /// The global advertisement for hardware-accelerated buffers.
     //     /// Without this, clients like Alacritty will fall back to software rendering
     //     /// or fail to launch.
     //     pub dmabuf_global: Option<DmabufGlobal>,
@@ -214,6 +218,8 @@ impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
+
+
 
 impl XdgDecorationHandler for Smallvil {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {

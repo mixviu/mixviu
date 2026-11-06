@@ -421,8 +421,7 @@ where
                 if let Some((text, cursor, anchor)) = new_state.surrounding_text.take() {
                     // local: keep a copy for the OSK preview, then forward to the IME (no-op
                     // without an instance).
-                    self.handle
-                        .set_surrounding_text(Some((text.clone(), cursor, anchor)));
+                    self.handle.set_surrounding_text(Some((text.clone(), cursor, anchor)));
                     self.input_method_handle.with_instance(move |input_method| {
                         input_method.object.surrounding_text(text, cursor, anchor)
                     });

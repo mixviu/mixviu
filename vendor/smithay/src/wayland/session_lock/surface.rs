@@ -523,9 +523,6 @@ mod tests {
         let null = src.find("\"Surface commit has no effective buffer.\"").unwrap();
         let dims = src.find("buffer_dimensions(&buffer)").unwrap();
         assert!(hook < resolve && resolve < null && null < dims);
-        assert!(
-            !src.contains("had_buffer_before"),
-            "empty commits must not bypass validation"
-        );
+        assert!(!src.contains("had_buffer_before"), "empty commits must not bypass validation");
     }
 }

@@ -188,7 +188,12 @@ impl<D: SeatHandler + 'static> SeatState<D> {
     /// Create a seat global visible only to clients accepted by `filter`
     /// (compd hook 1). A hidden client never binds the
     /// seat, so it sees neither its keyboard nor its pointer.
-    pub fn new_wl_seat_with_filter<N, F>(&mut self, display: &DisplayHandle, name: N, filter: F) -> Seat<D>
+    pub fn new_wl_seat_with_filter<N, F>(
+        &mut self,
+        display: &DisplayHandle,
+        name: N,
+        filter: F,
+    ) -> Seat<D>
     where
         D: GlobalDispatch<WlSeat, SeatGlobalData<D>> + SeatHandler + 'static,
         <D as SeatHandler>::PointerFocus: WaylandFocus,
@@ -389,8 +394,8 @@ where
 mod filter_tests {
     use super::*;
     use std::os::unix::net::UnixStream;
-    use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
     use wayland_server::protocol::wl_surface::WlSurface;
+    use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 
     struct Plain;
     impl ClientData for Plain {
@@ -449,10 +454,7 @@ mod filter_tests {
         assert!(!filtered.visible_to(&hidden));
 
         // `new_wl_seat`'s filter: everyone sees the seat.
-        let open = SeatGlobalData::<State> {
-            arc,
-            filter: Box::new(|_| true),
-        };
+        let open = SeatGlobalData::<State> { arc, filter: Box::new(|_| true) };
         assert!(open.visible_to(&hidden));
     }
 }

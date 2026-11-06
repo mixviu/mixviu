@@ -183,7 +183,14 @@ where
                 }
                 OfferReplySource::Compositor(source) => {
                     if let Some(seat) = Seat::<D>::from_resource(&self.seat) {
-                        handle.send_selection(source.ty, mime_type, fd, seat, &source.user_data, client_id);
+                        handle.send_selection(
+                            source.ty,
+                            mime_type,
+                            fd,
+                            seat,
+                            &source.user_data,
+                            client_id,
+                        );
                     }
                 }
             }

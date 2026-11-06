@@ -507,7 +507,10 @@ mod shutdown_tests {
     use super::{XWaylandClientData, expected_shutdown_status, reap_child};
     use std::os::unix::process::ExitStatusExt;
     use std::process::{Command, ExitStatus};
-    use std::sync::{Mutex, atomic::Ordering};
+    use std::sync::{
+        Mutex,
+        atomic::Ordering,
+    };
 
     #[test]
     fn only_requested_connection_close_exit_is_expected() {

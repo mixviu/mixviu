@@ -269,10 +269,7 @@ mod tests {
         let register = pos(src, ".register(output.clone(), lock_surface.clone())");
         assert!(may_create < role, "accepted-lock check must precede give_role");
         assert!(role < constructed && constructed < duplicate);
-        assert!(
-            duplicate < init && init < register,
-            "register only after all validation"
-        );
+        assert!(duplicate < init && init < register, "register only after all validation");
     }
 
     // compd guard
@@ -289,10 +286,7 @@ mod tests {
         let lock_fn = pos(module, "pub fn lock(mut self)");
         let gate = pos(module, "if self.done.load(Ordering::Acquire) || !lock.is_alive()");
         let install = pos(module, "LockStatus::Locked(lock.clone())");
-        assert!(
-            lock_fn < gate && gate < install,
-            "a destroyed lock must never become Locked"
-        );
+        assert!(lock_fn < gate && gate < install, "a destroyed lock must never become Locked");
     }
 
     // compd guard — "a rejected lock cannot unlock" (upstream behaviour; this
@@ -301,10 +295,7 @@ mod tests {
     fn unlock_requires_the_owning_lock() {
         let src = prod(include_str!("lock.rs"));
         let arm = pos(src, "Request::UnlockAndDestroy =>");
-        let owner = pos(
-            src,
-            "if !state.lock_state().lock_status.lock().unwrap().is_locked_by(lock) {",
-        );
+        let owner = pos(src, "if !state.lock_state().lock_status.lock().unwrap().is_locked_by(lock) {");
         let unlock = pos(src, "state.unlock();");
         assert!(arm < owner && owner < unlock);
     }

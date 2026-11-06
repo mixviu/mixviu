@@ -47,7 +47,7 @@ elif $a[0] == "default" then
   end
   gate_run($cmd)
 elif $a[0] == "clippy" then
-  gate_run(["cargo", "fmt", "--all", "--", "--check"])
+  gate_run(["/opt/mixos/bin/mix", "tools/fmt_comp_split.mix", "check"])
   gate_run(["cargo", "clippy", "-p", "compd", "--features", "backend-all", "--all-targets", "--locked"])
 else
   raise("USAGE", "gate_comp_split.mix native|default|clippy")

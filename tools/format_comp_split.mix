@@ -1,5 +1,5 @@
 -- CBC only; restore exactly the Rust files changed by this formatter job.
-$r = run_argv(["cargo", "fmt", "--all"], {timeout: 600, max_output: 64000000})
+$r = run_argv(["/opt/mixos/bin/mix", "tools/fmt_comp_split.mix", "write"], {timeout: 600, max_output: 64000000})
 print($r.stdout)
 print($r.stderr)
 print("FORMAT_RC=" .. to_string($r.exit_code))

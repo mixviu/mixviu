@@ -218,19 +218,10 @@ mod hook3_guard {
     #[test]
     fn every_source_reports_gone_first_then_offers_replacement() {
         for (name, src) in SOURCES {
-            let body = &src[src
-                .find("fn destroyed(")
-                .unwrap_or_else(|| panic!("{name}: destroyed"))..];
-            let gone = body
-                .find("selection_source_gone(")
-                .unwrap_or_else(|| panic!("{name}: no gone hook"));
-            let used = body
-                .find("used_sources")
-                .unwrap_or_else(|| panic!("{name}: used_sources"));
-            assert!(
-                gone < used,
-                "{name}: gone must be reported before the ownership bookkeeping"
-            );
+            let body = &src[src.find("fn destroyed(").unwrap_or_else(|| panic!("{name}: destroyed"))..];
+            let gone = body.find("selection_source_gone(").unwrap_or_else(|| panic!("{name}: no gone hook"));
+            let used = body.find("used_sources").unwrap_or_else(|| panic!("{name}: used_sources"));
+            assert!(gone < used, "{name}: gone must be reported before the ownership bookkeeping");
             assert!(
                 body.contains("replace_owned_selections("),
                 "{name}: an owning source must go through the replacement path"

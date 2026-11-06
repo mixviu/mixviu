@@ -86,9 +86,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     /// it accepts native multi-touch. When `false` the compositor should emulate the
     /// pointer for touch instead of forwarding `wl_touch` to this surface.
     pub fn client_has_touch(&self, surface: &WlSurface) -> bool {
-        let Some(client) = surface.client() else {
-            return false;
-        };
+        let Some(client) = surface.client() else { return false };
         self.client_touch(&client).next().is_some()
     }
 }
