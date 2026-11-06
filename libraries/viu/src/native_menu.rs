@@ -231,8 +231,11 @@ pub(crate) fn header_mark(ui: &mut egui::Ui, mark: Option<&str>, hosted: bool) {
             .round_to_pixels(ui.pixels_per_point());
             toolkit::icons::image_of(ui.ctx(), icon, chrome.metrics.mark, chrome.palette.icon)
                 .paint_at(ui, rect);
-            let response =
-                ui.interact(rect, ui.scope_id().with("window-menu-mark"), egui::Sense::click());
+            let response = ui.interact(
+                rect,
+                ui.scope_id().with("window-menu-mark"),
+                egui::Sense::click(),
+            );
             response.widget_info(|| {
                 egui::WidgetInfo::labeled(
                     egui::Role::Button,

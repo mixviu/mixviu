@@ -756,10 +756,22 @@ fn cards(
             continue;
         }
         if section["native_plain"] == true {
-            if section_index>0 {ui.add_space(look.l);}
-            for (index,row) in array(&section["rows"]).filter(|r|r["shown"]!=false && r["embedded"]!=true).enumerate() {
-                if index>0 {ui.add_space(look.l);}
-                ui.vertical(|ui| {ui.set_width(ui.available_width());ui.add_enabled_ui(row["blocked"].is_null(),|ui| {crate::media_gallery::draw(ui,id,row,look,geometry,events);});});
+            if section_index > 0 {
+                ui.add_space(look.l);
+            }
+            for (index, row) in array(&section["rows"])
+                .filter(|r| r["shown"] != false && r["embedded"] != true)
+                .enumerate()
+            {
+                if index > 0 {
+                    ui.add_space(look.l);
+                }
+                ui.vertical(|ui| {
+                    ui.set_width(ui.available_width());
+                    ui.add_enabled_ui(row["blocked"].is_null(), |ui| {
+                        crate::media_gallery::draw(ui, id, row, look, geometry, events);
+                    });
+                });
             }
             continue;
         }
@@ -799,7 +811,16 @@ fn cards(
             continue;
         }
         if section_index > 0 {
-            ui.add_space(if array(sections).nth(section_index-1).is_some_and(|s|s["native_plain"]==true) {look.l}else{look.m});
+            ui.add_space(
+                if array(sections)
+                    .nth(section_index - 1)
+                    .is_some_and(|s| s["native_plain"] == true)
+                {
+                    look.l
+                } else {
+                    look.m
+                },
+            );
         }
         if let Some(title) = section["title"].as_str() {
             let galley = ui.painter().layout_no_wrap(
@@ -2793,7 +2814,7 @@ fn images(
 
 fn colour_editor(ui: &mut Ui, id: &str, row: &Value, look: &Look, events: &mut Vec<Intent>) {
     if row["submit_label"].is_string() {
-        colour_adder(ui,id,row,look,events);
+        colour_adder(ui, id, row, look, events);
         return;
     }
     let key = text(row, "id");
@@ -2879,25 +2900,63 @@ fn colour_editor(ui: &mut Ui, id: &str, row: &Value, look: &Look, events: &mut V
         );
     }
 }
-fn colour_adder(ui:&mut Ui,id:&str,row:&Value,look:&Look,events:&mut Vec<Intent>) {
-    let held_id=ui.make_persistent_id((id,text(row,"id"),"adding"));
-    let mut picking=ui.data(|d|d.get_temp::<Color32>(held_id)).unwrap_or(look.accent);
-    if egui::widgets::color_picker::color_picker_color32(ui,&mut picking,egui::widgets::color_picker::Alpha::Opaque) {ui.data_mut(|d|d.insert_temp(held_id,picking));}
-    ui.add_space(look.s);
-    let hex_id=held_id.with("hex");
-    if ui.data(|d|d.get_temp::<Color32>(held_id))!=ui.data(|d|d.get_temp::<Color32>(hex_id.with("at"))) {
-        ui.data_mut(|d|{d.remove_temp::<String>(hex_id);d.insert_temp(hex_id.with("at"),picking);});
+fn colour_adder(ui: &mut Ui, id: &str, row: &Value, look: &Look, events: &mut Vec<Intent>) {
+    let held_id = ui.make_persistent_id((id, text(row, "id"), "adding"));
+    let mut picking = ui
+        .data(|d| d.get_temp::<Color32>(held_id))
+        .unwrap_or(look.accent);
+    if egui::widgets::color_picker::color_picker_color32(
+        ui,
+        &mut picking,
+        egui::widgets::color_picker::Alpha::Opaque,
+    ) {
+        ui.data_mut(|d| d.insert_temp(held_id, picking));
     }
-    let mut value=ui.data(|d|d.get_temp::<String>(hex_id)).unwrap_or_else(||colour_hex(picking,false));
+    ui.add_space(look.s);
+    let hex_id = held_id.with("hex");
+    if ui.data(|d| d.get_temp::<Color32>(held_id))
+        != ui.data(|d| d.get_temp::<Color32>(hex_id.with("at")))
+    {
+        ui.data_mut(|d| {
+            d.remove_temp::<String>(hex_id);
+            d.insert_temp(hex_id.with("at"), picking);
+        });
+    }
+    let mut value = ui
+        .data(|d| d.get_temp::<String>(hex_id))
+        .unwrap_or_else(|| colour_hex(picking, false));
     ui.horizontal(|ui| {
-        ui.label(RichText::new(text(row,"hex_label")).size(12.0).color(look.text));
-        let r=ui.add(egui::TextEdit::singleline(&mut value).desired_width(120.0).id_salt(hex_id));
-        if r.changed() {ui.data_mut(|d|{d.insert_temp(hex_id,value.clone());if let Some(colour)=parse_colour(value.trim()) {d.insert_temp(held_id,colour);}});}
+        ui.label(
+            RichText::new(text(row, "hex_label"))
+                .size(12.0)
+                .color(look.text),
+        );
+        let r = ui.add(
+            egui::TextEdit::singleline(&mut value)
+                .desired_width(120.0)
+                .id_salt(hex_id),
+        );
+        if r.changed() {
+            ui.data_mut(|d| {
+                d.insert_temp(hex_id, value.clone());
+                if let Some(colour) = parse_colour(value.trim()) {
+                    d.insert_temp(held_id, colour);
+                }
+            });
+        }
     });
     ui.add_space(look.m);
-    if standard_button(ui,text(row,"submit_label"),look).clicked() {
-        ui.data_mut(|d|{d.remove_temp::<Color32>(held_id);d.remove_temp::<String>(hex_id);});
-        emit(events,id,"edit",json!({"row":row["id"],"value":colour_hex(picking,false)}));
+    if standard_button(ui, text(row, "submit_label"), look).clicked() {
+        ui.data_mut(|d| {
+            d.remove_temp::<Color32>(held_id);
+            d.remove_temp::<String>(hex_id);
+        });
+        emit(
+            events,
+            id,
+            "edit",
+            json!({"row":row["id"],"value":colour_hex(picking,false)}),
+        );
     }
 }
 fn colour_hex(colour: Color32, alpha: bool) -> String {

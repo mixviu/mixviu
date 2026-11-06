@@ -32,20 +32,32 @@ pub(crate) fn finish(ui: &Ui, id: &str, events: &mut Vec<Intent>) {
     let shared = state(ui, id);
     let mut state = shared.lock().unwrap();
     state.images.finish();
-    let outcome = state
-        .chooser
-        .as_mut()
-        .and_then(|(row, operation, handle)| handle.poll(ui.ctx()).map(|answer| (row.clone(), operation.clone(), answer)));
+    let outcome = state.chooser.as_mut().and_then(|(row, operation, handle)| {
+        handle
+            .poll(ui.ctx())
+            .map(|answer| (row.clone(), operation.clone(), answer))
+    });
     if let Some((row, operation, answer)) = outcome {
         state.chooser = None;
         match answer {
-            toolkit::choose::Outcome::Chosen {paths,..}=>{
-                let paths=json!(paths.iter().filter_map(|p|p.to_str()).collect::<Vec<_>>());
-                let value=operation.map_or_else(||paths.clone(),|operation|json!({"action":operation,"value":paths}));
-                events.push(Intent {id:id.into(),action:"edit".into(),value:json!({"row":row,"value":value})});
-            },
-            toolkit::choose::Outcome::Failed(message)=>events.push(Intent {id:id.into(),action:"problem".into(),value:json!({"row":row,"message":message})}),
-            toolkit::choose::Outcome::Cancelled=>{}
+            toolkit::choose::Outcome::Chosen { paths, .. } => {
+                let paths = json!(paths.iter().filter_map(|p| p.to_str()).collect::<Vec<_>>());
+                let value = operation.map_or_else(
+                    || paths.clone(),
+                    |operation| json!({"action":operation,"value":paths}),
+                );
+                events.push(Intent {
+                    id: id.into(),
+                    action: "edit".into(),
+                    value: json!({"row":row,"value":value}),
+                });
+            }
+            toolkit::choose::Outcome::Failed(message) => events.push(Intent {
+                id: id.into(),
+                action: "problem".into(),
+                value: json!({"row":row,"message":message}),
+            }),
+            toolkit::choose::Outcome::Cancelled => {}
         }
     }
 }
@@ -119,82 +131,245 @@ pub(crate) fn draw(
         return response;
     }
     if row["kind"] == "display-picker" {
-        let response=ui.vertical(|ui| {
-            let choices:Vec<_>=row["choices"].as_array().into_iter().flatten().collect();
-            if row["all"]==true {
-                let galley=ui.painter().layout_no_wrap(text(row,"all_label").into(),toolkit::fonts::bound(ui.ctx(),toolkit::fonts::heading(14.0)),look.text);
-                let (rect,r)=ui.allocate_exact_size(vec2(ui.available_width(),21.0),Sense::hover());
-                ui.painter().galley(rect.center()-galley.size()/2.0,galley,look.text);
-                r.widget_info(||egui::WidgetInfo::labeled(egui::Role::Label,true,text(row,"all_label")));
-            } else if choices.len()>1 {
-                let widths:Vec<_>=choices.iter().map(|c|ui.painter().layout_no_wrap(text(c,"label").into(),egui::FontId::proportional(14.0),look.text).size().x+2.0*look.s).collect();
-                let total=widths.iter().sum::<f32>()+look.xs*(choices.len()-1) as f32;
-                let (area,_)=ui.allocate_exact_size(vec2(ui.available_width(),32.0),Sense::hover());
-                let mut x=area.center().x-total/2.0;
-                for (index,(choice,width)) in choices.iter().zip(widths).enumerate() {
-                    let rect=Rect::from_min_size(egui::pos2(x,area.top()),vec2(width,32.0));x+=width+look.xs;
-                    let r=ui.interact(rect,ui.scope_id().with((id,key,index)),Sense::click());
-                    if r.hovered() {ui.painter().rect_filled(rect,Look::radius(look.r_s),look.card_hover);}
-                    let selected=choice["value"]==row["value"];
-                    ui.painter().text(rect.center(),egui::Align2::CENTER_CENTER,text(choice,"label"),egui::FontId::proportional(14.0),look.text);
-                    if selected {ui.painter().hline(rect.x_range(),rect.bottom()-1.0,Stroke::new(2.0,look.accent));}
-                    r.widget_info(||egui::WidgetInfo::selected(egui::Role::RadioButton,ui.is_enabled(),selected,text(choice,"label")));
-                    geometry.insert(format!("{id}.row.{key}.choice.{index}"),rect);
-                    if r.clicked()&&!selected {events.push(Intent{id:id.into(),action:"edit".into(),value:json!({"row":key,"value":choice["value"]})});}
+        let response = ui
+            .vertical(|ui| {
+                let choices: Vec<_> = row["choices"].as_array().into_iter().flatten().collect();
+                if row["all"] == true {
+                    let galley = ui.painter().layout_no_wrap(
+                        text(row, "all_label").into(),
+                        toolkit::fonts::bound(ui.ctx(), toolkit::fonts::heading(14.0)),
+                        look.text,
+                    );
+                    let (rect, r) =
+                        ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::hover());
+                    ui.painter()
+                        .galley(rect.center() - galley.size() / 2.0, galley, look.text);
+                    r.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::Role::Label, true, text(row, "all_label"))
+                    });
+                } else if choices.len() > 1 {
+                    let widths: Vec<_> = choices
+                        .iter()
+                        .map(|c| {
+                            ui.painter()
+                                .layout_no_wrap(
+                                    text(c, "label").into(),
+                                    egui::FontId::proportional(14.0),
+                                    look.text,
+                                )
+                                .size()
+                                .x
+                                + 2.0 * look.s
+                        })
+                        .collect();
+                    let total = widths.iter().sum::<f32>() + look.xs * (choices.len() - 1) as f32;
+                    let (area, _) =
+                        ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::hover());
+                    let mut x = area.center().x - total / 2.0;
+                    for (index, (choice, width)) in choices.iter().zip(widths).enumerate() {
+                        let rect =
+                            Rect::from_min_size(egui::pos2(x, area.top()), vec2(width, 32.0));
+                        x += width + look.xs;
+                        let r =
+                            ui.interact(rect, ui.scope_id().with((id, key, index)), Sense::click());
+                        if r.hovered() {
+                            ui.painter()
+                                .rect_filled(rect, Look::radius(look.r_s), look.card_hover);
+                        }
+                        let selected = choice["value"] == row["value"];
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            text(choice, "label"),
+                            egui::FontId::proportional(14.0),
+                            look.text,
+                        );
+                        if selected {
+                            ui.painter().hline(
+                                rect.x_range(),
+                                rect.bottom() - 1.0,
+                                Stroke::new(2.0, look.accent),
+                            );
+                        }
+                        r.widget_info(|| {
+                            egui::WidgetInfo::selected(
+                                egui::Role::RadioButton,
+                                ui.is_enabled(),
+                                selected,
+                                text(choice, "label"),
+                            )
+                        });
+                        geometry.insert(format!("{id}.row.{key}.choice.{index}"), rect);
+                        if r.clicked() && !selected {
+                            events.push(Intent {
+                                id: id.into(),
+                                action: "edit".into(),
+                                value: json!({"row":key,"value":choice["value"]}),
+                            });
+                        }
+                    }
                 }
-            }
-        }).response;
+            })
+            .response;
         return response;
     }
     if row["kind"] == "media-chooser" {
-        let response=ui.vertical(|ui| {
-            let send=|events:&mut Vec<Intent>,action:&str,value:Value|events.push(Intent{id:id.into(),action:"edit".into(),value:json!({"row":key,"value":{"action":action,"value":value}})});
-            ui.horizontal(|ui| {
-                ui.set_width(ui.available_width());
-                let folder=row["value"]["kind"]=="folder";
-                let title=text(row,"display_value");
-                let width=ui.painter().layout_no_wrap(title.into(),egui::FontId::proportional(14.0),look.text).size().x+32.0+if folder {24.0}else{0.0};
-                let (rect,r)=ui.allocate_exact_size(vec2(width,32.0),Sense::click());
-                let mut x=rect.left()+4.0;
-                if folder {toolkit::button::paint_icon(ui,toolkit::Icon::Folder,egui::pos2(x+8.0,rect.center().y),16.0,look.text);x+=24.0;}
-                ui.painter().text(egui::pos2(x,rect.center().y),egui::Align2::LEFT_CENTER,title,egui::FontId::proportional(14.0),look.text);
-                toolkit::button::paint_icon(ui,toolkit::Icon::ChevronDown,egui::pos2(rect.right()-12.0,rect.center().y),16.0,look.text);
-                r.widget_info(||egui::WidgetInfo::selected(egui::Role::ComboBox,ui.is_enabled(),false,text(row,"category_label")));
-                geometry.insert(format!("{id}.row.{key}.category"),rect);
-                egui::Popup::menu(&r).show(ui,|ui| {
-                    ui.set_min_width(width.max(200.0));
-                    for (index,choice) in row["categories"].as_array().into_iter().flatten().enumerate() {
-                        if index==2 {ui.separator();ui.label(egui::RichText::new(text(row,"recent_label")).size(12.0).color(look.text));}
-                        let on=choice["value"]==row["value"];
-                        if toolkit::selectable(ui,on,text(choice,"label")).clicked()&&!on {send(events,"category",choice["value"].clone());ui.close();}
+        let response = ui
+            .vertical(|ui| {
+                let send = |events: &mut Vec<Intent>, action: &str, value: Value| {
+                    events.push(Intent {
+                        id: id.into(),
+                        action: "edit".into(),
+                        value: json!({"row":key,"value":{"action":action,"value":value}}),
+                    })
+                };
+                ui.horizontal(|ui| {
+                    ui.set_width(ui.available_width());
+                    let folder = row["value"]["kind"] == "folder";
+                    let title = text(row, "display_value");
+                    let width = ui
+                        .painter()
+                        .layout_no_wrap(title.into(), egui::FontId::proportional(14.0), look.text)
+                        .size()
+                        .x
+                        + 32.0
+                        + if folder { 24.0 } else { 0.0 };
+                    let (rect, r) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
+                    let mut x = rect.left() + 4.0;
+                    if folder {
+                        toolkit::button::paint_icon(
+                            ui,
+                            toolkit::Icon::Folder,
+                            egui::pos2(x + 8.0, rect.center().y),
+                            16.0,
+                            look.text,
+                        );
+                        x += 24.0;
                     }
-                    ui.separator();
-                    if toolkit::selectable(ui,false,text(row,"folder_label")).clicked() {
-                        if let Ok(request)=toolkit::choose::request(&row["folder_request"].to_string()) {state(ui,id).lock().unwrap().chooser=Some((key.into(),Some("folder".into()),toolkit::choose::choose(request)));}
-                        ui.close();
-                    }
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
-                    if !text(row,"add_label").is_empty() {
-                        let galley=ui.painter().layout_no_wrap(text(row,"add_label").into(),egui::FontId::proportional(14.0),look.accent);
-                        let (rect,r)=ui.allocate_exact_size(vec2(galley.size().x+20.0,24.0),Sense::click());
-                        ui.painter().galley(egui::pos2(rect.left(),rect.center().y-galley.size().y/2.0),galley,look.accent);
-                        toolkit::button::paint_icon(ui,toolkit::Icon::MoveUpRight,egui::pos2(rect.right()-8.0,rect.center().y),16.0,look.accent);
-                        r.widget_info(||egui::WidgetInfo::labeled(egui::Role::Link,ui.is_enabled(),text(row,"add_label")));
-                        geometry.insert(format!("{id}.row.{key}.add"),rect);
-                        if r.clicked() {
-                            if row["add_request"].is_object() {
-                                if let Ok(request)=toolkit::choose::request(&row["add_request"].to_string()) {state(ui,id).lock().unwrap().chooser=Some((key.into(),Some("images".into()),toolkit::choose::choose(request)));}
-                            } else {send(events,"colour",Value::Null);}
+                    ui.painter().text(
+                        egui::pos2(x, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        title,
+                        egui::FontId::proportional(14.0),
+                        look.text,
+                    );
+                    toolkit::button::paint_icon(
+                        ui,
+                        toolkit::Icon::ChevronDown,
+                        egui::pos2(rect.right() - 12.0, rect.center().y),
+                        16.0,
+                        look.text,
+                    );
+                    r.widget_info(|| {
+                        egui::WidgetInfo::selected(
+                            egui::Role::ComboBox,
+                            ui.is_enabled(),
+                            false,
+                            text(row, "category_label"),
+                        )
+                    });
+                    geometry.insert(format!("{id}.row.{key}.category"), rect);
+                    egui::Popup::menu(&r).show(|ui| {
+                        ui.set_min_width(width.max(200.0));
+                        for (index, choice) in row["categories"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .enumerate()
+                        {
+                            if index == 2 {
+                                ui.separator();
+                                ui.label(
+                                    egui::RichText::new(text(row, "recent_label"))
+                                        .size(12.0)
+                                        .color(look.text),
+                                );
+                            }
+                            let on = choice["value"] == row["value"];
+                            if toolkit::selectable(ui, on, text(choice, "label")).clicked() && !on {
+                                send(events, "category", choice["value"].clone());
+                                ui.close();
+                            }
                         }
-                    }
+                        ui.separator();
+                        if toolkit::selectable(ui, false, text(row, "folder_label")).clicked() {
+                            if let Ok(request) =
+                                toolkit::choose::request(&row["folder_request"].to_string())
+                            {
+                                state(ui, id).lock().unwrap().chooser = Some((
+                                    key.into(),
+                                    Some("folder".into()),
+                                    toolkit::choose::choose(request),
+                                ));
+                            }
+                            ui.close();
+                        }
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if !text(row, "add_label").is_empty() {
+                            let galley = ui.painter().layout_no_wrap(
+                                text(row, "add_label").into(),
+                                egui::FontId::proportional(14.0),
+                                look.accent,
+                            );
+                            let (rect, r) = ui.allocate_exact_size(
+                                vec2(galley.size().x + 20.0, 24.0),
+                                Sense::click(),
+                            );
+                            ui.painter().galley(
+                                egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
+                                galley,
+                                look.accent,
+                            );
+                            toolkit::button::paint_icon(
+                                ui,
+                                toolkit::Icon::MoveUpRight,
+                                egui::pos2(rect.right() - 8.0, rect.center().y),
+                                16.0,
+                                look.accent,
+                            );
+                            r.widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::Role::Link,
+                                    ui.is_enabled(),
+                                    text(row, "add_label"),
+                                )
+                            });
+                            geometry.insert(format!("{id}.row.{key}.add"), rect);
+                            if r.clicked() {
+                                if row["add_request"].is_object() {
+                                    if let Ok(request) =
+                                        toolkit::choose::request(&row["add_request"].to_string())
+                                    {
+                                        state(ui, id).lock().unwrap().chooser = Some((
+                                            key.into(),
+                                            Some("images".into()),
+                                            toolkit::choose::choose(request),
+                                        ));
+                                    }
+                                } else {
+                                    send(events, "colour", Value::Null);
+                                }
+                            }
+                        }
+                    });
                 });
-            });
-            ui.add_space(look.m);
-            if row["tiles"]["choices"].as_array().is_none_or(|a|a.is_empty()) {ui.label(egui::RichText::new(text(row,"empty_label")).size(14.0).color(look.text));}
-            else {draw(ui,id,&row["tiles"],look,geometry,events);}
-        }).response;
-        geometry.insert(format!("{id}.row.{key}"),response.rect);
+                ui.add_space(look.m);
+                if row["tiles"]["choices"]
+                    .as_array()
+                    .is_none_or(|a| a.is_empty())
+                {
+                    ui.label(
+                        egui::RichText::new(text(row, "empty_label"))
+                            .size(14.0)
+                            .color(look.text),
+                    );
+                } else {
+                    draw(ui, id, &row["tiles"], look, geometry, events);
+                }
+            })
+            .response;
+        geometry.insert(format!("{id}.row.{key}"), response.rect);
         return response;
     }
     if row["kind"] == "media-preview" {
