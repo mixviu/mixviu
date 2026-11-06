@@ -1,4 +1,4 @@
-# Email inventory and round-5 list experiment
+# Email inventory, core port and list measurement
 
 ## Round 6 measured list rerun
 
@@ -26,36 +26,26 @@ Email replaces a full input snapshot, Dopus sorts retained rows, and the
 Dopus reference cohort is release rather than debug. No direct speed ratio
 or performance gate pass is claimed. Adapter/draw stages are separate fresh
 objects, not live frame latency; callback includes validation/copy/publication.
-Step 2 real mail integration follows; these figures do not replace it.
+Real-mail verification below is separate from these synthetic timings.
 
 Oracle: MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`, `apps/email`:
 actions/commands/state/shell, account/mail/compose/calendar/contacts views,
 reader/documents/drafts/attachments/writer and embedded JMAP client.
-Email core remains open. The round-5 budget checkpoint adds a fixture-only
-list/draft experiment, not a mail client or viability step-2 acceptance.
-`viu run apps/email --fixture` admits an explicit synthetic message snapshot;
-ordinary launch refuses snapshot injection. The status always says fixture-only.
-The table uses the existing Viu virtual tree-table, with 2000-row/4 MiB input
-bounds, unique IDs and bounded text cells. A per-row Mix loop and the existing
-lib-mix `jq` bulk primitive project identical rows. No per-app Rust or shared
-production Rust is added; no interpreter/dependency change.
-
-Selection and an in-memory native draft editor are exercised; accounts and
-mailboxes are synthetic labels. No real account/mailbox list, message fetch,
-send, durable draft or real maild acceptance exists yet. Those remain next
-work, not optional feature deferrals. Existing richer-feature deferrals below
-remain explicit. The saved original snapshot is a layout reference with
-different fixture content, not a same-data original-run comparison.
+Round 6 ports the bounded account/mailbox/list/read/compose core. Run
+`viu run apps/email /absolute/path/accounts.json`; the bundle README documents
+the explicit account catalogue and native submission route. Mix owns account,
+JMAP, paging, reader, draft and receipt policy. Fixture mode remains separate
+and cannot contact a server; ordinary launch refuses fixture injection.
 
 | Original capability | Disposition |
 |---|---|
-| Accounts, enabled/default selection, settings.apply fencing, secrets/CA and reconnect | Deferred until Email implementation; explicit scoped auth ownership without secrets in info replies |
-| JMAP discovery, same-origin endpoints, token exchange, bounded HTTP/blob upload | Deferred shared native upstream wiring; embedded Mix has jmap/jmap_upload but Viu registers no JmapHandler |
-| Mailbox roles/counts/hierarchy and selection | Next core target; not implemented |
-| Paged message list, total, sort/query/search and stale-response fencing | Next core target; not implemented |
-| Open headers/plain text body | Next core target; not implemented |
-| Compose To/subject/body and explicit send/outcome/uncertainty | Next core target; not implemented |
-| MIME upload, Email/set, submission, Sent filing and partial-failure receipt | Deferred core implementation; recipe policy in Mix, reusable byte/upload primitives in Viu |
+| Accounts, enabled/default selection, settings.apply fencing, secrets/CA and reconnect | Ported explicit catalogue (up to 32), account selection, password-file/optional CA and explicit reconnect. Deferred settingsd registry/migration, enable/default preferences and token exchange: catalogue is the bounded authority |
+| JMAP discovery, same-origin endpoints, token exchange, bounded HTTP/blob upload | Ported Basic-auth discovery and same-origin maild /jmap via shared bounded HTTP. Deferred token flow, arbitrary advertised paths and binary/blob upload until their lifecycle contracts are ported |
+| Mailbox roles/counts/hierarchy and selection | Ported Mailbox/get, names/roles/total/unread and selection (up to 256). Deferred hierarchy/tree composition; flat labelled choices retain unique IDs |
+| Paged message list, total, sort/query/search and stale-response fencing | Ported 200-row pages, total, receivedAt descending, explicit refresh/previous/next, busy/generation ownership and exact query/get ID matching/order. Deferred custom sort/search, live push and paginated cross-page selection until authoritative update policy |
+| Open headers/plain text body | Ported listed-ID Email/get and full bounded text (64 KiB); truncated/invalid parts refused. UI excerpt 600 characters with notice, full text via email.message. Deferred rich full-body reader layout/scrolling |
+| Compose To/subject/body and explicit send/outcome/uncertainty | Ported native in-memory editor, 1..32 bare ASCII recipients, duplicate/header validation, explicit configured Bus route, accepted receipt, same-ID manual retry and held draft. No automatic retry. Deferred full RFC address parser and durable restart reconciliation |
+| MIME upload, Email/set, submission, Sent filing and partial-failure receipt | Ported existing maild.submit pipeline/receipt; maild owns MIME/Sent/delivery. Deferred client attachment uploads and direct JMAP mutation recipe; no duplicate submission implementation |
 | Separate composers, identities/signatures, Cc/Bcc/Reply-To, suggestions and reply/all/forward/quoting | Deferred richer compose after core |
 | Durable drafts/debounce/restore, dirty-close/quit and mail documents with Ced | Deferred; durable atomic ownership and close gates together |
 | Attachments/chooser, inspection/limits, inline preview/download/open | Deferred shared byte/image/chooser contracts and lifecycle |
@@ -65,15 +55,39 @@ different fixture content, not a same-data original-run comparison.
 | Calendar/event and address-book/contact CRUD | Deferred separate PIM surfaces after mail core |
 | Actions/menu/shortcuts/macros, theme/settings-follow, saved layouts, routing/full email.v1 | Deferred shared host and application integration |
 
-The original explicitly uses JMAP HTTPS for data; its Bus carries application
-automation/settings. `maild.submit` does not replace Mailbox/get, Email/query
-or Email/get. Survey the unchanged maild personality wire with that distinction
-intact. Do not use the old Email GUI as the new app's backend, read maild's
-database directly or introduce a parallel transport. Next: wire the existing
-JMAP seam to a reusable upstream and verify list/read/compose with an isolated
-real mail service. No embedded interpreter update is proposed.
+The original uses JMAP HTTPS for reads; maild's existing Bus submission command
+owns sends. Both wires are preserved. The app neither drives the old GUI as a
+backend nor reads maild's database. No embedded interpreter change: Mix 0.117
+remains. This is a functional bounded specimen, not full-feature/visual parity
+or approval to install it.
 
-## List budget checkpoint results
+## Shared native addition and real-mail witness
+
+The reusable `viu_http` text primitive in `libraries/viu` supplies GET/POST,
+Basic headers, optional CA trust, HTTPS (loopback HTTP for tests), 1..30-second
+deadlines, 1 MiB request/4 MiB UTF-8 response budgets and explicit HTTP status.
+It disables redirects and ambient proxies; failures exclude credentials and
+request bodies. Authentication/protocol/retry decisions remain in Mix.
+The shared worker now enables Tokio I/O as well as timers. No app-specific
+Rust or JMAP handler was added. Existing workspace reqwest 0.12.28 with
+json/rustls-tls is reused; only the viu lockfile dependency edge changes,
+with no new package/version/C build dependency. Embedded lib-mix is untouched.
+
+Initial private nested/headless witness at `248958af0d3551dfd3b27c647127e1fff444975e`
+passed against actual pinned maild: CLI-created temporary account, seeded local
+message via maild.submit, authenticated session/account/mailbox catalogue,
+list/read, native compose/Send and JMAP readback of exactly one delivered mail.
+Wrong credentials were refused and explicit reconnect recovered. Seven PNGs
+inspected including the pinned original reading the same message/server.
+Subject/body Unicode agrees; composition/layout is deliberately simpler.
+All six owned processes stopped. Final-source receipts follow below.
+
+An initial embedded call exposed disabled Tokio I/O; fixed in the shared
+worker with an actual embedded socket regression. Shared tests also cover
+off-origin session refusal, wrong method/call identity, incomplete text,
+query/get ID mismatch and query-order preservation. No test was weakened.
+
+## Historical round-5 fixture checkpoint
 
 Validated source `7c55df5d2de07b87e0ff6032fb9fade36b6a55b1`, CBC
 `20261106-224820-566c0878-a1`: 112 tests, fmt/check/clippy/build passed; full
@@ -109,9 +123,6 @@ cost outside Dopus but do not attribute the same bottleneck. Dopus's retained
 use a different operation and release build; there is no valid speed ratio.
 The private Dopus results now carry this separate cohort beside those numbers.
 
-Next required core work: account/settings/auth, native JMAP session and request
-wiring, mailbox/query/get, explicit compose/send with uncertain outcomes, then
-real isolated mail-service verification. Existing lib-mix HTTP builtins are
-feature-gated and not enabled by Viu here; the JMAP seam has no upstream
-handler. That is remaining implementation, not evidence that Mix cannot do it.
-Do not install this fixture bundle as a replacement Email client.
+At that checkpoint the mail connection and core were still absent. Round 6
+implements the core above using generic native HTTP, rather than enabling the
+feature-gated lib-mix HTTP/JMAP handlers or changing the embedded interpreter.
