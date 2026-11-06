@@ -5,7 +5,7 @@ $rc=0
 $temporary=path_join(dirname(cwd()),".app-ports-tmp-"..to_string(pid()))
 mkdir($temporary)
 try
-  for $a in [["cargo","fmt","--all","--","--check"],["cargo","check","--locked","--all-targets","-p","viu","-p","viu-client","-p","viu-gallery"],["cargo","test","--locked","-p","viu","-p","viu-client","-p","viu-gallery","--","--nocapture"],["cargo","clippy","--locked","--all-targets","-p","viu","-p","viu-client","-p","viu-gallery"],["cargo","build","--locked","-p","viu-client","--bin","viu"]]
+  for $a in [["cargo","fmt","-p","viu","-p","viu-engine","--","--check"],["cargo","check","--locked","--all-targets","-p","viu","-p","viu-engine"],["cargo","test","--locked","-p","viu","-p","viu-engine","--","--nocapture"],["cargo","clippy","--locked","--all-targets","-p","viu","-p","viu-engine"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
     print({argv:$a})
     $r=run_argv($a,{env:{CARGO_BUILD_JOBS:"6",TMPDIR:$temporary,RUSTC_WRAPPER:""},timeout:1800,max_output:8000000})
     print($r)

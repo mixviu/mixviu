@@ -10,7 +10,7 @@ fn start_prefs($s,$payload)
   if $s.busy then raise("BUSY","A settings operation is active") end
   $s.serial=$s.serial+1;$s.busy=true;$s.pending=$payload;$s.status="Settings request in progress"
   $path=path_join(dirname(script_path()),"job.mix")
-  send "viu-local" "jobs.start" id="prefs-work" owner=$s.serial path=$path source=read_file($path) command="job.run" args=$payload
+  send "viu-local" "jobs.start" body={id:"prefs-work",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:$payload}
   if $rc!=0 then raise("JOB",to_string($result)) end
   return $s
 end

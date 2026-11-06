@@ -11434,7 +11434,7 @@ impl Evaluator {
     /// the numeric subset. Caller falls back to the Value-based path.
     /// Single-element clone for sync Index access — mirrors the async
     /// `eval_expr` arm closely enough for the bench paths that use it.
-    fn index_value_clone(obj: &Value, idx: &Value) -> MixResult<Value> {
+    pub(crate) fn index_value_clone(obj: &Value, idx: &Value) -> MixResult<Value> {
         match (obj, idx) {
             (Value::List(items), Value::Number(n)) => {
                 match crate::builtins::resolve_signed_index(*n as i64, items.len()) {
@@ -15957,7 +15957,12 @@ impl Evaluator {
     }
 
     #[inline]
-    fn eval_binop(&self, op: &BinOp, left: &mut Value, right: &Value) -> MixResult<Value> {
+    pub(crate) fn eval_binop(
+        &self,
+        op: &BinOp,
+        left: &mut Value,
+        right: &Value,
+    ) -> MixResult<Value> {
         // Hot path: Number op Number for the four common arithmetic ops.
         // Skips the function-pointer indirection of `num_op` and the
         // double `to_number` match. Loop-heavy benches hammer this
@@ -16422,7 +16427,7 @@ impl Evaluator {
     /// denied` runtime error otherwise. Call only for names that resolve
     /// to a builtin/HOF — user functions are never gated. Cloning the
     /// `Option<Rc>` is free when no policy is set.
-    fn check_capability(&self, name: &str) -> MixResult<()> {
+    pub(crate) fn check_capability(&self, name: &str) -> MixResult<()> {
         let policy = { self.globals.borrow().capability_policy.clone() };
         match policy {
             Some(p) => p.check_builtin(name).map_err(|reason| {
@@ -16472,7 +16477,7 @@ impl Evaluator {
     /// pays essentially nothing; the recursive walk only runs once an
     /// embedder has opted into caps (and then it short-circuits on the
     /// first violation). String length is in bytes.
-    fn check_collection_size(&self, v: &Value) -> MixResult<()> {
+    pub(crate) fn check_collection_size(&self, v: &Value) -> MixResult<()> {
         if self.ctx.max_list_len.is_none()
             && self.ctx.max_map_len.is_none()
             && self.ctx.max_string_len.is_none()
@@ -16556,6 +16561,19 @@ impl Evaluator {
         Ok(())
     }
 
+    pub(crate) fn bulk_call(&self, name: &str, args: Vec<Value>) -> MixResult<Value> {
+        self.check_capability(name)?;
+        self.check_builtin_arity(name, args.len())?;
+        self.check_builtin_args(name, &args, !self.ctx.arity_strict)?;
+        builtins::call_builtin(name, args)?
+            .ok_or_else(|| self.runtime_err("unavailable row builtin"))
+    }
+    pub(crate) fn bulk_checkpoint(&mut self) -> MixResult<()> {
+        if self.deadline_exceeded_throttled() {
+            return Err(self.runtime_err("deadline exceeded"));
+        }
+        Ok(())
+    }
     pub fn try_call_function_sync(
         &mut self,
         func: &MixFunction,

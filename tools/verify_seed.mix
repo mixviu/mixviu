@@ -8,9 +8,9 @@ $checked = 0
 for $entry in $manifest.entries
   $path = $entry.destination
   if starts_with($path, "/") or contains(split($path, "/"), "..") then raise("SEED_PATH", $path) end
-  if hash_file($root .. "/" .. $path, "sha256") != ($entry.adapted_sha256 ?? $entry.destination_sha256) then raise("SEED_CHANGED", $path) end
+  if hash_file($root .. "/" .. $path, "sha256") != $entry.destination_sha256 then raise("SEED_CHANGED", $path) end
   $checked = $checked + 1
 end
 $lock = toml_parse(read_file($root .. "/Cargo.lock"))
-if not is_file($root .. "/provenance/runtime-imports.json") and length($lock.package) != $manifest.lockfile.retained_packages then raise("SEED_LOCK", "lock closure changed") end
+if length($lock.package) != $manifest.lockfile.retained_packages then raise("SEED_LOCK", "lock closure changed") end
 print("Seed provenance verified: " .. to_string($checked) .. " imported files")

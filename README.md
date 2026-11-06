@@ -24,16 +24,14 @@ early Viu experiments; a full system rewrite is not a prerequisite.
 
 ## Current state
 
-The first client-runtime lab is active. `libraries/viu` hosts embedded Mix
-behaviour on a worker, with bounded ordered input, completion wakes and scene
-generation fences. `engines/viu` presents the volume scene as a native Wayland
-client using an explicitly labelled safe audio fixture. Its original Mix
-callbacks and model helpers remain the application policy.
+Workspace preparation only. The seed contains the existing scene parser,
+binding expressions and strict-data dependency closure, original library tests,
+and one Quoin volume specimen with its module-level helpers. No new widget
+fallback, interpreter split, Viu runtime or replacement desktop exists yet.
+Feature implementation is on hold.
 
-This specimen is not a replacement desktop or production audio integration.
-The compositor retains all global input/window authority. Geometry and theme
-coverage are reduced; no full-product or physical-presentation parity follows.
-See [runtime contract](docs/runtime-lab.md) for the exact boundary and checks.
+The copied volume bundle requires a scene host and service facilities. It is
+an input specimen, not a standalone runnable application or installation.
 
 Read [architecture](docs/architecture.md), [import scope](provenance/README.md),
 [checks](docs/development.md) and [repository rules](AGENTS.md).

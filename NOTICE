@@ -11,18 +11,5 @@ scene, expr and strict library sources/tests, and the Quoin volume specimen
 with its helper modules. These files retain Mark Constable's attribution and
 MIT OR Apache-2.0 licensing; per-file provenance is in provenance/imports.json.
 
-The runtime lab additionally imports Mix (MIT), paths/mimedb and scene-host
-template preflight (MIT OR Apache-2.0), plus patched eframe and egui-wgpu
-(MIT OR Apache-2.0). Vendored crates retain their licences and PATCHES.md;
-revision, hashes and adaptations are in provenance/runtime-imports.json and
-provenance/runtime.md. No compositor engine has been copied.
-
-The paired gallery additionally imports the native Bus client and configuration
-source/test closure from the same revision (MIT OR Apache-2.0), recorded in
-provenance/gallery-native-bus.json. No replacement transport is implemented.
-
-The shared icon library imports the complete toolkit Lucide 1.54.0 SVG asset
-directory from that revision, including ISC/MIT licence text. See
-libraries/icons/assets/LICENSE-lucide.txt and provenance/icons.json. The
-catalogue and Viu renderer adapter are new project code. SVG loading uses
-egui_extras/resvg and their pure-Rust dependency closure recorded in Cargo.lock.
+No compositor or vendored third-party source has been copied. Future imports
+must add their actual attribution in the same commit as the source.

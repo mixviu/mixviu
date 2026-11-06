@@ -21,6 +21,7 @@ pub mod lint_docs;
 mod native_events;
 mod numeric;
 pub mod parser;
+mod rows;
 pub mod scope;
 pub mod script_version;
 pub mod shell_observation;

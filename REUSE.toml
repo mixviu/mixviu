@@ -8,9 +8,3 @@ path = ["**"]
 precedence = "closest"
 SPDX-FileCopyrightText = "2026 Mark Constable <mc@mixos.dev>"
 SPDX-License-Identifier = "MIT OR Apache-2.0"
-
-[[annotations]]
-path = ["libraries/icons/assets/**"]
-precedence = "override"
-SPDX-FileCopyrightText = ["2026 Lucide Icons and Contributors", "2013-present Cole Bemis"]
-SPDX-License-Identifier = "ISC AND MIT"

@@ -39,7 +39,7 @@ fn start_job($s,$payload)
   if $s.busy then raise("BUSY","A job is already active") end
   $s.serial=$s.serial+1;$s.pending=$payload;$s.busy=true;$s.status="Working…"
   $path=path_join(dirname(script_path()),"job.mix")
-  send "viu-local" "jobs.start" id="screenshot-work" owner=$s.serial path=$path source=read_file($path) command="job.run" args=$payload
+  send "viu-local" "jobs.start" body={id:"screenshot-work",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:$payload}
   if $rc!=0 then raise("JOB",to_string($result)) end
   return $s
 end
@@ -65,7 +65,7 @@ fn save_shot($s)
 end
 fn cancel_shot($s)
   if $s.busy then
-    send "viu-local" "jobs.cancel" id="screenshot-work"
+    send "viu-local" "jobs.cancel" body={id:"screenshot-work"}
     if $rc!=0 then raise("CANCEL","Worker cancellation refused") end
     $s.serial=$s.serial+1;$s.busy=false;$s.status="Cancelled"
     if $s.pending.op=="capture" and $s.pending.request.mode=="region" and $s.pending.request.region==nil then $s.status="Worker stopped; region selector may remain until Escape/timeout (Track B7 gap)" end

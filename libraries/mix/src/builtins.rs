@@ -292,6 +292,7 @@ builtin_table! {
     ("fsync", CapabilityClass::FsWrite,           "io",      "Make a file, a directory or a whole tree durable: fsync(path[, {recursive}]) -> number of inodes synced. A file is fsync(2)ed; a directory is opened and fsynced, which persists the entries created, renamed or removed in it; recursive:true syncs every regular file and directory beneath (children first, symlinks never followed, their entries persisted by their directory), then the directory itself. The path itself follows a symlink. Failures raise FSYNC_FAILED with details.path naming what could not be synced (v0.117.0)", contract!((path: string, opts?: any_of(map("fsync_options", {recursive: bool}), nil)) -> number; failure[raises])),
     ("chown", CapabilityClass::FsWrite,           "io",      "Set file owner/group by numeric uid/gid: chown(path, 1000, 1000). Follows symlinks by default; chown(path, uid, gid, {follow_symlinks:false}) changes a symlink itself (lchown, v0.117.0). Numeric only (no name resolution) (v0.17.1)", contract!((path: string, uid: number, gid: number, opts?: any_of(map("chown_options", {follow_symlinks: bool}), nil)) -> nil; failure[raises])),
     ("mime_type", CapabilityClass::FsRead,       "io",      "The type of a file from the freedesktop shared-mime-info database, as the desktop names it (requires mime feature): mime_type(path[, {content}]) -> {mime, by, uncertain, exists, parents}. Globs first, magic to settle a missing or ambiguous glob, then a text check (the GLib order). by is stat|glob|magic|content|fallback; parents lists every supertype nearest first, ending text/plain (for text/*) and application/octet-stream. {content:false} never opens the file. A missing path is typed by name with exists:false; an unreadable file by name, uncertain. Follows symlinks (v0.113.0)", contract!((path: string, opts?: any_of(map("mime_type_options", {content: bool}), nil)) -> map("mime_type", {mime: string, by: string, uncertain: bool, exists: bool, parents: list(string)}); failure[raises])),
+    ("stat_many", CapabilityClass::FsRead, "io", "Stat an ordered list of up to 65536 UTF-8 filesystem paths using stat options. Returns one stat map or nil (IO failure) per path. Invalid paths/options refuse the entire call before IO. No snapshot or traversal policy.", contract!((paths: list(string), opts?: any_of(map("stat_options", {follow_symlinks: bool}), nil)) -> list; effects[blocking]; failure[raises])),
     ("stat", CapabilityClass::FsRead,            "io",      "Stat a path → map {uid, gid, nlink, size, mode, perm, ino, dev, ctime, mtime, atime, ctime_nsec, mtime_nsec, atime_nsec, is_file, is_dir, is_symlink}. ino/dev are STRINGS (u64, exceed f64 exact range); mode is full st_mode, perm = mode & 0o7777; *time are epoch seconds (f64) and *_nsec the sub-second part 0..=999999999 (v0.44.0) — compare the PAIR to see a same-second rewrite. Follows symlinks by default; stat(path, {follow_symlinks:false}) is lstat (v0.17.1)", contract!((path: string, opts?: any_of(map("stat_options", {follow_symlinks: bool}), nil)) -> map("stat", {uid: number, gid: number, nlink: number, size: number, mode: number, perm: number, ino: string, dev: string, ctime: number, mtime: number, atime: number, ctime_nsec: number, mtime_nsec: number, atime_nsec: number, is_file: bool, is_dir: bool, is_symlink: bool}); failure[raises])),
     ("line_count", CapabilityClass::FsRead,      "io",      "Count lines in a file by streaming — never loads the whole file (byte-oriented, so it works on non-UTF-8 files too) (streams since v0.28.1)", contract!((path: string) -> number; failure[raises])),
     ("head", CapabilityClass::FsRead,            "io",      "First N lines of a file as a list (default 10) — streams and stops after N lines, never reads the rest (the no-slurp twin of take(read_lines(p), n)) (v0.28.1)", contract!((path: string, n?: number) -> list(string); failure[raises])),
@@ -675,6 +676,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "chown" => builtin_chown(args),
         "fsync" => builtin_fsync(args),
         "stat" => builtin_stat(args),
+        "stat_many" => builtin_stat_many(args),
         #[cfg(feature = "mime")]
         "mime_type" => builtin_mime_type(args),
         #[cfg(not(feature = "mime"))]
@@ -1140,8 +1142,9 @@ pub fn compiled_features() -> Vec<&'static str> {
 
 /// Features only the service profile (`mixd`) carries. The shell profile
 /// (`mix`) is everything else; see the mixviu engine-split decision.
-pub const SERVICE_PROFILE_FEATURES: &[&str] =
-    &["markdown", "dkim", "datastar", "xml", "yaml", "mime", "dns", "serde"];
+pub const SERVICE_PROFILE_FEATURES: &[&str] = &[
+    "markdown", "dkim", "datastar", "xml", "yaml", "mime", "dns", "serde",
+];
 
 /// Builtins that exist only in the service profile, with their feature.
 pub const SERVICE_BUILTINS: &[(&str, &str)] = &[
@@ -15465,6 +15468,42 @@ fn parse_id(func: &str, what: &str, v: &Value) -> MixResult<u32> {
 /// for a symlink regardless of the follow mode — when following, the
 /// other fields describe the *target* while `is_symlink` flags the path,
 /// a deliberate mixed view that matches how callers reason about links.
+fn builtin_stat_many(args: Vec<Value>) -> MixResult<Option<Value>> {
+    let err = |s: &str| MixError::structured("STAT_MANY_ARGUMENT", s);
+    if args.is_empty() || args.len() > 2 {
+        return Err(err("stat_many(paths[, options])"));
+    }
+    let Value::List(paths) = &args[0] else {
+        return Err(err("paths must be a list"));
+    };
+    if paths.len() > 65536
+        || paths
+            .iter()
+            .any(|p| !matches!(p,Value::String(s) if !s.contains('\0')))
+    {
+        return Err(err("at most 65536 NUL-free text paths"));
+    }
+    let opts = args.get(1).cloned().unwrap_or(Value::Nil);
+    match &opts {
+        Value::Nil => {}
+        Value::Map(m) => {
+            if m.keys().any(|k| k != "follow_symlinks") {
+                return Err(err("unknown stat_many option"));
+            }
+            bool_option("stat_many()", "follow_symlinks", m.get("follow_symlinks"))?;
+        }
+        _ => return Err(err("options must be a map or nil")),
+    }
+    let mut out = Vec::with_capacity(paths.len());
+    for path in paths.iter() {
+        out.push(
+            builtin_stat(vec![path.clone(), opts.clone()])
+                .unwrap_or(Some(Value::Nil))
+                .unwrap_or(Value::Nil),
+        );
+    }
+    Ok(Some(Value::list(out)))
+}
 fn builtin_stat(args: Vec<Value>) -> MixResult<Option<Value>> {
     use std::os::unix::fs::MetadataExt;
     if args.is_empty() || args.len() > 2 {
@@ -17820,9 +17859,16 @@ mod engine_profile_tests {
     #[test]
     fn service_builtin_names_never_collide_with_capability_names() {
         for (name, _) in SERVICE_BUILTINS {
-            assert!(BUILTIN_NAMES.contains(name), "{name} is not a registered builtin");
+            assert!(
+                BUILTIN_NAMES.contains(name),
+                "{name} is not a registered builtin"
+            );
             for info in BUILTINS {
-                assert_ne!(info.capability.as_str(), *name, "capability named like {name}");
+                assert_ne!(
+                    info.capability.as_str(),
+                    *name,
+                    "capability named like {name}"
+                );
             }
         }
     }

@@ -12,11 +12,12 @@ fn dp_publish($state,$contract,$cache)
   if $dopus_profile then
     $start=monotonic()
     $cache=$projection.dp_prepare_rows($state,$cache)
+    $prepared=monotonic()
     $model=$projection.dp_project($state,$contract,$cache)
     $projected=monotonic()
     send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$model}
     $published=monotonic()
-    print(json_encode({profile:"dopus",phase:"publication",serial:$state.serial,project_us:($projected-$start)*1000000,publish_us:($published-$projected)*1000000}))
+    print(json_encode({profile:"dopus",phase:"publication",serial:$state.serial,rows_us:($prepared-$start)*1000000,model_us:($projected-$prepared)*1000000,project_us:($projected-$start)*1000000,publish_us:($published-$projected)*1000000}))
   else
     $cache=$projection.dp_prepare_rows($state,$cache)
     send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$projection.dp_project($state,$contract,$cache)}
