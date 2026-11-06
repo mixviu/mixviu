@@ -241,6 +241,8 @@ async fn exercise(old: bool, parent: Option<&Path>) {
                 < row["height"].as_f64().unwrap_or(0.0))
     );
     if !old && parent.is_some() {
+        client.subscribe_topic("comp-headless.corner.clicked.v2").await.unwrap();
+        let mut corner_input = client.incoming().unwrap();
         client.call("shell","shell.scene.load",json!({"source":include_str!("../../../share/scenes/launcher/scene.mix"),"output":"winit"})).await.unwrap();
         let before = client
             .call("shell", "shell.props.get", json!({}))
@@ -264,6 +266,9 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             )
             .await
             .unwrap();
+        let clicked = tokio::time::timeout(Duration::from_secs(3), corner_input.recv())
+            .await.unwrap().unwrap();
+        println!("CORNER_CLICK_WIRE headers={:?} body={}", clicked.headers, clicked.body);
         let until = Instant::now() + Duration::from_secs(5);
         loop {
             let props = client

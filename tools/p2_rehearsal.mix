@@ -6,6 +6,7 @@ if trim(run_argv_must(["git","status","--porcelain"]))!="" then raise("DIRTY_SOU
 $binary_source=args()[0] ?? $sha
 run_argv_must(["git","diff","--exit-code",$binary_source,$sha,"--","Cargo.toml","Cargo.lock","engines","libraries","services","vendor"])
 $bin="/build/es-artifacts/"..$binary_source
+export MIXOS_TEST_MIX=$bin.."/mix"
 $run=$n.new_run("/build/es-artifacts/rehearsal-"..$sha)
 $children=[];$records=[]
 for $name in ["noded","settingsd","editd","monitord"]
