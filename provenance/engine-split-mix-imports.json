@@ -4248,6 +4248,146 @@
       "destination_sha256": "3c43002d8ccc57675bebb90caf5cb602cd9490ad762f81313d1cbc1295f858d4",
       "source": "docs/_build/gen-site.mix",
       "source_sha256": "3c43002d8ccc57675bebb90caf5cb602cd9490ad762f81313d1cbc1295f858d4"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/README.md",
+      "destination_sha256": "92a74e81654a252dbaa641bb0fc18e5f11b7ef1b8ca7b6bd9375cd0334be39a4",
+      "source": "services/dlnad/README.md",
+      "source_sha256": "92a74e81654a252dbaa641bb0fc18e5f11b7ef1b8ca7b6bd9375cd0334be39a4"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/component.mx",
+      "destination_sha256": "4fba5bea1c4e3112968680d948da150918cbf23fa654faa6b1a1291199c83dd1",
+      "source": "services/dlnad/component.mx",
+      "source_sha256": "4fba5bea1c4e3112968680d948da150918cbf23fa654faa6b1a1291199c83dd1"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/dlnad.conf.mix.example",
+      "destination_sha256": "6d703f817318384ea1ea8c71cac9dea5a9858a8dafbb143972faa1f9bdafcfb4",
+      "source": "services/dlnad/dlnad.conf.mix.example",
+      "source_sha256": "6d703f817318384ea1ea8c71cac9dea5a9858a8dafbb143972faa1f9bdafcfb4"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/scripts/dlnad.mix",
+      "destination_sha256": "facb362d2d81efe174a22eaa9e6aa42850b5ddadcf750f2a5fd7540104d66fda",
+      "source": "services/dlnad/scripts/dlnad.mix",
+      "source_sha256": "facb362d2d81efe174a22eaa9e6aa42850b5ddadcf750f2a5fd7540104d66fda"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/scripts/lib/dlna.mix",
+      "destination_sha256": "e05f17fba011c2b9dbedbc7c63ba41554caa6fccc3aa0170ddf1cadf52a7acb2",
+      "source": "services/dlnad/scripts/lib/dlna.mix",
+      "source_sha256": "e05f17fba011c2b9dbedbc7c63ba41554caa6fccc3aa0170ddf1cadf52a7acb2"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/scripts/lib/http.mix",
+      "destination_sha256": "f0bbc8aceae3f72af4b8f1c2d50b1a1839bafa08ac496dba71101c2ac7c11c46",
+      "source": "services/dlnad/scripts/lib/http.mix",
+      "source_sha256": "f0bbc8aceae3f72af4b8f1c2d50b1a1839bafa08ac496dba71101c2ac7c11c46"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/scripts/lib/limits.mix",
+      "destination_sha256": "b0f0d58981ba2f7044ae289ce0fde5b8346e9ff8780856a3f5b432295b939c07",
+      "source": "services/dlnad/scripts/lib/limits.mix",
+      "source_sha256": "b0f0d58981ba2f7044ae289ce0fde5b8346e9ff8780856a3f5b432295b939c07"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/scripts/lib/ssdp.mix",
+      "destination_sha256": "7a7c0d9d4d695bbe9f05b0b0e70761d17319f275d13187ab88f022219bb7232b",
+      "source": "services/dlnad/scripts/lib/ssdp.mix",
+      "source_sha256": "7a7c0d9d4d695bbe9f05b0b0e70761d17319f275d13187ab88f022219bb7232b"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/dlna_test.mix",
+      "destination_sha256": "ad8ca5cbe667861f0016cd1db8978399241613824e7dacae317541500d60c765",
+      "source": "services/dlnad/tests/dlna_test.mix",
+      "source_sha256": "ad8ca5cbe667861f0016cd1db8978399241613824e7dacae317541500d60c765"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/fixtures/vuio/README.md",
+      "destination_sha256": "ed7cf9a4def00295968c65fed3521ee94334e54244241db184c7ff179045cd24",
+      "source": "services/dlnad/tests/fixtures/vuio/README.md",
+      "source_sha256": "ed7cf9a4def00295968c65fed3521ee94334e54244241db184c7ff179045cd24"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/fixtures/vuio/browse_root.txt",
+      "destination_sha256": "3dff9b996fa2f23eb5a5d067312fec6c2f2ea8640224058bf740e5bda49e5990",
+      "source": "services/dlnad/tests/fixtures/vuio/browse_root.txt",
+      "source_sha256": "3dff9b996fa2f23eb5a5d067312fec6c2f2ea8640224058bf740e5bda49e5990"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/fixtures/vuio/browse_video.txt",
+      "destination_sha256": "570b07a5b289ac5139bcb9d44d2662035e37bd2c9f42a877a725639e7c7d76da",
+      "source": "services/dlnad/tests/fixtures/vuio/browse_video.txt",
+      "source_sha256": "570b07a5b289ac5139bcb9d44d2662035e37bd2c9f42a877a725639e7c7d76da"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/fixtures/vuio/cds_scpd.txt",
+      "destination_sha256": "baccf8fc35b521aa460150bab7fefe181ab200b00478df75661462b228590c98",
+      "source": "services/dlnad/tests/fixtures/vuio/cds_scpd.txt",
+      "source_sha256": "baccf8fc35b521aa460150bab7fefe181ab200b00478df75661462b228590c98"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/fixtures/vuio/cms_scpd.txt",
+      "destination_sha256": "0cf36e694f400227cbcf2ac56827d8152e9326670065ffd31832201eba7f4211",
+      "source": "services/dlnad/tests/fixtures/vuio/cms_scpd.txt",
+      "source_sha256": "0cf36e694f400227cbcf2ac56827d8152e9326670065ffd31832201eba7f4211"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/fixtures/vuio/description.txt",
+      "destination_sha256": "8f4431677127d9470164c84404aba57636fc4a6ed740daa0fe6830cdb2a2420d",
+      "source": "services/dlnad/tests/fixtures/vuio/description.txt",
+      "source_sha256": "8f4431677127d9470164c84404aba57636fc4a6ed740daa0fe6830cdb2a2420d"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/fixtures/vuio/media_head.txt",
+      "destination_sha256": "26cfb69fbfee2e017c76f88aca1de90396125040a9124f1fe5a7389a877cea77",
+      "source": "services/dlnad/tests/fixtures/vuio/media_head.txt",
+      "source_sha256": "26cfb69fbfee2e017c76f88aca1de90396125040a9124f1fe5a7389a877cea77"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/fixtures/vuio/media_range.txt",
+      "destination_sha256": "c184c0e1fa181d1c41d00f1dcbf3e2d0c2a7851c634f3b0e202bd6bc3cc63d83",
+      "source": "services/dlnad/tests/fixtures/vuio/media_range.txt",
+      "source_sha256": "c184c0e1fa181d1c41d00f1dcbf3e2d0c2a7851c634f3b0e202bd6bc3cc63d83"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/limits_test.mix",
+      "destination_sha256": "1140b148bfc4bfde7173e16904a7473579658b9b811082ca48dd310da29ede8a",
+      "source": "services/dlnad/tests/limits_test.mix",
+      "source_sha256": "1140b148bfc4bfde7173e16904a7473579658b9b811082ca48dd310da29ede8a"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/tests/oracle_test.mix",
+      "destination_sha256": "3500cc571c92413d0ef1db06baf8d4e24fd90c728aaee3fc74750b345bc345b0",
+      "source": "services/dlnad/tests/oracle_test.mix",
+      "source_sha256": "3500cc571c92413d0ef1db06baf8d4e24fd90c728aaee3fc74750b345bc345b0"
+    },
+    {
+      "adaptation": null,
+      "destination": "services/dlnad/units/dlnad.service",
+      "destination_sha256": "a6eb921129a1bdb14ca2cb840461cf092ee27356d8aaf58c2e45a244966bb6d8",
+      "source": "services/dlnad/units/dlnad.service",
+      "source_sha256": "a6eb921129a1bdb14ca2cb840461cf092ee27356d8aaf58c2e45a244966bb6d8"
     }
   ],
   "licence": "MIT OR Apache-2.0",

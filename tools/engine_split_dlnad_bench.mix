@@ -1,0 +1,54 @@
+-- A6: dlnad's offline suites under gold mix, the lab shell-profile mix and
+-- mixd. Pass/fail per suite, wall-time median over N runs and, when GNU time
+-- is present, max RSS. Run from the checkout root.
+-- usage: mix tools/engine_split_dlnad_bench.mix GOLD_MIX LAB_MIX LAB_MIXD [N]
+$a = args()
+$n = if len($a) > 3 then to_number($a[3]) else 5 end
+$engines = [
+  {name: "gold-mix", argv: [$a[0]]},
+  {name: "lab-mix", argv: [$a[1]]},
+  {name: "lab-mixd-run", argv: [$a[2], "run"]},
+]
+$suites = ["services/dlnad/tests/oracle_test.mix", "services/dlnad/tests/dlna_test.mix", "services/dlnad/tests/limits_test.mix"]
+$gnu_time = if is_file("/usr/bin/time") then "/usr/bin/time" else nil end
+fn median($xs)
+  $s = sort($xs)
+  return $s[floor(len($s) / 2)]
+end
+$fails = 0
+$rows = []
+for $e in $engines
+  for $suite in $suites
+    $times = []
+    $rss = []
+    $last = nil
+    for $i = 1 to $n
+      $argv = concat($e.argv, [$suite])
+      if $gnu_time != nil then
+        $argv = concat([$gnu_time, "-f", "MAXRSS_KB=%M"], $argv)
+      end
+      $r = run_argv($argv, {timeout: 300})
+      push($times, $r.duration_ms)
+      $m = re_find($r.stderr, "MAXRSS_KB=([0-9]+)")
+      if len($m) > 0 then
+        push($rss, to_number($m[0].groups[0]))
+      end
+      $last = $r
+    end
+    $passes = len(re_find($last.stdout, "(?m)^PASS"))
+    $failn = len(re_find($last.stdout, "(?m)^FAIL"))
+    $ok = $last.ok
+    if not $ok then
+      $fails = $fails + 1
+    end
+    $row = {engine: $e.name, suite: basename($suite), ok: $ok, pass_lines: $passes, fail_lines: $failn,
+      median_ms: median($times), max_rss_kb: if len($rss) > 0 then median($rss) else nil end}
+    push($rows, $row)
+    print json_encode($row)
+    if not $ok then
+      print "  stderr: " .. slice(trim($last.stderr), 0, 400)
+    end
+  end
+end
+print "DLNAD_BENCH_FAILS=" .. to_string($fails)
+exit(if $fails == 0 then 0 else 1 end)
