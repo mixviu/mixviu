@@ -32,4 +32,17 @@ Median changes range from -2.9% to +1.1%; all original bulk hot paths are retain
 
 ## Accepted Ced integration
 
-Merged `d4e19db5259e448190f3e877a0021f735195635a` at `4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0`. Only last.md conflicted. Release-byte validation and the second four-engine handoff are in progress.
+Merged `d4e19db5259e448190f3e877a0021f735195635a` at `4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0`. Only last.md conflicted. The merged source is now **ACCEPTED** for this integration handoff. All four release engines are together on **cbc3**, `/build/es-artifacts/4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0/`. SHA256SUMS hash: `302124de8d98426a199daebd9341535cecd6e20bc7486d18abee81f5fada22b9`.
+
+```text
+52b7cc69bb445bf95e07649267770b41cbe2aa4b03b91163091a4ae9b6681a41  mix
+f3b3b5d7b22f2c2cfca9ad5a28e5fd5653cdd5ed5bc62964242db9a422e9a659  mixd
+3fd391f4bed21d0b9cbcd6ed6a674842bd5f232d328c398b50262b967fd21de8  viud
+8c2eb07cbef36eed50ddcaacdb8b4664554fdfed999b0b42878aea2e3abe1735  viu
+```
+
+CBC `20261107-080318-8bce8633-a1` passed fmt, normal Clippy, 59 scoped Rust tests, four Monitor Mix tests, the four locked release builds and clean worker diff. The complete saved log is archived. Ced's release-byte acceptance passes 11 native suites and 35 paired captures: 31 exact, three unchanged raster-edge cases and Fable C1 Replace. The full [revalidation record](ced-acceptance.md#release-byte-revalidation-after-integration) includes every nonzero region and the gold caret-phase distinction.
+
+Monitor quick recheck on these same release bytes passes 46/46 structured replies and 10 comparison sets covering Processes and every Performance page. Whole/header/options/content/status SSIM and RMSE distortion are zero. This is a quick recheck, not a claim to have repeated the first set's entire live Prefs matrix on the editor merge. All owned services/apps/brokers are stopped. Private archive: `gold-parity-20261107/editor-integration/4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0`.
+
+Use the second set for the integrated Ced/bulk/Monitor handoff; the first CBC2 set is retained as a separately verified checkpoint. No installation, desktop or VT work was performed.

@@ -209,3 +209,24 @@ All regions not listed below are exact in the final index. Zero is identical.
 | search-replace | tabs_search | 0.0142043 | 0.0138868 |
 | prefs-light-large-compact | actions | 0.0147586 | 0.0436787 |
 | prefs-light-large-compact | status | 0.00355067 | 0.00564538 |
+
+### Release-byte revalidation after integration
+
+Verdict: **PASS** at `4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0` on `lab/gold-parity`, merging accepted editor `d4e19db5259e448190f3e877a0021f735195635a` with the bulk/Monitor integration. Subsequent commits are documentation receipts only. The exact **release** viu SHA256 is `8c2eb07cbef36eed50ddcaacdb8b4664554fdfed999b0b42878aea2e3abe1735`. Gold Ced and native service hashes match the original acceptance provenance above.
+
+CBC `20261107-080318-8bce8633-a1` returned BUILD_RC=0 with no worker diff: full-tree fmt check, normal Viu all-target Clippy, 36 scoped Viu tests, 23 maildoc tests, all four Monitor Mix contract tests, then four separate locked release-engine builds. All 59 Rust tests passed with no ignores. Existing Clippy/style warnings remain; this is not a warnings-as-errors gate. The complete 2,243-line saved log was read and archived (SHA256 `7941819c6ea040ee7aea40de520c9e08a2f6eafc453d3226c65b9d57b8727e33`). The previous whole-workspace gate belongs to the preceding integration source, not this editor merge.
+
+Eleven isolated native release-byte suites pass: 61/61 actions across text/mail, the 53-command surface and macros, native input/clipboard/IME and shutdown, deferred dialogs and saves, native recovery buttons, conflict/copy choices, sessions, mail/attachments/uncertain Send, 16/64 MiB files and refusals, and nine paired live Prefs states including authority recovery on the same app PID. The selected Goto check is incorporated in the visual suite; its overlay was also measured separately at zero. Every native result checks the frozen source and release hash, and all owned PIDs/brokers are stopped.
+
+The fresh 35 matched 1000×720 pairs were inspected with whole/region figures: **31 exact**, three reproduce precisely the original accepted raster metrics, and Replace retains C1. All regions except those already listed in this record are zero. Replace's current figures are:
+
+| Region | SSIM distortion | RMSE distortion |
+| --- | ---: | ---: |
+| Whole | 0.0111743 | 0.0324682 |
+| Content | 0.0120445 | 0.0356656 |
+| Gutter | 0.027558 | 0.0410017 |
+| Tabs/search | 0.0138192 | 0.0083526 |
+
+The candidate Replace PNG is byte-identical to the prior accepted candidate. Comparing the two gold captures isolates the changed score to 22 pixels of the gold caret blink; both originals and that amplified difference are retained. This introduces no new design deviation. Problems/Output separator and enlarged Prefs Search/status edges remain the same inspected raster differences. C1 is still the sole approved Ced design difference; there are no open items.
+
+Private archive: `gold-parity-20261107/editor-integration/4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0`, containing executed harnesses, native receipts, captures, region metrics, inspection, service/script hashes, exact release bytes and CBC log. Four-engine handoff and the Monitor quick recheck are in [desk4-integration.md](desk4-integration.md).
