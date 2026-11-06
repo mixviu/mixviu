@@ -15,6 +15,12 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    drive_replies: BTreeMap<u64, Reply>,
+    drive_answers: std::collections::VecDeque<toolkit::drive::Answer>,
+    drive_serial: u64,
+    macros: macros::Session,
+    macro_pending: Vec<(std::sync::mpsc::Receiver<macros::commands::Answer>, Reply)>,
+    macro_finished: std::sync::mpsc::Receiver<Value>,
     session: Option<crate::session::Session>,
     session_appearance: Option<Value>,
     session_window: Option<Value>,
@@ -93,6 +99,35 @@ impl Host {
             ));
             return;
         }
+        if let Some((rc, body)) = crate::debug::request(&self.service, &r.command, &r.args.to_string()) {
+            let _ = r.reply.send((rc, body));
+            return;
+        }
+        let prefix = format!("{}.", self.service);
+        if let Some(suffix) = r.command.strip_prefix(&prefix) {
+            if toolkit::drive::COMMANDS.contains(&suffix) {
+                if suffix == "window" && r.args["action"] == "close" && r.args.get("viewport").is_none() {
+                    self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
+                    let _ = r.reply.send((0, json!({"action":"close"})));
+                    return;
+                }
+                self.drive_serial += 1;
+                let id = self.drive_serial;
+                if let Some(answer) = toolkit::drive::request(ctx, id, suffix, &r.args) {
+                    let _ = r.reply.send((answer.rc, answer.body));
+                } else {
+                    self.drive_replies.insert(id, r.reply);
+                }
+                return;
+            }
+            if let Some(command) = suffix.strip_prefix("macros.") {
+                match macros::commands::handle(&self.macros, command, &r.args) {
+                    macros::commands::Reply::Immediate(answer) => { let _ = r.reply.send(macro_answer(answer)); }
+                    macros::commands::Reply::Deferred(answer) => self.macro_pending.push((answer, r.reply)),
+                }
+                return;
+            }
+        }
         match r.command.as_str() {
             "viu.state" | "viu.ui.tree" => {
                 let _ = r.reply.send((0, self.state()));
@@ -161,6 +196,26 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
+        self.drive_answers.extend(toolkit::drive::logic(ui.ctx()));
+        if self.inflight.is_empty() {
+            while let Some(answer) = self.drive_answers.pop_front() {
+                if let Some(reply) = self.drive_replies.remove(&answer.id) {
+                    let _ = reply.send((answer.rc, answer.body));
+                }
+            }
+        }
+        let mut waiting = Vec::new();
+        for (receiver, reply) in self.macro_pending.drain(..) {
+            match receiver.try_recv() {
+                Ok(answer) => { let _ = reply.send(macro_answer(answer)); }
+                Err(std::sync::mpsc::TryRecvError::Empty) => waiting.push((receiver, reply)),
+                Err(_) => { let _ = reply.send((10, json!({"error_code":"INTERNAL","message":"macro worker closed"}))); }
+            }
+        }
+        self.macro_pending = waiting;
+        while let Ok(body) = self.macro_finished.try_recv() {
+            let _ = self.bus.hint(format!("{}.macros.finished", self.service), body);
+        }
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
                 let result = if let Some(image) = image {
@@ -259,6 +314,7 @@ impl Host {
             }
         }
         for _ in 0..32 {
+            if toolkit::drive::pending(ui.ctx()) || !self.drive_answers.is_empty() { break; }
             match self.bus.requests.try_recv() {
                 Ok(r) => self.request(r, ui.ctx()),
                 Err(_) => break,
@@ -401,6 +457,18 @@ impl Host {
     }
 }
 
+fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {
+    match answer {
+        Ok(body) => (0, body),
+        Err(error) => (10, json!({"error_code":error.code,"message":error.message})),
+    }
+}
+impl Drop for Host {
+    fn drop(&mut self) {
+        if let Err(error) = self.macros.shutdown() { tracing::warn!(%error, "macro shutdown"); }
+    }
+}
+
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
     let mut commands = bundle.manifest.commands.clone();
@@ -421,6 +489,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         ]
         .map(String::from),
     );
+    commands.extend(toolkit::drive::COMMANDS.map(|suffix| format!("{service}.{suffix}")));
+    commands.extend(macros::commands::SUFFIXES.map(|suffix| format!("{service}.macros.{suffix}")));
+    commands.extend(["debug", "debug.recent", "debug.set"].map(|suffix| format!("{service}.{suffix}")));
     let declared = commands.iter().cloned().collect();
     let bus = Endpoint::start(
         service,
@@ -434,13 +505,29 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     );
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
     jobs.set_native_backend(bus.backend_maker());
-    let mut runtime = Runtime::new(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))));
+    let roots = macros::Roots::resolve().map(|mut roots| {
+        roots.mix = std::env::current_exe().expect("own macro interpreter artifact");
+        roots
+    });
+    let macros = macros::Session::with_roots(&bundle.manifest.service, roots);
+    let (macro_tx, macro_finished) = std::sync::mpsc::channel();
+    let macro_wake = wake.clone();
+    macros.add_finish_hook(Arc::new(move |body| { let _ = macro_tx.send(body); macro_wake(); }));
+    let services = crate::runtime::Services { macros: Some(macros.clone()), ..Default::default() };
+    jobs.set_services(services.clone());
+    let mut runtime = Runtime::with_services(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))), services);
     runtime.load(bundle.program).expect("load behaviour");
     let capture_root = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        drive_replies: BTreeMap::new(),
+        drive_answers: Default::default(),
+        drive_serial: 0,
+        macros,
+        macro_pending: Vec::new(),
+        macro_finished,
         service: bundle.manifest.service.clone(),
         file_theme: toolkit::Theme::load(),
         last_ui: settings::model::CommonUi::default(),
@@ -488,7 +575,18 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     }
 }
 
-pub fn run(args: Vec<String>) -> eframe::Result {
+pub fn run(mut args: Vec<String>) -> eframe::Result {
+    if let Err(error) = crate::debug::init("warn", &mut args) {
+        eprintln!("viu: {error}");
+        std::process::exit(2);
+    }
+    if args.first().is_some_and(|arg| arg == "--macro") {
+        let Some(path) = args.get(1) else { eprintln!("usage: viu --macro SCRIPT [ARG...]"); std::process::exit(2); };
+        std::process::exit(crate::macro_host::run(path.into(), args[2..].to_vec()));
+    }
+    if let Some(path) = args.first().filter(|path| path.ends_with(".mix") && std::path::Path::new(path).is_file()) {
+        std::process::exit(crate::macro_host::run(path.into(), args[1..].to_vec()));
+    }
     if args.first().map(String::as_str) != Some("run") || args.len() < 2 {
         eprintln!("usage: viu run APP_DIR [ARGS]");
         std::process::exit(2);
@@ -525,6 +623,8 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         },
         Box::new(move |cc| {
             crate::appearance::install(&cc.egui_ctx);
+            toolkit::drive::install(&cc.egui_ctx, &service);
+            toolkit::drive::set_service(&cc.egui_ctx, Some(&service));
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(
                 bundle,
