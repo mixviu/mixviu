@@ -2,6 +2,7 @@
 $m=require("model.mix");$tree=require("tree.mix");$work=require("work.mix");$discovery=require("discovery.mix");$text=require("text.mix");$actions=require("actions.mix");$theme=require("theme.mix")
 $macros=require("macro.mix")
 $agents=require("agents.mix");$traffic=require("traffic.mix");$mesh=require("mesh.mix");$mesh_flow=require("mesh-flow.mix");$counter=require("counter.mix")
+$saved=require("saved.mix")
 fn result($s,$body) return {state:$s,rc:0,body:$body,deferred:false} end
 fn refused($s,$code,$message) return {state:$s,rc:10,body:{error_code:$code,message:$message},deferred:false} end
 fn guard($s) return $s.dialog!=nil or $s.quitting end
@@ -111,7 +112,10 @@ fn request($s,$event)
     return {state:$s,rc:0,body:nil,deferred:true}
   end
   if $cmd=="workshop.ping" then return result($s,{schema:"workshop.v1",version:viu_context().version})
-  elif $cmd=="workshop.info" then return result($s,$m.info($s,viu_context()))
+  elif $cmd=="workshop.info" then
+    send "viu-local" "native.saved" body=$saved.project($s)
+    if $rc==0 then $s.saved=$reply end
+    return result($s,$m.info($s,viu_context()))
   elif $cmd=="workshop.tree" then return result($s,{rows:$tree.rows($s)})
   elif $cmd=="workshop.reply" then return result($s,{text:$s.answer,value:$s.last_reply})
   elif $cmd=="workshop.actions" then $s.busy=$m.busy($s);return result($s,{actions:$actions.registry($s)})

@@ -6,7 +6,11 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
-    "block-list", "form-grid", "cell-grid", "history-lines", "network-map",
+    "block-list",
+    "form-grid",
+    "cell-grid",
+    "history-lines",
+    "network-map",
     "widget-row",
     "divider",
     "mark",
@@ -170,6 +174,11 @@ impl Widget {
             );
         }
         self.validate_model(model)?;
+        if self.kind=="button" && ["primary","secondary"].contains(&self.text("style")) {
+            let chrome=toolkit::chrome::Chrome::of(ui.ctx());
+            let font=toolkit::fonts::bound(ui.ctx(),toolkit::fonts::medium(chrome.style.push_label_size as f32));
+            return Ok(ui.painter().layout_no_wrap(self.text("text").into(),font,Color32::PLACEHOLDER).size().x+chrome.style.button_push_padding as f32);
+        }
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
         }
@@ -207,8 +216,12 @@ impl Widget {
         self.properties[key].as_str().unwrap_or("")
     }
     pub fn validate(&self, value: &Value) -> Result<(), String> {
-        if self.kind=="network-map" {return crate::network_map::validate(value);}
-        if crate::data_panels::KINDS.contains(&self.kind.as_str()) { return crate::data_panels::validate(&self.kind,value); }
+        if self.kind == "network-map" {
+            return crate::network_map::validate(value);
+        }
+        if crate::data_panels::KINDS.contains(&self.kind.as_str()) {
+            return crate::data_panels::validate(&self.kind, value);
+        }
         if crate::rich::KINDS.contains(&self.kind.as_str()) {
             if self.kind == "menubar" && self.properties["style"] == "gold" {
                 crate::native_menu::validate(value)?;
@@ -324,9 +337,15 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.kind=="network-map" {return vec!["set","node","edge","inspect"];}
-        if self.kind=="block-list" { return vec!["set","choose"]; }
-        if self.kind=="form-grid" { return vec!["set","edit"]; }
+        if self.kind == "network-map" {
+            return vec!["set", "node", "edge", "inspect"];
+        }
+        if self.kind == "block-list" {
+            return vec!["set", "choose"];
+        }
+        if self.kind == "form-grid" {
+            return vec!["set", "edit"];
+        }
         if self.properties["read_only"] == true && self.kind == "tree-table" {
             return vec![];
         }
@@ -426,8 +445,12 @@ impl Widget {
             return crate::dashboard::admit(self.value(model), action, value);
         }
         self.validate_action(action, value)?;
-        if self.kind=="network-map" {return crate::network_map::admit(self.value(model),action,value);}
-        if crate::data_panels::KINDS.contains(&self.kind.as_str()) { return crate::data_panels::admit(&self.kind,self.value(model),action,value); }
+        if self.kind == "network-map" {
+            return crate::network_map::admit(self.value(model), action, value);
+        }
+        if crate::data_panels::KINDS.contains(&self.kind.as_str()) {
+            return crate::data_panels::admit(&self.kind, self.value(model), action, value);
+        }
         if self.kind == "window-controls" && self.value(model)["enabled"] != true {
             return Err("DISABLED".into());
         }
@@ -671,6 +694,7 @@ impl Widgets {
                 }
             }
             "divider" => {
+                if widget.properties["axis"]=="horizontal" {let rect=toolkit::bars::hairline(ui);let r=ui.interact(rect,ui.make_persistent_id(id),Sense::hover());return self.remember(ui,id,&r);}
                 toolkit::bars::divider(ui, ui.available_height().min(18.0));
                 ui.response()
             }
@@ -775,8 +799,12 @@ impl Widgets {
                 .surfaces
                 .get_or_insert_with(crate::image_view::Images::surface)
                 .draw_fill(ui, id, value),
-            "network-map"=>crate::network_map::draw(ui,widget,value,&mut self.geometry,events),
-            "block-list" | "form-grid" | "cell-grid" | "history-lines" => crate::data_panels::draw(ui,widget,value,&mut self.geometry,events),
+            "network-map" => {
+                crate::network_map::draw(ui, widget, value, &mut self.geometry, events)
+            }
+            "block-list" | "form-grid" | "cell-grid" | "history-lines" => {
+                crate::data_panels::draw(ui, widget, value, &mut self.geometry, events)
+            }
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" => {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
@@ -855,7 +883,9 @@ impl Widgets {
                 }
             }
             "button" => {
-                let r = if widget.properties["style"] == "primary" {
+                let r = if widget.properties["style"]=="icon" {
+                    ui.add(toolkit::button::IconButton::new(crate::icons::Icon::from_name(widget.text("icon")).expect("validated icon")).tooltip(&widget.label))
+                } else if widget.properties["style"] == "primary" {
                     ui.add(toolkit::button::PushButton::primary(widget.text("text")))
                 } else if widget.properties["style"] == "secondary" {
                     ui.add(toolkit::button::PushButton::secondary(widget.text("text")))
@@ -886,7 +916,7 @@ impl Widgets {
                 // cannot generate edits, even through keyboard/paste input.
                 let mut text = value.as_str().unwrap_or_default();
                 let rows = whole(&widget.properties["rows"]).unwrap_or(24) as f32;
-                let height = rows * ui.text_style_height(&egui::TextStyle::Monospace) + 8.0;
+                let height = if widget.properties["fill_height"]==true {ui.available_height()}else{rows * ui.text_style_height(&egui::TextStyle::Monospace) + 8.0};
                 let output = egui::ScrollArea::vertical()
                     .id_salt((id, "read-only"))
                     .max_height(height)
@@ -924,16 +954,26 @@ impl Widgets {
                     let edit = if widget.kind == "field" {
                         egui::TextEdit::singleline(&mut text)
                     } else if widget.kind == "editor" {
-                        let edit=egui::TextEdit::multiline(&mut text).desired_rows(rows).char_limit(65536);
-                        if widget.properties["plain"]==true {edit}else{edit.code_editor()}
+                        let edit = egui::TextEdit::multiline(&mut text)
+                            .desired_rows(rows)
+                            .char_limit(65536);
+                        if widget.properties["plain"] == true {
+                            edit
+                        } else {
+                            edit.code_editor()
+                        }
                     } else {
                         egui::TextEdit::multiline(&mut text).desired_rows(1)
                     };
                     ui.add(
-                        edit.desired_width(widget.properties["width"].as_f64().map_or(ui.available_width(),|w|w as f32))
-                            .hint_text(widget.text("placeholder"))
-                            .password(widget.properties["password"] == true)
-                            .id_salt(id),
+                        edit.desired_width(
+                            widget.properties["width"]
+                                .as_f64()
+                                .map_or(ui.available_width(), |w| w as f32),
+                        )
+                        .hint_text(widget.text("placeholder"))
+                        .password(widget.properties["password"] == true)
+                        .id_salt(id),
                     )
                 };
                 // The key which ends editing belongs to the field this frame.
@@ -958,7 +998,10 @@ impl Widgets {
                         value: Value::Null,
                     });
                 } else if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                    || (r.has_focus() && widget.properties["submit_chord"]=="Ctrl+Enter" && ui.input(|i|i.key_pressed(egui::Key::Enter) && i.modifiers.command)) {
+                    || (r.has_focus()
+                        && widget.properties["submit_chord"] == "Ctrl+Enter"
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command))
+                {
                     events.push(Intent {
                         id: id.clone(),
                         action: "submit".into(),
@@ -1445,8 +1488,12 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     if widget.properties["role"] == "status" {
         text = text.small();
     }
-    if widget.properties["small"]==true {text=text.small();}
-    if widget.properties["role"]=="heading" {text=text.text_style(egui::TextStyle::Heading);}
+    if widget.properties["small"] == true {
+        text = text.small();
+    }
+    if widget.properties["role"] == "heading" {
+        text = text.text_style(egui::TextStyle::Heading);
+    }
     if widget.properties["role"] == "title" {
         text = text.font(crate::fonts::emphasis(
             ui.ctx(),
@@ -1469,14 +1516,16 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     if widget.properties["tone"] == "warning" {
         text = text.color(ui.visuals().warn_fg_color);
     }
-    let palette=toolkit::chrome::Chrome::of(ui.ctx()).palette;
+    let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
     match widget.properties["tone"].as_str() {
-        Some("accent")=>text=text.color(palette.accent),
-        Some("danger")=>text=text.color(palette.danger),
-        Some("dim")=>text=text.color(palette.text_dim),
-        _=>{}
+        Some("accent") => text = text.color(palette.accent),
+        Some("danger") => text = text.color(palette.danger),
+        Some("dim") => text = text.color(palette.text_dim),
+        _ => {}
     }
-    if widget.properties["error"]==true {text=text.color(ui.visuals().error_fg_color);}
+    if widget.properties["error"] == true {
+        text = text.color(ui.visuals().error_fg_color);
+    }
     if widget.properties["mono"] == true {
         text = text.monospace();
     }

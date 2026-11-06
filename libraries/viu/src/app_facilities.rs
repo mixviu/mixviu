@@ -180,9 +180,14 @@ impl Facilities {
         // Introspection accepts an empty wire body, as native gold citizens do.
         if r.command == "app.describe" || r.command == "HELP" {
             if let Some(surface) = &self.surface {
-                let _ = r.reply.send((0, if r.command == "HELP" {
-                    surface["commands"].clone()
-                } else { surface.clone() }));
+                let _ = r.reply.send((
+                    0,
+                    if r.command == "HELP" {
+                        surface["commands"].clone()
+                    } else {
+                        surface.clone()
+                    },
+                ));
                 return None;
             }
         }

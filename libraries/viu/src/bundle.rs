@@ -27,6 +27,7 @@ pub struct Manifest {
     pub argument_error_exit: u8,
     pub app: Option<String>,
     pub bus_url: Option<String>,
+    pub saved_version: Option<u32>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -51,6 +52,7 @@ impl Default for Manifest {
             argument_error_exit: 2,
             app: None,
             bus_url: None,
+            saved_version: None,
         }
     }
 }

@@ -100,7 +100,16 @@ fn workshop_embedded_text_budget_retains_gold_sized_utf8_replies() {
 #[test]
 fn workshop_policy_contracts_run_inside_the_embedded_runtime() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
-    for name in ["tree", "agents", "traffic", "transcript", "counter", "mesh", "view"] {
+    for name in [
+        "tree",
+        "agents",
+        "traffic",
+        "transcript",
+        "counter",
+        "mesh",
+        "view",
+        "saved",
+    ] {
         let (tx, rx) = mpsc::channel();
         let mut runtime = Runtime::new(
             8,

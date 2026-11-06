@@ -199,7 +199,7 @@ impl Endpoint {
                         BoundedIncomingEvent::Overflow{dropped:count}=>{dropped.fetch_add(count,Ordering::Relaxed);post(Notice{command:"bus.overflow".into(),args:json!({"dropped":count}),headers:BTreeMap::new()});continue;},
                         BoundedIncomingEvent::Command(command)=>command
                     };
-                    if command.id.is_none(){post(Notice{command:command.topic().unwrap_or(&command.command).to_owned(),args:command.args,headers:command.headers});continue;}
+                    if command.id.is_none(){let mut headers=command.headers.clone();headers.insert("type".into(),"event".into());headers.insert("from".into(),command.from.clone());post(Notice{command:command.topic().unwrap_or(&command.command).to_owned(),args:command.args,headers});continue;}
                     if close.load(Ordering::Acquire){let _=native.respond(&command,10,&json!({"error_code":"CLOSING"}).to_string()).await;continue;}
                     if responses.len()>=32{let _=native.respond(&command,10,&json!({"error_code":"BUSY"}).to_string()).await;continue;}
                     let (reply,response)=oneshot::channel();

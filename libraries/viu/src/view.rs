@@ -480,9 +480,10 @@ impl SceneView {
                 match node.family.as_str() {
                     "column" if !text(node,"group_title").is_empty() => {
                         let title=text(node,"group_title");
+                        let group_key=if text(node,"group_key").is_empty(){&key}else{text(node,"group_key")};
                         let draw=|ui:&mut egui::Ui| {
                             ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
-                            toolkit::bars::dock_frame(ui.ctx()).show(ui,|ui| toolkit::panel::group(ui, &key, &[title], |ui,_| {
+                            toolkit::bars::dock_frame(ui.ctx()).show(ui,|ui| toolkit::saved::widgets::group(ui, group_key, &[title], |ui,_| {
                                 for child in children(node) {
                                     self.node(ui, child, nodes, route, depth+1, events);
                                 }
@@ -493,6 +494,17 @@ impl SceneView {
                             egui::ScrollArea::vertical().id_salt((&key,"group-scroll")).auto_shrink([false,false]).show(ui,|ui| draw(ui)).inner
                         } else { let mut draw=draw; draw(ui) };
                         ui.interact(rect,ui.scope_id().with((&key,"group")),Sense::hover());
+                    }
+                    "column" if node.ports.get("scroll").and_then(Value::as_bool)==Some(true) => {
+                        let height=ui.available_height();
+                        let context=node.ports.get("scroll_key").and_then(Value::as_str).filter(|s|!s.is_empty());
+                        let ready=node.ports.get("scroll_ready").and_then(Value::as_bool)!=Some(false);
+                        let after=if node.ports.get("reserve_panel_after").and_then(Value::as_bool)==Some(true){toolkit::chrome::Chrome::of(ui.ctx()).style.panel_card_after as f32}else{0.};
+                        let rect=toolkit::saved::widgets::scroll(ui,&key,context,ready,egui::ScrollArea::vertical().auto_shrink(false).max_height(height),|ui|{
+                            ui.set_max_height((height-after).max(0.));
+                            for child in children(node){self.node(ui,child,nodes,route,depth+1,events);}
+                        }).inner_rect;
+                        ui.interact(rect,ui.scope_id().with((&key,"scroll")),Sense::hover());
                     }
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
                     "band"=>{
@@ -630,6 +642,14 @@ impl SceneView {
                                 if node.family == "row" {
                                     if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) {
                                         ui.horizontal_wrapped(|ui| draw(ui));
+                                    } else if children(node).any(|child|nodes.get(child).is_some_and(|n|num(n,"grow").unwrap_or(0.)>0.)) {
+                                        let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
+                                        let fixed:Vec<_>=active.iter().map(|child|{let n=&nodes[*child];if num(n,"grow").unwrap_or(0.)>0.{0.}else{num(n,"width").or(num(n,"min_width")).unwrap_or_else(||if n.family=="control"{Widget::decode(&n.ports["definition"]).and_then(|w|w.intrinsic_width(ui,&self.tree.model)).unwrap_or(0.)}else{0.})}}).collect();
+                                        let weight:f32=active.iter().map(|child|num(&nodes[*child],"grow").unwrap_or(0.).max(0.)).sum();
+                                        let remaining=(ui.available_width()-fixed.iter().sum::<f32>()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
+                                        ui.horizontal(|ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};ui.allocate_ui(egui::vec2(width,0.),|ui|{ui.set_min_width(width);self.node(ui,child,nodes,route,depth+1,events);});});
+                                    } else if text(node,"align")=="end" {
+                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
                                     } else { ui.horizontal(|ui| draw(ui)); }
                                 } else {
                                     ui.vertical(|ui| draw(ui));

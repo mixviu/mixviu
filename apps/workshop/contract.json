@@ -380,6 +380,7 @@
     "native_macros": true,
     "native_ui": true,
     "notice_command": "workshop.notice",
+    "saved_version": 1,
     "service": "workshop",
     "size": [
       1100,
