@@ -5,6 +5,7 @@ $s.catalog=[{path:"appearance.mode",kind:"enum",variants:["light","dark"],class:
 $s.role="authority";$s.stale=false;$s.incarnation="inc";$s.revision="9007199254740993"
 $r=$c.admitted($s,"appearance.mode","light")
 if $r.expected_revision!=$s.revision or $r.changes["appearance.mode"]!="light" then raise("FENCE","Revision must remain exact decimal text") end
+if not re_match($r.operation_id,"^[A-Za-z0-9_-]{1,128}$") then raise("OPERATION_ID","Identifier must satisfy the native authority contract") end
 for $v in ["bogus",true,1]
   $refused=false
   try $c.admitted($s,"appearance.mode",$v) catch $message $refused=true end

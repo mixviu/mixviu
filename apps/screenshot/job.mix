@@ -28,9 +28,9 @@ on job.run
     if $r.window!=nil then $frame.window=$r.window end
     if $r.region!=nil then $frame.region=$r.region
     elif $r.mode=="region" then
-      $select={timeout_ms:60000}
+      $select={timeout_ms:55000}
       if $r.output!=nil then $select.output=$r.output end
-      send $a.comp "comp.region.select" body=$select timeout=70
+      send $a.comp "comp.region.select" body=$select timeout=60
       if $rc!=0 or $reply.status!="selected" then raise("SELECTION",json_encode($reply)) end
       $frame.output=$reply.output;$frame.region=$reply.region;$frame.output_generation=$reply.output_generation
     end
