@@ -225,7 +225,7 @@ impl Host {
 }
 impl eframe::App for Host {
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
-        if self.paste_deadline.is_some() { 
+        if self.paste_deadline.is_some() {
             raw.events.retain(|event| {
                 if let egui::Event::Paste(text) = event {
                     if self.paste_deadline.is_some() && let Some(id) = self.paste_waits.pop_front() {
