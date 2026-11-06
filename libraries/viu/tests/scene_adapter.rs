@@ -354,7 +354,7 @@ fn virtual_table_data_has_a_separate_bounded_transactional_model_budget() {
 
 #[test]
 fn scene_band_reuses_the_native_solver_with_app_owned_groups_and_transactional_validation() {
-    let source=scene(json!({"root":{"widget":"band","height":36,"children":["a","b","c"],"groups":"= $model.groups"},"a":{"widget":"text","text":"Menu"},"b":{"widget":"text","text":"Title"},"c":{"widget":"text","text":"Actions"}}));
+    let source=scene(json!({"root":{"widget":"band","children":["a","b","c"],"groups":"= $model.groups"},"a":{"widget":"text","text":"Menu"},"b":{"widget":"text","text":"Title"},"c":{"widget":"text","text":"Actions"}}));
     let ctx=egui::Context::default();
     for alignment in ["left","center","right"] {
         let model=json!({"groups":{"a":{"preferred":100,"minimum":40,"align":alignment,"shrink":1,"order":0},"b":{"preferred":200,"minimum":0,"align":"center","shrink":0,"order":1},"c":{"preferred":150,"minimum":80,"align":"right","shrink":1,"order":2}}});
