@@ -50,7 +50,8 @@ fn round_two_bundles_publish_and_draw_through_the_real_embedded_interpreter() {
             viu::gold_frame::mount(&bundle.scene, model)
         } else {
             SceneView::with_model(&bundle.scene, model)
-        }.unwrap();
+        }
+        .unwrap();
         let ctx = eframe::egui::Context::default();
         ctx.run_ui(
             eframe::egui::RawInput {
