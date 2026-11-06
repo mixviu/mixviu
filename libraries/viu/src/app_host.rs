@@ -158,7 +158,10 @@ impl eframe::App for Host {
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
         if let Some(session) = &mut self.session {
-            let drops = self.bus.dropped_notices.load(std::sync::atomic::Ordering::Relaxed);
+            let drops = self
+                .bus
+                .dropped_notices
+                .load(std::sync::atomic::Ordering::Relaxed);
             if drops != self.noticed_drops {
                 session.hint("bus.connected", &json!({}));
                 self.noticed_drops = drops;
@@ -167,11 +170,16 @@ impl Host {
                 self.session_update = Some(update);
             }
             if let Some(at) = session.deadline() {
-                ui.ctx().request_repaint_after(at.saturating_duration_since(Instant::now()));
+                ui.ctx()
+                    .request_repaint_after(at.saturating_duration_since(Instant::now()));
             }
         }
         if let Some(update) = &self.session_update {
-            if self.runtime.notify("viu.session".into(), update.clone()).is_ok() {
+            if self
+                .runtime
+                .notify("viu.session".into(), update.clone())
+                .is_ok()
+            {
                 self.session_update = None;
             } else {
                 ui.ctx().request_repaint();
@@ -407,13 +415,17 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
     let session = bundle.manifest.follow_settings.then(|| {
         crate::session::Session::new(
-            bundle.root.join("../../libraries/viu/mix/session-runtime.mix"),
+            bundle
+                .root
+                .join("../../libraries/viu/mix/session-runtime.mix"),
             &bundle.manifest.service,
             std::fs::read_to_string("/proc/sys/kernel/hostname")
-                .unwrap_or_else(|_| "host".into()).trim(),
+                .unwrap_or_else(|_| "host".into())
+                .trim(),
             wake.clone(),
             bus.backend(),
-        ).expect("start settings follower")
+        )
+        .expect("start settings follower")
     });
     jobs.set_native_backend(bus.backend_maker());
     let mut runtime = Runtime::new(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))));

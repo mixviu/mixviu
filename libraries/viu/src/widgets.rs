@@ -174,10 +174,19 @@ impl Widget {
                 }) {
                     return Err("editor font size must be 3..144".into());
                 }
-                if self.properties.get("padding").is_some_and(|v| v.as_f64().is_none_or(|n| !n.is_finite() || !(0.0..=127.0).contains(&n))) {
+                if self.properties.get("padding").is_some_and(|v| {
+                    v.as_f64()
+                        .is_none_or(|n| !n.is_finite() || !(0.0..=127.0).contains(&n))
+                }) {
                     return Err("editor padding must be 0..127".into());
                 }
-                if self.properties.get("light").is_some_and(|v| !v.is_boolean()) { return Err("editor light must be bool".into()); }
+                if self
+                    .properties
+                    .get("light")
+                    .is_some_and(|v| !v.is_boolean())
+                {
+                    return Err("editor light must be bool".into());
+                }
                 for key in ["native_document", "soft_wrap", "line_numbers", "find_bar"] {
                     if self.properties.get(key).is_some_and(|v| !v.is_boolean()) {
                         return Err(format!("editor {key} requires bool"));

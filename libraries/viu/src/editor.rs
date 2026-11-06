@@ -205,18 +205,30 @@ impl Editors {
         }
         let palette = if widget.properties["light"] == true {
             static LIGHT: std::sync::OnceLock<editor::Palette> = std::sync::OnceLock::new();
-            LIGHT.get_or_init(|| {
-                let resolved = crate::appearance::resolve(&serde_json::json!({"scheme":"mixos","mode":"light"})).expect("embedded light design");
-                struct Light(std::collections::BTreeMap<String, Color32>);
-                impl editor::palette::Theme for Light {
-                    fn editor_colour(&self, role: &str) -> Color32 { self.0.get(role).copied().unwrap_or(Color32::BLACK) }
-                }
-                editor::Palette::from_theme(&Light(resolved.colours))
-            }).clone()
-        } else { editor::Palette::from_theme(&Theme(ui)) };
+            LIGHT
+                .get_or_init(|| {
+                    let resolved = crate::appearance::resolve(
+                        &serde_json::json!({"scheme":"mixos","mode":"light"}),
+                    )
+                    .expect("embedded light design");
+                    struct Light(std::collections::BTreeMap<String, Color32>);
+                    impl editor::palette::Theme for Light {
+                        fn editor_colour(&self, role: &str) -> Color32 {
+                            self.0.get(role).copied().unwrap_or(Color32::BLACK)
+                        }
+                    }
+                    editor::Palette::from_theme(&Light(resolved.colours))
+                })
+                .clone()
+        } else {
+            editor::Palette::from_theme(&Theme(ui))
+        };
         let padding = widget.properties["padding"].as_f64().unwrap_or(0.0).round() as i8;
-        let out = egui::Frame::new().fill(palette.background).inner_margin(egui::Margin::same(padding))
-            .show(ui, |ui| doc.local.show_as(ui, &key, &palette, &view)).inner;
+        let out = egui::Frame::new()
+            .fill(palette.background)
+            .inner_margin(egui::Margin::same(padding))
+            .show(ui, |ui| doc.local.show_as(ui, &key, &palette, &view))
+            .inner;
         if let Some(error) = doc.local.take_refusal() {
             ui.colored_label(Color32::RED, error.to_string());
         }
