@@ -91,15 +91,22 @@ fn native_document_commands_are_local_and_a_serial_is_consumed_once() {
     let ctx = Context::default();
     viu::appearance::install(&ctx);
     let mut widgets = viu::widgets::Widgets::default();
-    for (serial, name, expected) in [(1, "duplicate-line", Some("alpha\nalpha")), (2, "undo", Some("alpha")), (2, "undo", None)] {
+    for (serial, name, expected) in [
+        (1, "duplicate-line", Some("alpha\nalpha")),
+        (2, "undo", Some("alpha")),
+        (2, "undo", None),
+    ] {
         let widget = viu::widgets::Widget::new("editor", "editor", "", json!("alpha"))
-            .with_properties(json!({"native_document":true,"command":{"serial":serial,"name":name}}));
+            .with_properties(
+                json!({"native_document":true,"command":{"serial":serial,"name":name}}),
+            );
         let mut events = Vec::new();
         ctx.run_ui(RawInput::default(), |ui| {
             widgets.begin_frame();
             events = widgets.widget(ui, &widget, &json!({}));
             widgets.finish_frame().unwrap();
-        }).drop_without_applying_deltas();
+        })
+        .drop_without_applying_deltas();
         match expected {
             Some(text) => assert!(events.iter().any(|e| e.value == text), "{events:?}"),
             None => assert!(events.is_empty(), "{events:?}"),

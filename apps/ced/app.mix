@@ -31,6 +31,9 @@ fn operation($s,$op,$a)
   if $s.busy then raise("BUSY","An edit operation is pending") end
   if $op=="open" then
     if type($a.path)!="string" or not starts_with($a.path,"/") then raise("PATH","Absolute path required") end
+    for $i=0 to len($s.tabs)-1
+      if $s.tabs[$i].path==$a.path then $s.active=$i;return $s end
+    end
     return start_ced($s,$op,{path:$a.path,create:$a.create ?? false})
   end
   $t=current($s)
@@ -81,6 +84,7 @@ end
 on viu.frame.intent
   $op=$event.args.value.command
   if contains(["undo","redo"],$op) then
+    if $state.busy then raise("BUSY","Wait for the pending operation") end
     $t=current($state);$state.editor_serial=$state.editor_serial+1;$state.editor_commands[$t.buffer]={serial:$state.editor_serial,name:$op}
   elif $op=="discard" then
     if $state.busy then raise("BUSY","Wait for the pending operation") end
@@ -106,7 +110,10 @@ on viu.job.completed
         $t.draft=$t.text
         $found=false
         for $i=0 to len($state.tabs)-1
-          if $state.tabs[$i].buffer==$t.buffer then $state.tabs[$i]=$t;$state.active=$i;$found=true end
+          if $state.tabs[$i].buffer==$t.buffer then
+            if $state.pending.op!="open" or $state.tabs[$i].draft==$state.tabs[$i].text then $state.tabs[$i]=$t end
+            $state.active=$i;$found=true
+          end
         end
         if not $found then $state.tabs=push($state.tabs,$t);$state.active=len($state.tabs)-1 end
       end

@@ -168,6 +168,17 @@ impl Widget {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
             "editor" => {
+                for key in ["native_document", "soft_wrap", "line_numbers", "find_bar"] {
+                    if self.properties.get(key).is_some_and(|v| !v.is_boolean()) {
+                        return Err(format!("editor {key} requires bool"));
+                    }
+                }
+                if let Some(command) = self.properties.get("command") {
+                    if !command.is_object() || command["serial"].as_u64().is_none()
+                        || !command["name"].as_str().is_some_and(|v| ["", "undo", "redo", "select-all", "duplicate-line", "delete-line", "move-line-up", "move-line-down", "toggle-comment", "indent", "outdent"].contains(&v)) {
+                        return Err("invalid editor command".into());
+                    }
+                }
                 value.as_str().is_some_and(|v| {
                     v.len()
                         <= if self.properties["native_document"] == true {

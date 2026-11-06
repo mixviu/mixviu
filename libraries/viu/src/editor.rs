@@ -112,7 +112,7 @@ impl Editors {
         };
         let before = doc.local.doc().revision;
         if let Some(serial) = widget.properties["command"]["serial"].as_u64() {
-            if serial > doc.command_serial {
+            if serial > doc.command_serial && !view.read_only {
                 doc.command_serial = serial;
                 let name = widget.properties["command"]["name"].as_str().unwrap_or("");
                 if !view.read_only {
@@ -129,10 +129,16 @@ impl Editors {
                     };
                     let result = if let Some(command) = command {
                         doc.local.command(command, &view)
-                    } else if name == "undo" { doc.local.undo() }
-                    else if name == "redo" { doc.local.redo() }
-                    else { Ok(()) };
-                    if let Err(e) = result { ui.colored_label(Color32::RED, e.to_string()); }
+                    } else if name == "undo" {
+                        doc.local.undo()
+                    } else if name == "redo" {
+                        doc.local.redo()
+                    } else {
+                        Ok(())
+                    };
+                    if let Err(e) = result {
+                        ui.colored_label(Color32::RED, e.to_string());
+                    }
                 }
             }
         }
