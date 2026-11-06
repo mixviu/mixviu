@@ -5,7 +5,7 @@ citizen: gold-frame
 ---
 ```mix
 {
-root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placements:{"gold-header":{edge:"top",size:38},"gold-status":{edge:"bottom",size:30},"gold-content":{edge:"fill"}}},
+root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placements:{"gold-header":{edge:"top",size:"design.title_bar_height"},"gold-status":{edge:"bottom",size:"design.status_height"},"gold-content":{edge:"fill"}}},
 "gold-header":{widget:"column",background:"design.chrome",padding:4,children:["gold-band"],window_slot:"window.header"},
 "gold-band":{widget:"band",children:["gold-icon","gold-menu","gold-title","gold-toolbar"],groups:"= $model.frame.groups"},
 "gold-icon":{widget:"image",src:"= $model.frame.icon",w:18,h:18},

@@ -63,7 +63,7 @@ fn mix_frame_preserves_application_content_and_intent_identity() {
     assert!(root_view.admit_intent("root", "set", &json!(50)).is_ok());
     let event_root = source.replace(
         "widget:\"column\",children:",
-        "widget:\"column\",on_change:\"app.layout\",children:",
+        "widget:\"dock\",on_change:\"app.layout\",placements:{content:{edge:\"fill\"}},children:",
     );
     assert!(viu::gold_frame::mount(&event_root, model).is_ok());
 }
