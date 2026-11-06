@@ -21,6 +21,7 @@ pub struct Manifest {
     pub native_debug: bool,
     pub activation: Option<String>,
     pub unknown_command: Option<String>,
+    pub notice_command: Option<String>,
     pub app: Option<String>,
     pub bus_url: Option<String>,
 }
@@ -41,6 +42,7 @@ impl Default for Manifest {
             native_debug: false,
             activation: None,
             unknown_command: None,
+            notice_command: None,
             app: None,
             bus_url: None,
         }
@@ -91,6 +93,7 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
+            || manifest.notice_command.as_ref().is_some_and(|s| s.is_empty() || s.len()>128)
             || !["window", "background"].contains(&manifest.surface.as_str())
             || manifest
                 .frame

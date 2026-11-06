@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix");$a=require("agents.mix");$s=$m.initial()
+fn check($v,$why) if not $v then raise("AGENTS_TEST",$why) end end
+check($a.caller_session({broker_origin:"local",from:"mcp-s-ab12-1234"})=="ab12","local agent caller")
+check($a.caller_session({broker_origin:"mesh",broker_service:"mcp-s-ab12-1234",from:"pretend"})=="ab12","mesh agent caller")
+check($a.caller_session({from:"mcp-s-ab12-1234"})==nil,"unattested name is anonymous")
+for $op in ["new","prompt","cancel","close","resume","set","answer"]
+  $out=$a.request($s,{command:"workshop.agents."..$op,args:{},headers:{broker_origin:"local",from:"mcp-s-ab12-1234"}})
+  check($out.rc==17 and $out.body.error_code=="USE_AGENT","self-bypass refused before any dispatch")
+end
+$s.agents.nodes.local=$a.empty_node();$s.agents.nodes.local.available=true
+$s=$a.update_row($s,"local",$a.session_row({session:"same",agent:"codex",cwd:"/home/user/project",status:"running"},"local"))
+$s.agents.nodes.peer=$a.empty_node();$s.agents.nodes.peer.available=true
+$s=$a.update_row($s,"peer",$a.session_row({session:"same",agent:"codex",cwd:"/home/user/project",status:"ended"},"peer"))
+check($a.session_node($s,"same",nil).body.error_code=="AMBIGUOUS_SESSION","shared log ids stay node-scoped")
+check($a.session_node($s,"missing",nil).rc==14,"unknown session")
+check($a.session_node($s,"same","peer").node=="peer","explicit node")
+$out=$a.request($s,{command:"workshop.agents.filter",args:{agent:"codex",ended:true},headers:{}})
+$s=$out.state;check($out.body.live==1 and $out.body.ended==1,"filter counts")
+check(contains($s.expanded,"agents:ended:peer"),"ended expansion")
+$out=$a.request($s,{command:"workshop.agents.filter",args:{agent:7},headers:{}})
+check($out.rc==10 and $out.body.error_code=="ARGUMENT","invalid filter refused atomically")
+check($a.request_payload("prompt",{text:"hello"},"same").body.content=="hello","prompt mapping")
+check($a.request_payload("answer",{request:12,option:"once"},"same").command=="agent.permission.respond","permission mapping")
+$s.snapshot.nodes=[{name:"example-node",local:true,services:[]}];$s=$a.sync_local($s)
+check($s.agents.local=="example-node" and has_key($s.agents.nodes,"example-node") and not has_key($s.agents.nodes,"local"),"discovered local name rekeys sessions")
+print("Workshop agent contracts PASS")

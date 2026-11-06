@@ -1,0 +1,61 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold inspector/agents.rs transcript folding and bounded log.
+fn text_of($content)
+  if type($content)=="string" then return $content
+  elif type($content)=="map" then return $content.text ?? ""
+  elif type($content)=="list" then return join(map($content,fn($c)=text_of($c)),"") end
+  return ""
+end
+fn fold($out,$event)
+  $kind=$event.kind ?? "";$u=$event.update ?? {}
+  if $kind=="prompt" then push($out,{item:"prompt",text:text_of($event.content)})
+  elif contains(["agent_message_chunk","agent_thought_chunk"],$kind) then
+    $item=if $kind=="agent_thought_chunk" then "thought" else "message" end;$chunk=text_of($u.content)
+    if len($out)>0 and $out[len($out)-1].item==$item then $out[len($out)-1].text=$out[len($out)-1].text..$chunk
+    else push($out,{item:$item,text:$chunk}) end
+  elif contains(["tool_call","tool_call_update"],$kind) then
+    $id=$u.toolCallId ?? "";$index=nil
+    for $i=0 to len($out)-1 if $out[$i].item=="tool" and $out[$i].id==$id then $index=$i end end
+    if $index==nil then push($out,{item:"tool",id:$id,title:$u.title ?? "",tool:$u.kind ?? "",status:$u.status ?? "pending",raw:$u})
+    else
+      for $field in [["title","title"],["kind","tool"],["status","status"]]
+        if type($u[$field[0]])=="string" then $out[$index][$field[1]]=$u[$field[0]] end
+      end
+      $out[$index].raw=$u
+    end
+  elif $kind=="plan" then push($out,{item:"plan",entries:map($u.entries ?? [],fn($entry)="["..($entry.status ?? "pending").."] "..($entry.content ?? ""))})
+  elif $kind=="stop" then push($out,{item:"stop",reason:$event.stop ?? ""})
+  elif contains(["error","protocol_error","resume_failed"],$kind) then
+    $error=$event.error ?? {};push($out,{item:"error",message:$error.message ?? $event.message ?? $kind})
+  elif not contains(["available_commands_update","usage_update","session_info_update","config_option_update","current_mode_update","initialized","ready"],$kind) then
+    $text=""
+    for $key in ["path","option","via","command"] if type($event[$key])=="string" then $text=$event[$key];break end end
+    push($out,{item:"note",kind:$kind,text:$text})
+  end
+  return $out
+end
+fn push_event($t,$event)
+  $seq=$event.seq ?? 0
+  if $seq<=$t.seq then return $t end
+  if $seq>$t.seq+1 then
+    if len($t.events)==0 and $t.seq==0 then $t.evicted=true else $t.gap=true end
+  end
+  $size=byte_length(json_encode($event))
+  if len($t.events)>=2000 or $t.bytes+$size>8388608 then
+    while len($t.events)>0 and (len($t.events)>1800 or $t.bytes+$size>7549747)
+      $t.bytes=max(0,$t.bytes-byte_length(json_encode($t.events[0])));$t.events=slice($t.events,1)
+    end
+    $t.evicted=true;$t.items=[]
+    for $old in $t.events $t.items=fold($t.items,$old) end
+  end
+  $t.items=fold($t.items,$event);$t.events=push($t.events,$event);$t.bytes=$t.bytes+$size;$t.seq=$seq
+  return $t
+end
+fn take_event($agents,$event)
+  if contains(["ready","resumed"],$event.kind) then $agents.config_options=$event.config_options;$agents.modes=$event.modes end
+  $update=$event.update ?? {}
+  if $event.kind=="current_mode_update" and type($update.currentModeId)=="string" and type($agents.modes)=="map" then $agents.modes.currentModeId=$update.currentModeId end
+  if $event.kind=="config_option_update" then $agents.config_options=$update.configOptions end
+  $agents.transcript=push_event($agents.transcript,$event)
+  return $agents
+end

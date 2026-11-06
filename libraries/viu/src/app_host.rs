@@ -77,6 +77,7 @@ struct Host {
     tick: Option<Duration>,
     next_tick: Instant,
     last_viewport: Option<[f32; 3]>,
+    notice_command: Option<String>,
 }
 impl Host {
     fn window_settings(&self, model: &Value) -> Value {
@@ -147,7 +148,10 @@ impl Host {
             }
         }
     }
-    fn request(&mut self, r: Request, ctx: &egui::Context) {
+    fn request(&mut self, mut r: Request, ctx: &egui::Context) {
+        // Never accept a wire-authored claim that automated input is physical.
+        r.headers.insert("viu_input".into(),"bus".into());
+        r.headers.insert("from".into(),r.from.clone());
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
@@ -242,19 +246,23 @@ impl Host {
         self.deferred.retain(|_, reply| !reply.is_closed());
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
-                "native.defer" => request.args["id"].as_u64()
+                "native.defer" => request.args["id"]
+                    .as_u64()
                     .ok_or("request id must be an integer".into())
                     .and_then(|id| {
                         let reply = self.pending.remove(&id).ok_or("request is not pending")?;
                         self.deferred.insert(id, reply);
                         Ok(json!({"deferred":id}))
                     }),
-                "native.reply" => request.args["id"].as_u64()
+                "native.reply" => request.args["id"]
+                    .as_u64()
                     .zip(request.args["rc"].as_u64().filter(|rc| *rc <= 255))
                     .ok_or("request id and byte rc required".into())
                     .and_then(|(id, rc)| {
                         let reply = self.deferred.remove(&id).ok_or("request is not deferred")?;
-                        reply.send((rc as u8, request.args["value"].clone())).map_err(|_| "request was cancelled".to_owned())?;
+                        reply
+                            .send((rc as u8, request.args["value"].clone()))
+                            .map_err(|_| "request was cancelled".to_owned())?;
                         Ok(json!({"replied":id}))
                     }),
                 "native.executed" => self.facilities.record(&request.args),
@@ -423,9 +431,11 @@ impl Host {
                     if let Some(session) = &mut self.session {
                         session.hint(&n.command, &n.args);
                     }
-                    let _ = self
-                        .runtime
-                        .notify_with_headers(n.command, n.args, n.headers);
+                    let (command,args)=match &self.notice_command {
+                        Some(command)=>(command.clone(),json!({"command":n.command,"args":n.args})),
+                        None=>(n.command,n.args),
+                    };
+                    let _ = self.runtime.notify_with_headers(command,args,n.headers);
                 }
                 Err(_) => break,
             }
@@ -551,10 +561,18 @@ impl Host {
         }
     }
     fn frame(&mut self, ui: &mut egui::Ui) {
-        let rect=ui.ctx().content_rect();
-        let viewport=[rect.width(),rect.height(),ui.ctx().pixels_per_point()];
-        if self.last_viewport!=Some(viewport) && self.runtime.notify("viu.viewport.changed".into(),json!({"width":viewport[0],"height":viewport[1],"scale":viewport[2]})).is_ok() {
-            self.last_viewport=Some(viewport);
+        let rect = ui.ctx().content_rect();
+        let viewport = [rect.width(), rect.height(), ui.ctx().pixels_per_point()];
+        if self.last_viewport != Some(viewport)
+            && self
+                .runtime
+                .notify(
+                    "viu.viewport.changed".into(),
+                    json!({"width":viewport[0],"height":viewport[1],"scale":viewport[2]}),
+                )
+                .is_ok()
+        {
+            self.last_viewport = Some(viewport);
         }
         if self.ready {
             if self.framed {
@@ -589,8 +607,10 @@ impl Host {
                     self.error = e;
                 }
             }
+            let mut input_headers=self.facilities.input_headers(ui.ctx());
+            if self.input_reply.is_some() {input_headers.insert("viu_input".into(),"bus".into());}
             for event in self.view.show(ui) {
-                self.dispatch(event.command, event.body, BTreeMap::new(), None);
+                self.dispatch(event.command, event.body, input_headers.clone(), None);
             }
             self.overlays.begin_frame();
             for overlay in self.model["native_overlays"]
@@ -604,7 +624,7 @@ impl Host {
                     .expect("validated overlay");
                 let command = overlay["command"].as_str().unwrap();
                 for intent in self.overlays.widget(ui, &widget, &self.model) {
-                    self.dispatch(command.into(), intent.encode(), BTreeMap::new(), None);
+                    self.dispatch(command.into(), intent.encode(), input_headers.clone(), None);
                 }
             }
             self.view.geometry.extend(self.overlays.geometry.clone());
@@ -632,7 +652,7 @@ impl Host {
                     self.dispatch(
                         "viu.frame.intent".into(),
                         json!({"id":"shortcut","value":{"command":command,"origin":"shortcut"}}),
-                        BTreeMap::new(),
+                        input_headers.clone(),
                         None,
                     );
                 }
@@ -777,6 +797,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         tick: bundle.manifest.tick_ms.map(Duration::from_millis),
         next_tick: Instant::now(),
         last_viewport: None,
+        notice_command: bundle.manifest.notice_command.clone(),
     }
 }
 

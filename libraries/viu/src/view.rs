@@ -479,7 +479,7 @@ impl SceneView {
                     "column" if !text(node,"group_title").is_empty() => {
                         let title=text(node,"group_title");
                         let draw=|ui:&mut egui::Ui| {
-                            ui.spacing_mut().item_spacing=ui.ctx().style().spacing.item_spacing;
+                            ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
                             toolkit::bars::dock_frame(ui.ctx()).show(ui,|ui| toolkit::panel::group(ui, &key, &[title], |ui,_| {
                                 for child in children(node) {
                                     self.node(ui, child, nodes, route, depth+1, events);
@@ -490,7 +490,7 @@ impl SceneView {
                             let mut draw=draw;
                             egui::ScrollArea::vertical().id_salt((&key,"group-scroll")).auto_shrink([false,false]).show(ui,|ui| draw(ui)).inner
                         } else { let mut draw=draw; draw(ui) };
-                        ui.interact(rect,ui.id().with((&key,"group")),Sense::hover())
+                        ui.interact(rect,ui.scope_id().with((&key,"group")),Sense::hover());
                     }
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
                     "band"=>{

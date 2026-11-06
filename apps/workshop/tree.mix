@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Tree policy adapted from pinned gold inspector/engine.rs.
+$agents=require("agents.mix")
 fn row($key,$kind,$label,$children,$s)
   return {key:$key,kind:$kind,label:$label,children:$children,expanded:contains($s.expanded,$key) or $s.filter!="",selected:$s.row_key==$key}
 end
@@ -40,8 +41,7 @@ fn tree($s)
     push($nodes,$r)
   end
   $rows=[row("nodes","nodes","Nodes",$nodes,$s)]
-  $agent_rows=$s.agent_tree ?? [row("agents:down","agents_down","agentd is not running on any reachable node",[],$s)]
-  push($rows,row("agents","agents","Agents",$agent_rows,$s))
+  if $agents.match_text($s) then push($rows,$agents.tree($s)) end
   for $app in sort(keys($s.catalogues))
     $children=[]
     for $m in $s.catalogues[$app].macros ?? []
@@ -75,7 +75,9 @@ fn flatten_rows($rows,$depth,$visible)
   end
   return $out
 end
-fn rows($s) return flatten_rows(tree($s),0,true) end
+fn rows($s)
+  return map(flatten_rows(tree($s),0,true),fn($r)=delete(delete($r,"app"),"macro_id"))
+end
 fn find_row($s,$key)
   $found=filter(flatten_rows(tree($s),0,false),fn($r)=$r.key==$key)
   return if len($found)>0 then $found[0] else nil end

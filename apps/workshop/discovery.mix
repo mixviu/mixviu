@@ -53,13 +53,15 @@ fn received($s,$task,$d)
     $s.discovery.peers_done=true
     if $error!=nil then $s.snapshot.peer_error=$error
     else
-      $peers=if type($value)=="list" then $value else $value.peers end
+      $object=if type($value)=="map" then $value else {} end;$authority=$object.authority ?? {}
+      $peers=$authority.routing_view ?? $object.peers ?? []
       if type($peers)!="list" then $s.snapshot.peer_error="noded.peers is not an array"
       else
         $names=[]
         for $peer in $peers
-          $name=if type($peer)=="string" then $peer else $peer.name end
-          if type($name)=="string" and not contains($names,$name) then push($names,$name) end
+          if type($peer)!="map" then continue end
+          $name=$peer.name
+          if type($name)=="string" and $name!=$object.node and ($peer.class==nil or $peer.class=="active-bus") and not contains($names,$name) then push($names,$name) end
         end
         $s.snapshot.peers=sort($names)
         for $name in $s.snapshot.peers
@@ -74,12 +76,13 @@ fn received($s,$task,$d)
     $s.discovery.nodes[$task.node].info_done=true
     if $error==nil then
       $s.discovery.nodes[$task.node].node.info=$value
-      if $task.node=="local" then $s.discovery.nodes.local.node.name=$value.name ?? $value.node ?? "local" end
+      if $task.node=="local" and type($value)=="map" then $s.discovery.nodes.local.node.name=$value.name ?? $value.node ?? "local" end
     else $s.discovery.nodes[$task.node].node.error="noded.info: "..$error end
   elif $task.op=="list" then
     $s.discovery.nodes[$task.node].list_done=true
     $local=$task.node=="local"
     if $error==nil and type($value)!="list" then $error="noded.list is not an array" end
+    if $error==nil and any($value,fn($i)=type($i)!="map" or type($i.name)!="string") then $error="noded.list has invalid service identity" end
     if $error!=nil then
       $s.discovery.nodes[$task.node].node.error="noded.list: "..$error
       if $local then $s.snapshot.error="noded.list: "..$error end

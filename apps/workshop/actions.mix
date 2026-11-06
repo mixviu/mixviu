@@ -1,5 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $base=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
+$macros=require("macro.mix")
+$model=require("model.mix")
 fn defaults() return $base end
 fn registry($s)
   $out=[]
@@ -7,6 +9,11 @@ fn registry($s)
     if $s.bindings[$a.id]!=nil then $a.shortcut=$s.bindings[$a.id].shortcut end
     $idle=not $s.busy and $s.connected and $s.dialog==nil and not $s.quitting
     $a.enabled=if $a.id=="file.refresh" then $idle elif contains(["edit.format","edit.clear"],$a.id) then not $s.busy and $s.dialog==nil elif $a.id=="bus.call" then $idle and $s.command!="" elif starts_with($a.id,"macro.") then false elif contains(["mesh.ping","bus.observe"],$a.id) then false elif $a.id=="help.macros" then $s.macros_open or $s.dialog==nil elif starts_with($a.id,"view.theme.") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.mode") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.") then true else $s.dialog==nil end
+    $a.reason=if $a.enabled then nil else "disabled" end
+    if $a.id=="macro.new" then $a.enabled=$macros.can_new($s)
+    elif starts_with($a.id,"macro.") then $a.enabled=$s.macro_selected!=nil and not $s.quitting and $s.dialog==nil
+    elif $a.id=="bus.call" and $s.macro_selected!=nil then $a.enabled=$idle end
+    if $a.id=="bus.call" and $s.macro_selected==nil then $a.enabled=$idle and $model.command($s,$s.selection)!=nil end
     $a.reason=if $a.enabled then nil else "disabled" end
     for $axis in [["theme","scheme"],["mode","mode"],["style","style"],["decorations","decorations"],["captions","caption_side"]]
       $prefix="view."..$axis[0].."."

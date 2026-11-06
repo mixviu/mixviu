@@ -287,17 +287,31 @@ impl Widget {
             }),
             "editor" => {
                 let limit = if self.properties["read_only"] == true {
-                    whole(&self.properties["max_bytes"]).unwrap_or(65536).min(8_388_608) as usize
-                } else { 65536 };
+                    whole(&self.properties["max_bytes"])
+                        .unwrap_or(65536)
+                        .min(8_388_608) as usize
+                } else {
+                    65536
+                };
                 value.as_str().is_some_and(|v| v.len() <= limit)
                     && (self.properties["rows"].is_null()
                         || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
                     && (self.properties["read_only"].is_null()
                         || self.properties["read_only"].is_boolean())
-                    && (self.properties["max_bytes"].is_null() || whole(&self.properties["max_bytes"]).is_some_and(|n| (1..=8_388_608).contains(&n)))
+                    && (self.properties["max_bytes"].is_null()
+                        || whole(&self.properties["max_bytes"])
+                            .is_some_and(|n| (1..=8_388_608).contains(&n)))
             }
-            "label" => value.as_str().is_some_and(|v| v.len() <= whole(&self.properties["max_bytes"]).unwrap_or(4096).min(8_388_608) as usize)
-                && (self.properties["max_bytes"].is_null() || whole(&self.properties["max_bytes"]).is_some_and(|n| (1..=8_388_608).contains(&n))),
+            "label" => {
+                value.as_str().is_some_and(|v| {
+                    v.len()
+                        <= whole(&self.properties["max_bytes"])
+                            .unwrap_or(4096)
+                            .min(8_388_608) as usize
+                }) && (self.properties["max_bytes"].is_null()
+                    || whole(&self.properties["max_bytes"])
+                        .is_some_and(|n| (1..=8_388_608).contains(&n)))
+            }
             _ => value.as_str().is_some_and(|v| v.len() <= 4096),
         };
         if valid {
@@ -759,16 +773,21 @@ impl Widgets {
             }
             "label" => {
                 if widget.properties["role"] == "section" {
-                    let r=toolkit::panel::section_label(ui,value.as_str().unwrap_or(""));
-                    return self.remember(ui,id,&r);
+                    let r = toolkit::panel::section_label(ui, value.as_str().unwrap_or(""));
+                    return self.remember(ui, id, &r);
                 }
-                if let Some(lines)=widget.properties["scroll_lines"].as_f64() {
-                    let height=ui.text_style_height(&egui::TextStyle::Body)*lines.clamp(1.,100.);
-                    let r=egui::ScrollArea::vertical().id_salt((id,"text-scroll")).max_height(height).show(ui,|ui| {
-                        ui.set_width(ui.available_width());
-                        ui.add(egui::Label::new(label_text(ui,widget,value)).wrap())
-                    }).inner;
-                    return self.remember(ui,id,&r);
+                if let Some(lines) = widget.properties["scroll_lines"].as_f64() {
+                    let height =
+                        ui.text_style_height(&egui::TextStyle::Body) * lines.clamp(1., 100.) as f32;
+                    let r = egui::ScrollArea::vertical()
+                        .id_salt((id, "text-scroll"))
+                        .max_height(height)
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.add(egui::Label::new(label_text(ui, widget, value)).wrap())
+                        })
+                        .inner;
+                    return self.remember(ui, id, &r);
                 }
                 let text = label_text(ui, widget, value);
                 if widget.properties["role"] == "title" {

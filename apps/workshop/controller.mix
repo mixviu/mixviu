@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $m=require("model.mix");$tree=require("tree.mix");$work=require("work.mix");$discovery=require("discovery.mix");$text=require("text.mix");$actions=require("actions.mix");$theme=require("theme.mix")
+$macros=require("macro.mix")
 fn result($s,$body) return {state:$s,rc:0,body:$body,deferred:false} end
 fn refused($s,$code,$message) return {state:$s,rc:10,body:{error_code:$code,message:$message},deferred:false} end
 fn guard($s) return $s.dialog!=nil or $s.quitting end
@@ -12,6 +13,7 @@ fn theme_edit($s,$args)
   return result($s,$body)
 end
 fn target($s,$a)
+  if has_key($a,"service")!=has_key($a,"command") then raise("ARGUMENT","service and command must be supplied together") end
   if has_key($a,"service") and type($a.service)!="string" then raise("ARGUMENT","service must be a string") end
   if has_key($a,"command") and type($a.command)!="string" then raise("ARGUMENT","command must be a string") end
   $selected=$s.selection ?? {}
@@ -40,6 +42,7 @@ fn select_row($s,$key)
   $s.row_key=$key;$s.selection=$r.selection
   if $r.kind=="command" then $s.service=$r.selection.service;$s.command=$r.selection.command end
   if $r.kind!="macro" then $s.macro_selected=nil end
+  if $r.kind=="macro" then $s=$macros.enqueue($s,"macros.open",{app:$r.app,id:$r.macro_id},nil) end
   return result($s,{row_key:$s.row_key,selection:$s.selection})
 end
 fn execute($s,$id,$origin)
@@ -51,7 +54,10 @@ fn execute($s,$id,$origin)
   elif $id=="edit.format" then $o=$text.format_body($s.body);$s.body=$o.body;if not $o.ok then $s.status=$o.status end
   elif $id=="edit.clear" then $s.body=""
   elif $id=="edit.copy" then send "viu-local" "native.copy" body={text:$s.answer}
-  elif $id=="bus.call" then $out=start_call($s,{},nil);$s=$out.state
+  elif $id=="bus.call" then
+    if $s.macro_selected!=nil then $s=$macros.ui_command($s,"macros.run") else $out=start_call($s,{},nil);$s=$out.state end
+  elif $id=="macro.new" then $s.dialog="new_macro";$s.macro_new_title=""
+  elif starts_with($id,"macro.") then $s=$macros.ui_command($s,replace_first($id,"macro.","macros."))
   elif $id=="help.macros" then $s.macros_open=not $s.macros_open
   elif $id=="view.search" then $s.focus_serial=$s.focus_serial+1
   elif $id=="help.about" then $s.dialog="about"
@@ -71,6 +77,15 @@ end
 fn request($s,$event)
   $a=$event.args;$cmd=$event.command
   if type($a)!="map" then return refused($s,"ARGUMENT","arguments must be a JSON object") end
+  if starts_with($cmd,"workshop.macros.") then
+    $limit=if $cmd=="workshop.macros.put" then 1581056 else 8192 end
+    if byte_length($event.body)>$limit then return refused($s,"INVALID_ARGUMENT","request exceeds "..to_string($limit).." bytes") end
+    if $s.quitting then return refused($s,"BUSY","Workshop is closing") end
+    $id=$work.defer($event);$op=strip_prefix($cmd,"workshop.")
+    if not has_key($a,"app") and not contains(["macros.open","macros.new","macros.ced","macros.dopus"],$op) then $s=$macros.enqueue($s,$op,$a,$id)
+    else $s=$macros.invoke($s,$op,$a,$id) end
+    return {state:$s,rc:0,body:nil,deferred:true}
+  end
   if $cmd=="workshop.ping" then return result($s,{schema:"workshop.v1",version:viu_context().version})
   elif $cmd=="workshop.info" then return result($s,$m.info($s,viu_context()))
   elif $cmd=="workshop.tree" then return result($s,{rows:$tree.rows($s)})
@@ -86,7 +101,8 @@ fn request($s,$event)
     $s.dialog=$a.open;return result($s,{dialog:$s.dialog})
   elif $cmd=="workshop.call" then return start_call($s,$a,$event)
   elif $cmd=="workshop.refresh" then
-    if $s.dialog!=nil or $s.discovery!=nil or $s.quitting then return refused($s,"BUSY","An operation is already running") end
+    if not $s.connected then return refused($s,"DISCONNECTED","Disconnected — requests are never replayed") end
+    if $s.dialog!=nil or $m.busy($s) or $s.quitting then return refused($s,"BUSY","An operation is already running") end
     $id=$work.defer($event);$s=$discovery.begin($s,$id);return {state:$s,rc:0,body:nil,deferred:true}
   elif $cmd=="workshop.quit" then
     if $m.busy($s) or $s.dialog!=nil then return refused($s,"BUSY","An operation is already running") end
@@ -137,6 +153,7 @@ fn received($s,$d)
   if $task==nil then return $s end
   $s.jobs=delete($s.jobs,$d.tag.id)
   if $task.owner=="discovery" then return $discovery.received($s,$task,$d) end
+  if $task.owner=="macros" then return $work.launch($macros.received($s,$task,$d)) end
   if $task.owner=="call" and $s.call!=nil then
     $call=$s.call;$s.call=nil;$t=$call.target
     $reply={service:$t.service,command:$t.command,request_body:$call.body}

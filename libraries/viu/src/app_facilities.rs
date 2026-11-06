@@ -13,6 +13,7 @@ type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 pub struct Facilities {
     app: String,
     service: String,
+    app_commands: std::collections::BTreeSet<String>,
     ui: bool,
     debug: bool,
     installed: bool,
@@ -21,6 +22,7 @@ pub struct Facilities {
     pub macros: Option<macros::Session>,
     next: u64,
     pending: BTreeMap<u64, Reply>,
+    input_headers: BTreeMap<u64, BTreeMap<String,String>>,
     completed: mpsc::Receiver<(Reply, macros::commands::Answer)>,
     complete: mpsc::Sender<(Reply, macros::commands::Answer)>,
     finished: mpsc::Receiver<Value>,
@@ -47,6 +49,8 @@ impl Facilities {
             if manifest.native_debug {
                 commands.extend(toolkit::debug::describe(&app));
             }
+            let mut names=std::collections::BTreeSet::new();
+            commands.retain(|c| names.insert(c["name"].as_str().unwrap_or_default().to_owned()));
         }
         let macros = manifest
             .native_macros
@@ -63,6 +67,7 @@ impl Facilities {
         Self {
             app,
             service: manifest.service.clone(),
+            app_commands: manifest.commands.iter().cloned().collect(),
             ui: manifest.native_ui,
             debug: manifest.native_debug,
             installed: false,
@@ -71,6 +76,7 @@ impl Facilities {
             macros,
             next: 0,
             pending: BTreeMap::new(),
+            input_headers: BTreeMap::new(),
             completed,
             complete,
             finished,
@@ -138,6 +144,13 @@ impl Facilities {
             .record(id, origin, args["params"].clone(), args["result"].clone());
         Ok(json!({"recorded":true}))
     }
+    pub fn input_headers(&self,ctx:&egui::Context)->BTreeMap<String,String> {
+        if let Some(id)=toolkit::drive::input_request(ctx) {
+            let mut headers=self.input_headers.get(&id).cloned().unwrap_or_default();
+            headers.insert("viu_input".into(),"bus".into());
+            headers
+        } else {BTreeMap::from([("viu_input".into(),"physical".into())])}
+    }
     pub fn notice(&mut self, command: &str, args: &Value) {
         if command == "bus.hint.completed"
             && self
@@ -154,6 +167,7 @@ impl Facilities {
     }
     fn answers(&mut self, ctx: &egui::Context, answers: Vec<toolkit::drive::Answer>) {
         for mut answer in answers {
+            self.input_headers.remove(&answer.id);
             if let Some(reply) = self.pending.remove(&answer.id) {
                 remap(ctx, &mut answer.body);
                 let _ = reply.send((answer.rc, answer.body));
@@ -198,12 +212,16 @@ impl Facilities {
                 self.next += 1;
                 let id = self.next;
                 self.pending.insert(id, r.reply);
+                self.input_headers.insert(id,r.headers.clone());
                 if let Some(answer) = toolkit::drive::request(ctx, id, suffix, &r.args) {
                     self.answers(ctx, vec![answer]);
                 }
                 return None;
             }
             if let Some(suffix) = suffix.strip_prefix("macros.") {
+                // An explicitly declared application workflow owns its command;
+                // otherwise the reusable native macro surface handles it.
+                if self.app_commands.contains(&r.command) { return Some(r); }
                 if let Some(session) = &self.macros {
                     match macros::commands::handle(session, suffix, &r.args) {
                         macros::commands::Reply::Immediate(answer) => {

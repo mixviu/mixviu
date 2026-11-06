@@ -11,7 +11,8 @@ fn launch($s)
     $used=len(filter(values($s.jobs),fn($j)=($j.lane ?? "local")==$lane))
     if $used>=6 or len($s.jobs)>=15 then push($waiting,$task);continue end
     $s.serial=$s.serial+1;$id="workshop-"..to_string($s.serial)
-    send "viu-local" "jobs.start" id=$id owner=$task.generation path=$path source=$source command="job.run" args=$task
+    $job_path=if $task.job!=nil then path_join(dirname($path),$task.job) else $path end
+    send "viu-local" "jobs.start" id=$id owner=$task.generation path=$job_path source=read_file($job_path) command="job.run" args=$task
     if $rc!=0 then push($waiting,$task);continue end
     $s.jobs[$id]=$task
   end

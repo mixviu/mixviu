@@ -1,0 +1,302 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$work=require("work.mix");$transcript=require("transcript.mix")
+fn refused($s,$rc,$code,$message) return {state:$s,rc:$rc,body:{error_code:$code,message:$message},deferred:false} end
+fn answer($s,$body) return {state:$s,rc:0,body:$body,deferred:false} end
+fn local_name($s)
+  for $node in $s.snapshot.nodes if $node.local then return $node.name end end
+  return $s.agents.local
+end
+fn nodes($s)
+  $out=[local_name($s)]
+  for $node in $s.snapshot.nodes
+    if not $node.local and contains($node.services,"agent."..$node.name..".bus") and not contains($out,$node.name) then push($out,$node.name) end
+  end
+  return $out
+end
+fn sync_local($s)
+  $old=$s.agents.local;$name=local_name($s)
+  if $old==$name then return $s end
+  $entry=$s.agents.nodes[$old]
+  if $entry!=nil then
+    $entry.sessions=map($entry.sessions,fn($row)=merge($row,{node:$name}));$s.agents.nodes=delete($s.agents.nodes,$old);$s.agents.nodes[$name]=$entry
+  end
+  if $s.agents.selected!=nil and $s.agents.selected.node==$old then $s.agents.selected.node=$name end
+  if $s.agents.filter.node==$old then $s.agents.filter.node=$name end
+  for $key in keys($s.jobs) if $s.jobs[$key].owner=="agents" and $s.jobs[$key].node==$old then $s.jobs[$key].node=$name end end
+  for $i=0 to len($s.queue)-1 if $s.queue[$i].owner=="agents" and $s.queue[$i].node==$old then $s.queue[$i].node=$name end end
+  $prefixes=["agents:node:","agents:new:","agents:ended:","agent:"]
+  $rekey=fn($key)=reduce($prefixes,$key,fn($v,$p)=if $v==$p..$old or starts_with($v,$p..$old..":") then replace_first($v,$p..$old,$p..$name) else $v end)
+  $s.expanded=map($s.expanded,$rekey)
+  if $s.row_key!=nil then $s.row_key=$rekey($s.row_key) end
+  $s.agents.local=$name;return $s
+end
+fn empty_node() return {available:nil,error:nil,instances:nil,sessions:[],list_ticket:nil,instances_ticket:nil,list_again:false} end
+fn enqueue($s,$node,$command,$body,$reply,$acting)
+  $s.agents.next_ticket=$s.agents.next_ticket+1;$ticket=$s.agents.next_ticket
+  $s=$work.enqueue($s,{owner:"agents",op:"agent",node:$node,service:if $node==local_name($s) then "agent" else "agent."..$node..".bus" end,command:$command,body:$body,timeout:30,ticket:$ticket,reply:$reply,acting:$acting,lane:"agents"})
+  return {state:$s,ticket:$ticket}
+end
+fn refresh_node($s,$node)
+  $entry=$s.agents.nodes[$node] ?? empty_node()
+  if $entry.list_ticket!=nil then $s.agents.nodes[$node].list_again=true;return $s end
+  $r=enqueue($s,$node,"agent.agents",{},nil,false);$s=$r.state;$entry.instances_ticket=$r.ticket
+  $r=enqueue($s,$node,"agent.session.list",{},nil,false);$s=$r.state;$entry.list_ticket=$r.ticket
+  $s.agents.nodes[$node]=$entry;return $work.launch($s)
+end
+fn refresh($s)
+  $s=sync_local($s)
+  for $node in nodes($s) $s=refresh_node($s,$node) end
+  return $s
+end
+fn selected($s,$node,$session) return $s.agents.selected!=nil and $s.agents.selected.node==$node and $s.agents.selected.session==$session end
+fn read_transcript($s)
+  if $s.agents.selected==nil then return $s end
+  $p=$s.agents.selected;$s.agents.transcript.filling=true
+  $r=enqueue($s,$p.node,"agent.session.read",{session:$p.session,since:$s.agents.transcript.seq,limit:2000},nil,false)
+  $s=$r.state;$s.agents.read_ticket=$r.ticket;return $work.launch($s)
+end
+fn select_session($s,$node,$session)
+  if selected($s,$node,$session) and $s.agents.transcript.seq>0 then return $s end
+  $s.agents.selected={node:$node,session:$session}
+  $s.agents.transcript={session:$session,events:[],items:[],seq:0,bytes:0,seen:0,evicted:false,gap:false,filling:false}
+  $s.agents.config_options=nil;$s.agents.modes=nil;$s.agents.draft="";$s.agents.prompting=false
+  return read_transcript($s)
+end
+fn session_row($value,$node)
+  if type($value)!="map" or type($value.session)!="string" then return nil end
+  $out={node:$node,session:$value.session,agent:$value.agent ?? "",cwd:$value.cwd ?? "",parent:$value.parent,status:$value.status ?? "unknown",seq:$value.seq ?? 0,turn:$value.turn ?? 0,created_at:$value.created_at ?? "",ended_at:$value.ended_at,exit_code:$value.exit_code,signal:$value.signal,end_reason:$value.end_reason,title:if ($value.title ?? "")!="" then $value.title else nil end,open_permissions:$value.open_permissions ?? 0,permission_requests:map($value.permission_requests ?? [],fn($key)=if type($key)=="string" then $key else json_encode($key) end),permissions:$value.permissions ?? []}
+  return $out
+end
+fn update_row($s,$node,$row)
+  if $row==nil then return $s end
+  $entry=$s.agents.nodes[$node] ?? empty_node();$rows=$entry.sessions;$index=nil
+  for $i=0 to len($rows)-1 if $rows[$i].session==$row.session then $index=$i;break end end
+  if $index==nil then $rows=concat([$row],$rows) else $rows[$index]=$row end
+  $entry.sessions=concat(filter($rows,fn($r)=$r.status!="ended"),filter($rows,fn($r)=$r.status=="ended"));$s.agents.nodes[$node]=$entry
+  return $s
+end
+fn node_answered($s,$node)
+  $entry=$s.agents.nodes[$node] ?? empty_node()
+  if $entry.available!=true and not contains($s.expanded,"agents:node:"..$node) then $s.expanded=push($s.expanded,"agents:node:"..$node) end
+  $entry.available=true;$entry.error=nil;$s.agents.nodes[$node]=$entry;return $s
+end
+fn info($s)
+  $local=local_name($s);$names=sort(keys($s.agents.nodes));$names=concat(filter($names,fn($n)=$n==$local),filter($names,fn($n)=$n!=$local));$nodes=[]
+  for $node in $names
+    $n=$s.agents.nodes[$node];$instances=$n.instances ?? {}
+    push($nodes,{node:$node,local:$node==$local,available:$n.available,error:$n.error,live:$instances.live,max_live:$instances.max_live,sessions:$n.sessions})
+  end
+  $t=$s.agents.transcript
+  return {nodes:$nodes,selected:$s.agents.selected,error:$s.agents.error,filter:$s.agents.filter,transcript:{first:if len($t.events)>0 then $t.events[0].seq else 0 end,last:$t.seq,events:len($t.events),evicted:$t.evicted,gap:$t.gap,filling:$t.filling,items:$t.items}}
+end
+fn caller_session($headers)
+  $name=if $headers.broker_origin=="local" then $headers.from elif $headers.broker_origin=="mesh" then $headers.broker_service else "" end
+  if type($name)!="string" then return nil end
+  $matches=re_find($name,"^mcp-s-([a-z0-9]{4,12})-")
+  return if len($matches)>0 then $matches[0].groups[0] else nil end
+end
+fn request_payload($op,$args,$selected)
+  $session=if type($args.session)=="string" then $args.session else $selected end
+  if $op=="new" then
+    if type($args.agent)!="string" then raise("ARGUMENT","agent must be a string") end
+    if type($args.cwd)!="string" then raise("ARGUMENT","cwd must be a string") end
+    $body={agent:$args.agent,cwd:$args.cwd}
+    for $key in ["mode","additional_dirs"] if $args[$key]!=nil then $body[$key]=$args[$key] end end
+  else
+    if $session==nil then raise("ARGUMENT","no session given and none selected") end
+    $body={session:$session}
+    if $op=="prompt" then
+      if type($args.text)!="string" then raise("ARGUMENT","text must be a string") end
+      $body.content=$args.text
+    elif $op=="answer" then
+      if not contains(["string","number"],type($args.request)) then raise("ARGUMENT","request must be the request key") end
+      if type($args.option)!="string" then raise("ARGUMENT","option must be an offered optionId") end
+      return {command:"agent.permission.respond",body:{session:$session,request:to_string($args.request),option:$args.option}}
+    elif $op=="set" then
+      if type($args.mode)=="string" then $body.mode=$args.mode
+      elif type($args.option)=="string" and $args.value!=nil then $body.option=$args.option;$body.value=$args.value
+      else raise("ARGUMENT","set needs mode, or option and value") end
+    elif not contains(["cancel","close","resume"],$op) then raise("ARGUMENT","unknown command workshop.agents."..$op) end
+  end
+  return {command:"agent.session."..$op,body:$body}
+end
+fn session_node($s,$session,$node)
+  $matches=[]
+  for $n in info($s).nodes if any($n.sessions,fn($r)=$r.session==$session) then push($matches,$n.node) end end
+  if type($node)=="string" then
+    if contains($matches,$node) then return {node:$node} end
+    return {rc:14,body:{error_code:"UNKNOWN_SESSION",message:"no agent session "..$session.." on "..$node}}
+  elif $node!=nil then return {rc:10,body:{error_code:"ARGUMENT",message:"node must be a string"}} end
+  if len($matches)==0 then return {rc:14,body:{error_code:"UNKNOWN_SESSION",message:"no agent session "..$session}}
+  elif len($matches)==1 then return {node:$matches[0]} end
+  return {rc:10,body:{error_code:"AMBIGUOUS_SESSION",nodes:$matches,message:"agent session "..$session.." is listed by "..join($matches,", ").."; give node"}}
+end
+fn request($s,$event)
+  $s=sync_local($s);$args=$event.args;$op=strip_prefix($event.command,"workshop.agents")
+  if $op=="" then return answer($s,info($s)) end
+  $op=strip_prefix($op,".")
+  if $op=="select" then
+    if type($args.session)!="string" then return refused($s,10,"ARGUMENT","session must be a string") end
+    $n=session_node($s,$args.session,$args.node)
+    if $n.node==nil then return {state:$s,rc:$n.rc,body:$n.body,deferred:false} end
+    for $key in ["agents","agents:node:"..$n.node] if not contains($s.expanded,$key) then $s.expanded=push($s.expanded,$key) end end
+    $s.row_key="agent:"..$n.node..":"..$args.session;$s.selection=nil;$s.macro_selected=nil
+    $s=select_session($s,$n.node,$args.session);return answer($s,info($s))
+  elif $op=="refresh" then
+    $known=nodes($s)
+    if $args.node==nil then $wanted=$known
+    elif type($args.node)!="string" then return refused($s,10,"ARGUMENT","node must be a string")
+    elif contains($known,$args.node) or has_key($s.agents.nodes,$args.node) then $wanted=[$args.node]
+    else return refused($s,14,"UNKNOWN_NODE","no agentd known on "..$args.node) end
+    for $node in $wanted $s=refresh_node($s,$node) end
+    if $s.agents.selected!=nil and contains($wanted,$s.agents.selected.node) and not $s.agents.transcript.filling then $s=read_transcript($s) end
+    return answer($s,{refreshing:$wanted})
+  elif $op=="filter" then
+    if $args.ended!=nil and type($args.ended)!="bool" then return refused($s,10,"ARGUMENT","ended must be a bool") end
+    for $key in ["node","agent"] if has_key($args,$key) and $args[$key]!=nil and type($args[$key])!="string" then return refused($s,10,"ARGUMENT",$key.." must be a string or null") end end
+    for $key in ["node","agent"] if has_key($args,$key) then $s.agents.filter[$key]=$args[$key] end end
+    if $args.ended!=nil then
+      for $node in keys($s.agents.nodes)
+        $key="agents:ended:"..$node;$s.expanded=filter($s.expanded,fn($v)=$v!=$key)
+        if $args.ended then $s.expanded=push($s.expanded,$key) end
+      end
+    end
+    $live=0;$ended=0
+    for $node in values($s.agents.nodes)
+      if $node.available!=true and not ($node.available==nil and $node.error!=nil) then continue end
+      for $r in $node.sessions
+        if passes($s,$r) then
+          if $r.status=="ended" then $ended=$ended+1 else $live=$live+1 end
+        end
+      end
+    end
+    return answer($s,{filter:$s.agents.filter,live:$live,ended:$ended})
+  end
+  if not contains(["new","prompt","cancel","close","resume","set","answer"],$op) then return refused($s,10,"UNKNOWN_COMMAND","unknown Workshop command") end
+  $caller=caller_session($event.headers)
+  if $caller!=nil then return refused($s,17,"USE_AGENT","agent session "..$caller..": call agent.* directly, not through Workshop") end
+  $selected=$s.agents.selected ?? {}; $default_session=nil
+  if $args.node!=nil then
+    if type($args.node)!="string" then return refused($s,10,"ARGUMENT","node must be a string") end
+    if not contains(nodes($s),$args.node) then return refused($s,14,"UNKNOWN_NODE","unknown node "..$args.node) end
+    $node=$args.node
+    if $selected.node==$node then $default_session=$selected.session end
+  elif $op=="new" then $node=local_name($s)
+  elif type($args.session)=="string" then
+    $n=session_node($s,$args.session,nil)
+    if $n.node==nil then return {state:$s,rc:$n.rc,body:$n.body,deferred:false} end
+    $node=$n.node
+  else $node=$selected.node ?? local_name($s);$default_session=$selected.session end
+  try $payload=request_payload($op,$args,$default_session) catch $message return refused($s,10,"ARGUMENT",$message) end
+  $id=$work.defer($event)
+  $r=enqueue($s,$node,$payload.command,$payload.body,$id,true);$s=$work.launch($r.state)
+  return {state:$s,rc:0,body:nil,deferred:true}
+end
+fn passes($s,$row)
+  return ($s.agents.filter.node==nil or $s.agents.filter.node==$row.node) and ($s.agents.filter.agent==nil or $s.agents.filter.agent==$row.agent)
+end
+fn received($s,$task,$d)
+  $node=$task.node;$command=$task.command;$ticket=$task.ticket
+  $body=nil;$transport=nil;$code=10
+  if $d.rc!=0 then $transport=$d.body.transport_error ?? json_encode($d.body)
+  else
+    $code=$d.body.rc
+    try $body=json_parse($d.body.body) catch $why $body={message:$d.body.error ?? $d.body.body} end
+  end
+  if $task.acting then
+    if $transport!=nil then $body={error_code:"UNAVAILABLE",message:$transport};$code=10 end
+    if $command=="agent.session.prompt" then $s.agents.prompting=false end
+    $s.agents.error=if $code!=0 then $body.message else nil end
+    if $code==0 and $command=="agent.session.new" and type($body.session)=="string" then
+      for $key in ["agents","agents:node:"..$node] if not contains($s.expanded,$key) then $s.expanded=push($s.expanded,$key) end end
+      $s.row_key="agent:"..$node..":"..$body.session;$s=select_session($s,$node,$body.session)
+      if $task.reply==nil then $s.agents.new_cwd="" end
+    end
+    $work.answer($task.reply,$code,$body);$s=refresh_node($s,$node)
+    if $node!=local_name($s) and $s.agents.selected!=nil and $s.agents.selected.node==$node and not $s.agents.transcript.filling then $s=read_transcript($s) end
+    return $s
+  end
+  $entry=$s.agents.nodes[$node] ?? empty_node()
+  if $command=="agent.session.read" then
+    if $ticket!=$s.agents.read_ticket then return $s end
+    $s.agents.read_ticket=nil
+    if $transport!=nil or $code!=0 then
+      $s.agents.transcript.filling=false;$s.agents.error=if $transport!=nil then "agent.session.read: "..$transport else $body.message end;return $s
+    end
+    $row=$body.session ?? {}
+    if type($row.session)!="string" or not selected($s,$node,$row.session) then return $s end
+    $s=update_row($s,$node,session_row($row,$node));$before=$s.agents.transcript.seq
+    for $event in $body.events ?? [] $s.agents=$transcript.take_event($s.agents,$event) end
+    if $s.agents.transcript.seq>$before and ($body.more==true or $s.agents.transcript.seen>$s.agents.transcript.seq) then return read_transcript($s) end
+    $s.agents.transcript.seen=$s.agents.transcript.seq;$s.agents.transcript.filling=false;return $s
+  end
+  if ($command=="agent.session.list" and $entry.list_ticket!=$ticket) or ($command=="agent.agents" and $entry.instances_ticket!=$ticket) then return $s end
+  $again=false
+  if $command=="agent.session.list" then $entry.list_ticket=nil;$again=$entry.list_again;$entry.list_again=false end
+  $s.agents.nodes[$node]=$entry
+  if $transport!=nil then $s.agents.nodes[$node].error=$transport
+  elif $code==0 then
+    $s=node_answered($s,$node)
+    if $command=="agent.agents" then $s.agents.nodes[$node].instances=$body
+    elif $command=="agent.session.list" then
+      $rows=filter(map($body.sessions ?? [],fn($r)=session_row($r,$node)),fn($r)=$r!=nil)
+      $s.agents.nodes[$node].sessions=concat(filter($rows,fn($r)=$r.status!="ended"),filter($rows,fn($r)=$r.status=="ended"))
+    end
+  else
+    $message=$body.message ?? ("agentd answered rc "..to_string($code));$s.agents.nodes[$node].error=$message
+    if $code==10 and contains($message,"not found") then
+      $s.agents.nodes[$node].available=false;$s.agents.nodes[$node].sessions=[];$s.agents.nodes[$node].instances=nil
+    end
+  end
+  if $again then $s=refresh_node($s,$node) end
+  return $s
+end
+fn topic($s,$topic,$body)
+  if type($body)!="map" or type($body.session)!="string" then return $s end
+  $node=local_name($s)
+  if $topic=="agent.session.updated" then
+    $entry=$s.agents.nodes[$node] ?? empty_node();$known=any($entry.sessions,fn($r)=$r.session==$body.session)
+    if not $known or contains(["prompt","ready","stop","error","resumed","resume_failed","permission_answered","ended"],$body.kind) then $s=refresh_node($s,$node) end
+    if not selected($s,$node,$body.session) then return $s end
+    $seq=$body.seq ?? 0
+    if $s.agents.transcript.filling then $s.agents.transcript.seen=max($s.agents.transcript.seen,$seq);return $s end
+    if $seq<=$s.agents.transcript.seq then return $s end
+    if $seq>$s.agents.transcript.seq+1 or $body.truncated==true then $s.agents.transcript.seen=$seq;return read_transcript($s) end
+    $s.agents=$transcript.take_event($s.agents,$body)
+  elif contains(["agent.session.ended","agent.permission.requested"],$topic) then $s=refresh_node($s,$node) end
+  return $s
+end
+fn row_label($row) return $row.agent.." · "..basename($row.cwd) end
+fn badge($row) return if $row.open_permissions>0 and $row.status!="ended" then "question" else $row.status end end
+fn make_row($s,$key,$kind,$label,$children)
+  return {key:$key,kind:$kind,label:$label,children:$children,expanded:contains($s.expanded,$key),selected:$s.row_key==$key}
+end
+fn match_text($s)
+  $q=lower($s.filter)
+  if $q=="" then return true end
+  return any(values($s.agents.nodes),fn($n)=any($n.sessions,fn($r)=contains(lower(row_label($r).." "..$r.cwd.." "..$r.agent.." "..$r.node),$q)))
+end
+fn tree($s)
+  $children=[];$answered=false;$shown=false
+  for $n in info($s).nodes
+    if $n.available!=nil or $n.error!=nil then $answered=true end
+    if $n.available!=true and not ($n.available==nil and $n.error!=nil) then continue end
+    $shown=true
+    if $s.agents.filter.node!=nil and $s.agents.filter.node!=$n.node then continue end
+    $node=$n.node;$leaves=[];$ended=[]
+    if $n.available==true then $r=make_row($s,"agents:new:"..$node,"agents_new","New session…",[]);$r.node=$node;push($leaves,$r) end
+    if $n.error!=nil then
+      $service=if $n.local then "agent" else "agent."..$node..".bus" end
+      $r=make_row($s,"agents:error:"..$node,"agents_error",$service..": "..$n.error,[]);push($leaves,$r)
+    end
+    for $session in $n.sessions
+      if not passes($s,$session) then continue end
+      $r=make_row($s,"agent:"..$node..":"..$session.session,"agent_session",row_label($session),[]);$r.node=$node;$r.session=$session.session;$r.badge=badge($session)
+      if $session.status=="ended" then push($ended,$r) else push($leaves,$r) end
+    end
+    if len($ended)>0 then $r=make_row($s,"agents:ended:"..$node,"agents_ended","Ended ("..to_string(len($ended))..")",$ended);$r.node=$node;push($leaves,$r) end
+    $r=make_row($s,"agents:node:"..$node,"agents_node",$node,$leaves);$r.node=$node;push($children,$r)
+  end
+  if $answered and not $shown then push($children,make_row($s,"agents:down","agents_down","agentd is not running on any reachable node",[])) end
+  return make_row($s,"agents","agents","Agents",$children)
+end
