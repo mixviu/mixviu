@@ -37,7 +37,7 @@ fn key(key: Key) -> Vec<Event> {
 fn read_only_editor_keeps_full_text_scrollable_and_rejects_native_edits() {
     let body = "An immutable Unicode line λ\n".repeat(1000);
     let definition = json!({"id":"body","kind":"editor","label":"","initial":"","properties":{"rows":4,"read_only":true}});
-    let source = format!("---\nscene: 1\nname: reader\ncitizen: reader\n---\n```mix\n{}\n```\n", json!({"body":{"widget":"control","on_intent":"input","definition":definition}}));
+    let source = format!("---\nscene: 1\nname: reader\ncitizen: reader\n---\n```mix\n{}\n```\n", json!({"root":{"widget":"column","children":["body"]},"body":{"widget":"control","on_intent":"input","definition":definition}}));
     let model = json!({"values":{"body":body}});
     let mut view = SceneView::with_model(&source, model.clone()).unwrap();
     let ctx = Context::default();
