@@ -183,6 +183,11 @@ impl SceneView {
         let candidate = evaluated.tree;
         let lists = validate_templates(&candidate).map_err(|e| e.to_string())?;
         validate_controls(&candidate)?;
+        for id in &self.overlays {
+            if !candidate.nodes.get(id).and_then(|n|n.ports.get("definition")).is_some_and(|definition|matches!(definition["kind"].as_str(),Some("menubar"|"command-bar"))) {
+                return Err("hosted overlay control changed to an incompatible kind".into());
+            }
+        }
         self.tree = candidate;
         self.lists = lists;
         self.revision += 1;

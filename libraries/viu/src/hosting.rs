@@ -11,22 +11,26 @@ pub struct Hosting {
     dirty: bool,
     pending: bool,
     retry: Option<Instant>,
+    offered: bool,
+    probes: usize,
     pub confirmed: bool,
 }
 impl Hosting {
     pub fn eligible(settings: &Value) -> bool {
+        Self::host_available(settings) && settings["window.actions_place"] == "titlebar"
+    }
+    pub fn host_available(settings: &Value)->bool {
         let requested = settings["window.decorations"]
             .as_str()
             .and_then(design::RequestedDecorations::from_name);
         design::decorations::resolve_with_actions(
             requested,
             design::RequestedDecorations::Auto,
-            design::ActionsPlace::Titlebar,
+            design::ActionsPlace::resolve(settings["window.actions_place"].as_str().unwrap_or("row")),
         )
         .mode
             == design::Decorations::Server
             && design::decorations::has_host()
-            && settings["window.actions_place"] == "titlebar"
     }
     pub fn update(&mut self, toolbar: &Value) -> Result<(), String> {
         crate::rich::validate("command-bar", toolbar)?;
@@ -76,6 +80,7 @@ impl Hosting {
                 )
                 .saturating_add(1);
             self.dirty = true;
+            self.probes=0;
         }
         Ok(())
     }
@@ -94,13 +99,16 @@ impl Hosting {
         self.dirty = true;
         self.pending = false;
         self.retry = None;
+        self.offered=false;
+        self.probes=0;
     }
     pub fn completed(&mut self, ok: bool) {
         self.pending = false;
-        if !ok {
+        if !ok || !self.confirmed {
             self.dirty = true;
         }
-        self.retry = Some(Instant::now() + Duration::from_millis(100));
+        let delays=[100,250,500,1000,2000,5000];
+        self.retry = Some(Instant::now() + Duration::from_millis(delays[self.probes.saturating_sub(1).min(5)]));
     }
     pub fn poll(
         &mut self,
@@ -109,7 +117,8 @@ impl Hosting {
         service: &str,
         eligible: bool,
     ) {
-        if !eligible || !self.dirty || self.pending {
+        if eligible!=self.offered {self.offered=eligible;self.probes=0;self.dirty=true;self.retry=None;}
+        if !eligible || !self.dirty || self.pending || (!self.confirmed && self.probes>=6) {
             return;
         }
         if let Some(at) = self.retry {
@@ -125,6 +134,7 @@ impl Hosting {
             Ok(()) => {
                 self.dirty = false;
                 self.pending = true;
+                self.probes+=1;
             }
             Err(_) => {
                 self.retry = Some(Instant::now() + Duration::from_millis(100));

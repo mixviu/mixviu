@@ -23,7 +23,16 @@ Menu, title, action and caption alignment follow the desktop profile. Native
 caption widgets and automatic backend framing detection are reusable Viu code;
 the owner retains quit, persistence and reply-delivery rules. Menu form/popup
 queries and native geometry are available through the same Bus surface.
-Compositor-hosted SSD menus/action bars remain an explicit adapter gap.
+The native host adapter offers the existing compd revisioned icon-bar contract.
+A registered host query acknowledges support before the ordinary client row
+is detached. Menu and nested action popups remain the same shared Viu controls.
+The historical `dev.mixos.<service>` application-ID namespace and three service
+command aliases are retained solely for the current compositor protocol.
+An absent host leaves usable client controls; unacknowledged offers retry six
+times within a bounded startup window, then become idle until state changes.
+The canonical app commands remain `dopus.*`. `dopus.dialog` accepts the original
+open/answer writes; its read result is the Viu form schema. The separate
+`dopus.dialog.answer` adds an explicit form-generation fence.
 
 `HELP`, `dopus.describe`, `dopus.actions` and `dopus.ui.tree` describe the actual
 Bus surface. Semantic intents use `dopus.intent`; native input uses the

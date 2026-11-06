@@ -477,7 +477,9 @@ impl App {
                             return Err("BUSY: native input gesture in progress".into());
                         }
                         egui::Popup::close_all(ctx);
-                        if self.chrome_state.0 {viu::rich::menu_popup(ctx,"menu",&json!({}))?;}
+                        if self.chrome_state.0 {
+                            viu::rich::menu_popup(ctx, "menu", &json!({}))?;
+                        }
                         self.input.queue("menu.open", &args, view)
                     });
                 match result {
@@ -849,6 +851,7 @@ impl App {
                 .strip_prefix(&format!("dopus-{}.", self.mode))
             {
                 if suffix == "ui.menu.popup" {
+                    if [std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_|"comp".into()),std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_|"shell".into())].iter().any(|service|notice.headers.get("from")==Some(service)) && viu::hosting::Hosting::host_available(&self.session.snapshot["state"]["values"]) {self.hosting.confirmed=true;}
                     if let Err(error) = viu::rich::menu_popup(ctx, "menu", &notice.args) {
                         self.error = error;
                     }
@@ -880,7 +883,7 @@ impl App {
         let settings = &self.session.snapshot["state"]["values"];
         let hosted = self.hosting.confirmed && viu::hosting::Hosting::eligible(settings);
         let chrome = (
-            hosted && settings["window.menu_style"] == "titlebar",
+            self.hosting.confirmed && viu::hosting::Hosting::host_available(settings) && settings["window.menu_style"] == "titlebar",
             hosted,
         );
         if chrome != self.chrome_state {
@@ -997,7 +1000,7 @@ impl eframe::App for App {
             Some(&format!("dopus-{}", self.mode)),
         );
         viu::rich::configure_hosting(ctx, self.chrome_state.0, self.chrome_state.1);
-        if let Err(error) = self.hosting.update(&self.model["values"]["toolbar"]) {
+        if self.ready() && let Err(error) = self.hosting.update(&self.model["values"]["toolbar"]) {
             self.error = error;
         }
         self.hosting.poll(

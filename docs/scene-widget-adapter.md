@@ -124,5 +124,12 @@ backend from environment variables alone.
 
 Menu automation opens actual egui popups against fresh geometry. Bar, compact
 button and explicit top-content popup forms share the same application command
-data. Form queries disclose effective fallbacks; compositor-hosted SSD menus
-and action bars are not yet advertised by this adapter.
+data. The native `hosting` adapter projects an application-owned command bar
+into the existing compd wire contract. Disabled/toggled state stays application
+data. Nested items use a bounded identity codec to open the same native popup;
+leaf command IDs retain their application meaning. Hosts acknowledge the offer
+by querying its registered form before client controls detach. `SceneView`
+overlays preserve popup identity and event routing when a client band is hidden.
+A missing host retains the client controls; probing is bounded and uses the
+same native Bus connection. No icon catalogue dependency or alternate transport
+is introduced.
