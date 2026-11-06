@@ -686,7 +686,7 @@ pub(crate) fn draw(
         }
         "dialog-form" => {
             if widget.properties["style"] == "gold" {
-                let dialog_id = egui::Id::unique((ui.ctx().viewport_id(), id, "gold-dialog"));
+                let dialog_id = egui::Id::unique((ui.ctx().viewport_id(), id, text(value, "title"), value["instance"].to_string(), "gold-dialog"));
                 let mut field = value["field"].as_str().map(str::to_owned);
                 let mut submitted = false;
                 let choices: Vec<_> = value["choices"]
