@@ -10,6 +10,7 @@ fn deferred_callbacks_keep_the_runtime_responsive_and_faults_publish_no_partial_
     runtime.load(Program {path:"/tmp/deferred.mix".into(),scene:"test".into(),citizen:"test".into(),source:r#"
 on begin
   send "viu-local" "requests.defer" token="owned"
+  if $rc!=0 then raise("DEFER","deferral admission refused") end
 end
 on ping
   reply(0,"{\"alive\":true}")

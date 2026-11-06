@@ -557,12 +557,17 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
         commands
             .into_iter()
-            .map(|name| bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false))
+            .map(|name| {
+                if let Some(entry)=bundle.manifest.command_metadata.iter().find(|entry|entry["name"]==name) {
+                    let args=entry["args"].as_object().map(|args|args.keys().map(String::as_str).collect::<Vec<_>>()).unwrap_or_default();
+                    bus::CommandDescriptor::new(&name,&args,entry["description"].as_str().unwrap(),entry["read_only"]==true)
+                } else { bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false) }
+            })
             .collect(),
         "viu.quit".into(),
         wake.clone(),
     );
-    let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
+    let mut jobs = crate::jobs::Jobs::new(bundle.manifest.job_limit, wake.clone());
     jobs.set_native_backend(bus.backend_maker());
     let roots = macros::Roots::resolve().map(|mut roots| {
         roots.mix = std::env::current_exe().expect("own macro interpreter artifact");
@@ -690,12 +695,13 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
     let service = bundle.manifest.service.clone();
+    let app_id=bundle.manifest.app_id.clone().unwrap_or_else(||format!("mixviu.{service}"));
     eframe::run_native(
         &title,
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size(size)
-                .with_app_id(format!("mixviu.{service}")),
+                .with_app_id(app_id),
             ..Default::default()
         },
         Box::new(move |cc| {

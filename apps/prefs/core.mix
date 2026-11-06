@@ -19,7 +19,7 @@ fn framed($s)
   $toolbar=[{id:"sidebar.toggle",label:"Sidebar",icon:"panel-left",icon_only:true,enabled:$s.ui.dialog==nil},$search,{id:"help.shortcuts",label:"Keyboard shortcuts",icon:"keyboard",icon_only:true,enabled:$s.ui.dialog==nil},{id:"view.mode",label:"Light or dark interface",icon:"sun",icon_only:true,enabled:$s.ui.dialog==nil}]
   $model=$frame.apply($model,{icon:"settings",title:"Preferences",menus:$actions.menus($s),toolbar:$toolbar,status:nil})
   $model.theme_choice=$actions.theme_choice($s)
-  $model.window_close=$s.quitting and not $s.busy and not $s.release_busy and $s.notes_owner==nil and len(keys($s.queue_changes))==0
+  $model.window_close=$s.quitting and not $s.busy and not $s.release_busy and $s.notes_owner==nil and $s.look.job==nil and $s.email.task==nil and len(keys($s.queue_changes))==0
   return $model
 end
 fn key_info($s,$key)

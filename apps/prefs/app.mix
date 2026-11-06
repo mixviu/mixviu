@@ -7,6 +7,8 @@ $pages=require("pages.mix")
 $actions=require("actions.mix")
 $look=require("look.mix")
 $email=require("email.mix")
+$software=require("software.mix")
+$bus_surface=json_parse(read_file(path_join(dirname(script_path()),"bus.json")))
 $state=$core.initial($app_args[0] ?? env("MIXOS_INSTANCE","desktop"))
 fn publish_prefs($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
@@ -53,10 +55,18 @@ fn queued_prefs($s)
   return start_prefs($s,{op:"write",request:{binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:uuid(),changes:$changes,reset:$reset}})
 end
 fn release_request($s,$command,$body)
+  if $command!="releases.notes" and $s.release_busy then
+    if $command=="releases.list" then $s.release_relist=true end
+    return $s
+  end
   if $command=="releases.notes" then send "viu-local" "jobs.cancel" id="prefs-notes" end
   $s.release_serial=$s.release_serial+1
   if $command=="releases.notes" then $s.notes_owner=$s.release_serial
-  else $s.release_busy=true;$s.release_owner=$s.release_serial end
+  else
+    $s.release_busy=true;$s.release_owner=$s.release_serial
+    $s.release_op=$software.operation($command,$body)
+    if not ($s.release_quiet ?? false) then $s.release_status=$software.progress($s.release_op);$s.release_failed=false end
+  end
   $path=path_join(dirname(script_path()),"job.mix")
   send "viu-local" "jobs.start" id=if $command=="releases.notes" then "prefs-notes" else "prefs-releases" end owner=$s.release_serial path=$path source=read_file($path) command="job.run" args={op:"release",command:$command,body:$body}
   if $rc!=0 then raise("JOB",to_string($result)) end
@@ -140,6 +150,12 @@ end
 on prefs.ping
   reply(0,json_encode({schema:"prefs.v1",version:"0.1.2"}))
 end
+on HELP
+  reply(0,json_encode($bus_surface.commands))
+end
+on app.describe
+  reply(0,json_encode($bus_surface))
+end
 on prefs.actions
   reply(0,json_encode($actions.action_list($state)))
 end
@@ -150,6 +166,7 @@ on prefs.execute
   catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on prefs.quit
+  if $state.ui.dialog!=nil then reply(10,json_encode({error_code:"BUSY",message:$nav.text_for("busy")}));return end
   $state.quitting=true;publish_prefs($state);reply(0,json_encode({quitting:true}))
 end
 on prefs.theme
@@ -321,13 +338,11 @@ on viu.job.completed
       if $d.rc==0 then $state.notes=$answer;$state.notes_error=nil
       else $state.notes_error=$answer.message ?? "Release notes could not be loaded" end
     elif $d.tag.owner==$state.release_owner then
-      $state.release_busy=false;$state.release_owner=nil
-      if $d.rc==0 and type($answer)=="list" then
-        $state.apps=$answer;$state.releases="available"
-        $state.release_status="Applications read";$state.release_failed=false
-        if $state.ui.selected!=nil and not any($nav.apps_view($state).visible,fn($r)=$r.app==$state.ui.selected) then $state=$nav.clear_selection($state) end
-      else
-        $state.releases="missing";$state.release_status="The releases service is not running";$state.release_failed=true
+      $state=$software.completed($state,$d.rc,$d.body)
+      if $state.reload_notes then $state=release_request($state,"releases.notes",{app:$state.ui.selected}) end
+      if $state.release_relist and (not $state.quitting or (($state.release_uncertain ?? nil)!=nil and not ($state.quit_settled ?? false))) then
+        if $state.quitting then $state.quit_settled=true end
+        $state.release_quiet=true;$state=release_request($state,"releases.list",{})
       end
     end
     publish_prefs($state);return
