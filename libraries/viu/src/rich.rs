@@ -480,7 +480,6 @@ pub(crate) fn draw(
                 let vertical=widget.properties["vertical"]==true;
                 let layout=if vertical {egui::Layout::top_down(egui::Align::Center)}else{egui::Layout::left_to_right(egui::Align::Center)};
                 ui.with_layout(layout, |ui| {
-                    if vertical {ui.spacing_mut().item_spacing.y=2.0;}
                     for item in value.as_array().into_iter().flatten() {
                         if item["separator"] == true {
                             ui.separator();

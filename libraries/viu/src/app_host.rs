@@ -20,9 +20,9 @@ struct Host {
     session_window: Option<Value>,
     service: String,
     drive: Option<String>,
-    drive_pending:BTreeMap<u64,Reply>,
-    drive_sequence:u64,
-    wire_deliveries:Vec<Arc<std::sync::atomic::AtomicU8>>,
+    drive_pending: BTreeMap<u64, Reply>,
+    drive_sequence: u64,
+    wire_deliveries: Vec<Arc<std::sync::atomic::AtomicU8>>,
     file_theme: toolkit::Theme,
     last_ui: settings::model::CommonUi,
     session_dirty: bool,
@@ -35,7 +35,7 @@ struct Host {
     clipboard: crate::thumbnail::Decoder<String>,
     clipboard_reply: Option<Reply>,
     local_clipboard: std::sync::mpsc::Receiver<crate::clipboard::Request>,
-    macros:macros::Session,
+    macros: macros::Session,
     commands: BTreeSet<String>,
     scene_source: String,
     loaded: bool,
@@ -95,8 +95,9 @@ impl Host {
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         self.wire_deliveries.push(r.delivery.clone());
-        if self.model["window_close"]==true {
-            let _=r.reply.send((10,json!({"error_code":"CLOSING"})));return;
+        if self.model["window_close"] == true {
+            let _ = r.reply.send((10, json!({"error_code":"CLOSING"})));
+            return;
         }
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
@@ -105,23 +106,31 @@ impl Host {
             ));
             return;
         }
-        if let Some(prefix)=&self.drive {
-            if let Some(answer)=crate::debug::request(prefix,&r.command,&r.args.to_string()) {
-                let _=r.reply.send(answer);return;
+        if let Some(prefix) = &self.drive {
+            if let Some(answer) = crate::debug::request(prefix, &r.command, &r.args.to_string()) {
+                let _ = r.reply.send(answer);
+                return;
             }
         }
-        if let Some(prefix)=&self.drive {
-            if let Some(command)=r.command.strip_prefix(&format!("{prefix}.")) {
+        if let Some(prefix) = &self.drive {
+            if let Some(command) = r.command.strip_prefix(&format!("{prefix}.")) {
                 if toolkit::drive::COMMANDS.contains(&command) {
-                    self.drive_sequence+=1;let id=self.drive_sequence;
-                    if command=="window" && r.args["action"]=="close" {
-                        if let Some(mut answer)=toolkit::drive::request(ctx,id,"window.state",&json!({})) {
-                            answer.body["requested"]=json!("close");let _=r.reply.send((answer.rc,answer.body));
+                    self.drive_sequence += 1;
+                    let id = self.drive_sequence;
+                    if command == "window" && r.args["action"] == "close" {
+                        if let Some(mut answer) =
+                            toolkit::drive::request(ctx, id, "window.state", &json!({}))
+                        {
+                            answer.body["requested"] = json!("close");
+                            let _ = r.reply.send((answer.rc, answer.body));
                         }
-                        self.dispatch("viu.frame.close".into(),json!({}),BTreeMap::new(),None);
-                    }else if let Some(answer)=toolkit::drive::request(ctx,id,command,&r.args) {
-                        let _=r.reply.send((answer.rc,answer.body));
-                    }else{self.drive_pending.insert(id,r.reply);}
+                        self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
+                    } else if let Some(answer) = toolkit::drive::request(ctx, id, command, &r.args)
+                    {
+                        let _ = r.reply.send((answer.rc, answer.body));
+                    } else {
+                        self.drive_pending.insert(id, r.reply);
+                    }
                     return;
                 }
             }
@@ -201,22 +210,44 @@ impl eframe::App for Host {
     }
 }
 impl Drop for Host {
-    fn drop(&mut self){let _=self.macros.shutdown();}
+    fn drop(&mut self) {
+        let _ = self.macros.shutdown();
+    }
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
-        self.wire_deliveries.retain(|state|state.load(std::sync::atomic::Ordering::Acquire)==0);
+        self.wire_deliveries
+            .retain(|state| state.load(std::sync::atomic::Ordering::Acquire) == 0);
         if self.drive.is_some() {
-            let answers=if self.model["window_close"]==true {toolkit::drive::finish(ui.ctx())}else{toolkit::drive::logic(ui.ctx())};
+            let answers = if self.model["window_close"] == true {
+                toolkit::drive::finish(ui.ctx())
+            } else {
+                toolkit::drive::logic(ui.ctx())
+            };
             for answer in answers {
-                if let Some(reply)=self.drive_pending.remove(&answer.id){let _=reply.send((answer.rc,answer.body));}
+                if let Some(reply) = self.drive_pending.remove(&answer.id) {
+                    let _ = reply.send((answer.rc, answer.body));
+                }
             }
         }
-        while let Ok(request)=self.local_clipboard.try_recv() {
-            if request.reply.is_closed() {continue;}
-            if self.clipboard_reply.is_some() || !self.clipboard.replace(&request.path,std::path::Path::new(&request.path),ui.ctx()) {
-                let _=request.reply.send((10,json!({"error_code":"BUSY","message":"clipboard busy or invalid image"})));
-            }else{self.clipboard_reply=Some(request.reply);}
+        while let Ok(request) = self.local_clipboard.try_recv() {
+            if request.reply.is_closed() {
+                continue;
+            }
+            if self.clipboard_reply.is_some()
+                || !self.clipboard.replace(
+                    &request.path,
+                    std::path::Path::new(&request.path),
+                    ui.ctx(),
+                )
+            {
+                let _ = request.reply.send((
+                    10,
+                    json!({"error_code":"BUSY","message":"clipboard busy or invalid image"}),
+                ));
+            } else {
+                self.clipboard_reply = Some(request.reply);
+            }
         }
         let gone: Vec<_> = self
             .pending
@@ -273,7 +304,7 @@ impl Host {
             self.error = done.error.unwrap_or_default();
             if self.error.is_empty() {
                 if let Some(model) = done.model {
-                    self.session_dirty|=self.model["theme_choice"]!=model["theme_choice"];
+                    self.session_dirty |= self.model["theme_choice"] != model["theme_choice"];
                     let projected = self
                         .output
                         .as_ref()
@@ -362,8 +393,12 @@ impl Host {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
                     if self.drive.is_some() {
-                        if n.command=="bus.connected" {toolkit::drive::set_service(ui.ctx(),Some(&self.service));}
-                        if n.command=="bus.disconnected" {toolkit::drive::set_service(ui.ctx(),None);}
+                        if n.command == "bus.connected" {
+                            toolkit::drive::set_service(ui.ctx(), Some(&self.service));
+                        }
+                        if n.command == "bus.disconnected" {
+                            toolkit::drive::set_service(ui.ctx(), None);
+                        }
                     }
                     if n.command == "theme.changed" {
                         self.file_theme = toolkit::Theme::load();
@@ -419,7 +454,7 @@ impl Host {
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
                             self.session_window = Some(snapshot["state"]["values"].clone());
-                            self.session_notice=Some(snapshot);
+                            self.session_notice = Some(snapshot);
                         }
                         Err(error) => self.error = error,
                     }
@@ -429,11 +464,17 @@ impl Host {
                         .request_repaint_after(at.saturating_duration_since(Instant::now()));
                 }
             }
-            if let Some(snapshot)=self.session_notice.as_ref() {
-                if self.runtime.notify("viu.session.changed".into(),snapshot.clone()).is_ok(){self.session_notice=None;}
+            if let Some(snapshot) = self.session_notice.as_ref() {
+                if self
+                    .runtime
+                    .notify("viu.session.changed".into(), snapshot.clone())
+                    .is_ok()
+                {
+                    self.session_notice = None;
+                }
             }
             if self.framed {
-                crate::native_menu::enable(ui.ctx(),self.model["native_menus"]==true);
+                crate::native_menu::enable(ui.ctx(), self.model["native_menus"] == true);
                 ui.painter().rect_filled(
                     ui.max_rect(),
                     0.0,
@@ -443,8 +484,10 @@ impl Host {
                     .session_window
                     .clone()
                     .unwrap_or_else(|| self.model["window_settings"].clone());
-                if let Some(overrides)=self.model["window_overrides"].as_object() {
-                    for (key,value) in overrides {settings[key]=value.clone();}
+                if let Some(overrides) = self.model["window_overrides"].as_object() {
+                    for (key, value) in overrides {
+                        settings[key] = value.clone();
+                    }
                 }
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 self.window_frame
@@ -462,12 +505,14 @@ impl Host {
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
             }
-            if self.model["keyboard_events"]==true {
+            if self.model["keyboard_events"] == true {
                 let keys=ui.input(|input|input.events.iter().filter_map(|event|match event {
                     egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=>Some(json!({"key":crate::input::key_name(*key),"ctrl":modifiers.ctrl||modifiers.command,"alt":modifiers.alt,"shift":modifiers.shift,"typing":self.view.text_input_active()})),
                     _=>None
                 }).collect::<Vec<_>>());
-                for key in keys {self.dispatch("viu.key".into(),key,BTreeMap::new(),None);}
+                for key in keys {
+                    self.dispatch("viu.key".into(), key, BTreeMap::new(), None);
+                }
             }
             if self.framed {
                 self.window_frame.edges(ui);
@@ -477,7 +522,10 @@ impl Host {
                 if self.window_frame.close_requested {
                     self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
                 }
-                if self.model["window_close"] == true && self.wire_deliveries.is_empty() && self.drive_pending.is_empty() {
+                if self.model["window_close"] == true
+                    && self.wire_deliveries.is_empty()
+                    && self.drive_pending.is_empty()
+                {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
@@ -548,9 +596,19 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     );
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
     jobs.set_native_backend(bus.backend_maker());
-    let (clipboard,local_clipboard)=crate::clipboard::Clipboard::channel(wake.clone());
-    let macros=macros::Session::for_app(bundle.manifest.drive.as_deref().unwrap_or(&bundle.manifest.service));
-    let services=crate::runtime::Services{clipboard:Some(clipboard),macros:Some(macros.clone()),..Default::default()};
+    let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
+    let macros = macros::Session::for_app(
+        bundle
+            .manifest
+            .drive
+            .as_deref()
+            .unwrap_or(&bundle.manifest.service),
+    );
+    let services = crate::runtime::Services {
+        clipboard: Some(clipboard),
+        macros: Some(macros.clone()),
+        ..Default::default()
+    };
     jobs.set_services(services.clone());
     let mut runtime = Runtime::with_services(
         32,
@@ -564,10 +622,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
-        drive:bundle.manifest.drive.clone(),
-        drive_pending:BTreeMap::new(),
-        drive_sequence:0,
-        wire_deliveries:Vec::new(),
+        drive: bundle.manifest.drive.clone(),
+        drive_pending: BTreeMap::new(),
+        drive_sequence: 0,
+        wire_deliveries: Vec::new(),
         service: bundle.manifest.service.clone(),
         file_theme: toolkit::Theme::load(),
         last_ui: settings::model::CommonUi::default(),
@@ -646,7 +704,11 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
     let service = bundle.manifest.service.clone();
-    let app_id=bundle.manifest.app_id.clone().unwrap_or_else(||format!("mixviu.{service}"));
+    let app_id = bundle
+        .manifest
+        .app_id
+        .clone()
+        .unwrap_or_else(|| format!("mixviu.{service}"));
     eframe::run_native(
         &title,
         eframe::NativeOptions {
@@ -657,8 +719,8 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         },
         Box::new(move |cc| {
             crate::appearance::install(&cc.egui_ctx);
-            if let Some(prefix)=&bundle.manifest.drive {
-                toolkit::drive::install(&cc.egui_ctx,prefix);
+            if let Some(prefix) = &bundle.manifest.drive {
+                toolkit::drive::install(&cc.egui_ctx, prefix);
             }
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(

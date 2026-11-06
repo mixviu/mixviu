@@ -12,8 +12,10 @@ root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placem
 "gold-menu":{widget:"control",definition:{id:"gold-menu",kind:"menubar",label:"",initial:[]},on_intent:"viu.frame.intent"},
 "gold-title":{widget:"control",definition:{id:"gold-title",kind:"label",label:"",initial:"",properties:{role:"title",weak:true}}},
 "gold-toolbar":{widget:"control",definition:{id:"gold-toolbar",kind:"command-bar",label:"",initial:[]},on_intent:"viu.frame.intent"},
-"gold-status":{widget:"column",background:"design.chrome",padding:0,children:["gold-status-text"]},
+"gold-status":{widget:"column",background:"design.chrome",padding:0,children:["gold-status-band"]},
+"gold-status-band":{widget:"band",children:["gold-status-text","gold-status-right"],groups:{"gold-status-text":{preferred:"content",minimum:0,align:"left",shrink:1,order:0},"gold-status-right":{preferred:"content",minimum:0,align:"right",shrink:1,order:1}}},
 "gold-status-text":{widget:"control",definition:{id:"gold-status-text",kind:"label",label:"",initial:"",properties:{role:"status"}}},
+"gold-status-right":{widget:"control",definition:{id:"gold-status-right",kind:"label",label:"",initial:"",properties:{role:"status",align:"right"}}},
 "gold-content":{widget:"column",children:[]}
 }
 ```

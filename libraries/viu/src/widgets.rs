@@ -43,6 +43,7 @@ pub const KINDS: &[&str] = &[
     "image-fill",
     "image-canvas",
     "macro-window",
+    "swatches",
     "window-controls",
 ];
 
@@ -131,6 +132,7 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
+            "swatches"=>value.as_array().is_some_and(|v|v.len()==4&&v.iter().all(|v|v.as_u64().is_some_and(|n|n<=255)))&&self.properties["items"].as_array().is_some_and(|items|items.len()<=32&&items.iter().all(|item|item["id"].is_string()&&item["label"].is_string()&&item["colour"].as_array().is_some_and(|v|v.len()==4&&v.iter().all(|v|v.as_u64().is_some_and(|n|n<=255))))),
             "macro-window"=>value.is_boolean()&&self.properties["app"].as_str().is_some_and(|app|!app.is_empty()&&app.len()<=64&&app.bytes().all(|b|b.is_ascii_lowercase()||b.is_ascii_digit()||b==b'-')),
             "mark" => value
                 .as_str()
@@ -192,6 +194,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind=="swatches" {return vec!["select"];}
         if self.kind=="macro-window" {return vec!["close"];}
         if self.kind == "image-canvas" {
             return vec!["pan", "zoom", "pick", "gesture"];
@@ -251,6 +254,10 @@ impl Widget {
         actions
     }
     pub fn validate_action(&self, action: &str, value: &Value) -> Result<(), String> {
+        if self.kind=="swatches" {
+            if action!="select"||!self.properties["items"].as_array().is_some_and(|items|items.iter().any(|item|item["id"]==*value)){return Err("invalid swatch choice".into());}
+            return Ok(());
+        }
         if !self.actions().contains(&action) {
             return Err("unsupported widget action".into());
         }
@@ -282,6 +289,7 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
+        if self.properties["enabled"]==false{return Err("DISABLED".into());}
         if self.kind == "image-canvas" {
             return crate::image_view::admit_canvas(self.value(model), action, value);
         }
@@ -304,6 +312,7 @@ impl Widget {
         model["values"].get(&self.id).unwrap_or(&self.initial)
     }
     pub fn validate_model(&self, model: &Value) -> Result<(), String> {
+        if self.properties.get("enabled").is_some_and(|v|!v.is_boolean()){return Err("widget enabled must be bool".into());}
         if !KINDS.contains(&self.kind.as_str()) || !self.properties.is_object() {
             return Err("invalid widget definition".into());
         }
@@ -415,9 +424,9 @@ impl Widgets {
         let value = model["values"]
             .get(&definition.id)
             .unwrap_or(&definition.initial);
-        ui.push_id(&definition.id, |ui| {
+        ui.add_enabled_ui(definition.properties["enabled"]!=false,|ui|ui.push_id(&definition.id, |ui| {
             self.draw(ui, definition, value, model, &mut intents)
-        });
+        }));
         intents
     }
     /// Call once after drawing an application frame (including individual
@@ -730,6 +739,29 @@ impl Widgets {
                     .show_percentage()
                     .desired_width(ui.available_width()),
             ),
+            "combo" if widget.properties["native"]==true=>{
+                let ids=widget.choices();
+                let labels=ids.iter().map(|id|widget.properties["choice_labels"][*id].as_str().unwrap_or(id).to_string()).collect::<Vec<_>>();
+                let mut at=ids.iter().position(|id|*id==value.as_str().unwrap_or("")).unwrap_or(0);
+                let response=toolkit::combo::show(ui,id,&mut at,&labels,widget.properties["width"].as_f64().map(|n|n as f32)).accessible_name(&widget.label);
+                if response.changed(){changed=Some(json!(ids[at]));}
+                response
+            }
+            "swatches"=>ui.horizontal(|ui| {
+                for item in widget.properties["items"].as_array().unwrap() {
+                    let selected=item["colour"]==*value;
+                    let (rect,response)=ui.allocate_exact_size(egui::vec2(18.0,18.0),egui::Sense::click());
+                    let name=item["label"].as_str().unwrap();
+                    response.widget_info(||egui::WidgetInfo::selected(egui::Role::Button,ui.is_enabled(),selected,name));
+                    let c=item["colour"].as_array().unwrap();
+                    ui.painter().rect_filled(rect.shrink(2.0),2.0,egui::Color32::from_rgba_unmultiplied(c[0].as_u64().unwrap() as u8,c[1].as_u64().unwrap() as u8,c[2].as_u64().unwrap() as u8,c[3].as_u64().unwrap() as u8));
+                    let outline=if selected {egui::Stroke::new(2.0,ui.visuals().selection.stroke.color)}else{ui.visuals().widgets.inactive.bg_stroke};
+                    ui.painter().rect_stroke(rect,3.0,outline,egui::StrokeKind::Inside);
+                    self.geometry.insert(format!("{id}.{}",item["id"].as_str().unwrap()),rect);
+                    if response.on_hover_text(name).clicked(){events.push(Intent{id:id.into(),action:"select".into(),value:item["id"].clone()});}
+                }
+                ui.add_space(6.0);
+            }).response,
             "combo" => {
                 egui::ComboBox::from_id_salt(id)
                     .selected_text(value.as_str().unwrap_or(""))

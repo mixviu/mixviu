@@ -68,7 +68,9 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
-            || manifest.app_id.as_deref().is_some_and(|id|id.is_empty()||id.len()>128||id.chars().any(char::is_whitespace))
+            || manifest.app_id.as_deref().is_some_and(|id| {
+                id.is_empty() || id.len() > 128 || id.chars().any(char::is_whitespace)
+            })
             || !["window", "background"].contains(&manifest.surface.as_str())
             || manifest
                 .frame

@@ -584,7 +584,10 @@ impl SceneView {
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let frame = egui::Frame::new()
                             .fill(background)
-                            .inner_margin(num(node, "padding").unwrap_or(0.0))
+                            .inner_margin(egui::Margin::symmetric(
+                                num(node,"padding_x").or_else(||design_length(node.ports.get("padding_x").unwrap_or(&Value::Null),Some(ui.ctx()))).or(num(node,"padding")).unwrap_or(0.0) as i8,
+                                num(node,"padding_y").or_else(||design_length(node.ports.get("padding_y").unwrap_or(&Value::Null),Some(ui.ctx()))).or(num(node,"padding")).unwrap_or(0.0) as i8,
+                            ))
                             .corner_radius(num(node, "radius").unwrap_or(0.0));
                         let response = frame
                             .show(ui, |ui| {
@@ -1111,6 +1114,10 @@ fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
         "design.options_height" => Some(ctx.map_or(42.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.bars.options
         })),
+        "design.tools_width"=>Some(ctx.map_or(50.0,|ctx|toolkit::chrome::Chrome::of(ctx).metrics.bars.tool)),
+        "design.tool_margin"=>Some(ctx.map_or(8.0,|ctx|toolkit::chrome::Chrome::of(ctx).metrics.bars.tool_margin)),
+        "design.bar_inset"=>Some(ctx.map_or(8.0,|ctx|toolkit::chrome::Chrome::of(ctx).style.bars_bar_inset as f32)),
+        "design.bar_padding_y"=>Some(ctx.map_or(6.0,|ctx|toolkit::chrome::Chrome::of(ctx).style.bar_padding_y as f32)),
         _ => None,
     }
 }
