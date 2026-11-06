@@ -712,6 +712,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 
 [[package]]
+name = "design"
+version = "0.1.2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "strict",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -791,6 +800,41 @@ dependencies = [
  "sha2 0.10.9",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "edit"
+version = "0.1.2"
+dependencies = [
+ "libc",
+ "proptest",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "editd"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "buildinfo",
+ "bus",
+ "chrono",
+ "clap",
+ "config",
+ "edit",
+ "libc",
+ "notify",
+ "props",
+ "rand 0.8.8",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2186,9 +2230,11 @@ dependencies = [
 name = "mixd"
 version = "0.1.2"
 dependencies = [
+ "editd",
  "mimalloc",
  "mix-shell",
  "noded",
+ "settingsd",
 ]
 
 [[package]]
@@ -3288,6 +3334,52 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "settings"
+version = "0.8.0"
+dependencies = [
+ "blake3",
+ "bus",
+ "config",
+ "design",
+ "futures-util",
+ "libc",
+ "serde",
+ "serde_json",
+ "strict",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite 0.26.2",
+]
+
+[[package]]
+name = "settingsd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "buildinfo",
+ "bus",
+ "chrono",
+ "clap",
+ "config",
+ "design",
+ "ed25519-dalek",
+ "libc",
+ "mesh-trust",
+ "serde",
+ "serde_json",
+ "settings",
+ "strict",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
