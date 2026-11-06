@@ -28,7 +28,7 @@ struct Document {
     layout: editor::LayoutReport,
 }
 struct State {
-    counters: BTreeMap<&'static str,u64>,
+    counters: BTreeMap<&'static str, u64>,
     documents: BTreeMap<String, Document>,
     ids: OpIdGen,
     next: u64,
@@ -39,7 +39,17 @@ impl Default for State {
             .build_hasher()
             .finish() as u32;
         Self {
-            counters: ["events","history_recoveries","snapshot_recoveries","conflicts","retries","uncertain"].into_iter().map(|k|(k,0)).collect(),
+            counters: [
+                "events",
+                "history_recoveries",
+                "snapshot_recoveries",
+                "conflicts",
+                "retries",
+                "uncertain",
+            ]
+            .into_iter()
+            .map(|k| (k, 0))
+            .collect(),
             documents: BTreeMap::new(),
             ids: OpIdGen::new(run),
             next: 0,
@@ -210,8 +220,17 @@ impl Documents {
             return Err("invalid document id".into());
         }
         let mut state = self.0.lock().map_err(|_| "document owner poisoned")?;
-        if op=="stats" {return Ok(json!(state.counters));}
-        if let Some(counter)=match op {"event"=>Some("events"),"retry"=>Some("retries"),"deadline"=>Some("uncertain"),_=>None}{*state.counters.entry(counter).or_default()+=1;}
+        if op == "stats" {
+            return Ok(json!(state.counters));
+        }
+        if let Some(counter) = match op {
+            "event" => Some("events"),
+            "retry" => Some("retries"),
+            "deadline" => Some("uncertain"),
+            _ => None,
+        } {
+            *state.counters.entry(counter).or_default() += 1;
+        }
         if op == "open" {
             if state.documents.contains_key(key) {
                 return Err("document already open".into());
@@ -244,18 +263,22 @@ impl Documents {
         }
         let State { documents, ids, .. } = &mut *state;
         let doc = documents.get_mut(key).ok_or("unknown document")?;
-        let previous_phase=doc.mirror.phase().clone();let previous_conflicts=doc.mirror.conflicts().len();
+        let previous_phase = doc.mirror.phase().clone();
+        let previous_conflicts = doc.mirror.conflicts().len();
         match op {
             "state" => {}
-            "find" => return tools::find(doc,&a,ids),
-            "diagnostics" => return tools::diagnostics(doc,&a),
+            "find" => return tools::find(doc, &a, ids),
+            "diagnostics" => return tools::diagnostics(doc, &a),
             "problems" => return Ok(tools::problems(doc)),
             "selected" => {
-                let lo=doc.model.sel.anchor.min(doc.model.sel.head);let hi=doc.model.sel.anchor.max(doc.model.sel.head);
-                let mut text=String::new();doc.mirror.text().read(lo..hi,&mut text);return Ok(json!({"text":if lo==hi{None}else{Some(text)}}));
+                let lo = doc.model.sel.anchor.min(doc.model.sel.head);
+                let hi = doc.model.sel.anchor.max(doc.model.sel.head);
+                let mut text = String::new();
+                doc.mirror.text().read(lo..hi, &mut text);
+                return Ok(json!({"text":if lo==hi{None}else{Some(text)}}));
             }
             "clear-markers" => doc.model.clear_markers(),
-            "overwrite" => doc.model.overwrite=!doc.model.overwrite,
+            "overwrite" => doc.model.overwrite = !doc.model.overwrite,
             "inspect" => {
                 let m = &doc.mirror;
                 if a["text"] == true && m.text().len() > 4 * 1024 * 1024 {
@@ -471,13 +494,21 @@ impl Documents {
             }
             _ => return Err("unknown document operation".into()),
         }
-        let value=doc.state(key);
-        let next_phase=doc.mirror.phase().clone();let new_conflicts=doc.mirror.conflicts().len().saturating_sub(previous_conflicts);
-        *state.counters.entry("conflicts").or_default()+=new_conflicts as u64;
-        if next_phase!=previous_phase {
-            if let Phase::Recovering{how,..}=next_phase {
-                let counter=match how{editor_model::mirror::RecoverHow::History=>"history_recoveries",editor_model::mirror::RecoverHow::Snapshot=>"snapshot_recoveries"};
-                *state.counters.entry(counter).or_default()+=1;
+        let value = doc.state(key);
+        let next_phase = doc.mirror.phase().clone();
+        let new_conflicts = doc
+            .mirror
+            .conflicts()
+            .len()
+            .saturating_sub(previous_conflicts);
+        *state.counters.entry("conflicts").or_default() += new_conflicts as u64;
+        if next_phase != previous_phase {
+            if let Phase::Recovering { how, .. } = next_phase {
+                let counter = match how {
+                    editor_model::mirror::RecoverHow::History => "history_recoveries",
+                    editor_model::mirror::RecoverHow::Snapshot => "snapshot_recoveries",
+                };
+                *state.counters.entry(counter).or_default() += 1;
             }
         }
         Ok(value)
@@ -508,8 +539,8 @@ impl Documents {
             };
         }
         let mut view = crate::editor::native_view(ui, widget);
-        view.matches=doc.matches.clone();
-        let diagnostics=tools::render_diagnostics(doc);
+        view.matches = doc.matches.clone();
+        let diagnostics = tools::render_diagnostics(doc);
         let palette = crate::editor::native_palette(ui, widget);
         let padding = widget.properties["padding"].as_f64().unwrap_or(0.0).round() as i8;
         let out = egui::Frame::new()
