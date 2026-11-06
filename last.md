@@ -1212,3 +1212,35 @@ and release-byte capture/functional/live-Prefs suite complete. No Fable
 deviation is proposed. This receipt commit changes documentation only.
 
 branch lab/parity-prefs; head/code 876f50a85bcb3f299558425969596dc9f4a63d20; OPEN: heavy release gate and release-byte evidence; pages 42/42; functional 40/40; CBC 20261107-073405-f2ebf754, 20261107-073545-70c5676f (queued)
+
+## Prefs round five: release witness and native search correction
+
+Exact source `f015520ceca5449a60b35c77284cca750c53993a` passed heavy CBC
+`20261107-074849-cf5ada53-a1` on cbc2, command `mix apps/prefs/gate.mix
+--release`, with no worker diff. The complete saved log was read. Release
+SHA256 is `877737ce2fcaf015206f04df9ea59b311abcc5ea3e5ea6e95db757a0d4e21d73`.
+Its nine private release runs and 91 regional comparison sets are retained
+under `prefs-parity-20261107/round5-f015520-receipt` and their original run
+directories. All 42 baseline pages are pixel-identical, as are ten drawers,
+catalogues, the native chooser, populated Software/Email and dialogs.
+Sixty-seven structured reply comparisons pass; native settingsd, Email and
+the installed Mix Releases citizen are exercised in private roots. The
+Releases witness verifies a private package, install, rollback refusal and
+removal. This complements the fully logged deterministic service fixture.
+
+That release is not accepted: the search capture exposed a real caret reset,
+not merely a blink. Native `den` then `sity` produced gold `density` and
+candidate `sityden` in `pair.qqHr5f`. The shared browser now retains pending
+text until owner acknowledgement, consumes repeated values in order, and
+discards a draft on explicit navigation. The private reset token is absent
+from the public Prefs state. Native repaired witness `pair.MTCmDB` produces
+`density` on both sides. CBC `20261107-081753-981fcde5` passed 18 focused
+checks/build; its formatting patch is applied. The regression includes
+delayed/partial replies, edit/undo cycles and numeric reset tokens.
+
+Code `249f9a3483b13a9b9ac0d26b878942d5d78191b1` is queued for heavy
+release gate `20261107-082023-f8cb0b05`. Acceptance remains OPEN until that
+gate and the ten-group release-byte rerun, including native continued
+typing, finish. Spacious retains only the previously inspected Macros icon
+anti-aliasing edge. No deviation from gold or Fable decision is proposed.
+branch lab/parity-prefs; head/code 249f9a3483b13a9b9ac0d26b878942d5d78191b1; OPEN: final search release gate and release-byte rerun; CBC 20261107-074849-cf5ada53-a1 (pass), 20261107-081753-981fcde5 (18 checks/build pass, formatting applied), 20261107-082023-f8cb0b05 (queued)
