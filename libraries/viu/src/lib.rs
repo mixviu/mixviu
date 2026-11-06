@@ -20,6 +20,7 @@ pub mod jobs;
 pub mod macro_host;
 pub mod native_bus;
 mod native_primitives;
+pub mod native_menu;
 pub mod rich;
 pub mod runtime;
 pub mod session;

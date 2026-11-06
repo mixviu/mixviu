@@ -180,6 +180,8 @@ pub(crate) fn draw(ui: &mut Ui, id: &str, value: &serde_json::Value) -> egui::Re
                 chart,
                 &|steps| notes.get(steps).and_then(Value::as_str).map(str::to_owned),
             );
+        } else if value["title"].as_str().unwrap_or("").is_empty() {
+            show(ui, id, size, chart);
         } else {
             show_titled(ui, id, value["title"].as_str().unwrap_or(""), size, chart);
         }

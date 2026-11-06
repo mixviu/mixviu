@@ -129,6 +129,9 @@ impl Widget {
     }
     pub fn validate(&self, value: &Value) -> Result<(), String> {
         if crate::rich::KINDS.contains(&self.kind.as_str()) {
+            if self.kind == "menubar" && self.properties["style"] == "gold" {
+                crate::native_menu::validate(value)?;
+            }
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
@@ -592,7 +595,7 @@ impl Widgets {
                 } else if widget.properties["align"] == "right" {
                     label = label.halign(egui::Align::Max);
                 }
-                if matches!(widget.properties["role"].as_str(), Some("title" | "status")) {
+                if matches!(widget.properties["role"].as_str(), Some("title" | "status" | "status-band")) {
                     ui.allocate_ui_with_layout(
                         ui.available_size_before_wrap(),
                         egui::Layout::left_to_right(egui::Align::Center),
@@ -612,7 +615,11 @@ impl Widgets {
                 }
             }
             "button" => {
-                let r = icon_button(ui, widget.text("icon"), widget.text("text"), false);
+                let r = if widget.properties["style"] == "secondary" {
+                    ui.add(toolkit::button::PushButton::secondary(widget.text("text")))
+                } else {
+                    icon_button(ui, widget.text("icon"), widget.text("text"), false)
+                };
                 if r.clicked() {
                     events.push(Intent {
                         id: id.clone(),
@@ -655,6 +662,9 @@ impl Widgets {
                     }
                 }
                 let rows = whole(&widget.properties["rows"]).unwrap_or(24) as usize;
+                let r = if widget.kind == "field" && widget.properties["search"] == true {
+                    toolkit::field::search(ui, &mut text, widget.text("placeholder"), ui.available_width())
+                } else {
                 let edit = if widget.kind == "field" {
                     egui::TextEdit::singleline(&mut text)
                 } else if widget.kind == "editor" {
@@ -665,12 +675,12 @@ impl Widgets {
                 } else {
                     egui::TextEdit::multiline(&mut text).desired_rows(1)
                 };
-                let r = ui.add(
+                ui.add(
                     edit.desired_width(ui.available_width())
                         .hint_text(widget.text("placeholder"))
                         .password(widget.properties["password"] == true)
                         .id_salt(id),
-                );
+                ) };
                 // The key which ends editing belongs to the field this frame.
                 self.text_input_active |= r.has_focus()
                     || (r.lost_focus()
@@ -712,7 +722,11 @@ impl Widgets {
                 let r = if widget.kind == "checkbox" {
                     ui.checkbox(&mut checked, widget.text("text"))
                 } else {
-                    ui.toggle_value(&mut checked, widget.text("text"))
+                    if widget.properties["style"] == "selectable" {
+                        let response = toolkit::selectable(ui, checked, widget.text("text"));
+                        if response.clicked() { checked = !checked; }
+                        response
+                    } else { ui.toggle_value(&mut checked, widget.text("text")) }
                 };
                 if r.changed() || r.clicked() {
                     changed = Some(json!(checked));
@@ -726,7 +740,7 @@ impl Widgets {
                             let r = if widget.kind == "radio" {
                                 ui.radio(value == option, option)
                             } else {
-                                ui.selectable_label(value == option, option)
+                                toolkit::selectable(ui, value == option, option)
                             };
                             self.remember(ui, &format!("{id}.{option}"), &r);
                             if r.clicked() {
@@ -786,18 +800,12 @@ impl Widgets {
                     .desired_width(ui.available_width()),
             ),
             "combo" => {
-                egui::ComboBox::from_id_salt(id)
-                    .selected_text(value.as_str().unwrap_or(""))
-                    .show_ui(ui, |ui| {
-                        for option in widget.choices() {
-                            let r = ui.selectable_label(value == option, option);
-                            self.remember(ui, &format!("{id}.{option}"), &r);
-                            if r.clicked() {
-                                changed = Some(json!(option));
-                            }
-                        }
-                    })
-                    .response
+                let choices = widget.choices();
+                let mut selected = choices.iter().position(|option| value == *option).unwrap_or(0);
+                let width = widget.properties["width"].as_f64().map(|v| v as f32);
+                let r = toolkit::combo::show(ui, id, &mut selected, &choices, width);
+                if r.changed() { changed = choices.get(selected).map(|v| json!(v)); }
+                r
             }
             "list" | "table" | "tree" => {
                 let source = widget.text("dataset");
@@ -1190,6 +1198,9 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     }
     if widget.properties["weak"] == true {
         text = text.weak();
+    }
+    if widget.properties["tone"] == "warning" {
+        text = text.color(ui.visuals().warn_fg_color);
     }
     if widget.properties["mono"] == true {
         text = text.monospace();

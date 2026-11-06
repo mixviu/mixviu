@@ -1,12 +1,12 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $f=require("format.mix")
 fn keys_for($snapshot)
-  $keys=["cpu","memory"]
+  $keys=["cpu","memory","tcp"]
   if $snapshot!=nil then
     for $d in ($snapshot.disks ?? []) push($keys,"disk:"..$d.name) end
     for $n in ($snapshot.net ?? []) push($keys,"net:"..$n.name) end
   end
-  push($keys,"tcp");return $keys
+  return $keys
 end
 fn ring($s,$name) return $s.rings[$name] ?? [] end
 fn peak($values,$floor)
@@ -28,7 +28,13 @@ fn gap($size) return {kind:"gap",size:$size} end
 fn item($s,$key)
   $v=$s.snapshot
   if $key=="cpu" then
-    return {id:$key,title:"CPU",subtitle:$f.percent($v.cpu.busy),values:ring($s,"cpu.busy"),peak:100,format:"percent",hue:"accent"}
+    $speeds=filter(map($v.cpu.per_core ?? [],fn($c)=$c.mhz),fn($n)=$n!=nil)
+    $speed=""
+    if len($speeds)>0 then
+      $sum=0;for $mhz in $speeds $sum=$sum+$mhz end
+      $speed="  "..$f.mhz(floor($sum/len($speeds)))
+    end
+    return {id:$key,title:"CPU",subtitle:$f.percent($v.cpu.busy)..$speed,values:ring($s,"cpu.busy"),peak:100,format:"percent",hue:"accent"}
   elif $key=="memory" then
     $m=$v.memory
     return {id:$key,title:"Memory",subtitle:$f.bytes($m.used).." / "..$f.bytes($m.total)..fmt(" (%.0f%%)",if $m.total>0 then $m.used*100/$m.total else 0 end),values:ring($s,"mem.used"),peak:max(1,$m.total),format:"bytes",hue:"accent-plus"}
