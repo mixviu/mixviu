@@ -26,8 +26,8 @@ impl BusHandler for Fixture {
         _: &'a MixValue,
     ) -> BusFuture<'a, MixResult<(i32, MixValue)>> {
         Box::pin(async move {
-            assert_eq!(command,"topic.publish","unexpected inter-process effect");
-            Ok((0,viu::runtime::from_json(json!({}))?))
+            assert_eq!(command, "topic.publish", "unexpected inter-process effect");
+            Ok((0, viu::runtime::from_json(json!({}))?))
         })
     }
     fn emit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a MixValue) -> BusFuture<'a, MixResult<()>> {

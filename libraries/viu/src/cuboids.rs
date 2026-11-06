@@ -3,7 +3,9 @@
 //! The callback records into egui's encoder; the layer submits once.
 use super::composition::Block;
 use crate::raster::{Rasters, TextureLease};
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> { mutex.lock().unwrap_or_else(|e|e.into_inner()) }
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
 use std::sync::{Arc, Mutex};
 use wgpu::util::DeviceExt;
 
@@ -39,7 +41,9 @@ fn project([x, y, z]: [f32; 3]) -> [f32; 2] {
 }
 fn animated_position(b: &Block, progress: f32) -> [f32; 3] {
     let mut p = b.position;
-    for i in 0..3 { p[i] += (1. - progress) * b.motion[i]; }
+    for i in 0..3 {
+        p[i] += (1. - progress) * b.motion[i];
+    }
     p
 }
 impl Cache {

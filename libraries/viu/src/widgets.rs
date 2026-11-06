@@ -922,8 +922,11 @@ impl Widgets {
             }
             "image-view" => self.images.draw(ui, id, value),
             "composition" => {
-                let rasters=self.rasters.clone().unwrap_or_default();
-                self.compositions.entry(id.into()).or_default().draw(ui,value,&rasters)
+                let rasters = self.rasters.clone().unwrap_or_default();
+                self.compositions
+                    .entry(id.into())
+                    .or_default()
+                    .draw(ui, value, &rasters)
             }
             "image-fill" => {
                 let images = self
