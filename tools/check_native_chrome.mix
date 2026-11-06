@@ -1,6 +1,8 @@
 -- CBC only; comp_oracle captures and restores the lock in this same job.
 for $cmd in [
-  ["cargo", "test", "-p", "decor", "-p", "comp-service", "-p", "world", "-p", "policy", "-p", "comp-model", "--lib"],
+  ["/opt/mixos/bin/mix", "tools/format_comp_split.mix", "fmt-only"],
+  ["cargo", "test", "-p", "decor", "-p", "comp-service", "-p", "world", "-p", "policy", "-p", "comp-model", "-p", "policy-host", "--lib"],
+  ["cargo", "test", "-p", "scene-host", "--lib", "native_chrome_preparation_matches_in_process_presentation", "--locked"],
   ["cargo", "check", "-p", "compd", "--no-default-features", "--features", "backend-native,backend-headless", "--locked"],
   ["cargo", "check", "-p", "compd", "--features", "backend-all", "--locked"]
 ]
