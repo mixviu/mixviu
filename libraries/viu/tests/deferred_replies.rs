@@ -23,7 +23,7 @@ $ctx=viu_context()
 on keep
   $h=viu_reply("keep")
   push($handles,$h)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:{handle:$h}}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:{handle:$h,broker_from:$event.headers.from}}
 end
 on keep-and-reply
   viu_reply("keep")
@@ -98,6 +98,24 @@ fn requests_survive_callbacks_and_reply_to_the_original_caller_once() {
     let done = next(&r, &wakes);
     assert!(done.error.is_some());
     assert!(done.answers.is_empty());
+}
+
+#[test]
+fn reply_receipts_preserve_broker_caller_headers_for_application_lanes() {
+    let (mut r, wakes) = setup();
+    let sequence = r.event_with_headers("keep".into(), json!({}), BTreeMap::from([
+        ("from".into(), "stable-editor-agent".into()),
+        ("viu-request-caller".into(), "wire-request-59".into()),
+    ])).unwrap();
+    let done = next(&r, &wakes);
+    assert!(done.error.is_none(), "{:?}", done.error);
+    let model = done.model.unwrap();
+    assert_eq!(model["broker_from"], "stable-editor-agent");
+    assert_eq!(model["handle"]["caller"], "wire-request-59");
+    r.event("complete".into(), json!({"index":0})).unwrap();
+    let done = next(&r, &wakes);
+    assert!(done.error.is_none(), "{:?}", done.error);
+    assert_eq!(done.answers[0].0, sequence);
 }
 
 #[test]

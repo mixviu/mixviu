@@ -274,8 +274,9 @@ impl Runtime {
                     Request::Event(generation, sequence, command, args, is_request, mut headers) => {
                         let outcome = match current.as_mut() {
                             Some((active, eval, local, ..)) if *active == generation => {
-                                local.is_request.set(is_request); headers.entry("from".into()).or_insert_with(||"viu-client".into());
-                                *local.active.borrow_mut()=is_request.then(||(sequence,headers["from"].clone()));
+                                local.is_request.set(is_request);
+                                let caller=headers.get("viu-request-caller").or_else(||headers.get("from")).cloned().unwrap_or_else(||"viu-client".into());
+                                *local.active.borrow_mut()=is_request.then(||(sequence,caller));
                                 headers.insert("type".into(),if is_request{"request"}else{"event"}.into());
                                 headers.insert("id".into(),sequence.to_string());
                                 let event = IncomingEvent { generation, command, headers, body: args.to_string() };

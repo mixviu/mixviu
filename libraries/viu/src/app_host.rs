@@ -324,7 +324,7 @@ impl Host {
             _ => match self.calls.begin(r.reply, r.close_after_reply) {
                 Ok(token) => {
                     let mut headers = r.headers;
-                    headers.insert("from".into(), r.from);
+                    headers.insert("viu-request-caller".into(), r.from);
                     let before = self.runtime.sequence();
                     headers.insert("viu-call".into(), token);
                     self.dispatch(r.command, r.args, headers, None);
