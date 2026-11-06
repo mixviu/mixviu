@@ -30,8 +30,12 @@ end
 fn dp_is_dir($path)
   try return dp_stat($path,true).is_dir catch $error return false end
 end
-fn dp_names($path)
-  return viu_files("names",{path:$path})
+fn dp_names($path,$limit=100000)
+  try return viu_files("names",{path:$path,limit:$limit})
+  catch $message,$error
+    if $error.code=="ENUMERATION_BUDGET" then raise("SCAN_BUDGET",$message) end
+    raise($error.code,$message)
+  end
 end
 fn dp_contains_path($path,$parent)
   if starts_with($path,"file://") or starts_with($parent,"file://") then
@@ -108,7 +112,7 @@ fn dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$remaining,$max_d
   if $depth>$max_depth then raise("SCAN_BUDGET","Pane scan depth budget exceeded") end
   $profile=env("VIU_BULK_PROFILE","")=="1";$t=monotonic()
   $rows=[]
-  $names=dp_names($path)
+  $names=dp_names($path,$remaining)
   if len($names)>$remaining then raise("SCAN_BUDGET","Pane scan total enumeration budget exceeded") end
   $remaining=$remaining-len($names)
   $native=all($names,fn($n)=not starts_with($n.path,"file://"))
@@ -123,7 +127,7 @@ fn dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$remaining,$max_d
         $count=nil
         if $st.is_dir then
           try
-            $children=dp_names($full)
+            $children=dp_names($full,$remaining)
             if len($children)>$remaining then raise("SCAN_BUDGET","Pane scan child-count work budget exceeded") end
             $remaining=$remaining-len($children)
             $count=len(filter($children,fn($n)=$hidden or not starts_with($n.name,".")))
@@ -155,6 +159,8 @@ fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth,$budget={rows:100000,d
   return dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$budget.rows,$budget.depth).rows
 end
 fn dp_refresh($pane)
+  $budget=$pane.scan_budget ?? {rows:100000,depth:64}
+  validate($budget,{rows:{type:"integer",min:1,max:100000},depth:{type:"integer",min:0,max:64}})
   try
     $pane.entries=dp_scan($pane.path,$pane.show_hidden,$pane.expanded,$pane.sort,$pane.ascending,0,$pane.scan_budget ?? {rows:100000,depth:64})
     $pane.root_entries=filter($pane.entries,fn($r)=$r.depth==0)
