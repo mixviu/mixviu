@@ -1,3 +1,55 @@
+# Screenshot round 2 — reusable deferred-reply checkpoint
+
+S1 decided by Opus: gold wins. No gold/inventory discrepancy is a stop gate.
+The old S1 question below is historical and no longer blocks implementation.
+
+Reusable `viu_reply("keep")` / `viu_reply("send", handle, rc, body)` is now
+implemented in Viu. Handles bind the request sequence, caller and runtime
+generation to the original native response sender. Returning from the keeping
+callback leaves the request open; later callbacks can answer it. Active
+callbacks retain their evaluation deadline; retained requests do not inherit
+it. Cancellation can deliver a structured final refusal to the original
+request while answering the cancelling callback separately. No new transport,
+broker or service identity was added. Public contract: deferred-replies.md.
+
+The ledger is bounded at 32, consumes each handle once, rejects notification,
+altered, stale and duplicate handles, rolls back staged replies on callback
+fault, and clears with the evaluator generation. Host response-receiver loss
+retires its handle; native connection loss aborts old response tasks. The
+native broker continues to drop replies to departed callers, as with gold.
+Tests cover original-caller routing, reverse-order completion, duplicate and
+identity refusals, callback-fault retry, caller receiver retirement,
+notifications, reload and capacity exhaustion/recovery.
+
+Exact tested code: `febe71da6958436f9c41d4b04213712a2419385b`.
+CBC `20261107-031129-f2c1172c-a1`, cbc3, BUILD_RC=0; fmt-check, locked
+all-target check, Viu/viu-engine tests, clippy and host build passed. Worker
+diff empty. Saved log:
+`20261107-031129-cbc3-febe71da6958-20261107-031129-f2c1172c-a1-a4a52ded.log`.
+This is the scoped Viu gate, not a full four-engine process gate. Preparation
+`20261107-030718-7abdc52b-a1` ran successfully but returned formatting (97);
+format-only `20261107-031104-cdcfb1f8-a1` returned the latest formatting, applied
+locally before the exact-source rerun. Existing warnings remain.
+
+The fetched exact artifact SHA256 is
+`2267048d38ea3c0565099785597a856ab36e8b7181c44d1a6b536ed6130b8ab0`.
+Private native evidence: hub `_var/screenshot-parity-20261107/`, harness
+`deferred-native.mix`, successful run `deferred-native.g1EPxG`. An isolated
+native broker/headless compositor and private probe bundle held a Bus request
+for **22.100 s**, returning `{finished:true}` with rc 0 while **73 pings**
+succeeded. A second retained request was cancelled: its original caller got
+rc 10 `{error_code:"CANCELLED",message:"cancelled"}` after 0.078 s and the
+cancel command got `{cancelling:true}`. All owned children and broker stopped.
+Failed harness runs retained: 0zcLVQ used an invalid timer budget; vc7xBI sent
+a typed CLI body rather than JSON text. Neither was an accepted test.
+
+Screenshot adoption, annotations, compatibility and file/settings behaviour,
+full Bus and content Prefs checks, and matched visual acceptance continue next.
+SSIM/regions unmeasured; no visual or full app parity claimed. The annotation
+engine source inspection/import in progress is outside this tested checkpoint.
+
+Earlier checkpoint history follows.
+
 # Screenshot frame checkpoint — awaiting Fable S1
 
 **Overall parity: incomplete.** Frame adoption is implemented and checked at
@@ -620,3 +672,6 @@ branch lab/gold-parity; head bb950a59f82ef5c400fe89eaf1175a42bef6f93c (tested co
 
 
 branch lab/parity-screenshot; head 6ed840c8877dff0712a9d8126bd28fd7bb7a33ee (tested code; receipt commit follows); frame adopted; features incomplete; Bus S1 pending; Prefs five live variants + loss/recovery passed; SSIM/regions unmeasured; CBC 20261107-025752-62f61cfc-a1 PASS.
+
+
+branch lab/parity-screenshot; head febe71da6958436f9c41d4b04213712a2419385b (tested code; receipt commit follows); frame adopted; features incomplete; Bus deferred primitive passed native 22.1 s + cancel; Prefs frame variants passed previously; SSIM/regions unmeasured; CBC 20261107-031129-f2c1172c-a1 PASS.
