@@ -1,0 +1,13 @@
+-- CBC only; comp_oracle captures and restores the lock in this same job.
+for $cmd in [
+  ["cargo", "test", "-p", "decor", "-p", "comp-service", "--lib"],
+  ["cargo", "check", "-p", "compd", "--no-default-features", "--features", "backend-native,backend-headless", "--locked"],
+  ["cargo", "check", "-p", "compd", "--features", "backend-all", "--locked"]
+]
+  print("STEP_BEGIN " .. join($cmd, " "))
+  $r = run_argv(concat(["env", "CARGO_BUILD_JOBS=6"], $cmd), {timeout: 7000, max_output: 64000000})
+  print($r.stdout)
+  print($r.stderr)
+  print("STEP_RC=" .. to_string($r.exit_code))
+  if $r.exit_code != 0 then exit($r.exit_code) end
+end

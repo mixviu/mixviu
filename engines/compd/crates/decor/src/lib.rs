@@ -41,3 +41,5 @@ pub use layout::{
 };
 pub use state::{Chrome, ChromeState};
 pub use theme::{ChromeTheme, Pair, Palette, TokenSource};
+
+pub mod appearance;

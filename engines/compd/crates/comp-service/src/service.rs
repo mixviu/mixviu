@@ -129,6 +129,7 @@ impl LongReply {
 /// dispatch boundary; the engine applies policy (policy) and executes
 /// its effects before answering.
 pub trait CompEngine {
+    fn native_chrome_changed(&mut self) {}
     /// A read snapshot whose volatile leaves cover `scopes`; `None` when the
     /// state cannot be represented (the reads answer `busy`).
     fn snapshot(&mut self, scopes: &ReadScopes) -> Option<CompSnapshot>;
@@ -211,6 +212,7 @@ impl PortService {
     fn drain<E: CompEngine>(&mut self, engine: &mut E) {
         while let Ok(command) = self.source.try_recv() {
             match command {
+                PortCommand::Chrome(update) => { update.apply(); engine.native_chrome_changed(); }
                 PortCommand::ServicesLive(live) => engine.services_live(&live),
                 PortCommand::Snapshot(request) => {
                     if self.reads.len() < PORT_QUEUE_CAPACITY {

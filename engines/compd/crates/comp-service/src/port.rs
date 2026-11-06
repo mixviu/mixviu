@@ -187,6 +187,7 @@ pub fn default_noded_url() -> String {
 }
 
 pub enum PortCommand {
+    Chrome(Box<crate::chrome::Update>),
     Panel(PortPanelRequest),
     /// The registered services, from a registry diff (full set, not a delta).
     ServicesLive(BTreeSet<String>),
@@ -353,6 +354,9 @@ pub struct PortIngress {
 }
 
 impl PortIngress {
+    pub(crate) fn chrome(&self, update: crate::chrome::Update) -> bool {
+        self.sender.try_send(PortCommand::Chrome(Box::new(update))).is_ok()
+    }
     pub fn request_panel(&self, op: PanelRequest) -> Result<ControlAdmission, QueueFull> {
         let (reply, receive) = tokio::sync::oneshot::channel();
         self.admit(
@@ -925,6 +929,7 @@ where
 type WorkerFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 trait WorkerClient: Send + Sync + 'static {
+    fn chrome_client(&self) -> Option<&SupervisedClient> { None }
     fn incoming(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>>;
     fn state(&self) -> ConnState;
     fn subscribe_state(&self) -> watch::Receiver<ConnState>;
@@ -949,6 +954,7 @@ trait WorkerClient: Send + Sync + 'static {
 }
 
 impl WorkerClient for SupervisedClient {
+    fn chrome_client(&self) -> Option<&SupervisedClient> { Some(self) }
     fn incoming(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>> {
         SupervisedClient::incoming(self)
     }
@@ -1090,6 +1096,16 @@ async fn worker_loop<F, Fut, C>(
         return;
     };
     let mut states = client.subscribe_state();
+    let (chrome_sender, chrome_receiver) = tokio_mpsc::channel(64);
+    let chrome_task = if crate::chrome::enabled() {
+        let client = Arc::clone(&client);
+        let ingress = ingress.clone();
+        Some(tokio::spawn(async move {
+            if let Some(client) = client.chrome_client() {
+                crate::chrome::run(client, ingress, chrome_receiver).await;
+            }
+        }))
+    } else { None };
     apply_connection_state(&broker, *states.borrow());
     let mut responders = JoinSet::new();
     let responder_permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
@@ -1162,6 +1178,9 @@ async fn worker_loop<F, Fut, C>(
                     }
                     break;
                 };
+                if crate::chrome::enabled() && command.is_topic_delivery() {
+                    let _ = chrome_sender.try_send(command.clone());
+                }
                 dispatch_incoming(
                     &ingress,
                     &mut responders,
@@ -1182,6 +1201,7 @@ async fn worker_loop<F, Fut, C>(
     }
 
     registry_task.abort();
+    if let Some(task) = chrome_task { task.abort(); }
     responders.abort_all();
     while responders.join_next().await.is_some() {}
     drop(reply_sender);

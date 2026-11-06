@@ -21,6 +21,8 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+tracing.workspace = true
+settings.workspace = true
 theme.workspace = true
 resvg.workspace = true
 icons.workspace = true
@@ -38,6 +40,3 @@ design = { workspace = true }
 config = { workspace = true }
 libc = { workspace = true }
 smithay = { workspace = true }
-
-[dev-dependencies]
-settings.workspace = true

@@ -39,6 +39,8 @@ static WORLD_DIVERGENCE_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(not(feature = "inproc-ui"))]
+    comp_service::chrome::enable();
     #[cfg(feature = "inproc-ui")]
     overlays::register();
     // Answer `--version`/`-V` (and `--version --json`) as

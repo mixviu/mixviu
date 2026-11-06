@@ -413,6 +413,8 @@ impl Bus {
         };
         let noded_url = identity.noded_url.clone();
         let (wiring, starter) = comp_service::prepare(identity, waker)?;
+        #[cfg(not(feature = "inproc-ui"))]
+        comp_service::chrome::install_emitters(wiring.fires.clone());
         let pending = Rc::new(Cell::new(false));
         let flag = Rc::clone(&pending);
         handle
@@ -1054,6 +1056,9 @@ impl Engine<'_> {
 }
 
 impl CompEngine for Engine<'_> {
+    fn native_chrome_changed(&mut self) {
+        self.lp.state.schedule_redraw(dispatcher::state::RedrawReason::Publish);
+    }
     fn snapshot(&mut self, scopes: &ReadScopes) -> Option<CompSnapshot> {
         let mut snapshot = policy_host::project(
             self.lp,

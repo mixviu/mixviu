@@ -1,3 +1,7 @@
+# Round 4 decision: viud owns early input
+
+The primary approved option 1 below. Compositor authority stays in viud: input ownership/routing, focus/grabs, hit-test order, reservations, output geometry, corners/edges and session lock. viu owns drawing, widget state and Mix behaviour. Extend the existing panel-owner authority; publish plain engaged/dwelled/clicked/released/consumed events. A fast click before dwell must never reach an application. This resolves the design stop; remaining cases fitting this ownership rule are implementation work.
+
 # Furniture input ownership: lab design stop
 
 The client port has a concrete input-contract gap. No runtime or test source

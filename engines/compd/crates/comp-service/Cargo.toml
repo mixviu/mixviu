@@ -15,6 +15,8 @@ layer = "desktop"
 contract = "none"
 
 [dependencies]
+decor.workspace = true
+settings.workspace = true
 logging.workspace = true
 comp-model.workspace = true
 surfaces.workspace = true
