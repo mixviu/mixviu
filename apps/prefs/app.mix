@@ -157,6 +157,7 @@ fn queue_keys($s,$changes)
   for $key in keys($changes) if $changes[$key]==nil then push($reset,$key) else $values[$key]=$changes[$key] end end
   $checked=viu_settings("apply",$s.values,$values,$reset)
   if not $checked.ok then raise("FAILED",join(map($checked.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
+  $s.store_error=nil
   $s.queue_changes=merge($s.queue_changes,$changes)
   return queued_prefs($s)
 end
@@ -203,6 +204,7 @@ end
 fn set_prefs($s,$key,$value)
   $admission=$s;$admission.busy=false
   $request=$core.admitted($admission,$key,$value)
+  $s.store_error=nil
   $s.queue_changes=merge($s.queue_changes,$request.changes)
   for $key in $request.reset $s.queue_changes[$key]=nil end
   return queued_prefs($s)
@@ -505,7 +507,6 @@ on viu.job.completed
       $state=$email.observed($state)
       $state.role=$b.status.role ?? "unknown";$state.stale=$b.status.stale ?? false;$state.uncertain=false
       $state.status="Settings read"
-      $state.store_error=nil
       if len($state.catalog)>0 then
         if not any($state.catalog,fn($k)=$k.path==$state.key) then $state.key=$state.catalog[0].path end
         $state=$core.choose($state,$state.key)
@@ -546,6 +547,7 @@ on prefs.intent
     elif $a.action=="query" then
       $state.nav.query=$a.value;$state.nav.searching=$a.value!="";$state.ui.search_focus=false
     elif $a.action=="drawer.close" then $state.nav.drawer=nil
+    elif $a.action=="focus.done" then $state.nav.focus=nil
     elif $a.action=="problem" then $state.status=$a.value.message;$state.failed=true
     elif $state.nav.page=="wallpaper" and ($a.action=="remove" or starts_with($a.value.row ?? "","gallery.") or $a.value.row=="display") then
       $browser=$pages.browser($state)

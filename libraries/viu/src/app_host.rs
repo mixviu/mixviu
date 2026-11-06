@@ -548,10 +548,15 @@ impl Host {
                     (self.session_dirty || key_changed).then(|| session.snapshot.clone())
                 }) {
                     let appearance = snapshot["appearance"].clone();
+                    let mut authored = snapshot.clone();
+                    if self.model["theme_values"].is_object() {
+                        authored["state"]["values"] = self.model["theme_values"].clone();
+                        authored["state"]["lost"] = Value::Bool(false);
+                    }
                     let installed = if refresh_key.is_none() || key_changed {
                         crate::appearance::install_session_choice(
                             ctx,
-                            &snapshot,
+                            &authored,
                             &self.service,
                             &self.file_theme,
                             &self.last_ui,

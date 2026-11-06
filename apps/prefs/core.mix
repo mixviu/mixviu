@@ -23,6 +23,7 @@ fn framed($s)
   $model.theme_choice=$actions.theme_choice($s)
   -- Gold Shell::wanted: profile installation follows these authored inputs.
   $model.theme_refresh_key=[$model.theme_choice,$look.shown($s.look),$s.look.custom_source,$s.values["appearance.font_weight"],$s.values["appearance.font_size"]]
+  $model.theme_values=$look.preview_values($s)
   $model.macros_open=$s.ui.macros_open
   $model.shortcuts=filter($actions.action_list($s).actions,fn($a)=$a.shortcut!=nil)
   $model.window_close=$s.quitting and not $s.busy and not $s.release_busy and $s.notes_owner==nil and $s.look.job==nil and $s.email.task==nil and len(keys($s.queue_changes))==0

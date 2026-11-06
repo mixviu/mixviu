@@ -139,6 +139,7 @@ pub fn actions(kind: &str) -> Vec<&'static str> {
             "remove",
             "problem",
             "drawer.close",
+            "focus.done",
         ],
         _ => vec!["set"],
     }

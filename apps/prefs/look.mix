@@ -29,6 +29,16 @@ fn shown($l)
   $e=expected($l)
   return if $e==nil then nil else merge($e,$l.edited) end
 end
+fn preview_values($s)
+  $values=$s.values
+  $shown=shown($s.look)
+  if $shown!=nil then
+    for $axis in keys($paths)
+      $values[$paths[$axis]]=if $axis=="density" then density_step($shown[$axis]) else $shown[$axis] end
+    end
+  end
+  return $values
+end
 fn density_step($value)
   return if $value<0.925 then "compact" elif $value<=1.1 then "comfortable" else "spacious" end
 end
