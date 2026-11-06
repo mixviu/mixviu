@@ -1,5 +1,63 @@
 # Email inventory, core port and list measurement
 
+## Gold parity frame checkpoint, 2026-11-07: IN PROGRESS
+
+Baseline `4f2c0fd`, branch `lab/parity-email`. Gold is pinned to
+`8779f33284b7d3f1178c3d57a699efb9b0867b22`; its canonical `email` service
+was captured on an isolated native broker, headless compd and private settingsd.
+Gold's no-account action readback contains 78 actions; its complete describe
+readback contains 86 commands. `actions.json` and `gold-surface.json` preserve
+those public reference records. The latter is an **oracle inventory**, not a
+claim that all those handlers exist. The host manifest currently exposes the
+implemented subset plus native UI, macro and debug facilities.
+
+Mix now mounts the common gold frame, with Email's seven menu roots, Compose
+and the standard toolbar tail, live appearance callbacks, Help overlays and
+native keymap resolution. The existing account catalogue and bounded mail
+core remain; they have not become the gold settings account registry. The
+measured `rows_project` path and 2,000-row bounds are unchanged. No per-app Rust
+was added. Shared widget changes supply primary buttons and a native section
+heading role. The focused frame test exercises native pointer activation,
+disabled Compose and the About overlay in the embedded runtime.
+
+Diagnostic pairs use sequential canonical identities at 1040×680, scale 1,
+Inter 400/14.667, Studio/CSD/bar menus/right captions/row actions. Images,
+readbacks, exact settings revisions, binary hashes, scripts and cleanup are in
+the private Email parity archive. First diagnostic pair: header and status
+SSIM and RMSE distortion **0**. Whole-image distortion **0.0164125 SSIM /
+0.0833201 RMSE**; content **0.0182362 / 0.0878271**. Originals, montage and
+difference figure were inspected: heading weight, vertical spacing and the
+primary button differ. Subsequent widget repair improves the button and
+heading, but content is still unaccepted (whole **0.0162815 / 0.0751937**).
+These are ImageMagick 7.1.2-35 normalised distortions, zero meaning identical.
+Region rectangles: header `[0,0,1040,38]`, content `[0,38,1040,612]`, status
+`[0,650,1040,30]`. Diagnostics do not attest release bytes.
+
+Nine states exercise dark/light, About, shortcuts, accent, density, roundness,
+font and text scale on unchanged PIDs. The shortcuts comparison revealed a
+missing grid-key projection, subsequently repaired. Compact frame geometry
+and no-account content still differ. The complete Prefs matrix (including
+authority loss/recovery) remains required. Process cleanup receipts show all
+owned applications, compositor, settingsd and private broker stopped.
+
+Remaining work is required, with no approved omissions: settings account
+registry/migration/secrets fencing; full JMAP reads and writes including
+mailbox/message/PIM CRUD; paged selection and actions; rich reader and
+attachments; separate native composers, identities/suggestions/quoting;
+durable drafts and mail documents; close gates; menus/search/macros/saved
+layouts; complete asynchronous ABP replies, refusals and topics; all matched
+visual states and live Prefs cases. The generic host currently owns one app
+viewport; separate composer windows require reusable native runtime support.
+No replacement process/Bus route or deviation from gold is approved.
+
+CBC preparation `20261107-085153-50a5d098-a1` at `da1ee29f939c` passed
+the frame/native input test, all three JMAP-wire tests, the 2,000-row list test
+and debug host build. Its formatting diff was applied. Earlier frame gate
+`20261107-084505-5c28b11a-a1` at `64fea4e3a423` passed fmt, all-target check,
+frame test, clippy, debug and release builds with no worker diff. These are
+scoped checks; **overall Email parity remains FAIL / incomplete**. Exact-source
+validation of the repaired checkpoint follows in `last.md`.
+
 ## Round 6 measured list rerun
 
 Step 1 is measured, not merely prepared: CBC
