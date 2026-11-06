@@ -147,10 +147,17 @@ fn search_controls_are_admitted_only_for_the_current_result_page() {
         {"page":"input","sections":[{"rows":[{"id":"enabled","title":"Enabled","kind":"toggle","value":false}]}]}
     ]});
     let payload = json!({"page":"input","row":"enabled","value":true});
-    assert!(viu::settings_browser::admit(&value,"edit",&payload).is_ok());
-    assert!(viu::settings_browser::admit(&value,"edit",&json!({"page":"other","row":"enabled","value":true})).is_err());
+    assert!(viu::settings_browser::admit(&value, "edit", &payload).is_ok());
+    assert!(
+        viu::settings_browser::admit(
+            &value,
+            "edit",
+            &json!({"page":"other","row":"enabled","value":true})
+        )
+        .is_err()
+    );
     value["searching"] = json!(false);
-    assert!(viu::settings_browser::admit(&value,"edit",&payload).is_err());
+    assert!(viu::settings_browser::admit(&value, "edit", &payload).is_err());
 }
 
 #[test]
@@ -161,9 +168,17 @@ fn split_record_details_preserve_disabled_and_current_field_admission() {
             {"id":"password","title":"Password","kind":"secret","blocked":"busy"}
         ]}
     ]}]});
-    assert!(viu::settings_browser::admit(&value,"edit",&json!({"row":"name","value":"Example"})).is_ok());
-    assert!(viu::settings_browser::admit(&value,"edit",&json!({"row":"password","value":"secret"})).is_err());
-    assert!(viu::settings_browser::admit(&value,"edit",&json!({"row":"name","value":false})).is_err());
+    assert!(
+        viu::settings_browser::admit(&value, "edit", &json!({"row":"name","value":"Example"}))
+            .is_ok()
+    );
+    assert!(
+        viu::settings_browser::admit(&value, "edit", &json!({"row":"password","value":"secret"}))
+            .is_err()
+    );
+    assert!(
+        viu::settings_browser::admit(&value, "edit", &json!({"row":"name","value":false})).is_err()
+    );
 }
 
 #[test]

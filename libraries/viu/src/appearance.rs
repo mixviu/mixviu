@@ -87,6 +87,9 @@ pub fn install_session_choice(
 }
 pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), String> {
     toolkit::install(ctx, theme);
+    // Normal clients have the same presentation in debug and release builds.
+    // Fractional spacing is valid; egui's development overlay is opt-in.
+    ctx.style_mut(|style| style.debug.show_unaligned = false);
     ctx.data_mut(|d| d.insert_temp(egui::Id::unique("viu-session-theme"), theme.clone()));
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();

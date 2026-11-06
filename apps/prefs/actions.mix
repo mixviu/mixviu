@@ -97,21 +97,21 @@ end
 fn menus($s)
   $all=action_list($s).actions;$out=[]
   for $menu in $menu_template.menus
-    push($out,{id:lower($menu.title),label:$menu.title,enabled:true,children:menu_rows($menu.rows,$all)})
+    push($out,{id:lower($menu.title),label:$menu.title,enabled:true,children:menu_rows($menu.rows,$all,$s.bindings)})
   end
   return $out
 end
-fn menu_rows($rows,$all)
+fn menu_rows($rows,$all,$bindings)
   $out=[]
   for $row in $rows
     if $row.separator ?? false then push($out,{separator:true});continue end
     $item={id:$row.id ?? lower($row.label),label:$row.label,enabled:$row.enabled,shortcut:$row.shortcut}
-    if $row.submenu!=nil then $item.children=menu_rows($row.submenu,$all)
+    if $row.submenu!=nil then $item.children=menu_rows($row.submenu,$all,$bindings)
     else
       $a=filter($all,fn($a)=$a.id==$row.id)[0]
       if $a!=nil then
         $item.enabled=$a.enabled;$item.checked=$a.checked
-        if $s.bindings[$a.id]!=nil then $item.shortcut=$a.shortcut end
+        if $bindings[$a.id]!=nil then $item.shortcut=$a.shortcut end
       end
     end
     push($out,$item)

@@ -2422,7 +2422,11 @@ fn draw_inline_row(
                                 });
                                 if !text(row, "description").is_empty() {
                                     let label = RichText::new(text(row, "description")).weak();
-                                    ui.label(if row["description_small"] == true { label.small() } else { label });
+                                    ui.label(if row["description_small"] == true {
+                                        label.small()
+                                    } else {
+                                        label
+                                    });
                                 }
                             });
                             ui.end_row();
