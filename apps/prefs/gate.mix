@@ -14,4 +14,14 @@ for $argv in [["cargo","test","--locked","-p","toolkit","--lib","menu"],["cargo"
   print($check)
   if not $check.ok then exit($check.exit_code ?? 124) end
 end
+if $gate.exit_code==0 and contains(args(),"--release") then
+  $build=run_argv(["cargo","build","--locked","--release","-p","viu-engine","--bin","viu"],{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}})
+  print($build)
+  if not $build.ok then exit($build.exit_code ?? 124) end
+  $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+  $artifact="/build/gold-parity-artifacts/"..$sha.."/release"
+  mkdir($artifact,{parents:true})
+  copy("target/release/viu",$artifact.."/viu")
+  print({release_artifact:$artifact,sha256:hash_file($artifact.."/viu","sha256")})
+end
 exit($gate.exit_code)
