@@ -1,3 +1,9 @@
+# Round 3: Fable P1 signal implementation checkpoint
+
+P1 is decided: exact gold admission/no confirmation plus the invisible start-time fence. docs/ports/monitor.md records the approved non-visual deviation and corrects the UID/confirmation claim. API and native primitive are implemented. CBC 20261107-013833-4b57ccb6-a1 ran all scoped checks successfully on ddfea5f, including both disposable-child signals and mismatch survival; rc97 records returned formatting/lock changes, not exact-source acceptance. Full log read; libc lock edge applied. ESRCH/integer-token refinements at 3551c1d await the next exact-source gate. No production process was signalled.
+
+Processes region work is in progress and unaccepted. Existing round-two SSIM distortion 0.0957189 remains a failed baseline, not evidence for current edits. P1 no longer blocks work.
+
 # Gold parity round 2 — frame and method checkpoint
 
 The standing parity mandate has been read. **Monitor is not at full parity.**
@@ -518,3 +524,5 @@ branch lab/gold-parity; head 0a7ae37937e8b022b38fb5b0adc176a6b83ce97b (tested co
 
 
 branch lab/gold-parity; head bb950a59f82ef5c400fe89eaf1175a42bef6f93c (tested code; receipt-only commit follows); frame: identity-preserving mount adopted by Monitor, five live Prefs variants/recovery/close passed, remaining input combinations unaccepted; Monitor: NOT at parity, matched 1040x680 SSIM distortion 0.0957189, menus/options/table/status/Performance/ABP/actions remain, no accepted deviations, Fable P1 pending; CBC job ids: 20261107-012348-cc3a95cf-a1 (final scoped green), 20261107-012031-152ba7e4-a1 (preparation passed with formatting diff), 20261107-011138-9b732aa9-a1 (earlier scoped green).
+
+branch lab/gold-parity; head 3551c1d (signal implementation; receipt commit follows); Monitor parity: NOT accepted, previous matched SSIM distortion 0.0957189, region/Performance/full ABP work pending; CBC job ids: 20261107-013833-4b57ccb6-a1 (preparation, checks passed, rc97 formatting/lock patch).
