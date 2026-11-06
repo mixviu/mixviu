@@ -50,7 +50,7 @@ fn open_recovery($a)
 end
 on job.run
   $job=$event.args;$a=$job.payload
-  if $job.kind=="action-publish" then emit "ced.action.executed" body=$a.body;reply(0,"{}");return
+  if $job.kind=="action-publish" then publish("ced.action.executed",json_encode($a.body));reply(0,"{}");return
   elif $job.kind=="macro-panel" then
     $panel=$a.panel
     if $a.action=="open" then $panel=macro_catalogue($panel)
