@@ -5,7 +5,8 @@ on job.run
   try
     if contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set"],$a.command) then
       $answer=$accounts.update($a.command,$a.args,$a.binding)
-      reply(0,json_encode({rc:0,body:$answer}));return
+      $snapshot=$accounts.settings_call("settings.get",{binding:$a.binding,view:"values"})
+      reply(0,json_encode({rc:0,body:$answer,settings:$snapshot}));return
     end
     $e=$a.entry
     if $e.password_file==nil and $accounts.password($e.id)=="" then raise("NO_PASSWORD","No password is saved for "..$e.user) end

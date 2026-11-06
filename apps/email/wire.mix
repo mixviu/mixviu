@@ -105,6 +105,9 @@ fn wire_completed($d)
   elif $answer.rc==0 and $job.command=="email.open" and $job.account==$active then
     $m=$answer.body;$message=merge($m,{text:$m.text ?? $m.html ?? ""});$selected=$m.id;$reader=reader_text($message)
   end
-  if $answer.rc==0 and $job.purpose=="settings" and contains(["email.account.set","email.account.password.set"],$job.command) and wire_entry($answer.body.id)!=nil then wire_start("email.account.connect",{id:$answer.body.id},nil,"connect") end
+  if $answer.rc==0 and $job.purpose=="settings" then
+    if $answer.settings!=nil then wire_session({state:merge($answer.settings,{binding:$mail_settings.binding,lost:false})}) end
+    if contains(["email.account.set","email.account.password.set"],$job.command) and wire_entry($answer.body.id)!=nil then wire_start("email.account.connect",{id:$answer.body.id},nil,"connect") end
+  end
   if $job.token!=nil then viu_reply("finish",$job.token,{rc:$answer.rc,body:$answer.body}) end
 end

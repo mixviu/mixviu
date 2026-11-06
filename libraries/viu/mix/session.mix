@@ -3,7 +3,7 @@
 -- Read-only native settings follower. Hints request reads; they carry no state.
 -- Revision strings stay decimal text, including values beyond f64 precision.
 fn session_topics()
-  return ["settingsd.desktop.look.default","settingsd.desktop.keys.default.keymaps","noded.props.changed","theme.changed"]
+  return ["settingsd.desktop.look.default","settingsd.desktop.keys.default.keymaps","settingsd.desktop.keys.default.email","settingsd.desktop.keys.default.ced","settingsd.desktop.keys.default.terminal","noded.props.changed","theme.changed"]
 end
 fn session_new($instance)
   return {binding:{instance:$instance,profile:"default"},retargeted:false,incarnation:nil,revision:nil,lost:false,values:{},changed:false,failures:0,retry:nil,error:nil}
