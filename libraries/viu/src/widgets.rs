@@ -658,7 +658,12 @@ impl Widgets {
                             let r = if widget.kind == "radio" {
                                 ui.radio(value == option, option)
                             } else {
-                                ui.selectable_label(value == option, widget.properties["labels"][option].as_str().unwrap_or(option))
+                                ui.selectable_label(
+                                    value == option,
+                                    widget.properties["labels"][option]
+                                        .as_str()
+                                        .unwrap_or(option),
+                                )
                             };
                             self.remember(ui, &format!("{id}.{option}"), &r);
                             if r.clicked() {
