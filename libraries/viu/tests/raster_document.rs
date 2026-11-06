@@ -34,6 +34,9 @@ end
 on cancelled
   reply(0,json_encode({cancelled:viu_cancelled()}))
 end
+on crypto
+  reply(0,json_encode({run:uuid(),digest:hash_sha256("abc")}))
+end
 "#
         .into(),
     })
@@ -51,6 +54,12 @@ fn reusable_documents_keep_history_and_worker_exports_the_same_annotated_pixels(
         .unwrap();
     let services = Services::default();
     let (mut root, wakes) = worker(services.clone());
+    root.event("crypto".into(), json!({})).unwrap();
+    let crypto=next(&root,&wakes);
+    assert!(crypto.error.is_none(),"{:?}",crypto.error);
+    let crypto=crypto.reply.unwrap().body;
+    assert_eq!(crypto["run"].as_str().unwrap().len(),36);
+    assert_eq!(crypto["digest"],"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     root.event(
         "document".into(),
         json!({"op":"open","body":{"path":source}}),

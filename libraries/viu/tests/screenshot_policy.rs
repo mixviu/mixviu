@@ -42,6 +42,7 @@ fn screenshot_mix_controller_mounts_and_keeps_read_surfaces_available() {
         ("screenshot.ping", json!({})),
         ("screenshot.info", json!({})),
         ("screenshot.actions", json!({})),
+        ("screenshot.execute", json!({"id":"annotate.colour.green"})),
         ("screenshot.select", json!({"mode":"screen"})),
         ("screenshot.theme", json!({"mode":"light"})),
         ("screenshot.dialog", json!({"open":"about"})),

@@ -16,8 +16,10 @@ fn flush($s,$service)
   if ($s.action_publishing ?? false) or not $s.connected or len($s.action_queue ?? [])==0 then return $s end
   $value=$s.action_queue[0];$value.dropped=$s.action_lost ?? 0
   $path=path_join(dirname(script_path()),"publish-job.mix")
-  send "viu-local" "jobs.start" id="screenshot-events" owner=$value.seq path=$path source=read_file($path) command="job.run" args={topic:$service..".action.executed",event:$value}
-  if $rc==0 then $s.action_queue=slice($s.action_queue,1);$s.action_publishing=true;$s.action_lost=0 end
+  try
+    send "viu-local" "jobs.start" id="screenshot-events" owner=$value.seq path=$path source=read_file($path) command="job.run" args={topic:$service..".action.executed",event:$value}
+    if $rc==0 then $s.action_queue=slice($s.action_queue,1);$s.action_publishing=true;$s.action_lost=0 end
+  catch $message end
   return $s
 end
 fn completed($s,$d)
