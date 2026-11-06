@@ -14,6 +14,7 @@ $state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_
 $state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).commands;$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:true,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.preview_requested={};$state.lex_requested={};$state.caret_wanted={};$state.caret_published={};$state.caret_at={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
 $state.macro_panel={epoch:0,serial:0,page:"closed",id:nil,filter:"",form:{open:false,title:"",body:"",field:nil,choices:[]}}
 $state.local_theme={}
+$state.recovered=[];$state.recovery_open=false;$state.recovery_checked=false;$state.dialog_call=nil
 publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
@@ -36,7 +37,7 @@ end
 on ced.intent
   $a=$event.args
   if $a.id=="editor" then $state=pump($state)
-  elif contains(["problems-list","close-dialog","find-bar","save-dialog","goto-dialog","help-dialog","macros-dialog","mail-fields","notice-actions"],$a.id) then $state=ced_ui_intent($state,$a)
+  elif contains(["problems-list","close-dialog","find-bar","save-dialog","goto-dialog","help-dialog","macros-dialog","mail-fields","notice-actions","recovered-dialog"],$a.id) then $state=ced_ui_intent($state,$a)
   elif $a.id=="tabs" then
     $i=to_number($a.value)
     if $i<0 or floor($i)!=$i or $i>=len($state.tabs) then raise("TAB","Unknown tab") end
@@ -45,7 +46,10 @@ on ced.intent
   elif $a.id=="open-dialog" then
     $state.path=if $a.action=="edit" then $a.value else $a.value.field end
     if $a.action=="answer" then
-      if $a.value.choice=="open" then $state=operation($state,"open",{path:$state.path}) end
+      if $a.value.choice=="open" then
+        $state=operation($state,"open",{path:$state.path})
+        if $state.dialog_call!=nil and $state.waits[$state.dialog_call]!=nil then $state.waits[$state.dialog_call]=merge($state.waits[$state.dialog_call],{kind:"open",documents:[$state.last_open],new:false});$state.dialog_call=nil end
+      else $state=dialog_cancel($state) end
       $state.open_dialog=false
     end
   else $state=operation($state,$a.id,$a) end
@@ -79,6 +83,7 @@ on viu.job.completed
         viu_timer($job.payload.document..":deadline:"..$job.payload.request.op_id,$event.args.body.deadline_after_ms,{document:$job.payload.document,kind:"deadline",op_id:$job.payload.request.op_id})
       end
       if $job.kind=="session-load" then $state=restore_session($state,$event.args.body)
+      elif $job.kind=="recovered-list" then $state.recovered=recovered_rows($state,$event.args.body);$state.recovery_open=len($state.recovered)>0;$state.recovery_checked=true
       elif $job.kind=="probe" then
         $state.reattach_wait={}
         $state.edit=$event.args.body
@@ -120,6 +125,7 @@ on edit.changed
   $state=pump($state);publish_ced($state)
 end
 on bus.connected
+  if not $state.recovery_checked then viu_timer("recovery-survey",500,{kind:"recovery-survey"}) end
   if not $state.session_loaded and not any(concat($state.queue,values($state.running)),fn($j)=$j.kind=="session-load") then $state=queue_job($state,"session-load",{}) end
   subscribe("edit.changed")
   subscribe("noded.props.changed")
@@ -133,7 +139,10 @@ on bus.overflow
 end
 on viu.timer
   $t=$event.args.value
-  if $t.kind=="call" then
+  if $t.kind=="recovery-survey" then
+    if not $state.session_loaded or len(keys($state.restore))>0 or any(concat($state.queue,values($state.running)),fn($j)=contains(["session-load","open"],$j.kind)) then viu_timer("recovery-survey",250,{kind:"recovery-survey"})
+    elif not $state.recovery_checked then $state=queue_job($state,"recovered-list",{}) end
+  elif $t.kind=="call" then
     if $state.waits[$t.token]!=nil then
       $w=$state.waits[$t.token];$left=$w.timeout_ms-(monotonic()-$w.started)*1000
       if $left>1 then viu_timer("call:"..$t.token,min(90000,$left),{kind:"call",token:$t.token})

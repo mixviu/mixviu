@@ -198,7 +198,16 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             {
                 return Err("invalid bounded form editor options".into());
             }
-            entries(&value["choices"], 0, &mut BTreeSet::new())
+            let mut ids=BTreeSet::new();
+            entries(&value["choices"], 0, &mut ids)?;
+            if let Some(items)=value.get("items") {
+                let items=items.as_array().filter(|r|r.len()<=1024).ok_or("bounded dialog rows required")?;
+                for row in items {
+                    if !row["label"].is_string(){return Err("dialog row label required".into());}
+                    entries(&row["choices"],0,&mut ids)?;
+                }
+            }
+            Ok(())
         }
         _ => Err("unknown rich control".into()),
     }
@@ -290,7 +299,7 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
                 || current
                     .get("instance")
                     .is_some_and(|instance| payload.get("instance") != Some(instance))
-                || find(&current["choices"], text(payload, "choice"))
+                || find(&current["choices"], text(payload, "choice")).or_else(|| current["items"].as_array().into_iter().flatten().find_map(|r|find(&r["choices"],text(payload,"choice"))))
                     .is_none_or(|item| item["enabled"] != true)
             {
                 return Err("disabled or unknown form choice".into());
@@ -403,6 +412,7 @@ pub(crate) fn draw(
     events: &mut Vec<Intent>,
 ) -> egui::Response {
     let id = &widget.id;
+    if widget.kind=="dialog-form" && widget.properties["style"]=="gold" {return gold_dialog(ui,widget,value,geometry,events);}
     match widget.kind.as_str() {
         "menubar" => {
             let form = menu_form(ui.ctx());
@@ -680,4 +690,41 @@ pub(crate) fn draw(
         }
         _ => ui.colored_label(egui::Color32::RED, "Unsupported rich widget"),
     }
+}
+
+fn gold_dialog(ui: &mut Ui, widget: &Widget, value: &Value, geometry: &mut BTreeMap<String,Rect>, events: &mut Vec<Intent>) -> egui::Response {
+    use toolkit::dialog::{Choice,Dialog,Role};
+    let id=&widget.id;
+    let choices=value["choices"].as_array().unwrap();
+    let key=egui::Id::unique((ui.ctx().viewport_id(),id,&value["instance"]));
+    let mut field=value["field"].as_str().map(str::to_owned);
+    let mut accept=false;
+    let shown=Dialog::new(key,text(value,"title")).buttons(choices.iter().map(|c|Choice::new(text(c,"label"),if c["cancel"]==true {Role::Cancel}else if c["default"]==true{Role::Default}else{Role::Other}).enabled(c["enabled"]==true)).collect()).show(ui.ctx(),|ui|{
+        if let Some(field)=field.as_mut(){
+            let response=toolkit::field::text(ui,field,text(value,"body"),420.0);
+            geometry.insert(format!("{id}.field"),response.rect);
+            if response.lost_focus() && ui.input(|i|i.key_pressed(egui::Key::Enter)){accept=true;}
+            else if !response.has_focus() && !response.lost_focus(){response.request_focus();}
+            if response.changed(){emit(events,id,"edit",json!(field));}
+        }else if !text(value,"body").is_empty(){ui.label(text(value,"body"));}
+        if let Some(items)=value["items"].as_array(){
+            egui::ScrollArea::vertical().max_height(360.0).show(ui,|ui|{
+                egui::Grid::new((id,"rows")).show(ui,|ui|{
+                    for row in items {
+                        ui.label(text(row,"label"));
+                        if let Some(shortcut)=row["shortcut"].as_str(){ui.monospace(shortcut);}
+                        for c in row["choices"].as_array().unwrap(){
+                            let response=ui.add_enabled(c["enabled"]==true,egui::Button::new(text(c,"label")));
+                            geometry.insert(format!("{id}.choice.{}",text(c,"id")),response.rect);
+                            if response.clicked(){emit(events,id,"answer",json!({"choice":c["id"],"field":field,"instance":value["instance"]}));}
+                        }
+                        ui.end_row();
+                    }
+                });
+            });
+        }
+    });
+    let chosen=shown.chosen.or_else(||if shown.dismissed{choices.iter().position(|c|c["cancel"]==true)}else if accept{choices.iter().position(|c|c["default"]==true && c["enabled"]==true)}else{None});
+    if let Some(i)=chosen {emit(events,id,"answer",json!({"choice":choices[i]["id"],"field":field,"instance":value["instance"]}));Dialog::reset(ui.ctx(),key);}
+    ui.allocate_rect(shown.rect,egui::Sense::hover())
 }

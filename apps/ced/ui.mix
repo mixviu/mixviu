@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Ced composes reusable controls; command and dialog policy stays here.
 fn ui_form($open,$title,$body,$field=nil,$instance=0)
-  return {open:$open,title:$title,body:$body,field:$field,instance:$instance,choices:[{id:"ok",label:"OK",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
+  return {open:$open,title:$title,body:$body,field:$field,instance:$instance,choices:[{id:"ok",label:if $title=="Save As" then "Save" elif $title=="Go to Line" then "Go" else "OK" end,enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
 end
 fn ced_menus($s)
   $menus=[];$rows=action_rows($s)
@@ -58,11 +58,25 @@ fn ced_ui_model($s,$model)
   $model.values["goto-dialog"]=ui_form($s.goto_dialog,"Go to Line","Line[:column]",$s.goto_text ?? "",$s.dialog_instance ?? 0)
   $body=if $s.help=="keys" then join(map(action_rows($s),fn($a)=$a.label.."    "..join($a.keys," / ")),"\n") elif $s.help=="about" then "MixOS Editor\nAn editor over the edit Bus service.\nMixOS 0.1.2" else "" end
   $model.values["help-dialog"]=ui_form(contains(["keys","about"],$s.help),if $s.help=="keys" then "Keyboard Shortcuts" else "About MixOS Editor" end,$body)
+  $model.values["help-dialog"].choices=[{id:"ok",label:"Close",enabled:true,default:true,cancel:true}]
+  if $s.help=="keys" then
+    $model.values["help-dialog"].body="";$model.values["help-dialog"].items=[]
+    for $a in action_rows($s) if len($a.keys)>0 then $model.values["help-dialog"].items=push($model.values["help-dialog"].items,{label:$a.label,shortcut:$a.keys[0],choices:[]}) end end
+  end
+  $items=[]
+  for $row in $s.recovered ?? []
+    push($items,{label:$row.path ?? $row.name ?? "untitled ("..$row.recovery_id..")",choices:[{id:"recover:"..$row.buffer,label:"Open",enabled:true},{id:"discard:"..$row.buffer,label:"Discard",enabled:true}]})
+  end
+  $model.values["recovered-dialog"]={open:$s.recovery_open ?? false,title:"Recovered documents",body:"Unsaved documents were recovered. Open or discard them.",items:$items,choices:[{id:"close",label:"Close",enabled:true,cancel:true}]}
   $model.values["macros-dialog"]={app:"ced",open:$s.macros_open ?? false}
   $model.values["notice-actions"]=[];$model.notice=""
   if $has then
     if $t.detached_copy then $model.notice="The document changed while disconnected. Choose which text to keep.";$model.values["notice-actions"]=[{id:"keep-mine",label:"Keep mine",enabled:true},{id:"take-theirs",label:"Take theirs",enabled:true}]
-    elif $t.conflicts>0 then $model.notice="Edits set aside after concurrent changes; "..to_string($t.conflicts).." conflict(s)."
+    elif $t.conflicts>0 then
+      $model.notice="Edits set aside after concurrent changes; "..to_string($t.conflicts).." conflict(s)."
+      for $conflict in viu_document("inspect",$t.document,{}).conflicts
+        $model.values["notice-actions"]=concat($model.values["notice-actions"],[{id:"reinsert:"..to_string($conflict.rev),label:"Reinsert",enabled:$t.phase=="live"},{id:"dismiss:"..to_string($conflict.rev),label:"Dismiss",enabled:true}])
+      end
     elif $s.notices[$t.document]!=nil then $model.notice=$s.notices[$t.document] end
   end
   $model.show_notice=$model.notice!=""
@@ -115,11 +129,24 @@ fn ced_ui_intent($s,$a)
     if $a.action=="answer" then
       if $a.value.choice=="ok" then
         $args=if $save then {path:$s[$key]} else {line:to_number(split($s[$key],":")[0]),col:to_number(split($s[$key],":")[1] ?? "1")} end
-        $s=do_action($s,if $save then "file.save_as" else "search.goto_line" end,$args).state
-      end
+        $out=do_action($s,if $save then "file.save_as" else "search.goto_line" end,$args);$s=dialog_complete($out.state,$out)
+      else $s=dialog_cancel($s) end
       $s[if $save then "save_dialog" else "goto_dialog" end]=false
     end
   elif $a.id=="help-dialog" then $s.help=nil
+  elif $a.id=="recovered-dialog" then
+    if $a.value.choice=="close" then $s.recovery_open=false
+    else
+      $parts=split($a.value.choice,":");$rows=filter($s.recovered,fn($r)=$r.buffer==$parts[1])
+      if len($rows)>0 then
+        $row=$rows[0]
+        if $parts[0]=="recover" then
+          if $row.path!=nil then $s=operation($s,"open",{path:$row.path})
+          else $s.next_tab=$s.next_tab+1;$s=queue_job($s,"open",{document:to_string($s.next_tab),args:{recovery_id:$row.recovery_id}}) end
+        else $s=queue_job($s,"discard-recovery",{buffer:$row.buffer}) end
+        $s.recovered=filter($s.recovered,fn($r)=$r.buffer!=$row.buffer);$s.recovery_open=len($s.recovered)>0
+      end
+    end
   elif $a.id=="macros-dialog" then
     $s.macros_open=false
   elif $a.id=="mail-fields" then
@@ -137,7 +164,10 @@ fn ced_ui_intent($s,$a)
       else $h.attachments=concat(slice($h.attachments,0,$a.value),slice($h.attachments,$a.value+1)) end
       $s=mail_headers($s,$key,$h)
     end
-  elif $a.id=="notice-actions" then $s=operation($s,$a.value.command,{})
+  elif $a.id=="notice-actions" then
+    if contains($a.value.command,":") then
+      $parts=split($a.value.command,":");$v=viu_document("conflict",current($s).document,{rev:to_number($parts[1]),reinsert:$parts[0]=="reinsert"})
+    else $s=operation($s,$a.value.command,{}) end
   end
   return pump($s)
 end

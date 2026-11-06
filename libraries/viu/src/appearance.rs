@@ -66,6 +66,7 @@ pub fn install_session(
             colours.insert(role.clone(), colour);
         }
     }
+    colours.insert("editor.background".into(),editor_palette.background);
     let m = chrome.metrics;
     ctx.data_mut(|d| {
         d.insert_temp(egui::Id::unique("viu-gold-editor-palette"), editor_palette);
@@ -122,11 +123,12 @@ pub fn local_choice(ctx: &egui::Context, value: &Value) -> Result<(), String> {
     toolkit::install(ctx, &theme);
     let palette = editor::Palette::from_theme(&theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
-    let colours = resolve(&serde_json::json!({}))?
+    let mut colours = resolve(&serde_json::json!({}))?
         .colours
         .keys()
         .filter_map(|role| chrome.palette.get(role).map(|c| (role.clone(), c)))
         .collect::<std::collections::BTreeMap<_, _>>();
+    colours.insert("editor.background".into(),palette.background);
     ctx.data_mut(|d| {
         d.insert_temp(key, value.clone());
         d.insert_temp(egui::Id::unique("viu-resolved-theme"), theme);

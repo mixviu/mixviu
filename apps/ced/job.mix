@@ -110,6 +110,8 @@ on job.run
   elif $job.kind=="macro" then
     reply(0,json_encode(viu_macros($a.command,$a.args)));return
   elif $job.kind=="session-load" then reply(0,json_encode(load_session()));return
+  elif $job.kind=="recovered-list" then send "edit" "edit.list" body={} timeout=5;reply($rc,json_encode($reply));return
+  elif $job.kind=="discard-recovery" then send "edit" "edit.close" body={buffer:$a.buffer,force:true,origin:"human:ced"} timeout=5;reply($rc,json_encode($reply));return
   elif $job.kind=="session-save" then
     mkdir(dirname($a.path),{parents:true})
     viu_atomic_replace($a.path,json_encode($a.value),33554432)

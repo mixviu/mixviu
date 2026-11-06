@@ -136,6 +136,10 @@ fn bus_command($s,$e)
     try $out=do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index,$e.headers["viu-call"],"bus",$a.params)
     catch $message,$error return refused($s,if contains(["INVALID_ARGUMENT","NOT_FOUND","UNKNOWN_ACTION"],$error.code) then $error.code else "CONFLICT" end,$message) end
     $s=$out.state
+    if $out.kind=="dialog" then
+      if $s.dialog_call!=nil then $s=dialog_cancel($s) end
+      $s=hold_call($s,$e,{kind:"dialog",action:$a.id,timeout_ms:10000});$s.dialog_call=$e.headers["viu-call"];return $s
+    end
     if $out.kind=="mail" then return check_calls(hold_call($s,$e,{kind:"job",timeout_ms:150000})) end
     if $out.op_id!=nil then return check_calls(hold_call($s,$e,{kind:"outcome",tab:if $index>=0 then to_number($s.tabs[$index].document) else nil end,op_id:$out.op_id,action:$a.id,close_after:$a.id=="file.close",timeout_ms:60000}))
     elif $out.kind=="close" then return check_calls(hold_call($s,$e,{kind:"close",tab:to_number($s.tabs[$index].document),action:$a.id,timeout_ms:60000})) end
