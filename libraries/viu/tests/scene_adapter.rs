@@ -14,7 +14,7 @@ fn hosted_menu_popup_survives_a_hidden_client_band_and_returns_to_the_row() {
     let source=scene(json!({"root":{"widget":"column","children":["band"]},"band":{"widget":"column","hidden":"= $model.hidden","children":["menu"]},"menu":{"widget":"control","definition":{"id":"menu","kind":"menubar","label":"","initial":[]},"on_intent":"menu.intent"}}));
     let mut view=SceneView::with_model(&source,json!({"hidden":false,"values":{"menu":[{"id":"File","label":"File","enabled":true,"children":[{"id":"file.open","label":"Open","enabled":true}]}]}})).unwrap();
     let ctx=egui::Context::default();
-    let input=||egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(600.0,300.0))),..Default::default()};
+    let input=||egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(800.0,300.0))),..Default::default()};
     let mut output=ctx.run_ui(input(),|ui|{view.show(ui);});output.textures_delta.clear();assert!(view.geometry.contains_key("menu.menu.File"));
     let mut model=view.model().clone();model["hidden"]=json!(true);view.apply_model(model).unwrap();
     view.set_overlay_controls(["menu".into()]).unwrap();viu::rich::configure_hosting(&ctx,true,false);viu::rich::menu_popup(&ctx,"menu",&json!({"side":"left"})).unwrap();

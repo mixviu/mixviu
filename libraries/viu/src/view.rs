@@ -190,7 +190,7 @@ impl SceneView {
         for id in &self.overlays {
             let node=&nodes[id];
             if let Ok(widget)=Widget::decode(&node.ports["definition"]){
-                egui::Area::new(ui.id().with(("viu-hosted-overlay",id))).fixed_pos(ui.ctx().content_rect().left_top()).order(egui::Order::Foreground).show(ui.ctx(),|ui|{
+                egui::Area::new(ui.scope_id().with(("viu-hosted-overlay",id))).fixed_pos(ui.ctx().content_rect().left_top()).order(egui::Order::Foreground).show(ui.ctx(),|ui|{
                     for intent in self.widgets.widget(ui,&widget,&self.tree.model){if let Some(command)=node.ports.get("on_intent").and_then(Value::as_str){events.push(Event::from_intent(command,&self.tree.name,intent));}}
                 });
             }

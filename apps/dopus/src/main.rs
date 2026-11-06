@@ -479,7 +479,9 @@ impl App {
                 let _=reply.send((0,json!({"info":self.model["info"],"busy":self.model["busy"],"panes":self.model["panes"]})));
             }
             "dopus.dialog" => {
-                let _ = reply.send((0, self.model["values"]["form"].clone()));
+                if args.as_object().is_some_and(|a|a.is_empty()) {
+                    let _ = reply.send((0, self.model["values"]["form"].clone()));
+                }else{self.call(command,args,headers,Some(reply),ctx);}
             }
             "dopus.ui.capture" => {
                 if args
