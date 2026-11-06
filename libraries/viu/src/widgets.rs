@@ -291,6 +291,24 @@ impl Widget {
                 0.0
             })
     }
+
+    /// The native header keeps its standard tail while optional actions give
+    /// up room. Measure that tail with the current theme, just like its icons.
+    pub fn minimum_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
+        if self.kind == "command-bar" && self.properties["style"] == "gold"
+            && self.properties["hostable"] != false
+        {
+            let mut tail = model.clone();
+            let items = self.value(model).as_array().ok_or("command bar list required")?
+                .iter().filter(|item| {
+                    let id = item["id"].as_str().unwrap_or("");
+                    icons::standard(if matches!(id,"view.mode.light"|"view.mode.dark") {"view.mode"} else {id})
+                }).cloned().collect::<Vec<_>>();
+            tail["values"][&self.id] = serde_json::json!(items);
+            return self.intrinsic_width(ui, &tail);
+        }
+        self.intrinsic_width(ui, model)
+    }
     fn choices(&self) -> Vec<&str> {
         self.properties["choices"]
             .as_array()

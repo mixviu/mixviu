@@ -480,10 +480,10 @@ impl SceneView {
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
                     "band"=>{
                         let area=ui.available_rect_before_wrap();
-                        let measure=|child:&str| {
+                        let measure=|child:&str,minimum:bool| {
                             let node=&nodes[child];
                             let widget=if node.family=="control" {Widget::decode(&node.ports["definition"]).expect("validated label")}else{Widget::new(child,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono")}))};
-                            widget.intrinsic_width(ui,&self.tree.model).expect("validated intrinsic label")
+                            if minimum {widget.minimum_width(ui,&self.tree.model)}else{widget.intrinsic_width(ui,&self.tree.model)}.expect("validated intrinsic label")
                         };
                         let groups=band_groups(node,crate::window_frame::Metrics::of(ui.ctx()).caption_width*3.0,ui.ctx().data(|d| d.get_temp::<design::title_band::Alignment>(egui::Id::unique("viu-caption-alignment"))).unwrap_or_else(|| toolkit::chrome::Chrome::of(ui.ctx()).captions.alignment(design::title_band::Alignment::Right)),Some(ui.ctx()),&measure).expect("validated band groups");
                         let active=children(node).zip(groups).filter(|(child,_)|nodes.get(*child).is_some_and(|child|child.ports.get("hidden").and_then(Value::as_bool)!=Some(true)&&child.ports.get("slot_only").and_then(Value::as_str).is_none_or(|name|self.slots.contains_key(name)))).collect::<Vec<_>>();
@@ -1079,7 +1079,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                     0.0,
                     design::title_band::Alignment::Right,
                     None,
-                    &|_| 0.0,
+                    &|_, _| 0.0,
                 )?;
                 for child in children(node) {
                     let group = &node.ports["groups"][child];
@@ -1238,7 +1238,7 @@ fn band_groups(
     caption_width: f32,
     caption_side: design::title_band::Alignment,
     ctx: Option<&egui::Context>,
-    content_width: &dyn Fn(&str) -> f32,
+    content_width: &dyn Fn(&str, bool) -> f32,
 ) -> Result<Vec<design::title_band::Group>, String> {
     use design::title_band::{Alignment, Group};
     let groups = node
@@ -1252,7 +1252,7 @@ fn band_groups(
     }
     children.into_iter().map(|child|{
         let group=groups.get(child).ok_or("band child missing group")?;
-        let length=|name:&str|if group[name]=="window.captions"{Ok(caption_width)}else if group[name]=="content"{Ok(content_width(child))}else if let Some(length)=design_length(&group[name],ctx){Ok(length)}else{group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length, content, or window.captions metric"))};
+        let length=|name:&str|if group[name]=="window.captions"{Ok(caption_width)}else if group[name]=="content"{Ok(content_width(child,false))}else if group[name]=="content.minimum"{Ok(content_width(child,true))}else if let Some(length)=design_length(&group[name],ctx){Ok(length)}else{group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length, content, or window.captions metric"))};
         let chrome=ctx.map(toolkit::chrome::Chrome::of);
         let align=match group["align"].as_str(){Some("window.captions")=>caption_side,Some("window.menu")=>chrome.as_ref().map_or(Alignment::Left,|c|c.menu_side.alignment()),Some("window.actions")=>chrome.as_ref().map_or(Alignment::Right,|c|c.band.actions.alignment()),Some("window.title")=>chrome.as_ref().map_or(Alignment::Center,|c|c.band.title.alignment(c.band.style.title_alignment())),Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center, right or a native window alignment".into())};
         let integer=|name:&str|group[name].as_f64().filter(|n|n.is_finite()&&n.fract()==0.0&&(0.0..=255.0).contains(n)).map(|n|n as u8).ok_or_else(||format!("band {name} must be an integer 0..255"));

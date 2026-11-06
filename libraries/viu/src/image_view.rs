@@ -362,14 +362,11 @@ impl Images {
                         rect.min + egui::vec2(vp.origin.x, vp.origin.y),
                         egui::vec2(vp.width, vp.height),
                     );
-                    let painter = ui.painter_at(rect);
-                    painter.rect_filled(image, 0.0, egui::Color32::WHITE);
-                    painter.image(
+                    egui::Image::from_texture(egui::load::SizedTexture::new(
                         texture.id(),
-                        image,
-                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                        egui::Color32::WHITE,
-                    );
+                        image.size(),
+                    ))
+                    .paint_at(ui, image);
                     return ui.allocate_rect(rect, egui::Sense::click_and_drag());
                 }
                 let fit = value["fit"].as_str().unwrap();
