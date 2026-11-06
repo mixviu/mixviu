@@ -17,6 +17,11 @@ pub struct Manifest {
     pub app_id: Option<String>,
     pub job_limit: usize,
     pub command_metadata: Vec<serde_json::Value>,
+    /// App-authored compatibility surface; native facilities append descriptors.
+    pub bus_surface: Option<serde_json::Value>,
+    pub native_ui: bool,
+    pub native_macros: bool,
+    pub native_debug: bool,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -32,6 +37,10 @@ impl Default for Manifest {
             app_id: None,
             job_limit: 4,
             command_metadata: vec![],
+            bus_surface: None,
+            native_ui: false,
+            native_macros: false,
+            native_debug: false,
         }
     }
 }
@@ -96,6 +105,22 @@ impl Bundle {
                 .is_some_and(|n| !(100..=3_600_000).contains(&n))
         {
             return Err("invalid host size, service, commands or timer budget".into());
+        }
+        if let Some(surface) = &manifest.bus_surface {
+            if !surface.is_object()
+                || surface["commands"].as_array().is_none_or(|a| {
+                    a.len() > 128
+                        || a.iter().any(|c| {
+                            c["name"]
+                                .as_str()
+                                .is_none_or(|s| s.is_empty() || s.len() > 128)
+                                || !c["description"].is_string()
+                                || !c["read_only"].is_boolean()
+                        })
+                })
+            {
+                return Err("invalid app Bus surface".into());
+            }
         }
         let relative = Path::new(&manifest.behaviour);
         if relative

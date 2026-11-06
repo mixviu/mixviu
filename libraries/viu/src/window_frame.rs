@@ -30,6 +30,7 @@ impl Metrics {
 
 #[derive(Default)]
 pub struct WindowFrame {
+    caption_alignment: design::title_band::Alignment,
     server: Option<bool>,
     client: bool,
     pub geometry: BTreeMap<String, Rect>,
@@ -106,26 +107,41 @@ impl WindowFrame {
         }
         let metrics = Metrics::of(ui.ctx());
         let height = metrics.height;
+        let gap = ui.spacing().item_spacing.y;
+        ui.spacing_mut().item_spacing.y = 0.0;
         let (band, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), height), egui::Sense::hover());
+        ui.spacing_mut().item_spacing.y = gap;
         ui.painter().rect_filled(
             band,
             0.0,
             crate::appearance::colour(ui.ctx(), "chrome").unwrap_or(ui.visuals().panel_fill),
         );
-        let left = settings["window.caption_side"] == "left";
+        let alignment = design::CaptionSide::resolve(
+            settings["window.caption_side"].as_str().unwrap_or("auto"),
+        )
+        .alignment(
+            toolkit::chrome::Chrome::of(ui.ctx())
+                .captions
+                .alignment(design::title_band::Alignment::Right),
+        );
+        self.caption_alignment = alignment;
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique("viu-caption-alignment"), alignment));
+        let left = alignment == design::title_band::Alignment::Left;
         let caption_width = metrics.caption_width;
         let controls = Rect::from_min_size(
             pos2(
-                if left {
-                    band.left()
-                } else {
-                    band.right() - 3.0 * caption_width
+                match alignment {
+                    design::title_band::Alignment::Left => band.left(),
+                    design::title_band::Alignment::Center => band.center().x - 1.5 * caption_width,
+                    design::title_band::Alignment::Right => band.right() - 3.0 * caption_width,
                 },
                 band.top(),
             ),
             vec2(3.0 * caption_width, height),
         );
+        self.geometry.insert("window.captions".into(), controls);
         let drag = if scene_captions {
             band
         } else {
@@ -172,6 +188,27 @@ impl WindowFrame {
         if !scene_captions {
             let (close, geometry) = caption_controls(ui, controls, left, "window");
             self.close_requested = close;
+            self.geometry.extend(geometry);
+        }
+    }
+    /// Paint captions after a scene-authored header, preserving the full band
+    /// for the shared layout solver while keeping native controls on top.
+    pub fn finish_captions(&mut self, ui: &mut Ui, reserved: Option<Rect>) {
+        if let Some(mut area) = self.geometry.get("window.captions").copied() {
+            if self.caption_alignment == design::title_band::Alignment::Center {
+                if let Some(rect) = reserved {
+                    area.min.x = rect.min.x;
+                    area.max.x = rect.max.x;
+                }
+            }
+            self.geometry.insert("window.captions".into(), area);
+            let (close, geometry) = caption_controls(
+                ui,
+                area,
+                self.caption_alignment == design::title_band::Alignment::Left,
+                "window",
+            );
+            self.close_requested |= close;
             self.geometry.extend(geometry);
         }
     }
@@ -284,40 +321,71 @@ pub fn caption_controls(
             egui::Sense::click(),
         );
         r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
-        if r.hovered() {
-            ui.painter().rect_filled(
-                rect,
-                0.0,
-                if name == "close" {
-                    ui.visuals().error_fg_color
-                } else {
-                    ui.visuals().widgets.hovered.weak_bg_fill
-                },
-            );
-        }
-        let glyph = if name == "close" {
-            "x"
-        } else if name == "minimize" {
-            "minus"
-        } else if maximized {
-            "copy"
-        } else {
-            "square"
-        };
-        if let Some(icon) = crate::icons::Icon::from_name(glyph) {
-            crate::icons::image_of(
-                ui.ctx(),
-                icon,
-                metrics.caption_glyph,
-                ui.visuals().text_color(),
-            )
-            .paint_at(
-                ui,
-                Rect::from_center_size(
-                    rect.center(),
-                    vec2(metrics.caption_glyph, metrics.caption_glyph),
+        let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+        let pressed = r.is_pointer_button_down_on();
+        let hovered = r.hovered() || pressed;
+        let palette = &chrome.palette;
+        let (fill, glyph) = match name {
+            "close" if pressed => (
+                Some(
+                    palette
+                        .caption_close
+                        .gamma_multiply(chrome.style.close_pressed_alpha as f32),
                 ),
-            );
+                palette.caption_close_text,
+            ),
+            "close" if hovered => (Some(palette.caption_close), palette.caption_close_text),
+            _ if pressed => (Some(palette.pressed), palette.icon),
+            _ if hovered => (Some(palette.hover), palette.icon),
+            _ => (None, palette.icon),
+        };
+        let painter = ui.painter();
+        if let Some(fill) = fill {
+            painter.rect_filled(rect, chrome.style.square_radius, fill);
+        }
+        let b = Rect::from_center_size(
+            rect.center(),
+            vec2(metrics.caption_glyph, metrics.caption_glyph),
+        );
+        let line = egui::Stroke::new(chrome.style.hairline_width as f32, glyph);
+        match name {
+            "minimize" => {
+                painter.line_segment([b.left_center(), b.right_center()], line);
+            }
+            "maximize" if maximized => {
+                let front = Rect::from_min_max(
+                    pos2(b.left(), b.top() + 2.0),
+                    pos2(b.right() - 2.0, b.bottom()),
+                );
+                painter.rect_stroke(
+                    front,
+                    chrome.style.square_radius,
+                    line,
+                    egui::StrokeKind::Middle,
+                );
+                painter.add(egui::Shape::line(
+                    vec![
+                        pos2(front.left() + 2.0, front.top()),
+                        pos2(front.left() + 2.0, b.top()),
+                        b.right_top(),
+                        pos2(b.right(), b.bottom() - 2.0),
+                        pos2(front.right(), b.bottom() - 2.0),
+                    ],
+                    line,
+                ));
+            }
+            "maximize" => {
+                painter.rect_stroke(
+                    b,
+                    chrome.style.square_radius,
+                    line,
+                    egui::StrokeKind::Middle,
+                );
+            }
+            _ => {
+                painter.line_segment([b.left_top(), b.right_bottom()], line);
+                painter.line_segment([b.right_top(), b.left_bottom()], line);
+            }
         }
         if r.on_hover_text(name).clicked() {
             if name == "close" {

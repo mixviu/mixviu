@@ -4,13 +4,21 @@ Oracle: MixOS `8779f3328`, `apps/monitor/src`, `crates/vitals`, original
 README and `docs/monitor/README.md`. Source review includes actions, model,
 query construction and UI documentation. This lab specimen has no parity claim.
 
-Round-two source audit: the signal-policy description in the table below
-conflicts with the pinned implementation. Gold's `Engine::can_signal` checks
-local node, no open dialog and a selected row. Its shell validates a positive
-PID and calls `kill(2)` with SIGTERM/SIGKILL; it has no UID/start-time identity
-fence or confirmation. The earlier inventory instead requires those guards.
-The Fable question and source evidence are recorded in `last.md`; neither
-policy is claimed implemented or accepted by the Mix app yet.
+Fable ruling P1 (2026-11-07): preserve gold's signal admission: local node,
+no open dialog, selected row and positive PID; SIGTERM/SIGKILL run as the app
+user via kill(2), without confirmation or a UID fence. Kernel failures are
+surfaced. The previous inventory's claim of original UID checks and
+confirmation was incorrect.
+
+Approved non-visual deviation: record `/proc/PID/stat` field 22 at refresh,
+then re-read it immediately before signalling. Mismatch refuses with
+`pid reused`, refreshes the list and returns an error, with no prompt.
+`monitor.signal {pid, signal, start_time?}` uses a supplied start time or the
+snapshot value when omitted. Decimal-string start times preserve exact ticks.
+Reusable `viu_process` primitives supply process identities and guarded local
+signals; admission, snapshot ownership, refresh and replies remain in Mix.
+Tests signal disposable children only. Implementation validation is recorded
+in `last.md`; the rest of Monitor remains unaccepted.
 
 | Original capability | Round 1 status |
 |---|---|
@@ -25,7 +33,7 @@ policy is claimed implemented or accepted by the Mix app yet.
 | Disk/filesystem, network and TCP charts / connection table / sockstat | Deferred: snapshot retained for inspection, no equivalent UI yet |
 | Server-seeded history, gaps, interactive plot hover, series toggles, zoom/pan/reset | Deferred: requires reusable graph widget; current canvas is explicitly limited |
 | Peer discovery chooser and offline/reconnect UX | Deferred: explicit node field works without discovery, errors retained |
-| End task / kill / command-line column and copy | Deferred: command-line projection/copy still needs wiring; original local-only UID/start-time signal admission and confirmations must be ported before enabling mutations |
+| End task / kill / command-line column and copy | Signal API implemented with Fable P1 fence, awaiting gate; UI actions and command-line projection/copy remain open. Gold has no UID fence or confirmation |
 | Uptime, load/task counts and CPU frequency/per-core detail | Deferred: present in the retained snapshot; detailed Mix projection not yet authored |
 | Action catalogue, menu/shortcuts, dialogs, theme axes, macros | Deferred until shared host actions/session integration; no application policy moved to Rust |
 | Original HELP/app.describe/info/rows/show/quit and ui/window wire contracts | Ported info/rows/ping and generic `viu.*`; other compatibility envelopes deferred |
@@ -34,3 +42,7 @@ policy is claimed implemented or accepted by the Mix app yet.
 Per-app Rust added: **0**. All sampling, query, row formatting, state,
 composition and history policy live in Mix. No new bulk builtin is justified
 without measured row cost. Headless captures inspected against the original. Detailed parity is explicitly deferred; final exact-source gate is recorded in last.md.
+
+## Round-three region witnesses
+
+At source `0807e73`, matched native 1040×680 constant-history fixtures have zero SSIM/RMSE distortion in Processes, CPU, Memory, three disk pages and Network content rectangles. Whole-window acceptance remains open: Processes SSIM distortion 0.0064456; header 0.0928214, options 0.0203370, status 0.0016791. TCP content distortion 0.00417085 exposes heading typography and paused fetch-policy differences. Populated TCP tables, interactive states, full Bus contracts and live theme choices remain unaccepted. No visual deviation is approved. Captures, figures, hashes and cleanup receipts are held privately following parity-method.md.

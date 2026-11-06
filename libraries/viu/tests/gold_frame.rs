@@ -82,7 +82,8 @@ fn mounted_root_control_delivers_its_original_native_intent() {
         "gold-icon":{"preferred":28,"minimum":28,"align":"left","order":0,"shrink":null},
         "gold-menu":{"preferred":200,"minimum":100,"align":"left","order":1,"shrink":1},
         "gold-title":{"preferred":100,"minimum":0,"align":"center","order":2,"shrink":1},
-        "gold-toolbar":{"preferred":100,"minimum":0,"align":"right","order":3,"shrink":1}
+        "gold-toolbar":{"preferred":100,"minimum":0,"align":"right","order":3,"shrink":1},
+        "gold-captions":{"preferred":"window.captions","minimum":"window.captions","align":"window.captions","order":4,"shrink":null}
     }}});
     let source = "---\nscene: 1\nname: app\ncitizen: app\n---\n```mix\n{root:{widget:\"control\",definition:{id:\"root\",kind:\"button\",label:\"Original root\",initial:\"Press\"},on_intent:\"app.intent\"}}\n```\n";
     let mut view = viu::gold_frame::mount(source, model).unwrap();

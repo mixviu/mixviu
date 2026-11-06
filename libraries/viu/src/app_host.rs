@@ -14,6 +14,19 @@ use std::{
     time::{Duration, Instant},
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
+fn validate_overlays(model:&Value)->Result<(),String> {
+    if let Some(overlays)=model.get("native_overlays") {
+        let overlays=overlays.as_array().filter(|a|a.len()<=16).ok_or("native overlays exceed budget")?;
+        let mut ids=BTreeSet::new();
+        for overlay in overlays {
+            if !overlay["command"].is_string() {return Err("overlay requires an intent command".into());}
+            let widget=crate::widgets::Widget::decode(&overlay["definition"])?;
+            if !ids.insert(widget.id.clone()) {return Err("duplicate overlay identity".into());}
+            widget.validate_model(model)?;
+        }
+    }
+    Ok(())
+}
 struct Host {
     deferred_replies: BTreeMap<String, (u64, Instant, Reply)>,
     drive_replies: BTreeMap<u64, Reply>,
@@ -23,6 +36,11 @@ struct Host {
     macro_ui: toolkit::macros::State,
     macro_pending: Vec<(std::sync::mpsc::Receiver<macros::commands::Answer>, Reply)>,
     macro_finished: std::sync::mpsc::Receiver<Value>,
+    local_ui: crate::local_ui::LocalUi,
+    native_choice: Value,
+    overlays:crate::widgets::Widgets,
+    focus_serial:Value,
+    facilities: crate::app_facilities::Facilities,
     session: Option<crate::session::Session>,
     session_appearance: Option<Value>,
     session_window: Option<Value>,
@@ -94,6 +112,15 @@ impl Host {
         }
     }
     fn request(&mut self, r: Request, ctx: &egui::Context) {
+        let Some(r) = self.facilities.request(r, ctx) else {
+            return;
+        };
+        if r.command == format!("{}.quit", self.service)
+            || (r.command == format!("{}.execute", self.service) && r.args["id"] == "file.quit")
+        {
+            r.close_after_reply
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
@@ -207,7 +234,7 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
-        self.drive_answers.extend(toolkit::drive::logic(ui.ctx()));
+        if !self.facilities.native_ui() { self.drive_answers.extend(toolkit::drive::logic(ui.ctx())); }
         if self.inflight.is_empty() {
             while let Some(answer) = self.drive_answers.pop_front() {
                 if let Some(reply) = self.drive_replies.remove(&answer.id) {
@@ -235,6 +262,51 @@ impl Host {
             let _ = self
                 .bus
                 .hint(format!("{}.macros.finished", self.service), body);
+}
+        self.facilities.prepare(ui.ctx(), &self.bus);
+        while let Ok(request) = self.local_ui.requests.try_recv() {
+            let answer = match request.command.as_str() {
+                "native.copy" => match request.args["text"]
+                    .as_str()
+                    .filter(|s| s.len() <= 1_048_576)
+                {
+                    Some(text) => {
+                        ui.ctx().copy_text(text.into());
+                        Ok(json!({"copied":true}))
+                    }
+                    None => Err("text must be bounded text".into()),
+                },
+                "native.focus" => request.args["id"]
+                    .as_str()
+                    .ok_or("id required".into())
+                    .and_then(|id| self.view.request_focus(id))
+                    .map(|_| json!({"focused":true})),
+                "native.theme" => {
+                    let snapshot = self.session.as_ref().map(|s| s.snapshot.clone());
+                    crate::native_theme::choice(&request.args).and_then(|choice| {
+                        let base = if let Some(snapshot) = snapshot {
+                            crate::appearance::session_base(
+                                &snapshot,
+                                &self.service,
+                                &self.file_theme,
+                                &self.last_ui,
+                            )?
+                            .0
+                        } else {
+                            self.file_theme.clone()
+                        };
+                        let theme = base.with_choice(&choice).map_err(|e| e.to_string())?;
+                        crate::appearance::install_theme(ui.ctx(), &theme)?;
+                        self.native_choice = request.args.clone();
+                        Ok(crate::native_theme::describe(&theme))
+                    })
+                }
+                _ => Err("unknown native operation".into()),
+            };
+            let _ = request.reply.send(match answer {
+                Ok(body) => (0, body),
+                Err(message) => (10, json!({"error_code":"ARGUMENT","message":message})),
+            });
         }
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
@@ -292,6 +364,7 @@ impl Host {
                         Ok(None)
                     };
                     let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
+                        validate_overlays(&projected)?;
                         if self.loaded {
                             self.view.apply_model(projected)
                         } else {
@@ -429,11 +502,13 @@ impl Host {
             }
         }
         if self.ready {
+            if self.facilities.macros.is_none() {
             self.macro_ui.open = self.model["macros_open"] == true;
             let was_open = self.macro_ui.open;
             self.macro_ui.show(ui.ctx());
             if self.macro_ui.open != was_open {
                 self.dispatch("viu.macros.closed".into(), json!({}), BTreeMap::new(), None);
+            }
             }
             if let Some(session) = &mut self.session {
                 if let Some(snapshot) = session
@@ -449,8 +524,8 @@ impl Host {
                         &self.last_ui,
                         &self.model["theme_choice"],
                     ) {
-                        Ok(ui) => {
-                            self.last_ui = ui;
+                        Ok(common_ui) => {
+                            self.last_ui = common_ui;
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
                             let mut window = snapshot["state"]["values"].clone();
@@ -463,6 +538,19 @@ impl Host {
                                 }
                             }
                             self.session_window = Some(window);
+                            self.session_window = Some(snapshot["state"]["values"].clone());
+                            if let Ok(choice) = crate::native_theme::choice(&self.native_choice) {
+                                if let Ok((base, _)) = crate::appearance::session_base(
+                                    &snapshot,
+                                    &self.service,
+                                    &self.file_theme,
+                                    &self.last_ui,
+                                ) {
+                                    if let Ok(theme) = base.with_choice(&choice) {
+                                        let _ = crate::appearance::install_theme(ui.ctx(), &theme);
+                                    }
+                                }
+                            }
                         }
                         Err(error) => self.error = error,
                     }
@@ -478,10 +566,18 @@ impl Host {
                     0.0,
                     crate::appearance::colour(ui.ctx(), "dock").unwrap_or(ui.visuals().panel_fill),
                 );
-                let settings = self
+                let mut settings = self
                     .session_window
                     .clone()
                     .unwrap_or_else(|| self.model["window_settings"].clone());
+                for (axis, key) in [
+                    ("decorations", "window.decorations"),
+                    ("caption_side", "window.caption_side"),
+                ] {
+                    if !self.native_choice[axis].is_null() {
+                        settings[key] = self.native_choice[axis].clone();
+                    }
+                }
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 self.window_frame
                     .show_scene_frame(ui, &self.title, &settings);
@@ -498,7 +594,35 @@ impl Host {
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
             }
+            self.overlays.begin_frame();
+            for overlay in self.model["native_overlays"].as_array().into_iter().flatten().cloned().collect::<Vec<_>>() {
+                let widget=crate::widgets::Widget::decode(&overlay["definition"]).expect("validated overlay");
+                let command=overlay["command"].as_str().unwrap();
+                for intent in self.overlays.widget(ui,&widget,&self.model) {
+                    self.dispatch(command.into(),intent.encode(),BTreeMap::new(),None);
+                }
+            }
+            self.view.geometry.extend(self.overlays.geometry.clone());
+            if self.facilities.macros.is_some() && toolkit::macros::show_app(ui.ctx(),&self.service,self.model["macros_open"]==true) {
+                self.dispatch("viu.macros.changed".into(),json!({"open":false}),BTreeMap::new(),None);
+            }
+            if self.model["native_focus"]["serial"]!=self.focus_serial && self.model["native_focus"]["id"].is_string() {
+                if let Some(id)=self.model["native_focus"]["id"].as_str() {let _=self.view.request_focus(id);}
+                self.focus_serial=self.model["native_focus"]["serial"].clone();ui.ctx().request_repaint();
+            }
+            if !toolkit::menu::is_open(ui.ctx()) {
+                for action in self.model["shortcuts"].as_array().into_iter().flatten().cloned().collect::<Vec<_>>() {
+                    if action["enabled"]!=true {continue;}
+                    if let Some(shortcut)=action["shortcut"].as_str().and_then(toolkit::keymap::parse_chord) {
+                        if ui.ctx().input_mut(|input|input.consume_shortcut(&shortcut)) {
+                            self.dispatch("viu.frame.intent".into(),json!({"id":"shortcut","value":{"command":action["id"],"origin":"shortcut"}}),BTreeMap::new(),None);
+                        }
+                    }
+                }
+            }
             if self.framed {
+                let reserved = self.view.allocated_region("gold-captions");
+                self.window_frame.finish_captions(ui, reserved);
                 self.window_frame.edges(ui);
                 self.view
                     .geometry
@@ -507,6 +631,7 @@ impl Host {
                     self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
                 }
                 if self.model["window_close"] == true {
+                    self.facilities.finish(ui.ctx());
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
@@ -566,7 +691,17 @@ impl Drop for Host {
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
+    let facilities = crate::app_facilities::Facilities::new(&bundle.manifest, wake.clone());
     let mut commands = bundle.manifest.commands.clone();
+    if let Some(surface) = &facilities.surface {
+        commands.extend(
+            surface["commands"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|c| c["name"].as_str().map(str::to_owned)),
+        );
+    }
     commands.extend(
         [
             "viu.state",
@@ -589,7 +724,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     commands
         .extend(["debug", "debug.recent", "debug.set"].map(|suffix| format!("{service}.{suffix}")));
     let declared = commands.iter().cloned().collect();
-    let bus = Endpoint::start(
+    let bus = Endpoint::start_described(
         service,
         std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
         commands
@@ -618,14 +753,16 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             .collect(),
         "viu.quit".into(),
         wake.clone(),
+        facilities.surface.as_ref().map(|s| s["commands"].clone()),
     );
     let mut jobs = crate::jobs::Jobs::new(bundle.manifest.job_limit, wake.clone());
+    let local_ui = crate::local_ui::LocalUi::new(wake.clone());
     jobs.set_native_backend(bus.backend_maker());
     let roots = macros::Roots::resolve().map(|mut roots| {
         roots.mix = std::env::current_exe().expect("own macro interpreter artifact");
         roots
     });
-    let macros = macros::Session::with_roots(&bundle.manifest.service, roots);
+    let macros = facilities.macros.clone().unwrap_or_else(||macros::Session::with_roots(&bundle.manifest.service, roots));
     let (macro_tx, macro_finished) = std::sync::mpsc::channel();
     let macro_wake = wake.clone();
     macros.add_finish_hook(Arc::new(move |body| {
@@ -640,7 +777,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let mut runtime = Runtime::with_services(
         32,
         wake.clone(),
-        Some(jobs.backend(Some(bus.backend()))),
+        Some(jobs.backend(Some(local_ui.backend(bus.backend())))),
         services,
     );
     runtime.load(bundle.program).expect("load behaviour");
@@ -657,6 +794,11 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         macros,
         macro_pending: Vec::new(),
         macro_finished,
+        local_ui,
+        native_choice: json!({}),
+        overlays:Default::default(),
+        focus_serial:Value::Null,
+        facilities,
         service: bundle.manifest.service.clone(),
         file_theme: toolkit::Theme::load(),
         last_ui: settings::model::CommonUi::default(),

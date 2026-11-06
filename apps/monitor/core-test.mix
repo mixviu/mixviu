@@ -14,7 +14,8 @@ for $i=1 to 2000
 end
 $start=monotonic();$model=$c.project($s);$elapsed=monotonic()-$start
 if len($model.table.initial.rows)!=2000 then raise("ROWS","Row count") end
-if $model.table.initial.rows[1999].cells[5]!="Unavailable" then raise("IO","Missing rates must remain unavailable") end
+if $model.table.initial.rows[1999].cells[5]!="—" then raise("IO","Missing rates must use gold's unavailable marker") end
+if len($model.table.initial.columns)!=7 or $model.table.initial.rows[0].cells[4]!="1.0 KiB" then raise("TABLE","Gold columns and binary units") end
 $s.processes=push($s.processes,{pid:2001});$refused=false
 try $c.project($s) catch $message $refused=true end
 if not $refused then raise("BUDGET","Unbounded process list accepted") end

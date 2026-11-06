@@ -1,0 +1,12 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$h=require("history.mix")
+$rings=$h.seed({}, {series:{"tcp.out_segs":[[1,100,100,100],[3,200,200,200]],"tcp.retrans_segs":[[1,2,2,2],[2,5,5,5],[3,10,10,10]]}})
+if not deep_eq($rings["tcp.out_segs"],[100,nil,200]) then raise("GAPS","TCP timestamps lost alignment") end
+$rings=$h.record($rings,{cpu:{busy:1},memory:{used:1},tcp:{out_segs:1000}})
+if len($rings["tcp.out_segs"])!=4 or $rings["tcp.retrans_segs"][3]!=nil then raise("GAPS","Missing counter must stay missing") end
+$rings={}
+for $i=0 to 64 $rings=$h.append_sample($rings,"cpu.busy",$i,false) end
+if len($rings["cpu.busy"])!=60 or $rings["cpu.busy"][0]!=5 then raise("WINDOW","History window") end
+$rings=$h.seed({"mem.used":[9]}, {series:{"mem.used":[[1,1,0,2],[2,2,1,3]]}})
+if not deep_eq($rings["mem.used"],[1,2,9]) then raise("SEED","Seed must precede held readings") end
+print("Monitor history: aligned gaps, seeding and 60-sample bounds pass")

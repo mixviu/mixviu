@@ -702,7 +702,7 @@ fn draw_control(ui:&mut Ui,id:&str,row:&Value,look:&Look,geometry:&mut BTreeMap<
                 let dark=choice["value"]=="dark";
                 let palette=if dark { &design::cosmic_tables::DARK_PALETTE } else { &design::cosmic_tables::LIGHT_PALETTE };
                 let rect=Rect::from_min_size(pos2(left+index as f32*(width+gap),area.top()),vec2(width,100.0));
-                let r=ui.interact(rect,ui.id().with((id,key,index)),Sense::click());
+                let r=ui.interact(rect,ui.scope_id().with((id,key,index)),Sense::click());
                 ui.painter().rect_filled(rect,Look::radius(look.r_s),rgba(palette.gray_1));
                 let inset=(rect.width()*0.1).min(20.0);
                 let inner=Rect::from_min_size(rect.min+vec2(inset,18.0),vec2(rect.width()-2.0*inset,64.0));
@@ -805,7 +805,7 @@ fn scheme_swatch(name:&str,dark:bool)->Option<(Color32,Option<Color32>)> {
     let mut cache=CACHE.get_or_init(Default::default).lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     *cache.entry((scheme,mode)).or_insert_with(|| {
         let theme=toolkit::Theme::for_context(design::DesignContext{scheme,mode,..Default::default()});
-        theme.accent().map(|fill|(rgba(fill),theme.dictionary().colours.pairs.get("accent").map(|p|rgba(p.rendered_foreground))))
+        theme.accent().map(|fill|(rgba(fill),theme.dictionary().colours.pairs.get("accent").map(|p|{let [r,g,b,a]=p.rendered_foreground.to_srgba8();Color32::from_rgba_unmultiplied(r,g,b,a)})))
     })
 }
 

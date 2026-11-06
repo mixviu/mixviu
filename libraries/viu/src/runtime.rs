@@ -210,6 +210,7 @@ impl Runtime {
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
                         eval.register("viu_files",crate::file_data::binding());
+                        eval.register("viu_process",crate::process::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_settings",crate::native_primitives::settings_values());
                         eval.register("viu_token",crate::native_primitives::token());
@@ -220,6 +221,7 @@ impl Runtime {
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
+                            "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
                             "loader": "viu-local", "host": "viu-local"
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
