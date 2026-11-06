@@ -234,7 +234,7 @@ fn host_slots_reuse_scene_composition_without_consuming_the_fallback_dock_edge()
 fn compact_and_requested_vertical_menus_keep_native_paths_and_report_the_effective_form() {
     let menus = json!([{"id":"View","label":"View","enabled":true,"children":[{"id":"Dark","label":"Dark","enabled":true}]}]);
     let source = scene(json!({"root":{"widget":"column","children":["menu"]},"menu":{"widget":"control","definition":{"id":"menu","kind":"menubar","label":"","initial":menus}}}));
-    let mut view = SceneView::new(&source).unwrap();
+    let mut view = SceneView::with_model(&source,json!({"values":{"menu":menus}})).unwrap();
     let ctx = egui::Context::default();
     viu::appearance::install(&ctx);
     viu::rich::configure_menu(&ctx,&json!({"window.menu_style":"titlebar","window.menu_side":"right"}),Some("example"));
