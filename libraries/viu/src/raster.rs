@@ -49,6 +49,7 @@ pub struct Rasters {
     lane: Arc<Mutex<()>>,
 }
 impl Rasters {
+    pub fn texture_bytes(&self) -> u64 { self.textures.load(Ordering::Acquire) }
     pub fn begin(&self) -> String {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.serial += 1;

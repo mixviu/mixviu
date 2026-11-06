@@ -160,11 +160,15 @@ impl Composition {
                 "world" => {
                     let blocks: Vec<Block> =
                         serde_json::from_value(n["blocks"].clone()).expect("validated blocks");
-                    self.fallback = n["disabled"] == true || !self.worlds
-                        .entry(id.clone())
-                        .or_default()
-                        .draw(ui, &blocks, progress, rasters);
-                    if self.fallback { self.worlds.remove(&id); }
+                    self.fallback = n["disabled"] == true
+                        || !self
+                            .worlds
+                            .entry(id.clone())
+                            .or_default()
+                            .draw(ui, &blocks, progress, rasters);
+                    if self.fallback {
+                        self.worlds.remove(&id);
+                    }
                 }
                 "frame" => {
                     let frame = if n["style"] == "popup" {
@@ -258,7 +262,13 @@ impl Composition {
                     if let Some(label) = n["y_axis"].as_str() {
                         plot = plot.y_axis_label(label);
                     }
-                    let palette = [ui.visuals().selection.bg_fill, ui.visuals().warn_fg_color, ui.visuals().hyperlink_color, ui.visuals().error_fg_color, ui.visuals().text_color()];
+                    let palette = [
+                        ui.visuals().selection.bg_fill,
+                        ui.visuals().warn_fg_color,
+                        ui.visuals().hyperlink_color,
+                        ui.visuals().error_fg_color,
+                        ui.visuals().text_color(),
+                    ];
                     plot.show(ui, |p| {
                         for s in n["series"].as_array().into_iter().flatten() {
                             let name = s["name"].as_str().unwrap_or("");
@@ -274,7 +284,15 @@ impl Composition {
                                 let mut points = egui_plot::Points::new(name, points)
                                     .radius(s["radius"].as_f64().unwrap_or(3.) as f32);
                                 if !s["colour"].is_null() {
-                                    points = points.color(palette[match s["colour"].as_str().unwrap_or("") {"accent"=>0,"warning"=>1,"link"=>2,"error"=>3,_=>4}]);
+                                    points = points.color(
+                                        palette[match s["colour"].as_str().unwrap_or("") {
+                                            "accent" => 0,
+                                            "warning" => 1,
+                                            "link" => 2,
+                                            "error" => 3,
+                                            _ => 4,
+                                        }],
+                                    );
                                 }
                                 p.points(points);
                                 if let Some(label) = s["label"].as_str() {

@@ -15,17 +15,45 @@ end
 $document=$launch.override($document,$options)
 $s=$engine.fresh();$running=nil
 $views=require("views.mix");$live=$views.fresh()
+$train=require("train.mix");$reader_module=require("reader.mix")
+$snapshot=$train.fresh();$reader=$reader_module.fresh();$train_busy=nil;$train_generation=0
+fn visible()
+  $outputs=viu_ui_state().outputs ?? {}
+  return any(values($outputs),fn($output)=$output.visible==true)
+end
+fn train_poll($reader,$snapshot,$live,$busy,$selected,$hint=false)
+  if $selected!="train" then viu_timer("backdrop-train",nil,{});return {reader:$reader,busy:$busy} end
+  $reader.hint=$reader.hint or $hint
+  if $busy!=nil then return {reader:$reader,busy:$busy} end
+  $plan=$reader_module.plan($reader,$live,$snapshot,visible(),$reader.hint,monotonic());$reader=$plan.reader
+  if len($plan.requests)>0 then
+    $path=path_join(dirname(script_path()),"read-job.mix");$id="backdrop-read-"..to_string($plan.ticket)
+    $tag={kind:"train",key:$plan.key,ticket:$plan.ticket}
+    send "viu-local" "jobs.start" id=$id owner=$tag path=$path source=read_file($path) command="job.run" args={requests:$plan.requests}
+    if $rc==0 then $busy=$tag end
+  end
+  if $busy==nil then viu_timer("backdrop-train",$reader_module.wait_seconds($reader,$snapshot,visible(),monotonic())*1000,{})
+  else viu_timer("backdrop-train",nil,{}) end
+  return {reader:$reader,busy:$busy}
+end
 fn snapshot($s)
   $outputs=[];$native=viu_ui_state().outputs ?? {}
   for $name in keys($native)
-    $o=$native[$name];$o.name=$name
-    $o.presented_view_frames=$o.presented_view_frames ?? 0
+    $raw=$native[$name]
+    $o={name:$name,width:$raw.width,height:$raw.height,scale:$raw.scale,shows:$raw.shows ?? "theme",presented_revision:$raw.presented_revision ?? 0,presented_frames:$raw.presented_frames ?? 0,presented_view_frames:$raw.presented_view_frames ?? 0,error:$raw.error,fit:$raw.fit}
     push($outputs,$o)
   end
   return $engine.state($s,$ctx.citizen,$store,$outputs)
 end
 fn show_state($s)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$projection.model($s,monotonic())}
+  $model=$projection.model($s,monotonic())
+  if $s.view=="train" and visible() then
+    $value=$train.model($snapshot,$live.renderer,$train_generation)
+    $model.values.root=$value;$model.surfaces={};$model.root={id:"root",kind:"composition",label:"",initial:{nodes:[]}}
+  else $model.root={id:"root",kind:"image-fill",label:"",initial:{phase:"none",colour:[0,0,0],fit:"fill"}} end
+  for $key in keys($model.surfaces) $model.surfaces[$key].root=$model.root end
+  $model.layer={strict_callbacks:$s.view=="train",frame_ms:if $s.view=="train" then 100 else 0 end}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
 end
 fn answer($owed,$rc,$body)
   if $owed.token!=nil then viu_reply("finish",$owed.token,{rc:$rc,body:$body}) end
@@ -127,7 +155,7 @@ on backdrop.set
   try
     $checked=$launch.override($event.args,{colour:nil,image:nil})
     $s=stage($s,$checked,owed("set"));$p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
-    if $event.headers["viu-call"]==nil then reply(0,json_encode({requested:$s.requested,active:$s.active,config_file:$store})) end
+    reply(0,json_encode({requested:$s.requested,active:$s.active,config_file:$store}))
   catch $message
     reply(10,json_encode({error_code:"ARGUMENT",message:$message}))
   end
@@ -138,6 +166,7 @@ on backdrop.next
     if len(keys($s.schedules))==0 then raise("NON_SLIDESHOW","the applied backdrop has no slideshow") end
     if $s.pending!=nil then raise("BUSY","a set or advance is pending") end
     $s=advance($s,keys($s.schedules),owed("next"));$p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
+    reply(0,"{}")
   catch $message,$error
     reply(10,json_encode({error_code:$error.code,message:$message}))
   end
@@ -149,9 +178,13 @@ end
 on backdrop.view.set
   try
     $candidate=$views.choose_view($live,$event.args)
+    if not deep_eq([$live.train_service,$live.buildd_service,$live.hours],[$candidate.train_service,$candidate.buildd_service,$candidate.hours]) then
+      $alerts=$snapshot.alerts;$snapshot=$train.fresh($candidate.hours);$snapshot.alerts=$alerts;$train_generation=$train_generation+1
+    end
     $live=$candidate;$s.view=$event.args.view
     $result={view:$s.view}
     publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.set","bus",$event.args,$result)))
+    $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
     show_state($s);reply(0,json_encode($result))
   catch $message reply(10,json_encode({error_code:"ARGUMENT",message:$message})) end
 end
@@ -159,11 +192,22 @@ on backdrop.view.cycle
   try
     $s.view=$views.cycle($s.view,$event.args);$result={view:$s.view}
     publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.cycle","bus",$event.args,$result)))
+    $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
     show_state($s);reply(0,json_encode($result))
   catch $message reply(10,json_encode({error_code:"ARGUMENT",message:$message})) end
 end
 on viu.job.completed
   $d=$event.args
+  if type($d.tag.owner)=="map" and $d.tag.owner.kind=="train" then
+    if $train_busy!=nil and $d.tag.owner.ticket==$train_busy.ticket then
+      $train_busy=nil
+      if $d.rc==0 then
+        $result=$reader_module.received($reader,$snapshot,$live,$d.tag.owner.key,$d.body.results,time());$reader=$result.reader
+        if not deep_eq($snapshot,$result.snapshot) then $snapshot=$result.snapshot;$train_generation=$train_generation+1;show_state($s) end
+      end
+      $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view);$reader=$poll.reader;$train_busy=$poll.busy
+    end
+  end
   if $running!=nil and $d.tag.id==$running.id then
     $running=nil
     if $s.pending!=nil and $d.tag.owner==$s.pending.revision then
@@ -177,6 +221,9 @@ on viu.job.completed
   end
 end
 on viu.timer
+  if $event.args.timer=="backdrop-train" then
+    $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view);$reader=$poll.reader;$train_busy=$poll.busy
+  end
   if $event.args.timer=="backdrop-deadline" then
     if $s.fade!=nil and monotonic()>=$s.fade+0.5 then $s=finish_fade($s) end
     if $s.pending==nil and $s.fade==nil then
@@ -186,4 +233,39 @@ on viu.timer
     end
     $p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
   end
+end
+on viu.layer.visibility
+  show_state($s)
+  $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+end
+on bus.connected
+  for $topic in ["train.landed","train.rejected","buildd.started","buildd.done","pipeline.alert","pipeline.clear","pipeline.alerts"] subscribe($topic) end
+  $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+end
+on train.landed
+  $reader.generation=$reader.generation+1
+  $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+end
+on train.rejected
+  $reader.generation=$reader.generation+1
+  $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+end
+on buildd.started
+  $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+end
+on buildd.done
+  $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+end
+on pipeline.alert
+  $next=$train.alert($snapshot,"pipeline.alert",$event.args)
+  if not deep_eq($next,$snapshot) then $snapshot=$next;$train_generation=$train_generation+1;show_state($s) end
+  $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+end
+on pipeline.clear
+  $next=$train.alert($snapshot,"pipeline.clear",$event.args)
+  if not deep_eq($next,$snapshot) then $snapshot=$next;$train_generation=$train_generation+1;show_state($s) end
+end
+on pipeline.alerts
+  $next=$train.alert($snapshot,"pipeline.alerts",$event.args)
+  if not deep_eq($next,$snapshot) then $snapshot=$next;$train_generation=$train_generation+1;show_state($s) end
 end

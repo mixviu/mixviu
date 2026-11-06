@@ -3,7 +3,7 @@
 //! this module draws and reports intents, never executes application policy.
 use egui::{Color32, Id, Rect, Sense, Vec2};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const KINDS: &[&str] = &[
     "mark",
@@ -648,6 +648,7 @@ pub struct Widgets {
     documents: crate::documents::Documents,
     rasters: Option<crate::raster::Rasters>,
     compositions: BTreeMap<String, crate::composition::Composition>,
+    visible_compositions: BTreeSet<String>,
 }
 impl Widgets {
     pub fn set_rasters(&mut self, rasters: crate::raster::Rasters) {
@@ -678,6 +679,7 @@ impl Widgets {
     /// Begin exactly once before drawing an application frame. Geometry is
     /// retained after finish_frame for automation until the next begin_frame.
     pub fn begin_frame(&mut self) {
+        self.visible_compositions.clear();
         self.geometry.clear();
         self.text_input_active = false;
         self.focus_error = None;
@@ -713,6 +715,7 @@ impl Widgets {
     /// Call once after drawing an application frame (including individual
     /// `widget` calls). A disappeared target must not latch future replies.
     pub fn finish_frame(&mut self) -> Result<(), String> {
+        self.compositions.retain(|id,_|self.visible_compositions.contains(id));
         self.images.finish();
         if let Some(images) = &mut self.surfaces {
             images.finish();
@@ -922,6 +925,7 @@ impl Widgets {
             }
             "image-view" => self.images.draw(ui, id, value),
             "composition" => {
+                self.visible_compositions.insert(id.into());
                 let rasters = self.rasters.clone().unwrap_or_default();
                 self.compositions
                     .entry(id.into())

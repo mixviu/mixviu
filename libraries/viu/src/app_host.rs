@@ -1161,6 +1161,19 @@ struct LayerHost {
     contexts: Arc<std::sync::Mutex<Vec<egui::Context>>>,
 }
 impl crate::layer::LayerProgram for LayerHost {
+    fn strict_frame_callbacks(&self) -> bool {
+        self.host.as_ref().is_some_and(|h|h.model["layer"]["strict_callbacks"]==true)
+    }
+    fn frame_interval(&self) -> Duration {
+        Duration::from_millis(self.host.as_ref().and_then(|h|h.model["layer"]["frame_ms"].as_u64()).unwrap_or(0))
+    }
+    fn visibility(&mut self, ctx: &egui::Context, visible: bool) {
+        if let (Some(host),Some(output))=(&mut self.host,ctx.data(|d|d.get_temp::<String>(egui::Id::unique("viu-layer-output")))) {
+            if let Some(state)=host.outputs.get_mut(&output) {state["visible"]=json!(visible);}
+            host.ui_state.set_outputs(&host.outputs);
+            let _=host.runtime.notify("viu.layer.visibility".into(),json!({"output":output,"visible":visible}));
+        }
+    }
     fn should_close(&self) -> bool {
         self.host.as_ref().is_some_and(|h| {
             h.bus
@@ -1186,6 +1199,7 @@ impl crate::layer::LayerProgram for LayerHost {
     fn show(&mut self, ui: &mut egui::Ui, surface: &crate::layer::SurfaceInfo) {
         let host = self.host.as_mut().unwrap();
         let output = surface.output.clone().unwrap_or_default();
+        ui.ctx().data_mut(|d|d.insert_temp(egui::Id::unique("viu-layer-output"),output.clone()));
         let frames = host
             .outputs
             .get(&output)

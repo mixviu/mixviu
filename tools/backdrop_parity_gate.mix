@@ -8,12 +8,12 @@ if contains(args(),"--prepare") then
   print("==ENDLOCKDIFF==")
   print(run_argv_must(["git","checkout","-q","--","."]))
 end
-for $case in ["core","document","schedule","launch","engine"]
+for $case in ["core","document","schedule","launch","engine","train"]
   $result=run_argv(["/opt/mixos/bin/mix","apps/backdrop/"..$case.."-test.mix"])
   print($result)
   if not $result.ok then exit($result.exit_code ?? 1) end
 end
-for $file in ["app","core","document","document-test","schedule","schedule-test","launch","launch-test","engine","engine-test","projection","runtime","decode-job"]
+for $file in ["app","core","document","document-test","schedule","schedule-test","launch","launch-test","engine","engine-test","projection","runtime","decode-job","train","train-test","views","bus","reader","read-job"]
   $argv=["/opt/mixos/bin/mix","lint","apps/backdrop/"..$file..".mix"]
   for $builtin in ["viu_context","viu_app_dirs","viu_read_optional","viu_raster","viu_reply","viu_ui_state","viu_store","viu_timer","viu_action_event"] push($argv,"--allow-function");push($argv,$builtin) end
   $result=run_argv($argv)
