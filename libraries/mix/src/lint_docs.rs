@@ -230,6 +230,21 @@ pub const LINT_DOCS: &[LintDoc] = &[
         detail: "A declaration nested in control flow takes effect only if executed, then lasts for the rest of this invocation. Lint checks declarations in textual order without evaluating conditions.",
     },
     LintDoc {
+        code: "MIX-D3025",
+        summary: "service-profile builtins with no `-- host:` header",
+        detail: "The script calls builtins that only the service-profile engine `mixd` carries (markdown, xml_parse, yaml_*, ds_*, dkim_keygen, dns_query, mime_type), and its leading comment region has no `-- host:` line. The shell-profile `mix` refuses those calls at run time and names `mixd`. Add `-- host: mixd` and run the script with `mixd run FILE`. A note, because an undeclared script still runs under `mixd`. Emitted by the lint driver: the header is a property of the file.",
+    },
+    LintDoc {
+        code: "MIX-D3026",
+        summary: "`host: mix` script calls service-profile builtins",
+        detail: "The script declares `-- host: mix` but calls builtins that only the service-profile engine `mixd` carries, so it fails under the engine it names. Either change the header to `-- host: mixd`, or stop using the service builtin.",
+    },
+    LintDoc {
+        code: "MIX-D3027",
+        summary: "`-- host:` names no engine",
+        detail: "The `-- host:` header value is not one of the engines `mix`, `mixd` or `viu`. The header is matched exactly (lowercase, colon required), so a typo would otherwise pass silently.",
+    },
+    LintDoc {
         code: "MIX-E1601",
         summary: "malformed `-- lint:` pragma",
         detail: "A comment starting `-- lint:` (or `# lint:`) that is not one of the three pragmas: `-- lint: globals NAME, …` (names injected by `ssh_mix` bindings, an embedder or a `source` — an in-file `--allow-global`), `-- lint: ignore CODE` (suppress CODE on the next line holding code only, or on its own line when written after code) and `-- lint: ignore-file CODE` (the whole file). A bare `ignore` with no code is refused by design: every suppression names what it suppresses, so it can be reported once it goes stale (MIX-D3019). An unknown code, a non-name in `globals`, and an unknown directive are refused too. Pragmas are read from comments only, never from strings or heredocs.",

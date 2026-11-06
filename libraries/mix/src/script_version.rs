@@ -115,6 +115,39 @@ pub fn parse_script_header(source: &str) -> ScriptHeader {
     }
 }
 
+/// The engines a script may name in its `-- host:` header (mixviu
+/// engine-split decision): `mix` (shell profile), `mixd` (service profile and
+/// Bus citizens), `viu` (desktop scene apps).
+pub const HOSTS: &[&str] = &["mix", "mixd", "viu"];
+
+/// A script's `-- host: ENGINE` declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostHeader {
+    Absent,
+    Declared { host: String, line: usize },
+    Unknown { raw: String, line: usize },
+}
+
+/// The first `-- host:` line of the leading comment region.
+pub fn parse_host_header(source: &str) -> HostHeader {
+    for (line, text) in leading_comment_lines(source) {
+        if let Some(value) = header_value(text, "host") {
+            return if HOSTS.contains(&value) {
+                HostHeader::Declared {
+                    host: value.to_string(),
+                    line,
+                }
+            } else {
+                HostHeader::Unknown {
+                    raw: value.to_string(),
+                    line,
+                }
+            };
+        }
+    }
+    HostHeader::Absent
+}
+
 /// The `--` comment lines of the leading comment region, as (1-based line
 /// number, line): skips a line-1 `#!` shebang and blank lines, stops at the
 /// first line that is neither those nor a `--` comment, and never looks past

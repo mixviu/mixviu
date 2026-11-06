@@ -190,6 +190,9 @@ pub struct Analysis {
     /// (plus "process" for shell constructs and "bus" for messaging) —
     /// reported as data, not warnings (D3).
     pub capabilities: Vec<&'static str>,
+    /// Service-profile builtins the script calls (`markdown`, `xml_parse`,
+    /// ...): a script with any needs the `mixd` engine. Sorted, unique.
+    pub service_builtins: Vec<&'static str>,
     /// Every `on` declaration in the file, in walker order, duplicates kept.
     /// Filled by [`analyze`] only; remote `ssh_mix` bodies are not included.
     pub handlers: Vec<HandlerDeclaration>,
@@ -7411,14 +7414,25 @@ fn collect_capabilities(stmts: &[Stmt], a: &mut Analysis) {
             collect_expr_caps(expr, &mut caps);
         });
     });
-    let mut list: Vec<&'static str> = caps.into_iter().filter(|c| *c != "pure").collect();
+    let (mut service, rest): (Vec<&'static str>, Vec<&'static str>) = caps
+        .into_iter()
+        .filter(|c| *c != "pure")
+        .partition(|c| builtins::service_builtin_name(c).is_some());
+    let mut list = rest;
     list.sort_unstable();
+    service.sort_unstable();
     a.capabilities = list;
+    a.service_builtins = service;
 }
 
 fn collect_expr_caps(expr: &Expr, caps: &mut HashSet<&'static str>) {
     match expr {
         Expr::FunctionCall { name, args } => {
+            // Service-profile builtins ride in the same set under their own
+            // (static) names; collect_capabilities moves them out.
+            if let Some(service) = builtins::service_builtin_name(name) {
+                caps.insert(service);
+            }
             if let Some(info) = builtins::builtin_info_of(name) {
                 caps.insert(info.capability.as_str());
                 for cap in info.contract.required_caps {

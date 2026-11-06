@@ -253,6 +253,48 @@ fn exec_lint_gate(source: &str, no_lint: bool, agent_mode: bool) -> Option<i32> 
     Some(2)
 }
 
+/// Engine handoff (engine-split decision): a shell-profile `mix` given a
+/// script that declares `-- host: mixd` re-executes as `mixd` with the same
+/// argv, so the script runs under the service profile. `mixd` is looked for
+/// beside this binary, then on PATH. Returns the exit code when the script
+/// must not run here; None to run it in this process. Only the header
+/// decides: an undeclared script runs here, and a service builtin it calls
+/// refuses at run time naming `mixd` (lint's MIX-D3025 asks for the header).
+fn engine_handoff(source: &str, filename: &str, args: &[String]) -> Option<i32> {
+    if mix::builtins::engine_profile() == "service" {
+        return None;
+    }
+    match mix::parse_host_header(source) {
+        mix::HostHeader::Declared { host, .. } if host == "mixd" => {}
+        _ => return None,
+    }
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("mixd")))
+        .filter(|p| p.is_file());
+    let on_path = || {
+        env::var_os("PATH").and_then(|paths| {
+            env::split_paths(&paths)
+                .map(|dir| dir.join("mixd"))
+                .find(|p| p.is_file())
+        })
+    };
+    let Some(mixd) = beside.or_else(on_path) else {
+        eprintln!(
+            "mix: {filename} declares `-- host: mixd`, and this mix is the shell profile; \
+             the mixd engine is not installed (looked beside this binary and on PATH)"
+        );
+        return Some(127);
+    };
+    use std::os::unix::process::CommandExt;
+    let err = process::Command::new(&mixd)
+        .arg0("mixd")
+        .args(&args[1..])
+        .exec();
+    eprintln!("mix: {filename}: cannot hand off to {}: {err}", mixd.display());
+    Some(126)
+}
+
 /// Apply the global CLI arity flag to a freshly built evaluator.
 fn apply_arity_mode(eval: &mut Evaluator) {
     if STRICT_ARITY.load(std::sync::atomic::Ordering::Relaxed) {
@@ -2721,6 +2763,9 @@ fn real_main() -> i32 {
                         return 1;
                     }
                 };
+                if let Some(code) = engine_handoff(&source, filename, &args) {
+                    return code;
+                }
                 let script_args: Vec<String> = args[i + 1..].to_vec();
                 warn_trailing_flag_args(&script_args);
                 return run_source(

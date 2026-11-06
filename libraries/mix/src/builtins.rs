@@ -1143,6 +1143,28 @@ pub fn compiled_features() -> Vec<&'static str> {
 pub const SERVICE_PROFILE_FEATURES: &[&str] =
     &["markdown", "dkim", "datastar", "xml", "yaml", "mime", "dns", "serde"];
 
+/// Builtins that exist only in the service profile, with their feature.
+pub const SERVICE_BUILTINS: &[(&str, &str)] = &[
+    ("dkim_keygen", "dkim"),
+    ("dns_query", "dns"),
+    ("ds_patch_elements", "datastar"),
+    ("ds_patch_signals", "datastar"),
+    ("ds_sse", "datastar"),
+    ("markdown", "markdown"),
+    ("mime_type", "mime"),
+    ("xml_parse", "xml"),
+    ("yaml_encode", "yaml"),
+    ("yaml_parse", "yaml"),
+];
+
+/// The static name of `name` when it is a service-profile builtin.
+pub fn service_builtin_name(name: &str) -> Option<&'static str> {
+    SERVICE_BUILTINS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(n, _)| *n)
+}
+
 /// The engine profile this interpreter was built as: "service" when every
 /// service-profile feature is compiled in, otherwise "shell".
 pub fn engine_profile() -> &'static str {

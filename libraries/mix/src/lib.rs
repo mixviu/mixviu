@@ -82,7 +82,8 @@ pub use evaluator::{
 /// dependency of their own — use `mix::IndexMap`.
 pub use indexmap::IndexMap;
 pub use script_version::{
-    ScriptHeader, ScriptProvenance, VersionHeader, parse_script_header, parse_version_header,
+    HostHeader, ScriptHeader, ScriptProvenance, VersionHeader, parse_host_header,
+    parse_script_header, parse_version_header,
 };
 
 /// Run Mix source code and return the result.

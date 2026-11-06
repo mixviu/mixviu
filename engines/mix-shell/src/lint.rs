@@ -183,6 +183,7 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
                 if let Some(diag) = version_header_diag(&source, file, require_version) {
                     all_diags.push(diag);
                 }
+                all_diags.extend(host_header_diag(&source, file, &analysis.service_builtins));
                 for cap in analysis.capabilities {
                     if !capabilities.contains(&cap) {
                         capabilities.push(cap);
@@ -410,6 +411,56 @@ fn version_header_diag(source: &str, file: &str, require: bool) -> Option<Diagno
         hint: Some(format!(
             "add a `-- version: 0.1.0` comment near the top (the first {scan} lines are searched)"
         )),
+        fix: None,
+    })
+}
+
+/// The engine a script needs, checked against its `-- host:` header
+/// (engine-split decision). MIX-D3025: service-profile builtins with no
+/// header (note). MIX-D3026: `host: mix` but service-profile builtins are
+/// called (warning). MIX-D3027: a host value that names no engine (warning).
+fn host_header_diag(source: &str, file: &str, service: &[&'static str]) -> Option<Diagnostic> {
+    use mix::HostHeader;
+    let used = service.join("(), ");
+    let (code, severity, line, message, hint) = match mix::parse_host_header(source) {
+        HostHeader::Unknown { raw, line } => (
+            "MIX-D3027",
+            Severity::Warning,
+            Some(line),
+            format!(
+                "`-- host:` value `{raw}` names no engine (one of: {})",
+                mix::script_version::HOSTS.join(", ")
+            ),
+            "write `-- host: mix`, `-- host: mixd` or `-- host: viu`".to_string(),
+        ),
+        HostHeader::Declared { host, line } if host == "mix" && !service.is_empty() => (
+            "MIX-D3026",
+            Severity::Warning,
+            Some(line),
+            format!(
+                "declares `host: mix` but calls service-profile builtins ({used}()), which the mix engine does not carry"
+            ),
+            "declare `-- host: mixd` and run it with `mixd run FILE`".to_string(),
+        ),
+        HostHeader::Absent if !service.is_empty() => (
+            "MIX-D3025",
+            Severity::Note,
+            None,
+            format!(
+                "calls service-profile builtins ({used}()) with no `-- host:` header; the shell-profile mix refuses them"
+            ),
+            "add `-- host: mixd` near the top and run it with `mixd run FILE`".to_string(),
+        ),
+        _ => return None,
+    };
+    Some(Diagnostic {
+        code,
+        severity,
+        file: Some(file.to_string()),
+        line,
+        column: None,
+        message,
+        hint: Some(hint),
         fix: None,
     })
 }
