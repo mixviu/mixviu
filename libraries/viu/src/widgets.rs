@@ -6,7 +6,12 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
+    "widget-row",
+    "divider",
     "mark",
+    "status-line",
+    "time-series",
+    "dashboard",
     "label",
     "button",
     "field",
@@ -126,12 +131,89 @@ impl Widget {
     /// Untruncated native label width, using exactly the same typography as
     /// drawing. Containers choose whether and how this preferred size shrinks.
     pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
+        if self.kind == "menubar" && self.properties["style"] == "gold" {
+            let c = toolkit::chrome::Chrome::of(ui.ctx());
+            let form = toolkit::menu::form(ui.ctx());
+            if form["hosted"] == true {
+                return Ok(0.0);
+            }
+            let width = if form["effective"] == "bar" {
+                self.value(model)
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|menu| {
+                        ui.painter()
+                            .layout_no_wrap(
+                                menu["label"].as_str().unwrap_or("").into(),
+                                toolkit::chrome::Chrome::menu_font(ui.style()),
+                                c.palette.text,
+                            )
+                            .size()
+                            .x
+                            + 2.0 * c.metrics.menu_title_padding.x
+                    })
+                    .sum()
+            } else {
+                c.style.icon_button as f32
+            };
+            let mark = if crate::window_frame::client_of(ui.ctx())
+                && self.properties["header_icon"].is_string()
+            {
+                c.metrics.mark + c.metrics.mark_gap
+            } else {
+                0.0
+            };
+            return Ok(width
+                + mark
+                + if c.menu_side != design::MenuSide::Center {
+                    c.metrics.title_bar_margin
+                } else {
+                    0.0
+                });
+        }
+        if self.kind == "command-bar" && self.properties["style"] == "gold" {
+            if toolkit::titlebar::hosting::hosted(ui.ctx()) {
+                return Ok(0.0);
+            }
+            let n = model["values"]
+                .get(&self.id)
+                .unwrap_or(&self.initial)
+                .as_array()
+                .ok_or("command bar list required")?
+                .len() as f32;
+            let c = toolkit::chrome::Chrome::of(ui.ctx());
+            return Ok(
+                n * (c.style.icon_button as f32 + c.style.title_control_spacing as f32)
+                    + if c.band.actions.alignment() == design::title_band::Alignment::Center {
+                        0.0
+                    } else if crate::window_frame::client_of(ui.ctx())
+                        && c.band.actions.alignment()
+                            == c.captions.alignment(design::title_band::Alignment::Right)
+                    {
+                        c.metrics.caption_gap
+                    } else {
+                        c.metrics.title_bar_margin
+                    },
+            );
+        }
         self.validate_model(model)?;
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
         }
-        Ok(
-            egui::WidgetText::from(label_text(ui, self, self.value(model)))
+        let extra = if self.properties["role"] == "title" {
+            let c = toolkit::chrome::Chrome::of(ui.ctx());
+            2.0 * c.metrics.title_gap
+                + if c.band.title == design::TitleAlign::Auto {
+                    c.metrics.title_bar_margin
+                } else {
+                    0.0
+                }
+        } else {
+            0.0
+        };
+        Ok(extra
+            + egui::WidgetText::from(label_text(ui, self, self.value(model)))
                 .into_galley(
                     ui,
                     Some(egui::TextWrapMode::Extend),
@@ -162,6 +244,9 @@ impl Widget {
     }
     pub fn validate(&self, value: &Value) -> Result<(), String> {
         if crate::rich::KINDS.contains(&self.kind.as_str()) {
+            if self.kind == "menubar" && self.properties["style"] == "gold" {
+                crate::native_menu::validate(value)?;
+            }
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
@@ -189,6 +274,35 @@ impl Widget {
                                 .bytes()
                                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
                     })
+            }
+            "widget-row" => {
+                for side in ["left", "right"] {
+                    for item in value[side]
+                        .as_array()
+                        .filter(|a| a.len() <= 64)
+                        .ok_or("row requires bounded left/right widgets")?
+                    {
+                        let child = Widget::decode(item)?;
+                        if child.kind == "widget-row" {
+                            return Err("nested widget rows are not supported".into());
+                        }
+                        child.validate(&child.initial)?;
+                    }
+                }
+                true
+            }
+            "divider" => value.is_null(),
+            "dashboard" => return crate::dashboard::validate(value),
+            "time-series" => return crate::time_series::validate(value),
+            "status-line" => {
+                value["left"].is_string()
+                    && value["right"]
+                        .as_array()
+                        .is_some_and(|a| a.len() <= 16 && a.iter().all(Value::is_string))
+                    && value["icon"]
+                        .as_str()
+                        .and_then(crate::icons::Icon::from_name)
+                        .is_some()
             }
             "mark" => value
                 .as_str()
@@ -250,16 +364,16 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.kind == "swatches" {
-            return vec!["select"];
+        if self.kind == "swatches" {return vec!["select"];}
+        if self.kind == "macro-window" {return vec!["close"];}
+        if self.kind == "image-canvas" {return vec!["pan","zoom","pick","gesture","viewport"];}
+        if self.properties["read_only"] == true && self.kind == "tree-table" {
+            return vec![];
         }
-        if self.kind == "macro-window" {
-            return vec!["close"];
+        if self.kind == "dashboard" {
+            return vec!["choose"];
         }
-        if self.kind == "image-canvas" {
-            return vec!["pan", "zoom", "pick", "gesture", "viewport"];
-        }
-        if self.kind == "mark" {
+        if self.kind == "mark" || self.kind == "status-line" || self.kind == "time-series" {
             return vec![];
         }
         if self.kind == "editor" && self.properties["read_only"] == true {
@@ -360,6 +474,9 @@ impl Widget {
         }
         if self.kind == "image-canvas" {
             return crate::image_view::admit_canvas(self.value(model), action, value);
+        }
+        if self.kind == "dashboard" {
+            return crate::dashboard::admit(self.value(model), action, value);
         }
         self.validate_action(action, value)?;
         if self.kind == "window-controls" && self.value(model)["enabled"] != true {
@@ -498,10 +615,16 @@ impl Widgets {
         let value = model["values"]
             .get(&definition.id)
             .unwrap_or(&definition.initial);
-        ui.add_enabled_ui(definition.properties["enabled"] != false, |ui| {
-            ui.push_id(&definition.id, |ui| {
-                self.draw(ui, definition, value, model, &mut intents)
-            })
+        ui.push_id(&definition.id, |ui| {
+            ui.add_enabled_ui(definition.properties["enabled"] != false, |ui| {
+                if definition.properties["frame"] == "dock" {
+                    toolkit::bars::dock_frame(ui.ctx()).show(ui, |ui| {
+                        self.draw(ui, definition, value, model, &mut intents);
+                    });
+                } else {
+                    self.draw(ui, definition, value, model, &mut intents);
+                }
+            });
         });
         intents
     }
@@ -560,13 +683,131 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
-            "mark" => ui.add(crate::icons::image_of(
-                ui.ctx(),
-                crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
-                    .expect("validated mark"),
-                toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark,
-                ui.visuals().text_color(),
-            )),
+            "widget-row" => {
+                let mut row = |ui: &mut egui::Ui| {
+                    for item in value["left"].as_array().unwrap() {
+                        let child = Widget::decode(item).expect("validated row child");
+                        if child.kind == "tabs" {
+                            let selected = model["values"].get(&child.id).unwrap_or(&child.initial);
+                            for option in child.choices() {
+                                let response = toolkit::selectable(ui, selected == option, option);
+                                self.remember(ui, &format!("{}.{}", child.id, option), &response);
+                                if response.clicked() {
+                                    events.push(Intent::set(&child.id, json!(option)));
+                                }
+                            }
+                            continue;
+                        }
+                        events.extend(self.widget(ui, &child, model));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        for item in value["right"].as_array().unwrap() {
+                            let child = Widget::decode(item).expect("validated row child");
+                            events.extend(self.widget(ui, &child, model));
+                        }
+                    });
+                };
+                if widget.properties["chrome"] == "options" {
+                    toolkit::bars::options(ui, |ui| {
+                        if let Some(threshold) = widget.properties["scroll_below"]
+                            .as_f64()
+                            .filter(|n| ui.available_width() < *n as f32)
+                        {
+                            let width = widget.properties["scroll_width"]
+                                .as_f64()
+                                .unwrap_or(threshold)
+                                .clamp(64.0, 8192.0) as f32;
+                            egui::ScrollArea::horizontal()
+                                .min_scrolled_width(0.0)
+                                .auto_shrink(false)
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.set_width(width);
+                                        row(ui);
+                                    });
+                                });
+                        } else {
+                            row(ui);
+                        }
+                    })
+                    .response
+                } else {
+                    ui.horizontal(row).response
+                }
+            }
+            "divider" => {
+                toolkit::bars::divider(ui, ui.available_height().min(18.0));
+                ui.response()
+            }
+            "dashboard" => crate::dashboard::draw(ui, id, value, events),
+            "time-series" => crate::time_series::draw(ui, id, value),
+            "status-line" => {
+                toolkit::bars::status(ui, |ui| {
+                    let colour = if value["error"] == true {
+                        ui.visuals().error_fg_color
+                    } else {
+                        ui.visuals().weak_text_color()
+                    };
+                    ui.add(crate::icons::image_of(
+                        ui.ctx(),
+                        crate::icons::Icon::from_name(value["icon"].as_str().unwrap()).unwrap(),
+                        14.0,
+                        colour,
+                    ));
+                    ui.small(value["left"].as_str().unwrap());
+                    if let Some(error) = value["message"].as_str() {
+                        ui.small(egui::RichText::new(error).color(ui.visuals().error_fg_color));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        for item in value["right"].as_array().unwrap() {
+                            ui.small(item.as_str().unwrap());
+                        }
+                    });
+                })
+                .response
+            }
+            "mark" => {
+                let size = widget.properties["size"]
+                    .as_f64()
+                    .unwrap_or(toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark as f64)
+                    as f32;
+                let image = crate::icons::image_of(
+                    ui.ctx(),
+                    crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
+                        .expect("validated mark"),
+                    size,
+                    if widget.properties["header_mark"] == true {
+                        toolkit::chrome::Chrome::of(ui.ctx()).palette.icon
+                    } else if widget.properties["weak"] == true {
+                        ui.visuals().weak_text_color()
+                    } else {
+                        ui.visuals().text_color()
+                    },
+                );
+                if widget.properties["fill_height"] == true {
+                    let inset = if widget.properties["header_mark"] == true {
+                        toolkit::chrome::Chrome::of(ui.ctx())
+                            .metrics
+                            .title_bar_margin
+                    } else {
+                        0.0
+                    };
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(size + inset, ui.available_height()),
+                        Sense::hover(),
+                    );
+                    image.paint_at(
+                        ui,
+                        egui::Rect::from_center_size(
+                            rect.center() + egui::vec2(inset / 2.0, 0.0),
+                            egui::vec2(size, size),
+                        ),
+                    );
+                    response
+                } else {
+                    ui.add(image)
+                }
+            }
             "window-controls" => {
                 let metrics = crate::window_frame::Metrics::of(ui.ctx());
                 let (area, response) = ui.allocate_exact_size(
@@ -625,6 +866,27 @@ impl Widgets {
             }
             "label" => {
                 let text = label_text(ui, widget, value);
+                if widget.properties["role"] == "title" {
+                    let (rect, response) =
+                        ui.allocate_exact_size(ui.available_size_before_wrap(), Sense::hover());
+                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    toolkit::titlebar::window_title(
+                        ui,
+                        &chrome,
+                        value.as_str().unwrap_or(""),
+                        rect,
+                        rect.left() + chrome.metrics.title_gap,
+                        rect.right() - chrome.metrics.title_gap,
+                    );
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Label,
+                            ui.is_enabled(),
+                            value.as_str().unwrap_or(""),
+                        )
+                    });
+                    return self.remember(ui, id, &response);
+                }
                 let mut label = egui::Label::new(text);
                 if widget.properties["truncate"] == true {
                     label = label.truncate();
@@ -634,7 +896,10 @@ impl Widgets {
                 } else if widget.properties["align"] == "right" {
                     label = label.halign(egui::Align::Max);
                 }
-                if matches!(widget.properties["role"].as_str(), Some("title" | "status")) {
+                if matches!(
+                    widget.properties["role"].as_str(),
+                    Some("title" | "status" | "status-band")
+                ) {
                     ui.allocate_ui_with_layout(
                         ui.available_size_before_wrap(),
                         egui::Layout::left_to_right(egui::Align::Center),
@@ -654,7 +919,11 @@ impl Widgets {
                 }
             }
             "button" => {
-                let r = icon_button(ui, widget.text("icon"), widget.text("text"), false);
+                let r = if widget.properties["style"] == "secondary" {
+                    ui.add(toolkit::button::PushButton::secondary(widget.text("text")))
+                } else {
+                    icon_button(ui, widget.text("icon"), widget.text("text"), false)
+                };
                 if r.clicked() {
                     events.push(Intent {
                         id: id.clone(),
@@ -697,22 +966,30 @@ impl Widgets {
                     }
                 }
                 let rows = whole(&widget.properties["rows"]).unwrap_or(24) as usize;
-                let edit = if widget.kind == "field" {
-                    egui::TextEdit::singleline(&mut text)
-                } else if widget.kind == "editor" {
-                    egui::TextEdit::multiline(&mut text)
-                        .code_editor()
-                        .desired_rows(rows)
-                        .char_limit(16384)
+                let r = if widget.kind == "field" && widget.properties["search"] == true {
+                    let width = widget.properties["width"]
+                        .as_f64()
+                        .unwrap_or(ui.available_width() as f64)
+                        as f32;
+                    toolkit::field::search(ui, &mut text, widget.text("placeholder"), width)
                 } else {
-                    egui::TextEdit::multiline(&mut text).desired_rows(1)
+                    let edit = if widget.kind == "field" {
+                        egui::TextEdit::singleline(&mut text)
+                    } else if widget.kind == "editor" {
+                        egui::TextEdit::multiline(&mut text)
+                            .code_editor()
+                            .desired_rows(rows)
+                            .char_limit(16384)
+                    } else {
+                        egui::TextEdit::multiline(&mut text).desired_rows(1)
+                    };
+                    ui.add(
+                        edit.desired_width(ui.available_width())
+                            .hint_text(widget.text("placeholder"))
+                            .password(widget.properties["password"] == true)
+                            .id_salt(id),
+                    )
                 };
-                let r = ui.add(
-                    edit.desired_width(ui.available_width())
-                        .hint_text(widget.text("placeholder"))
-                        .password(widget.properties["password"] == true)
-                        .id_salt(id),
-                );
                 // The key which ends editing belongs to the field this frame.
                 self.text_input_active |= r.has_focus()
                     || (r.lost_focus()
@@ -754,7 +1031,15 @@ impl Widgets {
                 let r = if widget.kind == "checkbox" {
                     ui.checkbox(&mut checked, widget.text("text"))
                 } else {
-                    ui.toggle_value(&mut checked, widget.text("text"))
+                    if widget.properties["style"] == "selectable" {
+                        let response = toolkit::selectable(ui, checked, widget.text("text"));
+                        if response.clicked() {
+                            checked = !checked;
+                        }
+                        response
+                    } else {
+                        ui.toggle_value(&mut checked, widget.text("text"))
+                    }
                 };
                 if r.changed() || r.clicked() {
                     changed = Some(json!(checked));
@@ -768,7 +1053,7 @@ impl Widgets {
                             let r = if widget.kind == "radio" {
                                 ui.radio(value == option, option)
                             } else {
-                                ui.selectable_label(value == option, option)
+                                toolkit::selectable(ui, value == option, option)
                             };
                             self.remember(ui, &format!("{id}.{option}"), &r);
                             if r.clicked() {
@@ -777,7 +1062,7 @@ impl Widgets {
                         }
                     })
                     .response;
-                if widget.kind == "tabs" {
+                if widget.kind == "tabs" && widget.properties["pages"].is_object() {
                     ui.small(
                         widget.properties["pages"][value.as_str().unwrap_or("")]
                             .as_str()
@@ -903,18 +1188,17 @@ impl Widgets {
                 .response
             }
             "combo" => {
-                egui::ComboBox::from_id_salt(id)
-                    .selected_text(value.as_str().unwrap_or(""))
-                    .show_ui(ui, |ui| {
-                        for option in widget.choices() {
-                            let r = ui.selectable_label(value == option, option);
-                            self.remember(ui, &format!("{id}.{option}"), &r);
-                            if r.clicked() {
-                                changed = Some(json!(option));
-                            }
-                        }
-                    })
-                    .response
+                let choices = widget.choices();
+                let mut selected = choices
+                    .iter()
+                    .position(|option| value == *option)
+                    .unwrap_or(0);
+                let width = widget.properties["width"].as_f64().map(|v| v as f32);
+                let r = toolkit::combo::show(ui, id, &mut selected, &choices, width);
+                if r.changed() {
+                    changed = choices.get(selected).map(|v| json!(v));
+                }
+                r
             }
             "list" | "table" | "tree" => {
                 let source = widget.text("dataset");
@@ -1307,6 +1591,9 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     }
     if widget.properties["weak"] == true {
         text = text.weak();
+    }
+    if widget.properties["tone"] == "warning" {
+        text = text.color(ui.visuals().warn_fg_color);
     }
     if widget.properties["mono"] == true {
         text = text.monospace();

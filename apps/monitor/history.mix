@@ -1,0 +1,59 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold history policy; values are oldest first, nil preserves TCP gaps.
+fn tcp_keys()
+  return ["in_segs","out_segs","retrans_segs","in_errs","active_opens","passive_opens","out_rsts","estab_resets","listen_overflows","listen_drops","established"]
+end
+fn bounded($values)
+  return if len($values)>60 then slice($values,len($values)-60) else $values end
+end
+fn append_sample($rings,$name,$value,$gap)
+  if $value==nil and not $gap then return $rings end
+  $ring=$rings[$name] ?? [];push($ring,$value);$rings[$name]=bounded($ring)
+  return $rings
+end
+fn record($rings,$s)
+  $rings=append_sample($rings,"cpu.busy",$s.cpu.busy,false)
+  for $core in ($s.cpu.per_core ?? [])
+    $rings=append_sample($rings,"cpu.core."..to_string($core.cpu)..".busy",$core.busy,false)
+  end
+  $rings=append_sample($rings,"mem.used",$s.memory.used,false)
+  for $d in ($s.disks ?? [])
+    for $pair in [["read","read_bps"],["write","write_bps"],["busy","busy"]]
+      $rings=append_sample($rings,"disk."..$d.name.."."..$pair[0],$d[$pair[1]],false)
+    end
+  end
+  for $n in ($s.net ?? [])
+    $rings=append_sample($rings,"net."..$n.name..".rx",$n.rx_bps,false)
+    $rings=append_sample($rings,"net."..$n.name..".tx",$n.tx_bps,false)
+  end
+  $tcp=$s.tcp ?? {}
+  for $key in tcp_keys() $rings=append_sample($rings,"tcp."..$key,$tcp[$key],true) end
+  return $rings
+end
+fn seed($rings,$reply)
+  if type($reply)!="map" or type($reply.series)!="map" then return $rings end
+  $series=$reply.series ?? {};$times=[]
+  for $name in keys($series)
+    $points=if type($series[$name])=="list" then filter($series[$name],fn($p)=type($p)=="list") else [] end
+    if starts_with($name,"tcp.") then
+      for $p in $points if len($p)>0 and type($p[0])=="number" then push($times,$p[0]) end end
+    else
+      $values=map(filter($points,fn($p)=len($p)>1 and type($p[1])=="number"),fn($p)=$p[1])
+      $rings[$name]=bounded(concat($values,$rings[$name] ?? []))
+    end
+  end
+  $unique=[];$seen={}
+  for $t in sort_by($times,fn($v)=$v)
+    $key=to_string($t)
+    if $seen[$key]!=true then push($unique,$t);$seen[$key]=true end
+  end
+  for $key in tcp_keys()
+    $name="tcp."..$key;$points=if type($series[$name])=="list" then filter($series[$name],fn($p)=type($p)=="list" and len($p)>0) else [] end;$values=[]
+    for $t in $unique
+      $matches=filter($points,fn($p)=$p[0]==$t)
+      push($values,if len($matches)>0 and len($matches[0])>1 and type($matches[0][1])=="number" then $matches[0][1] else nil end)
+    end
+    $rings[$name]=bounded(concat($values,$rings[$name] ?? []))
+  end
+  return $rings
+end

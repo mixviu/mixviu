@@ -35,16 +35,16 @@ pub fn install_session(
     file: &toolkit::Theme,
     last_ui: &settings::model::CommonUi,
 ) -> Result<settings::model::CommonUi, String> {
-    install_session_choice(ctx, snapshot, app, file, last_ui, &Value::Null)
+    let (theme, ui) = session_base(snapshot, app, file, last_ui)?;
+    install_theme(ctx, &theme)?;
+    Ok(ui)
 }
-pub fn install_session_choice(
-    ctx: &egui::Context,
+pub fn session_base(
     snapshot: &Value,
     app: &str,
     file: &toolkit::Theme,
     last_ui: &settings::model::CommonUi,
-    choice: &Value,
-) -> Result<settings::model::CommonUi, String> {
+) -> Result<(toolkit::Theme, settings::model::CommonUi), String> {
     use settings::view::View;
     let values: settings::registry::Values =
         serde_json::from_value(snapshot["state"]["values"].clone()).map_err(|e| e.to_string())?;
@@ -57,15 +57,15 @@ pub fn install_session_choice(
         file,
         last_ui,
     );
-    let theme = theme
-        .with_choice(&theme_choice(choice)?)
-        .map_err(|e| e.to_string())?;
     let ui = if lost {
         last_ui.clone()
     } else {
         toolkit::session_look::ui(&look, Some(app))
     };
-    toolkit::install(ctx, &theme);
+    Ok((theme, ui))
+}
+pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), String> {
+    toolkit::install(ctx, theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
     let mut colours = std::collections::BTreeMap::new();
     for role in resolve(&serde_json::json!({}))?.colours.keys() {
@@ -94,10 +94,10 @@ pub fn install_session_choice(
     });
     crate::icons::install_style(
         ctx,
-        toolkit::icons::stroke_width(&theme),
+        toolkit::icons::stroke_width(theme),
         chrome.style.icon_mask.0,
     );
-    Ok(ui)
+    Ok(())
 }
 
 pub fn theme_choice(value: &Value) -> Result<toolkit::theme::Choice, String> {
@@ -196,3 +196,5 @@ pub fn install_style(ctx: &egui::Context, description: &Value, appearance: Resol
     ctx.set_style_of(egui::Theme::Light, style.clone());
     ctx.set_style_of(egui::Theme::Dark, style);
 }
+
+pub fn install_session_choice(ctx:&egui::Context,snapshot:&Value,app:&str,file:&toolkit::Theme,last_ui:&settings::model::CommonUi,choice:&Value)->Result<settings::model::CommonUi,String>{let (base,ui)=session_base(snapshot,app,file,last_ui)?;let theme=base.with_choice(&theme_choice(choice)?).map_err(|e|e.to_string())?;install_theme(ctx,&theme)?;Ok(ui)}

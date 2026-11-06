@@ -1,0 +1,21 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$c=require("core.mix");$a=require("actions.mix");$w=require("wire.mix")
+$s=$c.initial();$registry=$a.registry($s)
+if len($registry)!=45 or len(unique(map($registry,fn($a)=$a.id)))!=45 then raise("ACTIONS","Gold registry identity/count") end
+if filter($registry,fn($a)=$a.id=="process.end")[0].enabled then raise("ACTIONS","No signal without a selected row") end
+$s.selected=1;$s.processes=[{pid:1,name:"example",user:"user",cpu:1,memory:1024,cmdline:"example --flag"}];$s.processes_loaded=true;$s.total=12
+if not filter($a.registry($s),fn($a)=$a.id=="process.end")[0].enabled then raise("ACTIONS","Local selected row admission") end
+$s.node="peer"
+if filter($a.registry($s),fn($a)=$a.id=="process.end")[0].enabled then raise("ACTIONS","Remote signal admitted") end
+$s.node="";$s.dialog="about"
+if filter($a.registry($s),fn($a)=$a.id=="file.refresh")[0].enabled or not filter($a.registry($s),fn($a)=$a.id=="process.copy")[0].enabled then raise("ACTIONS","Gold dialog admission") end
+$choice=$s.theme_choice
+$answer=$a.theme_edit($choice,{scheme:"ocean",style:"invalid"})
+if $answer.ok or $choice.scheme!=nil then raise("THEME","Invalid mixed-axis edit committed") end
+$s.dialog=nil;$info=$w.info($s,{pid:42,version:"example"})
+if $info.schema!="monitor.v1" or $info.pid!=42 or $info.processes.total!=12 or $info.ui.tab!="processes" then raise("INFO","Gold compact info contract") end
+$row=$w.rows($s)[0]
+if $row.io!=nil or not $row.selected or contains(keys($row),"cmdline") then raise("ROWS","Gold rows projection") end
+$peers=$w.peers({node:"local",authority:{routing_view:[{name:"local"},{name:"peer"},{name:"peer"},{name:"retired",class:"retired"},{name:"transport",class:"transport"},{name:"bad.node"}]}})
+if not deep_eq($peers,["peer"]) then raise("PEERS","Membership filtering") end
+print("Monitor registry, compact wire state, theme atomicity and peers pass")

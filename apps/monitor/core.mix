@@ -1,3 +1,5 @@
+$commands=require("actions.mix")
+$performance=require("performance.mix")
 $frame=require("../../libraries/viu/mix/gold-frame.mix")
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
@@ -7,19 +9,21 @@ fn target($node)
   return "monitord."..$node..".bus"
 end
 fn initial()
-  return {node:"",node_draft:"",paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,snapshot:nil,processes:[],history:[],error:nil,serial:0}
+  return {bindings:{},theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark",style:"studio"},ticket:0,inflight:{},processes_loaded:false,focus_serial:0,macros_open:false,quitting:false,window_close:false,connected:true,status:"Connecting to monitord…",node:"",node_draft:"",tab:"Processes",section:"cpu",rings:{},history_seeded:false,connections:nil,connections_error:nil,peers:[],total:0,paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
 end
 fn query($s)
-  return {sort:$s.sort,reverse:$s.reverse,filter:$s.filter,tree:$s.tree,limit:2001}
+  $query={sort:$s.sort,reverse:$s.reverse,tree:$s.tree,limit:0}
+  if trim($s.filter)!="" then $query.filter=trim($s.filter) end
+  return $query
 end
 fn project($s)
   $rows=[]
-  if len($s.processes)>2000 then raise("PROCESS_BUDGET","More than 2000 processes; no partial table") end
   for $p in $s.processes
-    push($rows,{key:to_string($p.pid),depth:min(256,$p.depth ?? 0),branch:false,selected:$p.pid==$s.selected,focused:$p.pid==$s.selected,expanded:false,cells:[$p.name,to_string($p.pid),$p.user,fmt("%.1f",$p.cpu),format_bytes($p.memory),if $p.read_bps==nil and $p.write_bps==nil then "Unavailable" else format_bytes(($p.read_bps ?? 0)+($p.write_bps ?? 0)).."/s" end]})
+    if type($p.name)!="string" or type($p.user)!="string" or type($p.cpu)!="number" or type($p.memory)!="number" then raise("PROCESS_ROW","Invalid process row; no partial table") end
+    push($rows,{key:to_string($p.pid),depth:min(256,$p.depth ?? 0),branch:false,selected:$p.pid==$s.selected,focused:$p.pid==$s.selected,expanded:false,cells:[$p.name,to_string($p.pid),$p.user,fmt("%.1f",$p.cpu),gold_bytes($p.memory),if $p.read_bps==nil and $p.write_bps==nil then "—" else gold_bytes(($p.read_bps ?? 0)+($p.write_bps ?? 0)).."/s" end,$p.cmdline ?? ""]})
   end
   $columns=[]
-  for $pair in [["name","Name"],["pid","PID"],["user","User"],["cpu","CPU %"],["memory","Memory"],["io","I/O /s"]] push($columns,{id:$pair[0],label:$pair[1]}) end
+  for $pair in [["name","Name"],["pid","PID"],["user","User"],["cpu","CPU"],["memory","Memory"],["io","Disk"],["cmdline","Command line"]] push($columns,{id:$pair[0],label:$pair[1],width:if $pair[0]=="name" then 240 elif $pair[0]=="pid" or $pair[0]=="cpu" then 70 elif $pair[0]=="user" then 100 else 90 end,min_width:if $pair[0]=="name" or $pair[0]=="cmdline" then 120 elif $pair[0]=="user" or $pair[0]=="memory" or $pair[0]=="io" then 60 else 50 end,remainder:$pair[0]=="cmdline",sortable:$pair[0]!="cmdline",weak:$pair[0]=="cmdline",align:if contains(["pid","cpu","memory","io"],$pair[0]) then "right" else "left" end}) end
   $shapes=[]
   if len($s.history)>1 then
     for $i=1 to len($s.history)-1 push($shapes,{kind:"line",from:[($i-1)/59,1-$s.history[$i-1]/100],to:[$i/59,1-$s.history[$i]/100]}) end
@@ -29,13 +33,59 @@ fn project($s)
     $v=$s.snapshot
     $summary=fmt("CPU %.1f%% · %d cores · Memory %s / %s · Swap %s / %s",$v.cpu.busy,$v.cpu.cores,format_bytes($v.memory.used),format_bytes($v.memory.total),format_bytes($v.swap.used),format_bytes($v.swap.total))
   end
-  $model={status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:$s.sort,ascending:if contains(["name","pid","user"],$s.sort) then not $s.reverse else $s.reverse end},properties:{height:470}},values:{pause:$s.paused,filter:$s.filter,node:$s.node_draft},serial:$s.serial}
+  $nodes=concat(["This node"],$s.peers);if $s.node!="" and not contains($nodes,$s.node) then push($nodes,$s.node) end
+  $model={performance_view:$performance.project($s),processes_hidden:$s.tab!="Processes",performance_hidden:$s.tab!="Performance",node_choice:{id:"node",kind:"combo",label:"Node",initial:if $s.node=="" then "This node" else $s.node end,properties:{choices:$nodes,width:150}},end_button:{id:"end-task",kind:"button",label:"",initial:"End task",properties:{text:"End task",style:"secondary",enabled:$s.node=="" and $s.dialog==nil and $s.selected!=nil}},status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:$s.sort,reverse:$s.reverse,ascending:if contains(["name","pid","user"],$s.sort) then not $s.reverse else $s.reverse end},properties:{style:"grid",frame:"dock"}},options:{tabs:{preferred:220,minimum:200,align:"left",order:0},server:{preferred:26,minimum:26,align:"left",order:1},node:{preferred:150,minimum:100,align:"left",order:2},"filter-gap":{preferred:15,minimum:15,align:"right",order:5},filter:{preferred:220,minimum:120,align:"right",order:4},tree:{preferred:112,minimum:94,align:"right",order:3},"end-task":{preferred:90,minimum:80,align:"right",order:2},paused:{preferred:80,minimum:0,align:"left",order:3}},performance:$s.tab=="Performance",values:{paused:if $s.paused then "Paused" else "" end,tabs:$s.tab,tree:$s.tree,pause:$s.paused,filter:$s.filter,node:if $s.node=="" then "This node" else $s.node end},serial:$s.serial}
+  $left=[{id:"tabs",kind:"tabs",label:"",initial:$s.tab,properties:{choices:["Processes","Performance"]}},{id:"node-divider",kind:"divider",label:"",initial:nil,properties:{}},{id:"server",kind:"mark",label:"",initial:"server",properties:{size:14,weak:true}},$model.node_choice]
+  if $s.paused then push($left,{id:"paused",kind:"label",label:"",initial:"Paused",properties:{tone:"warning"}}) end
+  $right=[]
+  if $s.tab=="Processes" then
+    $right=[$model.end_button,{id:"tree",kind:"toggle",label:"Tree",initial:$s.tree,properties:{text:"Show as tree",style:"selectable"}},{id:"filter",kind:"field",label:"Filter processes",initial:$s.filter,properties:{placeholder:"Filter processes",search:true,width:220}}]
+  end
+  $model.options_row={id:"options",kind:"widget-row",label:"Options",initial:{left:$left,right:$right},properties:{chrome:"options",scroll_below:640,scroll_width:1040}}
   return $model
 end
 
 fn framed($s)
   $model=project($s)
-  $actions=[{id:"monitor.refresh",label:"Refresh",icon:"refresh-cw",icon_only:true,enabled:true},{id:"monitor.pause",label:"Pause",checked:$s.paused,enabled:true}]
-  $menus=[{id:"File",label:"File",enabled:true,children:concat($actions,[{id:"monitor.close",label:"Close",enabled:true}])}]
-  return $frame.apply($model,{icon:"monitor",title:"Monitor",menus:$menus,toolbar:$actions,status:$model.status})
+  $actions=$commands.toolbar($s)
+  $menus=$commands.menus($s)
+  $model.window_close=$s.window_close
+  $model.shortcuts=$commands.shortcuts($s)
+  $model.macros_open=$s.macros_open
+  $model.native_focus=if $s.focus_serial>0 then {id:"filter",serial:$s.focus_serial} else nil end
+  $model.native_overlays=[]
+  if $s.dialog!=nil then
+    $definition={id:"monitor-dialog",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Monitor" else "Keyboard shortcuts" end,body:"Processes and performance for this node or any node on the mesh, read from monitord. End task and Kill act only on this node"..chr(39).."s processes, as you.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
+    if $s.dialog=="shortcuts" then
+      $grid=[]
+      for $a in $commands.registry($s)
+        $bound=$s.bindings[$a.id] ?? {}; $a.keys=$bound.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+        if len($a.keys)>0 then push($grid,$a) end
+      end
+      $definition.initial.grid=$grid
+    end
+    $model.native_overlays=[{definition:$definition,command:"monitor.dialog.intent"}]
+  end
+  return $frame.apply($model,{icon:"monitor",title:"Monitor — "..(if $s.snapshot!=nil then $s.snapshot.host ?? "This node" else "This node" end),menus:$menus,toolbar:$actions,status:status_line($s)})
+end
+
+fn gold_bytes($n)
+  $units=["B","KiB","MiB","GiB","TiB","PiB"];$i=0;$v=max(0,$n)
+  while $v>=1024 and $i<5
+    $v=$v/1024;$i=$i+1
+  end
+  return (if $i==0 or $v>=100 then fmt("%.0f",$v) else fmt("%.1f",$v) end).." "..$units[$i]
+end
+
+fn status_line($s)
+  $right=[]
+  if $s.snapshot!=nil and $s.snapshot.uptime_s!=nil then push($right,"Up time "..gold_uptime($s.snapshot.uptime_s)) end
+  if $s.processes_loaded then push($right,to_string(len($s.processes)).." of "..to_string($s.total).." processes") end
+  return {left:$s.status,icon:if $s.connected and $s.error==nil then "plug" else "unplug" end,error:not $s.connected or $s.error!=nil,message:$s.error,right:$right}
+end
+fn gold_uptime($seconds)
+  $s=floor(max(0,$seconds));$d=floor($s/86400);$h=floor(($s%86400)/3600);$m=floor(($s%3600)/60)
+  if $d>0 then return fmt("%dd %dh %dm",$d,$h,$m)
+  elif $h>0 then return fmt("%dh %dm",$h,$m)
+  else return fmt("%dm %ds",$m,$s%60) end
 end

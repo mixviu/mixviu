@@ -32,6 +32,13 @@ pub fn validate(value: &Value) -> Result<(), String> {
     let mut keys = BTreeSet::new();
     let mut column_keys = BTreeSet::new();
     for column in columns {
+        if !column["fraction"].is_null()
+            && column["fraction"]
+                .as_f64()
+                .is_none_or(|n| !n.is_finite() || n <= 0.0 || n > 1.0)
+        {
+            return Err("invalid column width fraction".into());
+        }
         if text(column, "id").is_empty()
             || !column_keys.insert(text(column, "id"))
             || !column["label"].is_string()
@@ -337,6 +344,9 @@ pub(crate) fn draw(
     geometry: &mut BTreeMap<String, Rect>,
     events: &mut Vec<Intent>,
 ) -> egui::Response {
+    if widget.properties["style"] == "grid" {
+        return draw_grid(ui, widget, value, geometry, events);
+    }
     let id = &widget.id;
     let rows = value["rows"].as_array().expect("validated rows");
     let columns = value["columns"].as_array().expect("validated columns");
@@ -450,6 +460,126 @@ pub(crate) fn draw(
         }
     }
     result.response
+}
+
+/// Resizable, striped native table. Column sizing and cell semantics are
+/// supplied by Mix; this renderer has no resource or application knowledge.
+fn draw_grid(
+    ui: &mut Ui,
+    widget: &Widget,
+    value: &Value,
+    geometry: &mut BTreeMap<String, Rect>,
+    events: &mut Vec<Intent>,
+) -> egui::Response {
+    use egui_extras::{Column, TableBuilder};
+    let id = &widget.id;
+    let rows = value["rows"].as_array().expect("validated rows");
+    let columns = value["columns"].as_array().expect("validated columns");
+    let height = ui.text_style_height(&TextStyle::Body)
+        + number(&widget.properties, "row_padding", 6.0).clamp(0.0, 32.0);
+    ui.scope(|ui| {
+        let read_only = widget.properties["read_only"] == true;
+        let room = (ui.available_width()
+            - ui.spacing().item_spacing.x * (columns.len().saturating_sub(1) as f32))
+            .max(1.0);
+        let mut table = TableBuilder::new(ui)
+            .id_salt(id)
+            .auto_shrink([widget.properties["auto_shrink"] == true; 2])
+            .vscroll(widget.properties["vscroll"] != false)
+            .striped(true)
+            .resizable(widget.properties["resizable"] != false)
+            .sense(if read_only {
+                Sense::hover()
+            } else {
+                Sense::click()
+            })
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
+        for column in columns {
+            let width = if column["remainder"] == true {
+                Column::remainder()
+            } else if let Some(fraction) = column["fraction"].as_f64() {
+                Column::exact(room * fraction as f32)
+            } else {
+                Column::initial(number(column, "width", 90.0))
+            };
+            table = table.column(width.at_least(number(column, "min_width", 50.0)).clip(true));
+        }
+        table
+            .header(height, |mut header| {
+                for column in columns {
+                    header.col(|ui| {
+                        let arrow = if value["sort"] == column["id"] {
+                            if value["reverse"] == true {
+                                " ↑"
+                            } else {
+                                " ↓"
+                            }
+                        } else {
+                            ""
+                        };
+                        let label =
+                            egui::RichText::new(format!("{}{arrow}", text(column, "label")))
+                                .strong();
+                        let response = if read_only || column["sortable"] == false {
+                            ui.label(label)
+                        } else {
+                            ui.add(egui::Button::new(label).frame(false))
+                        };
+                        let response = if let Some(tip) = column["tooltip"].as_str() {
+                            response.on_hover_text(tip)
+                        } else {
+                            response
+                        };
+                        geometry
+                            .insert(format!("{id}.column.{}", text(column, "id")), response.rect);
+                        if !read_only && response.clicked() && column["sortable"] != false {
+                            emit(events, id, "sort", json!({"column":column["id"]}));
+                        }
+                    });
+                }
+            })
+            .body(|body| {
+                body.rows(height, rows.len(), |mut row| {
+                    let data = &rows[row.index()];
+                    let key = text(data, "key");
+                    row.set_selected(selected(value, data));
+                    for (i, column) in columns.iter().enumerate() {
+                        row.col(|ui| {
+                            if i == 0 {
+                                ui.add_space(number(data, "depth", 0.0) * 14.0);
+                            }
+                            let label =
+                                egui::RichText::new(data["cells"][i].as_str().unwrap_or(""));
+                            let label = if column["weak"] == true {
+                                label.color(ui.visuals().weak_text_color())
+                            } else {
+                                label
+                            };
+                            if column["align"] == "right" {
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| ui.label(label),
+                                );
+                            } else {
+                                if column["leading_gap"] == true {
+                                    ui.add_space(ui.spacing().item_spacing.x);
+                                }
+                                let response = ui.label(label);
+                                if let Some(tip) = data["tooltips"][i].as_str() {
+                                    response.on_hover_text(tip);
+                                }
+                            }
+                        });
+                    }
+                    let response = row.response();
+                    geometry.insert(format!("{id}.key.{key}"), response.rect);
+                    if !read_only && response.clicked() {
+                        emit(events, id, "select", json!({"key":key}));
+                    }
+                });
+            });
+    })
+    .response
 }
 fn text_value<'a>(v: &'a Value, key: &str) -> &'a str {
     text(v, key)

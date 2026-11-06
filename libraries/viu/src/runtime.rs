@@ -215,6 +215,7 @@ impl Runtime {
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
                         eval.register("viu_files",crate::file_data::binding());
+                        eval.register("viu_process",crate::process::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_image",crate::native_primitives::image_file());
                         eval.register("viu_http",crate::http::binding());
@@ -233,6 +234,7 @@ impl Runtime {
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "loader": "viu-local", "host": "viu-local", "options":options
+                            "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));
@@ -549,6 +551,7 @@ impl BusHandler for Local {
     ) -> BusFuture<'a, MixResult<(i32, Value, Value)>> {
         Box::pin(async move {
             if target != "viu-local"
+                || command.starts_with("native.")
                 || ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command)
             {
                 return match &self.backend {
@@ -568,6 +571,7 @@ impl BusHandler for Local {
     ) -> BusFuture<'a, MixResult<(i32, Value)>> {
         Box::pin(async move {
             if target != "viu-local"
+                || command.starts_with("native.")
                 || ["jobs.start", "jobs.cancel", "jobs.signal"].contains(&command)
             {
                 return match &self.backend {

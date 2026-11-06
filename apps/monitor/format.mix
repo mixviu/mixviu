@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+fn bytes($n)
+  $units=["B","KiB","MiB","GiB","TiB","PiB"];$i=0;$v=max(0,$n)
+  while $v>=1024 and $i<5
+    $v=$v/1024;$i=$i+1
+  end
+  return (if $i==0 or $v>=100 then fmt("%.0f",$v) else fmt("%.1f",$v) end).." "..$units[$i]
+end
+fn rate($n) return bytes($n ?? 0).."/s" end
+fn percent($n) return fmt("%.1f%%",min(100,max(0,$n ?? 0))) end
+fn uptime($seconds)
+  $s=floor(max(0,$seconds));$d=floor($s/86400);$h=floor(($s%86400)/3600);$m=floor(($s%3600)/60)
+  if $d>0 then return fmt("%dd %dh %dm",$d,$h,$m)
+  elif $h>0 then return fmt("%dh %dm",$h,$m)
+  else return fmt("%dm %ds",$m,$s%60) end
+end
+fn mhz($n) return if $n>=1000 then fmt("%.2f GHz",$n/1000) else fmt("%.0f MHz",$n) end end

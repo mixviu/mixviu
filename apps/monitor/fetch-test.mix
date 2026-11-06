@@ -1,0 +1,13 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$c=require("core.mix");$fetch=require("fetch.mix");$p=require("performance.mix")
+$s=$c.initial();$s.node="peer";$s.inflight={snapshot:{ticket:5,id:"example"}}
+$v=json_parse(read_file(path_join(dirname(script_path()),"../../libraries/viu/tests/fixtures/monitor-snapshot.json")))
+for $tag in [{node:"old",kind:"snapshot",ticket:5},{node:"peer",kind:"snapshot",ticket:4}]
+  $unchanged=$fetch.received($s,{tag:{owner:$tag},rc:0,body:{rc:0,body:$v}})
+  if not deep_eq($s,$unchanged) then raise("TICKET","A stale fetch changed the watched node") end
+end
+$s=$fetch.received($s,{tag:{owner:{node:"peer",kind:"snapshot",ticket:5}},rc:0,body:{rc:0,body:$v}})
+if $s.snapshot.host!=$v.host or $s.inflight.snapshot!=nil or len($s.rings["cpu.busy"])!=1 then raise("FETCH","Current snapshot was not applied") end
+$table=$p.rank({rows:[{cookie:[2,0],state:"listen",rx_bps:9000},{cookie:[3,0],state:"established"},{cookie:[1,0],state:"established",rx_bps:0},{cookie:[4,0],state:"established",rx_bps:10}]})
+if not deep_eq(map($table.rows,fn($r)=$r.cookie[0]),[4,1,3,2]) then raise("RANK","Gold throughput order, unknowns and listener backfill") end
+print("Monitor fetch tickets and TCP ranking pass")

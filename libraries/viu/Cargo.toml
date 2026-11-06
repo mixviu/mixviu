@@ -6,12 +6,17 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = ["shell-profile"]
+shell-profile = ["mix/json", "mix/regex", "mix/toml", "mix/datetime", "mix/url", "mix/crypto", "mix/http", "mix/sqlite", "mix/ws", "mix/archive"]
+
 [dependencies]
 action.workspace = true
 schemars.workspace = true
 cosmic-text.workspace = true
 tiny-skia = { version = "=0.11.4", default-features = false, features = ["std", "simd"] }
 uuid.workspace = true
+egui_plot.workspace = true
 libc.workspace = true
 toolkit = { path = "../toolkit", default-features = false }
 settings = { path = "../settings", default-features = false }

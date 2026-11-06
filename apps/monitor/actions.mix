@@ -1,0 +1,70 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Registry data adapted from the pinned gold actions/theme catalogue.
+$base=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
+fn registry($s)
+  $out=[];$selected=$s.selected!=nil and any($s.processes,fn($p)=$p.pid==$s.selected)
+  for $a in $base
+    if $s.bindings[$a.id]!=nil then $a.shortcut=$s.bindings[$a.id].shortcut end
+    $a.enabled=if $a.id=="help.macros" then $s.macros_open or $s.dialog==nil elif $a.id=="process.copy" then $selected elif contains(["process.end","process.kill"],$a.id) then $selected and $s.node=="" and $s.dialog==nil elif $a.id=="view.tree" then $s.dialog==nil and $s.tab=="Processes" elif starts_with($a.id,"view.theme.") or starts_with($a.id,"view.mode") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.") then true else $s.dialog==nil end
+    $a.reason=if $a.enabled then nil else "disabled" end
+    for $axis in [["theme","scheme"],["mode","mode"],["style","style"],["decorations","decorations"],["captions","caption_side"]]
+      $prefix="view."..$axis[0].."."
+      if starts_with($a.id,$prefix) then
+        $name=slice($a.id,len($prefix));$choice=$s.theme_choice[$axis[1]]
+        $a.checked=if $name=="session" then $choice==nil elif $name=="auto" then ($choice ?? "auto")=="auto" else $choice==$name end
+      end
+    end
+    push($out,$a)
+  end
+  return $out
+end
+fn binding_defaults() return $base end
+fn shortcuts($s)
+  $out=[]
+  for $a in registry($s)
+    $binding=$s.bindings[$a.id] ?? {}; $keys=$binding.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+    for $key in $keys $entry=$a;$entry.shortcut=$key;push($out,$entry) end
+  end
+  return $out
+end
+fn menus($s)
+  $actions=registry($s);$out=[]
+  for $menu in ["File","View","Process","Help"]
+    $children=[];$last=nil;$theme=[];$theme_group=nil
+    for $a in filter($actions,fn($a)=$a.menu==$menu)
+      $group=if $a.id=="file.quit" or $a.id=="view.tree" or $a.id=="view.pause" or $a.id=="process.copy" or $a.id=="help.about" then 1 else 0 end
+      -- Prefix checks stay explicit: identifiers are public command data.
+      $is_theme=starts_with($a.id,"view.theme.") or starts_with($a.id,"view.mode.") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.")
+      $row={id:$a.id,label:$a.label,enabled:$a.enabled,checked:$a.checked,shortcut:$a.shortcut}
+      if $is_theme then
+        $tg=if starts_with($a.id,"view.theme.") then (if contains(["pro","studio","classic","breeze","adwaita","mixos"],slice($a.id,11)) then 1 elif $a.id=="view.theme.session" then 2 else 0 end) elif starts_with($a.id,"view.mode.") then 3 elif starts_with($a.id,"view.style.") then 4 else 5 end
+        if $theme_group!=nil and $theme_group!=$tg then push($theme,{separator:true}) end
+        push($theme,$row);$theme_group=$tg
+      else
+        if $last!=nil and $last!=$group then push($children,{separator:true}) end
+        push($children,$row);$last=$group
+      end
+    end
+    if len($theme)>0 then push($children,{separator:true});push($children,{id:"theme-menu",label:"Theme",enabled:true,children:$theme}) end
+    push($out,{id:$menu,label:$menu,enabled:true,children:$children})
+  end
+  return $out
+end
+fn toolbar($s)
+  $actions=registry($s);$out=[]
+  for $pair in [["file.refresh","refresh-cw"],["help.macros","scroll-text"],["view.search","search"],["help.shortcuts","keyboard"],["view.mode",if ($s.theme_effective.mode ?? "dark")=="dark" then "sun" else "moon" end]]
+    $a=filter($actions,fn($a)=$a.id==$pair[0])[0];$a.icon=$pair[1];$a.icon_only=true;push($out,$a)
+  end
+  return $out
+end
+fn theme_edit($choice,$args)
+  $allowed={scheme:["ocean","crimson","stone","forest","sunset","mono","pro","studio","classic","breeze","adwaita","mixos"],mode:["light","dark"],style:["own","plain","pro","studio","classic","breeze","adwaita"],decorations:["auto","csd","ssd"],caption_side:["auto","left","center","right"]}
+  for $key in keys($allowed)
+    if contains(keys($args),$key) then
+      $v=$args[$key]
+      if $v!=nil and (type($v)!="string" or not contains($allowed[$key],$v)) then return {ok:false,message:"unknown "..$key.." "..json_encode($v)} end
+    end
+  end
+  for $key in keys($allowed) if contains(keys($args),$key) then $choice[$key]=$args[$key] end end
+  return {ok:true,choice:$choice}
+end

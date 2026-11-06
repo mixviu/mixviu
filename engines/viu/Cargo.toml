@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-viu = { path = "../../libraries/viu" }
+viu = { path = "../../libraries/viu", features = ["shell-profile"] }
 eframe.workspace = true
 comp-model.workspace = true
 toolkit = { workspace = true, features = ["layer"] }
