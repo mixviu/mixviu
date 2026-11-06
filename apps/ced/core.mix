@@ -102,7 +102,7 @@ fn publish_ced($s)
     $labels[$k]=basename($s.tabs[$i].path ?? "Untitled")..if $s.tabs[$i].dirty or $s.tabs[$i].pending>0 then " *" else "" end
   end
   if not $has then $choices=["none"] end
-  $window={"window.decorations":"client"}
+  $window={"window.decorations":"ssd"}
   for $k in keys($prefs) if starts_with($k,"window.") then $window[$k]=$prefs[$k] end end
   $items=map(["save","undo","redo","refresh","close"],fn($op)={id:$op,label:$op,enabled:$has and $t.phase=="live"})
   $mail=$s.mail[$t.document]
@@ -120,6 +120,6 @@ fn publish_ced($s)
   end
   $status=if $has then $t.phase.." · rev "..to_string($t.rev).." · "..$t.language.." · pending "..to_string($t.pending) else $s.status end
   $model=ced_ui_model($s,$model)
-  $model=$frame.apply($model,{icon:"file-text",title:"MixOS Editor",menus:ced_menus($s),toolbar:ced_toolbar($s),status:ced_status($s,$t),appearance:$look,window:$window})
+  $model=$frame.apply($model,{identity:false,icon:"file-text",title:"MixOS Editor",menus:ced_menus($s),toolbar:ced_toolbar($s),status:ced_status($s,$t),appearance:$look,window:$window})
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
 end

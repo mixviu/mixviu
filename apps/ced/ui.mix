@@ -43,7 +43,7 @@ fn ced_ui_model($s,$model)
   $model.values["goto-dialog"]=ui_form($s.goto_dialog,"Go to Line","Line[:column]",$s.goto_text ?? "",$s.dialog_instance ?? 0)
   $body=if $s.help=="keys" then join(map(action_rows($s),fn($a)=$a.label.."    "..join($a.keys," / ")),"\n") elif $s.help=="about" then "MixOS Editor\nAn editor over the edit Bus service.\nMixOS 0.1.2" else "" end
   $model.values["help-dialog"]=ui_form(contains(["keys","about"],$s.help),if $s.help=="keys" then "Keyboard Shortcuts" else "About MixOS Editor" end,$body)
-  $model.values["macros-dialog"]=$s.macro_panel.form
+  $model.values["macros-dialog"]={app:"ced",open:$s.macros_open ?? false}
   $model.values["notice-actions"]=[];$model.notice=""
   if $has then
     if $t.detached_copy then $model.notice="The document changed while disconnected. Choose which text to keep.";$model.values["notice-actions"]=[{id:"keep-mine",label:"Keep mine",enabled:true},{id:"take-theirs",label:"Take theirs",enabled:true}]
@@ -85,7 +85,7 @@ fn ced_ui_intent($s,$a)
     end
   elif $a.id=="help-dialog" then $s.help=nil
   elif $a.id=="macros-dialog" then
-    $s=queue_job($s,"macro-panel",{panel:$s.macro_panel,action:$a.action,value:$a.value})
+    $s.macros_open=false
   elif $a.id=="mail-fields" then
     $t=current($s);$h=$s.mail[$t.document].headers
     for $row in $a.value $h[$row.id]=$row.value end

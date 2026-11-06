@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 pub fn validate(kind: &str, v: &Value) -> Result<(), String> {
     let valid = match kind {
+        "macro-menu" => v["open"].is_boolean() && v["app"].as_str().is_some_and(|a|!a.is_empty() && a.len()<=64 && a.bytes().all(|b|b.is_ascii_lowercase() || b.is_ascii_digit() || b==b'-')),
         "form-fields" => v.as_array().is_some_and(|rows| {
             rows.len() <= 32
                 && rows.iter().all(|r| {
@@ -42,6 +43,7 @@ pub fn validate(kind: &str, v: &Value) -> Result<(), String> {
     }
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
+    if kind=="macro-menu" { return if action=="close" && payload.is_null() {Ok(())}else{Err("invalid macro menu intent".into())}; }
     if kind == "form-fields" {
         return if action == "edit"
             && validate(kind, payload).is_ok()
@@ -91,6 +93,10 @@ pub fn draw(
             value,
         })
     };
+    if kind=="macro-menu" {
+        if toolkit::macros::show_app(ui.ctx(),value["app"].as_str().unwrap(),value["open"]==true) {emit(events,"close",Value::Null);}
+        return ui.allocate_response(egui::Vec2::ZERO,egui::Sense::hover());
+    }
     if kind == "form-fields" {
         let mut rows = value.clone();
         let mut changed = false;

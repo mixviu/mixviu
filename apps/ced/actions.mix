@@ -78,7 +78,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
   elif starts_with($id,"view.markdown.") then $s.previews[$t.document]=split($id,".")[2]
   elif $id=="view.search" then $s.find.open=true;$s.find_instance=($s.find_instance ?? 0)+1
   elif $id=="view.mode" then $s.look.appearance.mode=if $s.look.appearance.mode=="dark" then "light" else "dark" end
-  elif $id=="help.macros" then $s=queue_job($s,"macro-panel",{panel:$s.macro_panel,action:"open"})
+  elif $id=="help.macros" then $s.macros_open=true
   elif starts_with($id,"help.") then $s.help=split($id,".")[1]
   else raise("UNKNOWN_ACTION","Unknown action "..$id) end
   if $index!=nil and $index>=0 and not starts_with($id,"tabs.") and not contains(["file.open","file.new"],$id) then $s.active=$original_active end
