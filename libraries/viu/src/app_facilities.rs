@@ -49,7 +49,7 @@ impl Facilities {
         }
         let macros = manifest
             .native_macros
-            .then(|| macros::Session::for_app(&app));
+            .then(|| macros::Session::for_app(manifest.drive.as_deref().unwrap_or(&app)));
         let (tx, finished) = mpsc::channel();
         let wake_done = wake.clone();
         let subscriber = macros.as_ref().map(|s| {
@@ -115,7 +115,7 @@ impl Facilities {
                 }
             }
         }
-        self.answers(ctx, toolkit::drive::logic(ctx));
+        if self.ui {self.answers(ctx, toolkit::drive::logic(ctx));}
     }
     pub fn record(&mut self, args: &Value) -> Result<Value, String> {
         use toolkit::executed::Origin;
@@ -191,6 +191,7 @@ impl Facilities {
                             let _ = r.reply.send(macro_answer(answer));
                         }
                         macros::commands::Reply::Deferred(rx) => {
+                            r.deferred.store(true,std::sync::atomic::Ordering::Release);
                             let tx = self.complete.clone();
                             let wake = self.wake.clone();
                             std::thread::spawn(move || {
@@ -226,7 +227,7 @@ fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {
         Err(e) => (10, json!({"error_code":e.code,"message":e.message})),
     }
 }
-fn remap(ctx: &egui::Context, value: &mut Value) {
+pub(crate) fn remap(ctx: &egui::Context, value: &mut Value) {
     match value {
         Value::Array(values) => {
             for value in values {

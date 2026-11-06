@@ -170,9 +170,8 @@ impl Endpoint {
             rt.block_on(async move{
                 let owner_help=commands.iter().any(|descriptor|descriptor.name=="HELP");
                 let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32);
-                let options=if owner_help {options}else{options.with_commands(commands)};
                 let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32);
-                let options=if help.is_none(){options.with_commands(commands)}else{options};
+                let options=if help.is_none() && !owner_help {options.with_commands(commands)}else{options};
                 let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");return;}}};
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=Some(native.clone());
