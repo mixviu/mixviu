@@ -1,67 +1,157 @@
-# Preferences gold parity inventory
+# Preferences gold parity inventory and acceptance
 
-Round-five status: implementation and native drawer repairs are complete;
-overall acceptance remains OPEN pending the heavy exact-source release gate
-and the release-byte evidence set. The historical tables below retain failed
-captures and are superseded by the later receipts, not deleted.
+**ACCEPTED — 2026-11-07.** All gold features are ported. The final release
+passes 42/42 baseline pages, the 40/40 functional/refusal matrix, the complete
+55-command Bus catalogue, native menus and callbacks, daemon-backed workflows
+and 17/17 live Prefs variants. There are no open items or Fable decisions.
+The only remaining pixel difference is the inspected Spacious Macros icon
+anti-aliasing edge permitted by [the parity method](parity-method.md).
 
-Latest code is `876f50a85bcb3f299558425969596dc9f4a63d20`.
-Private run `prefs-parity-20261107/pair.6Uttb8` repeats 42/42 baseline
-pages with full/header/sidebar/content SSIM and RMSE distortion zero,
-40/40 structured functional/refusal cases, identical HELP (55 commands),
-describe, actions, page tree, menus and four menu paths. Only the sequential
-accepted store revision is normalised in structured state replies.
+Branch: `lab/parity-prefs`. Exact tested code:
+`249f9a3483b13a9b9ac0d26b878942d5d78191b1`. This acceptance is a subsequent
+receipt-only documentation commit; its SHA is recorded in the private
+`release-acceptance.json` after commit. The archived Mix application and
+libraries and the executable in every final run belong to that tested code.
 
-Round-five `pair.7xWNxT` closes all ten open drawer states with zero SSIM
-and RMSE distortion in every measured region. The native panel separator
-reserves one point before drawer padding; the panel background supplies the
-scroll fade. Originals and the paired contact sheet were inspected. All five
-owned processes were confirmed stopped. `pair.29fCaL` exercises catalogue
-selection through native input and confirms both font-family settings writes
-against real private settingsd before restoration. Its catalogue comparisons
-and the release rerun remain part of the final acceptance record.
-
-The native image chooser is pixel-identical in `pair.96mOt2`. Email's nine
-additional mutation/refusal cases and its inline empty-save errors match in
-`pair.cZAFcS`; password set, forget, forget for a removed account and removal
-through the real private Email process match in `pair.u74dge`. Rebound menu
-queries, macro lifecycle and action/completion event payloads match in
-`pair.dPAr7S`, excluding process-unique IDs, timestamps and broker sequence
-offsets. Existing live-axis and authority-recovery evidence is retained in
-`pair.UWEu2H`; release bytes must repeat it before overall acceptance.
-
-Focused CBC `20261107-073405-f2ebf754` passed all 17 widget/Prefs tests and
-the native build; its formatting patch is applied. Heavy release acceptance
-job `20261107-073545-70c5676f` is queued for the exact code above, running
-`mix apps/prefs/gate.mix --release`. The gate retains a separately hashed
-release executable for the evidence suite. No production install is involved.
-
-Oracle: MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`, including
-`apps/prefs`, its preferences engine and the shared toolkit. Gold wins any
-inventory disagreement. No overall feature, Bus or visual acceptance is
-claimed. No deviation from gold has approval.
-
-Application layout, state transitions and service policy live in Mix. Rust
-additions are reusable Viu widgets and host facilities. Intra-app events and
-jobs stay in process; native Bus calls cross process boundaries.
-
-| Gold feature | Implementation and outstanding acceptance |
+| Identity | Revision or SHA256 |
 | --- | --- |
-| Shared frame, menus, title, actions, captions and close | Shared gold frame adopted; exact-source frame checkpoint `48b5b430f56fd7c2101f199ef15cd2cd89cabdde`. Shared branch merged through `15956a6`; further paired frame acceptance is open. Native menu model and four open-path replies match gold. |
-| 42 pages, 11 sidebar roots, children, drawers, search and legacy sections | Mix page descriptors, navigation and read-only page/row search implemented. All 42 pages mount in the embedded runtime test. Native default pages/actions metadata matches gold. Full navigation/input acceptance remains open. |
-| Registry, defaults, typed validation, fenced writes | Native settings registry supplies defaults and validation. Mix queues/coalesces absolute values, retains failed writes and refreshes/replays after conflicts or uncertain results. Topic/reconnect reads replace idle polling. Recovery acceptance remains open. |
-| Appearance drafts, conflict Keep/Revert and uncertain apply receipts | Mix appearance state machine and operation receipt lookup implemented; embedded conflict/receipt tests pass. Native mutation/refusal/restart comparison remains open. |
-| Appearance mode previews, palettes, accent, typography, window composition and accessibility | Controls implemented through data-authored shared widgets. Current matched Appearance capture fails visual acceptance; geometry, bold fonts, previews, palettes and disabled extras remain open. |
-| Wallpaper gallery, bounded folder scan, custom folders/images, native chooser, colours, slideshow and per-output drawer | Mix gallery state/scan jobs and coupled writes implemented; reusable native media widgets added. Native picker, gallery limits, output and visual acceptance remain open. |
-| Terminal and Ced settings | Specialised Mix pages and typed native validation implemented. Passive numeric redraw regression repaired. Full native input/layout comparison remains open. |
-| Email accounts/default, identities, migration, password, connect, reset and mail options | Mix workflows use fenced full-account writes and actual Email replies. Password stays out of public models/settingsd; deferred reply and validation/redaction tests pass. Native Email lifecycle, removal cleanup and UI acceptance remain open. |
-| Software groups, listing/check, notes, install/update/remove/rollback and progress | Mix releases jobs, strict reply admission, stale-note rejection and lost-mutation reconciliation implemented. Native deterministic service cases and real-daemon acceptance remain open. |
-| Keyboard layout/variant picker, font/icon/locale catalogues and asset selection | Worker jobs and searchable reusable pickers implemented; native fontdb catalogue reused. Catalogue parsing, native chooser and representative dataset acceptance remain open. |
-| Backend pages and disabled controls | Gold's pending notices, hidden battery controls and missing-backend refusals are the target. These are not proposed future backend implementations. Native visibility/refusal coverage remains open. |
-| Actions, dialogs, themes, macros and debug | Canonical descriptors and Mix actions/forms implemented; generic native macro editor/session and debug surface reused. Complete action/input/dialog/macro comparison remains open. |
-| Full canonical Bus surface | 55 gold command descriptors preserved; canonical handlers, native drive, macros and debug registered. HELP, `app.describe`, `prefs.actions`, `prefs.pages`, full menus and File/View/View → Theme/Help open-path replies match native gold. Host commands are hidden from the explicit HELP surface. Structured mutation/refusal coverage remains open. |
-| Single-instance CLI, service options and page/row deep links | Outstanding generic launch/host integration. Current lab launch is `viu run apps/prefs [INSTANCE]`. |
-| Live Prefs response of Prefs itself | Shared host follows native session appearance without restart. Per-app complete axes/tune/app-override matrix and authority loss/recovery comparison remain open. |
+| Pinned gold source | `8779f33284b7d3f1178c3d57a699efb9b0867b22` |
+| Gold Prefs 0.1.2, built 2026-11-04T19:10:04Z | `18590ca486b4b417b9de5a762f2dcf31b6b13d2351bb3eddd46d66e783fe3c55` |
+| Final candidate release executable | `eb6145fe3b07d8c81eb83c7bc445f0b8a0d7e66599732550d29464713e834a16` |
+
+Heavy CBC **`20261107-082023-f8cb0b05-a1`** ran
+`mix apps/prefs/gate.mix --release` at the exact code above: **BUILD_RC=0**,
+no worker diff. The complete saved 127,670-character log was read, including
+format/check, all Viu and Viu-engine tests, clippy, debug build, 64 toolkit
+menu tests and the release build. Prefs tests cover registry admission,
+account validation/redaction, fenced writes, appearance receipts, all page
+mounts, native controls and search. The new native text regression covers
+delayed/partial owner acknowledgements, repeated edit/undo values and numeric
+navigation reset tokens. Warnings remain in shared/vendor code; the gate is
+green. The log path, hash, command, worker and read ranges are retained in
+the private `release-gate-reviewed.json`.
+
+## Final feature inventory
+
+Gold wins inventory disagreements. The canonical descriptors remain in
+[pages.json](../../apps/prefs/pages.json),
+[actions.json](../../apps/prefs/actions.json) and
+[bus.json](../../apps/prefs/bus.json). Application layout, state transitions
+and service policy live in Mix; Rust supplies reusable Viu widgets and host
+facilities. Intra-app events and work stay in process.
+
+| Gold feature | Implemented and accepted evidence |
+| --- | --- |
+| Shared frame, title, captions, menus, actions and close | Shared frame adopted; native readbacks, baseline and live region comparisons; native owner close and alternate service identity. |
+| All 42 pages, 11 sidebar roots, children, drawers, search and legacy sections | Complete descriptors/navigation; every baseline PNG identical; ten open drawer states identical; read-only `prefs.search` leaves the window unchanged; rendered section matches expose live controls. |
+| Registry defaults, typed validation and fenced writes | Effective readback accepted without dropping account/domain/cross-setting validation; exact mutation/refusal replies; native settingsd writes and recovery. |
+| Appearance drafts, conflict Keep/Revert and uncertain apply receipts | Mix state machine with operation receipt lookup; native embedded conflict/fence/receipt tests and private settings authority restart. |
+| Mode previews, palettes, accent, typography, composition and accessibility | Gold geometry, disabled controls and live theme response; baseline and all 17 accepted live variants. Gold's cached COSMIC palette quirk is preserved. |
+| Wallpaper gallery, folder scan, custom folders/images, chooser, colours, slideshow and outputs | Bounded Mix jobs and coupled writes; gold thumbnail pool/cache/rounded mesh path; baseline, drawer and native chooser comparisons. |
+| Terminal and Ced settings | Typed controls, gold text defaults and layout; native passive numeric admission regression; both page pairs identical. |
+| Email accounts/default, identities, migration, password, connect, reset and mail options | Fenced full-account writes, redacted secrets, deferred reply admission; nine mutation/refusal cases, native forms and four actual private Email password/removal cases. |
+| Software groups, listing/check, notes, install/update/remove/rollback and progress | Deterministic native citizen with request/reply log; populated five-column table/notes; real installed Releases citizen verifies a private package, installs it, returns the exact rollback refusal and removes it. |
+| Keyboard layouts/variants, fonts, icons, locales and asset selection | Native catalogue jobs/searchable pickers; exact drawers/font/mono/icon chooser figures; native font and mono selections read back through settingsd before restoration. |
+| Backend pages and disabled controls | Gold notices, hidden battery controls and missing-backend refusals are preserved. Disabled gold capabilities are part of the accepted target. |
+| Actions, dialogs, themes, macros and debug | Exact actions/menu models, four native popup figures, About/shortcuts dialogs, rebound shortcuts, macro mutation/lifecycle and action/completion topic payloads. |
+| Full canonical Bus surface | Exactly gold's 55 HELP descriptors; describe/actions/pages, properties, menus and four menu paths match. Generic host commands are hidden from this explicit HELP surface. Canonical `prefs.select {app}` selects the software group/app and requests notes. |
+| Single-instance CLI, service options and page/row deep links | Mix launcher/native first and second launch checks; alternate service and requested page/row reuse the same process/window. |
+| Live Prefs response of Prefs itself | Seventeen accepted variants on each unchanged PID, invalid tune refusal, authority absence/restart, retained look and queued write settlement. |
+
+## Release-byte capture and behaviour record
+
+The private evidence root is `prefs-parity-20261107`. The final ten-group
+manifest is `release-suite-.json`; `release-evidence.json` and
+`release-acceptance.json` index source/binary identities, service/fixture and
+harness hashes, native readbacks, captured names, original PNG hashes,
+figures, raw metrics, functional outcomes and cleanup. Recipes are copied to
+each run's `harness.mix`; failed earlier runs are retained separately.
+
+Every pair uses an owned native Bus, private settingsd, headless compd and
+isolated home/runtime/config/data/cache/settings roots. Gold runs first,
+then stops before the candidate uses the same services and data. Clients are
+1040×680 logical pixels, scale 1, Studio Dark/comfortable, CSD, right
+captions, bar menus and row actions. Effective framing and client size are
+read back. Images are never resized for comparison. Live density captures
+use their actual 33/38/46-pixel header regions.
+
+| Group | Final private run | Paired capture sets |
+| --- | --- | ---: |
+| 42 baseline pages, 17 live variants, authority, dialogs, search and initial drawers | `pair.Z6zkRL` | 67 |
+| Ten complete open drawers after separator-inset repair | `pair.wbuiBG` | 10 |
+| Font, mono, icon catalogues and native image chooser | `pair.8neQkL` | 4 |
+| Rebound actions/menus, macros and topics | `pair.Vt8roH` | 1 |
+| Email mutations/refusals and inline empty-save errors | `pair.hO2otr` | 1 |
+| Real private Email password/removal lifecycle | `pair.fO7FS4` | Readback cases |
+| Populated Software/Email and four native menu popups | `pair.G60fbJ` | 7 |
+| First/second CLI launch, service override and deep links | `pair.9RhFcd` | Readback cases |
+| Real installed Releases citizen and private package | `pair.WYMCij` | 1 |
+| Native `den` then `sity` continued typing | `pair.bHal9d` | Readback case |
+
+All **91 capture pairs** have full/header/sidebar/content comparisons under
+`release-diff-<state>`, containing `comparison.json`, originals, region crops,
+`full-side-by-side.png` and `full-diff.png` plus regional figures. Original
+pairs, contact sheets, differences and the enlarged remaining icon edge were
+inspected. All **42 baseline pages**, ten drawers, catalogues, chooser,
+populated states, menus, dialogs, authority loss/recovery and native search
+are pixel-identical in every region. Ninety pairs are entirely identical.
+
+ImageMagick **7.1.2-35 Q16-HDRI** reports SSIM as **distortion**, zero
+identical; lower is better. The regional record is:
+
+| State/region | Rectangle x,y,w,h | SSIM distortion | RMSE distortion | Inspection |
+| --- | --- | ---: | ---: | --- |
+| All 42 baseline pages, full | 0,0,1040,680 | 0 | 0 | Accepted |
+| All baseline headers | 0,0,1040,38 | 0 | 0 | Accepted |
+| All baseline sidebars | 0,38,296,642 | 0 | 0 | Accepted |
+| All baseline content | 296,38,744,642 | 0 | 0 | Accepted |
+| Sixteen live variants, all regions | Matching per-state rectangles | 0 | 0 | Accepted |
+| Spacious, full | 0,0,1040,680 | 0.0000928134 | 0.00306816 | Icon anti-aliasing only |
+| Spacious, header | 0,0,1040,46 | 0.00137202 | 0.0117965 | 16×13 Macros icon edge |
+| Spacious, sidebar/content | 0,46,296,634 / 296,46,744,634 | 0 | 0 | Accepted |
+
+The Spacious residue comes from native 1/32-logical-point rounding of the
+Macros icon. Enlarged originals and the header difference show only its
+anti-aliased edges; the remaining geometry and page regions match. It is
+accepted under the method's anti-aliasing allowance, without a numerical pass
+threshold or Fable waiver. There are no unexplained differences.
+
+Structured comparison is **69/69 exact**: nine metadata/menu comparisons,
+the **40/40** functional/refusal matrix, rebound actions/menu, macro lifecycle,
+topics, nine Email mutations, four native Email cases, two real Releases
+outcomes and continued typing. The only normalisations are sequential store
+revisions, macro/action clocks, process-unique run/connection identities,
+relative per-topic broker sequence offsets and Releases checked timestamps.
+Application event sequence, payloads, counts, order, refusals and results
+remain compared. Original request/reply and topic transcripts are retained.
+
+Live settings cover mode, scheme/style, accent, compact/spacious density,
+roundness, proportional/mono family, size/weight, text scale, icon stroke,
+app override, auto-mode, contrast, reduced motion and valid tune inputs.
+Every accepted apply waits for its revision on the same Prefs PID. Invalid
+`tune.chrome.title_size` has the exact gold refusal. Authority loss retains
+the accepted role/look and the same queued-write reply; after restart the
+write settles in actual settingsd without restarting Prefs. Intermediate
+queue snapshots are timing observations; settled outcomes are asserted.
+
+The deterministic Releases citizen logs every fixture request/reply. It is
+complemented by the installed native Mix Releases service, native local HTTP
+fixture and verified private package, and by the actual private Email
+process. Service binaries/scripts, fixture inputs, API/package files and
+catalogue readbacks are hashed in the private record. No production install
+or desktop/VT change was made.
+
+The earlier release `f015520` passed CBC but exposed a real search caret reset:
+`den` then `sity` became `sityden`. Both failed captures and transcripts are
+retained. The final release produces `density` on both sides and matches the
+focused search image exactly. This repairs a port defect and introduces no
+deviation from gold. No C1 exception is needed.
+
+All **61 owned process records** across the ten groups confirm exit,
+including private brokers and restarted settings authorities. Each run has
+`closure.json` and a fresh `release-cleanup-verified.json`. Overall verdict:
+**ACCEPTED**. Earlier checkpoint OPEN/FAIL statements below are historical;
+this exact-source release record supersedes them.
 
 ## Corrections from pinned gold
 

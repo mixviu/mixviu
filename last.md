@@ -1244,3 +1244,35 @@ gate and the ten-group release-byte rerun, including native continued
 typing, finish. Spacious retains only the previously inspected Macros icon
 anti-aliasing edge. No deviation from gold or Fable decision is proposed.
 branch lab/parity-prefs; head/code 249f9a3483b13a9b9ac0d26b878942d5d78191b1; OPEN: final search release gate and release-byte rerun; CBC 20261107-074849-cf5ada53-a1 (pass), 20261107-081753-981fcde5 (18 checks/build pass, formatting applied), 20261107-082023-f8cb0b05 (queued)
+
+
+## Prefs round five: final acceptance
+
+Exact code `249f9a3483b13a9b9ac0d26b878942d5d78191b1` and release SHA256
+`eb6145fe3b07d8c81eb83c7bc445f0b8a0d7e66599732550d29464713e834a16`
+are ACCEPTED against pinned gold `8779f33284b7d3f1178c3d57a699efb9b0867b22`.
+Heavy CBC `20261107-082023-f8cb0b05-a1` passed `mix apps/prefs/gate.mix
+--release` with no worker diff; the complete saved log was read.
+
+Final ten-group release suite: 42/42 baseline pages and all ten drawers
+are pixel-identical in full/header/sidebar/content; 91 paired capture sets,
+90 entirely identical. All 17 live variants are accepted on unchanged PIDs.
+Spacious retains only the inspected 16×13 Macros icon anti-aliasing edge
+(full SSIM distortion 0.0000928134, header 0.00137202; sidebar/content zero).
+Catalogue/chooser, populated services, menus/dialogs, search and authority
+loss/recovery match. All 61 owned process records confirm exit.
+
+The 40/40 functional/refusal matrix and 69/69 extended structured comparisons
+pass, including exactly 55 HELP commands, canonical menus, rebound actions,
+macro lifecycle/topics, actual private Email and Releases operations, CLI
+reuse and native continued typing. The final typing witness produces
+`density` from `den` then `sity` on both sides; the failed earlier release
+is retained. No deviation, Fable question or open item remains.
+
+Full acceptance record: `docs/ports/prefs.md`; private
+`prefs-parity-20261107/release-acceptance.json` indexes all final runs,
+source/binary and fixture/service hashes, readbacks, figures, raw metrics,
+CBC log and cleanup. This checkpoint changes documentation only; the tested
+code SHA is separate from the receipt commit.
+
+branch lab/parity-prefs; head/code 249f9a3483b13a9b9ac0d26b878942d5d78191b1; ACCEPTED; pages 42/42; functional 40/40 (extended 69/69); CBC 20261107-082023-f8cb0b05-a1 (pass), 20261107-074849-cf5ada53-a1 (earlier release pass), 20261107-081753-981fcde5 (18 repair checks/build pass)
