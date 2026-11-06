@@ -1,18 +1,40 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Bounded row expression plans. Policy is the caller's Mix expression.
-use crate::{ast::{Expr,BinOp,FunctionBody}, evaluator::Evaluator, error::{MixError,MixResult}, value::Value};
+use crate::{
+    ast::{BinOp, Expr, FunctionBody},
+    error::{MixError, MixResult},
+    evaluator::Evaluator,
+    value::Value,
+};
 use indexmap::IndexMap;
-use std::{future::Future,pin::Pin,sync::atomic::Ordering};
-fn fail(s:impl Into<String>)->MixError { MixError::structured("ROW_EXPRESSION",s.into()) }
-enum Plan {
-    Literal(Value), Row, Field(Box<Plan>,String,bool), Index(Box<Plan>,Box<Plan>),
-    Map(Vec<(String,Plan)>), List(Vec<Plan>), Binary(Box<Plan>,BinOp,Box<Plan>),
-    Choose(Box<Plan>,Box<Plan>,Box<Plan>), Call(String,Vec<Plan>),
+use std::{future::Future, pin::Pin, sync::atomic::Ordering};
+fn fail(s: impl Into<String>) -> MixError {
+    MixError::structured("ROW_EXPRESSION", s.into())
 }
-fn compile(e:&Expr,param:&str,captures:Option<&std::collections::HashMap<String,Value>>,depth:usize,nodes:&mut usize,eval:&Evaluator)->MixResult<Plan> {
-    *nodes+=1;
-    if depth>64 || *nodes>512 {return Err(fail("row expression exceeds 64 levels / 512 nodes"));}
-    let mut sub=|e:&Expr|compile(e,param,captures,depth+1,nodes,eval);
+enum Plan {
+    Literal(Value),
+    Row,
+    Field(Box<Plan>, String, bool),
+    Index(Box<Plan>, Box<Plan>),
+    Map(Vec<(String, Plan)>),
+    List(Vec<Plan>),
+    Binary(Box<Plan>, BinOp, Box<Plan>),
+    Choose(Box<Plan>, Box<Plan>, Box<Plan>),
+    Call(String, Vec<Plan>),
+}
+fn compile(
+    e: &Expr,
+    param: &str,
+    captures: Option<&std::collections::HashMap<String, Value>>,
+    depth: usize,
+    nodes: &mut usize,
+    eval: &Evaluator,
+) -> MixResult<Plan> {
+    *nodes += 1;
+    if depth > 64 || *nodes > 512 {
+        return Err(fail("row expression exceeds 64 levels / 512 nodes"));
+    }
+    let mut sub = |e: &Expr| compile(e, param, captures, depth + 1, nodes, eval);
     Ok(match e {
         Expr::Variable(n) if n==param => Plan::Row,
         Expr::Variable(n) => Plan::Literal(captures.and_then(|m|m.get(n)).ok_or_else(||fail(format!("uncaptured variable ${n}; pass constants through the lambda's lexical capture")))?.clone()),
@@ -32,45 +54,93 @@ fn compile(e:&Expr,param:&str,captures:Option<&std::collections::HashMap<String,
     })
 }
 impl Plan {
-    fn run(&self,row:&Value,eval:&Evaluator)->MixResult<Value> {
-        let value=match self {
-            Self::Literal(v)=>v.clone(),Self::Row=>row.clone(),
-            Self::Field(p,key,optional)=>match p.run(row,eval)? {
-                Value::Map(ref m)=>m.get(key).cloned().unwrap_or(Value::Nil),
-                Value::Nil if *optional=>Value::Nil,
-                v=>return Err(fail(format!("cannot access field {key} on {}",v.type_name()))),
-            },
-            Self::Index(p,i)=>Evaluator::index_value_clone(&p.run(row,eval)?,&i.run(row,eval)?)?,
-            Self::List(xs)=>Value::list(xs.iter().map(|p|p.run(row,eval)).collect::<MixResult<_>>()?),
-            Self::Map(xs)=>Value::map(xs.iter().map(|(k,p)|Ok((k.clone(),p.run(row,eval)?))).collect::<MixResult<IndexMap<_,_>>>()?),
-            Self::Choose(c,a,b)=>if c.run(row,eval)?.is_truthy(){a.run(row,eval)?}else{b.run(row,eval)?},
-            Self::Binary(a,op,b)=>{
-                let mut a=a.run(row,eval)?;
-                match op {
-                    BinOp::NilCoalesce if !matches!(a,Value::Nil)=>a,
-                    BinOp::And if !a.is_truthy()=>a,
-                    BinOp::Or if a.is_truthy()=>a,
-                    BinOp::NilCoalesce|BinOp::And|BinOp::Or=>b.run(row,eval)?,
-                    _=>eval.eval_binop(op,&mut a,&b.run(row,eval)?)?,
+    fn run(&self, row: &Value, eval: &Evaluator) -> MixResult<Value> {
+        let value = match self {
+            Self::Literal(v) => v.clone(),
+            Self::Row => row.clone(),
+            Self::Field(p, key, optional) => match p.run(row, eval)? {
+                Value::Map(ref m) => m.get(key).cloned().unwrap_or(Value::Nil),
+                Value::Nil if *optional => Value::Nil,
+                v => {
+                    return Err(fail(format!(
+                        "cannot access field {key} on {}",
+                        v.type_name()
+                    )));
                 }
             },
-            Self::Call(name,xs)=>eval.bulk_call(name,xs.iter().map(|p|p.run(row,eval)).collect::<MixResult<_>>()?)?,
+            Self::Index(p, i) => {
+                Evaluator::index_value_clone(&p.run(row, eval)?, &i.run(row, eval)?)?
+            }
+            Self::List(xs) => Value::list(
+                xs.iter()
+                    .map(|p| p.run(row, eval))
+                    .collect::<MixResult<_>>()?,
+            ),
+            Self::Map(xs) => Value::map(
+                xs.iter()
+                    .map(|(k, p)| Ok((k.clone(), p.run(row, eval)?)))
+                    .collect::<MixResult<IndexMap<_, _>>>()?,
+            ),
+            Self::Choose(c, a, b) => {
+                if c.run(row, eval)?.is_truthy() {
+                    a.run(row, eval)?
+                } else {
+                    b.run(row, eval)?
+                }
+            }
+            Self::Binary(a, op, b) => {
+                let mut a = a.run(row, eval)?;
+                match op {
+                    BinOp::NilCoalesce if !matches!(a, Value::Nil) => a,
+                    BinOp::And if !a.is_truthy() => a,
+                    BinOp::Or if a.is_truthy() => a,
+                    BinOp::NilCoalesce | BinOp::And | BinOp::Or => b.run(row, eval)?,
+                    _ => eval.eval_binop(op, &mut a, &b.run(row, eval)?)?,
+                }
+            }
+            Self::Call(name, xs) => eval.bulk_call(
+                name,
+                xs.iter()
+                    .map(|p| p.run(row, eval))
+                    .collect::<MixResult<_>>()?,
+            )?,
         };
         eval.check_collection_size(&value)?;
         Ok(value)
     }
 }
-pub(crate) fn project<'a>(eval:&'a mut Evaluator,args:Vec<Value>)->Pin<Box<dyn Future<Output=MixResult<Value>>+'a>> {
+pub(crate) fn project<'a>(
+    eval: &'a mut Evaluator,
+    args: Vec<Value>,
+) -> Pin<Box<dyn Future<Output = MixResult<Value>> + 'a>> {
     Box::pin(async move {
-        let [Value::List(rows),Value::Function(f)]=args.as_slice() else {return Err(fail("rows_project(rows, fn(row) = expression)"));};
-        if rows.len()>65536 || f.params.len()!=1 {return Err(fail("at most 65536 rows; exactly one lambda parameter"));}
-        let FunctionBody::Expression(expr)=&f.body else {return Err(fail("expression lambda required"));};
-        let plan=compile(expr,&f.params[0].name,f.captures.as_ref(),0,&mut 0,eval)?;
-        let flag=eval.interrupt_flag();let mut out=Vec::with_capacity(rows.len());
+        let [Value::List(rows), Value::Function(f)] = args.as_slice() else {
+            return Err(fail("rows_project(rows, fn(row) = expression)"));
+        };
+        if rows.len() > 65536 || f.params.len() != 1 {
+            return Err(fail("at most 65536 rows; exactly one lambda parameter"));
+        }
+        let FunctionBody::Expression(expr) = &f.body else {
+            return Err(fail("expression lambda required"));
+        };
+        let plan = compile(
+            expr,
+            &f.params[0].name,
+            f.captures.as_ref(),
+            0,
+            &mut 0,
+            eval,
+        )?;
+        let flag = eval.interrupt_flag();
+        let mut out = Vec::with_capacity(rows.len());
         for row in rows.iter() {
-            if flag.load(Ordering::Acquire) {return Err(fail("row operation interrupted"));}
+            if flag.load(Ordering::Acquire) {
+                return Err(fail("row operation interrupted"));
+            }
             eval.bulk_checkpoint()?;
-            let value=plan.run(row,eval)?;eval.check_collection_size(&value)?;out.push(value);
+            let value = plan.run(row, eval)?;
+            eval.check_collection_size(&value)?;
+            out.push(value);
         }
         Ok(Value::list(out))
     })

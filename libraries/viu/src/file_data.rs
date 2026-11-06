@@ -95,7 +95,11 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
             let p = path(&args["path"])?;
             let limit = match args.get("limit") {
                 None => 100_000,
-                Some(v) => v.as_f64().filter(|n| n.is_finite() && n.fract()==0.0 && (0.0..=100_000.0).contains(n)).ok_or("Directory limit must be an integer in 0..100000")? as usize,
+                Some(v) => v
+                    .as_f64()
+                    .filter(|n| n.is_finite() && n.fract() == 0.0 && (0.0..=100_000.0).contains(n))
+                    .ok_or("Directory limit must be an integer in 0..100000")?
+                    as usize,
             };
             let mut entries = Vec::new();
             for entry in std::fs::read_dir(p).map_err(|e| e.to_string())? {
@@ -234,7 +238,7 @@ pub(crate) fn binding() -> mix::evaluator::ExtFn {
     mix::sync_ext(|args| {
         let fail = |msg: String| {
             if msg.starts_with("ENUMERATION_BUDGET:") {
-                mix::MixError::structured("ENUMERATION_BUDGET",msg)
+                mix::MixError::structured("ENUMERATION_BUDGET", msg)
             } else {
                 mix::MixError::RuntimeError { msg, span: None }
             }
@@ -254,13 +258,27 @@ mod tests {
     use super::*;
     #[test]
     fn directory_admission_stops_at_the_callers_remaining_work_budget() {
-        let d=tempfile::tempdir().unwrap();
-        assert_eq!(command("names",&json!({"path":d.path(),"limit":0})).unwrap(),json!([]));
-        std::fs::write(d.path().join("one"),"x").unwrap();
-        assert!(command("names",&json!({"path":d.path(),"limit":0})).unwrap_err().starts_with("ENUMERATION_BUDGET:"));
-        assert_eq!(command("names",&json!({"path":d.path(),"limit":1.0})).unwrap().as_array().unwrap().len(),1);
-        for limit in [json!(-1),json!(1.5),json!(100001),json!("1")] {
-            assert!(command("names",&json!({"path":d.path(),"limit":limit})).is_err());
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(
+            command("names", &json!({"path":d.path(),"limit":0})).unwrap(),
+            json!([])
+        );
+        std::fs::write(d.path().join("one"), "x").unwrap();
+        assert!(
+            command("names", &json!({"path":d.path(),"limit":0}))
+                .unwrap_err()
+                .starts_with("ENUMERATION_BUDGET:")
+        );
+        assert_eq!(
+            command("names", &json!({"path":d.path(),"limit":1.0}))
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        for limit in [json!(-1), json!(1.5), json!(100001), json!("1")] {
+            assert!(command("names", &json!({"path":d.path(),"limit":limit})).is_err());
         }
     }
     #[test]

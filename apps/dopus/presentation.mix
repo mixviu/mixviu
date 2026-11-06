@@ -5,7 +5,7 @@
 $dp=require("core.mix")
 fn dp_rows($pane)
   -- Retain the established per-cell fallback for unrepresentable timestamps.
-  for $entry in unique_by($pane.entries,fn($r)=$r.modified)
+  for $entry in unique_by($pane.entries,fn($r)=[type($r.modified),$r.modified])
     if $entry.modified!=nil then
       try date_format($entry.modified,"%d/%m/%y %H:%M") catch $message return dp_rows_interpreted($pane) end
     end

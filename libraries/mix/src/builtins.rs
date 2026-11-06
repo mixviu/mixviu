@@ -1142,8 +1142,9 @@ pub fn compiled_features() -> Vec<&'static str> {
 
 /// Features only the service profile (`mixd`) carries. The shell profile
 /// (`mix`) is everything else; see the mixviu engine-split decision.
-pub const SERVICE_PROFILE_FEATURES: &[&str] =
-    &["markdown", "dkim", "datastar", "xml", "yaml", "mime", "dns", "serde"];
+pub const SERVICE_PROFILE_FEATURES: &[&str] = &[
+    "markdown", "dkim", "datastar", "xml", "yaml", "mime", "dns", "serde",
+];
 
 /// Builtins that exist only in the service profile, with their feature.
 pub const SERVICE_BUILTINS: &[(&str, &str)] = &[
@@ -15468,22 +15469,38 @@ fn parse_id(func: &str, what: &str, v: &Value) -> MixResult<u32> {
 /// other fields describe the *target* while `is_symlink` flags the path,
 /// a deliberate mixed view that matches how callers reason about links.
 fn builtin_stat_many(args: Vec<Value>) -> MixResult<Option<Value>> {
-    let err=|s:&str|MixError::structured("STAT_MANY_ARGUMENT",s);
-    if args.is_empty() || args.len()>2 {return Err(err("stat_many(paths[, options])"));}
-    let Value::List(paths)=&args[0] else {return Err(err("paths must be a list"));};
-    if paths.len()>65536 || paths.iter().any(|p|!matches!(p,Value::String(s) if !s.contains('\0'))) {return Err(err("at most 65536 NUL-free text paths"));}
-    let opts=args.get(1).cloned().unwrap_or(Value::Nil);
-    match &opts {
-        Value::Nil=>{},
-        Value::Map(m)=>{
-            if m.keys().any(|k|k!="follow_symlinks") {return Err(err("unknown stat_many option"));}
-            bool_option("stat_many()","follow_symlinks",m.get("follow_symlinks"))?;
-        },
-        _=>return Err(err("options must be a map or nil")),
+    let err = |s: &str| MixError::structured("STAT_MANY_ARGUMENT", s);
+    if args.is_empty() || args.len() > 2 {
+        return Err(err("stat_many(paths[, options])"));
     }
-    let mut out=Vec::with_capacity(paths.len());
+    let Value::List(paths) = &args[0] else {
+        return Err(err("paths must be a list"));
+    };
+    if paths.len() > 65536
+        || paths
+            .iter()
+            .any(|p| !matches!(p,Value::String(s) if !s.contains('\0')))
+    {
+        return Err(err("at most 65536 NUL-free text paths"));
+    }
+    let opts = args.get(1).cloned().unwrap_or(Value::Nil);
+    match &opts {
+        Value::Nil => {}
+        Value::Map(m) => {
+            if m.keys().any(|k| k != "follow_symlinks") {
+                return Err(err("unknown stat_many option"));
+            }
+            bool_option("stat_many()", "follow_symlinks", m.get("follow_symlinks"))?;
+        }
+        _ => return Err(err("options must be a map or nil")),
+    }
+    let mut out = Vec::with_capacity(paths.len());
     for path in paths.iter() {
-        out.push(builtin_stat(vec![path.clone(),opts.clone()]).unwrap_or(Some(Value::Nil)).unwrap_or(Value::Nil));
+        out.push(
+            builtin_stat(vec![path.clone(), opts.clone()])
+                .unwrap_or(Some(Value::Nil))
+                .unwrap_or(Value::Nil),
+        );
     }
     Ok(Some(Value::list(out)))
 }
@@ -17842,9 +17859,16 @@ mod engine_profile_tests {
     #[test]
     fn service_builtin_names_never_collide_with_capability_names() {
         for (name, _) in SERVICE_BUILTINS {
-            assert!(BUILTIN_NAMES.contains(name), "{name} is not a registered builtin");
+            assert!(
+                BUILTIN_NAMES.contains(name),
+                "{name} is not a registered builtin"
+            );
             for info in BUILTINS {
-                assert_ne!(info.capability.as_str(), *name, "capability named like {name}");
+                assert_ne!(
+                    info.capability.as_str(),
+                    *name,
+                    "capability named like {name}"
+                );
             }
         }
     }

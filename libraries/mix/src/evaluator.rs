@@ -15957,7 +15957,12 @@ impl Evaluator {
     }
 
     #[inline]
-    pub(crate) fn eval_binop(&self, op: &BinOp, left: &mut Value, right: &Value) -> MixResult<Value> {
+    pub(crate) fn eval_binop(
+        &self,
+        op: &BinOp,
+        left: &mut Value,
+        right: &Value,
+    ) -> MixResult<Value> {
         // Hot path: Number op Number for the four common arithmetic ops.
         // Skips the function-pointer indirection of `num_op` and the
         // double `to_number` match. Loop-heavy benches hammer this
@@ -16558,12 +16563,15 @@ impl Evaluator {
 
     pub(crate) fn bulk_call(&self, name: &str, args: Vec<Value>) -> MixResult<Value> {
         self.check_capability(name)?;
-        self.check_builtin_arity(name,args.len())?;
-        self.check_builtin_args(name,&args,!self.ctx.arity_strict)?;
-        builtins::call_builtin(name,args)?.ok_or_else(||self.runtime_err("unavailable row builtin"))
+        self.check_builtin_arity(name, args.len())?;
+        self.check_builtin_args(name, &args, !self.ctx.arity_strict)?;
+        builtins::call_builtin(name, args)?
+            .ok_or_else(|| self.runtime_err("unavailable row builtin"))
     }
     pub(crate) fn bulk_checkpoint(&mut self) -> MixResult<()> {
-        if self.deadline_exceeded_throttled() { return Err(self.runtime_err("deadline exceeded")); }
+        if self.deadline_exceeded_throttled() {
+            return Err(self.runtime_err("deadline exceeded"));
+        }
         Ok(())
     }
     pub fn try_call_function_sync(
