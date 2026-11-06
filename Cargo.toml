@@ -5,7 +5,7 @@
 [workspace]
 resolver = "3"
 # libs/* includes maildoc and every other shared library component.
-members = ["libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","engines/mix-shell","engines/mix","engines/mixd","services/noded"]
+members = ["libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","engines/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd"]
 
 [workspace.package]
 version = "0.1.2"
@@ -129,6 +129,9 @@ props = { path = "libraries/props" }
 scene = { path = "libraries/scene" }
 strict = { path = "libraries/strict" }
 mimedb = { path = "libraries/mimedb" }
+design = { path = "libraries/design" }
+edit = { path = "libraries/edit" }
+settings = { path = "libraries/settings" }
 
 # The compositor (services/compd): smithay with compd's hooks and patches
 # (vendor/smithay/PATCHES.md), and wgpu on the GL backend only, sharing

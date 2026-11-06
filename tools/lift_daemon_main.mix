@@ -1,0 +1,26 @@
+-- Lift a daemon's src/main.rs into its library as `pub fn main`, so mixd can
+-- run it as an argv[0] personality. The standalone binary keeps working as a
+-- one-line wrapper. Lab adaptation (engine-split decision); records nothing
+-- else. usage: mix tools/lift_daemon_main.mix CRATE_DIR CRATE_NAME
+$a = args()
+$dir = $a[0]
+$name = $a[1]
+$main_path = path_join($dir, "src/main.rs")
+$lib_path = path_join($dir, "src/lib.rs")
+$daemon_path = path_join($dir, "src/daemon.rs")
+if is_file($daemon_path) then
+  raise("EXISTS", "already lifted: " .. $daemon_path)
+end
+$main = read_file($main_path)
+$sig = "\nfn main() -> anyhow::Result<()> {"
+if len(split($main, $sig)) != 2 then
+  raise("ANCHOR", "expected exactly one `fn main() -> anyhow::Result<()>` in " .. $main_path)
+end
+$lifted = replace($main, $sig, "\npub fn main() -> anyhow::Result<()> {")
+$lifted = replace($lifted, $name .. "::", "crate::")
+write_file($daemon_path, "// Lifted from src/main.rs so the mixd engine can run " .. $name .. " as an argv[0]\n// personality (mixviu engine-split lab). src/main.rs is now a wrapper.\n" .. $lifted)
+$header = filter(lines($main), fn($l) = starts_with($l, "// SPDX") or starts_with($l, "// Copyright"))
+write_file($main_path, join($header, "\n") .. "\n//! Standalone " .. $name .. " binary; the program is the library's `main`.\n\nfn main() -> anyhow::Result<()> {\n    " .. $name .. "::main()\n}\n")
+$lib = read_file($lib_path)
+write_file($lib_path, $lib .. "\nmod daemon;\npub use daemon::main;\n\n/// Component version, listed by the mixd engine's `--personalities`.\npub const COMPONENT_VERSION: &str = env!(\"CARGO_PKG_VERSION\");\n")
+print "lifted " .. $name

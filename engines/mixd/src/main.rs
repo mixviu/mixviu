@@ -24,7 +24,25 @@ const PERSONALITIES: &[(&str, &str)] = &[
     ("mixd", mix_shell::COMPONENT_VERSION),
     #[cfg(feature = "noded")]
     ("noded", noded::COMPONENT_VERSION),
+    #[cfg(feature = "settingsd")]
+    ("settingsd", settingsd::COMPONENT_VERSION),
+    #[cfg(feature = "editd")]
+    ("editd", editd::COMPONENT_VERSION),
 ];
+
+/// A personality whose main returns `anyhow::Result`, reported the way Rust's
+/// own `main` reports an `Err` (Debug form, exit 1), so units see the same
+/// behaviour as the standalone binary.
+#[allow(dead_code)]
+fn exit_of<E: std::fmt::Debug>(result: Result<(), E>) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Error: {e:?}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
 fn personality_name(argv0: &OsStr) -> String {
     let base = Path::new(argv0)
@@ -90,6 +108,10 @@ fn main() -> ExitCode {
     match personality.as_str() {
         #[cfg(feature = "noded")]
         "noded" => noded::main(),
+        #[cfg(feature = "settingsd")]
+        "settingsd" => exit_of(settingsd::main()),
+        #[cfg(feature = "editd")]
+        "editd" => exit_of(editd::main()),
         _ => match rewrite(&args) {
             Some(rewritten) => mix_shell::main_with_args(rewritten),
             None => mix_shell::main(),

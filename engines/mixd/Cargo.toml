@@ -22,10 +22,14 @@ path = "src/main.rs"
 [features]
 # Headless personalities, chosen by argv[0] (a `noded` symlink to mixd runs
 # the broker). Each is its component's library `main`.
-default = ["noded"]
+default = ["noded", "settingsd", "editd"]
 noded = ["dep:noded"]
+settingsd = ["dep:settingsd"]
+editd = ["dep:editd"]
 
 [dependencies]
 mix-shell = { path = "../mix-shell", features = ["service-builtins", "serve"] }
 noded = { path = "../../services/noded", optional = true }
+settingsd = { path = "../../services/settingsd", optional = true }
+editd = { path = "../../services/editd", optional = true }
 mimalloc.workspace = true
