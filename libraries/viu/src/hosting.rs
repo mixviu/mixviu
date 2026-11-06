@@ -16,10 +16,10 @@ pub struct Hosting {
     pub confirmed: bool,
 }
 impl Hosting {
-    /// The native broker stamps the registered local publisher. `from` may
-    /// be node-qualified, so it is not an authority or service-name match.
+    /// Topic deliveries carry broker_service; local RPCs carry the broker's
+    /// registered caller in from. Both require the broker's local origin.
     pub fn local_owner(headers:&std::collections::BTreeMap<String,String>,expected:&str)->bool {
-        headers.get("broker_origin").map(String::as_str)==Some("local") && headers.get("broker_service").map(String::as_str)==Some(expected)
+        headers.get("broker_origin").map(String::as_str)==Some("local") && headers.get("broker_service").or_else(||headers.get("from")).map(String::as_str)==Some(expected)
     }
     pub fn eligible(settings: &Value) -> bool {
         Self::host_available(settings) && settings["window.actions_place"] == "titlebar"
@@ -177,6 +177,8 @@ mod tests {
         assert!(Hosting::local_owner(&headers,"shell"));assert!(!Hosting::local_owner(&headers,"comp"));
         headers.insert("broker_origin".into(),"mesh".into());assert!(!Hosting::local_owner(&headers,"shell"));
         headers.remove("broker_origin");assert!(!Hosting::local_owner(&headers,"shell"));
+        let rpc=std::collections::BTreeMap::from([("from".into(),"shell".into()),("broker_origin".into(),"local".into())]);assert!(Hosting::local_owner(&rpc,"shell"));
+        let mut qualified=rpc.clone();qualified.insert("from".into(),"shell@example.invalid".into());assert!(!Hosting::local_owner(&qualified,"shell"));
     }
     #[test]
     fn native_bar_preserves_leaf_identity_and_bounds_popup_codec() {
