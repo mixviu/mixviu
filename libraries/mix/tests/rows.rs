@@ -22,13 +22,14 @@ print(project([]))
 #[tokio::test]
 async fn unsupported_effects_and_mid_batch_failures_never_return_partial_rows() {
  for src in ["rows_project([],fn($r)=read_file($r))","rows_project([1],fn($r)=fn($x)=$x)","rows_project([1],fn($r)=$missing)"] {
-  assert!(run(src).await.unwrap_err().contains("ROW_EXPRESSION"));
+  let probe=format!("try\n{src}\ncatch $m,$e\nprint($e.code)\nend");
+  assert_eq!(run(&probe).await.unwrap(),"ROW_EXPRESSION\n","{src}");
  }
  assert_eq!(run(r#"
 $out=["previous"]
 try $out=rows_project([2,0,4],fn($r)=10/$r) catch $m print($m) end
-print(json_encode($out))
-"#).await.unwrap(),"division by zero\n[\"previous\"]\n");
+print($out[0])
+"#).await.unwrap(),"division by zero\nprevious\n");
 }
 #[tokio::test]
 async fn stat_many_matches_single_stat_missing_and_lstat() {
