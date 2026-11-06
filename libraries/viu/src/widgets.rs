@@ -156,7 +156,8 @@ impl Widget {
                 .ok_or("swatches required")?
                 .len() as f32
                 * (18.0 + ui.spacing().item_spacing.x)
-                + 6.0 - ui.spacing().item_spacing.x);
+                + 6.0
+                - ui.spacing().item_spacing.x);
         }
         if self.kind == "combo" && self.properties["native"] == true {
             return Ok(self.combo_width(ui) + 2.0 * ui.spacing().button_padding.x);
@@ -1246,7 +1247,7 @@ impl Widgets {
                     }
                     // The enclosing native control contributes the final
                     // item gap; retain the six-point trailing ink inset once.
-                    ui.add_space(6.0-ui.spacing().item_spacing.x);
+                    ui.add_space(6.0 - ui.spacing().item_spacing.x);
                 })
                 .response
             }
