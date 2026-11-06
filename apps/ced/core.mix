@@ -9,6 +9,19 @@ end
 fn refresh_tabs($s)
   for $i=0 to len($s.tabs)-1
     $old=$s.tabs[$i];$s.tabs[$i]=viu_document("state",$old.document,{});$t=$s.tabs[$i]
+    $m=$s.mail[$t.document]
+    if $m!=nil then
+      $s.tabs[$i].path=$m.path
+      $s.tabs[$i].dirty=not deep_eq($m.headers,$m.saved_headers) or $m.body_hash!=$m.saved_body_hash or $m.hash_gen!=$t.view_gen
+      if $t.phase=="live" and $m.hash_gen!=$t.view_gen and $m.hash_wanted!=$t.view_gen then
+        $s.mail[$t.document].hash_wanted=$t.view_gen
+        $s=queue_job($s,"mail-hash",{document:$t.document})
+      end
+    elif $t.phase=="live" and not $s.classified[$t.document] then
+      $s.classified[$t.document]=true
+      $s=queue_job($s,"classify",{document:$t.document})
+    end
+    if any(concat($s.queue,values($s.running)),fn($j)=contains(["classify","mail-seed"],$j.kind) and $j.payload.document==$t.document) then $s.tabs[$i].phase="bootstrapping" end
     if $t.phase=="live" and $t.path!=nil and $s.diagnostics[$t.path]!=nil and ($old.phase!="live" or $old.resyncs!=$t.resyncs or ($old.dirty and not $t.dirty)) then
       for $source in keys($s.diagnostics[$t.path]) $s=queue_job($s,"diagnostics",{request:$s.diagnostics[$t.path][$source],documents:[$t.document]}) end
     end
@@ -31,6 +44,7 @@ fn queue_job($s,$kind,$payload)
 end
 fn pump($s)
   $s=refresh_tabs($s)
+  $s=mail_pump($s)
   for $t in $s.tabs
     if $t.reattach_needed then $s=request_reattach($s,$t) end
     $effects=viu_document("effects",$t.document,{})
@@ -84,7 +98,8 @@ fn publish_ced($s)
   $window={"window.decorations":"client"}
   for $k in keys($prefs) if starts_with($k,"window.") then $window[$k]=$prefs[$k] end end
   $items=map(["save","undo","redo","refresh","close"],fn($op)={id:$op,label:$op,enabled:$has and $t.phase=="live"})
-  $editor={id:"editor",kind:"editor",label:"Editing buffer",initial:"",properties:{native_document:true,font_size:max(3,min(144,($prefs["ced.editor.font.size"] ?? 13)+($s.zoom ?? 0)))*($look.text_scale ?? 1),padding:round(($prefs["ced.editor.padding"] ?? 8)*$density),light:$prefs["ced.editor.light"] ?? false,soft_wrap:$s.wrap,line_numbers:$s.line_numbers,whitespace:$s.whitespace,remote_carets:$s.remote_carets,read_only:not $has or $t.phase!="live"}}
+  $mail=$s.mail[$t.document]
+  $editor={id:"editor",kind:"editor",label:"Editing buffer",initial:"",properties:{native_document:true,font_size:max(3,min(144,($prefs["ced.editor.font.size"] ?? 13)+($s.zoom ?? 0)))*($look.text_scale ?? 1),padding:round(($prefs["ced.editor.padding"] ?? 8)*$density),light:$prefs["ced.editor.light"] ?? false,soft_wrap:$s.wrap,line_numbers:$s.line_numbers,whitespace:$s.whitespace,remote_carets:$s.remote_carets,read_only:not $has or $t.phase!="live" or ($mail!=nil and ($mail.sending or ($mail.saving and not $mail.parked)))}}
   $model={editor:$editor,window_close:$s.window_close,tabs:{id:"tabs",kind:"tabs",label:"Documents",initial:if $has then to_string($s.active) else "none" end,properties:{labels:$labels,choices:$choices}},values:{editor:if $has then {document:$t.document} else "" end,"open-dialog":{open:$s.open_dialog,title:"Open file",body:"Absolute UTF-8 file path",field:$s.path,instance:1,choices:[{id:"open",label:"Open",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}}}
   $model.shortcuts=[];$model.on_shortcut="ced.key"
   for $action in action_rows($s)

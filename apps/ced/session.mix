@@ -5,7 +5,14 @@ fn empty_session()
   return {version:1,active:nil,tabs:[],recent:[]}
 end
 fn session_value($s)
-  return {version:1,active:if len($s.tabs)>0 then $s.active else nil end,tabs:map($s.tabs,fn($t)={path:$t.path,recovery_id:if $t.path==nil then $t.recovery_id else nil end,caret:$t.selection.head.offset,first_line:max(1,$t.first_line)}),recent:slice($s.recent,0,20)}
+  $tabs=[]
+  for $t in $s.tabs
+    $m=$s.mail[$t.document]
+    $row={path:$t.path,recovery_id:if $t.path==nil or $m!=nil then $t.recovery_id else nil end,caret:$t.selection.head.offset,first_line:max(1,$t.first_line)}
+    if $m!=nil then $row.mail={disk:$m.disk,headers:$m.headers} end
+    push($tabs,$row)
+  end
+  return {version:1,active:if len($s.tabs)>0 then $s.active else nil end,tabs:$tabs,recent:slice($s.recent,0,20)}
 end
 fn session_changed($s)
   if not $s.session_loaded or len(keys($s.restore))>0 then return $s end
@@ -29,7 +36,8 @@ fn restore_session($s,$body)
   for $i=0 to len($value.tabs)-1
     $s.next_tab=$s.next_tab+1;$key=to_string($s.next_tab);$tab=$value.tabs[$i]
     $s.restore[$key]=$tab
-    $s=queue_job($s,"open",{document:$key,args:{path:$tab.path,recovery_id:$tab.recovery_id}})
+    $s=restore_mail($s,$key,$tab)
+    $s=queue_job($s,"open",{document:$key,args:{path:$tab.path,recovery_id:if $tab.path==nil or $s.mail[$key]!=nil then $tab.recovery_id else nil end,mail:$tab.mail}})
   end
   $s.session_seen=$value
   return $s
@@ -41,7 +49,8 @@ end
 fn request_reattach($s,$t)
   if $s.reattach_wait[$t.document] then return $s end
   if not any(concat($s.queue,values($s.running)),fn($j)=$j.kind=="reattach" and $j.payload.document==$t.document) then
-    $s=queue_job($s,"reattach",{document:$t.document,args:{path:$t.path,recovery_id:if $t.path==nil then $t.recovery_id else nil end}})
+    $m=$s.mail[$t.document]
+    $s=queue_job($s,"reattach",{document:$t.document,args:{path:$t.path,recovery_id:if $t.path==nil or $m!=nil then $t.recovery_id else nil end,mail:if $m!=nil then {disk:$m.disk} else nil end,existing_document:if $m!=nil then $t.document else nil end}})
   end
   return $s
 end

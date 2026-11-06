@@ -57,7 +57,8 @@ impl App {
             &[],
         )
         .unwrap();
-        bundle.program.source.push_str("\n$state.tabs=[viu_document(\"state\",\"1\",{})]\n$state.next_tab=1\npublish_ced($state)\n");
+        bundle.program.source.push_str("\n$state.tabs=[viu_document(\"state\",\"1\",{})]\n$state.next_tab=1
+$state.classified={\"1\":true}\npublish_ced($state)\n");
         let docs = viu::documents::Documents::default();
         fixture::seed(&docs, "1", "/tmp/contract.rs", "λ one\ntwo\n");
         let calls = viu::calls::Calls::default();

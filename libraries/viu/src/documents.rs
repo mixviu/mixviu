@@ -241,8 +241,8 @@ impl Documents {
         } {
             *state.counters.entry(counter).or_default() += 1;
         }
-        if op == "open" {
-            if state.documents.contains_key(key) {
+        if op == "open" || op=="reset" {
+            if op=="open" && state.documents.contains_key(key) {
                 return Err("document already open".into());
             }
             let open: edit::wire::OpenReply = decode(&a)?;

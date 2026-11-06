@@ -23,6 +23,7 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 /// Supplying one does not create a Bus citizen, broker or global registry.
 #[derive(Clone, Default)]
 pub struct Services {
+    pub max_string_bytes: Option<usize>,
     pub platform: Option<crate::platform::Platform>,
     pub ui_state: Option<crate::ui_state::UiState>,
     pub calls: Option<crate::calls::Calls>,
@@ -199,7 +200,7 @@ impl Runtime {
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
                         eval.set_capability_policy(Rc::new(WorkerPolicy));
                         eval.set_interrupt_flag(worker_interrupt.clone());
-                        eval.set_limits(mix::EvalLimits { time_limit: Some(deadline), max_string_len: Some(1_048_576), max_list_len: Some(65_536), max_map_len: Some(65_536), ..Default::default() });
+                        eval.set_limits(mix::EvalLimits { time_limit: Some(deadline), max_string_len: Some(services.max_string_bytes.unwrap_or(1_048_576).clamp(1_048_576,32*1024*1024)), max_list_len: Some(65_536), max_map_len: Some(65_536), ..Default::default() });
                         eval.set_entry_script(&program.path.to_string_lossy());
                         eval.set_file(program.path.to_string_lossy().to_string());
                         eval.set_bus_handler(local.clone());
@@ -208,6 +209,9 @@ impl Runtime {
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
                         eval.register("viu_app_dirs",crate::native_primitives::app_dirs());
+                        eval.register("viu_maildoc",crate::native_primitives::mail_document());
+                        eval.register("viu_editor_write",crate::native_primitives::editor_write());
+                        eval.register("viu_digest",crate::native_primitives::digest());
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_image",crate::native_primitives::image_file());

@@ -31,7 +31,7 @@ fn hold_call($s,$e,$wait)
   if $token==nil or not viu_reply("hold",$token,{}) then raise("CALL","Native receipt is unavailable") end
   $wait.started=monotonic();$wait.token=$token
   $s.waits[$token]=$wait
-  viu_timer("call:"..$token,$wait.timeout_ms,{kind:"call",token:$token})
+  viu_timer("call:"..$token,min(90000,$wait.timeout_ms),{kind:"call",token:$token})
   reply(0,"{}");return $s
 end
 fn finish_call($s,$token,$rc,$body,$close=false)
@@ -105,6 +105,7 @@ fn bus_command($s,$e)
   elif $command=="app.describe" then
     reply(0,json_encode({contract:"ctk-app-control.v0",app:"ced",title:"MixOS Editor",view:if len($s.tabs)>0 then tab_row(current($s)).name else "" end,engine:"egui",version:$ctx.version ?? "0.1.2",description:"The MixOS Editor: an egui editor over the edit Bus service",controls:[],commands:$s.commands}));return $s
   elif $command=="app.quit" then
+    if any($s.tabs,fn($t)=$s.mail[$t.document]!=nil and ($t.dirty or $s.mail[$t.document].sending or $s.mail[$t.document].saving)) then return refused($s,"CONFLICT","Save or discard mail document changes before quitting") end
     $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",timeout_ms:30000}))
   elif $command=="ced.show" then
     $s=hold_call($s,$e,{kind:"job",timeout_ms:10000});return pump(queue_job($s,"show",{call:$e.headers["viu-call"]}))
@@ -130,9 +131,10 @@ fn bus_command($s,$e)
     if $a.id=="file.exit" then
       $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",action:$a.id,timeout_ms:30000}))
     end
-    try $out=do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index)
+    try $out=do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index,$e.headers["viu-call"])
     catch $message return refused($s,"CONFLICT",$message) end
     $s=$out.state
+    if $out.kind=="mail" then return check_calls(hold_call($s,$e,{kind:"job",timeout_ms:150000})) end
     if $out.op_id!=nil then return check_calls(hold_call($s,$e,{kind:"outcome",tab:if $index>=0 then to_number($s.tabs[$index].document) else nil end,op_id:$out.op_id,action:$a.id,close_after:$a.id=="file.close",timeout_ms:60000}))
     elif $out.kind=="close" then return check_calls(hold_call($s,$e,{kind:"close",tab:to_number($s.tabs[$index].document),action:$a.id,timeout_ms:60000})) end
     reply(0,json_encode({id:$a.id,ok:true,result:$out.result}));return $s
@@ -147,6 +149,8 @@ fn bus_command($s,$e)
     try
       $v=viu_document("inspect",$t.document,{text:$a.text ?? false})
       $body={tab:to_number($t.document),preview:"source",buffer:$v.buffer,rev:$v.rev,view_gen:$v.view_gen,phase:$v.phase,pending:$v.pending,inflight:$v.inflight,text_hash:$v.text_hash,bytes:$v.bytes,lines:$v.lines,selection:$v.selection,first_line:$v.first_line,last_remote:$v.last_remote,conflicts:$v.conflicts,detached_copy:$v.detached_copy,text:$v.text}
+      if $s.mail[$t.document]!=nil then $m=$s.mail[$t.document];$body.mail={headers:$m.headers,sending:$m.sending,saving:$m.saving,notice:$m.notice} end
+      if $s.notices[$t.document]!=nil then $body.document_notice=$s.notices[$t.document] end
       reply(0,json_encode($body));return $s
     catch $message
       return refused($s,"INVALID_ARGUMENT",$message)
@@ -157,6 +161,8 @@ fn bus_command($s,$e)
     reply(0,json_encode({selection:$v.selection}));return session_changed(refresh_tabs($s))
   elif $command=="ced.type" then
     if type($a.text)!="string" then return refused($s,"INVALID_ARGUMENT","text is required","bad_args") end
+    $m=$s.mail[$t.document]
+    if $m!=nil and ($m.sending or ($m.saving and not $m.parked)) then return refused($s,"CONFLICT","Wait for the mail operation to finish") end
     try $v=viu_document("command",$t.document,{name:"insert",text:$a.text,caller:caller($e.headers)})
     catch $message return refused($s,"CONFLICT",$message) end
     reply(0,json_encode({tab:to_number($t.document),pending:$v.pending}));return pump($s)

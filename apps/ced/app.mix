@@ -6,9 +6,10 @@ include "core.mix"
 include "session.mix"
 include "bus.mix"
 include "actions.mix"
+include "mail.mix"
 $state={tabs:[],active:0,busy:false,serial:0,next_tab:0,queue:[],running:{},timers:{},outcomes:{},last_op:nil,status:"Open a UTF-8 document",path:"",wrap:false,line_numbers:true,window_close:false,open_dialog:false,event_seq:nil,look:{appearance:{scheme:"studio",mode:"dark"},values:{},revision:nil}}
 $state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_loaded=false;$state.session_dirty=false;$state.session_seen=nil;$state.restore={};$state.restore_active=nil;$state.exit_after_save=false;$state.edit={epoch:nil,version:nil,volatile:nil}
-$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=filter(json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).host.commands,fn($c)=not contains(["ced.command","ced.draft","ced.debug","ced.intent"],$c));$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:true,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
+$state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=filter(json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).host.commands,fn($c)=not contains(["ced.command","ced.draft","ced.debug","ced.intent"],$c));$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:true,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
 publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
@@ -16,7 +17,7 @@ end
 on ced.info
   $state=bus_command($state,$event)
 end
-on ced.debug
+on ced.specimen
   $state=refresh_tabs($state);reply(0,json_encode($state))
 end
 on ced.command
@@ -62,6 +63,7 @@ on viu.job.completed
   $job=$event.args.tag.owner
   if $state.running[$job.id]!=nil then
     $state.running=delete($state.running,$job.id)
+    $state=mail_completed($state,$job,$event.args)
     if contains(["show","diagnostics"],$job.kind) and $job.payload.call!=nil then $state=finish_call($state,$job.payload.call,$event.args.rc,$event.args.body) end
     if $job.kind=="macro" then $state=finish_call($state,$job.payload.call,if $event.args.rc==0 then $event.args.body.rc else 10 end,if $event.args.rc==0 then $event.args.body.body else $event.args.body end) end
     if $event.args.rc==0 then
@@ -76,6 +78,7 @@ on viu.job.completed
           if $t.epoch!=$state.edit.epoch then $v=viu_document("epoch",$t.document,{}) end
         end
       elif $job.kind=="open" then
+        if $event.args.body.mail_missing then $state.mail=delete($state.mail,$job.payload.document);$state.classified=delete($state.classified,$job.payload.document) end
         $t=viu_document("state",$job.payload.document,{})
         $state.tabs=push($state.tabs,$t);$state.active=len($state.tabs)-1
         $state.tabs=sort_by($state.tabs,fn($t)=to_number($t.document))
@@ -86,6 +89,7 @@ on viu.job.completed
       elif $job.kind=="close" then
         $v=viu_document("close",$job.payload.document,{})
         $state.tabs=filter($state.tabs,fn($t)=$t.document!=$job.payload.document);$state.active=0
+        $state.mail=delete($state.mail,$job.payload.document);$state.classified=delete($state.classified,$job.payload.document)
       end
     else
       $state.status="Failed: "..json_encode($event.args.body)
@@ -121,7 +125,11 @@ end
 on viu.timer
   $t=$event.args.value
   if $t.kind=="call" then
-    if $state.waits[$t.token]!=nil then $state=finish_call($state,$t.token,10,{error_code:"CONFLICT",message:"Command timed out",reason:"timeout"}) end
+    if $state.waits[$t.token]!=nil then
+      $w=$state.waits[$t.token];$left=$w.timeout_ms-(monotonic()-$w.started)*1000
+      if $left>1 then viu_timer("call:"..$t.token,min(90000,$left),{kind:"call",token:$t.token})
+      else $state=finish_call($state,$t.token,10,{error_code:"CONFLICT",message:"Command timed out",reason:"timeout"}) end
+    end
   elif $t.kind=="session-save" then $state=save_session($state)
   elif $t.kind=="reattach" then
     $state.reattach_wait=delete($state.reattach_wait,$t.document)

@@ -17,6 +17,7 @@ pub struct Manifest {
     pub follow_settings: bool,
     pub macros: bool,
     pub native_drive: bool,
+    pub max_string_bytes: Option<usize>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -32,6 +33,7 @@ impl Default for Manifest {
             follow_settings: false,
             macros: false,
             native_drive: false,
+            max_string_bytes:None,
         }
     }
 }
@@ -70,6 +72,7 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
+            || manifest.max_string_bytes.is_some_and(|n|!(1_048_576..=32*1024*1024).contains(&n))
             || !["window", "background"].contains(&manifest.surface.as_str())
             || manifest
                 .frame

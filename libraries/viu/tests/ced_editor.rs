@@ -59,6 +59,7 @@ fn ced_retains_independent_tab_drafts_and_refuses_dirty_caption_close() {
     bundle.program.source.push_str(
         r#"
 $state.tabs=[viu_document("state","one",{}),viu_document("state","two",{})]
+$state.classified={one:true,two:true}
 publish_ced($state)
 "#,
     );

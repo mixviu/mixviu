@@ -12,10 +12,13 @@ fn action_rows($s)
   end
   return $rows
 end
-fn do_action($s,$id,$a,$who=nil,$index=nil)
+fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil)
   $result=nil;$op_id=nil;$kind=nil
   if $index!=nil and $index>=0 then $s.active=$index end
   $has=len($s.tabs)>0;$t=if $has then current($s) else nil end
+  if $has and $s.mail[$t.document]!=nil and (contains(["file.save","file.save_as","file.send","mail.headers"],$id) or ($id=="file.close" and ($a.save ?? false))) then
+    return mail_action($s,$id,$a,$t.document,$call)
+  end
   if $id=="file.new" then $s=operation($s,"new",{})
   elif $id=="file.open" then
     if $a.paths==nil then $s.open_dialog=true

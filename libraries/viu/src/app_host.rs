@@ -575,8 +575,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
                 .iter()
                 .map(|suffix| format!("{service}.{suffix}")),
         );
-        commands
-            .extend(["state", "set", "recent"].map(|suffix| format!("{service}.debug.{suffix}")));
+        commands.push(format!("{service}.debug"));
+        commands.extend(["set", "recent"].map(|suffix| format!("{service}.debug.{suffix}")));
     }
     commands.extend(
         [
@@ -613,6 +613,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let ui_state = crate::ui_state::UiState::default();
     let platform = crate::platform::Platform::default();
     let services = crate::runtime::Services {
+        max_string_bytes:bundle.manifest.max_string_bytes,
         platform: Some(platform.clone()),
         ui_state: Some(ui_state.clone()),
         macros: bundle.manifest.macros.then(|| {

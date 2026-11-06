@@ -104,7 +104,7 @@ impl Jobs {
                 self.wake.clone(),
                 self.native_backend.as_ref().map(|f| f()),
                 self.services.clone(),
-                std::time::Duration::from_secs(90),
+                std::time::Duration::from_secs(180),
             );
             let program = Program {
                 path: PathBuf::from(path.unwrap()),

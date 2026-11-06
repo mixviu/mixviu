@@ -1,13 +1,14 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
+include "mail.mix"
+include "../../libraries/viu/mix/app-call.mix"
 fn load_session()
   $dirs=viu_app_dirs("ced");$path=if $dirs!=nil then path_join($dirs.state,"session.json") else nil end
   $empty={version:1,active:nil,tabs:[],recent:[]};$value=$empty
   try
     if $path!=nil then
-      $file=viu_read_optional($path)
-      if $file.found then
-        $v=json_parse($file.text)
+      if exists($path) then
+        $v=json_parse(read_file($path))
         if $v.version==1 and type($v.tabs)=="list" and type($v.recent)=="list" and all($v.recent,fn($p)=type($p)=="string") and all($v.tabs,fn($t)=type($t)=="map" and ($t.path==nil or type($t.path)=="string") and ($t.recovery_id==nil or type($t.recovery_id)=="string") and type($t.caret)=="number" and $t.caret>=0 and floor($t.caret)==$t.caret and type($t.first_line)=="number" and $t.first_line>=0 and floor($t.first_line)==$t.first_line) then
           $value=$v;$value.recent=slice($value.recent,0,20)
           if type($value.active)!="number" or $value.active<0 or floor($value.active)!=$value.active or $value.active>=len($value.tabs) then $value.active=nil end
@@ -20,6 +21,7 @@ fn load_session()
   return {path:$path,value:$value}
 end
 fn open_recovery($a)
+  $missing=false
   if $a.recovery_id!=nil then
     send "edit" "edit.list" body={} timeout=30
     if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
@@ -31,14 +33,51 @@ fn open_recovery($a)
       end
     end
   end
+  if $a.mail!=nil then
+    if $a.existing_document!=nil then
+      send "edit" "edit.open" body={text:document_text($a.existing_document,8388608),language:"markdown",origin:"human:ced"} timeout=30
+      if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
+      return $reply
+    end
+    $missing=true
+  end
   $a=delete($a,"recovery_id")
+  $a=delete(delete($a,"mail"),"existing_document")
   send "edit" "edit.open" body=$a timeout=30
   if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
-  return $reply
+  $reply.mail_missing=$missing;return $reply
 end
 on job.run
   $job=$event.args;$a=$job.payload
-  if $job.kind=="diagnostics" then
+  if $job.kind=="classify" then reply(0,json_encode(classify_document($a.document)));return
+  elif $job.kind=="mail-hash" then
+    $state=viu_document("state",$a.document,{})
+    $text=document_text($a.document,8388608)
+    reply(0,json_encode({hash:viu_digest("blake3",canonical_body($text)),view_gen:$state.view_gen}));return
+  elif $job.kind=="mail-seed" then
+    send "edit" "edit.open" body={text:$a.body,language:"markdown",origin:"human:ced"} timeout=30
+    if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
+    $state=viu_document("reset",$a.document,$reply)
+    send "edit" "edit.close" body={buffer:$a.buffer} timeout=5
+  elif $job.kind=="mail-save" then
+    try
+      $text=viu_maildoc("write",header_document($a.headers,document_text($a.document,8388608)))
+    catch $message
+      reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:$message,reason:nil}));return
+    end
+    try
+      $same=$a.original_path!=nil and ((realpath($a.path)!=nil and realpath($a.path)==realpath($a.original_path)) or $a.path==$a.original_path)
+      viu_editor_write($a.path,$text,if $same then $a.expected else nil end)
+    catch $message
+      reply(10,json_encode({error_code:if contains($message,"CONFLICT:") then "CONFLICT" else "INTERNAL" end,message:$message,reason:nil}));return
+    end
+    reply(0,json_encode({text:$text,hash:viu_digest("blake3",viu_maildoc("parse",$text).body),message:"Saved"}));return
+  elif $job.kind=="mail-send" then
+    $answer=viu_app_call("dev.mixos.email","email.send",{document:$a.path},10,120)
+    if $answer.body.error_code=="OUTCOME_UNKNOWN" then $answer.rc=10;$answer.body={error_code:"INTERNAL",message:"The mail may have been sent; "..to_string($answer.message),reason:nil} end
+    if $answer.rc==0 then $answer.body={message:$answer.body.message ?? "Sent"} end
+    reply($answer.rc,json_encode($answer.body));return
+  elif $job.kind=="diagnostics" then
     $shown=0;$stale=false
     for $doc in $a.documents
       $v=viu_document("diagnostics",$doc,$a.request)
@@ -62,7 +101,7 @@ on job.run
   elif $job.kind=="session-load" then reply(0,json_encode(load_session()));return
   elif $job.kind=="session-save" then
     mkdir(dirname($a.path),{parents:true})
-    viu_atomic_replace($a.path,json_encode($a.value))
+    viu_atomic_replace($a.path,json_encode($a.value),33554432)
   elif $job.kind=="probe" then
     send "edit" "edit.info" body={} timeout=5
     if $rc!=0 then raise("PROBE",json_encode($reply ?? $result)) end
@@ -72,6 +111,7 @@ on job.run
     $state=viu_document(if $job.kind=="open" then "open" else "reattach" end,$a.document,$open)
     send "edit" "edit.list" body={} timeout=5
     if $rc==0 then $state=viu_document("saved",$a.document,$reply) end
+    reply(0,json_encode({mail_missing:$open.mail_missing ?? false}));return
   elif $job.kind=="close" then
     send "edit" "edit.close" body={buffer:$a.buffer,force:$a.force} timeout=5
     if $rc!=0 then raise("CLOSE",json_encode($reply ?? $result)) end
