@@ -66,7 +66,7 @@ pub fn install_session(
             colours.insert(role.clone(), colour);
         }
     }
-    colours.insert("editor.background".into(),editor_palette.background);
+    colours.insert("editor.background".into(), editor_palette.background);
     let m = chrome.metrics;
     ctx.data_mut(|d| {
         d.insert_temp(egui::Id::unique("viu-gold-editor-palette"), editor_palette);
@@ -105,21 +105,25 @@ pub fn local_mode(ctx: &egui::Context, name: &str) -> Result<(), String> {
     local_choice(ctx, &serde_json::json!({"mode":mode.name()}))
 }
 pub fn local_choice(ctx: &egui::Context, value: &Value) -> Result<(), String> {
-    let key=egui::Id::unique("viu-local-choice");
-    if ctx.data(|d| d.get_temp::<Value>(key)).as_ref()==Some(value) {return Ok(());}
+    let key = egui::Id::unique("viu-local-choice");
+    if ctx.data(|d| d.get_temp::<Value>(key)).as_ref() == Some(value) {
+        return Ok(());
+    }
     let choice = toolkit::theme::Choice {
         scheme: value["theme"].as_str().and_then(design::Scheme::from_name),
         mode: value["mode"].as_str().and_then(design::Mode::from_name),
         style: value["style"].as_str().map(|s| design::Style::from_name(s)),
-        decorations: value["decorations"].as_str().and_then(design::RequestedDecorations::from_name),
-        captions: value["captions"].as_str().and_then(design::CaptionSide::from_name),
+        decorations: value["decorations"]
+            .as_str()
+            .and_then(design::RequestedDecorations::from_name),
+        captions: value["captions"]
+            .as_str()
+            .and_then(design::CaptionSide::from_name),
     };
     let theme = ctx
         .data(|d| d.get_temp::<toolkit::Theme>(egui::Id::unique("viu-session-theme")))
         .unwrap_or_else(toolkit::Theme::load);
-    let theme = theme
-        .with_choice(&choice)
-        .map_err(|e| e.to_string())?;
+    let theme = theme.with_choice(&choice).map_err(|e| e.to_string())?;
     toolkit::install(ctx, &theme);
     let palette = editor::Palette::from_theme(&theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
@@ -128,7 +132,7 @@ pub fn local_choice(ctx: &egui::Context, value: &Value) -> Result<(), String> {
         .keys()
         .filter_map(|role| chrome.palette.get(role).map(|c| (role.clone(), c)))
         .collect::<std::collections::BTreeMap<_, _>>();
-    colours.insert("editor.background".into(),palette.background);
+    colours.insert("editor.background".into(), palette.background);
     ctx.data_mut(|d| {
         d.insert_temp(key, value.clone());
         d.insert_temp(egui::Id::unique("viu-resolved-theme"), theme);

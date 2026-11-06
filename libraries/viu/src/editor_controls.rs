@@ -60,7 +60,9 @@ pub fn validate(kind: &str, v: &Value) -> Result<(), String> {
     }
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
-    if kind == "header-form" { return crate::header_controls::admit(current, action, payload); }
+    if kind == "header-form" {
+        return crate::header_controls::admit(current, action, payload);
+    }
     if kind == "diagnostic-list" {
         return if action == "goto"
             && current
@@ -121,7 +123,9 @@ pub fn draw(
     value: &Value,
     events: &mut Vec<Intent>,
 ) -> egui::Response {
-    if kind == "header-form" { return crate::header_controls::draw(ui, id, value, events); }
+    if kind == "header-form" {
+        return crate::header_controls::draw(ui, id, value, events);
+    }
     let emit = |events: &mut Vec<Intent>, action: &str, value: Value| {
         events.push(Intent {
             id: id.into(),

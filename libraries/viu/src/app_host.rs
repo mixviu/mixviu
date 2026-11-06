@@ -530,7 +530,11 @@ impl Host {
         }
         if self.ready {
             if self.model["local_theme"].is_object() {
-                if let Err(error) = crate::appearance::local_choice(ui.ctx(), &self.model["local_theme"]) { self.error = error; }
+                if let Err(error) =
+                    crate::appearance::local_choice(ui.ctx(), &self.model["local_theme"])
+                {
+                    self.error = error;
+                }
             } else if let Some(mode) = self.model["local_mode"].as_str() {
                 if let Err(error) = crate::appearance::local_mode(ui.ctx(), mode) {
                     self.error = error;

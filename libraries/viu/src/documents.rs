@@ -339,11 +339,21 @@ impl Documents {
             }
             "clear-markers" => doc.model.clear_markers(),
             "conflict" => {
-                let rev=crate::widgets::whole(&a["rev"]).ok_or("conflict revision required")?;
-                let conflict=doc.mirror.conflicts().iter().find(|c|c.rev==rev).ok_or("conflict no longer exists")?;
-                if a["reinsert"]==true {
-                    let text=conflict.texts.concat();
-                    doc.command(EditCommand::Insert(text), &View::default(), ids, Intent::ui(doc.identity))?;
+                let rev = crate::widgets::whole(&a["rev"]).ok_or("conflict revision required")?;
+                let conflict = doc
+                    .mirror
+                    .conflicts()
+                    .iter()
+                    .find(|c| c.rev == rev)
+                    .ok_or("conflict no longer exists")?;
+                if a["reinsert"] == true {
+                    let text = conflict.texts.concat();
+                    doc.command(
+                        EditCommand::Insert(text),
+                        &View::default(),
+                        ids,
+                        Intent::ui(doc.identity),
+                    )?;
                 }
                 doc.mirror.dismiss_conflict(rev);
             }
