@@ -417,8 +417,7 @@ impl App {
                 let eligible =
                     viu::hosting::Hosting::eligible(&self.session.snapshot["state"]["values"]);
                 if eligible
-                    && r.from
-                        == std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_| "shell".into())
+                    && viu::hosting::Hosting::local_owner(&headers,&std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()))
                 {
                     self.hosting.confirmed = true;
                     ctx.request_repaint();
@@ -533,7 +532,7 @@ impl App {
                 self.effect_next += 1;
                 let id = format!("window-rpc-{}", self.effect_next);
                 let path = self.app_dir.join("../../libraries/viu/mix/window.mix");
-                let admission=std::fs::read_to_string(&path).map_err(|e|e.to_string()).and_then(|source|self.jobs.submit(json!({"id":id,"owner":0,"path":path,"source":source,"command":"job.run","args":{"app_id":format!("mixviu.dopus.{}",self.mode),"pid":std::process::id()}})));
+                let admission=std::fs::read_to_string(&path).map_err(|e|e.to_string()).and_then(|source|self.jobs.submit(json!({"id":id,"owner":0,"path":path,"source":source,"command":"job.run","args":{"app_id":format!("dev.mixos.dopus-{}",self.mode),"pid":std::process::id()}})));
                 match admission {
                     Ok(receipt) => {
                         self.effect_admissions.insert(id.clone(), receipt);
@@ -851,7 +850,7 @@ impl App {
                 .strip_prefix(&format!("dopus-{}.", self.mode))
             {
                 if suffix == "ui.menu.popup" {
-                    if [std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_|"comp".into()),std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_|"shell".into())].iter().any(|service|notice.headers.get("from")==Some(service)) && viu::hosting::Hosting::host_available(&self.session.snapshot["state"]["values"]) {self.hosting.confirmed=true;}
+                    if [std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_|"comp".into()),std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_|"shell".into())].iter().any(|service|viu::hosting::Hosting::local_owner(&notice.headers,service)) && viu::hosting::Hosting::host_available(&self.session.snapshot["state"]["values"]) {self.hosting.confirmed=true;}
                     if let Err(error) = viu::rich::menu_popup(ctx, "menu", &notice.args) {
                         self.error = error;
                     }
