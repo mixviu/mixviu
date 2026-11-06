@@ -60,6 +60,10 @@ fn proc_ticks($p)
   $fields=split(trim($parts[len($parts)-1])," ")
   return to_number($fields[11])+to_number($fields[12])
 end
+fn panel_is_mapped($row)
+  if $row.mapped!=true or type($row.layer)!="map" then return false end
+  return ($row.layer.exclusive_zone ?? 0)>0
+end
 try
   push($records,{service:"noded",ping:checked("noded","noded.info",{})})
   $parent=launch([$bin.."/viud","--headless","--size","1440x1000","--socket","p2-parent","--bus-service","comp-parent","--config-file",$run.path.."/settings.json"],"parent",{})
@@ -86,7 +90,7 @@ try
   $mapped=false;$until=monotonic()+20
   while monotonic()<$until
     $surfaces=checked("comp-p2","comp.props.get",{path:"surfaces"})
-    if any(values($surfaces),fn($row)=$row.mapped==true and ($row.layer?.exclusive_zone ?? 0)>0) then $mapped=true;break end
+    if any(values($surfaces),fn($row)=panel_is_mapped($row)) then $mapped=true;break end
     sleep(0.05)
   end
   if not $mapped then raise("PANEL_MAP","Furniture panel did not map and reserve its edge") end
