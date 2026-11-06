@@ -2183,6 +2183,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mixd"
+version = "0.1.2"
+dependencies = [
+ "mimalloc",
+ "mix-shell",
+]
+
+[[package]]
 name = "moka"
 version = "0.12.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
