@@ -168,7 +168,10 @@ impl Images {
             }
             if response.clicked_by(egui::PointerButton::Primary) {
                 if let Some(p) = response.interact_pointer_pos() {
-                    emit("pick", serde_json::json!({"point":point(p),"scale":view.scale}));
+                    emit(
+                        "pick",
+                        serde_json::json!({"point":point(p),"scale":view.scale}),
+                    );
                 }
             }
         }
