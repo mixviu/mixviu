@@ -304,7 +304,7 @@ pub(crate) fn store() -> mix::evaluator::ExtFn {
             Err(e) => {
                 serde_json::json!({"stored":false,"unconfirmed":false,"message":e.to_string()})
             }
-            Ok(()) => match config::atomic::replace(path, text.as_bytes()) {
+            Ok(_) => match config::atomic::replace(path, text.as_bytes()) {
                 Ok(()) => serde_json::json!({"stored":true,"unconfirmed":false,"message":null}),
                 Err(e) => {
                     serde_json::json!({"stored":e.may_have_replaced,"unconfirmed":e.may_have_replaced,"message":e.to_string()})

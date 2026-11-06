@@ -1006,7 +1006,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         file_theme: toolkit::Theme::load(),
         last_ui: settings::model::CommonUi::default(),
         session_dirty: false,
-        session: bundle.manifest.frame.as_ref().map(|_| {
+        session: (bundle.manifest.frame.is_some() || bundle.manifest.follow_settings).then(|| {
             crate::session::Session::embedded(
                 bundle.manifest.app(),
                 &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_| "default".into()),
@@ -1207,6 +1207,18 @@ impl crate::layer::LayerProgram for LayerHost {
         host.output = Some(output);
         // Layer hosts use the same owner loop; eframe's Frame is not needed.
         host.pump(ui.ctx());
+        if let Some(session) = &host.session {
+            if session.snapshot["state"].is_object() {
+                let stamp = json!([session.snapshot["state"]["incarnation"],session.snapshot["state"]["revision"],session.snapshot["state"]["lost"]]);
+                let key = egui::Id::unique("viu-layer-look-revision");
+                if ui.ctx().data(|d|d.get_temp::<Value>(key)).as_ref() != Some(&stamp) {
+                    if let Ok(common) = crate::appearance::install_session(ui.ctx(), &session.snapshot, &host.app, &host.file_theme, &host.last_ui) {
+                        host.last_ui = common;
+                        ui.ctx().data_mut(|d|d.insert_temp(key,stamp));
+                    }
+                }
+            }
+        }
         host.frame(ui);
         if let Some(state) = host.outputs.get_mut(host.output.as_ref().unwrap()) {
             let raster = host.view.raster_states();
