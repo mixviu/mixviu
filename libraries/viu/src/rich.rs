@@ -897,6 +897,21 @@ fn gold_dialog(
             if response.changed(){emit(events,id,"edit",json!(field));}
         }else if !text(value,"body").is_empty(){ui.label(text(value,"body"));}
         if let Some(footer)=value["footer"].as_str(){ui.weak(footer);}
+        if let Some(rows)=value["grid"].as_array(){
+            egui::ScrollArea::vertical().max_height(360.0).show(ui,|ui|{
+                egui::Grid::new("shortcut-grid").show(ui,|ui|{
+                    for row in rows {
+                        let keys:Vec<String>=row["keys"].as_array().into_iter().flatten()
+                            .filter_map(|key| key.as_str())
+                            .map(|key|toolkit::keymap::parse_chord(key).map_or_else(||key.to_owned(),|key|ui.ctx().format_shortcut(&key)))
+                            .collect();
+                        ui.label(text(row,"label"));
+                        ui.label(egui::RichText::new(keys.join(", ")).weak());
+                        ui.end_row();
+                    }
+                });
+            });
+        }
         if let Some(items)=value["items"].as_array(){
           if value["row_layout"]=="inline" {
             for row in items {
