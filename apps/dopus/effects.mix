@@ -1,0 +1,9 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Pure edge argument preparation; event handlers stay in effect-job.mix.
+fn dopus_open_argv($path)
+  if type($path)!="string" then raise("INVALID_ARGUMENT","Open requires a local absolute path") end
+  -- Reuse the byte-preserving local-path codec. Raw names remain file URIs
+  -- at the external opener edge; a remote file authority refuses here.
+  return ["xdg-open",viu_files("token",{path:$path})]
+end
