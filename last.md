@@ -600,3 +600,93 @@ four owned PIDs confirmed stopped. Gold Appearance image inspected. This
 is discovery evidence, not a matched candidate acceptance pair.
 
 branch lab/parity-prefs; head SHA 48b5b430f56fd7c2101f199ef15cd2cd89cabdde (tested frame source; receipt-only commit follows); frame adopted; features/Bus/Prefs unaccepted; SSIM/regions not measured; CBC job ids 20261107-014533-4e174e67-a1 green, 20261107-014020-4b3285ad-a1 formatting preparation.
+
+## Prefs round 2 progress: features and visual gate still open
+
+Code head before this receipt: `2aed4f80f0dabf31d0583eb0aeab11bffc7a9620`.
+Gold remains `8779f33284b7d3f1178c3d57a699efb9b0867b22`; the installed
+oracle's version explicitly attests that revision. Oracle binary SHA256:
+`18590ca486b4b417b9de5a762f2dcf31b6b13d2351bb3eddd46d66e783fe3c55`.
+No inventory disagreement requires a question; no gold deviation is proposed.
+
+Implemented since the frame checkpoint: 42-page navigation and typed wrappers,
+topic/reconnect settings reads and queued writes, appearance conflict/receipt
+handling, specialised Terminal/Ced/Email/Software pages, Email identities and
+deferred actual Email replies, release recovery/notes, bounded wallpaper scan
+and native chooser/media controls, installed font/XKB catalogues, native macro
+session/editor integration and canonical drive/debug command registration.
+These are implementation progress, not a completed feature checkpoint.
+The rewritten inventory in `docs/ports/prefs.md` names remaining acceptance.
+
+CBC evidence, complete saved logs read:
+
+- `20261107-024331-ac8cf226-a1`, source `f6370e6ce2260b87ec244177048823115b2f056d`:
+  scoped fmt/check/test/clippy/build passed; rc 97 returned formatting, applied.
+- `20261107-030733-1696f3b7-a1`, source `e081ecd78247`:
+  six focused Prefs/deferred-request tests passed, including all-page mounting,
+  settings fences, appearance receipt recovery and Email admission/redaction.
+- `20261107-031534-7d749887-a1`, source `f2d7a9cb12ef19e4001036ffa0e4f6b96927d308`:
+  scoped fmt/check/test/clippy/build passed; rc 97 formatting patch applied.
+  Candidate artifact SHA256:
+  `e875d774114f169d3215762d97971055b03f936c2e693c99af5cfb162fbfa1af`.
+  Saved log basename:
+  `20261107-031534-cbc2-f2d7a9cb12ef-20261107-031534-7d749887-a1-bead5316.log`
+  under the private CBC log root.
+- `20261107-032557-0d6fad36-a1`: native-menu compile repair needed public
+  toolkit APIs; fixed at `c85aaa588953574345cc9eeb53d742ac0013d757`.
+- `20261107-032646-bc64fe9b-a1`: invalid repair check; the caller supplied HEAD,
+  resolving the primary checkout instead of this worktree. No Prefs evidence.
+- `20261107-032704-f4d3462d-a1`, exact source `c85aaa588953574345cc9eeb53d742ac0013d757`:
+  nine file-widget tests passed, including owned native menu ids, keyboard
+  activation and public browser action admission.
+- Queue job `20261107-033410-20638506`: full Prefs gate at the code head above,
+  including retained toolkit menu tests; result pending at this receipt.
+
+Private native evidence: `prefs-parity-20261107/pair.WrTxPr` captured gold
+first, stopped it, then the exact CBC candidate from `f6370e6`, using the
+same private native Bus/settingsd/headless compd. Both client images are
+1040×680, scale 1, Studio Dark, comfortable density, CSD, right captions,
+bar menus and row actions. Candidate binary SHA256:
+`45eaefa8089de70e276ed89b8eaba43199bcda29675c49b4421a51540bb7ec55`.
+Placement corrected native client dimensions without resizing either PNG.
+Default app description, actions, pages, Appearance and missing-releases
+Software replies compare structurally equal. Search remains read-only.
+HELP exposed extra host commands and native menu queries returned empty;
+subsequent code routes explicit HELP to Mix and data-authored menus through
+the retained toolkit path. Native recomparison is outstanding.
+
+Appearance original images, montage, full diff, header montage and sidebar
+diff were inspected; figures and raw metrics are in `appearance-diff`.
+ImageMagick 7.1.2-35 SSIM values are **distortion**, zero identical.
+
+| Region | x,y,w,h | SSIM distortion | RMSE distortion |
+| --- | --- | ---: | ---: |
+| Full | 0,0,1040,680 | 0.113842 | 0.211563 |
+| Header | 0,0,1040,38 | 0.120927 | 0.120185 |
+| Sidebar | 0,38,296,642 | 0.0670151 | 0.121422 |
+| Content | 296,38,744,642 | 0.131337 | 0.243328 |
+
+Unresolved inspected differences: frame content gap, displaced title/actions,
+caption glyph sizing; heading faces/spacing, mode preview geometry, disabled
+row geometry, scheme chips, accent spacing/custom control and missing disabled
+extras. Generic frame repairs and page/control repairs are committed; further
+matched captures must verify them. This pair is **FAIL**, with no approved
+deviation. Gold image SHA256:
+`7285279ecdec3c3ddf4c1aebee1236353042d7ae89caf70809bfafd45f2fbbab`;
+candidate image SHA256:
+`c570b6f91d38e43196eb8ce2a24ba81f91a946fa2c91221354e4ca30cba335c3`.
+
+A later all-page run `pair.izlSrW` uses the `f2d7a9c` artifact and canonical
+service identity for both processes. It captured gold pages then candidate
+pages through Applications, but Terminal capture timed out. It is failed
+diagnostic evidence. Numeric controls now reuse gold's value-field/slider
+commit rules, with a passive redraw regression test; no acceptance yet.
+Both runs' cleanup receipts confirm all five owned PIDs stopped.
+
+Remaining required work includes native service fixtures and real daemon
+cases, complete action/refusal/deferred delivery coverage, launch/deep-link
+compatibility, full live-Prefs axes/tunes/overrides and authority recovery,
+all visual states and final exact-source checks. Frame adoption is the only
+accepted checkpoint so far. Work continues.
+
+branch lab/parity-prefs; head SHA 2aed4f80f0dabf31d0583eb0aeab11bffc7a9620 (code head before receipt-only commit); features/Bus/Prefs unaccepted; SSIM distortion 0.113842, header 0.120927/sidebar 0.0670151/content 0.131337 FAIL; CBC job ids 20261107-031534-7d749887-a1 checks passed with applied formatting, 20261107-032704-f4d3462d-a1 focused green, 20261107-033410-20638506 pending.
