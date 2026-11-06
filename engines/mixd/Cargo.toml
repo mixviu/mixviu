@@ -20,5 +20,5 @@ name = "mixd"
 path = "src/main.rs"
 
 [dependencies]
-mix-shell = { path = "../mix-shell", features = ["service-builtins"] }
+mix-shell = { path = "../mix-shell", features = ["service-builtins", "serve"] }
 mimalloc.workspace = true

@@ -44,6 +44,7 @@ mod repl;
 mod repl_editor;
 mod result_fd;
 mod script_meta;
+#[cfg(feature = "serve")]
 mod serve_runtime;
 mod session_execute;
 mod session_state;
@@ -268,31 +269,53 @@ fn engine_handoff(source: &str, filename: &str, args: &[String]) -> Option<i32> 
         mix::HostHeader::Declared { host, .. } if host == "mixd" => {}
         _ => return None,
     }
-    let beside = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("mixd")))
-        .filter(|p| p.is_file());
-    let on_path = || {
-        env::var_os("PATH").and_then(|paths| {
-            env::split_paths(&paths)
-                .map(|dir| dir.join("mixd"))
-                .find(|p| p.is_file())
-        })
-    };
-    let Some(mixd) = beside.or_else(on_path) else {
+    let Some(mixd) = find_mixd() else {
         eprintln!(
             "mix: {filename} declares `-- host: mixd`, and this mix is the shell profile; \
              the mixd engine is not installed (looked beside this binary and on PATH)"
         );
         return Some(127);
     };
+    Some(exec_mixd(&mixd, &args[1..], filename))
+}
+
+/// The `mixd` engine: beside this binary first, then on PATH.
+fn find_mixd() -> Option<std::path::PathBuf> {
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("mixd")))
+        .filter(|p| p.is_file());
+    beside.or_else(|| {
+        env::var_os("PATH").and_then(|paths| {
+            env::split_paths(&paths)
+                .map(|dir| dir.join("mixd"))
+                .find(|p| p.is_file())
+        })
+    })
+}
+
+/// Replace this process with `mixd ARGS`; returns only on exec failure.
+fn exec_mixd(mixd: &Path, args: &[String], what: &str) -> i32 {
     use std::os::unix::process::CommandExt;
-    let err = process::Command::new(&mixd)
-        .arg0("mixd")
-        .args(&args[1..])
-        .exec();
-    eprintln!("mix: {filename}: cannot hand off to {}: {err}", mixd.display());
-    Some(126)
+    let err = process::Command::new(mixd).arg0("mixd").args(args).exec();
+    eprintln!("mix: {what}: cannot hand off to {}: {err}", mixd.display());
+    126
+}
+
+/// Shell profile: Bus citizens are served by the mixd engine (engine-split
+/// decision). `mix --serve SCRIPT ...` stays as a shim that re-executes the
+/// same argv under `mixd`, so existing units keep working.
+#[cfg(not(feature = "serve"))]
+fn run_serve(script_path: &str, _service_name: &str, _no_prelude: bool) -> i32 {
+    let Some(mixd) = find_mixd() else {
+        eprintln!(
+            "mix --serve {script_path}: serving is the mixd engine's job, and mixd is not \
+             installed (looked beside this binary and on PATH)"
+        );
+        return 127;
+    };
+    let args = process_args();
+    exec_mixd(&mixd, &args[1..], "--serve")
 }
 
 /// Apply the global CLI arity flag to a freshly built evaluator.
@@ -1528,6 +1551,7 @@ enum ServeOutcome {
 /// live SPEC-12 `<svc>.log` swap that webd/maild get is not wired here;
 /// `RUST_LOG` + restart is the control surface until a Mix-native Bus
 /// command drives the reload handle via props-core.)
+#[cfg(feature = "serve")]
 fn init_serve_tracing() -> logging::LogHandle {
     // EnvFilter directives match the runtime tracing *target* = each
     // crate's compiled name, NOT its Cargo package name. Getting this
@@ -1606,10 +1630,12 @@ fn init_serve_tracing() -> logging::LogHandle {
 /// `tracing` was invisible: exit 1 and no output anywhere. Every fatal or
 /// reverted serve outcome also prints one stderr line (the unit journal when
 /// run under systemd, the caller's terminal or log file otherwise).
+#[cfg(feature = "serve")]
 fn serve_stderr(service_name: &str, what: &str, error: &dyn std::fmt::Display) {
     eprintln!("mix --serve {service_name}: {what}: {error}");
 }
 
+#[cfg(feature = "serve")]
 fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
     // Held for the entire serve lifetime: owns the journald/stderr
     // subscriber guards + the live-reload handle. Dropping it on
@@ -3022,6 +3048,7 @@ mod serve_name_tests {
     /// `MixServeRuntime::with_script_path`, which `set_serve_runtime`
     /// installs. The broker connect in front of it is not needed to prove
     /// the plumbing, so this drives the evaluator directly.
+    #[cfg(feature = "serve")]
     #[tokio::test(flavor = "current_thread")]
     async fn serve_name_builtin_answers_the_derived_name() {
         use mix::evaluator::{Evaluator, SharedBuf};

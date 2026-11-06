@@ -85,6 +85,9 @@ structured-zstd = "0.0.58"
 default = []
 # The service profile: builtins only `mixd` carries (engine-split decision).
 service-builtins = ["mix/dkim", "mix/serde", "mix/markdown", "mix/datastar", "mix/xml", "mix/yaml", "mix/mime", "mix/dns"]
+# Bus-citizen serving (`mixd serve`, legacy `--serve`). Without it, `mix
+# --serve` re-executes under mixd.
+serve = []
 
 [dev-dependencies]
 # Property-based testing for the shell-dispatch tokenizer (P0 of the mix

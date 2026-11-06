@@ -1417,6 +1417,7 @@ impl BusHandler for MixBusHandler {
 /// link — routing a subset through an unregistered local socket would
 /// split its identity and is the legibility regression the substrate
 /// criteria forbid.
+#[cfg(feature = "serve")]
 pub struct MixServeHandler {
     connection_state:
         tokio::sync::Mutex<tokio::sync::watch::Receiver<::bus::native_client::ConnState>>,
@@ -1449,6 +1450,7 @@ pub struct MixServeHandler {
     service_name: String,
 }
 
+#[cfg(feature = "serve")]
 impl MixServeHandler {
     /// Wrap a connected [`SupervisedClient`]. Takes its outward
     /// incoming receiver immediately; the supervisor keeps that
@@ -1486,6 +1488,7 @@ impl MixServeHandler {
     }
 }
 
+#[cfg(feature = "serve")]
 async fn next_connection_change(
     state: &tokio::sync::Mutex<tokio::sync::watch::Receiver<::bus::native_client::ConnState>>,
     delivered: &Cell<u64>,
@@ -1525,7 +1528,7 @@ async fn next_connection_change(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "serve"))]
 mod connection_events_tests {
     use super::*;
     use std::{
@@ -1746,6 +1749,7 @@ mod connection_events_tests {
     }
 }
 
+#[cfg(feature = "serve")]
 impl BusHandler for MixServeHandler {
     fn send<'a>(
         &'a self,
