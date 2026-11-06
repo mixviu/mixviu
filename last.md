@@ -56,3 +56,7 @@ Earlier CBC attempts: 20261106-192006-425c8dff-a1 (lock update),
 after the validated source change no runtime, bundle or test source.
 
 Branch: lab/app-ports; head/source SHA: 14943caf69394c93e66acdd7af878b7634707b7f (validated source; reporting commit follows); steps done: 0/1/2 bounded lab specimens with listed deferrals; CBC job ids: 20261106-195953-c07e7f58-a1 (final green), 20261106-194851-e7308ce5-a1 (exploratory green).
+
+
+Round 2 started from 11945c0. Source-derived screenshot/prefs inventories written before implementation. Embedded mix remains 0.117; no installs or desktop changes.
+Branch: lab/app-ports; head SHA: 11945c0a2f96f1067aab79050b25a9ceeabd93c4; apps done: round-1 specimens, round-2 inventory only; CBC job ids: 20261106-195953-c07e7f58-a1 (round 1).
