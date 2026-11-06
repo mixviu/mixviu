@@ -1,85 +1,140 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Application-authored menu data adapted to the retained gold menu engine.
-//! Its legacy API takes static command IDs: a bounded process-lifetime pool
-//! interns at most 1024 IDs of at most 256 bytes; model updates reuse them.
-use serde_json::{Value, json};
-use std::collections::BTreeMap;
+//! Bounded adapter from Mix command data to the native menu renderer.
+//! Static native slots are allocated once; application IDs remain owned data.
+use serde_json::Value;
+use std::sync::OnceLock;
+use toolkit::menu::{Entry, Menu, Row};
+
 #[derive(Default)]
-pub struct NativeMenu {
-    ids: BTreeMap<String, &'static str>,
-}
+pub struct NativeMenu;
 impl NativeMenu {
-    fn id(&mut self, id: &str) -> Result<&'static str, String> {
-        if let Some(id) = self.ids.get(id) {
-            return Ok(*id);
-        }
-        if self.ids.len() >= 1024 || id.len() > 256 {
-            return Err("native menu command budget exceeded".into());
-        }
-        let owned: &'static str = Box::leak(id.to_owned().into_boxed_str());
-        self.ids.insert(id.into(), owned);
-        Ok(owned)
+    pub fn draw(&mut self, ui: &mut egui::Ui, widget: &crate::widgets::Widget, value: &Value, events: &mut Vec<crate::widgets::Intent>) -> egui::Response {
+        let response=draw(ui,value,false);
+        if let Some(command)=picked(ui.ctx()) {events.push(crate::widgets::Intent{id:widget.id.clone(),action:"command".into(),value:serde_json::json!({"command":command})});}
+        response
     }
-    fn entries(&mut self, value: &Value) -> Result<Vec<toolkit::menu::Entry>, String> {
-        use toolkit::menu::{Entry, Row};
-        let mut rows = Vec::new();
-        for item in value.as_array().into_iter().flatten() {
+}
+
+const CAPACITY: usize = 256;
+fn slots() -> &'static [&'static str] {
+    static SLOTS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    SLOTS.get_or_init(|| {
+        (0..CAPACITY)
+            .map(|n| &*Box::leak(format!("viu.menu.slot.{n}").into_boxed_str()))
+            .collect()
+    })
+}
+#[derive(Clone, Default)]
+struct Model {
+    ids: Vec<String>,
+}
+fn model_id(ctx: &egui::Context) -> egui::Id {
+    egui::Id::unique((ctx.viewport_id(), "viu-native-menu-model"))
+}
+pub fn application_id(ctx: &egui::Context, slot: &str) -> Option<String> {
+    let index = slots().iter().position(|id| *id == slot)?;
+    let key = model_id(ctx);
+    ctx.data(|data| data.get_temp::<Model>(key))?
+        .ids
+        .get(index)
+        .cloned()
+}
+fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
+    value
+        .as_array()
+        .ok_or("menu entries must be a list")?
+        .iter()
+        .map(|item| {
             if item["separator"] == true {
-                rows.push(Entry::Separator);
-                continue;
+                return Ok(Entry::Separator);
             }
-            let label = item["label"].as_str().unwrap_or("");
-            if item["children"].is_array() {
-                rows.push(Entry::Row(Row::submenu(
-                    label,
-                    self.entries(&item["children"])?,
-                )));
+            let children = if item["children"].is_array() {
+                entries(&item["children"], ids)?
             } else {
-                let id = self.id(item["id"].as_str().ok_or("menu id required")?)?;
-                let shortcut = item["shortcut"].as_str().map(str::to_owned);
-                let enabled = item["enabled"] == true;
-                rows.push(Entry::Row(
-                    if let Some(checked) = item["checked"].as_bool() {
-                        Row::choice(id, label, shortcut, enabled, checked)
-                    } else {
-                        Row::command(id, label, shortcut, enabled)
-                    },
-                ));
-            }
-        }
-        Ok(rows)
-    }
-    pub fn draw(
-        &mut self,
-        ui: &mut egui::Ui,
-        widget: &crate::widgets::Widget,
-        value: &Value,
-        events: &mut Vec<crate::widgets::Intent>,
-    ) -> egui::Response {
-        let menus = value
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(|item| {
-                Ok(toolkit::menu::Menu {
-                    title: item["label"].as_str().unwrap_or("").into(),
-                    entries: self.entries(&item["children"])?,
-                })
-            })
-            .collect::<Result<Vec<_>, String>>();
-        let menus = match menus {
-            Ok(m) => m,
-            Err(e) => return ui.colored_label(egui::Color32::RED, e),
-        };
-        ui.scope(|ui| {
-            if let Some(command) = toolkit::menu::bar(ui, &menus) {
-                events.push(crate::widgets::Intent {
-                    id: widget.id.clone(),
-                    action: "command".into(),
-                    value: json!({"command":command}),
-                });
-            }
+                vec![]
+            };
+            let id = if item["children"].is_array() {
+                None
+            } else {
+                if ids.len() == CAPACITY {
+                    return Err("native menu exceeds 256 commands".into());
+                }
+                let slot = slots()[ids.len()];
+                ids.push(item["id"].as_str().unwrap_or("").into());
+                Some(slot)
+            };
+            Ok(Entry::Row(Row {
+                id,
+                label: item["label"].as_str().unwrap_or("").into(),
+                shortcut: item["shortcut"].as_str().map(str::to_owned),
+                enabled: item["enabled"] == true,
+                checked: item["checked"].as_bool(),
+                children,
+            }))
         })
-        .response
+        .collect()
+}
+pub fn validate(value: &Value) -> Result<(), String> {
+    let mut ids = vec![];
+    for menu in value.as_array().ok_or("menus must be a list")? {
+        entries(&menu["children"], &mut ids)?;
     }
+    Ok(())
+}
+pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
+    let mut ids = vec![];
+    let menus: Vec<Menu> = value
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| Menu {
+            title: item["label"].as_str().unwrap_or("").into(),
+            entries: entries(&item["children"], &mut ids).expect("validated native menu"),
+        })
+        .collect();
+    let key = model_id(ui.ctx());
+    if ui
+        .ctx()
+        .data(|d| d.get_temp::<Model>(key))
+        .is_some_and(|old| old.ids != ids)
+    {
+        toolkit::menu::close(ui.ctx());
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(key, Model { ids }));
+    let search = menus
+        .iter()
+        .position(|m| m.title == "Help")
+        .map(|menu| toolkit::menu::Search {
+            menu,
+            hint: "Search commands".into(),
+            empty: "No matching commands".into(),
+        });
+    let shown = ui.allocate_ui_with_layout(ui.available_size_before_wrap(),egui::Layout::left_to_right(egui::Align::Center),|ui| {
+        if compact {
+            let response = ui.add(toolkit::button::IconButton::new(
+                crate::icons::Icon::from_name("menu").unwrap(),
+            ));
+            if response.clicked() {
+                if toolkit::menu::is_open(ui.ctx()) {
+                    toolkit::menu::close(ui.ctx());
+                } else if let Some(first) = menus.first() {
+                    let _ = toolkit::menu::open_path(ui.ctx(), &[first.title.clone()]);
+                }
+            }
+            toolkit::menu::compact_picked(ui, &menus, search.as_ref(), response.rect)
+        } else {
+            toolkit::menu::bar_picked(ui, &menus, search.as_ref())
+        }
+    });
+    if let Some(pick) = shown.inner {
+        if let Some(command) = application_id(ui.ctx(), pick.0) {
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(key.with("picked"), command));
+        }
+    }
+    shown.response
+}
+pub fn picked(ctx: &egui::Context) -> Option<String> {
+    let key = model_id(ctx).with("picked");
+    ctx.data_mut(|d| d.remove_temp::<String>(key))
 }

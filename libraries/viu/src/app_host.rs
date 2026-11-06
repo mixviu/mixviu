@@ -15,6 +15,7 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    facilities: crate::app_facilities::Facilities,
     platform: crate::platform::Platform,
     paste_waits: std::collections::VecDeque<String>,
     platform_results: std::collections::VecDeque<Value>,
@@ -254,6 +255,7 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
+        self.facilities.prepare(ui.ctx(), &self.bus);
         for request in self.platform.take() {
             if request["kind"] == "copy" {
                 ui.ctx()
@@ -576,6 +578,7 @@ impl Host {
             &self.view.geometry,
             self.measurements.snapshot(),
         );
+        self.facilities.finish(ui.ctx());
         if self.native_drive {
             for answer in toolkit::drive::finish(ui.ctx()) {
                 if let Some(reply) = self.drive_pending.remove(&answer.id) {
@@ -588,7 +591,9 @@ impl Host {
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let service = bundle.manifest.service.clone();
+    let facilities=crate::app_facilities::Facilities::new(&bundle.manifest,wake.clone());
     let mut commands = bundle.manifest.commands.clone();
+    if let Some(surface)=&facilities.surface {commands.extend(surface["commands"].as_array().into_iter().flatten().filter_map(|c|c["name"].as_str().map(str::to_owned)));}
     if bundle.manifest.native_drive {
         commands.extend(
             toolkit::drive::COMMANDS
@@ -683,6 +688,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        facilities,
         platform,
         paste_waits: Default::default(),
         platform_results: Default::default(),

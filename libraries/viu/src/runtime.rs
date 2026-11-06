@@ -214,6 +214,7 @@ impl Runtime {
                         eval.register("viu_digest",crate::native_primitives::digest());
                         eval.register("viu_action_event",crate::native_primitives::action_event());
                         eval.register("viu_files",crate::file_data::binding());
+                        eval.register("viu_process",crate::process::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_image",crate::native_primitives::image_file());
                         eval.register("viu_http",crate::http::binding());
@@ -227,6 +228,7 @@ impl Runtime {
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "version":env!("CARGO_PKG_VERSION"),"git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"),
+                            "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
                             "loader": "viu-local", "host": "viu-local"
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));

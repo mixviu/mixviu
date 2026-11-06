@@ -46,7 +46,12 @@ fn all_mix_bundles_publish_models_the_actual_scene_adapter_can_draw() {
         let (bundle, mut runtime, wakes) = app(name);
         runtime.load(bundle.program).unwrap();
         let model = completion(&runtime, &wakes).model.unwrap();
-        let mut view = SceneView::with_model(&bundle.scene, model).unwrap();
+        let mut view = if bundle.manifest.frame.is_some() {
+            viu::gold_frame::mount(&bundle.scene, model)
+        } else {
+            SceneView::with_model(&bundle.scene, model)
+        }
+        .unwrap();
         let ctx = eframe::egui::Context::default();
         viu::icons::install(&ctx);
         ctx.run_ui(

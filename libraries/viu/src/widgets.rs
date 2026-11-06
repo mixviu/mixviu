@@ -11,6 +11,10 @@ pub const KINDS: &[&str] = &[
     "search-bar",
     "form-fields",
     "status-line",
+    "widget-row",
+    "divider",
+    "time-series",
+    "dashboard",
     "label",
     "button",
     "field",
@@ -131,10 +135,26 @@ impl Widget {
     }
     pub fn validate(&self, value: &Value) -> Result<(), String> {
         if crate::rich::KINDS.contains(&self.kind.as_str()) {
+            if self.kind == "menubar" && self.properties["style"] == "gold" {
+                crate::native_menu::validate(value)?;
+            }
             return crate::rich::validate(&self.kind, value);
         }
         if ["document-tabs","search-bar","form-fields"].contains(&self.kind.as_str()) { return crate::editor_controls::validate(&self.kind,value); }
         let valid = match self.kind.as_str() {
+            "widget-row" => {
+                for side in ["left", "right"] {
+                    for item in value[side].as_array().filter(|a|a.len()<=64).ok_or("row requires bounded left/right widgets")? {
+                        let child=Widget::decode(item)?;
+                        if child.kind=="widget-row" {return Err("nested widget rows are not supported".into());}
+                        child.validate(&child.initial)?;
+                    }
+                }
+                true
+            }
+            "divider" => value.is_null(),
+            "dashboard" => return crate::dashboard::validate(value),
+            "time-series" => return crate::time_series::validate(value),
             "status-line" => {
                 value["left"].is_string()
                     && value["right"]
@@ -268,6 +288,15 @@ impl Widget {
         if self.kind=="form-fields" {return vec!["edit"];}
         if self.kind=="search-bar" {return vec!["edit","next","prev","replace","replace-all","close"];}
         if self.kind == "mark" || self.kind == "status-line" { return vec![]; }
+        if self.properties["read_only"] == true && self.kind == "tree-table" {
+            return vec![];
+        }
+        if self.kind == "dashboard" {
+            return vec!["choose"];
+        }
+        if self.kind == "mark" || self.kind == "status-line" || self.kind == "time-series" {
+            return vec![];
+        }
         if self.kind == "editor" && self.properties["read_only"] == true {
             return vec![];
         }
@@ -353,6 +382,12 @@ impl Widget {
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
         if self.properties["enabled"] == false { return Err("DISABLED".into()); }
         if ["document-tabs","search-bar","form-fields"].contains(&self.kind.as_str()) {return crate::editor_controls::admit(&self.kind,self.value(model),action,value);}
+        if self.properties["enabled"] == false {
+            return Err("DISABLED".into());
+        }
+        if self.kind == "dashboard" {
+            return crate::dashboard::admit(self.value(model), action, value);
+        }
         self.validate_action(action, value)?;
         if self.kind == "window-controls" && self.value(model)["enabled"] != true {
             return Err("DISABLED".into());
@@ -490,7 +525,15 @@ impl Widgets {
             .get(&definition.id)
             .unwrap_or(&definition.initial);
         ui.push_id(&definition.id, |ui| {
-            self.draw(ui, definition, value, model, &mut intents)
+            ui.add_enabled_ui(definition.properties["enabled"] != false, |ui| {
+                if definition.properties["frame"] == "dock" {
+                    toolkit::bars::dock_frame(ui.ctx()).show(ui, |ui| {
+                        self.draw(ui, definition, value, model, &mut intents);
+                    });
+                } else {
+                    self.draw(ui, definition, value, model, &mut intents);
+                }
+            });
         });
         intents
     }
@@ -547,6 +590,33 @@ impl Widgets {
         let mut changed = None;
         let response = match widget.kind.as_str() {
             "document-tabs" | "search-bar" | "form-fields" => crate::editor_controls::draw(ui,id,&widget.kind,value,events),
+            "widget-row" => {
+                let mut row = |ui: &mut egui::Ui| {
+                    for item in value["left"].as_array().unwrap() {
+                        let child=Widget::decode(item).expect("validated row child");
+                        events.extend(self.widget(ui,&child,model));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
+                        for item in value["right"].as_array().unwrap() {
+                            let child=Widget::decode(item).expect("validated row child");
+                            events.extend(self.widget(ui,&child,model));
+                        }
+                    });
+                };
+                if widget.properties["chrome"]=="options" {
+                    toolkit::bars::options(ui,|ui| {
+                        if let Some(threshold)=widget.properties["scroll_below"].as_f64().filter(|n|ui.available_width()<*n as f32) {
+                            let width=widget.properties["scroll_width"].as_f64().unwrap_or(threshold).clamp(64.0,8192.0) as f32;
+                            egui::ScrollArea::horizontal().min_scrolled_width(0.0).auto_shrink(false).show(ui,|ui| {
+                                ui.horizontal(|ui| {ui.set_width(width);row(ui);});
+                            });
+                        } else {row(ui);}
+                    }).response
+                } else {ui.horizontal(row).response}
+            }
+            "divider" => {toolkit::bars::divider(ui,ui.available_height().min(18.0));ui.response()}
+            "dashboard" => crate::dashboard::draw(ui, id, value, events),
+            "time-series" => crate::time_series::draw(ui, id, value),
             "status-line" => {
                 toolkit::bars::status(ui, |ui| {
                     let colour = if value["error"] == true {
@@ -582,7 +652,7 @@ impl Widgets {
                     crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
                         .expect("validated mark"),
                     size,
-                    ui.visuals().text_color(),
+                    if widget.properties["weak"]==true {ui.visuals().weak_text_color()}else{ui.visuals().text_color()},
                 );
                 if widget.properties["fill_height"] == true {
                     let (rect, response) = ui.allocate_exact_size(
@@ -647,10 +717,34 @@ impl Widgets {
                 } else if widget.properties["align"] == "right" {
                     label = label.halign(egui::Align::Max);
                 }
-                ui.add(label)
+                if matches!(
+                    widget.properties["role"].as_str(),
+                    Some("title" | "status" | "status-band")
+                ) {
+                    ui.allocate_ui_with_layout(
+                        ui.available_size_before_wrap(),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            if widget.properties["role"] == "status" {
+                                ui.add_space(
+                                    toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset
+                                        as f32,
+                                );
+                            }
+                            ui.add(label);
+                        },
+                    )
+                    .response
+                } else {
+                    ui.add(label)
+                }
             }
             "button" => {
-                let r = icon_button(ui, widget.text("icon"), widget.text("text"), false);
+                let r = if widget.properties["style"] == "secondary" {
+                    ui.add(toolkit::button::PushButton::secondary(widget.text("text")))
+                } else {
+                    icon_button(ui, widget.text("icon"), widget.text("text"), false)
+                };
                 if r.clicked() {
                     events.push(Intent {
                         id: id.clone(),
@@ -708,22 +802,32 @@ impl Widgets {
                     }
                 }
                 let rows = whole(&widget.properties["rows"]).unwrap_or(24) as usize;
-                let edit = if widget.kind == "field" {
-                    egui::TextEdit::singleline(&mut text)
-                } else if widget.kind == "editor" {
-                    egui::TextEdit::multiline(&mut text)
-                        .code_editor()
-                        .desired_rows(rows)
-                        .char_limit(16384)
+                let r = if widget.kind == "field" && widget.properties["search"] == true {
+                    let width=widget.properties["width"].as_f64().unwrap_or(ui.available_width() as f64) as f32;
+                    toolkit::field::search(
+                        ui,
+                        &mut text,
+                        widget.text("placeholder"),
+                        width,
+                    )
                 } else {
-                    egui::TextEdit::multiline(&mut text).desired_rows(1)
+                    let edit = if widget.kind == "field" {
+                        egui::TextEdit::singleline(&mut text)
+                    } else if widget.kind == "editor" {
+                        egui::TextEdit::multiline(&mut text)
+                            .code_editor()
+                            .desired_rows(rows)
+                            .char_limit(16384)
+                    } else {
+                        egui::TextEdit::multiline(&mut text).desired_rows(1)
+                    };
+                    ui.add(
+                        edit.desired_width(ui.available_width())
+                            .hint_text(widget.text("placeholder"))
+                            .password(widget.properties["password"] == true)
+                            .id_salt(id),
+                    )
                 };
-                let r = ui.add(
-                    edit.desired_width(ui.available_width())
-                        .hint_text(widget.text("placeholder"))
-                        .password(widget.properties["password"] == true)
-                        .id_salt(id),
-                );
                 // The key which ends editing belongs to the field this frame.
                 self.text_input_active |= r.has_focus()
                     || (r.lost_focus()
@@ -765,7 +869,15 @@ impl Widgets {
                 let r = if widget.kind == "checkbox" {
                     ui.checkbox(&mut checked, widget.text("text"))
                 } else {
-                    ui.toggle_value(&mut checked, widget.text("text"))
+                    if widget.properties["style"] == "selectable" {
+                        let response = toolkit::selectable(ui, checked, widget.text("text"));
+                        if response.clicked() {
+                            checked = !checked;
+                        }
+                        response
+                    } else {
+                        ui.toggle_value(&mut checked, widget.text("text"))
+                    }
                 };
                 if r.changed() || r.clicked() {
                     changed = Some(json!(checked));
@@ -845,18 +957,17 @@ impl Widgets {
                     .desired_width(ui.available_width()),
             ),
             "combo" => {
-                egui::ComboBox::from_id_salt(id)
-                    .selected_text(value.as_str().unwrap_or(""))
-                    .show_ui(ui, |ui| {
-                        for option in widget.choices() {
-                            let r = ui.selectable_label(value == option, option);
-                            self.remember(ui, &format!("{id}.{option}"), &r);
-                            if r.clicked() {
-                                changed = Some(json!(option));
-                            }
-                        }
-                    })
-                    .response
+                let choices = widget.choices();
+                let mut selected = choices
+                    .iter()
+                    .position(|option| value == *option)
+                    .unwrap_or(0);
+                let width = widget.properties["width"].as_f64().map(|v| v as f32);
+                let r = toolkit::combo::show(ui, id, &mut selected, &choices, width);
+                if r.changed() {
+                    changed = choices.get(selected).map(|v| json!(v));
+                }
+                r
             }
             "list" | "table" | "tree" => {
                 let source = widget.text("dataset");
@@ -1249,6 +1360,9 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     }
     if widget.properties["weak"] == true {
         text = text.weak();
+    }
+    if widget.properties["tone"] == "warning" {
+        text = text.color(ui.visuals().warn_fg_color);
     }
     if widget.properties["mono"] == true {
         text = text.monospace();

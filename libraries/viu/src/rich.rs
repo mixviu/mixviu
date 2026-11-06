@@ -408,6 +408,12 @@ pub(crate) fn draw(
             let form = menu_form(ui.ctx());
             let response = if form["hosted"] == true {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
+            } else if widget.properties["style"] == "gold" {
+                let response = crate::native_menu::draw(ui, value, form["effective"] != "bar");
+                if let Some(command) = crate::native_menu::picked(ui.ctx()) {
+                    emit(events, id, "command", json!({"command":command}));
+                }
+                response
             } else if form["effective"] == "bar" {
                 egui::MenuBar::new()
                     .ui(ui, |ui| menu_roots(ui, value, id, geometry, events))
@@ -476,7 +482,19 @@ pub(crate) fn draw(
                             ui.separator();
                             continue;
                         }
-                        let response = if let Some(icon) = item["icon"]
+                        let response = if widget.properties["style"] == "gold"
+                            && item["icon"].as_str().is_some()
+                        {
+                            let icon =
+                                crate::icons::Icon::from_name(item["icon"].as_str().unwrap())
+                                    .expect("validated icon");
+                            ui.add_enabled(
+                                item["enabled"] == true,
+                                toolkit::button::IconButton::new(icon)
+                                    .selected(item["checked"] == true)
+                                    .tooltip(text(item, "label")),
+                            )
+                        } else if let Some(icon) = item["icon"]
                             .as_str()
                             .and_then(crate::icons::Icon::from_name)
                         {

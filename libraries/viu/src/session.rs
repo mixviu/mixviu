@@ -17,8 +17,47 @@ pub struct Session {
     pub error: String,
 }
 impl Session {
+    pub fn embedded(
+        app: &str,
+        instance: &str,
+        wake: Wake,
+        backend: BackendFactory,
+    ) -> Result<Self, String> {
+        let source = format!(
+            "{}\n{}",
+            include_str!("../mix/session.mix"),
+            include_str!("../mix/session-runtime.mix")
+                .replace("$session=require(\"session.mix\")", "")
+                .replace("$session.session_", "session_")
+        );
+        Self::start(
+            PathBuf::from("viu-session.mix"),
+            source,
+            app,
+            instance,
+            wake,
+            backend,
+        )
+    }
     pub fn new(
         path: PathBuf,
+        app: &str,
+        instance: &str,
+        wake: Wake,
+        backend: BackendFactory,
+    ) -> Result<Self, String> {
+        Self::start(
+            path,
+            include_str!("../mix/session-runtime.mix").into(),
+            app,
+            instance,
+            wake,
+            backend,
+        )
+    }
+    fn start(
+        path: PathBuf,
+        source: String,
         app: &str,
         instance: &str,
         wake: Wake,
@@ -28,7 +67,7 @@ impl Session {
         worker
             .load(Program {
                 path,
-                source: include_str!("../mix/session-runtime.mix").into(),
+                source,
                 scene: "session".into(),
                 citizen: app.into(),
             })

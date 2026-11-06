@@ -1,3 +1,116 @@
+Round 3 regions checkpoint c18677b: real native sequential canonical monitor service, identical fixture/theme, 1040×680. Processes content region matches pixel-for-pixel (SSIM distortion 0, RMSE 0); whole window remains FAIL at 0.0139849 (header 0.0943344, options 0.134687, status 0.0016791). Inspected figure confirms all table typography/stripes/proportions/command-line cells now match for six-row tree fixture. No general Processes acceptance: interactive/large-list states remain. Performance seven sections render through reusable data-authored dashboard/time-series widgets; matched captures reveal chooser ordering and a blank chart header adding 20 px, being repaired. Native evidence retained privately under round3/processes-c18677b and performance-c18677b; owned PIDs stopped. CBC preparation 20261107-024928-e337ff81-a1 passed check, six focused integration targets, clippy and build; rc97 formatting returned/applied, not a full acceptance gate. Earlier schema/fixture/numeric repairs failed honestly; no test weakened. P1 disposable-child native witness previously passed at bacd117.
+
+# Round 3: Fable P1 signal implementation checkpoint
+
+P1 is decided: exact gold admission/no confirmation plus the invisible start-time fence. docs/ports/monitor.md records the approved non-visual deviation and corrects the UID/confirmation claim. API and native primitive are implemented. CBC 20261107-013833-4b57ccb6-a1 ran all scoped checks successfully on ddfea5f, including both disposable-child signals and mismatch survival; rc97 records returned formatting/lock changes, not exact-source acceptance. Full log read; libc lock edge applied. ESRCH/integer-token refinements at 3551c1d await the next exact-source gate. No production process was signalled.
+
+Processes region work is in progress and unaccepted. Existing round-two SSIM distortion 0.0957189 remains a failed baseline, not evidence for current edits. P1 no longer blocks work.
+
+# Gold parity round 2 — frame and method checkpoint
+
+The standing parity mandate has been read. **Monitor is not at full parity.**
+No deviation has been accepted, and no production install or VT work occurred.
+
+## Fable decision P1: process-signal contract
+
+Opus: put this source/inventory conflict to Fable before implementing Monitor's
+effectful process actions. The mandate requires gold behaviour and the full
+inventory, but the inventory currently names safeguards that gold does not have.
+
+**Question:** which signal contract should the Mix Monitor implement?
+
+- **A — exact pinned-gold behaviour (recommended for parity):** enable signals
+  for a selected local process with no dialog open; accept a positive PID;
+  issue SIGTERM or SIGKILL as the app's user, with kernel permission checks.
+  Correct the inventory's inaccurate UID/start-time/confirmation claim.
+- **B — stronger admission as an approved deviation:** add UID/start-time
+  identity checks and confirmation before signalling. Approve the resulting
+  behaviour, UI and refusal-contract differences explicitly and specify the
+  confirmation contract for Bus callers.
+
+Evidence from immutable gold `8779f33284b7d3f1178c3d57a699efb9b0867b22`:
+`apps/monitor/crates/vitals/src/engine.rs:623` tests only local node, no dialog
+and selection. `apps/monitor/src/shell.rs:172–187` validates positive PID and
+calls `kill(2)` with SIGTERM/SIGKILL. There is no identity fence or confirmation.
+`docs/ports/monitor.md` instead says the original UID/start-time admission and
+confirmations must be ported. The discrepancy is now annotated in that document.
+Neither signal policy is implemented in Mix, and no process-signalling test or
+production signal was performed. No question is being sent directly to Mark.
+
+## Frame implementation and validation
+
+The frame now mounts independently resolved content. Original app root/control
+IDs, bindings, native input, focus targets and dock intents are preserved;
+there is no root rename. Reserved frame-node collisions refuse explicitly.
+Content uses the dock-allocated region, clips to it, and draw receipts cover
+both scenes. Model updates validate both scenes before committing app state.
+Monitor now opts into the shared frame; application state and callbacks remain
+Mix-owned. Caption close returns to Mix before viewport closure.
+
+The generic host follows settingsd through an embedded Mix session worker and
+the application's existing native connection. Intra-app delivery is in process.
+The retained gold `session_theme` resolver/font installer supplies the complete
+Look contract: app overrides, automatic mode, schemes/styles, accent/tints,
+density, roundness, fonts, text scale, icon stroke, tunables and file-theme/
+lost-authority fallback. Frame bar lengths, title/status type and app-mark sizes
+use native design metrics. No application policy was moved into per-app Rust.
+
+Independent surveys identified and prompted fixes for root relocation, close
+ownership, content clipping, empty placeholder geometry, lost-authority theme
+fallback and premature frame draw receipts. Two frame regressions and the
+strengthened app-bundle gate cover actual mounting instead of an unframed bypass.
+
+Final native private settingsd test used the exact final CBC binary: five live
+variants on one Monitor PID (light, Studio/orange, compact/square, fonts/scale/
+stroke, dark/Pro), then authority disappearance/restart and Mix-owned caption
+close, all passed. Seven captures and revision/PID receipts are retained;
+light, enlarged-font, dark and lost-authority captures were inspected. The
+full-region background and large-font status repairs were confirmed. This
+frame responsiveness test was 980×680, not a Monitor visual acceptance pair.
+Automatic-mode clock transitions, all app overrides and all tune keys still
+need representative native acceptance cases; installing the complete gold
+resolver alone does not certify every input combination.
+
+Exact scoped CBC `20261107-012348-cc3a95cf-a1`, worker cbc3, source
+`bb950a59f82ef5c400fe89eaf1175a42bef6f93c`: BUILD_RC=0. Fmt-check, locked
+all-target check, all Viu/viu-engine tests, clippy and debug host build passed;
+the complete 1803-line saved log was read and worker diff was empty. Existing
+warnings remain. This was not the full four-engine integration/process gate.
+Artifact SHA256 is
+`2044c741983b90bdc48ae2bc6ce7c07f461f779341a13dd8df9044ef6659ce51`,
+identical to the binary used in the final native runs.
+
+## Method and remaining Monitor work
+
+`docs/ports/parity-method.md` specifies pinned oracle, isolated native services,
+matched data/state/theme/scale, 1040×680 capture, region inspection, four parity
+gates and acceptance records. `tools/parity_compare.mix` refuses rescaling and
+existing evidence directories; it writes crops, figures, raw metrics, hashes
+and an `inspection-required` verdict. Identical-image and old-baseline probes
+were run. ImageMagick 7.1.2-35 SSIM output is normalised **distortion**, where
+identical images return zero. The historical baseline value 0.137345 must not
+be called mathematical SSIM similarity; its RMSE distortion is 0.183086.
+
+Monitor still needs its gold menu/options/status composition, seven-column
+styled table, complete tree/selection behaviour, node discovery, all Performance
+resources/charts and navigation, actions/dialogs/macros, and its 50-command ABP
+surface with gold replies/topics. Original refresh is asynchronous; original
+rows/info/ping/refusal shapes differ from the current specimen. Use pinned git
+objects for shell/main: the maintainer's source checkout has unrelated edits.
+A fresh gold-first 1040×680 pair used matched Studio Dark settings, client
+decorations, Inter 400 at 14.667, scale 1, paused state and the same six-row
+native fixture. The inspected pair **fails**: normalised SSIM distortion
+0.0957189, RMSE 0.118710. Region SSIM distortions: header 0.119769, options
+0.258504, content 0.0859221, status 0.125844. The method document records the
+rectangles and remaining differences. These scores are not directly comparable
+with the historical mismatched-theme diagnostic. Fable has approved nothing.
+
+Private durable evidence is in the hub's `gold-parity-20261107/round2`:
+`final-live-prefs` and `matched-monitor-pair`, including scripts, PNGs,
+side-by-side/diff figures, raw metrics and closure receipts. Every owned PID
+was confirmed stopped. The next implementation checkpoint needs Fable P1's
+signal contract; Opus can relay the question above. Monitor remains unfinished.
+
 # Gold parity discovery checkpoint — 2026-11-07
 
 **Incomplete. No app is at visual parity.** Work is on `lab/gold-parity`;
@@ -454,3 +567,16 @@ Mix persists the gold v1 session shape atomically after a one-second change debo
 CBC 20261107-020130-d71e0268-a1 passed eight scoped tests and host build at fb3dd52239d7; full log read, exact formatting applied. Native witness editor-parity-r2-20261107/native.gApVsS killed/restarted Ced with unsaved file and scratch tabs, restored cursor/active/recovery ID, killed/restarted editd, reattached both recovered drafts across epoch change and saved recovered Unicode file text exactly. Both captures inspected; seven owned processes stopped. Regression tests separately preserve a differing unacknowledged draft through reattach and drive both Keep mine/Take theirs. Earlier 20261107-020021-4a3b03d6-a1 green; 20261107-015652-4cc78964-a1 standalone composition failure corrected by starting IO at the connection edge.
 
 branch: lab/viu-editor; head SHA: fb3dd52239d7 (tested implementation; formatting and receipt checkpoint follows); parity evidence: 1 live Prefs native passed; 2 paged large files and gold refusals native passed; 3 native file/scratch session and editd restart recovery passed, recovery UI and mail-specific integration remain with full surface work; 4 full Bus in progress; 5 visual open; CBC job ids: 20261107-020130-d71e0268-a1 green, 20261107-020021-4a3b03d6-a1 green, 20261107-015310-d39fa564-a1 green, 20261107-012401-496e92cc-a1 green.
+branch lab/gold-parity; head bb950a59f82ef5c400fe89eaf1175a42bef6f93c (tested code; receipt-only commit follows); frame: identity-preserving mount adopted by Monitor, five live Prefs variants/recovery/close passed, remaining input combinations unaccepted; Monitor: NOT at parity, matched 1040x680 SSIM distortion 0.0957189, menus/options/table/status/Performance/ABP/actions remain, no accepted deviations, Fable P1 pending; CBC job ids: 20261107-012348-cc3a95cf-a1 (final scoped green), 20261107-012031-152ba7e4-a1 (preparation passed with formatting diff), 20261107-011138-9b732aa9-a1 (earlier scoped green).
+
+branch lab/gold-parity; head 3551c1d (signal implementation; receipt commit follows); Monitor parity: NOT accepted, previous matched SSIM distortion 0.0957189, region/Performance/full ABP work pending; CBC job ids: 20261107-013833-4b57ccb6-a1 (preparation, checks passed, rc97 formatting/lock patch).
+
+Round 3 Processes prototype: native striped/resizable seven-column grid, command-line projection, gold binary units, options row, frame menus and Mix-owned End task/Kill share P1 admission. Embedded-Mix regression passed at a424cf3: mismatch survives, refreshes both inputs, no dialog; omitted start_time uses snapshot and signals only the disposable child. Mounted table exposes command-line geometry. CBC 20261107-014455-cb1b2c26-a1 all scoped checks passed, rc97 returned formatting. Native paired visual acceptance is still pending. Status-line reusable widget and native bar details now in progress.
+
+branch lab/gold-parity; head a424cf33a694614a07e6d86eba753e9981c3f41e (tested preparation source; next source includes returned formatting and status work); Monitor NOT at parity, latest accepted visual evidence none, previous failed SSIM distortion 0.0957189; CBC job ids: 20261107-014455-cb1b2c26-a1, 20261107-013833-4b57ccb6-a1 (both preparation, tests passed, formatting returned).
+
+Round 3 native checkpoint at bacd117: matched gold/Mix pair at 1040x680 with identical settings/fixture now has SSIM distortion 0.0678706 (content 0.0558222, header 0.136426, options 0.208595, status 0.0016791). Full/status side-by-sides and individual originals inspected: still FAIL, header/options and table offsets/divider extent need repair. Private pair frame-live-prefs-round2.qcWsF1, gold PNG hash unchanged 800c2850..., candidate a785c896.... Native Bus test monitor-signals-round3.Cm2qTi passed both disposable-child signals, explicit mismatch survival/refresh/no prompt and omitted-token snapshot admission; all six owned PIDs stopped. Exact scoped CBC 20261107-015349-51192852-a1 BUILD_RC=0, empty diff, binary 6c7064907fecc95a749d68d2f28b584e712f87064c70544c606b98c6aa7f9aee matches native runs. Header full-band/no-gap/native caption and table-fill repairs follow; no new visual acceptance yet.
+
+branch lab/gold-parity; head bacd11720d20f22a472c7f67cbfa4bdd579e7a7c (tested code; next checkpoint includes visual repairs); Monitor NOT at parity, matched SSIM distortion 0.0678706, header/options/table/Performance/full ABP pending; CBC job ids: 20261107-015349-51192852-a1 (scoped green), 20261107-014915-bbf51126-a1 and 20261107-014455-cb1b2c26-a1 (preparation, formatting returned).
+
+branch lab/gold-parity; head c18677b4207789f4e3ad4b5f4f4a3d3b76c0b6b9 (capture source; receipt/format commit follows); Monitor NOT at full parity, Processes content SSIM distortion 0, full 0.0139849, header/options/status/Performance/full ABP remain; CBC job ids 20261107-024928-e337ff81-a1 (preparation passed, rc97 fmt), 20261107-015349-51192852-a1 (earlier full scoped green).

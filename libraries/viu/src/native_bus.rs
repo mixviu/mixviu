@@ -100,6 +100,12 @@ impl Endpoint {
         quit_command: String,
         wake: crate::runtime::Wake,
     ) -> Self {
+        Self::start_described(name,url,commands,quit_command,wake,None)
+    }
+    pub fn start_described(
+        name: String, url: String, commands: Vec<CommandDescriptor>,
+        quit_command: String, wake: crate::runtime::Wake, help: Option<Value>,
+    ) -> Self {
         let (tx, requests) = mpsc::sync_channel(32);
         let (notice_tx, notices) = mpsc::sync_channel(32);
         let close_requested = Arc::new(AtomicBool::new(false));
@@ -113,7 +119,8 @@ impl Endpoint {
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
-                let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).with_commands(commands);
+                let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32);
+                let options=if help.is_none(){options.with_commands(commands)}else{options};
                 let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");return;}}};
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=Some(native.clone());
@@ -136,6 +143,7 @@ impl Endpoint {
                         BoundedIncomingEvent::Command(command)=>command
                     };
                     if command.id.is_none(){post(Notice{command:command.topic().unwrap_or(&command.command).to_owned(),args:command.args,headers:command.headers});continue;}
+                    if command.command=="HELP" {if let Some(help)=&help {let _=native.respond(&command,0,&help.to_string()).await;continue;}}
                     if close.load(Ordering::Acquire){let _=native.respond(&command,10,&json!({"error_code":"CLOSING"}).to_string()).await;continue;}
                     if responses.len()>=32{let _=native.respond(&command,10,&json!({"error_code":"BUSY"}).to_string()).await;continue;}
                     let (reply,response)=oneshot::channel();
