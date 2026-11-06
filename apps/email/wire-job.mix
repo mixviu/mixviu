@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
 $protocol=require("protocol.mix");$accounts=require("accounts.mix");$pim=require("pim.mix")
 on job.run
   $a=$event.args
@@ -15,7 +16,7 @@ on job.run
     if $command=="email.mailboxes" or $command=="email.account.connect" then
       $answer={mailboxes:$protocol.boxes($protocol.call($e,$s,"Mailbox/get",{}).list)}
       if $command=="email.account.connect" then
-        $answer=merge($answer,$pim.dispatch($e,$s,"email.calendars",{}),$pim.dispatch($e,$s,"email.books",{}))
+        $answer=merge(merge($answer,$pim.dispatch($e,$s,"email.calendars",{})),$pim.dispatch($e,$s,"email.books",{}))
       end
     elif $command=="email.list" or $command=="email.search" then
       if $command=="email.search" then $p.query=$p.text end
