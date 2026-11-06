@@ -278,7 +278,16 @@ pub fn draw(
                         let label = choices
                             .iter()
                             .find(|c| c["id"] == val)
-                            .map_or_else(|| if val.is_empty() { text(row, "placeholder") } else { val.as_str() }, |c| text(c, "label"))
+                            .map_or_else(
+                                || {
+                                    if val.is_empty() {
+                                        text(row, "placeholder")
+                                    } else {
+                                        val.as_str()
+                                    }
+                                },
+                                |c| text(c, "label"),
+                            )
                             .to_owned();
                         ui.add_enabled_ui(row["enabled"] != false, |ui| {
                             egui::ComboBox::from_id_salt((id, text(row, "id")))

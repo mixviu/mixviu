@@ -731,9 +731,10 @@ fn outline_rows(
             }
         });
         geometry.insert(format!("{id}.row.{key}"), response.response.rect);
-        if row["expanded"] == true || rows
-            .get(*next)
-            .is_some_and(|row| number(row, "depth", 0.) as usize > depth)
+        if row["expanded"] == true
+            || rows
+                .get(*next)
+                .is_some_and(|row| number(row, "depth", 0.) as usize > depth)
         {
             ui.indent((id, key), |ui| {
                 outline_rows(ui, widget, rows, next, depth + 1, geometry, events)

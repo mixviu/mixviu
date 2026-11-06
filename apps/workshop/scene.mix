@@ -76,7 +76,7 @@ reply:{widget:"control",definition:{id:"reply",kind:"editor",label:"Reply",initi
 "agent-newform":{widget:"control",definition:"= $model.agent_newform",on_intent:"workshop.intent"},
 "agent-cap":{widget:"control",definition:{id:"agent-cap",kind:"label",label:"",initial:"",properties:{weak:true}}},
 "agent-start":{widget:"control",definition:"= $model.agent_start",on_intent:"workshop.intent"},
-"agent-error":{widget:"control",hidden:"= $model.agent_error == \"\" || $model.agent_new || $model.agent_session",definition:{id:"agent-error",kind:"label",label:"",initial:"",properties:{error:true}}},
+"agent-error":{widget:"control",hidden:"= $model.agent_error == \"\" or $model.agent_new or $model.agent_session",definition:{id:"agent-error",kind:"label",label:"",initial:"",properties:{error:true}}},
 "agent-new-error":{widget:"control",hidden:"= $model.agent_error == \"\"",definition:{id:"agent-new-error",kind:"label",label:"",initial:"",properties:{error:true}}},
 "agent-session-error":{widget:"control",hidden:"= $model.agent_error == \"\"",definition:{id:"agent-session-error",kind:"label",label:"",initial:"",properties:{error:true}}},
 "agent-session-panel":{native_spacing:true,widget:"column",hidden:"= !$model.agent_session",children:["agent-title","agent-header","agent-actions","agent-session-error","agent-divider","agent-transcript-label","agent-evicted","agent-gap","agent-transcript","agent-permissions","agent-composer-panel"],gap:6},
