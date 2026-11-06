@@ -104,15 +104,23 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
             entries: entries(&item["children"], &mut ids).expect("validated native menu"),
         })
         .collect();
-    fn shortcuts(ctx:&egui::Context,entries:&mut [Entry]) {
+    fn shortcuts(ctx: &egui::Context, entries: &mut [Entry]) {
         for entry in entries {
-            if let Entry::Row(row)=entry {
-                if let Some(chord)=row.shortcut.as_deref().and_then(toolkit::keymap::parse_chord) {row.shortcut=Some(ctx.format_shortcut(&chord));}
-                shortcuts(ctx,&mut row.children);
+            if let Entry::Row(row) = entry {
+                if let Some(chord) = row
+                    .shortcut
+                    .as_deref()
+                    .and_then(toolkit::keymap::parse_chord)
+                {
+                    row.shortcut = Some(ctx.format_shortcut(&chord));
+                }
+                shortcuts(ctx, &mut row.children);
             }
         }
     }
-    for menu in &mut menus {shortcuts(ui.ctx(),&mut menu.entries);}
+    for menu in &mut menus {
+        shortcuts(ui.ctx(), &mut menu.entries);
+    }
     let key = model_id(ui.ctx());
     if ui
         .ctx()
