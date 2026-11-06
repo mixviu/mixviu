@@ -290,7 +290,10 @@ impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
         self.wire_deliveries
             .retain(|state| state.load(std::sync::atomic::Ordering::Acquire) == 0);
-        if self.drive.is_some() {
+        // A native input pass may dispatch a Mix reducer. Advance the next
+        // drive step only after its model has been accepted and drawn, so a
+        // following key/type command sees the resulting dialog and focus.
+        if self.drive.is_some() && self.inflight.is_empty() && self.view.current_revision_drawn() {
             for mut answer in toolkit::drive::logic(ctx) {
                 if let Some(reply) = self.drive_pending.remove(&answer.id) {
                     crate::app_facilities::remap(ctx, &mut answer.body);
