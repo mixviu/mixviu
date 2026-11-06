@@ -72,7 +72,7 @@ fn check_calls($s)
       elif $o.ok then $s=finish_call($s,$token,0,{id:$w.action,ok:true,result:nil})
       else $s=finish_call($s,$token,10,{error_code:$o.error.error_code,message:$o.error.message,reason:$o.error.reason}) end
     elif $w.kind=="close" and $i<0 then $s=finish_call($s,$token,0,{id:$w.action,ok:true,result:nil})
-    elif $w.kind=="quit" and not any(concat($s.queue,values($s.running)),fn($j)=$j.kind=="session-save") then
+    elif $w.kind=="quit" and not any(concat($s.queue,values($s.running)),fn($j)=contains(["session-save","action-publish"],$j.kind)) then
       $s=finish_call($s,$token,0,if $w.action!=nil then {id:$w.action,ok:true,result:nil} else {quitting:true} end,true)
     end
   end
@@ -129,9 +129,11 @@ fn bus_command($s,$e)
     $index=tab_index($s,$params)
     if ($params.tab!=nil or $params.buffer!=nil) and $index<0 then return refused($s,"NOT_FOUND","No matching tab") end
     if $a.id=="file.exit" then
+      if any($s.tabs,fn($t)=$s.mail[$t.document]!=nil and ($t.dirty or $s.mail[$t.document].sending or $s.mail[$t.document].saving)) then return refused($s,"CONFLICT","Save or discard mail document changes before quitting") end
+      $s=queue_job($s,"action-publish",{body:viu_action_event($a.id,"bus",$a.params,nil)})
       $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",action:$a.id,timeout_ms:30000}))
     end
-    try $out=do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index,$e.headers["viu-call"])
+    try $out=do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index,$e.headers["viu-call"],"bus",$a.params)
     catch $message,$error return refused($s,if contains(["INVALID_ARGUMENT","NOT_FOUND","UNKNOWN_ACTION"],$error.code) then $error.code else "CONFLICT" end,$message) end
     $s=$out.state
     if $out.kind=="mail" then return check_calls(hold_call($s,$e,{kind:"job",timeout_ms:150000})) end

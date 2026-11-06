@@ -12,7 +12,7 @@ fn action_rows($s)
   end
   return $rows
 end
-fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
+fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui",$event_params=nil)
   $result=nil;$op_id=nil;$kind=nil
   $original_active=$s.active
   if $index!=nil and $index>=0 then $s.active=$index end
@@ -32,7 +32,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
   end
   if contains(["file.send","mail.headers"],$id) and (not $has or $s.mail[$t.document]==nil) then raise("INVALID_ARGUMENT","Not a mail document") end
   if $has and $s.mail[$t.document]!=nil and (contains(["file.save","file.save_as","file.send","mail.headers"],$id) or ($id=="file.close" and ($a.save ?? false))) then
-    $s=queue_job($s,"action-publish",{body:viu_action_event($id,if $who!=nil then "bus" else $origin end,{args:$a},nil)})
+    $s=queue_job($s,"action-publish",{body:viu_action_event($id,if $who!=nil then "bus" else $origin end,$event_params,nil)})
     $out=mail_action($s,$id,$a,$t.document,$call)
     if $index!=nil and $index>=0 then $out.state.active=$original_active end
     return $out
@@ -105,6 +105,6 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
   elif starts_with($id,"help.") then $s.help=split($id,".")[1]
   else raise("UNKNOWN_ACTION","Unknown action "..$id) end
   if $index!=nil and $index>=0 and not starts_with($id,"tabs.") and not contains(["file.open","file.new"],$id) then $s.active=$original_active end
-  $s=queue_job($s,"action-publish",{body:viu_action_event($id,if $who!=nil then "bus" else $origin end,{args:$a},$result)})
+  $s=queue_job($s,"action-publish",{body:viu_action_event($id,if $who!=nil then "bus" else $origin end,$event_params,$result)})
   return {state:pump($s),result:$result,op_id:$op_id,kind:$kind}
 end

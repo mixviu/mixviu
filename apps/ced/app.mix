@@ -61,7 +61,7 @@ on viu.frame.close
   $state=refresh_tabs($state)
   if any($state.tabs,fn($t)=$state.mail[$t.document]!=nil and ($t.dirty or $state.mail[$t.document].saving or $state.mail[$t.document].sending)) then raise("DRAFT","Save or confirm discard of mail changes before quitting") end
   $state.exit_after_save=true;$state=pump(save_session(session_changed($state)))
-  if not any(concat($state.queue,values($state.running)),fn($j)=$j.kind=="session-save") then $state.window_close=true end
+  if not any(concat($state.queue,values($state.running)),fn($j)=contains(["session-save","action-publish"],$j.kind)) then $state.window_close=true end
   publish_ced($state);reply(0,"{}")
 end
 on viu.job.completed
@@ -105,7 +105,7 @@ on viu.job.completed
       if $job.kind=="session-save" then $state.session_dirty=true;$state.exit_after_save=false end
     end
     $state=pump($state);publish_ced($state)
-    if $state.exit_after_save and not any(concat($state.queue,values($state.running)),fn($j)=$j.kind=="session-save") then $state.window_close=true;publish_ced($state) end
+    if $state.exit_after_save and not any(concat($state.queue,values($state.running)),fn($j)=contains(["session-save","action-publish"],$j.kind)) then $state.window_close=true;publish_ced($state) end
   end
 end
 on edit.changed
