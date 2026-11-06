@@ -719,7 +719,7 @@ fn gold_dialog(
     let key = egui::Id::unique((ui.ctx().viewport_id(), id, &value["instance"]));
     let mut field = value["field"].as_str().map(str::to_owned);
     let mut accept = false;
-    let shown=Dialog::new(key,text(value,"title")).buttons(choices.iter().map(|c|Choice::new(text(c,"label"),if c["cancel"]==true {Role::Cancel}else if c["default"]==true{Role::Default}else{Role::Other}).enabled(c["enabled"]==true)).collect()).show(ui.ctx(),|ui|{
+    let shown=Dialog::new(key,text(value,"title")).buttons(choices.iter().map(|c|Choice::new(text(c,"label"),if c["default"]==true {Role::Default}else if c["cancel"]==true{Role::Cancel}else{Role::Other}).enabled(c["enabled"]==true)).collect()).show(ui.ctx(),|ui|{
         if let Some(field)=field.as_mut(){
             let response=toolkit::field::text(ui,field,text(value,"body"),420.0);
             geometry.insert(format!("{id}.field"),response.rect);
@@ -729,10 +729,10 @@ fn gold_dialog(
         }else if !text(value,"body").is_empty(){ui.label(text(value,"body"));}
         if let Some(items)=value["items"].as_array(){
             egui::ScrollArea::vertical().max_height(360.0).show(ui,|ui|{
-                egui::Grid::new((id,"rows")).show(ui,|ui|{
+                egui::Grid::new((id,"rows")).striped(true).show(ui,|ui|{
                     for row in items {
                         ui.label(text(row,"label"));
-                        if let Some(shortcut)=row["shortcut"].as_str(){ui.monospace(shortcut);}
+                        if let Some(shortcut)=row["shortcut"].as_str(){ui.monospace(toolkit::keymap::parse_chord(shortcut).map_or_else(||shortcut.to_owned(),|key|ui.ctx().format_shortcut(&key)));}
                         for c in row["choices"].as_array().unwrap(){
                             let response=ui.add_enabled(c["enabled"]==true,egui::Button::new(text(c,"label")));
                             geometry.insert(format!("{id}.choice.{}",text(c,"id")),response.rect);

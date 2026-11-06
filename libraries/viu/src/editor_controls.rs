@@ -135,7 +135,7 @@ pub fn draw(
     };
     if kind == "diagnostic-list" {
         if value.as_array().unwrap().is_empty() {
-            return ui.weak("No problems");
+            return ui.weak("No problems.");
         }
         return ui
             .scope(|ui| {

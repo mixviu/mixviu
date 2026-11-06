@@ -7,7 +7,9 @@ fn ced_menus($s)
   $menus=[];$rows=action_rows($s)
   for $menu in ["File","Edit","Search","View","Tabs","Help"]
     $children=[];$last_group=nil;$markdown=[]
-    for $a in filter($rows,fn($a)=$a.menu==$menu)
+    $menu_rows=filter($rows,fn($a)=$a.menu==$menu)
+    if $menu=="View" then $menu_rows=concat(filter($menu_rows,fn($a)=contains(["view.zoom_in","view.zoom_out","view.zoom_reset","view.clear_markers","view.reload_settings"],$a.id)),filter($menu_rows,fn($a)=not contains(["view.zoom_in","view.zoom_out","view.zoom_reset","view.clear_markers","view.reload_settings"],$a.id))) end
+    for $a in $menu_rows
       if contains(["mail.headers","help.macros"],$a.id) then continue end
       if starts_with($a.id,"view.markdown.") then
         push($markdown,{id:$a.id,label:$a.label,enabled:$a.enabled,checked:len($s.tabs)>0 and ($s.previews[current($s).document] ?? "source")==split($a.id,".")[2]});continue
@@ -15,13 +17,13 @@ fn ced_menus($s)
       $group=menu_group($a.id)
       if $last_group!=nil and $last_group!=$group then push($children,{separator:true}) end
       $last_group=$group
-      $row={id:$a.id,label:$a.label,enabled:$a.enabled,shortcut:join($a.keys," / ")}
+      $row={id:$a.id,label:$a.label,enabled:$a.enabled,shortcut:$a.keys[0] ?? ""}
       if starts_with($a.id,"view.markdown.") then $row.checked=len($s.tabs)>0 and ($s.previews[current($s).document] ?? "source")==split($a.id,".")[2]
       elif contains(["view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output"],$a.id) then $row.checked=$s[split($a.id,".")[1]] end
       push($children,$row)
     end
     if $menu=="View" then
-      push($children,{separator:true});push($children,{id:"markdown",label:"Markdown",enabled:true,children:$markdown})
+      push($children,{separator:true});push($children,{id:"markdown",label:"Markdown",enabled:any($markdown,fn($a)=$a.enabled),children:$markdown})
       push($children,{separator:true});push($children,{id:"theme",label:"Theme",enabled:true,children:theme_rows($s)})
     end
     push($menus,{id:"menu-"..lower($menu),label:$menu,enabled:true,children:$children})
@@ -62,7 +64,7 @@ fn ced_ui_model($s,$model)
   $model.values["help-dialog"].choices=[{id:"ok",label:"Close",enabled:true,default:true,cancel:true}]
   if $s.help=="keys" then
     $model.values["help-dialog"].body="";$model.values["help-dialog"].items=[]
-    for $a in action_rows($s) if len($a.keys)>0 then $model.values["help-dialog"].items=push($model.values["help-dialog"].items,{label:$a.label,shortcut:$a.keys[0],choices:[]}) end end
+    for $a in action_rows($s) if len($a.keys)>0 and (not contains(["edit.cut","edit.copy","edit.paste"],$a.id) or len($s.keys[$a.id] ?? [])>0) then $model.values["help-dialog"].items=push($model.values["help-dialog"].items,{label:$a.label,shortcut:$a.keys[0],choices:[]}) end end
   end
   $items=[]
   for $row in $s.recovered ?? []
@@ -82,6 +84,8 @@ fn ced_ui_model($s,$model)
   end
   $model.show_notice=$model.notice!=""
   $model.show_problems=$s.problems;$model.show_output=$s.output
+  $modal=$s.open_dialog or $s.save_dialog or $s.goto_dialog or $s.close_dialog!=nil or contains(["keys","about"],$s.help) or ($s.recovery_open ?? false)
+  $model.editor.properties.enabled=not $modal
   $model.problems_text=if $has and $s.problems then join(map(viu_document("problems",$t.document,{}),fn($p)=to_string($p.line)..":"..to_string($p.col ?? 1).."  "..$p.severity.."  "..$p.code.."  "..$p.message),"\n") else "" end
   if $model.problems_text=="" then $model.problems_text="No problems" end
   $model.values["problems-list"]=if $has then viu_document("problems",$t.document,{}) else [] end
@@ -109,7 +113,7 @@ fn ced_ui_model($s,$model)
   if $model.find_open then $model.top_height=$model.top_height+if $s.find.replace then 84 else 42 end end
   if $model.show_notice then $model.top_height=$model.top_height+64 end
   if $model.show_mail then $model.top_height=$model.top_height+180 end
-  $model.placements={"top-controls":{edge:"top",size:"content"},"problems-panel":{edge:"bottom",size:140,resizable:true,max_fraction:0.3},"output-panel":{edge:"bottom",size:120,resizable:true,max_fraction:0.3},body:{edge:"fill"}}
+  $model.placements={"top-controls":{edge:"top",size:"content"},"problems-panel":{edge:"bottom",panel:true,size:140,resizable:true,max_fraction:0.3},"output-panel":{edge:"bottom",panel:true,size:120,resizable:true,max_fraction:0.3},body:{edge:"fill"}}
   return $model
 end
 fn ced_ui_intent($s,$a)

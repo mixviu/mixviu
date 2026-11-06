@@ -859,6 +859,17 @@ impl SceneView {
             }
             let placement = &placements[child];
             let edge = placement["edge"].as_str().unwrap_or("fill");
+            if edge=="bottom" && placement["panel"]==true {
+                let mut panel_ui=ui.new_child(egui::UiBuilder::new().max_rect(remaining));
+                egui::Panel::bottom(egui::Id::unique((key,child)))
+                    .resizable(placement["resizable"]==true)
+                    .default_size(placement["size"].as_f64().unwrap_or(140.0) as f32)
+                    .size_range(0.0..=remaining.height()*placement["max_fraction"].as_f64().unwrap_or(0.3) as f32)
+                    .frame(toolkit::bars::dock_frame(ui.ctx()))
+                    .show(&mut panel_ui,|ui|self.node(ui,child,nodes,route,depth+1,events));
+                remaining=panel_ui.available_rect_before_wrap();
+                continue;
+            }
             if placement["minimum_window_width"]
                 .as_f64()
                 .is_some_and(|w| (area.width() as f64) < w)
