@@ -14,9 +14,9 @@ This is a bounded local Bus browser, not full Workshop parity.
 | Arguments/descriptions and service search | Ported bounded metadata and case-insensitive local service filter; filtering leaves chosen target intact |
 | Read-only declaration badge | Deferred metadata presentation; target admission stays authoritative for every call |
 | Advertised command selection | Ported: command must belong to selected service's catalogue; changing service clears command before discovery |
-| JSON body editing, clear and format | Ported shared editor, 65,536 UTF-8 bytes; blank body or valid JSON; format emits compact JSON rather than original indentation |
+| JSON body editing, clear and format | Ported shared editor, 65,536 UTF-8 bytes; blank body or valid JSON; W1 corrected: Format pretty-prints JSON and preserves the body if expansion exceeds 65,536 bytes |
 | Explicit command call and reply | Ported one native call, 8-second deadline, body/selection held while busy; peer rc/structured refusal retained; transport uncertainty never auto-retried |
-| Reply display bounds | Ported smaller budget: 900 Unicode scalars with explicit truncation; parsed JSON is serialised again, raw whitespace/error headers are not preserved |
+| Reply display bounds | W1 corrected in round two: gold headers and JSON pretty-printing, raw non-JSON text, bounded at 1,000,000 UTF-8 bytes with gold marker; native acceptance pending |
 | Own call history | Ported last 12 target/command/outcome metadata records in memory; visible history bounded to 900 scalars; full retained metadata via info |
 | Reply clipboard copy | Deferred shared clipboard selection/ownership contract |
 | Live Traffic dock, pause/filter, redaction, drop reporting and request/reply correlation | Deferred: observation ownership, loss and redaction-before-retention must be ported together; own history is not broker observation |
