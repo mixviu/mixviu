@@ -1,1 +1,1 @@
-{"host":{"service":"email","title":"Email — list experiment","size":[1100,900],"commands":["email.ping","email.info","email.fixture","email.intent"]}}
+{"host":{"commands":["email.ping","email.info","email.fixture","email.intent","email.connect","email.account","email.mailbox","email.read","email.message"],"service":"email","size":[1100,900],"title":"Email — Mix on Viu"}}

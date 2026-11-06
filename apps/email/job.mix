@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$mail=require("mail.mix")
+on job.run
+  $a=$event.args
+  if $a.op=="connect" then
+    $s=$mail.session($a.entry);$boxes=$mail.mailboxes($a.entry,$s.account)
+    reply(0,json_encode({session:$s,mailboxes:$boxes}))
+  elif $a.op=="page" then
+    reply(0,json_encode($mail.page($a.entry,$a.account,$a.mailbox,$a.offset)))
+  elif $a.op=="read" then
+    reply(0,json_encode($mail.message($a.entry,$a.account,$a.id)))
+  else raise("OP","Unknown mail operation") end
+end

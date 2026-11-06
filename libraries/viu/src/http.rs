@@ -14,6 +14,9 @@ pub fn binding() -> mix::evaluator::ExtFn {
     }))
 }
 pub async fn text_request(request: &Value) -> mix::MixResult<Value> {
+    if !request.is_object() || (!request["body"].is_null() && !request["body"].is_string()) || (!request["headers"].is_null() && !request["headers"].is_object()) || (!request["timeout"].is_null() && request["timeout"].as_u64().is_none()) {
+        return Err(error("Invalid HTTP request field types"));
+    }
     let url=reqwest::Url::parse(request["url"].as_str().ok_or_else(|| error("HTTP URL required"))?).map_err(|_| error("Invalid HTTP URL"))?;
     let loopback=url.host_str().is_some_and(|h| h=="localhost" || h.trim_matches(['[',']']).parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback()));
     if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() || !(url.scheme()=="https" || (url.scheme()=="http" && loopback)) {
@@ -31,6 +34,12 @@ pub async fn text_request(request: &Value) -> mix::MixResult<Value> {
     }
     let client=builder.build().map_err(|_|error("HTTP client setup failed"))?;
     let mut call=client.request(method,url).body(body.to_owned());
+    if !request["basic"].is_null() {
+        let username=request["basic"]["username"].as_str().ok_or_else(||error("HTTP Basic username required"))?;
+        let password=request["basic"]["password"].as_str().ok_or_else(||error("HTTP Basic password required"))?;
+        if username.len()+password.len()>8192 || username.contains(':') {return Err(error("Invalid HTTP Basic credentials"));}
+        call=call.basic_auth(username,Some(password));
+    }
     if let Some(headers)=request["headers"].as_object() {
         if headers.len()>32 || serde_json::to_string(headers).unwrap_or_default().len()>16384 {return Err(error("HTTP header budget exceeded"));}
         for (name,value) in headers {

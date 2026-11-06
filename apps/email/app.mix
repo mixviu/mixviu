@@ -1,18 +1,64 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- lint: globals app_args
-$c=require("core.mix");$ctx=viu_context()
+$c=require("core.mix");$mail=require("mail.mix");$ctx=viu_context()
 $fixture=len($app_args)>0 and $app_args[0]=="--fixture"
 $rows=[];$selected=nil;$revision=0;$account="No account connected";$mailbox="No mailbox";$reader="No message open";$draft={to:"",subject:"",text:""}
+$entries=[];$active="";$session=nil;$boxes=[];$box="";$offset=0;$total=0;$message=nil;$connected=false;$busy=false;$serial=0;$pending=nil;$status="Choose an account and Connect"
+if not $fixture and len($app_args)>0 then
+  $entries=$mail.accounts($app_args[0])
+  if len($entries)>0 then $active=$entries[0].id end
+end
+fn entry()
+  for $e in $entries if $e.id==$active then return $e end end
+  raise("ACCOUNT","No configured account selected")
+end
 fn publish_email()
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$c.model($rows,$selected,$revision,$account,$mailbox,$reader,$draft)}
+  $m=$c.model($rows,$selected,$revision,$account,$mailbox,$reader,$draft)
+  $m.status=if $fixture then $m.status else $status.." · "..to_string(len($rows)).." / "..to_string($total).." messages · offset "..to_string($offset) end
+  $m.accounts={id:"accounts",kind:"combo",label:"Account",initial:if $active!="" then $active else "No account" end,properties:{choices:if len($entries)>0 then map($entries,fn($e)=$e.id) else ["No account"] end}}
+  $m.mailboxes={id:"mailboxes",kind:"combo",label:"Mailbox",initial:if $box!="" then $box else "Select mailbox" end,properties:{choices:concat(["Select mailbox"],map($boxes,fn($b)=$b.id))}}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$m}
+end
+fn begin_mail($op,$data)
+  if $fixture then raise("FIXTURE","Fixture mode cannot contact a mail service") end
+  if $busy then raise("BUSY","Wait for the pending mail operation") end
+  $path=path_join(dirname(script_path()),"job.mix")
+  $owner=$serial+1;$a=merge($data,{op:$op,entry:entry(),account:if $session!=nil then $session.account else nil end})
+  send "viu-local" "jobs.start" id="email-work" owner=$owner path=$path source=read_file($path) command="job.run" args=$a
+  if $rc!=0 then raise("JOB","Mail worker unavailable") end
+end
+fn reader_text($m)
+  return "Subject: "..substr($m.subject,0,120).."\nFrom: "..substr(json_encode($m.from),0,120).."\n"..substr($m.text,0,600)..if len($m.text)>600 then "\n[Display truncated; email.message returns bounded full text]" else "" end
 end
 publish_email()
 on email.ping
   reply(0,"{}")
 end
 on email.info
-  reply(0,json_encode({fixture:$fixture,connected:false,rows:len($rows),selected:$selected,revision:$revision,draft:$draft}))
+  reply(0,json_encode({fixture:$fixture,connected:$connected,busy:$busy,status:$status,accounts:map($entries,fn($e)={id:$e.id,label:$e.label,user:$e.user}),active:$active,server_accounts:if $session!=nil then $session.accounts else [] end,mailboxes:$boxes,mailbox:$box,rows:len($rows),total:$total,offset:$offset,selected:$selected,revision:$revision,draft:$draft}))
+end
+on email.message
+  reply(0,json_encode($message))
+end
+on email.connect
+  begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting";publish_email();reply(0,"{}")
+end
+on email.account
+  if $busy then raise("BUSY","Wait for the pending operation") end
+  if not any($entries,fn($e)=$e.id==$event.args.id) then raise("ACCOUNT","Unknown configured account") end
+  if $draft.to!="" or $draft.subject!="" or $draft.text!="" then raise("DRAFT","Clear the draft before changing account") end
+  $active=$event.args.id;$connected=false;$session=nil;$boxes=[];$box="";$rows=[];$message=nil;$reader="No message open";$account="Not connected";$mailbox="No mailbox";$selected=nil
+  begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting";publish_email();reply(0,"{}")
+end
+on email.mailbox
+  if not $connected then raise("CONNECT","Connect first") end
+  if not any($boxes,fn($b)=$b.id==$event.args.id) then raise("MAILBOX","Unknown mailbox") end
+  begin_mail("page",{mailbox:$event.args.id,offset:0});$serial=$serial+1;$busy=true;$pending={op:"page",mailbox:$event.args.id};$status="Loading mailbox";publish_email();reply(0,"{}")
+end
+on email.read
+  if not $connected or not any($rows,fn($r)=$r.key==$event.args.id) then raise("MESSAGE","Choose a listed message on a connected account") end
+  begin_mail("read",{id:$event.args.id});$serial=$serial+1;$busy=true;$pending={op:"read"};$status="Reading message";publish_email();reply(0,"{}")
 end
 on email.fixture
   if not $fixture then raise("FIXTURE","Explicit --fixture launch required; this is not maild data") end
@@ -23,13 +69,53 @@ on email.fixture
 end
 on email.intent
   $a=$event.args
-  if $a.id=="messages" then
+  if $a.id=="connect" then
+    begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting"
+  elif $a.id=="accounts" then
+    if $busy then raise("BUSY","Wait for the pending operation") end
+    if not any($entries,fn($e)=$e.id==$a.value) then raise("ACCOUNT","Unknown configured account") end
+    if $draft.to!="" or $draft.subject!="" or $draft.text!="" then raise("DRAFT","Clear the draft before changing account") end
+    $active=$a.value;$connected=false;$session=nil;$boxes=[];$box="";$rows=[];$selected=nil;$message=nil;$reader="No message open"
+    begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting"
+  elif $a.id=="mailboxes" then
+    if not $connected or not any($boxes,fn($b)=$b.id==$a.value) then raise("MAILBOX","Choose a connected mailbox") end
+    begin_mail("page",{mailbox:$a.value,offset:0});$serial=$serial+1;$busy=true;$pending={op:"page",mailbox:$a.value};$status="Loading mailbox"
+  elif contains(["next","previous","refresh"],$a.id) then
+    if not $connected or $box=="" then raise("MAILBOX","Choose a mailbox first") end
+    $position=if $a.id=="next" then $offset+200 elif $a.id=="previous" then max(0,$offset-200) else $offset end
+    if $a.id=="next" and $position>=$total then raise("PAGE","No next page") end
+    begin_mail("page",{mailbox:$box,offset:$position});$serial=$serial+1;$busy=true;$pending={op:"page",mailbox:$box};$status="Loading page"
+  elif $a.id=="messages" then
     if not contains(["select","activate"],$a.action) then raise("DEFERRED","Message sorting/navigation needs authoritative list wiring") end
     if not any($rows,fn($r)=$r.key==$a.value.key) then raise("ID","Unknown message") end
-    $selected=$a.value.key;$reader="Selected fixture "..$selected.." · full message read not wired"
+    if $fixture then $selected=$a.value.key;$reader="Selected fixture "..$selected.." · full message read not wired"
+    else
+      if not $connected then raise("CONNECT","Reconnect before reading") end
+      begin_mail("read",{id:$a.value.key});$serial=$serial+1;$busy=true;$pending={op:"read"};$status="Reading message"
+    end
   elif contains(["to","subject","compose"],$a.id) then
     if type($a.value)!="string" or byte_length($a.value)>if $a.id=="compose" then 65536 else 4096 end then raise("TEXT","Draft text exceeds budget") end
     if $a.id=="compose" then $draft.text=$a.value else $draft[$a.id]=$a.value end
   else raise("DEFERRED","Mail transport is not wired at this checkpoint") end
   publish_email();reply(0,"{}")
+end
+on viu.job.completed
+  $d=$event.args
+  if $busy and $d.tag.owner==$serial then
+    $busy=false
+    if $d.rc==0 then
+      if $pending.op=="connect" then
+        $session=$d.body.session;$boxes=$d.body.mailboxes;$connected=true;$box="";$rows=[];$selected=nil;$message=nil;$reader="Choose a mailbox, then a message";$total=0;$offset=0
+        $e=entry();$account=$e.label.." · "..$e.user;$mailbox="Select mailbox";$status="Connected · choose mailbox"
+      elif $pending.op=="page" then
+        $candidate=$c.rows($d.body.messages,false)
+        $rows=$candidate;$box=$pending.mailbox;$offset=$d.body.offset;$total=$d.body.total;$selected=nil;$message=nil;$reader="Select a message to read"
+        for $b in $boxes if $b.id==$box then $mailbox=$b.name end end
+        $revision=$revision+1;$status="Mailbox loaded"
+      else
+        $message=$d.body;$selected=$message.id;$reader=reader_text($message);$status="Message loaded"
+      end
+    else $connected=false;$status="Mail request failed · choose Connect to recover; no automatic retry" end
+    publish_email()
+  end
 end

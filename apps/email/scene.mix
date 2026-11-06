@@ -5,8 +5,17 @@ citizen: email
 ---
 ```mix
 {
-root:{widget:"column",children:["title","status","account","mailbox","messages","reader","compose-label","to-label","to","subject-label","subject","compose"],gap:6},
-title:{widget:"text",text:"Email · bounded list experiment"},
+root:{widget:"column",children:["title","status","account-label","accounts","account","connect","mailbox-label","mailboxes","mailbox","paging","messages","reader","compose-label","to-label","to","subject-label","subject","compose"],gap:6},
+title:{widget:"text",text:"Email · Mix on Viu · JMAP"},
+"account-label":{widget:"text",text:"Configured account"},
+accounts:{widget:"control",definition:"= $model.accounts",on_intent:"email.intent"},
+connect:{widget:"control",definition:{id:"connect",kind:"button",label:"",initial:"",properties:{text:"Connect / reconnect"}},on_intent:"email.intent"},
+"mailbox-label":{widget:"text",text:"Mailbox"},
+mailboxes:{widget:"control",definition:"= $model.mailboxes",on_intent:"email.intent"},
+paging:{widget:"row",children:["previous","refresh","next"],gap:12},
+previous:{widget:"control",definition:{id:"previous",kind:"button",label:"",initial:"",properties:{text:"Previous 200"}},on_intent:"email.intent"},
+next:{widget:"control",definition:{id:"next",kind:"button",label:"",initial:"",properties:{text:"Next 200"}},on_intent:"email.intent"},
+refresh:{widget:"control",definition:{id:"refresh",kind:"button",label:"",initial:"",properties:{text:"Refresh page"}},on_intent:"email.intent"},
 status:{widget:"text",text:"= $model.status"},
 account:{widget:"text",text:"= $model.account"},mailbox:{widget:"text",text:"= $model.mailbox"},
 messages:{widget:"control",definition:"= $model.table",on_intent:"email.intent"},
