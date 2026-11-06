@@ -15,6 +15,7 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    documents: crate::documents::Documents,
     framed: bool,
     title: String,
     window_frame: crate::window_frame::WindowFrame,
@@ -245,6 +246,7 @@ impl Host {
                         } else {
                             SceneView::with_model(&self.scene_source, projected).map(|view| {
                                 self.view = view;
+                                self.view.set_documents(self.documents.clone());
                                 self.loaded = true;
                             })
                         }
@@ -412,7 +414,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         "viu.quit".into(),
         wake.clone(),
     );
+    let documents = crate::documents::Documents::default();
+    let services = crate::runtime::Services { documents: Some(documents.clone()), ..Default::default() };
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
+    jobs.set_services(services.clone());
     let session = bundle.manifest.follow_settings.then(|| {
         crate::session::Session::new(
             bundle
@@ -428,13 +433,14 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .expect("start settings follower")
     });
     jobs.set_native_backend(bus.backend_maker());
-    let mut runtime = Runtime::new(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))));
+    let mut runtime = Runtime::with_services(32, wake.clone(), Some(jobs.backend(Some(bus.backend()))), services);
     runtime.load(bundle.program).expect("load behaviour");
     let capture_root = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        documents,
         framed: bundle.manifest.frame.is_some(),
         title: bundle.manifest.title.clone(),
         window_frame: crate::window_frame::WindowFrame::default(),

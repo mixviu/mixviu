@@ -98,23 +98,7 @@ impl Editors {
                 head: byte(end),
             };
         }
-        let mut view = editor::View {
-            font_size: Some(
-                widget.properties["font_size"]
-                    .as_f64()
-                    .map(|v| v as f32)
-                    .unwrap_or_else(|| TextStyle::Monospace.resolve(ui.style()).size),
-            ),
-            wrap: if widget.properties["soft_wrap"] == true {
-                editor::Wrap::Words
-            } else {
-                editor::Wrap::None
-            },
-            line_numbers: widget.properties["line_numbers"] != false,
-            read_only: widget.properties["read_only"] == true,
-            label: Some(widget.label.clone()),
-            ..Default::default()
-        };
+        let mut view = native_view(ui, widget);
         let before = doc.local.doc().revision;
         if let Some(serial) = crate::widgets::whole(&widget.properties["command"]["serial"]) {
             if serial > doc.command_serial && !view.read_only {
@@ -203,6 +187,48 @@ impl Editors {
                     .collect();
             }
         }
+        let palette = native_palette(ui, widget);
+        let padding = widget.properties["padding"].as_f64().unwrap_or(0.0).round() as i8;
+        let out = egui::Frame::new()
+            .fill(palette.background)
+            .inner_margin(egui::Margin::same(padding))
+            .show(ui, |ui| doc.local.show_as(ui, &key, &palette, &view))
+            .inner;
+        if let Some(error) = doc.local.take_refusal() {
+            ui.colored_label(Color32::RED, error.to_string());
+        }
+        if before != doc.local.doc().revision {
+            let contents = doc.local.contents();
+            // Hold the draft locally until Mix acknowledges the new value.
+            doc.acknowledged = text.to_owned();
+            events.push(Intent::set(&widget.id, Value::String(contents)));
+        }
+        out.response
+    }
+}
+
+pub(crate) fn native_view(ui: &Ui, widget: &Widget) -> editor::View {
+        let view = editor::View {
+            font_size: Some(
+                widget.properties["font_size"]
+                    .as_f64()
+                    .map(|v| v as f32)
+                    .unwrap_or_else(|| TextStyle::Monospace.resolve(ui.style()).size),
+            ),
+            wrap: if widget.properties["soft_wrap"] == true {
+                editor::Wrap::Words
+            } else {
+                editor::Wrap::None
+            },
+            line_numbers: widget.properties["line_numbers"] != false,
+            read_only: widget.properties["read_only"] == true,
+            label: Some(widget.label.clone()),
+            ..Default::default()
+        };
+    view
+}
+
+pub(crate) fn native_palette(ui: &Ui, widget: &Widget) -> editor::Palette {
         let palette = if widget.properties["light"] == true {
             static LIGHT: std::sync::OnceLock<editor::Palette> = std::sync::OnceLock::new();
             LIGHT
@@ -223,21 +249,5 @@ impl Editors {
         } else {
             editor::Palette::from_theme(&Theme(ui))
         };
-        let padding = widget.properties["padding"].as_f64().unwrap_or(0.0).round() as i8;
-        let out = egui::Frame::new()
-            .fill(palette.background)
-            .inner_margin(egui::Margin::same(padding))
-            .show(ui, |ui| doc.local.show_as(ui, &key, &palette, &view))
-            .inner;
-        if let Some(error) = doc.local.take_refusal() {
-            ui.colored_label(Color32::RED, error.to_string());
-        }
-        if before != doc.local.doc().revision {
-            let contents = doc.local.contents();
-            // Hold the draft locally until Mix acknowledges the new value.
-            doc.acknowledged = text.to_owned();
-            events.push(Intent::set(&widget.id, Value::String(contents)));
-        }
-        out.response
-    }
+    palette
 }
