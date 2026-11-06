@@ -76,16 +76,32 @@ pub(crate) fn settings_values() -> mix::evaluator::ExtFn {
         match args.as_slice() {
             [Value::String(op), account] if op == "email-fields" => {
                 let account = crate::runtime::to_json(account)?;
-                if !account.is_object() { return Err(fail()); }
+                if !account.is_object() {
+                    return Err(fail());
+                }
                 let text = |field: &str| account[field].as_str().unwrap_or("");
                 let checks = [
                     ("name", settings::email::valid_name(text("name"))),
                     ("url", settings::email::valid_url(text("url"))),
                     ("email", settings::email::valid_address(text("email"))),
-                    ("ca_path", account["ca_path"].as_str().filter(|s| !s.is_empty()).is_none_or(settings::email::valid_ca_path)),
-                    ("signature", settings::email::valid_signature(text("signature"))),
+                    (
+                        "ca_path",
+                        account["ca_path"]
+                            .as_str()
+                            .filter(|s| !s.is_empty())
+                            .is_none_or(settings::email::valid_ca_path),
+                    ),
+                    (
+                        "signature",
+                        settings::email::valid_signature(text("signature")),
+                    ),
                 ];
-                crate::runtime::from_json(serde_json::json!(checks.into_iter().filter_map(|(field, valid)| (!valid).then_some(field)).collect::<Vec<_>>()))
+                crate::runtime::from_json(serde_json::json!(
+                    checks
+                        .into_iter()
+                        .filter_map(|(field, valid)| (!valid).then_some(field))
+                        .collect::<Vec<_>>()
+                ))
             }
             [Value::String(op), Value::String(path)] if op == "default" => {
                 crate::runtime::from_json(

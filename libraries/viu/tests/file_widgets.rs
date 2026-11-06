@@ -60,7 +60,10 @@ fn data_authored_menus_share_native_model_and_keyboard_activation() {
     }
     let model = toolkit::menu::model(&ctx);
     assert_eq!(model[0].title, "File");
-    assert_eq!(model[0].entries[0].row().unwrap().shortcut.as_deref(), Some("F2"));
+    assert_eq!(
+        model[0].entries[0].row().unwrap().shortcut.as_deref(),
+        Some("F2")
+    );
     assert_eq!(
         model[0].entries[0].row().unwrap().id.as_deref(),
         Some("runtime.command-42")

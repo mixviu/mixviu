@@ -51,7 +51,8 @@ pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
 }
 pub(crate) fn shortcut(ctx: Option<&egui::Context>, item: &Value) -> Option<String> {
     if item.get("shortcut_binding").is_some() {
-        item["shortcut_binding"].as_str()
+        item["shortcut_binding"]
+            .as_str()
             .and_then(toolkit::keymap::parse_chord)
             .and_then(|shortcut| ctx.map(|ctx| ctx.format_shortcut(&shortcut)))
     } else {

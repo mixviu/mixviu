@@ -11,7 +11,7 @@ try
   end
   if $rc==0 then
     $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
-    $artifact="/build/gold-parity-artifacts/"..$sha
+    $artifact="/tmp/mixviu-parity-artifacts/"..$sha
     mkdir($artifact,{parents:true})
     copy("target/debug/viu",$artifact.."/viu")
     print({artifact:$artifact,sha256:hash_file($artifact.."/viu","sha256")})
