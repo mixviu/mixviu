@@ -417,42 +417,65 @@ fn menu_roots(
 }
 
 fn native_entries(value: &Value) -> Vec<toolkit::menu::Entry> {
-    value.as_array().into_iter().flatten().map(|item| {
-        if item["separator"] == true {
-            return toolkit::menu::Entry::Separator;
-        }
-        let children = native_entries(&item["children"]);
-        toolkit::menu::Entry::Row(toolkit::menu::Row {
-            id: if item["children"].is_array() { None } else { Some(text(item, "id").to_owned().into()) },
-            label: text(item, "label").into(),
-            shortcut: item["shortcut"].as_str().map(str::to_owned),
-            enabled: item["enabled"] == true,
-            checked: item["checked"].as_bool(),
-            children,
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            if item["separator"] == true {
+                return toolkit::menu::Entry::Separator;
+            }
+            let children = native_entries(&item["children"]);
+            toolkit::menu::Entry::Row(toolkit::menu::Row {
+                id: if item["children"].is_array() {
+                    None
+                } else {
+                    Some(text(item, "id").to_owned().into())
+                },
+                label: text(item, "label").into(),
+                shortcut: item["shortcut"].as_str().map(str::to_owned),
+                enabled: item["enabled"] == true,
+                checked: item["checked"].as_bool(),
+                children,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn native_menu(ui: &mut Ui, value: &Value, id: &str, events: &mut Vec<Intent>) -> egui::Response {
-    let menus: Vec<_> = value.as_array().into_iter().flatten().map(|item| toolkit::menu::Menu {
-        title: text(item, "label").into(), entries: native_entries(&item["children"]),
-    }).collect();
-    let search = menus.iter().position(|m| m.title == "Help").map(toolkit::menu::Search::new);
+    let menus: Vec<_> = value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|item| toolkit::menu::Menu {
+            title: text(item, "label").into(),
+            entries: native_entries(&item["children"]),
+        })
+        .collect();
+    let search = menus
+        .iter()
+        .position(|m| m.title == "Help")
+        .map(toolkit::menu::Search::new);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         let form = menu_form(ui.ctx());
         let picked = if form["effective"] == "bar" {
             toolkit::menu::data_picked(ui, &menus, search.as_ref())
         } else {
-            let response = ui.add(toolkit::button::IconButton::new(toolkit::Icon::Menu).tooltip("Window menu"));
+            let response = ui
+                .add(toolkit::button::IconButton::new(toolkit::Icon::Menu).tooltip("Window menu"));
             if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
-                || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary)) {
+                || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary))
+            {
                 toolkit::menu::toggle(ui.ctx());
             }
             toolkit::menu::data_compact_picked(ui, &menus, search.as_ref(), response.rect)
         };
-        if let Some(command) = picked { emit(events, id, "command", json!({"command":command})); }
-    }).response
+        if let Some(command) = picked {
+            emit(events, id, "command", json!({"command":command}));
+        }
+    })
+    .response
 }
 pub(crate) fn draw(
     ui: &mut Ui,
@@ -648,27 +671,63 @@ pub(crate) fn draw(
         }
         "dialog-form" => {
             if widget.properties["style"] == "gold" {
-                let dialog_id=egui::Id::unique((ui.ctx().viewport_id(),id,"gold-dialog"));
-                let choices:Vec<_>=value["choices"].as_array().unwrap().iter().map(|c|toolkit::dialog::Choice::new(text(c,"label"),
-                    if c["default"]==true {toolkit::dialog::Role::Default}else if c["cancel"]==true {toolkit::dialog::Role::Cancel}else{toolkit::dialog::Role::Other}).enabled(c["enabled"]==true)).collect();
-                let shown=toolkit::dialog::Dialog::new(dialog_id,text(value,"title")).buttons(choices).show(ui.ctx(),|ui| {
-                    if let Some(rows)=value["grid"].as_array() {
-                        egui::ScrollArea::vertical().max_height(360.0).show(ui,|ui| {
-                            egui::Grid::new((id,"shortcuts")).show(ui,|ui| {
-                                for row in rows {ui.label(text(row,"label"));ui.weak(text(row,"shortcut"));ui.end_row();}
-                            });
-                        });
-                    } else {ui.add(egui::Label::new(text(value,"body")).wrap());}
-                });
-                if let Some(index)=shown.chosen {
-                    let choice=&value["choices"][index];
-                    emit(events,id,"answer",json!({"choice":choice["id"],"instance":value["instance"]}));
-                    toolkit::dialog::Dialog::reset(ui.ctx(),dialog_id);
+                let dialog_id = egui::Id::unique((ui.ctx().viewport_id(), id, "gold-dialog"));
+                let choices: Vec<_> = value["choices"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|c| {
+                        toolkit::dialog::Choice::new(
+                            text(c, "label"),
+                            if c["default"] == true {
+                                toolkit::dialog::Role::Default
+                            } else if c["cancel"] == true {
+                                toolkit::dialog::Role::Cancel
+                            } else {
+                                toolkit::dialog::Role::Other
+                            },
+                        )
+                        .enabled(c["enabled"] == true)
+                    })
+                    .collect();
+                let shown = toolkit::dialog::Dialog::new(dialog_id, text(value, "title"))
+                    .buttons(choices)
+                    .show(ui.ctx(), |ui| {
+                        if let Some(rows) = value["grid"].as_array() {
+                            egui::ScrollArea::vertical()
+                                .max_height(360.0)
+                                .show(ui, |ui| {
+                                    egui::Grid::new((id, "shortcuts")).show(ui, |ui| {
+                                        for row in rows {
+                                            ui.label(text(row, "label"));
+                                            ui.weak(text(row, "shortcut"));
+                                            ui.end_row();
+                                        }
+                                    });
+                                });
+                        } else {
+                            ui.add(egui::Label::new(text(value, "body")).wrap());
+                        }
+                    });
+                if let Some(index) = shown.chosen {
+                    let choice = &value["choices"][index];
+                    emit(
+                        events,
+                        id,
+                        "answer",
+                        json!({"choice":choice["id"],"instance":value["instance"]}),
+                    );
+                    toolkit::dialog::Dialog::reset(ui.ctx(), dialog_id);
                 } else if shown.dismissed {
-                    emit(events,id,"answer",json!({"choice":"close","instance":value["instance"]}));
-                    toolkit::dialog::Dialog::reset(ui.ctx(),dialog_id);
+                    emit(
+                        events,
+                        id,
+                        "answer",
+                        json!({"choice":"close","instance":value["instance"]}),
+                    );
+                    toolkit::dialog::Dialog::reset(ui.ctx(), dialog_id);
                 }
-                return ui.interact(shown.rect,dialog_id.with("receipt"),egui::Sense::hover());
+                return ui.interact(shown.rect, dialog_id.with("receipt"), egui::Sense::hover());
             }
             let mut field = value["field"].as_str().map(str::to_owned);
             let modal = egui::Modal::new(egui::Id::unique((ui.ctx().viewport_id(), id, "modal")))

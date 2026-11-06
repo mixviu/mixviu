@@ -55,46 +55,90 @@ fn data_authored_menus_share_native_model_and_keyboard_activation() {
         ]}
     ])).with_properties(json!({"native_menu":true}));
     let mut widgets = Widgets::default();
-    for _ in 0..2 { frame(&ctx, &mut widgets, &widget, vec![]); }
+    for _ in 0..2 {
+        frame(&ctx, &mut widgets, &widget, vec![]);
+    }
     let model = toolkit::menu::model(&ctx);
     assert_eq!(model[0].title, "File");
-    assert_eq!(model[0].entries[0].row().unwrap().id.as_deref(), Some("runtime.command-42"));
+    assert_eq!(
+        model[0].entries[0].row().unwrap().id.as_deref(),
+        Some("runtime.command-42")
+    );
     assert!(!model[0].entries[2].row().unwrap().enabled);
     toolkit::menu::open_path(&ctx, &["File".into()]).unwrap();
     let key = |key| egui::Event::Key {
-        key, physical_key:Some(key), pressed:true, repeat:false, modifiers:egui::Modifiers::NONE,
+        key,
+        physical_key: Some(key),
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
     };
     frame(&ctx, &mut widgets, &widget, vec![key(egui::Key::ArrowDown)]);
     let intents = frame(&ctx, &mut widgets, &widget, vec![key(egui::Key::Enter)]);
-    assert!(intents.iter().any(|i|i.id=="commands" && i.action=="command" && i.value["command"]=="runtime.command-42"), "{intents:?}");
+    assert!(
+        intents.iter().any(|i| i.id == "commands"
+            && i.action == "command"
+            && i.value["command"] == "runtime.command-42"),
+        "{intents:?}"
+    );
     assert!(!toolkit::menu::is_open(&ctx));
 }
 
 #[test]
 fn browser_actions_are_admitted_through_the_public_widget_boundary() {
-    let widget = Widget::new("browser", "settings-browser", "", json!({
-        "title":"Settings","pages":[{"id":"page","title":"Page"}],
-        "sections":[{"rows":[{"id":"toggle","title":"Enabled","kind":"toggle","value":false}]}]
-    }));
-    assert!(widget.admit(&json!({}),"edit",&json!({"row":"toggle","value":true})).is_ok());
-    assert!(widget.admit(&json!({}),"navigate",&json!({"page":"page"})).is_ok());
-    assert!(widget.admit(&json!({}),"edit",&json!({"row":"missing","value":true})).is_err());
-    assert!(widget.admit(&json!({}),"edit",&json!({"row":"toggle","value":"true"})).is_err());
+    let widget = Widget::new(
+        "browser",
+        "settings-browser",
+        "",
+        json!({
+            "title":"Settings","pages":[{"id":"page","title":"Page"}],
+            "sections":[{"rows":[{"id":"toggle","title":"Enabled","kind":"toggle","value":false}]}]
+        }),
+    );
+    assert!(
+        widget
+            .admit(&json!({}), "edit", &json!({"row":"toggle","value":true}))
+            .is_ok()
+    );
+    assert!(
+        widget
+            .admit(&json!({}), "navigate", &json!({"page":"page"}))
+            .is_ok()
+    );
+    assert!(
+        widget
+            .admit(&json!({}), "edit", &json!({"row":"missing","value":true}))
+            .is_err()
+    );
+    assert!(
+        widget
+            .admit(&json!({}), "edit", &json!({"row":"toggle","value":"true"}))
+            .is_err()
+    );
 }
 
 #[test]
 fn passive_numeric_redraws_never_publish_rounded_or_clamped_settings() {
-    let ctx=egui::Context::default();viu::appearance::install(&ctx);
-    let widget=Widget::new("browser","settings-browser","",json!({
-        "title":"Text","pages":[],"settings":{},"sections":[{"plain":true,"rows":[
-            {"id":"size","title":"Font size","kind":"number","inline":true,"value":14.6666666667,"min":4,"max":72,"places":1,"slider":true},
-            {"id":"scrollback","title":"Scrollback","kind":"number","inline":true,"value":1000,"min":0,"max":100000}
-        ]}]
-    }));
-    let mut widgets=Widgets::default();
+    let ctx = egui::Context::default();
+    viu::appearance::install(&ctx);
+    let widget = Widget::new(
+        "browser",
+        "settings-browser",
+        "",
+        json!({
+            "title":"Text","pages":[],"settings":{},"sections":[{"plain":true,"rows":[
+                {"id":"size","title":"Font size","kind":"number","inline":true,"value":14.6666666667,"min":4,"max":72,"places":1,"slider":true},
+                {"id":"scrollback","title":"Scrollback","kind":"number","inline":true,"value":1000,"min":0,"max":100000}
+            ]}]
+        }),
+    );
+    let mut widgets = Widgets::default();
     for _ in 0..6 {
-        let events=frame(&ctx,&mut widgets,&widget,vec![]);
-        assert!(!events.iter().any(|e|e.action=="edit"),"passive redraw wrote settings: {events:?}");
+        let events = frame(&ctx, &mut widgets, &widget, vec![]);
+        assert!(
+            !events.iter().any(|e| e.action == "edit"),
+            "passive redraw wrote settings: {events:?}"
+        );
     }
 }
 

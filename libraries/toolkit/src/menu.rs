@@ -159,7 +159,11 @@ pub struct Search {
 impl Search {
     /// Toolkit-localised menu search, shared by registry and data-authored bars.
     pub fn new(menu: usize) -> Self {
-        Self { menu, hint: crate::strings::own("search-menus"), empty: crate::strings::own("no-matching-commands") }
+        Self {
+            menu,
+            hint: crate::strings::own("search-menus"),
+            empty: crate::strings::own("no-matching-commands"),
+        }
     }
 }
 
@@ -1292,7 +1296,12 @@ pub fn data_picked(ui: &mut Ui, menus: &[Menu], search: Option<&Search>) -> Opti
 }
 
 /// Data-authored counterpart of the native compact form.
-pub fn data_compact_picked(ui: &mut Ui, menus: &[Menu], search: Option<&Search>, anchor: Rect) -> Option<String> {
+pub fn data_compact_picked(
+    ui: &mut Ui,
+    menus: &[Menu],
+    search: Option<&Search>,
+    anchor: Rect,
+) -> Option<String> {
     render_picked(ui, menus, search, Some(anchor)).map(|(id, _)| id.into_owned())
 }
 

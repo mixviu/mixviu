@@ -14,14 +14,21 @@ use std::{
     time::{Duration, Instant},
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
-fn validate_overlays(model:&Value)->Result<(),String> {
-    if let Some(overlays)=model.get("native_overlays") {
-        let overlays=overlays.as_array().filter(|a|a.len()<=16).ok_or("native overlays exceed budget")?;
-        let mut ids=BTreeSet::new();
+fn validate_overlays(model: &Value) -> Result<(), String> {
+    if let Some(overlays) = model.get("native_overlays") {
+        let overlays = overlays
+            .as_array()
+            .filter(|a| a.len() <= 16)
+            .ok_or("native overlays exceed budget")?;
+        let mut ids = BTreeSet::new();
         for overlay in overlays {
-            if !overlay["command"].is_string() {return Err("overlay requires an intent command".into());}
-            let widget=crate::widgets::Widget::decode(&overlay["definition"])?;
-            if !ids.insert(widget.id.clone()) {return Err("duplicate overlay identity".into());}
+            if !overlay["command"].is_string() {
+                return Err("overlay requires an intent command".into());
+            }
+            let widget = crate::widgets::Widget::decode(&overlay["definition"])?;
+            if !ids.insert(widget.id.clone()) {
+                return Err("duplicate overlay identity".into());
+            }
             widget.validate_model(model)?;
         }
     }
@@ -38,8 +45,8 @@ struct Host {
     macro_finished: std::sync::mpsc::Receiver<Value>,
     local_ui: crate::local_ui::LocalUi,
     native_choice: Value,
-    overlays:crate::widgets::Widgets,
-    focus_serial:Value,
+    overlays: crate::widgets::Widgets,
+    focus_serial: Value,
     facilities: crate::app_facilities::Facilities,
     session: Option<crate::session::Session>,
     session_appearance: Option<Value>,
@@ -234,7 +241,9 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
-        if !self.facilities.native_ui() { self.drive_answers.extend(toolkit::drive::logic(ui.ctx())); }
+        if !self.facilities.native_ui() {
+            self.drive_answers.extend(toolkit::drive::logic(ui.ctx()));
+        }
         if self.inflight.is_empty() {
             while let Some(answer) = self.drive_answers.pop_front() {
                 if let Some(reply) = self.drive_replies.remove(&answer.id) {
@@ -262,7 +271,7 @@ impl Host {
             let _ = self
                 .bus
                 .hint(format!("{}.macros.finished", self.service), body);
-}
+        }
         self.facilities.prepare(ui.ctx(), &self.bus);
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
@@ -503,12 +512,12 @@ impl Host {
         }
         if self.ready {
             if self.facilities.macros.is_none() {
-            self.macro_ui.open = self.model["macros_open"] == true;
-            let was_open = self.macro_ui.open;
-            self.macro_ui.show(ui.ctx());
-            if self.macro_ui.open != was_open {
-                self.dispatch("viu.macros.closed".into(), json!({}), BTreeMap::new(), None);
-            }
+                self.macro_ui.open = self.model["macros_open"] == true;
+                let was_open = self.macro_ui.open;
+                self.macro_ui.show(ui.ctx());
+                if self.macro_ui.open != was_open {
+                    self.dispatch("viu.macros.closed".into(), json!({}), BTreeMap::new(), None);
+                }
             }
             if let Some(session) = &mut self.session {
                 if let Some(snapshot) = session
@@ -595,26 +604,63 @@ impl Host {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
             }
             self.overlays.begin_frame();
-            for overlay in self.model["native_overlays"].as_array().into_iter().flatten().cloned().collect::<Vec<_>>() {
-                let widget=crate::widgets::Widget::decode(&overlay["definition"]).expect("validated overlay");
-                let command=overlay["command"].as_str().unwrap();
-                for intent in self.overlays.widget(ui,&widget,&self.model) {
-                    self.dispatch(command.into(),intent.encode(),BTreeMap::new(),None);
+            for overlay in self.model["native_overlays"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+            {
+                let widget = crate::widgets::Widget::decode(&overlay["definition"])
+                    .expect("validated overlay");
+                let command = overlay["command"].as_str().unwrap();
+                for intent in self.overlays.widget(ui, &widget, &self.model) {
+                    self.dispatch(command.into(), intent.encode(), BTreeMap::new(), None);
                 }
             }
             self.view.geometry.extend(self.overlays.geometry.clone());
-            if self.facilities.macros.is_some() && toolkit::macros::show_app(ui.ctx(),&self.service,self.model["macros_open"]==true) {
-                self.dispatch("viu.macros.changed".into(),json!({"open":false}),BTreeMap::new(),None);
+            if self.facilities.macros.is_some()
+                && toolkit::macros::show_app(
+                    ui.ctx(),
+                    &self.service,
+                    self.model["macros_open"] == true,
+                )
+            {
+                self.dispatch(
+                    "viu.macros.changed".into(),
+                    json!({"open":false}),
+                    BTreeMap::new(),
+                    None,
+                );
             }
-            if self.model["native_focus"]["serial"]!=self.focus_serial && self.model["native_focus"]["id"].is_string() {
-                if let Some(id)=self.model["native_focus"]["id"].as_str() {let _=self.view.request_focus(id);}
-                self.focus_serial=self.model["native_focus"]["serial"].clone();ui.ctx().request_repaint();
+            if self.model["native_focus"]["serial"] != self.focus_serial
+                && self.model["native_focus"]["id"].is_string()
+            {
+                if let Some(id) = self.model["native_focus"]["id"].as_str() {
+                    let _ = self.view.request_focus(id);
+                }
+                self.focus_serial = self.model["native_focus"]["serial"].clone();
+                ui.ctx().request_repaint();
             }
             if !toolkit::menu::is_open(ui.ctx()) {
-                for action in self.model["shortcuts"].as_array().into_iter().flatten().cloned().collect::<Vec<_>>() {
-                    if action["enabled"]!=true {continue;}
-                    if let Some(shortcut)=action["shortcut"].as_str().and_then(toolkit::keymap::parse_chord) {
-                        if ui.ctx().input_mut(|input|input.consume_shortcut(&shortcut)) {
+                for action in self.model["shortcuts"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                {
+                    if action["enabled"] != true {
+                        continue;
+                    }
+                    if let Some(shortcut) = action["shortcut"]
+                        .as_str()
+                        .and_then(toolkit::keymap::parse_chord)
+                    {
+                        if ui
+                            .ctx()
+                            .input_mut(|input| input.consume_shortcut(&shortcut))
+                        {
                             self.dispatch("viu.frame.intent".into(),json!({"id":"shortcut","value":{"command":action["id"],"origin":"shortcut"}}),BTreeMap::new(),None);
                         }
                     }
@@ -762,7 +808,10 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         roots.mix = std::env::current_exe().expect("own macro interpreter artifact");
         roots
     });
-    let macros = facilities.macros.clone().unwrap_or_else(||macros::Session::with_roots(&bundle.manifest.service, roots));
+    let macros = facilities
+        .macros
+        .clone()
+        .unwrap_or_else(|| macros::Session::with_roots(&bundle.manifest.service, roots));
     let (macro_tx, macro_finished) = std::sync::mpsc::channel();
     let macro_wake = wake.clone();
     macros.add_finish_hook(Arc::new(move |body| {
@@ -796,8 +845,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         macro_finished,
         local_ui,
         native_choice: json!({}),
-        overlays:Default::default(),
-        focus_serial:Value::Null,
+        overlays: Default::default(),
+        focus_serial: Value::Null,
         facilities,
         service: bundle.manifest.service.clone(),
         file_theme: toolkit::Theme::load(),

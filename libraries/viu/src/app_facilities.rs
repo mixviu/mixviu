@@ -28,7 +28,9 @@ pub struct Facilities {
     wake: crate::runtime::Wake,
 }
 impl Facilities {
-    pub fn native_ui(&self)->bool {self.ui}
+    pub fn native_ui(&self) -> bool {
+        self.ui
+    }
     pub fn new(manifest: &Manifest, wake: crate::runtime::Wake) -> Self {
         let app = manifest.service.clone();
         let mut surface = manifest.bus_surface.clone();
