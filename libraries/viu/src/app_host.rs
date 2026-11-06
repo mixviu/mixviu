@@ -942,10 +942,14 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         std::process::exit(2)
     });
     let _logging = if bundle.manifest.native_debug {
-        Some(toolkit::debug::init(&bundle.manifest.service, "warn", &mut args).unwrap_or_else(|error| {
-            eprintln!("viu logging: {error}");
-            std::process::exit(2)
-        }))
+        Some(
+            toolkit::debug::init(&bundle.manifest.service, "warn", &mut args).unwrap_or_else(
+                |error| {
+                    eprintln!("viu logging: {error}");
+                    std::process::exit(2)
+                },
+            ),
+        )
     } else {
         crate::debug::init("warn", &mut args).unwrap_or_else(|error| {
             eprintln!("viu logging: {error}");

@@ -544,6 +544,8 @@ on prefs.intent
         $state=gallery_action($state,$action,$v)
       end
     elif contains(["edit","activate"],$a.action) then
+      $browser=$pages.browser($state)
+      viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,$a.action,$a.value)
       if $a.action=="edit" and $nav.page($state.nav.page).kind=="custom" then
         $browser=$pages.browser($state)
         viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,"edit",$a.value)
@@ -565,10 +567,13 @@ on prefs.intent
         end
         publish_prefs($state);reply(0,"{}");return
       end
-      $p=$nav.page($state.nav.page);$r=$pages.row_for($p,$a.value.row)
+      $p=$nav.page($state.nav.page);$row_id=$a.value.row
+      if starts_with($row_id,"pick:") then $row_id=substr($row_id,5) end
+      $r=$pages.row_for($p,$row_id)
       $why=$pages.row_blocked($state,$p,$r)
       if $why!=nil then raise("FAILED",$why) end
-      if $a.action=="activate" and $r.control.control=="accent" then $state.nav.drawer=$r.id
+      if $a.action=="activate" and contains(["accent","colour"],$r.control.control) then $state.nav.drawer=$r.id
+      elif $a.action=="activate" and $r.control.control=="pick" then $state.nav.drawer=$r.id
       elif $a.action=="activate" and $r.control.control=="drawer" then $state.nav.drawer=$r.control.drawer
       elif $a.action=="activate" and $r.control.control=="ordered" then $state.nav.drawer=$r.control.add
       elif $a.action=="activate" and $r.control.control=="page" then $state=$pages.open_page($state,$r.control.page,nil)

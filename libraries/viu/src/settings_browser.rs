@@ -167,13 +167,14 @@ fn text<'a>(v: &'a Value, key: &str) -> &'a str {
 }
 fn parse_colour(value: &str) -> Option<Color32> {
     let hex = value.strip_prefix('#')?;
-    if hex.len() != 6 || !hex.is_ascii() {
+    if ![6,8].contains(&hex.len()) || !hex.is_ascii() {
         return None;
     }
-    Some(Color32::from_rgb(
+    Some(Color32::from_rgba_unmultiplied(
         u8::from_str_radix(&hex[0..2], 16).ok()?,
         u8::from_str_radix(&hex[2..4], 16).ok()?,
         u8::from_str_radix(&hex[4..6], 16).ok()?,
+        if hex.len()==8 {u8::from_str_radix(&hex[6..8],16).ok()?}else{255},
     ))
 }
 fn array(v: &Value) -> impl Iterator<Item = &Value> {
@@ -221,6 +222,8 @@ pub fn validate(value: &Value) -> Result<(), String> {
                 "colour",
                 "ordered",
                 "pick",
+                "pick-list",
+                "colour-editor",
             ]
             .contains(&text(row, "kind"))
             || array(&row["choices"]).count() > 4096
@@ -444,15 +447,17 @@ pub(crate) fn draw(
         let mut drawer = ui.new_child(
             egui::UiBuilder::new()
                 .id_salt((id, "drawer"))
-                .max_rect(rect.shrink(look.l))
+                .max_rect(rect.shrink2(vec2(look.l,look.s)))
                 .layout(Layout::top_down(Align::Min)),
         );
         drawer.horizontal(|ui| {
-            ui.heading(text(&value["drawer"], "title"));
-            if ui.button("×").clicked() {
-                emit(events, id, "drawer.close", Value::Null);
-            }
+            let font=toolkit::fonts::bound(ui.ctx(),toolkit::fonts::heading(20.0));
+            ui.label(RichText::new(text(&value["drawer"],"title")).font(font).color(look.text));
+            ui.with_layout(Layout::right_to_left(Align::Center),|ui| {
+                if ui.add(toolkit::button::IconButton::new(toolkit::Icon::X).size(16.0).tooltip(text(value,"drawer_close"))).clicked() {emit(events,id,"drawer.close",Value::Null);}
+            });
         });
+        drawer.add_space(look.m);
         egui::ScrollArea::vertical()
             .id_salt((id, "drawer-scroll"))
             .show(&mut drawer, |ui| {
@@ -1000,6 +1005,7 @@ fn draw_row(
             let control_width = match kind {
                 "toggle" => 48.0,
                 "link" => 16.0,
+                "colour" => if row["auto_link"]==true && row["value"]=="auto" {text_width(ui,text(row,"auto_label"),14.0)+28.0}else{48.0},
                 "number" => 96.0,
                 "slider" | "steps" => 360.0,
                 "choice" => {
@@ -1008,7 +1014,7 @@ fn draw_row(
                         .fold(0.0_f32, f32::max)
                         + 33.0
                 }
-                "pick" => text_width(ui, text(row, "value"), 14.0) + 28.0,
+                "pick" => text_width(ui, text(row, "display_value"), 14.0) + 28.0,
                 "info" => text_width(ui, text(row, "value"), 14.0),
                 _ => 180.0,
             };
@@ -1050,7 +1056,7 @@ fn draw_row(
         })
         .response;
     record(geometry, id, &format!("row.{key}"), &response);
-    if kind == "link" {
+    if kind == "link" || kind == "pick" {
         let click = ui.interact(response.rect, response.id.with("go"), Sense::click());
         click.widget_info(|| {
             egui::WidgetInfo::labeled(
@@ -1521,23 +1527,27 @@ fn draw_control(
             record(geometry, id, &format!("row.{key}.control"), &r);
         }
         "pick" => {
-            let (r, value) = picker(ui, id, row);
-            record(geometry, id, &format!("row.{key}.control"), &r);
-            edit = value;
+            ui.add(crate::icons::image_of(ui.ctx(),crate::icons::Icon::from_name("chevron-right").unwrap(),16.0,look.icon));
+            ui.label(RichText::new(text(row,"display_value")).size(14.0).color(look.value));
         }
         "colour" => {
-            let (r, value) = colour_picker(ui, row, look);
+            let auto=row["auto_link"]==true && row["value"]=="auto";
+            let (rect,r)=ui.allocate_exact_size(vec2(if auto {text_width(ui,text(row,"auto_label"),14.0)+28.0}else{48.0},24.0),Sense::click());
+            if auto {
+                toolkit::button::paint_icon(ui,toolkit::Icon::ChevronRight,pos2(rect.right()-8.0,rect.center().y),16.0,look.icon);
+                ui.painter().text(pos2(rect.right()-20.0,rect.center().y),egui::Align2::RIGHT_CENTER,text(row,"auto_label"),egui::FontId::proportional(14.0),look.value);
+            } else {
+                let colour=parse_colour(text(row,"value")).unwrap_or(match text(row,"colour_role") {"window"=>look.window,"card"=>look.card,"text"=>look.text,"control"=>look.control,_=>look.accent});
+                ui.painter().rect_filled(rect,Look::radius(look.r_xs),colour);
+                ui.painter().rect_stroke(rect,Look::radius(look.r_xs),Stroke::new(1.0,look.swatch_border),StrokeKind::Inside);
+            }
+            focus_ring(ui,&r,rect,look.r_xs,look);
+            r.widget_info(||egui::WidgetInfo::labeled(if auto {egui::Role::Link}else{egui::Role::Button},ui.is_enabled(),text(row,"title")));
             record(geometry, id, &format!("row.{key}.control"), &r);
-            edit = value;
+            if r.clicked(){emit(events,id,"activate",json!({"row":key}));}
         }
         "link" => {
-            toolkit::button::paint_icon(
-                ui,
-                toolkit::Icon::ChevronRight,
-                ui.available_rect_before_wrap().center(),
-                20.0,
-                look.icon,
-            );
+            ui.add(crate::icons::image_of(ui.ctx(),crate::icons::Icon::from_name("chevron-right").unwrap(),16.0,look.icon));
         }
         "button" => {
             let r = ui.button(text(row, "title"));
@@ -1645,7 +1655,28 @@ fn draw_inline_row(
     let response = ui
         .push_id((id, key), |ui| {
             ui.add_enabled_ui(row["blocked"].is_null(), |ui| {
-                if text(row, "kind") == "info" {
+                if text(row,"kind")=="colour-editor" {
+                    colour_editor(ui,id,row,look,events);
+                } else if text(row,"kind")=="pick-list" {
+                    let filter_id=ui.make_persistent_id((id,key,"pick-filter"));
+                    let mut query=ui.data(|d|d.get_temp::<String>(filter_id)).unwrap_or_default();
+                    if ui.add(egui::TextEdit::singleline(&mut query).hint_text(text(row,"search_hint")).desired_width(ui.available_width())).changed() {ui.data_mut(|d|d.insert_temp(filter_id,query.clone()));}
+                    ui.add_space(look.s);
+                    let choices:Vec<_>=array(&row["choices"]).enumerate().filter(|(_,c)|text(c,"label").to_lowercase().contains(&query.to_lowercase()) && (!c["value"].is_null() || query.is_empty())).collect();
+                    egui::Frame::NONE.fill(look.card).corner_radius(Look::radius(look.r_s)).show(ui,|ui|{
+                        ui.set_width(ui.available_width());ui.spacing_mut().item_spacing.y=0.0;
+                        for (position,(index,choice)) in choices.iter().enumerate() {
+                            if position>0 {let y=ui.cursor().top();ui.painter().hline(ui.min_rect().x_range(),y,Stroke::new(1.0,look.divider));ui.add_space(1.0);}
+                            let (rect,r)=ui.allocate_exact_size(vec2(ui.available_width(),36.0),Sense::click());
+                            let selected=choice["value"]==row["value"];
+                            ui.painter().text(rect.left_center()+vec2(look.m,0.0),egui::Align2::LEFT_CENTER,text(choice,"label"),egui::FontId::proportional(14.0),look.text);
+                            if selected {toolkit::button::paint_icon(ui,toolkit::Icon::Check,rect.right_center()-vec2(look.m+8.0,0.0),16.0,look.accent);}
+                            r.widget_info(||egui::WidgetInfo::selected(egui::Role::RadioButton,ui.is_enabled(),selected,text(choice,"label")));
+                            record(geometry,id,&format!("row.{key}.choice.{index}"),&r);
+                            if r.clicked() && !selected {edit=Some(choice["value"].clone());}
+                        }
+                    });
+                } else if text(row, "kind") == "info" {
                     ui.label(RichText::new(row["value"].as_str().unwrap_or("")).weak());
                 } else if text(row, "kind") == "records" {
                     if row["split"] == true {
@@ -2256,6 +2287,42 @@ fn images(
     }
 }
 
+fn colour_editor(ui: &mut Ui, id: &str, row: &Value, look: &Look, events: &mut Vec<Intent>) {
+    let key=text(row,"id");
+    let alpha=row["alpha"]==true;
+    let stored=parse_colour(text(row,"value"));
+    let held_id=ui.make_persistent_id((id,key,"picking"));
+    let mut picking=ui.data(|d|d.get_temp::<Color32>(held_id)).or(stored).unwrap_or(look.accent);
+    if egui::widgets::color_picker::color_picker_color32(ui,&mut picking,if alpha {egui::widgets::color_picker::Alpha::OnlyBlend}else{egui::widgets::color_picker::Alpha::Opaque}) {
+        ui.data_mut(|d|d.insert_temp(held_id,picking));
+    }
+    if ui.input(|i|i.pointer.any_released()) && let Some(held)=ui.data(|d|d.get_temp::<Color32>(held_id)) && Some(held)!=stored {
+        ui.data_mut(|d|d.remove_temp::<Color32>(held_id));
+        emit(events,id,"edit",json!({"row":key,"value":colour_hex(held,alpha)}));
+    }
+    ui.add_space(look.s);
+    let hex_id=held_id.with("hex");
+    let mut value=ui.data(|d|d.get_temp::<String>(hex_id)).unwrap_or_else(||text(row,"value").to_owned());
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(text(row,"hex_label")).size(12.0).color(look.text));
+        let edit=ui.add(egui::TextEdit::singleline(&mut value).desired_width(120.0).id_salt(hex_id));
+        if edit.changed(){ui.data_mut(|d|d.insert_temp(hex_id,value.clone()));}
+        if edit.lost_focus() && ui.data(|d|d.get_temp::<String>(hex_id)).is_some() {
+            ui.data_mut(|d|d.remove_temp::<String>(hex_id));
+            if let Some(colour)=parse_colour(value.trim()) {emit(events,id,"edit",json!({"row":key,"value":colour_hex(colour,alpha)}));}
+            else {emit(events,id,"problem",json!({"message":row["invalid_label"]}));}
+        }
+    });
+    ui.add_space(look.m);
+    if standard_button(ui,text(row,"reset_label"),look).clicked() {
+        ui.data_mut(|d|{d.remove_temp::<Color32>(held_id);d.remove_temp::<String>(hex_id);});
+        emit(events,id,"edit",json!({"row":key,"value":row["auto_value"]}));
+    }
+}
+fn colour_hex(colour: Color32, alpha: bool) -> String {
+    let [r,g,b,a]=colour.to_srgba_unmultiplied();
+    if alpha && a<255 {format!("#{r:02x}{g:02x}{b:02x}{a:02x}")}else{format!("#{r:02x}{g:02x}{b:02x}")}
+}
 fn cosmic_icon_button(
     ui: &mut Ui,
     icon: toolkit::Icon,
