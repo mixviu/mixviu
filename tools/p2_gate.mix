@@ -18,8 +18,9 @@ if $mode=="build" then
     $ldd=run_argv_must(["ldd",$art.."/"..$pair[1]])
     print({engine:$pair[1],sha256:hash_file($art.."/"..$pair[1],"sha256"),ldd:$ldd})
     if contains(["mix","mixd"],$pair[1]) then
-      for $line in lines($ldd)
-        if contains($line,"=>") and not any(["libc.so","libm.so","libgcc_s.so"],fn($ok)=contains($line,$ok)) then raise("D2_SHARED_LIBRARY",$line) end
+      $dynamic=run_argv_must(["readelf","-d",$art.."/"..$pair[1]])
+      for $line in lines($dynamic)
+        if contains($line,"(NEEDED)") and not any(["[libc.so.6]","[libm.so.6]","[libgcc_s.so.1]"],fn($ok)=contains($line,$ok)) then raise("D2_SHARED_LIBRARY",$line) end
       end
     end
   end
