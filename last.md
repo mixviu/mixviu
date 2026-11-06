@@ -1,3 +1,54 @@
+# MixViu app ports — round 3 Ced checkpoint
+
+Ced is a bounded Mix specimen over the unchanged editd wire. Workshop is
+inventoried but not implemented at this Ced-first budget checkpoint.
+No installs, real desktop/VT changes, interpreter changes or main merge.
+
+Validated source: `6edaf28e63a2192a67ee52feb3398d6349e8179b`.
+The native run uses this exact immutable bundle archive and CBC-built generic
+host. Four captures were inspected beside original Ced 8779f33284b7.
+This is not complete feature, visual, collaboration or performance parity.
+
+Implemented: semantic open/create, tabs, native text input/selection, explicit
+revision-fenced Apply, Save/Save As, editd Undo/Redo/Reload, Refresh/Discard and
+Close. Mix owns all file/tab/session/command policy. Failed CAS retains the
+local draft; no automatic write replay. Native checks passed open, selection,
+Unicode typing, save bytes, undo/redo, two-tab selection/close, concurrent edit
+refusal and retained draft, refresh and clean close. Oversized Unicode input
+was refused without changing the draft.
+
+Per-app Rust: **0**. Shared production Rust: **+12/-5 lines**; shared test diff
+**+10/-1 lines**. The generic editor kind uses the existing native egui text
+buffer, code-editor rendering and bounded UTF-8 admission; it changes no
+ordinary field limits. No new dependency or imported Rust source. Embedded
+Mix remains 0.117, with libraries/mix, engines and Cargo.lock unchanged.
+
+The editor-model/edit mirror and storage closure were surveyed, not imported.
+Optimistic typing/OT, event/reply-loss reconciliation, large paged buffers,
+highlighting/diagnostics, rich commands/search/markdown/mail, OS clipboard,
+session settings/keymaps and unsaved-quit prompts remain deferred. The native
+control caps interactive insertion at 16384 scalars and admission at 65536
+UTF-8 bytes; partial snapshots are refused. Generic host quit has no original
+draft-loss prompt. Details and rationale: docs/ports/ced.md. Workshop inventory:
+docs/ports/workshop.md. No Workshop acceptance is claimed.
+
+Final native evidence: `native.0JyRoF`, six records, all six owned processes
+stopped. App archive SHA256:
+`de6a766387b76fdfc0921b58b132bb6e36497994c61bb3191215c640367f78dc`.
+Binary SHA256:
+`a2ce609315a551b9a2847ccb658c451da8b362473e5818b00a4eab11e3968e6f`.
+Private scripts, captures and receipts remain in app-ports-r3-20261106.
+Mix lint and the 101 native-import checks pass. No test was weakened.
+
+Earlier round-3 CBC: 20261106-215555-cd9f02ee-a1 (three scoped tests/build,
+full saved log read, fmt diff applied locally); 20261106-220141-a624f945-a1
+(109 tests, fmt/check/clippy/build green, full saved log read, worker diff
+empty). The final corrected-source gate is recorded at the end of this file.
+Clippy has existing style warnings; no warning-free claim. Commits after the
+validated source change documentation/receipts only.
+
+## Earlier round-2 and round-3 checkpoint history
+
 # MixViu app ports — round 2 checkpoint
 
 Screenshot and Prefs are implemented and verified as bounded Mix lab specimens.
@@ -102,3 +153,6 @@ Branch: lab/app-ports; head/source SHA: 3afe5229942cd596744555e3a699268e1d3e2110
 
 Ced final boundary correction: use byte_length rather than scalar-count len for the 65536-byte UTF-8 fence. Added native oversized-Unicode refusal with unchanged draft assertion. Full CBC 20261106-220141-a624f945-a1 passed 109 tests with empty worker diff and full saved log read; corrected Mix source has a new exact-source gate. Rust unchanged after that gate.
 Branch: lab/app-ports; head/source SHA: 6edaf28e63a2192a67ee52feb3398d6349e8179b (source; reporting-only commit follows); apps done: Ced bounded specimen, Workshop inventory only; CBC job ids: 20261106-220647-449d25c2 (queued), 20261106-220141-a624f945-a1 (full green), 20261106-215555-cd9f02ee-a1 (scoped green).
+
+Round-3 final CBC 20261106-220647-449d25c2-a1 BUILD_RC=0: 109 tests, fmt/check/clippy/build; full 43894-character log read, empty worker diff. Final artifact fetched and byte-identical to the inspected native witness. Ced is checkpointed with listed deferrals; Workshop remains inventory only.
+Branch: lab/app-ports; head/source SHA: 6edaf28e63a2192a67ee52feb3398d6349e8179b (validated source; reporting-only commit follows); apps done: Ced bounded specimen, Workshop inventory only; CBC job ids: 20261106-220647-449d25c2-a1 (final green), 20261106-220141-a624f945-a1 (earlier full green), 20261106-215555-cd9f02ee-a1 (scoped green).
