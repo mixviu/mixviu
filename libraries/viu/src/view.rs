@@ -1025,12 +1025,34 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             return Err("scene slots must attach a dock child".into());
         }
         match node.family.as_str() {
-            "row" if text(node,"packing")=="toolbar" => {
-                let kids=children(node).collect::<Vec<_>>();
-                for name in ["end","flex"] {
-                    if node.ports.get(name).is_some_and(|v|v.as_str().is_none_or(|s|!kids.contains(&s))) { return Err("toolbar role must name a child".into()); }
+            "row" if text(node, "packing") == "toolbar" => {
+                let kids = children(node).collect::<Vec<_>>();
+                for name in ["end", "flex"] {
+                    if node
+                        .ports
+                        .get(name)
+                        .is_some_and(|v| v.as_str().is_none_or(|s| !kids.contains(&s)))
+                    {
+                        return Err("toolbar role must name a child".into());
+                    }
                 }
-                if node.ports.get("fit").and_then(Value::as_array).is_some_and(|items| items.iter().any(|v|v.as_str().is_none_or(|s| !kids.contains(&s) || ![Some("combo"),Some("swatches")].contains(&tree.nodes[s].ports["definition"]["kind"].as_str())))) {return Err("toolbar fit requires combo or swatches children".into());}
+                if node
+                    .ports
+                    .get("fit")
+                    .and_then(Value::as_array)
+                    .is_some_and(|items| {
+                        items.iter().any(|v| {
+                            v.as_str().is_none_or(|s| {
+                                !kids.contains(&s)
+                                    || ![Some("combo"), Some("swatches")].contains(
+                                        &tree.nodes[s].ports["definition"]["kind"].as_str(),
+                                    )
+                            })
+                        })
+                    })
+                {
+                    return Err("toolbar fit requires combo or swatches children".into());
+                }
             }
             "row" | "column"
                 if node

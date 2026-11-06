@@ -130,19 +130,33 @@ impl Widget {
     }
     fn combo_width(&self, ui: &egui::Ui) -> f32 {
         let minimum = self.properties["width"].as_f64().unwrap_or(96.0) as f32;
-        if self.properties["measure_choices"] != true { return minimum; }
+        if self.properties["measure_choices"] != true {
+            return minimum;
+        }
         let font = egui::TextStyle::Button.resolve(ui.style());
-        let longest = self.choices().iter().map(|id| {
-            let label = self.properties["choice_labels"][*id].as_str().unwrap_or(id);
-            ui.painter().layout_no_wrap(label.into(),font.clone(),egui::Color32::PLACEHOLDER).size().x
-        }).fold(0.0, f32::max);
+        let longest = self
+            .choices()
+            .iter()
+            .map(|id| {
+                let label = self.properties["choice_labels"][*id].as_str().unwrap_or(id);
+                ui.painter()
+                    .layout_no_wrap(label.into(), font.clone(), egui::Color32::PLACEHOLDER)
+                    .size()
+                    .x
+            })
+            .fold(0.0, f32::max);
         minimum.max(longest + ui.spacing().icon_spacing + ui.spacing().icon_width)
     }
     /// Untruncated native label width, using exactly the same typography as
     /// drawing. Containers choose whether and how this preferred size shrinks.
     pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
         if self.kind == "swatches" {
-            return Ok(self.properties["items"].as_array().ok_or("swatches required")?.len() as f32 * (18.0 + ui.spacing().item_spacing.x) + 6.0);
+            return Ok(self.properties["items"]
+                .as_array()
+                .ok_or("swatches required")?
+                .len() as f32
+                * (18.0 + ui.spacing().item_spacing.x)
+                + 6.0);
         }
         if self.kind == "combo" && self.properties["native"] == true {
             return Ok(self.combo_width(ui) + 2.0 * ui.spacing().button_padding.x);
@@ -193,12 +207,31 @@ impl Widget {
                 let items = self.value(model);
                 let items = items.as_array().ok_or("command bar list required")?;
                 let chrome = toolkit::chrome::Chrome::of(ui.ctx());
-                let font = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(chrome.style.push_label_size as f32));
-                return Ok(items.iter().map(|item| {
-                    if item["separator"] == true { 9.0 }
-                    else if item["icon"].is_string() && item["primary"] != true { chrome.style.icon_button as f32 }
-                    else { ui.painter().layout_no_wrap(item["label"].as_str().unwrap_or("").into(),font.clone(),egui::Color32::PLACEHOLDER).size().x + chrome.style.button_push_padding as f32 }
-                }).sum::<f32>() + ui.spacing().item_spacing.x * items.len().saturating_sub(1) as f32);
+                let font = toolkit::fonts::bound(
+                    ui.ctx(),
+                    toolkit::fonts::medium(chrome.style.push_label_size as f32),
+                );
+                return Ok(items
+                    .iter()
+                    .map(|item| {
+                        if item["separator"] == true {
+                            9.0
+                        } else if item["icon"].is_string() && item["primary"] != true {
+                            chrome.style.icon_button as f32
+                        } else {
+                            ui.painter()
+                                .layout_no_wrap(
+                                    item["label"].as_str().unwrap_or("").into(),
+                                    font.clone(),
+                                    egui::Color32::PLACEHOLDER,
+                                )
+                                .size()
+                                .x
+                                + chrome.style.button_push_padding as f32
+                        }
+                    })
+                    .sum::<f32>()
+                    + ui.spacing().item_spacing.x * items.len().saturating_sub(1) as f32);
             }
             if toolkit::titlebar::hosting::hosted(ui.ctx()) {
                 return Ok(0.0);
@@ -1160,14 +1193,9 @@ impl Widgets {
                     .iter()
                     .position(|id| *id == value.as_str().unwrap_or(""))
                     .unwrap_or(0);
-                let response = toolkit::combo::show(
-                    ui,
-                    id,
-                    &mut at,
-                    &labels,
-                    Some(widget.combo_width(ui)),
-                )
-                .accessible_name(&widget.label);
+                let response =
+                    toolkit::combo::show(ui, id, &mut at, &labels, Some(widget.combo_width(ui)))
+                        .accessible_name(&widget.label);
                 if response.changed() {
                     changed = Some(json!(ids[at]));
                 }
