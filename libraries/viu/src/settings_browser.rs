@@ -523,7 +523,10 @@ pub(crate) fn draw(
     let mut body = ui.new_child(
         egui::UiBuilder::new()
             .id_salt((id, "body"))
-            .ui_stack_info(egui::UiStackInfo::new(egui::UiKind::CentralPanel).with_frame(egui::Frame::NONE.fill(look.window)))
+            .ui_stack_info(
+                egui::UiStackInfo::new(egui::UiKind::CentralPanel)
+                    .with_frame(egui::Frame::NONE.fill(look.window)),
+            )
             .max_rect(column)
             .layout(Layout::top_down(Align::Min)),
     );
