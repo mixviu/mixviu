@@ -145,8 +145,8 @@ impl ChromeTheme {
             captions: Default::default(),
             action_style: dictionary
                 .style
-                .unwrap_or_else(|| toolkit::theme::Theme::embedded().style()),
-            action_stroke: toolkit::icons::DEFAULT_STROKE,
+                .unwrap_or_else(|| theme::theme::Theme::embedded().style()),
+            action_stroke: theme::icons::DEFAULT_STROKE,
             tokens: TokenSource::Prepared,
             palette: Palette::from_dictionary(dictionary),
         }
@@ -181,8 +181,8 @@ impl ChromeTheme {
             action_style: design
                 .dictionary()
                 .style
-                .unwrap_or_else(|| toolkit::theme::Theme::embedded().style()),
-            action_stroke: toolkit::icons::DEFAULT_STROKE,
+                .unwrap_or_else(|| theme::theme::Theme::embedded().style()),
+            action_stroke: theme::icons::DEFAULT_STROKE,
             tokens,
             palette,
         }

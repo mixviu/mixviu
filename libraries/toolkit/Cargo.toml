@@ -20,6 +20,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+theme.workspace = true
 files.workspace = true
 mimedb.workspace = true
 anyhow.workspace = true

@@ -4,7 +4,7 @@
 //! elided at the end to the width it may take.
 //!
 //! The font system is decor's own, process-wide and built on first use from
-//! the faces the apps embed (`toolkit::fonts`): Inter at each weight as the
+//! the faces the apps embed (`theme::fonts`): Inter at each weight as the
 //! sans-serif family, JetBrains Mono as monospace. Titles therefore match
 //! the apps' own type and need no fonts on the machine. A face without a
 //! glyph falls back the way cosmic-text always does; no usable face gives an
@@ -72,10 +72,10 @@ fn font_system() -> &'static Mutex<FontSystem> {
     static FONTS: OnceLock<Mutex<FontSystem>> = OnceLock::new();
     FONTS.get_or_init(|| {
         let mut db = fontdb::Database::new();
-        for &weight in toolkit::fonts::INTER_WEIGHTS {
-            db.load_font_data(toolkit::fonts::inter_face(weight).1.to_vec());
+        for &weight in theme::fonts::INTER_WEIGHTS {
+            db.load_font_data(theme::fonts::inter_face(weight).1.to_vec());
         }
-        db.load_font_data(toolkit::fonts::mono_face().1.to_vec());
+        db.load_font_data(theme::fonts::mono_face().1.to_vec());
         db.set_sans_serif_family("Inter");
         db.set_monospace_family("JetBrains Mono");
         Mutex::new(FontSystem::new_with_locale_and_db("en-US".into(), db))
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn every_offered_weight_draws_a_heavier_title() {
         let mut previous = 0;
-        for &weight in toolkit::fonts::INTER_WEIGHTS {
+        for &weight in theme::fonts::INTER_WEIGHTS {
             let mask = title_mask(
                 "MixOS Preferences Hamburgefonts 0123456789",
                 &DecoFontFamily::SystemUi,

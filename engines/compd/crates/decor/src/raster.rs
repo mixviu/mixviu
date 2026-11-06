@@ -342,7 +342,7 @@ pub fn titlebar(
         let stroke = if state.action_stroke > 0.0 {
             state.action_stroke
         } else {
-            toolkit::icons::DEFAULT_STROKE
+            theme::icons::DEFAULT_STROKE
         };
         let Some(icon) = icon_image(icon, (size * scale).round().max(1.0) as u32, tint, stroke)
         else {
@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn maximum_interface_title_fits_the_unchanged_bar_with_padding() {
-        let theme = toolkit::Theme::embedded();
+        let theme = theme::Theme::embedded();
         let title =
             design::active_typography(Some(theme.typography()), design::TypographyRole::UiDisplay);
         let ui = design::active_typography(Some(theme.typography()), design::TypographyRole::Ui);

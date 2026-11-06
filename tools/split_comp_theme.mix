@@ -1,0 +1,101 @@
+-- Lab B2: preserve the toolkit facade while moving value ownership out of egui.
+$dir = "libraries/theme"
+mkdir($dir .. "/src", {parents: true})
+write_file($dir .. "/Cargo.toml", <<EOF
+[package]
+name = "theme"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+design.workspace = true
+config.workspace = true
+settings.workspace = true
+assets.workspace = true
+action.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+EOF
+)
+$t = read_file("libraries/toolkit/src/theme.rs")
+$trait = split(split($t, "impl editor::palette::Theme for Theme {")[1], "\n#[cfg(test)]")[0]
+$t = replace($t, "impl editor::palette::Theme for Theme {" .. $trait, "")
+$start = "    /// A custom design with no style family keeps deriving the hue"
+$tail = "    #[test]\n    fn bad_sources_are_reported()"
+$middle = split(split($t, $start)[1], $tail)[0]
+$t = replace($t, $start .. $middle, "")
+$t = replace($t, "pub(crate) fn", "pub fn")
+write_file($dir .. "/src/theme.rs", $t)
+$scale = split(read_file("libraries/toolkit/src/ui_scale.rs"), "/// The installed desktop values")[0]
+$scale = replace($scale, "pub(crate) fn", "pub fn")
+write_file($dir .. "/src/ui_scale.rs", $scale)
+$fonts = read_file("libraries/toolkit/src/fonts.rs")
+$fontcore = split(split($fonts, "/// The body weight")[1], "/// The font definitions")[0]
+write_file($dir .. "/src/fonts.rs", "// SPDX-License-Identifier: MIT OR Apache-2.0\nuse crate::Theme;\nuse design::TypographyRole;\n/// The body weight" .. replace($fontcore, "../assets/fonts/", "../../toolkit/assets/fonts/"))
+write_file($dir .. "/src/lib.rs", <<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Egui-free theme values shared by the compositor and UI adapters.
+pub mod theme;
+pub mod fonts;
+pub mod ui_scale;
+pub use theme::*;
+pub mod strings { pub use action::Strings; }
+pub mod icons { pub const DEFAULT_STROKE: f32 = 1.5; }
+EOF
+)
+-- Toolkit owns the egui adapter; the editor trait remains implemented on a
+-- local facade, avoiding an orphan impl or an editor dependency in theme.
+write_file("libraries/toolkit/src/theme.rs", <<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Toolkit adapter over egui-free theme values.
+pub use theme::theme::{Choice, Error, Overlay, THEME_FILE, theme_path};
+use design::{CaptionSide, DesignContext, DesignSourceDocument, RequestedDecorations};
+use std::path::Path;
+#[derive(Clone, Debug, PartialEq)]
+pub struct Theme(theme::Theme);
+impl std::ops::Deref for Theme {
+    type Target = theme::Theme;
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+impl Theme {
+    pub fn embedded() -> Self { Self(theme::Theme::embedded()) }
+    pub fn for_context(context: DesignContext) -> Self { Self(theme::Theme::for_context(context)) }
+    pub fn from_source(identity: &str, source: &str) -> Result<Self, Error> {
+        theme::Theme::from_source(identity, source).map(Self)
+    }
+    pub fn from_source_in(identity: &str, source: &str, context: DesignContext) -> Result<Self, Error> {
+        theme::Theme::from_source_in(identity, source, context).map(Self)
+    }
+    pub fn read(path: &Path) -> Result<Option<Self>, Error> { theme::Theme::read(path).map(|t| t.map(Self)) }
+    pub fn load() -> Self { Self(theme::Theme::load()) }
+    pub fn with_choice(&self, choice: &Choice) -> Result<Self, Error> { self.0.with_choice(choice).map(Self) }
+    pub fn framed(self, decorations: impl Into<RequestedDecorations>, captions: CaptionSide) -> Self { Self(self.0.framed(decorations, captions)) }
+    pub fn with_menus(self, style: design::MenuStyle, side: design::MenuSide) -> Self { Self(self.0.with_menus(style, side)) }
+    pub fn with_band(self, band: design::title_band::Settings) -> Self { Self(self.0.with_band(band)) }
+    pub fn with_overlay(self, overlay: Overlay) -> Result<Self, Error> { self.0.with_overlay(overlay).map(Self) }
+    pub fn with_ui(self, ui: settings::model::CommonUi) -> Self { Self(self.0.with_ui(ui)) }
+}
+EOF
+)
+$p = "libraries/toolkit/src/theme.rs"
+write_file($p, read_file($p) .. "\nimpl editor::palette::Theme for Theme {" .. $trait .. "\n")
+-- The fonts adapter now reuses the native bytes and weight calculation.
+$before = split($fonts, "/// The body weight")[0]
+$after = "/// The font definitions" .. split($fonts, "/// The font definitions")[1]
+write_file("libraries/toolkit/src/fonts.rs", $before .. "pub use theme::fonts::{CHROME_WEIGHT, INTER_WEIGHTS, inter_face, mono_face, weights};\n" .. $after)
+for $p in ["libraries/toolkit/Cargo.toml", "engines/compd/crates/decor/Cargo.toml"]
+  write_file($p, replace(read_file($p), "[dependencies]", "[dependencies]\ntheme.workspace = true"))
+end
+write_file("Cargo.toml", replace(read_file("Cargo.toml"), "[workspace.dependencies]", "[workspace.dependencies]\ntheme = { path = \"libraries/theme\" }"))
+for $p in walk("engines/compd/crates/decor/src")
+  if ends_with($p, ".rs") then
+    write_file($p, replace(read_file($p), "toolkit::", "theme::"))
+  end
+end
+$p = "engines/compd/crates/decor/Cargo.toml"
+write_file($p, re_replace(read_file($p), "(?m)^toolkit.*\\n", ""))
+print("theme values and decor detached; world overlays remain for B4")
