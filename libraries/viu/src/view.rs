@@ -956,8 +956,9 @@ impl SceneView {
                 // leaving a fractional strip between it and the document.
                 if let Some(top) = nodes
                     .values()
-                    .filter(|node| node.ports["definition"]["kind"] == "status-line")
-                    .filter_map(|node| node.ports["definition"]["id"].as_str())
+                    .filter_map(|node| node.ports.get("definition"))
+                    .filter(|definition| definition["kind"] == "status-line")
+                    .filter_map(|definition| definition["id"].as_str())
                     .filter_map(|id| self.widgets.geometry.get(id))
                     .filter(|bounds| bounds.top() >= rect.top() && bounds.bottom() <= rect.bottom())
                     .map(egui::Rect::top)
