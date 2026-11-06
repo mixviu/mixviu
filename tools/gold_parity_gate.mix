@@ -16,11 +16,22 @@ try
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
   end
   if $rc==0 then
+    $release=run_argv(["cargo","build","--locked","--release","-p","viu-engine","--bin","viu"],{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}})
+    print($release)
+    if not $release.ok then $rc=$release.exit_code ?? 124 end
+  end
+  if $rc==0 then
     $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
     $artifact="/build/gold-parity-artifacts/"..$sha
     mkdir($artifact,{parents:true})
     copy("target/debug/viu",$artifact.."/viu")
     print({artifact:$artifact,sha256:hash_file($artifact.."/viu","sha256")})
+    $release_artifact="/build/es-artifacts/"..$sha
+    mkdir($release_artifact,{parents:true})
+    copy("target/release/viu",$release_artifact.."/viu")
+    $receipt={source:$sha,profile:"release",binary:"viu",sha256:hash_file($release_artifact.."/viu","sha256")}
+    write_file($release_artifact.."/viu.json",json_encode($receipt))
+    print({release_artifact:$release_artifact,receipt:$receipt})
   end
 finally
   print("GOLD_PARITY_PATCH_BEGIN")
