@@ -21,6 +21,10 @@ $state=$s.session_answer($state,10,{status:"denied"},"Denied")
 if $state.lost or not deep_eq($before.values,$state.values) then raise("TEST","refusal is not absence") end
 $appearance=$s.session_appearance($state.values,"dopus")
 if $appearance.mode!="light" or $appearance.contrast!="high" then raise("TEST","appearance overlay") end
+$override=$s.session_appearance(merge($state.values,{"state.appearance.mode_override":"dark"}),"dopus")
+if $override.mode!="dark" then raise("TEST","auto mode override must precede daylight") end
+$app=$s.session_appearance(merge($state.values,{"state.appearance.mode_override":"dark","apps.dopus.mode":"light"}),"dopus")
+if $app.mode!="light" then raise("TEST","app mode must precede auto mode override") end
 $keys=$s.session_keys($state.values,"dopus")
 if not deep_eq($keys["nav.parent"],["Ctrl+U"]) then raise("TEST","key binding") end
 $state=$s.session_answer($state,10,nil,"Service not found")
