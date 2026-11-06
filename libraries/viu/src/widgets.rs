@@ -168,7 +168,7 @@ impl Widget {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
             "editor" => {
-                value.as_str().is_some_and(|v| v.len() <= 65536)
+                value.as_str().is_some_and(|v| v.len() <= if self.properties["native_document"] == true { 64 * 1024 * 1024 } else { 65536 })
                     && (self.properties["rows"].is_null()
                         || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
                     && (self.properties["read_only"].is_null()
@@ -357,6 +357,7 @@ pub struct Widgets {
     focus_error: Option<String>,
     images: crate::image_view::Images,
     surfaces: Option<crate::image_view::Images>,
+    editors: crate::editor::Editors,
 }
 impl Widgets {
     pub fn request_focus(&mut self, id: &str, selection: Option<[usize; 2]>) -> Result<(), String> {
@@ -508,6 +509,12 @@ impl Widgets {
                     });
                 }
                 r
+            }
+            "editor" if widget.properties["native_document"] == true => {
+                let selection = if self.focus.as_deref() == Some(id) {
+                    self.focus_selection.take()
+                } else { None };
+                self.editors.draw(ui, widget, value, selection, events)
             }
             "editor" if widget.properties["read_only"] == true => {
                 // An immutable native text buffer permits selection/copy but

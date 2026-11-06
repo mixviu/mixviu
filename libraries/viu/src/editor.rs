@@ -1,0 +1,152 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! In-process editor documents. File and editd authority belong to the Mix
+//! owner; this adapter never opens, saves or sends a Bus message.
+use std::collections::BTreeMap;
+
+use egui::{Color32, Response, TextStyle, Ui};
+use serde_json::Value;
+
+use crate::widgets::{Intent, Widget};
+
+struct Document {
+    local: editor::local::Document,
+    acknowledged: String,
+    find: String,
+    replacement: String,
+    searching: bool,
+}
+
+#[derive(Default)]
+pub struct Editors {
+    documents: BTreeMap<(String, String), Document>,
+}
+
+struct Theme<'a>(&'a egui::Context);
+impl editor::palette::Theme for Theme<'_> {
+    fn editor_colour(&self, role: &str) -> Color32 {
+        crate::appearance::colour(self.0, role).unwrap_or_else(|| {
+            let style = self.0.style();
+            let v = &style.visuals;
+            match role {
+                "field" => v.extreme_bg_color,
+                "text_dim" | "text_faint" | "palette.foreground.muted" => v.weak_text_color(),
+                "accent" | "palette.accent.hover" => v.selection.bg_fill,
+                "selection" => v.selection.bg_fill,
+                "hover" => v.widgets.hovered.bg_fill,
+                "separator" => v.widgets.noninteractive.bg_stroke.color,
+                "warning" => v.warn_fg_color,
+                "danger" => v.error_fg_color,
+                _ => v.text_color(),
+            }
+        })
+    }
+}
+
+impl Editors {
+    pub fn draw(
+        &mut self,
+        ui: &mut Ui,
+        widget: &Widget,
+        value: &Value,
+        selection: Option<[usize; 2]>,
+        events: &mut Vec<Intent>,
+    ) -> Response {
+        let text = value.as_str().unwrap_or_default();
+        let key = (
+            widget.id.clone(),
+            widget.properties["document"].as_str().unwrap_or(&widget.id).to_owned(),
+        );
+        let language = widget.properties["language"].as_str().unwrap_or("text");
+        if !self.documents.contains_key(&key) {
+            match editor::local::Document::new(text, language) {
+                Ok(local) => {
+                    self.documents.insert(key.clone(), Document {
+                        local,
+                        acknowledged: text.to_owned(),
+                        find: String::new(),
+                        replacement: String::new(),
+                        searching: false,
+                    });
+                }
+                Err(e) => return ui.colored_label(Color32::RED, e.to_string()),
+            }
+        }
+        let doc = self.documents.get_mut(&key).unwrap();
+        // A Mix echo acknowledges typing without reconstructing the model or
+        // destroying undo, selection, scroll and composition. A different
+        // authoritative value is an explicit reload, never a transport write.
+        if text != doc.acknowledged {
+            if text != doc.local.contents() {
+                if let Err(e) = doc.local.set_contents(text) {
+                    return ui.colored_label(Color32::RED, e.to_string());
+                }
+            }
+            doc.acknowledged = text.to_owned();
+        }
+        if let Some([start, end]) = selection {
+            // Native focus uses scalar offsets, the editor uses UTF-8 bytes.
+            let byte = |n| text.char_indices().nth(n).map_or(text.len(), |(i, _)| i);
+            doc.local.model_mut().sel = editor::Selection { anchor: byte(start), head: byte(end) };
+        }
+        let mut view = editor::View {
+            font_size: Some(TextStyle::Monospace.resolve(ui.style()).size),
+            wrap: if widget.properties["soft_wrap"] == true { editor::Wrap::Words } else { editor::Wrap::None },
+            line_numbers: widget.properties["line_numbers"] != false,
+            read_only: widget.properties["read_only"] == true,
+            label: Some(widget.label.clone()),
+            ..Default::default()
+        };
+        let before = doc.local.doc().revision;
+        let editor_id = ui.id().with(&key);
+        if ui.memory(|m| m.has_focus(editor_id)) && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::F)) {
+            doc.searching = true;
+        }
+        if widget.properties["find_bar"] == true || doc.searching {
+            ui.horizontal(|ui| {
+                ui.label("Find");
+                ui.text_edit_singleline(&mut doc.find);
+                if ui.button("Next").clicked() && !doc.find.is_empty() {
+                    let text = doc.local.contents();
+                    let from = doc.local.selection().head;
+                    let found = text[from..].find(&doc.find).map(|i| i + from)
+                        .or_else(|| text[..from].find(&doc.find));
+                    if let Some(start) = found {
+                        doc.local.model_mut().sel = editor::Selection { anchor: start, head: start + doc.find.len() };
+                    }
+                }
+                if ui.button("×").clicked() { doc.searching = false; }
+            });
+            if !view.read_only {
+                ui.horizontal(|ui| {
+                    ui.label("Replace");
+                    ui.text_edit_singleline(&mut doc.replacement);
+                    if ui.button("Replace").clicked() && !doc.find.is_empty() {
+                        let sel = doc.local.selection();
+                        let text = doc.local.contents();
+                        let range = sel.anchor.min(sel.head)..sel.anchor.max(sel.head);
+                        if text.get(range) == Some(doc.find.as_str()) {
+                            if let Err(e) = doc.local.command(editor::EditCommand::Insert(doc.replacement.clone()), &view) {
+                                ui.colored_label(Color32::RED, e.to_string());
+                            }
+                        }
+                    }
+                });
+            }
+            if !doc.find.is_empty() {
+                view.matches = doc.local.contents().match_indices(&doc.find).map(|(i, s)| i..i+s.len()).collect();
+            }
+        }
+        let palette = editor::Palette::from_theme(&Theme(ui.ctx()));
+        let out = doc.local.show_as(ui, &key, &palette, &view);
+        if let Some(error) = doc.local.take_refusal() {
+            ui.colored_label(Color32::RED, error.to_string());
+        }
+        if before != doc.local.doc().revision {
+            let contents = doc.local.contents();
+            // Hold the draft locally until Mix acknowledges the new value.
+            doc.acknowledged = text.to_owned();
+            events.push(Intent::set(&widget.id, Value::String(contents)));
+        }
+        out.response
+    }
+}

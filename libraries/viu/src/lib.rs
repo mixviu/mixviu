@@ -9,6 +9,7 @@ pub mod debug;
 mod debug_recent;
 mod design_style;
 pub mod elide;
+pub mod editor;
 pub mod file_data;
 pub mod fonts;
 pub mod gold_frame;
