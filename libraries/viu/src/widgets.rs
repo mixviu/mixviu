@@ -168,9 +168,15 @@ impl Widget {
                 v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
             }),
             "editor" => {
-                value.as_str().is_some_and(|v| v.len() <= if self.properties["native_document"] == true { 64 * 1024 * 1024 } else { 65536 })
-                    && (self.properties["rows"].is_null()
-                        || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
+                value.as_str().is_some_and(|v| {
+                    v.len()
+                        <= if self.properties["native_document"] == true {
+                            64 * 1024 * 1024
+                        } else {
+                            65536
+                        }
+                }) && (self.properties["rows"].is_null()
+                    || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
                     && (self.properties["read_only"].is_null()
                         || self.properties["read_only"].is_boolean())
             }
@@ -513,7 +519,9 @@ impl Widgets {
             "editor" if widget.properties["native_document"] == true => {
                 let selection = if self.focus.as_deref() == Some(id) {
                     self.focus_selection.take()
-                } else { None };
+                } else {
+                    None
+                };
                 self.editors.draw(ui, widget, value, selection, events)
             }
             "editor" if widget.properties["read_only"] == true => {

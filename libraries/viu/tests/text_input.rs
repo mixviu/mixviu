@@ -43,20 +43,34 @@ fn native_document_preserves_unicode_selection_and_undo_across_model_echo() {
     let ctx = Context::default();
     viu::appearance::install(&ctx);
     draw(&ctx, &mut view, vec![]);
-    view.request_focus_value(&json!({"id":"editor","selection":[0,4]})).unwrap();
+    view.request_focus_value(&json!({"id":"editor","selection":[0,4]}))
+        .unwrap();
     draw(&ctx, &mut view, vec![]);
     let events = draw(&ctx, &mut view, vec![Event::Text("λ".into())]);
-    assert!(events.iter().any(|e| e.body["value"] == "λ.txt"), "{events:?}");
-    view.apply_model(json!({"values":{"editor":"λ.txt"}})).unwrap();
+    assert!(
+        events.iter().any(|e| e.body["value"] == "λ.txt"),
+        "{events:?}"
+    );
+    view.apply_model(json!({"values":{"editor":"λ.txt"}}))
+        .unwrap();
     draw(&ctx, &mut view, vec![]);
-    let modifiers = Modifiers { ctrl: true, command: true, ..Modifiers::NONE };
+    let modifiers = Modifiers {
+        ctrl: true,
+        command: true,
+        ..Modifiers::NONE
+    };
     let mut undo = key(Key::Z);
     for event in &mut undo {
-        if let Event::Key { modifiers: m, .. } = event { *m = modifiers; }
+        if let Event::Key { modifiers: m, .. } = event {
+            *m = modifiers;
+        }
     }
     undo.insert(0, Event::ModifiersChanged(modifiers));
     let events = draw(&ctx, &mut view, undo);
-    assert!(events.iter().any(|e| e.body["value"] == "café.txt"), "{events:?}");
+    assert!(
+        events.iter().any(|e| e.body["value"] == "café.txt"),
+        "{events:?}"
+    );
 }
 
 #[test]
@@ -64,7 +78,12 @@ fn native_document_admits_large_files_without_relaxing_legacy_controls() {
     let text = "λ\n".repeat(100_000);
     let widget = viu::widgets::Widget::new("editor", "editor", "", json!(""));
     assert!(widget.validate(&json!(text)).is_err());
-    assert!(widget.with_properties(json!({"native_document":true})).validate(&json!(text)).is_ok());
+    assert!(
+        widget
+            .with_properties(json!({"native_document":true}))
+            .validate(&json!(text))
+            .is_ok()
+    );
 }
 #[test]
 fn read_only_editor_keeps_full_text_scrollable_and_rejects_native_edits() {
