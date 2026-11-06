@@ -53,6 +53,9 @@ on viu.job.completed
   if $state.running[$job.id]!=nil then
     $state.running=delete($state.running,$job.id)
     if $event.args.rc==0 then
+      if $job.kind=="io" and $event.args.body.deadline_after_ms!=nil then
+        viu_timer($job.payload.document..":deadline:"..$job.payload.request.op_id,$event.args.body.deadline_after_ms,{document:$job.payload.document,kind:"deadline",op_id:$job.payload.request.op_id})
+      end
       if $job.kind=="open" then
         $t=viu_document("state",$job.payload.document,{})
         $state.tabs=push($state.tabs,$t);$state.active=len($state.tabs)-1
@@ -82,14 +85,9 @@ on bus.overflow
   for $t in $state.tabs $v=viu_document("suspect",$t.document,{}) end
   $state=pump($state);publish_ced($state)
 end
-on viu.tick
-  for $key in keys($state.timers)
-    $timer=$state.timers[$key]
-    if $timer.at<=monotonic() then
-      $v=viu_document($timer.kind,$timer.document,{op_id:$timer.op_id})
-      $state.timers=delete($state.timers,$key)
-    end
-  end
+on viu.timer
+  $t=$event.args.value
+  if $t.kind!="drain" and any($state.tabs,fn($tab)=$tab.document==$t.document) then $v=viu_document($t.kind,$t.document,{op_id:$t.op_id}) end
   $state=pump($state);publish_ced($state)
 end
 on viu.session

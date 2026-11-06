@@ -11,13 +11,15 @@ on job.run
     if $rc!=0 then raise("CLOSE",json_encode($reply ?? $result)) end
   elif $job.kind=="io" then
     $r=$a.request
+    $started=monotonic();$deadline=nil
     try
       send "edit" $r.command body=json_parse($r.body) timeout=$r.deadline_ms/1000
-      if $rc<0 or $rc>=20 then $state=viu_document("deadline",$a.document,{op_id:$r.op_id})
+      if $rc<0 or $rc>=20 or ($rc!=0 and (type($reply)!="map" or $reply.error_code==nil)) then $deadline=max(0,$r.deadline_ms-(monotonic()-$started)*1000)
       else $state=viu_document("reply",$a.document,{op_id:$r.op_id,rc:$rc,body:$reply}) end
     catch $message
-      $state=viu_document("deadline",$a.document,{op_id:$r.op_id})
+      $deadline=max(0,$r.deadline_ms-(monotonic()-$started)*1000)
     end
+    reply(0,json_encode({deadline_after_ms:$deadline}));return
   else raise("JOB","Unknown document job") end
   reply(0,"{}")
 end

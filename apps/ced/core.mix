@@ -21,15 +21,15 @@ fn pump($s)
   for $t in $s.tabs
     $effects=viu_document("effects",$t.document,{})
     for $request in $effects.out $s=queue_job($s,"io",{document:$t.document,request:$request}) end
-    if $effects.retry_ms!=nil then $s.timers[$t.document..":retry"]={document:$t.document,kind:"retry",at:monotonic()+$effects.retry_ms/1000} end
-    if $effects.echo!=nil then $s.timers[$t.document..":echo"]={document:$t.document,kind:"echo",op_id:$effects.echo[0],at:monotonic()+$effects.echo[1]/1000} end
+    if $effects.retry_ms!=nil then viu_timer($t.document..":retry",$effects.retry_ms,{document:$t.document,kind:"retry"}) end
+    if $effects.echo!=nil then viu_timer($t.document..":echo",$effects.echo[1],{document:$t.document,kind:"echo",op_id:$effects.echo[0]}) end
     for $outcome in $effects.outcomes $s.outcomes[$outcome.op_id]=$outcome end
   end
   while len($s.queue)>0 and len(keys($s.running))<4
     $job=$s.queue[0];$s.queue=slice($s.queue,1)
     $p=path_join(dirname(script_path()),"job.mix")
     send "viu-local" "jobs.start" id=$job.id owner=$job path=$p source=read_file($p) command="job.run" args=$job
-    if $rc!=0 then $s.queue=concat([$job],$s.queue);break end
+    if $rc!=0 then $s.queue=concat([$job],$s.queue);viu_timer("drain",25,{kind:"drain"});break end
     $s.running[$job.id]=$job
   end
   return refresh_tabs($s)

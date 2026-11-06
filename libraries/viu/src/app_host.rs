@@ -15,6 +15,8 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    timers: crate::timers::Timers,
+    timer_results: std::collections::VecDeque<Value>,
     documents: crate::documents::Documents,
     framed: bool,
     title: String,
@@ -158,6 +160,12 @@ impl eframe::App for Host {
 }
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
+        let (due,deadline)=self.timers.poll();self.timer_results.extend(due);
+        if let Some(at)=deadline {ui.ctx().request_repaint_after(at.saturating_duration_since(Instant::now()));}
+        while let Some(body)=self.timer_results.front() {
+            if self.runtime.notify("viu.timer".into(),body.clone()).is_err(){ui.ctx().request_repaint();break;}
+            self.timer_results.pop_front();
+        }
         if let Some(session) = &mut self.session {
             let drops = self
                 .bus
@@ -415,7 +423,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         wake.clone(),
     );
     let documents = crate::documents::Documents::default();
+    let timers = crate::timers::Timers::default();
     let services = crate::runtime::Services {
+        timers: Some(timers.clone()),
         documents: Some(documents.clone()),
         ..Default::default()
     };
@@ -448,6 +458,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        timers,
+        timer_results: Default::default(),
         documents,
         framed: bundle.manifest.frame.is_some(),
         title: bundle.manifest.title.clone(),

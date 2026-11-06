@@ -1,1 +1,1 @@
-{"host":{"commands":["ced.ping","ced.info","ced.command","ced.draft","ced.intent"],"follow_settings":true,"frame":"gold","service":"ced","size":[1000,720],"tick_ms":100,"title":"Ced — Mix on Viu"}}
+{"host":{"commands":["ced.ping","ced.info","ced.command","ced.draft","ced.intent"],"follow_settings":true,"frame":"gold","service":"ced","size":[1000,720],"title":"Ced — Mix on Viu"}}

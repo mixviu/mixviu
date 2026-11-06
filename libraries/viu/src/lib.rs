@@ -27,6 +27,7 @@ pub mod runtime;
 pub mod session;
 pub mod templates;
 pub mod thumbnail;
+pub mod timers;
 pub mod tree_table;
 pub mod view;
 pub mod widgets;
