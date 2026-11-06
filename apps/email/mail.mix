@@ -15,7 +15,8 @@ fn accounts($path)
     if $a.password!=nil then raise("CONFIG","Inline passwords are not accepted") end
     $label=$a.label ?? $a.id
     if type($label)!="string" or byte_length($label)>256 then raise("CONFIG","Account label exceeds budget") end
-    push($ids,$a.id);push($out,{id:$a.id,label:$label,url:$a.url,user:$a.user,password_file:$a.password_file,ca_file:$a.ca_file})
+    if $a.submit_service!=nil and (type($a.submit_service)!="string" or not re_match($a.submit_service,"^[A-Za-z0-9_.-]{1,128}$")) then raise("CONFIG","Invalid submission Bus route") end
+    push($ids,$a.id);push($out,{id:$a.id,label:$label,url:$a.url,user:$a.user,password_file:$a.password_file,ca_file:$a.ca_file,submit_service:$a.submit_service})
   end
   return $out
 end
