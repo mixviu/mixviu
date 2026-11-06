@@ -23,7 +23,8 @@ fn model_id(ctx: &egui::Context) -> egui::Id {
 }
 pub fn application_id(ctx: &egui::Context, slot: &str) -> Option<String> {
     let index = slots().iter().position(|id| *id == slot)?;
-    ctx.data(|data| data.get_temp::<Model>(model_id(ctx)))?
+    let key = model_id(ctx);
+    ctx.data(|data| data.get_temp::<Model>(key))?
         .ids
         .get(index)
         .cloned()
@@ -124,5 +125,6 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool) -> egui::Response {
     shown.response
 }
 pub fn picked(ctx: &egui::Context) -> Option<String> {
-    ctx.data_mut(|d| d.remove_temp::<String>(model_id(ctx).with("picked")))
+    let key = model_id(ctx).with("picked");
+    ctx.data_mut(|d| d.remove_temp::<String>(key))
 }
