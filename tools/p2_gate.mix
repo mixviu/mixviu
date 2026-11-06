@@ -42,7 +42,7 @@ if $mode=="build" then
     copy("target/release/compd",$art.."/compd-oracle")
   end
 elif $mode=="tests" then
-  p2_run(["cargo","test","--locked","-p","mixd","-p","noded"])
+  p2_run(["cargo","test","--locked","-p","mixd","-p","noded","-p","settingsd","-p","editd","-p","monitord","-p","dnsd","-p","blobd","-p","hostd","-p","mixtrayd","-p","maild","-p","webd","-p","indexd"])
   p2_run(["cargo","test","--locked","-p","viu","-p","viu-engine"])
   p2_run(["cargo","clippy","--locked","--all-targets","-p","viu","-p","viu-engine"])
   p2_run(["/opt/mixos/bin/mix","tools/engine_split_smoke.mix",$art.."/mix",$art.."/mixd"])

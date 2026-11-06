@@ -894,9 +894,12 @@ fn dispatch(
         .unwrap_or_default();
     // Bus callers may use the compositor's stable output key; layer clients
     // identify that same output by its Wayland name.
-    let output = shared.outputs.get(&output)
+    let output = shared
+        .outputs
+        .get(&output)
         .and_then(|row| row["name"].as_str())
-        .unwrap_or(&output).to_owned();
+        .unwrap_or(&output)
+        .to_owned();
     let edge = if matches!(kind, SceneCommand::Panel { corner: true, .. }) {
         match args["corner"].as_str() {
             Some("tl") => "left",
@@ -1004,13 +1007,29 @@ fn dispatch(
             let name = args["scene"].as_str().unwrap_or_default();
             let visible = kind == SceneCommand::ToastShow;
             let height = if visible && args.get("h").is_some() {
-                let Some(h) = args["h"].as_f64().or_else(|| args["h"].as_str().and_then(|h| h.parse::<f64>().ok())).filter(|h| h.is_finite()) else {
-                    return (10, json!({"error_code":"INVALID_HEIGHT","message":"h must be a finite number"}));
+                let Some(h) = args["h"]
+                    .as_f64()
+                    .or_else(|| args["h"].as_str().and_then(|h| h.parse::<f64>().ok()))
+                    .filter(|h| h.is_finite())
+                else {
+                    return (
+                        10,
+                        json!({"error_code":"INVALID_HEIGHT","message":"h must be a finite number"}),
+                    );
                 };
                 Some(h.clamp(60.0, 2048.0) as f32)
-            } else { None };
-            if output.is_empty() { return (10, json!({"error_code":"OUTPUT_NOT_READY"})); }
-            if let Err(error) = shared.store.set_toast_visible(name, visible, &comp_model::snapshot::output_key(&output), height) {
+            } else {
+                None
+            };
+            if output.is_empty() {
+                return (10, json!({"error_code":"OUTPUT_NOT_READY"}));
+            }
+            if let Err(error) = shared.store.set_toast_visible(
+                name,
+                visible,
+                &comp_model::snapshot::output_key(&output),
+                height,
+            ) {
                 return (10, error);
             }
             shared.wake();

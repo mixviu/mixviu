@@ -364,13 +364,42 @@ async fn exercise(old: bool, parent: Option<&Path>) {
         }
         client.call("shell", "shell.scene.load", json!({"source":include_str!("../../../share/scenes/toast/scene.mix"),"output":"o_winit"})).await.unwrap();
         for visible in [true, false, true, false] {
-            client.call("shell", if visible { "shell.toast.show" } else { "shell.toast.hide" }, json!({"scene":"toast","output":"o_winit","h":132})).await.unwrap();
+            client
+                .call(
+                    "shell",
+                    if visible {
+                        "shell.toast.show"
+                    } else {
+                        "shell.toast.hide"
+                    },
+                    json!({"scene":"toast","output":"o_winit","h":132}),
+                )
+                .await
+                .unwrap();
             let until = Instant::now() + Duration::from_secs(10);
             loop {
-                let surfaces = client.call("comp-headless", "comp.props.get", json!({"path":"surfaces"})).await.unwrap();
-                let mapped = surfaces.as_object().unwrap().values().any(|s| s["mapped"]==true && s["width"]==360.0 && s["height"]==132.0 && s["focused"]==false);
-                if mapped==visible { println!("TOAST_MAPPED visible={visible}");break; }
-                assert!(Instant::now()<until,"toast mapping failed visible={visible}: {surfaces}");
+                let surfaces = client
+                    .call(
+                        "comp-headless",
+                        "comp.props.get",
+                        json!({"path":"surfaces"}),
+                    )
+                    .await
+                    .unwrap();
+                let mapped = surfaces.as_object().unwrap().values().any(|s| {
+                    s["mapped"] == true
+                        && s["width"] == 360.0
+                        && s["height"] == 132.0
+                        && s["focused"] == false
+                });
+                if mapped == visible {
+                    println!("TOAST_MAPPED visible={visible}");
+                    break;
+                }
+                assert!(
+                    Instant::now() < until,
+                    "toast mapping failed visible={visible}: {surfaces}"
+                );
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         }
