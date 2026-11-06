@@ -652,7 +652,10 @@ async fn worker(
         .await
         .map_err(|e| e.to_string())?;
     let mut incoming = client.incoming().ok_or("Bus incoming already taken")?;
-    if let Ok(outputs) = client.call(&comp, "comp.props.get", json!({"path":"outputs"})).await {
+    if let Ok(outputs) = client
+        .call(&comp, "comp.props.get", json!({"path":"outputs"}))
+        .await
+    {
         state.lock().unwrap().outputs = outputs;
     }
     for suffix in [
@@ -863,7 +866,18 @@ fn dispatch(
         .as_str()
         .map(str::to_owned)
         .or_else(|| shared.contexts.keys().next().map(|(o, _)| o.clone()))
-        .or_else(|| shared.outputs.as_object().and_then(|rows| rows.values().find(|row| row["default"] == true).or_else(||rows.values().next())).and_then(|row|row["name"].as_str()).map(str::to_owned))
+        .or_else(|| {
+            shared
+                .outputs
+                .as_object()
+                .and_then(|rows| {
+                    rows.values()
+                        .find(|row| row["default"] == true)
+                        .or_else(|| rows.values().next())
+                })
+                .and_then(|row| row["name"].as_str())
+                .map(str::to_owned)
+        })
         .unwrap_or_default();
     let edge = if matches!(kind, SceneCommand::Panel { corner: true, .. }) {
         match args["corner"].as_str() {
@@ -975,7 +989,9 @@ fn dispatch(
         | SceneCommand::Describe
         | SceneCommand::Unload
         | SceneCommand::Watch => {
-            if output.is_empty() { return (10,json!({"error_code":"OUTPUT_NOT_READY"})); }
+            if output.is_empty() {
+                return (10, json!({"error_code":"OUTPUT_NOT_READY"}));
+            }
             let output = comp_model::snapshot::output_key(&output);
             let mut mount = SceneMount {
                 output: &output,

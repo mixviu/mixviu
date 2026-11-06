@@ -181,7 +181,11 @@ async fn exercise(old: bool, parent: Option<&Path>) {
     let start = Instant::now();
     let source = include_str!("fixtures/panel-render.scene.mix");
     let loaded = client
-        .call("shell", "shell.scene.load", json!({"source":source,"output":if parent.is_some() {"winit"} else {"headless-0"}}))
+        .call(
+            "shell",
+            "shell.scene.load",
+            json!({"source":source,"output":if parent.is_some() {"winit"} else {"headless-0"}}),
+        )
         .await
         .unwrap();
     println!("SCENE_LOAD old={old} {loaded}");
@@ -236,6 +240,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
                 < row["height"].as_f64().unwrap_or(0.0))
     );
     if !old && parent.is_some() {
+        client.call("shell","shell.scene.load",json!({"source":include_str!("../../../share/scenes/launcher/scene.mix"),"output":"winit"})).await.unwrap();
         let before = client
             .call("shell", "shell.props.get", json!({}))
             .await
@@ -279,6 +284,16 @@ async fn exercise(old: bool, parent: Option<&Path>) {
                 break;
             }
             assert!(Instant::now() < until, "corner topic missing: {props}");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let until = Instant::now() + Duration::from_secs(10);
+        loop {
+            let surfaces = client.call("comp-headless","comp.props.get",json!({"path":"surfaces"})).await.unwrap();
+            if surfaces.as_object().unwrap().values().any(|s| s["mapped"] == true && s["role"] == "layer" && s["width"] == 440.0 && s["focused"] == true) {
+                println!("LAUNCHER_MAPPED_AND_FOCUSED {surfaces}");
+                break;
+            }
+            assert!(Instant::now() < until,"launcher failed to map/take one-shot pinned focus: {surfaces}");
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }

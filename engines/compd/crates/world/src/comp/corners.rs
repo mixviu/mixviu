@@ -48,6 +48,9 @@ static PANEL_INPUT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 pub fn enable_panel_input() {
     PANEL_INPUT.store(true, std::sync::atomic::Ordering::Release);
 }
+pub fn panel_input_enabled() -> bool {
+    PANEL_INPUT.load(std::sync::atomic::Ordering::Acquire)
+}
 
 /// The corner state of the compd host.
 #[derive(Debug)]
@@ -464,9 +467,16 @@ pub fn panel_button(lp: &mut Loop, button: u32, pressed: bool) -> bool {
     // The global hotspot is viud's even while its renderer is starting or
     // disconnected. A missing live claim cancels the resulting action on
     // release; it must never turn the early press into an application click.
-    let claim = panel_claim(lp, &output, corner).unwrap_or_else(|| (
-        output.clone(), corner.summoned_edge().into(), None, None, String::new(), String::new(),
-    ));
+    let claim = panel_claim(lp, &output, corner).unwrap_or_else(|| {
+        (
+            output.clone(),
+            corner.summoned_edge().into(),
+            None,
+            None,
+            String::new(),
+            String::new(),
+        )
+    });
     let locked = super::session_lock::active(lp);
     let modifiers = lp
         .state

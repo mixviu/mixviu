@@ -32,6 +32,8 @@ pub type Holders = PanelHolders<ClientId, Serial>;
 
 #[derive(Debug, Default)]
 pub struct Panels {
+    /// Native furniture's one-shot pinned focus request, fenced by its reporter.
+    pub focus_owed: BTreeMap<(String, String), (String, Option<u64>)>,
     pub holders: BTreeMap<(String, String), Holders>,
     /// The union of every edge's enforced layers, as last applied.
     pub enforced: BTreeSet<SurfaceId>,

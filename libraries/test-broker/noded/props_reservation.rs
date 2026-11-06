@@ -71,9 +71,15 @@ pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
     // Reserve every such stream and attest its publisher just like props and
     // pointer events. The imported production helper is shared by the real
     // embedded broker; integration must carry this into mixd's broker source.
-    for suffix in [".corner.input", ".corner.entered", ".corner.left",
-        ".corner.clicked.v2", ".corner.clicked", ".panel.command",
-        ".chrome.action.hover"] {
+    for suffix in [
+        ".corner.input",
+        ".corner.entered",
+        ".corner.left",
+        ".corner.clicked.v2",
+        ".corner.clicked",
+        ".panel.command",
+        ".chrome.action.hover",
+    ] {
         if let Some(owner) = name.strip_suffix(suffix).filter(|owner| !owner.is_empty()) {
             return Some(owner);
         }
