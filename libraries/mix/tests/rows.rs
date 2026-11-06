@@ -125,17 +125,30 @@ async fn native_row_calls_honour_strict_argument_types() {
 #[tokio::test]
 async fn hoisted_capture_checks_and_projected_values_keep_collection_limits() {
     let mut e = Evaluator::new();
-    e.execute_script_source("fn make_projector($xs)\nreturn fn($r)=$xs[$r]\nend\n$f=make_projector([1,2,3])")
-        .await.unwrap();
-    e.set_limits(mix::EvalLimits { max_list_len: Some(2), ..Default::default() });
-    let err = e.execute_script_source("rows_project([],$f)").await.unwrap_err();
+    e.execute_script_source(
+        "fn make_projector($xs)\nreturn fn($r)=$xs[$r]\nend\n$f=make_projector([1,2,3])",
+    )
+    .await
+    .unwrap();
+    e.set_limits(mix::EvalLimits {
+        max_list_len: Some(2),
+        ..Default::default()
+    });
+    let err = e
+        .execute_script_source("rows_project([],$f)")
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("exceeds limit"), "{err}");
     for source in [
         "rows_project([1],fn($r)=[$r,$r,$r])",
         "rows_project([1],fn($r)={a:$r,b:$r,c:$r})",
     ] {
         let mut e = Evaluator::new();
-        e.set_limits(mix::EvalLimits { max_list_len: Some(2), max_map_len: Some(2), ..Default::default() });
+        e.set_limits(mix::EvalLimits {
+            max_list_len: Some(2),
+            max_map_len: Some(2),
+            ..Default::default()
+        });
         let err = e.execute_script_source(source).await.unwrap_err();
         assert!(err.to_string().contains("exceeds limit"), "{err}");
     }

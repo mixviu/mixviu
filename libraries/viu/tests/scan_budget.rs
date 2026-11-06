@@ -25,13 +25,20 @@ end
         json!(root)
     );
     let (tx, rx) = mpsc::channel();
-    let mut r = Runtime::new(4, Arc::new(move || { let _ = tx.send(()); }), None);
+    let mut r = Runtime::new(
+        4,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+    );
     r.load(Program {
         source,
         path: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/dopus/scan-probe.mix"),
         scene: "scan".into(),
         citizen: "scan".into(),
-    }).unwrap();
+    })
+    .unwrap();
     rx.recv_timeout(Duration::from_secs(20)).unwrap();
     assert!(r.try_completion().unwrap().error.is_none());
     for hidden in [false, true] {
@@ -41,11 +48,11 @@ end
         assert!(c.error.is_none(), "{:?}", c.error);
         let body = c.reply.unwrap().body;
         let rows = body["rows"].as_array().unwrap();
-        assert_eq!(rows.len(), if hidden {4} else {3});
+        assert_eq!(rows.len(), if hidden { 4 } else { 3 });
         assert_eq!(rows[0]["name"], "folder");
-        assert_eq!(rows[0]["child_count"], if hidden {2} else {1});
-        assert!(rows.iter().any(|r| r["name"]=="line�break"));
-        let link = rows.iter().find(|r| r["name"]=="dangling").unwrap();
+        assert_eq!(rows[0]["child_count"], if hidden { 2 } else { 1 });
+        assert!(rows.iter().any(|r| r["name"] == "line�break"));
+        let link = rows.iter().find(|r| r["name"] == "dangling").unwrap();
         assert_eq!(link["symlink"], true);
         assert_eq!(link["dir"], false);
         assert_eq!(link["file"], false);

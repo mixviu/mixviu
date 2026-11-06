@@ -78,9 +78,10 @@ impl Plan {
                     )));
                 }
             },
-            Self::Index(p, i) => {
-                Evaluator::index_value_clone(&p.run(row, position, eval)?, &i.run(row, position, eval)?)?
-            }
+            Self::Index(p, i) => Evaluator::index_value_clone(
+                &p.run(row, position, eval)?,
+                &i.run(row, position, eval)?,
+            )?,
             Self::List(xs) => Value::list(
                 xs.iter()
                     .map(|p| p.run(row, position, eval))
@@ -128,7 +129,9 @@ pub(crate) fn project<'a>(
             return Err(fail("rows_project(rows, fn(row) = expression)"));
         };
         if rows.len() > 65536 || !(1..=2).contains(&f.params.len()) {
-            return Err(fail("at most 65536 rows; one row parameter and optional zero-based index parameter"));
+            return Err(fail(
+                "at most 65536 rows; one row parameter and optional zero-based index parameter",
+            ));
         }
         let FunctionBody::Expression(expr) = &f.body else {
             return Err(fail("expression lambda required"));
