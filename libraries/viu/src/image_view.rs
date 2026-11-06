@@ -288,3 +288,39 @@ pub(crate) fn decode_surface(path: &std::path::Path) -> Option<egui::ColorImage>
         image.as_raw(),
     ))
 }
+
+#[cfg(test)]
+mod retained_tests {
+    use super::*;
+    #[test]
+    fn retained_raster_draws_after_source_removal_and_releases_on_surface_removal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.png");
+        image::RgbaImage::new(2, 3).save(&path).unwrap();
+        let store = crate::raster::Rasters::default();
+        let decoded = store.load(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        let handle = decoded["handle"].as_str().unwrap();
+        let value = serde_json::json!({"phase":"ready","handle":handle,"colour":[0,0,0],"fit":"centre"});
+        validate_fill(&value).unwrap();
+        let mut images = Images::surface();
+        images.set_rasters(Some(store.clone()));
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            images.begin();
+            images.draw_fill(ui, "surface", &value);
+            images.finish();
+        })
+        .drop_without_applying_deltas();
+        assert!(images.slots["surface"].texture.is_some());
+        store.release(handle);
+        assert_eq!(
+            store.bytes(),
+            24,
+            "the visible surface retains its decoded pixels"
+        );
+        images.begin();
+        images.finish();
+        assert_eq!(store.bytes(), 0, "removing a surface drops its raster lease");
+    }
+}
