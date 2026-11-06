@@ -556,6 +556,7 @@ impl Host {
                 match SceneView::with_model(&self.scene_source, projected.clone()) {
                     Ok(view) => {
                         self.view = view;
+                        self.view.set_rasters(self.rasters.clone());
                         self.loaded = true;
                     }
                     Err(e) => self.error = e,
