@@ -477,7 +477,7 @@ impl Host {
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
                 Ok(n) => {
-                    self.facilities.notice(&n.command,&n.args);
+                    self.facilities.notice(&n.command, &n.args);
                     if n.command == "theme.changed" {
                         self.file_theme = toolkit::Theme::load();
                         self.session_dirty = true;
@@ -965,7 +965,16 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let service = bundle.manifest.service.clone();
     let app_id = bundle
         .manifest
-.app_id.clone().or_else(||bundle.manifest.bus_surface.as_ref().and_then(|s|s["app_id"].as_str()).map(str::to_owned))
+        .app_id
+        .clone()
+        .or_else(|| {
+            bundle
+                .manifest
+                .bus_surface
+                .as_ref()
+                .and_then(|s| s["app_id"].as_str())
+                .map(str::to_owned)
+        })
         .unwrap_or_else(|| format!("mixviu.{service}"));
     eframe::run_native(
         &title,

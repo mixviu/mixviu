@@ -599,7 +599,7 @@ pub(crate) fn draw(
                         .show(ui, |ui| {
                             ui.set_width((width - 2.0 * look.row_pad()).max(0.0));
                             ui.set_min_height(32.0);
-                            ui.spacing_mut().item_spacing.y=0.0;
+                            ui.spacing_mut().item_spacing.y = 0.0;
                             ui.vertical(|ui| {
                                 ui.label(
                                     RichText::new(text(&value["pending"], "title"))
@@ -692,10 +692,12 @@ fn cards(
     for (section_index, section) in array(sections).filter(|s| s["shown"] != false).enumerate() {
         if section["plain"] == true {
             if let Some(title) = section["title"].as_str() {
-                if section_index>0 {toolkit::bars::hairline(ui);}
+                if section_index > 0 {
+                    toolkit::bars::hairline(ui);
+                }
                 ui.add_space(ui.spacing().item_spacing.y);
-                let size=egui::TextStyle::Body.resolve(ui.style()).size;
-                let font=toolkit::fonts::bound(ui.ctx(),toolkit::fonts::heading(size*1.1));
+                let size = egui::TextStyle::Body.resolve(ui.style()).size;
+                let font = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::heading(size * 1.1));
                 ui.label(RichText::new(title).font(font).strong());
                 ui.add_space(ui.spacing().item_spacing.y);
             }
@@ -708,7 +710,9 @@ fn cards(
             }
             continue;
         }
-        if section_index > 0 {ui.add_space(look.m);}
+        if section_index > 0 {
+            ui.add_space(look.m);
+        }
         if let Some(title) = section["title"].as_str() {
             let galley = ui.painter().layout_no_wrap(
                 title.into(),
@@ -723,13 +727,20 @@ fn cards(
             );
             ui.add_space(look.xs);
         }
-        let visible: Vec<_> = array(&section["rows"]).filter(|r| r["shown"] != false).collect();
-        let quiet = visible.len() > 1 && visible.iter().all(|r| r.get("reason").unwrap_or(&r["blocked"]).is_string());
+        let visible: Vec<_> = array(&section["rows"])
+            .filter(|r| r["shown"] != false)
+            .collect();
+        let quiet = visible.len() > 1
+            && visible
+                .iter()
+                .all(|r| r.get("reason").unwrap_or(&r["blocked"]).is_string());
         if quiet {
             let mut said = BTreeSet::new();
             for row in &visible {
                 if let Some(reason) = row.get("reason").unwrap_or(&row["blocked"]).as_str() {
-                    if said.insert(reason) {browser_notice(ui, look, reason);}
+                    if said.insert(reason) {
+                        browser_notice(ui, look, reason);
+                    }
                 }
             }
         }
@@ -765,7 +776,12 @@ fn cards(
 }
 fn browser_notice(ui: &mut Ui, look: &Look, notice: &str) {
     ui.horizontal_wrapped(|ui| {
-        ui.add(crate::icons::image_of(ui.ctx(),crate::icons::Icon::from_name("circle-alert").unwrap(),16.0,look.warning));
+        ui.add(crate::icons::image_of(
+            ui.ctx(),
+            crate::icons::Icon::from_name("circle-alert").unwrap(),
+            16.0,
+            look.warning,
+        ));
         ui.label(RichText::new(notice).size(12.0).color(look.text));
     });
     ui.add_space(look.xs);
@@ -791,7 +807,11 @@ impl Labels {
                 .as_str()
                 .filter(|s| !s.is_empty())
                 .map(|s| lay(s, 12.0, width)),
-            reason: row.get("reason").unwrap_or(&row["blocked"]).as_str().map(|s| lay(s, 12.0, width - 16.0)),
+            reason: row
+                .get("reason")
+                .unwrap_or(&row["blocked"])
+                .as_str()
+                .map(|s| lay(s, 12.0, width - 16.0)),
         }
     }
     fn height(&self) -> f32 {
@@ -982,9 +1002,14 @@ fn draw_row(
                 "link" => 16.0,
                 "number" => 96.0,
                 "slider" | "steps" => 360.0,
-                "choice" => array(&row["choices"]).map(|c| text_width(ui, text(c,"label"),14.0)).fold(0.0_f32,f32::max)+33.0,
-                "pick" => text_width(ui,text(row,"value"),14.0)+28.0,
-                "info" => text_width(ui,text(row,"value"),14.0),
+                "choice" => {
+                    array(&row["choices"])
+                        .map(|c| text_width(ui, text(c, "label"), 14.0))
+                        .fold(0.0_f32, f32::max)
+                        + 33.0
+                }
+                "pick" => text_width(ui, text(row, "value"), 14.0) + 28.0,
+                "info" => text_width(ui, text(row, "value"), 14.0),
                 _ => 180.0,
             };
             let beside = !stacked && width - control_width - look.xs >= 200.0;
@@ -1261,23 +1286,66 @@ fn draw_control(
             });
         }
         "choice" if row["presentation"] == "segmented" => {
-            let (rect,_) = ui.allocate_exact_size(vec2(ui.available_width(),32.0),Sense::hover());
-            ui.painter().rect_filled(rect,Look::radius(look.r_xl),look.field);
-            let each=rect.width()/array(&row["choices"]).count().max(1) as f32;
-            for (index,choice) in array(&row["choices"]).enumerate() {
-                let r=Rect::from_min_size(pos2(rect.left()+each*index as f32,rect.top()),vec2(each,32.0));
-                let response=ui.interact(r,ui.scope_id().with((id,key,index)),Sense::click());
-                let selected=choice["value"]==row["value"];
-                if selected {ui.painter().rect_filled(r.shrink(1.0),Look::radius(look.r_xl),look.sidebar_selected);}
-                let title=if selected {format!("✓ {}",text(choice,"label"))}else{text(choice,"label").to_owned()};
-                ui.painter().text(r.center(),egui::Align2::CENTER_CENTER,title,egui::FontId::proportional(14.0),look.text);
-                response.widget_info(||egui::WidgetInfo::selected(egui::Role::RadioButton,ui.is_enabled(),selected,text(choice,"label")));
-                record(geometry,id,&format!("row.{key}.choice.{index}"),&response);
-                if response.clicked() && !selected {edit=Some(choice["value"].clone());}
+            let (rect, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::hover());
+            ui.painter()
+                .rect_filled(rect, Look::radius(look.r_xl), look.field);
+            let each = rect.width() / array(&row["choices"]).count().max(1) as f32;
+            for (index, choice) in array(&row["choices"]).enumerate() {
+                let r = Rect::from_min_size(
+                    pos2(rect.left() + each * index as f32, rect.top()),
+                    vec2(each, 32.0),
+                );
+                let response = ui.interact(r, ui.scope_id().with((id, key, index)), Sense::click());
+                let selected = choice["value"] == row["value"];
+                if selected {
+                    ui.painter().rect_filled(
+                        r.shrink(1.0),
+                        Look::radius(look.r_xl),
+                        look.sidebar_selected,
+                    );
+                }
+                let title = if selected {
+                    format!("✓ {}", text(choice, "label"))
+                } else {
+                    text(choice, "label").to_owned()
+                };
+                ui.painter().text(
+                    r.center(),
+                    egui::Align2::CENTER_CENTER,
+                    title,
+                    egui::FontId::proportional(14.0),
+                    look.text,
+                );
+                response.widget_info(|| {
+                    egui::WidgetInfo::selected(
+                        egui::Role::RadioButton,
+                        ui.is_enabled(),
+                        selected,
+                        text(choice, "label"),
+                    )
+                });
+                record(
+                    geometry,
+                    id,
+                    &format!("row.{key}.choice.{index}"),
+                    &response,
+                );
+                if response.clicked() && !selected {
+                    edit = Some(choice["value"].clone());
+                }
             }
         }
         "choice" if row["presentation"] == "images" => {
-            images(ui,id,row,&array(&row["choices"]).collect::<Vec<_>>(),look,events,geometry);
+            images(
+                ui,
+                id,
+                row,
+                &array(&row["choices"]).collect::<Vec<_>>(),
+                look,
+                events,
+                geometry,
+            );
         }
         "choice" if row["presentation"] != "dropdown" => {
             ui.horizontal_wrapped(|ui| {
@@ -1300,34 +1368,92 @@ fn draw_control(
             }
         }
         "number" => {
-            let min=row["min"].as_f64().unwrap_or(0.0);
-            let max=row["max"].as_f64().unwrap_or(100.0);
-            let value=row["value"].as_f64().filter(|v|v.is_finite()).unwrap_or(min).round().clamp(min,max);
-            let step=row["step"].as_f64().unwrap_or(1.0);
-            ui.spacing_mut().item_spacing.x=4.0;
-            let plus=cosmic_icon_button(ui,toolkit::Icon::Plus,value<max,&format!("{} +",text(row,"title")),look);
-            ui.label(RichText::new(value.to_string()).size(14.0).color(look.value));
-            let minus=cosmic_icon_button(ui,toolkit::Icon::Minus,value>min,&format!("{} −",text(row,"title")),look);
-            record(geometry,id,&format!("row.{key}.plus"),&plus);
-            record(geometry,id,&format!("row.{key}.minus"),&minus);
-            if plus.clicked(){edit=Some(json!((value+step).min(max)));}
-            if minus.clicked(){edit=Some(json!((value-step).max(min)));}
+            let min = row["min"].as_f64().unwrap_or(0.0);
+            let max = row["max"].as_f64().unwrap_or(100.0);
+            let value = row["value"]
+                .as_f64()
+                .filter(|v| v.is_finite())
+                .unwrap_or(min)
+                .round()
+                .clamp(min, max);
+            let step = row["step"].as_f64().unwrap_or(1.0);
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let plus = cosmic_icon_button(
+                ui,
+                toolkit::Icon::Plus,
+                value < max,
+                &format!("{} +", text(row, "title")),
+                look,
+            );
+            ui.label(
+                RichText::new(value.to_string())
+                    .size(14.0)
+                    .color(look.value),
+            );
+            let minus = cosmic_icon_button(
+                ui,
+                toolkit::Icon::Minus,
+                value > min,
+                &format!("{} −", text(row, "title")),
+                look,
+            );
+            record(geometry, id, &format!("row.{key}.plus"), &plus);
+            record(geometry, id, &format!("row.{key}.minus"), &minus);
+            if plus.clicked() {
+                edit = Some(json!((value + step).min(max)));
+            }
+            if minus.clicked() {
+                edit = Some(json!((value - step).max(min)));
+            }
         }
         "steps" => {
-            let steps:Vec<_>=array(&row["steps"]).collect();
+            let steps: Vec<_> = array(&row["steps"]).collect();
             if !steps.is_empty() {
-                let current=steps.iter().position(|v|**v==row["value"]).unwrap_or(steps.len()/2) as f64;
-                if let Some(next)=cosmic_slider(ui,(id,key),current,(0.0,(steps.len()-1) as f64),1.0,false,row["start"].as_str(),row["end"].as_str(),text(row,"title"),look) {
-                    edit=Some(steps[(next.round().max(0.0) as usize).min(steps.len()-1)].clone());
+                let current = steps
+                    .iter()
+                    .position(|v| **v == row["value"])
+                    .unwrap_or(steps.len() / 2) as f64;
+                if let Some(next) = cosmic_slider(
+                    ui,
+                    (id, key),
+                    current,
+                    (0.0, (steps.len() - 1) as f64),
+                    1.0,
+                    false,
+                    row["start"].as_str(),
+                    row["end"].as_str(),
+                    text(row, "title"),
+                    look,
+                ) {
+                    edit =
+                        Some(steps[(next.round().max(0.0) as usize).min(steps.len() - 1)].clone());
                 }
             }
         }
         "slider" => {
-            let scale=row["scale"].as_f64().unwrap_or(1.0);
-            let value=row["value"].as_f64().unwrap_or(row["min"].as_f64().unwrap_or(0.0));
-            let range=(row["min"].as_f64().unwrap_or(0.0),row["max"].as_f64().unwrap_or(100.0));
-            if let Some(next)=cosmic_slider(ui,(id,key),value*scale,(range.0*scale,range.1*scale),row["step"].as_f64().unwrap_or(0.0)*scale,row["show_value"]==true,row["start"].as_str(),row["end"].as_str(),text(row,"title"),look) {
-                edit=Some(json!(((next/scale*1e6).round()/1e6).clamp(range.0,range.1)));
+            let scale = row["scale"].as_f64().unwrap_or(1.0);
+            let value = row["value"]
+                .as_f64()
+                .unwrap_or(row["min"].as_f64().unwrap_or(0.0));
+            let range = (
+                row["min"].as_f64().unwrap_or(0.0),
+                row["max"].as_f64().unwrap_or(100.0),
+            );
+            if let Some(next) = cosmic_slider(
+                ui,
+                (id, key),
+                value * scale,
+                (range.0 * scale, range.1 * scale),
+                row["step"].as_f64().unwrap_or(0.0) * scale,
+                row["show_value"] == true,
+                row["start"].as_str(),
+                row["end"].as_str(),
+                text(row, "title"),
+                look,
+            ) {
+                edit = Some(json!(
+                    ((next / scale * 1e6).round() / 1e6).clamp(range.0, range.1)
+                ));
             }
         }
         "text" => {
@@ -1343,22 +1469,56 @@ fn draw_control(
             }
         }
         "choice" => {
-            let current=array(&row["choices"]).find(|c|c["value"]==row["value"]).map(|c|text(c,"label")).unwrap_or(text(row,"value"));
-            let width=array(&row["choices"]).map(|c|text_width(ui,text(c,"label"),14.0)).fold(text_width(ui,current,14.0),f32::max)+33.0;
-            let (rect,r)=ui.allocate_exact_size(vec2(width,32.0),Sense::click());
-            let ink=if ui.is_enabled(){look.value}else{look.value.gamma_multiply(0.65)};
-            toolkit::button::paint_icon(ui,toolkit::Icon::ChevronDown,pos2(rect.right()-17.0,rect.center().y),16.0,ink);
-            ui.painter().text(pos2(rect.right()-33.0,rect.center().y),egui::Align2::RIGHT_CENTER,current,egui::FontId::proportional(14.0),ink);
-            focus_ring(ui,&r,rect,look.r_s,look);
-            r.widget_info(||egui::WidgetInfo::selected(egui::Role::ComboBox,ui.is_enabled(),false,text(row,"title")));
+            let current = array(&row["choices"])
+                .find(|c| c["value"] == row["value"])
+                .map(|c| text(c, "label"))
+                .unwrap_or(text(row, "value"));
+            let width = array(&row["choices"])
+                .map(|c| text_width(ui, text(c, "label"), 14.0))
+                .fold(text_width(ui, current, 14.0), f32::max)
+                + 33.0;
+            let (rect, r) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
+            let ink = if ui.is_enabled() {
+                look.value
+            } else {
+                look.value.gamma_multiply(0.65)
+            };
+            toolkit::button::paint_icon(
+                ui,
+                toolkit::Icon::ChevronDown,
+                pos2(rect.right() - 17.0, rect.center().y),
+                16.0,
+                ink,
+            );
+            ui.painter().text(
+                pos2(rect.right() - 33.0, rect.center().y),
+                egui::Align2::RIGHT_CENTER,
+                current,
+                egui::FontId::proportional(14.0),
+                ink,
+            );
+            focus_ring(ui, &r, rect, look.r_s, look);
+            r.widget_info(|| {
+                egui::WidgetInfo::selected(
+                    egui::Role::ComboBox,
+                    ui.is_enabled(),
+                    false,
+                    text(row, "title"),
+                )
+            });
             egui::Popup::menu(&r).show(|ui| {
                 ui.set_min_width(width);
                 for choice in array(&row["choices"]) {
-                    let selected=choice["value"]==row["value"];
-                    if toolkit::selectable(ui,selected,text(choice,"label")).clicked() && !selected {edit=Some(choice["value"].clone());ui.close();}
+                    let selected = choice["value"] == row["value"];
+                    if toolkit::selectable(ui, selected, text(choice, "label")).clicked()
+                        && !selected
+                    {
+                        edit = Some(choice["value"].clone());
+                        ui.close();
+                    }
                 }
             });
-            record(geometry,id,&format!("row.{key}.control"),&r);
+            record(geometry, id, &format!("row.{key}.control"), &r);
         }
         "pick" => {
             let (r, value) = picker(ui, id, row);
@@ -1488,30 +1648,52 @@ fn draw_inline_row(
                 if text(row, "kind") == "info" {
                     ui.label(RichText::new(row["value"].as_str().unwrap_or("")).weak());
                 } else if text(row, "kind") == "records" {
-                    if row["split"]==true {toolkit::bars::hairline(ui);}
-                    let shown=ui.horizontal_top(|ui| {
+                    if row["split"] == true {
+                        toolkit::bars::hairline(ui);
+                    }
+                    let shown = ui.horizontal_top(|ui| {
                         ui.vertical(|ui| {
-                            if row["split"]==true {ui.set_width(220.0);toolkit::panel::section_label(ui,text(row,"title"));}
-                            if array(&row["choices"]).next().is_none() {ui.label(RichText::new(text(row,"empty")).weak());}
-                            for (index,item) in array(&row["choices"]).enumerate() {
-                                let r=toolkit::selectable(ui,item["value"]==row["value"],text(item,"label"));
-                                record(geometry,id,&format!("row.{key}.choice.{index}"),&r);
-                                if r.clicked(){edit=Some(item["value"].clone());}
-                                ui.label(RichText::new(text(item,"detail")).small().weak());
+                            if row["split"] == true {
+                                ui.set_width(220.0);
+                                toolkit::panel::section_label(ui, text(row, "title"));
+                            }
+                            if array(&row["choices"]).next().is_none() {
+                                ui.label(RichText::new(text(row, "empty")).weak());
+                            }
+                            for (index, item) in array(&row["choices"]).enumerate() {
+                                let r = toolkit::selectable(
+                                    ui,
+                                    item["value"] == row["value"],
+                                    text(item, "label"),
+                                );
+                                record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
+                                if r.clicked() {
+                                    edit = Some(item["value"].clone());
+                                }
+                                ui.label(RichText::new(text(item, "detail")).small().weak());
                                 ui.add_space(ui.spacing().item_spacing.y);
                             }
                         });
-                        if row["split"]==true {
-                            ui.add_space(ui.spacing().item_spacing.x*2.0);
+                        if row["split"] == true {
+                            ui.add_space(ui.spacing().item_spacing.x * 2.0);
                             ui.vertical(|ui| {
                                 ui.set_width(ui.available_width());
-                                ui.add(egui::Label::new(RichText::new(text(row,"empty_detail")).weak()).wrap());
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(text(row, "empty_detail")).weak(),
+                                    )
+                                    .wrap(),
+                                );
                             });
                         }
                     });
-                    if row["split"]==true {
-                        let rect=shown.response.rect;
-                        ui.painter().vline(rect.left()+220.0+ui.spacing().item_spacing.x*2.0,rect.y_range(),ui.visuals().widgets.noninteractive.bg_stroke);
+                    if row["split"] == true {
+                        let rect = shown.response.rect;
+                        ui.painter().vline(
+                            rect.left() + 220.0 + ui.spacing().item_spacing.x * 2.0,
+                            rect.y_range(),
+                            ui.visuals().widgets.noninteractive.bg_stroke,
+                        );
                     }
                 } else if text(row, "kind") == "buttons" {
                     ui.horizontal_wrapped(|ui| {
@@ -1988,8 +2170,16 @@ fn cosmic_slider(
     out.filter(|v| (v - value).abs() > f64::EPSILON)
 }
 
-
-fn text_width(ui: &Ui, text: &str, size: f32) -> f32 { ui.painter().layout_no_wrap(text.to_owned(),egui::FontId::proportional(size),Color32::WHITE).size().x }
+fn text_width(ui: &Ui, text: &str, size: f32) -> f32 {
+    ui.painter()
+        .layout_no_wrap(
+            text.to_owned(),
+            egui::FontId::proportional(size),
+            Color32::WHITE,
+        )
+        .size()
+        .x
+}
 
 fn images(
     ui: &mut Ui,
@@ -2000,7 +2190,7 @@ fn images(
     events: &mut Vec<Intent>,
     geometry: &mut BTreeMap<String, Rect>,
 ) {
-    let key=text(row,"id");
+    let key = text(row, "id");
     let count = options.len().max(1) as f32;
     let gap = look.xs;
     // Below three cells' width the images shrink to fit, never clip.
@@ -2008,11 +2198,12 @@ fn images(
         .min((ui.available_width() - gap * (count - 1.0)) / count)
         .max(1.0);
     let total = cell * count + gap * (count - 1.0);
-    let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), 100.0 + 30.0), Sense::hover());
+    let (area, _) =
+        ui.allocate_exact_size(vec2(ui.available_width(), 100.0 + 30.0), Sense::hover());
     let left = area.center().x - total / 2.0;
     for (i, option) in options.iter().enumerate() {
-        let selected = option["value"]==row["value"];
-        let text = text(option,"label").to_owned();
+        let selected = option["value"] == row["value"];
+        let text = text(option, "label").to_owned();
         let radius = match option["value"].as_str() {
             Some("round") => 16.0,
             Some("slightly_round") => 6.0,
@@ -2046,9 +2237,14 @@ fn images(
         response.widget_info(|| {
             egui::WidgetInfo::selected(egui::Role::RadioButton, ui.is_enabled(), selected, &text)
         });
-        record(geometry,id,&format!("row.{key}.choice.{i}"),&response);
+        record(geometry, id, &format!("row.{key}.choice.{i}"), &response);
         if response.clicked() && !selected && ui.is_enabled() {
-            emit(events,id,"edit",json!({"row":key,"value":option["value"]}));
+            emit(
+                events,
+                id,
+                "edit",
+                json!({"row":key,"value":option["value"]}),
+            );
         }
         ui.painter().text(
             pos2(rect.center().x, rect.max.y + 8.0),
@@ -2060,8 +2256,13 @@ fn images(
     }
 }
 
-
-fn cosmic_icon_button(ui: &mut Ui, icon: toolkit::Icon, enabled: bool, name: &str, look: &Look) -> Response {
+fn cosmic_icon_button(
+    ui: &mut Ui,
+    icon: toolkit::Icon,
+    enabled: bool,
+    name: &str,
+    look: &Look,
+) -> Response {
     let enabled = enabled && ui.is_enabled();
     let sense = if enabled {
         Sense::click()
@@ -2083,4 +2284,3 @@ fn cosmic_icon_button(ui: &mut Ui, icon: toolkit::Icon, enabled: bool, name: &st
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
     response
 }
-
