@@ -55,14 +55,24 @@ fn mailboxes($entry,$account)
   $r=call($entry,"Mailbox/get",{accountId:$account})
   if type($r.list)!="list" or len($r.list)>256 then raise("MAILBOXES","Mailbox list exceeds budget") end
   if not jq($r.list,'all(.[]; (.id|type)=="string" and (.id|length)>0 and (.id|length)<=128 and (.name|type)=="string" and (.name|length)<=256)') or jq($r.list,'map(.id)|unique|length')!=len($r.list) then raise("MAILBOXES","Invalid mailbox identity or label") end
-  return jq($r.list,'map({id:.id,name:.name,role:.role,total:(.totalEmails // 0),unread:(.unreadEmails // 0)})')
+  $out=[];$i=0
+  for $b in $r.list
+    $i=$i+1
+    push($out,{id:$b.id,name:$b.name,role:$b.role,total:$b.totalEmails ?? 0,unread:$b.unreadEmails ?? 0,choice:to_string($i).." · "..$b.name.." · "..to_string($b.unreadEmails ?? 0).." unread"})
+  end
+  return $out
 end
 fn page($entry,$account,$mailbox,$offset)
   $q=call($entry,"Email/query",{accountId:$account,filter:{inMailbox:$mailbox},sort:[{property:"receivedAt",isAscending:false}],position:$offset,limit:200,calculateTotal:true})
-  if type($q.ids)!="list" or len($q.ids)>200 then raise("QUERY","Message query exceeds page budget") end
+  if type($q.ids)!="list" or len($q.ids)>200 or not jq($q.ids,'all(.[]; type=="string" and length>0 and length<=128)') or len(unique($q.ids))!=len($q.ids) then raise("QUERY","Invalid message query identities or page budget") end
+  if not jq($q,'(.total|type)=="number" and .total>=0 and (.total|floor)==.total') then raise("QUERY","Invalid message total") end
   if len($q.ids)==0 then return {messages:[],total:$q.total ?? 0,offset:$offset} end
   $r=call($entry,"Email/get",{accountId:$account,ids:$q.ids,properties:["id","subject","from","receivedAt","preview"]})
   if type($r.list)!="list" or len($r.list)!=len($q.ids) or len($r.notFound ?? [])>0 then raise("SNAPSHOT","Message page changed; refresh explicitly") end
+  if sort(map($r.list,fn($m)=$m.id))!=sort($q.ids) then raise("SNAPSHOT","Message identities did not match the query") end
+  -- Email/get need not preserve Email/query order.
+  $by_id={};for $m in $r.list $by_id[$m.id]=$m end
+  $r.list=map($q.ids,fn($id)=$by_id[$id])
   $messages=jq($r.list,'map({id:.id,subject:((.subject // "")[0:1024]),from:[{email:((if (.from|type)=="string" then .from elif (.from[0]|type)=="string" then .from[0] else .from[0].email end // "")[0:1024])}],receivedAt:(.receivedAt // ""),preview:((.preview // "")[0:1024])})')
   return {messages:$messages,total:$q.total ?? len($messages),offset:$offset}
 end
@@ -72,6 +82,7 @@ fn message($entry,$account,$id)
   $m=$r.list[0];$text=""
   if len($m.textBody ?? [])>0 then
     $part=$m.bodyValues[$m.textBody[0].partId]
+    if type($part)!="map" or type($part.value)!="string" then raise("BODY","Message text part unavailable") end
     if $part.isTruncated or $part.isEncodingProblem then raise("BODY","Incomplete message body refused") end
     $text=$part.value ?? ""
   end

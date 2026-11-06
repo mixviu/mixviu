@@ -8,10 +8,14 @@ use std::{
 };
 use viu::runtime::{Program, Runtime};
 fn probe(reply: Value, call: &str) -> (u8, Value) {
+    probe_sequence(vec![reply], call)
+}
+fn probe_sequence(replies: Vec<Value>, call: &str) -> (u8, Value) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
-    let body = reply.to_string().replace("ORIGIN", &url);
+    let bodies: Vec<_> = replies.iter().map(|r| r.to_string().replace("ORIGIN", &url)).collect();
     let server = std::thread::spawn(move || {
+      for body in bodies {
         let (mut socket, _) = listener.accept().unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(5)))
@@ -20,9 +24,12 @@ fn probe(reply: Value, call: &str) -> (u8, Value) {
         let mut buf = [0; 4096];
         loop {
             let n = socket.read(&mut buf).unwrap();
+            assert!(n > 0, "request ended before its headers/body");
             bytes.extend_from_slice(&buf[..n]);
-            if bytes.windows(4).any(|w| w == b"\r\n\r\n") {
-                break;
+            if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                let header = String::from_utf8_lossy(&bytes[..end]);
+                let length = header.lines().find_map(|line| line.to_ascii_lowercase().strip_prefix("content-length:").map(|s| s.trim().parse::<usize>().unwrap())).unwrap_or(0);
+                if bytes.len() >= end + 4 + length { break; }
             }
         }
         assert!(String::from_utf8_lossy(&bytes).contains("Basic dXNlcjpzZWNyZXQ="));
@@ -32,6 +39,7 @@ fn probe(reply: Value, call: &str) -> (u8, Value) {
             body.len()
         )
         .unwrap();
+      }
     });
     let scratch = tempfile::tempdir().unwrap();
     let password = scratch.path().join("password");
@@ -79,6 +87,18 @@ end
     let reply = done.reply.unwrap();
     server.join().unwrap();
     (reply.rc, reply.body)
+}
+#[test]
+fn query_order_is_preserved_and_different_get_identities_are_refused() {
+    let query = json!({"methodResponses":[["Email/query",{"ids":["a","b"],"total":2},"c0"]]});
+    let get = json!({"methodResponses":[["Email/get",{"list":[{"id":"b","subject":"Second"},{"id":"a","subject":"First"}]},"c0"]]});
+    let (rc, body) = probe_sequence(vec![query.clone(),get], "$m.page($e,\"1\",\"inbox\",0)");
+    assert_eq!(rc, 0);
+    assert_eq!(body["messages"][0]["id"], "a");
+    assert_eq!(body["messages"][1]["id"], "b");
+    let (rc, body) = probe_sequence(vec![query,json!({"methodResponses":[["Email/get",{"list":[{"id":"a"},{"id":"other"}]},"c0"]]})], "$m.page($e,\"1\",\"inbox\",0)");
+    assert_eq!(rc, 10);
+    assert_eq!(body["code"], "SNAPSHOT");
 }
 #[test]
 fn embedded_jmap_session_uses_io_and_refuses_off_origin_endpoints() {

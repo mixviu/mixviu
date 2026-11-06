@@ -25,6 +25,8 @@ pub async fn text_request(request: &Value) -> mix::MixResult<Value> {
         || (!request["body"].is_null() && !request["body"].is_string())
         || (!request["headers"].is_null() && !request["headers"].is_object())
         || (!request["timeout"].is_null() && request["timeout"].as_u64().is_none())
+        || (!request["method"].is_null() && !request["method"].is_string())
+        || (!request["ca_pem"].is_null() && !request["ca_pem"].is_string())
     {
         return Err(error("Invalid HTTP request field types"));
     }
@@ -106,7 +108,7 @@ pub async fn text_request(request: &Value) -> mix::MixResult<Value> {
             call = call.header(name, value);
         }
     }
-    let result = tokio::time::timeout(Duration::from_secs(timeout), async {
+    tokio::time::timeout(Duration::from_secs(timeout), async {
         let mut response = call
             .send()
             .await
@@ -128,8 +130,7 @@ pub async fn text_request(request: &Value) -> mix::MixResult<Value> {
         Ok(json!({"status":status,"body":body}))
     })
     .await
-    .map_err(|_| error("HTTP deadline; delivery outcome may be unknown"))?;
-    result
+    .map_err(|_| error("HTTP deadline; delivery outcome may be unknown"))?
 }
 #[cfg(test)]
 mod tests {
@@ -165,6 +166,8 @@ mod tests {
             json!({"url":"https://user:secret@example.test/"}),
             json!({"url":url,"timeout":31}),
             json!({"url":url,"body":"x".repeat(1024*1024+1)}),
+            json!({"url":url,"method":42}),
+            json!({"url":url,"ca_pem":false}),
         ] {
             assert!(rt.block_on(text_request(&invalid)).is_err());
         }
