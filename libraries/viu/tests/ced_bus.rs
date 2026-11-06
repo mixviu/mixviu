@@ -81,7 +81,7 @@ $state.classified={\"1\":true}\npublish_ced($state)\n",
         );
         runtime.load(bundle.program).unwrap();
         ready.recv_timeout(Duration::from_secs(5)).unwrap();
-        assert!(runtime.try_completion().unwrap().error.is_none());
+        let first=runtime.try_completion().unwrap();assert!(first.error.is_none(),"{:?}",first.error);
         Self {
             runtime,
             ready,

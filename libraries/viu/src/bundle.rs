@@ -11,6 +11,7 @@ pub struct Manifest {
     pub title: String,
     pub size: [f32; 2],
     pub commands: Vec<String>,
+    pub command_descriptors: Vec<bus::CommandDescriptor>,
     pub tick_ms: Option<u64>,
     pub surface: String,
     pub frame: Option<String>,
@@ -27,6 +28,7 @@ impl Default for Manifest {
             title: "Viu".into(),
             size: [800.0, 600.0],
             commands: vec![],
+            command_descriptors: vec![],
             tick_ms: None,
             surface: "window".into(),
             frame: None,
@@ -72,6 +74,8 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
+            || manifest.command_descriptors.len() > 256
+            || manifest.command_descriptors.iter().any(|d| !manifest.commands.contains(&d.name) || d.description.len()>8192 || d.args.len()>64)
             || manifest
                 .max_string_bytes
                 .is_some_and(|n| !(1_048_576..=32 * 1024 * 1024).contains(&n))

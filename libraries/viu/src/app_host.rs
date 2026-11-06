@@ -620,10 +620,14 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let bus = Endpoint::start(
         service,
         std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
-        commands
-            .into_iter()
-            .map(|name| bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false))
-            .collect(),
+        {
+            let mut described=bundle.manifest.command_descriptors.clone();
+            let mut native=Vec::new();
+            if bundle.manifest.native_drive {native.extend(toolkit::drive::describe(&bundle.manifest.service));}
+            if bundle.manifest.macros {native.extend(macros::commands::describe(&bundle.manifest.service));}
+            for value in native { described.push(bus::CommandDescriptor {name:value["name"].as_str().unwrap().into(),args:value["args"].as_object().map(|a|a.keys().cloned().collect()).unwrap_or_default(),description:value["description"].as_str().unwrap_or("").into(),read_only:value["read_only"]==true}); }
+            commands.into_iter().map(|name|described.iter().find(|d|d.name==name).cloned().unwrap_or_else(||bus::CommandDescriptor::new(&name,&[],"Mix bundle command",false))).collect()
+        },
         "viu.quit".into(),
         wake.clone(),
     );

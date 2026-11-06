@@ -29,26 +29,20 @@ pub(super) fn find(d: &mut Document, a: &Value, ids: &mut OpIdGen) -> Result<Val
         .map_err(|e| format!("bad_regex: {e}"))?;
     let text = contents(d);
     let kind = a["kind"].as_str().unwrap_or("next");
-    let matches: Vec<_> = regex
-        .find_iter(&text)
-        .take(edit::limits::MAX_OPS_PER_TXN + 1)
-        .map(|m| m.range())
-        .collect();
-    d.matches = matches.iter().take(1000).cloned().collect();
     let lo = d.model.sel.anchor.min(d.model.sel.head);
     let hi = d.model.sel.anchor.max(d.model.sel.head);
-    let selected = if kind == "prev" {
-        matches
-            .iter()
-            .rev()
-            .find(|r| r.end <= lo && (r.start != lo || r.end != hi))
-            .or_else(|| matches.last())
-    } else {
-        matches
-            .iter()
-            .find(|r| r.start >= hi && (r.start != lo || r.end != hi))
-            .or_else(|| matches.first())
-    };
+    let replacing=matches!(kind,"replace"|"replace-all");
+    let mut matches=Vec::new();let mut count=0;let mut first=None;let mut last=None;let mut selected=None;
+    d.matches.clear();
+    for m in regex.find_iter(&text) {
+        let r=m.range();count+=1;
+        if first.is_none(){first=Some(r.clone());}last=Some(r.clone());
+        if d.matches.len()<1000 {d.matches.push(r.clone());}
+        if replacing && (kind=="replace-all" || r==(lo..hi)) {matches.push(r.clone());if kind=="replace-all" && matches.len()>edit::limits::MAX_OPS_PER_TXN {return Err("Too large for one undoable transaction (over 10000 matches)".into());}}
+        if kind=="prev" {if r.end<=lo && r!=(lo..hi){selected=Some(r);}}
+        else if selected.is_none() && r.start>=hi && r!=(lo..hi){selected=Some(r);}
+    }
+    let selected=selected.or(if kind=="prev" {last}else{first});
     let mut items = Vec::new();
     if kind == "replace-all" || (kind == "replace" && hi > lo && matches.contains(&(lo..hi))) {
         if !d.mirror.is_idle() {
@@ -105,7 +99,7 @@ pub(super) fn find(d: &mut Document, a: &Value, ids: &mut OpIdGen) -> Result<Val
         };
         d.model.preferred_cells = None;
     }
-    Ok(json!({"found":!matches.is_empty(),"matches":matches.len(),"replaced":n,"op_id":op_id}))
+    Ok(json!({"found":count>0,"matches":count,"replaced":n,"op_id":op_id}))
 }
 pub(super) fn diagnostics(d: &mut Document, a: &Value) -> Result<Value, String> {
     if serde_json::to_vec(a).map_err(|e| e.to_string())?.len() > 64 * 1024 {

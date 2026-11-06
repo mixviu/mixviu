@@ -31,7 +31,7 @@ fn ced_status($s,$t)
   return {left:if starts_with($s.status,"Failed:") then $s.status else "" end,right:$right,icon:if $s.edit.epoch!=nil then "plug" else "unplug" end,error:$s.edit.epoch==nil}
 end
 fn ced_ui_model($s,$model)
-  $has=len($s.tabs)>0;$t=if $has then current($s) else nil end
+  $has=len($s.tabs)>0;$t=if $has then current($s) else {path:nil} end
   $items=[]
   for $i=0 to len($s.tabs)-1
     $tab=$s.tabs[$i]
