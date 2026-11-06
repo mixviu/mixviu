@@ -104,10 +104,14 @@ fn dp_sort($rows,$key,$ascending)
   end
   return concat(filter($rows,fn($r)=$r.dir),filter($rows,fn($r)=not $r.dir))
 end
-fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth)
+fn dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$remaining,$max_depth)
+  if $depth>$max_depth then raise("SCAN_BUDGET","Pane scan depth budget exceeded") end
   $profile=env("VIU_BULK_PROFILE","")=="1";$t=monotonic()
   $rows=[]
-  for $entry in dp_names($path)
+  $names=dp_names($path)
+  if len($names)>$remaining then raise("SCAN_BUDGET","Pane scan total enumeration budget exceeded") end
+  $remaining=$remaining-len($names)
+  for $entry in $names
     $name=$entry.name
     if $hidden or not starts_with($name,".") then
       $full=$entry.path
@@ -115,7 +119,15 @@ fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth)
       if $st!=nil then
         $count=nil
         if $st.is_dir then
-          try $count=len(filter(dp_names($full),fn($n)=$hidden or not starts_with($n.name,"."))) catch $message $count=nil end
+          try
+            $children=dp_names($full)
+            if len($children)>$remaining then raise("SCAN_BUDGET","Pane scan child-count work budget exceeded") end
+            $remaining=$remaining-len($children)
+            $count=len(filter($children,fn($n)=$hidden or not starts_with($n.name,".")))
+          catch $message,$error
+            if $error.code=="SCAN_BUDGET" then raise("SCAN_BUDGET",$message) end
+            $count=nil
+          end
         end
         push($rows,{path:$full,name:dp_display($name),dir:$st.is_dir,file:$st.is_file,symlink:$st.is_symlink,size:if $st.is_dir then nil else $st.size end,modified:$st.mtime,child_count:$count,depth:$depth})
       end
@@ -128,19 +140,25 @@ fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth)
   for $row in $ordered
     push($out,$row)
     if $row.dir and ($expanded[$row.path] ?? false) then
-      $out=concat($out,dp_scan($row.path,$hidden,$expanded,$key,$ascending,$depth+1))
+      $child=dp_scan_walk($row.path,$hidden,$expanded,$key,$ascending,$depth+1,$remaining,$max_depth)
+      $remaining=$child.remaining;$out=concat($out,$child.rows)
     end
   end
   if $profile then print(json_encode({profile:"dopus",phase:"scan",depth:$depth,rows:len($rows),list_stat_reduce_ms:($listed-$t)*1000,sort_ms:($sorted-$listed)*1000,flatten_ms:(monotonic()-$sorted)*1000})) end
-  return $out
+  return {rows:$out,remaining:$remaining}
+end
+fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth,$budget={rows:100000,depth:64})
+  validate($budget,{rows:{type:"integer",min:1,max:100000},depth:{type:"integer",min:0,max:64}})
+  return dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$budget.rows,$budget.depth).rows
 end
 fn dp_refresh($pane)
   try
-    $pane.entries=dp_scan($pane.path,$pane.show_hidden,$pane.expanded,$pane.sort,$pane.ascending,0)
+    $pane.entries=dp_scan($pane.path,$pane.show_hidden,$pane.expanded,$pane.sort,$pane.ascending,0,$pane.scan_budget ?? {rows:100000,depth:64})
     $pane.root_entries=filter($pane.entries,fn($r)=$r.depth==0)
     $pane.summary=dp_summary($pane.root_entries)
     $pane.error=nil
-  catch $message
+  catch $message,$error
+    if $error.code=="SCAN_BUDGET" then raise("SCAN_BUDGET",$message) end
     $pane.entries=[];$pane.root_entries=[];$pane.summary="Cannot read folder";$pane.error=dp_display($message)
   end
   $paths=map($pane.entries,fn($r)=$r.path)

@@ -56,7 +56,7 @@ pub fn lookup(name: &str) -> Option<EvalBuiltin> {
         #[cfg(not(feature = "http"))]
         "http_stream" => Some(hof_http_stream_unavailable),
         "__hof_smoke" => Some(hof_smoke),
-        "sort_by" => Some(hof_sort_by),
+        "rows_project" => Some(crate::rows::project),\n        "sort_by" => Some(hof_sort_by),
         "filter" => Some(hof_filter),
         "map" => Some(hof_map),
         "reduce" => Some(hof_reduce),
@@ -96,7 +96,7 @@ fn hof_http_stream_unavailable<'a>(
 builtin_table! {
     HOFS, HOF_NAMES,
     ("http_stream", CapabilityClass::Network, "system", "Read HTTP response lines as they arrive: http_stream(method, url, on_line[, body, headers, opts]). Callback receives a UTF-8 line without LF/CRLF (including empty lines and a final unterminated line; bare CR is data); return false to close promptly. Opts: timeout (whole call, integer seconds, default 30; 0 disables), idle_timeout (positive seconds, default 30; fractions allowed), ssl_verify, ca_file, ca_pem. Scoped response is dropped on return, callback error, interruption or evaluator retirement; no persistent handle. Returns status, headers, final_url, duration_ms, stopped, bytes_received, body/bytes (unfinished line only), error_code/error. Operational failure = status:0 with HTTP_IDLE_TIMEOUT, HTTP_TIMEOUT, HTTP_STREAM_CUT or HTTP_INTERRUPTED; completed lines remain delivered. 64 MiB per-line cap. Network capability; ca_file also requires fs-read.", contract!((method: string, url: string, on_line: function, body?: any, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map; effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
-    ("sort_by", CapabilityClass::Pure,   "hof", "Return list sorted ascending by key function (stable) (v0.2.0)", contract!((list: list, func: function) -> list)),
+    ("rows_project", CapabilityClass::Pure, "hof", "Compile a bounded pure row expression once; project up to 65536 rows without per-row evaluator frames. Expression lambda only; no IO or application policy. See mix man rows.", contract!((rows: list, func: function) -> list; failure[raises])),\n    ("sort_by", CapabilityClass::Pure,   "hof", "Return list sorted ascending by key function (stable) (v0.2.0)", contract!((list: list, func: function) -> list)),
     ("filter", CapabilityClass::Pure,    "hof", "Return new list of items where predicate returns truthy (v0.2.0)", contract!((list: list, pred: function) -> list)),
     ("map", CapabilityClass::Pure,       "hof", "Return new list of transform(item) results (v0.2.0)", contract!((list: list, func: function) -> list)),
     ("reduce", CapabilityClass::Pure,    "hof", "Fold list left with an explicit init: reduce($xs, $init, function($a, $b) = ...) (v0.2.0)", contract!((list: list, init: any, func: function) -> any)),

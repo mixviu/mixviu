@@ -5,6 +5,7 @@ pub mod ast;
 pub mod builtin_info;
 pub mod builtins;
 pub mod builtins_hof;
+mod rows;
 pub mod cancel;
 mod child_events;
 pub mod continuation;
