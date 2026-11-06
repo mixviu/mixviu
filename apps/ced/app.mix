@@ -15,7 +15,7 @@ $state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_
 $state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).commands;$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:false,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.preview_requested={};$state.lex_requested={};$state.caret_wanted={};$state.caret_published={};$state.caret_at={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
 $state.macro_panel={epoch:0,serial:0,page:"closed",id:nil,filter:"",form:{open:false,title:"",body:"",field:nil,choices:[]}}
 $state.local_theme={};$state.info_commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).info_commands
-$state.recovered=[];$state.recovery_open=false;$state.recovery_checked=false;$state.dialog_call=nil;$state.locations={}
+$state.recovered=[];$state.recovery_open=false;$state.recovery_checked=false;$state.dialog_call=nil;$state.locations={};$state.save_prompts={}
 publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))

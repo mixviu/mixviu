@@ -127,7 +127,7 @@ on job.run
     reply(0,json_encode({mail_missing:$open.mail_missing ?? false}));return
   elif $job.kind=="close" then
     send "edit" "edit.close" body={buffer:$a.buffer,force:$a.force} timeout=5
-    if $rc!=0 then raise("CLOSE",json_encode($reply ?? $result)) end
+    reply($rc,json_encode($reply ?? $result));return
   elif $job.kind=="io" then
     $r=$a.request
     $started=monotonic();$deadline=nil

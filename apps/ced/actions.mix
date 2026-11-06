@@ -69,6 +69,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui",$event_params=
       if $id=="edit.undo_other" and $lane==nil then raise("CONFLICT","No other origin has edited this tab") end
       $v=viu_document("command",$t.document,{name:$name,path:$a.path,force:$a.force ?? false,lane:$lane,caller:$who})
       $op_id=$v.op_id
+      if $name=="save" and $op_id!=nil then $s.save_prompts[$op_id]=$who==nil end
       if $id=="file.close" and $who==nil and $op_id!=nil then $s.close_after=merge($s.close_after ?? {},{});$s.close_after[$op_id]=$t.document end
     end
   elif starts_with($id,"tabs.") then

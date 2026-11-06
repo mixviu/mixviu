@@ -93,7 +93,11 @@ fn pump($s)
     if $effects.echo!=nil then viu_timer($t.document..":echo",$effects.echo[1],{document:$t.document,kind:"echo",op_id:$effects.echo[0]}) end
     for $outcome in $effects.outcomes
       $s.outcomes[$outcome.op_id]=$outcome
-      if not $outcome.ok and $outcome.error.reason=="disk_modified" then $s.disk_dialog=$t.document end
+      if not $outcome.ok and $outcome.error.reason=="disk_modified" then
+        if $s.save_prompts[$outcome.op_id] ?? true then $s.disk_dialog=$t.document
+        else $s.status="An agent's save was refused: the file changed on disk" end
+      end
+      $s.save_prompts=delete($s.save_prompts,$outcome.op_id)
     end
   end
   for $id in keys($s.close_after ?? {})
