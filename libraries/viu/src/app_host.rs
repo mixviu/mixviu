@@ -732,6 +732,11 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         }
         return Ok(());
     }
+    if let Some(command)=&bundle.manifest.activation {
+        match crate::native_bus::activate_existing(&bundle.manifest.service,command,&std::env::var("MIXOS_NODED_URL").unwrap_or_else(|_|"ws://127.0.0.1:4200/ws".into())) {
+            Ok(true)=>return Ok(()),Ok(false)=>{},Err(error)=>{eprintln!("viu activation: {error}");std::process::exit(1);}
+        }
+    }
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
     let service = bundle.manifest.service.clone();
