@@ -88,20 +88,19 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
             )
             .unwrap();
         let completed = wait(&runtime, &mut jobs, seq).0;
-        let reply=completed.reply.unwrap();
+        let reply = completed.reply.unwrap();
         assert_eq!(reply.rc, rc, "{args}");
-        let native_reply=native.call("dopus.dialog", &args);
-        assert_eq!(
-            native_reply.is_ok(),
-            rc == 0,
-            "{args}"
-        );
-        if rc==0 {
-            assert_eq!(reply.body["dialog"].is_null(),!open);
-            assert_eq!(native_reply.as_ref().unwrap()["dialog"].is_null(),!open);
+        let native_reply = native.call("dopus.dialog", &args);
+        assert_eq!(native_reply.is_ok(), rc == 0, "{args}");
+        if rc == 0 {
+            assert_eq!(reply.body["dialog"].is_null(), !open);
+            assert_eq!(native_reply.as_ref().unwrap()["dialog"].is_null(), !open);
             if open {
-                assert_eq!(reply.body["dialog"]["kind"],args["open"]);
-                assert_eq!(native.model()["values"]["form"]["dialog"]["kind"],args["open"]);
+                assert_eq!(reply.body["dialog"]["kind"], args["open"]);
+                assert_eq!(
+                    native.model()["values"]["form"]["dialog"]["kind"],
+                    args["open"]
+                );
             }
         }
         assert_eq!(native.model()["values"]["form"]["open"], open);

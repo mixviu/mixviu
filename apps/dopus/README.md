@@ -31,7 +31,8 @@ command aliases are retained solely for the current compositor protocol.
 An absent host leaves usable client controls; unacknowledged offers make at most six
 attempts within a bounded startup window, then become idle until state changes.
 The canonical app commands remain `dopus.*`. `dopus.dialog` accepts the original
-open/answer writes; its read result is the Viu form schema. The separate
+open/answer writes and typed `dialog` envelope alongside the Viu form fields.
+An unacknowledged offer reports its effective client row honestly. The separate
 `dopus.dialog.answer` adds an explicit form-generation fence.
 
 `HELP`, `dopus.describe`, `dopus.actions` and `dopus.ui.tree` describe the actual

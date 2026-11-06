@@ -345,6 +345,7 @@ impl App {
             return;
         }
         if (command == "dopus.execute" && args["id"] == "app.quit")
+            || (command=="viu.window" && args["action"]=="close")
             || (command == "dopus.intent"
                 && args["action"] == "close"
                 && self
@@ -1194,6 +1195,7 @@ fn commands() -> Vec<String> {
         "dopus.dialog",
         "dopus.execute",
         "dopus.intent",
+        "viu.window",
         "dopus.actions",
         "dopus.theme.set",
         "dopus.open",
