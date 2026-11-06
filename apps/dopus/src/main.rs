@@ -234,7 +234,10 @@ impl App {
         // Profile/job notices can arrive while a gesture is being consumed.
         let ui_call = reply.is_none()
             && self.input_wait
-            && matches!(command.as_str(), "dopus.intent" | "dopus.execute" | "dopus.quit");
+            && matches!(
+                command.as_str(),
+                "dopus.intent" | "dopus.execute" | "dopus.quit"
+            );
         let human_close = reply.is_none() && quit;
         if !matches!(
             command.as_str(),
