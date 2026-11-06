@@ -461,9 +461,12 @@ pub fn panel_button(lp: &mut Loop, button: u32, pressed: bool) -> bool {
     let Some(output) = lp.inner.comp.corners.output().map(str::to_owned) else {
         return false;
     };
-    let Some(claim) = panel_claim(lp, &output, corner) else {
-        return false;
-    };
+    // The global hotspot is viud's even while its renderer is starting or
+    // disconnected. A missing live claim cancels the resulting action on
+    // release; it must never turn the early press into an application click.
+    let claim = panel_claim(lp, &output, corner).unwrap_or_else(|| (
+        output.clone(), corner.summoned_edge().into(), None, None, String::new(), String::new(),
+    ));
     let locked = super::session_lock::active(lp);
     let modifiers = lp
         .state

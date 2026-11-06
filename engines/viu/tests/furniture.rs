@@ -278,7 +278,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
                 println!("EARLY_CLICK_PHASES {}", props["corner_phases"]);
                 break;
             }
-            assert!(Instant::now() < until, "corner topic missing");
+            assert!(Instant::now() < until, "corner topic missing: {props}");
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }

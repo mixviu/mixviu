@@ -1,59 +1,98 @@
-# Round 4 decision: viud owns early input
+# Furniture boundary (Track B lab)
 
-The primary approved option 1 below. Compositor authority stays in viud: input ownership/routing, focus/grabs, hit-test order, reservations, output geometry, corners/edges and session lock. viu owns drawing, widget state and Mix behaviour. Extend the existing panel-owner authority; publish plain engaged/dwelled/clicked/released/consumed events. A fast click before dwell must never reach an application. This resolves the design stop; remaining cases fitting this ownership rule are implementation work.
+This branch is a discovery specimen and never lands on main. Runtime receipts
+and measured values live in the worktree's `last.md`.
 
-# Furniture input ownership: lab design stop
+## Authority
 
-The client port has a concrete input-contract gap. No runtime or test source
-was changed at this checkpoint.
+Viud owns input routing and ownership, focus, grabs, hit-test order, reserved
+space, output geometry, global corners/edges and session lock. Viu draws
+furniture and owns widget state. Existing Mix sources in `share/scenes` retain
+application behaviour. No code from `lab/viu-runtime` is imported here.
 
-The in-process scene host installs a synchronous button hook in
-`engines/compd/src/scenes.rs`. Seat invokes it in
-`crates/seat/src/pointer/input/button.rs` before decoration release handling,
-native hot corners, popup grabs, world input and client hit-testing.
+The resolved design stop was a fast corner click before dwell. The former
+scene-host hook consumed both button events before chrome, popup grabs and
+application routing. A client cannot retract an already delivered press.
 
-`scene-host/src/panels.rs::pointer_button_at` takes ownership while the corner
-detector reports either a candidate or an engaged corner. Dwell is not needed.
-It remembers the button across pointer departure, consumes its release and
-only then toggles a panel or invokes its popup route. With a furniture menu
-open, an outside press closes it and consumes the entire click too.
+The native shared seat button path now takes corner presses before those
+routes. Its existing tracker keeps each matching release across pointer
+departure, output loss, lock and renderer departure. Leaving the hotspot
+cancels the action, never ownership of the release. The in-process default
+retains its existing scene hook and legacy dwell behaviour.
 
-The native path in `world/src/comp/corners.rs::Corners::press` instead supplies
-`engaged_corner()` and `engaged_dwell_ms()` to its press tracker. Before dwell,
-it passes the press. Two existing tests make the distinction explicit:
+Native global hotspots also own presses while furniture starts or disconnects.
+An action requires the same live panel reporter, generation, namespace and
+Wayland client claim at release. A hidden panel may bind its first layer role
+during a press. Missing or replaced claims cancel actions; clicks never leak.
 
-- scene-host: `hotspot_click_is_consumed_before_dwell_and_fires_on_release`;
-- world: `an_unengaged_press_is_not_consumed_and_another_output_resets`.
+Viud publishes plain `corner.input` records: output, corner, phase (engaged,
+dwelled, consumed, clicked, released), optional button, consumed flag and event
+sequence. Existing corner topics remain, including modifier-bearing
+`corner.clicked.v2`. Two extension bits leave the frozen base catalogue intact.
 
-Concrete regression: press and release in the launcher corner before dwell
-with an application below it. Today the application sees neither event and
-the launcher pins on release. Simply replacing the scene hook with a client
-subscribed to `corner.entered/left/clicked` lets that press reach the
-application. A later Bus message cannot retract an already delivered event.
-An unmapped launcher cannot intercept it through a layer-shell input region.
-`comp.panel.*` manages panel membership/conceal and reservations; it does not
-provide the early synchronous button veto currently installed by scene-host.
+Viu reports `comp.panel.mode` with output, edge, namespace and generation.
+Viud computes panel holds and sends `comp.panel.command` verdicts. Exclusive
+zones are layer-shell requests arranged by viud. Viu changes no compositor
+world coordinates, reservations or routing hooks.
 
-Options requiring an ownership decision:
+## Native chrome
 
-1. Keep early hotspot ownership in viud. Add a session/owner-bound furniture
-   claim, preserve the pre-hit-test press/release tracker and publish plain
-   events to viu. Define claim loss, reconnect, session lock, popup priority
-   and multi-button behaviour. This is the recommended parity route; panel
-   contents and settings policy remain in viu.
-2. Authorise the native dwell-only behaviour for client furniture. Smaller
-   port, but changes fast corner clicks and fails the current scene contract.
-3. Add always-mapped client hotspot surfaces. Changes input ordering against
-   popup grabs/chrome and introduces lifetime/ownership surfaces. It needs
-   explicit parity decisions and is not an equivalent mechanical port.
+The compositor-only service uses its existing authenticated Bus connection
+for settingsd, service discovery and visible targets' titlebar forms.
+`titlebar.changed` and connection generations fence refreshes. Menu/action
+emitters preserve the old `menu.get` and `action.execute` request bodies.
+`decor::appearance` prepares egui-free chrome from accepted settings and core
+theme/design values. A parity test covers all shipped modes, schemes and
+chrome styles. The default retains its in-process appearance push.
 
-The existing pure panel clock can be driven by client frame callbacks, but
-that does not resolve this earlier input ownership gap. No panel cold-start
-or idle CPU result is claimed before a client implementation and runtime gate.
-Task tooltip thumbnails remain deferred to B7; a future client must state
-that previews are unavailable in its tooltip UI.
+Action tooltips use the smaller Bus hover route. Retained
+`chrome.action.hover` carries output, opaque identity, title, pressed state,
+output-local anchor and output size, or null (also during session lock).
+Viu keeps the old 500 ms delay, 400 ms sticky interval, press suppression,
+card renderer and placement. Its tooltip layer has an empty input region and
+no keyboard interactivity. Viud supplies geometry; viu owns timing and pixels.
 
-B5 remains unimplemented at this preflight stop. Its smaller tooltip route
-would be a Bus hover topic emitted from decor, retaining presentation in viu;
-the CPU route needs another output composition path in viud. No tooltip
-behaviour or titlebar/theme ownership has been changed without the port.
+## Client specimen
+
+`engines/viu` builds binary `viu`, serving the `shell` protocol through the
+copied transactional scene store and renderer on `toolkit::layer`. Production
+code has no compositor Loop, typed registry or synchronous compositor callback.
+Each edge has an output-bound layer. The pure panel model drives presentation
+and motion; Wayland frame callbacks drive authored scene frame requests.
+Hidden layers unmap buffers and wait for configure when remapped. Authored
+extents are retained, including the shipped taskbar's 52 px. Accepted panel
+preferences use the copied, tested preparation module. Default output comes
+from viud's Bus state.
+
+Viu consumes `comp.props.watch`, corners and panel verdicts. Mix taskbar
+behaviour retains `comp.window.*` calls; widget events return to their authored
+Mix citizen. Page selection, mode and resize requests live in the client;
+viud retains final layer layout and input authority.
+
+The first target is panels/taskbar and launcher. Dialog/toast/corner-menu
+presentation, carousel ordering, layout readback and persistence of client
+mode changes are follow-up work; unsupported commands refuse explicitly.
+Thumbnails stay off until B7. Task tooltip cards say “Window previews
+unavailable until B7”. This is not an accepted complete desktop or installer.
+
+Toolkit layer adds dynamic size, margin, stratum, visibility, input transparency
+and frame notifications, with unchanged defaults for existing programs.
+Nested viud advertises its actual EGL render node when available. The old
+measurement-only tooltip context explicitly discards unused texture deltas;
+otherwise egui 0.37 panicked during startup.
+
+## Gate method
+
+`tools/gate_furniture.mix` builds and fingerprints exact native/default binaries
+on CBC. Owned processes use private brokers and Wayland sockets. Native viud
+plus viu must map a panel layer, reserve space and answer `shell.ping`.
+An owned nested native compositor under a headless parent exercises real
+human corner injection and requires consumed/clicked/released events at viu.
+The headless human seat's intentional refusal is unchanged.
+
+Each headless profile receives the same idle panel fixture and 180 paced shm
+damage frames. An opt-in CLOCK_THREAD_CPUTIME_ID span covers the full headless
+draw call; /proc CPU ticks provide a coarser whole-process measure. Client
+first commit and first frame callback include GPU/Wayland startup. The prior
+58 ms in-process figure is context, not an equivalent end-to-end sample.
+No performance improvement is inferred from the architecture.
