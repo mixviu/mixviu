@@ -4,7 +4,7 @@
 //!
 //! `UiInstance<U>`: concrete, knows `U::Message`.
 //! `UiItem`: type-erased newtype the registry stores and yields.
-//! `UiInstanceAny`: private vtable behind `UiItem`.
+//! `UiProducer`: private vtable behind `UiItem`.
 //!
 //! The item's `location` is in its own coordinate space (World coords for
 //! `UiSpace::World`, screen physical pixels for `UiSpace::Screen`).
@@ -77,9 +77,9 @@ impl<U: UiProgram> UiInstance<U> {
 
 // ── Vtable ─────────────────────────────────────────────────────────────
 
-use ui_surface::producer::UiProducer as UiInstanceAny;
+use ui_surface::producer::UiProducer;
 
-impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
+impl<U: UiProgram> UiProducer for UiInstance<U> {
     fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> { self.ui().capture_setup() }
     fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> { self.ui().capture_save_choice() }
     fn capture_message(&mut self, message: ui_surface::capture::CaptureMessage) { if let Some(message) = U::capture_message(message) { self.runtime_mut().queue_message(message); } }
@@ -239,7 +239,7 @@ impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
 // ── UiItem (the registry's stored type) ─────────────────────────────
 
 pub struct UiItem {
-    pub(crate) inner: Box<dyn UiInstanceAny>,
+    pub(crate) inner: Box<dyn UiProducer>,
     space: UiSpace,
     pub layer: u64,
     /// When false the item is skipped by `elements`/`element_of` and never
@@ -326,7 +326,7 @@ impl UiItem {
         }
     }
     pub(crate) fn new<U: UiProgram>(inst: UiInstance<U>, space: UiSpace, layer: u64) -> Self { Self::from_source(Box::new(SharedInstance(UiControl::new(inst))), space, layer) }
-    pub(crate) fn from_source(inner: Box<dyn UiInstanceAny>, space: UiSpace, layer: u64) -> Self {
+    pub(crate) fn from_source(inner: Box<dyn UiProducer>, space: UiSpace, layer: u64) -> Self {
         Self {
             inner,
             space,
@@ -411,7 +411,7 @@ impl UiItem {
     }
 
     /// When a waiting animation next needs a frame (see
-    /// [`UiInstanceAny::deadline`]).
+    /// [`UiProducer::deadline`]).
     pub fn deadline(&self) -> Option<Instant> {
         self.inner.deadline()
     }
@@ -631,7 +631,7 @@ impl UiItem {
         self.render_stale = false;
     }
     /// Retire a pipelined frame without rasterizing. Runs for every item every
-    /// frame — see [`UiInstanceAny::poll_publish`].
+    /// frame — see [`UiProducer::poll_publish`].
     pub(crate) fn poll_publish(&mut self) {
         self.inner.poll_publish();
     }
@@ -714,7 +714,7 @@ impl UiItem {
             }
         }
     }
-    /// Match the ring to the live setting — see [`UiInstanceAny::sync_depth`].
+    /// Match the ring to the live setting — see [`UiProducer::sync_depth`].
     /// Gated on the request, for the same reason as `ensure_backing`.
     pub(crate) fn sync_depth(
         &mut self,
@@ -852,7 +852,7 @@ pub(crate) fn build_instance<U: UiProgram>(
 }
 
 pub(crate) struct SharedInstance<U: UiProgram>(pub(crate) UiControl<U>);
-impl<U: UiProgram> UiInstanceAny for SharedInstance<U> {
+impl<U: UiProgram> UiProducer for SharedInstance<U> {
     fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> { self.0.ui().capture_setup() }
     fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> { self.0.ui().capture_save_choice() }
     fn capture_message(&mut self, message: ui_surface::capture::CaptureMessage) { if let Some(message) = U::capture_message(message) { self.0.runtime_mut().queue_message(message); } }
@@ -901,7 +901,6 @@ impl<U: UiProgram> UiInstanceAny for SharedInstance<U> {
     fn request_resize(&mut self, new_size: Size<i32, Physical>, scale_factor: f32) { self.0.inner.borrow_mut().request_resize(new_size, scale_factor) }
     fn pending_resize(&self) -> Option<(Size<i32, Physical>, f32)> { self.0.inner.borrow().pending_resize() }
     fn pointer_leave(&mut self) { self.0.inner.borrow_mut().pointer_leave() }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self.0.inner.borrow_mut().as_any_mut() }
 }
 
 
