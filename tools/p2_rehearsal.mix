@@ -1,0 +1,114 @@
+-- CBC-only private desk; uses the existing native Bus test harness.
+$root=dirname(dirname(script_path()))
+$n=require($root.."/../mixos/tests/desktop/nested_host_lib.mix")
+$sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+$bin="/build/es-artifacts/"..$sha
+$run=$n.new_run("/build/es-artifacts/rehearsal-"..$sha)
+$children=[];$records=[]
+for $name in ["noded","settingsd","editd","monitord"]
+  run_argv_must(["ln","-s",$bin.."/mixd",$run.path.."/"..$name])
+end
+$bus=$n.private_bus({dir:$run.path.."/broker",name:"p2-desk",noded:$run.path.."/noded"})
+export MIXOS_NODED_URL=$bus.url
+export MIXOS_NODE_CONFIG=$bus.conf
+export MIXOS_RUN=$bus.dir.."/run"
+export MIXOS_BROKER_ACCOUNT=$bus.account
+export MIXOS_TEST_MIX=$bin.."/mix"
+$runtime=$run.path.."/wayland"
+mkdir($runtime,{parents:true});chmod($runtime,0o700)
+copy($root.."/../mixos/tests/desktop/smoke-settings.json",$run.path.."/settings.json")
+write_file($run.path.."/preferences.json",json_encode({scene_host:false}))
+$env={HOME:$run.path.."/home",XDG_RUNTIME_DIR:$runtime,XDG_CONFIG_HOME:$run.path.."/config",XDG_DATA_HOME:$run.path.."/data",XDG_STATE_HOME:$run.path.."/state",XDG_CACHE_HOME:$run.path.."/cache",MIXOS_ETC:$run.path.."/etc",MIXOS_VAR:$run.path.."/var",MIXOS_RUN:$bus.dir.."/run",MIXOS_NODE_CONFIG:$bus.conf,MIXOS_NODED_URL:$bus.url,DISPLAY:nil,DBUS_SESSION_BUS_ADDRESS:nil,MIXOS_VT:nil,NOTIFY_SOCKET:nil,MESA_VK_WSI_PRESENT_MODE:"mailbox"}
+mkdir($env.HOME,{parents:true})
+fn launch($argv,$name,$extra)
+  $e=merge($env,$extra)
+  return spawn($argv,{env:$e,stdout:{file:$run.path.."/"..$name..".log"},stderr:"stdout",detach:true})
+end
+fn checked($service,$command,$body)
+  $r=$n.call_within($service,$command,$body,10)
+  if $r.rc!=0 then raise("BUS_CALL",json_encode({service:$service,command:$command,reply:$r})) end
+  return $r.result
+end
+fn await_service($service,$command)
+  $deadline=monotonic()+30
+  while monotonic()<$deadline
+    $r=$n.call_within($service,$command,{},3)
+    if $r.rc==0 then return $r.result end
+    sleep(0.1)
+  end
+  raise("SERVICE_TIMEOUT",$service.." "..$command)
+end
+fn await_app($service)
+  $deadline=monotonic()+30
+  while monotonic()<$deadline
+    $r=$n.call_within($service,"viu.state",{},3)
+    if $r.rc==0 and $r.result.ready then
+      if $r.result.error!="" then raise("APP_ERROR",json_encode($r)) end
+      return $r.result
+    end
+    write_file($run.path.."/"..$service.."-pending.json",json_encode($r))
+    sleep(0.1)
+  end
+  raise("APP_TIMEOUT",$service)
+end
+fn proc_ticks($p)
+  $s=read_file("/proc/"..to_string($p).."/stat")
+  $parts=split($s,")")
+  $fields=split(trim($parts[len($parts)-1])," ")
+  return to_number($fields[11])+to_number($fields[12])
+end
+try
+  $parent=launch([$bin.."/viud","--headless","--size","1440x1000","--socket","p2-parent","--bus-service","comp-parent","--config-file",$run.path.."/settings.json"],"parent",{})
+  push($children,$parent)
+  await_service("comp-parent","comp.ping")
+  $comp=launch([$bin.."/viud","--nested","--socket","p2-desk","--bus-service","comp-p2","--config-file",$run.path.."/settings.json"],"viud",{WAYLAND_DISPLAY:"p2-parent"})
+  push($children,$comp)
+  await_service("comp-p2","comp.ping")
+  $env.WAYLAND_DISPLAY="p2-desk";$env.MIXOS_COMP_SERVICE="comp-p2";$env.VIU_COMP_SERVICE="comp-p2"
+  print(run_argv_must([$run.path.."/settingsd","init","--root",$run.path.."/settings","--instance","example"],{env:$env}))
+  for $item in [{name:"settingsd",argv:["serve","--root",$run.path.."/settings","--instance","example"],service:"settingsd",ping:"HELP"},{name:"editd",argv:["serve"],service:"edit",ping:"edit.ping"},{name:"monitord",argv:["serve","--db",$run.path.."/monitor.sqlite"],service:"monitord",ping:"monitord.ping"}]
+    $p=launch(concat([$run.path.."/"..$item.name],$item.argv),$item.name,{})
+    push($children,$p)
+    push($records,{service:$item.service,pid:$p,ping:await_service($item.service,$item.ping)})
+  end
+  $cold=monotonic()
+  $host=launch([$bin.."/viu","--host"],"furniture",{})
+  push($children,$host)
+  await_service("shell","shell.ping")
+  push($records,{engine:"furniture",cold_to_bus_ms:(monotonic()-$cold)*1000,pid:$host})
+  for $scene in ["panel","launcher","toast"]
+    checked("shell","shell.scene.load",{source:read_file($root.."/share/scenes/"..$scene.."/scene.mix"),output:"winit"})
+  end
+  for $app in [{dir:"backdrop",service:"backdrop"},{dir:"gallery",service:"gallery-mix"},{dir:"monitor",service:"monitor"},{dir:"quoin/volume",service:"quoin-volume"},{dir:"dopus",service:"dopus-mix"}]
+    $cold=monotonic()
+    $p=launch([$bin.."/viu","run",$root.."/apps/"..$app.dir],$app.service,{})
+    push($children,$p)
+    $state=await_app($app.service)
+    push($records,{app:$app.service,pid:$p,cold_to_model_ms:(monotonic()-$cold)*1000,state:$state})
+  end
+  checked("gallery-mix","gallery.execute",{id:"slider",action:"set",value:72})
+  if checked("gallery-mix","viu.state",{}).model.values.slider!=72 then raise("GALLERY_REDUCER","Slider model differs") end
+  $monitor=checked("monitor","monitor.refresh",{})
+  if $monitor.snapshot==nil or len($monitor.processes)==0 then raise("MONITOR_DATA","No real samples") end
+  checked("dopus-mix","dopus.execute",{id:"view.refresh",params:{}})
+  checked("quoin-volume","volume.state",{})
+  sleep(2)
+  checked("comp-p2","comp.capture.frame",{path:$run.path.."/desk.png",cursor:false})
+  for $app in ["gallery-mix","monitor","quoin-volume","dopus-mix"]
+    $capture=checked($app,"viu.capture",{name:$app..".png"})
+    copy($capture.path,$run.path.."/"..$app..".png")
+  end
+  $sample=map($children,fn($p)={pid:$p,ticks:proc_ticks($p)})
+  $start=monotonic();sleep(10);$wall=monotonic()-$start
+  $hz=to_number(trim(run_argv_must(["getconf","CLK_TCK"])))
+  $idle=map($sample,fn($row)={pid:$row.pid,cpu_percent:100*(proc_ticks($row.pid)-$row.ticks)/$hz/$wall})
+  write_file($run.path.."/results.json",json_encode({result:"pass",source:$sha,records:$records,idle:$idle,idle_wall_seconds:$wall,clock_ticks_per_second:$hz,method:"Cold: spawn to Bus ping/model ready, includes polling and IPC; warm filesystem caches. Idle: delta process utime+stime over 10 seconds, percent of one core."}))
+  print({result:"pass",run:$run.path})
+finally
+  write_file($run.path.."/progress.json",json_encode($records))
+  for $p in reverse($children) if process_alive($p) then kill($p,15) end end
+  $n.stop_bus($bus)
+  sleep(1)
+  for $p in $children if process_alive($p) then kill($p,9) end end
+  write_file($run.path.."/closure.json",json_encode(map(concat($children,[$bus.pid]),fn($p)={pid:$p,alive:process_alive($p)})))
+end
