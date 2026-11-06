@@ -65,6 +65,11 @@ fn rewrite(args: &[OsString]) -> Option<Vec<OsString>> {
 }
 
 fn main() -> ExitCode {
+    // A mix -> mixd handoff marks the environment so a shell-profile binary
+    // installed as `mixd` refuses instead of looping. This is the service
+    // engine: clear it, so scripts and their children start clean.
+    // SAFETY: first statement of main; no other thread exists yet.
+    unsafe { std::env::remove_var(mix_shell::ENGINE_HANDOFF_ENV) };
     let args: Vec<OsString> = std::env::args_os().collect();
     if args.get(1).is_some_and(|first| first == "--personalities") {
         println!("{}", list());

@@ -14,6 +14,14 @@ use std::process::ExitCode;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+// The mix engine is the shell profile. A build that unified mixd's features
+// into mix-shell (`cargo build --workspace`) fails here instead of shipping a
+// service-profile `mix`. Build each engine with its own `-p`.
+const _: () = assert!(
+    !mix_shell::HAS_SERVICE_BUILTINS && !mix_shell::HAS_SERVE,
+    "mix built with mixd features (Cargo feature unification): build with `cargo build -p system`, not --workspace"
+);
+
 /// Every personality this binary carries, with its component's version.
 const PERSONALITIES: &[(&str, &str)] = &[
     ("mix", mix_shell::COMPONENT_VERSION),

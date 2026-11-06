@@ -17799,7 +17799,41 @@ fn builtin_has_builtin(args: Vec<Value>) -> MixResult<Option<Value>> {
     // nonetheless callable in every build. has_builtin must answer "is this
     // a callable name", so it checks the full registry.
     let name = args[0].to_mix_string();
-    Ok(Some(Value::Bool(BUILTIN_NAMES.contains(&name.as_str()))))
+    let name = name.as_str();
+    // A service-profile builtin is registered in every build (so a shell
+    // build refuses it by name), but it is only callable where its feature
+    // is compiled: answer for this binary, so feature detection is honest.
+    let callable = BUILTIN_NAMES.contains(&name)
+        && SERVICE_BUILTINS
+            .iter()
+            .find(|(b, _)| *b == name)
+            .is_none_or(|(_, feature)| compiled_features().contains(feature));
+    Ok(Some(Value::Bool(callable)))
+}
+
+#[cfg(test)]
+mod engine_profile_tests {
+    use super::*;
+
+    /// The analyzer keeps service-builtin names and capability classes in one
+    /// set and partitions them afterwards, so the two must never share a name.
+    #[test]
+    fn service_builtin_names_never_collide_with_capability_names() {
+        for (name, _) in SERVICE_BUILTINS {
+            assert!(BUILTIN_NAMES.contains(name), "{name} is not a registered builtin");
+            for info in BUILTINS {
+                assert_ne!(info.capability.as_str(), *name, "capability named like {name}");
+            }
+        }
+    }
+
+    #[test]
+    fn has_builtin_answers_for_this_build() {
+        let ask = |n: &str| builtin_has_builtin(vec![Value::String(n.into())]).unwrap();
+        assert_eq!(ask("len"), Some(Value::Bool(true)));
+        let md_compiled = compiled_features().contains(&"markdown");
+        assert_eq!(ask("markdown"), Some(Value::Bool(md_compiled)));
+    }
 }
 
 /// `mix_version()` → {major, minor, patch, string} — the language runtime

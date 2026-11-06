@@ -70,6 +70,13 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// This component's version, for the system binary's `--personalities`.
 pub const COMPONENT_VERSION: &str = VERSION;
 
+/// Which engine features this build of the shell carries. The `mix` engine
+/// asserts both are false at compile time: one Cargo invocation unifies
+/// features, so a workspace-wide build would otherwise hand `mix` the
+/// service profile silently (engine-split review, DeepSeek finding 1).
+pub const HAS_SERVICE_BUILTINS: bool = cfg!(feature = "service-builtins");
+pub const HAS_SERVE: bool = cfg!(feature = "serve");
+
 #[derive(Clone, Copy)]
 enum CliStream {
     Stdout,
@@ -269,6 +276,9 @@ fn engine_handoff(source: &str, filename: &str, args: &[String]) -> Option<i32> 
         mix::HostHeader::Declared { host, .. } if host == "mixd" => {}
         _ => return None,
     }
+    if let Some(code) = refuse_repeat_handoff(filename) {
+        return Some(code);
+    }
     let Some(mixd) = find_mixd() else {
         eprintln!(
             "mix: {filename} declares `-- host: mixd`, and this mix is the shell profile; \
@@ -279,25 +289,61 @@ fn engine_handoff(source: &str, filename: &str, args: &[String]) -> Option<i32> 
     Some(exec_mixd(&mixd, &args[1..], filename))
 }
 
-/// The `mixd` engine: beside this binary first, then on PATH.
+/// Set on a mix -> mixd handoff; the service engine clears it at startup.
+/// A shell-profile binary that still sees it was handed off to by mistake (a
+/// shell build installed as `mixd`) and refuses instead of re-executing.
+pub const ENGINE_HANDOFF_ENV: &str = "MIX_ENGINE_HANDOFF";
+
+/// The `mixd` engine: beside this binary first, then on PATH. Never this
+/// binary itself.
 fn find_mixd() -> Option<std::path::PathBuf> {
+    let own = std::env::current_exe()
+        .ok()
+        .and_then(|exe| std::fs::canonicalize(exe).ok());
+    let not_self = |p: &std::path::PathBuf| {
+        p.is_file() && std::fs::canonicalize(p).ok().as_ref() != own.as_ref()
+    };
     let beside = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|dir| dir.join("mixd")))
-        .filter(|p| p.is_file());
+        .filter(&not_self);
     beside.or_else(|| {
         env::var_os("PATH").and_then(|paths| {
             env::split_paths(&paths)
                 .map(|dir| dir.join("mixd"))
-                .find(|p| p.is_file())
+                .find(&not_self)
         })
     })
 }
 
-/// Replace this process with `mixd ARGS`; returns only on exec failure.
+/// A shell-profile binary reached through a handoff: the installed `mixd`
+/// is not the service engine. Refuse rather than hand off again.
+fn refuse_repeat_handoff(what: &str) -> Option<i32> {
+    env::var_os(ENGINE_HANDOFF_ENV)?;
+    eprintln!(
+        "mix: {what}: handed off to a shell-profile binary ({}); the installed mixd is \
+         not the service engine",
+        std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+    );
+    Some(126)
+}
+
+/// Replace this process with `mixd run ARGS`; returns only on refusal or
+/// exec failure. The explicit `run` (mixd strips exactly one) keeps a script
+/// named `run` or `serve` from being read as a mixd subcommand.
 fn exec_mixd(mixd: &Path, args: &[String], what: &str) -> i32 {
+    if let Some(code) = refuse_repeat_handoff(what) {
+        return code;
+    }
     use std::os::unix::process::CommandExt;
-    let err = process::Command::new(mixd).arg0("mixd").args(args).exec();
+    let err = process::Command::new(mixd)
+        .arg0("mixd")
+        .arg("run")
+        .args(args)
+        .env(ENGINE_HANDOFF_ENV, "1")
+        .exec();
     eprintln!("mix: {what}: cannot hand off to {}: {err}", mixd.display());
     126
 }
@@ -307,6 +353,9 @@ fn exec_mixd(mixd: &Path, args: &[String], what: &str) -> i32 {
 /// same argv under `mixd`, so existing units keep working.
 #[cfg(not(feature = "serve"))]
 fn run_serve(script_path: &str, _service_name: &str, _no_prelude: bool) -> i32 {
+    if let Some(code) = refuse_repeat_handoff("--serve") {
+        return code;
+    }
     let Some(mixd) = find_mixd() else {
         eprintln!(
             "mix --serve {script_path}: serving is the mixd engine's job, and mixd is not \
