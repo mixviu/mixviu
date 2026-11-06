@@ -114,7 +114,7 @@ end
 fn mail_action($s,$id,$a,$key,$call=nil)
   $m=$s.mail[$key]
   if $id=="mail.headers" then
-    if $a.headers==nil then $s.header_dialog=$key else $s=mail_headers($s,$key,$a.headers) end
+    if $a.headers==nil then $s.header_dialog=$key;$s.mail[$key].focus="to";$s.mail[$key].focus_instance=($s.mail[$key].focus_instance ?? 0)+1 else $s=mail_headers($s,$key,$a.headers) end
     return {state:pump($s),result:nil,op_id:nil,kind:nil}
   end
   if $m.saving or $m.sending then raise("CONFLICT","A mail save or Send is already in flight") end

@@ -176,12 +176,14 @@ pub fn draw(
         return ui.scope(|ui| {
             egui::Grid::new(id).num_columns(2).show(ui, |ui| {
                 for row in rows.as_array_mut().unwrap() {
-                    ui.label(row["label"].as_str().unwrap());
+                    let labelled=ui.label(row["label"].as_str().unwrap()).id;
                     let mut text = row["value"].as_str().unwrap().to_owned();
                     let response = ui.add_enabled(
                         row["read_only"] != true,
                         egui::TextEdit::singleline(&mut text).desired_width(ui.available_width()),
-                    );
+                    ).labelled_by(labelled);
+                    let marker=Id::unique((id,row["id"].as_str().unwrap(),"focus"));
+                    if row["focus"]==true && ui.ctx().data(|d|d.get_temp::<Value>(marker)).as_ref()!=Some(&row["focus_instance"]) {response.request_focus();ui.ctx().data_mut(|d|d.insert_temp(marker,row["focus_instance"].clone()));}
                     if response.has_focus(){ui.ctx().data_mut(|d|d.insert_temp(egui::Id::unique("viu-focused-widget"),id.to_owned()));}
                     changed |= response.changed();
                     row["value"] = json!(text);

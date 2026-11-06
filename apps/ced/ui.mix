@@ -62,7 +62,7 @@ fn ced_ui_model($s,$model)
   $model.mail_fields=[];$model.show_mail=$has and $s.mail[$t.document]!=nil
   if $model.show_mail then
     $m=$s.mail[$t.document]
-    for $key in ["from","to","cc","bcc","reply_to","subject"] $model.mail_fields=push($model.mail_fields,{id:$key,label:({from:"From",to:"To",cc:"Cc",bcc:"Bcc",reply_to:"Reply-To",subject:"Subject"})[$key],value:$m.headers[$key],read_only:$m.saving or $m.sending}) end
+    for $key in ["from","to","cc","bcc","reply_to","subject"] $model.mail_fields=push($model.mail_fields,{id:$key,label:({from:"From",to:"To",cc:"Cc",bcc:"Bcc",reply_to:"Reply-To",subject:"Subject"})[$key],value:$m.headers[$key],focus:$m.focus==$key,focus_instance:$m.focus_instance ?? 0,read_only:$m.saving or $m.sending}) end
   end
   $model.values["mail-fields"]=$model.mail_fields
   $model.top_height=if $has then 32 else 0 end

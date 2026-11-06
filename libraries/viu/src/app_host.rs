@@ -19,6 +19,7 @@ struct Host {
     facilities: crate::app_facilities::Facilities,
     platform: crate::platform::Platform,
     paste_waits: std::collections::VecDeque<String>,
+    paste_deadline: Option<Instant>,
     platform_results: std::collections::VecDeque<Value>,
     service: String,
     native_drive: bool,
@@ -224,10 +225,11 @@ impl Host {
 }
 impl eframe::App for Host {
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
-        if !self.paste_waits.is_empty() {
+        if self.paste_deadline.is_some() { 
             raw.events.retain(|event| {
                 if let egui::Event::Paste(text) = event {
-                    if let Some(id) = self.paste_waits.pop_front() {
+                    if self.paste_deadline.is_some() && let Some(id) = self.paste_waits.pop_front() {
+                        self.paste_deadline=None;
                         self.platform_results
                             .push_back(json!({"id":id,"text":text}));
                         return false;
@@ -265,10 +267,16 @@ impl Host {
             } else {
                 self.paste_waits
                     .push_back(request["id"].as_str().unwrap_or("").into());
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+
             }
         }
+        if self.paste_deadline.is_some_and(|at|at<=Instant::now()) {
+            self.paste_deadline=None;if let Some(id)=self.paste_waits.pop_front() {self.platform_results.push_back(json!({"id":id,"text":"","reason":"timeout"}));}
+        }
+        if self.paste_deadline.is_none() && !self.paste_waits.is_empty() {
+            self.paste_deadline=Some(Instant::now()+Duration::from_secs(2));ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+        }
+        if let Some(at)=self.paste_deadline {ui.ctx().request_repaint_after(at.saturating_duration_since(Instant::now()));}
         while let Some(result) = self.platform_results.front() {
             if self
                 .runtime
@@ -790,6 +798,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         facilities,
         platform,
         paste_waits: Default::default(),
+        paste_deadline: None,
         platform_results: Default::default(),
         service: bundle.manifest.service.clone(),
         native_drive: bundle.manifest.native_drive,
