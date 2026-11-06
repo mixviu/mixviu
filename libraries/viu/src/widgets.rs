@@ -104,20 +104,50 @@ impl Widget {
     /// drawing. Containers choose whether and how this preferred size shrinks.
     pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
         self.validate_model(model)?;
-        let chrome=toolkit::chrome::Chrome::of(ui.ctx());
-        let value=self.value(model);
-        if self.kind=="mark" {return Ok(chrome.metrics.title_bar_margin+chrome.metrics.mark+chrome.metrics.mark_gap);}
-        if self.kind=="menubar" {
-            return Ok(if crate::rich::menu_form(ui.ctx())["effective"]=="bar" {
-                value.as_array().into_iter().flatten().map(|m|ui.painter().layout_no_wrap(m["label"].as_str().unwrap_or("").into(),toolkit::chrome::Chrome::menu_font(ui.style()),chrome.palette.text).size().x+2.0*chrome.metrics.menu_title_padding.x).sum()
-            } else {chrome.style.icon_button as f32});
+        let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+        let value = self.value(model);
+        if self.kind == "mark" {
+            return Ok(chrome.metrics.title_bar_margin
+                + chrome.metrics.mark
+                + chrome.metrics.mark_gap);
         }
-        if self.kind=="command-bar" {let count=value.as_array().map_or(0,Vec::len);return Ok(if count==0 {0.0}else{count as f32*(chrome.style.icon_button+chrome.style.title_control_spacing) as f32+chrome.metrics.caption_gap});}
+        if self.kind == "menubar" {
+            return Ok(if crate::rich::menu_form(ui.ctx())["effective"] == "bar" {
+                value
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|m| {
+                        ui.painter()
+                            .layout_no_wrap(
+                                m["label"].as_str().unwrap_or("").into(),
+                                toolkit::chrome::Chrome::menu_font(ui.style()),
+                                chrome.palette.text,
+                            )
+                            .size()
+                            .x
+                            + 2.0 * chrome.metrics.menu_title_padding.x
+                    })
+                    .sum()
+            } else {
+                chrome.style.icon_button as f32
+            });
+        }
+        if self.kind == "command-bar" {
+            let count = value.as_array().map_or(0, Vec::len);
+            return Ok(if count == 0 {
+                0.0
+            } else {
+                count as f32
+                    * (chrome.style.icon_button + chrome.style.title_control_spacing) as f32
+                    + chrome.metrics.caption_gap
+            });
+        }
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
         }
-        Ok((
-            egui::WidgetText::from(label_text(ui, self, self.value(model)))
+        Ok(
+            (egui::WidgetText::from(label_text(ui, self, self.value(model)))
                 .into_galley(
                     ui,
                     Some(egui::TextWrapMode::Extend),
@@ -125,7 +155,13 @@ impl Widget {
                     egui::TextStyle::Body,
                 )
                 .size()
-                .x) + if self.properties["native_title"]==true {2.0*chrome.metrics.title_gap+chrome.metrics.title_bar_margin} else {0.0})
+                .x)
+                + if self.properties["native_title"] == true {
+                    2.0 * chrome.metrics.title_gap + chrome.metrics.title_bar_margin
+                } else {
+                    0.0
+                },
+        )
     }
     fn choices(&self) -> Vec<&str> {
         self.properties["choices"]
@@ -596,43 +632,56 @@ impl Widgets {
                 .response
             }
             "mark" => {
-                if widget.properties["role"]=="window-icon" {
-                    let chrome=toolkit::chrome::Chrome::of(ui.ctx());
-                    let (area,response)=ui.allocate_exact_size(ui.available_size_before_wrap(),Sense::hover());
-                    let rect=egui::Rect::from_min_size(egui::pos2(area.left()+chrome.metrics.title_bar_margin,area.center().y-chrome.metrics.mark/2.0),egui::Vec2::splat(chrome.metrics.mark));
-                    crate::icons::image_of(ui.ctx(),crate::icons::Icon::from_name(value.as_str().unwrap()).unwrap(),chrome.metrics.mark,chrome.palette.icon).paint_at(ui,rect);
+                if widget.properties["role"] == "window-icon" {
+                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    let (area, response) =
+                        ui.allocate_exact_size(ui.available_size_before_wrap(), Sense::hover());
+                    let rect = egui::Rect::from_min_size(
+                        egui::pos2(
+                            area.left() + chrome.metrics.title_bar_margin,
+                            area.center().y - chrome.metrics.mark / 2.0,
+                        ),
+                        egui::Vec2::splat(chrome.metrics.mark),
+                    );
+                    crate::icons::image_of(
+                        ui.ctx(),
+                        crate::icons::Icon::from_name(value.as_str().unwrap()).unwrap(),
+                        chrome.metrics.mark,
+                        chrome.palette.icon,
+                    )
+                    .paint_at(ui, rect);
                     response
                 } else {
-                let size = widget.properties["size"]
-                    .as_f64()
-                    .unwrap_or(toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark as f64)
-                    as f32;
-                let image = crate::icons::image_of(
-                    ui.ctx(),
-                    crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
-                        .expect("validated mark"),
-                    size,
-                    if widget.properties["weak"] == true {
-                        ui.visuals().weak_text_color()
+                    let size = widget.properties["size"]
+                        .as_f64()
+                        .unwrap_or(toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark as f64)
+                        as f32;
+                    let image = crate::icons::image_of(
+                        ui.ctx(),
+                        crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
+                            .expect("validated mark"),
+                        size,
+                        if widget.properties["weak"] == true {
+                            ui.visuals().weak_text_color()
+                        } else {
+                            ui.visuals().text_color()
+                        },
+                    );
+                    if widget.properties["fill_height"] == true {
+                        let (rect, response) = ui.allocate_exact_size(
+                            egui::vec2(size, ui.available_height()),
+                            Sense::hover(),
+                        );
+                        image.paint_at(
+                            ui,
+                            egui::Rect::from_center_size(rect.center(), egui::vec2(size, size)),
+                        );
+                        response
                     } else {
-                        ui.visuals().text_color()
-                    },
-                );
-                if widget.properties["fill_height"] == true {
-                    let (rect, response) = ui.allocate_exact_size(
-                        egui::vec2(size, ui.available_height()),
-                        Sense::hover(),
-                    );
-                    image.paint_at(
-                        ui,
-                        egui::Rect::from_center_size(rect.center(), egui::vec2(size, size)),
-                    );
-                    response
-                } else {
-                    ui.add(image)
+                        ui.add(image)
+                    }
                 }
             }
-                }
             "window-controls" => {
                 let metrics = crate::window_frame::Metrics::of(ui.ctx());
                 let (area, response) = ui.allocate_exact_size(
@@ -676,46 +725,60 @@ impl Widgets {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
             "label" => {
-                if widget.properties["native_title"]==true {
-                    let chrome=toolkit::chrome::Chrome::of(ui.ctx());
-                    let (rect,response)=ui.allocate_exact_size(ui.available_size_before_wrap(),Sense::hover());
-                    let offset=if chrome.band.title==design::TitleAlign::Auto {chrome.metrics.title_bar_margin/2.0}else{0.0};
-                    ui.painter().text(rect.center()+egui::vec2(offset,0.0),egui::Align2::CENTER_CENTER,value.as_str().unwrap_or(""),toolkit::fonts::bound(ui.ctx(),toolkit::fonts::medium(chrome.metrics.title_size)),chrome.palette.text_dim);
+                if widget.properties["native_title"] == true {
+                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    let (rect, response) =
+                        ui.allocate_exact_size(ui.available_size_before_wrap(), Sense::hover());
+                    let offset = if chrome.band.title == design::TitleAlign::Auto {
+                        chrome.metrics.title_bar_margin / 2.0
+                    } else {
+                        0.0
+                    };
+                    ui.painter().text(
+                        rect.center() + egui::vec2(offset, 0.0),
+                        egui::Align2::CENTER_CENTER,
+                        value.as_str().unwrap_or(""),
+                        toolkit::fonts::bound(
+                            ui.ctx(),
+                            toolkit::fonts::medium(chrome.metrics.title_size),
+                        ),
+                        chrome.palette.text_dim,
+                    );
                     response
                 } else {
-                let text = label_text(ui, widget, value);
-                let mut label = egui::Label::new(text);
-                if widget.properties["truncate"] == true {
-                    label = label.truncate();
-                }
-                if widget.properties["align"] == "center" {
-                    label = label.halign(egui::Align::Center);
-                } else if widget.properties["align"] == "right" {
-                    label = label.halign(egui::Align::Max);
-                }
-                if matches!(
-                    widget.properties["role"].as_str(),
-                    Some("title" | "status" | "status-band")
-                ) {
-                    ui.allocate_ui_with_layout(
-                        ui.available_size_before_wrap(),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| {
-                            if widget.properties["role"] == "status" {
-                                ui.add_space(
-                                    toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset
-                                        as f32,
-                                );
-                            }
-                            ui.add(label);
-                        },
-                    )
-                    .response
-                } else {
-                    ui.add(label)
+                    let text = label_text(ui, widget, value);
+                    let mut label = egui::Label::new(text);
+                    if widget.properties["truncate"] == true {
+                        label = label.truncate();
+                    }
+                    if widget.properties["align"] == "center" {
+                        label = label.halign(egui::Align::Center);
+                    } else if widget.properties["align"] == "right" {
+                        label = label.halign(egui::Align::Max);
+                    }
+                    if matches!(
+                        widget.properties["role"].as_str(),
+                        Some("title" | "status" | "status-band")
+                    ) {
+                        ui.allocate_ui_with_layout(
+                            ui.available_size_before_wrap(),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                if widget.properties["role"] == "status" {
+                                    ui.add_space(
+                                        toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset
+                                            as f32,
+                                    );
+                                }
+                                ui.add(label);
+                            },
+                        )
+                        .response
+                    } else {
+                        ui.add(label)
+                    }
                 }
             }
-                }
             "button" => {
                 let r = if widget.properties["style"] == "secondary" {
                     ui.add(toolkit::button::PushButton::secondary(widget.text("text")))

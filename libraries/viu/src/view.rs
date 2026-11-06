@@ -996,10 +996,10 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                         let child = &tree.nodes[child];
                         if child.family != "text"
                             && !(child.family == "control"
-                                && child
-                                    .ports
-                                    .get("definition")
-                                    .is_some_and(|definition| ["label","mark","menubar","command-bar"].contains(&definition["kind"].as_str().unwrap_or(""))))
+                                && child.ports.get("definition").is_some_and(|definition| {
+                                    ["label", "mark", "menubar", "command-bar"]
+                                        .contains(&definition["kind"].as_str().unwrap_or(""))
+                                }))
                         {
                             return Err(
                                 "intrinsic band content requires a text or label child".into()

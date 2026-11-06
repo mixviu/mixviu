@@ -323,11 +323,14 @@ pub(crate) fn draw(
     // The author decides when a palette snapshot changes. Other browsers
     // continue following the live theme on every frame.
     if let Some(refresh) = value.get("look_refresh_key") {
-        let key=egui::Id::unique((ui.ctx().viewport_id(),id,"browser-look"));
-        if let Some((previous,cached))=ui.ctx().data(|d|d.get_temp::<(Value,Look)>(key)) {
-            if previous==*refresh {look=cached;}
+        let key = egui::Id::unique((ui.ctx().viewport_id(), id, "browser-look"));
+        if let Some((previous, cached)) = ui.ctx().data(|d| d.get_temp::<(Value, Look)>(key)) {
+            if previous == *refresh {
+                look = cached;
+            }
         }
-        ui.ctx().data_mut(|d|d.insert_temp(key,(refresh.clone(),look)));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(key, (refresh.clone(), look)));
     }
     ui.painter().rect_filled(area, 0.0, look.window);
     let condensed = area.width() < 648.0;
@@ -427,7 +430,11 @@ pub(crate) fn draw(
                 }
             });
         content.min.x = area.left() + 296.0;
-        ui.painter().vline(content.left()-0.5,area.y_range(),ui.visuals().widgets.noninteractive.bg_stroke);
+        ui.painter().vline(
+            content.left() - 0.5,
+            area.y_range(),
+            ui.visuals().widgets.noninteractive.bg_stroke,
+        );
     }
     if value["drawer"].is_object() {
         let width = (344.0 + 2.0 * look.l).min(content.width());
@@ -484,12 +491,32 @@ pub(crate) fn draw(
             });
     } else {
         if !value["parent"].is_null() {
-            let r = body.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x=4.0;
-                ui.add(crate::icons::image_of(ui.ctx(),crate::icons::Icon::from_name("chevron-left").unwrap(),16.0,look.text));
-                ui.add(egui::Label::new(RichText::new(text(value,"parent_title")).color(look.text).size(14.0)).sense(Sense::click()))
-            }).inner;
-            r.widget_info(||egui::WidgetInfo::labeled(egui::Role::Link,ui.is_enabled(),text(value,"parent_title")));
+            let r = body
+                .horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.add(crate::icons::image_of(
+                        ui.ctx(),
+                        crate::icons::Icon::from_name("chevron-left").unwrap(),
+                        16.0,
+                        look.text,
+                    ));
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(text(value, "parent_title"))
+                                .color(look.text)
+                                .size(14.0),
+                        )
+                        .sense(Sense::click()),
+                    )
+                })
+                .inner;
+            r.widget_info(|| {
+                egui::WidgetInfo::labeled(
+                    egui::Role::Link,
+                    ui.is_enabled(),
+                    text(value, "parent_title"),
+                )
+            });
             record(geometry, id, "back", &r);
             if r.clicked() {
                 emit(events, id, "navigate", json!({"page":value["parent"]}));
@@ -769,6 +796,59 @@ fn standard_button(ui: &mut Ui, text: &str, look: &Look) -> Response {
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), text));
     response
 }
+fn radio_rows(
+    ui: &mut Ui,
+    id: &str,
+    row: &Value,
+    look: &Look,
+    geometry: &mut BTreeMap<String, Rect>,
+    events: &mut Vec<Intent>,
+) {
+    let key = text(row, "id");
+    for (index, choice) in array(&row["choices"]).enumerate() {
+        if index > 0 {
+            let y = ui.cursor().top();
+            ui.painter().hline(ui.min_rect().x_range(), y, Stroke::new(1.0, look.divider));
+            ui.add_space(1.0);
+        }
+        let selected = choice["value"] == row["value"];
+        let response = egui::Frame::NONE
+            .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
+            .show(ui, |ui| {
+                ui.set_min_height(32.0);
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.add_enabled_ui(row["blocked"].is_null(), |ui| {
+                        let (rect, response) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::click());
+                        if selected {
+                            ui.painter().circle_filled(rect.center(), 8.0, look.accent);
+                            ui.painter().circle_filled(rect.center(), 3.0, look.on_accent);
+                        } else {
+                            ui.painter().circle_filled(rect.center(), 8.0, look.field);
+                            ui.painter().circle_stroke(rect.center(), 7.5, Stroke::new(1.0, look.swatch_border));
+                        }
+                        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, ui.is_enabled(), selected, text(choice, "label")));
+                        if response.clicked() && !selected {
+                            emit(events, id, "edit", json!({"row":key,"value":choice["value"]}));
+                        }
+                    });
+                    ui.add_space(look.xs);
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        ui.label(RichText::new(text(choice, "label")).size(14.0).color(look.text));
+                        if let Some(description) = choice["description"].as_str().filter(|s| !s.is_empty()) {
+                            ui.label(RichText::new(description).size(12.0).color(look.text));
+                        }
+                    });
+                });
+            }).response;
+        let click = ui.interact(response.rect, response.id.with((key, index)), Sense::click());
+        record(geometry, id, &format!("row.{key}.choice.{index}"), &click);
+        if click.clicked() && row["blocked"].is_null() && !selected {
+            emit(events, id, "edit", json!({"row":key,"value":choice["value"]}));
+        }
+    }
+}
 fn draw_row(
     ui: &mut Ui,
     id: &str,
@@ -777,6 +857,10 @@ fn draw_row(
     geometry: &mut BTreeMap<String, Rect>,
     events: &mut Vec<Intent>,
 ) {
+    if row["kind"] == "choice" && row["presentation"] == "radio" {
+        radio_rows(ui, id, row, look, geometry, events);
+        return;
+    }
     if row["kind"] == "ordered" {
         draw_ordered(ui, id, row, geometry, events);
         return;
@@ -1024,7 +1108,10 @@ fn draw_control(
                             look.field
                         },
                     );
-                    if let Some((fill, ink)) = scheme_swatch(text(choice, "value"), row["resolved_dark"].as_bool().unwrap_or(look.dark)) {
+                    if let Some((fill, ink)) = scheme_swatch(
+                        text(choice, "value"),
+                        row["resolved_dark"].as_bool().unwrap_or(look.dark),
+                    ) {
                         let chip = Rect::from_center_size(
                             pos2(rect.left() + 16.0, rect.center().y),
                             vec2(14.0, 14.0),
