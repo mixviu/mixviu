@@ -8,6 +8,8 @@ use bus::{IncomingCommand, SupervisedClient};
 use crate::port::{FireSender, PortIngress};
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
+static TARGETS: std::sync::Mutex<BTreeSet<String>> = std::sync::Mutex::new(BTreeSet::new());
+pub fn targets(targets: BTreeSet<String>) { *TARGETS.lock().unwrap() = targets; }
 pub fn enable() { ENABLED.store(true, Ordering::Release); }
 pub(crate) fn enabled() -> bool { ENABLED.load(Ordering::Acquire) }
 
@@ -34,30 +36,35 @@ fn action_args(viewport: Option<&str>, command: &str) -> Value {
 pub struct Update {
     generation: u64,
     live: Arc<AtomicU64>,
-    theme: Option<decor::ChromeTheme>,
+    theme: Option<decor::appearance::Look>,
     services: BTreeSet<String>,
     bars: BTreeMap<String, Value>,
 }
 impl Update {
+    pub(crate) fn look(&self) -> Option<&decor::appearance::Look> {
+        (self.live.load(Ordering::Acquire) == self.generation).then_some(())?;
+        self.theme.as_ref()
+    }
     /// Runs only on the engine thread. Reconnect fences queued presentations.
-    pub(crate) fn apply(self) {
-        if self.live.load(Ordering::Acquire) != self.generation { return; }
-        if let Some(theme) = self.theme { decor::window::install(theme); }
-        decor::window::menu_services(self.services);
+    pub(crate) fn apply(self) -> bool {
+        if self.live.load(Ordering::Acquire) != self.generation { return false; }
+        let mut changed = self.theme.is_some();
+        if let Some(look) = self.theme { decor::window::install(look.chrome(look.window_style)); }
+        changed |= decor::window::menu_services(self.services);
         for (service, form) in self.bars {
             let bar = if form["hosted"] == true && form["service"].as_str() == Some(&service) {
                 serde_json::from_value(form["bar"].clone()).unwrap_or_default()
             } else { Default::default() };
-            decor::window::update_actions(&service, bar);
+            changed |= decor::window::update_actions(&service, bar);
         }
+        changed
     }
 }
 
 pub(crate) async fn run(client: &SupervisedClient, ingress: PortIngress,
-    mut events: tokio::sync::mpsc::Receiver<IncomingCommand>) {
+    mut events: tokio::sync::mpsc::Receiver<IncomingCommand>, live: Arc<AtomicU64>) {
     let Ok(binding) = settings::session::binding() else { return; };
     let Ok(mut consumer) = settings::consumer::Consumer::for_shell(binding) else { return; };
-    let live = Arc::new(AtomicU64::new(0));
     let mut states = client.subscribe_state();
     let mut retry = tokio::time::interval(std::time::Duration::from_secs(1));
     retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -68,11 +75,9 @@ pub(crate) async fn run(client: &SupervisedClient, ingress: PortIngress,
         if let Some(now) = settings::native::live_generation(client) {
             if generation != Some(now) {
                 generation = Some(now);
-                live.store(now, Ordering::Release);
                 work = consumer.connected(now);
             }
         } else {
-            live.store(0, Ordering::Release);
             generation = None;
             consumer.disconnected();
         }
@@ -84,7 +89,7 @@ pub(crate) async fn run(client: &SupervisedClient, ingress: PortIngress,
         let pending = consumer.pending().cloned();
         if let Some(update) = &pending {
             match decor::appearance::build(update.snapshot()) {
-                Ok(look) => theme = Some(look.chrome(look.window_style)),
+                Ok(look) => theme = Some(look),
                 Err(error) => tracing::warn!(?error, "native chrome settings refused"),
             }
         }
@@ -98,7 +103,8 @@ pub(crate) async fn run(client: &SupervisedClient, ingress: PortIngress,
                 }
             }
             let mut bars = BTreeMap::new();
-            for service in services.iter().filter(|name| !name.contains('.') && !name.is_empty()) {
+            let targets = TARGETS.lock().unwrap().clone();
+            for service in targets.iter().filter(|name| services.contains(*name)) {
                 let _ = tokio::time::timeout(std::time::Duration::from_secs(1),
                     client.subscribe_topic(&format!("{service}.ui.titlebar.changed"))).await;
                 if let Ok(Ok(form)) = tokio::time::timeout(std::time::Duration::from_millis(250),
@@ -122,7 +128,6 @@ pub(crate) async fn run(client: &SupervisedClient, ingress: PortIngress,
             _ = retry.tick() => { work = consumer.refresh(); }
         }
     }
-    live.store(0, Ordering::Release);
 }
 
 #[cfg(test)]
@@ -137,9 +142,11 @@ mod tests {
     #[test]
     fn queued_chrome_from_an_old_connection_cannot_repaint() {
         let before = decor::window::generation();
-        Update { generation: 1, live: Arc::new(AtomicU64::new(2)),
-            theme: Some(decor::ChromeTheme::from_source(decor::ChromeStyle::Mac,None)),
-            services: BTreeSet::new(), bars: BTreeMap::new() }.apply();
+        let services = decor::window::live_menu_services();
+        assert!(!Update { generation: 1, live: Arc::new(AtomicU64::new(2)),
+            theme: None,
+            services: BTreeSet::from(["unexpected".into()]), bars: BTreeMap::new() }.apply());
+        assert_eq!(decor::window::live_menu_services(), services);
         assert_eq!(decor::window::generation(), before);
     }
 }

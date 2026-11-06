@@ -306,6 +306,7 @@ pub fn pushes_outward(corner: Corner, motion: (f64, f64)) -> bool {
 /// One corner topic, before the shared event sequence numbers it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CornerTopic {
+    Input { output: String, corner: Corner, phase: &'static str, button: Option<u32>, consumed: bool },
     Entered {
         output: String,
         corner: Corner,
@@ -355,6 +356,7 @@ impl CornerTopic {
 
     pub fn into_record(self, event_seq: u64) -> ObservationRecord {
         match self {
+            Self::Input { output, corner, phase, button, consumed } => ObservationRecord::CornerInput { output, corner, phase, button, consumed, event_seq },
             Self::Entered {
                 output,
                 corner,
@@ -470,6 +472,8 @@ impl CornerPresses {
 
     /// Cancel every owed click (the corner left, the lock came up), keeping
     /// the ownership.
+    pub fn cancel(&mut self, button: u32) { if let Some(action) = self.presses.get_mut(&button) { *action = None; } }
+
     pub fn cancel_all(&mut self) {
         for action in self.presses.values_mut() {
             *action = None;

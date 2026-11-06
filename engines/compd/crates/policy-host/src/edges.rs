@@ -63,7 +63,8 @@ struct Published {
 pub fn corner_topics(lp: &mut Loop) -> Vec<CornerTopic> {
     let mut topics = lp.inner.comp.corners.take_topics();
     for topic in &mut topics {
-        let (CornerTopic::Entered { output, .. }
+        let (CornerTopic::Input { output, .. }
+        | CornerTopic::Entered { output, .. }
         | CornerTopic::Left { output, .. }
         | CornerTopic::Clicked { output, .. }
         | CornerTopic::ClickedV2 { output, .. }) = topic;

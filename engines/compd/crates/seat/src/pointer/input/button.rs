@@ -50,6 +50,9 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
     // Shared by winit and udev: reserved corner squares take presses BEFORE
     // chrome, legacy corners, popup grabs, furniture or application routing.
     // Their matching releases stay consumed even after pointer departure.
+    if world::comp::corners::panel_button(_loop, event.button_code(), event.state() == ButtonState::Pressed) {
+        return;
+    }
     if world::comp::scenes::pointer_button(
         _loop,
         event.button_code(),

@@ -1,6 +1,6 @@
 -- CBC only; comp_oracle captures and restores the lock in this same job.
 for $cmd in [
-  ["cargo", "test", "-p", "decor", "-p", "comp-service", "--lib"],
+  ["cargo", "test", "-p", "decor", "-p", "comp-service", "-p", "world", "-p", "policy", "-p", "comp-model", "--lib"],
   ["cargo", "check", "-p", "compd", "--no-default-features", "--features", "backend-native,backend-headless", "--locked"],
   ["cargo", "check", "-p", "compd", "--features", "backend-all", "--locked"]
 ]

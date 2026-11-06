@@ -52,7 +52,7 @@ pub const WORKSPACE_COUNT_MAX: u32 = 16;
 
 /// Every topic suffix, in `AffectedTopics` bit order. The service publishes
 /// each as `<service>.<suffix>` ([`topic_name`]).
-pub const TOPIC_SUFFIXES: [&str; 14] = [
+pub const TOPIC_SUFFIXES: [&str; 16] = [
     PROPS_TOPIC_SUFFIX,
     SURFACE_MAPPED_TOPIC_SUFFIX,
     SURFACE_UNMAPPED_TOPIC_SUFFIX,
@@ -67,6 +67,8 @@ pub const TOPIC_SUFFIXES: [&str; 14] = [
     WORKSPACE_TOPIC_SUFFIX,
     SESSION_TOPIC_SUFFIX,
     PLACEMENT_TOPIC_SUFFIX,
+    "corner.input",
+    "chrome.action.hover",
 ];
 
 pub fn topic_name(service: &str, suffix: &str) -> String {
@@ -391,6 +393,8 @@ impl TopicMessage {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ObservationRecord {
+    ChromeHover { hover: Value, event_seq: u64 },
+    CornerInput { output: String, corner: Corner, phase: &'static str, button: Option<u32>, consumed: bool, event_seq: u64 },
     PlacementChanged {
         id: u64,
         generation: u64,
@@ -490,6 +494,7 @@ pub enum ObservationRecord {
 impl ObservationRecord {
     pub fn event_seq(&self) -> u64 {
         match self {
+            Self::ChromeHover { event_seq, .. } | Self::CornerInput { event_seq, .. } => *event_seq,
             Self::PlacementChanged { event_seq, .. } => *event_seq,
             Self::SessionChanged { event_seq, .. } => *event_seq,
             Self::PanelCommand { event_seq, .. } => *event_seq,
@@ -511,6 +516,7 @@ impl ObservationRecord {
     /// the outbox numbers each one as it is offered (`offer_next`).
     pub fn with_event_seq(mut self, seq: u64) -> Self {
         match &mut self {
+            Self::ChromeHover { event_seq, .. } | Self::CornerInput { event_seq, .. } => *event_seq = seq,
             Self::PlacementChanged { event_seq, .. } => *event_seq = seq,
             Self::SessionChanged { event_seq, .. }
             | Self::PanelCommand { event_seq, .. }
@@ -531,6 +537,8 @@ impl ObservationRecord {
 
     pub fn topic_suffix(&self) -> &'static str {
         match self {
+            Self::ChromeHover { .. } => "chrome.action.hover",
+            Self::CornerInput { .. } => "corner.input",
             Self::PlacementChanged { .. } => PLACEMENT_TOPIC_SUFFIX,
             Self::SessionChanged { .. } => SESSION_TOPIC_SUFFIX,
             Self::PanelCommand { .. } => PANEL_COMMAND_TOPIC_SUFFIX,
@@ -556,6 +564,8 @@ impl ObservationRecord {
         message.set("command", self.topic_suffix());
         message.set("event_seq", &self.event_seq().to_string());
         message.body = match self {
+            Self::ChromeHover { hover, event_seq } => json!({"version":1,"hover":hover,"event_seq":event_seq}).to_string(),
+            Self::CornerInput { output, corner, phase, button, consumed, event_seq } => json!({"version":1,"output":output,"corner":corner.name(),"phase":phase,"button":button,"consumed":consumed,"event_seq":event_seq}).to_string(),
             Self::PlacementChanged { id, generation, placement, output, event_seq } => json!({
                 "id": id, "generation": generation, "placement": placement, "output": output, "event_seq": event_seq,
             }).to_string(),

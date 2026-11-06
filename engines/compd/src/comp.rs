@@ -159,6 +159,9 @@ pub(crate) fn reconcile_scene_geometry(lp: &mut Loop) {
         // client buffer can remove a letterbox after scene geometry settled;
         // the commit observer requests the same reconciliation in that case.
         refresh_scene_surfaces(lp);
+        #[cfg(not(feature = "inproc-ui"))]
+        comp_service::chrome::targets(lp.inner.all_world_spaces().iter()
+            .flat_map(|space| space.state.elements()).filter_map(decor::window::action_service).collect());
         if policy_host::input::try_retarget_pointer(lp) {
             lp.inner.comp.clear_input_geometry_dirty();
         }
@@ -304,6 +307,7 @@ fn motion_cancelled(reason: &str) -> ControlReply {
 
 /// The engine half of the port, owned by the event loop's closure.
 pub struct Bus {
+    chrome_hover: Value,
     port: PortService,
     /// The outbox the publisher task drains (dropping it ends the outbox).
     producer: ObservationProducer,
@@ -429,6 +433,7 @@ impl Bus {
         // even if no Bus request or frame is waiting.
         wake();
         Ok(Self {
+            chrome_hover: Value::Null,
             port: wiring.service,
             producer: wiring.observation_producer,
             fires: wiring.fires,
@@ -546,6 +551,14 @@ impl Bus {
         // The renderer's occlusion decisions since the last pass, as row
         // changes for the edge pass below (F6).
         world::comp::occlusion::service(lp);
+        #[cfg(not(feature = "inproc-ui"))]
+        {
+            let hover = policy_host::chrome::hover(lp);
+            if hover != self.chrome_hover {
+                self.chrome_hover = hover.clone();
+                self.producer.offer_next(move |event_seq| comp_model::observation::ObservationRecord::ChromeHover { hover, event_seq });
+            }
+        }
         // The corner topics the pointer path earned, then the dwell timer for
         // whatever is pending now.
         for topic in policy_host::edges::corner_topics(lp) {
@@ -1056,6 +1069,12 @@ impl Engine<'_> {
 }
 
 impl CompEngine for Engine<'_> {
+    fn native_chrome_theme(&mut self, look: &decor::appearance::Look) {
+        world::comp::region::follow(&look.theme);
+        if self.lp.inner.comp.set_tile_gap(look.gaps) {
+            policy_host::control::refresh_usable(self.lp);
+        }
+    }
     fn native_chrome_changed(&mut self) {
         self.lp.state.schedule_redraw(dispatcher::state::RedrawReason::Publish);
     }
@@ -1127,6 +1146,10 @@ impl CompEngine for Engine<'_> {
 
     // Panel holders are the only consumer of the live set.
     fn services_live(&mut self, live: &BTreeSet<String>) {
+        #[cfg(not(feature = "inproc-ui"))]
+        if decor::window::menu_services(live.clone()) {
+            self.lp.state.schedule_redraw(dispatcher::state::RedrawReason::Publish);
+        }
         policy_host::panel::services_live(self.lp, live);
     }
 

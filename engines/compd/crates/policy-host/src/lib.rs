@@ -24,6 +24,7 @@
 //!   desktops, HIDDEN).
 
 pub mod capture;
+pub mod chrome;
 pub mod control;
 pub mod edges;
 pub mod geometry;

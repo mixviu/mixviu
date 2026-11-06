@@ -1097,12 +1097,15 @@ async fn worker_loop<F, Fut, C>(
     };
     let mut states = client.subscribe_state();
     let (chrome_sender, chrome_receiver) = tokio_mpsc::channel(64);
+    let chrome_live = Arc::new(AtomicU64::new(client.chrome_client()
+        .and_then(settings::native::live_generation).unwrap_or(0)));
     let chrome_task = if crate::chrome::enabled() {
         let client = Arc::clone(&client);
         let ingress = ingress.clone();
+        let live = chrome_live.clone();
         Some(tokio::spawn(async move {
             if let Some(client) = client.chrome_client() {
-                crate::chrome::run(client, ingress, chrome_receiver).await;
+                crate::chrome::run(client, ingress, chrome_receiver, live).await;
             }
         }))
     } else { None };
@@ -1158,6 +1161,10 @@ async fn worker_loop<F, Fut, C>(
                     break;
                 }
                 let state = *states.borrow_and_update();
+                chrome_live.store(client.chrome_client().and_then(settings::native::live_generation).unwrap_or(0), Ordering::Release);
+                if crate::chrome::enabled() && state != ConnState::Connected {
+                    ingress.services_live(BTreeSet::new());
+                }
                 apply_connection_state(&broker, state);
                 observation_notifier.notify_one();
                 if state == ConnState::Connected && !registry_subscribed.load(Ordering::Acquire) {
@@ -1179,7 +1186,11 @@ async fn worker_loop<F, Fut, C>(
                     break;
                 };
                 if crate::chrome::enabled() && command.is_topic_delivery() {
-                    let _ = chrome_sender.try_send(command.clone());
+                    let _ = chrome_sender.try_send(bus::IncomingCommand {
+                        generation: command.generation, from: command.from.clone(),
+                        command: command.command.clone(), id: command.id.clone(),
+                        args: command.args.clone(), body: command.body.clone(), headers: command.headers.clone(),
+                    });
                 }
                 dispatch_incoming(
                     &ingress,
@@ -1201,6 +1212,7 @@ async fn worker_loop<F, Fut, C>(
     }
 
     registry_task.abort();
+    chrome_live.store(0, Ordering::Release);
     if let Some(task) = chrome_task { task.abort(); }
     responders.abort_all();
     while responders.join_next().await.is_some() {}

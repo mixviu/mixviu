@@ -16,7 +16,7 @@ contract = "none"
 
 [dependencies]
 decor.workspace = true
-settings.workspace = true
+settings = { workspace = true, features = ["native"] }
 logging.workspace = true
 comp-model.workspace = true
 surfaces.workspace = true
