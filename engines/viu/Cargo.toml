@@ -7,8 +7,14 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+bus = { path = "../../libraries/bus" }
+tokio = { version = "=1.53.1", features = ["sync"] }
 viu = { path = "../../libraries/viu" }
 mix = { path = "../../libraries/mix" }
 serde_json = "=1.0.151"
 eframe = { version = "=0.37.0", default-features = false, features = ["default_fonts", "wayland", "wgpu_no_default_features"] }
 wgpu = { version = "30.0", default-features = false, features = ["std", "vulkan", "gles", "wgsl"] }
+
+[[bin]]
+name = "viu"
+path = "src/bin/viu.rs"
