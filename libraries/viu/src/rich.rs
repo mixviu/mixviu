@@ -716,7 +716,7 @@ fn gold_dialog(
     use toolkit::dialog::{Choice, Dialog, Role};
     let id = &widget.id;
     let choices = value["choices"].as_array().unwrap();
-    let key = egui::Id::unique((ui.ctx().viewport_id(), id, &value["instance"]));
+    let key = egui::Id::unique((ui.ctx().viewport_id(), id, &value["instance"], &value["title"]));
     let mut field = value["field"].as_str().map(str::to_owned);
     let mut accept = false;
     let shown=Dialog::new(key,text(value,"title")).buttons(choices.iter().map(|c|Choice::new(text(c,"label"),if c["default"]==true {Role::Default}else if c["cancel"]==true{Role::Cancel}else{Role::Other}).enabled(c["enabled"]==true)).collect()).show(ui.ctx(),|ui|{
@@ -727,6 +727,7 @@ fn gold_dialog(
             else if !response.has_focus() && !response.lost_focus(){response.request_focus();}
             if response.changed(){emit(events,id,"edit",json!(field));}
         }else if !text(value,"body").is_empty(){ui.label(text(value,"body"));}
+        if let Some(footer)=value["footer"].as_str(){ui.weak(footer);}
         if let Some(items)=value["items"].as_array(){
             egui::ScrollArea::vertical().max_height(360.0).show(ui,|ui|{
                 egui::Grid::new((id,"rows")).striped(true).show(ui,|ui|{

@@ -8,9 +8,10 @@ fn ced_menus($s)
   for $menu in ["File","Edit","Search","View","Tabs","Help"]
     $children=[];$last_group=nil;$markdown=[]
     $menu_rows=filter($rows,fn($a)=$a.menu==$menu)
+    if $menu=="Help" then $menu_rows=concat(filter($menu_rows,fn($a)=$a.id=="help.macros"),filter($menu_rows,fn($a)=$a.id!="help.macros")) end
     if $menu=="View" then $menu_rows=concat(filter($menu_rows,fn($a)=contains(["view.zoom_in","view.zoom_out","view.zoom_reset","view.clear_markers","view.reload_settings"],$a.id)),filter($menu_rows,fn($a)=not contains(["view.zoom_in","view.zoom_out","view.zoom_reset","view.clear_markers","view.reload_settings"],$a.id))) end
     for $a in $menu_rows
-      if contains(["mail.headers","help.macros"],$a.id) then continue end
+      if $a.id=="mail.headers" then continue end
       if starts_with($a.id,"view.markdown.") then
         push($markdown,{id:$a.id,label:$a.label,enabled:$a.enabled,checked:len($s.tabs)>0 and ($s.previews[current($s).document] ?? "source")==split($a.id,".")[2]});continue
       end
@@ -18,6 +19,7 @@ fn ced_menus($s)
       if $last_group!=nil and $last_group!=$group then push($children,{separator:true}) end
       $last_group=$group
       $row={id:$a.id,label:$a.label,enabled:$a.enabled,shortcut:$a.keys[0] ?? ""}
+      if contains(["edit.cut","edit.copy","edit.paste"],$a.id) and len($s.keys[$a.id] ?? [])==0 then $row.shortcut="" end
       if starts_with($a.id,"view.markdown.") then $row.checked=len($s.tabs)>0 and ($s.previews[current($s).document] ?? "source")==split($a.id,".")[2]
       elif contains(["view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output"],$a.id) then $row.checked=$s[split($a.id,".")[1]] end
       push($children,$row)
@@ -63,6 +65,7 @@ fn ced_ui_model($s,$model)
   $body=if $s.help=="keys" then "" elif $s.help=="about" then "The MixOS Editor edits buffers shared through the edit service: other people and agents can edit the same document at the same time." else "" end
   $model.values["help-dialog"]=ui_form(contains(["keys","about"],$s.help),if $s.help=="keys" then "Keyboard Shortcuts" else "About MixOS Editor" end,$body)
   $model.values["help-dialog"].choices=[{id:"ok",label:"Close",enabled:true,default:true,cancel:true}]
+  if $s.help=="about" then $model.values["help-dialog"].footer="Version "..($ctx.version ?? "0.1.2") end
   if $s.help=="keys" then
     $model.values["help-dialog"].body="";$model.values["help-dialog"].items=[]
     for $a in action_rows($s) if len($a.keys)>0 and (not contains(["edit.cut","edit.copy","edit.paste"],$a.id) or len($s.keys[$a.id] ?? [])>0) then $model.values["help-dialog"].items=push($model.values["help-dialog"].items,{label:$a.label,shortcut:$a.keys[0],choices:[]}) end end
@@ -91,6 +94,7 @@ fn ced_ui_model($s,$model)
   if $model.problems_text=="" then $model.problems_text="No problems" end
   $model.values["problems-list"]=if $has then viu_document("problems",$t.document,{}) else [] end
   $model.output_text="No output yet."
+  $model.values["output-text"]=$model.output_text
   $model.mail_fields={enabled:true,fields:[],attachments:[],attachment_label:"Attachments",attach_label:"Attach…",remove_label:"Remove",chooser:{open:false,title:"Attach…",directory:"/"}};$model.show_mail=$has and $s.mail[$t.document]!=nil
   if $model.show_mail then
     $m=$s.mail[$t.document]

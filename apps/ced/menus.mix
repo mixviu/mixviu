@@ -17,6 +17,7 @@ fn theme_rows($s)
   return $rows
 end
 fn menu_group($id)
+  if $id=="help.macros" then return 17 end
   if starts_with($id,"tabs.goto.") then return 1 end
   $groups=[
     ["file.new","file.open"],["file.send","file.save","file.save_as","file.save_all"],["file.reload"],["file.close"],["file.exit"],
