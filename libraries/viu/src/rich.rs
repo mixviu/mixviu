@@ -868,7 +868,8 @@ pub(crate) fn draw(
                     ui.ctx().viewport_id(),
                     id,
                     "gold-dialog",
-                    text(value, "instance"),\n                    text(value, "title"),
+                    text(value, "instance"),
+                    text(value, "title"),
                 ));
                 let mut field = value["field"].as_str().map(str::to_owned);
                 let mut submitted = false;
