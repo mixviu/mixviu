@@ -34,7 +34,7 @@ on viu.macros.closed
 end
 on viu.frame.intent
   $id=$event.args.value.command
-  $state=execute_prefs($state,$id,{})
+  $state=execute_origin($state,$id,{},$event.args.value.origin ?? "menu")
   publish_prefs($state);reply(0,"{}")
 end
 fn start_prefs($s,$payload)
@@ -77,6 +77,9 @@ fn release_request($s,$command,$body)
   return $s
 end
 fn execute_prefs($s,$id,$params)
+  return execute_origin($s,$id,$params,"bus")
+end
+fn execute_origin($s,$id,$params,$origin)
   if not any($actions.registry,fn($a)=$a.id==$id) then raise("UNKNOWN_ACTION",$nav.text_for("unknown-action")) end
   if not $actions.enabled($s,$id) then raise("DISABLED",$nav.text_for("command-disabled")) end
   if $id=="file.quit" then $s.quitting=true
@@ -137,6 +140,8 @@ fn execute_prefs($s,$id,$params)
     $choice={};$choice[$axis]=if $parts[2]=="session" then nil else $parts[2] end
     $s=$actions.choose_theme($s,$choice)
   else raise("UNKNOWN_COMMAND","Action implementation pending: "..$id) end
+  send "viu-local" "native.executed" body={id:$id,origin:$origin,params:if contains(["page.open","set","item"],$id) then $params else nil end,result:$pages.action_result($s,$id,$params)}
+  $recorded=$rc
   return $s
 end
 fn apply_email($s,$args)
@@ -553,7 +558,7 @@ on prefs.intent
           $d=$email.identity_draft($state);$state=apply_email($state,{op:"identities",id:$d.account,identities:$d.rows});$state.email.identities=nil
         elif starts_with(to_string($v),"email.identity.") then $state=$email.identity_action($state,substr($v,15),nil)
         elif starts_with($key,"email.identity.") then $state=$email.identity_action($state,substr($key,15),$v)
-        elif any($actions.registry,fn($act)=$act.id==$v) then $state=execute_prefs($state,$v,{})
+        elif any($actions.registry,fn($act)=$act.id==$v) then $state=execute_origin($state,$v,{},"ui")
         else
           if contains(["terminal.font.family","ced.editor.font.family","email.reader.font.family","email.composer.font.family"],$key) and type($v)=="string" then $v=trim($v);if $v=="" then $v=nil end end
           $state=set_prefs($state,$key,$v)

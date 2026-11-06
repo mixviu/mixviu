@@ -459,7 +459,7 @@ fn native_menu(ui: &mut Ui, value: &Value, id: &str, events: &mut Vec<Intent>) -
         ui.spacing_mut().item_spacing.x = 0.0;
         let form = menu_form(ui.ctx());
         let picked = if form["effective"] == "bar" {
-            toolkit::menu::data_picked(ui, &menus, search.as_ref())
+            toolkit::menu::data_picked_with_origin(ui, &menus, search.as_ref(), None)
         } else {
             let response = ui
                 .add(toolkit::button::IconButton::new(toolkit::Icon::Menu).tooltip("Window menu"));
@@ -468,10 +468,10 @@ fn native_menu(ui: &mut Ui, value: &Value, id: &str, events: &mut Vec<Intent>) -
             {
                 toolkit::menu::toggle(ui.ctx());
             }
-            toolkit::menu::data_compact_picked(ui, &menus, search.as_ref(), response.rect)
+            toolkit::menu::data_picked_with_origin(ui, &menus, search.as_ref(), Some(response.rect))
         };
-        if let Some(command) = picked {
-            emit(events, id, "command", json!({"command":command}));
+        if let Some((command, palette)) = picked {
+            emit(events, id, "command", json!({"command":command,"origin":if palette {"palette"}else{"menu"}}));
         }
     })
     .response
