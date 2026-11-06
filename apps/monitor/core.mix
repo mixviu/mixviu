@@ -9,7 +9,7 @@ fn target($node)
   return "monitord."..$node..".bus"
 end
 fn initial()
-  return {theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark",style:"studio"},ticket:0,inflight:{},processes_loaded:false,focus_serial:0,macros_open:false,quitting:false,window_close:false,connected:true,status:"Connecting to monitord…",node:"",node_draft:"",tab:"Processes",section:"cpu",rings:{},history_seeded:false,connections:nil,connections_error:nil,peers:[],total:0,paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
+  return {bindings:{},theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark",style:"studio"},ticket:0,inflight:{},processes_loaded:false,focus_serial:0,macros_open:false,quitting:false,window_close:false,connected:true,status:"Connecting to monitord…",node:"",node_draft:"",tab:"Processes",section:"cpu",rings:{},history_seeded:false,connections:nil,connections_error:nil,peers:[],total:0,paused:false,filter:"",sort:"cpu",reverse:false,tree:false,selected:nil,dialog:nil,start_times:{},snapshot:nil,processes:[],history:[],error:nil,serial:0}
 end
 fn query($s)
   $query={sort:$s.sort,reverse:$s.reverse,tree:$s.tree,limit:0}
@@ -50,13 +50,20 @@ fn framed($s)
   $actions=$commands.toolbar($s)
   $menus=$commands.menus($s)
   $model.window_close=$s.window_close
-  $model.shortcuts=$commands.registry($s)
+  $model.shortcuts=$commands.shortcuts($s)
   $model.macros_open=$s.macros_open
   $model.native_focus=if $s.focus_serial>0 then {id:"filter",serial:$s.focus_serial} else nil end
   $model.native_overlays=[]
   if $s.dialog!=nil then
     $definition={id:"monitor-dialog",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Monitor" else "Keyboard shortcuts" end,body:"Processes and performance for this node or any node on the mesh, read from monitord. End task and Kill act only on this node"..chr(39).."s processes, as you.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
-    if $s.dialog=="shortcuts" then $definition.initial.grid=filter($commands.registry($s),fn($a)=$a.shortcut!=nil) end
+    if $s.dialog=="shortcuts" then
+      $grid=[]
+      for $a in $commands.registry($s)
+        $bound=$s.bindings[$a.id] ?? {}; $a.keys=$bound.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+        if len($a.keys)>0 then push($grid,$a) end
+      end
+      $definition.initial.grid=$grid
+    end
     $model.native_overlays=[{definition:$definition,command:"monitor.dialog.intent"}]
   end
   return $frame.apply($model,{icon:"monitor",title:"Monitor — "..(if $s.snapshot!=nil then $s.snapshot.host ?? "This node" else "This node" end),menus:$menus,toolbar:$actions,status:status_line($s)})

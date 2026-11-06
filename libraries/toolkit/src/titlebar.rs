@@ -827,7 +827,8 @@ fn right_group<S>(
 /// The window title in Inter Medium, `text_dim`: centred on the bar, slid
 /// sideways to stay within `left..right`, elided with "…" from `left` when
 /// it cannot fit but the gap is wider than [`MIN_TITLE_ROOM`], else omitted.
-fn window_title(ui: &Ui, chrome: &Chrome, title: &str, bar: Rect, left: f32, right: f32) {
+/// Paint a title in an embedding frame's allocated native title region.
+pub fn window_title(ui: &Ui, chrome: &Chrome, title: &str, bar: Rect, left: f32, right: f32) {
     let room = right - left;
     if title.is_empty() || room <= 0.0 {
         return;

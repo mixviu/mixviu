@@ -7,7 +7,12 @@ $commands=require("actions.mix")
 $history=require("history.mix")
 $performance=require("performance.mix")
 $core=require("core.mix");$state=$core.initial();$ctx=viu_context()
-if len($app_args)>0 then $state.node=$app_args[0];$state.node_draft=$state.node;$checked=$core.target($state.node) end
+if len($app_args)>0 then
+  if len($app_args)==2 and $app_args[0]=="--node" then $state.node=$app_args[1]
+  elif len($app_args)==1 and not starts_with($app_args[0],"--") then $state.node=$app_args[0]
+  else raise("ARGUMENT","Usage: viu run apps/monitor [--node NAME]") end
+  $state.node_draft=$state.node;$checked=$core.target($state.node)
+end
 fn publish_monitor($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
@@ -273,6 +278,10 @@ on viu.macros.changed
 end
 on viu.theme.changed
   $state.theme_effective=$event.args;publish_monitor($state)
+end
+on viu.keymap.changed
+  send "viu-local" "native.bindings" body={defaults:$commands.binding_defaults(),overrides:$event.args}
+  if $rc==0 then $state.bindings=$reply.bindings;publish_monitor($state) end
 end
 on monitor.dialog.intent
   if $event.args.value.instance==$state.dialog then $state.dialog=nil;publish_monitor($state) end

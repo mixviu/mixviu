@@ -2,6 +2,10 @@ $rc=0
 $prepare=contains(args(),"--prepare")
 if $prepare then print(run_argv(["cargo","fmt","-p","viu","-p","viu-engine"])) end
 try
+  for $case in ["core-test.mix","history-test.mix","wire-test.mix","fetch-test.mix"]
+    $result=run_argv(["/opt/mixos/bin/mix","apps/monitor/"..$case]);print($result)
+    if not $result.ok then exit($result.exit_code ?? 1) end
+  end
   for $a in [["cargo","fmt","-p","viu","-p","viu-engine","--","--check"],["cargo","check","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","test","--locked","-p","viu","-p","viu-engine"],["cargo","clippy","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
     if contains(args(),"--frame-only") and $a[1]=="test" then $a=["cargo","test","--locked","-p","viu","--test","gold_frame"] end
     if contains(args(),"--visual-repair") and $a[1]=="test" then $a=["cargo","test","--locked","-p","viu","--test","frame_geometry","--test","gold_frame","--test","monitor_signal","--test","monitor_performance","--test","dashboard_contract","--test","app_ports"] end

@@ -28,6 +28,7 @@ mod native_theme;
 pub mod rich;
 pub mod runtime;
 pub mod session;
+mod shortcuts;
 pub mod templates;
 pub mod thumbnail;
 pub mod tree_table;
