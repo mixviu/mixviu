@@ -188,6 +188,7 @@ fn rows(value: &Value) -> impl Iterator<Item = &Value> {
     array(&value["sections"])
         .chain(array(&value["drawer"]["sections"]))
         .flat_map(|s| array(&s["rows"]))
+        .flat_map(|row| std::iter::once(row).chain(array(&row["detail_rows"])))
 }
 pub fn validate(value: &Value) -> Result<(), String> {
     if !value.is_object()
@@ -219,6 +220,8 @@ pub fn validate(value: &Value) -> Result<(), String> {
                 "image",
                 "buttons",
                 "records",
+                "table",
+                "notes",
                 "multitext",
                 "secret",
                 "tiles",
@@ -2100,7 +2103,50 @@ fn draw_inline_row(
                     if row["separator_before"] == true {
                         toolkit::bars::hairline(ui);
                     }
-                    ui.label(RichText::new(row["value"].as_str().unwrap_or("")).weak());
+                    let mut label = RichText::new(row["value"].as_str().unwrap_or(""));
+                    label = if row["strong"] == true { label.strong() } else { label.weak() };
+                    ui.add(egui::Label::new(label).wrap());
+                } else if text(row, "kind") == "table" {
+                    egui::Grid::new((id, key, "table"))
+                        .num_columns(array(&row["columns"]).count())
+                        .striped(true)
+                        .spacing([18.0, 6.0])
+                        .show(ui, |ui| {
+                            for column in array(&row["columns"]) {
+                                toolkit::panel::section_label(ui, column.as_str().unwrap_or(""));
+                            }
+                            ui.end_row();
+                            for (index, item) in array(&row["choices"]).enumerate() {
+                                let r = toolkit::selectable(ui, item["value"] == row["value"], text(item, "label"));
+                                record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
+                                if r.clicked() { edit = Some(item["value"].clone()); }
+                                for cell in array(&item["cells"]) {
+                                    let mut label = RichText::new(text(cell, "text"));
+                                    if cell["mono"] == true { label = label.monospace(); }
+                                    if cell["weak"] == true { label = label.weak(); }
+                                    if cell["tone"] == "warning" { label = label.color(ui.visuals().warn_fg_color); }
+                                    if cell["tone"] == "error" { label = label.color(ui.visuals().error_fg_color); }
+                                    ui.label(label).on_hover_text(text(cell, "hint"));
+                                }
+                                ui.end_row();
+                            }
+                        });
+                } else if text(row, "kind") == "notes" {
+                    if !text(row, "tag").is_empty() {
+                        ui.horizontal(|ui| {
+                            ui.strong(text(row, "tag"));
+                            if let Some(date) = row["published"].as_str() { ui.label(RichText::new(date).weak()); }
+                            if let Some(url) = row["url"].as_str() { ui.hyperlink_to(RichText::new(url).small(), url); }
+                        });
+                    }
+                    for block in array(&row["blocks"]) {
+                        if block["kind"] == "space" { ui.add_space(ui.spacing().item_spacing.y); continue; }
+                        let mut label = RichText::new(text(block, "text"));
+                        if block["kind"] == "heading" { label = label.strong(); }
+                        if block["weak"] == true { label = label.weak(); }
+                        if block["error"] == true { label = label.color(ui.visuals().error_fg_color); }
+                        ui.add(egui::Label::new(label).wrap());
+                    }
                 } else if text(row, "kind") == "choice" && row["standalone"] == true {
                     edit = inline_choices(ui, id, row, geometry);
                 } else if text(row, "kind") == "records" {
@@ -2120,7 +2166,7 @@ fn draw_inline_row(
                                 let r = toolkit::selectable(
                                     ui,
                                     item["value"] == row["value"],
-                                    text(item, "label"),
+                                    if item["weak"] == true { RichText::new(text(item, "label")).weak() } else { RichText::new(text(item, "label")) },
                                 );
                                 record(geometry, id, &format!("row.{key}.choice.{index}"), &r);
                                 if r.clicked() {
@@ -2134,12 +2180,13 @@ fn draw_inline_row(
                             ui.add_space(ui.spacing().item_spacing.x * 2.0);
                             ui.vertical(|ui| {
                                 ui.set_width(ui.available_width());
-                                ui.add(
-                                    egui::Label::new(
-                                        RichText::new(text(row, "empty_detail")).weak(),
-                                    )
-                                    .wrap(),
-                                );
+                                if array(&row["detail_rows"]).next().is_some() {
+                                    for detail in array(&row["detail_rows"]).filter(|r| r["shown"] != false) {
+                                        draw_inline_row(ui, id, detail, look, geometry, events);
+                                    }
+                                } else {
+                                    ui.add(egui::Label::new(RichText::new(text(row, "empty_detail")).weak()).wrap());
+                                }
                             });
                         }
                     });
@@ -2280,7 +2327,7 @@ fn draw_inline_row(
                                             .inner
                                         } else {
                                             let mut field = if text(row, "kind") == "multitext" {
-                                                egui::TextEdit::multiline(&mut v).desired_rows(3)
+                                                egui::TextEdit::multiline(&mut v).desired_rows(row["lines"].as_u64().unwrap_or(3).min(32) as usize)
                                             } else {
                                                 egui::TextEdit::singleline(&mut v)
                                             };
@@ -2324,6 +2371,7 @@ fn draw_inline_row(
     if let Some(value) = edit {
         emit(events, id, "edit", json!({"row":key,"value":value}));
     }
+    if let Some(gap) = row["space_after"].as_f64() { ui.add_space(gap.clamp(0.0, 64.0) as f32); }
 }
 
 fn inline_choices(

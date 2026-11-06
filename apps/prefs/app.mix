@@ -584,6 +584,7 @@ on prefs.intent
         elif $key=="email.accounts" then $state=$email.select_account($state,$v)
         elif starts_with($key,"email.form.") then $state.email.form[substr($key,11)]=$v;$state.email.dirty=true
         elif $key=="email.password" then $state.email.password=$v
+        elif $key=="email.enabled" then $state=apply_email($state,{op:"enable",id:$state.ui.email_account,enabled:$v})
         elif $v=="email.identity.save" then
           $d=$email.identity_draft($state);$state=apply_email($state,{op:"identities",id:$d.account,identities:$d.rows});$state.email.identities=nil
         elif starts_with(to_string($v),"email.identity.") then $state=$email.identity_action($state,substr($v,15),nil)
