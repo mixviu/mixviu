@@ -513,8 +513,7 @@ impl SceneView {
                     "control" => {
                         // Container gaps arrange children; they must not
                         // rewrite the native control's internal theme metrics.
-                        let theme=if ui.visuals().dark_mode{egui::Theme::Dark}else{egui::Theme::Light};
-                        let spacing=ui.ctx().style_of(theme).spacing.item_spacing;
+                        let spacing=ui.ctx().global_style().spacing.item_spacing;
                         ui.spacing_mut().item_spacing=spacing;
                         match Widget::decode(&node.ports["definition"]) {
                             Ok(widget)=> {

@@ -433,7 +433,8 @@ impl Host {
                                         snapshot["state"]["values"].clone(),
                                     )
                                 {
-                                    let keymap = settings::view::Keymaps::of(&values).app(&self.service);
+                                    let keymap =
+                                        settings::view::Keymaps::of(&values).app(&self.service);
                                     let _ = self
                                         .runtime
                                         .notify("viu.keymap.changed".into(), json!(keymap));
