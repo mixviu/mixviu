@@ -510,7 +510,7 @@ impl Native {
                         .collect::<Vec<_>>()
                         .join("\n")
                 };
-                let form = json!({"open":true,"title":if id=="help.about"{"About Dopus"}else{"Keyboard shortcuts"},"body":body,"field":null,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"OK","enabled":true,"default":true}]});
+                let form = json!({"open":true,"legacy_kind":if id=="help.about"{"about"}else{"shortcuts"},"title":if id=="help.about"{"About Dopus"}else{"Keyboard shortcuts"},"body":body,"field":null,"choices":[{"id":"cancel","label":"Cancel","enabled":true,"cancel":true},{"id":"ok","label":"OK","enabled":true,"default":true}]});
                 self.enqueue_form("message", 0, form, None)?;
             }
             "search" => {
@@ -888,7 +888,7 @@ impl Native {
                         if self.form["open"] == true {
                             self.answer("cancel", None)?;
                         }
-                        return Ok(json!({"ok":true}));
+                        return Ok(json!({"dialog":self.legacy_view()}));
                     }
                     let kind = open
                         .as_str()
@@ -897,7 +897,8 @@ impl Native {
                     if self.form["open"] == true {
                         return Err("DIALOG_OPEN: answer the open dialog first".into());
                     }
-                    return self.action(&format!("help.{kind}"), &json!({}));
+                    self.action(&format!("help.{kind}"), &json!({}))?;
+                    return Ok(json!({"dialog":self.legacy_view()}));
                 }
                 if let Some(answer) = object.get("answer") {
                     if self.form["open"] != true {
@@ -934,9 +935,10 @@ impl Native {
                     } else {
                         None
                     };
-                    return self.answer(choice, name);
+                    self.answer(choice, name)?;
+                    return Ok(json!({"dialog":self.legacy_view()}));
                 }
-                Ok(json!({"ok":true}))
+                Ok(json!({"dialog":self.legacy_view()}))
             }
             "dopus.dialog.answer" => {
                 if args.get("instance") != self.form.get("instance") {
@@ -1078,6 +1080,19 @@ impl Native {
             }
         }
     }
+    fn legacy_view(&self)->Value {
+        if self.form["open"]!=true {return Value::Null;}
+        let kind=match self.form_kind.as_str(){"mkdir"|"rename"=>"name","message"=>self.form["legacy_kind"].as_str().unwrap_or("message"),other=>other};
+        let buttons=match self.form_kind.as_str(){
+            "delete"=>json!([{"id":"yes","label":"Yes","role":"default"},{"id":"no","label":"No","role":"cancel"}]),
+            "message"=>json!([{"id":"done","label":"Done","role":"default"}]),
+            _=>json!(self.form["choices"].as_array().into_iter().flatten().map(|c|json!({"id":c["id"],"label":c["label"],"role":if c["cancel"]==true{"cancel"}else if c["default"]==true{"default"}else{"other"}})).collect::<Vec<_>>())
+        };
+        let mut value=json!({"kind":kind,"title":self.form["title"],"buttons":buttons,"status":self.info});
+        if self.form["field"].is_string(){value["name"]=self.form["field"].clone();}else{value["body"]=self.form["body"].clone();}
+        if self.form_kind=="drop" && let Some(request)=&self.drop_request {value["paths"]=request["keys"].clone();value["path"]=request["destination"].clone();}
+        value
+    }
     pub fn model(&self) -> Value {
         let side = |key: &str, fallback: &str| {
             self.window[key]
@@ -1110,6 +1125,7 @@ impl Native {
         let core = self.core();
         let config = core.config_snapshot();
         let mut values = json!({"caption-title":dopus_core::sanitise_display_path(&core.pane(core.active()).path),"window":{"side":caption_side,"enabled":true},"menu":self.menus(),"toolbar":self.toolbar(),"status":self.info,"properties":self.properties(),"form":self.form});
+        values["form"]["dialog"]=self.legacy_view();
         let mut panes = Vec::new();
         let context = self.contract["context"]
             .as_array()
