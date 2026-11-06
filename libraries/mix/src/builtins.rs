@@ -293,7 +293,7 @@ builtin_table! {
     ("chown", CapabilityClass::FsWrite,           "io",      "Set file owner/group by numeric uid/gid: chown(path, 1000, 1000). Follows symlinks by default; chown(path, uid, gid, {follow_symlinks:false}) changes a symlink itself (lchown, v0.117.0). Numeric only (no name resolution) (v0.17.1)", contract!((path: string, uid: number, gid: number, opts?: any_of(map("chown_options", {follow_symlinks: bool}), nil)) -> nil; failure[raises])),
     ("mime_type", CapabilityClass::FsRead,       "io",      "The type of a file from the freedesktop shared-mime-info database, as the desktop names it (requires mime feature): mime_type(path[, {content}]) -> {mime, by, uncertain, exists, parents}. Globs first, magic to settle a missing or ambiguous glob, then a text check (the GLib order). by is stat|glob|magic|content|fallback; parents lists every supertype nearest first, ending text/plain (for text/*) and application/octet-stream. {content:false} never opens the file. A missing path is typed by name with exists:false; an unreadable file by name, uncertain. Follows symlinks (v0.113.0)", contract!((path: string, opts?: any_of(map("mime_type_options", {content: bool}), nil)) -> map("mime_type", {mime: string, by: string, uncertain: bool, exists: bool, parents: list(string)}); failure[raises])),
     ("stat_many", CapabilityClass::FsRead, "io", "Stat an ordered list of up to 65536 UTF-8 filesystem paths using stat options. Returns one stat map or nil (IO failure) per path. Invalid paths/options refuse the entire call before IO. No snapshot or traversal policy.", contract!((paths: list(string), opts?: any_of(map("stat_options", {follow_symlinks: bool}), nil)) -> list; effects[blocking]; failure[raises])),
-    ("stat", CapabilityClass::FsRead,            "io",      "Stat a path → map {uid, gid, nlink, size, mode, perm, ino, dev, ctime, mtime, atime, ctime_nsec, mtime_nsec, atime_nsec, is_file, is_dir, is_symlink}. ino/dev are STRINGS (u64, exceed f64 exact range); mode is full st_mode, perm = mode & 0o7777; *time are epoch seconds (f64) and *_nsec the sub-second part 0..=999999999 (v0.44.0) — compare the PAIR to see a same-second rewrite. Follows symlinks by default; stat(path, {follow_symlinks:false}) is lstat (v0.17.1)", contract!((path: string, opts?: any_of(map("stat_options", {follow_symlinks: bool}), nil)) -> map("stat", {uid: number, gid: number, nlink: number, size: number, mode: number, perm: number, ino: string, dev: string, ctime: number, mtime: number, atime: number, ctime_nsec: number, mtime_nsec: number, atime_nsec: number, is_file: bool, is_dir: bool, is_symlink: bool}); failure[raises])),
+    ("stat", CapabilityClass::FsRead,            "io",      "Stat a path → map {uid, gid, nlink, size, mode, perm, ino, dev, ctime, mtime, atime, ctime_nsec, mtime_nsec, atime_nsec, is_file, is_dir, is_symlink}. ino/dev are STRINGS (u64, exceed f64 exact range); mode is full st_mode, perm = mode & 0o7777; *time are epoch seconds (f64) and *_nsec the sub-second part 0..=999999999 (v0.44.0) — compare the PAIR to see a same-second rewrite. btime/btime_nsec report OS creation time or nil when unavailable. Follows symlinks by default; stat(path, {follow_symlinks:false}) is lstat (v0.17.1)", contract!((path: string, opts?: any_of(map("stat_options", {follow_symlinks: bool}), nil)) -> map("stat", {uid: number, gid: number, nlink: number, size: number, mode: number, perm: number, ino: string, dev: string, ctime: number, mtime: number, atime: number, ctime_nsec: number, mtime_nsec: number, atime_nsec: number, btime: any_of(number, nil), btime_nsec: any_of(number, nil), is_file: bool, is_dir: bool, is_symlink: bool}); failure[raises])),
     ("line_count", CapabilityClass::FsRead,      "io",      "Count lines in a file by streaming — never loads the whole file (byte-oriented, so it works on non-UTF-8 files too) (streams since v0.28.1)", contract!((path: string) -> number; failure[raises])),
     ("head", CapabilityClass::FsRead,            "io",      "First N lines of a file as a list (default 10) — streams and stops after N lines, never reads the rest (the no-slurp twin of take(read_lines(p), n)) (v0.28.1)", contract!((path: string, n?: number) -> list(string); failure[raises])),
     ("tail", CapabilityClass::FsRead,            "io",      "Last N lines of a file as a list (default 10) — reads backwards in blocks from EOF, never slurps the whole file (the no-slurp twin of take(read_lines(p), -n)) (v0.28.1)", contract!((path: string, n?: number) -> list(string); failure[raises])),
@@ -15566,6 +15566,18 @@ fn builtin_stat(args: Vec<Value>) -> MixResult<Option<Value>> {
     map.insert("ctime".to_string(), Value::Number(meta.ctime() as f64));
     map.insert("mtime".to_string(), Value::Number(meta.mtime() as f64));
     map.insert("atime".to_string(), Value::Number(meta.atime() as f64));
+    let birth = meta
+        .created()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok());
+    map.insert(
+        "btime".to_string(),
+        birth.map_or(Value::Nil, |time| Value::Number(time.as_secs() as f64)),
+    );
+    map.insert(
+        "btime_nsec".to_string(),
+        birth.map_or(Value::Nil, |time| Value::Number(time.subsec_nanos() as f64)),
+    );
     // Sub-second components (`st_?tim.tv_nsec`, 0..=999_999_999).
     //
     // Whole seconds are not enough to answer "did this file change?", which
