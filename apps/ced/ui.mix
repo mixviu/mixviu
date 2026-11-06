@@ -57,6 +57,7 @@ fn ced_ui_model($s,$model)
   $model.show_problems=$s.problems;$model.show_output=$s.output
   $model.problems_text=if $has and $s.problems then join(map(viu_document("problems",$t.document,{}),fn($p)=to_string($p.line)..":"..to_string($p.col ?? 1).."  "..$p.severity.."  "..$p.code.."  "..$p.message),"\n") else "" end
   if $model.problems_text=="" then $model.problems_text="No problems" end
+  $model.values["problems-list"]=if $has then viu_document("problems",$t.document,{}) else [] end
   $model.output_text="No output yet."
   $model.mail_fields=[];$model.show_mail=$has and $s.mail[$t.document]!=nil
   if $model.show_mail then
@@ -72,7 +73,8 @@ fn ced_ui_model($s,$model)
   return $model
 end
 fn ced_ui_intent($s,$a)
-  if $a.id=="close-dialog" then
+  if $a.id=="problems-list" then $s=do_action($s,"search.goto_line",{line:$a.value.line,col:$a.value.col ?? 1}).state
+  elif $a.id=="close-dialog" then
     $i=tab_index($s,{tab:to_number($s.close_dialog)});$s.close_dialog=nil
     if $i>=0 and $a.value.choice!="cancel" then
       $s.active=$i

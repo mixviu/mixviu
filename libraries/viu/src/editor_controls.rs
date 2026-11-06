@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 pub fn validate(kind: &str, v: &Value) -> Result<(), String> {
     let valid = match kind {
+        "diagnostic-list" => v.as_array().is_some_and(|rows|rows.len()<=500 && rows.iter().all(|r|r["line"].as_u64().is_some_and(|n|n>0) && r["message"].is_string() && r["code"].is_string())),
         "macro-menu" => {
             v["open"].is_boolean()
                 && v["app"].as_str().is_some_and(|a| {
@@ -51,6 +52,7 @@ pub fn validate(kind: &str, v: &Value) -> Result<(), String> {
     }
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
+    if kind=="diagnostic-list" {return if action=="goto" && current.as_array().is_some_and(|rows|rows.iter().any(|r|r==payload)){Ok(())}else{Err("invalid problem selection".into())};}
     if kind == "macro-menu" {
         return if action == "close" && payload.is_null() {
             Ok(())
@@ -107,6 +109,16 @@ pub fn draw(
             value,
         })
     };
+    if kind=="diagnostic-list" {
+        if value.as_array().unwrap().is_empty() {return ui.weak("No problems");}
+        return ui.scope(|ui| {egui::ScrollArea::vertical().show(ui,|ui|{
+            for row in value.as_array().unwrap() {
+                let colour=match row["severity"].as_str(){Some("error")=>ui.visuals().error_fg_color,Some("warning")=>ui.visuals().warn_fg_color,_=>ui.visuals().weak_text_color()};
+                let text=format!("{}:{}  {}  {}",row["line"],row["col"].as_u64().unwrap_or(1),row["code"].as_str().unwrap(),row["message"].as_str().unwrap());
+                if ui.add(egui::Label::new(egui::RichText::new(text).color(colour)).sense(egui::Sense::click())).clicked() {emit(events,"goto",row.clone());}
+            }
+        });}).response;
+    }
     if kind == "macro-menu" {
         if toolkit::macros::show_app(
             ui.ctx(),
