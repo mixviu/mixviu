@@ -571,8 +571,8 @@ impl Host {
                                         snapshot["state"]["values"].clone(),
                                     )
                                 {
-                                    let keymap =
-                                        settings::view::Keymaps::of(&values).app(self.drive.as_deref().unwrap_or(&self.service));
+                                    let keymap = settings::view::Keymaps::of(&values)
+                                        .app(self.drive.as_deref().unwrap_or(&self.service));
                                     let _ = self
                                         .runtime
                                         .notify("viu.keymap.changed".into(), json!(keymap));
@@ -873,7 +873,11 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         session_notice: None,
         session: bundle.manifest.frame.as_ref().map(|_| {
             crate::session::Session::embedded(
-                bundle.manifest.drive.as_deref().unwrap_or(&bundle.manifest.service),
+                bundle
+                    .manifest
+                    .drive
+                    .as_deref()
+                    .unwrap_or(&bundle.manifest.service),
                 &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_| "default".into()),
                 wake.clone(),
                 bus.backend(),

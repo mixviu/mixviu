@@ -645,7 +645,10 @@ pub(crate) fn draw(
                                 if ui
                                     .ctx()
                                     .data(|d| {
-                                        d.get_temp::<bool>(toolkit::window_id(viewport, "macro-busy"))
+                                        d.get_temp::<bool>(toolkit::window_id(
+                                            viewport,
+                                            "macro-busy",
+                                        ))
                                     })
                                     .unwrap_or(false)
                                 {
