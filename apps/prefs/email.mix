@@ -16,11 +16,33 @@ fn redact_url($url)
   return re_replace($url,"(?i)([?&][^=&]*(?:pass|pwd|secret|token|key|auth|credential)[^=&]*=)[^&#]*","$1[redacted]")
 end
 fn blank_form()
-  return {id:nil,name:"",url:"",email:"",ca_path:"",signature:"",refusals:{}}
+  return {id:nil,name:"",url:"",email:"",ca_path:"",signature:"",errors:{}}
 end
 fn form_of($a)
   if $a==nil then return nil end
-  return {id:$a.id,name:$a.name,url:$a.url,email:$a.email,ca_path:$a.ca_path ?? "",signature:$a.signature ?? "",refusals:{}}
+  return {id:$a.id,name:$a.name,url:$a.url,email:$a.email,ca_path:$a.ca_path ?? "",signature:$a.signature ?? "",errors:{}}
+end
+fn field_errors($account)
+  $errors={};$labels={name:"email-name-refused",url:"email-url-refused",email:"email-address-refused",ca_path:"email-ca-refused",signature:"email-signature-refused"}
+  for $field in viu_settings("email-fields",$account) $errors[$field]=$labels[$field] end
+  return $errors
+end
+fn field_message($errors)
+  $out=[]
+  for $field in ["name","url","email","ca_path","signature"] if $errors[$field]!=nil then push($out,$field..": "..$n.text_for($errors[$field])) end end
+  return join($out,"; ")
+end
+fn normal_identities($identities)
+  $out=[]
+  for $identity in $identities
+    $row={id:$identity.id,name:$identity.name ?? "",address:$identity.address,signature:$identity.signature ?? ""}
+    if $identity.reply_to!=nil then $row.reply_to=$identity.reply_to end
+    push($out,$row)
+  end
+  return $out
+end
+fn removal($s,$id)
+  return {id:$id,name:(account($s,$id) ?? {}).name ?? $id}
 end
 fn select_account($s,$id)
   $a=account($s,$id)
@@ -73,6 +95,7 @@ fn view($s)
   $rows=[]
   for $a in accounts($s)
     $a.url=redact_url($a.url);$a.has_password=$s.email.passwords[$a.id];$a.default=$a.id==$s.values["email.default_account"]
+    if $a.identities!=nil then $a.identities=normal_identities($a.identities) end
     push($rows,$a)
   end
   return {settings:$s.look.settings,revision:$s.revision,read:$s.revision!=nil,accounts:$rows,default_account:$s.values["email.default_account"],mail:if $s.revision==nil then nil else {page_size:value_or($s,"email.mail.page_size",100),mark_read_on_open:value_or($s,"email.mail.mark_read_on_open",true),confirm_delete:value_or($s,"email.mail.confirm_delete",true),quote_on_reply:value_or($s,"email.mail.quote_on_reply",true),reply_position:value_or($s,"email.mail.reply_position","above")} end,email_service:$s.email.service,selected:$s.ui.email_account,form:$form,password_typed:($s.email.password ?? "")!="",task:$s.email.task,outcome:$s.email.outcome,can_edit:$s.revision!=nil and $s.connected and not $s.busy and not $s.quitting and $s.ui.dialog==nil}
@@ -112,8 +135,12 @@ fn plan($s,$args)
       if not all(["name","url","email"],fn($key)=contains(keys($args),$key)) then raise("ARGUMENT","add needs name, url and email") end
       $added="acct-"..substr(replace(viu_token(),"-",""),0,12)
       $a=patch_account({id:$added,name:"",url:"",email:"",ca_path:nil,enabled:true,signature:""},$args)
+      $errors=field_errors($a);if len(keys($errors))>0 then raise("ARGUMENT",field_message($errors)) end
       push($list,$a);$changes["email.accounts"]=$list
-    elif $op=="update" then $list[$at]=patch_account($list[$at],$args);$changes["email.accounts"]=$list
+    elif $op=="update" then
+      $list[$at]=patch_account($list[$at],$args)
+      $errors=field_errors($list[$at]);if len(keys($errors))>0 then raise("ARGUMENT",field_message($errors)) end
+      $changes["email.accounts"]=$list
     elif $op=="remove" then
       $list=filter($list,fn($a)=$a.id!=$id);$changes["email.accounts"]=$list
       if $s.values["email.default_account"]==$id then $changes["email.default_account"]=nil end
@@ -123,7 +150,7 @@ fn plan($s,$args)
       $list[$at].enabled=$args.enabled;$changes["email.accounts"]=$list
     elif $op=="identities" then
       if type($args.identities)!="list" then raise("ARGUMENT","identities must be a list") end
-      $list[$at].identities=$args.identities;$changes["email.accounts"]=$list
+      $list[$at].identities=normal_identities($args.identities);$changes["email.accounts"]=$list
     elif $op=="move" then
       if not contains(["up","down"],$args.direction) then raise("ARGUMENT","direction must be up or down") end
       $to=if $args.direction=="up" then $at-1 else $at+1 end

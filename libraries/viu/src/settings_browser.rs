@@ -2124,6 +2124,7 @@ fn draw_inline_row(
                     } else {
                         label.weak()
                     };
+                    if row["error"] == true { label = label.color(ui.visuals().error_fg_color); }
                     ui.add(egui::Label::new(label).wrap());
                 } else if text(row, "kind") == "table" {
                     let mut draw = |ui: &mut Ui| {
@@ -2294,6 +2295,9 @@ fn draw_inline_row(
                                 button(ui);
                             }
                         }
+                        if let Some(note) = row["trailing_text"].as_str() {
+                            ui.add(egui::Label::new(RichText::new(note).weak()).wrap());
+                        }
                     });
                     if row["separator_after"] == true {
                         toolkit::bars::hairline(ui);
@@ -2433,6 +2437,9 @@ fn draw_inline_row(
                                         ui.label(text(row, "value"));
                                     }
                                 });
+                                if let Some(error) = row["error"].as_str() {
+                                    ui.add(egui::Label::new(RichText::new(error).small().color(ui.visuals().error_fg_color)).wrap());
+                                }
                                 if !text(row, "description").is_empty() {
                                     let label = RichText::new(text(row, "description")).weak();
                                     ui.label(if row["description_small"] == true {

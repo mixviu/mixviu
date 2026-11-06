@@ -120,7 +120,9 @@ fn execute_origin($s,$id,$params,$origin)
     $form=$s.email.form
     $args={op:if $form.id==nil then "add" else "update" end,name:$form.name,url:$form.url,email:$form.email,ca_path:$form.ca_path,signature:$form.signature}
     if $form.id!=nil then $args.id=$form.id end
-    $s=apply_email($s,$args);$s.email.dirty=false
+    $errors=$email.field_errors($form)
+    if len(keys($errors))>0 then $s.email.form.errors=$errors;$s.status=$nav.text_for("email-fields-refused");$s.failed=true
+    else $s=apply_email($s,$args);$s.email.form.errors={};$s.email.dirty=false end
   elif $id=="email.account.revert" then $s.email.form=$email.form_of($email.account($s,$s.ui.email_account));$s.email.dirty=false
   elif $id=="email.account.remove" then $s.ui.dialog={remove_account:$s.ui.email_account}
   elif $id=="email.account.up" or $id=="email.account.down" then $s=apply_email($s,{op:"move",id:$s.ui.email_account,direction:split($id,".")[2]})
@@ -205,7 +207,7 @@ fn confirm_dialog($s,$answer)
     $s.email.added=nil;$s=queued_prefs($s)
   elif $d.remove!=nil then $s=release_request($s,"releases.remove",{app:$d.remove})
   elif $d.remove_account!=nil then
-    if $s.email.service=="absent" then $s=apply_email($s,{op:"remove",id:$d.remove_account});$s.email.removed={id:$d.remove_account}
+    if $s.email.service=="absent" then $removed=$email.removal($s,$d.remove_account);$s=apply_email($s,{op:"remove",id:$d.remove_account});$s.email.removed=$removed
     else $s=email_task($s,"remove",$d.remove_account,"email.account.remove",{id:$d.remove_account},false,nil) end
   elif $d.forget_password!=nil then $s=email_task($s,"forget",$d.forget_password,"email.account.password.set",{id:$d.forget_password,password:""},true,nil) end
   return $s
@@ -340,10 +342,10 @@ on prefs.email.set
     end
     $plan=$email.plan($state,$event.args)
     $state.queue_changes=merge($state.queue_changes,$plan.changes);$state.email.added=$plan.added
-    if $event.args.op=="remove" then $state.email.removed={id:$event.args.id} end
+    if $event.args.op=="remove" then $state.email.removed=$email.removal($state,$event.args.id) end
     $state=queued_prefs($state);publish_prefs($state)
     $body=$email.view($state);$body.applying=len(keys($plan.changes))>0
-    if $body.applying then $body.id=$plan.added end
+    if $body.applying and $event.args.op!="remove" then $body.id=$plan.added end
     reply(0,json_encode($body))
   catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
@@ -475,7 +477,7 @@ on viu.job.completed
     $state.email.task=nil;$state.email.reply_token=nil
     if $task.action=="remove" and ($d.body.absent ?? false) then
       $plan=$email.plan($state,{op:"remove",id:$task.account})
-      $state.queue_changes=merge($state.queue_changes,$plan.changes);$state.email.removed={id:$task.account}
+      $state.queue_changes=merge($state.queue_changes,$plan.changes);$state.email.removed=$email.removal($state,$task.account)
       $state=queued_prefs($state)
       $body=$email.view($state);$body.applying=true;$body.id=nil;$code=0
     else
@@ -517,8 +519,15 @@ on viu.job.completed
       $state.values=$b.read.values;$state.revision=$b.read.revision;$state.incarnation=$b.read.incarnation
       $state.look=$look.observe($state.look,$b.read)
       $state=$email.observed($state)
+      if ($state.email.removed ?? nil)!=nil and $email.account($state,$state.email.removed.id)==nil then
+        $removed=$state.email.removed;$state.email.removed=nil
+        if $state.email.service=="absent" then
+          $text=replace(replace($nav.text_for("email-forget-after-remove-failed"),"{ $account }",$removed.name),"{ $message }",$nav.text_for("email-not-running"))
+          $state.email.outcome={text:$text,failed:true};$state.status=$text;$state.failed=true
+        else $state=email_task($state,"forget",$removed.id,"email.account.password.set",{id:$removed.id,password:""},false,nil) end
+      end
       $state.role=$b.status.role ?? "unknown";$state.stale=$b.status.stale ?? false;$state.uncertain=false
-      $state.status="Settings read"
+      $state.status=if $state.email.outcome==nil then "Settings read" else $state.email.outcome.text end
       if len($state.catalog)>0 then
         if not any($state.catalog,fn($k)=$k.path==$state.key) then $state.key=$state.catalog[0].path end
         $state=$core.choose($state,$state.key)

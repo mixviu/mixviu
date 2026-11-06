@@ -104,7 +104,7 @@ fn email_sections($s)
     if $s.email.form.id==nil then push($rows,{id:"email.new",title:"",kind:"info",inline:true,shown:true,value:$n.text_for("email-new-account"),normal:true,blocked:nil}) end
     for $field in ["name","url","email","ca_path","signature"]
       $title={name:"email-name",url:"email-url",email:"email-address",ca_path:"email-ca",signature:"email-signature"}[$field]
-      push($rows,{id:"email.form."..$field,title:$n.text_for($title),hint:$n.text_for($title.."-hint"),lines:4,space_after:if $field=="signature" and $s.ui.email_account==nil then 0 else 4 end,kind:if $field=="signature" then "multitext" else "text" end,inline:true,shown:true,value:$s.email.form[$field] ?? "",blocked:if $email.view($s).can_edit then nil else $n.text_for("busy") end})
+      push($rows,{id:"email.form."..$field,title:$n.text_for($title),hint:$n.text_for($title.."-hint"),error:if $s.email.form.errors[$field]==nil then nil else $n.text_for($s.email.form.errors[$field]) end,lines:4,space_after:if $field=="signature" and $s.ui.email_account==nil then 0 else 4 end,kind:if $field=="signature" then "multitext" else "text" end,inline:true,shown:true,value:$s.email.form[$field] ?? "",blocked:if $email.view($s).can_edit then nil else $n.text_for("busy") end})
     end
     if $s.ui.email_account!=nil then push($rows,{id:"email.enabled",title:$n.text_for("email-enabled"),kind:"toggle",inline:true,shown:true,value:$email.account($s,$s.ui.email_account).enabled,blocked:if $email.view($s).can_edit then nil else $n.text_for("busy") end}) end
     $save=buttons($s,"email-form-actions",["email.account.save","email.account.revert"]);$save.choices[0].primary=true;$save.separator_after=$s.ui.email_account!=nil;push($rows,$save)
@@ -131,11 +131,17 @@ fn email_sections($s)
       $password=filter($details,fn($r)=contains(["email.password","email-password-actions"],$r.id))
       $details=concat(filter($details,fn($r)=not starts_with($r.id,"email.identity") and not starts_with($r.id,"email-identity") and not contains(["email.password","email-password-actions"],$r.id)),concat($password,filter($details,fn($r)=starts_with($r.id,"email.identity") or starts_with($r.id,"email-identity"))))
     end
+    if $s.email.outcome!=nil then
+      $feedback={id:"email.outcome",title:"",kind:"info",inline:true,shown:true,value:$s.email.outcome.text,normal:not $s.email.outcome.failed,error:$s.email.outcome.failed,blocked:nil}
+      $at=index_of(map($details,fn($r)=$r.id),"email.identity.heading")
+      $details=if $at<0 then concat($details,[$feedback]) else concat(slice($details,0,$at),concat([$feedback],slice($details,$at))) end
+    end
     $rows=slice($rows,0,2);$rows[1].detail_rows=$details
     if $s.email.form.id==nil then $rows[1].new_label=$n.text_for("email-new-account") end
   end
+  $reset=buttons($s,"email-reset",["email.reset"]);$reset.trailing_text=$n.text_for("email-note")
   $mail=[row($s,"email.mail.page_size","email-page-size","number",{slider:true}),row($s,"email.mail.mark_read_on_open","email-mark-read","toggle",{}),row($s,"email.mail.confirm_delete","email-confirm-delete","toggle",{}),row($s,"email.mail.quote_on_reply","email-quote-on-reply","toggle",{}),row($s,"email.mail.reply_position","email-reply-position","choice",{presentation:"radio",choices:choices(["above","below"],["email-reply-above","email-reply-below"])})]
-  return [section("email-accounts",nil,$rows),section("email-mail","email-mail",$mail),text_controls($s,"email.reader","text-reader"),text_controls($s,"email.composer","text-composer"),section("email-reset",nil,[buttons($s,"email-reset",["email.reset"])])]
+  return [section("email-accounts",nil,$rows),section("email-mail","email-mail",$mail),text_controls($s,"email.reader","text-reader"),text_controls($s,"email.composer","text-composer"),section("email-reset",nil,[$reset])]
 end
 fn sections($s,$page)
   if $page=="term" then return terminal($s) end
