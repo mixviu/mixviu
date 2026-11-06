@@ -1,0 +1,42 @@
+-- A8 size attribution without cargo-bloat: build the shell-profile `mix`
+-- release once as the baseline, then once per lib-mix feature with that
+-- feature removed from mix-shell's profile, and report the size delta (or
+-- the compile failure, which shows a direct dependency). Restores the
+-- manifest after every build. Run from the checkout root on a CBC worker.
+-- usage: mix tools/engine_split_size_ablation.mix [FEATURE...]
+$manifest = "engines/mix-shell/Cargo.toml"
+$orig = read_file($manifest)
+$m = re_find($orig, "(?m)^mix = \\{ workspace = true, features = \\[([^\\]]*)\\] \\}$")
+if len($m) != 1 then
+  raise("ANCHOR", "mix feature line not found once in " .. $manifest)
+end
+$line = $m[0].match
+$features = map(split($m[0].groups[0], ","), fn($f) = trim(replace(trim($f), "\"", "")))
+$targets = if len(args()) > 0 then args() else $features end
+
+fn build()
+  $r = run_argv(["cargo", "build", "--release", "-p", "system", "--locked"], {timeout: 3600, max_output: 8000000})
+  if not $r.ok then
+    return {ok: false, err: slice(trim($r.stderr), max(0, len(trim($r.stderr)) - 600), len(trim($r.stderr)))}
+  end
+  return {ok: true, size: stat("target/release/mix").size}
+end
+
+$base = build()
+if not $base.ok then
+  raise("BASELINE", $base.err)
+end
+print json_encode({feature: "(baseline)", size: $base.size})
+for $f in $targets
+  $keep = filter($features, fn($x) = $x != $f)
+  $quoted = join(map($keep, fn($x) = "\"" .. $x .. "\""), ", ")
+  write_file($manifest, replace($orig, $line, "mix = { workspace = true, features = [" .. $quoted .. "] }"))
+  $r = build()
+  write_file($manifest, $orig)
+  if $r.ok then
+    print json_encode({feature: $f, size: $r.size, saved: $base.size - $r.size})
+  else
+    print json_encode({feature: $f, compile_error: $r.err})
+  end
+end
+write_file($manifest, $orig)
