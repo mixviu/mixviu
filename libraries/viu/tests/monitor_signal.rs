@@ -35,6 +35,7 @@ impl BusHandler for Processes {
                 "monitord.processes" => {
                     json!({"total":1,"rows":[{"pid":self.pid,"name":"disposable child","user":"test","cpu":0,"memory":0,"cmdline":"sleep 60"}]})
                 }
+                "monitord.history" => json!({"series":{}}),
                 _ => panic!("unexpected effect {command}"),
             };
             Ok((0, from_json(value)?))

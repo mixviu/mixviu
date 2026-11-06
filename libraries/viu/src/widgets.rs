@@ -9,6 +9,7 @@ pub const KINDS: &[&str] = &[
     "mark",
     "status-line",
     "time-series",
+    "dashboard",
     "label",
     "button",
     "field",
@@ -131,6 +132,7 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
+            "dashboard" => return crate::dashboard::validate(value),
             "time-series" => return crate::time_series::validate(value),
             "status-line" => {
                 value["left"].is_string()
@@ -201,6 +203,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind == "dashboard" {return vec!["choose"];}
         if self.kind == "mark" || self.kind == "status-line" || self.kind == "time-series" {
             return vec![];
         }
@@ -287,6 +290,7 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
+        if self.kind == "dashboard" {return crate::dashboard::admit(self.value(model),action,value);}
         if self.properties["enabled"] == false {
             return Err("DISABLED".into());
         }
@@ -475,6 +479,7 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
+            "dashboard" => crate::dashboard::draw(ui,id,value,events),
             "time-series" => crate::time_series::draw(ui,id,value),
             "status-line" => {
                 toolkit::bars::status(ui, |ui| {
@@ -501,13 +506,14 @@ impl Widgets {
                 })
                 .response
             }
-            "mark" => ui.add(crate::icons::image_of(
-                ui.ctx(),
-                crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
-                    .expect("validated mark"),
-                toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark,
-                ui.visuals().text_color(),
-            )),
+            "mark" => {
+                let size=widget.properties["size"].as_f64().unwrap_or(toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark as f64) as f32;
+                let image=crate::icons::image_of(ui.ctx(),crate::icons::Icon::from_name(value.as_str().expect("validated mark")).expect("validated mark"),size,ui.visuals().text_color());
+                if widget.properties["fill_height"]==true {
+                    let (rect,response)=ui.allocate_exact_size(egui::vec2(size,ui.available_height()),Sense::hover());
+                    image.paint_at(ui,egui::Rect::from_center_size(rect.center(),egui::vec2(size,size)));response
+                } else {ui.add(image)}
+            },
             "window-controls" => {
                 let metrics = crate::window_frame::Metrics::of(ui.ctx());
                 let (area, response) = ui.allocate_exact_size(

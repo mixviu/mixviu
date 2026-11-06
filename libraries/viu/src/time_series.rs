@@ -3,6 +3,7 @@
 //! The replaceable large-chart renderer. The engine supplies the same rings
 //! used by painted sparklines; plotting types never enter that data path.
 use egui::{Ui, Vec2};
+use serde_json::Value;
 use egui_plot::{
     AxisHints, GridMark, HoverPosition, ItemId, ItemIdSet, Line, Plot, PlotMemory, PlotResponse,
 };
@@ -17,7 +18,7 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
         || value["height"].as_f64().is_none_or(|n| !n.is_finite() || !(80.0..=2000.0).contains(&n)) {
         return Err("invalid chart interval, window or height".into());
     }
-    if !["percent","bytes","rate","count"].contains(&value["format"].as_str().unwrap_or(""))
+    if !["percent","bytes","rate","count","count-rate"].contains(&value["format"].as_str().unwrap_or(""))
         || !["percent","capacity","rate","count"].contains(&value["scale"].as_str().unwrap_or("")) {
         return Err("invalid chart units or scale".into());
     }
@@ -37,6 +38,10 @@ fn bytes(n: f64) -> String {
 fn percent(n: f64) -> String {format!("{:.1}%",n.clamp(0.0,100.0))}
 fn rate(n: f64) -> String {format!("{}/s",bytes(n))}
 fn count(n: f64) -> String {format!("{n:.0}")}
+fn count_rate(n: f64) -> String {format!("{n:.1}/s")}
+pub(crate) fn format_value(unit: &str, n: f64) -> String {
+    match unit {"bytes"=>bytes(n),"rate"=>rate(n),"count"=>count(n),"count-rate"=>count_rate(n),_=>percent(n)}
+}
 pub(crate) fn draw(ui: &mut Ui, id: &str, value: &serde_json::Value) -> egui::Response {
     let raw=value["series"].as_array().expect("validated series");
     let values:Vec<Vec<f64>>=raw.iter().map(|s| s["values"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap_or(f64::NAN)).collect()).collect();
@@ -50,9 +55,14 @@ pub(crate) fn draw(ui: &mut Ui, id: &str, value: &serde_json::Value) -> egui::Re
     set_context(ui.ctx(),value["context"].as_str());
     let peak=value["peak"].as_f64().unwrap_or(100.0);
     let scale=match value["scale"].as_str().unwrap() {"capacity"=>Scale::Capacity(peak),"rate"=>Scale::Rate(peak),"count"=>Scale::Count(peak),_=>Scale::Percent};
-    let format=match value["format"].as_str().unwrap() {"bytes"=>bytes,"rate"=>rate,"count"=>count,_=>percent};
+    let format=match value["format"].as_str().unwrap() {"bytes"=>bytes,"rate"=>rate,"count"=>count,"count-rate"=>count_rate,_=>percent};
     let size=Vec2::new(ui.available_width(),value["height"].as_f64().unwrap() as f32);
-    ui.scope(|ui| show_titled(ui,id,value["title"].as_str().unwrap_or(""),size,Chart {series:&series,samples:value["samples"].as_u64().unwrap() as usize,interval_s:value["interval_s"].as_f64().unwrap(),scale,format})).response
+    ui.scope(|ui| {
+        let chart=Chart {series:&series,samples:value["samples"].as_u64().unwrap() as usize,interval_s:value["interval_s"].as_f64().unwrap(),scale,format};
+        if let Some(notes)=value["annotations"].as_array() {
+            show_annotated(ui,id,value["title"].as_str().unwrap_or(""),size,chart,&|steps| notes.get(steps).and_then(Value::as_str).map(str::to_owned));
+        } else { show_titled(ui,id,value["title"].as_str().unwrap_or(""),size,chart); }
+    }).response
 }
 
 #[cfg(test)]

@@ -1,6 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- lint: globals app_args
+$history=require("history.mix")
+$performance=require("performance.mix")
 $core=require("core.mix");$state=$core.initial();$ctx=viu_context()
 if len($app_args)>0 then $state.node=$app_args[0];$state.node_draft=$state.node;$checked=$core.target($state.node) end
 fn publish_monitor($s)
@@ -17,6 +19,17 @@ fn refresh_monitor($s)
     if type($reply.rows)!="list" or len($reply.rows)>2000 or ($reply.total ?? 0)>2000 then raise("PROCESS_BUDGET","Process limit 2000 exceeded; no partial state") end
     $s.snapshot=$snapshot;$s.processes=$reply.rows;$s.total=$reply.total ?? len($reply.rows)
     $s.start_times=if $s.node=="" then viu_process("snapshot",{pids:map($s.processes,fn($p)=$p.pid)}) else {} end
+        $s.rings=$history.record($s.rings,$snapshot)
+    if not $s.history_seeded then
+      $s.history_seeded=true
+      send $target "monitord.history" body={series:["cpu.busy","cpu.core.*","mem.used","disk.*","net.*","tcp.*"],since:60,max_points:60}
+      if $rc==0 then $s.rings=$history.seed($s.rings,$reply) end
+    end
+    if $s.tab=="Performance" and $s.section=="tcp" then
+      send $target "monitord.connections" body={limit:20,sort:"throughput"}
+      if $rc==0 then $s.connections=$reply;$s.connections_error=nil
+      else $s.connections=nil;$s.connections_error=to_string($result) end
+    else $s.connections=nil;$s.connections_error=nil end
     $s.history=push($s.history,$snapshot.cpu.busy)
     if len($s.history)>60 then $s.history=slice($s.history,len($s.history)-60) end
     $s.error=nil;$s.serial=$s.serial+1
@@ -44,7 +57,7 @@ on monitor.refresh
 end
 on monitor.node
   $node=$event.args.node ?? "";$checked=$core.target($node)
-  $state.node=$node;$state.node_draft=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.selected=nil
+  $state.node=$node;$state.node_draft=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.rings={};$state.history_seeded=false;$state.connections=nil;$state.connections_error=nil;$state.selected=nil
   $state=refresh_monitor($state);publish_monitor($state)
   reply(0,json_encode({node:$state.node}))
 end
@@ -77,7 +90,8 @@ on monitor.intent
   $a=$event.args
   if $a.id=="end-task" then
     $out=signal_monitor($state,{pid:$state.selected,signal:"SIGTERM"});$state=$out.state
-  elif $a.id=="tabs" then $state.tab=$a.value
+  elif $a.id=="tabs" then $state.tab=$a.value;$state=refresh_monitor($state)
+  elif $a.id=="performance" and $a.action=="choose" then $state.section=$a.value;$state=refresh_monitor($state)
   elif $a.id=="tree" then $state.tree=$a.value;$state=refresh_monitor($state)
   elif $a.id=="refresh" then $state=refresh_monitor($state)
   elif $a.id=="pause" then $state.paused=$a.value
@@ -86,7 +100,7 @@ on monitor.intent
     $state.node_draft=$a.value
     if $a.action=="submit" or $a.action=="set" then
       $node=if $a.value=="This node" then "" else $a.value end
-      $checked=$core.target($node);$state.node=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.selected=nil;$state=refresh_monitor($state)
+      $checked=$core.target($node);$state.node=$node;$state.snapshot=nil;$state.processes=[];$state.history=[];$state.rings={};$state.history_seeded=false;$state.connections=nil;$state.connections_error=nil;$state.selected=nil;$state=refresh_monitor($state)
     end
   elif $a.id=="processes" then
     if $a.action=="sort" then
@@ -109,6 +123,8 @@ on viu.frame.intent
     publish_monitor($state);reply($out.rc,json_encode($out.body));return
   elif $id=="file.refresh" then $state=refresh_monitor($state)
   elif $id=="view.pause" then $state.paused=not $state.paused
+  elif $id=="view.processes" then $state.tab="Processes";$state=refresh_monitor($state)
+  elif $id=="view.performance" then $state.tab="Performance";$state=refresh_monitor($state)
   elif $id=="view.tree" then $state.tree=not $state.tree;$state=refresh_monitor($state)
   elif $id=="file.quit" then
     $model=$core.framed($state);$model.window_close=true
@@ -136,4 +152,16 @@ end
 on monitor.signal
   $out=signal_monitor($state,$event.args);$state=$out.state;publish_monitor($state)
   reply($out.rc,json_encode($out.body))
+end
+
+on monitor.tab
+  if not contains(["processes","performance"],$event.args.tab) then raise("ARGUMENT","tab must be processes or performance") end
+  $state.tab=if $event.args.tab=="processes" then "Processes" else "Performance" end
+  $state=refresh_monitor($state);publish_monitor($state)
+  reply(0,json_encode({tab:$event.args.tab}))
+end
+on monitor.section
+  if not contains($performance.keys_for($state.snapshot),$event.args.section) then raise("ARGUMENT","No such section") end
+  $state.section=$event.args.section;$state=refresh_monitor($state);publish_monitor($state)
+  reply(0,json_encode({section:$state.section}))
 end

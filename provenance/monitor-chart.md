@@ -19,3 +19,12 @@ denies unsafe code. Its enabled dependencies are ahash (no-rng/std), egui,
 emath and nohash-hasher; there is no C build or new service. Cargo.lock
 changes must be returned by CBC. This is lab implementation evidence,
 not Monitor or widget acceptance; gate receipts belong in `last.md`.
+
+`libraries/viu/tests/fixtures/monitor-snapshot.json` is the pinned original's
+`apps/monitor/crates/vitals/tests/fixtures/monitord-snapshot.json`, unchanged;
+SHA256 `e027e9d09aa4647385b65a16ef7306e9d8b0d048c27b0d0573d3c9f1b82f6df2`.
+The dashboard widget renders chooser items and ordered blocks supplied by Mix.
+Its native grids, sparklines, meters and charts reuse the retained toolkit.
+Monitor's resource names, queries, histories and connection projection remain
+in `apps/monitor/*.mix`. The integration is a prototype pending CBC and native
+gold comparisons for every page and interaction.

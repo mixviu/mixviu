@@ -1,0 +1,142 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$f=require("format.mix")
+fn keys_for($snapshot)
+  $keys=["cpu","memory"]
+  if $snapshot!=nil then
+    for $d in ($snapshot.disks ?? []) push($keys,"disk:"..$d.name) end
+    for $n in ($snapshot.net ?? []) push($keys,"net:"..$n.name) end
+  end
+  push($keys,"tcp");return $keys
+end
+fn ring($s,$name) return $s.rings[$name] ?? [] end
+fn peak($values,$floor)
+  $p=$floor
+  for $v in $values if $v!=nil then $p=max($p,$v) end end
+  if $p<=0 then return 1 end
+  $m=pow(10,floor(log10($p)))
+  for $step in [1,2,5,10] if $p<=$step*$m then return $step*$m end end
+  return 10*$m
+end
+fn graph($s,$id,$title,$keys,$names,$hues,$format,$scale,$peak,$height)
+  $series=[]
+  for $i=0 to len($keys)-1 push($series,{name:$names[$i],hue:$hues[$i],values:ring($s,$keys[$i])}) end
+  return {kind:"chart",id:$id,chart:{context:$s.node,title:$title,series:$series,samples:60,interval_s:$s.snapshot.interval_s ?? 1,height:$height,format:$format,scale:$scale,peak:$peak}}
+end
+fn figures($pairs,$columns) return {kind:"figures",columns:$columns,items:map($pairs,fn($p)={label:$p[0],value:$p[1]})} end
+fn header($title,$detail) return {kind:"heading",title:$title,detail:$detail ?? ""} end
+fn gap($size) return {kind:"gap",size:$size} end
+fn item($s,$key)
+  $v=$s.snapshot
+  if $key=="cpu" then
+    return {id:$key,title:"CPU",subtitle:$f.percent($v.cpu.busy),values:ring($s,"cpu.busy"),peak:100,format:"percent",hue:"accent"}
+  elif $key=="memory" then
+    $m=$v.memory
+    return {id:$key,title:"Memory",subtitle:$f.bytes($m.used).." / "..$f.bytes($m.total)..fmt(" (%.0f%%)",if $m.total>0 then $m.used*100/$m.total else 0 end),values:ring($s,"mem.used"),peak:max(1,$m.total),format:"bytes",hue:"accent-plus"}
+  elif $key=="tcp" then
+    $tcp=$v.tcp ?? {}
+    return {id:$key,title:"TCP",subtitle:"↓ "..(if $tcp.in_segs!=nil then fmt("%.1f/s",$tcp.in_segs) else "—" end).."  ↑ "..(if $tcp.out_segs!=nil then fmt("%.1f/s",$tcp.out_segs) else "—" end),values:ring($s,"tcp.in_segs"),second_values:ring($s,"tcp.out_segs"),peak:max(peak(ring($s,"tcp.in_segs"),1),peak(ring($s,"tcp.out_segs"),1)),format:"count",hue:1}
+  elif starts_with($key,"disk:") then
+    $name=slice($key,5);$d=filter($v.disks,fn($d)=$d.name==$name)[0]
+    return {id:$key,title:"Disk "..$name,subtitle:if $d.busy==nil then "—" else $f.percent($d.busy) end,values:ring($s,"disk."..$name..".busy"),peak:100,format:"percent",hue:"warning"}
+  else
+    $name=slice($key,4);$n=filter($v.net,fn($n)=$n.name==$name)[0]
+    return {id:$key,title:"Network "..$name,subtitle:"↓ "..$f.rate($n.rx_bps).."  ↑ "..$f.rate($n.tx_bps),values:ring($s,"net."..$name..".rx"),peak:peak(ring($s,"net."..$name..".rx"),1024),format:"rate",hue:"accent-minus"}
+  end
+end
+fn cpu($s)
+  $v=$s.snapshot;$c=$v.cpu
+  $blocks=[header("CPU",$c.model),{kind:"small",text:"Utilisation % · 60 s"},graph($s,"cpu-main","",["cpu.busy"],["Utilisation"],["accent"],"percent","percent",100,180),gap(8)]
+  $cores=$c.per_core ?? []
+  if len($cores)>1 then
+    $items=map($cores,fn($c)={name:"CPU "..to_string($c.cpu),values:ring($s,"cpu.core."..to_string($c.cpu)..".busy"),peak:100,hue:"accent",format:"percent"})
+    push($blocks,{kind:"small",text:"Logical processors"});push($blocks,{kind:"sparklines",height:44,items:$items});push($blocks,gap(8))
+  end
+  $pairs=[["Utilisation",$f.percent($c.busy)],["User",$f.percent($c.user)],["System",$f.percent($c.system)],["I/O wait",$f.percent($c.iowait)],["Logical processors",to_string($c.cores)]]
+  $mhz=filter(map($cores,fn($c)=$c.mhz),fn($m)=$m!=nil)
+  if len($mhz)>0 then push($pairs,["Speed",$f.mhz(floor(sum($mhz)/len($mhz)))]) end
+  if $v.load!=nil then push($pairs,["Load average",fmt("%.2f  %.2f  %.2f",$v.load.one,$v.load.five,$v.load.fifteen)]) end
+  if $v.tasks!=nil then push($pairs,["Tasks",to_string($v.tasks.total)]) end
+  if $v.uptime_s!=nil then push($pairs,["Up time",$f.uptime($v.uptime_s)]) end
+  push($blocks,figures($pairs,3));return $blocks
+end
+fn memory($s)
+  $v=$s.snapshot;$m=$v.memory
+  $blocks=[header("Memory",$f.bytes($m.total)),{kind:"small",text:"In use · 60 s"},graph($s,"memory-main","",["mem.used"],["In use"],["accent-plus"],"bytes","capacity",$m.total,240),gap(8),{kind:"meter",share:if $m.total>0 then $m.used/$m.total else 0 end,hue:"accent-plus"},gap(8)]
+  $pairs=[["In use",$f.bytes($m.used)],["Available",$f.bytes($m.available ?? 0)],["Cached",$f.bytes($m.cached ?? 0)],["Total",$f.bytes($m.total)]]
+  if $v.swap.total>0 then push($pairs,["Swap",$f.bytes($v.swap.used).." / "..$f.bytes($v.swap.total)]) end
+  push($blocks,figures($pairs,2));return $blocks
+end
+fn disk($s,$name)
+  $d=filter($s.snapshot.disks,fn($d)=$d.name==$name)[0]
+  $p="disk."..$name
+  $top=max(peak(ring($s,$p..".read"),1048576),peak(ring($s,$p..".write"),1048576))
+  $blocks=[header("Disk "..$name,$d.model),{kind:"small",text:"Active time % · 60 s"},graph($s,$p.."-busy","",[$p..".busy"],["Active time"],["warning"],"percent","percent",100,180),gap(8),graph($s,$p.."-rates","Read / Write · "..$f.rate($top).." · 60 s",[$p..".read",$p..".write"],["Read","Write"],["warning","accent-plus"],"rate","rate",$top,150),gap(8),figures([["Active time",if $d.busy==nil then "—" else $f.percent($d.busy) end],["Read",$f.rate($d.read_bps)],["Write",$f.rate($d.write_bps)]],3)]
+  $mounts=filter($s.snapshot.filesystems ?? [],fn($f)=contains($f.device,$name))
+  if len($mounts)>0 then
+    push($blocks,gap(10));push($blocks,{kind:"small",text:"Filesystems"})
+    push($blocks,{kind:"meters",items:map($mounts,fn($m)={label:$m.mount,detail:$m.kind,caption:$f.bytes($m.used).." / "..$f.bytes($m.total),share:if $m.total>0 then $m.used/$m.total else 0 end,width:160,hue:"warning"})})
+  end
+  return $blocks
+end
+fn network($s,$name)
+  $n=filter($s.snapshot.net,fn($n)=$n.name==$name)[0];$p="net."..$name
+  $top=max(peak(ring($s,$p..".rx"),1024),peak(ring($s,$p..".tx"),1024))
+  $blocks=[header("Network "..$name,$n.state),graph($s,$p.."-rates","Receive / Send · "..$f.rate($top).." · 60 s",[$p..".rx",$p..".tx"],["Receive","Send"],["accent-minus","accent-plus"],"rate","rate",$top,270),gap(8)]
+  $pairs=[["Receive",$f.rate($n.rx_bps)],["Send",$f.rate($n.tx_bps)],["State",$n.state ?? "—"]]
+  if $n.speed_mbps!=nil then push($pairs,["Link speed",to_string($n.speed_mbps).." Mbit/s"]) end
+  push($pairs,["Total ↓",$f.bytes($n.rx_bytes)]);push($pairs,["Total ↑",$f.bytes($n.tx_bytes)])
+  push($blocks,figures($pairs,3));return $blocks
+end
+fn tcp_chart($s,$id,$title,$keys,$names,$legends,$hues,$gauge)
+  $top=1
+  for $key in $keys $top=max($top,peak(ring($s,$key),1)) end
+  $block=graph($s,$id,$title,$keys,$names,$hues,if $gauge then "count" else "count-rate" end,"count",$top,130)
+  $series=$block.chart.series
+  for $i=0 to len($series)-1 $series[$i].legend=$legends[$i] end
+  $block.chart.series=$series
+  return $block
+end
+fn tcp($s)
+  $segments=tcp_chart($s,"tcp-segments","Segments in / out",["tcp.in_segs","tcp.out_segs"],["Receive","Send"],["Receive","Send"],[1,2],false)
+  $retrans=tcp_chart($s,"tcp-retransmits","Retransmits",["tcp.retrans_segs"],["Retransmits"],["Retransmits"],["warning"],false)
+  $r=reverse(ring($s,"tcp.retrans_segs"));$out=reverse(ring($s,"tcp.out_segs"));$annotations=[]
+  for $i=0 to len($r)-1
+    $den=if $i<len($out) then $out[$i] else nil end
+    push($annotations,"Retransmit percentage: "..(if $den==nil or $den<=0 or $r[$i]==nil then "—" else $f.percent($r[$i]*100/$den) end))
+  end
+  $retrans.chart.annotations=$annotations
+  $established=tcp_chart($s,"tcp-established","Established",["tcp.established"],["Established"],["Established"],[3],true)
+  $opens=tcp_chart($s,"tcp-opens-resets","Opens / resets",["tcp.active_opens","tcp.passive_opens","tcp.out_rsts","tcp.estab_resets"],["Active opens","Passive opens","Sent resets","Established resets"],["Active","Passive","Sent","Estab."],[1,2,3,4],false)
+  $tcp=$s.snapshot.tcp ?? {};$sock=$tcp.sockstat ?? {};$sock6=$tcp.sockstat6 ?? {}
+  $chips=[]
+  for $p in [["In use (v4)",$sock.inuse],["In use (v6)",$sock6.inuse],["Orphans",$sock.orphan],["Time wait",$sock.tw],["Allocated",$sock.alloc],["Buffer pages",$sock.mem]]
+    push($chips,$p[0]..": "..(if $p[1]==nil then "—" else to_string($p[1]) end))
+  end
+  $blocks=[header("TCP",""),{kind:"columns",blocks:[$segments,$retrans]},{kind:"columns",blocks:[$established,$opens]},{kind:"chips",items:$chips},gap(6),{kind:"small",text:"Top 20 connections by throughput"}]
+  if $s.connections_error!=nil then push($blocks,{kind:"small",text:$s.connections_error})
+  elif $s.connections==nil then push($blocks,{kind:"small",text:"Waiting for the first reading…"})
+  elif len($s.connections.rows)==0 then push($blocks,{kind:"small",text:"No TCP sockets"})
+  else
+    $rows=[]
+    for $c in slice($s.connections.rows,0,20)
+      $remote=if contains($c.remote,":") then "["..$c.remote.."]" else $c.remote end
+      push($rows,{key:to_string($c.cookie),depth:0,branch:false,selected:false,focused:false,expanded:false,cells:[$remote..":"..to_string($c.remote_port),to_string($c.local_port),replace($c.state,"_"," "),if $c.rx_bps==nil then "—" else $f.rate($c.rx_bps) end,if $c.tx_bps==nil then "—" else $f.rate($c.tx_bps) end,if $c.rtt_us==nil then "—" else fmt("%.1f ms",$c.rtt_us/1000) end,if $c.retransmits==nil then "—" else to_string($c.retransmits) end,$c.user]})
+    end
+    $columns=[]
+    for $p in [["remote","Remote",200],["port","Port",70],["state","State",100],["rx","Rx/s",90],["tx","Tx/s",90],["rtt","RTT",70],["retx","Retx",70],["user","User",90]]
+      push($columns,{id:$p[0],label:$p[1],width:$p[2],min_width:40,remainder:$p[0]=="remote",sortable:false,align:if contains(["rx","tx","rtt","retx"],$p[0]) then "right" else "left" end})
+    end
+    push($blocks,{kind:"table",table:{key:"tcp-connections",rows:$rows,columns:$columns}})
+  end
+  return $blocks
+end
+fn project($s)
+  $items=[];$blocks=[];$selected=$s.section
+  if $s.snapshot!=nil then
+    $keys=keys_for($s.snapshot)
+    if not contains($keys,$selected) then $selected="cpu" end
+    $items=map($keys,fn($key)=item($s,$key))
+    $blocks=if $selected=="cpu" then cpu($s) elif $selected=="memory" then memory($s) elif starts_with($selected,"disk:") then disk($s,slice($selected,5)) elif starts_with($selected,"net:") then network($s,slice($selected,4)) else tcp($s) end
+  else push($blocks,{kind:"small",text:"Waiting for the first reading…"}) end
+  return {id:"performance",kind:"dashboard",label:"Performance",initial:{sidebar_width:250,compact_width:640,selected:$selected,items:$items,blocks:$blocks,interval_s:if $s.snapshot!=nil then $s.snapshot.interval_s ?? 1 else 1 end},properties:{}}
+end

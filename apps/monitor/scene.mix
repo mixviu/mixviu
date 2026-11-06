@@ -7,15 +7,17 @@ citizen: monitor
 {
 root:{widget:"dock",children:["options","content"],placements:{options:{edge:"top",size:"design.options_height"},content:{edge:"fill"}}},
 options:{widget:"column",background:"design.chrome",padding:8,children:["options-band"]},
-"options-band":{widget:"band",children:["tabs","server","node","paused","filter","tree","end-task"],groups:"= $model.options"},
+"options-band":{widget:"band",children:["tabs","server","node","paused","end-task","tree","filter-gap","filter"],groups:"= $model.options"},
 tabs:{widget:"control",definition:{id:"tabs",kind:"tabs",label:"",initial:"Processes",properties:{choices:["Processes","Performance"]}},on_intent:"monitor.intent"},
-server:{widget:"control",definition:{id:"server",kind:"mark",label:"",initial:"server"}},
+server:{widget:"control",definition:{id:"server",kind:"mark",label:"",initial:"server",properties:{size:14,fill_height:true}}},
 paused:{widget:"control",definition:{id:"paused",kind:"label",label:"",initial:""}},
 node:{widget:"control",definition:"= $model.node_choice",on_intent:"monitor.intent"},
+"filter-gap":{widget:"spacer"},
 filter:{widget:"control",definition:{id:"filter",kind:"field",label:"Filter processes",initial:"",properties:{placeholder:"Filter processes"}},on_intent:"monitor.intent"},
 tree:{widget:"control",definition:{id:"tree",kind:"toggle",label:"Tree",initial:false,properties:{text:"Show as tree"}},on_intent:"monitor.intent"},
 "end-task":{widget:"control",definition:"= $model.end_button",on_intent:"monitor.intent"},
-content:{widget:"column",padding:2,children:["processes"]},
-processes:{widget:"control",definition:"= $model.table",on_intent:"monitor.intent"}
+content:{widget:"column",padding:2,children:["processes","performance"]},
+performance:{widget:"control",hidden:"= $model.performance_hidden",definition:"= $model.performance_view",on_intent:"monitor.intent"},
+processes:{widget:"control",hidden:"= $model.processes_hidden",definition:"= $model.table",on_intent:"monitor.intent"}
 }
 ```

@@ -472,7 +472,8 @@ fn draw_grid(
     ui.scope(|ui| {
         let mut table = TableBuilder::new(ui)
             .id_salt(id)
-            .auto_shrink([false, false])
+            .auto_shrink([widget.properties["auto_shrink"] == true; 2])
+            .vscroll(widget.properties["vscroll"] != false)
             .striped(true)
             .resizable(true)
             .sense(Sense::click())

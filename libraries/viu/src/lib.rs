@@ -37,3 +37,5 @@ pub mod layer;
 pub mod process;
 
 pub mod time_series;
+
+pub mod dashboard;
