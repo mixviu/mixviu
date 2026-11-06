@@ -1,3 +1,52 @@
+# Screenshot round 3 — shared frame and engine profile
+
+Overall parity remains **unaccepted**. No deviation from gold is proposed.
+
+Merged `origin/lab/gold-parity` through `158adc5` in merge `38ca78b`.
+Screenshot retains reusable deferred replies, raster documents, annotation
+painting and canvas gestures; it now uses the newer shared native frame,
+status control and macro facilities. Compatibility command IDs are remapped
+back from bounded native menu slots. Macro deferred responses retain native
+request ownership and the shared facility publishes completion topics.
+
+Viu declares `shell-profile` for lib-mix: json, regex, toml, datetime, url,
+crypto, http, sqlite, ws and archive. The engine explicitly selects this
+profile with dependency defaults disabled. This is engine policy, not an
+application switch. Its embedded regression test exercises dispatch for
+every feature without opening network connections.
+
+Preparation CBC `20261107-050951-a88e1a14-a1` on `2b99cfa5c20374e79b5f472039f7bef743c14bb6`
+passed policy, all-target check, focused raster/controller tests, the engine
+shell-profile test, clippy and build, but returned formatting (BUILD_RC=97).
+Formatting was applied. Saved log:
+`20261107-050951-cbc2-2b99cfa5c203-20261107-050951-a88e1a14-a1-c848c981.log`.
+Its preparation artifact hash is
+`5dc4c4e8f212a45dd6fd85b339a6695ec8197dec7cded244bf00ef4d2b9e9f35`.
+Earlier merge repairs: `20261107-050436-d1bb128b-a1` found a JSON comma;
+`20261107-050541-df786fbc-a1` found duplicate consumption of descriptors.
+Both were fixed. They are not accepted gates.
+
+An explicit-body jobs-envelope defect was found during integration and fixed
+in the reusable jobs backend, with a test checking admission, owner and typed
+payload. The updated focused gate and isolated engine profile test are queued
+as `20261107-051316-4ed4aa20` on `fc774bb`; no result is claimed here.
+
+Private evidence is in hub `_var/screenshot-parity-20261107/`.
+Gold functional run `functional-gold.4RiKU8` passed all nine annotation kinds,
+move/delete, undo/redo, crop, completion export, overwrite refusal and recent
+history. Candidate conformance and PNG equivalence remain to run against the
+merged exact artifact. Earlier native initial action descriptions matched the
+gold descriptions. Earlier frame Prefs variants and the native 22.1-second
+deferred/cancel witness remain valid only for their recorded revisions below.
+
+Preliminary candidate captures exposed header/menu/content-spacing defects;
+the shared-frame merge replaces the overlapping adapter. Matched captures,
+region differences, full live content Prefs and final app/Bus acceptance are
+still outstanding. The revised Screenshot inventory separates implementation
+from acceptance. No SSIM or region verdict is claimed for round 3.
+
+Earlier receipts follow.
+
 # Screenshot round 2 — reusable deferred-reply checkpoint
 
 S1 decided by Opus: gold wins. No gold/inventory discrepancy is a stop gate.
@@ -675,3 +724,5 @@ branch lab/parity-screenshot; head 6ed840c8877dff0712a9d8126bd28fd7bb7a33ee (tes
 
 
 branch lab/parity-screenshot; head febe71da6958436f9c41d4b04213712a2419385b (tested code; receipt commit follows); frame adopted; features incomplete; Bus deferred primitive passed native 22.1 s + cancel; Prefs frame variants passed previously; SSIM/regions unmeasured; CBC 20261107-031129-f2c1172c-a1 PASS.
+
+branch lab/parity-screenshot; head fc774bb (implementation; gate pending); parity evidence: deferred primitive accepted at its earlier SHA, merged app features/Bus/Prefs not yet accepted, SSIM/regions pending; CBC 20261107-050951-a88e1a14-a1 preparation passed with formatting, 20261107-051316-4ed4aa20 queued.
