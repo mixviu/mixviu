@@ -683,7 +683,10 @@ impl Host {
             &self.view.geometry,
             self.measurements.snapshot(),
         );
-        if self.bus.close_requested.load(std::sync::atomic::Ordering::Acquire)
+        if self
+            .bus
+            .close_requested
+            .load(std::sync::atomic::Ordering::Acquire)
             || self.model["window_close"] == true
         {
             self.facilities.finish(ui.ctx());
