@@ -5,6 +5,12 @@ $errors=$e.field_errors({name:"",url:"http://invalid",email:"invalid",ca_path:"r
 if len(keys($errors))!=4 or $errors.name!="email-name-refused" or $errors.url!="email-url-refused" or $errors.email!="email-address-refused" or $errors.ca_path!="email-ca-refused" then raise("TEST","Native field refusals lost") end
 $identities=$e.normal_identities([{id:"default",name:"Example",address:"user@example.test",reply_to:nil,signature:""}])
 if contains(keys($identities[0]),"reply_to") then raise("TEST","Absent identity reply-to must be omitted") end
+$done=$e.completed({action:"password",account:"primary"},"Example account",true,0,{id:"primary",has_password:true},false)
+if not deep_eq($done.body,{done:true,account:"primary"}) or $done.outcome.text!="Password set for Example account" then raise("TEST","Email password completion must use Prefs' public result") end
+$done=$e.completed({action:"remove",account:"primary"},"Example account",false,10,{error_code:"MIGRATION_PENDING",message:"Wait for migration"},false)
+if not deep_eq($done.body,{error_code:"MIGRATION_PENDING",message:"MIGRATION_PENDING: Wait for migration"}) or $done.outcome.text!="Example account: MIGRATION_PENDING: Wait for migration" then raise("TEST","Email removal must retain its native refusal") end
+$done=$e.completed({action:"forget",account:"primary"},"Example account",false,10,{error_code:"UNKNOWN_ACCOUNT",message:"Unknown account"},false)
+if $done.code!=0 or $done.outcome.text!="Email no longer holds a password for Example account" then raise("TEST","Removed unknown account has no password to forget") end
 $p=$e.plan($s,{op:"add",name:" Example ",url:"https://example.test/jmap",email:"user@example.test"})
 if len($p.changes["email.accounts"])!=1 or $p.changes["email.accounts"][0].name!="Example" then raise("TEST","Account add/trim failed") end
 $id=$p.added;$s.values=$p.changes

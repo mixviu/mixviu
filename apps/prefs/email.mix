@@ -44,6 +44,49 @@ end
 fn removal($s,$id)
   return {id:$id,name:(account($s,$id) ?? {}).name ?? $id}
 end
+fn action_text($key,$name,$message)
+  return replace(replace($n.text_for($key),"{ $account }",$name),"{ $message }",$message)
+end
+fn refusal($answer)
+  if type($answer.message)=="string" then return redact_url($answer.message) end
+  if type($answer.diagnostics)=="list" and len($answer.diagnostics)>0 then return redact_url(join(map($answer.diagnostics,fn($d)=($d.path ?? "")..": "..($d.message ?? "")),"; ")) end
+  return redact_url($answer.status ?? json_encode($answer))
+end
+fn unknown_command($answer)
+  return $answer.error_code=="UNKNOWN_COMMAND" or contains(lower($answer.message ?? ""),"unknown command")
+end
+fn completed($task,$name,$may_launch,$code,$answer,$absent)
+  if $task.action=="remove" and ($absent or unknown_command($answer)) then return {fallback:true} end
+  $failed=$code!=0;$error=nil;$body=nil;$text=""
+  if $task.action=="forget" and not $may_launch and $failed then
+    if $answer.error_code=="UNKNOWN_ACCOUNT" then $failed=false;$text=action_text("email-password-forgotten",$name,"")
+    else
+      $message=if $absent then $n.text_for("email-not-running") elif unknown_command($answer) then $n.text_for("email-unsupported") else refusal($answer) end
+      $error="NOT_FORGOTTEN";$text=action_text("email-forget-after-remove-failed",$name,$message)
+    end
+  elif not $failed then
+    $key={password:"email-password-set",forget:"email-password-forgotten",remove:"email-removed",connect:"email-connect-asked"}[$task.action]
+    $text=action_text($key,$name,"")
+    if $task.action=="remove" then $body={removed:$task.account,via:"email"}
+    else
+      $detail=$answer.message ?? $answer.status ?? ""
+      if $detail!="" then $text=$text.." ("..$detail..")" end
+      $body={done:true,account:$task.account}
+    end
+  elif $absent then $error="NOT_RUNNING";$text=$n.text_for("email-not-running")
+  elif unknown_command($answer) then $error="UNSUPPORTED";$text=$n.text_for("email-unsupported")
+  elif $answer.error_code=="OUTCOME_UNKNOWN" then $error="OUTCOME_UNKNOWN";$text=action_text("email-action-lost",$name,refusal($answer))
+  else
+    $error="REFUSED";$message=refusal($answer)
+    if $task.action=="remove" then
+      if type($answer.error_code)=="string" and type($answer.message)=="string" then $message=redact_url($answer.error_code..": "..$answer.message) end
+      $body={error_code:$answer.error_code ?? "REFUSED",message:$message}
+    end
+    $text=action_text("email-action-failed",$name,$message)
+  end
+  if $failed and $body==nil then $body={error_code:$error,message:$text} end
+  return {fallback:false,code:if $failed then 10 else 0 end,body:$body,outcome:{text:$text,failed:$failed}}
+end
 fn select_account($s,$id)
   $a=account($s,$id)
   if $a==nil then raise("ARGUMENT",$n.text_for("email-unknown-account")) end

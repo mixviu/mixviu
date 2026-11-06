@@ -241,6 +241,10 @@ fn email_task($s,$kind,$id,$command,$body,$launch,$token)
   send "viu-local" "jobs.start" id="prefs-email-task" owner=$s.email.serial path=$path source=read_file($path) command="job.run" args={kind:$kind,command:$command,body:$body,launch:$launch}
   if $rc!=0 then raise("BUSY","An Email task could not start") end
   $s.email.task={action:$kind,account:$id,stage:"sending"};$s.email.task_owner=$s.email.serial;$s.email.reply_token=$token
+  $s.email.task_name=($email.account($s,$id) ?? {}).name ?? $id;$s.email.task_launch=$launch
+  $s.email.task_password=if $kind=="password" and $token==nil then $body.password else nil end
+  $s.email.outcome=nil;$s.failed=false
+  $s.status=$email.action_text({password:"email-password-sending",forget:"email-password-forgetting",remove:"email-removing",connect:"email-connecting"}[$kind],$s.email.task_name,"")
   return $s
 end
 publish_prefs($state)
@@ -352,7 +356,7 @@ end
 on prefs.email.password
   try
     $a=$event.args
-    if type($a.id)!="string" or not re_match($a.id,"^[a-z0-9-]{1,64}$") then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
+    if type($a.id)!="string" then raise("ARGUMENT","id must be an account id") end
     if contains(keys($a),"forget") and type($a.forget)!="bool" then raise("ARGUMENT","forget must be true or false") end
     $forget=$a.forget ?? false
     if $forget and contains(keys($a),"password") then raise("ARGUMENT","give password or forget, not both") end
@@ -361,6 +365,7 @@ on prefs.email.password
       if $a.password=="" then raise("ARGUMENT",$nav.text_for("email-password-empty")) end
       if $state.revision!=nil and $email.account($state,$a.id)==nil then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
     end
+    if not re_match($a.id,"^[a-z0-9-]{1,64}$") then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
     $token=viu_token()
     $state=email_task($state,if $forget then "forget" else "password" end,$a.id,"email.account.password.set",{id:$a.id,password:if $forget then "" else $a.password end},true,$token)
     send "viu-local" "requests.defer" token=$token
@@ -469,22 +474,26 @@ on viu.job.completed
     if $d.rc==0 and $d.body.rc==0 then
       $state.email.service="running";$state.email.passwords={}
       for $a in $answer.accounts ?? [] $state.email.passwords[$a.id]=$a.has_password end
-    else $state.email.service=if $d.body.absent ?? false then "absent" else "unsupported" end end
+    elif $d.body.absent ?? false then $state.email.service="absent";$state.email.passwords={}
+    elif $email.unknown_command($answer) then $state.email.service="unsupported";$state.email.passwords={} end
     publish_prefs($state);return
   end
   if $d.tag.id=="prefs-email-task" and $d.tag.owner==$state.email.task_owner then
     $task=$state.email.task;$token=$state.email.reply_token
     $state.email.task=nil;$state.email.reply_token=nil
-    if $task.action=="remove" and ($d.body.absent ?? false) then
+    $finished=$email.completed($task,$state.email.task_name,$state.email.task_launch,if $d.rc==0 then $d.body.rc else 20 end,$answer,$d.body.absent ?? false)
+    if $finished.fallback then
       $plan=$email.plan($state,{op:"remove",id:$task.account})
       $state.queue_changes=merge($state.queue_changes,$plan.changes);$state.email.removed=$email.removal($state,$task.account)
       $state=queued_prefs($state)
-      $body=$email.view($state);$body.applying=true;$body.id=nil;$code=0
+      $body=$email.view($state);$body.applying=true;$code=0
     else
-      $body=$answer;$code=if $d.rc==0 then $d.body.rc else 20 end
-      $state.email.outcome={text:if $code==0 then "Email operation completed" else $answer.message ?? "Email operation failed" end,failed:$code!=0}
+      $body=$finished.body;$code=$finished.code
+      $state.email.outcome=$finished.outcome;$state.status=$finished.outcome.text;$state.failed=$finished.outcome.failed
+      if $code!=0 and $state.email.task_password!=nil and $state.ui.email_account==$task.account and ($state.email.password ?? "")=="" then $state.email.password=$state.email.task_password;$state.email.secret_epoch=($state.email.secret_epoch ?? 0)+1 end
       if $code==0 and $task.action=="remove" then $state=hint_prefs($state) end
     end
+    $state.email.task_password=nil
     if $token!=nil then send "viu-local" "requests.reply" token=$token rc=$code value=$body end
     $state=query_email($state);publish_prefs($state);return
   end
@@ -524,7 +533,7 @@ on viu.job.completed
         if $state.email.service=="absent" then
           $text=replace(replace($nav.text_for("email-forget-after-remove-failed"),"{ $account }",$removed.name),"{ $message }",$nav.text_for("email-not-running"))
           $state.email.outcome={text:$text,failed:true};$state.status=$text;$state.failed=true
-        else $state=email_task($state,"forget",$removed.id,"email.account.password.set",{id:$removed.id,password:""},false,nil) end
+        else $state=email_task($state,"forget",$removed.id,"email.account.password.set",{id:$removed.id,password:""},false,nil);$state.email.task_name=$removed.name end
       end
       $state.role=$b.status.role ?? "unknown";$state.stale=$b.status.stale ?? false;$state.uncertain=false
       $state.status=if $state.email.outcome==nil then "Settings read" else $state.email.outcome.text end
@@ -596,7 +605,9 @@ on prefs.intent
         elif $key=="software.apps" then
           $state=$nav.select_app($state,$v);$state=release_request($state,"releases.notes",{app:$v})
         elif $key=="email.accounts" then $state=$email.select_account($state,$v)
-        elif starts_with($key,"email.form.") then $state.email.form[substr($key,11)]=$v;$state.email.dirty=true
+        elif starts_with($key,"email.form.") then
+          $field=substr($key,11);$state.email.form[$field]=$v;$state.email.dirty=true
+          $errors={};for $name in keys($state.email.form.errors) if $name!=$field then $errors[$name]=$state.email.form.errors[$name] end end;$state.email.form.errors=$errors
         elif $key=="email.password" then $state.email.password=$v
         elif $key=="email.enabled" then $state=apply_email($state,{op:"enable",id:$state.ui.email_account,enabled:$v})
         elif $v=="email.identity.save" then
