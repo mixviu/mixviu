@@ -278,5 +278,3 @@ pub fn presented(
         }
     }
 }
-
-

@@ -4,9 +4,9 @@
 //! (e.g. no working hardware video encoder). A message + a single OK button that
 //! emits [`CaptureMessage::Discard`] (the interface tears the capture down).
 
-use world::capture::session::message::CaptureMessage;
 use crate::strings;
 use ui::UiProgram;
+use world::capture::session::message::CaptureMessage;
 
 use crate::capture::style;
 
@@ -25,7 +25,9 @@ impl ErrorDialog {
 impl ui::UiProgram for ErrorDialog {
     ui::program_owner!(ErrorDialog);
     type Message = CaptureMessage;
-    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }
+    fn capture_message(message: CaptureMessage) -> Option<Self::Message> {
+        Some(message)
+    }
 
     fn update(&mut self, _message: Self::Message) {}
 
@@ -55,6 +57,3 @@ impl ui::UiProgram for ErrorDialog {
         });
     }
 }
-
-
-

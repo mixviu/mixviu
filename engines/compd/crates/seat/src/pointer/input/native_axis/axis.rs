@@ -101,4 +101,3 @@ pub fn input_received<I: InputBackend>(
         );
     }
 }
-

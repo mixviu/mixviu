@@ -838,5 +838,3 @@ pub fn surface_under_filtered_cx(
     }
     check_layer(Layer::Background)
 }
-
-

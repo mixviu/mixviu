@@ -214,6 +214,3 @@ mod tests {
         assert!(!keep_up(&later));
     }
 }
-
-
-

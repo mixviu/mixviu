@@ -60,7 +60,8 @@ pub mod owner;
 pub use owner::UiControl;
 
 pub use owner::TypedSurfaces;
-pub fn register() { ui_surface::factory::register(|gpu| Box::new(UiRegistry::new(gpu))); }
-
+pub fn register() {
+    ui_surface::factory::register(|gpu| Box::new(UiRegistry::new(gpu)));
+}
 
 use crate::TypedSurfaces as _;

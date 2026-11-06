@@ -198,9 +198,9 @@ mod pre_request_tests {
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     use std::sync::Arc;
+    use wayland_server::Display;
     use wayland_server::backend::{ClientData, DisconnectReason};
     use wayland_server::protocol::wl_output::{self, WlOutput};
-    use wayland_server::Display;
 
     #[derive(Default)]
     struct TestState {
@@ -319,7 +319,10 @@ mod pre_request_tests {
         dh.create_global::<TestState, WlOutput, _>(4, TestGlobal);
         let (server_end, mut client) = UnixStream::pair().unwrap();
         dh.insert_client(server_end, Arc::new(NoData)).unwrap();
-        let mut state = TestState { refuse, ..Default::default() };
+        let mut state = TestState {
+            refuse,
+            ..Default::default()
+        };
 
         // wl_display(1).get_registry(new id 2)
         client.write_all(&msg(1, 1, &2u32.to_ne_bytes())).unwrap();

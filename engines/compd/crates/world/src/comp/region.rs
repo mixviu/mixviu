@@ -509,7 +509,13 @@ impl Look {
     fn of(theme: &theme::Theme) -> Self {
         let colours = theme::region::colours(theme);
         let straight = |value: [u8; 4]| value.map(|v| f32::from(v) / 255.0);
-        Self { outline: straight(colours.outline), back: straight(colours.back), edge: straight(colours.edge), text: straight(colours.text), dim: straight([0, 0, 0, theme::region::DIM_ALPHA]) }
+        Self {
+            outline: straight(colours.outline),
+            back: straight(colours.back),
+            edge: straight(colours.edge),
+            text: straight(colours.text),
+            dim: straight([0, 0, 0, theme::region::DIM_ALPHA]),
+        }
     }
 
     fn current() -> Self {
@@ -1075,5 +1081,3 @@ mod tests {
         assert!(hint_image(&text, 1.0, 10.0, &look).is_none());
     }
 }
-
-

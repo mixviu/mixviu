@@ -22,15 +22,33 @@ pub struct UiItemView {
     pub keyboard_transparent: bool,
 }
 impl UiItemView {
-    pub fn pending_resize(&self) -> Option<(Size<i32, Physical>, f32)> { self.pending_resize }
-    pub fn handle_id(&self) -> HandleId { self.id }
-    pub fn space(&self) -> UiSpace { self.space }
-    pub fn location(&self) -> Point<i32, Physical> { self.location }
-    pub fn size(&self) -> Size<i32, Physical> { self.size }
-    pub fn output(&self) -> Option<&str> { self.output.as_deref() }
-    pub fn is_visible(&self) -> bool { self.visible }
-    pub fn is_passthrough(&self) -> bool { self.passthrough }
-    pub fn is_keyboard_transparent(&self) -> bool { self.keyboard_transparent }
+    pub fn pending_resize(&self) -> Option<(Size<i32, Physical>, f32)> {
+        self.pending_resize
+    }
+    pub fn handle_id(&self) -> HandleId {
+        self.id
+    }
+    pub fn space(&self) -> UiSpace {
+        self.space
+    }
+    pub fn location(&self) -> Point<i32, Physical> {
+        self.location
+    }
+    pub fn size(&self) -> Size<i32, Physical> {
+        self.size
+    }
+    pub fn output(&self) -> Option<&str> {
+        self.output.as_deref()
+    }
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
+    pub fn is_passthrough(&self) -> bool {
+        self.passthrough
+    }
+    pub fn is_keyboard_transparent(&self) -> bool {
+        self.keyboard_transparent
+    }
     pub fn world_zoom(&self, transform: &Transform) -> f64 {
         match (self.space, self.zoom_lock) {
             (UiSpace::Screen, _) => 1.0,
@@ -151,6 +169,4 @@ impl UiItemView {
         let divisor = self.world_zoom(transform) * self.scale_factor as f64;
         ((local.0 / divisor) as f32, (local.1 / divisor) as f32)
     }
-
-
 }

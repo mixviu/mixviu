@@ -10,11 +10,11 @@
 //! reads them off the instance on Confirm (it reads the live canvas selection
 //! itself for the Windows case).
 
+use crate::strings;
+use ui::UiProgram;
 use world::capture::session::message::{
     CaptureMedia, CaptureMessage, OverlayPoint, OverlayRect, TargetKind,
 };
-use crate::strings;
-use ui::UiProgram;
 
 use crate::capture::{mask, style};
 
@@ -111,11 +111,19 @@ fn rect_from(a: (i32, i32), b: (i32, i32)) -> OverlayRect {
 impl ui::UiProgram for SetupOverlay {
     ui::program_owner!(SetupOverlay);
     fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> {
-        Some(ui_surface::capture::CaptureSetup { kind: self.kind, media: self.media,
-            draft: self.draft, no_background: self.no_background, output: None, windows: Vec::new() })
+        Some(ui_surface::capture::CaptureSetup {
+            kind: self.kind,
+            media: self.media,
+            draft: self.draft,
+            no_background: self.no_background,
+            output: None,
+            windows: Vec::new(),
+        })
     }
     type Message = CaptureMessage;
-    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }
+    fn capture_message(message: CaptureMessage) -> Option<Self::Message> {
+        Some(message)
+    }
 
     fn update(&mut self, message: Self::Message) {
         match message {
@@ -302,6 +310,3 @@ impl ui::UiSnapshot for SetupOverlay {
         }
     }
 }
-
-
-

@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use std::time::Instant;
+use crate::error::{DispatchError, ResizeError};
+use crate::input::{Input, Modifiers};
+use crate::{HandleId, Transform, UiItemView, UiRenderElement, UiSpace};
 use graphics::surface::WgpuGlContext;
-use std::sync::Arc;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Rectangle, Size};
-use crate::{HandleId, Transform, UiSpace, UiRenderElement, UiItemView};
-use crate::input::{Input, Modifiers};
-use crate::error::{DispatchError, ResizeError};
+use std::sync::Arc;
+use std::time::Instant;
 #[derive(Clone, Copy, Debug)]
-pub struct PaneView { pub transform: Transform, pub rect: Rectangle<i32, Physical> }
+pub struct PaneView {
+    pub transform: Transform,
+    pub rect: Rectangle<i32, Physical>,
+}
 /// World-facing compositor surface operations. No typed programs or toolkit values.
 pub trait UiSurfaces: crate::capture::CaptureUi {
     fn allocate_id(&mut self) -> HandleId;
@@ -17,7 +20,9 @@ pub trait UiSurfaces: crate::capture::CaptureUi {
     fn insert(&mut self, source: Box<dyn crate::producer::UiProducer>, space: UiSpace, layer: u64);
     fn request_redraw(&mut self, id: HandleId);
     fn items(&self) -> Vec<UiItemView>;
-    fn get(&self, id: HandleId) -> Option<UiItemView> { self.items().into_iter().find(|item| item.id == id) }
+    fn get(&self, id: HandleId) -> Option<UiItemView> {
+        self.items().into_iter().find(|item| item.id == id)
+    }
     fn set_dealloc_enabled(&mut self, enabled: bool);
     fn set_draw_order(&mut self, topmost_first: &[HandleId]);
     fn len(&self) -> usize;

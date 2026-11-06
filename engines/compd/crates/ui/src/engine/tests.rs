@@ -303,5 +303,4 @@ fn a_hidden_animation_stops_asking_for_frames_until_it_is_shown() {
     assert!(rt.is_dirty());
 }
 
-
 use crate::TypedSurfaces as _;

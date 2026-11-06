@@ -5,9 +5,9 @@
 //! by the interface via [`CaptureMessage::SetEncodeProgress`]. Own small centered
 //! screen-space instance (replaces the save dialog during encoding).
 
-use world::capture::session::message::CaptureMessage;
 use crate::strings;
 use ui::UiProgram;
+use world::capture::session::message::CaptureMessage;
 
 use crate::capture::style;
 
@@ -31,7 +31,9 @@ impl Default for EncodingDialog {
 impl ui::UiProgram for EncodingDialog {
     ui::program_owner!(EncodingDialog);
     type Message = CaptureMessage;
-    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }
+    fn capture_message(message: CaptureMessage) -> Option<Self::Message> {
+        Some(message)
+    }
 
     fn update(&mut self, message: Self::Message) {
         if let CaptureMessage::SetEncodeProgress(p) = message {
@@ -66,6 +68,3 @@ impl ui::UiProgram for EncodingDialog {
         });
     }
 }
-
-
-

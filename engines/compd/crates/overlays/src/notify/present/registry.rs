@@ -107,13 +107,15 @@ pub fn ensure_registry(p: &mut Presenter, kernel: &Storage) -> bool {
     true
 }
 
-
-
-
 impl world::notify::present::registry::NotifyPresenter for Presenter {
-    fn tick(&mut self, next: Option<String>, kernel: &Storage, renderer: &mut GlesRenderer,
-        node: &str, screen: &world::smithay_glue::data::ScreenContext)
-        -> (Option<world::notify::present::base::NotifyFrame>, bool) {
+    fn tick(
+        &mut self,
+        next: Option<String>,
+        kernel: &Storage,
+        renderer: &mut GlesRenderer,
+        node: &str,
+        screen: &world::smithay_glue::data::ScreenContext,
+    ) -> (Option<world::notify::present::base::NotifyFrame>, bool) {
         super::base::tick(self, next, kernel, renderer, node, screen)
     }
 }

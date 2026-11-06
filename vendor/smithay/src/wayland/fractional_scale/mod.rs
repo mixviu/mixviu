@@ -121,9 +121,7 @@ static VISIBILITY_FILTER: Mutex<Option<Box<dyn Fn(&wayland_server::Client) -> bo
 ///
 /// The filter returns `true` for a client that may see the global. Replaces any
 /// previously installed filter; with none installed every client sees it.
-pub fn set_visibility_filter(
-    filter: impl Fn(&wayland_server::Client) -> bool + Send + Sync + 'static,
-) {
+pub fn set_visibility_filter(filter: impl Fn(&wayland_server::Client) -> bool + Send + Sync + 'static) {
     *VISIBILITY_FILTER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(filter));
 }
 

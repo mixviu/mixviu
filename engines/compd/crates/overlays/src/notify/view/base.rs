@@ -61,6 +61,3 @@ impl ui::UiProgram for NotifyUi {
             });
     }
 }
-
-
-

@@ -4,9 +4,9 @@
 //! own small screen-space instance (positioned by the interface) so it only
 //! intercepts clicks where the button is.
 
-use world::capture::session::message::CaptureMessage;
 use crate::strings;
 use ui::UiProgram;
+use world::capture::session::message::CaptureMessage;
 
 use crate::capture::style;
 
@@ -15,7 +15,9 @@ pub struct StopHud;
 impl ui::UiProgram for StopHud {
     ui::program_owner!(StopHud);
     type Message = CaptureMessage;
-    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }
+    fn capture_message(message: CaptureMessage) -> Option<Self::Message> {
+        Some(message)
+    }
 
     fn update(&mut self, _message: Self::Message) {}
 
@@ -33,6 +35,3 @@ impl ui::UiProgram for StopHud {
         });
     }
 }
-
-
-

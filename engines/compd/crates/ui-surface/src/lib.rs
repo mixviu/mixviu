@@ -9,7 +9,7 @@ pub mod space;
 pub mod view;
 pub use element::UiRenderElement;
 pub use handle::HandleId;
-pub use interface::{UiSurfaces, PaneView};
+pub use interface::{PaneView, UiSurfaces};
 pub use space::{Transform, UiSpace};
 pub use view::UiItemView;
 pub mod producer;
@@ -18,5 +18,5 @@ pub mod factory;
 
 pub mod capture;
 
-pub mod source;
 pub mod frame_trace;
+pub mod source;

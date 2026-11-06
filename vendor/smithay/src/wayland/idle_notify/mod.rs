@@ -252,7 +252,11 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
             Box::new(move || {
                 let data = idle_notification.data::<IdleNotificationUserData>().unwrap();
 
-                if fires(data.ignore_inhibitor, inhibited.load(atomic::Ordering::Acquire), data.is_idle()) {
+                if fires(
+                    data.ignore_inhibitor,
+                    inhibited.load(atomic::Ordering::Acquire),
+                    data.is_idle(),
+                ) {
                     idle_notification.idled();
                     data.set_idle(true);
                 }
@@ -418,10 +422,15 @@ mod compd_idle_timer_tests {
         let timers: Box<dyn IdleTimerLoop> = Box::new(event_loop.handle());
         let fired = std::rc::Rc::new(std::cell::Cell::new(0));
         let seen = std::rc::Rc::clone(&fired);
-        let token = timers.arm(Duration::from_millis(1), Box::new(move || seen.set(seen.get() + 1)));
+        let token = timers.arm(
+            Duration::from_millis(1),
+            Box::new(move || seen.set(seen.get() + 1)),
+        );
         assert!(token.is_some());
         for _ in 0..3 {
-            event_loop.dispatch(Some(Duration::from_millis(20)), &mut ()).unwrap();
+            event_loop
+                .dispatch(Some(Duration::from_millis(20)), &mut ())
+                .unwrap();
         }
         assert_eq!(fired.get(), 1);
     }
@@ -432,9 +441,13 @@ mod compd_idle_timer_tests {
         let timers: Box<dyn IdleTimerLoop> = Box::new(event_loop.handle());
         let fired = std::rc::Rc::new(std::cell::Cell::new(false));
         let seen = std::rc::Rc::clone(&fired);
-        let token = timers.arm(Duration::from_millis(1), Box::new(move || seen.set(true))).unwrap();
+        let token = timers
+            .arm(Duration::from_millis(1), Box::new(move || seen.set(true)))
+            .unwrap();
         timers.disarm(token);
-        event_loop.dispatch(Some(Duration::from_millis(20)), &mut ()).unwrap();
+        event_loop
+            .dispatch(Some(Duration::from_millis(20)), &mut ())
+            .unwrap();
         assert!(!fired.get());
     }
 
@@ -442,7 +455,10 @@ mod compd_idle_timer_tests {
     fn a_timer_fires_unless_inhibited_or_already_idle() {
         assert!(fires(false, false, false));
         assert!(!fires(false, true, false), "an inhibitor holds");
-        assert!(fires(true, true, false), "get_input_idle_notification ignores inhibitors");
+        assert!(
+            fires(true, true, false),
+            "get_input_idle_notification ignores inhibitors"
+        );
         assert!(!fires(false, false, true), "idled once only");
     }
 }

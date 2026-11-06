@@ -13,9 +13,9 @@
 //! passed as arguments. This mirrors how Smithay's `window.render_elements`
 //! takes the screen location and zoom as arguments rather than storing them.
 
-use std::cell::{RefCell, Ref, RefMut};
-use std::rc::{Rc, Weak};
 use crate::owner::UiControl;
+use std::cell::{Ref, RefCell, RefMut};
+use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use std::sync::Arc;
@@ -80,9 +80,17 @@ impl<U: UiProgram> UiInstance<U> {
 use ui_surface::producer::UiProducer;
 
 impl<U: UiProgram> UiProducer for UiInstance<U> {
-    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> { self.ui().capture_setup() }
-    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> { self.ui().capture_save_choice() }
-    fn capture_message(&mut self, message: ui_surface::capture::CaptureMessage) { if let Some(message) = U::capture_message(message) { self.runtime_mut().queue_message(message); } }
+    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> {
+        self.ui().capture_setup()
+    }
+    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> {
+        self.ui().capture_save_choice()
+    }
+    fn capture_message(&mut self, message: ui_surface::capture::CaptureMessage) {
+        if let Some(message) = U::capture_message(message) {
+            self.runtime_mut().queue_message(message);
+        }
+    }
     fn handle_id(&self) -> HandleId {
         self.id
     }
@@ -232,8 +240,6 @@ impl<U: UiProgram> UiProducer for UiInstance<U> {
     fn pointer_leave(&mut self) {
         self.runtime.pointer_leave();
     }
-
-
 }
 
 // ── UiItem (the registry's stored type) ─────────────────────────────
@@ -318,14 +324,24 @@ pub struct UiItem {
 impl UiItem {
     pub fn view(&self, draw_order: usize) -> ui_surface::UiItemView {
         ui_surface::UiItemView {
-            id: self.handle_id(), space: self.space(), location: self.location(),
-            size: self.size(), scale_factor: self.inner.scale_factor(),
-            zoom_lock: self.zoom_lock(), pending_resize: self.pending_resize(), output: self.output.clone(), layer: self.layer,
-            draw_order, visible: self.is_visible(), passthrough: self.is_passthrough(),
+            id: self.handle_id(),
+            space: self.space(),
+            location: self.location(),
+            size: self.size(),
+            scale_factor: self.inner.scale_factor(),
+            zoom_lock: self.zoom_lock(),
+            pending_resize: self.pending_resize(),
+            output: self.output.clone(),
+            layer: self.layer,
+            draw_order,
+            visible: self.is_visible(),
+            passthrough: self.is_passthrough(),
             keyboard_transparent: self.is_keyboard_transparent(),
         }
     }
-    pub(crate) fn new<U: UiProgram>(inst: UiInstance<U>, space: UiSpace, layer: u64) -> Self { Self::from_source(Box::new(SharedInstance(UiControl::new(inst))), space, layer) }
+    pub(crate) fn new<U: UiProgram>(inst: UiInstance<U>, space: UiSpace, layer: u64) -> Self {
+        Self::from_source(Box::new(SharedInstance(UiControl::new(inst))), space, layer)
+    }
     pub(crate) fn from_source(inner: Box<dyn UiProducer>, space: UiSpace, layer: u64) -> Self {
         Self {
             inner,
@@ -610,12 +626,6 @@ impl UiItem {
 
     // ── Type queries ──────────────────────────────────────────────
 
-
-
-
-
-
-
     // ── Internal ──────────────────────────────────────────────────
 
     pub(crate) fn tick(&mut self) -> bool {
@@ -853,55 +863,132 @@ pub(crate) fn build_instance<U: UiProgram>(
 
 pub(crate) struct SharedInstance<U: UiProgram>(pub(crate) UiControl<U>);
 impl<U: UiProgram> UiProducer for SharedInstance<U> {
-    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> { self.0.ui().capture_setup() }
-    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> { self.0.ui().capture_save_choice() }
-    fn capture_message(&mut self, message: ui_surface::capture::CaptureMessage) { if let Some(message) = U::capture_message(message) { self.0.runtime_mut().queue_message(message); } }
-    fn handle_id(&self) -> HandleId { self.0.inner.borrow().handle_id() }
-    fn smithay_id(&self) -> Id { self.0.inner.borrow().smithay_id() }
-    fn commit(&self) -> CommitCounter { self.0.inner.borrow().commit() }
-    fn bump_commit(&mut self) { self.0.inner.borrow_mut().bump_commit() }
-    fn location(&self) -> Point<i32, Physical> { self.0.inner.borrow().location() }
-    fn size(&self) -> Size<i32, Physical> { self.0.inner.borrow().size() }
-    fn scale_factor(&self) -> f32 { self.0.inner.borrow().scale_factor() }
-    fn set_location(&mut self, p: Point<i32, Physical>) { self.0.inner.borrow_mut().set_location(p) }
-    fn queue_input(&mut self, input: Input) { self.0.inner.borrow_mut().queue_input(input) }
-    fn has_queued(&self) -> bool { self.0.inner.borrow().has_queued() }
-    fn has_input(&self) -> bool { self.0.inner.borrow().has_input() }
-    fn tick(&mut self) -> bool { self.0.inner.borrow_mut().tick() }
-    fn tick_offscreen(&mut self) { self.0.inner.borrow_mut().tick_offscreen() }
-    fn acknowledge_frame(&mut self) { self.0.inner.borrow_mut().acknowledge_frame() }
-    fn set_suspended(&mut self, suspended: bool) { self.0.inner.borrow_mut().set_suspended(suspended) }
-    fn request_redraw(&mut self) { self.0.inner.borrow_mut().request_redraw() }
-    fn wants_frame(&self) -> bool { self.0.inner.borrow().wants_frame() }
-    fn deadline(&self) -> Option<Instant> { self.0.inner.borrow().deadline() }
-    fn render(&mut self) { self.0.inner.borrow_mut().render() }
-    fn poll_publish(&mut self) { self.0.inner.borrow_mut().poll_publish() }
-    fn is_resident(&self) -> bool { self.0.inner.borrow().is_resident() }
-    fn release_backing(&mut self) { self.0.inner.borrow_mut().release_backing() }
+    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> {
+        self.0.ui().capture_setup()
+    }
+    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> {
+        self.0.ui().capture_save_choice()
+    }
+    fn capture_message(&mut self, message: ui_surface::capture::CaptureMessage) {
+        if let Some(message) = U::capture_message(message) {
+            self.0.runtime_mut().queue_message(message);
+        }
+    }
+    fn handle_id(&self) -> HandleId {
+        self.0.inner.borrow().handle_id()
+    }
+    fn smithay_id(&self) -> Id {
+        self.0.inner.borrow().smithay_id()
+    }
+    fn commit(&self) -> CommitCounter {
+        self.0.inner.borrow().commit()
+    }
+    fn bump_commit(&mut self) {
+        self.0.inner.borrow_mut().bump_commit()
+    }
+    fn location(&self) -> Point<i32, Physical> {
+        self.0.inner.borrow().location()
+    }
+    fn size(&self) -> Size<i32, Physical> {
+        self.0.inner.borrow().size()
+    }
+    fn scale_factor(&self) -> f32 {
+        self.0.inner.borrow().scale_factor()
+    }
+    fn set_location(&mut self, p: Point<i32, Physical>) {
+        self.0.inner.borrow_mut().set_location(p)
+    }
+    fn queue_input(&mut self, input: Input) {
+        self.0.inner.borrow_mut().queue_input(input)
+    }
+    fn has_queued(&self) -> bool {
+        self.0.inner.borrow().has_queued()
+    }
+    fn has_input(&self) -> bool {
+        self.0.inner.borrow().has_input()
+    }
+    fn tick(&mut self) -> bool {
+        self.0.inner.borrow_mut().tick()
+    }
+    fn tick_offscreen(&mut self) {
+        self.0.inner.borrow_mut().tick_offscreen()
+    }
+    fn acknowledge_frame(&mut self) {
+        self.0.inner.borrow_mut().acknowledge_frame()
+    }
+    fn set_suspended(&mut self, suspended: bool) {
+        self.0.inner.borrow_mut().set_suspended(suspended)
+    }
+    fn request_redraw(&mut self) {
+        self.0.inner.borrow_mut().request_redraw()
+    }
+    fn wants_frame(&self) -> bool {
+        self.0.inner.borrow().wants_frame()
+    }
+    fn deadline(&self) -> Option<Instant> {
+        self.0.inner.borrow().deadline()
+    }
+    fn render(&mut self) {
+        self.0.inner.borrow_mut().render()
+    }
+    fn poll_publish(&mut self) {
+        self.0.inner.borrow_mut().poll_publish()
+    }
+    fn is_resident(&self) -> bool {
+        self.0.inner.borrow().is_resident()
+    }
+    fn release_backing(&mut self) {
+        self.0.inner.borrow_mut().release_backing()
+    }
     fn ensure_backing(
         &mut self,
         render_node: &str,
         wgpu_ctx: &WgpuGlContext,
         gles: &mut GlesRenderer,
-    ) -> Result<(), SurfaceError> { self.0.inner.borrow_mut().ensure_backing(render_node, wgpu_ctx, gles) }
+    ) -> Result<(), SurfaceError> {
+        self.0
+            .inner
+            .borrow_mut()
+            .ensure_backing(render_node, wgpu_ctx, gles)
+    }
     fn sync_depth(
         &mut self,
         render_node: &str,
         wgpu_ctx: &WgpuGlContext,
         gles: &mut GlesRenderer,
         want: usize,
-    ) -> Result<(), SurfaceError> { self.0.inner.borrow_mut().sync_depth(render_node, wgpu_ctx, gles, want) }
-    fn texture_handle(&self) -> Option<smithay::backend::renderer::gles::GlesTexture> { self.0.inner.borrow().texture_handle() }
+    ) -> Result<(), SurfaceError> {
+        self.0
+            .inner
+            .borrow_mut()
+            .sync_depth(render_node, wgpu_ctx, gles, want)
+    }
+    fn texture_handle(&self) -> Option<smithay::backend::renderer::gles::GlesTexture> {
+        self.0.inner.borrow().texture_handle()
+    }
     fn apply_pending_resize(
         &mut self,
         render_node: &str,
         wgpu_ctx: &WgpuGlContext,
         gles: &mut GlesRenderer,
-    ) -> Result<bool, SurfaceError> { self.0.inner.borrow_mut().apply_pending_resize(render_node, wgpu_ctx, gles) }
-    fn request_resize(&mut self, new_size: Size<i32, Physical>, scale_factor: f32) { self.0.inner.borrow_mut().request_resize(new_size, scale_factor) }
-    fn pending_resize(&self) -> Option<(Size<i32, Physical>, f32)> { self.0.inner.borrow().pending_resize() }
-    fn pointer_leave(&mut self) { self.0.inner.borrow_mut().pointer_leave() }
+    ) -> Result<bool, SurfaceError> {
+        self.0
+            .inner
+            .borrow_mut()
+            .apply_pending_resize(render_node, wgpu_ctx, gles)
+    }
+    fn request_resize(&mut self, new_size: Size<i32, Physical>, scale_factor: f32) {
+        self.0
+            .inner
+            .borrow_mut()
+            .request_resize(new_size, scale_factor)
+    }
+    fn pending_resize(&self) -> Option<(Size<i32, Physical>, f32)> {
+        self.0.inner.borrow().pending_resize()
+    }
+    fn pointer_leave(&mut self) {
+        self.0.inner.borrow_mut().pointer_leave()
+    }
 }
-
 
 use crate::TypedSurfaces as _;

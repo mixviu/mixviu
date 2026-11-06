@@ -4,7 +4,13 @@ use smithay::reexports::calloop::LoopHandle;
 use world::state::Loop;
 pub struct Scenes;
 impl Scenes {
-    pub fn start(_lp: &Loop, _service: Option<&str>, _handle: &LoopHandle<'static, Loop>) -> Option<Self> { None }
+    pub fn start(
+        _lp: &Loop,
+        _service: Option<&str>,
+        _handle: &LoopHandle<'static, Loop>,
+    ) -> Option<Self> {
+        None
+    }
     pub fn service(&mut self, _lp: &mut Loop) {}
     pub fn shutdown(self) {}
 }

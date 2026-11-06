@@ -236,5 +236,3 @@ mod tests {
         assert_eq!(state.overlay_ids(), [1, 3, 6, 7, 8].map(HandleId).to_vec());
     }
 }
-
-

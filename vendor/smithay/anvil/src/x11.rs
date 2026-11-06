@@ -346,7 +346,6 @@ pub fn run_x11() {
 
             let scale = Scale::from(output.current_scale().fractional_scale());
 
-
             let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
                 compositor::with_states(surface, |states| {
                     states

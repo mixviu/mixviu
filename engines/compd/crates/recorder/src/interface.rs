@@ -285,7 +285,13 @@ fn start_setup(state: &mut Loop, renderer: &mut GlesRenderer) {
         TargetKind::FullScreen
     };
 
-    let overlay = CaptureProgram::Setup { width: sw, height: sh, media: CaptureMedia::Screenshot, kind, preselect };
+    let overlay = CaptureProgram::Setup {
+        width: sw,
+        height: sh,
+        media: CaptureMedia::Screenshot,
+        kind,
+        preselect,
+    };
     let handle = load_snapshot(
         state,
         renderer,
@@ -567,7 +573,11 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
     let dim = load(
         state,
         renderer,
-        CaptureProgram::Dim { width: sw, height: sh, region: crop_ov },
+        CaptureProgram::Dim {
+            width: sw,
+            height: sh,
+            region: crop_ov,
+        },
         full_rect(sw, sh),
         UiSpace::Screen,
         (Layer::CAPTURE_DIM | Layer::CAPTURE_PASSTHROUGH).bits(),
@@ -583,7 +593,11 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
     let border = load(
         state,
         renderer,
-        CaptureProgram::Border { width: sw, height: sh, region: crop_ov },
+        CaptureProgram::Border {
+            width: sw,
+            height: sh,
+            region: crop_ov,
+        },
         full_rect(sw, sh),
         UiSpace::Screen,
         (Layer::SCENE | Layer::CAPTURE_PASSTHROUGH).bits(),
@@ -903,7 +917,10 @@ fn begin_saving(state: &mut Loop, renderer: &mut GlesRenderer) {
         renderer,
         // Offer the "Optimized encoding" checkbox only in manual mode (auto runs
         // it in the background with no checkbox).
-        CaptureProgram::Save { label: label.into(), offer_optimized: !capture_background_auto() },
+        CaptureProgram::Save {
+            label: label.into(),
+            offer_optimized: !capture_background_auto(),
+        },
         rect,
         UiSpace::Screen,
         Layer::SCENE.bits(),
@@ -1241,7 +1258,10 @@ fn respawn_save_dialog(state: &mut Loop, renderer: &mut GlesRenderer, lossless: 
     let dlg = load_snapshot(
         state,
         renderer,
-        CaptureProgram::Save { label: "Video".into(), offer_optimized: !capture_background_auto() },
+        CaptureProgram::Save {
+            label: "Video".into(),
+            offer_optimized: !capture_background_auto(),
+        },
         rect,
         UiSpace::Screen,
         Layer::SCENE.bits(),
@@ -1274,10 +1294,7 @@ fn set_encode_progress(state: &mut Loop, percent: u32) {
         return;
     };
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
-        let _ = reg.capture_message(
-            id,
-            CaptureMessage::SetEncodeProgress(percent),
-        );
+        let _ = reg.capture_message(id, CaptureMessage::SetEncodeProgress(percent));
     }
 }
 
@@ -1294,7 +1311,8 @@ fn save_dialog_optimized(state: &mut Loop) -> bool {
     let Some(reg) = state.inner.surface_mut().registry.as_ref() else {
         return false;
     };
-    reg.save_choice(id).map(|choice| choice.optimized)
+    reg.save_choice(id)
+        .map(|choice| choice.optimized)
         .unwrap_or(false)
 }
 
@@ -1526,10 +1544,7 @@ fn set_countdown(state: &mut Loop, secs: u32) {
         return;
     };
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
-        let _ = reg.capture_message(
-            id,
-            CaptureMessage::SetCountdown(secs),
-        );
+        let _ = reg.capture_message(id, CaptureMessage::SetCountdown(secs));
     }
 }
 
@@ -1860,8 +1875,6 @@ fn destroy_anywhere(state: &mut Loop, ids: &[HandleId]) {
         }
     }
 }
-
-
 
 use ui_surface::{HandleId, capture::CaptureProgram};
 use world::surface::draw::handle::CaptureHandle;

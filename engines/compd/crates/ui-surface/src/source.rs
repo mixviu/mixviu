@@ -230,6 +230,3 @@ mod tests {
         assert!(frame("DP-1").is_empty());
     }
 }
-
-
-

@@ -98,8 +98,6 @@ pub enum CaptureMessage {
     SetCountdown(u32),
 }
 
-
-
 /// Committed setup state, read synchronously after input has been applied.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CaptureSetup {
@@ -118,12 +116,29 @@ pub struct SaveChoice {
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum CaptureProgram {
-    Setup { width: i32, height: i32, media: CaptureMedia, kind: TargetKind, preselect: Option<OverlayRect> },
-    Border { width: i32, height: i32, region: OverlayRect },
-    Dim { width: i32, height: i32, region: OverlayRect },
+    Setup {
+        width: i32,
+        height: i32,
+        media: CaptureMedia,
+        kind: TargetKind,
+        preselect: Option<OverlayRect>,
+    },
+    Border {
+        width: i32,
+        height: i32,
+        region: OverlayRect,
+    },
+    Dim {
+        width: i32,
+        height: i32,
+        region: OverlayRect,
+    },
     Stop,
     Continue(u32),
-    Save { label: String, offer_optimized: bool },
+    Save {
+        label: String,
+        offer_optimized: bool,
+    },
     Error(String),
     Encoding,
 }
@@ -143,16 +158,34 @@ pub trait CaptureUi {
     fn setup(&self, id: crate::HandleId) -> Option<CaptureSetup>;
     fn save_choice(&self, id: crate::HandleId) -> Option<SaveChoice>;
     fn capture_message(&mut self, id: crate::HandleId, message: CaptureMessage);
-    fn open(&mut self, program: CaptureProgram, node: &str,
+    fn open(
+        &mut self,
+        program: CaptureProgram,
+        node: &str,
         renderer: &mut smithay::backend::renderer::gles::GlesRenderer,
         bounds: smithay::utils::Rectangle<i32, smithay::utils::Physical>,
-        space: crate::UiSpace, layer: u64, emit: EmitCapture) -> Option<crate::HandleId>;
+        space: crate::UiSpace,
+        layer: u64,
+        emit: EmitCapture,
+    ) -> Option<crate::HandleId>;
     fn close(&mut self, id: crate::HandleId);
 }
-pub type CaptureFactory = fn(&mut dyn crate::UiSurfaces, CaptureProgram, &str,
+pub type CaptureFactory = fn(
+    &mut dyn crate::UiSurfaces,
+    CaptureProgram,
+    &str,
     &mut smithay::backend::renderer::gles::GlesRenderer,
-    smithay::utils::Rectangle<i32, smithay::utils::Physical>, crate::UiSpace,
-    u64, EmitCapture) -> Option<crate::HandleId>;
+    smithay::utils::Rectangle<i32, smithay::utils::Physical>,
+    crate::UiSpace,
+    u64,
+    EmitCapture,
+) -> Option<crate::HandleId>;
 static OWNER: std::sync::OnceLock<CaptureFactory> = std::sync::OnceLock::new();
-pub fn register(factory: CaptureFactory) { OWNER.set(factory).unwrap_or_else(|_| panic!("capture UI owner already registered")); }
-pub fn factory() -> Option<CaptureFactory> { OWNER.get().copied() }
+pub fn register(factory: CaptureFactory) {
+    OWNER
+        .set(factory)
+        .unwrap_or_else(|_| panic!("capture UI owner already registered"));
+}
+pub fn factory() -> Option<CaptureFactory> {
+    OWNER.get().copied()
+}

@@ -1149,4 +1149,6 @@ impl CompEngine for Engine<'_> {
 #[cfg(not(feature = "inproc-ui"))]
 fn refresh_scene_reserved(_lp: &mut Loop) {}
 #[cfg(not(feature = "inproc-ui"))]
-fn refresh_scene_surfaces(lp: &mut Loop) { lp.inner.comp.set_scene_surfaces(Vec::new(), None); }
+fn refresh_scene_surfaces(lp: &mut Loop) {
+    lp.inner.comp.set_scene_surfaces(Vec::new(), None);
+}

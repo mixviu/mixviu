@@ -4,9 +4,9 @@
 //! optional "Optimized encoding" checkbox (video only; hidden when the
 //! `background_encoder` setting makes the optimized re-encode automatic).
 
-use world::capture::session::message::CaptureMessage;
 use crate::strings;
 use ui::UiProgram;
+use world::capture::session::message::CaptureMessage;
 
 use crate::capture::style;
 
@@ -41,10 +41,16 @@ impl SaveDialog {
 impl ui::UiProgram for SaveDialog {
     ui::program_owner!(SaveDialog);
     fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> {
-        Some(ui_surface::capture::SaveChoice { optimized: self.optimized, format: None, path: None })
+        Some(ui_surface::capture::SaveChoice {
+            optimized: self.optimized,
+            format: None,
+            path: None,
+        })
     }
     type Message = CaptureMessage;
-    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }
+    fn capture_message(message: CaptureMessage) -> Option<Self::Message> {
+        Some(message)
+    }
 
     fn update(&mut self, message: Self::Message) {
         if let CaptureMessage::ToggleOptimized(v) = message {
@@ -107,6 +113,3 @@ impl ui::UiSnapshot for SaveDialog {
         self.optimized
     }
 }
-
-
-

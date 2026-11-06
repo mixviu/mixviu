@@ -5,6 +5,8 @@ pub use grab::*;
 pub use manager::*;
 use wayland_server::protocol::wl_surface::WlSurface;
 
+#[cfg(feature = "xwayland")]
+use crate::xwayland::X11Surface;
 use crate::{
     utils::{IsAlive, Logical, Point, Rectangle},
     wayland::{
@@ -13,8 +15,6 @@ use crate::{
         shell::xdg::{self, SurfaceCachedState},
     },
 };
-#[cfg(feature = "xwayland")]
-use crate::xwayland::X11Surface;
 #[cfg(feature = "xwayland")]
 use std::sync::Mutex;
 
@@ -73,13 +73,13 @@ impl X11Popup {
     ///
     /// The parent-relative offset is not supplied: it is read live from both windows on
     /// every query, so the popup follows a client that repositions it. See [`Self::offset`].
-    pub fn new(
-        x11: X11Surface,
-        surface: WlSurface,
-        parent_x11: X11Surface,
-        parent: WlSurface,
-    ) -> Self {
-        let popup = X11Popup { surface, parent, x11, parent_x11 };
+    pub fn new(x11: X11Surface, surface: WlSurface, parent_x11: X11Surface, parent: WlSurface) -> Self {
+        let popup = X11Popup {
+            surface,
+            parent,
+            x11,
+            parent_x11,
+        };
         with_states(&popup.surface, |states| {
             states
                 .data_map

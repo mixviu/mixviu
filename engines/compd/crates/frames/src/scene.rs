@@ -968,4 +968,3 @@ where
         visible_window: canvas_window,
     }
 }
-

@@ -161,4 +161,3 @@ pub fn cancel(_loop: &mut Loop) {
         touch.cancel(&mut _loop.state);
     }
 }
-

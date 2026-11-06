@@ -304,5 +304,3 @@ pub fn surfaces_inside_filtered(
         filter,
     )
 }
-
-

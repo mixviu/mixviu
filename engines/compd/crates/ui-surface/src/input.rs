@@ -56,7 +56,6 @@ impl Modifiers {
             logo: pick(self.logo, other.logo),
         }
     }
-
 }
 
 /// A scroll amount: wheel ticks or continuous pixels, Wayland's sign
@@ -171,7 +170,6 @@ pub fn wheel(
     };
     Some(Input::Scroll { delta, source })
 }
-
 
 use smithay::backend::input::KeyState as SmithayKeyState;
 pub fn translate_keyboard(

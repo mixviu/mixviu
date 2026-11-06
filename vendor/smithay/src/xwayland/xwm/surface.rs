@@ -1354,7 +1354,10 @@ impl X11Surface {
             Err(err) => {
                 // Not fatal: the extension may be absent, and a window dying mid-query is
                 // ordinary. The caller falls back to `_NET_WM_PID`.
-                warn!("Unable to query the X client pid for ({:?}): {}", self.window, err);
+                warn!(
+                    "Unable to query the X client pid for ({:?}): {}",
+                    self.window, err
+                );
                 return None;
             }
         };
@@ -2389,7 +2392,10 @@ impl X11Surface {
         match self.read_window_property_u32_array(self.atoms._NET_WM_ICON, MAX_ICON_WORDS) {
             Ok(value) => value,
             Err(err) => {
-                warn!("Unable to read _NET_WM_ICON for X11Surface ({:?}): {}", self.window, err);
+                warn!(
+                    "Unable to read _NET_WM_ICON for X11Surface ({:?}): {}",
+                    self.window, err
+                );
                 None
             }
         }
@@ -2406,7 +2412,10 @@ impl X11Surface {
         match self.read_window_property_string(self.atoms.WM_WINDOW_ROLE) {
             Ok(value) => value.filter(|s| !s.is_empty()),
             Err(err) => {
-                warn!("Unable to read WM_WINDOW_ROLE for X11Surface ({:?}): {}", self.window, err);
+                warn!(
+                    "Unable to read WM_WINDOW_ROLE for X11Surface ({:?}): {}",
+                    self.window, err
+                );
                 None
             }
         }

@@ -91,6 +91,3 @@ pub fn region_border(
         painter.rect_filled(rect(cx1 - bw, cy0, bw, cy1 - cy0), 0.0, colour);
     }
 }
-
-
-

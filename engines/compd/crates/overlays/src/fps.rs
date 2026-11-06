@@ -17,9 +17,9 @@ use smithay::utils::{Physical, Point, Rectangle, Size};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use crate::handle::load;
 use crate::scene::layer::base::Layer;
 use crate::state::Loop;
-use crate::handle::load;
 use ui::UiProgram;
 use ui::{HandleId, UiHandle, UiSpace};
 

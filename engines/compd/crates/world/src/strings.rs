@@ -32,4 +32,3 @@ mod tests {
         assert_eq!(super::with("fps-value", &[("fps", "60")]), "60 FPS");
     }
 }
-

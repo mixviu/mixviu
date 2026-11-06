@@ -54,6 +54,3 @@ impl Drop for Frame {
         }
     }
 }
-
-
-

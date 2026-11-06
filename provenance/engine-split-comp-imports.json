@@ -23612,6 +23612,212 @@
       "source_sha256": "e902f3648d6fd3af1ef04dedfaebd55f1d904a487b6f35ab5fc770c7e939c086"
     }
   ],
+  "import_hash_scope": "entries preserve the B1 import snapshot; lab_refactors record moved/derived destinations after B3/B4",
+  "lab_refactors": [
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/ui-surface/src/element.rs",
+      "destination_sha256": "92e41f82dff074fb18d4ea554eee9f0839de100372e483783a1d965446d67756",
+      "source": "services/compd/crates/ui/src/element.rs",
+      "source_sha256": "92e41f82dff074fb18d4ea554eee9f0839de100372e483783a1d965446d67756"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/ui-surface/src/error.rs",
+      "destination_sha256": "187b45c3bb1c00b2ca1c36c3e8b68c04f4c1529fba93e3d93c573df0c369608c",
+      "source": "services/compd/crates/ui/src/error.rs",
+      "source_sha256": "187b45c3bb1c00b2ca1c36c3e8b68c04f4c1529fba93e3d93c573df0c369608c"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/ui-surface/src/frame_trace.rs",
+      "destination_sha256": "f4d8b60fdfec688e95a2713f1725915a304efbb41406dff382d39b439b353fc0",
+      "source": "services/compd/crates/ui/src/frame_trace.rs",
+      "source_sha256": "a5d5b21f45ba98cd689ca8263a006b325436dcc07f582a3769e9e48c597b3419"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/ui-surface/src/handle.rs",
+      "destination_sha256": "2ba6fc4375598ed50376f5fdd7a0d219c944b03d6720f3562d005d735f8739fa",
+      "source": "services/compd/crates/ui/src/handle.rs",
+      "source_sha256": "2cdb9f4e4bc0a1d606d1b5ed44ba717429a88889b49b24b829513c088f910d85"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/ui-surface/src/input.rs",
+      "destination_sha256": "69874fd3be78257c5195ec7a787bc0b8ab4fe2f1d598c5757c0911f9e772bbf4",
+      "source": "services/compd/crates/ui/src/input.rs",
+      "source_sha256": "b3952ebee3e5a51ff6f77e61a14e6113882bffaf930fc9a1a9e1e8307470a1b5"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/ui-surface/src/source.rs",
+      "destination_sha256": "af778ac9649b7bd401e716589e54dbd16cebdbb68de01b4de2888c514d5bb94d",
+      "source": "services/compd/crates/ui/src/source.rs",
+      "source_sha256": "af778ac9649b7bd401e716589e54dbd16cebdbb68de01b4de2888c514d5bb94d"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/ui-surface/src/space.rs",
+      "destination_sha256": "2628496b579edb344ec0b5ce72b772ffa3be8fc12092cffdbe0017f94705de27",
+      "source": "services/compd/crates/ui/src/space.rs",
+      "source_sha256": "2628496b579edb344ec0b5ce72b772ffa3be8fc12092cffdbe0017f94705de27"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/notify/present.rs",
+      "destination_sha256": "9c10a7b8ed71f54fcda72a700eb058efee973649d362492cb546d930486be95a",
+      "source": "services/compd/crates/world/src/notify/present.rs",
+      "source_sha256": "9c10a7b8ed71f54fcda72a700eb058efee973649d362492cb546d930486be95a"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/notify/present/base.rs",
+      "destination_sha256": "b9d6f555cd78757324514e283b87a889608f4085b7e37584777a884ad69536f1",
+      "source": "services/compd/crates/world/src/notify/present/base.rs",
+      "source_sha256": "160ee32804d9ebfb1a3ad52bd66b68b43058e7a0ac19bee997e41ac7c13172eb"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/notify/present/registry.rs",
+      "destination_sha256": "4f080624eafdb39cfbd8c3296fb1fa003144f86c65d62bbb87b851fadcaf214c",
+      "source": "services/compd/crates/world/src/notify/present/registry.rs",
+      "source_sha256": "49e431be5ffb2ecf56c05a2e9d0ec761a897095f957c866f88cb3b86bc642ee3"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/notify/view.rs",
+      "destination_sha256": "de93b20818373fec136c7cd60a45bf03e7f7899e43bfb9ce93193c4161ab0cf1",
+      "source": "services/compd/crates/world/src/notify/view.rs",
+      "source_sha256": "de93b20818373fec136c7cd60a45bf03e7f7899e43bfb9ce93193c4161ab0cf1"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/notify/view/base.rs",
+      "destination_sha256": "e6e2d3e42b1205c440a878a02d5a92bc03467bd1090ce650bab242ff16e0f194",
+      "source": "services/compd/crates/world/src/notify/view/base.rs",
+      "source_sha256": "78df3f14fa9dc28d4b6ebf760262003143f219ef57bc5cac6a6424af48bb8a28"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture.rs",
+      "destination_sha256": "93853a728c15bee09ce2a2d8bfbda4bdb04788d9170fa5ea4695141954e69483",
+      "source": "services/compd/crates/world/src/surface/draw/capture.rs",
+      "source_sha256": "f4e5e77d5b52de9605c2ebfe35d140faf5049b35cba33d056ab60335414dfd77"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture/border.rs",
+      "destination_sha256": "c477b9c82844e7ae28395a1bd6d681bdd0e16e0e4bf98ef7ee0b9908135cb6a0",
+      "source": "services/compd/crates/world/src/surface/draw/capture/border.rs",
+      "source_sha256": "311e10e0cf51ec17b5b989e9b41e022438cac6faa9c0aa5e277d38485f71a4a2"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture/dialog.rs",
+      "destination_sha256": "f5a897cf04f20ebdcc34e89e59a39d484a016a16adba031392b8fef404b123e7",
+      "source": "services/compd/crates/world/src/surface/draw/capture/dialog.rs",
+      "source_sha256": "2eb6ae172954cb2223e02927deecf18e3d57a9719cd42c07e4cd5ba98d07a695"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture/dim.rs",
+      "destination_sha256": "ba6cb9d381c93c9575ad811d24c20e22472fd52e175d2dd19ea33f613d780720",
+      "source": "services/compd/crates/world/src/surface/draw/capture/dim.rs",
+      "source_sha256": "e1256ad1cc7190e75a5ee5c8fc6871162cbf2cf22b58acf702c21418ccf660ee"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture/encodialog.rs",
+      "destination_sha256": "c2693f380f4de7c6793dd697ef68a229da708e9b10b5d3b97ab5124ca33f960e",
+      "source": "services/compd/crates/world/src/surface/draw/capture/encodialog.rs",
+      "source_sha256": "88073c99fccb1bdb29ff0e41d25115d3c3694634209d03584e23685b185cd096"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture/errordialog.rs",
+      "destination_sha256": "d7b3428944d1b6bd51bc185976f0381fca92e9a2c538cf43bf2cdd6ab1985f53",
+      "source": "services/compd/crates/world/src/surface/draw/capture/errordialog.rs",
+      "source_sha256": "fafa08006f8e240c51f99d48838feacb435bc945a1261f7ae6a97c6f2680a767"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture/hud.rs",
+      "destination_sha256": "c4c0fbb07bc647ce157af01115649018ba8c421c89b6fe37132736c7a6845e30",
+      "source": "services/compd/crates/world/src/surface/draw/capture/hud.rs",
+      "source_sha256": "7179897b776a90259991256109685f55d0f59aa2c43b60707685ee48a826b62a"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture/mask.rs",
+      "destination_sha256": "70b852b40b100888b53b954b21b99c936afefa02f39ef79a5f82664a58cac05e",
+      "source": "services/compd/crates/world/src/surface/draw/capture/mask.rs",
+      "source_sha256": "7ca6d3eee96b49ca7d6f16e5ae65c688af69714104c16cfce52c0c678c0e7423"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture/savedialog.rs",
+      "destination_sha256": "bddaab2f6fc5d10423a47cbf67400fb59771368a78268f82b412578cab12df1d",
+      "source": "services/compd/crates/world/src/surface/draw/capture/savedialog.rs",
+      "source_sha256": "2a61b73e22ec8460a9079d0f233f2477a8f7d14bac8adb7d3ab1cef344a47086"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture/setup.rs",
+      "destination_sha256": "dbcd560181031686e21bcc1a9d9ccb12477ec149db0bcc69d77f28dc465b6a34",
+      "source": "services/compd/crates/world/src/surface/draw/capture/setup.rs",
+      "source_sha256": "46857258c0c130ba692ae0b1c88ba212988fc03e6fd8acf806ab488d72407ae2"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/capture/style.rs",
+      "destination_sha256": "31c85c0acc4ecb9907ab2a6d15d15ee74b228f9d02592dc3d7510b0929e092d5",
+      "source": "services/compd/crates/world/src/surface/draw/capture/style.rs",
+      "source_sha256": "63a3c59daf85ea731503005b207079ed40b475c03cc57d20aa22cb45171f5d0c"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/fps.rs",
+      "destination_sha256": "15d35e893e1de8a92c4a37cddf81443f6a076e7a0006cb270a63192176966808",
+      "source": "services/compd/crates/world/src/surface/draw/fps.rs",
+      "source_sha256": "4cf33c12ccdc649dbc179729dab005554ee92766da7462db82e1e223c7f377da"
+    },
+    {
+      "adaptation": "B3/B4 lab extraction; plain surface contracts and program ownership separated; paths remapped",
+      "destination": "engines/compd/crates/overlays/src/handle.rs",
+      "destination_sha256": "4f00f27c186115873061a9014e7ac09dfc554e9ef034f830121ec2351b8bbd18",
+      "source": "services/compd/crates/world/src/surface/draw/handle.rs",
+      "source_sha256": "82d1e8286340bcbbd09ae2f3c7df158ce074361500064a8c953e1c25af39bea7"
+    },
+    {
+      "adaptation": "B3/B4 lab contract extracted from pinned source; typed APIs excluded and lifecycle documented",
+      "destination": "engines/compd/crates/ui-surface/src/producer.rs",
+      "destination_sha256": "2a75cb456014c4a57e4287576161687279396eaabeb1aacdad901617b29201bf",
+      "source": "services/compd/crates/ui/src/instance.rs",
+      "source_sha256": "abf749787fb7c55c1e731ba96cc209d2e263fe0f963a010df36dd20884d98a9d"
+    },
+    {
+      "adaptation": "B3/B4 lab contract extracted from pinned source; typed APIs excluded and lifecycle documented",
+      "destination": "engines/compd/crates/ui-surface/src/view.rs",
+      "destination_sha256": "d08c5cc7a72ad7abd070bd62d71608d850d8861b734eb597020a33c65728cd4e",
+      "source": "services/compd/crates/ui/src/instance.rs",
+      "source_sha256": "abf749787fb7c55c1e731ba96cc209d2e263fe0f963a010df36dd20884d98a9d"
+    },
+    {
+      "adaptation": "B3/B4 lab contract extracted from pinned source; typed APIs excluded and lifecycle documented",
+      "destination": "engines/compd/crates/ui-surface/src/interface.rs",
+      "destination_sha256": "2ddb4fbe99d17911ab52e3d26e3e8930dec2753b841dcb1eb59614c69535f81f",
+      "source": "services/compd/crates/ui/src/registry.rs",
+      "source_sha256": "5354543045915c1bd5194032110a6d1fabfefcfb5a4bb33774a8052052dbf878"
+    },
+    {
+      "adaptation": "B3/B4 lab contract extracted from pinned source; typed APIs excluded and lifecycle documented",
+      "destination": "engines/compd/crates/ui-surface/src/capture.rs",
+      "destination_sha256": "df4f79b472c2461e12dfd31e934d2aadb3d3a8c814e80b2bb297972c6738ede7",
+      "source": "services/compd/crates/world/src/capture/session/message.rs",
+      "source_sha256": "9c214c708285ef8f4e56186165e16e2cf43131da690b4d8efa97d6033a2110e2"
+    }
+  ],
   "licence": "Original per-file and vendor licences retained",
   "purpose": "Track B lab unchanged-behaviour compd oracle closure",
   "source_repository": "https://github.com/markc/mixos",

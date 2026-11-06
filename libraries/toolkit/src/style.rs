@@ -421,15 +421,41 @@ mod tests {
         for scheme in Scheme::ALL {
             for mode in Mode::ALL {
                 for style in design::Style::ALL {
-                    let theme = Theme::for_context(DesignContext { scheme, mode, style: Some(style), ..Default::default() });
+                    let theme = Theme::for_context(DesignContext {
+                        scheme,
+                        mode,
+                        style: Some(style),
+                        ..Default::default()
+                    });
                     let visuals = visuals(&theme);
                     let native = theme::region::colours(&theme);
-                    let ring = theme.dictionary().colours.non_text.get("ring")
-                        .map(|ring| colour(ring.value)).unwrap_or(visuals.selection.bg_fill);
-                    assert_eq!(native.outline, ring.to_srgba_unmultiplied(), "{scheme:?} {mode:?} {style:?}: outline");
-                    assert_eq!(native.back, visuals.window_fill.to_srgba_unmultiplied(), "{scheme:?} {mode:?} {style:?}: background");
-                    assert_eq!(native.edge, visuals.window_stroke.color.to_srgba_unmultiplied(), "{scheme:?} {mode:?} {style:?}: edge");
-                    assert_eq!(native.text, visuals.strong_text_color().to_srgba_unmultiplied(), "{scheme:?} {mode:?} {style:?}: text");
+                    let ring = theme
+                        .dictionary()
+                        .colours
+                        .non_text
+                        .get("ring")
+                        .map(|ring| colour(ring.value))
+                        .unwrap_or(visuals.selection.bg_fill);
+                    assert_eq!(
+                        native.outline,
+                        ring.to_srgba_unmultiplied(),
+                        "{scheme:?} {mode:?} {style:?}: outline"
+                    );
+                    assert_eq!(
+                        native.back,
+                        visuals.window_fill.to_srgba_unmultiplied(),
+                        "{scheme:?} {mode:?} {style:?}: background"
+                    );
+                    assert_eq!(
+                        native.edge,
+                        visuals.window_stroke.color.to_srgba_unmultiplied(),
+                        "{scheme:?} {mode:?} {style:?}: edge"
+                    );
+                    assert_eq!(
+                        native.text,
+                        visuals.strong_text_color().to_srgba_unmultiplied(),
+                        "{scheme:?} {mode:?} {style:?}: text"
+                    );
                 }
             }
         }

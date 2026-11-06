@@ -80,5 +80,4 @@ impl<U: UiProgram> std::fmt::Debug for UiHandle<U> {
     }
 }
 
-
 use crate::TypedSurfaces as _;

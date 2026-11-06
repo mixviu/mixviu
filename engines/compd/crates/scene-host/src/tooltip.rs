@@ -11,6 +11,7 @@
 
 use std::sync::Arc;
 
+use overlays::handle::{UiSpace, load};
 use serde_json::{Value, json};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Rectangle};
@@ -18,7 +19,6 @@ use ui::UiProgram;
 use ui::{HandleId, UiHandle};
 use world::scene::layer::base::Layer;
 use world::state::Loop;
-use overlays::handle::{UiSpace, load};
 
 use crate::view::tip::{self, Tip, TipAt};
 pub(crate) mod actions;

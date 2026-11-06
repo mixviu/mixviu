@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Erased GPU surface source. Typed program storage never crosses this seam.
-use std::time::Instant;
 use crate::{HandleId, input::Input};
 use graphics::surface::{SurfaceError, WgpuGlContext};
-use smithay::backend::renderer::{element::Id, utils::CommitCounter, gles::GlesRenderer};
+use smithay::backend::renderer::{element::Id, gles::GlesRenderer, utils::CommitCounter};
 use smithay::utils::{Physical, Point, Size};
+use std::time::Instant;
 pub trait UiProducer {
-    fn capture_setup(&self) -> Option<crate::capture::CaptureSetup> { None }
-    fn capture_save_choice(&self) -> Option<crate::capture::SaveChoice> { None }
+    fn capture_setup(&self) -> Option<crate::capture::CaptureSetup> {
+        None
+    }
+    fn capture_save_choice(&self) -> Option<crate::capture::SaveChoice> {
+        None
+    }
     fn capture_message(&mut self, _message: crate::capture::CaptureMessage) {}
 
     fn handle_id(&self) -> HandleId;
@@ -88,5 +92,4 @@ pub trait UiProducer {
     fn request_resize(&mut self, new_size: Size<i32, Physical>, scale_factor: f32);
     fn pending_resize(&self) -> Option<(Size<i32, Physical>, f32)>;
     fn pointer_leave(&mut self);
-
 }

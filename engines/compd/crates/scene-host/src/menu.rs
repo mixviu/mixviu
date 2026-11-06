@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use config::{Value as MixValue, parse as parse_mix_data};
 use edges::{Corner, PanelMode};
+use overlays::handle::{UiSpace, load};
 use serde_json::{Value, json};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::wayland_server::{Resource, protocol::wl_surface::WlSurface};
@@ -16,7 +17,6 @@ use ui::UiProgram;
 use ui::{HandleId, UiHandle};
 use world::scene::layer::base::Layer;
 use world::state::Loop;
-use overlays::handle::{UiSpace, load};
 
 /// Underscores are outside the authored scene-name grammar: no id collision.
 pub const SCENE: &str = "__corner_menu";

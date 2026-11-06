@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 pub use ui_surface::input::*;
-trait EguiModifiers { fn egui(self) -> egui::Modifiers; }
+trait EguiModifiers {
+    fn egui(self) -> egui::Modifiers;
+}
 impl EguiModifiers for Modifiers {
     fn egui(self) -> egui::Modifiers {
         egui::Modifiers {
@@ -485,6 +487,5 @@ mod tests {
         );
     }
 }
-
 
 use crate::TypedSurfaces as _;
