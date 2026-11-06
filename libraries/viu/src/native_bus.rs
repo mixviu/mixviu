@@ -194,6 +194,7 @@ impl Endpoint {
                         BoundedIncomingEvent::Command(command)=>command
                     };
                     if command.id.is_none(){post(Notice{command:command.topic().unwrap_or(&command.command).to_owned(),args:command.args,headers:command.headers});continue;}
+                    toolkit::debug::received(&name,&command.command);
                     if command.command=="HELP" {if let Some(help)=&help {let _=native.respond(&command,0,&help.to_string()).await;continue;}}
                     if close.load(Ordering::Acquire){let _=native.respond(&command,10,&json!({"error_code":"CLOSING"}).to_string()).await;continue;}
                     if responses.len()>=32{let _=native.respond(&command,10,&json!({"error_code":"BUSY"}).to_string()).await;continue;}
@@ -204,11 +205,12 @@ impl Endpoint {
                     let request=Request{from:command.from.clone(),command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone(),deferred:deferred.clone()};
                     let admitted=tx.try_send(request).is_ok();
                     if admitted{wake();}
-                    let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;
+                    let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;let service=name.clone();
                     responses.spawn(async move{
                         let ack=Delivery{state:delivery,wake:wake.clone()};
                         let mut response=response;
                         let answer=if admitted{match tokio::time::timeout(Duration::from_secs(10),&mut response).await{Ok(Ok(value))=>value,Err(_) if deferred.load(Ordering::Acquire)=>response.await.unwrap_or((20,json!({"error_code":"OWNER_CLOSED"}))),_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
+                        toolkit::debug::answered(&service,&command.command,answer.0);
                         let sent=matches!(tokio::time::timeout(Duration::from_secs(2),native.respond(&command,answer.0,&answer.1.to_string())).await,Ok(Ok(())));
                         ack.state.store(if sent{1}else{2},Ordering::Release);wake();
                         if (quit||close_after_reply.load(Ordering::Acquire))&&answer.0==0&&sent{close.store(true,Ordering::Release);wake();}
