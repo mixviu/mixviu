@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
 fn request($a)
   if type($a)!="map" then raise("ARGUMENT","Capture requires a map") end
   for $k in keys($a) if not contains(["mode","output","window","region","cursor","delay"],$k) then raise("ARGUMENT","Unknown capture field: "..$k) end end
@@ -26,6 +27,14 @@ fn request($a)
     $r.region=$a.region
   end
   return $r
+end
+
+fn framed($s)
+  $model=model($s)
+  $actions=[{id:"screenshot.capture",label:"Take screenshot",icon:"camera",icon_only:true,enabled:not $s.busy},{id:"screenshot.cancel",label:"Cancel",enabled:$s.busy}]
+  $menus=[{id:"File",label:"File",enabled:true,children:[{id:"screenshot.save",label:"Save",icon:"save",enabled:$s.path!=nil and not $s.busy},{id:"screenshot.copy",label:"Copy",icon:"copy",enabled:$s.path!=nil and not $s.busy},{id:"screenshot.close",label:"Quit",enabled:not $s.busy}]}]
+  $title=if $s.path==nil then "Screenshot" else basename($s.path).." — Screenshot" end
+  return $frame.apply($model,{icon:"camera",title:$title,menus:$menus,toolbar:$actions,status:$s.status})
 end
 fn model($s)
   $outputs=concat(["Pointer output"],$s.outputs);$windows=concat(["Choose window"],map($s.windows,fn($w)=to_string($w.id)..":"..to_string($w.generation).." "..$w.title))

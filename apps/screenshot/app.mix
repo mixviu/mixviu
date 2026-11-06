@@ -9,7 +9,7 @@ $raw=$app_args[2] ?? path_join(env("XDG_STATE_HOME",path_join($home,".local/stat
 mkdir($raw,{parents:true});chmod($raw,0o700)
 $state={comp:$comp,folder:$folder,status:"Ready · raw PNG captures; annotation tools deferred",path:nil,image:nil,mode:"screen",cursor:false,output:"Pointer output",window:"Choose window",windows:[],outputs:[],busy:false,serial:0,own:nil,restore_failed:false,recent:[],pending:nil,settings_error:nil}
 fn publish_shot($s)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.model($s)}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
 fn restored($s)
   if $s.own!=nil then
@@ -48,6 +48,15 @@ fn capture_shot($s,$a)
   $r=$core.request($a);$s=targets($s)
   if $s.own==nil then raise("WINDOW","Own window is not mapped") end
   return start_job($s,{op:"capture",comp:$comp,request:$r,own:$s.own,path:path_join($raw,"capture-"..to_string($s.serial+1)..".png")})
+end
+fn capture_selected($s)
+  $r={mode:$s.mode,cursor:$s.cursor}
+  if $s.output!="Pointer output" then $r.output=$s.output end
+  if $s.mode=="window" then
+    $key=split(split($s.window," ")[0],":")
+    $r.window={id:to_number($key[0]),generation:to_number($key[1])};$r=delete($r,"output")
+  end
+  return capture_shot($s,$r)
 end
 fn export_shot($s,$path)
   if $s.path==nil then raise("EMPTY","No image to save") end
@@ -131,12 +140,7 @@ end
 on screenshot.intent
   $a=$event.args
   if $a.id=="capture" then
-    $r={mode:$state.mode,cursor:$state.cursor}
-    if $state.output!="Pointer output" then $r.output=$state.output end
-    if $state.mode=="window" then
-      $key=split(split($state.window," ")[0],":");$r.window={id:to_number($key[0]),generation:to_number($key[1])};$r=delete($r,"output")
-    end
-    $state=capture_shot($state,$r)
+    $state=capture_selected($state)
   elif $a.id=="save" then $state=save_shot($state)
   elif $a.id=="copy" then
     if $state.path==nil then raise("EMPTY","No image") end
@@ -145,5 +149,30 @@ on screenshot.intent
   elif $a.id=="cancel" then
     $state=cancel_shot($state)
   elif contains(["mode","cursor","output","window"],$a.id) then $state[$a.id]=$a.value end
+  publish_shot($state);reply(0,"{}")
+end
+
+on viu.frame.close
+  -- Keep the worker and its restore ownership alive until completion.
+  if $state.busy or $state.restore_failed then raise("BUSY","Finish capture and restore before closing") end
+  $model=$core.framed($state);$model.window_close=true
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+end
+on viu.frame.intent
+  $id=$event.args.value.command
+  if $id=="screenshot.capture" then
+    -- Reuse the same target/mode policy as the content control.
+    $state=capture_selected($state)
+  elif $id=="screenshot.cancel" then $state=cancel_shot($state)
+  elif $id=="screenshot.save" then $state=save_shot($state)
+  elif $id=="screenshot.copy" then
+    if $state.path==nil or $state.busy then raise("EMPTY","No idle image") end
+    $state=start_job($state,{op:"copy",source:$state.path})
+  elif $id=="screenshot.close" then
+    if $state.busy or $state.restore_failed then raise("BUSY","Finish capture and restore before closing") end
+    $model=$core.framed($state);$model.window_close=true
+    send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+    reply(0,"{}");return
+  else raise("ACTION","Unknown frame action") end
   publish_shot($state);reply(0,"{}")
 end

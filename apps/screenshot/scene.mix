@@ -5,8 +5,7 @@ citizen: screenshot
 ---
 ```mix
 {
- root:{widget:"column",children:["title","status","toolbar","options","destination","preview"],gap:8},
- title:{widget:"text",text:"Screenshot · Mix on Viu"},status:{widget:"text",text:"= $model.status"},
+ root:{widget:"column",children:["toolbar","options","destination","preview"],gap:8},
  toolbar:{widget:"row",children:["capture","cancel","save","copy","refresh"],gap:8},
  capture:{widget:"control",definition:{id:"capture",kind:"button",label:"",initial:"",properties:{text:"Take screenshot"}},on_intent:"screenshot.intent"},
  cancel:{widget:"control",definition:{id:"cancel",kind:"button",label:"",initial:"",properties:{text:"Cancel / restore"}},on_intent:"screenshot.intent"},
