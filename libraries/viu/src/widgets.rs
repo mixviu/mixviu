@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
+    "mark",
+    "status-line",
     "label",
     "button",
     "field",
@@ -129,6 +131,21 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
+            "status-line" => {
+                value["left"].is_string()
+                    && value["right"]
+                        .as_array()
+                        .is_some_and(|a| a.len() <= 16 && a.iter().all(Value::is_string))
+                    && value["icon"]
+                        .as_str()
+                        .and_then(crate::icons::Icon::from_name)
+                        .is_some()
+            }
+            "mark" => value
+                .as_str()
+                .and_then(crate::icons::Icon::from_name)
+                .is_some(),
+
             "window-controls" => {
                 value["side"]
                     .as_str()
@@ -243,6 +260,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind == "mark" || self.kind == "status-line" { return vec![]; }
         if self.kind == "editor" && self.properties["read_only"] == true {
             return vec![];
         }
@@ -326,6 +344,7 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
+        if self.properties["enabled"] == false { return Err("DISABLED".into()); }
         self.validate_action(action, value)?;
         if self.kind == "window-controls" && self.value(model)["enabled"] != true {
             return Err("DISABLED".into());
@@ -410,8 +429,8 @@ impl Intent {
 
 #[derive(Default)]
 pub struct Widgets {
-    native_menu:crate::native_menu::NativeMenu,
-    gold_menus:bool,
+    native_menu: crate::native_menu::NativeMenu,
+    gold_menus: bool,
     pub geometry: BTreeMap<String, Rect>,
     pub focus: Option<String>,
     pub text_input_active: bool,
@@ -423,7 +442,9 @@ pub struct Widgets {
     documents: crate::documents::Documents,
 }
 impl Widgets {
-    pub fn set_native_menus(&mut self,enabled:bool){self.gold_menus=enabled;}
+    pub fn set_native_menus(&mut self, enabled: bool) {
+        self.gold_menus = enabled;
+    }
     pub fn set_documents(&mut self, documents: crate::documents::Documents) {
         self.documents = documents;
     }
@@ -517,6 +538,58 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
+            "status-line" => {
+                toolkit::bars::status(ui, |ui| {
+                    let colour = if value["error"] == true {
+                        ui.visuals().error_fg_color
+                    } else {
+                        ui.visuals().weak_text_color()
+                    };
+                    ui.add(crate::icons::image_of(
+                        ui.ctx(),
+                        crate::icons::Icon::from_name(value["icon"].as_str().unwrap()).unwrap(),
+                        14.0,
+                        colour,
+                    ));
+                    ui.small(value["left"].as_str().unwrap());
+                    if let Some(error) = value["message"].as_str() {
+                        ui.small(egui::RichText::new(error).color(ui.visuals().error_fg_color));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        for item in value["right"].as_array().unwrap() {
+                            ui.small(item.as_str().unwrap());
+                        }
+                    });
+                })
+                .response
+            }
+            "mark" => {
+                let size = widget.properties["size"]
+                    .as_f64()
+                    .unwrap_or(toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark as f64)
+                    as f32;
+                let image = crate::icons::image_of(
+                    ui.ctx(),
+                    crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
+                        .expect("validated mark"),
+                    size,
+                    ui.visuals().text_color(),
+                );
+                if widget.properties["fill_height"] == true {
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(size, ui.available_height()),
+                        Sense::hover(),
+                    );
+                    image.paint_at(
+                        ui,
+                        egui::Rect::from_center_size(rect.center(), egui::vec2(size, size)),
+                    );
+                    response
+                } else {
+                    ui.add(image)
+                }
+            }
+
             "window-controls" => {
                 let metrics = crate::window_frame::Metrics::of(ui.ctx());
                 let (area, response) = ui.allocate_exact_size(
@@ -550,7 +623,7 @@ impl Widgets {
                 .get_or_insert_with(crate::image_view::Images::surface)
                 .draw_fill(ui, id, value),
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
-            "menubar" if self.gold_menus => self.native_menu.draw(ui,widget,value,events),
+            "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" => {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
@@ -578,7 +651,7 @@ impl Widgets {
                 }
                 r
             }
-            "markdown" => self.documents.show_preview(ui,widget,value),
+            "markdown" => self.documents.show_preview(ui, widget, value),
             "editor" if widget.properties["native_document"] == true => {
                 let selection = if self.focus.as_deref() == Some(id) {
                     self.focus_selection.take()
@@ -711,7 +784,7 @@ impl Widgets {
                         }
                     })
                     .response;
-                if widget.kind == "tabs" {
+                if widget.kind == "tabs" && widget.properties["pages"].is_object() {
                     if let Some(page) = widget.properties["pages"][value.as_str().unwrap_or("")]
                         .as_str()
                         .filter(|s| !s.is_empty())
@@ -1146,6 +1219,15 @@ fn icon_button(ui: &mut egui::Ui, name: &str, text: &str, selected: bool) -> egu
 
 fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
+    if widget.properties["role"] == "status" {
+        text = text.small();
+    }
+    if widget.properties["role"] == "title" {
+        text = text.font(crate::fonts::emphasis(
+            ui.ctx(),
+            egui::FontId::proportional(crate::window_frame::Metrics::of(ui.ctx()).title_size),
+        ));
+    }
     if let Some(size) = widget.properties["size"].as_f64() {
         text = text.size(size as f32);
     }

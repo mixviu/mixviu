@@ -17,7 +17,7 @@ use std::{
 };
 
 struct Document {
-    preview:Option<(u64,Arc<toolkit::markdown::Document>)>,
+    preview: Option<(u64, Arc<toolkit::markdown::Document>)>,
     diagnostics: editor_model::diag::Diagnostics,
     matches: Vec<std::ops::Range<usize>>,
     resyncs: u64,
@@ -172,7 +172,7 @@ impl Document {
             "reattach_needed":matches!(m.phase(),Phase::Detached{reason:editor_model::mirror::DetachReason::EpochChanged}),
             "bytes":m.text().len(),"lines":m.text().line_count(),"path":m.meta().path,"language":m.meta().language,
             "dirty":m.meta().dirty,"pending":m.pending(),"inflight":m.inflight().is_some(),"idle":m.is_idle(),"resyncs":self.resyncs,
-            "recovered":m.meta().recovered,"recovery_id":m.meta().recovery_id,"saved_rev":m.meta().saved_rev,"disk":m.meta().disk,
+            "recovered":m.meta().recovered,"recovery_id":m.meta().recovery_id,"saved_rev":m.meta().saved_rev,"disk":m.meta().disk,"bom":m.meta().bom,"eol":m.meta().eol,
             "selection":{"anchor":m.text().point(self.model.sel.anchor),"head":m.text().point(self.model.sel.head)},
             "first_line":self.model.scroll.first_line,"detached_copy":m.detached_copy().is_some(),"conflicts":m.conflicts().len(),"layout":self.layout,"notices":self.notices})
     }
@@ -230,13 +230,27 @@ impl Documents {
         if key.is_empty() || key.len() > 128 {
             return Err("invalid document id".into());
         }
-        if op=="preview" {
-            let (text,generation)={let state=self.0.lock().map_err(|_|"document owner poisoned")?;let doc=state.documents.get(key).ok_or("unknown document")?;
-                let mut text=String::new();doc.mirror.text().read(0..doc.mirror.text().len(),&mut text);(text,doc.mirror.view_gen())};
-            let preview=Arc::new(toolkit::markdown::Document::parse(&text));
-            let mut state=self.0.lock().map_err(|_|"document owner poisoned")?;let doc=state.documents.get_mut(key).ok_or("document closed while parsing")?;
-            if doc.mirror.view_gen()!=generation{return Err("document changed while parsing".into());}
-            doc.preview=Some((generation,preview));return Ok(json!({"view_gen":generation}));
+        if op == "preview" {
+            let (text, generation) = {
+                let state = self.0.lock().map_err(|_| "document owner poisoned")?;
+                let doc = state.documents.get(key).ok_or("unknown document")?;
+                let mut text = String::new();
+                doc.mirror
+                    .text()
+                    .read(0..doc.mirror.text().len(), &mut text);
+                (text, doc.mirror.view_gen())
+            };
+            let preview = Arc::new(toolkit::markdown::Document::parse(&text));
+            let mut state = self.0.lock().map_err(|_| "document owner poisoned")?;
+            let doc = state
+                .documents
+                .get_mut(key)
+                .ok_or("document closed while parsing")?;
+            if doc.mirror.view_gen() != generation {
+                return Err("document changed while parsing".into());
+            }
+            doc.preview = Some((generation, preview));
+            return Ok(json!({"view_gen":generation}));
         }
         let mut state = self.0.lock().map_err(|_| "document owner poisoned")?;
         if op == "stats" {
@@ -250,15 +264,15 @@ impl Documents {
         } {
             *state.counters.entry(counter).or_default() += 1;
         }
-        if op == "open" || op=="reset" {
-            if op=="open" && state.documents.contains_key(key) {
+        if op == "open" || op == "reset" {
+            if op == "open" && state.documents.contains_key(key) {
                 return Err("document already open".into());
             }
             let open: edit::wire::OpenReply = decode(&a)?;
             let (mirror, step) = Mirror::bootstrap(&open).map_err(|e| format!("{e:?}"))?;
             state.next += 1;
             let mut doc = Document {
-                preview:None,
+                preview: None,
                 diagnostics: Default::default(),
                 matches: Vec::new(),
                 resyncs: 0,
@@ -613,13 +627,47 @@ impl Documents {
         out.response
     }
 
-    pub fn show_preview(&self,ui:&mut egui::Ui,widget:&crate::widgets::Widget,value:&Value)->egui::Response {
-        let preview={let state=self.0.lock().unwrap();value["document"].as_str().and_then(|key|state.documents.get(key)).and_then(|d|d.preview.as_ref().filter(|(generation,_)|*generation==d.mirror.view_gen()).map(|(_,preview)|preview.clone()))};
-        let palette=crate::editor::native_palette(ui,widget);let view=crate::editor::native_view(ui,widget);
-        egui::Frame::new().fill(palette.background).inner_margin(widget.properties["padding"].as_f64().unwrap_or(8.0) as i8).show(ui,|ui|{
-            ui.set_min_size(ui.available_size());
-            for style in [egui::TextStyle::Body,egui::TextStyle::Monospace]{if let Some(font)=ui.style_mut().text_styles.get_mut(&style){font.size=view.font_size.unwrap_or(13.0);}}
-            egui::ScrollArea::both().id_salt((&widget.id,"markdown")).auto_shrink([false,false]).show(ui,|ui|{if let Some(document)=preview {toolkit::markdown::show(ui,&document);}else{ui.weak("Preparing preview…");}});
-        }).response
+    pub fn show_preview(
+        &self,
+        ui: &mut egui::Ui,
+        widget: &crate::widgets::Widget,
+        value: &Value,
+    ) -> egui::Response {
+        let preview = {
+            let state = self.0.lock().unwrap();
+            value["document"]
+                .as_str()
+                .and_then(|key| state.documents.get(key))
+                .and_then(|d| {
+                    d.preview
+                        .as_ref()
+                        .filter(|(generation, _)| *generation == d.mirror.view_gen())
+                        .map(|(_, preview)| preview.clone())
+                })
+        };
+        let palette = crate::editor::native_palette(ui, widget);
+        let view = crate::editor::native_view(ui, widget);
+        egui::Frame::new()
+            .fill(palette.background)
+            .inner_margin(widget.properties["padding"].as_f64().unwrap_or(8.0) as i8)
+            .show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                for style in [egui::TextStyle::Body, egui::TextStyle::Monospace] {
+                    if let Some(font) = ui.style_mut().text_styles.get_mut(&style) {
+                        font.size = view.font_size.unwrap_or(13.0);
+                    }
+                }
+                egui::ScrollArea::both()
+                    .id_salt((&widget.id, "markdown"))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if let Some(document) = preview {
+                            toolkit::markdown::show(ui, &document);
+                        } else {
+                            ui.weak("Preparing preview…");
+                        }
+                    });
+            })
+            .response
     }
 }

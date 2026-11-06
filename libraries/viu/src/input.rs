@@ -40,9 +40,15 @@ impl Input {
                 }
                 let event = match a["phase"].as_str() {
                     Some("enabled") => return Ok(()),
-                    Some("preedit") => egui::ImeEvent::Preedit { text:text.into(),active_range_chars:None },
+                    Some("preedit") => egui::ImeEvent::Preedit {
+                        text: text.into(),
+                        active_range_chars: None,
+                    },
                     Some("commit") => egui::ImeEvent::Commit(text.into()),
-                    Some("disabled") => egui::ImeEvent::Preedit { text:String::new(),active_range_chars:None },
+                    Some("disabled") => egui::ImeEvent::Preedit {
+                        text: String::new(),
+                        active_range_chars: None,
+                    },
                     _ => {
                         return Err("IME phase must be enabled, preedit, commit or disabled".into());
                     }

@@ -30,6 +30,8 @@ pub struct Event {
 }
 
 pub struct SceneView {
+    frame: Option<Box<SceneView>>,
+    regions: BTreeMap<String, egui::Rect>,
     tree: ResolvedScene,
     lists: PreparedLists,
     pub revision: u64,
@@ -42,9 +44,16 @@ pub struct SceneView {
 }
 
 impl SceneView {
-    pub fn set_native_menus(&mut self,enabled:bool){self.widgets.set_native_menus(enabled);}
+    pub fn set_native_menus(&mut self, enabled: bool) {
+        self.widgets.set_native_menus(enabled);
+        if let Some(frame) = self.frame.as_mut() { frame.set_native_menus(enabled); }
+    }
     pub fn set_documents(&mut self, documents: crate::documents::Documents) {
-        self.widgets.set_documents(documents);
+        self.widgets.set_documents(documents.clone());
+        if let Some(frame) = self.frame.as_mut() { frame.set_documents(documents); }
+    }
+    pub fn allocated_region(&self, id: &str) -> Option<egui::Rect> {
+        self.frame.as_ref().and_then(|frame| frame.allocated_region(id)).or_else(|| self.regions.get(id).copied())
     }
     pub fn new(source: &str) -> Result<Self, String> {
         Self::prepare(source, None)
@@ -64,6 +73,8 @@ impl SceneView {
         let lists = validate_templates(&tree).map_err(|e| e.to_string())?;
         validate_controls(&tree)?;
         Ok(Self {
+            frame: None,
+            regions: BTreeMap::new(),
             tree,
             lists,
             revision: 0,
@@ -78,6 +89,25 @@ impl SceneView {
 
     pub fn model(&self) -> &Value {
         &self.tree.model
+    }
+    /// Mount independently resolved scenes, preserving every application ID.
+    /// The frame authors the content rectangle; no app node is rewritten.
+    pub fn with_frame(source: &str, model: Value, frame_source: &str) -> Result<Self, String> {
+        let mut view = Self::with_model(source, model.clone())?;
+        let frame = Self::with_model(frame_source, model)?;
+        if !frame.tree.nodes.contains_key("gold-content") {
+            return Err("frame must declare gold-content".into());
+        }
+        if frame
+            .tree
+            .nodes
+            .keys()
+            .any(|id| id != "root" && view.tree.nodes.contains_key(id))
+        {
+            return Err("frame and application node identities overlap".into());
+        }
+        view.frame = Some(Box::new(frame));
+        Ok(view)
     }
     /// Hosted controls retain the same identity, model and intent dispatch.
     /// Their popup layers draw independently of the detached client layout.
@@ -96,6 +126,9 @@ impl SceneView {
         Ok(())
     }
     pub fn control_kind(&self, id: &str) -> Option<&str> {
+        if let Some(kind) = self.frame.as_ref().and_then(|frame| frame.control_kind(id)) {
+            return Some(kind);
+        }
         let node = self.tree.nodes.get(id)?;
         if node.family != "control" {
             return None;
@@ -103,12 +136,26 @@ impl SceneView {
         node.ports.get("definition")?.get("kind")?.as_str()
     }
     pub fn has_control_kind(&self, kind: &str) -> bool {
+        if self
+            .frame
+            .as_ref()
+            .is_some_and(|frame| frame.has_control_kind(kind))
+        {
+            return true;
+        }
         self.tree
             .nodes
             .keys()
             .any(|id| self.control_kind(id) == Some(kind))
     }
     pub fn has_slot(&self, name: &str) -> bool {
+        if self
+            .frame
+            .as_ref()
+            .is_some_and(|frame| frame.has_slot(name))
+        {
+            return true;
+        }
         self.tree
             .nodes
             .values()
@@ -123,6 +170,15 @@ impl SceneView {
         {
             return Err("invalid or undeclared scene slot".into());
         }
+        let slots = if let Some(frame) = self.frame.as_mut() {
+            let (outer, inner) = slots
+                .into_iter()
+                .partition(|(name, _)| frame.has_slot(name));
+            frame.set_slots(outer)?;
+            inner
+        } else {
+            slots
+        };
         if self.slots != slots {
             self.slots = slots;
             self.shown_revision = None;
@@ -132,6 +188,13 @@ impl SceneView {
     /// Shared control admission uses the currently rendered definition/model.
     /// Applications still own the meaning and execution of admitted intents.
     pub fn admit_intent(&self, id: &str, action: &str, value: &Value) -> Result<(), String> {
+        if let Some(frame) = self
+            .frame
+            .as_ref()
+            .filter(|frame| id != "root" && frame.tree.nodes.contains_key(id))
+        {
+            return frame.admit_intent(id, action, value);
+        }
         let node = self.tree.nodes.get(id).ok_or("unknown scene node")?;
         match node.family.as_str() {
             "control" => {
@@ -199,6 +262,9 @@ impl SceneView {
                 return Err("hosted overlay control changed to an incompatible kind".into());
             }
         }
+        if let Some(frame) = self.frame.as_mut() {
+            frame.apply_model(model)?;
+        }
         self.tree = candidate;
         self.lists = lists;
         self.revision += 1;
@@ -206,7 +272,35 @@ impl SceneView {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        if let Some(mut frame) = self.frame.take() {
+            let mut events = frame.show(ui);
+            if let Some(rect) = frame.regions.get("gold-content").copied() {
+                events.extend(
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                        ui.set_clip_rect(ui.clip_rect().intersect(rect));
+                        self.show_content(ui)
+                    })
+                    .inner,
+                );
+            } else {
+                self.geometry.clear();
+                self.shown_revision = None;
+            }
+            self.geometry.extend(
+                frame
+                    .geometry
+                    .iter()
+                    .filter(|(id, _)| id.as_str() != "root")
+                    .map(|(id, rect)| (id.clone(), *rect)),
+            );
+            self.frame = Some(frame);
+            return events;
+        }
+        self.show_content(ui)
+    }
+    fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         let mut events = Vec::new();
+        self.regions.clear();
         self.geometry.clear();
         self.widgets.begin_frame();
         let tree = self.tree.clone();
@@ -239,8 +333,19 @@ impl SceneView {
     /// fence input replies on this without claiming GPU or physical display.
     pub fn current_revision_drawn(&self) -> bool {
         self.shown_revision == Some(self.revision)
+            && self
+                .frame
+                .as_ref()
+                .is_none_or(|frame| frame.current_revision_drawn())
     }
     pub fn request_focus(&mut self, id: &str) -> Result<(), String> {
+        if let Some(frame) = self
+            .frame
+            .as_mut()
+            .filter(|frame| frame.control_kind(id).is_some())
+        {
+            return frame.request_focus(id);
+        }
         if !self.geometry.contains_key(id) {
             return Err("focus target not visible".into());
         }
@@ -250,6 +355,14 @@ impl SceneView {
     /// Renderer-neutral character selection. The application chooses the
     /// range; it carries no filename, path or other application interpretation.
     pub fn request_focus_value(&mut self, value: &Value) -> Result<(), String> {
+        let target = value.as_str().or_else(|| value["id"].as_str());
+        if let Some(frame) = self
+            .frame
+            .as_mut()
+            .filter(|frame| target.is_some_and(|id| frame.control_kind(id).is_some()))
+        {
+            return frame.request_focus_value(value);
+        }
         if let Some(id) = value.as_str() {
             return self.request_focus(id);
         }
@@ -302,13 +415,25 @@ impl SceneView {
         Ok(())
     }
     pub fn take_focus_error(&mut self) -> Option<String> {
-        self.focus_error.take()
+        self.focus_error.take().or_else(|| {
+            self.frame
+                .as_mut()
+                .and_then(|frame| frame.take_focus_error())
+        })
     }
     pub fn focus_pending(&self) -> bool {
         self.widgets.focus.is_some()
+            || self
+                .frame
+                .as_ref()
+                .is_some_and(|frame| frame.focus_pending())
     }
     pub fn text_input_active(&self) -> bool {
         self.widgets.text_input_active
+            || self
+                .frame
+                .as_ref()
+                .is_some_and(|frame| frame.text_input_active())
     }
     pub fn image_states(&self) -> Value {
         self.widgets.image_states()
@@ -364,7 +489,7 @@ impl SceneView {
                             let widget=if node.family=="control" {Widget::decode(&node.ports["definition"]).expect("validated label")}else{Widget::new(child,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono")}))};
                             widget.intrinsic_width(ui,&self.tree.model).expect("validated intrinsic label")
                         };
-                        let groups=band_groups(node,crate::window_frame::Metrics::of(ui.ctx()).caption_width*3.0,&measure).expect("validated band groups");
+                        let groups=band_groups(node,crate::window_frame::Metrics::of(ui.ctx()).caption_width*3.0,ui.ctx().data(|d| d.get_temp::<design::title_band::Alignment>(egui::Id::unique("viu-caption-alignment"))).unwrap_or_else(|| toolkit::chrome::Chrome::of(ui.ctx()).captions.alignment(design::title_band::Alignment::Right)),&measure).expect("validated band groups");
                         let active=children(node).zip(groups).filter(|(child,_)|nodes.get(*child).is_some_and(|child|child.ports.get("hidden").and_then(Value::as_bool)!=Some(true)&&child.ports.get("slot_only").and_then(Value::as_str).is_none_or(|name|self.slots.contains_key(name)))).collect::<Vec<_>>();
                         let groups=active.iter().map(|(_,group)|*group).collect::<Vec<_>>();
                         let rectangles=design::title_band::layout(area.width(),&groups);
@@ -470,7 +595,7 @@ impl SceneView {
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let frame = egui::Frame::new()
                             .fill(background)
-                            .inner_margin(num(node, "padding").unwrap_or(0.0))
+                            .inner_margin(egui::Margin { left: node_padding(node, "padding_left") as i8, right: node_padding(node, "padding_right") as i8, top: node_padding(node, "padding_top") as i8, bottom: node_padding(node, "padding_bottom") as i8 })
                             .corner_radius(num(node, "radius").unwrap_or(0.0));
                         let response = frame
                             .show(ui, |ui| {
@@ -544,6 +669,21 @@ impl SceneView {
         depth: usize,
         events: &mut Vec<Event>,
     ) {
+        self.regions
+            .insert(id.into(), rect.intersect(ui.clip_rect()));
+        if let Some(node) = nodes.get(id) {
+            if let Some(background) = color(text(node, "background")).or_else(|| {
+                text(node, "background")
+                    .strip_prefix("design.")
+                    .and_then(|role| crate::appearance::colour(ui.ctx(), role))
+            }) {
+                ui.painter().rect_filled(
+                    rect.intersect(ui.clip_rect()),
+                    num(node, "radius").unwrap_or(0.0),
+                    background,
+                );
+            }
+        }
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(id), |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(rect));
             self.node(ui, id, nodes, route, depth + 1, events);
@@ -575,10 +715,21 @@ impl SceneView {
         if child.len() != 2 {
             return;
         }
-        let active=child.iter().filter(|id|nodes.get(**id).is_some_and(|node|node.ports.get("hidden")!=Some(&Value::Bool(true)))).copied().collect::<Vec<_>>();
-        if active.len()<2 {
-            if let Some(child)=active.first(){self.child_rect(ui,child,area,nodes,route,depth,events);}
-            ui.advance_cursor_after_rect(area);return;
+        let active = child
+            .iter()
+            .filter(|id| {
+                nodes
+                    .get(**id)
+                    .is_some_and(|node| node.ports.get("hidden") != Some(&Value::Bool(true)))
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        if active.len() < 2 {
+            if let Some(child) = active.first() {
+                self.child_rect(ui, child, area, nodes, route, depth, events);
+            }
+            ui.advance_cursor_after_rect(area);
+            return;
         }
         let horizontal = text(node, "axis") != "vertical";
         let divider = num(node, "divider").unwrap_or(6.0).min(
@@ -714,6 +865,7 @@ impl SceneView {
             let requested = placement["size"]
                 .as_f64()
                 .map(|v| v as f32)
+                .or_else(|| design_length(&placement["size"], Some(ui.ctx())))
                 .unwrap_or_else(|| {
                     placement["fraction"].as_f64().unwrap_or(0.2) as f32 * dimension
                 });
@@ -858,7 +1010,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
         }
         match node.family.as_str() {
             "band" => {
-                band_groups(node, 0.0, &|_| 0.0)?;
+                band_groups(node, 0.0, design::title_band::Alignment::Right, &|_| 0.0)?;
                 for child in children(node) {
                     let group = &node.ports["groups"][child];
                     if group["preferred"] == "content" || group["minimum"] == "content" {
@@ -924,6 +1076,9 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                         "max_fraction",
                     ] {
                         if let Some(v) = p.get(key) {
+                            if key == "size" && design_length(v, None).is_some() {
+                                continue;
+                            }
                             if v.as_f64().is_none_or(|n| {
                                 !n.is_finite() || n < 0.0 || (key.contains("fraction") && n > 1.0)
                             }) {
@@ -972,9 +1127,28 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
     Ok(())
 }
 
+fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
+    match value.as_str()? {
+        "design.title_bar_height" => {
+            Some(ctx.map_or(38.0, |ctx| crate::window_frame::Metrics::of(ctx).height))
+        }
+        "design.status_height" => Some(ctx.map_or(30.0, |ctx| {
+            toolkit::chrome::Chrome::of(ctx).metrics.bars.status
+        })),
+        "design.dock_margin" => Some(ctx.map_or(2.0, |ctx| {
+            toolkit::chrome::Chrome::of(ctx).metrics.dock_margin
+        })),
+        "design.options_height" => Some(ctx.map_or(42.0, |ctx| {
+            toolkit::chrome::Chrome::of(ctx).metrics.bars.options
+        })),
+        _ => None,
+    }
+}
+
 fn band_groups(
     node: &Node,
     caption_width: f32,
+    caption_side: design::title_band::Alignment,
     content_width: &dyn Fn(&str) -> f32,
 ) -> Result<Vec<design::title_band::Group>, String> {
     use design::title_band::{Alignment, Group};
@@ -990,7 +1164,7 @@ fn band_groups(
     children.into_iter().map(|child|{
         let group=groups.get(child).ok_or("band child missing group")?;
         let length=|name:&str|if group[name]=="window.captions"{Ok(caption_width)}else if group[name]=="content"{Ok(content_width(child))}else{group[name].as_f64().filter(|n|n.is_finite()&&*n>=0.0&&(*n as f32).is_finite()).map(|n|n as f32).ok_or_else(||format!("band {name} must be a finite nonnegative length, content, or window.captions metric"))};
-        let align=match group["align"].as_str(){Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center or right".into())};
+        let align=match group["align"].as_str(){Some("window.captions")=>caption_side,Some("left")=>Alignment::Left,Some("center")=>Alignment::Center,Some("right")=>Alignment::Right,_=>return Err("band alignment must be left, center or right".into())};
         let integer=|name:&str|group[name].as_f64().filter(|n|n.is_finite()&&n.fract()==0.0&&(0.0..=255.0).contains(n)).map(|n|n as u8).ok_or_else(||format!("band {name} must be an integer 0..255"));
         let shrink=if group["shrink"].is_null(){None}else{Some(integer("shrink")?)};
         let order=integer("order")?;
@@ -1033,4 +1207,8 @@ fn color(s: &str) -> Option<Color32> {
         byte(4)?,
         if s.len() == 8 { byte(6)? } else { 255 },
     ))
+}
+
+fn node_padding(node: &Node, side: &str) -> f32 {
+    num(node, side).or(num(node, "padding")).unwrap_or(0.0)
 }

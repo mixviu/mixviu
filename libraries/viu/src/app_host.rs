@@ -393,7 +393,7 @@ impl Host {
                         if self.loaded {
                             self.view.apply_model(projected)
                         } else {
-                            SceneView::with_model(&self.scene_source, projected).map(|view| {
+                            (if self.framed { crate::gold_frame::mount(&self.scene_source, projected) } else { SceneView::with_model(&self.scene_source, projected) }).map(|view| {
                                 self.view = view;
                                 self.view.set_documents(self.documents.clone());
                                 self.view.set_native_menus(self.native_drive);
@@ -455,9 +455,11 @@ impl Host {
             .or_else(|| self.output.as_ref().map(|_| &self.model))
         {
             if self.ready && !self.loaded {
-                match SceneView::with_model(&self.scene_source, projected.clone()) {
+                match if self.framed { crate::gold_frame::mount(&self.scene_source, projected.clone()) } else { SceneView::with_model(&self.scene_source, projected.clone()) } {
                     Ok(view) => {
                         self.view = view;
+                        self.view.set_documents(self.documents.clone());
+                        self.view.set_native_menus(self.native_drive);
                         self.loaded = true;
                     }
                     Err(e) => self.error = e,
@@ -497,7 +499,7 @@ impl Host {
                     toolkit::chrome::install(ui.ctx(),&chrome);toolkit::chrome::client_side(ui.ctx());
                 }
                 self.window_frame
-                    .show_with_header(ui, &self.title, &settings, true);
+                    .show_with_chrome(ui, &self.title, &settings, true, true);
                 let slots = self
                     .window_frame
                     .geometry
@@ -508,6 +510,7 @@ impl Host {
                     self.error = e;
                 }
             }
+            if self.framed { ui.painter().rect_filled(ui.max_rect(), 0.0, toolkit::chrome::Chrome::of(ui.ctx()).palette.dock); }
             let started = Instant::now();
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, BTreeMap::new(), None);
@@ -517,6 +520,7 @@ impl Host {
                 self.measurements.next(at.elapsed().as_micros() as u64);
             }
             if self.framed {
+                self.window_frame.finish_captions(ui, self.view.allocated_region("gold-captions"));
                 self.window_frame.edges(ui);
                 self.view
                     .geometry

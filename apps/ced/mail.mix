@@ -35,7 +35,7 @@ fn classify_document($key)
     if starts_with($lines[$i],"mail-") and contains($lines[$i],":") then $candidate=true end
   end
   if not $candidate then return {kind:"text"} end
-  if $source!=$text then return {kind:"text",notice:"mail documents with a UTF-8 BOM open as text; remove the BOM to open the mail header form"} end
+  if $source!=$text or $state.bom then return {kind:"text",notice:"mail documents with a UTF-8 BOM open as text; remove the BOM to open the mail header form"} end
   try
     $d=viu_maildoc("parse",$text);$headers=headers_of($d)
     return {kind:"mail",disk:$text,headers:$headers,saved_headers:$headers,saved_body_hash:viu_digest("blake3",$d.body),body_hash:viu_digest("blake3",$d.body),path:$state.path,body:$d.body,saving:false,sending:false,parked:false,notice:nil,undo:[],redo:[]}

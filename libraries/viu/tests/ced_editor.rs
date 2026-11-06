@@ -83,7 +83,7 @@ publish_ced($state)
     assert!(initial.error.is_none(), "{:?}", initial.error);
     let model = initial.model.unwrap();
     assert_eq!(model["values"]["editor"]["document"], "one");
-    let mut view = SceneView::with_model(&bundle.scene, model).unwrap();
+    let mut view = viu::gold_frame::mount(&bundle.scene, model).unwrap();
     view.set_documents(docs.clone());
     let ctx = egui::Context::default();
     viu::appearance::install(&ctx);

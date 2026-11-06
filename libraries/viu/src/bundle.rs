@@ -33,7 +33,7 @@ impl Default for Manifest {
             follow_settings: false,
             macros: false,
             native_drive: false,
-            max_string_bytes:None,
+            max_string_bytes: None,
         }
     }
 }
@@ -72,7 +72,9 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
-            || manifest.max_string_bytes.is_some_and(|n|!(1_048_576..=32*1024*1024).contains(&n))
+            || manifest
+                .max_string_bytes
+                .is_some_and(|n| !(1_048_576..=32 * 1024 * 1024).contains(&n))
             || !["window", "background"].contains(&manifest.surface.as_str())
             || manifest
                 .frame
@@ -106,11 +108,7 @@ impl Bundle {
                 .replace("${", "\\${"),
             std::fs::read_to_string(&path).map_err(|e| e.to_string())?
         );
-        let mut scene =
-            std::fs::read_to_string(root.join("scene.mix")).map_err(|e| e.to_string())?;
-        if manifest.frame.is_some() {
-            scene = crate::gold_frame::compose(&scene)?;
-        }
+        let scene = std::fs::read_to_string(root.join("scene.mix")).map_err(|e| e.to_string())?;
         let program = crate::runtime::Program {
             path,
             source,

@@ -5087,6 +5087,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "maildoc"
+version = "0.1.2"
+dependencies = [
+ "bus",
+ "proptest",
+ "serde_json",
+]
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10056,6 +10065,7 @@ dependencies = [
  "icons",
  "image",
  "macros",
+ "maildoc",
  "mimedb",
  "mix",
  "png 0.18.1",
