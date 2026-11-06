@@ -35,23 +35,27 @@ async fn furniture_events_refuse_foreign_publishers_and_attest_the_compositor() 
             ("retain".into(), "false".into()),
         ]);
         let wire = bus::BusMessage {
-            headers: BTreeMap::from([("command".into(), suffix.into()),
-                ("broker_service".into(), "foreign".into()), ("broker_origin".into(), "mesh".into())]),
+            headers: BTreeMap::from([
+                ("command".into(), suffix.into()),
+                ("broker_service".into(), "foreign".into()),
+                ("broker_origin".into(), "mesh".into()),
+            ]),
             body: "{\"phase\":\"consumed\"}".into(),
-        }.to_wire();
+        }
+        .to_wire();
         let (rc, _, error) = attacker
             .call_with_headers_raw("noded", "topic.publish", &headers, &wire)
             .await
             .unwrap();
         assert_ne!(rc, 0, "foreign publisher admitted on {topic}");
-        assert!(error.as_deref().is_some_and(|e| e.contains("topic_reserved")), "unexpected refusal: {error:?}");
+        assert!(
+            error
+                .as_deref()
+                .is_some_and(|e| e.contains("topic_reserved")),
+            "unexpected refusal: {error:?}"
+        );
         let (rc, _, _) = owner
-            .call_with_headers_raw(
-                "noded",
-                "topic.publish",
-                &headers,
-                &wire,
-            )
+            .call_with_headers_raw("noded", "topic.publish", &headers, &wire)
             .await
             .unwrap();
         assert_eq!(rc, 0, "owner refused on {topic}");

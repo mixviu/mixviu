@@ -28,7 +28,22 @@ during a press. Missing or replaced claims cancel actions; clicks never leak.
 Viud publishes plain `corner.input` records: output, corner, phase (engaged,
 dwelled, consumed, clicked, released), optional button, consumed flag and event
 sequence. Existing corner topics remain, including modifier-bearing
-`corner.clicked.v2`. Two extension bits leave the frozen base catalogue intact.
+`corner.clicked.v2`. Two extension bits leave the frozen base catalogue intact. The imported noded
+reservation helper now reserves and attests these authority streams; integration
+must carry that native broker change into mixd. A real broker test rejects
+foreign publishers and verifies owner stamps on deliveries.
+
+The changed production-source copy is
+`libraries/test-broker/noded/props_reservation.rs::publisher_owner`. It now
+reserves corner.input/entered/left/clicked/clicked.v2, panel.command and
+chrome.action.hover for the service named by their topic prefix. Noded's
+existing publication path then stamps broker_service and broker_origin.
+`engines/viu/tests/authority.rs::furniture_events_refuse_foreign_publishers_and_attest_the_compositor`
+uses the embedded real broker to reject a foreign publisher and check the
+owner's delivered stamps, including replacement of forged inner headers.
+P2 must carry this change into mixd's noded personality: changing the lab's
+embedded broker does not update an installed broker. Without the reservation,
+real corner/hover deliveries lack the owner stamp and viu rejects them.
 
 Viu reports `comp.panel.mode` with output, edge, namespace and generation.
 Viud computes panel holds and sends `comp.panel.command` verdicts. Exclusive
@@ -67,7 +82,9 @@ from viud's Bus state.
 Viu consumes `comp.props.watch`, corners and panel verdicts. Mix taskbar
 behaviour retains `comp.window.*` calls; widget events return to their authored
 Mix citizen. Page selection, mode and resize requests live in the client;
-viud retains final layer layout and input authority.
+viud retains final layer layout and input authority. Pinning requests focus once
+after the reporter-bound layer maps. Locks and grabs win; repeated reports
+never steal focus back from an application.
 
 The first target is panels/taskbar and launcher. Dialog/toast/corner-menu
 presentation, carousel ordering, layout readback and persistence of client
@@ -96,3 +113,14 @@ draw call; /proc CPU ticks provide a coarser whole-process measure. Client
 first commit and first frame callback include GPU/Wayland startup. The prior
 58 ms in-process figure is context, not an equivalent end-to-end sample.
 No performance improvement is inferred from the architecture.
+
+The measured a2de606 sample reached its first panel commit at 2705.825 ms
+and first frame callback at 2709.018 ms from viu runtime startup. The timer
+includes Bus setup, five independent layer connections/threads, EGL/wgpu
+initialisation, font setup, scene acceptance and first presentation. Those
+stages were not separately timed, so no numeric GPU-versus-host split is
+claimed. The test loads a scene fixture over the Bus; it starts no Mix
+behaviour process. Mix startup is therefore unmeasured, not part of a
+measured 2.7-second decomposition. Multiple GPU contexts are a plausible
+contributor, not a measured attribution. Startup tuning is outside this
+close-out round.

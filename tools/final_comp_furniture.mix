@@ -1,0 +1,20 @@
+-- CBC only; the outer comp_oracle wrapper captures/restores Cargo.lock.
+$a=args()
+if len($a)!=1 then raise("USAGE","final_comp_furniture.mix default|client") end
+$commands=if $a[0]=="default" then [
+  ["/opt/mixos/bin/mix","tools/gate_comp_split.mix","default"],
+  ["/opt/mixos/bin/mix","tools/gate_comp_split.mix","clippy"]
+] elif $a[0]=="client" then [
+  ["/opt/mixos/bin/mix","tools/check_viu_client.mix"],
+  ["/opt/mixos/bin/mix","tools/gate_comp_split.mix","native"],
+  ["env","CARGO_BUILD_JOBS=6","cargo","clippy","-p","compd","--no-default-features","--features","backend-native,backend-headless","--all-targets","--locked"],
+  ["/opt/mixos/bin/mix","tools/gate_furniture.mix"]
+] else raise("USAGE","final_comp_furniture.mix default|client") end
+for $cmd in $commands
+  print("CHECKPOINT_BEGIN "..join($cmd," "))
+  $r=run_argv($cmd,{timeout:7000,max_output:64000000})
+  print($r.stdout)
+  print($r.stderr)
+  print("CHECKPOINT_RC="..to_string($r.exit_code))
+  if $r.exit_code!=0 then exit($r.exit_code) end
+end

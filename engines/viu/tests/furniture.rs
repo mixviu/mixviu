@@ -288,12 +288,27 @@ async fn exercise(old: bool, parent: Option<&Path>) {
         }
         let until = Instant::now() + Duration::from_secs(10);
         loop {
-            let surfaces = client.call("comp-headless","comp.props.get",json!({"path":"surfaces"})).await.unwrap();
-            if surfaces.as_object().unwrap().values().any(|s| s["mapped"] == true && s["role"] == "layer" && s["width"] == 440.0 && s["focused"] == true) {
+            let surfaces = client
+                .call(
+                    "comp-headless",
+                    "comp.props.get",
+                    json!({"path":"surfaces"}),
+                )
+                .await
+                .unwrap();
+            if surfaces.as_object().unwrap().values().any(|s| {
+                s["mapped"] == true
+                    && s["role"] == "layer"
+                    && s["width"] == 440.0
+                    && s["focused"] == true
+            }) {
                 println!("LAUNCHER_MAPPED_AND_FOCUSED {surfaces}");
                 break;
             }
-            assert!(Instant::now() < until,"launcher failed to map/take one-shot pinned focus: {surfaces}");
+            assert!(
+                Instant::now() < until,
+                "launcher failed to map/take one-shot pinned focus: {surfaces}"
+            );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }

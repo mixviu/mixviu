@@ -23890,7 +23890,7 @@
     {
       "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
       "destination": "engines/viu/src/view.rs",
-      "destination_sha256": "dfc844339ffa22ee5a255607e1f748998eefcf55660a5fc2775046b6a08acd0c",
+      "destination_sha256": "1265600b553978c77a7a869cd02f964eb5da0400ea3da9bc15e94a7e37197e11",
       "source": "services/compd/crates/scene-host/src/view.rs",
       "source_sha256": "5b80bb9522f8f26fd4be74ac17b49e2ccf5639d2d00b02413dc41138f446f785"
     },
@@ -23918,7 +23918,7 @@
     {
       "adaptation": "B6 client copy of scene renderer/store; world/registry host replaced by layer-shell; renderer tests retained through test-only UiProgram adapter",
       "destination": "engines/viu/src/view/tests.rs",
-      "destination_sha256": "5f3e8b3f2d0e6c467d9103b201180be91166ca247a983df01d7c2c4665571173",
+      "destination_sha256": "744506b01c5e36aa1a6f749c4dad10eb8bdc11770a6cc7a7b1f2a74cd0f2aa60",
       "source": "services/compd/crates/scene-host/src/view/tests.rs",
       "source_sha256": "2695e7dac7e2cdaabdba3e93093c36d4c24a45783657399ff16d7f41965b56e4"
     },
@@ -23981,16 +23981,737 @@
     {
       "adaptation": "B5/B6 extraction of chrome theme, client appearance and passive tooltip drawing; compositor Loop and typed registry stay outside the client",
       "destination": "engines/viu/src/appearance.rs",
-      "destination_sha256": "0ebfff723a87e5293f789f6d32aa2260fbf4a85423d45221bf64f26c0e2cc367",
+      "destination_sha256": "1fe3ac1f24c6094c47dd10053858981c82b3ef2f5a93f66b7ec710c5b95162ef",
       "source": "services/compd/crates/scene-host/src/appearance.rs",
       "source_sha256": "1537c8c96556b13935485bb574801fd14d97a0f26eefc25ea999047d19cc289d"
     },
     {
       "adaptation": "B5/B6 extraction of chrome theme, client appearance and passive tooltip drawing; compositor Loop and typed registry stay outside the client",
       "destination": "engines/viu/src/tooltip.rs",
-      "destination_sha256": "b84f0eca9773e848069b39b29d866682e61a121a764f993add658ce033a65eef",
+      "destination_sha256": "e09d23142e41e8cba13c239eb027b654bb345b15c3f2a75a72182079b4b8ad99",
       "source": "services/compd/crates/scene-host/src/tooltip.rs",
       "source_sha256": "be2345a020a2653fa122ac902597666f0c83059214260fd2ee53eee6d84d1197"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "libraries/toolkit/Cargo.toml",
+      "destination_sha256": "cd50d844ff94f59d0bb477dc09248af3791cb922c108cf0d14ccc28b9213ca38",
+      "source": "libs/toolkit/Cargo.toml",
+      "source_sha256": "123c685ae915b36bcd95deee0961d6a3718fb02840994aa860a068fd63f4208d"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "libraries/toolkit/src/fonts.rs",
+      "destination_sha256": "bdf21e53f5df4527cf7e6abbfcb09076f0e52db8578bf4a4e2585ccea39feb16",
+      "source": "libs/toolkit/src/fonts.rs",
+      "source_sha256": "f4d10df072e0dfb206122acfaad95a2df98a21529a2f20b792ec777f199e9056"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "libraries/toolkit/src/layer.rs",
+      "destination_sha256": "f04f7e58d4847db7dc191b521f2cfac99c208a0d4c3c1f32d8401ea490169f92",
+      "source": "libs/toolkit/src/layer.rs",
+      "source_sha256": "f3b4fa25a29e059285fbef356fab4bf08fb8509b672a692f043a174219b75d45"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "libraries/toolkit/src/layer/state.rs",
+      "destination_sha256": "a90cadd1dd2c8459ee6cee8a6d9de0a48fb6cc6307d030d71bdd3f24874d742d",
+      "source": "libs/toolkit/src/layer/state.rs",
+      "source_sha256": "746ec0677367e22a81752fa0ba69ebfdeeb79c78263d571063ea0102a116c03e"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "libraries/toolkit/src/style.rs",
+      "destination_sha256": "1026b623da584ee1552d15252d9ee31994e97740ec7f332ab268a487d20b22f0",
+      "source": "libs/toolkit/src/style.rs",
+      "source_sha256": "81be37d743b8136e296d28c344b8b3569e071cb9483e1f090ba0f649f38d7590"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "libraries/toolkit/src/theme.rs",
+      "destination_sha256": "f16ab4155b24590b360a6cf92eba5b79997725ae84cdac19bb527f72767b86b9",
+      "source": "libs/toolkit/src/theme.rs",
+      "source_sha256": "90e56ca7415542b44c6ea26f8ed2b1d08ede5f524b2525a4ec3ea353ae134961"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "libraries/toolkit/src/ui_scale.rs",
+      "destination_sha256": "81f2845eaad95ac73d8ee9b9f9d515f4ebe2565a9721d4611d96781df8c3b295",
+      "source": "libs/toolkit/src/ui_scale.rs",
+      "source_sha256": "a873f08f96fbbf632a004e51f6841e5efb3e5587c7ae8dc76bc62fa842db74f5"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/Cargo.toml",
+      "destination_sha256": "e8f6a246d2845229495ba9e060c412f4b34572d014b2f0382f3f321e3571ac18",
+      "source": "services/compd/Cargo.toml",
+      "source_sha256": "102619951e0bb4b4c980225caf026bad8bd88b58b72a615aa81e4f3f5df41979"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/comp-model/src/observation.rs",
+      "destination_sha256": "913c3b14200ac2d2b44fa391ca1908c378810e6815d08af290c9853f3589c0a5",
+      "source": "services/compd/crates/comp-model/src/observation.rs",
+      "source_sha256": "e477e1bdd0a411bb16f4d518d36320c78dcc7a8592c41048283b4afaeafce486"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/comp-model/src/observation_tests.rs",
+      "destination_sha256": "42321a737130304308ed43e035df4e15dcafdccbc04c1f08b75b5bd89b66459c",
+      "source": "services/compd/crates/comp-model/src/observation_tests.rs",
+      "source_sha256": "f3a3779afe4d1a5c12e37b4ca4f6ea1e777ad62a61ab9cfbb593c4edf877d988"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/comp-service/Cargo.toml",
+      "destination_sha256": "752c11dae7fc75465541e1472a166a0f62dc252dc181d798c411f55d1229d6d6",
+      "source": "services/compd/crates/comp-service/Cargo.toml",
+      "source_sha256": "3ac3efebbcce75f8f98e86ae9c8971e7ea503616ca372aecb6a9b86d000a6792"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/comp-service/src/lib.rs",
+      "destination_sha256": "85d95fec0bc93be542db3c923728d8e4b5f3e9af7cb4d3baa0ee6d3b7fa7de49",
+      "source": "services/compd/crates/comp-service/src/lib.rs",
+      "source_sha256": "d1dad40c3f151dac37afa9b4b371acef91b6df35e1bcd2307d9c88482d7ed887"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/comp-service/src/port.rs",
+      "destination_sha256": "7f771557eaf22fcde09a4864e242ddab8bfa6ac4bf63c57d23a16dcf573e6475",
+      "source": "services/compd/crates/comp-service/src/port.rs",
+      "source_sha256": "065edbd9dbe2425b196ab56a9ad206e0bbaf9d81cb1b8f6e41818b4de2c3f486"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/comp-service/src/service.rs",
+      "destination_sha256": "4897ce8c641d2fccd3509509d7eb15b6f9086c5c3dec10f3de147588ee0e27cf",
+      "source": "services/compd/crates/comp-service/src/service.rs",
+      "source_sha256": "bac8ad20e0aca6368b2af19c17f8048243a16e3680240e02eea6a71a2cf39a52"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/decor/Cargo.toml",
+      "destination_sha256": "85b0e0290cc5583a7f2aa9dfedb5c324ef7b94fa2f2c1f29e82b6026dea293c2",
+      "source": "services/compd/crates/decor/Cargo.toml",
+      "source_sha256": "e0799c464e5d6c3f79737eb139f53f3be881259822cf480a9dcd17403d5cb856"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/decor/src/lib.rs",
+      "destination_sha256": "83a23a05bf715d065513acf4a4ea30254e3229c9276ce69aff5522591325d943",
+      "source": "services/compd/crates/decor/src/lib.rs",
+      "source_sha256": "e8ae70c2d268cc77a4eda812f9750c316387496a4e177247aa8a8e0ea178e69d"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/decor/src/raster.rs",
+      "destination_sha256": "91884f89707f3382205637e4b3a9b347219baa7a48b5b44b1c10c350d3c60786",
+      "source": "services/compd/crates/decor/src/raster.rs",
+      "source_sha256": "47ab8bf127e0814efe94271d5f12e933712898d3fe76a0cf638a198d7d078425"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/decor/src/text.rs",
+      "destination_sha256": "26efa8050276ffd7f8d99b6ed2e5b1ee07aab77d68c0406dc306752b08339241",
+      "source": "services/compd/crates/decor/src/text.rs",
+      "source_sha256": "57f71dd7f271425ac6e2f1af626025985d461aa14a34c25cdad40edf5ffafe47"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/decor/src/theme.rs",
+      "destination_sha256": "8d6e7087f3e00019dfcfa30d0351695c13bd805ca721000d5990f118a89c5bda",
+      "source": "services/compd/crates/decor/src/theme.rs",
+      "source_sha256": "4c2c38db5642943b4db246c60f03045aabc3c6b543f4f7414960458b9e5d2dfc"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/frames/Cargo.toml",
+      "destination_sha256": "1990d141428bdf9c901196847118b0b7672df308b484eb94dcff5f17c48c3cc4",
+      "source": "services/compd/crates/frames/Cargo.toml",
+      "source_sha256": "44f888ea35a9a29f41f06bd08528d2834d73a20ee4230849f397871463fdc0ff"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/frames/src/scene.rs",
+      "destination_sha256": "cf65310c6f9c731dd678702a1f8c3871f2f31283a0e50c1c28da1f4ee01152da",
+      "source": "services/compd/crates/frames/src/scene.rs",
+      "source_sha256": "f70779fed85f4df74e6976f08eb6e8ee3fe05147950e05e4ba0176e39e2ca321"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/frames/src/scene/gpu.rs",
+      "destination_sha256": "3f917473c2f4f536ce162dbbef3b3cb24ce4bb7dd679c98b5da4b59b2b4ca4bd",
+      "source": "services/compd/crates/frames/src/scene/gpu.rs",
+      "source_sha256": "86979e8fe85c658f0410381bee49b787f918df260cbf40a29c9642d4822af193"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/headless/Cargo.toml",
+      "destination_sha256": "7c6d20195b5fd8c1790f139b2b11d6c6656a8c6981aa8d78b0a90fdb9f474ba5",
+      "source": "services/compd/crates/headless/Cargo.toml",
+      "source_sha256": "ca68802f9bd36222d1bb529c891bad4bbda56a1bc600c973d45f43bf0139e2d7"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/headless/src/frame.rs",
+      "destination_sha256": "f8b4d795b010020bb60017c2e5acd67159c172143fa4d36250447b9b222b224b",
+      "source": "services/compd/crates/headless/src/frame.rs",
+      "source_sha256": "8b3a7bc66232e93d8e8a46f7158a0d34f0070759b17cb93e02a798b4ff5dd7e3"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/nested/src/wire/entry.rs",
+      "destination_sha256": "76881dcfd491ccc72089001246fe2a7ae4427b9feac087da383b3600b3eaf249",
+      "source": "services/compd/crates/nested/src/wire/entry.rs",
+      "source_sha256": "4cadf8d25239cb57431f7f46884a54b8be9ce09b558448e2be28b115118a7182"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/policy-host/Cargo.toml",
+      "destination_sha256": "d3265a909ba7f51dd226cd3465374d5c73e3a822a429d5b5ee82486065ef7a38",
+      "source": "services/compd/crates/policy-host/Cargo.toml",
+      "source_sha256": "a777731894e2ac1c4f0c164dc07f7fe3b57f66dc8e85031358e0e838ee3c0cb7"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/policy-host/src/edges.rs",
+      "destination_sha256": "2dd901278d47d92576e2351c8712d531fd9bc46ebc165b77996bf555afe39a84",
+      "source": "services/compd/crates/policy-host/src/edges.rs",
+      "source_sha256": "a50ce931f85d60e515f7be1bd3ab03adc44279fbfffbd14901329a8a3c6c96d1"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/policy-host/src/lib.rs",
+      "destination_sha256": "5fdd3db36ac1593d1b8bc74bb0c4121022b42e02b29feb453afe34d011847ebd",
+      "source": "services/compd/crates/policy-host/src/lib.rs",
+      "source_sha256": "e949944ba1e864b755373225e7c5ca5ffc2295718cec28f319e082dde68f74d7"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/policy-host/src/panel.rs",
+      "destination_sha256": "f6963fe450238e6133f5e27cc4fe349a3e5d0563749b16fa2205c4f3dec432f5",
+      "source": "services/compd/crates/policy-host/src/panel.rs",
+      "source_sha256": "a471e6a19381d60c33dc55acc4b84c933b20835ee5d16aa7029e5613dd046be6"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/policy-host/src/truth.rs",
+      "destination_sha256": "85ac2565ce10de9501bf54dbcda28cee9c69ec131a8b30b8e8dc3b445904a89c",
+      "source": "services/compd/crates/policy-host/src/truth.rs",
+      "source_sha256": "3c3778ef1f0cd2aabe0b5847893580707e1753c8bcfaf478c731fabf934df437"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/policy/src/corner.rs",
+      "destination_sha256": "2ccf54a7a17fe1cc3cedb8640c7eec880b19a83e4754967e0e8e07fe55fa27d0",
+      "source": "services/compd/crates/policy/src/corner.rs",
+      "source_sha256": "cf94d80e03c6fc8b971a68c2fe964b9001101b149e9da222f8750ced54086b37"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/recorder/Cargo.toml",
+      "destination_sha256": "e6f7fddb6509c739dee6b76f0e8100a295cfa1e4576692cb47f961bc6e0356b9",
+      "source": "services/compd/crates/recorder/Cargo.toml",
+      "source_sha256": "ce16108f1dc505dc1a60d1980bce46c8590d445cdabc80467be5bc399811fb39"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/recorder/src/interface.rs",
+      "destination_sha256": "d977cf69e178c99c1a30cc6892ab9a1980c92b49f632c452b60e384d7d1d4085",
+      "source": "services/compd/crates/recorder/src/interface.rs",
+      "source_sha256": "204805bcb08c27c4f41a0594625f83f6d53d8608807b7a85ad6ea211b824953b"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/Cargo.toml",
+      "destination_sha256": "caf48a3414c4d645511117712923fbd68d543ce3a99077907304b0b451cdfbc9",
+      "source": "services/compd/crates/scene-host/Cargo.toml",
+      "source_sha256": "2d726a1888836e7062d8827ceb6160532c3ae154daa9d862ba33c2ec88edc81d"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/appearance.rs",
+      "destination_sha256": "4c3de955bcfc0db0bf69acc26e145c2cb9040e5d9e4567bd73848c164456dcb9",
+      "source": "services/compd/crates/scene-host/src/appearance.rs",
+      "source_sha256": "1537c8c96556b13935485bb574801fd14d97a0f26eefc25ea999047d19cc289d"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/host.rs",
+      "destination_sha256": "5b634b8fecc634536fa52d6693c68beb8a6d5e430293e7f826bfcc13cbaf3929",
+      "source": "services/compd/crates/scene-host/src/host.rs",
+      "source_sha256": "ed6b9d6dc907bf6f446d09e2b6b990999852209cab03797dcd4bb10072767f0f"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/lane.rs",
+      "destination_sha256": "21e244d2cf7b5c0f7c826be254801fc9783a89d159580ebf0f833174bd065e2d",
+      "source": "services/compd/crates/scene-host/src/lane.rs",
+      "source_sha256": "3aa166fd872c8557527b2f73a8187449b8db5c84d2636389355b1f154fe3d184"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/lane/native.rs",
+      "destination_sha256": "754d8771093b0637eddacb60c225c7d6a44f1018bac6daf385d03581b69db15c",
+      "source": "services/compd/crates/scene-host/src/lane/native.rs",
+      "source_sha256": "5e47ee81eb0351b67053ed4172f4c00402c2cca505695da43bfa7b35aa74a1c5"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/lane/native/tests.rs",
+      "destination_sha256": "da8c5f1769f48867fc437ba7bf22a1550440fc5d78cb555abe86ae176e3d4042",
+      "source": "services/compd/crates/scene-host/src/lane/native/tests.rs",
+      "source_sha256": "7f45c5def0d1e96029f3264c726252ca9db1de53a5071e83c416fa5ce439e84b"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/lane/native/tests/cache.rs",
+      "destination_sha256": "b6347128972e92c26c906405826c1952ad3b537ec19fbb4fa8ec9323e506e78a",
+      "source": "services/compd/crates/scene-host/src/lane/native/tests/cache.rs",
+      "source_sha256": "4d271cdfe07085a94670c20e79d2de0d1950cf1be3f6e593ac0abbd7836ce7d6"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/menu.rs",
+      "destination_sha256": "05d4588ef252c0b395896fcf50ff290a038abed2654aad9611214d35864f3395",
+      "source": "services/compd/crates/scene-host/src/menu.rs",
+      "source_sha256": "3cdc4defef1d0086d2762d4823461e91d70418ff3885740336238c35f75baf52"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/panels.rs",
+      "destination_sha256": "815e360ac02bd528bc883afabbab4dc973d3e73ed7ed28ee99ddeeaf7d856c96",
+      "source": "services/compd/crates/scene-host/src/panels.rs",
+      "source_sha256": "c0f759e09e692755fd5b9c538d977a910193d022ce6945dc963f02c129e183d4"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/render.rs",
+      "destination_sha256": "ca70aaf408ba3b2930f21c94f9e6caee24fd8cacfb8a5fdeafa6233f48c72d1c",
+      "source": "services/compd/crates/scene-host/src/render.rs",
+      "source_sha256": "f03ef87f5391d002f4439a3fe4dee7194038ceb48627846640458b49a7139061"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/tooltip.rs",
+      "destination_sha256": "e3d7808aac78a1ef996ba6d6b88f7077f67bcf701b7cbdb4193e7347d51f4fdb",
+      "source": "services/compd/crates/scene-host/src/tooltip.rs",
+      "source_sha256": "be2345a020a2653fa122ac902597666f0c83059214260fd2ee53eee6d84d1197"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/tooltip/actions.rs",
+      "destination_sha256": "393f8e97bdfa5ec5b0ac44d4c0c1b650721b7711deb6cebb5daaab22c625c88e",
+      "source": "services/compd/crates/scene-host/src/tooltip/actions.rs",
+      "source_sha256": "19da4a9e70c6f39118978a6a2d831c2220cfbb47757ce401b44ba186fc037c6d"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/view.rs",
+      "destination_sha256": "be158a4d0fa2e2e519d536fc951ec33449b5e8e0ac5bd7385f5b4119b1dfba38",
+      "source": "services/compd/crates/scene-host/src/view.rs",
+      "source_sha256": "5b80bb9522f8f26fd4be74ac17b49e2ccf5639d2d00b02413dc41138f446f785"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scene-host/src/view/tests.rs",
+      "destination_sha256": "96940225633707204e595d4e496cc76e6455b3800ef81f1aad09bb0bf8607a1b",
+      "source": "services/compd/crates/scene-host/src/view/tests.rs",
+      "source_sha256": "2695e7dac7e2cdaabdba3e93093c36d4c24a45783657399ff16d7f41965b56e4"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scenegraph/Cargo.toml",
+      "destination_sha256": "6517d6d90f05b61e175cbed4dbf92b19c8c793a1e7d8da07e80914331a5683c2",
+      "source": "services/compd/crates/scenegraph/Cargo.toml",
+      "source_sha256": "48daf16748f9057014e04fcea483f24c43b81404e2b1be2ace03693f3cbd695b"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scenegraph/src/node.rs",
+      "destination_sha256": "c4577fdb24d8392c410bcecf36b9b40277d1c899ac5c0401b3120629b2d5e4b6",
+      "source": "services/compd/crates/scenegraph/src/node.rs",
+      "source_sha256": "277df2f8e66d8094a4ab00f46ae5e8755c4844733af03ed469206821c8ac0e53"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/scenegraph/src/scene/element.rs",
+      "destination_sha256": "7804ea80e76368edb48384e983bf53b10221bfd84a81d55d210cb06b08a07ed3",
+      "source": "services/compd/crates/scenegraph/src/scene/element.rs",
+      "source_sha256": "e422cb460921ca28f4ac2c93688912ac5b4b9984531e9fdb13808ab1e894f740"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/seat/Cargo.toml",
+      "destination_sha256": "4f46ef669a024f65eb926df75b72ab9847142f6910091c2a888d889522aa66b9",
+      "source": "services/compd/crates/seat/Cargo.toml",
+      "source_sha256": "23da1cc9cfa0bea349244398b1e403ebd68d34d4be54e070209589fa0add1b81"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/seat/src/keyboard/input/keyboard.rs",
+      "destination_sha256": "c5e812f79ca1e08b972b8f80dc6be1a8ba091f3bd6b465405b7c3b46e8678fce",
+      "source": "services/compd/crates/seat/src/keyboard/input/keyboard.rs",
+      "source_sha256": "efa496f5ce1315a734e0e06ff394e502d40bd6b731ae6da3b33122740933711e"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/seat/src/pointer/input/button.rs",
+      "destination_sha256": "747e7f87fe725254caf7ae62187de8231eb14a6af80e802236598b6a4146fc1c",
+      "source": "services/compd/crates/seat/src/pointer/input/button.rs",
+      "source_sha256": "8e79580088ace7a8e8d7bd9e895f053c903ff2dddd3d04e9142f6db58e7b3a45"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/seat/src/pointer/input/native_axis/axis.rs",
+      "destination_sha256": "fc9280559b9b2e6efd2daf07e78c2668b1bd24427c75031cce13d1f91819a55c",
+      "source": "services/compd/crates/seat/src/pointer/input/native_axis/axis.rs",
+      "source_sha256": "b547bd5f6368a5ad16381e7ab21080f269a4e68850f84803649a5fc78c4f9e3f"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/seat/src/pointer/input/native_press/press.rs",
+      "destination_sha256": "9b864752843c5a0fd5c80dee82cb36728d1e6886c224fe9672b38ff961264e5d",
+      "source": "services/compd/crates/seat/src/pointer/input/native_press/press.rs",
+      "source_sha256": "eddec32432dd27b887cd1a8a399758c7e4d95b1f3ca9495a1cd13dcd08ac2594"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/seat/src/pointer/input/touch/client.rs",
+      "destination_sha256": "74357d28c7fcb677db0fef9f1f66fd5c69a9e451aebf92c857eb883bb2802e34",
+      "source": "services/compd/crates/seat/src/pointer/input/touch/client.rs",
+      "source_sha256": "5fbb99fb1f5b23fa64d7fbb410052babdd0b054fa2a81866e66a50a21406a804"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/Cargo.toml",
+      "destination_sha256": "373fb923b9bf2d10beff030af74992af7e74a375ee7582b96349b127cd1badd4",
+      "source": "services/compd/crates/ui/Cargo.toml",
+      "source_sha256": "9378ec04bda18bdeea9de6b981019e28bfff092756632a06aa68b31e1df3b6d3"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/element.rs",
+      "destination_sha256": "52c01ec1ed91c636c3cafbe843d43f16e7bac62ee34043d8c9b8bf7e24123ccf",
+      "source": "services/compd/crates/ui/src/element.rs",
+      "source_sha256": "92e41f82dff074fb18d4ea554eee9f0839de100372e483783a1d965446d67756"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/engine.rs",
+      "destination_sha256": "56c94874736c368de9663e4d4d1e903844b08de66ae1082a337e072474e7170a",
+      "source": "services/compd/crates/ui/src/engine.rs",
+      "source_sha256": "05933bc6c1e6eb6fedd0bb82bb50875b80bb59d16d069044c7384a9ea1659dd8"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/engine/painter.rs",
+      "destination_sha256": "f0a78c104d927f37048599e45238eb13275ea94e26d9d8d2d175458757d1cf47",
+      "source": "services/compd/crates/ui/src/engine/painter.rs",
+      "source_sha256": "3de01e465265eea7386f1422d5a1e12e2498ed917e6bca0d4bd13ef6d075a36e"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/engine/program.rs",
+      "destination_sha256": "464e4127b5b6bdd04721fa1e051464ce1789e9da2f9dd6426a67e425356c4f61",
+      "source": "services/compd/crates/ui/src/engine/program.rs",
+      "source_sha256": "c716436232e42e66e85a3ede15b3237ede53fd07a9e5e4955cf8b24aa9b90e73"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/engine/runtime.rs",
+      "destination_sha256": "9d33bed821001d3bd58e19f73e37023b3f8a3a3c123ebd1e0d54a1d3eb63e535",
+      "source": "services/compd/crates/ui/src/engine/runtime.rs",
+      "source_sha256": "445947031130b1861c688618e1db7e8d2227bfd6d36a0f78b99032f17f241b50"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/engine/tests.rs",
+      "destination_sha256": "08571711e64f7e5126834ca8e4ad5f5598cf90b14a1bcd7fec78a69bc6355ab3",
+      "source": "services/compd/crates/ui/src/engine/tests.rs",
+      "source_sha256": "0f4f311d82e2ab26e678a647c0bb14d7971847a068d695d42fab1db204e64aac"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/engine/wake.rs",
+      "destination_sha256": "9ff5cb2db779395b3feaccd56948fcbf3325a77dff10d1f6dea86c0ce8f9ce71",
+      "source": "services/compd/crates/ui/src/engine/wake.rs",
+      "source_sha256": "cad63e5d9faa87d2c81e70939cd922b673fb348b268a1faa58adc7b35ede90aa"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/error.rs",
+      "destination_sha256": "5abb1cd12d9bf6f8c9f943a6a4c2f39019e5e3229f6da69c662a08bf7e3469c2",
+      "source": "services/compd/crates/ui/src/error.rs",
+      "source_sha256": "187b45c3bb1c00b2ca1c36c3e8b68c04f4c1529fba93e3d93c573df0c369608c"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/frame_trace.rs",
+      "destination_sha256": "428c02da7e7ee5675731e77dd102b4aef5a2801faa44be3174c94fa466977755",
+      "source": "services/compd/crates/ui/src/frame_trace.rs",
+      "source_sha256": "a5d5b21f45ba98cd689ca8263a006b325436dcc07f582a3769e9e48c597b3419"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/handle.rs",
+      "destination_sha256": "73d4536885153ca673e1483370fd3cf4b6e89604a1b78554abcdc9f814ecc500",
+      "source": "services/compd/crates/ui/src/handle.rs",
+      "source_sha256": "2cdb9f4e4bc0a1d606d1b5ed44ba717429a88889b49b24b829513c088f910d85"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/input.rs",
+      "destination_sha256": "76892118133ff0b98cf362284d4bef1ce754e1cf4ad5e947757dbb9373a57005",
+      "source": "services/compd/crates/ui/src/input.rs",
+      "source_sha256": "b3952ebee3e5a51ff6f77e61a14e6113882bffaf930fc9a1a9e1e8307470a1b5"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/instance.rs",
+      "destination_sha256": "b0165fe83b5d927c94a7c36d10d1e40d7ab9c74136b22bd4cf428288bebc6555",
+      "source": "services/compd/crates/ui/src/instance.rs",
+      "source_sha256": "abf749787fb7c55c1e731ba96cc209d2e263fe0f963a010df36dd20884d98a9d"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/lib.rs",
+      "destination_sha256": "8de41cb2d61f54712073a9ee46fe0c77c40822d97b53eb9bc89ebda71a5258d2",
+      "source": "services/compd/crates/ui/src/lib.rs",
+      "source_sha256": "96b5807b32556c5cd5efa3582870f97a2c510771a18334dd7dab57c92283c185"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/registry.rs",
+      "destination_sha256": "f4c266969757b7e62877a336bf0bfa1a72da3ae118507ec8b3aaf3a58ad258c1",
+      "source": "services/compd/crates/ui/src/registry.rs",
+      "source_sha256": "5354543045915c1bd5194032110a6d1fabfefcfb5a4bb33774a8052052dbf878"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/source.rs",
+      "destination_sha256": "e69edb04ede0f2ccdfae69a88a774bdf2ff42f88d0037493a545d185cbe97979",
+      "source": "services/compd/crates/ui/src/source.rs",
+      "source_sha256": "af778ac9649b7bd401e716589e54dbd16cebdbb68de01b4de2888c514d5bb94d"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/src/space.rs",
+      "destination_sha256": "e4a2fe808877784aabfb26b3118a5caf8b63a75574054cb245a1bc77c2dcfd64",
+      "source": "services/compd/crates/ui/src/space.rs",
+      "source_sha256": "2628496b579edb344ec0b5ce72b772ffa3be8fc12092cffdbe0017f94705de27"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/ui/tests/shared_gl.rs",
+      "destination_sha256": "9b8c067a460b5cfefe65b7923157e603aa7cbbbb4a29b7718df9cacf1f64eefb",
+      "source": "services/compd/crates/ui/tests/shared_gl.rs",
+      "source_sha256": "ec2ad041c4f46894490cba261bb64f92e4b00f45f3be7e5ac95a241fd760a931"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/Cargo.toml",
+      "destination_sha256": "e49b016f76ca8ae0578b4c2006f959418bdabaaf470c627e417ad0a9ff22bde7",
+      "source": "services/compd/crates/world/Cargo.toml",
+      "source_sha256": "af3b57ec9ed8e763e309ef39efe82fe2a60073edb75f31691c582fe27a11839f"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/canvas/draw/scene.rs",
+      "destination_sha256": "d48c76fe259b457ed197ed74868cbd184d425f825e81cc4b52e67203ed097f98",
+      "source": "services/compd/crates/world/src/canvas/draw/scene.rs",
+      "source_sha256": "5159a94ce195ecc27829bf42b25f59c9665b06067b8c6313204c24cc1b7ea488"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/capture/session.rs",
+      "destination_sha256": "59088ab6d2113c207e985d9c44655b423b8f015e91bf138fb1b3426050c3359e",
+      "source": "services/compd/crates/world/src/capture/session.rs",
+      "source_sha256": "fbf3a88655d30421bb1cd47a39a9398a8aee3f7ffd8b496ee22ebade626ab63a"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/capture/session/message.rs",
+      "destination_sha256": "ed76b782af8aa012e8d3fff9fa6b4cab4d8306b297076f41ed99608cb2d61e17",
+      "source": "services/compd/crates/world/src/capture/session/message.rs",
+      "source_sha256": "9c214c708285ef8f4e56186165e16e2cf43131da690b4d8efa97d6033a2110e2"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/comp/corners.rs",
+      "destination_sha256": "642198598a6dfba486ad51f8111631a99b6a01852ff0d2e88a49671e28b122aa",
+      "source": "services/compd/crates/world/src/comp/corners.rs",
+      "source_sha256": "7e0afed40cc8a640b77c8a932f6201f17241f48978df20cca5441769363bcebf"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/comp/panels.rs",
+      "destination_sha256": "900f1753abfe8a1f8d2be2fa4bc89675f6eef745538cd10d9aa227f2da1597e8",
+      "source": "services/compd/crates/world/src/comp/panels.rs",
+      "source_sha256": "e30761386cb17f2f8ae8f6dc3eab05d349e128f2e2e2a998f00a67b4a36d511f"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/comp/presentation.rs",
+      "destination_sha256": "bb25f30015fb4e9ec4d2ef0ac41b178af24d0edbfa6024f2ba073ba6b0a49beb",
+      "source": "services/compd/crates/world/src/comp/presentation.rs",
+      "source_sha256": "b56c64a8405c05156f22c3471aa98f2405fb2501e7fe82757858fcfdf7b15c49"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/comp/region.rs",
+      "destination_sha256": "785c39d55e7b777ae6899626557ac026136c168c42290407b89c94ebd76da32e",
+      "source": "services/compd/crates/world/src/comp/region.rs",
+      "source_sha256": "722a0b91510d5658ac21989287d88ff0beb71554cdca82dd6315596f502fe1d4"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/driver/settings/base.rs",
+      "destination_sha256": "7acca574d3817de6c5c5a2c42eef7f7696cdf60ac43c1d6aaeb6d57febf808f0",
+      "source": "services/compd/crates/world/src/driver/settings/base.rs",
+      "source_sha256": "c5d7804dbaaead77d4534c37458b4b369f7073d93c18c8228cd1ef2255bc7336"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/notify.rs",
+      "destination_sha256": "10a6261e53af6f4ada3e32cbcd20572e0bd4a304f52f46f599a6640094a9dfb3",
+      "source": "services/compd/crates/world/src/notify.rs",
+      "source_sha256": "c4d6ef077e6886a5ec268b8ed345828e9205e9297a8d7f8ce87604b0a585a11d"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/notify/present/base.rs",
+      "destination_sha256": "746a8dfc464dc021a0e7557c8562c3adf590d3e4f789cef519ab02da094b0831",
+      "source": "services/compd/crates/world/src/notify/present/base.rs",
+      "source_sha256": "160ee32804d9ebfb1a3ad52bd66b68b43058e7a0ac19bee997e41ac7c13172eb"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/notify/present/registry.rs",
+      "destination_sha256": "0cd7d37ea6530f1bfb3ce45f5f0ad1d6b0138379be3fdc0772b8829225f8c25e",
+      "source": "services/compd/crates/world/src/notify/present/registry.rs",
+      "source_sha256": "49e431be5ffb2ecf56c05a2e9d0ec761a897095f957c866f88cb3b86bc642ee3"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/strings.rs",
+      "destination_sha256": "1e5959c52efe11272d7b9870a88023b7d670e793ec2631610c7116907f1bdb20",
+      "source": "services/compd/crates/world/src/strings.rs",
+      "source_sha256": "5cf1b90e3a61dd49709a24d19034960eb126c51ba942c4790f81438c17270743"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/surface/draw.rs",
+      "destination_sha256": "57a085f769728cfb930f91d23c9bfe8b4bf5334194761edc8237cc0a92a9aa57",
+      "source": "services/compd/crates/world/src/surface/draw.rs",
+      "source_sha256": "39f3b3d7904f2f0a36f747559841c52b3017c57b0b71d5538b979394ec6e1451"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/surface/draw/fps.rs",
+      "destination_sha256": "e782ab19650d923d879626f04d6d820ce216fc2581dba85e1813582c2ae8107a",
+      "source": "services/compd/crates/world/src/surface/draw/fps.rs",
+      "source_sha256": "4cf33c12ccdc649dbc179729dab005554ee92766da7462db82e1e223c7f377da"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/surface/draw/handle.rs",
+      "destination_sha256": "2093d1ab2fc877501c8cf8368d36937681f7bcafd92518165d79516392e71cde",
+      "source": "services/compd/crates/world/src/surface/draw/handle.rs",
+      "source_sha256": "82d1e8286340bcbbd09ae2f3c7df158ce074361500064a8c953e1c25af39bea7"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/surface/draw/scene.rs",
+      "destination_sha256": "c23bd8103d13cbc22be32f4791e4545bd9889187f1fdf4fa30599f57858b1389",
+      "source": "services/compd/crates/world/src/surface/draw/scene.rs",
+      "source_sha256": "9a8ade664b745b7a6688670da0117b33c4714e93acf261eef07c39abcf49891e"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/surface/interface/core/hit.rs",
+      "destination_sha256": "0691ce287a1668c717154e98e6f7a8021d809c86ca3849cc1ce695ba02ded6e3",
+      "source": "services/compd/crates/world/src/surface/interface/core/hit.rs",
+      "source_sha256": "8740a3c316dbabe8cc38efda92763f3a8597d364dfb187cd1a91cbd03086bdc2"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/surface/interface/hit.rs",
+      "destination_sha256": "b090f05df9a54bb9c3ad568c00860f4d76822679f688203b0181439bd2126276",
+      "source": "services/compd/crates/world/src/surface/interface/hit.rs",
+      "source_sha256": "bbc6de6ea7f72b9c91532d1f7e6d1aec5aeea4b4a149335b718463ce3aa15cf5"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/surface/state.rs",
+      "destination_sha256": "6160035fb5d341217c58602f9ddf71b181c3554231c18abd6867382b95c52a7c",
+      "source": "services/compd/crates/world/src/surface/state.rs",
+      "source_sha256": "b91cab89cedb7109f2ba90292f81e8e77d7ac693afa1317558feff93b53974b4"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/crates/world/src/surface/system/base.rs",
+      "destination_sha256": "5bab7ef64571c9c0a060e8b6b29dd0e45307fef05289e36d991bbce45aff3c64",
+      "source": "services/compd/crates/world/src/surface/system/base.rs",
+      "source_sha256": "dfd852c5bd6bcfd515834632a9b58b238ddef0bfd29cee13622f15356ea63a2b"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/src/comp.rs",
+      "destination_sha256": "45739df0c76f3cbd9f2a3a49ea723945f1234b9a782e654812990d4d5f1fa1df",
+      "source": "services/compd/src/comp.rs",
+      "source_sha256": "bfe61187af823f71e9c92ea5fe5709ea16eef89f901376b5579639381e1ac01f"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/src/main.rs",
+      "destination_sha256": "3cb6c2a4fe440673a7dfc7ffe271c226d06024a1cc56a2bc46a1bc288884d78f",
+      "source": "services/compd/src/main.rs",
+      "source_sha256": "b7fdde8deaa016289e42f0556fdd3a842009c4446e30bfdb132a242d036f1c52"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "engines/compd/tests/bus_wake.rs",
+      "destination_sha256": "0b9f9964601f80af5a2fdb5fbae2329c4c4cef0888aece3cf9dd9f372f292393",
+      "source": "services/compd/tests/bus_wake.rs",
+      "source_sha256": "23bd82b97acc1ae530f31bcaa3fac5af0083a10cf786a82ad8b51fc6c2b74b59"
+    },
+    {
+      "adaptation": "Track B lab refactor after the immutable B1 import: egui-free contracts/theme, native authority/chrome, client furniture, CBC manifest/lock adaptation; licences retained",
+      "destination": "libraries/test-broker/noded/props_reservation.rs",
+      "destination_sha256": "f7f9690c0e3bef7900912db51bf6454b2ffa4828eb580619261cb0d07755d60a",
+      "source": "services/noded/src/props_reservation.rs",
+      "source_sha256": "b97d9f39876c93922813d583a7db4a9258e6df3cbd1909df6ecda956de09e884"
+    },
+    {
+      "adaptation": "B6 client copy of pure accepted panel preferences and all original tests",
+      "destination": "engines/viu/src/preferences.rs",
+      "destination_sha256": "31b2656b4d78193fddb4c8288eb6875f9f295f68605bdc4697c9aa3a4cffaf67",
+      "source": "services/compd/crates/scene-host/src/preferences.rs",
+      "source_sha256": "31b2656b4d78193fddb4c8288eb6875f9f295f68605bdc4697c9aa3a4cffaf67"
+    },
+    {
+      "adaptation": "B6 client extraction; original renderer/state tests retained; compositor host wiring replaced with layer-shell",
+      "destination": "engines/viu/Cargo.toml",
+      "destination_sha256": "aad81a2ff5e8aa84b26f0da520708abe6bd4f6dff0cca57b42d95a8cadde11a0",
+      "source": "services/compd/crates/scene-host/Cargo.toml",
+      "source_sha256": "2d726a1888836e7062d8827ceb6160532c3ae154daa9d862ba33c2ec88edc81d"
+    },
+    {
+      "adaptation": "B6 client extraction; original renderer/state tests retained; compositor host wiring replaced with layer-shell",
+      "destination": "engines/viu/src/lib.rs",
+      "destination_sha256": "e809f8859abb1a1efdd1e820be545daa97b97be420797b6acd3b2f94a2e0e5f0",
+      "source": "services/compd/crates/scene-host/src/lib.rs",
+      "source_sha256": "f7ba5fc692b6ac8a87687d523e3b4661e999a7c3674012004c6afef54037d719"
+    },
+    {
+      "adaptation": "B6 client extraction; original renderer/state tests retained; compositor host wiring replaced with layer-shell",
+      "destination": "engines/viu/src/panels.rs",
+      "destination_sha256": "e617ed07d23d952ab70964a389993b5aa74901cdec3d17099ec16f950dfe738a",
+      "source": "services/compd/crates/scene-host/src/panels.rs",
+      "source_sha256": "c0f759e09e692755fd5b9c538d977a910193d022ce6945dc963f02c129e183d4"
     }
   ],
   "licence": "Original per-file and vendor licences retained",

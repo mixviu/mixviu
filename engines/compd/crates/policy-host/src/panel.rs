@@ -145,9 +145,13 @@ pub fn request(lp: &mut Loop, request: &PanelRequest) -> ControlReply {
     // is owed again with a fresh grace.
     let owed = request.mode.is_some() && panels.holders.get(&key).is_some_and(|panel| panel.owed());
     let previous = panels.holders.get(&key).and_then(|panel| panel.verdict);
-    let focus = world::comp::corners::panel_input_enabled() && reporting
+    let focus = world::comp::corners::panel_input_enabled()
+        && reporting
         && request.mode.as_deref() == Some("pinned")
-        && !panels.holders.get(&key).is_some_and(|p| p.mode == "pinned" && p.generation == request.generation);
+        && !panels
+            .holders
+            .get(&key)
+            .is_some_and(|p| p.mode == "pinned" && p.generation == request.generation);
     let op = PanelOp {
         output: &request.output,
         edge: &request.edge,
@@ -203,7 +207,9 @@ pub fn request(lp: &mut Loop, request: &PanelRequest) -> ControlReply {
         ));
     }
     if focus {
-        panels.focus_owed.insert(key.clone(), (request.sender.clone(), request.generation));
+        panels
+            .focus_owed
+            .insert(key.clone(), (request.sender.clone(), request.generation));
     } else if reporting && request.mode.as_deref() != Some("pinned") {
         panels.focus_owed.remove(&key);
     }
@@ -306,19 +312,40 @@ fn service_panel_focus(lp: &mut Loop) {
     }
     let requests = std::mem::take(&mut lp.inner.comp.panels.focus_owed);
     for (key, claim) in requests {
-        let Some(panel) = lp.inner.comp.panels.holders.get(&key) else { continue; };
-        if panel.mode != "pinned" || panel.stalled || panel.reporter.as_ref() != Some(&claim.0) || panel.generation != claim.1 { continue; }
-        let surface = panel.id.and_then(|id| {
-            lp.inner.comp.registry.get(id).filter(|r| r.mapped()).and_then(|_|surface_of(lp,id))
-        });
-        let Some(surface) = surface else {
-            lp.inner.comp.panels.focus_owed.insert(key,claim);
+        let Some(panel) = lp.inner.comp.panels.holders.get(&key) else {
             continue;
         };
-        if world::comp::panels::concealed(&surface) || world::comp::latch::active(lp) { continue; }
+        if panel.mode != "pinned"
+            || panel.stalled
+            || panel.reporter.as_ref() != Some(&claim.0)
+            || panel.generation != claim.1
+        {
+            continue;
+        }
+        let surface = panel.id.and_then(|id| {
+            lp.inner
+                .comp
+                .registry
+                .get(id)
+                .filter(|r| r.mapped())
+                .and_then(|_| surface_of(lp, id))
+        });
+        let Some(surface) = surface else {
+            lp.inner.comp.panels.focus_owed.insert(key, claim);
+            continue;
+        };
+        if world::comp::panels::concealed(&surface) || world::comp::latch::active(lp) {
+            continue;
+        }
         if let Some(keyboard) = lp.state.seat.seat.get_keyboard() {
-            if keyboard.is_grabbed() || lp.state.seat.seat.input_method().keyboard_grabbed() { continue; }
-            keyboard.set_focus(&mut lp.state, Some(surface), smithay::utils::SERIAL_COUNTER.next_serial());
+            if keyboard.is_grabbed() || lp.state.seat.seat.input_method().keyboard_grabbed() {
+                continue;
+            }
+            keyboard.set_focus(
+                &mut lp.state,
+                Some(surface),
+                smithay::utils::SERIAL_COUNTER.next_serial(),
+            );
         }
     }
 }
