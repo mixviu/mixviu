@@ -4,7 +4,7 @@
 $core=require("core.mix");$state=$core.initial();$ctx=viu_context()
 if len($app_args)>0 then $state.node=$app_args[0];$state.node_draft=$state.node;$checked=$core.target($state.node) end
 fn publish_monitor($s)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.project($s)}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
 fn refresh_monitor($s)
   try
@@ -88,5 +88,22 @@ on monitor.intent
       $state.sort=$a.value.column;$state=refresh_monitor($state)
     elif $a.action=="select" then $state.selected=to_number($a.value.key) end
   end
+  publish_monitor($state);reply(0,"{}")
+end
+
+on viu.frame.close
+  $model=$core.framed($state)
+  $model.window_close=true
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+end
+on viu.frame.intent
+  $id=$event.args.value.command
+  if $id=="monitor.refresh" then $state=refresh_monitor($state)
+  elif $id=="monitor.pause" then $state.paused=not $state.paused
+  elif $id=="monitor.close" then
+    $model=$core.framed($state);$model.window_close=true
+    send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+    reply(0,"{}");return
+  else raise("ACTION","Unknown frame action") end
   publish_monitor($state);reply(0,"{}")
 end

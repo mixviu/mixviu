@@ -1026,7 +1026,9 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                         "max_fraction",
                     ] {
                         if let Some(v) = p.get(key) {
-                            if key == "size" && design_length(v, None).is_some() { continue; }
+                            if key == "size" && design_length(v, None).is_some() {
+                                continue;
+                            }
                             if v.as_f64().is_none_or(|n| {
                                 !n.is_finite() || n < 0.0 || (key.contains("fraction") && n > 1.0)
                             }) {
@@ -1077,9 +1079,15 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
 
 fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
     match value.as_str()? {
-        "design.title_bar_height" => Some(ctx.map_or(38.0, |ctx| crate::window_frame::Metrics::of(ctx).height)),
-        "design.status_height" => Some(ctx.map_or(30.0, |ctx| toolkit::chrome::Chrome::of(ctx).metrics.bars.status)),
-        "design.options_height" => Some(ctx.map_or(42.0, |ctx| toolkit::chrome::Chrome::of(ctx).metrics.bars.options)),
+        "design.title_bar_height" => {
+            Some(ctx.map_or(38.0, |ctx| crate::window_frame::Metrics::of(ctx).height))
+        }
+        "design.status_height" => Some(ctx.map_or(30.0, |ctx| {
+            toolkit::chrome::Chrome::of(ctx).metrics.bars.status
+        })),
+        "design.options_height" => Some(ctx.map_or(42.0, |ctx| {
+            toolkit::chrome::Chrome::of(ctx).metrics.bars.options
+        })),
         _ => None,
     }
 }

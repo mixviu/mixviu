@@ -1,3 +1,4 @@
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 fn target($node)
@@ -28,5 +29,13 @@ fn project($s)
     $v=$s.snapshot
     $summary=fmt("CPU %.1f%% · %d cores · Memory %s / %s · Swap %s / %s",$v.cpu.busy,$v.cpu.cores,format_bytes($v.memory.used),format_bytes($v.memory.total),format_bytes($v.swap.used),format_bytes($v.swap.total))
   end
-  return {status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:$s.sort,ascending:if contains(["name","pid","user"],$s.sort) then not $s.reverse else $s.reverse end},properties:{height:470}},values:{pause:$s.paused,filter:$s.filter,node:$s.node_draft},serial:$s.serial}
+  $model={status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:$s.sort,ascending:if contains(["name","pid","user"],$s.sort) then not $s.reverse else $s.reverse end},properties:{height:470}},values:{pause:$s.paused,filter:$s.filter,node:$s.node_draft},serial:$s.serial}
+  return $model
+end
+
+fn framed($s)
+  $model=project($s)
+  $actions=[{id:"monitor.refresh",label:"Refresh",icon:"refresh-cw",icon_only:true,enabled:true},{id:"monitor.pause",label:"Pause",icon:"pause",icon_only:true,checked:$s.paused,enabled:true}]
+  $menus=[{id:"File",label:"File",enabled:true,children:concat($actions,[{id:"monitor.close",label:"Close",enabled:true}])}]
+  return $frame.apply($model,{icon:"monitor",title:"Monitor",menus:$menus,toolbar:$actions,status:$model.status})
 end

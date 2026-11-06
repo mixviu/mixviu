@@ -44,6 +44,7 @@ pub fn install_session(ctx: &egui::Context, values: &Value, app: &str) -> Result
     }
     let m = chrome.metrics;
     ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::unique("viu-gold-fonts"), true);
         d.insert_temp(
             egui::Id::unique("viu-design-colours"),
             std::sync::Arc::new(colours),
@@ -60,7 +61,7 @@ pub fn install_session(ctx: &egui::Context, values: &Value, app: &str) -> Result
             },
         );
     });
-    crate::icons::install(ctx);
+    crate::icons::install_style(ctx, toolkit::icons::stroke_width(&theme), chrome.style.icon_mask.0);
     Ok(())
 }
 pub fn apply(ctx: &egui::Context, description: &Value, accent: [u8; 3]) {
@@ -103,6 +104,7 @@ pub fn resolve(description: &Value) -> Result<ResolvedAppearance, String> {
 }
 
 pub fn install_style(ctx: &egui::Context, description: &Value, appearance: ResolvedAppearance) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("viu-gold-fonts"), false));
     crate::fonts::install(ctx, appearance.body_weight, appearance.heading_weight);
     crate::icons::install_style(ctx, appearance.icon_stroke, appearance.icon_mask);
     let theme = if description["mode"] == "light" {

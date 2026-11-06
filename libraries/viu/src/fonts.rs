@@ -71,6 +71,9 @@ pub fn install(ctx: &egui::Context, body: u16, heading: u16) {
     ctx.data_mut(|d| d.insert_temp::<(u16, u16)>(key, (body, heading)));
 }
 pub fn emphasis(ctx: &egui::Context, font: FontId) -> FontId {
+    if ctx.data(|d| d.get_temp::<bool>(egui::Id::unique("viu-gold-fonts"))).unwrap_or(false) {
+        return toolkit::fonts::bound(ctx, toolkit::fonts::medium(font.size));
+    }
     if ctx
         .data(|d| d.get_temp::<(u16, u16)>(egui::Id::unique("viu-font-weights")))
         .is_some()
