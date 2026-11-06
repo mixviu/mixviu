@@ -43,7 +43,9 @@ mimalloc.workspace = true
 # The shell's process-level tests (tests/), which run `mix` as built here.
 # Versions match cli/mix-shell's, so the lock gains no second copy.
 [dev-dependencies]
-mix.workspace = true
+# serde: tests/lint_functions.rs hydrates fixtures with mix::from_value. Test
+# builds only; the shipped shell profile carries no serde.
+mix = { workspace = true, features = ["serde"] }
 bus = { workspace = true, features = ["native"] }
 buildinfo.workspace = true
 test-broker = { path = "../../libraries/test-broker" }
