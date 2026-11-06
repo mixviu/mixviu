@@ -731,7 +731,7 @@ fn outline_rows(
             }
         });
         geometry.insert(format!("{id}.row.{key}"), response.response.rect);
-        if rows
+        if row["expanded"] == true || rows
             .get(*next)
             .is_some_and(|row| number(row, "depth", 0.) as usize > depth)
         {
