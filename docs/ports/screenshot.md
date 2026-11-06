@@ -2,6 +2,10 @@
 
 Oracle: MixOS `8779f3328`, apps/screenshot capture/actions/commands/shell/jobs,
 annotation engine and docs/screenshot/README.md. Per-app Rust added: 0.
+The shared gold frame is now selected. This only covers frame adoption;
+the rows labelled ported below are historical specimen dispositions, not
+gold acceptance. In particular, capture/save/export return admission rather
+than gold's completion replies. See the Screenshot Fable question in last.md.
 The inventory was committed before implementation. Dispositions below describe
 the bounded lab implementation, with acceptance evidence recorded in last.md.
 

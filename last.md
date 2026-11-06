@@ -1,3 +1,102 @@
+# Screenshot frame checkpoint — awaiting Fable S1
+
+**Overall parity: incomplete.** Frame adoption is implemented and checked at
+`6ed840c8877dff0712a9d8126bd28fd7bb7a33ee` on `lab/parity-screenshot`,
+based on the assigned `64e3b7b`. This receipt-only checkpoint does not certify
+features, ABP compatibility or visual parity. No production install occurred.
+
+## Fable question S1: completion replies and capture lifecycle
+
+Opus: relay this question to Fable. The per-app brief explicitly says to stop
+when gold and inventory disagree. The standing brief normally permits correcting
+such disagreements and continuing; this job's more specific stop instruction
+is followed here. No approval or accepted deviation is claimed.
+
+**Question:** confirm exact gold completion/lifecycle semantics for Screenshot,
+including the reusable host work needed, or approve the specimen's differing
+admission protocol explicitly?
+
+- **A — exact gold (recommended):** correct the inventory's historical
+  "Ported" claims; extend the generic Viu host/runtime with caller-owned
+  deferred replies, preserving request identity across job completion,
+  cancellation, stale results and close. Mix continues to own app policy.
+  Capture/open/save/export answer their final result; cancellation remains
+  responsive. Implement gold's quit/cancel/restore ordering as part of this.
+- **B — approved deviation:** keep immediate `{accepted:true}` job admission
+  and require polling `screenshot.info`. This changes the public protocol,
+  errors, cancellation and closing behaviour and cannot count as gold ABP
+  parity without an explicit ruling.
+
+Evidence from pinned gold
+`8779f33284b7d3f1178c3d57a699efb9b0867b22`:
+
+- `apps/screenshot/src/commands.rs:93` describes capture answering when ready.
+  `app.rs:1486–1494` retains the request id in `start_capture`;
+  `app.rs:1151–1206` replies after completion with `info()` or rc 10 and
+  `{error_code,message}`, plus `restore_failed` where applicable.
+- `app.rs:1427–1436` returns `{cancelling:bool}` from cancel. Gold signals the
+  running job and settles it; it does not immediately claim cancelled/restored.
+  `capture.rs:497–517` awaits region selection before checking cancellation.
+  Gold's test `quitting_during_a_capture_cancels_it_then_asks` covers close.
+- Current Mix `app.mix` returns `{accepted:true,job}` from capture and
+  `{accepted:true}` from save/export, then publishes completion later.
+  Its cancellation stops the worker immediately and warns about a remaining
+  selector. The inventory's initial "Ported" dispositions overstate parity,
+  despite its later paragraph acknowledging deferred blocking replies.
+- Generic `libraries/viu/src/app_host.rs:250–258` removes and answers the
+  pending request on callback completion, falling back to host state if the
+  callback supplies no reply. `runtime.rs:160` bounds callbacks to 20 seconds;
+  `runtime.rs:528–543` stores one reply for the current callback. Running the
+  entire capture synchronously there would obstruct cancellation and can exceed
+  the callback deadline during selection. This is reusable host implementation
+  work, not a missing Mix interpreter primitive or licence to add a transport.
+
+The frame checkpoint temporarily refuses close while busy or restore has
+failed, so the existing worker cannot outlive its restore owner. This is not
+gold's final close policy and remains unaccepted under S1. Existing annotation,
+dialog, macro, CLI, persistence and other inventory deferrals remain open.
+
+## Frame checks and evidence
+
+The bundle selects `host.frame: gold`. Mix supplies the camera mark, title,
+File menu, Take/Cancel actions and status. Content retains its IDs and uses
+the identity-preserving shared mount. Header and content capture actions call
+the same in-process Mix function. Caption close returns to Mix. No per-app
+Rust, transport, dependency or shared-frame change was added.
+
+Exact CBC `20261107-025752-62f61cfc-a1`, worker cbc3, BUILD_RC=0:
+`mix tools/gold_parity_gate.mix` ran fmt-check, locked all-target check,
+Viu/viu-engine tests, clippy and debug host build. Worker diff empty; existing
+warnings remain. Saved complete log basename:
+`20261107-025752-cbc3-6ed840c8877d-20261107-025752-62f61cfc-a1-d2ac0e9d.log`.
+This is the scoped gate, not the four-engine integration/process gate.
+Artifact SHA256:
+`2044c741983b90bdc48ae2bc6ce7c07f461f779341a13dd8df9044ef6659ce51`.
+Fetched artifact hash matched. Local Mix capture validation (four valid shapes,
+nine refusals), app provenance/bundle checks and diff-check passed. App lint
+with the embedder's viu_context/viu_image functions allowed had no errors and
+one unchecked-send warning.
+
+Private evidence: `screenshot-parity-20261107/frame-live.HgpRCT` in the
+private hub `_var`, with harness `frame-live.mix`, seven PNG readbacks,
+settings receipts/state/PID records, logs and closure receipt. The run used
+an owned native broker, headless compositor and private settingsd, isolated
+home/runtime/config/data/cache/state and no live display. Frame-only captures
+were 980×680, scale 1, empty image state; these are not a matched 1040×680 gold
+pair. No fixture content was needed for this empty-state frame check.
+
+One Screenshot PID, 1828764, passed light mode, Studio/orange, compact/square,
+font/weight/size/text-scale/icon-stroke changes, dark/Pro, then settings
+authority absence/restart and native caption close. Light and enlarged-font
+captures inspected: frame responds; destination text remains poor contrast in
+light mode and the preview still uses a hardcoded dark background. Header
+menus, options, annotation rail, canvas and status still need gold matching.
+SSIM/region metrics: **not measured**, no gold capture pair or visual acceptance.
+Full ABP and all Prefs inputs/refusals remain untested. All four owned child
+PIDs were confirmed dead; the private broker was stopped by the native harness.
+
+Earlier shared checkpoint history follows.
+
 # Gold parity round 2 — frame and method checkpoint
 
 The standing parity mandate has been read. **Monitor is not at full parity.**
@@ -518,3 +617,6 @@ branch lab/gold-parity; head 0a7ae37937e8b022b38fb5b0adc176a6b83ce97b (tested co
 
 
 branch lab/gold-parity; head bb950a59f82ef5c400fe89eaf1175a42bef6f93c (tested code; receipt-only commit follows); frame: identity-preserving mount adopted by Monitor, five live Prefs variants/recovery/close passed, remaining input combinations unaccepted; Monitor: NOT at parity, matched 1040x680 SSIM distortion 0.0957189, menus/options/table/status/Performance/ABP/actions remain, no accepted deviations, Fable P1 pending; CBC job ids: 20261107-012348-cc3a95cf-a1 (final scoped green), 20261107-012031-152ba7e4-a1 (preparation passed with formatting diff), 20261107-011138-9b732aa9-a1 (earlier scoped green).
+
+
+branch lab/parity-screenshot; head 6ed840c8877dff0712a9d8126bd28fd7bb7a33ee (tested code; receipt commit follows); frame adopted; features incomplete; Bus S1 pending; Prefs five live variants + loss/recovery passed; SSIM/regions unmeasured; CBC 20261107-025752-62f61cfc-a1 PASS.
