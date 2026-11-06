@@ -91,6 +91,13 @@ impl Widget {
         self.properties = properties;
         self
     }
+    /// Untruncated native label width, using exactly the same typography as
+    /// drawing. Containers choose whether and how this preferred size shrinks.
+    pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32,String> {
+        self.validate_model(model)?;
+        if self.kind!="label" { return Err("intrinsic text width requires a label".into()); }
+        Ok(egui::WidgetText::from(label_text(ui,self,self.value(model))).into_galley(ui,Some(egui::TextWrapMode::Extend),f32::INFINITY,egui::TextStyle::Body).size().x)
+    }
     fn choices(&self) -> Vec<&str> {
         self.properties["choices"]
             .as_array()
@@ -443,40 +450,15 @@ impl Widgets {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
             "label" => {
-                let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
-                if let Some(size) = widget.properties["size"].as_f64() {
-                    text = text.size(size as f32);
-                }
-                if widget.properties["bold"] == true {
-                    text = text.strong();
-                }
-                if widget.properties["emphasis"] == true {
-                    let font = egui::TextStyle::Body.resolve(ui.style());
-                    text = text.font(crate::fonts::emphasis(ui.ctx(), font));
-                }
-                if widget.properties["weak"] == true {
-                    text = text.weak();
-                }
-                if widget.properties["mono"] == true {
-                    text = text.monospace();
-                }
-                if let Some(colour) = widget.properties["colour"]
-                    .as_array()
-                    .filter(|c| c.len() == 4)
-                {
-                    text = text.color(Color32::from_rgba_unmultiplied(
-                        whole(&colour[0]).unwrap_or(255) as u8,
-                        whole(&colour[1]).unwrap_or(255) as u8,
-                        whole(&colour[2]).unwrap_or(255) as u8,
-                        whole(&colour[3]).unwrap_or(255) as u8,
-                    ));
-                }
+                let text=label_text(ui,widget,value);
                 let mut label = egui::Label::new(text);
                 if widget.properties["truncate"] == true {
                     label = label.truncate();
                 }
                 if widget.properties["align"] == "center" {
                     label = label.halign(egui::Align::Center);
+                } else if widget.properties["align"] == "right" {
+                    label = label.halign(egui::Align::Max);
                 }
                 ui.add(label)
             }
@@ -1005,4 +987,36 @@ fn icon_button(ui: &mut egui::Ui, name: &str, text: &str, selected: bool) -> egu
     } else {
         ui.add(egui::Button::new(text).selected(selected))
     }
+}
+
+fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
+                let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
+                if let Some(size) = widget.properties["size"].as_f64() {
+                    text = text.size(size as f32);
+                }
+                if widget.properties["bold"] == true {
+                    text = text.strong();
+                }
+                if widget.properties["emphasis"] == true {
+                    let font = egui::TextStyle::Body.resolve(ui.style());
+                    text = text.font(crate::fonts::emphasis(ui.ctx(), font));
+                }
+                if widget.properties["weak"] == true {
+                    text = text.weak();
+                }
+                if widget.properties["mono"] == true {
+                    text = text.monospace();
+                }
+                if let Some(colour) = widget.properties["colour"]
+                    .as_array()
+                    .filter(|c| c.len() == 4)
+                {
+                    text = text.color(Color32::from_rgba_unmultiplied(
+                        whole(&colour[0]).unwrap_or(255) as u8,
+                        whole(&colour[1]).unwrap_or(255) as u8,
+                        whole(&colour[2]).unwrap_or(255) as u8,
+                        whole(&colour[3]).unwrap_or(255) as u8,
+                    ));
+                }
+    text
 }

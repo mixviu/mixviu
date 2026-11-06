@@ -93,13 +93,17 @@ expose current subwidget geometry for Bus input automation.
 edges use `min_fraction` and `max_fraction` for both native dragging and intent
 admission. `split` owns a divider, bounded ratio and double-click reset. Numeric
 admission uses the same native point precision as pointer-generated values.
+Dock `outline`/`outline_width` ports draw app-selected focus or status borders
+without changing the allocated child geometry.
 
 `band` arranges app-authored `children` using one `groups` entry per child:
 `preferred`, `minimum`, `align` (`left`, `center`, `right`), optional `shrink`
 priority and integer `order`. It reuses the retained renderer-independent design
 solver. Omit `shrink` for a fixed group; authored Mix uses `nil`, while a JSON
 model uses `null`. Lengths are finite nonnegative numbers; `window.captions`
-selects the current theme's three-caption width. Hidden or detached slot-only
+selects the current theme's three-caption width. `content` uses a label's
+untruncated native text width, with its current typography; the solver then
+shrinks it into the available space. Hidden or detached slot-only
 children consume no band space. Malformed model updates refuse transactionally,
 including a required definition, placement or group port removed by a binding.
 

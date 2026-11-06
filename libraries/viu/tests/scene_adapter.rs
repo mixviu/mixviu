@@ -393,3 +393,21 @@ fn scene_band_reuses_the_native_solver_with_app_owned_groups_and_transactional_v
         }
     }
 }
+
+#[test]
+fn intrinsic_band_labels_measure_native_text_shrink_and_refuse_an_incompatible_bound_control() {
+    let source=scene(json!({"root":{"widget":"band","children":["heading"],"groups":{"heading":{"preferred":"content","minimum":0,"align":"left","shrink":0,"order":0}}},"heading":{"widget":"control","definition":"= $model.control"}}));
+    let control=Widget::new("heading","label","",json!("Short")).with_properties(json!({"truncate":true}));
+    let mut view=SceneView::with_model(&source,json!({"control":control.encode()})).unwrap();
+    let ctx=egui::Context::default();
+    let mut out=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(600.0,200.0))),..Default::default()},|ui|{view.show(ui);});out.textures_delta.clear();
+    let short=view.geometry["heading"].width();
+    let model=json!({"control":control.encode(),"values":{"heading":"A long native title / ".repeat(40)}});
+    view.apply_model(model.clone()).unwrap();
+    let mut out=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(600.0,200.0))),..Default::default()},|ui|{view.show(ui);});out.textures_delta.clear();
+    assert!(view.geometry["heading"].width()>short+100.0);
+    assert!(view.geometry["heading"].width()<=600.0);
+    let incompatible=Widget::new("heading","button","",json!("Ready"));
+    assert!(view.apply_model(json!({"control":incompatible.encode()})).is_err());
+    assert_eq!(view.model(),&model);
+}
