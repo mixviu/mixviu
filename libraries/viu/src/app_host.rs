@@ -68,6 +68,8 @@ struct Host {
     deferred: BTreeMap<u64, Reply>,
     held_requests: std::collections::VecDeque<Request>,
     inflight: BTreeSet<u64>,
+    ui_inflight: BTreeSet<u64>,
+    dispatching_ui: bool,
     input: Input,
     input_reply: Option<Reply>,
     capture: crate::capture::Capture,
@@ -147,6 +149,9 @@ impl Host {
         match self.runtime.event_with_headers(command, body, headers) {
             Ok(seq) => {
                 self.inflight.insert(seq);
+                if self.dispatching_ui {
+                    self.ui_inflight.insert(seq);
+                }
                 if let Some(reply) = reply {
                     self.pending.insert(seq, reply);
                 }
@@ -377,6 +382,7 @@ impl Host {
         }
         while let Some(done) = self.runtime.try_completion() {
             self.inflight.remove(&done.sequence);
+            self.ui_inflight.remove(&done.sequence);
             self.error = done.error.unwrap_or_default();
             if self.error.is_empty() {
                 if let Some(model) = done.model {
@@ -592,12 +598,14 @@ impl Host {
         if let Some(error) = self.view.take_focus_error() {
             self.error = error;
         }
+        if self.ui_inflight.is_empty() && self.view.current_revision_drawn() {
+            self.facilities.settle_answers();
+        }
         if self.input.now.is_empty()
             && self.input.later.is_empty()
             && self.inflight.is_empty()
             && self.view.current_revision_drawn()
         {
-            self.facilities.settle_answers();
             if let Some(reply) = self.input_reply.take() {
                 let _ = reply.send((if self.error.is_empty() { 0 } else { 10 }, self.state()));
             }
@@ -672,6 +680,7 @@ impl Host {
             if self.input_reply.is_some() {
                 input_headers.insert("viu_input".into(), "bus".into());
             }
+            self.dispatching_ui = true;
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, input_headers.clone(), None);
             }
@@ -735,6 +744,7 @@ impl Host {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
+            self.dispatching_ui = false;
         }
         self.settle(ui.ctx());
         if !self.error.is_empty() {
@@ -879,6 +889,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         deferred: BTreeMap::new(),
         held_requests: std::collections::VecDeque::new(),
         inflight: BTreeSet::new(),
+        ui_inflight: BTreeSet::new(),
+        dispatching_ui: false,
         input: Input::default(),
         input_reply: None,
         capture: crate::capture::Capture::new(capture_root, wake),

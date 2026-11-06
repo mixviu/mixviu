@@ -601,10 +601,38 @@ fn draw_outline(
         .id_salt((id, "outline"))
         .auto_shrink([false, false]);
     let mut draw = |ui: &mut Ui| {
-        for row in value["rows"].as_array().into_iter().flatten() {
+        let mut next = 0;
+        outline_rows(ui, widget, value["rows"].as_array().expect("validated rows"), &mut next, 0, geometry, events);
+    };
+    let rect = if let Some(name) = widget.properties["saved_scroll"].as_str() {
+        toolkit::saved::widgets::scroll(
+            ui,
+            name,
+            None,
+            widget.properties["scroll_ready"] != false,
+            area,
+            &mut draw,
+        )
+        .inner_rect
+    } else {
+        area.show(ui, &mut draw).inner_rect
+    };
+    ui.interact(rect, ui.scope_id().with((id, "outline")), Sense::hover())
+}
+
+#[expect(clippy::too_many_arguments, reason = "reusable outline traversal retains caller-owned rows and intents")]
+fn outline_rows(ui: &mut Ui, widget: &Widget, rows: &[Value], next: &mut usize, depth: usize, geometry: &mut BTreeMap<String, Rect>, events: &mut Vec<Intent>) {
+    let id = &widget.id;
+    while let Some(row) = rows.get(*next) {
+        let row_depth = number(row, "depth", 0.) as usize;
+        if row_depth < depth { break; }
+        if row_depth > depth {
+            ui.indent((id, "level", *next), |ui| outline_rows(ui, widget, rows, next, depth + 1, geometry, events));
+            continue;
+        }
+        *next += 1;
             let key = text(row, "key");
             let response = ui.horizontal(|ui| {
-                ui.add_space(number(row, "depth", 0.) * ui.spacing().indent);
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 let colour = ui.visuals().text_color();
                 if row["branch"] == true {
@@ -680,20 +708,8 @@ fn draw_outline(
                 }
             });
             geometry.insert(format!("{id}.row.{key}"), response.response.rect);
+        if rows.get(*next).is_some_and(|row| number(row, "depth", 0.) as usize > depth) {
+            ui.indent((id, key), |ui| outline_rows(ui, widget, rows, next, depth + 1, geometry, events));
         }
-    };
-    let rect = if let Some(name) = widget.properties["saved_scroll"].as_str() {
-        toolkit::saved::widgets::scroll(
-            ui,
-            name,
-            None,
-            widget.properties["scroll_ready"] != false,
-            area,
-            &mut draw,
-        )
-        .inner_rect
-    } else {
-        area.show(ui, &mut draw).inner_rect
-    };
-    ui.interact(rect, ui.scope_id().with((id, "outline")), Sense::hover())
+    }
 }

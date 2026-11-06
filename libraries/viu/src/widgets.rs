@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
     "block-list",
+    "label-run",
     "form-grid",
     "cell-grid",
     "history-lines",
@@ -818,7 +819,7 @@ impl Widgets {
             "network-map" => {
                 crate::network_map::draw(ui, widget, value, &mut self.geometry, events)
             }
-            "block-list" | "form-grid" | "cell-grid" | "history-lines" => {
+            "block-list" | "form-grid" | "cell-grid" | "history-lines" | "label-run" => {
                 crate::data_panels::draw(ui, widget, value, &mut self.geometry, events)
             }
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),

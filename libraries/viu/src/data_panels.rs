@@ -6,7 +6,7 @@ use egui::{Rect, Ui, Vec2};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-pub const KINDS: &[&str] = &["block-list", "form-grid", "cell-grid", "history-lines"];
+pub const KINDS: &[&str] = &["block-list", "form-grid", "cell-grid", "history-lines", "label-run"];
 fn text<'a>(v: &'a Value, key: &str) -> &'a str {
     v[key].as_str().unwrap_or("")
 }
@@ -110,6 +110,7 @@ fn block(
             "separator"=>{ui.separator();},
             "collapse"=>{
                 let shown=egui::CollapsingHeader::new(styled(v,text(v,"title"))).id_salt(key).show(ui,|ui| {
+                    if let Some(width) = v["body_max_width"].as_f64() { ui.set_max_width(ui.available_width().min(width as f32)); }
                     if !text(v,"subtitle").is_empty(){ui.label(egui::RichText::new(text(v,"subtitle")).small().weak());}
                     ui.add(egui::Label::new(styled(&v["body_style"],text(v,"text"))).wrap());
                 });
@@ -142,6 +143,22 @@ pub fn draw(
     events: &mut Vec<Intent>,
 ) -> egui::Response {
     let id = &widget.id;
+    if widget.kind == "label-run" {
+        return ui.horizontal_wrapped(|ui| {
+            let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
+            for (index, row) in value.as_array().into_iter().flatten().enumerate() {
+                let label = styled(row, text(row, "text"));
+                let response = match text(row, "hue") {
+                    "accent" => ui.colored_label(palette.accent, label),
+                    "warning" => ui.colored_label(palette.warning, label),
+                    "danger" => ui.colored_label(palette.danger, label),
+                    "dim" => ui.colored_label(palette.text_dim, label),
+                    _ => ui.label(label),
+                };
+                geometry.insert(format!("{id}.{index}"), response.rect);
+            }
+        }).response;
+    }
     if widget.kind == "history-lines" {
         use toolkit::graph::{self, Hue, Readout};
         let raw = value["series"].as_array().unwrap();
@@ -318,7 +335,8 @@ pub fn draw(
                     * ui.text_style_height(&egui::TextStyle::Body))
             .max(60.)
         });
-    let rect = egui::ScrollArea::vertical()
+    let scroll = if widget.properties["scroll_both"] == true { egui::ScrollArea::both() } else { egui::ScrollArea::vertical() };
+    let rect = scroll
         .id_salt((id, widget.properties["document"].as_str().unwrap_or("")))
         .auto_shrink([false, false])
         .max_height(height)
