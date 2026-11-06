@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub const KINDS: &[&str] = &[
+    "mark",
     "label",
     "button",
     "field",
@@ -128,6 +129,7 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         let valid = match self.kind.as_str() {
+            "mark" => value.as_str().and_then(crate::icons::Icon::from_name).is_some(),
             "window-controls" => {
                 value["side"]
                     .as_str()
@@ -183,6 +185,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind == "mark" { return vec![]; }
         if self.kind == "editor" && self.properties["read_only"] == true {
             return vec![];
         }
@@ -449,6 +452,7 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
+            "mark" => ui.add(crate::icons::image_of(ui.ctx(), crate::icons::Icon::from_name(value.as_str().expect("validated mark")).expect("validated mark"), toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark, ui.visuals().text_color())),
             "window-controls" => {
                 let metrics = crate::window_frame::Metrics::of(ui.ctx());
                 let (area, response) = ui.allocate_exact_size(

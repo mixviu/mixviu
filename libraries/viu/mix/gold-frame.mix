@@ -3,6 +3,7 @@
 fn apply($model,$options)
   $model.frame={icon:"icon:"..$options.icon,groups:{"gold-icon":{preferred:28,minimum:28,align:"left",shrink:nil,order:0},"gold-menu":{preferred:220,minimum:100,align:"left",shrink:1,order:1},"gold-title":{preferred:"content",minimum:0,align:"center",shrink:0,order:2},"gold-toolbar":{preferred:180,minimum:36,align:"right",shrink:1,order:3}}}
   $values=$model.values ?? {}
+  $values["gold-icon"]=$options.icon
   $values["gold-title"]=$options.title
   $values["gold-menu"]=$options.menus
   $values["gold-toolbar"]=$options.toolbar

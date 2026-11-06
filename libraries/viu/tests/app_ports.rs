@@ -50,7 +50,8 @@ fn all_mix_bundles_publish_models_the_actual_scene_adapter_can_draw() {
             viu::gold_frame::mount(&bundle.scene, model)
         } else {
             SceneView::with_model(&bundle.scene, model)
-        }.unwrap();
+        }
+        .unwrap();
         let ctx = eframe::egui::Context::default();
         viu::icons::install(&ctx);
         ctx.run_ui(
