@@ -1341,6 +1341,10 @@ impl ui_surface::UiSurfaces for UiRegistry {
             .map(|(order, item)| item.view(order))
             .collect()
     }
+    fn get(&self, id: HandleId) -> Option<ui_surface::UiItemView> {
+        let order = *self.index.get(&id)?;
+        self.items.get(order).map(|item| item.view(order))
+    }
     fn set_dealloc_enabled(&mut self, enabled: bool) {
         UiRegistry::set_dealloc_enabled(self, enabled)
     }

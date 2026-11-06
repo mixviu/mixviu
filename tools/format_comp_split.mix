@@ -9,6 +9,7 @@ print("FORMAT_DIFF_END")
 $files = filter(lines(run_argv_must(["git", "diff", "--name-only", "--", "*.rs"])), fn($p) = $p != "")
 if len($files) > 0 then run_argv_must(concat(["git", "checkout", "-q", "--"], $files)) end
 if $r.exit_code != 0 then exit($r.exit_code) end
+if args() == ["fmt-only"] then exit(0) end
 $failed = false
 for $cmd in [
   ["/opt/mixos/bin/mix", "tools/check_comp_profiles.mix"],

@@ -12,6 +12,11 @@ end
 if $a[0] == "native" then
   $features = "backend-native,backend-headless"
   gate_run(["cargo", "build", "-p", "compd", "--no-default-features", "--features", $features, "--locked"])
+  $meta = json_parse(run_argv_must(["cargo", "metadata", "--no-deps", "--format-version", "1", "--locked"]))
+  $binary = $meta.target_directory .. "/debug/compd"
+  print("HEADLESS_BINARY=" .. $binary)
+  gate_run([$binary, "--backends"])
+  $test = ["env", "COMPD_TEST_BINARY=" .. $binary, "cargo", "test", "-p", "compd", "-p", "headless", "--no-default-features", "--features", "compd/backend-native,compd/backend-headless", "--locked"]
   $tree = run_argv(["cargo", "tree", "-p", "compd", "--no-default-features", "--features", $features, "-e", "normal", "--locked"], {max_output: 64000000})
   print($tree.stderr)
   $matches = filter(lines($tree.stdout), fn($line) = contains($line, "egui"))
@@ -19,17 +24,19 @@ if $a[0] == "native" then
   print("EGUI_MATCH_LINES=" .. to_string(len($matches)))
   print("TREE_RC=" .. to_string($tree.exit_code))
   if $tree.exit_code != 0 or len($matches) != 0 then exit(1) end
-  gate_run(["cargo", "test", "-p", "compd", "-p", "headless", "--no-default-features", "--features", "compd/backend-native,compd/backend-headless", "--locked"])
+  gate_run($test)
   -- These runtime tests start only owned headless children, never a VT/display.
   -- Broker/app-dependent and long timing tests retain their upstream ignores.
-  if is_file("/dev/dri/renderD128") then
+  if exists("/dev/dri/renderD128") then
     print("HEADLESS_GPU_AVAILABLE=/dev/dri/renderD128")
     for $target in ["boot", "render_node", "feedback"]
-      gate_run(["cargo", "test", "-p", "headless", "--test", $target, "--locked", "--", "--ignored", "--test-threads=1"])
+      gate_run(concat($test, ["--test", $target, "--", "--ignored", "--test-threads=1"]))
     end
   else
     print("HEADLESS_GPU_SKIPPED=no renderD128 on worker; run refusal tests only")
-    gate_run(["cargo", "test", "-p", "headless", "--test", "boot", "--locked", "--", "--ignored", "render_node_", "--test-threads=1"])
+    for $name in ["render_node_nonexistent_is_refused", "render_node_primary_or_non_render_is_refused"]
+      gate_run(concat($test, ["--test", "boot", "--", "--ignored", "--exact", $name, "--test-threads=1"]))
+    end
   end
 elif $a[0] == "default" then
   gate_run(["cargo", "build", "-p", "compd", "--features", "backend-all", "--locked"])

@@ -18,7 +18,7 @@ fn create<U: UiProgram<Message = ui_surface::capture::CaptureMessage>>(
     bounds: Rectangle<i32, Physical>,
     space: UiSpace,
     layer: u64,
-    mut emit: EmitCapture,
+    emit: Option<EmitCapture>,
 ) -> Option<HandleId> {
     let handle = registry
         .create_in_space(
@@ -31,7 +31,9 @@ fn create<U: UiProgram<Message = ui_surface::capture::CaptureMessage>>(
             layer,
         )
         .ok()?;
-    registry.set_message_handler(handle, move |message| emit(message));
+    if let Some(mut emit) = emit {
+        registry.set_message_handler(handle, move |message| emit(message));
+    }
     Some(handle.id)
 }
 pub fn open(
@@ -44,6 +46,12 @@ pub fn open(
     layer: u64,
     emit: EmitCapture,
 ) -> Option<HandleId> {
+    // These display-only programs receive recorder updates but never send
+    // them back through the surface channel.
+    let emit = match &program {
+        CaptureProgram::Border { .. } | CaptureProgram::Dim { .. } | CaptureProgram::Encoding => None,
+        _ => Some(emit),
+    };
     macro_rules! open {
         ($program:expr) => {
             create(

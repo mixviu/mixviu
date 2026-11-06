@@ -44,7 +44,6 @@ use world::capture::session::{ActiveState, CapturePhase, CaptureTarget, PendingS
 use world::state::CoordinateTrait;
 use world::state::Loop;
 use world::surface::draw::handle::{UiSpace, load, load_snapshot};
-use world::surface::protocol::{SurfaceMessage, SurfaceMessageType};
 use world::window::interface::record::window::LoopWindow;
 
 /// Time a video capture runs before the "still capturing?" prompt appears.
@@ -310,7 +309,6 @@ fn start_setup(state: &mut Loop, renderer: &mut GlesRenderer) {
         .kernel
         .get_mut(&world::driver::capture::base::CAPTURE_MUT)
         .phase = CapturePhase::Setup;
-    forward(state, handle);
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
         reg.set_keyboard_focus(Some(handle.untyped()));
     }
@@ -628,7 +626,6 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
         );
         let stop_id = stop.untyped();
         bind_output(state, stop_id, &key);
-        forward(state, stop);
         state
             .inner
             .kernel
@@ -930,7 +927,6 @@ fn begin_saving(state: &mut Loop, renderer: &mut GlesRenderer) {
         .kernel
         .get_mut(&world::driver::capture::base::CAPTURE_MUT)
         .save_dialog_id = Some(dlg.untyped());
-    forward(state, dlg);
     state
         .inner
         .kernel
@@ -1064,7 +1060,6 @@ fn show_capture_error(state: &mut Loop, renderer: &mut GlesRenderer, message: &s
         .kernel
         .get_mut(&world::driver::capture::base::CAPTURE_MUT)
         .save_dialog_id = Some(dlg.untyped());
-    forward(state, dlg);
     warn!("capture aborted — {message}");
 }
 
@@ -1271,7 +1266,6 @@ fn respawn_save_dialog(state: &mut Loop, renderer: &mut GlesRenderer, lossless: 
         .kernel
         .get_mut(&world::driver::capture::base::CAPTURE_MUT)
         .save_dialog_id = Some(dlg.untyped());
-    forward(state, dlg);
     state
         .inner
         .kernel
@@ -1522,7 +1516,6 @@ fn spawn_dialog(state: &mut Loop, renderer: &mut GlesRenderer, deadline: Instant
         .kernel
         .get_mut(&world::driver::capture::base::CAPTURE_MUT)
         .continue_dialog_id = Some(dialog.untyped());
-    forward(state, dialog);
     if let CapturePhase::Active(a) = &mut state
         .inner
         .kernel
@@ -1823,10 +1816,6 @@ fn bind_output(state: &mut Loop, id: HandleId, key: &str) {
     }
 }
 
-/// Install a message handler that forwards a capture UI's messages onto the
-/// surface message channel (drained by the surface pump → `handle`).
-fn forward(_state: &mut Loop, _handle: CaptureHandle) {}
-
 fn set_region_msg(state: &mut Loop, id: Option<HandleId>, rect: OverlayRect) {
     let Some(id) = id else { return };
     if let Some(registry) = state.inner.surface_mut().registry.as_mut() {
@@ -1877,4 +1866,3 @@ fn destroy_anywhere(state: &mut Loop, ids: &[HandleId]) {
 }
 
 use ui_surface::{HandleId, capture::CaptureProgram};
-use world::surface::draw::handle::CaptureHandle;

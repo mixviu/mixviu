@@ -161,9 +161,12 @@ pub trait TypedSurfaces: UiSurfaces {
         handle: UiHandle<U>,
         message: U::Message,
     ) -> Result<(), DispatchError> {
+        if !self.contains(handle.id) {
+            return Err(DispatchError::UnknownHandle(handle.id));
+        }
         let instance = self
             .instance_mut(handle)
-            .ok_or(DispatchError::UnknownHandle(handle.id))?;
+            .ok_or(DispatchError::TypeMismatch)?;
         instance.runtime_mut().queue_message(message);
         Ok(())
     }
