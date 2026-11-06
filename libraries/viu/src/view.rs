@@ -586,6 +586,37 @@ impl SceneView {
                         }
                     }
                     "row" | "column" => {
+                        if text(node,"packing")=="toolbar" {
+                            ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let end=text(node,"end");
+                                if nodes.get(end).is_some_and(|n|n.ports.get("hidden")!=Some(&json!(true))) {
+                                    self.node(ui,end,nodes,route,depth+1,events);
+                                    ui.add_space(8.0);
+                                }
+                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                    ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+                                    let flex=text(node,"flex");
+                                    let reserve=nodes.get(flex).filter(|n|n.ports.get("hidden")!=Some(&json!(true))).map_or(0.0, |_|80.0+ui.spacing().item_spacing.x);
+                                    for child in children(node).filter(|c|*c!=end) {
+                                        let n=&nodes[child];
+                                        if n.ports.get("hidden")==Some(&json!(true)) {continue;}
+                                        if node.ports.get("fit").and_then(Value::as_array).is_some_and(|items|items.iter().any(|v|v==child)) {
+                                            let widget=Widget::decode(&n.ports["definition"]).expect("validated toolbar control");
+                                            let width=widget.intrinsic_width(ui,&self.tree.model).expect("validated toolbar width");
+                                            if ui.available_width()<width+ui.spacing().item_spacing.x+reserve {continue;}
+                                        }
+                                        if child==flex {
+                                            let width=(ui.available_width()-2.0).clamp(80.0,220.0);
+                                            let area=egui::Rect::from_min_size(ui.cursor().min,egui::vec2(width,ui.available_height()));
+                                            self.child_rect(ui,child,area,nodes,route,depth,events);
+                                            ui.allocate_rect(area,egui::Sense::hover());
+                                        } else {self.node(ui,child,nodes,route,depth+1,events);}
+                                    }
+                                });
+                            });
+                            return;
+                        }
                         if ["options","tools"].contains(&text(node,"bar")) {
                             let mut draw=|ui:&mut egui::Ui| {
                                 for child in children(node) {self.node(ui,child,nodes,route,depth+1,events);}
@@ -994,6 +1025,13 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             return Err("scene slots must attach a dock child".into());
         }
         match node.family.as_str() {
+            "row" if text(node,"packing")=="toolbar" => {
+                let kids=children(node).collect::<Vec<_>>();
+                for name in ["end","flex"] {
+                    if node.ports.get(name).is_some_and(|v|v.as_str().is_none_or(|s|!kids.contains(&s))) { return Err("toolbar role must name a child".into()); }
+                }
+                if node.ports.get("fit").and_then(Value::as_array).is_some_and(|items| items.iter().any(|v|v.as_str().is_none_or(|s| !kids.contains(&s) || ![Some("combo"),Some("swatches")].contains(&tree.nodes[s].ports["definition"]["kind"].as_str())))) {return Err("toolbar fit requires combo or swatches children".into());}
+            }
             "row" | "column"
                 if node
                     .ports

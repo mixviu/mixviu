@@ -254,6 +254,14 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         _ => return None,
     };
     let mut ports = family.to_vec();
+    if f == "row" {
+        ports.extend([
+            Port { name: "packing", ty: "string", required: false, default: None, enum_values: &["normal", "toolbar"], min: None },
+            p("end", "string", false, None),
+            p("fit", "list", false, None),
+            p("flex", "string", false, None),
+        ]);
+    }
     if f == "list" {
         ports
             .iter_mut()

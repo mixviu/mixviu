@@ -14,7 +14,7 @@ fn dialog_form($s)
     $form.choices=[{id:"save",label:"Save",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"keep",label:"Keep editing",enabled:true,cancel:true}]
   elif $kind=="open" or $kind=="save_as" then
     $save=$kind=="save_as";$form.title=if $save then "Save PNG" else "Open image" end
-    $form.field=$s.ui.path;$form.error=$s.dialog_error ?? "";$form.width=520
+    $form.field=$s.ui.path;$form.status=$s.status;$form.error=$s.dialog_error ?? "";$form.width=520
     $form.choices=[{id:if $save then "save" else "open" end,label:if $save then "Save" else "Open" end,enabled:not $s.busy,default:true},{id:"cancel",label:"Cancel",enabled:not $s.busy,cancel:true}]
   elif $kind=="about" then
     $form.title="About Screenshot";$form.body="Native screenshots and editable annotations for MixOS. Shots are saved to Pictures/Screenshots, and agents find them with screenshot.recent."
@@ -22,7 +22,7 @@ fn dialog_form($s)
   else
     $form.title="Keyboard shortcuts"
     $rows=filter($registry.describe($s),fn($r)=$r.shortcut!=nil)
-    $form.body=join(map($rows,fn($r)=$r.label.."    "..$r.shortcut),"\n")
+    $form.grid=map($rows,fn($r)={label:$r.label,shortcut:$r.shortcut})
     $form.choices=[{id:"done",label:"Done",enabled:true,default:true,cancel:true}]
   end
   return $form
@@ -34,6 +34,7 @@ fn render($s)
   for $mode in ["region","screen","window"]
     $item=$registry.item($s,"capture.mode."..$mode,true);$item.enabled=$item.enabled and not $s.busy;push($options,$item)
   end
+  if $has then push($options,{separator:true}) end
   $tools=[]
   for $tool in $registry.tools
     push($tools,$registry.item($s,"tool."..$tool,true))
@@ -44,8 +45,9 @@ fn render($s)
   $header=[]
   for $id in ["capture.take","help.macros","help.shortcuts","view.mode"] push($header,$registry.item($s,$id,true)) end
   $header[3].icon=if ($s.look.mode ?? $s.effective.mode)=="light" then "moon" else "sun" end
+  $header[3].checked=false
   $files=[]
-  for $id in ["file.copy","file.save"]
+  for $id in ["file.save","file.copy"]
     $item=delete($registry.item($s,$id,false),"icon")
     if $id=="file.copy" then $item.label="Copy" end
     push($files,$item)
@@ -76,7 +78,7 @@ fn render($s)
     window_control:combo("window","Window",$window_choices,$window_labels,180,not $s.busy),
     output_control:combo("output","Output",concat(["pointer"],$s.outputs),{pointer:"Output under the pointer"},180,not $s.busy),
     inks_control:{id:"inks",kind:"swatches",label:"Colour",initial:$s.ui.colour,properties:{items:$swatches,enabled:$editable}},
-    width_control:combo("width","Stroke width",["thin","medium","thick","heavy"],{thin:"Thin",medium:"Medium",thick:"Thick",heavy:"Heavy"},64,$editable),
+    width_control:combo("width","Stroke width",["thin","medium","thick","heavy"],{thin:"Thin",medium:"Medium",thick:"Thick",heavy:"Heavy"},96,$editable),
     size_control:combo("text_size","Text size",["small","medium","large","huge"],{small:"Small text",medium:"Medium text",large:"Large text",huge:"Huge text"},96,$editable),
     text_control:{id:"text",kind:"field",label:"Text",initial:"",properties:{placeholder:"Text, then click or drag on the picture",enabled:$editable}},
     values:{options:$options,tools:$tools,window:$window_value,output:$s.ui.output ?? "pointer",inks:$s.ui.colour,width:$width_name,text_size:$size_name,text:$s.ui.text,preview:$preview,dialog:dialog_form($s),macros:$s.ui.macros_open,file_actions:$files}}
@@ -89,6 +91,7 @@ fn render($s)
   $title=if $path==nil then "Screenshot" else basename($path).." — Screenshot" end
   $model=$frame.apply($model,{icon:"camera",title:$title,menus:$registry.menus($s),toolbar:$header,status:{left:$s.status,right:if $right=="" then [] else [$right] end,icon:nil},native_title:$title})
   $model.macros_open=$s.ui.macros_open;$model.values.macros=false
+  $model.width_control.properties.measure_choices=true;$model.size_control.properties.measure_choices=true
   $model.values["gold-actions"]=$registry.describe($s)
   if $s.close_after and not ($s.action_publishing ?? false) and len($s.action_queue ?? [])==0 then $model.window_close=true end
   return $model

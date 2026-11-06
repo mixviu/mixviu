@@ -519,9 +519,11 @@ pub(crate) fn draw(
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
             } else {
                 ui.allocate_ui_with_layout(
-                    ui.available_size_before_wrap(),
+                    if widget.properties["hostable"] == false && widget.properties["vertical"] != true { egui::Vec2::ZERO } else { ui.available_size_before_wrap() },
                     if widget.properties["vertical"] == true {
                         egui::Layout::top_down(egui::Align::Center)
+                    } else if widget.properties["reverse"] == true {
+                        egui::Layout::right_to_left(egui::Align::Center)
                     } else {
                         egui::Layout::left_to_right(egui::Align::Center)
                     },
@@ -560,7 +562,7 @@ pub(crate) fn draw(
                                 if widget.properties["vertical"] == true {
                                     toolkit::bars::hairline(ui);
                                 } else {
-                                    ui.separator();
+                                    toolkit::bars::divider(ui, toolkit::bars::divider_height_of(ui.ctx()));
                                 }
                                 continue;
                             }
@@ -612,11 +614,13 @@ pub(crate) fn draw(
                                     item["enabled"] == true,
                                     item["checked"] == true,
                                 )
-                            } else {
+                            } else if gold {
                                 ui.add_enabled(
                                     item["enabled"] == true,
-                                    egui::Button::new(label(item)),
+                                    toolkit::button::PushButton::secondary(text(item, "label")),
                                 )
+                            } else {
+                                ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
                             };
                             let response = response.on_hover_text(text(item, "label"));
                             geometry.insert(
@@ -671,6 +675,8 @@ pub(crate) fn draw(
         "dialog-form" => {
             if widget.properties["style"] == "gold" {
                 let dialog_id = egui::Id::unique((ui.ctx().viewport_id(), id, "gold-dialog"));
+                let mut field=value["field"].as_str().map(str::to_owned);
+                let mut submitted=false;
                 let choices: Vec<_> = value["choices"]
                     .as_array()
                     .unwrap()
@@ -689,8 +695,9 @@ pub(crate) fn draw(
                         .enabled(c["enabled"] == true)
                     })
                     .collect();
-                let shown = toolkit::dialog::Dialog::new(dialog_id, text(value, "title"))
-                    .buttons(choices)
+                let mut dialog=toolkit::dialog::Dialog::new(dialog_id, text(value,"title")).buttons(choices);
+                if field.is_some() {dialog=dialog.width(egui::Rangef::new(480.0,600.0));}
+                let shown = dialog
                     .show(ui.ctx(), |ui| {
                         if let Some(rows) = value["grid"].as_array() {
                             egui::ScrollArea::vertical()
@@ -715,17 +722,27 @@ pub(crate) fn draw(
                                         }
                                     });
                                 });
-                        } else {
+                        } else if !text(value,"body").is_empty() {
                             ui.add(egui::Label::new(text(value, "body")).wrap());
                         }
+                        if !text(value,"note").is_empty() {ui.weak(text(value,"note"));}
+                        if let Some(path)=field.as_mut() {
+                            ui.label(value["field_label"].as_str().unwrap_or("Path"));
+                            let response=ui.add(egui::TextEdit::singleline(path).id(dialog_id.with("field")).desired_width(f32::INFINITY));
+                            geometry.insert(format!("{id}.field"),response.rect);
+                            submitted=response.lost_focus() && ui.input(|i|i.key_pressed(egui::Key::Enter));
+                            if !response.has_focus() && ui.memory(|m|m.focused().is_none()) {response.request_focus();}
+                            if response.changed() {emit(events,id,"edit",json!(path));}
+                            ui.label(egui::RichText::new(text(value,"status")).small().weak());
+                        }
                     });
-                if let Some(index) = shown.chosen {
+                if let Some(index) = shown.chosen.or_else(||if submitted {value["choices"].as_array()?.iter().position(|v|v["default"]==true && v["enabled"]==true)}else{None}) {
                     let choice = &value["choices"][index];
                     emit(
                         events,
                         id,
                         "answer",
-                        json!({"choice":choice["id"],"instance":value["instance"]}),
+                        json!({"choice":choice["id"],"field":field,"instance":value["instance"]}),
                     );
                     toolkit::dialog::Dialog::reset(ui.ctx(), dialog_id);
                 } else if shown.dismissed {
