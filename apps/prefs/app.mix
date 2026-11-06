@@ -516,6 +516,7 @@ on viu.job.completed
   end
 end
 on prefs.intent
+  try
   $a=$event.args
   if $a.id=="dialog" and $a.action=="answer" then
     $state=confirm_dialog($state,$a.value.choice);publish_prefs($state);reply(0,"{}");return
@@ -593,7 +594,10 @@ on prefs.intent
     $state=set_prefs($state,$state.key,$value)
   elif $a.id=="reset" then $state=set_prefs($state,$state.key,nil)
   elif $a.id=="refresh" then $state.dirty=false;$state=refresh_prefs($state) end
-  publish_prefs($state);reply(0,"{}")
+  publish_prefs($state);reply(0,"{}")  catch $message, $error
+    $state.status=$message;$state.failed=true;publish_prefs($state)
+    reply(10,json_encode({error_code:$error.code,message:$message}))
+  end
 end
 
 on settingsd.desktop.keys.default.wallpaper

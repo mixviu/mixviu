@@ -137,7 +137,7 @@ impl Widget {
             "window-controls" => {
                 value["side"]
                     .as_str()
-                    .is_some_and(|v| ["left", "center", "right"].contains(&v))
+                    .is_some_and(|v| ["auto", "left", "center", "right"].contains(&v))
                     && value["enabled"].is_boolean()
             }
             "image-view" => return crate::image_view::validate(value),
@@ -478,7 +478,7 @@ impl Widgets {
                     crate::window_frame::caption_controls(
                         ui,
                         area,
-                        value["side"] == "left",
+                        value["side"] == "left" || (value["side"]=="auto" && ui.ctx().data(|d|d.get_temp::<design::title_band::Alignment>(Id::unique("viu-caption-alignment")))==Some(design::title_band::Alignment::Left)),
                         &widget.id,
                     )
                 });

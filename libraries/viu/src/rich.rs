@@ -492,7 +492,11 @@ pub(crate) fn draw(
                             .as_str()
                             .and_then(crate::icons::Icon::from_name)
                         {
-                            crate::icons::button(
+                            if item["plain"]==true {
+                                let response=ui.add_enabled(item["enabled"]==true,egui::Button::image(crate::icons::image_of(ui.ctx(),icon,16.0,ui.visuals().weak_text_color())).frame(false).min_size(egui::vec2(28.0,28.0)));
+                                response.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,ui.is_enabled(),text(item,"label")));
+                                response
+                            } else {crate::icons::button(
                                 ui,
                                 icon,
                                 if item["icon_only"] == true {
@@ -504,7 +508,7 @@ pub(crate) fn draw(
                                 None,
                                 item["enabled"] == true,
                                 item["checked"] == true,
-                            )
+                            )}
                         } else {
                             ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
                         };

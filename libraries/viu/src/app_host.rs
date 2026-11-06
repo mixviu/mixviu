@@ -484,7 +484,7 @@ impl Host {
                     .unwrap_or_else(|| self.model["window_settings"].clone());
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 self.window_frame
-                    .show_with_header(ui, &self.title, &settings, true);
+                    .show_scene_frame(ui, &self.title, &settings);
                 let slots = self
                     .window_frame
                     .geometry

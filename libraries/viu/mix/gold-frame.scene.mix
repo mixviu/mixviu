@@ -7,7 +7,8 @@ citizen: gold-frame
 {
 root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placements:{"gold-header":{edge:"top",size:"design.title_bar_height"},"gold-status":{edge:"bottom",size:"design.status_height"},"gold-content":{edge:"fill"}}},
 "gold-header":{widget:"column",background:"design.chrome",padding:4,children:["gold-band"],window_slot:"window.header"},
-"gold-band":{widget:"band",children:["gold-icon","gold-menu","gold-title","gold-toolbar"],groups:"= $model.frame.groups"},
+"gold-band":{widget:"band",children:["gold-captions","gold-icon","gold-menu","gold-title","gold-toolbar"],groups:"= $model.frame.groups"},
+"gold-captions":{widget:"control",definition:{id:"gold-captions",kind:"window-controls",label:"",initial:{enabled:true,side:"auto"}},slot_only:"window.header",on_intent:"viu.frame.close"},
 "gold-icon":{widget:"control",definition:{id:"gold-icon",kind:"mark",label:"",initial:"monitor"}},
 "gold-menu":{widget:"control",definition:{id:"gold-menu",kind:"menubar",label:"",initial:[]},on_intent:"viu.frame.intent"},
 "gold-title":{widget:"control",definition:{id:"gold-title",kind:"label",label:"",initial:"",properties:{role:"title",weak:true}}},

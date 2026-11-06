@@ -16,8 +16,8 @@ fn framed($s)
   $model=model($s)
   $available=not $s.busy
   $refresh={id:"view.refresh",label:"Refresh",icon:"refresh-cw",enabled:$available}
-  $search={id:"view.search",label:"Search",icon:"search",enabled:$available}
-  $toolbar=[{id:"sidebar.toggle",label:"Sidebar",icon:"panel-left",icon_only:true,enabled:$s.ui.dialog==nil},$search,{id:"help.shortcuts",label:"Keyboard shortcuts",icon:"keyboard",icon_only:true,enabled:$s.ui.dialog==nil},{id:"view.mode",label:"Light or dark interface",icon:"sun",icon_only:true,enabled:$s.ui.dialog==nil}]
+  $search={id:"view.search",label:"Search preferences",icon:"search",icon_only:true,plain:true,enabled:$s.ui.dialog==nil}
+  $toolbar=[{id:"sidebar.toggle",label:"Sidebar",icon:"panel-left",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},{id:"help.macros",label:"Macros",icon:"scroll-text",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},$search,{id:"help.shortcuts",label:"Keyboard shortcuts",icon:"keyboard",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},{id:"view.mode",label:"Light or dark interface",icon:"sun",icon_only:true,plain:true,enabled:$s.ui.dialog==nil}]
   $model=$frame.apply($model,{icon:"settings",title:"Preferences",menus:$actions.menus($s),toolbar:$toolbar,status:nil})
   $model.theme_choice=$actions.theme_choice($s)
   $model.macros_open=$s.ui.macros_open
