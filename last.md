@@ -1,3 +1,85 @@
+# Gold parity round 2 — frame and method checkpoint
+
+The standing parity mandate has been read. **Monitor is not at full parity.**
+No deviation has been accepted, and no production install or VT work occurred.
+
+## Fable decision P1: process-signal contract
+
+Opus: put this source/inventory conflict to Fable before implementing Monitor's
+effectful process actions. The mandate requires gold behaviour and the full
+inventory, but the inventory currently names safeguards that gold does not have.
+
+**Question:** which signal contract should the Mix Monitor implement?
+
+- **A — exact pinned-gold behaviour (recommended for parity):** enable signals
+  for a selected local process with no dialog open; accept a positive PID;
+  issue SIGTERM or SIGKILL as the app's user, with kernel permission checks.
+  Correct the inventory's inaccurate UID/start-time/confirmation claim.
+- **B — stronger admission as an approved deviation:** add UID/start-time
+  identity checks and confirmation before signalling. Approve the resulting
+  behaviour, UI and refusal-contract differences explicitly and specify the
+  confirmation contract for Bus callers.
+
+Evidence from immutable gold `8779f33284b7d3f1178c3d57a699efb9b0867b22`:
+`apps/monitor/crates/vitals/src/engine.rs:623` tests only local node, no dialog
+and selection. `apps/monitor/src/shell.rs:172–187` validates positive PID and
+calls `kill(2)` with SIGTERM/SIGKILL. There is no identity fence or confirmation.
+`docs/ports/monitor.md` instead says the original UID/start-time admission and
+confirmations must be ported. The discrepancy is now annotated in that document.
+Neither signal policy is implemented in Mix, and no process-signalling test or
+production signal was performed. No question is being sent directly to Mark.
+
+## Frame implementation and validation
+
+The frame now mounts independently resolved content. Original app root/control
+IDs, bindings, native input, focus targets and dock intents are preserved;
+there is no root rename. Reserved frame-node collisions refuse explicitly.
+Content uses the dock-allocated region, clips to it, and draw receipts cover
+both scenes. Model updates validate both scenes before committing app state.
+Monitor now opts into the shared frame; application state and callbacks remain
+Mix-owned. Caption close returns to Mix before viewport closure.
+
+The generic host follows settingsd through an embedded Mix session worker and
+the application's existing native connection. Intra-app delivery is in process.
+The retained gold `session_theme` resolver/font installer supplies the complete
+Look contract: app overrides, automatic mode, schemes/styles, accent/tints,
+density, roundness, fonts, text scale, icon stroke, tunables and file-theme/
+lost-authority fallback. Frame bar lengths, title/status type and app-mark sizes
+use native design metrics. No application policy was moved into per-app Rust.
+
+Independent surveys identified and prompted fixes for root relocation, close
+ownership, content clipping, empty placeholder geometry, lost-authority theme
+fallback and premature frame draw receipts. Two frame regressions and the
+strengthened app-bundle gate cover actual mounting instead of an unframed bypass.
+
+Native private settingsd test, initial source `2d9043c`: five live variants on
+one Monitor PID, then authority disappearance/restart and Mix-owned caption
+close, all passed. Captures/receipts were retained and inspected. Inspection
+found full-region background and large-font status clipping defects; their
+repairs and native mark metrics are in subsequent source and await final CBC/
+native confirmation. The initial test was 980×680, not a Monitor parity pair.
+
+## Method and remaining Monitor work
+
+`docs/ports/parity-method.md` specifies pinned oracle, isolated native services,
+matched data/state/theme/scale, 1040×680 capture, region inspection, four parity
+gates and acceptance records. `tools/parity_compare.mix` refuses rescaling and
+existing evidence directories; it writes crops, figures, raw metrics, hashes
+and an `inspection-required` verdict. Identical-image and old-baseline probes
+were run. ImageMagick 7.1.2-35 SSIM output is normalised **distortion**, where
+identical images return zero. The historical baseline value 0.137345 must not
+be called mathematical SSIM similarity; its RMSE distortion is 0.183086.
+
+Monitor still needs its gold menu/options/status composition, seven-column
+styled table, complete tree/selection behaviour, node discovery, all Performance
+resources/charts and navigation, actions/dialogs/macros, and its 50-command ABP
+surface with gold replies/topics. Original refresh is asynchronous; original
+rows/info/ping/refusal shapes differ from the current specimen. Use pinned git
+objects for shell/main: the maintainer's source checkout has unrelated edits.
+No new 1040×680 visual acceptance pair has passed. Fable has approved nothing.
+
+Final CBC and native evidence follows after queued checks complete.
+
 # Gold parity discovery checkpoint — 2026-11-07
 
 **Incomplete. No app is at visual parity.** Work is on `lab/gold-parity`;
@@ -410,3 +492,6 @@ branch lab/gold-parity; head: see this checkpoint commit; apps at parity: none; 
 
 
 branch lab/gold-parity; head 0a7ae37937e8b022b38fb5b0adc176a6b83ce97b (tested code; following receipt commit changes documentation only); apps at parity: none; gate evidence: failing Monitor baseline and framed-host pilot retained privately; CBC jobs: 20261107-004421-72b146fc-a1 full scoped gate green, 20261107-004254-ea9ed470-a1 focused gate green.
+
+
+branch lab/gold-parity; head e4de4b1 (code; receipt-only commit follows); frame: mounted and adopted, initial live Prefs/recovery passed, final repairs queued; Monitor: not at parity, historical SSIM distortion 0.137345, layout/Performance/ABP/actions pending Fable P1; CBC: 20261107-011138-9b732aa9-a1 green at 2d9043c, latest 20261107-012031-152ba7e4 queued.
