@@ -15,6 +15,8 @@ use std::{
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct Host {
+    local_ui:crate::local_ui::LocalUi,
+    native_choice:Value,
     facilities: crate::app_facilities::Facilities,
     session: Option<crate::session::Session>,
     session_appearance: Option<Value>,
@@ -90,6 +92,9 @@ impl Host {
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
+        if r.command==format!("{}.quit",self.service) || (r.command==format!("{}.execute",self.service) && r.args["id"]=="file.quit") {
+            r.close_after_reply.store(true,std::sync::atomic::Ordering::Release);
+        }
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
@@ -166,6 +171,25 @@ impl eframe::App for Host {
 impl Host {
     fn frame(&mut self, ui: &mut egui::Ui) {
         self.facilities.prepare(ui.ctx(), &self.bus);
+        while let Ok(request)=self.local_ui.requests.try_recv() {
+            let answer=match request.command.as_str() {
+                "native.copy"=>match request.args["text"].as_str().filter(|s|s.len()<=1_048_576) {
+                    Some(text)=>{ui.ctx().copy_text(text.into());Ok(json!({"copied":true}))},None=>Err("text must be bounded text".into())},
+                "native.focus"=>request.args["id"].as_str().ok_or("id required".into()).and_then(|id|self.view.request_focus(id)).map(|_|json!({"focused":true})),
+                "native.theme"=>{
+                    let snapshot=self.session.as_ref().map(|s|s.snapshot.clone());
+                    crate::native_theme::choice(&request.args).and_then(|choice| {
+                        let base=if let Some(snapshot)=snapshot {crate::appearance::session_base(&snapshot,&self.service,&self.file_theme,&self.last_ui)?.0}else{self.file_theme.clone()};
+                        let theme=base.with_choice(&choice).map_err(|e|e.to_string())?;
+                        crate::appearance::install_theme(ui.ctx(),&theme)?;
+                        self.native_choice=request.args.clone();
+                        Ok(crate::native_theme::describe(&theme))
+                    })
+                },
+                _=>Err("unknown native operation".into())
+            };
+            let _=request.reply.send(match answer {Ok(body)=>(0,body),Err(message)=>(10,json!({"error_code":"ARGUMENT","message":message}))});
+        }
         for (_, image) in self.clipboard.drain() {
             if let Some(reply) = self.clipboard_reply.take() {
                 let result = if let Some(image) = image {
@@ -325,6 +349,11 @@ impl Host {
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
                             self.session_window = Some(snapshot["state"]["values"].clone());
+                            if let Ok(choice)=crate::native_theme::choice(&self.native_choice) {
+                                if let Ok((base,_))=crate::appearance::session_base(&snapshot,&self.service,&self.file_theme,&self.last_ui) {
+                                    if let Ok(theme)=base.with_choice(&choice) {let _=crate::appearance::install_theme(ui.ctx(),&theme);}
+                                }
+                            }
                         }
                         Err(error) => self.error = error,
                     }
@@ -340,10 +369,13 @@ impl Host {
                     0.0,
                     crate::appearance::colour(ui.ctx(), "dock").unwrap_or(ui.visuals().panel_fill),
                 );
-                let settings = self
+                let mut settings = self
                     .session_window
                     .clone()
                     .unwrap_or_else(|| self.model["window_settings"].clone());
+                for (axis,key) in [("decorations","window.decorations"),("caption_side","window.caption_side")] {
+                    if !self.native_choice[axis].is_null() {settings[key]=self.native_choice[axis].clone();}
+                }
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 self.window_frame
                     .show_with_chrome(ui, &self.title, &settings, true, true);
@@ -452,6 +484,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         facilities.surface.as_ref().map(|s| s["commands"].clone()),
     );
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
+    let local_ui=crate::local_ui::LocalUi::new(wake.clone());
     jobs.set_native_backend(bus.backend_maker());
     let services = crate::runtime::Services {
         macros: facilities.macros.clone(),
@@ -461,7 +494,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let mut runtime = Runtime::with_services(
         32,
         wake.clone(),
-        Some(jobs.backend(Some(bus.backend()))),
+        Some(jobs.backend(Some(local_ui.backend(bus.backend())))),
         services,
     );
     runtime.load(bundle.program).expect("load behaviour");
@@ -470,6 +503,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        local_ui,
+        native_choice:json!({}),
         facilities,
         service: bundle.manifest.service.clone(),
         file_theme: toolkit::Theme::load(),

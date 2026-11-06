@@ -18,6 +18,8 @@ pub mod http;
 pub mod icons;
 pub mod image_view;
 pub mod jobs;
+mod local_ui;
+mod native_theme;
 pub mod macro_host;
 pub mod native_bus;
 pub mod native_menu;
