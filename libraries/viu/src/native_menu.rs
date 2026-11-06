@@ -49,7 +49,7 @@ pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
     })?;
     Some(slots()[index])
 }
-fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
+fn entries(value: &Value, ids: &mut Vec<String>, ctx: Option<&egui::Context>) -> Result<Vec<Entry>, String> {
     value
         .as_array()
         .ok_or("menu entries must be a list")?
@@ -59,7 +59,7 @@ fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
                 return Ok(Entry::Separator);
             }
             let children = if item["children"].is_array() {
-                entries(&item["children"], ids)?
+                entries(&item["children"], ids, ctx)?
             } else {
                 vec![]
             };
@@ -76,7 +76,13 @@ fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
             Ok(Entry::Row(Row {
                 id,
                 label: item["label"].as_str().unwrap_or("").into(),
-                shortcut: item["shortcut"].as_str().map(str::to_owned),
+                shortcut: if item.get("shortcut_binding").is_some() {
+                    item["shortcut_binding"].as_str()
+                        .and_then(toolkit::keymap::parse_chord)
+                        .and_then(|shortcut| ctx.map(|ctx| ctx.format_shortcut(&shortcut)))
+                } else {
+                    item["shortcut"].as_str().map(str::to_owned)
+                },
                 enabled: item["enabled"] == true,
                 checked: item["checked"].as_bool(),
                 children,
@@ -87,7 +93,7 @@ fn entries(value: &Value, ids: &mut Vec<String>) -> Result<Vec<Entry>, String> {
 pub fn validate(value: &Value) -> Result<(), String> {
     let mut ids = vec![];
     for menu in value.as_array().ok_or("menus must be a list")? {
-        entries(&menu["children"], &mut ids)?;
+        entries(&menu["children"], &mut ids, None)?;
     }
     Ok(())
 }
@@ -99,7 +105,7 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
         .iter()
         .map(|item| Menu {
             title: item["label"].as_str().unwrap_or("").into(),
-            entries: entries(&item["children"], &mut ids).expect("validated native menu"),
+            entries: entries(&item["children"], &mut ids, Some(ui.ctx())).expect("validated native menu"),
         })
         .collect();
     let key = model_id(ui.ctx());
