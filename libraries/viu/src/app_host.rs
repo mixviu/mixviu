@@ -428,7 +428,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
                 &bundle.manifest.service,
                 &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_| "default".into()),
                 wake.clone(),
-                bus.backend_maker(),
+                bus.backend(),
             )
             .expect("embedded session worker")
         }),
