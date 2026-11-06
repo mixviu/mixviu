@@ -919,6 +919,31 @@ impl Widgets {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
             "label" => {
+                if widget.properties["role"] == "panel-header" {
+                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), chrome.style.panel_header as f32),
+                        Sense::hover(),
+                    );
+                    let font = toolkit::fonts::bound(
+                        ui.ctx(),
+                        toolkit::fonts::medium(chrome.style.panel_pill_size as f32),
+                    );
+                    let galley = ui.painter().layout_no_wrap(
+                        value.as_str().unwrap_or_default().into(),
+                        font,
+                        chrome.palette.text,
+                    );
+                    ui.painter().galley(
+                        egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        chrome.palette.text,
+                    );
+                    response.widget_info(|| egui::WidgetInfo::labeled(
+                        egui::Role::Label, ui.is_enabled(), value.as_str().unwrap_or_default(),
+                    ));
+                    return self.remember(ui, id, &response);
+                }
                 let text = label_text(ui, widget, value);
                 if widget.properties["role"] == "title" {
                     let (rect, response) =
@@ -975,7 +1000,9 @@ impl Widgets {
                 }
             }
             "button" => {
-                let r = if widget.properties["style"] == "secondary" {
+                let r = if widget.properties["style"] == "primary" {
+                    ui.add(toolkit::button::PushButton::primary(widget.text("text")))
+                } else if widget.properties["style"] == "secondary" {
                     ui.add(toolkit::button::PushButton::secondary(widget.text("text")))
                 } else {
                     icon_button(ui, widget.text("icon"), widget.text("text"), false)
