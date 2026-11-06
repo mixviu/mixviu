@@ -49,6 +49,8 @@ on job.run
   elif $job.kind=="open" or $job.kind=="reattach" then
     $open=open_recovery($a.args)
     $state=viu_document(if $job.kind=="open" then "open" else "reattach" end,$a.document,$open)
+    send "edit" "edit.list" body={} timeout=5
+    if $rc==0 then $state=viu_document("saved",$a.document,$reply) end
   elif $job.kind=="close" then
     send "edit" "edit.close" body={buffer:$a.buffer,force:$a.force} timeout=5
     if $rc!=0 then raise("CLOSE",json_encode($reply ?? $result)) end

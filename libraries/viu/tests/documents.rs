@@ -100,3 +100,20 @@ fn epoch_reattach_preserves_a_differing_local_draft_until_keep_or_take() {
         assert_eq!(restored["first_line"], restored["lines"]);
     }
 }
+
+#[test]
+fn reopening_retains_saved_revision_and_recovered_metadata() {
+    let docs = Documents::default();
+    let mut server = seed(&docs, "first", "/tmp/dirty.rs", "on disk");
+    docs.call("command", "first", json!({"name":"insert","text":"unsaved "})).unwrap();
+    settle(&docs,"first",&mut server);
+    let open = server.handle("ced","edit.open",&json!({"path":"/tmp/dirty.rs"}));
+    docs.call("open", "second", open.body).unwrap();
+    let list = server.handle("ced","edit.list",&json!({}));
+    docs.call("saved", "second", list.body).unwrap();
+    settle(&docs,"second",&mut server);
+    let reopened = docs.call("state", "second", json!({})).unwrap();
+    assert_eq!(reopened["dirty"], true);
+    assert_eq!(reopened["saved_rev"], 0);
+    assert_eq!(docs.call("read", "second",json!({})).unwrap()["text"], "unsaved on disk");
+}
