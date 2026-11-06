@@ -21,3 +21,4 @@ pub struct WindowFullscreen {
     pub restore_loc: Point<i32, Logical>,
     pub restore_size: Size<i32, Logical>,
 }
+

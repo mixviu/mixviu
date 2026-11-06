@@ -18,3 +18,4 @@ pub fn get() -> Environment {
 
     Environment { gpu, desktop_name }
 }
+

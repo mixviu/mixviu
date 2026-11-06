@@ -21,7 +21,7 @@ mod_module_files = "deny"
 [dependencies]
 dispatcher = { workspace = true }
 graphics = { workspace = true }
-ui = { workspace = true }
+ui-surface.workspace = true
 model = { workspace = true }
 world = { workspace = true }
 smithay = { workspace = true }

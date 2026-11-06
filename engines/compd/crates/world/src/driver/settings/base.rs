@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use model::environment::preference::base::{KeyBind, PenBindTarget};
 use slots::storage::token::base::{Token, TokenMut};
-use ui::HandleId;
+use ui_surface::HandleId;
 
 /// What the settings Pen tab is currently waiting to capture (click-to-bind). Read by
 /// the keyboard handler (Key) and the libinput pad handler (Pad); armed/cleared via
@@ -71,4 +71,4 @@ pub type SettingsSurface = Option<HandleId>;
 pub static SETTINGS_SURFACE: Token<SettingsSurface> = Token::new();
 pub static SETTINGS_SURFACE_MUT: TokenMut<SettingsSurface> = TokenMut::new(&SETTINGS_SURFACE);
 
-use ui::TypedSurfaces as _;
+

@@ -302,3 +302,5 @@ fn absent_cache_root_is_configuration_evidence_not_a_write_or_consumer_failure()
     assert!(ui.session().host().consumer().fault().is_none());
     assert!(ui.session().host().consumer().applied().is_some());
 }
+
+use ui::TypedSurfaces as _;

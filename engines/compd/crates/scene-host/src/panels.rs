@@ -3137,3 +3137,5 @@ mod tests {
         assert_eq!(body["panels"]["bottom"]["pages"], json!(["scene-panel"]));
     }
 }
+
+use ui::TypedSurfaces as _;

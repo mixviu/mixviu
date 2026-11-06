@@ -4,15 +4,15 @@
 //! optional "Optimized encoding" checkbox (video only; hidden when the
 //! `background_encoder` setting makes the optimized re-encode automatic).
 
-use crate::capture::session::message::CaptureMessage;
+use world::capture::session::message::CaptureMessage;
 use crate::strings;
 use ui::UiProgram;
 
-use crate::surface::draw::capture::style;
+use crate::capture::style;
 
 pub struct SaveDialog {
     /// What was captured: "Screenshot" or "Video" (the interface's names).
-    pub kind_label: &'static str,
+    pub kind_label: String,
     /// Whether to offer the "Optimized encoding" checkbox (video + manual mode).
     show_optimize: bool,
     /// Current checkbox state (read by the interface on Save).
@@ -20,9 +20,9 @@ pub struct SaveDialog {
 }
 
 impl SaveDialog {
-    pub fn new(kind_label: &'static str, show_optimize: bool) -> Self {
+    pub fn new(kind_label: impl Into<String>, show_optimize: bool) -> Self {
         Self {
-            kind_label,
+            kind_label: kind_label.into(),
             show_optimize,
             optimized: false,
         }
@@ -40,7 +40,11 @@ impl SaveDialog {
 
 impl ui::UiProgram for SaveDialog {
     ui::program_owner!(SaveDialog);
+    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> {
+        Some(ui_surface::capture::SaveChoice { optimized: self.optimized, format: None, path: None })
+    }
     type Message = CaptureMessage;
+    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }
 
     fn update(&mut self, message: Self::Message) {
         if let CaptureMessage::ToggleOptimized(v) = message {
@@ -103,5 +107,6 @@ impl ui::UiSnapshot for SaveDialog {
         self.optimized
     }
 }
+
 
 use ui::TypedSurfaces as _;

@@ -107,3 +107,5 @@ impl Lane {
         self.queued.is_some()
     }
 }
+
+use ui::TypedSurfaces as _;

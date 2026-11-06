@@ -10,7 +10,7 @@
 
 use egui::{Color32, Painter, Rect, Stroke, StrokeKind, pos2};
 
-use crate::capture::session::message::OverlayRect;
+use world::capture::session::message::OverlayRect;
 
 fn rect(x: i32, y: i32, w: i32, h: i32) -> Rect {
     Rect::from_min_size(
@@ -91,5 +91,6 @@ pub fn region_border(
         painter.rect_filled(rect(cx1 - bw, cy0, bw, cy1 - cy0), 0.0, colour);
     }
 }
+
 
 use ui::TypedSurfaces as _;

@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use smithay::backend::renderer::gles::GlesRenderer;
-use ui::{WgpuGlContext, create_wgpu_gl_context, make_current};
+use graphics::surface::{WgpuGlContext, create_wgpu_gl_context, make_current};
 use world::state::Loop;
 
 /// Make the renderer's context current for this frame's wgpu work, building the
@@ -115,7 +115,7 @@ fn build(state: &mut Loop, renderer: &mut GlesRenderer) {
         .worlds
         .get_mut(world::world::manager::MAIN_WORLD)
         .storage_mut();
-    if main
+    if ui_surface::factory::is_registered() && main
         .try_get_mut(&world::surface::system::base::SURFACE_MUT)
         .and_then(|s| s.registry.as_ref())
         .is_none()
@@ -124,4 +124,3 @@ fn build(state: &mut Loop, renderer: &mut GlesRenderer) {
     }
 }
 
-use ui::TypedSurfaces as _;

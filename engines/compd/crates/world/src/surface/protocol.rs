@@ -14,3 +14,4 @@ pub struct SurfaceMessage {
 pub enum SurfaceMessageType {
     Capture(CaptureMessage),
 }
+

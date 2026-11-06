@@ -142,3 +142,4 @@ pub fn slot_at(
 pub fn separator_at(computed: &Computed, point: Point<i32, Physical>) -> Option<&Separator> {
     computed.separators.iter().find(|s| s.rect.contains(point))
 }
+

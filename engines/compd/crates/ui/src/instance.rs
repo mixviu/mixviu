@@ -80,6 +80,9 @@ impl<U: UiProgram> UiInstance<U> {
 use ui_surface::producer::UiProducer as UiInstanceAny;
 
 impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
+    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> { self.ui().capture_setup() }
+    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> { self.ui().capture_save_choice() }
+    fn capture_message(&mut self, message: ui_surface::capture::CaptureMessage) { if let Some(message) = U::capture_message(message) { self.runtime_mut().queue_message(message); } }
     fn handle_id(&self) -> HandleId {
         self.id
     }
@@ -850,6 +853,9 @@ pub(crate) fn build_instance<U: UiProgram>(
 
 pub(crate) struct SharedInstance<U: UiProgram>(pub(crate) UiControl<U>);
 impl<U: UiProgram> UiInstanceAny for SharedInstance<U> {
+    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> { self.0.ui().capture_setup() }
+    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> { self.0.ui().capture_save_choice() }
+    fn capture_message(&mut self, message: ui_surface::capture::CaptureMessage) { if let Some(message) = U::capture_message(message) { self.0.runtime_mut().queue_message(message); } }
     fn handle_id(&self) -> HandleId { self.0.inner.borrow().handle_id() }
     fn smithay_id(&self) -> Id { self.0.inner.borrow().smithay_id() }
     fn commit(&self) -> CommitCounter { self.0.inner.borrow().commit() }
@@ -897,5 +903,6 @@ impl<U: UiProgram> UiInstanceAny for SharedInstance<U> {
     fn pointer_leave(&mut self) { self.0.inner.borrow_mut().pointer_leave() }
     fn as_any_mut(&mut self) -> &mut dyn Any { self.0.inner.borrow_mut().as_any_mut() }
 }
+
 
 use crate::TypedSurfaces as _;

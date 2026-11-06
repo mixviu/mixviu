@@ -4,4 +4,7 @@
 // this crate. (Drop this line if the crate genuinely never logs.)
 
 pub mod base;
-pub use base::{NotifyMessage, NotifyUi};
+
+pub mod registry;
+
+use ui::TypedSurfaces as _;

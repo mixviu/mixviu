@@ -969,13 +969,13 @@ impl SceneHost {
                 // The region-select overlay and the capture panels draw in
                 // the session look too.
                 world::comp::region::follow(&look.theme);
-                world::surface::draw::capture::style::follow(look.theme.clone());
+                overlays::capture::style::follow(look.theme.clone());
             },
         ) {
             self.appearance_generation = self.appearance_generation.wrapping_add(1);
             serviced.changed = true;
             // Open capture panels take the new look without waiting for input.
-            world::surface::draw::capture::style::restyle(lp);
+            overlays::capture::style::restyle(lp);
         }
         if let Some(gaps) = gaps {
             serviced.tile_gap_changed = lp.inner.comp.set_tile_gap(gaps);
@@ -2815,5 +2815,6 @@ mod tests {
         assert!(host.store.pages().seat("scene-notes").is_none());
     }
 }
+
 
 use ui::TypedSurfaces as _;

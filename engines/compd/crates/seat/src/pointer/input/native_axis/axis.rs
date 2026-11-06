@@ -94,12 +94,11 @@ pub fn input_received<I: InputBackend>(
             horizontal_amount,
             vertical_amount,
             match source {
-                AxisSource::Finger => ui::input::ScrollSource::Finger,
-                AxisSource::Wheel | AxisSource::WheelTilt => ui::input::ScrollSource::Wheel,
-                _ => ui::input::ScrollSource::Unknown,
+                AxisSource::Finger => ui_surface::input::ScrollSource::Finger,
+                AxisSource::Wheel | AxisSource::WheelTilt => ui_surface::input::ScrollSource::Wheel,
+                _ => ui_surface::input::ScrollSource::Unknown,
             },
         );
     }
 }
 
-use ui::TypedSurfaces as _;

@@ -10,7 +10,7 @@ use crate::error::{DispatchError, ResizeError};
 #[derive(Clone, Copy, Debug)]
 pub struct PaneView { pub transform: Transform, pub rect: Rectangle<i32, Physical> }
 /// World-facing compositor surface operations. No typed programs or toolkit values.
-pub trait UiSurfaces {
+pub trait UiSurfaces: crate::capture::CaptureUi {
     fn allocate_id(&mut self) -> HandleId;
     fn gpu(&self) -> Arc<WgpuGlContext>;
     fn instance_scale(&self) -> f32;

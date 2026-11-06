@@ -37,22 +37,12 @@ use graphics::capture::vaapi::{
     capture_background_auto, capture_cfr, capture_codec_name, capture_codecs, capture_cq,
     capture_fps, capture_nvenc_readback_fallback, capture_render_node,
 };
-use ui::engine::UiProgram;
-use ui::{HandleId, UiHandle};
 use world::camera::transform::translate::slot;
 use world::camera::transform::translate::transform::Transform;
 use world::capture::session::message::{CaptureMedia, CaptureMessage, OverlayRect, TargetKind};
 use world::capture::session::{ActiveState, CapturePhase, CaptureTarget, PendingSave};
 use world::state::CoordinateTrait;
 use world::state::Loop;
-use world::surface::draw::capture::border::RegionBorder;
-use world::surface::draw::capture::dialog::ContinueDialog;
-use world::surface::draw::capture::dim::RegionDim;
-use world::surface::draw::capture::encodialog::EncodingDialog;
-use world::surface::draw::capture::errordialog::ErrorDialog;
-use world::surface::draw::capture::hud::StopHud;
-use world::surface::draw::capture::savedialog::SaveDialog;
-use world::surface::draw::capture::setup::SetupOverlay;
 use world::surface::draw::handle::{UiSpace, load, load_snapshot};
 use world::surface::protocol::{SurfaceMessage, SurfaceMessageType};
 use world::window::interface::record::window::LoopWindow;
@@ -295,7 +285,7 @@ fn start_setup(state: &mut Loop, renderer: &mut GlesRenderer) {
         TargetKind::FullScreen
     };
 
-    let overlay = SetupOverlay::new(sw, sh, CaptureMedia::Screenshot, kind, preselect);
+    let overlay = CaptureProgram::Setup { width: sw, height: sh, media: CaptureMedia::Screenshot, kind, preselect };
     let handle = load_snapshot(
         state,
         renderer,
@@ -347,7 +337,7 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
         // Read the published copy, not the UI: off-thread the runtime lives on
         // the worker and cannot be borrowed from here. Inline this reads the
         // live UI, so both paths see the same values.
-        let Some(s) = reg.snapshot::<SetupOverlay>(UiHandle::from_id(setup_id)) else {
+        let Some(s) = reg.setup(setup_id) else {
             return;
         };
         (s.kind, s.media, s.draft, s.no_background)
@@ -577,7 +567,7 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
     let dim = load(
         state,
         renderer,
-        RegionDim::new(sw, sh, crop_ov),
+        CaptureProgram::Dim { width: sw, height: sh, region: crop_ov },
         full_rect(sw, sh),
         UiSpace::Screen,
         (Layer::CAPTURE_DIM | Layer::CAPTURE_PASSTHROUGH).bits(),
@@ -593,7 +583,7 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
     let border = load(
         state,
         renderer,
-        RegionBorder::new(sw, sh, crop_ov),
+        CaptureProgram::Border { width: sw, height: sh, region: crop_ov },
         full_rect(sw, sh),
         UiSpace::Screen,
         (Layer::SCENE | Layer::CAPTURE_PASSTHROUGH).bits(),
@@ -617,7 +607,7 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
         let stop = load(
             state,
             renderer,
-            StopHud,
+            CaptureProgram::Stop,
             stop_rect,
             UiSpace::Screen,
             Layer::SCENE.bits(),
@@ -913,7 +903,7 @@ fn begin_saving(state: &mut Loop, renderer: &mut GlesRenderer) {
         renderer,
         // Offer the "Optimized encoding" checkbox only in manual mode (auto runs
         // it in the background with no checkbox).
-        SaveDialog::new(label, !capture_background_auto()),
+        CaptureProgram::Save { label: label.into(), optimized: !capture_background_auto() },
         rect,
         UiSpace::Screen,
         Layer::SCENE.bits(),
@@ -1047,7 +1037,7 @@ fn show_capture_error(state: &mut Loop, renderer: &mut GlesRenderer, message: &s
     let dlg = load(
         state,
         renderer,
-        ErrorDialog::new(message),
+        CaptureProgram::Error(message.into()),
         rect,
         UiSpace::Screen,
         Layer::SCENE.bits(),
@@ -1151,7 +1141,7 @@ fn begin_encoding(
     let dlg = load(
         state,
         renderer,
-        EncodingDialog::new(),
+        CaptureProgram::Encoding,
         rect,
         UiSpace::Screen,
         Layer::SCENE.bits(),
@@ -1251,7 +1241,7 @@ fn respawn_save_dialog(state: &mut Loop, renderer: &mut GlesRenderer, lossless: 
     let dlg = load_snapshot(
         state,
         renderer,
-        SaveDialog::new("Video", !capture_background_auto()),
+        CaptureProgram::Save { label: "Video".into(), optimized: !capture_background_auto() },
         rect,
         UiSpace::Screen,
         Layer::SCENE.bits(),
@@ -1284,8 +1274,8 @@ fn set_encode_progress(state: &mut Loop, percent: u32) {
         return;
     };
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
-        let _ = reg.dispatch_message(
-            UiHandle::<EncodingDialog>::from_id(id),
+        let _ = reg.capture_message(
+            id,
             CaptureMessage::SetEncodeProgress(percent),
         );
     }
@@ -1304,7 +1294,7 @@ fn save_dialog_optimized(state: &mut Loop) -> bool {
     let Some(reg) = state.inner.surface_mut().registry.as_ref() else {
         return false;
     };
-    reg.snapshot::<SaveDialog>(UiHandle::from_id(id))
+    reg.save_choice(id).map(|choice| choice.optimized)
         .unwrap_or(false)
 }
 
@@ -1417,7 +1407,7 @@ fn update_crop(state: &mut Loop, renderer: &mut GlesRenderer) {
     }
 
     let ov = to_overlay(indicator);
-    set_region_msg::<RegionBorder>(
+    set_region_msg(
         state,
         state
             .inner
@@ -1426,7 +1416,7 @@ fn update_crop(state: &mut Loop, renderer: &mut GlesRenderer) {
             .border_id,
         ov,
     );
-    set_region_msg::<RegionDim>(
+    set_region_msg(
         state,
         state
             .inner
@@ -1504,7 +1494,7 @@ fn spawn_dialog(state: &mut Loop, renderer: &mut GlesRenderer, deadline: Instant
     let dialog = load(
         state,
         renderer,
-        ContinueDialog::new(GRACE.as_secs() as u32),
+        CaptureProgram::Continue(GRACE.as_secs() as u32),
         rect,
         UiSpace::Screen,
         Layer::SCENE.bits(),
@@ -1536,8 +1526,8 @@ fn set_countdown(state: &mut Loop, secs: u32) {
         return;
     };
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
-        let _ = reg.dispatch_message(
-            UiHandle::<ContinueDialog>::from_id(id),
+        let _ = reg.capture_message(
+            id,
             CaptureMessage::SetCountdown(secs),
         );
     }
@@ -1820,34 +1810,12 @@ fn bind_output(state: &mut Loop, id: HandleId, key: &str) {
 
 /// Install a message handler that forwards a capture UI's messages onto the
 /// surface message channel (drained by the surface pump → `handle`).
-fn forward<U>(state: &mut Loop, handle: UiHandle<U>)
-where
-    U: UiProgram<Message = CaptureMessage>,
-{
-    let tx = state
-        .inner
-        .surface_mut()
-        .surface_message_buffer_channel
-        .0
-        .clone();
-    if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
-        {
-            reg.set_message_handler(handle, move |m: &CaptureMessage| {
-                let _ = tx.send(SurfaceMessage {
-                    message: SurfaceMessageType::Capture(m.clone()),
-                });
-            });
-        }
-    }
-}
+fn forward(_state: &mut Loop, _handle: CaptureHandle) {}
 
-fn set_region_msg<U>(state: &mut Loop, id: Option<HandleId>, rect: OverlayRect)
-where
-    U: UiProgram<Message = CaptureMessage>,
-{
+fn set_region_msg(state: &mut Loop, id: Option<HandleId>, rect: OverlayRect) {
     let Some(id) = id else { return };
-    if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
-        let _ = reg.dispatch_message(UiHandle::<U>::from_id(id), CaptureMessage::SetRegion(rect));
+    if let Some(registry) = state.inner.surface_mut().registry.as_mut() {
+        registry.capture_message(id, CaptureMessage::SetRegion(rect));
     }
 }
 
@@ -1893,4 +1861,7 @@ fn destroy_anywhere(state: &mut Loop, ids: &[HandleId]) {
     }
 }
 
-use ui::TypedSurfaces as _;
+
+
+use ui_surface::{HandleId, capture::CaptureProgram};
+use world::surface::draw::handle::CaptureHandle;

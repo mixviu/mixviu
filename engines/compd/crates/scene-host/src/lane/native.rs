@@ -610,3 +610,5 @@ fn prepare<T>(
     check()?;
     Ok(Presentation { content })
 }
+
+use ui::TypedSurfaces as _;

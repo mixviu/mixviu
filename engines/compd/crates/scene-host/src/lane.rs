@@ -177,3 +177,5 @@ impl<T> Presentation<T> {
         &self.content
     }
 }
+
+use ui::TypedSurfaces as _;

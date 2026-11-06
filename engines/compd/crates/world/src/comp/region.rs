@@ -46,7 +46,7 @@ use dispatcher::state::RedrawReason;
 use crate::camera::transform::translate::transform::Transform;
 use crate::state::CoordinateTrait;
 use crate::state::Loop;
-use crate::surface::draw::capture::style as capture_style;
+use theme::region as capture_style;
 
 /// How a run ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -477,7 +477,7 @@ thread_local! {
 /// called on every look change, so a scheme, mode or contrast switch reaches
 /// the overlay on its next frame, mid-selection included. The hint cache is
 /// keyed by the look, so it re-rasterises once.
-pub fn follow(theme: &toolkit::theme::Theme) {
+pub fn follow(theme: &theme::Theme) {
     LOOK.set(Some(Look::of(theme)));
 }
 
@@ -506,31 +506,15 @@ struct Look {
 }
 
 impl Look {
-    fn of(theme: &toolkit::theme::Theme) -> Self {
-        let visuals = toolkit::style::visuals(theme);
-        let ring = theme
-            .dictionary()
-            .colours
-            .non_text
-            .get("ring")
-            .map(|ring| toolkit::style::colour(ring.value));
-        let straight = |colour: egui::Color32| {
-            colour
-                .to_srgba_unmultiplied()
-                .map(|channel| f32::from(channel) / 255.0)
-        };
-        Self {
-            outline: straight(ring.unwrap_or(visuals.selection.bg_fill)),
-            back: straight(visuals.window_fill),
-            edge: straight(visuals.window_stroke.color),
-            text: straight(visuals.strong_text_color()),
-            dim: straight(capture_style::DIM_MASK),
-        }
+    fn of(theme: &theme::Theme) -> Self {
+        let colours = theme::region::colours(theme);
+        let straight = |value: [u8; 4]| value.map(|v| f32::from(v) / 255.0);
+        Self { outline: straight(colours.outline), back: straight(colours.back), edge: straight(colours.edge), text: straight(colours.text), dim: straight([0, 0, 0, theme::region::DIM_ALPHA]) }
     }
 
     fn current() -> Self {
         LOOK.get().unwrap_or_else(|| {
-            let look = Self::of(&toolkit::theme::Theme::embedded());
+            let look = Self::of(&theme::Theme::embedded());
             LOOK.set(Some(look));
             look
         })
@@ -1029,9 +1013,9 @@ mod tests {
     #[test]
     fn the_look_comes_from_the_theme() {
         let look = Look::current();
-        let theme = toolkit::theme::Theme::embedded();
+        let theme = theme::Theme::embedded();
         let ring = &theme.dictionary().colours.non_text["ring"];
-        let ring = toolkit::style::colour(ring.value).to_srgba_unmultiplied();
+        let ring = ring.value.to_srgba8();
         assert_eq!(look.outline.map(|c| (c * 255.0).round() as u8), ring);
         assert!(look.back[3] > 0.0 && look.text[3] > 0.0);
         assert!(
@@ -1043,7 +1027,7 @@ mod tests {
     #[test]
     fn the_look_follows_the_session_theme() {
         let embedded = Look::current();
-        let light = toolkit::theme::Theme::from_source("test", "mode: \"light\"\n").unwrap();
+        let light = theme::Theme::from_source("test", "mode: \"light\"\n").unwrap();
         follow(&light);
         let followed = Look::current();
         assert_eq!(followed, Look::of(&light));
@@ -1053,7 +1037,7 @@ mod tests {
         let image = hint_image(&text, 1.0, 1_280.0, &followed).expect("a hint");
         let before = hint_image(&text, 1.0, 1_280.0, &embedded).expect("a hint");
         assert_ne!(image.argb, before.argb);
-        follow(&toolkit::theme::Theme::embedded());
+        follow(&theme::Theme::embedded());
         assert_eq!(Look::current(), embedded);
     }
 
@@ -1092,4 +1076,4 @@ mod tests {
     }
 }
 
-use ui::TypedSurfaces as _;
+

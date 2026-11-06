@@ -14,6 +14,9 @@
 /// that program its own messages.
 pub trait UiProgram: Sized + Send + 'static {
     fn with_controls<R>(f: impl FnOnce(&mut std::collections::HashMap<crate::HandleId, std::rc::Weak<std::cell::RefCell<crate::UiInstance<Self>>>>) -> R) -> R;
+    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> { None }
+    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> { None }
+    fn capture_message(_message: ui_surface::capture::CaptureMessage) -> Option<Self::Message> { None }
     type Message: Clone + Send + std::fmt::Debug + 'static;
 
     /// Draw the UI for this pass into `ui`, the root covering the whole
@@ -45,5 +48,6 @@ pub trait UiSnapshot: UiProgram {
     type Snapshot: Send + Sync + Clone + 'static;
     fn snapshot(&self) -> Self::Snapshot;
 }
+
 
 use crate::TypedSurfaces as _;

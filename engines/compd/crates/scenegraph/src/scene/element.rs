@@ -4,7 +4,7 @@ use dispatcher::frame::SceneDispatch;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::{ImportAll, ImportMem};
-use ui::UiRenderElement;
+use ui_surface::UiRenderElement;
 use world::seat::pointer::element::PointerRenderElement;
 
 pub use crate::scene::preimported::PreImported;
@@ -45,4 +45,3 @@ where
     }
 }
 
-use ui::TypedSurfaces as _;

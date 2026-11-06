@@ -24,7 +24,8 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [features]
-default = ["backend-winit"]
+default = ["backend-winit", "inproc-ui"]
+inproc-ui = ["dep:ui", "dep:scene-host", "dep:overlays"]
 # Optional compatibility adapters. The native session does not enable these.
 desktop-dbus = ["dep:zbus", "world/desktop-dbus", "graphics/desktop-dbus", "slots/desktop-dbus"]
 backend-native = ["dep:native"]
@@ -55,7 +56,8 @@ kms = { workspace = true }
 effects = { workspace = true }
 frames = { workspace = true }
 graphics = { workspace = true }
-ui = { workspace = true }
+ui = { workspace = true, optional = true }
+overlays = { workspace = true, optional = true }
 model = { workspace = true }
 native = { workspace = true, optional = true }
 policy = { workspace = true }
@@ -64,7 +66,7 @@ motion = { workspace = true }
 surfaces = { workspace = true }
 render-gles = { workspace = true }
 scenegraph = { workspace = true }
-scene-host = { workspace = true }
+scene-host = { workspace = true, optional = true }
 slots = { workspace = true }
 protocols = { workspace = true }
 nested = { workspace = true, optional = true }
@@ -80,5 +82,6 @@ zbus = { workspace = true, optional = true }
 buildinfo = { workspace = true }
 
 [dev-dependencies]
-egui = { workspace = true }
+egui = { workspace = true, optional = true }
+overlays = { workspace = true, optional = true }
 tokio = { workspace = true }

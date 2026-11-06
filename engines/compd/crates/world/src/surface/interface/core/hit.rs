@@ -54,7 +54,7 @@ pub(crate) fn root_dst(surface: &WlSurface) -> Option<smithay::utils::Size<i32, 
     })
 }
 use slots::storage::slot::base::Storage;
-use ui::{HandleId, Transform as UiTransform, UiSpace};
+use ui_surface::{HandleId, Transform as UiTransform, UiSpace};
 
 // ─── Hit context ────────────────────────────────────────────────────
 //
@@ -839,4 +839,4 @@ pub fn surface_under_filtered_cx(
     check_layer(Layer::Background)
 }
 
-use ui::TypedSurfaces as _;
+

@@ -1,3 +1,4 @@
+#![cfg(feature = "inproc-ui")]
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! No input, Wayland traffic, vblank or watchdog is available to help these
@@ -274,5 +275,6 @@ fn bus_and_ui_wakes_schedule_frames_without_input_even_when_paced() {
         None
     );
 }
+
 
 use ui::TypedSurfaces as _;

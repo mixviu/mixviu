@@ -17,7 +17,7 @@ use protocols::window::ident;
 use smithay::desktop::layer_map_for_output;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 use smithay::wayland::shell::wlr_layer::Layer;
-use ui::{Transform as UiTransform, UiSpace};
+use ui_surface::{Transform as UiTransform, UiSpace};
 
 // The hit type, filter, context, and the `_cx` hit-test entry come from the
 // Loop-free core; re-export so callers keep using `surface_interface_base::hit::*`.
@@ -305,4 +305,4 @@ pub fn surfaces_inside_filtered(
     )
 }
 
-use ui::TypedSurfaces as _;
+

@@ -19,11 +19,11 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+ui-surface.workspace = true
 recorder = { workspace = true }
 dispatcher = { workspace = true }
 effects = { workspace = true }
 graphics = { workspace = true }
-ui = { workspace = true }
 model = { workspace = true }
 render-gles = { workspace = true }
 scenegraph = { workspace = true }

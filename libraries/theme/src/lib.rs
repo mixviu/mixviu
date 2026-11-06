@@ -10,3 +10,5 @@ pub mod strings {
 pub mod icons {
     pub const DEFAULT_STROKE: f32 = 1.5;
 }
+
+pub mod region;

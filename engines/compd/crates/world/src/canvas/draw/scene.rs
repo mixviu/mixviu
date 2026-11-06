@@ -9,7 +9,7 @@ use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
 use smithay::desktop::Window;
 use smithay::utils::{Physical, Point, Size};
 use std::collections::{HashMap, HashSet};
-use ui::{HandleId, Transform as UiTransform, UiRenderElement, UiSpace};
+use ui_surface::{HandleId, Transform as UiTransform, UiRenderElement, UiSpace};
 use uuid::Uuid;
 
 /// One drawable in the content band: a canvas element (window / cursor) or an
@@ -187,4 +187,4 @@ where
 
 pub use crate::canvas::draw::viewport::context;
 
-use ui::TypedSurfaces as _;
+

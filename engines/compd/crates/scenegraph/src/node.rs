@@ -20,7 +20,7 @@ use smithay::backend::renderer::{ImportAll, ImportDma, ImportMem, Renderer, Text
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Physical, Point, Scale};
 
-type UI = ui::UiRenderElement;
+type UI = ui_surface::UiRenderElement;
 
 /// One unit of drawable content, generic over the active renderer `R`.
 /// A renderer-agnostic wl_surface tree to draw: systems/contributors carry the
@@ -212,4 +212,3 @@ where
     }
 }
 
-use ui::TypedSurfaces as _;

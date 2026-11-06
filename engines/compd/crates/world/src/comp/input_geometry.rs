@@ -66,3 +66,4 @@ pub(crate) fn observe(window: &Window) -> bool {
     *previous = Some(shape);
     true
 }
+

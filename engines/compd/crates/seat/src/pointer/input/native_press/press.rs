@@ -251,7 +251,7 @@ pub fn apply_focus(
                 .registry
                 .as_ref()
                 .and_then(|r| r.space_of(*handle))
-                .is_some_and(|s| matches!(s, ui::UiSpace::World));
+                .is_some_and(|s| matches!(s, ui_surface::UiSpace::World));
             if is_world {
                 _loop
                     .inner
@@ -298,4 +298,3 @@ fn x11_popup_focus(state: &Loop, hit: &SurfaceHit) -> Option<WlSurface> {
     .then(|| surface.clone())
 }
 
-use ui::TypedSurfaces as _;

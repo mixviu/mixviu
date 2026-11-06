@@ -511,3 +511,4 @@ fn switch_vt(lp: &mut Loop, vt: u8) {
         }
     });
 }
+

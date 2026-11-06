@@ -331,3 +331,5 @@ mod tests {
         assert!(slot.seat().is_none());
     }
 }
+
+use ui::TypedSurfaces as _;

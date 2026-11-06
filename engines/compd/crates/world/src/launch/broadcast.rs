@@ -25,3 +25,4 @@ pub mod event {
 pub fn broadcast(channels: &mut ChannelRouter, outcome: LaunchOutcome) {
     channels.send(&event::EXECUTED_TX, outcome);
 }
+

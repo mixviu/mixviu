@@ -124,6 +124,7 @@ mod authority_tests {
 /// What docked Mix Scenes panels reserve on each output: the scene
 /// host keys its panels by compd's output key (`make model serial`), the
 /// usable area by output name. Empty with no scene host.
+#[cfg(feature = "inproc-ui")]
 fn refresh_scene_reserved(lp: &mut Loop) {
     use dispatcher::wire::trait_::wire_trait::WireTrait;
     let mut reserved = std::collections::BTreeMap::new();
@@ -174,6 +175,7 @@ pub(crate) fn refresh_placement_geometry(lp: &mut Loop) {
 /// in for Quoin's layer surfaces, so `surfaces.*`, `stack` and
 /// `focus.keyboard` must carry them too. Positions are made global from
 /// each output's logical origin; outputs are keyed as comp.props keys them.
+#[cfg(feature = "inproc-ui")]
 fn refresh_scene_surfaces(lp: &mut Loop) {
     use dispatcher::wire::trait_::wire_trait::WireTrait;
     let mut inputs = Vec::new();
@@ -1143,3 +1145,8 @@ impl CompEngine for Engine<'_> {
         policy_host::truth(self.lp)
     }
 }
+
+#[cfg(not(feature = "inproc-ui"))]
+fn refresh_scene_reserved(_lp: &mut Loop) {}
+#[cfg(not(feature = "inproc-ui"))]
+fn refresh_scene_surfaces(lp: &mut Loop) { lp.inner.comp.set_scene_surfaces(Vec::new(), None); }

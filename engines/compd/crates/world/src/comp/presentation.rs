@@ -13,7 +13,7 @@
 //!   the oldest queued frame of that output is folded in at its time.
 //!
 //! Content sources: compd's own UI surfaces
-//! register through `ui::source`; [`frame_queued`] drains the
+//! register through `ui_surface::source`; [`frame_queued`] drains the
 //! registrations into [`Presentation::sources`] and takes each source's report
 //! for that output's frame, and [`presented`] resolves them with the frame.
 //!
@@ -140,22 +140,22 @@ fn surface_tree(lp: &Loop, root: &WlSurface, root_id: SurfaceId) -> Vec<(u64, bo
 pub fn frame_queued(lp: &mut Loop, output: &Output, visible: &[Window]) {
     // Registrations first, so a source registered this frame reports in it.
     let now = super::injection::monotonic_us();
-    for event in ui::source::take_events() {
+    for event in ui_surface::source::take_events() {
         match event {
-            ui::source::SourceEvent::Registered { id, output } => {
+            ui_surface::source::SourceEvent::Registered { id, output } => {
                 lp.inner
                     .comp
                     .presentation
                     .sources
                     .register(&id, output, now);
             }
-            ui::source::SourceEvent::Unregistered { id, revision } => {
+            ui_surface::source::SourceEvent::Unregistered { id, revision } => {
                 let _ = lp.inner.comp.presentation.sources.unregister(&id, revision);
             }
         }
     }
     // Keyed as the scene host registers them: the engine's output key.
-    let sources = ui::source::frame(&crate::state::output_key(output));
+    let sources = ui_surface::source::frame(&crate::state::output_key(output));
     let comp = &lp.inner.comp;
     let mut listed = HashSet::new();
     let mut shown = Vec::new();
@@ -279,4 +279,4 @@ pub fn presented(
     }
 }
 
-use ui::TypedSurfaces as _;
+

@@ -463,4 +463,3 @@ fn a_texture_dropped_in_its_own_pass_still_draws() {
     }
 }
 
-use ui::TypedSurfaces as _;

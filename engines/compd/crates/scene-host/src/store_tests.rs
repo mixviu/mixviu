@@ -1228,3 +1228,5 @@ fn show_targets_the_selected_output() {
     assert_eq!(store.dialog_seat().unwrap().output, "HDMI-A-1");
     assert!(!store.retarget_dialog("other", "HDMI-A-1"));
 }
+
+use ui::TypedSurfaces as _;

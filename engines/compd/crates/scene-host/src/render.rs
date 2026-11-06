@@ -30,7 +30,7 @@ use smithay::utils::{Physical, Point, Rectangle, Size};
 use ui::{HandleId, UiHandle};
 use world::scene::layer::base::Layer;
 use world::state::Loop;
-use world::surface::draw::handle::{UiSpace, load};
+use overlays::handle::{UiSpace, load};
 
 use crate::mount::{
     dialog_geometry, is_dialog, is_overlay, is_toast, page_id, scene_edge, toast_geometry,
@@ -1613,5 +1613,6 @@ mod tests {
         }
     }
 }
+
 
 use ui::TypedSurfaces as _;

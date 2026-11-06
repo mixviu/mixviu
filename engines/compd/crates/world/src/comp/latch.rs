@@ -120,3 +120,4 @@ pub fn service(lp: &mut Loop) {
         lp.inner.comp.settings_changed("focus", "wayland.focus");
     }
 }
+

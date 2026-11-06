@@ -1,0 +1,104 @@
+-- Remove every native crate's dependency on the UI implementation.
+include "split_comp_owner_helpers.mix"
+$base="engines/compd/crates/"
+for $name in ["source","frame_trace"]
+  $s=replace(read_file($base .. "ui/src/" .. $name .. ".rs"),"use crate::TypedSurfaces as _;","")
+  if $name=="frame_trace" then $s=replace($s,"pub(crate) fn", "pub fn") end
+  write_file($base .. "ui-surface/src/" .. $name .. ".rs",$s)
+  write_file($base .. "ui/src/" .. $name .. ".rs","// SPDX-License-Identifier: MIT OR Apache-2.0\npub use ui_surface::" .. $name .. "::*;\n")
+end
+$p=$base .. "ui-surface/src/lib.rs"
+write_file($p,read_file($p) .. "\npub mod source;\npub mod frame_trace;\n")
+$p=$base .. "ui-surface/Cargo.toml"
+write_file($p,read_file($p) .. "ledger.workspace = true\n")
+-- Plain handle/load path for capture. Other typed producers use overlays::handle.
+write_file($base .. "world/src/surface/draw/handle.rs",<<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use crate::state::Loop;
+use smithay::{backend::renderer::gles::GlesRenderer, utils::{Physical, Rectangle}};
+pub use ui_surface::{UiSpace, HandleId};
+use ui_surface::capture::CaptureProgram;
+#[derive(Clone, Copy)]
+pub struct CaptureHandle { pub id: HandleId }
+impl CaptureHandle { pub fn untyped(self) -> HandleId { self.id } }
+pub fn load(state: &mut Loop, renderer: &mut GlesRenderer, program: CaptureProgram,
+    bounds: Rectangle<i32, Physical>, space: UiSpace, layer: u64) -> CaptureHandle {
+    let node = state.inner.environment.gpu.clone();
+    let sender = state.inner.surface().surface_message_buffer_channel.0.clone();
+    let Some(registry) = state.inner.surface_mut().registry.as_mut() else { return CaptureHandle { id: HandleId(0) }; };
+    let id = registry.open(program, node.as_str(), renderer, bounds, space, layer, Box::new(move |message| {
+        let _ = sender.send(crate::surface::protocol::SurfaceMessage { message: crate::surface::protocol::SurfaceMessageType::Capture(message.clone()) });
+    })).expect("registered capture UI owner must allocate the requested surface");
+    if space == UiSpace::World {
+        let tier = if layer & crate::scene::layer::base::Layer::SCENE_SURFACE_GROUP.bits() != 0 { crate::order::track::base::DrawLayer::GROUP } else { crate::order::track::base::DrawLayer::CONTENT };
+        state.inner.register_drawable(uuid::Uuid::from_u128(id.0 as u128), tier);
+    }
+    CaptureHandle { id }
+}
+pub use load as load_snapshot;
+EOF
+)
+$p=$base .. "recorder/src/interface.rs"
+$s=read_file($p)
+$s=re_replace($s,"(?m)^use ui::.*\\n", "")
+$s=re_replace($s,"(?m)^use world::surface::draw::capture::.*\\n", "")
+$s=$s .. "\nuse ui_surface::{HandleId, capture::CaptureProgram};\nuse world::surface::draw::handle::CaptureHandle;\n"
+$s=replace_must($s,"let overlay = SetupOverlay::new(sw, sh, CaptureMedia::Screenshot, kind, preselect);", "let overlay = CaptureProgram::Setup { width: sw, height: sh, media: CaptureMedia::Screenshot, kind, preselect };")
+for $pair in [["RegionDim::new(sw, sh, crop_ov)","CaptureProgram::Dim { width: sw, height: sh, region: crop_ov }"],["RegionBorder::new(sw, sh, crop_ov)","CaptureProgram::Border { width: sw, height: sh, region: crop_ov }"],["        StopHud,","        CaptureProgram::Stop,"],["SaveDialog::new(label, !capture_background_auto())","CaptureProgram::Save { label: label.into(), optimized: !capture_background_auto() }"],["SaveDialog::new(\"Video\", !capture_background_auto())","CaptureProgram::Save { label: \"Video\".into(), optimized: !capture_background_auto() }"],["ErrorDialog::new(message)","CaptureProgram::Error(message.into())"],["EncodingDialog::new()","CaptureProgram::Encoding"],["ContinueDialog::new(GRACE.as_secs() as u32)","CaptureProgram::Continue(GRACE.as_secs() as u32)"],["reg.snapshot::<SetupOverlay>(UiHandle::from_id(setup_id))","reg.setup(setup_id)"],["reg.snapshot::<SaveDialog>(UiHandle::from_id(id))","reg.save_choice(id).map(|choice| choice.optimized)"]]
+  $s=replace_must($s,$pair[0],$pair[1])
+end
+$s=re_replace($s,"set_region_msg::<[A-Za-z_]+>","set_region_msg")
+-- Function declarations here are at column zero; temporarily indent for the helper.
+$s=re_replace($s,"(?m)^fn (forward|set_region_msg)","    fn $1")
+$m=rust_method($s,"forward")
+$s=replace_must($s,$m.text,"fn forward(_state: &mut Loop, _handle: CaptureHandle) {}")
+$m=rust_method($s,"set_region_msg")
+$s=replace_must($s,$m.text,<<EOF
+fn set_region_msg(state: &mut Loop, id: Option<HandleId>, rect: OverlayRect) {
+    let Some(id) = id else { return };
+    if let Some(registry) = state.inner.surface_mut().registry.as_mut() {
+        registry.capture_message(id, CaptureMessage::SetRegion(rect));
+    }
+}
+EOF
+)
+$s=re_replace($s,"UiHandle::<[A-Za-z_]+>::from_id\\(([^)]+)\\)","$1")
+$s=replace($s,".dispatch_message(",".capture_message(")
+write_file($p,$s)
+-- Source types, input and plain GLES elements: no typed owner in native crates.
+for $name in ["world","seat","scenegraph","frames","policy-host"]
+  for $p in walk($base .. $name)
+    if ends_with($p,".rs") then
+      $s=replace(read_file($p),"\nuse ui::TypedSurfaces as _;\n", "\n")
+      $s=replace($s,"use ui::{HandleId, UiRegistry};","use ui_surface::HandleId;")
+      $s=replace($s,"ui::", "ui_surface::")
+      $s=replace($s,"ui_surface::registry::translate_keyboard", "ui_surface::input::translate_keyboard")
+      write_file($p,$s)
+    end
+  end
+  $p=$base .. $name .. "/Cargo.toml"
+  $s=read_file($p)
+  $s=re_replace($s,"(?m)^ui(?:\\.workspace = true| = \\{ workspace = true \\})\\n", "")
+  if not contains($s,"ui-surface.workspace") then $s=replace_must($s,"[dependencies]","[dependencies]\nui-surface.workspace = true") end
+  if $name=="world" then
+    $s=re_replace($s,"(?m)^(egui|toolkit) = .*\\n", "")
+    $s=replace_must($s,"[dependencies]","[dependencies]\ntheme.workspace = true")
+  end
+  write_file($p,$s)
+end
+$p=$base .. "recorder/Cargo.toml"
+write_file($p,replace_must(read_file($p),"ui = { workspace = true }","ui-surface.workspace = true"))
+$p=$base .. "recorder/src/lib.rs"
+write_file($p,replace(read_file($p),"use ui::TypedSurfaces as _;", ""))
+$p=$base .. "frames/src/scene/gpu.rs"
+$s=replace_must(read_file($p),"use ui_surface::{WgpuGlContext, create_wgpu_gl_context, make_current};","use graphics::surface::{WgpuGlContext, create_wgpu_gl_context, make_current};")
+$s=replace_must($s,"    if main\n", "    if ui_surface::factory::is_registered() && main\n")
+write_file($p,$s)
+$p=$base .. "ui-surface/src/factory.rs"
+write_file($p,read_file($p) .. "\npub fn is_registered() -> bool { FACTORY.get().is_some() }\n")
+$p=$base .. "ui-surface/src/input.rs"
+$reg=read_file($base .. "ui/src/registry.rs")
+$keyboard="pub fn translate_keyboard(" .. split(split($reg,"pub fn translate_keyboard(")[1],"\n}")[0] .. "\n}\n"
+$keyboard=replace($keyboard,"crate::input::key", "key")
+write_file($p,read_file($p) .. "\nuse smithay::backend::input::KeyState as SmithayKeyState;\n" .. $keyboard)
+print("recorder and native compositor crates now use plain interfaces")

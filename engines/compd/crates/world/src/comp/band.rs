@@ -81,3 +81,4 @@ pub fn apply(lp: &mut Loop, id: SurfaceId, band: StackBand, cause: &'static str)
     lp.inner.comp.settings_changed("stack", cause);
     lp.inner.comp.causes.note_window(id.0, cause);
 }
+

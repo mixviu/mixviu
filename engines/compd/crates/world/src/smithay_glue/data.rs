@@ -58,3 +58,4 @@ pub fn populate(
     kernel.insert(&POINTER, pointer);
     kernel.insert(&KEYBOARD, keyboard);
 }
+

@@ -395,11 +395,11 @@ fn fill_id(index: usize) -> Id {
 /// every frame (via the GLES renderer), so it is produced here and handed to
 /// `scene()` as plain values — `scene()` only wraps them into `SceneElement`s.
 pub struct PreparedGles {
-    pub surfaces: Vec<ui::UiRenderElement>,
-    pub surfaces_screen: Vec<ui::UiRenderElement>,
+    pub surfaces: Vec<ui_surface::UiRenderElement>,
+    pub surfaces_screen: Vec<ui_surface::UiRenderElement>,
     /// Capture-dim layer elements, composited between windows and the
     /// world/background layers.
-    pub surfaces_dim: Vec<ui::UiRenderElement>,
+    pub surfaces_dim: Vec<ui_surface::UiRenderElement>,
     /// The notification pill, above everything (`None` while nothing is queued).
     pub notify: Option<world::notify::present::base::NotifyFrame>,
     /// What the effects host produced for this output (empty with `NullEffects`).
@@ -411,7 +411,7 @@ pub struct PreparedGles {
 /// recomputes the same `layout::compute` the content band uses; the duplication
 /// is deliberate — backing (de)allocation needs the GLES renderer and must run in
 /// `prepare()`, before the renderer-agnostic `scene()` builds the content band.
-fn ui_panes(state: &Loop, size: Size<i32, Physical>) -> Vec<ui::PaneView> {
+fn ui_panes(state: &Loop, size: Size<i32, Physical>) -> Vec<ui_surface::PaneView> {
     let scale = state.viewport_context().scale;
     let vps = state.inner.viewports();
     let computed =
@@ -425,8 +425,8 @@ fn ui_panes(state: &Loop, size: Size<i32, Physical>) -> Vec<ui::PaneView> {
                 .unwrap_or_else(|| vps.focus_camera())
                 .transform
                 .clone();
-            ui::PaneView {
-                transform: ui::Transform {
+            ui_surface::PaneView {
+                transform: ui_surface::Transform {
                     zoom: cam.zoom,
                     position: Point::new(cam.position.x * scale, cam.position.y * scale),
                 },
@@ -452,7 +452,7 @@ pub fn prepare_kms(
     size: Size<i32, Physical>,
     subject: u64,
 ) -> PreparedGles {
-    let _ui_trace = ui::frame_trace::frame(subject);
+    let _ui_trace = ui_surface::frame_trace::frame(subject);
     prepare(state, renderer, size)
 }
 
@@ -493,11 +493,11 @@ pub fn prepare(
         // Real compositing z-order (topmost-first) so occlusion follows the
         // DrawOrder authority, not the registry's `items` Vec. World UI ids map
         // reversibly from their drawable uuid (see `surface.draw.handle::load`).
-        let draw_order: Vec<ui::HandleId> = state
+        let draw_order: Vec<ui_surface::HandleId> = state
             .inner
             .drawable_order()
             .iter()
-            .map(|u| ui::HandleId(u.as_u128() as u64))
+            .map(|u| ui_surface::HandleId(u.as_u128() as u64))
             .collect();
         if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
             reg.set_draw_order(&draw_order);
@@ -969,4 +969,3 @@ where
     }
 }
 
-use ui::TypedSurfaces as _;

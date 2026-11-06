@@ -4,7 +4,7 @@
 //! (`services/compd/i18n/en/compd.ftl`, AGENTS.md §4). A missing key renders
 //! as the key itself, so a gap shows instead of going blank.
 
-use toolkit::strings::Strings;
+use theme::strings::Strings;
 
 const CATALOGUE: &str = include_str!("../../../i18n/en/compd.ftl");
 
@@ -32,3 +32,4 @@ mod tests {
         assert_eq!(super::with("fps-value", &[("fps", "60")]), "60 FPS");
     }
 }
+

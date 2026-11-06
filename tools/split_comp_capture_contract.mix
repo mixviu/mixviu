@@ -1,0 +1,116 @@
+$base = "engines/compd/crates/"
+$s = read_file($base .. "world/src/capture/session/message.rs")
+$s = re_replace($s,"#\\[derive\\(([^\\n]+)\\)\\]", "#[derive($1, serde::Serialize, serde::Deserialize)]")
+write_file($base .. "ui-surface/src/capture.rs",$s .. <<EOF
+
+/// Committed setup state, read synchronously after input has been applied.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct CaptureSetup {
+    pub kind: TargetKind,
+    pub media: CaptureMedia,
+    pub draft: Option<OverlayRect>,
+    pub no_background: bool,
+    pub output: Option<String>,
+    pub windows: Vec<String>,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct SaveChoice {
+    pub optimized: bool,
+    pub format: Option<String>,
+    pub path: Option<std::path::PathBuf>,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum CaptureProgram {
+    Setup { width: i32, height: i32, media: CaptureMedia, kind: TargetKind, preselect: Option<OverlayRect> },
+    Border { width: i32, height: i32, region: Option<OverlayRect> },
+    Dim { width: i32, height: i32, region: Option<OverlayRect> },
+    Stop,
+    Continue(u32),
+    Save { label: String, optimized: bool },
+    Error(String),
+    Encoding,
+}
+pub type EmitCapture = Box<dyn FnMut(&CaptureMessage) + Send>;
+/// Capture UI lifecycle / future Bus boundary.
+///
+/// The overlays owner registers its factory at compositor startup, before any
+/// world's surfaces are created. Recorder opens an instance on the active world
+/// and output and retains its handle. Input is applied by the UI frame/input
+/// pump; emitted plain messages arrive on recorder's existing surface channel.
+/// Recorder reads setup/save_choice synchronously while handling Confirm or
+/// Save, before closing the instance. Closing is idempotent and is swept across
+/// worlds, so a world switch cannot strand an overlay. Reads of a missing or
+/// closed handle return None. No registry or typed program reference is shared
+/// with recorder. An absent owner creates no instances and returns None.
+pub trait CaptureUi {
+    fn setup(&self, id: crate::HandleId) -> Option<CaptureSetup>;
+    fn save_choice(&self, id: crate::HandleId) -> Option<SaveChoice>;
+    fn capture_message(&mut self, id: crate::HandleId, message: CaptureMessage);
+    fn open(&mut self, program: CaptureProgram, node: &str,
+        renderer: &mut smithay::backend::renderer::gles::GlesRenderer,
+        bounds: smithay::utils::Rectangle<i32, smithay::utils::Physical>,
+        space: crate::UiSpace, layer: u64, emit: EmitCapture) -> Option<crate::HandleId>;
+    fn close(&mut self, id: crate::HandleId);
+}
+pub type CaptureFactory = fn(&mut dyn crate::UiSurfaces, CaptureProgram, &str,
+    &mut smithay::backend::renderer::gles::GlesRenderer,
+    smithay::utils::Rectangle<i32, smithay::utils::Physical>, crate::UiSpace,
+    u64, EmitCapture) -> Option<crate::HandleId>;
+static OWNER: std::sync::OnceLock<CaptureFactory> = std::sync::OnceLock::new();
+pub fn register(factory: CaptureFactory) { OWNER.set(factory).unwrap_or_else(|_| panic!("capture UI owner already registered")); }
+pub fn factory() -> Option<CaptureFactory> { OWNER.get().copied() }
+EOF
+)
+write_file($base .. "world/src/capture/session/message.rs","// SPDX-License-Identifier: MIT OR Apache-2.0\npub use ui_surface::capture::{CaptureMedia, CaptureMessage, OverlayPoint, OverlayRect, TargetKind};\n")
+$p=$base .. "ui-surface/src/lib.rs"
+write_file($p,read_file($p) .. "\npub mod capture;\n")
+$p=$base .. "ui-surface/src/interface.rs"
+write_file($p,replace_must(read_file($p),"pub trait UiSurfaces {","pub trait UiSurfaces: crate::capture::CaptureUi {"))
+$p=$base .. "ui-surface/src/producer.rs"
+write_file($p,replace_must(read_file($p),"pub trait UiProducer {",<<EOF
+pub trait UiProducer {
+    fn capture_setup(&self) -> Option<crate::capture::CaptureSetup> { None }
+    fn capture_save_choice(&self) -> Option<crate::capture::SaveChoice> { None }
+    fn capture_message(&mut self, _message: crate::capture::CaptureMessage) {}
+EOF
+))
+$p=$base .. "ui/src/engine/program.rs"
+write_file($p,replace_must(read_file($p),"    type Message:",<<EOF
+    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> { None }
+    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> { None }
+    fn capture_message(_message: ui_surface::capture::CaptureMessage) -> Option<Self::Message> { None }
+    type Message:
+EOF
+))
+$p=$base .. "ui/src/instance.rs"
+$s=read_file($p)
+$s=replace_must($s,"impl<U: UiProgram> UiInstanceAny for UiInstance<U> {",<<EOF
+impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
+    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> { self.ui().capture_setup() }
+    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> { self.ui().capture_save_choice() }
+    fn capture_message(&mut self, message: ui_surface::capture::CaptureMessage) { if let Some(message) = U::capture_message(message) { self.runtime_mut().queue_message(message); } }
+EOF
+)
+$s=replace_must($s,"impl<U: UiProgram> UiInstanceAny for SharedInstance<U> {",<<EOF
+impl<U: UiProgram> UiInstanceAny for SharedInstance<U> {
+    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> { self.0.ui().capture_setup() }
+    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> { self.0.ui().capture_save_choice() }
+    fn capture_message(&mut self, message: ui_surface::capture::CaptureMessage) { if let Some(message) = U::capture_message(message) { self.0.runtime_mut().queue_message(message); } }
+EOF
+)
+write_file($p,$s)
+$p=$base .. "ui/src/registry.rs"
+write_file($p,read_file($p) .. <<EOF
+
+impl ui_surface::capture::CaptureUi for UiRegistry {
+    fn setup(&self, id: HandleId) -> Option<ui_surface::capture::CaptureSetup> { self.get(id)?.inner.capture_setup() }
+    fn save_choice(&self, id: HandleId) -> Option<ui_surface::capture::SaveChoice> { self.get(id)?.inner.capture_save_choice() }
+    fn capture_message(&mut self, id: HandleId, message: ui_surface::capture::CaptureMessage) { if let Some(item) = self.get_mut(id) { item.inner.capture_message(message); } }
+    fn open(&mut self, program: ui_surface::capture::CaptureProgram, node: &str, renderer: &mut GlesRenderer, bounds: Rectangle<i32, Physical>, space: UiSpace, layer: u64, emit: ui_surface::capture::EmitCapture) -> Option<HandleId> {
+        ui_surface::capture::factory()?(self, program, node, renderer, bounds, space, layer, emit)
+    }
+    fn close(&mut self, id: HandleId) { self.destroy_by_id(id); }
+}
+EOF
+)
+print("plain capture lifecycle contract installed")

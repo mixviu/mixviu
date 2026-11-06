@@ -15,3 +15,8 @@ pub use view::UiItemView;
 pub mod producer;
 
 pub mod factory;
+
+pub mod capture;
+
+pub mod source;
+pub mod frame_trace;

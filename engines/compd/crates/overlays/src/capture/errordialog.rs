@@ -4,11 +4,11 @@
 //! (e.g. no working hardware video encoder). A message + a single OK button that
 //! emits [`CaptureMessage::Discard`] (the interface tears the capture down).
 
-use crate::capture::session::message::CaptureMessage;
+use world::capture::session::message::CaptureMessage;
 use crate::strings;
 use ui::UiProgram;
 
-use crate::surface::draw::capture::style;
+use crate::capture::style;
 
 pub struct ErrorDialog {
     message: String,
@@ -25,6 +25,7 @@ impl ErrorDialog {
 impl ui::UiProgram for ErrorDialog {
     ui::program_owner!(ErrorDialog);
     type Message = CaptureMessage;
+    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }
 
     fn update(&mut self, _message: Self::Message) {}
 
@@ -54,5 +55,6 @@ impl ui::UiProgram for ErrorDialog {
         });
     }
 }
+
 
 use ui::TypedSurfaces as _;

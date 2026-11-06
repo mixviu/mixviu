@@ -4,10 +4,10 @@
 //! everything (screen-space, top layer). Fully transparent except the outline,
 //! and click-through (the interface adds the passthrough layer bit).
 
-use crate::capture::session::message::{CaptureMessage, OverlayRect};
+use world::capture::session::message::{CaptureMessage, OverlayRect};
 use ui::UiProgram;
 
-use crate::surface::draw::capture::{mask, style};
+use crate::capture::{mask, style};
 
 pub struct RegionBorder {
     pub screen_w: i32,
@@ -28,6 +28,7 @@ impl RegionBorder {
 impl ui::UiProgram for RegionBorder {
     ui::program_owner!(RegionBorder);
     type Message = CaptureMessage;
+    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }
 
     fn update(&mut self, message: Self::Message) {
         if let CaptureMessage::SetRegion(r) = message {
@@ -61,5 +62,6 @@ impl ui::UiProgram for RegionBorder {
         );
     }
 }
+
 
 use ui::TypedSurfaces as _;

@@ -2,3 +2,4 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 pub mod space;
 pub mod window;
+

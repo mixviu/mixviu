@@ -77,7 +77,7 @@ pub fn over_ui(_loop: &mut Loop, world: Point<f64, Logical>) -> bool {
 pub fn over_screen_ui(_loop: &mut Loop, world: Point<f64, Logical>) -> bool {
     matches!(
         topmost(_loop, world).and_then(|h| h.ui_space()),
-        Some(ui::UiSpace::Screen)
+        Some(ui_surface::UiSpace::Screen)
     )
 }
 
@@ -162,4 +162,3 @@ pub fn cancel(_loop: &mut Loop) {
     }
 }
 
-use ui::TypedSurfaces as _;

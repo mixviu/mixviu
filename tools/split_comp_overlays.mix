@@ -1,0 +1,212 @@
+-- B4 lab extraction. Native world holds only plain callbacks/interfaces.
+$base="engines/compd/crates/"
+$over=$base .. "overlays/src/"
+mkdir($over,{parents:true})
+write_file($base .. "overlays/Cargo.toml",<<EOF
+[package]
+name = "overlays"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+[dependencies]
+world.workspace = true
+ui.workspace = true
+ui-surface.workspace = true
+dispatcher.workspace = true
+graphics.workspace = true
+model.workspace = true
+slots.workspace = true
+smithay.workspace = true
+toolkit.workspace = true
+theme.workspace = true
+egui.workspace = true
+EOF
+)
+for $name in ["capture", "fps", "handle"]
+  $src=$base .. "world/src/surface/draw/" .. $name
+  run_argv_must(["cp",$src .. ".rs",$over .. $name .. ".rs"])
+  if is_dir($src) then run_argv_must(["cp","-r",$src,$over .. $name]) end
+end
+mkdir($over .. "notify",{parents:true})
+for $name in ["present","view"]
+  run_argv_must(["cp",$base .. "world/src/notify/" .. $name .. ".rs",$over .. "notify/" .. $name .. ".rs"])
+  run_argv_must(["cp","-r",$base .. "world/src/notify/" .. $name,$over .. "notify/" .. $name])
+end
+write_file($over .. "notify.rs","// SPDX-License-Identifier: MIT OR Apache-2.0\npub mod present;\npub mod view;\n")
+for $p in walk($over)
+  if ends_with($p,".rs") then
+    $s=read_file($p)
+    $s=replace($s,"crate::surface::draw::capture", "crate::capture")
+    $s=replace($s,"crate::surface::draw::handle", "crate::handle")
+    $s=replace($s,"crate::capture::session", "world::capture::session")
+    $s=replace($s,"crate::notify::present", "crate::notify::present")
+    write_file($p,$s)
+  end
+end
+-- View programs expose committed plain state through the producer vtable.
+for $p in walk($over .. "capture")
+  if ends_with($p,".rs") then
+    $s=read_file($p)
+    if contains($s,"type Message = CaptureMessage;") then
+      $s=replace_must($s,"type Message = CaptureMessage;", "type Message = CaptureMessage;\n    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }")
+    end
+    write_file($p,$s)
+  end
+end
+$p=$over .. "capture/setup.rs"
+write_file($p,replace_must(read_file($p),"    type Message = CaptureMessage;",<<EOF
+    fn capture_setup(&self) -> Option<ui_surface::capture::CaptureSetup> {
+        Some(ui_surface::capture::CaptureSetup { kind: self.kind, media: self.media,
+            draft: self.draft, no_background: self.no_background, output: None, windows: Vec::new() })
+    }
+    type Message = CaptureMessage;
+EOF
+))
+$p=$over .. "capture/savedialog.rs"
+$s=replace_must(read_file($p),"pub kind_label: &'static str", "pub kind_label: String")
+$s=replace_must($s,"kind_label: &'static str,", "kind_label: impl Into<String>,")
+$s=replace_must($s,"            kind_label,", "            kind_label: kind_label.into(),")
+$s=replace_must($s,"    type Message = CaptureMessage;",<<EOF
+    fn capture_save_choice(&self) -> Option<ui_surface::capture::SaveChoice> {
+        Some(ui_surface::capture::SaveChoice { optimized: self.optimized, format: None, path: None })
+    }
+    type Message = CaptureMessage;
+EOF
+)
+write_file($p,$s)
+write_file($over .. "owner.rs",<<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use ui_surface::{UiSurfaces, HandleId, UiSpace};
+use ui_surface::capture::{CaptureProgram, EmitCapture};
+use ui::{TypedSurfaces, UiProgram};
+use smithay::{backend::renderer::gles::GlesRenderer, utils::{Physical, Rectangle}};
+use crate::capture::{setup::SetupOverlay, border::RegionBorder, dim::RegionDim,
+    hud::StopHud, dialog::ContinueDialog, savedialog::SaveDialog,
+    errordialog::ErrorDialog, encodialog::EncodingDialog};
+fn create<U: UiProgram<Message=ui_surface::capture::CaptureMessage>>(
+    registry: &mut dyn UiSurfaces, program: U, node: &str, renderer: &mut GlesRenderer,
+    bounds: Rectangle<i32, Physical>, space: UiSpace, layer: u64, mut emit: EmitCapture,
+) -> Option<HandleId> {
+    let handle = registry.create_in_space(node, program, renderer, bounds.loc, bounds.size, space, layer).ok()?;
+    registry.set_message_handler(handle, move |message| emit(message));
+    Some(handle.id)
+}
+pub fn open(registry: &mut dyn UiSurfaces, program: CaptureProgram, node: &str,
+    renderer: &mut GlesRenderer, bounds: Rectangle<i32, Physical>, space: UiSpace,
+    layer: u64, emit: EmitCapture) -> Option<HandleId> {
+    macro_rules! open { ($program:expr) => { create(registry, $program, node, renderer, bounds, space, layer, emit) }; }
+    match program {
+        CaptureProgram::Setup { width, height, media, kind, preselect } => open!(SetupOverlay::new(width,height,media,kind,preselect)),
+        CaptureProgram::Border { width, height, region } => open!(RegionBorder::new(width,height,region)),
+        CaptureProgram::Dim { width, height, region } => open!(RegionDim::new(width,height,region)),
+        CaptureProgram::Stop => open!(StopHud),
+        CaptureProgram::Continue(seconds) => open!(ContinueDialog::new(seconds)),
+        CaptureProgram::Save { label, optimized } => open!(SaveDialog::new(label, optimized)),
+        CaptureProgram::Error(message) => open!(ErrorDialog::new(message)),
+        CaptureProgram::Encoding => open!(EncodingDialog::new()),
+    }
+}
+EOF
+)
+write_file($over .. "lib.rs",<<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+#[macro_use]
+extern crate model;
+pub use world::*;
+pub mod capture;
+pub mod fps;
+pub mod handle;
+pub mod notify;
+pub mod owner;
+pub fn register() {
+    ui::register();
+    ui_surface::capture::register(owner::open);
+    world::surface::draw::fps::register(fps::per_frame);
+    world::notify::present::registry::register(|| Box::new(notify::present::registry::Presenter::default()));
+}
+EOF
+)
+-- Notify's plain presenter boundary keeps queue and kernel scheduling in world.
+write_file($base .. "world/src/notify/present/base.rs",<<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use super::registry::Presenter;
+use slots::storage::slot::base::Storage;
+use smithay::backend::renderer::gles::GlesRenderer;
+use crate::smithay_glue::data::ScreenContext;
+pub struct NotifyFrame { pub elements: Vec<ui_surface::UiRenderElement>, pub animating: bool }
+pub fn tick(p: &mut Presenter, next: Option<String>, kernel: &Storage, renderer: &mut GlesRenderer,
+    node: &str, screen: &ScreenContext) -> (Option<NotifyFrame>, bool) {
+    match p.owner.as_mut() { Some(owner) => owner.tick(next, kernel, renderer, node, screen), None => (None, false) }
+}
+EOF
+)
+write_file($base .. "world/src/notify/present/registry.rs",<<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use super::base::NotifyFrame;
+use slots::storage::slot::base::Storage;
+use smithay::backend::renderer::gles::GlesRenderer;
+use crate::smithay_glue::data::ScreenContext;
+pub trait NotifyPresenter {
+    fn tick(&mut self, next: Option<String>, kernel: &Storage, renderer: &mut GlesRenderer,
+        node: &str, screen: &ScreenContext) -> (Option<NotifyFrame>, bool);
+}
+type Factory = fn() -> Box<dyn NotifyPresenter>;
+static FACTORY: std::sync::OnceLock<Factory> = std::sync::OnceLock::new();
+pub fn register(factory: Factory) { FACTORY.set(factory).unwrap_or_else(|_| panic!("notify presenter already registered")); }
+pub struct Presenter { pub(super) owner: Option<Box<dyn NotifyPresenter>> }
+impl Default for Presenter { fn default() -> Self { Self { owner: FACTORY.get().map(|factory| factory()) } } }
+EOF
+)
+$p=$over .. "notify/present/base.rs"
+$s=read_file($p)
+$start=index_of($s,"pub struct NotifyFrame {")
+$end=$start+index_of(substr($s,$start),"\n}")+2
+$s=substr($s,0,$start) .. "pub use world::notify::present::base::NotifyFrame;" .. substr($s,$end)
+write_file($p,$s)
+$p=$over .. "notify/present/registry.rs"
+write_file($p,read_file($p) .. <<EOF
+
+impl world::notify::present::registry::NotifyPresenter for Presenter {
+    fn tick(&mut self, next: Option<String>, kernel: &Storage, renderer: &mut GlesRenderer,
+        node: &str, screen: &world::smithay_glue::data::ScreenContext)
+        -> (Option<world::notify::present::base::NotifyFrame>, bool) {
+        super::base::tick(self, next, kernel, renderer, node, screen)
+    }
+}
+EOF
+)
+-- Native world holds a frame hook, not an egui program.
+write_file($base .. "world/src/surface/draw/fps.rs",<<EOF
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use smithay::{backend::renderer::gles::GlesRenderer, utils::{Physical, Size}};
+use crate::state::Loop;
+type Hook = fn(&mut Loop, &mut GlesRenderer, Size<i32, Physical>);
+static HOOK: std::sync::OnceLock<Hook> = std::sync::OnceLock::new();
+pub fn register(hook: Hook) { HOOK.set(hook).unwrap_or_else(|_| panic!("FPS owner already registered")); }
+pub fn per_frame(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, Physical>) {
+    if let Some(hook) = HOOK.get() { hook(state, renderer, size); }
+}
+EOF
+)
+-- Remove only the UI programs just copied into overlays.
+for $p in [$base .. "world/src/surface/draw/capture", $base .. "world/src/surface/draw/capture.rs", $base .. "world/src/notify/view", $base .. "world/src/notify/view.rs"]
+  run_argv_must(["rm","-rf",$p])
+end
+$p=$base .. "world/src/notify.rs"
+write_file($p,replace_must(read_file($p),"pub mod view;\n", ""))
+$p=$base .. "world/src/surface/draw.rs"
+write_file($p,replace_must(read_file($p),"pub mod capture;\n", ""))
+-- Typed scene furniture creates through the overlays helper, outside world.
+for $p in walk($base .. "scene-host/src")
+  if ends_with($p,".rs") then
+    $s=replace(read_file($p),"world::surface::draw::handle", "overlays::handle")
+    $s=replace($s,"world::surface::draw::capture", "overlays::capture")
+    write_file($p,$s)
+  end
+end
+for $pair in [["Cargo.toml","[workspace.dependencies]"],[ $base .. "scene-host/Cargo.toml","[dependencies]"]]
+  $line=if $pair[0]=="Cargo.toml" then "overlays = { path = \"engines/compd/crates/overlays\" }" else "overlays.workspace = true" end
+  write_file($pair[0],replace_must(read_file($pair[0]),$pair[1],$pair[1] .. "\n" .. $line))
+end
+print("overlay programs extracted; native hooks retain scheduling and queue ownership")

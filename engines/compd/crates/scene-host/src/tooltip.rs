@@ -18,7 +18,7 @@ use ui::UiProgram;
 use ui::{HandleId, UiHandle};
 use world::scene::layer::base::Layer;
 use world::state::Loop;
-use world::surface::draw::handle::{UiSpace, load};
+use overlays::handle::{UiSpace, load};
 
 use crate::view::tip::{self, Tip, TipAt};
 pub(crate) mod actions;
@@ -538,5 +538,6 @@ mod tests {
         assert_eq!(x, 1536.0 - 300.0 - EDGE);
     }
 }
+
 
 use ui::TypedSurfaces as _;

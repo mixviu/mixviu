@@ -19,6 +19,7 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+theme.workspace = true
 ui-surface.workspace = true
 comp-model.workspace = true
 serde_json.workspace = true
@@ -27,7 +28,6 @@ decor = { workspace = true }
 dispatcher = { workspace = true }
 drivers = { workspace = true }
 graphics = { workspace = true }
-ui = { workspace = true }
 ledger = { workspace = true }
 model = { workspace = true }
 policy = { workspace = true }
@@ -42,8 +42,6 @@ notify = { workspace = true }
 # The compositor's own UIs (capture overlays and dialogs, notifications,
 # the frame-rate overlay) are egui programs on the MixOS look; strings come
 # from services/compd/i18n.
-egui = { workspace = true }
-toolkit = { workspace = true }
 smithay = { workspace = true }
 uuid = { workspace = true }
 xcursor = { workspace = true }

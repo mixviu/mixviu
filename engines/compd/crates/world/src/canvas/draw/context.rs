@@ -11,3 +11,4 @@ pub struct Context {
 pub struct Cursor {
     pub position: Point<f64, Logical>,
 }
+

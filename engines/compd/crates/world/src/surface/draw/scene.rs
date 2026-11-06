@@ -5,7 +5,7 @@ use crate::state::Loop;
 use dispatcher::state::RedrawReason;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Size};
-use ui::{UiRenderElement, UiSpace};
+use ui_surface::{UiRenderElement, UiSpace};
 
 /// Returns `(world, screen, dim)` UI render-element vecs:
 /// - `world`  — `UiSpace::World`, SCENE layer (drawn below windows);
@@ -37,7 +37,7 @@ pub fn scene(
     let gpu = _loop.inner.environment.gpu.clone();
     let mut wants_frame = false;
     if let Some(ref mut registry) = _loop.inner.surface_mut().registry {
-        let transform = ui::Transform {
+        let transform = ui_surface::Transform {
             zoom: camera_transform.zoom,
             position: Point::new(
                 camera_transform.position.x * scale,
@@ -95,4 +95,4 @@ pub fn scene(
     (ui_elements, ui_elements_screen, ui_elements_dim)
 }
 
-use ui::TypedSurfaces as _;
+

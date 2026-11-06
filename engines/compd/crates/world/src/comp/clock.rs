@@ -39,3 +39,4 @@ impl ManualClock {
         self.0.set(self.now() + duration);
     }
 }
+

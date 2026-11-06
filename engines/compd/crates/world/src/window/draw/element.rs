@@ -295,3 +295,4 @@ where
         self.inner.capture_framebuffer(frame, src, dst, cache)
     }
 }
+

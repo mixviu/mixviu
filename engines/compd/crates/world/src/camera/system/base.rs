@@ -24,3 +24,4 @@ impl System for CameraSystem {
             .insert(&OUTPUT_VIEWS, OutputViews::default());
     }
 }
+

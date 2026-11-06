@@ -23,7 +23,7 @@ use graphics::capture::encode::{AsyncReadback, Frame, ReencodeJob};
 use graphics::capture::registry::CaptureHandle;
 use graphics::capture::vaapi::CaptureEncoder;
 use smithay::utils::{Logical, Physical, Point, Rectangle};
-use ui::HandleId;
+use ui_surface::HandleId;
 use uuid::Uuid;
 
 use crate::capture::session::message::{CaptureMedia, TargetKind};
@@ -237,4 +237,4 @@ mod tests {
     }
 }
 
-use ui::TypedSurfaces as _;
+

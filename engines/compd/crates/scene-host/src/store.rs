@@ -1029,3 +1029,5 @@ pub fn refusal(mut error: Value) -> Value {
 #[cfg(test)]
 #[path = "store_tests.rs"]
 mod tests;
+
+use ui::TypedSurfaces as _;

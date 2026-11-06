@@ -13,7 +13,7 @@
 //! - [`dialog::ContinueDialog`]— the 5-minute "continue?" countdown dialog.
 //!
 //! Every UI's `UiProgram::Message` is
-//! [`crate::capture::session::message::CaptureMessage`].
+//! [`world::capture::session::message::CaptureMessage`].
 
 pub mod border;
 pub mod dialog;
@@ -25,3 +25,5 @@ pub mod mask;
 pub mod savedialog;
 pub mod setup;
 pub mod style;
+
+use ui::TypedSurfaces as _;

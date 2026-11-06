@@ -20,6 +20,7 @@ repository = "https://github.com/markc/mixos"
 warnings = "allow"
 
 [workspace.dependencies]
+overlays = { path = "engines/compd/crates/overlays" }
 ui-surface = { path = "engines/compd/crates/ui-surface" }
 theme = { path = "libraries/theme" }
 async-stream = "0.3"

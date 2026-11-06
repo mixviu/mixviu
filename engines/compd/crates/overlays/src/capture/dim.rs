@@ -4,10 +4,10 @@
 //! Drawn BELOW windows (its own `CAPTURE_DIM` layer) so windows in the region
 //! stay bright while everything else is dimmed. Click-through.
 
-use crate::capture::session::message::{CaptureMessage, OverlayRect};
+use world::capture::session::message::{CaptureMessage, OverlayRect};
 use ui::UiProgram;
 
-use crate::surface::draw::capture::{mask, style};
+use crate::capture::{mask, style};
 
 pub struct RegionDim {
     pub screen_w: i32,
@@ -28,6 +28,7 @@ impl RegionDim {
 impl ui::UiProgram for RegionDim {
     ui::program_owner!(RegionDim);
     type Message = CaptureMessage;
+    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }
 
     fn update(&mut self, message: Self::Message) {
         if let CaptureMessage::SetRegion(r) = message {
@@ -51,5 +52,6 @@ impl ui::UiProgram for RegionDim {
         );
     }
 }
+
 
 use ui::TypedSurfaces as _;

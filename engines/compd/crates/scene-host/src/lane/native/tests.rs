@@ -394,3 +394,5 @@ async fn superseded_blocking_jobs_are_physically_serial_and_keep_only_latest() {
     assert!(worker.running.is_none() && worker.queued.is_none());
     assert!(entered_rx.try_recv().is_err());
 }
+
+use ui::TypedSurfaces as _;

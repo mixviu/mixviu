@@ -96,3 +96,4 @@ impl SolidBank {
         })
     }
 }
+

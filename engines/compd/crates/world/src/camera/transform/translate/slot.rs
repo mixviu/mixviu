@@ -277,3 +277,4 @@ pub fn resize_stretching(window: &Window, content: Size<i32, Logical>) -> bool {
     }
     !clear
 }
+

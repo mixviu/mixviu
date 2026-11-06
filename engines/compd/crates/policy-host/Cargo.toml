@@ -22,6 +22,7 @@ contract = "none"
 wlcs = []
 
 [dependencies]
+ui-surface.workspace = true
 # The MixOS etc dir rule.
 config = { workspace = true }
 comp-model.workspace = true

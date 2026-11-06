@@ -543,7 +543,7 @@ fn ui_handle(state: &mut Loop, key_code: u32, keysym: Keysym, key_state: KeyStat
         let pressed = matches!(key_state, KeyState::Pressed);
 
         // If this key is a modifier itself, update tracked state and stop.
-        if let Some(mod_bit) = ui::input::keysym_modifier(keysym_raw) {
+        if let Some(mod_bit) = ui_surface::input::keysym_modifier(keysym_raw) {
             registry.modifier_changed(mod_bit, pressed);
             return Some(true);
         };
@@ -551,7 +551,7 @@ fn ui_handle(state: &mut Loop, key_code: u32, keysym: Keysym, key_state: KeyStat
         // Non-modifier key: route to the focused UI. Its modifier state already
         // travelled through `modifier_changed`.
         if let Some(focused) = registry.keyboard_focus() {
-            let input = ui::registry::translate_keyboard(
+            let input = ui_surface::input::translate_keyboard(
                 key_code,
                 keysym_raw,
                 utf8.as_deref(),
@@ -594,4 +594,3 @@ fn ui_handle(state: &mut Loop, key_code: u32, keysym: Keysym, key_state: KeyStat
 // }
 // END - Keyboard navigation, currently disabled.
 
-use ui::TypedSurfaces as _;

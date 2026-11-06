@@ -24,3 +24,4 @@ impl System for WindowSystem {
             .insert(&WINDOW_LIFECYCLE, WindowLifecycle::new());
     }
 }
+

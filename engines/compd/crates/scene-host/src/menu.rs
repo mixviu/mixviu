@@ -16,7 +16,7 @@ use ui::UiProgram;
 use ui::{HandleId, UiHandle};
 use world::scene::layer::base::Layer;
 use world::state::Loop;
-use world::surface::draw::handle::{UiSpace, load};
+use overlays::handle::{UiSpace, load};
 
 /// Underscores are outside the authored scene-name grammar: no id collision.
 pub const SCENE: &str = "__corner_menu";
@@ -701,5 +701,6 @@ mod tests {
         }
     }
 }
+
 
 use ui::TypedSurfaces as _;

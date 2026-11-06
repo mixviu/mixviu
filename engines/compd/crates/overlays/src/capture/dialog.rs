@@ -4,11 +4,11 @@
 //! a countdown; the user must click Continue within the window or the capture
 //! stops. Its own small centered screen-space instance.
 
-use crate::capture::session::message::CaptureMessage;
+use world::capture::session::message::CaptureMessage;
 use crate::strings;
 use ui::UiProgram;
 
-use crate::surface::draw::capture::style;
+use crate::capture::style;
 
 pub struct ContinueDialog {
     /// Seconds remaining before the capture auto-stops.
@@ -24,6 +24,7 @@ impl ContinueDialog {
 impl ui::UiProgram for ContinueDialog {
     ui::program_owner!(ContinueDialog);
     type Message = CaptureMessage;
+    fn capture_message(message: CaptureMessage) -> Option<Self::Message> { Some(message) }
 
     fn update(&mut self, message: Self::Message) {
         if let CaptureMessage::SetCountdown(s) = message {
@@ -61,5 +62,6 @@ impl ui::UiProgram for ContinueDialog {
         });
     }
 }
+
 
 use ui::TypedSurfaces as _;

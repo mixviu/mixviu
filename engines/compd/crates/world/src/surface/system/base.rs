@@ -10,7 +10,7 @@ use slots::trait_::system::base::{BufferCx, System, SystemCx, WorldBuilder};
 use smithay::utils::{Physical, Point, Size};
 use std::any::Any;
 use std::sync::Arc;
-use ui::{HandleId, UiRegistry};
+use ui_surface::HandleId;
 
 /// An UI pointer-button event routed to the surface registry. Input systems
 /// can't touch the registry (it's this system's slot), so they announce this and
@@ -202,4 +202,4 @@ impl SurfaceSystem {
     }
 }
 
-use ui::TypedSurfaces as _;
+

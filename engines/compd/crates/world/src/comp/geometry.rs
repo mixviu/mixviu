@@ -996,3 +996,4 @@ fn apply(
     slot::set_expected_size(window, area.size);
     space.map_element(window.clone(), area.loc, false);
 }
+

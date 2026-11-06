@@ -172,3 +172,15 @@ pub fn wheel(
     Some(Input::Scroll { delta, source })
 }
 
+
+use smithay::backend::input::KeyState as SmithayKeyState;
+pub fn translate_keyboard(
+    code: u32,
+    keysym_raw: u32,
+    utf8: Option<&str>,
+    key_state: SmithayKeyState,
+    is_repeat: bool,
+) -> Input {
+    let pressed = matches!(key_state, SmithayKeyState::Pressed);
+    key(code, keysym_raw, utf8, pressed, is_repeat)
+}

@@ -7,6 +7,9 @@ use graphics::surface::{SurfaceError, WgpuGlContext};
 use smithay::backend::renderer::{element::Id, utils::CommitCounter, gles::GlesRenderer};
 use smithay::utils::{Physical, Point, Size};
 pub trait UiProducer {
+    fn capture_setup(&self) -> Option<crate::capture::CaptureSetup> { None }
+    fn capture_save_choice(&self) -> Option<crate::capture::SaveChoice> { None }
+    fn capture_message(&mut self, _message: crate::capture::CaptureMessage) {}
 
     fn handle_id(&self) -> HandleId;
     fn smithay_id(&self) -> Id;

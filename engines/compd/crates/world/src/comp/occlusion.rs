@@ -74,3 +74,4 @@ mod tests {
         assert_eq!(comp.causes.resolve("surfaces.s6.occluded"), None);
     }
 }
+

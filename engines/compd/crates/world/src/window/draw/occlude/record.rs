@@ -279,3 +279,4 @@ mod tests {
         assert!(r.decisions.is_empty() && r.votes.is_empty());
     }
 }
+

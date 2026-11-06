@@ -802,3 +802,5 @@ mod tests {
         assert_eq!(list("a, b;c d").collect::<Vec<_>>(), ["a", "b", "c", "d"]);
     }
 }
+
+use ui::TypedSurfaces as _;

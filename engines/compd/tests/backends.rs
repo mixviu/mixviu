@@ -24,3 +24,5 @@ fn backend_probe_exits_before_config_or_display_initialisation() {
         names.join(" ") + "\n"
     );
 }
+
+use ui::TypedSurfaces as _;
