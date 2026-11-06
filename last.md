@@ -1060,3 +1060,71 @@ Full gate `20261107-054646-be78c922` is in progress at code head
 baseline/live variant acceptance, authority recovery and the outstanding
 full mutation/topic/native-input/populated-service matrix.
 branch lab/parity-prefs; head SHA 2dd337a9719e7bc53a4e7c00b84afb91a14a2ded (tested code before receipt); pages 39/42 with all-region SSIM/RMSE 0; functional 40/40 exact; OPEN: three reset-page captures, live variants, authority recovery and full mutation/topic/native-input/populated-service acceptance; CBC job ids 20261107-053534-6bd3db64-a1 full PASS, 20261107-054605-8c5bf1b0-a1 repair PASS, 20261107-054646-be78c922 pending.
+
+## Prefs round four: complete baseline acceptance, overall still open
+
+All **42/42 baseline pages** now match gold pixel-for-pixel in one complete
+native paired run, `prefs-parity-20261107/pair.nIbtod`. Full window, header,
+sidebar and content SSIM and RMSE distortions are **zero on every page**.
+`comparison-index.json`, `acceptance.json` and `diff-<page>` preserve the
+region rectangles, original PNG hashes, raw metrics and difference figures.
+Originals/side-by-side images were inspected through the closure runs; the
+final reset-page figures were inspected again in `pair.KghwYB`.
+
+Tested source: `9353aaf74812d224eaea8dec5fb0071ba2131f05`.
+Candidate binary SHA256:
+`237b10a7b326769866426317e2f5f0f9d54257eed63ca663751ea810000e26ef`.
+Gold revision remains `8779f33284b7d3f1178c3d57a699efb9b0867b22`, binary
+SHA256 `18590ca486b4b417b9de5a762f2dcf31b6b13d2351bb3eddd46d66e783fe3c55`.
+Both use the same private native Bus/settingsd/compositor, 1040×680 client,
+scale 1, Studio Dark/comfortable/CSD. ImageMagick 7.1.2-35 reports distortion,
+zero identical. Every HELP/describe/actions/pages/full-menu/four menu-path
+comparison is exact. All seven owned processes, including both restarted
+settingsd processes, are confirmed stopped in closure.json.
+
+The functional matrix remains **40/40 exact**, repeated at
+`49d9f6ae27bb0b1999c3ecac473d96960ff8faa5` in `pair.bISgS0` after fixing
+toolbar accessible names to include native shortcut hints. The native search
+click now focuses the same field and rectangle as gold. About and Keyboard
+shortcuts PNGs are also exact (`pair.WUYkD6`). The original twelve refusal
+differences are closed. Admission accepts effective defaults/nulls while
+retaining the native registry's account/domain/cross-setting validation.
+
+Fifteen live variants are exact in every region at the complete-run source;
+their gold/candidate contact sheets and regional figures were inspected.
+Native panel GUI rounding was then corrected from physical pixels to
+egui's 1/32 logical-point rounding. Compact is exact in `pair.FGb10H`.
+Spacious differs only at the Macros icon's 16×13-pixel anti-aliased edges
+(whole SSIM distortion 0.0000928134); enlarged originals and native widget
+bounds are retained. No geometry or other page region differs. Final live
+acceptance and the retained-authority chrome capture are being rerun.
+
+Both apps preserve the accepted role, stale flag and revision on local
+settingsd loss, return the same valid queued-write reply, and settle it after
+restart on the same PID. Pending controls now preview gold's queued values
+and show its retained error notice. A shared-host defect reset window settings
+on a lost session, hiding the client mark/captions; the host now retains its
+accepted window settings. This repair awaits final paired verification.
+
+Native input exposed a further search-result gap: gold presents matching
+sections with live controls rather than a button list. Mix now authors grouped
+results, rendered through reusable browser cards with page-scoped admission.
+The native clear button is reused too. CBC's fifteen focused tests/build pass;
+rendered-search and in-place edit verification are in progress.
+
+Full exact-source scoped app gates passed with no worker diff at
+`55e404c`, `2dd337a`, `9353aaf` and `49d9f6a` (jobs
+`20261107-053534-6bd3db64-a1`, `20261107-054646-be78c922-a1`,
+`20261107-055202-a9165bdb-a1`, `20261107-055711-a793ea55-a1`). Complete
+saved logs were read. Subsequent repair jobs `20261107-055936-61cb9c95-a1`,
+`20261107-060927-c44a0f83-a1`, `20261107-061124-012794a9-a1` and
+`20261107-061354-a8769509-a1` passed fifteen tests/build and returned
+formatting, now applied at code head
+`ff82bf2165570dc896b08629aa1d5650a4bd23a4`.
+
+Overall remains **OPEN**. Beyond final live/authority verification and a fresh
+exact-source full gate, remaining acceptance includes native search edits,
+drawers/menus/keyboard callbacks, populated Software/Email, macro mutations,
+topics/properties and CLI/single-instance behaviour. Baseline page acceptance
+does not claim those capabilities. No Fable deviation is proposed.
+branch lab/parity-prefs; head SHA ff82bf2165570dc896b08629aa1d5650a4bd23a4 (code before receipt); pages 42/42 at 9353aaf, full/header/sidebar/content SSIM and RMSE 0, figures pair.nIbtod/diff-<page>; functional 40/40 at 49d9f6a; OPEN: final live/authority visuals, search edits and full interaction/mutation/topic/populated-service acceptance, final exact-source gate; CBC job ids 20261107-055202-a9165bdb-a1 and 20261107-055711-a793ea55-a1 full PASS, 20261107-061354-a8769509-a1 repair PASS with formatting applied.
