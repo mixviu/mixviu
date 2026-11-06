@@ -713,3 +713,45 @@ branch lab/gold-parity; head bacd11720d20f22a472c7f67cbfa4bdd579e7a7c (tested co
 branch lab/gold-parity; head c18677b4207789f4e3ad4b5f4f4a3d3b76c0b6b9 (capture source; receipt/format commit follows); Monitor NOT at full parity, Processes content SSIM distortion 0, full 0.0139849, header/options/status/Performance/full ABP remain; CBC job ids 20261107-024928-e337ff81-a1 (preparation passed, rc97 fmt), 20261107-015349-51192852-a1 (earlier full scoped green).
 
 branch lab/gold-parity; head 0807e73 (native region witness; receipt/format commit follows); Monitor NOT at full parity: Processes and six Performance content regions SSIM distortion 0, Processes full 0.0064456, TCP/header/options/status/ABP/action states remain; CBC job ids 20261107-031548-86f79d4c-a1 (preparation passed, rc97 formatting), 20261107-031044-7b2134a3-a1 (focused green), 20261107-024928-e337ff81-a1 (preparation).
+
+## Prefs round 3: shared-frame merge and repair checkpoint
+
+Merged `lab/gold-parity` at `0841770` before further parity work, merge
+commit `0047ba72342cc7b3737950dd205f1e59acef97a7`. Conflicts preserved
+Prefs deferred requests, bounded jobs and application theme choices alongside
+the shared frame's native captions, structured status, overlays, local UI
+operations and generic native facilities. Monitor source changes here come
+from that authorised merge; this job does not change Monitor policy.
+
+Data-authored frame menus use the retained native toolkit renderer with
+owned command identities, preserving separators, shortcuts, checks and gold's
+File/View/Help hierarchy. The explicit application HELP handler bypasses the
+host's automatic list, so private host commands do not replace the canonical
+surface. Embedded native model/keyboard/admission tests pass; exact native
+Bus recomparison is still required.
+
+Terminal numeric controls now use gold's value field and slider commit rules.
+Passive precision rounding never emits a settings write; that regression test
+passes. Appearance headers/cards/previews/chips/swatches, pending notices and
+disabled extras have implementation repairs. New paired evidence must verify
+the native Terminal timeout and every visual change. Pages accepted: **0/42**.
+
+CBC (saved full logs read): `20261107-033410-20638506-a1` found a scheme-chip
+colour conversion error; fixed. `20261107-033807-34f3d949-a1` found a merge
+omission in session theme readback; fixed, formatting patch applied.
+`20261107-034027-0a438d39-a1` and `20261107-034248-534fb98a-a1` passed
+checks, native widget/geometry tests and the passive redraw test, then found
+the optional hidden status model incompatible with the new status-line widget.
+Fixed in `72c70c6`. Focused repair `20261107-034401-76fce065-a1` caught a
+temporary empty-theme lifetime; fixed in `d0b95f7`. Current full gate queue
+`20261107-034553-0321d97f` tests that source; result pending here.
+
+The owned capture driver now covers all 42 pages, native menu paths and 12
+live Prefs variants, with settings revision/PID readbacks and gold-first
+ordering on identical private services. It has not yet run with the repaired
+artifact. Previous figures remain failed diagnostic evidence:
+`prefs-parity-20261107/pair.WrTxPr/appearance-diff`; no new visual acceptance
+or Fable-approved deviation is claimed. No owned native capture processes
+are running at this checkpoint.
+
+branch lab/parity-prefs; head SHA 86c003c1b64c0df4be2fe191b0d723baf358111d (code head before receipt-only commit); pages at acceptance 0/42, figures pair.WrTxPr/appearance-diff FAIL; Bus/menu native implementation repaired, exact native HELP/menu comparison pending; CBC job ids 20261107-033807-34f3d949-a1 merge repair, 20261107-034027-0a438d39-a1 and 20261107-034248-534fb98a-a1 status repair, 20261107-034401-76fce065-a1 lifetime repair, 20261107-034553-0321d97f pending.
