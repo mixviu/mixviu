@@ -584,7 +584,7 @@ impl SceneView {
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let frame = egui::Frame::new()
                             .fill(background)
-                            .inner_margin(egui::Margin::symmetric(node_padding(node, "padding_x", ui.ctx()) as i8,node_padding(node, "padding_y", ui.ctx()) as i8))
+                            .inner_margin(egui::Margin { left: node_padding(node, "padding_left") as i8, right: node_padding(node, "padding_right") as i8, top: node_padding(node, "padding_top") as i8, bottom: node_padding(node, "padding_bottom") as i8 })
                             .corner_radius(num(node, "radius").unwrap_or(0.0));
                         let response = frame
                             .show(ui, |ui| {
@@ -1182,6 +1182,6 @@ fn color(s: &str) -> Option<Color32> {
     ))
 }
 
-fn node_padding(node: &Node, axis: &str, ctx: &egui::Context) -> f32 {
-    num(node, axis).or_else(|| (text(node, "design_padding") == "dock").then(|| toolkit::chrome::Chrome::of(ctx).metrics.dock_margin)).or(num(node, "padding")).unwrap_or(0.0)
+fn node_padding(node: &Node, side: &str) -> f32 {
+    num(node, side).or(num(node, "padding")).unwrap_or(0.0)
 }
