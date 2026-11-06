@@ -49,6 +49,7 @@ struct Host {
     session_dirty: bool,
     framed: bool,
     title: String,
+    unknown_command: Option<String>,
     window_frame: crate::window_frame::WindowFrame,
     jobs: crate::jobs::Jobs,
     job_results: std::collections::VecDeque<Value>,
@@ -64,6 +65,7 @@ struct Host {
     view: SceneView,
     bus: Endpoint,
     pending: BTreeMap<u64, Reply>,
+    held_requests: std::collections::VecDeque<Request>,
     inflight: BTreeSet<u64>,
     input: Input,
     input_reply: Option<Reply>,
@@ -156,7 +158,7 @@ impl Host {
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
-                json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
+                self.unknown_command.as_ref().map_or_else(||json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),|message|json!({"error_code":"UNKNOWN_COMMAND","message":message})),
             ));
             return;
         }
@@ -367,11 +369,17 @@ impl Host {
                 let _ = reply.send(answer);
             }
         }
-        for _ in 0..32 {
+        for _ in self.held_requests.len()..32 {
             match self.bus.requests.try_recv() {
-                Ok(r) => self.request(r, ctx),
+                Ok(r) => self.held_requests.push_back(r),
                 Err(_) => break,
             }
+        }
+        while let Some(request) = self.held_requests.front() {
+            let queues = request.command.strip_prefix(&format!("{}.",self.service)).is_some_and(toolkit::drive::queues);
+            if toolkit::drive::pending(ctx) && !queues { break; }
+            let request = self.held_requests.pop_front().unwrap();
+            self.request(request,ctx);
         }
         for _ in 0..32 {
             match self.bus.notices.try_recv() {
@@ -704,6 +712,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         session_window: None,
         framed: bundle.manifest.frame.is_some(),
         title: bundle.manifest.title.clone(),
+        unknown_command: bundle.manifest.unknown_command.clone(),
         window_frame: crate::window_frame::WindowFrame::default(),
         clipboard: crate::thumbnail::Decoder::with_decoder(
             "viu-clipboard-decode",
@@ -722,6 +731,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         view: loading_view(),
         bus,
         pending: BTreeMap::new(),
+        held_requests: std::collections::VecDeque::new(),
         inflight: BTreeSet::new(),
         input: Input::default(),
         input_reply: None,

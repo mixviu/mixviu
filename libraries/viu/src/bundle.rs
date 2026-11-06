@@ -20,6 +20,7 @@ pub struct Manifest {
     pub native_macros: bool,
     pub native_debug: bool,
     pub activation: Option<String>,
+    pub unknown_command: Option<String>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -37,6 +38,7 @@ impl Default for Manifest {
             native_macros: false,
             native_debug: false,
             activation: None,
+            unknown_command: None,
         }
     }
 }

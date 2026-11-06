@@ -86,6 +86,7 @@ on monitor.node
 end
 on monitor.sort
   if busy_monitor($state) then return end
+  if type($event.args.column)!="string" then reply(10,json_encode({error_code:"ARGUMENT",message:"column must be a string"}));return end
   if not contains(["name","pid","user","cpu","memory","io"],$event.args.column) then reply(10,json_encode({error_code:"ARGUMENT",message:"column must be name, pid, user, cpu, memory or io"}));return end
   if contains(keys($event.args),"reverse") and type($event.args.reverse)!="bool" then reply(10,json_encode({error_code:"ARGUMENT",message:"reverse must be a bool"}));return end
   $state.reverse=$event.args.reverse ?? (if $state.sort==$event.args.column then not $state.reverse else false end);$state.sort=$event.args.column
@@ -178,6 +179,7 @@ end
 
 on monitor.tab
   if busy_monitor($state) then return end
+  if type($event.args.tab)!="string" then reply(10,json_encode({error_code:"ARGUMENT",message:"tab must be a string"}));return end
   if not contains(["processes","performance"],$event.args.tab) then reply(10,json_encode({error_code:"ARGUMENT",message:"tab must be processes or performance"}));return end
   $state.tab=if $event.args.tab=="processes" then "Processes" else "Performance" end
   $state=navigate_monitor($state);publish_monitor($state)
@@ -185,6 +187,7 @@ on monitor.tab
 end
 on monitor.section
   if busy_monitor($state) then return end
+  if type($event.args.section)!="string" then reply(10,json_encode({error_code:"ARGUMENT",message:"section must be a string"}));return end
   if not contains($performance.keys_for($state.snapshot),$event.args.section) then reply(10,json_encode({error_code:"ARGUMENT",message:"No such section"}));return end
   $state.section=$event.args.section;$state=navigate_monitor($state);publish_monitor($state)
   reply(0,json_encode({section:$state.section}))

@@ -49,7 +49,11 @@ pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
     })?;
     Some(slots()[index])
 }
-fn entries(value: &Value, ids: &mut Vec<String>, ctx: Option<&egui::Context>) -> Result<Vec<Entry>, String> {
+fn entries(
+    value: &Value,
+    ids: &mut Vec<String>,
+    ctx: Option<&egui::Context>,
+) -> Result<Vec<Entry>, String> {
     value
         .as_array()
         .ok_or("menu entries must be a list")?
@@ -76,7 +80,12 @@ fn entries(value: &Value, ids: &mut Vec<String>, ctx: Option<&egui::Context>) ->
             Ok(Entry::Row(Row {
                 id,
                 label: item["label"].as_str().unwrap_or("").into(),
-                shortcut: item["shortcut"].as_str().map(|s|ctx.and_then(|ctx|toolkit::keymap::parse_chord(s).map(|key|ctx.format_shortcut(&key))).unwrap_or_else(||s.into())),
+                shortcut: item["shortcut"].as_str().map(|s| {
+                    ctx.and_then(|ctx| {
+                        toolkit::keymap::parse_chord(s).map(|key| ctx.format_shortcut(&key))
+                    })
+                    .unwrap_or_else(|| s.into())
+                }),
                 enabled: item["enabled"] == true,
                 checked: item["checked"].as_bool(),
                 children,
@@ -99,7 +108,8 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
         .iter()
         .map(|item| Menu {
             title: item["label"].as_str().unwrap_or("").into(),
-            entries: entries(&item["children"], &mut ids, Some(ui.ctx())).expect("validated native menu"),
+            entries: entries(&item["children"], &mut ids, Some(ui.ctx()))
+                .expect("validated native menu"),
         })
         .collect();
     let key = model_id(ui.ctx());
