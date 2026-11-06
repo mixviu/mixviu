@@ -1015,7 +1015,7 @@ pub fn form(ctx: &Context) -> serde_json::Value {
     })
 }
 
-pub(crate) fn effective(ctx: &Context) -> design::MenuStyle {
+pub fn effective(ctx: &Context) -> design::MenuStyle {
     let chrome = Chrome::of(ctx);
     let style = chrome.menu_style.effective(chrome.decorations);
     if (style == design::MenuStyle::Bar && ctx.content_rect().width() < 640.0)
