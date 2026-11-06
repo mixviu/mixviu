@@ -69,3 +69,6 @@ Branch: lab/app-ports; head SHA: b77bd167a4d4d5a7fd29bdd222f567ac7fc01e17; apps 
 
 CBC 20261106-210914-2b236015-a1 passed scoped round-2 render/export tests and binary build. Full saved log read; empty adaptation diff. Screenshot copy now follows native blobd + clipd references in Mix after source inspection showed egui image copy unavailable in the current host feature profile. No dependency/interpreter changes. Private native harness prepared against real settingsd, original apps and compositor commands.
 Branch: lab/app-ports; head SHA: 78949427c03ff9b019bc546acefaefb5ea174866; apps done: screenshot/prefs implemented, native acceptance pending; CBC job ids: 20261106-210914-2b236015-a1 (scoped green).
+
+CBC 20261106-211636-ceb74f7b-a1 passed scoped tests/build; full log read. First private native pilot exposed job admission argument routing: local jobs require flat named arguments, unlike native Bus JSON bodies. Both bundles corrected; initial settings reads remain timer driven. Host timers now admit fairly during request traffic. Native acceptance pending, pilots fully torn down.
+Branch: lab/app-ports; head SHA: 76d8ce0 (checkpoint parent); apps done: screenshot/prefs implemented, native acceptance pending; CBC job ids: 20261106-211636-ceb74f7b-a1 (scoped green).

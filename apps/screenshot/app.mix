@@ -39,7 +39,7 @@ fn start_job($s,$payload)
   if $s.busy then raise("BUSY","A job is already active") end
   $s.serial=$s.serial+1;$s.pending=$payload;$s.busy=true;$s.status="Working…"
   $path=path_join(dirname(script_path()),"job.mix")
-  send "viu-local" "jobs.start" body={id:"screenshot-work",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:$payload}
+  send "viu-local" "jobs.start" id="screenshot-work" owner=$s.serial path=$path source=read_file($path) command="job.run" args=$payload
   if $rc!=0 then raise("JOB",to_string($result)) end
   return $s
 end
@@ -78,7 +78,7 @@ on screenshot.capture
 end
 on screenshot.cancel
   if $state.busy then
-    send "viu-local" "jobs.cancel" body={id:"screenshot-work"}
+    send "viu-local" "jobs.cancel" id="screenshot-work"
     $state.serial=$state.serial+1;$state.busy=false;$state.status="Cancelled"
     if $state.pending.op=="capture" and $state.pending.request.mode=="region" and $state.pending.request.region==nil then $state.status="Worker stopped; region selector may remain until Escape/timeout (Track B7 gap)" end
     if $state.pending.op=="capture" and is_file($state.pending.path) then remove($state.pending.path) end
@@ -139,7 +139,7 @@ on screenshot.intent
     $state=start_job($state,{op:"copy",source:$state.path})
   elif $a.id=="refresh" then $state=targets($state)
   elif $a.id=="cancel" then
-    send "viu-local" "jobs.cancel" body={id:"screenshot-work"}
+    send "viu-local" "jobs.cancel" id="screenshot-work"
     $state.serial=$state.serial+1;$state.busy=false;$state.status="Cancelled";$state=restored($state)
   elif contains(["mode","cursor","output","window"],$a.id) then $state[$a.id]=$a.value end
   publish_shot($state);reply(0,"{}")
