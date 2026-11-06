@@ -824,8 +824,10 @@ dependencies = [
  "bus",
  "comp-model",
  "crossbeam-channel",
+ "decor",
  "logging",
  "serde_json",
+ "settings",
  "surfaces",
  "tokio",
  "tracing",
@@ -1182,6 +1184,7 @@ dependencies = [
  "settings",
  "smithay",
  "theme",
+ "tracing",
 ]
 
 [[package]]

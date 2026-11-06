@@ -256,6 +256,25 @@ pub(crate) fn snapshot_of(desktop: settings::Desktop) -> Snapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_chrome_preparation_matches_in_process_presentation() {
+        for scheme in Scheme::ALL {
+            for mode in Mode::ALL {
+                let mut desktop = settings::Desktop::default();
+                desktop.appearance.scheme = scheme.name().into();
+                desktop.appearance.mode = mode.name().into();
+                desktop.appearance.font_weight = Some(500);
+                desktop.appearance.font_size = Some(18.0);
+                desktop.ui.text_scale = 1.5;
+                let snapshot = snapshot_of(desktop);
+                let original = build(&snapshot).unwrap();
+                let native = decor::appearance::build(&snapshot).unwrap();
+                for style in ChromeStyle::ALL {
+                    assert_eq!(original.chrome(style), native.chrome(style), "{scheme:?} {mode:?} {style:?}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn invalid_overlay_keeps_the_selected_design() {
