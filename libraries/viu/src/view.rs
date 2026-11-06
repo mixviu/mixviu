@@ -463,8 +463,17 @@ impl SceneView {
                 }
             })
             .response;
-        if let Some(outline)=color(text(node,"outline")).or_else(||text(node,"outline").strip_prefix("design.").and_then(|name|crate::appearance::colour(ui.ctx(),name))) {
-            ui.painter().rect_stroke(response.rect.shrink(0.5),2.0,egui::Stroke::new(num(node,"outline_width").unwrap_or(1.0),outline),egui::StrokeKind::Inside);
+        if let Some(outline) = color(text(node, "outline")).or_else(|| {
+            text(node, "outline")
+                .strip_prefix("design.")
+                .and_then(|name| crate::appearance::colour(ui.ctx(), name))
+        }) {
+            ui.painter().rect_stroke(
+                response.rect.shrink(0.5),
+                2.0,
+                egui::Stroke::new(num(node, "outline_width").unwrap_or(1.0), outline),
+                egui::StrokeKind::Inside,
+            );
         }
         if node.family != "control" {
             self.geometry.insert(key, response.rect);
@@ -790,13 +799,27 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
         }
         match node.family.as_str() {
             "band" => {
-                band_groups(node, 0.0,&|_|0.0)?;
+                band_groups(node, 0.0, &|_| 0.0)?;
                 for child in children(node) {
-                    let group=&node.ports["groups"][child];
-                    if group["preferred"]=="content" || group["minimum"]=="content" {
-                        let child=&tree.nodes[child];
-                        if child.family!="text" && !(child.family=="control" && child.ports.get("definition").is_some_and(|definition|definition["kind"]=="label")) {return Err("intrinsic band content requires a text or label child".into());}
-                        if child.family=="text" && text(child,"text").len()>4096 {return Err("intrinsic band text exceeds the native label budget".into());}
+                    let group = &node.ports["groups"][child];
+                    if group["preferred"] == "content" || group["minimum"] == "content" {
+                        let child = &tree.nodes[child];
+                        if child.family != "text"
+                            && !(child.family == "control"
+                                && child
+                                    .ports
+                                    .get("definition")
+                                    .is_some_and(|definition| definition["kind"] == "label"))
+                        {
+                            return Err(
+                                "intrinsic band content requires a text or label child".into()
+                            );
+                        }
+                        if child.family == "text" && text(child, "text").len() > 4096 {
+                            return Err(
+                                "intrinsic band text exceeds the native label budget".into()
+                            );
+                        }
                     }
                 }
             }
@@ -890,7 +913,11 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
     Ok(())
 }
 
-fn band_groups(node: &Node, caption_width: f32, content_width: &dyn Fn(&str)->f32) -> Result<Vec<design::title_band::Group>, String> {
+fn band_groups(
+    node: &Node,
+    caption_width: f32,
+    content_width: &dyn Fn(&str) -> f32,
+) -> Result<Vec<design::title_band::Group>, String> {
     use design::title_band::{Alignment, Group};
     let groups = node
         .ports
