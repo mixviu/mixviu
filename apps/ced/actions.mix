@@ -17,6 +17,19 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
   $original_active=$s.active
   if $index!=nil and $index>=0 then $s.active=$index end
   $has=len($s.tabs)>0;$t=if $has then current($s) else nil end
+  if $has and $s.mail[$t.document]!=nil then
+    $m=$s.mail[$t.document]
+    if $id=="file.reload" then raise("CONFLICT","Close and reopen this mail document to reload it") end
+    if contains(["edit.undo","edit.redo"],$id) then
+      if $m.saving or $m.sending then raise("CONFLICT","Wait for the mail operation to finish") end
+      $stack=if $id=="edit.undo" then "undo" else "redo" end;$other=if $stack=="undo" then "redo" else "undo" end
+      if len($m[$stack])>0 then
+        $old=$m.headers;$m.headers=$m[$stack][len($m[$stack])-1];$m[$stack]=slice($m[$stack],0,len($m[$stack])-1);$m[$other]=concat($m[$other],[$old]);$s.mail[$t.document]=$m
+        if $index!=nil and $index>=0 then $s.active=$original_active end
+        return {state:pump($s),result:nil,op_id:nil,kind:nil}
+      end
+    end
+  end
   if contains(["file.send","mail.headers"],$id) and (not $has or $s.mail[$t.document]==nil) then raise("INVALID_ARGUMENT","Not a mail document") end
   if $has and $s.mail[$t.document]!=nil and (contains(["file.save","file.save_as","file.send","mail.headers"],$id) or ($id=="file.close" and ($a.save ?? false))) then
     $s=queue_job($s,"action-publish",{body:viu_action_event($id,if $who!=nil then "bus" else $origin end,{args:$a},nil)})
@@ -30,7 +43,10 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
     else for $path in $a.paths $s=operation($s,"open",{path:$path}) end end
   elif $id=="file.exit" then $s.exit_after_save=true;$s=save_session(session_changed($s))
   elif $id=="file.save_all" then
-    for $tab in $s.tabs $v=viu_document("command",$tab.document,{name:"save",caller:$who}) end
+    for $tab in $s.tabs
+      if $s.mail[$tab.document]!=nil then $out=mail_action($s,"file.save",{},$tab.document);$s=$out.state
+      else $v=viu_document("command",$tab.document,{name:"save",caller:$who}) end
+    end
   elif contains(["file.save","file.save_as","file.reload","file.close","edit.undo","edit.redo","edit.undo_any","edit.undo_other"],$id) then
     if not $has then raise("NOT_FOUND","No tab is open") end
     if $id=="file.close" and not ($a.save ?? false) then
@@ -50,6 +66,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
     if $id=="tabs.next" then $s.active=($s.active+1)%len($s.tabs)
     elif $id=="tabs.prev" then $s.active=($s.active+len($s.tabs)-1)%len($s.tabs)
     else $i=to_number(split($id,".")[2])-1;if $i<0 or $i>=len($s.tabs) then raise("NOT_FOUND","No such tab") end;$s.active=$i end
+    $result={tab:to_number(current($s).document)}
   elif starts_with($id,"edit.") then
     if not $has then raise("NOT_FOUND","No tab is open") end
     if contains(["edit.copy","edit.cut"],$id) then
@@ -61,7 +78,7 @@ fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui")
     elif $id=="edit.paste" then
       $s.serial=$s.serial+1;$key="paste-"..to_string($s.serial)
       $s.pastes[$key]={document:$t.document,caller:$who};viu_platform("paste",$key,{})
-    elif $id=="edit.overwrite" then $v=viu_document("overwrite",$t.document,{})
+    elif $id=="edit.overwrite" then $v=viu_document("overwrite",$t.document,{});$result=$v.overwrite
     else $v=viu_document("command",$t.document,{name:replace(replace($id,"edit.",""),"_","-"),caller:$who}) end
   elif starts_with($id,"search.") then
     if not $has then raise("NOT_FOUND","No tab is open") end

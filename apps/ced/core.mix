@@ -27,6 +27,12 @@ fn refresh_tabs($s)
     end
   end
   for $t in $s.tabs
+    if $s.edit.epoch!=nil then
+      $selection={buffer:$t.buffer,epoch:$t.epoch,anchor:$t.selection.anchor.offset,head:$t.selection.head.offset}
+      if not deep_eq($s.caret_wanted[$t.document],$selection) then
+        $s.caret_wanted[$t.document]=$selection;viu_timer($t.document..":caret",200,{kind:"caret",document:$t.document})
+      end
+    end
     if $t.phase=="live" and contains(["mix","scene","mix-data"],$t.language) and $s.lex_requested[$t.document]!=$t.view_gen then
       $s.lex_requested[$t.document]=$t.view_gen;viu_timer($t.document..":lex",150,{kind:"lex",document:$t.document})
     end

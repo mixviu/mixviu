@@ -10,7 +10,7 @@ include "mail.mix"
 include "ui.mix"
 $state={tabs:[],active:0,busy:false,serial:0,next_tab:0,queue:[],running:{},timers:{},outcomes:{},last_op:nil,status:"Open a UTF-8 document",path:"",wrap:false,line_numbers:true,window_close:false,open_dialog:false,event_seq:nil,look:{appearance:{scheme:"studio",mode:"dark"},values:{},revision:nil}}
 $state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_loaded=false;$state.session_dirty=false;$state.session_seen=nil;$state.restore={};$state.restore_active=nil;$state.exit_after_save=false;$state.edit={epoch:nil,version:nil,volatile:nil}
-$state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).commands;$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:true,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.preview_requested={};$state.lex_requested={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
+$state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).commands;$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:true,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.preview_requested={};$state.lex_requested={};$state.caret_wanted={};$state.caret_published={};$state.caret_at={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
 $state.macro_panel={epoch:0,serial:0,page:"closed",id:nil,filter:"",form:{open:false,title:"",body:"",field:nil,choices:[]}}
 publish_ced($state)
 on ced.ping
@@ -136,6 +136,17 @@ on viu.timer
       $w=$state.waits[$t.token];$left=$w.timeout_ms-(monotonic()-$w.started)*1000
       if $left>1 then viu_timer("call:"..$t.token,min(90000,$left),{kind:"call",token:$t.token})
       else $state=finish_call($state,$t.token,10,{error_code:"CONFLICT",message:"Command timed out",reason:"timeout"}) end
+    end
+  elif $t.kind=="caret" then
+    if any($state.tabs,fn($tab)=$tab.document==$t.document) then
+      $tab=viu_document("state",$t.document,{})
+      $left=1-(monotonic()-($state.caret_at[$t.document] ?? -100))
+      if not $tab.idle or $tab.phase!="live" then viu_timer($t.document..":caret",200,{kind:"caret",document:$t.document})
+      elif $left>0 then viu_timer($t.document..":caret",$left*1000,{kind:"caret",document:$t.document})
+      elif not deep_eq($state.caret_wanted[$t.document],$state.caret_published[$t.document]) then
+        $state.caret_at[$t.document]=monotonic();$state.caret_published[$t.document]=$state.caret_wanted[$t.document]
+        $state=queue_job($state,"caret",{buffer:$tab.buffer,ranges:[{anchor:$tab.selection.anchor.offset,head:$tab.selection.head.offset}],origin:"human:ced"})
+      end
     end
   elif $t.kind=="lex" then $state=queue_job($state,"lex",{document:$t.document})
   elif $t.kind=="session-save" then $state=save_session($state)

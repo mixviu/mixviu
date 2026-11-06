@@ -57,6 +57,7 @@ on job.run
     elif $a.action=="edit" then $panel.form.field=$a.value;if $panel.page=="catalogue" then $panel.filter=$a.value;$panel=macro_catalogue($panel) end
     else $panel.form.field=$a.value.field;$panel=macro_answer($panel,$a.value.choice) end
     reply(0,json_encode($panel));return
+  elif $job.kind=="caret" then send "edit" "edit.select" body=$a timeout=5;reply($rc,json_encode($reply));return
   elif $job.kind=="lex" then $v=viu_document("lex",$a.document,{});reply(0,"{}");return
   elif $job.kind=="preview" then $v=viu_document("preview",$a.document,{});reply(0,json_encode($v));return
   elif $job.kind=="classify" then reply(0,json_encode(classify_document($a.document)));return
