@@ -5,7 +5,12 @@ citizen: email
 ---
 ```mix
 {
-root:{widget:"column",children:["title","status","account-label","accounts","account","connect","view","mail-pane","compose-pane"],gap:6},
+root:{widget:"column",children:["no-accounts","core"],gap:0},
+"no-accounts":{widget:"column",padding:16,gap:12,hidden:"= !$model.no_accounts",children:["empty-title","empty-body","open-settings"]},
+"empty-title":{widget:"control",definition:{id:"empty-title",kind:"label",label:"",initial:"No accounts",properties:{strong:true}}},
+"empty-body":{widget:"control",definition:{id:"empty-body",kind:"label",label:"",initial:"Email has no account yet. Accounts are set up in Prefs, under Email: the server URL, your address, your password, and an optional CA bundle for a server whose certificate is self-issued.",properties:{wrap:true}}},
+"open-settings":{widget:"control",definition:{id:"open-settings",kind:"button",label:"",initial:"",properties:{text:"Open Email Settings",style:"primary"}},on_intent:"email.intent"},
+core:{widget:"column",hidden:"= !$model.has_accounts",children:["title","status","account-label","accounts","account","connect","view","mail-pane","compose-pane"],gap:6},
 view:{widget:"control",definition:{id:"view",kind:"tabs",label:"View",initial:"Mail",properties:{choices:["Mail","Compose"]}},on_intent:"email.intent"},
 "mail-pane":{widget:"column",children:["mailbox-label","mailboxes","mailbox","paging","messages","reader","reader-body"],gap:6,hidden:"= $model.mail_hidden"},
 "compose-pane":{widget:"column",children:["compose-label","to-label","to","subject-label","subject","compose","send"],gap:6,hidden:"= $model.compose_hidden"},

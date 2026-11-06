@@ -7,6 +7,8 @@ $rows=[];$selected=nil;$revision=0;$account="No account connected";$mailbox="No 
 $entries=[];$active="";$session=nil;$boxes=[];$box="";$offset=0;$total=0;$message=nil;$connected=false;$busy=false;$serial=0;$pending=nil;$status="Choose an account and Connect"
 $submission=nil;$receipt=nil;$last_receipt=nil
 $view="Mail"
+$frame=require("frame.mix");$actions=require("actions.mix")
+$chrome={bindings:{},theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark"},dialog:nil,macros_open:false,window_close:false}
 if not $fixture and len($app_args)>0 then
   $entries=$mail.accounts($app_args[0])
   if len($entries)>0 then $active=$entries[0].id end
@@ -23,6 +25,8 @@ fn publish_email()
   $m.mailboxes={id:"mailboxes",kind:"combo",label:"Mailbox",initial:if len($chosen)>0 then $chosen[0].choice else "Select mailbox" end,properties:{choices:concat(["Select mailbox"],map($boxes,fn($b)=$b.choice))}}
   $m.values.view=$view;$m.mail_hidden=$view!="Mail";$m.compose_hidden=$view!="Compose"
   $m.values["reader-body"]=if $message!=nil then $message.text else "" end
+  $look=merge($chrome,{fixture:$fixture,accounts:len($entries),connected:$connected,status:$status})
+  $m=$frame.apply($m,$look)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$m}
 end
 fn begin_mail($op,$data)
@@ -93,7 +97,9 @@ on email.fixture
 end
 on email.intent
   $a=$event.args
-  if $a.id=="view" then
+  if $a.id=="open-settings" then
+    $out=execute_email("file.accounts","ui");reply($out.rc,json_encode($out.body));return
+  elif $a.id=="view" then
     if not contains(["Mail","Compose"],$a.value) then raise("VIEW","Unknown view") end
     $view=$a.value
   elif $a.id=="send" then
@@ -131,6 +137,88 @@ on email.intent
     if $a.id=="compose" then $draft.text=$a.value else $draft[$a.id]=$a.value end
   else raise("DEFERRED","Unknown or deferred mail action") end
   publish_email();reply(0,"{}")
+end
+
+fn execute_email($id,$origin)
+  global $chrome,$view,$serial,$busy,$pending,$status
+  $s=merge($chrome,{connected:$connected})
+  $found=filter($actions.registry($s),fn($a)=$a.id==$id)
+  if len($found)==0 then return {rc:10,body:{error_code:"UNKNOWN_ACTION",message:"No such command"}} end
+  if not $found[0].enabled then return {rc:10,body:{error_code:"DISABLED",message:"That command cannot run now"}} end
+  if $id=="file.quit" or $id=="compose.close" then $chrome.window_close=true
+  elif $id=="file.accounts" then
+    send "prefs" "prefs.section" body={name:"apps_email"}
+    if $rc!=0 then
+      send "apps" "apps.launch" body={id:"dev.mixos.prefs"}
+      if $rc!=0 then return {rc:10,body:{error_code:"LAUNCH",message:"Can't open Prefs: no launcher"}} end
+      send "prefs" "prefs.section" body={name:"apps_email"}
+      if $rc!=0 then return {rc:10,body:{error_code:"LAUNCH",message:"Prefs did not open its Email settings"}} end
+    end
+  elif $id=="help.about" then $chrome.dialog="about"
+  elif $id=="help.shortcuts" then $chrome.dialog="shortcuts"
+  elif $id=="help.macros" then $chrome.macros_open=not $chrome.macros_open
+  elif $id=="view.search" then
+    return {rc:10,body:{error_code:"DISABLED",message:"Command search is awaiting the shared palette port"}}
+  elif $id=="mail.compose" then $view="Compose"
+  elif $id=="file.refresh" then
+    if len($entries)>0 then begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting" end
+  elif starts_with($id,"view.theme.") or starts_with($id,"view.mode") or starts_with($id,"view.style.") or starts_with($id,"view.decorations.") or starts_with($id,"view.captions.") then
+    $axis=if starts_with($id,"view.theme.") then "scheme" elif starts_with($id,"view.style.") then "style" elif starts_with($id,"view.decorations.") then "decorations" elif starts_with($id,"view.captions.") then "caption_side" else "mode" end
+    $parts=split($id,".");$value=$parts[len($parts)-1]
+    if $id=="view.mode" then
+      send "viu-local" "native.theme" body=$chrome.theme_choice
+      if $rc!=0 then return {rc:$rc,body:$reply} end
+      $value=if $reply.mode=="dark" then "light" else "dark" end
+    end
+    $edit={};$edit[$axis]=if $value=="session" then nil else $value end
+    $out=theme_email($edit)
+    if $out.rc!=0 then return $out end
+  else return {rc:10,body:{error_code:"DISABLED",message:"That command cannot run now"}} end
+  send "viu-local" "native.executed" body={id:$id,origin:$origin,params:nil,result:nil}
+  publish_email()
+  return {rc:0,body:{executed:$id}}
+end
+fn theme_email($args)
+  global $chrome
+  $edit=$actions.theme_edit($chrome.theme_choice,$args)
+  if not $edit.ok then return {rc:10,body:{error_code:"ARGUMENT",message:$edit.message}} end
+  send "viu-local" "native.theme" body=$edit.choice
+  if $rc!=0 then return {rc:$rc,body:$reply} end
+  $chrome.theme_choice=$edit.choice;$chrome.theme_effective=$reply
+  $body=$edit.choice;$body.effective=$reply
+  return {rc:0,body:$body}
+end
+on email.actions
+  reply(0,json_encode({actions:$actions.registry(merge($chrome,{connected:$connected}))}))
+end
+on email.execute
+  $out=execute_email($event.args.id,"bus");reply($out.rc,json_encode($out.body))
+end
+on email.theme
+  $out=theme_email($event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on viu.theme.changed
+  $chrome.theme_effective=$event.args;publish_email()
+end
+on viu.frame.intent
+  $out=execute_email($event.args.value.command,$event.args.value.origin ?? "menu")
+  reply($out.rc,json_encode($out.body))
+end
+on viu.frame.close
+  $chrome.window_close=true;publish_email()
+end
+on email.quit
+  $chrome.window_close=true;publish_email();reply(0,json_encode({quitting:true}))
+end
+on email.dialog
+  if contains(keys($event.args),"open") then
+    if $event.args.open!=nil and not contains(["about","shortcuts"],$event.args.open) then reply(10,json_encode({error_code:"ARGUMENT",message:"Unknown dialog"}));return end
+    $chrome.dialog=$event.args.open
+  elif $event.args.answer!=nil then $chrome.dialog=nil end
+  publish_email();reply(0,json_encode({dialog:$chrome.dialog}))
+end
+on email.dialog.intent
+  $chrome.dialog=nil;publish_email();reply(0,"{}")
 end
 on viu.job.completed
   $d=$event.args

@@ -1,0 +1,19 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Email frame policy, referenced to gold 8779f3328.
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
+$actions=require("actions.mix")
+fn apply($model,$s)
+  $model.no_accounts=not $s.fixture and $s.accounts==0
+  $model.has_accounts=not $model.no_accounts
+  $model.window_close=$s.window_close
+  $model.macros_open=$s.macros_open
+  $model.shortcuts=$actions.shortcuts($s)
+  $model.native_overlays=[]
+  if $s.dialog!=nil then
+    $definition={id:"email-help",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Email" else "Keyboard shortcuts" end,body:"A pure JMAP client: mail, calendar and contacts over HTTPS to any RFC 8620/8621-shaped server. Mail is read, composed and sent; calendars and contacts are listed and shown.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
+    if $s.dialog=="shortcuts" then $definition.initial.body="";$definition.initial.grid=filter($actions.registry(merge($s,{dialog:nil})),fn($a)=$a.shortcut!=nil) end
+    $model.native_overlays=[{definition:$definition,command:"email.dialog.intent"}]
+  end
+  $status=if $model.no_accounts then "" else $s.status end
+  return $frame.apply($model,{icon:"mail",title:"Email",native_title:"Email",menus:$actions.menus($s),toolbar:$actions.toolbar($s),status:{left:$status,right:[],icon:if $s.connected then "plug" else "unplug" end,error:not $s.connected}})
+end
