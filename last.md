@@ -1131,3 +1131,42 @@ to existing in-process Mix ownership; do not import Rust app tab policy.
 Current Host still supplies no issuer. Full session/Bus/clipboard/mouse/
 IME/Prefs and release captures remain open. Overall NOT ACCEPTED.
 branch: lab/parity-term; head SHA: 785b342eff93919bfae7aff3513791bc8aeaa8e1 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — lease ordering gate, verified issuer/control and remaining full parity/release acceptance open; CBC job ids: term-wheel-owner-60212c48-a1 (green exact source/native Ctrl+wheel), term-lease-order-785b342e (next await).
+### Verified session actor extraction checkpoint
+
+`term-lease-order-785b342e-a1` passed: 146 terminal tests, five existing
+ignores, seven input tests, two bundle tests, six Mix suites, search/dialog,
+foreign gate and debug build. Complete saved log read in two chunks;
+worker test-format patch applied in the actor checkpoint. The ordering
+tests confirm local invalidation before cleanup and failed-launch report.
+
+652c704e extracts pinned term-core/native_session.rs production actor
+into reusable terminal/session_actor.rs. Its native Bus discovery, verified
+attachment, grant pool, conservative deadlines, renewal, lifecycle gap/
+reconnect reconciliation, bounded dispatch queue and revocation logic are
+retained. Rust TabSet-dependent Control is replaced by typed ControlLane
+futures; attachment/VerifiedCommand stay native values, never JSON-minted
+authority. The protected command manifest is copied from pinned control.rs.
+The actor implements existing SessionIssuer, retaining descriptor, issuing
+endpoint and ordered callbacks. Added existing test-broker as a dev-only
+workspace dependency, not a second transport or production service.
+Provenance includes source hash and adaptations.
+
+Five initial tests cover diagnostic transitions, real-broker issuing
+endpoint, expiry launch margin, nonblocking prepared consumption and
+typed lease-bridge invalidation. Native compile/tests are pending. This
+does not port the full original enforcement/bootstrap/reconnect test
+suite yet. Host still supplies no issuer; ControlLane has no app adapter.
+There is no claim of working protected commands or sealed Mix login
+integration in the candidate at this checkpoint.
+
+Next CBC `term-session-actor-652c704e` at
+`652c704ef4a57b73a7c714cdc4a1edb392fbe2b6`, term_gate --prepare. Read
+complete log; apply fmt/Cargo.lock and repeat exact source if changed.
+Then implement host supervisor lifetime/startup wait and protected policy
+adapter through existing in-process Mix mailbox. Preserve exact native
+pane IDs/generations across failed creations, map native handles to Mix
+layout explicitly, and keep Rust free of app tab/pane policy. Adapt the
+remaining pinned actor/enforcement/Mix bootstrap tests and drive real
+sessions through native Bus. All other inventory and exact release visual
+acceptance remain open. NOT ACCEPTED; no Fable deviation requested.
+branch: lab/parity-term; head SHA: 652c704ef4a57b73a7c714cdc4a1edb392fbe2b6 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — session actor gate/host/protected adapter, remaining full parity and release acceptance open; CBC job ids: term-lease-order-785b342e-a1 (green, fmt applied), term-session-actor-652c704e (next await).
