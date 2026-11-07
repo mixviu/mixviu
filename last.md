@@ -359,3 +359,19 @@ Light checks on cachyos at 34a8d52 (one or two crates per job):
   green (20261107-185418-c5fe3256).
 
 Branch cutover/four-engines; head is this last.md commit (source 6fb20c11); gate: full run held for parity (the next full gate also writes the release set with apps.tar); light checks green apart from cachyos filesystem cases; CBC light bundle 20261107-212351-63549e61, lint 20261107-211822-f6329f7d, mixtest 20261107-212515-4a70d7c5, last full cutover-gate-2d7e1c7, earlier cutover-gate-5d1ec61, cutover-gate-43de632, cutover-removed-4755e9e, 20261107-111516-437fd7b1.
+
+# Security TLS split
+
+Branch fix/security-tls starts at the requested infra/pr-ci base 395aab71. Final gated source: b664878c19868d5e8666700b0cc2f45ecbedbd11. This status and PR body are the following documentation-only commit.
+
+Clear 11 of 18 inherited advisories: rustls, rustls-webpki, webpki-roots, rustls-pemfile replacement, Tokio, ctutils and quick-xml. Remove unused mail-send to eliminate the old XML/ZIP6 report dependency path. Hickory and mail-auth versions and DNS APIs remain unchanged.
+
+Retain seven debt entries: two Hickory advisories point to fix/security-hickory; four ZIP advisories need a separately validated Candle stack upgrade; RSA has no patched release. PR.md records the versions, deferrals and undo: revert the dependency, adapter and advisory-policy commits together; no data change expected.
+
+Requested gate PASS: cargo deny, all affected-crate light jobs and the full CI test stage. Final full test receipt is BUILD_RC=0: 10,525 Rust tests passed, none failed, 90 ignored, plus all five Mix policy checks. Formatting, environment, clippy and the viud dependency gate passed.
+
+The complete all-stage recipe is not green: Mix lint reports eight inherited Backdrop/Workshop regression entries. The base comparison reproduces identical files, codes and counts. The scripts, linter and baseline were not changed or weakened.
+
+Independent round 1 review: Gemini 3.1 Pro Preview and DeepSeek V4 Pro both report no blocking findings at b664878c. DeepSeek’s ECHCONFIG nit was closed with source/lock evidence as pre-existing; PR.md records the reason. No source changes after review. Tier 2 code-owner approval remains required after cut-over. No PR opened, production install or deployment performed. Original fix/security-advisories remains at 40a3c75670d760544c17d2b74d695776ad298c12. Hickory adapters are preserved and pushed on their own unfinished branch.
+
+Branch fix/security-tls; head/source b664878c19868d5e8666700b0cc2f45ecbedbd11 (following status commit changes documentation only); gate requested PASS, all-stage Mix lint inherited FAIL; CBC 20261107-220026-acacbff6-a1, 20261107-220026-e6a5c094-a1, 20261107-220026-6d4dae71-a1, 20261107-220026-62cd04d9-a1, 20261107-220026-3d85fbf6-a1, 20261107-221648-810111e3-a1, 20261107-222839-4c5d81a1-a1, 20261107-222839-b8cd5ee7-a1, 20261107-223327-64e473bf-a1, 20261107-223349-8cb1d811-a1, base comparison 20261107-223537-fa2ce977-a1; needs Mark: code-owner review, later Hickory completion.
