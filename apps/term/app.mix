@@ -20,9 +20,15 @@ on viu.session
   publish_term($state)
 end
 on viu.frame.close
-  $closed=viu_terminal("close",$state.session.handle,{})
+  if not $state.closed then $closed=viu_terminal("close",$state.session.handle,{}) end
   $state.closed=true
   publish_term($state)
+end
+on app.quit
+  if not $state.closed then $closed=viu_terminal("close",$state.session.handle,{}) end
+  $state.closed=true
+  publish_term($state)
+  reply(0,"{}")
 end
 on viu.frame.intent
   if $event.args.value.command=="close" then

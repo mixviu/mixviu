@@ -1,1 +1,1 @@
-{"commands":["term.ping","term.snapshot","term.type"],"host":{"commands":["term.ping","term.snapshot","term.type"],"follow_settings":true,"frame":"gold","native_drive":true,"service":"term","size":[900,560],"title":"Terminal"}}
+{"commands":["term.ping","term.snapshot","term.type","app.quit"],"host":{"commands":["term.ping","term.snapshot","term.type","app.quit"],"follow_settings":true,"frame":"gold","native_drive":true,"service":"term","size":[900,560],"title":"Terminal"}}
