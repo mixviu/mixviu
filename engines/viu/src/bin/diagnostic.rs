@@ -85,8 +85,8 @@ fn next(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> viu::runtime::Completi
     done
 }
 fn main() {
-    let profile = std::env::var_os("VIU_DIAGNOSTIC_PROFILE").is_some();
-    let string_body = std::env::var_os("VIU_DIAGNOSTIC_STRING_BODY").is_some();
+    let profile = std::env::var_os("MIX_VIU_DIAGNOSTIC_PROFILE").is_some();
+    let string_body = std::env::var_os("MIX_VIU_DIAGNOSTIC_STRING_BODY").is_some();
     // Attribution run only: timer/log overhead is not baseline throughput.
     let source = if profile {
         BEHAVIOUR.replace(r#"  $model.visible = slice($model.rows, 0, 256)

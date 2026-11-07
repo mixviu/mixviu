@@ -44,7 +44,7 @@ fn named_fd_adoption_and_fallback() {
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
         child
             .args(["--exact", "activation_child", "--nocapture"])
-            .env("MAILD_ACTIVATION_TEST", mode)
+            .env("MIX_TEST_MAILD_ACTIVATION", mode)
             .env("LISTEN_FDS", names.len().to_string())
             .env(
                 "LISTEN_FDNAMES",
@@ -95,7 +95,7 @@ fn named_fd_adoption_and_fallback() {
 
 #[test]
 fn activation_child() {
-    let Ok(mode) = std::env::var("MAILD_ACTIVATION_TEST") else {
+    let Ok(mode) = std::env::var("MIX_TEST_MAILD_ACTIVATION") else {
         return;
     };
     // This isolated helper has no other environment readers or worker tasks.

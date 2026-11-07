@@ -56,6 +56,6 @@ for $round=1 to (if $mode=="parity" then 1 else $rounds end)
     end
   end
 end
-$receipt={schema:"viu.gallery.check.v1",mode:$mode,rounds:if $mode=="parity" then 1 else $rounds end,checks:$receipts,failures:0,endpoint:"native Bus request to applied model; includes UI scheduling/serialization; not physical presentation or an isolated interpreter benchmark",witness_note:"Run clients without VIU_GALLERY_WITNESS for timing. Visible popup state and system load affect scheduling."}
+$receipt={schema:"viu.gallery.check.v1",mode:$mode,rounds:if $mode=="parity" then 1 else $rounds end,checks:$receipts,failures:0,endpoint:"native Bus request to applied model; includes UI scheduling/serialization; not physical presentation or an isolated interpreter benchmark",witness_note:"Run clients without MIX_TEST_VIU_GALLERY_WITNESS for timing. Visible popup state and system load affect scheduling."}
 if args()[2]!=nil then write_file(args()[2],json_encode($receipt)) end
 print(json_encode($receipt))

@@ -1173,7 +1173,7 @@ impl eframe::App for App {
         for reply in self.replies_after_frame.drain(..) {
             let _ = reply.send((0, answer.clone()));
         }
-        if let Some(path) = std::env::var_os("VIU_DOPUS_WITNESS") {
+        if let Some(path) = std::env::var_os("MIX_TEST_VIU_DOPUS_WITNESS") {
             let _ = std::fs::write(path, self.state().to_string());
         }
     }

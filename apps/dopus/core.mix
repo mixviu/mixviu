@@ -110,7 +110,7 @@ fn dp_sort($rows,$key,$ascending)
 end
 fn dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$remaining,$max_depth)
   if $depth>$max_depth then raise("SCAN_BUDGET","Pane scan depth budget exceeded") end
-  $profile=env("VIU_BULK_PROFILE","")=="1";$t=monotonic()
+  $profile=env("MIX_VIU_BULK_PROFILE","")=="1";$t=monotonic()
   $rows=[]
   $names=dp_names($path,$remaining)
   if len($names)>$remaining then raise("SCAN_BUDGET","Pane scan total enumeration budget exceeded") end

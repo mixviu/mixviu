@@ -165,7 +165,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             .env("XDG_STATE_HOME", root.path().join("state"))
             .env("XDG_DATA_HOME", root.path().join("data"))
             .env("MIX_NODED_URL", &broker.url)
-            .env("VIU_COMP_SERVICE", "comp-headless")
+            .env("MIX_VIU_COMP_SERVICE", "comp-headless")
             .env_remove("DISPLAY")
             .env_remove("NOTIFY_SOCKET")
             .env_remove("MIX_VT")

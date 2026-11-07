@@ -1415,7 +1415,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         Endpoint::offline()
     } else {
         Endpoint::start_policy(
-            std::env::var("VIU_SERVICE").unwrap_or(service),
+            std::env::var("MIX_VIU_SERVICE").unwrap_or(service),
             bundle.manifest.bus_url(),
             {
                 let mut described = bundle.manifest.command_descriptors.clone();
@@ -1535,7 +1535,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         measurements: Default::default(),
         input_at: None,
         native_drive: bundle.manifest.native_drive,
-        service: std::env::var("VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
+        service: std::env::var("MIX_VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
         settings_reload: 0,
         session_update: None,
         deferred_replies: BTreeMap::new(),
@@ -1743,7 +1743,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         let fallback = vec![json!({"command":command,"body":{}})];
         let plan = bundle.launch["activation"].as_array().unwrap_or(&fallback);
         match crate::native_bus::activate_existing_plan(
-            &std::env::var("VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
+            &std::env::var("MIX_VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
             plan,
             &bundle.manifest.bus_url(),
         ) {
@@ -1759,7 +1759,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let size = bundle.manifest.size;
     let service = bundle.manifest.app().to_owned();
     let live_service =
-        std::env::var("VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone());
+        std::env::var("MIX_VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone());
     let app_id = bundle
         .manifest
         .app_id

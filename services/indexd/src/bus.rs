@@ -285,7 +285,7 @@ mod tests {
         let output = tokio::process::Command::new(mix)
             .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/bus_test.mix"))
             .env("MIX_NODED_URL", &broker.url)
-            .env("INDEXD_TEST_BROKER", "1")
+            .env("MIX_TEST_INDEXD_BROKER", "1")
             .output()
             .await
             .unwrap();

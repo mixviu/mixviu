@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 fn rows($messages,$bulk)
-  $profile=env("VIU_BULK_PROFILE","")=="1";$t=monotonic()
+  $profile=env("MIX_VIU_BULK_PROFILE","")=="1";$t=monotonic()
   if type($messages)!="list" or len($messages)>2000 or byte_length(json_encode($messages))>4194304 then raise("BUDGET","At most 2000 complete messages / 4 MiB per fixture") end
   $encoded=monotonic()
   if not jq($messages,'all(.[]; (.id|type)=="string" and (.id|length)>0 and (.id|length)<=128 and ((.subject // "")|type)=="string" and ((.receivedAt // "")|type)=="string" and ((.preview // "")|type)=="string" and ((.from // [])|type)=="array" and ((.from[0].email // "")|type)=="string" and ([.subject // "",.receivedAt // "",.preview // "",.from[0].email // ""] | all(.[]; length<=1024)))') then raise("SCHEMA","Message identity/text shape or cell limit invalid") end

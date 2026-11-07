@@ -5,11 +5,11 @@
 #[test]
 #[cfg_attr(
     not(indexd_test_tokenizer),
-    ignore = "INDEXD_TEST_TOKENIZER is unset; stage 7 supplies the tokenizer and golden"
+    ignore = "MIX_TEST_INDEXD_TOKENIZER is unset; stage 7 supplies the tokenizer and golden"
 )]
 fn tokenizer_ids_match_predecessor_golden() {
-    let Some(path) = std::env::var_os("INDEXD_TEST_TOKENIZER") else {
-        eprintln!("skipped: INDEXD_TEST_TOKENIZER is unset");
+    let Some(path) = std::env::var_os("MIX_TEST_INDEXD_TOKENIZER") else {
+        eprintln!("skipped: MIX_TEST_INDEXD_TOKENIZER is unset");
         return;
     };
     let tokenizer = tokenizers::Tokenizer::from_file(path).expect("read local tokenizer.json");
