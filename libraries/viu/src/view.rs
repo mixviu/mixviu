@@ -492,7 +492,7 @@ impl SceneView {
                 match node.family.as_str() {
                     "panes"=>self.panes(ui,&key,node,nodes,route,depth,events),
                     "content"=>{
-                        let content:settings::content::Content=serde_json::from_value(node.ports["settings"].clone()).expect("validated prose content");
+                        let content:settings::content::Content=serde_json::from_value(node.ports.get("settings").cloned().unwrap_or_else(|| json!({}))).expect("validated prose content");
                         let fill=if content.light {toolkit::chrome::Chrome::for_theme(toolkit::content::light_theme()).palette.canvas}else{ui.visuals().panel_fill};
                         toolkit::content::surface_filled(ui,&content,fill,|ui|{
                             let mut draw=|ui:&mut egui::Ui|for child in children(node){self.node(ui,child,nodes,route,depth+1,events);};
@@ -755,25 +755,64 @@ impl SceneView {
 
     /// Native resizable navigation/detail panes. Applications provide every
     /// child and persist the returned fractions; this owns only layout.
-    fn panes(&mut self, ui:&mut egui::Ui, key:&str, node:&Node, nodes:&BTreeMap<String,Node>, route:Option<(&str,&Node,&Value)>, depth:usize, events:&mut Vec<Event>) {
-        let children=children(node).collect::<Vec<_>>();
-        let width=ui.available_width();
-        let frame=|which:&str| {
-            let ring=if text(node,"focus")==which {let palette=&toolkit::chrome::Chrome::of(ui.ctx()).palette;palette.card_border.lerp_to_gamma(palette.accent,0.25)}else{Color32::TRANSPARENT};
-            toolkit::bars::dock_frame(ui.ctx()).stroke(egui::Stroke::new(1.0,ring))
+    fn panes(
+        &mut self,
+        ui: &mut egui::Ui,
+        key: &str,
+        node: &Node,
+        nodes: &BTreeMap<String, Node>,
+        route: Option<(&str, &Node, &Value)>,
+        depth: usize,
+        events: &mut Vec<Event>,
+    ) {
+        let children = children(node).collect::<Vec<_>>();
+        let width = ui.available_width();
+        let frame = |which: &str| {
+            let ring = if text(node, "focus") == which {
+                let palette = &toolkit::chrome::Chrome::of(ui.ctx()).palette;
+                palette.card_border.lerp_to_gamma(palette.accent, 0.25)
+            } else {
+                Color32::TRANSPARENT
+            };
+            toolkit::bars::dock_frame(ui.ctx()).stroke(egui::Stroke::new(1.0, ring))
         };
-        let left_frame=frame("left");let right_frame=frame("right");let center_frame=frame("center");
-        let left=egui::Panel::left(egui::Id::new((key,"left"))).resizable(true).default_size(width*num(node,"left_fraction").unwrap_or(0.18)).frame(left_frame).show(ui,|ui|self.node(ui,children[0],nodes,route,depth+1,events));
-        let left_fraction=left.response.rect.width()/width.max(1.0);
-        let mut right_fraction=num(node,"right_fraction").unwrap_or(0.42);
-        if node.ports.get("right_visible")!=Some(&Value::Bool(false)) {
-            let remaining=ui.available_width();
-            let right=egui::Panel::right(egui::Id::new((key,"right"))).resizable(true).default_size(remaining*right_fraction).frame(right_frame).show(ui,|ui|self.node(ui,children[2],nodes,route,depth+1,events));
-            right_fraction=right.response.rect.width()/remaining.max(1.0);
+        let left_frame = frame("left");
+        let right_frame = frame("right");
+        let center_frame = frame("center");
+        let left = egui::Panel::left(egui::Id::unique((ui.ctx().viewport_id(), key, "left")))
+            .resizable(true)
+            .default_size(width * num(node, "left_fraction").unwrap_or(0.18))
+            .frame(left_frame)
+            .show(ui, |ui| {
+                self.node(ui, children[0], nodes, route, depth + 1, events)
+            });
+        let left_fraction = left.response.rect.width() / width.max(1.0);
+        let mut right_fraction = num(node, "right_fraction").unwrap_or(0.42);
+        if node.ports.get("right_visible") != Some(&Value::Bool(false)) {
+            let remaining = ui.available_width();
+            let right = egui::Panel::right(egui::Id::unique((ui.ctx().viewport_id(), key, "right")))
+                .resizable(true)
+                .default_size(remaining * right_fraction)
+                .frame(right_frame)
+                .show(ui, |ui| {
+                    self.node(ui, children[2], nodes, route, depth + 1, events)
+                });
+            right_fraction = right.response.rect.width() / remaining.max(1.0);
         }
-        egui::CentralPanel::default().frame(center_frame).show(ui,|ui|self.node(ui,children[1],nodes,route,depth+1,events));
-        if (left_fraction-num(node,"left_fraction").unwrap_or(0.18)).abs()>0.005 || (right_fraction-num(node,"right_fraction").unwrap_or(0.42)).abs()>0.005 {
-            self.layout_change(node,key,json!({"left":left_fraction,"right":right_fraction}),events);
+        egui::CentralPanel::default()
+            .frame(center_frame)
+            .show(ui, |ui| {
+                self.node(ui, children[1], nodes, route, depth + 1, events)
+            });
+        if (left_fraction - num(node, "left_fraction").unwrap_or(0.18)).abs() > 0.005
+            || (right_fraction - num(node, "right_fraction").unwrap_or(0.42)).abs() > 0.005
+        {
+            self.layout_change(
+                node,
+                key,
+                json!({"left":left_fraction,"right":right_fraction}),
+                events,
+            );
         }
     }
 
@@ -1272,12 +1311,30 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             "text" | "button" | "field" | "toggle" | "row" | "column" | "list" | "spacer"
             | "grid" => {}
             "panes" => {
-                if children(node).count()!=3 {return Err("panes requires left, center, right children".into());}
-                for key in ["left_fraction","right_fraction"] {if num(node,key).is_none_or(|v|!(0.05..=0.95).contains(&v)){return Err("pane fractions must be 0.05..0.95".into());}}
+                if children(node).count() != 3 {
+                    return Err("panes requires left, center, right children".into());
+                }
+                for key in ["left_fraction", "right_fraction"] {
+                    if num(node, key).is_none_or(|v| !(0.05..=0.95).contains(&v)) {
+                        return Err("pane fractions must be 0.05..0.95".into());
+                    }
+                }
             }
             "content" => {
-                let content:settings::content::Content=serde_json::from_value(node.ports["settings"].clone()).map_err(|e|e.to_string())?;
-                if !content.font.size.is_finite() || !(6.0..=48.0).contains(&content.font.size) || ![1,2,4,8,16].contains(&content.padding) || content.font.family.as_deref().is_some_and(|f|!["Inter","JetBrains Mono"].contains(&f)) {return Err("invalid prose content settings".into());}
+                let content: settings::content::Content =
+                    serde_json::from_value(node.ports.get("settings").cloned().unwrap_or_else(|| json!({})))
+                        .map_err(|e| e.to_string())?;
+                if !content.font.size.is_finite()
+                    || !(6.0..=48.0).contains(&content.font.size)
+                    || ![1, 2, 4, 8, 16].contains(&content.padding)
+                    || content
+                        .font
+                        .family
+                        .as_deref()
+                        .is_some_and(|f| !["Inter", "JetBrains Mono"].contains(&f))
+                {
+                    return Err("invalid prose content settings".into());
+                }
             }
             "section" => {
                 let titles = node
