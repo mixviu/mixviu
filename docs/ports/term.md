@@ -1280,3 +1280,9 @@ stay open. NOT ACCEPTED. No Fable deviation or gold/desktop changes.
 Next CBC `term-layout-context-f47e845d`, exact code above,
 term_gate --prepare. Read full saved log; repair failures, apply fmt/lock
 and repeat exact source if changed before continuing the policy adapter.
+
+### Native layout context compile repair
+
+CBC term-layout-context-f47e845d-a1 failed with Rust E0282 before tests: the local completion reply shadowed the optional supplied reply. Complete 26542-byte saved log read; returned formatting applied. Code a374b0974590c2257595f0a276d6022498c78e01 names the supplied argument separately, preserving the existing cancellation/commit rules. No test weakened and no acceptance claim.
+
+CBC term-layout-reply-a374b097 is pending at that exact code, term_gate --prepare, await a8f168f1-32bc-4c66-aa26-7b98585d64d4. Read its complete saved log on resume, repair any failures, apply returned fmt/lock and repeat exact source as required. Protected layout producer and Mix affected-pane policy/reducer remain next; the full feature/Bus/Prefs, conformance and release visual gates remain open. No desktop or gold changes.
