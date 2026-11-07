@@ -233,8 +233,8 @@ dirs-sys = { path = "vendor/dirs-sys" }
 mail-parser = { path = "vendor/mail-parser" }
 
 [patch."https://github.com/raphamorim/rio"]
-rio-vt = { path = "vendor/rio-vt" }
 teletypewriter = { path = "vendor/teletypewriter" }
+rio-vt = { path = "vendor/rio-vt" }
 
 [profile.release]
 codegen-units = 1
