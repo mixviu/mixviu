@@ -400,14 +400,26 @@ mod tests {
                             ))
                             .layout(egui::Layout::top_down(egui::Align::Min)),
                     );
-                    views.draw(&mut other, &sibling, &json!("vt-4"), &sessions, &mut Vec::new());
+                    views.draw(
+                        &mut other,
+                        &sibling,
+                        &json!("vt-4"),
+                        &sessions,
+                        &mut Vec::new(),
+                    );
                     assert_eq!(views.placements[0].area.min, egui::pos2(740.0, 65.0));
                 },
             )
             .drop_without_applying_deltas();
-            for (handle, rect) in expected.into_iter().chain([("vt-4", [0.0, 0.0, 120.0, 100.0])]) {
+            for (handle, rect) in expected
+                .into_iter()
+                .chain([("vt-4", [0.0, 0.0, 120.0, 100.0])])
+            {
                 let state = sessions.call("state", handle, json!({})).unwrap();
-                assert_eq!(state["geometry"], json!({"x":rect[0],"y":rect[1],"w":rect[2],"h":rect[3]}));
+                assert_eq!(
+                    state["geometry"],
+                    json!({"x":rect[0],"y":rect[1],"w":rect[2],"h":rect[3]})
+                );
             }
         }
     }
