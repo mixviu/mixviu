@@ -236,8 +236,7 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                                         }
                                     });
                                 }
-                                let response = ui
-                                    .add_enabled_ui(r["read_only"] != true, |ui| {
+                                let mut text_field = |ui: &mut Ui| {
                                         form::text(
                                             ui,
                                             field_id,
@@ -245,8 +244,12 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                                             &mut text,
                                             ui.available_width(),
                                         )
-                                    })
-                                    .inner;
+                                };
+                                let response = if r["read_only"] == true {
+                                    ui.add_enabled_ui(false, text_field).inner
+                                } else {
+                                    text_field(ui)
+                                };
                                 if response.has_focus() {
                                     if let Some(suggestions) = suggestions {
                                         egui::Area::new(response.id.with("suggestions"))
