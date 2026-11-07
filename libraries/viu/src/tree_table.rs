@@ -359,7 +359,8 @@ pub(crate) fn draw(
         visible -= 1;
     }
     measured[0] = (available - measured[1..visible].iter().sum::<f32>()).max(20.0);
-    let compact = ui.ctx().content_rect().height() < number(&widget.properties,"compact_below_height",0.0);
+    let compact =
+        ui.ctx().content_rect().height() < number(&widget.properties, "compact_below_height", 0.0);
     let reserve = if !compact && widget.properties["reserve_bottom_style"] == "small" {
         ui.text_style_height(&TextStyle::Small)
             + number(&widget.properties, "reserve_bottom_padding", 0.0)
