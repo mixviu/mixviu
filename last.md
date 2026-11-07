@@ -1661,3 +1661,11 @@ This checkpoint adds native platform capability only; terminal OSC52 draining/re
 The previous exact native lifecycle and matched protected-host evidence at d16d82fd remains recorded above; it does not attest these new bytes. Overall NOT ACCEPTED: remaining input/clipboard/IME/search/Prefs, complete Bus/enforcement/conformance and release visual acceptance open. No desktop/gold change or Fable deviation.
 
 branch: lab/parity-term; head SHA: 13b95e5ced6018a1502ce8ea2ec7af702a5a5f22 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — native clipboard/primary gate, remaining full features/Bus/Prefs/conformance/release acceptance open; CBC job ids: term-layout-close-d16d82fd-a1 (green exact; matched debug host evidence), term-native-selection-13b95e5c (next await).
+
+### Native selection wrapper import repair
+
+CBC term-native-selection-13b95e5c-a1 failed before tests with E0433: the imported clipboard wrapper still used the gold sctk alias without importing the existing smithay_client_toolkit crate under that name. Complete 9771-byte saved log read. Worker formatting applied and the missing alias added in e59f321259ef1606c166b8d2b0cb7d015c1bec61. No dependency, test or runtime behaviour weakened.
+
+Next CBC term-selection-alias-e59f3212 at that exact code, term_gate --prepare. Read the complete log, repair further failures and apply fmt/lock changes before exact-source repeat. Native clipboard/primary readback and terminal OSC52/mouse adapters remain unproven/open; prior matched protected-host debug evidence applies only to d16d82fd. NOT ACCEPTED. No install, gold change or Fable deviation.
+
+branch: lab/parity-term; head SHA: e59f321259ef1606c166b8d2b0cb7d015c1bec61 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — native selection gate and remaining full parity/release acceptance open; CBC job ids: term-native-selection-13b95e5c-a1 (compile failure), term-selection-alias-e59f3212 (next await).

@@ -1328,3 +1328,9 @@ viu_platform retains its bounded in-process queue, with a validated optional pri
 This checkpoint adds native platform capability only; terminal OSC52 draining/replies and mouse selection/copy-on-select/middle-paste ownership still need their Mix/native adapter and real Wayland evidence. Ordinary platform Paste input events still follow the existing native input route. Build/runtime/clipboard readback not yet claimed. Next CBC term-native-selection-13b95e5c, term_gate --prepare at the exact code above. Read its full saved log, repair failures, apply fmt/lock and repeat exact source; then verify actual clipboard/primary ownership, empty/refused/late/busy reads, original paste-owner survival, and connect OSC52/live policy.
 
 The previous exact native lifecycle and matched protected-host evidence at d16d82fd remains recorded above; it does not attest these new bytes. Overall NOT ACCEPTED: remaining input/clipboard/IME/search/Prefs, complete Bus/enforcement/conformance and release visual acceptance open. No desktop/gold change or Fable deviation.
+
+### Native selection wrapper import repair
+
+CBC term-native-selection-13b95e5c-a1 failed before tests with E0433: the imported clipboard wrapper still used the gold sctk alias without importing the existing smithay_client_toolkit crate under that name. Complete 9771-byte saved log read. Worker formatting applied and the missing alias added in e59f321259ef1606c166b8d2b0cb7d015c1bec61. No dependency, test or runtime behaviour weakened.
+
+Next CBC term-selection-alias-e59f3212 at that exact code, term_gate --prepare. Read the complete log, repair further failures and apply fmt/lock changes before exact-source repeat. Native clipboard/primary readback and terminal OSC52/mouse adapters remain unproven/open; prior matched protected-host debug evidence applies only to d16d82fd. NOT ACCEPTED. No install, gold change or Fable deviation.
