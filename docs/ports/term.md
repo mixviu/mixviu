@@ -539,3 +539,22 @@ model provenance and absent-authority text; pure tests cover line order
 and connected/disconnected labels. Five Mix suites pass. Rust gate,
 returned lock/fmt handling and matched About visual witness pending:
 `term-about-provenance-43dcbf58`. Full parity remains **NOT ACCEPTED**.
+
+`term-about-provenance-43dcbf58-a1` passed, including actual-bundle About
+provenance checks. Complete saved log read in two chunks. Returned
+Cargo.lock dependency and test-format diff applied/pushed as 8c5f6333.
+Fetched matching debug artifact SHA256
+`f9952a67a1143ee5dbe1305e274336585d09f5326cdc619f6a2dfbb52c13944d`.
+Native candidate `native.U7W85I` and pinned gold `native.m4sBwh` About
+captures have identical layout, title, fixed text, button and settings
+source. All differences are confined to the actual compiled provenance
+line. Its dirty marker truthfully reflects the worker's prepare patch.
+Both tracked-process cleanup receipts pass.
+
+Inspected `about-43dcbf58-regions`: header, above-provenance and
+below-provenance SSIM/RMSE distortion 0/0; full .0050312/.0396607,
+entirely differing data in the build row [230,255,440,18]. This follows
+the standing truthful-runtime-data ruling, not a fabricated gold version.
+Exact-source repeat `term-about-exact-8c5f6333` at
+`8c5f6333c002bb1db8ad4684457394c06e60ef25` pending before final artifact
+evidence. Overall **NOT ACCEPTED**; full remaining inventory applies.

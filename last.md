@@ -825,3 +825,35 @@ session/control/sealed shell, full Bus/IME/search/zoom/all Prefs and release
 acceptance. No Fable question, installs, merges or VT changes.
 
 branch: lab/parity-term; head SHA: 43dcbf5820c98359827c1362bc48351812e8f54c (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — About native gate, remaining clipboard/session/Bus/Prefs/input/search and release acceptance open; CBC job ids: term-terminal-prefs-21e53cc7-a1 (green exact source and native terminal-only witness), term-about-provenance-43dcbf58 (next await).
+
+## About native witness; exact-source repeat
+
+Read complete term-about-provenance-43dcbf58-a1 log in two chunks: green.
+Actual bundle About provenance tests pass. Applied returned Cargo.lock
+dependency and test fmt patch as 8c5f6333, committed/pushed. Fetched
+matching debug executable SHA256
+f9952a67a1143ee5dbe1305e274336585d09f5326cdc619f6a2dfbb52c13944d.
+
+Native.U7W85I About versus gold native.m4sBwh: layout/title/fixed body/
+licence/settingsd connected/button exact. Only own Viu version/SHA/dirty
+marker/build time differ; dirty correctly reflects worker prepare diff.
+Originals, montage and diff inspected. about-43dcbf58-regions: header,
+above provenance and below provenance distortion 0/0; full SSIM .0050312,
+RMSE .0396607, entirely build data row [230,255,440,18]. Truthful runtime
+data ruling applies. All tracked candidate PIDs stopped; gold cleanup
+receipt retained. No final release acceptance claim.
+
+Next exact-source CBC term-about-exact-8c5f6333 at
+8c5f6333c002bb1db8ad4684457394c06e60ef25. Read full log, expect no patch;
+if changed apply/repeat. Fetch artifact and bundle, repeat About provenance
+readback/capture and source status after authority loss/recovery. Then
+implement gold zoom persistence from apps/term/src/font.rs in Mix: 400ms
+debounce, one fenced write/read, conflict fresh read, refusal restore,
+failed writes event-driven retry, Ctrl+0 cancellation/in-flight correction.
+The full gold source was read; existing pure FontSize extraction is only
+size arithmetic, not that persistence machine. Keep app policy in Mix and
+use native settingsd, existing Jobs/timer facilities. Continue primary/
+OSC52/mouse, verified session/control/sealed shell, full Bus/IME/search/
+all Prefs and release acceptance. No Fable question, installs or VT work.
+
+branch: lab/parity-term; head SHA: 8c5f6333c002bb1db8ad4684457394c06e60ef25 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — exact About repeat, zoom persistence and remaining clipboard/session/Bus/Prefs/input/search/release acceptance open; CBC job ids: term-about-provenance-43dcbf58-a1 (green, lock/fmt applied), term-about-exact-8c5f6333 (next await).
