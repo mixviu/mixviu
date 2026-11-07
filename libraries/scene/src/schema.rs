@@ -278,6 +278,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             ports.push(p("hidden", "bool", false, None));
         }
         ports.push(p("clip", "bool", false, None));
+        ports.push(p("enabled", "bool", false, None));
         ports.push(pn("clip_below", false, None));
         ports.extend([
             p("align_self", "string", false, None),

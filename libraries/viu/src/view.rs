@@ -487,6 +487,7 @@ impl SceneView {
         );
         let response = ui
             .push_id(&key, |ui| {
+                if node.ports.get("enabled") == Some(&Value::Bool(false)) { ui.disable(); }
                 if let Some(width) = num(node, "width").or(num(node, "min_width")) {
                     ui.set_width(width);
                 }
@@ -936,8 +937,8 @@ impl SceneView {
                     panel.frame(toolkit::bars::dock_frame(ui.ctx()))
                 };
                 let shown = panel.show(&mut panel_ui, |ui| {
-                        self.node(ui, child, nodes, route, depth + 1, events)
-                    });
+                    self.node(ui, child, nodes, route, depth + 1, events)
+                });
                 if horizontal && placement["resizable"] == true {
                     let fraction = shown.response.rect.width() / area.width().max(1.0);
                     if (fraction - placement["fraction"].as_f64().unwrap_or(0.2) as f32).abs()

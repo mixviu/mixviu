@@ -196,8 +196,8 @@ impl Widget {
                         .x
                 })
                 .fold(0.0_f32, f32::max)
-                + 2.0 * ui.spacing().interact_size.x
-                + 2.0 * ui.spacing().item_spacing.x);
+                + 2.0 * ui.ctx().global_style().spacing.interact_size.x
+                + 2.0 * ui.ctx().global_style().spacing.item_spacing.x);
         }
         if self.kind == "menubar" && self.properties["style"] == "gold" {
             let chrome = toolkit::chrome::Chrome::of(ui.ctx());

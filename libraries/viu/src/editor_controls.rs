@@ -272,7 +272,7 @@ pub fn draw(
                     for row in rows.as_array_mut().unwrap() {
                         let mut text = row["value"].as_str().unwrap().to_owned();
                         ui.push_id(row["id"].as_str().unwrap(), |ui| {
-                            ui.add_enabled_ui(row["read_only"] != true, |ui| {
+                            ui.add_enabled_ui(row["read_only"] != true || row["type"] == "label", |ui| {
                                 match row["type"].as_str() {
                                     Some("label") => {
                                         ui.label(&text);

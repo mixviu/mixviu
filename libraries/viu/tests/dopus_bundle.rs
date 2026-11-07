@@ -49,11 +49,19 @@ fn chooser_mix_mounts_shared_frame_and_keeps_native_save_focus_and_rows() {
     assert_eq!(model["viewport"]["size"], json!([820, 600]));
     assert_eq!(model["frame"]["status_hidden"], true);
     assert_eq!(model["values"]["identity"], "Requested by local:test");
-    assert_eq!(model["form_rows"],1);
-    let mut doc=scene::parse(&std::fs::read_to_string(root.join("chooser.scene.mix")).unwrap()).unwrap();
-    doc.model=Some(model.clone());
-    let resolved=scene::resolve(&doc).unwrap();
-    assert!(resolved.nodes["root"].ports.get("placements").is_some_and(|v|v.is_object()),"{:?}",resolved);
+    assert_eq!(model["form_rows"], 1);
+    let mut doc =
+        scene::parse(&std::fs::read_to_string(root.join("chooser.scene.mix")).unwrap()).unwrap();
+    doc.model = Some(model.clone());
+    let resolved = scene::resolve(&doc).unwrap();
+    assert!(
+        resolved.nodes["root"]
+            .ports
+            .get("placements")
+            .is_some_and(|v| v.is_object()),
+        "{:?}",
+        resolved
+    );
     let mut view = viu::gold_frame::mount(
         &std::fs::read_to_string(root.join("chooser.scene.mix")).unwrap(),
         model,
