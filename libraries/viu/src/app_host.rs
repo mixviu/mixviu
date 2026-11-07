@@ -296,12 +296,12 @@ impl eframe::App for Host {
             && ctx.input(|i| i.viewport().close_requested())
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.owner_close_pending=true;
+            self.owner_close_pending = true;
         }
         self.pump(ctx);
         if self.owner_close_pending && !toolkit::drive::pending(ctx) {
-            self.owner_close_pending=false;
-            self.dispatch("viu.frame.close".into(),json!({}),BTreeMap::new(),None);
+            self.owner_close_pending = false;
+            self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
         }
     }
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
@@ -947,7 +947,7 @@ impl Host {
                     .geometry
                     .extend(self.window_frame.geometry.clone());
                 if self.window_frame.close_requested {
-                    self.owner_close_pending=true;
+                    self.owner_close_pending = true;
                     ui.ctx().request_repaint();
                 }
                 if self.model["window_close"] == true {

@@ -427,13 +427,15 @@ impl Child {
         self.view.geometry.extend(self.frame.geometry.clone());
         if self.frame.close_requested || ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.close_pending=true;
+            self.close_pending = true;
         }
         if self.close_pending && !toolkit::drive::pending(&ctx) {
-            self.close_pending=false;
+            self.close_pending = false;
             self.emit("viu.window.close".into(), json!({}), &ctx);
         }
-        if self.close_pending {ctx.request_repaint();}
+        if self.close_pending {
+            ctx.request_repaint();
+        }
         if let Some((_, result)) = self.capture.poll(&ctx) {
             if let Some(reply) = self.capture_reply.take() {
                 let _ = reply.send(match result {

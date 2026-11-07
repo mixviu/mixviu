@@ -792,90 +792,156 @@ impl SceneView {
         }
         let children = children(node).collect::<Vec<_>>();
         let width = ui.available_width();
-        if node.ports.get("keyboard")==Some(&Value::Bool(true)) && !ui.ctx().text_edit_focused() {
-            let targets=node.ports.get("focus_targets").cloned().unwrap_or_default();
-            let names=["left","center","right"];
-            let count=if node.ports.get("right_visible")==Some(&Value::Bool(false)){2}else{3};
-            let mut focus=text(node,"focus");
-            let previous=ui.input_mut(|i|i.consume_key(egui::Modifiers::SHIFT,egui::Key::Tab));
-            let next=!previous && ui.input_mut(|i|i.consume_key(egui::Modifiers::NONE,egui::Key::Tab));
+        if node.ports.get("keyboard") == Some(&Value::Bool(true)) && !ui.ctx().text_edit_focused() {
+            let targets = node.ports.get("focus_targets").cloned().unwrap_or_default();
+            let names = ["left", "center", "right"];
+            let count = if node.ports.get("right_visible") == Some(&Value::Bool(false)) {
+                2
+            } else {
+                3
+            };
+            let mut focus = text(node, "focus");
+            let previous = ui.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab));
+            let next =
+                !previous && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Tab));
             if previous || next {
-                let at=names[..count].iter().position(|n|*n==focus).unwrap_or(0);
-                focus=names[(at+count+if next{1}else{count-1})%count];
-                if let Some(target)=targets[focus].as_str(){
-                    if let Some(id)=target.strip_prefix("table:"){toolkit::datatable::focus(ui.ctx(),id);}
-                    else{ui.memory_mut(|m|m.request_focus(egui::Id::unique(target)));}
+                let at = names[..count].iter().position(|n| *n == focus).unwrap_or(0);
+                focus = names[(at + count + if next { 1 } else { count - 1 }) % count];
+                if let Some(target) = targets[focus].as_str() {
+                    if let Some(id) = target.strip_prefix("table:") {
+                        toolkit::datatable::focus(ui.ctx(), id);
+                    } else {
+                        ui.memory_mut(|m| m.request_focus(egui::Id::unique(target)));
+                    }
                 }
             } else {
                 for name in &names[..count] {
-                    if let Some(target)=targets[*name].as_str(){
-                        let focused=if let Some(id)=target.strip_prefix("table:"){toolkit::datatable::is_focused(ui.ctx(),id)}else{ui.memory(|m|m.has_focus(egui::Id::unique(target)))};
-                        if focused{focus=name;break;}
+                    if let Some(target) = targets[*name].as_str() {
+                        let focused = if let Some(id) = target.strip_prefix("table:") {
+                            toolkit::datatable::is_focused(ui.ctx(), id)
+                        } else {
+                            ui.memory(|m| m.has_focus(egui::Id::unique(target)))
+                        };
+                        if focused {
+                            focus = name;
+                            break;
+                        }
                     }
                 }
             }
-            if focus!=text(node,"focus"){self.layout_change(node,key,json!({"focus":focus}),events);}
+            if focus != text(node, "focus") {
+                self.layout_change(node, key, json!({"focus":focus}), events);
+            }
         }
+        let pane_ctx=ui.ctx().clone();
         let frame = |which: &str| {
             let ring = if text(node, "focus") == which {
-                let palette = &toolkit::chrome::Chrome::of(ui.ctx()).palette;
+                let palette = &toolkit::chrome::Chrome::of(&pane_ctx).palette;
                 palette.card_border.lerp_to_gamma(palette.accent, 0.25)
             } else {
                 Color32::TRANSPARENT
             };
-            toolkit::bars::dock_frame(ui.ctx()).stroke(egui::Stroke::new(1.0, ring))
+            toolkit::bars::dock_frame(&pane_ctx).stroke(egui::Stroke::new(1.0, ring))
         };
         let left_frame = frame("left");
         let right_frame = frame("right");
         let center_frame = frame("center");
-        if width < num(node,"compact_below").unwrap_or(0.0) {
-            let focus=if text(node,"focus")=="right" && node.ports.get("right_visible")==Some(&Value::Bool(false)) {"center"} else {text(node,"focus")};
-            egui::Panel::top(egui::Id::unique((key,"compact-panes"))).show(ui,|ui| {
+        if width < num(node, "compact_below").unwrap_or(0.0) {
+            let focus = if text(node, "focus") == "right"
+                && node.ports.get("right_visible") == Some(&Value::Bool(false))
+            {
+                "center"
+            } else {
+                text(node, "focus")
+            };
+            egui::Panel::top(egui::Id::unique((key, "compact-panes"))).show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    for (name,label) in [("left","Left"),("center","Centre"),("right","Right")] {
-                        if name=="right" && node.ports.get("right_visible")==Some(&Value::Bool(false)){continue;}
-                        let label=node.ports.get("pane_labels").and_then(|v|v[name].as_str()).unwrap_or(label);
-                        if toolkit::selectable(ui,focus==name,label).clicked(){self.layout_change(node,key,json!({"focus":name}),events);}
+                    for (name, label) in
+                        [("left", "Left"), ("center", "Centre"), ("right", "Right")]
+                    {
+                        if name == "right"
+                            && node.ports.get("right_visible") == Some(&Value::Bool(false))
+                        {
+                            continue;
+                        }
+                        let label = node
+                            .ports
+                            .get("pane_labels")
+                            .and_then(|v| v[name].as_str())
+                            .unwrap_or(label);
+                        if toolkit::selectable(ui, focus == name, label).clicked() {
+                            self.layout_change(node, key, json!({"focus":name}), events);
+                        }
                     }
                 });
             });
-            egui::CentralPanel::default().frame(frame(focus)).show(ui,|ui| {
-                self.node(ui,children[if focus=="left" {0}else if focus=="right" {2}else{1}],nodes,route,depth+1,events);
-            });
+            egui::CentralPanel::default()
+                .frame(frame(focus))
+                .show(ui, |ui| {
+                    self.node(
+                        ui,
+                        children[if focus == "left" {
+                            0
+                        } else if focus == "right" {
+                            2
+                        } else {
+                            1
+                        }],
+                        nodes,
+                        route,
+                        depth + 1,
+                        events,
+                    );
+                });
             return;
         }
-        let narrow=width < num(node,"narrow_below").unwrap_or(0.0);
-        let mut left_panel=egui::Panel::left(egui::Id::unique((ui.ctx().viewport_id(), key, if narrow {"left-narrow"}else{"left"})))
-            .resizable(true)
-            .default_size(width * num(node, "left_fraction").unwrap_or(0.18))
-            .frame(left_frame);
+        let narrow = width < num(node, "narrow_below").unwrap_or(0.0);
+        let mut left_panel = egui::Panel::left(egui::Id::unique((
+            ui.ctx().viewport_id(),
+            key,
+            if narrow { "left-narrow" } else { "left" },
+        )))
+        .resizable(true)
+        .default_size(width * num(node, "left_fraction").unwrap_or(0.18))
+        .frame(left_frame);
         if narrow {
-            let range=node.ports.get("narrow_left_range").cloned().unwrap_or_default();
-            let low=range[0].as_f64().unwrap_or(0.0).clamp(0.0,1.0) as f32;let high=range[1].as_f64().unwrap_or(1.0).clamp(low as f64,1.0) as f32;
-            left_panel=left_panel.size_range(width*low..=width*high);
+            let range = node
+                .ports
+                .get("narrow_left_range")
+                .cloned()
+                .unwrap_or_default();
+            let low = range[0].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+            let high = range[1].as_f64().unwrap_or(1.0).clamp(low as f64, 1.0) as f32;
+            left_panel = left_panel.size_range(width * low..=width * high);
         }
-        let left = left_panel
-            .show(ui, |ui| {
-                self.node(ui, children[0], nodes, route, depth + 1, events)
-            });
+        let left = left_panel.show(ui, |ui| {
+            self.node(ui, children[0], nodes, route, depth + 1, events)
+        });
         let left_fraction = left.response.rect.width() / width.max(1.0);
         let mut right_fraction = num(node, "right_fraction").unwrap_or(0.42);
         if node.ports.get("right_visible") != Some(&Value::Bool(false)) {
             let remaining = ui.available_width();
-            let mut right_panel=
-                egui::Panel::right(egui::Id::unique((ui.ctx().viewport_id(), key, if narrow {"right-narrow"}else{"right"})))
-                    .resizable(true)
-                    .default_size(remaining * right_fraction)
-                    .frame(right_frame);
+            let mut right_panel = egui::Panel::right(egui::Id::unique((
+                ui.ctx().viewport_id(),
+                key,
+                if narrow { "right-narrow" } else { "right" },
+            )))
+            .resizable(true)
+            .default_size(remaining * right_fraction)
+            .frame(right_frame);
             if narrow {
-                let range=node.ports.get("narrow_right_range").cloned().unwrap_or_default();
-                let low=range[0].as_f64().unwrap_or(0.0).clamp(0.0,1.0) as f32;let high=range[1].as_f64().unwrap_or(1.0).clamp(low as f64,1.0) as f32;
-                right_panel=right_panel.size_range(remaining*low..=remaining*high);
+                let range = node
+                    .ports
+                    .get("narrow_right_range")
+                    .cloned()
+                    .unwrap_or_default();
+                let low = range[0].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+                let high = range[1].as_f64().unwrap_or(1.0).clamp(low as f64, 1.0) as f32;
+                right_panel = right_panel.size_range(remaining * low..=remaining * high);
             }
-            let right=right_panel
-                    .show(ui, |ui| {
-                        self.node(ui, children[2], nodes, route, depth + 1, events)
-                    });
+            let right = right_panel.show(ui, |ui| {
+                self.node(ui, children[2], nodes, route, depth + 1, events)
+            });
             right_fraction = right.response.rect.width() / remaining.max(1.0);
         }
         egui::CentralPanel::default()
@@ -883,8 +949,9 @@ impl SceneView {
             .show(ui, |ui| {
                 self.node(ui, children[1], nodes, route, depth + 1, events)
             });
-        if !narrow && ((left_fraction - num(node, "left_fraction").unwrap_or(0.18)).abs() > 0.005
-            || (right_fraction - num(node, "right_fraction").unwrap_or(0.42)).abs() > 0.005)
+        if !narrow
+            && ((left_fraction - num(node, "left_fraction").unwrap_or(0.18)).abs() > 0.005
+                || (right_fraction - num(node, "right_fraction").unwrap_or(0.42)).abs() > 0.005)
         {
             self.layout_change(
                 node,
