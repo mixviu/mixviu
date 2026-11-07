@@ -892,3 +892,34 @@ refuse uniformly. Next implement typed protected admission plus in-process
 Mix policy dispatch, adapt remaining gold control/bootstrap/reconnect
 tests, then complete all Bus/input/clipboard/IME/Prefs/release acceptance.
 Overall NOT ACCEPTED. No Fable deviation or desktop changes.
+
+### Session-owner fixture isolation repair
+
+`term-session-owner-4a76a9b6-a1` failed its new real-Mix enrolment test:
+152 terminal tests passed, one failed and five were ignored. Six Mix
+suites and both bundle tests passed before the failure. The complete saved
+CBC log was read; its worker formatting patch is applied in 5e4e7344.
+
+The failed fixture configured the parent actor with the embedded broker's
+worker-owned account, but launched Mix with inherited installed broker
+configuration and home. Native client resolution defaults to the noded
+account; a delivered descriptor does not override trusted account lookup.
+Pinned gold's production e2e fixture explicitly isolates that configuration.
+
+5e4e7344 runs the owner test in a fresh subprocess with an isolated home,
+node configuration, explicit kernel-derived fixture broker account and
+private data/runtime/config/cache roots. It now exercises normal
+Supervisor::start discovery as well as normal Sessions::call creation;
+there is no injected supervisor or substitute PTY launcher. The child must
+both enrol through the sealed handoff and show its real Mix login prompt.
+Close still must invalidate local authority immediately and reap the child.
+No assertion is weakened. A failed enrolment now includes the PTY snapshot.
+This configuration diagnosis awaits the repeat; no native pass is claimed.
+
+Next CBC `term-owner-isolated-5e4e7344`, exact code
+`5e4e7344c0472b2594aaa18eb5ac8c5c2bae07d7`, term_gate --prepare.
+Read the full saved log, apply any worker diff and repeat exact source.
+Then fetch and verify the artifact for isolated host/session evidence.
+Protected ControlLane, remaining gold enforcement tests and the complete
+Bus/input/clipboard/IME/Prefs/release acceptance remain open. NOT ACCEPTED.
+No Fable deviation proposed; no gold or desktop changes.
