@@ -412,7 +412,8 @@ elif $cmd == "all" then
       cmd_survey($WORK)
     end
   finally
-    if not $o.opts.keep and exists($WORK) then cmd_clean($WORK, $o.opts.cache) end
+    -- A shared --cache survives `all` for a retry; `clean --cache` removes it.
+    if not $o.opts.keep and exists($WORK) then cmd_clean($WORK, nil) end
   end
 else
   eprint("unknown command " .. $cmd)
