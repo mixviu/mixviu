@@ -14,6 +14,9 @@ $history=$wire.remember([],"term.type",$a,0,"original")
 check($wire.replay($history,"term.type",$a).body=="original","replay has original result")
 check($wire.replay($history,"term.type",{text:"y",pane:1,request_id:"r1"}).rc==10,"changed payload conflicts")
 check($wire.replay($history,"term.tab.new",$a).rc==10,"changed command conflicts")
+$conflict="request_id already used by a different request; retries must resend the identical command and body"
+check($wire.replay($history,"term.type",{text:"y",pane:1,request_id:"r1"}).body==$conflict,"gold payload conflict text")
+check($wire.replay($history,"term.tab.new",$a).body==$conflict,"gold command conflict text")
 for $i=2 to 129
   $history=$wire.remember($history,"term.type",{text:"x",pane:1,request_id:to_string($i)},0,"saved")
 end

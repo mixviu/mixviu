@@ -15,7 +15,7 @@ check($out.rc==10 and len($out.state.replies)==0,"validation never consumes repl
 $out=$b.dispatch($out.state,"term.type",{pane:1,text:"x",request_id:"retry"},$n);$s=$out.state
 check($out.rc==0 and contains($out.body,"tab=1 pane=1 revision=1"),"type resolves explicit pane")
 $conflict=$b.dispatch($s,"term.type",{text:"mistyped retry",request_id:"retry"},$n)
-check(starts_with($conflict.body,"conflict:"),"recorded ID conflicts before command argument validation like gold")
+check($conflict.rc==10 and $conflict.body=="request_id already used by a different request; retries must resend the identical command and body" and deep_eq($conflict.state,$s),"recorded ID has gold conflict reply before validation and preserves state")
 $out=$b.dispatch($s,"term.tab.new",{title:"pinned",request_id:"open"},$n);$s=$out.state
 check($out.rc==0 and len($s.layout.tabs)==2 and $s.layout.tabs[1].title=="pinned","new tab owns supplied native session")
 $out=$b.dispatch($s,"term.tab.new",{request_id:"open",title:"pinned"},$n)

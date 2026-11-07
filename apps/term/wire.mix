@@ -94,7 +94,7 @@ fn replay($history,$command,$a)
   $digest=request_digest($command,$a)
   for $entry in $history
     if $entry.id==$a.request_id then
-      if $entry.digest!=$digest then return {rc:10,body:"conflict: request_id reused with different command or arguments"} end
+      if $entry.digest!=$digest then return {rc:10,body:"request_id already used by a different request; retries must resend the identical command and body"} end
       return {rc:$entry.rc,body:$entry.body}
     end
   end
