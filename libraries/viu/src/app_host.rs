@@ -1404,61 +1404,65 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let mut command_names = BTreeSet::new();
     commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
-    let bus = if !bundle.manifest.bus { Endpoint::offline() } else { Endpoint::start_policy(
-        std::env::var("VIU_SERVICE").unwrap_or(service),
-        bundle.manifest.bus_url(),
-        {
-            let mut described = bundle.manifest.command_descriptors.clone();
-            for entry in &bundle.manifest.command_metadata {
-                described.push(bus::CommandDescriptor {
-                    name: entry["name"].as_str().unwrap().into(),
-                    args: entry["args"]
-                        .as_object()
-                        .map(|a| a.keys().cloned().collect())
-                        .unwrap_or_default(),
-                    description: entry["description"].as_str().unwrap().into(),
-                    read_only: entry["read_only"] == true,
-                });
-            }
-            let mut native = Vec::new();
-            if bundle.manifest.native_drive {
-                native.extend(toolkit::drive::describe(&bundle.manifest.service));
-            }
-            if bundle.manifest.macros {
-                native.extend(macros::commands::describe(&bundle.manifest.service));
-            }
-            for value in native {
-                described.push(bus::CommandDescriptor {
-                    name: value["name"].as_str().unwrap().into(),
-                    args: value["args"]
-                        .as_object()
-                        .map(|a| a.keys().cloned().collect())
-                        .unwrap_or_default(),
-                    description: value["description"].as_str().unwrap_or("").into(),
-                    read_only: value["read_only"] == true,
-                });
-            }
-            commands
-                .into_iter()
-                .map(|name| {
-                    described
-                        .iter()
-                        .find(|d| d.name == name)
-                        .cloned()
-                        .unwrap_or_else(|| {
-                            bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false)
-                        })
-                })
-                .collect()
-        },
-        "viu.quit".into(),
-        wake.clone(),
-        crate::native_bus::RequestPolicy {
-            help: facilities.surface.as_ref().map(|s| s["commands"].clone()),
-            owner_help: bundle.manifest.owner_help,
-            timeout: Duration::from_secs(bundle.manifest.reply_timeout_secs),
-        },
-    ) };
+    let bus = if !bundle.manifest.bus {
+        Endpoint::offline()
+    } else {
+        Endpoint::start_policy(
+            std::env::var("VIU_SERVICE").unwrap_or(service),
+            bundle.manifest.bus_url(),
+            {
+                let mut described = bundle.manifest.command_descriptors.clone();
+                for entry in &bundle.manifest.command_metadata {
+                    described.push(bus::CommandDescriptor {
+                        name: entry["name"].as_str().unwrap().into(),
+                        args: entry["args"]
+                            .as_object()
+                            .map(|a| a.keys().cloned().collect())
+                            .unwrap_or_default(),
+                        description: entry["description"].as_str().unwrap().into(),
+                        read_only: entry["read_only"] == true,
+                    });
+                }
+                let mut native = Vec::new();
+                if bundle.manifest.native_drive {
+                    native.extend(toolkit::drive::describe(&bundle.manifest.service));
+                }
+                if bundle.manifest.macros {
+                    native.extend(macros::commands::describe(&bundle.manifest.service));
+                }
+                for value in native {
+                    described.push(bus::CommandDescriptor {
+                        name: value["name"].as_str().unwrap().into(),
+                        args: value["args"]
+                            .as_object()
+                            .map(|a| a.keys().cloned().collect())
+                            .unwrap_or_default(),
+                        description: value["description"].as_str().unwrap_or("").into(),
+                        read_only: value["read_only"] == true,
+                    });
+                }
+                commands
+                    .into_iter()
+                    .map(|name| {
+                        described
+                            .iter()
+                            .find(|d| d.name == name)
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false)
+                            })
+                    })
+                    .collect()
+            },
+            "viu.quit".into(),
+            wake.clone(),
+            crate::native_bus::RequestPolicy {
+                help: facilities.surface.as_ref().map(|s| s["commands"].clone()),
+                owner_help: bundle.manifest.owner_help,
+                timeout: Duration::from_secs(bundle.manifest.reply_timeout_secs),
+            },
+        )
+    };
     let documents = crate::documents::Documents::default();
     let rasters = crate::raster::Rasters::default();
     let timers = crate::timers::Timers::default();
