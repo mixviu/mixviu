@@ -58,7 +58,7 @@ end
 fn composer_snapshot($info,$window=nil)
   $info.compose_windows=map(keys($composers),fn($key)={window:$key,root:$key==$compose_root,compose:composer_info($composers[$key])})
   $key=$window ?? $compose_focused;$c=$composers[$key]
-  if $c!=nil then $info.window=$key;$info.compose=composer_info($c);$info.confirm=if $c.confirm then (if $compose_quitting then "quit" else "close_compose" end) else nil end end
+  if $c!=nil then $info.window=$key;$info.status=$c.notice ?? "";$info.compose=composer_info($c);$info.confirm=if $c.confirm then (if $compose_quitting then "quit" else "close_compose" end) else nil end end
   return $info
 end
 fn composer_target($args)
@@ -94,7 +94,7 @@ fn composer_open($a,$raw_to=nil)
     if $raw_to!=nil then $c.to=$raw_to end
     $c.show_cc=$c.cc!="";$c.show_bcc=$c.bcc!="";$c.show_reply_to=($c.reply_to ?? "")!=""
     $c.stale=nil;$c.send_origin=nil;$c.reply_quote=$a.reply_quote;$c.reply_signature=$a.reply_signature;$c.reply_position=$a.reply_position
-    $c.connection={url:$e.url,user:$e.user,ca_file:$e.ca_file,enabled:$e.enabled}
+    $c.connection={url:$e.url,user:$e.user,ca_file:$e.ca_file,enabled:$e.enabled,identities:$e.identities ?? []}
     $c=composer_files($c,true)
     $composers[$key]=$c;composer_focus($key)
     return {rc:0,body:{composing:$id,window:$key,compose:composer_info($c)}}

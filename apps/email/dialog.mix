@@ -5,7 +5,7 @@ fn dialog_view($window=nil)
   $kind=if $c!=nil then $c.dialog else $chrome.dialog end
   $confirm=$c!=nil and $c.confirm
   $restore=$c==nil and $mail_form==nil and len($compose_restore)>0
-  $v={kind:$kind,title:"",buttons:[],status:$status}
+  $v={kind:$kind,title:"",buttons:[],status:if $c!=nil then $c.notice ?? "" else $status end}
   if $confirm then
     $v.kind=if $compose_quitting then "quit" else "close_compose" end
     $v.title=if $compose_quitting then "Quit with an unsent message?" else "Close this message?" end

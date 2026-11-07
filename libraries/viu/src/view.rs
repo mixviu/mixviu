@@ -817,6 +817,25 @@ impl SceneView {
         let width = ui.available_width();
         if node.ports.get("keyboard") == Some(&Value::Bool(true)) && !ui.ctx().text_edit_focused() {
             let targets = node.ports.get("focus_targets").cloned().unwrap_or_default();
+            // A compact pane is mounted on the frame after its intent is
+            // applied. Retake its focus then: the target was absent in the
+            // frame that consumed Tab, so egui may have retired that request.
+            let marker = egui::Id::unique((ui.ctx().viewport_id(), key, "pane-model-focus"));
+            let model_focus = text(node, "focus");
+            let previous_model = ui.ctx().data_mut(|d| {
+                let previous = d.get_temp::<String>(marker);
+                d.insert_temp(marker, model_focus.to_owned());
+                previous
+            });
+            if previous_model.is_some_and(|previous| previous != model_focus) {
+                if let Some(target) = targets[model_focus].as_str() {
+                    if let Some(id) = target.strip_prefix("table:") {
+                        toolkit::datatable::focus(ui.ctx(), id);
+                    } else {
+                        ui.memory_mut(|m| m.request_focus(egui::Id::unique(target)));
+                    }
+                }
+            }
             let names = ["left", "center", "right"];
             let count = if node.ports.get("right_visible") == Some(&Value::Bool(false)) {
                 2
@@ -1216,7 +1235,7 @@ impl SceneView {
                 );
                 let height = measure.min_rect().height().ceil().min(limit);
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
-                egui::Panel::bottom(egui::Id::unique((key, child, "intrinsic")))
+                let panel = egui::Panel::bottom(egui::Id::unique((key, child, "intrinsic")))
                     .frame(egui::Frame::new())
                     .exact_size(height)
                     .show(&mut panel_ui, |ui| {
@@ -1226,6 +1245,7 @@ impl SceneView {
                     d.remove::<f32>(marker);
                 });
                 remaining = panel_ui.available_rect_before_wrap();
+                remaining.max.y = remaining.max.y.min(panel.response.rect.top());
                 continue;
             }
             if edge == "bottom" && placement["size"] == "content" {

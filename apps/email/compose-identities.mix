@@ -53,7 +53,7 @@ fn composer_choose_sender($key,$entry,$sender)
   if $c.body==$compose_quoting.signature($old.signature ?? "") then $composers[$key].body=$compose_quoting.signature($sender.signature ?? "") end
   if $c.reply_to==nil or $c.reply_to==$old.reply_to then $composers[$key].reply_to=$sender.reply_to end
   $composers[$key].account=$entry.id;$composers[$key].identity=$sender.id;$composers[$key].from=$sender.address;$composers[$key].from_name=if len($entry.identities ?? [])==0 then "" else $sender.name end
-  $composers[$key].connection={url:$entry.url,user:$entry.user,ca_file:$entry.ca_file,enabled:$entry.enabled};$composers[$key].stale=nil;$composers[$key].error=nil
+  $composers[$key].connection={url:$entry.url,user:$entry.user,ca_file:$entry.ca_file,enabled:$entry.enabled,identities:$entry.identities ?? []};$composers[$key].stale=nil;$composers[$key].error=nil
 end
 fn composer_reconcile()
   global $composers
@@ -61,7 +61,7 @@ fn composer_reconcile()
     $c=$composers[$key];$entry=wire_entry($c.account)
     if $entry==nil then continue end
     $senders=$compose_sending.senders($entry);$sender=filter($senders,fn($s)=$s.id==$c.identity)[0] ?? $senders[0]
-    $connection={url:$entry.url,user:$entry.user,ca_file:$entry.ca_file,enabled:$entry.enabled}
+    $connection={url:$entry.url,user:$entry.user,ca_file:$entry.ca_file,enabled:$entry.enabled,identities:$entry.identities ?? []}
     if ($c.connection!=nil and not deep_eq($c.connection,$connection)) or $c.from!=$sender.address then $composers[$key].stale={account:$entry.id,generation:$wire_generations[$entry.id] ?? 0,address:$sender.address} end
   end
 end
