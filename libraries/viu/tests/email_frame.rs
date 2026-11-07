@@ -17,10 +17,21 @@ fn complete(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> Completion {
     done
 }
 fn isolated_runtime() -> (tempfile::TempDir, Runtime, mpsc::Receiver<()>) {
-    let root=tempfile::tempdir().unwrap();
-    let (tx,rx)=mpsc::channel();
-    let runtime=Runtime::with_services(8,Arc::new(move ||{let _=tx.send(());}),None,viu::runtime::Services{application_roots:Some(root.path().to_owned()),timers:Some(Default::default()),..Default::default()});
-    (root,runtime,rx)
+    let root = tempfile::tempdir().unwrap();
+    let (tx, rx) = mpsc::channel();
+    let runtime = Runtime::with_services(
+        8,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+        viu::runtime::Services {
+            application_roots: Some(root.path().to_owned()),
+            timers: Some(Default::default()),
+            ..Default::default()
+        },
+    );
+    (root, runtime, rx)
 }
 
 #[test]
@@ -37,7 +48,7 @@ on test.rows
   reply(0,json_encode({rows:len($projected),first:$projected[0],milliseconds:(monotonic()-$began)*1000}))
 end
 "#);
-    let (_root,mut runtime,rx)=isolated_runtime();
+    let (_root, mut runtime, rx) = isolated_runtime();
     runtime.load(program).unwrap();
     complete(&runtime, &rx);
     let emails=(0..2000).map(|n|json!({"id":format!("email-{n}"),"subject":format!("A realistic message {n}"),"from":[{"name":"Example Sender","email":"sender@example.test"}],"receivedAt":chrono::DateTime::from_timestamp(1794000000+n*120,0).unwrap().to_rfc3339(),"keywords":{},"hasAttachment":n%3==0})).collect::<Vec<_>>();
@@ -80,7 +91,7 @@ on test.pim
   surface_mode("calendar");publish_email();reply(0,"{}")
 end
 "#);
-    let (_root,mut runtime,rx)=isolated_runtime();
+    let (_root, mut runtime, rx) = isolated_runtime();
     runtime.load(program).unwrap();
     complete(&runtime, &rx);
     runtime.event("test.ready".into(), json!({})).unwrap();
@@ -183,7 +194,7 @@ fn email_empty_frame_draws_and_primary_button_keeps_native_intent() {
         &[],
     )
     .unwrap();
-    let (_root,mut runtime,rx)=isolated_runtime();
+    let (_root, mut runtime, rx) = isolated_runtime();
     runtime.load(bundle.program).unwrap();
     let model = complete(&runtime, &rx).model.unwrap();
     assert_eq!(model["no_accounts"], true);
@@ -269,35 +280,49 @@ fn email_empty_frame_draws_and_primary_button_keeps_native_intent() {
 
 #[test]
 fn email_config_keeps_poisoned_files_and_migrates_the_pinned_legacy_identity() {
-    for (raw,legacy) in [
-        ("schema_version: 9\nui: {}\n",false),
-        ("schema_version: $executable\n",false),
-        ("schema_version: 1\naccount: {url: \"https://mail.example.test\", email: \"User@example.test\", password: \"fixture-only\"}\nui: {places: 0.2}\n",true),
+    for (raw, legacy) in [
+        ("schema_version: 9\nui: {}\n", false),
+        ("schema_version: $executable\n", false),
+        (
+            "schema_version: 1\naccount: {url: \"https://mail.example.test\", email: \"User@example.test\", password: \"fixture-only\"}\nui: {places: 0.2}\n",
+            true,
+        ),
     ] {
-        let (root,mut runtime,rx)=isolated_runtime();
-        let dir=root.path().join("email/config");std::fs::create_dir_all(&dir).unwrap();
-        let path=dir.join("config.conf.mix");std::fs::write(&path,raw).unwrap();
-        let mut program=Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),&[]).unwrap().program;
+        let (root, mut runtime, rx) = isolated_runtime();
+        let dir = root.path().join("email/config");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.conf.mix");
+        std::fs::write(&path, raw).unwrap();
+        let mut program = Bundle::load(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
+            &[],
+        )
+        .unwrap()
+        .program;
         program.source.push_str(r#"
 on test.config
   reply(0,json_encode({allowed:$config_save_allowed,migration:$config_migration,entries:$entries,saved:if $config_legacy==nil then config_save() else false end}))
 end
 "#);
-        runtime.load(program).unwrap();complete(&runtime,&rx);
-        runtime.event("test.config".into(),json!({})).unwrap();
-        let body=complete(&runtime,&rx).reply.unwrap().body;
+        runtime.load(program).unwrap();
+        complete(&runtime, &rx);
+        runtime.event("test.config".into(), json!({})).unwrap();
+        let body = complete(&runtime, &rx).reply.unwrap().body;
         if legacy {
-            let mut seed=0xcbf29ce484222325_u64;
-            for byte in b"https://mail.example.test\0user@example.test" {seed^=u64::from(*byte);seed=seed.wrapping_mul(0x100000001b3);}
-            let expected=format!("acct-{}",&blake3::hash(&seed.to_le_bytes()).to_hex()[..12]);
-            assert_eq!(body["migration"]["entry"]["id"],expected);
-            assert_eq!(body["migration"]["stage"],"ready");
+            let mut seed = 0xcbf29ce484222325_u64;
+            for byte in b"https://mail.example.test\0user@example.test" {
+                seed ^= u64::from(*byte);
+                seed = seed.wrapping_mul(0x100000001b3);
+            }
+            let expected = format!("acct-{}", &blake3::hash(&seed.to_le_bytes()).to_hex()[..12]);
+            assert_eq!(body["migration"]["entry"]["id"], expected);
+            assert_eq!(body["migration"]["stage"], "ready");
             assert!(dir.join("secrets.conf.mix").is_file());
-        }else{
-            assert_eq!(body["allowed"],false);
-            assert_eq!(body["saved"],false);
-            assert_eq!(body["entries"],json!([]));
+        } else {
+            assert_eq!(body["allowed"], false);
+            assert_eq!(body["saved"], false);
+            assert_eq!(body["entries"], json!([]));
         }
-        assert_eq!(std::fs::read_to_string(path).unwrap(),raw);
+        assert_eq!(std::fs::read_to_string(path).unwrap(), raw);
     }
 }

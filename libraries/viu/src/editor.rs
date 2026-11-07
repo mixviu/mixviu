@@ -118,7 +118,9 @@ impl Editors {
                 }
                 if !view.read_only {
                     let command = match name {
-                        "cut" => Some(editor::EditCommand::Delete),
+                        "cut" if doc.local.selection().anchor != doc.local.selection().head => {
+                            Some(editor::EditCommand::Delete)
+                        }
                         "select-all" => Some(editor::EditCommand::SelectAll),
                         "duplicate-line" => Some(editor::EditCommand::DuplicateLine),
                         "delete-line" => Some(editor::EditCommand::DeleteLine),
