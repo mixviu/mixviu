@@ -36,8 +36,9 @@ fn validate_overlays(model: &Value) -> Result<(), String> {
 }
 struct Host {
     platform: crate::platform::Platform,
-    paste_waits: std::collections::VecDeque<String>,
-    paste_deadline: Option<Instant>,
+    selection: crate::terminal::clipboard::Clipboard,
+    selection_sequence: u64,
+    selection_waits: BTreeMap<u64, String>,
     platform_results: std::collections::VecDeque<Value>,
     calls: crate::calls::Calls,
     timers: crate::timers::Timers,
@@ -280,21 +281,6 @@ impl eframe::App for Host {
         self.pump(ctx);
     }
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
-        if self.paste_deadline.is_some() {
-            raw.events.retain(|event| {
-                if let egui::Event::Paste(text) = event {
-                    if self.paste_deadline.is_some()
-                        && let Some(id) = self.paste_waits.pop_front()
-                    {
-                        self.paste_deadline = None;
-                        self.platform_results
-                            .push_back(json!({"id":id,"text":text}));
-                        return false;
-                    }
-                }
-                true
-            });
-        }
         if !self.input.now.is_empty() {
             raw.events.append(&mut self.input.now);
         } else if let Some(mut events) = self.input.later.pop_front() {
@@ -339,25 +325,22 @@ impl Host {
         self.facilities.prepare(ctx, &self.bus);
         for request in self.platform.take() {
             if request["kind"] == "copy" {
-                ctx.copy_text(request["body"]["text"].as_str().unwrap_or("").into());
+                self.selection.write(ctx, request["body"]["text"].as_str().unwrap_or("").into(),request["body"]["primary"]==true);
             } else {
-                self.paste_waits
-                    .push_back(request["id"].as_str().unwrap_or("").into());
+                self.selection_sequence=self.selection_sequence.checked_add(1).expect("selection id exhausted");
+                self.selection_waits.insert(self.selection_sequence,request["id"].as_str().unwrap_or("").into());
+                self.selection.read(self.selection_sequence,request["body"]["primary"]==true);
             }
         }
-        if self.paste_deadline.is_some_and(|at| at <= Instant::now()) {
-            self.paste_deadline = None;
-            if let Some(id) = self.paste_waits.pop_front() {
-                self.platform_results
-                    .push_back(json!({"id":id,"text":"","reason":"timeout"}));
+        for (sequence,result) in self.selection.take() {
+            if let Some(id)=self.selection_waits.remove(&sequence) {
+                self.platform_results.push_back(match result {
+                    Ok(text)=>json!({"id":id,"text":text}),
+                    Err(reason)=>json!({"id":id,"text":"","reason":format!("{reason:?}")}),
+                });
+            } else if let Err(reason)=result {
+                eprintln!("viu: clipboard write refused: {reason:?}");
             }
-        }
-        if self.paste_deadline.is_none() && !self.paste_waits.is_empty() {
-            self.paste_deadline = Some(Instant::now() + Duration::from_secs(2));
-            ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
-        }
-        if let Some(at) = self.paste_deadline {
-            ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
         }
         while let Some(result) = self.platform_results.front() {
             if self
@@ -1002,8 +985,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .join("viu-captures");
     Host {
         platform,
-        paste_waits: Default::default(),
-        paste_deadline: None,
+        selection: crate::terminal::clipboard::Clipboard::none(),
+        selection_sequence: 0,
+        selection_waits: BTreeMap::new(),
         platform_results: Default::default(),
         calls,
         timers,
@@ -1172,10 +1156,13 @@ pub fn run(args: Vec<String>) -> eframe::Result {
                     .insert(state.target_format);
             }
             let ctx = cc.egui_ctx.clone();
-            Ok(Box::new(create(
-                bundle,
-                Arc::new(move || ctx.request_repaint()),
-            )))
+            let wake: crate::runtime::Wake=Arc::new(move || ctx.request_repaint());
+            let mut host=create(bundle,wake.clone());
+            use raw_window_handle::HasDisplayHandle;
+            // SAFETY: eframe keeps its display alive until after Host drops,
+            // matching the pinned gold window/selection-worker ownership.
+            host.selection=unsafe {crate::terminal::clipboard::Clipboard::new(cc.display_handle().ok().map(|display|display.as_raw()),wake)};
+            Ok(Box::new(host))
         }),
     )
 }

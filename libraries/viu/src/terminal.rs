@@ -4,6 +4,7 @@
 //! bootstrap; importing them does not grant authority to an unverified child.
 mod admission;
 mod blink;
+pub(crate) mod clipboard;
 mod clusters;
 pub mod config;
 pub mod control;
@@ -20,6 +21,7 @@ pub mod protocol;
 pub mod raster;
 mod recipient;
 mod replay;
+mod selection_worker;
 pub mod session_actor;
 pub mod session_fd;
 pub mod sessions;
