@@ -55,7 +55,9 @@ Bus traffic in this recipe is between independent processes.
 
 The reusable comparison driver is `tools/parity_compare.mix`. Run it with
 Mix, passing gold PNG, candidate PNG, a new output directory and optionally a
-JSON region map such as `{"header":[0,0,1040,38],"status":[0,650,1040,30]}`.
+path to a JSON region-map file containing, for example,
+`{"header":[0,0,1040,38],"status":[0,650,1040,30]}`. The fourth argument is
+a filename, not inline JSON.
 It refuses unequal sizes and existing output directories, writes crops,
 side-by-side/diff figures and `comparison.json`, and leaves its verdict as
 `inspection-required`. Choose region rectangles from the matching gold state.

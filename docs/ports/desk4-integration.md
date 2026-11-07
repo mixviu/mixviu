@@ -1,5 +1,31 @@
 # Desk4 integration receipts
 
+## Current six-app handoff — accepted 2026-11-08
+
+Use the single four-engine set for tested runtime
+`0124e5c58c889f1d93c730b92993e2e74b707464` on `lab/gold-parity`, together
+on cbc2 at `/build/es-artifacts/0124e5c58c889f1d93c730b92993e2e74b707464/`.
+Monitor, Ced, Prefs, Screenshot, Backdrop and Workshop release revalidation
+is **ACCEPTED**. Exact hashes, whole/region figures, native/deferred/live-Prefs
+results, same-worker 2,000-row measurements and all remaining differences are
+in [six-app-integration-acceptance.md](six-app-integration-acceptance.md).
+
+SHA256SUMS SHA256:
+`c3d7694fce426855334dc622c97958f9cdaa2790ba84159280ce7b8dad0e6e9a`.
+Accepted HANDOFF.json/MD are beside all four engines. Full CBC
+`gold-six-full-20261107-r8-a1`, furniture, Track A and native performance
+`gold-six-perf-0124e5c58c88-a1` pass. All sixteen native groups and 293 raw
+comparison sets are accounted for. Source-5bd remains NOT_ACCEPTED because
+its additional native Tab witness exposed the shared focus defect repaired
+and revalidated in this set.
+
+No installation is part of this handoff. The
+[22 import-hash mismatches](import-hash-debt.md) remain open before production
+derivation. Workshop's installed native Dopus interop matches gold; generic
+Dopus migration remains separate.
+
+## Earlier integration receipts
+
 ## Bulk and Monitor integration
 
 Tested source `9643f9235819d33fc8e398ea0abfcc29d84192cf` merges `4c1d7153f6e13da0e1f67317af9c3b4518ff5e09` into `lab/gold-parity`. All four release engines are together on **cbc2**, `/build/es-artifacts/9643f9235819d33fc8e398ea0abfcc29d84192cf/`. SHA256SUMS hash: `2becc4885ba92e1e2ec9164a664911fc01c6f0ea5fa31eff269c64959e4a8869`.

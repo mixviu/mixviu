@@ -1,145 +1,286 @@
-# Six-app integration: validation in progress
+# Six-app integration acceptance — 2026-11-08
 
-Latest repair source: `0124e5c58c889f1d93c730b92993e2e74b707464`.
-Integration acceptance remains **OPEN**. The source-5bd release set passed
-full CBC, all original native suites and two 510-sample performance runs,
-but an additional native keyboard witness found the shared gold dialog
-reclaiming Tab focus from Cancel. Its worker HANDOFF explicitly says
-NOT_ACCEPTED. The reusable renderer now follows gold: request field focus
-only when no widget owns keyboard focus. All seven text-input tests pass,
-including title/path Tab transfer and Enter cancellation. CBC debug build
-`gold-six-focus-debug-r8b-a1` passes. Its native editor witness preserves all
-existing creation/edit/undo/redo/Save and window-effect assertions, and adds
-explicit Tab focus assertions. The tabbed New macro capture is pixel-exact
-and inspected. Full gate `gold-six-full-20261107-r8` is running on that
-frozen source; release-byte acceptance is still pending.
+**ACCEPTED for the lab integration handoff.** Tested runtime source
+`0124e5c58c889f1d93c730b92993e2e74b707464`, branch `lab/gold-parity`.
+This combines Monitor, Ced, Prefs, Screenshot, Backdrop, Workshop and the
+bulk primitives from `4c1d715`. Later documentation receipts do not change
+the tested code or binaries. No installation or desktop/VT work occurred.
 
-The original source-5bd Ced run retained two clean-checkout preparation
-refusals while documentation was being edited. The three cases they stopped
-were then executed unchanged against the same frozen source and binary from
-a clean checkout. All eleven Ced suites and their 35 pairs are accounted for;
-the original refusals remain in the private archive. Screenshot's Open-dialog
-caret-phase difference was closed with a paired left/right cursor reset:
-the additional whole-window capture has SSIM/RMSE distortion 0.
+The [22 inherited import-hash mismatches](import-hash-debt.md) remain open
+before production derivation. This acceptance covers application behaviour,
+Bus compatibility, appearance and the integrated release set. Generic Dopus
+migration remains separate.
 
-The sections below retain the earlier integration checkpoints.
+## Source, gates and handoff
 
-Tested runtime source: `2894a603a903d05f5a53f734dc5c591a11e69a91`,
-branch `lab/gold-parity`. This integrates the accepted Monitor, Ced, Prefs,
-Screenshot and Backdrop work, Workshop's shared editor, and the bulk
-primitives from `4c1d715`. Overall acceptance is **OPEN**. Source `2894a603`
-is **NOT_ACCEPTED**: final inspection found Workshop retaining client chrome
-after authority loss where gold removes it. Its saved worker handoff says
-NOT_ACCEPTED. Successor bundle repair `5bdc85c3a833e471fa5b5d7a5b666bb32ada8202`
-sets the existing `retain_window_on_loss` policy to false for Workshop.
-That paired repair capture is pixel-exact; detached full gate
-`gold-six-full-20261107-r7` and successor release-byte repetition are pending.
+Gold is MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`, launched through
+explicit `/opt/mixos/bin/<app>` paths. Candidate bundles came from the exact
+frozen source. The release viu was fetched and hash-verified before native
+testing. The checkout stayed clean throughout all sixteen execution groups.
 
-## Exact-source gate and artifacts
+| Pinned gold executable | SHA256 |
+| --- | --- |
+| monitor | `59d016a2eadf7107e5b8ccbbe32c4cf006c9616b4a26316ade5c20ebeb3d93f9` |
+| ced | `d83f730e3d69b10f7bd1ab0e4cec5cd7bcf299b4705f864393c8cea96e4aa328` |
+| prefs | `18590ca486b4b417b9de5a762f2dcf31b6b13d2351bb3eddd46d66e783fe3c55` |
+| screenshot | `f3b5bad3b0f43a3183a9810fe9178a9f445801c63c5e06e313bd4caaa2e3f932` |
+| backdrop | `3501c2d6d867689d873758b84284e777fa5f68a4db094c5fae36bfba83c01bac` |
+| workshop | `21303df6158fbc7c856aa39525a9bacff31a258f05d03f1b6602de6aeb8e52e6` |
 
-CBC `gold-six-full-20261107-r6-a1` passed on cbc2, rc 0. The complete saved
-log was read: 1,120,645 bytes, 19,531 lines, SHA256
-`18f376917419e7d02dcff85e61412e93aec2d07cfdc528363fae10c6566f8931`.
-The gate covers formatting, both Clippy profiles, shell/workspace tests,
-app policy suites using the source-built Mix interpreter, bulk tests,
-P2 furniture, Track A (`SMOKE_FAILS=0`) and four release builds.
-
-All four engines are together on cbc2 at
-`/build/es-artifacts/2894a603a903d05f5a53f734dc5c591a11e69a91/`:
+All four engines are together on **cbc2** at
+`/build/es-artifacts/0124e5c58c889f1d93c730b92993e2e74b707464/`:
 
 | Engine | SHA256 |
-|---|---|
-| mix | `35afa7c406a2c8d767ab68d5a41726ebb17c0ef36466f787955c36cd294211d2` |
-| mixd | `b1638d8d7459c195cebd72a2ca1d1aa3642040dd689838f707a538344c7df97d` |
-| viud | `5f50a834e2abd1020787160d8ea0ac9fb6deca8464faa417a4249b8dc9d0cf80` |
-| viu | `b15c1272d91a3ef2b9f4e43562854750fd4583558c1ea4057b9d2874ac1944f0` |
+| --- | --- |
+| mix | `68856fdceb020681257ebe07b6d35975b56fb1089071d6a2b823aa2e78100a8f` |
+| mixd | `e28cd8cd8c6e3fa4e71d12fdcea335bcc173c8c7315399358eb04d1b57df5cad` |
+| viud | `c6bcb6047af1a2d13c5ed97178a2520028f597ce6e5a4b830dc708abd51d9ffd` |
+| viu | `90bcb22785a223291d0c2152eef2c78ccc63e2abb96dc2cf6c52583ef7f769bf` |
 
-SHA256SUMS SHA256:
-`368f59d81cd6ddc0e4b7e7931cacfb8898e45649018bc6ba78404f08d1a2e7ea`.
-The fetched release viu was hash-verified before native tests. These saved
-artifacts are not yet an accepted desk handoff; no installation is authorised.
+`SHA256SUMS` SHA256:
+`c3d7694fce426855334dc622c97958f9cdaa2790ba84159280ce7b8dad0e6e9a`.
+Accepted `HANDOFF.json` and `HANDOFF.md` sit beside the engines. Their SHA256s
+are `c113aa3b050f968704ae6f4addcb9d61162aabcc68ececa056167f252d37b714`
+and `1b1b11c6c4af334bf7bf818721cd6b400888efeadd855f476f2306279c4ee533`.
+All engine and manifest hashes were checked again when writing the handoff.
 
-## Open acceptance work
+| CBC job | Result and scope |
+| --- | --- |
+| `gold-six-full-20261107-r8-a1` | PASS, detached cbc2: fmt, workspace and isolated-shell Clippy, shell/workspace tests, source-built Mix app policies, bulk tests, P2 furniture, Track A `SMOKE_FAILS=0`, four release builds, empty worker diff |
+| `gold-six-perf-0124e5c58c88-a1` | PASS, detached cbc2: same-worker 2,000-row comparison, 510 checked native samples |
+| `gold-six-focus-test-r8b-a1` | PASS, scoped/light: all seven text-input tests, including title/path Tab retention and Enter cancellation |
+| `gold-six-focus-debug-r8b-a1` | PASS, detached cbc2: debug repair/native Tab witness; final acceptance uses the release bytes above |
 
-The exact-release six-app suites and deferred-reply witnesses executed.
-Monitor has 46/46 replies and ten exact pairs; Ced has eleven suites and
-35 pairs (31 exact); Prefs has 69 functional checks, 42 pages and 91 pairs
-(88 exact); Screenshot has 55 Bus comparisons, eleven suites and 47 image
-comparisons; Backdrop has its four native groups and 44 pairs. Workshop
-matches 99/99 protocol replies and 25/25 macro replies, with native UI,
-editor, panels, persistence and live Prefs runs. These results do not close
-the remaining visual mismatch or grant acceptance to the set.
+The complete full-gate log is retained: **1,138,382 bytes / 19,797 lines**,
+SHA256 `fbf2680daba0993899d1be42b5d5b83d1eb838c1cc85123d9a68916efe2b399a`.
+Its stages and test results were reviewed. Existing warnings and 100 ignored
+entries remain visible; ignores are not counted as passes. The complete
+performance log and raw distributions are retained too.
 
-The concurrent Workshop editor
-witness passed New macro, Unicode typing, undo/redo and Save, then received
-`BUSY/Full` from `workshop.info` after launching Ced. That failed run is
-preserved. An isolated repetition on identical release bytes will distinguish
-load-dependent admission from a reproducible editor launch failure. That
-unchanged isolated witness passed, including both window effects and cleanup
-of all thirteen owned PIDs. It does not erase the concurrent failure. The
-successor recipe runs the strict editor witness before the other app groups,
-without retrying or ignoring refused requests.
+## Release-byte native revalidation
 
-Expanded Traffic regions were inspected separately from the collapsed
-layout. Bottom/right headers, static content, controls and status all have
-SSIM/RMSE distortion 0. Populated traffic data has whole distortion
-0.0184629/0.00517524 and data-region distortion 0.082597/0.0218041;
-timestamps, observations and message sizes are truthful S2 data. Clearing
-traffic produces whole-window and every-region distortion 0 in both docks.
+Original assertions and deadlines, request/reply transcripts, fixture hashes
+and owned-process closure receipts are retained. The final audit verifies
+all sixteen native groups, byte identity and these capture counts:
 
-The persistence witness initially compared selection reveal at different
-initial viewport sizes. Setting both saved window sizes to 1040×680 before
-restart gives equal restored offsets (809.5px) and a pixel-exact restored
-capture; the raw 70px restart capture is also exact. The original strict
-offset and passive-state assertions remain intact. Startup sizing and
-in-progress wheel captures are retained as diagnostics, rather than being
-presented as matched settled visual states. This fixture correction changes
-no application behaviour and claims no scroll waiver.
+| App | Final release evidence | Raw comparison sets / exact sets |
+| --- | --- | ---: |
+| Monitor | Quick Bus **46/46**, Processes and every Performance page; ten 1040×680 pairs, whole/header/options/content/status SSIM and RMSE all **0** | 10 / 10 |
+| Ced | All **eleven** suites: actions with stable caller and cross-caller undo refusal, native input, files/prompts, mail, notices, recovery, 16/64 MiB and live Prefs | 35 / 31 |
+| Prefs | Ten groups; **69/69** aggregate checks including the **40-case** functional matrix; all **42 pages**, drawers/catalogues, events, mutations, CLI and live authority | 91 / 88 |
+| Screenshot | **55/55** Bus cases, all **eleven** suites, native input/export/clipboard/lifecycle/CLI/deferred replies and live Prefs | 47 / 42 |
+| Backdrop | Four groups: main, scale 1.5, settled scenes and CLI; placement/click-through, image formats/fits, slides, refusals and appearance authority | 44 / 35 |
+| Workshop | **99/99** protocol and **25/25** macro replies; native menus/clipboard, agents/permissions, mesh, editor, persistence, live Prefs and authority loss | 66 / 39 |
 
-The preceding source `73bda564` passed CBC but failed visual acceptance:
-background appearance retention leaked into ordinary windows after authority
-loss, and the generic gold dialog path ignored shortcut grids. Its worker
-handoff explicitly says NOT_ACCEPTED. The successor restores ordinary-window
-file-palette fallback, keeps Backdrop retention opt-in, and uses the shared
-grid renderer for grid-bearing dialogs. Three focused debug capture pairs
-are pixel-exact; final release captures must establish acceptance separately.
+Raw counts include overlay crops and the explicit startup/scroll/blink
+diagnostics below. They are not a claim that every raw frame is a matched
+acceptance state.
 
-The native Ced fixture now uses a stable broker-attested caller for its own
-edits and undo, with a second-caller refusal assertion. Gold demonstrates
-this identity contract. Workshop's persistence fixture seeds deterministic
-membership before scrolling, retaining the strict 70px restoration assertion
-for both implementations. No scroll waiver or weakened assertion is claimed.
+The strict Workshop editor ran alone before the other groups. New/title,
+Unicode typing, undo/redo, Save, integrated generic Ced Bus/window/text and
+installed native Dopus directory/window effects pass; all thirteen PIDs
+exited. Added native Tab assertions require Cancel focused and Title
+unfocused. The new 1040×680 tabbed pair is whole/all-region **0 / 0**.
+The reusable gold dialog now requests field focus only when no widget owns
+keyboard focus, exactly as gold does.
 
-The [22 inherited import-hash mismatches](import-hash-debt.md) remain
-provenance debt. That record names each file, both hashes, first divergence
-and cause. Behavioural acceptance does not repair import provenance;
-`verify_runtime` remains failing until reconciliation before production
-derivation.
+The earlier sixteen-app concurrent editor probe's `BUSY/Full` is preserved
+alongside its unchanged same-byte isolated pass. Final interop evidence uses
+isolated paired runs per [parity-method.md](parity-method.md). No refused
+request was retried or ignored.
 
-Workshop's installed native Dopus interoperability follows gold. Moving
-Dopus itself to the generic host remains a separate open port.
+App-native asynchronous suites and shared deferred witnesses pass. Named-token
+95-second and Calls 180-second configurations each retain a request for 22
+seconds, answer 73 intervening pings, deliver the original reply and return
+`CANCELLED` on explicit cancellation. Screenshot's `keep` also passes beyond
+its ordinary ten-second response deadline. Application operation deadlines
+and cancellation policy remain unchanged.
+
+Live Prefs captures cover mode/scheme/style/accent/density/roundness, fonts,
+weight/size/mono family, text scale/stroke, app overrides, auto-mode, title
+controls and authority loss/recovery on unchanged PIDs. Monitor's final run
+is the requested quick recheck; its earlier complete 19-state live-Prefs
+acceptance remains the reference. The other final native suites repeat their
+live settings matrices. Background appearance retention is opt-in for
+Backdrop. Ordinary windows recover gold's file palette; Workshop and
+Screenshot use gold's automatic window fallback on authority loss.
+
+## Visual inspection and remaining differences
+
+The recipe is [parity-method.md](parity-method.md): equal initial viewport,
+state/data/settings, no image resizing, native readback and separate region
+figures. Most client captures are 1040×680 at scale 1; Ced uses its accepted
+1000×720 fixture; Backdrop repeats at scale 1.5. Every decoded size, PNG hash
+and crop rectangle is in the private index. ImageMagick 7.1.2-35 reports
+normalised **distortion**, zero identical. No score threshold grants acceptance.
+
+All 293 paired sets were inspected through the paired sheets, with originals
+and full differences for nonzero regions. Expanded Traffic was recropped
+separately. Final index SHA256:
+`980abc493431dbaf61c549bbf2ef9da76b1db9df5f5c4964db58d944c3bf4f71`.
+The appendix lists every raw nonzero set and region. Its numbers are **SSIM /
+RMSE distortion**; unlisted regions are zero.
+
+- **Monitor:** all ten pairs and every region 0. Existing invisible Fable P1
+  process-start-time fence retained; no new visual deviation.
+- **Ced:** C1 Replace deliberately exposes the controls gold clips. Canonical
+  whole 0.0111743 / 0.0324682; content 0.0120445 / 0.0356656; gutter
+  0.027558 / 0.0410017; tabs/search 0.0138192 / 0.0083526. Header/actions/status
+  0. Fresh raw pair whole 0.0112466 / 0.0328173 changes only gold caret phase:
+  candidate PNG is byte-identical to the preceding release. The two gold PNGs'
+  inspected diff contains only Find/editor carets. Comparing canonical gold
+  with the **current release capture** reproduces the accepted C1 figures.
+  Output/Problems retain their separator raster edge; light/large/compact
+  retains Search-icon and separator raster edges. No new C1 repair is claimed.
+- **Prefs:** three nonzero states, only the Macros header glyph raster;
+  sidebar/content 0. All 42 pages and remaining pairs exact.
+- **Screenshot:** About shows its true own source stamp (S2), with matching
+  format/position. Two header glyph raster cases and the guide edge remain.
+  Open dialog whole and overlay are now **0 / 0** after actual left/right
+  cursor motion resets the blink phase. No caret waiver. Its own debug-target
+  list remains truthful S2; shared directives/levels/clamps match.
+- **Backdrop:** two native train-history pairs contain S2 live sample extent;
+  seven populated/train/pipeline pairs retain trace/legend raster edges.
+  Scene geometry is 0, including main pipeline-clear. All scale-1.5 and all
+  three settled scene pairs are **0 / 0**. Its recorded Mark-mandated live
+  Prefs/new-output improvement remains where gold ignores the setting.
+- **Workshop:** macro open/saved/typed/panel differences are the destination
+  combo **chevron** raster, not editor carets. Two live-Prefs cases retain
+  Macros glyph/button-edge raster. Mesh differs only at the S2 live scrollbar;
+  static details and other regions 0. Command/About/Shortcuts/Agents, final
+  menus, Tabbed New/title, restored selection/raw70 and authority loss are
+  exact. Populated Traffic differences are S2 data; correct expanded crops
+  prove all static regions exact as shown below.
+
+### Workshop expanded Traffic
+
+| State | Whole SSIM / RMSE | Data SSIM / RMSE | Header/static content/controls/status |
+| --- | --- | --- | --- |
+| Bottom, populated | 0.0187066 / 0.0714922 | 0.0836876 / 0.151214 | **0 / 0** |
+| Right, populated | 0.00606559 / 0.0378831 | 0.0255551 / 0.0777585 | **0 / 0** |
+| Bottom, empty | **0 / 0** | **0 / 0** | **0 / 0** |
+| Right, empty | **0 / 0** | **0 / 0** | **0 / 0** |
+
+Only actual observed row membership, timestamps, commands, readings and wire
+sizes differ. Reply comparisons still check payloads and correlation. The
+collapsed crop map crosses the data panel when expanded, so its raw
+`details_static` name does not establish an expanded static-region difference.
+Separate expanded crops and full differences establish the boundary above.
+
+### Temporal diagnostics and matched closure
+
+| Raw set(s) retained | Difference | Matched closure |
+| --- | --- | --- |
+| Eight Workshop `size-1` frames | Initial live Traffic/pre-settled layout | Same runs' settled states; initial frames are diagnostic |
+| Persistence `before-save` | Fractional in-progress wheel offset/live Traffic | Equal saved 1040×680 viewports before restart; restored selection (809.5px) and strict raw70 both whole/all-region 0 |
+| New macro `new-empty` | Title caret phase only | Added Tab pair exact, with real Cancel/Title focus assertions; typed-title state exact |
+| Help phases 2/3 and original native Help | Search-menu caret only | Help phases 1/4/5/6 and final-native Help exact; all phases retained |
+| Original native right-empty Traffic | Filter caret only | Final-native empty dock every expanded region exact |
+| Original populated Traffic and final-native narrow | S2 observed rows; collapsed crop names cross expanded data | Correct final bottom/right crops above; separate collapsed narrow-window layout exact |
+
+No C1 scroll waiver or blanket caret tolerance is used. P1 and Ced C1 are
+the existing approved deviations. S2 preserves truthful runtime data; the
+remaining matched cosmetic differences are inspected raster edges.
 
 ## Same-worker 2,000-row comparison
 
-CBC `gold-six-perf-2894a603a903-a1` passed on cbc2 against
-`4c1d7153f6e13da0e1f67317af9c3b4518ff5e09`. The complete log was read.
-All four engine hashes verify; 510 native samples pass row-count, sorting,
-selection, refresh-witness and applied-model checks. No compiler was active.
-Thirty Latin-rotated rounds use 2,000 actual files and alternating Email
-order. ACK timing is separate from applied-model readback and does not
-measure physical presentation.
+Exact release versus `4c1d7153f6e13da0e1f67317af9c3b4518ff5e09`, cbc2,
+30 warm Latin-rotated rounds, 2,000 actual files, alternating Email order and
+an actual 2,001st refresh witness. All **510** native samples pass row counts,
+sorting/selection/revision and applied-model assertions. All four hashes
+verify; no compiler active. ACK and model readback are separate, with no
+physical-presentation claim. Original gold timings and full distributions
+remain retained; the generic host is still slower than original gold.
 
-| Operation | Median before → after, ms | p95 before → after, ms |
-|---|---:|---:|
-| view.sort-size | 112.847 → 114.924 | 124.971 → 121.356 |
-| view.sort-name | 110.874 → 110.420 | 119.234 → 116.129 |
-| view.refresh | 101.629 → 102.429 | 117.606 → 108.119 |
-| selection.first | 63.192 → 64.241 | 74.526 → 67.123 |
-| selection.last | 64.335 → 64.797 | 68.835 → 71.276 |
-| email.list | 115.287 → 117.390 | 135.131 → 140.187 |
+| Operation | ACK median before → after, ms | ACK p95 before → after, ms | Applied-model median before → after, ms |
+| --- | ---: | ---: | ---: |
+| view.sort-size | 114.931 → 113.656 | 123.937 → 119.756 | 131.037 → 131.032 |
+| view.sort-name | 108.682 → 111.060 | 124.682 → 116.604 | 125.418 → 126.104 |
+| view.refresh | 101.000 → 103.123 | 111.804 → 106.434 | 115.622 → 119.426 |
+| selection.first | 64.006 → 66.174 | 70.976 → 70.845 | 78.773 → 81.955 |
+| selection.last | 62.545 → 64.049 | 70.142 → 69.835 | 77.935 → 79.099 |
+| email.list | 115.892 → 115.284 | 135.892 → 140.686 | 133.003 → 133.793 |
 
-Bulk correctness and hot paths are retained. Residual timing shifts remain
-visible, including Email's 1.8% median increase; these are not identical
-measurements or a claim to have reached a new latency target. Full raw
-distributions, model readbacks, original gold timings and cleanup receipts
-remain in the private evidence.
+Bulk correctness/hot paths are retained. Median shifts span −1.1% to +3.4%;
+timings are not identical. Email median decreases 0.5%, p95 increases 3.5%.
+No equivalence threshold or new latency target is claimed. Initial cleanup
+caught the broker still exiting; the separate final audit confirms all seven
+PIDs gone, preserving the original receipt.
+
+## Provenance and retained evidence
+
+The fresh audit confirms the same **22** files explained in
+[import-hash-debt.md](import-hash-debt.md), with expected/current hashes,
+first divergence and subsequent adaptations. Twenty arise from A1 importing
+newer `8779f33` Mix under an inventory pinned to `884fdd8`; A5's host-header
+parser and the later bulk HOF import explain the other two. They predate this
+work and are unchanged from accepted `4f2c0fd`. Reconcile pins/adaptations
+before updating inventory and deriving production. `verify_runtime` stays red.
+
+The private source-keyed archive contains executed recipes/support fixtures,
+all originals/regions/figures, native transcripts, cleanup, raw performance,
+complete CBC logs, inspected sheets, and outside-root Monitor runs with a path
+mapping. Previous failed source-73 appearance retention, source-2894 chrome
+loss, source-5bd Tab focus, concurrent admission and fixture-preparation
+attempts remain retained. Source-5bd's handoff remains NOT_ACCEPTED.
+
+Workshop opens Ced through the generic host. Dopus interop uses the installed
+native dependency with explicit `MIXOS_PREFIX=/opt/mixos`, as gold does. This
+does not attest the separate unfinished generic Dopus port.
+
+## Raw nonzero comparison appendix
+
+This exhaustive table retains the diagnostics as well as accepted raster,
+C1 and S2 differences. The dispositions and canonical replacements above
+govern acceptance. Values are normalised SSIM / RMSE; absent regions are 0.
+
+| App / capture | Whole | Other nonzero regions |
+| --- | --- | --- |
+| ced / accepted-integrated/prefs-light-large-compact | 0.000301469 / 0.00405315 | actions 0.0147586 / 0.0436787; status 0.00355067 / 0.00564538 |
+| ced / accepted-integrated/search-replace | 0.0112466 / 0.0328173 | content 0.0120445 / 0.0356656; gutter 0.0292901 / 0.0471239; tabs_search 0.0142043 / 0.0138868 |
+| ced / accepted-integrated/view-output | 0.00000215932 / 0.000551697 | content 0.00000257402 / 0.00060235; gutter 0.00000343203 / 0.000695534 |
+| ced / accepted-integrated/view-problems | 0.00000215932 / 0.000551697 | content 0.00000257402 / 0.00060235; gutter 0.00000343203 / 0.000695534 |
+| prefs / pair/authority-recovered | 0.0000927844 / 0.00306816 | header 0.00166035 / 0.012979 |
+| prefs / pair/search-edited | 0.0000927844 / 0.00306816 | header 0.00191192 / 0.0139276 |
+| prefs / pair/variant-compact | 0.0000927844 / 0.00306816 | header 0.00191192 / 0.0139276 |
+| screenshot / advanced/diff-prefs-fonts | 0.0000917354 / 0.00422666 | header 0.00194938 / 0.019484 |
+| screenshot / advanced/diff-prefs-orange-compact-square | 0.000090203 / 0.00323826 | header 0.00191681 / 0.0149276 |
+| screenshot / matched/diff-about-dark | 0.000597788 / 0.00887363 | canvas 0.000749168 / 0.00993384 |
+| screenshot / matched/diff-guide-dark | 0.00000000178112 / 0.00000737325 | canvas 0.00000000223216 / 0.0000082542 |
+| screenshot / matched/overlay-diff-about-dark | 0.000597788 / 0.00887363 | overlay 0.00461685 / 0.0246604 |
+| backdrop / round3-final-recipe/pair/compare-native-2d | 0.0000195026 / 0.000567021 | history 0.0000697988 / 0.0010727; legend 0.00145399 / 0.00489165 |
+| backdrop / round3-final-recipe/pair/compare-native-3d | 0.0000195026 / 0.000567021 | history 0.0000697988 / 0.0010727; legend 0.00145399 / 0.00489165 |
+| backdrop / round3-final-recipe/pair/compare-pipeline-alert | 0.0000000935554 / 0.0000528959 | history 0.00000033483 / 0.000100069; legend 0.00000700873 / 0.000457833 |
+| backdrop / round3-final-recipe/pair/compare-pipeline-alerts | 0.0000000935554 / 0.0000528959 | history 0.00000033483 / 0.000100069; legend 0.00000700873 / 0.000457833 |
+| backdrop / round3-final-recipe/pair/compare-pipeline-clear | 0.0000000935554 / 0.0000528959 | history 0.00000033483 / 0.000100069; legend 0.00000700873 / 0.000457833 |
+| backdrop / round3-final-recipe/pair/compare-populated-2d | 0.0000000935554 / 0.0000528959 | history 0.00000033483 / 0.000100069; legend 0.00000700873 / 0.000457833 |
+| backdrop / round3-final-recipe/pair/compare-populated-3d | 0.0000000935554 / 0.0000528959 | history 0.00000033483 / 0.000100069; legend 0.00000700873 / 0.000457833 |
+| backdrop / round3-final-recipe/pair/compare-train-2d | 0.0000000935554 / 0.0000528959 | history 0.00000033483 / 0.000100069; legend 0.00000700873 / 0.000457833 |
+| backdrop / round3-final-recipe/pair/compare-train-3d | 0.0000000935554 / 0.0000528959 | history 0.00000033483 / 0.000100069; legend 0.00000700873 / 0.000457833 |
+| workshop / editor-probe/macro-open | 0.0000495769 / 0.00316474 | details 0.0000896649 / 0.00425608; details_static 0.0000918062 / 0.0043066 |
+| workshop / editor-probe/macro-saved | 0.0000495769 / 0.00316474 | details 0.0000896649 / 0.00425608; details_static 0.0000918062 / 0.0043066 |
+| workshop / editor-probe/macro-typed | 0.0000496052 / 0.00316531 | details 0.0000897161 / 0.00425684; details_static 0.0000918586 / 0.00430737 |
+| workshop / editor-probe/new-empty | 0.0000837101 / 0.00481709 | dialog 0.00104317 / 0.0170049; title_field 0.0106866 / 0.0548226; tree 0.000293388 / 0.00901815 |
+| workshop / editor-probe/size-1 | 0.0174765 / 0.0711087 | details 0.0212281 / 0.0786139; details_static 0.0216648 / 0.0795049; traffic 0.075104 / 0.144028; tree 0.00385684 / 0.0354282 |
+| workshop / persistence/before-save | 0.0341297 / 0.0802563 | details 0.00667264 / 0.0436463; details_static 0.00633739 / 0.0430855; traffic 0.0197539 / 0.0395314; tree 0.102031 / 0.136179 |
+| workshop / persistence/size-1 | 0.0175598 / 0.0715794 | details 0.0220881 / 0.0802362; details_static 0.0226156 / 0.0811885; traffic 0.0735259 / 0.143826; tree 0.00282372 / 0.0316821 |
+| workshop / release-help/help-2 | 0.0000588537 / 0.00459047 | header 0.000354783 / 0.00478142; tree 0.000166452 / 0.00832929 |
+| workshop / release-help/help-3 | 0.0000588537 / 0.00459047 | header 0.000354783 / 0.00478142; tree 0.000166452 / 0.00832929 |
+| workshop / release-help/size-1 | 0.0174822 / 0.0701902 | details 0.0221982 / 0.0803928; details_static 0.0226581 / 0.0813059; traffic 0.0754021 / 0.136777; tree 0.00193249 / 0.0263237 |
+| workshop / release-native/menu-help | 0.0000588537 / 0.00459047 | header 0.000354783 / 0.00478142; tree 0.000166452 / 0.00832929 |
+| workshop / release-native/size-1 | 0.0176446 / 0.0715851 | details 0.0221958 / 0.0803222; details_static 0.0226211 / 0.0811952; traffic 0.0746579 / 0.14501; tree 0.00266731 / 0.030096 |
+| workshop / release-native/traffic-bottom | 0.0188228 / 0.0716827 | details 0.0230019 / 0.0781022; details_static 0.0235512 / 0.0790292; traffic 0.073335 / 0.142326; tree 0.00551601 / 0.0424655 |
+| workshop / release-native/traffic-narrow | 0.00649606 / 0.0399949 | details 0.0116226 / 0.0535865; details_static 0.0117451 / 0.0541694; traffic 0.000823663 / 0.0138807 |
+| workshop / release-native/traffic-right-empty | 0.0000770184 / 0.00467142 | details 0.000139296 / 0.00628233; details_static 0.000142622 / 0.0063569 |
+| workshop / release-native/traffic-right | 0.00640926 / 0.0393891 | details 0.0114657 / 0.0527686; details_static 0.0116998 / 0.0533851; traffic 0.000823663 / 0.0138807 |
+| workshop / release-pair/mesh | 0.000157695 / 0.00505986 | details 0.000285207 / 0.00680472 |
+| workshop / release-pair/size-1 | 0.0176647 / 0.0704096 | details 0.0221335 / 0.0801119; details_static 0.0225918 / 0.0810215; traffic 0.075655 / 0.136549; tree 0.0026426 / 0.0300313 |
+| workshop / release-panels/macro | 0.0000495769 / 0.00316474 | details 0.0000896649 / 0.00425608; details_static 0.0000918062 / 0.0043066 |
+| workshop / release-panels/size-1 | 0.0176659 / 0.0718207 | details 0.0219117 / 0.0799675; details_static 0.022435 / 0.0809167; traffic 0.0763704 / 0.146948; tree 0.00288973 / 0.0318101 |
+| workshop / release-prefs/prefs-fonts-scale | 0.000120609 / 0.00381725 | details 0.0000456998 / 0.000657549; details_static 0.0000467911 / 0.000665354; header 0.0017061 / 0.0160148 |
+| workshop / release-prefs/prefs-light-compact | 0.0000900625 / 0.00446253 | header 0.00161165 / 0.0188775 |
+| workshop / release-prefs/size-1 | 0.0172214 / 0.0706352 | details 0.0210968 / 0.0782235; details_static 0.0215303 / 0.0791096; traffic 0.0761673 / 0.145939; tree 0.00298712 / 0.0319162 |
+| workshop / repair-native-final/size-1 | 0.0177558 / 0.0709656 | details 0.0221896 / 0.080446; details_static 0.0226492 / 0.0813597; traffic 0.0760694 / 0.137139; tree 0.00276372 / 0.0322253 |
+| workshop / repair-native-final/traffic-bottom | 0.0187066 / 0.0714922 | details 0.0230481 / 0.078323; details_static 0.0235985 / 0.0792527; traffic 0.0730904 / 0.142283; tree 0.00507232 / 0.0405392 |
+| workshop / repair-native-final/traffic-narrow | 0.00615238 / 0.0385136 | details 0.0110799 / 0.0517947; details_static 0.0111894 / 0.0523546 |
+| workshop / repair-native-final/traffic-right | 0.00606559 / 0.0378831 | details 0.0109229 / 0.0509468; details_static 0.0111441 / 0.0515413 |
