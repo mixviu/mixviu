@@ -164,6 +164,9 @@ fn dp_request($request)
       end
       if $name=="dopus.execute" and $a.id=="file.mail" and $request.token!=nil and $state.reply.error_code==nil then
         if not viu_reply("hold",$request.token,{}) then raise("CALL","Native mail receipt is unavailable") end
+        -- Complete this evaluator request while the native receipt remains
+        -- held for the owned effect. Silence would synthesise NO_REPLY first.
+        reply(0,"{}")
         return
       end
       reply(if $state.reply.error_code!=nil then 10 else 0 end,json_encode($state.reply))
