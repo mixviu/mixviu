@@ -1294,6 +1294,7 @@ mod tests {
         ctx.run_ui(input, |ui| {
             assert_eq!(ui.ctx().viewport_id(), child);
             requests.lock().unwrap().clear();
+            let wake = wake.clone();
             std::thread::spawn(move || wake()).join().unwrap();
             assert_eq!(*requests.lock().unwrap(), vec![egui::ViewportId::ROOT]);
         })
