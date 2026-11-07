@@ -263,7 +263,7 @@ works.</li>
 </ul>
 <p><strong>New to Mix, or coming from bash/Python/JS? Read <a href="/mix/gotchas/">gotchas</a> first</strong> —
 it is the errata against every other language's reflexes, and every row of its
-table is executed by <code>cargo test -p system --test man_gotchas</code>, so it cannot
+table is executed by <code>cargo test -p mix --test man_gotchas</code>, so it cannot
 rot. <code>mix man syntax</code> is the mental model; gotchas is the corrections.</p>
 <h2 id="start-here">Start here</h2>
 <ul>
@@ -321,7 +321,7 @@ rot. <code>mix man syntax</code> is the mental model; gotchas is the corrections
 <h2 id="where-mix-lives">Where Mix lives</h2>
 <p>Mix is the MixOS shell and scripting language. The interpreter lives in the
 <code>mix</code> library at <code>libs/mix</code>; <code>cli/mix-shell</code> owns the interactive shell and
-native ABP citizen runtime, and <code>cli/system</code> builds the <code>mix</code> binary.
+native ABP citizen runtime, and <code>engines/mix</code> builds the <code>mix</code> binary.
 The source versions are declared in
 <a href="https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml"><code>libs/mix/Cargo.toml</code></a>
 and <a href="https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml"><code>cli/mix-shell/Cargo.toml</code></a>.

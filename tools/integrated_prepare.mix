@@ -1,6 +1,10 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
 $rc=0
 try
-  for $argv in [["cargo","build","--locked","-p","system","--bin","mix"],["target/debug/mix","docs/_build/gen-builtins-md.mix","--mix","target/debug/mix"]]
+  for $argv in [["cargo","build","--locked","-p","mix","--bin","mix"],["target/debug/mix","docs/_build/gen-builtins-md.mix","--mix","target/debug/mix"]]
     $r=run_argv($argv,{timeout:1800,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}});print($r)
     if not $r.ok then raise("PREPARE",to_string($r.exit_code ?? 124)) end
   end

@@ -1,9 +1,13 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 $rc=0
 try
-  $fmt=if contains(args(),"--prepare") then ["cargo","fmt","-p","viu","-p","viu-engine"] else ["cargo","fmt","-p","viu","-p","viu-engine","--","--check"] end
-  for $argv in [$fmt,["cargo","test","--locked","-p","viu","--test","ports_round5","--","--nocapture"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
+  $fmt=if contains(args(),"--prepare") then ["cargo","fmt","-p","lib-viu","-p","viu"] else ["cargo","fmt","-p","lib-viu","-p","viu","--","--check"] end
+  for $argv in [$fmt,["cargo","test","--locked","-p","lib-viu","--test","ports_round5","--","--nocapture"],["cargo","build","--locked","-p","viu","--bin","viu"]]
     $r=run_argv($argv,{env:{CARGO_BUILD_JOBS:"6",RUSTC_WRAPPER:""},timeout:1800,max_output:8000000});print($r)
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
   end

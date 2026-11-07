@@ -1,10 +1,10 @@
 -- CBC only. Resolve the client closure before the locked checks.
 for $cmd in [
   ["/opt/mixos/bin/mix", "tools/format_comp_split.mix", "fmt-only"],
-  ["cargo", "check", "-p", "viu-engine"],
-  ["cargo", "test", "-p", "viu-engine", "--no-fail-fast", "--locked"],
-  ["cargo", "clippy", "-p", "viu-engine", "--all-targets", "--locked"],
-  ["cargo", "build", "-p", "viu-engine", "--locked"]
+  ["cargo", "check", "-p", "viu"],
+  ["cargo", "test", "-p", "viu", "--no-fail-fast", "--locked"],
+  ["cargo", "clippy", "-p", "viu", "--all-targets", "--locked"],
+  ["cargo", "build", "-p", "viu", "--locked"]
 ]
   print("STEP_BEGIN " .. join($cmd," "))
   $r=run_argv(concat(["env","CARGO_BUILD_JOBS=6"],$cmd),{timeout:7000,max_output:64000000})

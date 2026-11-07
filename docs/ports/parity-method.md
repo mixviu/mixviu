@@ -1,5 +1,10 @@
 # Application parity method
 
+> Lab evidence. This method and its gate scripts belong to the pre-cut-over
+> parity labs. The gold oracle, including any compd or compd-oracle build,
+> comes from mixos 8779f33; this tree no longer has a compd package (viud is
+> its successor, without the in-process egui toolkit).
+
 An acceptance record covers behaviour, appearance, ABP compatibility and live
 Prefs response. Passing one does not substitute for another. Use the pinned
 gold original at `8779f33284b7d3f1178c3d57a699efb9b0867b22` and the exact CBC

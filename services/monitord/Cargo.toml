@@ -19,8 +19,8 @@ profiles = ["base"]
 [lints.clippy]
 mod_module_files = "deny"
 
-# The daemon is a library, so the system binary can run it as its
-# `monitord` personality (docs/docs/decisions/2026-10-12-one-system-binary.md);
+# The daemon is a library, so the mixd engine can run it as its
+# `monitord` personality (argv[0]);
 # src/main.rs is the standalone development binary.
 [lib]
 doctest = false

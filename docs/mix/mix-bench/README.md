@@ -16,12 +16,12 @@ The current regression suites live with the components they exercise:
 | --- | --- | --- |
 | `libs/mix/src` and `libs/mix/tests` | Lexer, parser, evaluator, builtins, strict data and language regression scripts | `mix` |
 | `cli/mix-shell/src` and `cli/mix-shell/tests` | Shell library and lint coverage | `mix-shell` |
-| `cli/system/tests` | Shipped executable, native sessions, processes, manuals and shell integration | `system` |
+| `engines/mix/tests` | Shipped executable, native sessions, processes, manuals and shell integration | `mix` |
 
 In the designated Rust build environment, run the relevant suites with:
 
 ```text
-cargo test --locked -p mix -p mix-shell -p system
+cargo test --locked -p lib-mix -p mix-shell -p mix
 ```
 
 These are correctness tests, not a replacement performance score. Check

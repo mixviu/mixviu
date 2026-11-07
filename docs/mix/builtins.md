@@ -31,7 +31,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 
 > The tables below are generated: `docs/_build/gen-builtins-md.mix` writes
 > one section per category, one row per entry of `mix builtins --json`, in
-> the binary's order. `cargo test -p system --test man_pages` fails when the
+> the binary's order. `cargo test -p mix --test man_pages` fails when the
 > committed tables differ from the binary it built, so after adding or
 > changing a builtin run
 > `mix docs/_build/gen-builtins-md.mix --mix target/debug/mix`. Rows of kind

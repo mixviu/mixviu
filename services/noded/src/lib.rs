@@ -5,7 +5,7 @@
 //!
 //! One process running the broker (WebSocket message broker), system
 //! monitor, and Bus traffic logger as async tasks. The `noded` binary, and
-//! the system binary started as `noded`, both run [`main`].
+//! the mixd engine started as `noded`, both run [`main`].
 
 use anyhow::Result;
 use clap::Parser;
@@ -86,10 +86,10 @@ enum Command {
     },
 }
 
-/// This component's version, for the system binary's `--personalities`.
+/// This component's version, for the mixd engine's `--personalities`.
 pub const COMPONENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The whole noded program: the `noded` binary and the system binary's
+/// The whole noded program: the `noded` binary and the mixd engine's
 /// `noded` personality are thin calls into this.
 pub fn main() -> ExitCode {
     // --version/-V first, before the tokio runtime exists: a thread- or

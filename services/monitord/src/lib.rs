@@ -4,7 +4,7 @@
 //! answers read commands on the Bus, so any node's load can be read from
 //! anywhere on the mesh (docs/docs/decisions/2026-10-16-monitord-and-monitor.md).
 //!
-//! The `monitord` binary, and the system binary started as `monitord`,
+//! The `monitord` binary, and the mixd engine started as `monitord`,
 //! both run [`main`].
 pub mod action;
 pub mod bus_loop;
@@ -23,7 +23,7 @@ use std::process::ExitCode;
 // The global allocator belongs to each binary (src/main.rs, or the system
 // binary), never to this library.
 
-/// This component's version, for the system binary's `--personalities`.
+/// This component's version, for the mixd engine's `--personalities`.
 pub const COMPONENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct ServeConfig {

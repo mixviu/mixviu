@@ -278,7 +278,7 @@ encode-first guidance for file payloads; this is additive within metadata_schema
 <blockquote>
 <p>The tables below are generated: <code>docs/_build/gen-builtins-md.mix</code> writes
 one section per category, one row per entry of <code>mix builtins --json</code>, in
-the binary's order. <code>cargo test -p system --test man_pages</code> fails when the
+the binary's order. <code>cargo test -p mix --test man_pages</code> fails when the
 committed tables differ from the binary it built, so after adding or
 changing a builtin run
 <code>mix docs/_build/gen-builtins-md.mix --mix target/debug/mix</code>. Rows of kind

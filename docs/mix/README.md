@@ -18,7 +18,7 @@ home of these pages is
 
 **New to Mix, or coming from bash/Python/JS? Read [gotchas](gotchas.md) first** —
 it is the errata against every other language's reflexes, and every row of its
-table is executed by `cargo test -p system --test man_gotchas`, so it cannot
+table is executed by `cargo test -p mix --test man_gotchas`, so it cannot
 rot. `mix man syntax` is the mental model; gotchas is the corrections.
 
 ## Start here
@@ -79,7 +79,7 @@ rot. `mix man syntax` is the mental model; gotchas is the corrections.
 
 Mix is the MixOS shell and scripting language. The interpreter lives in the
 `mix` library at `libs/mix`; `cli/mix-shell` owns the interactive shell and
-native ABP citizen runtime, and `cli/system` builds the `mix` binary.
+native ABP citizen runtime, and `engines/mix` builds the `mix` binary.
 The source versions are declared in
 [`libs/mix/Cargo.toml`](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml)
 and [`cli/mix-shell/Cargo.toml`](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml).
