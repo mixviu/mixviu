@@ -556,7 +556,7 @@ pub(crate) fn draw(
             for index in range {
                 let row=&rows[index];
                 let key=text(row,"key");
-                let (rect,response)=ui.allocate_exact_size(vec2(available,row_h),Sense::click_and_drag());
+                let (rect,response)=ui.allocate_exact_size(vec2(ui.available_width(),row_h),Sense::click_and_drag());
                 geometry.insert(format!("{id}.row.{index}"),rect);
                 geometry.insert(format!("{id}.key.{key}"),rect);
                 response.widget_info(||egui::WidgetInfo::selected(egui::Role::Button,true,selected(value,row),row["cells"][0].as_str().unwrap_or("")));
@@ -582,9 +582,11 @@ pub(crate) fn draw(
                 let icon_rect=Rect::from_center_size(pos2(tx+8.0,rect.center().y),vec2(16.0,16.0));
                 icon(ui,text(row,"icon"),icon_rect,if is_selected{colour}else if row["branch"]==true{ui.visuals().hyperlink_color}else{ui.visuals().weak_text_color()});
                 tx+=22.0;
-                let mut cx=rect.left();
                 for i in 0..visible {
-                    let right=cx+measured[i];
+                    // The scroll area's row may snap its available width.
+                    // Anchor metadata to that final rect, as native panels do.
+                    let right=rect.right()-measured[i+1..visible].iter().sum::<f32>();
+                    let cx=if i==0 {rect.left()} else {right-measured[i]};
                     let cell=Rect::from_min_max(pos2(cx,rect.top()),pos2(right,rect.bottom()));
                     let mut font=TextStyle::Body.resolve(ui.style());
                     if i>0 {font.size*=metadata_scale;}
@@ -597,7 +599,6 @@ pub(crate) fn draw(
                         let right_align=text_value(&columns[i],"align")=="right";
                         painter.with_clip_rect(cell.intersect(ui.clip_rect())).text(pos2(if right_align{right-6.0}else{cx+6.0},rect.center().y),if right_align{Align2::RIGHT_CENTER}else{Align2::LEFT_CENTER},text,font,if is_selected{colour}else{ui.visuals().weak_text_color()});
                     }
-                    cx=right;
                 }
                 let modifiers=ui.input(|i|i.modifiers);
                 if !toggled&&response.clicked(){response.request_focus();emit(events,id,"select",json!({"key":key,"ctrl":modifiers.ctrl||modifiers.command,"shift":modifiers.shift}));}
