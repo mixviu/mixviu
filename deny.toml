@@ -14,8 +14,6 @@ yanked = "warn"
 ignore = [
   { id = "RUSTSEC-2023-0071", reason = "rsa 0.9 Marvin timing (no fixed release); inherited debt" },
   { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained; inherited debt" },
-  { id = "RUSTSEC-2026-0118", reason = "hickory-proto NSEC3 loop (dnsd, Tier 2); inherited debt" },
-  { id = "RUSTSEC-2026-0119", reason = "hickory-proto name compression CPU (dnsd, Tier 2); inherited debt" },
   { id = "RUSTSEC-2026-0194", reason = "quick-xml duplicate-attribute quadratic; inherited debt" },
   { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader allocation; inherited debt" },
   { id = "RUSTSEC-2026-0367", reason = "zip SUID preservation on extract; inherited debt" },

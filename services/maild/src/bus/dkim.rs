@@ -131,7 +131,7 @@ async fn handle_check(cmd: &IncomingCommand, state: &DkimState) -> Result<JsonVa
         (selector, pem)
     };
     let name = format!("{selector}._domainkey.{domain}.");
-    let resolver = hickory_resolver::TokioResolver::builder_tokio()?.build();
+    let resolver = hickory_resolver::TokioResolver::builder_tokio()?.build()?;
     check_published(&resolver, &name, &pem).await?;
     Ok(json!({"domain":domain,"selector":selector,"dns_name":name,"matches":true}))
 }
@@ -692,11 +692,10 @@ mod tests {
     async fn check_fetches_chunked_dns_txt_and_refuses_wrong_key() {
         use hickory_resolver::{
             config::{NameServerConfig, ResolverConfig},
-            name_server::TokioConnectionProvider,
+            net::runtime::TokioRuntimeProvider,
             proto::{
                 op::{Message, MessageType},
                 rr::{RData, Record, rdata::TXT},
-                xfer::Protocol,
             },
         };
         let material = keygen::generate(KeySpec::Rsa { bits: 2048 }).unwrap();
@@ -735,13 +734,13 @@ mod tests {
         let config = ResolverConfig::from_parts(
             None,
             vec![],
-            vec![NameServerConfig::new(addr, Protocol::Udp)],
+            vec![{ let mut server = NameServerConfig::udp(addr.ip()); server.connections[0].port = addr.port(); server }],
         );
         let resolver = hickory_resolver::TokioResolver::builder_with_config(
             config,
-            TokioConnectionProvider::default(),
+            TokioRuntimeProvider::default(),
         )
-        .build();
+        .build().unwrap();
         check_published(
             &resolver,
             "s2026a._domainkey.example.com.",

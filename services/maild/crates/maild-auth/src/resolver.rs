@@ -15,9 +15,9 @@
 use crate::error::{Error, Result};
 use mail_auth::MessageAuthenticator;
 use mail_auth::hickory_resolver::config::{
-    NameServerConfig, NameServerConfigGroup, ProtocolConfig, ResolverConfig, ResolverOpts,
+    NameServerConfig, ResolverConfig, ResolverOpts,
 };
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 
 #[derive(Debug, Clone, Default)]
 pub enum ResolverChoice {
@@ -80,17 +80,14 @@ impl DnsResolver {
             ResolverChoice::Cloudflare => MessageAuthenticator::new_cloudflare()
                 .map_err(|e| Error::Internal(format!("cloudflare resolver: {e}")))?,
             ResolverChoice::Custom(ips) => {
-                let mut servers: Vec<NameServerConfig> = Vec::with_capacity(ips.len() * 2);
+                let mut servers: Vec<NameServerConfig> = Vec::with_capacity(ips.len());
                 for ip in ips {
-                    let addr = SocketAddr::new(*ip, 53);
                     // UDP first; TCP fallback for large responses (DKIM
                     // keys can exceed UDP MTU; DMARC tree-walks
                     // multiply lookups but stay small).
-                    servers.push(NameServerConfig::new(addr, ProtocolConfig::Udp));
-                    servers.push(NameServerConfig::new(addr, ProtocolConfig::Tcp));
+                    servers.push(NameServerConfig::udp_and_tcp(*ip));
                 }
-                let group = NameServerConfigGroup::from(servers);
-                let config = ResolverConfig::from_parts(None, vec![], group);
+                let config = ResolverConfig::from_parts(None, vec![], servers);
                 MessageAuthenticator::new(config, ResolverOpts::default())
                     .map_err(|e| Error::Internal(format!("custom resolver: {e}")))?
             }

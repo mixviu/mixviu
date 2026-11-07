@@ -135,7 +135,7 @@ impl MxResolver {
     pub fn new() -> anyhow::Result<Self> {
         let resolver = Resolver::builder_tokio()
             .map_err(|e| anyhow::anyhow!("DNS resolver init failed: {e}"))?
-            .build();
+            .build()?;
         Ok(Self {
             resolver,
             cache: Mutex::new(HashMap::new()),
@@ -364,14 +364,14 @@ async fn probe_host(tls: &Arc<rustls::ClientConfig>, host: &str) -> Result<(), M
 /// MX RRset). Every other code — and every non-`NoRecordsFound` proto
 /// kind, plus internal Message/IO errors with no proto payload — is
 /// `Transient`.
-fn classify(e: &hickory_resolver::ResolveError) -> MxError {
-    use hickory_resolver::proto::ProtoErrorKind;
+fn classify(e: &hickory_resolver::net::NetError) -> MxError {
+    use hickory_resolver::net::{DnsError, NetError, NoRecords};
     use hickory_resolver::proto::op::ResponseCode;
-    match e.proto().map(|p| p.kind()) {
-        Some(ProtoErrorKind::NoRecordsFound {
+    match e {
+        NetError::Dns(DnsError::NoRecordsFound(NoRecords {
             response_code: ResponseCode::NXDomain | ResponseCode::NoError,
             ..
-        }) => MxError::NoMx,
+        })) => MxError::NoMx,
         _ => MxError::Transient,
     }
 }
@@ -546,14 +546,14 @@ mod tests {
 
     #[test]
     fn classify_only_caches_genuine_negative_answers() {
-        use hickory_resolver::proto::ProtoError;
+        use hickory_resolver::net::{DnsError, NoRecords};
         use hickory_resolver::proto::op::ResponseCode;
         let mk = |rc: ResponseCode| {
             // hickory wraps *every* error response code in the single
             // NoRecordsFound variant; only the inner response_code
             // distinguishes them.
-            let pe = ProtoError::nx_error(Box::default(), None, None, None, rc, false, None);
-            let re: hickory_resolver::ResolveError = pe.into();
+            let pe = DnsError::NoRecordsFound(NoRecords::new(hickory_resolver::proto::op::Query::default(), rc));
+            let re: hickory_resolver::net::NetError = pe.into();
             classify(&re)
         };
         // Genuine "no MX" → cacheable 404.

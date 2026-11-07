@@ -337,7 +337,7 @@ pub(crate) fn sender_domain_of(addr: &str, default_domain: &str) -> String {
 pub async fn delivery_worker(state: Arc<SmtpState>) {
     tracing::info!("SMTP delivery worker started");
 
-    let resolver = match Resolver::builder_tokio().map(|b| b.build()) {
+    let resolver = match Resolver::builder_tokio().and_then(|b| b.build()) {
         Ok(r) => r,
         Err(e) => {
             tracing::error!(error = %e, "Failed to create DNS resolver — delivery worker disabled");

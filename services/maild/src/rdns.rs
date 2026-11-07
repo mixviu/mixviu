@@ -75,7 +75,7 @@ fn cache() -> &'static Mutex<HashMap<IpAddr, Entry>> {
 fn resolver() -> Option<&'static TokioResolver> {
     static RESOLVER: OnceLock<Option<TokioResolver>> = OnceLock::new();
     RESOLVER
-        .get_or_init(|| match Resolver::builder_tokio().map(|b| b.build()) {
+        .get_or_init(|| match Resolver::builder_tokio().and_then(|b| b.build()) {
             Ok(r) => Some(r),
             Err(e) => {
                 tracing::warn!(error = %e, "rdns: no system resolver — client names stay unknown");

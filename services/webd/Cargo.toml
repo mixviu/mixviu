@@ -70,6 +70,7 @@ clap.workspace = true
 mimalloc.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
 tokio-rustls.workspace = true
+rustls-pemfile = "2"
 rustls.workspace = true
 rustls-pemfile = "2"
 # SSR PIM Phase 2 — AEAD-sealed stateless session cookies. XChaCha20-
