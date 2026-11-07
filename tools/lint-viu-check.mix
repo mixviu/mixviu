@@ -9,7 +9,7 @@ run_step(["cargo","build","--locked","-p","mix"])
 run_step(["cargo","test","--locked","-p","lib-mix","--test","lint_viu"])
 run_step(["cargo","test","--locked","-p","lib-viu"])
 run_step(["cargo","test","--locked","-p","viu"])
-run_step(["cargo","test","--locked","-p","dopus"])
+run_step(["cargo","test","--locked","-p","viu-dopus"])
 for $p in split(trim(run_argv_must(["git","ls-files","apps/*-test.mix"])),"\n")
   run_step(["target/debug/mix",$p])
 end
