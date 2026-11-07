@@ -53,7 +53,7 @@ fn chooser_mix_mounts_shared_frame_and_keeps_native_save_focus_and_rows() {
     let mut doc=scene::parse(&std::fs::read_to_string(root.join("chooser.scene.mix")).unwrap()).unwrap();
     doc.model=Some(model.clone());
     let resolved=scene::resolve(&doc).unwrap();
-    assert!(resolved.nodes["root"].ports["placements"].is_object(),"{:?}",resolved);
+    assert!(resolved.nodes["root"].ports.get("placements").is_some_and(|v|v.is_object()),"{:?}",resolved);
     let mut view = viu::gold_frame::mount(
         &std::fs::read_to_string(root.join("chooser.scene.mix")).unwrap(),
         model,
