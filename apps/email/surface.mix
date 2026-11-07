@@ -109,11 +109,12 @@ fn surface_account($id)
   return {rc:0,body:{id:$id}}
 end
 fn surface_mailbox($account,$id)
-  global $box,$rows,$message,$mail_selection,$mail_focus,$revision
+  global $box,$rows,$message,$mail_selection,$mail_focus,$revision,$wire_data,$mode,$total,$offset
   $r=surface_account($account)
   if $r.rc!=0 then return $r end
   if not any($boxes,fn($b)=$b.id==$id) then return wire_refuse("NOT_FOUND","No such mailbox "..to_string($id)) end
-  $box=$id;$rows=[];$message=nil;$mail_selection=[];$mail_focus=nil;$revision=$revision+1
+  $box=$id;$rows=[];$message=nil;$mail_selection=[];$mail_focus=nil;$revision=$revision+1;$mode="mail";$total=0;$offset=0
+  $wire_data[$account]=$wire_data[$account] ?? {};$wire_data[$account].box=$id;$wire_data[$account].message=nil;$wire_data[$account].emails=[];$wire_data[$account].total=0;$wire_data[$account].offset=0
   wire_start("email.list",{account:$account,mailbox:$id,limit:$mail_settings.page_size},nil,"list")
   return {rc:0,body:{account:$account,id:$id}}
 end

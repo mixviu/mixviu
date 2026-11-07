@@ -27,6 +27,40 @@ fn sample_width(ui: &Ui, column: &Value) -> Option<f32> {
         .fold(0.0, f32::max);
     Some(width + ui.spacing().item_spacing.x + 2.0)
 }
+fn native_table_state(value:&Value)->Result<toolkit::datatable::TableState,String>{
+    if value.is_null(){return Ok(Default::default());}
+    if !value.is_object(){return Err("table state must be an object".into());}
+    let mut value=value.clone();
+    for key in ["page","page_size","focus"] {
+        if let Some(number)=value.get(key).filter(|n|!n.is_null()) {
+            let number=crate::widgets::whole(number).ok_or_else(||format!("table {key} must be a whole number"))?;
+            if key=="page_size" && (number==0 || number>u32::MAX as u64){return Err("invalid table page size".into());}
+            value[key]=json!(number);
+        }
+    }
+    serde_json::from_value(value).map_err(|e|format!("invalid table state: {e}"))
+}
+
+#[cfg(test)]
+mod numeric_state_tests {
+    use super::*;
+
+    #[test]
+    fn scene_numbers_preserve_selection_page_and_focus() {
+        let state = native_table_state(&json!({
+            "page": 2.0, "page_size": 100.0, "focus": 3.0,
+            "selection": ["message-4"], "sort": {"column":"date", "order":"descending"}
+        })).unwrap();
+        assert_eq!(state.page, 2);
+        assert_eq!(state.page_size, 100);
+        assert_eq!(state.focus, Some(3));
+        assert_eq!(state.selection, ["message-4"]);
+        assert!(state.sort.is_some());
+        for invalid in [json!({"page":1.5}), json!({"page_size":0.0}), json!({"focus":-1.0})] {
+            assert!(native_table_state(&invalid).is_err());
+        }
+    }
+}
 fn emit(events: &mut Vec<Intent>, id: &str, action: &str, value: Value) {
     events.push(Intent {
         id: id.into(),
@@ -45,8 +79,13 @@ pub fn validate(value: &Value) -> Result<(), String> {
         .filter(|c| !c.is_empty() && c.len() <= 16)
         .ok_or("tree-table requires 1..16 columns")?;
     let mut keys = BTreeSet::new();
+    native_table_state(&value["state"])?;
+    if !value["total"].is_null() && crate::widgets::whole(&value["total"]).is_none(){return Err("table total must be a whole number".into());}
     let mut column_keys = BTreeSet::new();
     for column in columns {
+        if let Some(samples)=column.get("samples") {
+            if samples.as_array().is_none_or(|samples|samples.len()>64 || samples.iter().any(|s|s.as_str().is_none_or(|s|s.len()>4096))){return Err("invalid column measurement samples".into());}
+        }
         if !column["fraction"].is_null()
             && column["fraction"]
                 .as_f64()
@@ -509,7 +548,10 @@ fn draw_grid(
         let room = (ui.available_width()
             - ui.spacing().item_spacing.x * (columns.len().saturating_sub(1) as f32))
             .max(1.0);
-        let measured=columns.iter().map(|column|sample_width(ui,column)).collect::<Vec<_>>();
+        let measured = columns
+            .iter()
+            .map(|column| sample_width(ui, column))
+            .collect::<Vec<_>>();
         let mut table = TableBuilder::new(ui)
             .id_salt(id)
             .auto_shrink([widget.properties["auto_shrink"] == true; 2])
@@ -522,7 +564,7 @@ fn draw_grid(
                 Sense::click()
             })
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
-        for (column,measured) in columns.iter().zip(measured) {
+        for (column, measured) in columns.iter().zip(measured) {
             let width = if let Some(width) = measured {
                 Column::exact(width)
             } else if column["remainder"] == true {
@@ -700,7 +742,7 @@ fn draw_gold(
             result
         })
         .collect::<Vec<_>>();
-    let mut state: TableState = serde_json::from_value(value["state"].clone()).unwrap_or_default();
+    let mut state: TableState = native_table_state(&value["state"]).expect("validated table state");
     let external = |key: &str| {
         authored
             .iter()
@@ -738,7 +780,7 @@ fn draw_gold(
     ui.scope(|ui| {
         let mut table=DataTable::new(&widget.id,&columns,&state).strings(&strings).keeps_tab(true)
             .selection(if widget.properties["multi"]==false{SelectionMode::Single}else{SelectionMode::Multi})
-            .total(Total::Known(value["total"].as_u64().unwrap_or(rows.len() as u64)))
+            .total(Total::Known(crate::widgets::whole(&value["total"]).unwrap_or(rows.len() as u64)))
             .pager(widget.properties["pager"]!=false).empty_text(value["empty"].as_str().unwrap_or("No items"));
         if let Some(link)=value["select_everything"].as_str(){ table=table.select_everything(Everything{link:link.into(),done:value["everything_done"].as_str().map(Into::into)}); }
         for event in table.show(ui,&rows) {
@@ -834,7 +876,7 @@ fn draw_outline(
                                 }
                             },
                             |ui| {
-                                if let Some(n) = row["count"].as_u64().filter(|n| *n > 0) {
+                                if let Some(n) = crate::widgets::whole(&row["count"]).filter(|n| *n > 0) {
                                     ui.label(egui::RichText::new(n.to_string()).strong());
                                 }
                             },

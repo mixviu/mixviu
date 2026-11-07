@@ -245,6 +245,7 @@ end
 on viu.job.completed
   $d=$event.args
   if $d.tag.owner.id!=nil then wire_completed($d);publish_email();return end
+  wire_pump()
   if $busy and $d.tag.owner==$serial then
     $busy=false
     if $d.rc==0 then

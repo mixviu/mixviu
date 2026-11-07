@@ -29,7 +29,7 @@ emails:{widget:"control",definition:"= $model.native_table",on_intent:"email.int
 "message-from":{widget:"control",definition:{id:"message-from",kind:"label",label:"",initial:"",properties:{weak:true,wrap:true}}},
 "message-to":{widget:"control",definition:{id:"message-to",kind:"label",label:"",initial:"",properties:{weak:true,wrap:true}}},
 "message-source-note":{widget:"control",definition:{id:"message-source-note",kind:"label",label:"",initial:"This email has no plain-text body; the HTML source follows.",properties:{weak:true,wrap:true}},hidden:"= !$model.html_source"},
-"message-rule":{widget:"control",definition:{id:"message-rule",kind:"separator",label:"",initial:"",properties:{}}},
+"message-rule":{widget:"control",definition:{id:"message-rule",kind:"separator",label:"",initial:"",properties:{style:"hairline"}}},
 "message-surface":{widget:"content",settings:"= $model.reader_content",children:["message-source-note","message-body","message-markdown"]},
 "message-body":{widget:"control",definition:"= $model.message_body",hidden:"= $model.markdown"},
 "message-markdown":{widget:"control",definition:{id:"message-markdown",kind:"markdown",label:"",initial:"",properties:{}},hidden:"= !$model.markdown"},

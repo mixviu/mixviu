@@ -973,6 +973,8 @@ impl Widgets {
                 let mut label = egui::Label::new(text);
                 if widget.properties["truncate"] == true {
                     label = label.truncate();
+                } else if widget.properties["wrap"] == true {
+                    label = label.wrap();
                 }
                 if widget.properties["align"] == "center" {
                     label = label.halign(egui::Align::Center);
@@ -1527,8 +1529,15 @@ impl Widgets {
                 .label(value.as_str().unwrap_or("Hover for help"))
                 .on_hover_text(widget.text("body")),
             "separator" => {
-                let r = ui.separator();
-                ui.small(value.as_str().unwrap_or("Section boundary"));
+                let r = if widget.properties["style"] == "hairline" {
+                    let rect = toolkit::bars::hairline(ui);
+                    ui.interact(rect, ui.id().with(id), Sense::hover())
+                } else {
+                    ui.separator()
+                };
+                if let Some(text) = value.as_str().filter(|s| !s.is_empty()) {
+                    ui.small(text);
+                }
                 r
             }
             "icon" => {

@@ -15,9 +15,6 @@ on job.run
     $command=$a.command;$p=$a.args
     if $command=="email.mailboxes" or $command=="email.account.connect" then
       $answer={mailboxes:$protocol.boxes($protocol.call($e,$s,"Mailbox/get",{}).list)}
-      if $command=="email.account.connect" then
-        $answer=merge(merge($answer,$pim.dispatch($e,$s,"email.calendars",{})),$pim.dispatch($e,$s,"email.books",{}))
-      end
     elif $command=="email.list" or $command=="email.search" then
       if $command=="email.search" then $p.query=$p.text end
       $answer=$protocol.list($e,$s,$p)

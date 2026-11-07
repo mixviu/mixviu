@@ -3,7 +3,7 @@
 -- lint: globals ctx entries active session boxes box rows total offset selected message reader account mailbox connected revision serial status fixture c
 $account_policy=require("accounts.mix")
 $argument_policy=require("arguments.mix")
-$wire_sequence=0;$wire_pending={};$wire_sessions={};$wire_views={};$wire_generations={};$wire_data={};$wire_open_targets={}
+$wire_sequence=0;$wire_pending={};$wire_sessions={};$wire_views={};$wire_generations={};$wire_data={};$wire_open_targets={};$wire_list_targets={};$wire_waiting=[];$wire_running={}
 $mail_settings={binding:{instance:env("MIXOS_INSTANCE","default"),profile:"default"},source:"cache",default_account:nil,page_size:100,mark_read_on_open:true,confirm_delete:true,quote_on_reply:true,reply_position:"above",revision:nil}
 fn wire_entry($id)
   for $e in $entries if $e.id==$id then return $e end end
@@ -12,12 +12,25 @@ end
 fn wire_refuse($code,$message)
   return {rc:10,body:{error_code:$code,message:$message}}
 end
+fn wire_current($job)
+  if $job.purpose=="settings" then return true end
+  $entry=wire_entry($job.account)
+  return $entry!=nil and $entry.enabled!=false and $entry.url==$job.entry.url and $entry.user==$job.entry.user and $entry.ca_file==$job.entry.ca_file and ($wire_generations[$job.account] ?? 0)==$job.generation
+end
 fn wire_start($command,$args,$event=nil,$purpose="query")
-  global $wire_sequence,$wire_pending,$wire_views,$wire_sessions,$wire_generations,$wire_open_targets
+  try
+    return wire_schedule($command,$args,$event,$purpose)
+  catch $message,$error
+    return wire_refuse(if $error.code=="INVALID_ARGUMENT" then "INVALID_ARGUMENT" else "SERVER" end,$message)
+  end
+end
+fn wire_schedule($command,$args,$event,$purpose)
+  global $wire_sequence,$wire_pending,$wire_views,$wire_sessions,$wire_generations,$wire_open_targets,$wire_list_targets,$wire_waiting
+  if type($args)!="map" then return wire_refuse("INVALID_ARGUMENT","arguments must be an object") end
   $settings=contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set"],$command)
   if $settings then $purpose="settings" end
-  $id=$args.account ?? $active;$entry=wire_entry($id)
-  if $command=="email.account.connect" then $id=$args.id;$entry=wire_entry($id) end
+  $id=$argument_policy.text($args,"account") ?? $active;$entry=wire_entry($id)
+  if $command=="email.account.connect" then $id=$argument_policy.required($args,"id");$entry=wire_entry($id) end
   if not $settings then
     if $entry==nil then return wire_refuse("UNKNOWN_ACCOUNT",if $id=="" or $id==nil then "No account is selected" else "No account "..to_string($id) end) end
     if $entry.enabled==false then return wire_refuse("NOT_CONNECTED","Not connected") end
@@ -27,25 +40,49 @@ fn wire_start($command,$args,$event=nil,$purpose="query")
     if contains(["email.events","email.event.create"],$command) then $args.calendar=$args.calendar ?? ($wire_data[$id] ?? {}).calendar end
     if contains(["email.contacts","email.contact.create"],$command) then $args.book=$args.book ?? ($wire_data[$id] ?? {}).book end
   end
-  if len(keys($wire_pending))>=32 then return wire_refuse("BUSY","Too many requests pending") end
+  if len(keys($wire_pending))>=512 then return wire_refuse("BUSY","Too many requests pending") end
   if $command=="email.account.connect" then $wire_generations[$id]=($wire_generations[$id] ?? 0)+1;$wire_sessions=delete($wire_sessions,$id) end
   $token=if $event!=nil then $event.headers["viu-call"] else nil end
   if $token!=nil and not viu_reply("hold",$token,{}) then return wire_refuse("BUSY","Request receipt unavailable") end
   $wire_sequence=$wire_sequence+1;$job="email-wire-"..to_string($wire_sequence)
   $owner={id:$job,account:$id,entry:$entry,generation:$wire_generations[$id] ?? 0,command:$command,args:$args,token:$token,purpose:$purpose}
+  if contains(["list","refresh-list"],$purpose) then $wire_list_targets[$id]=$job end
   if $command=="email.open" then
     if $id!=$active then surface_account($id) end
     $owner.mailbox=$box;$wire_open_targets[$id]=$job
   end
-  $path=path_join(dirname(script_path()),"wire-job.mix")
-  send "viu-local" "jobs.start" id=$job owner={id:$job} path=$path source=read_file($path) command="job.run" args={entry:$entry,command:$command,args:$args,session:if $command=="email.account.connect" then nil else $wire_sessions[$id] end,binding:$mail_settings.binding}
-  if $rc!=0 then
-    if $token!=nil then viu_reply("finish",$token,{rc:10,body:{error_code:"BUSY",message:"Mail worker unavailable"}}) end
-    return wire_refuse("BUSY","Mail worker unavailable")
-  end
+  $owner.session=if $command=="email.account.connect" then nil else $wire_sessions[$id] end
+  $owner.binding=$mail_settings.binding
   $wire_pending[$job]=$owner
+  push($wire_waiting,$job)
   if $command=="email.account.connect" then $wire_views[$id]={state:"connecting",error:nil,has_password:false} end
+  wire_pump()
   return {rc:0,body:{}}
+end
+fn wire_pump()
+  global $wire_waiting,$wire_running,$wire_pending
+  while len(keys($wire_running))<4 and len($wire_waiting)>0
+    $id=$wire_waiting[0];$job=$wire_pending[$id]
+    if not wire_current($job) then
+      $wire_waiting=slice($wire_waiting,1);$wire_pending=delete($wire_pending,$id)
+      if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"}}) end
+      continue
+    end
+    $path=path_join(dirname(script_path()),"wire-job.mix")
+    try
+      send "viu-local" "jobs.start" id=$id owner={id:$id} path=$path source=read_file($path) command="job.run" args={entry:$job.entry,command:$job.command,args:$job.args,session:$job.session,binding:$job.binding}
+      if $rc!=0 and $reply.error_code=="BUSY" then return end
+      $accepted=$rc==0
+    catch $failure
+      $accepted=false
+    end
+    $wire_waiting=slice($wire_waiting,1)
+    if $accepted then $wire_running[$id]=true
+    else
+      $wire_pending=delete($wire_pending,$id)
+      if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"SERVER",message:"Mail worker unavailable"}}) end
+    end
+  end
 end
 fn wire_accounts()
   $default=$mail_settings.default_account
@@ -55,7 +92,7 @@ fn wire_accounts()
   return map($entries,fn($e)=merge({id:$e.id,name:$e.label,url:$e.url,email:$e.user,ca_path:$e.ca_file,enabled:$e.enabled ?? true,signature:$e.signature ?? "",identities:$e.identities ?? [],default:$e.id==$default,has_password:false,state:if $e.enabled==false then "disabled" else "connecting" end,error:nil,session:nil,unread:0,migrating:false},$wire_views[$e.id] ?? {}))
 end
 fn wire_session($update)
-  global $entries,$active,$mail_settings,$wire_sessions,$wire_views,$connected
+  global $entries,$active,$mail_settings,$wire_sessions,$wire_views,$wire_data,$wire_generations,$connected,$box,$boxes,$rows,$total,$offset,$message,$mail_emails,$mail_selection,$mail_focus
   if $fixture then return end
   $state=$update.state
   if $state==nil then return end
@@ -70,6 +107,12 @@ fn wire_session($update)
   -- Gold keeps a nonempty cache when an authority temporarily advertises [].
   if len($next)==0 and len($entries)>0 and $update.confirmed!=true then $next=$entries end
   $old=$entries;$entries=$next
+  for $removed in $old
+    if not any($entries,fn($e)=$e.id==$removed.id) then
+      $wire_generations[$removed.id]=($wire_generations[$removed.id] ?? 0)+1
+      $wire_sessions=delete($wire_sessions,$removed.id);$wire_views=delete($wire_views,$removed.id);$wire_data=delete($wire_data,$removed.id)
+    end
+  end
   $mail_settings.default_account=$v["email.default_account"]
   for $pair in [["page_size",100],["mark_read_on_open",true],["confirm_delete",true],["quote_on_reply",true],["reply_position","above"]]
     $mail_settings[$pair[0]]=$v["email.mail."..$pair[0]] ?? $v["email.compose."..$pair[0]] ?? $pair[1]
@@ -82,7 +125,11 @@ fn wire_session($update)
     end
     $mail_settings[$surface]={padding:$v["email."..$surface..".padding"] ?? 8,light:$v["email."..$surface..".light"] ?? false,font:$font}
   end
-  if not any($entries,fn($e)=$e.id==$active) then $active=if len($entries)>0 then $entries[0].id else "" end end
+  if not any($entries,fn($e)=$e.id==$active) then
+    $active=if len($entries)>0 then $entries[0].id else "" end
+    $connected=false;$box="";$boxes=[];$rows=[];$mail_emails=[];$mail_selection=[];$mail_focus=nil;$total=0;$offset=0;$message=nil
+    if $active!="" then surface_account($active) end
+  end
   for $e in $entries
     $previous=filter($old,fn($a)=$a.id==$e.id)
     if len($previous)==0 or $previous[0].url!=$e.url or $previous[0].user!=$e.user or $previous[0].ca_file!=$e.ca_file or $previous[0].enabled!=$e.enabled then
@@ -93,20 +140,23 @@ fn wire_session($update)
   if $previous_page_size!=$mail_settings.page_size and $connected and $box!="" then wire_start("email.list",{mailbox:$box,limit:$mail_settings.page_size},nil,"list") end
 end
 fn wire_completed($d)
-  global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus,$reader_markdown,$reader_detected,$reader_auto
+  global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus,$reader_markdown,$reader_detected,$reader_auto,$wire_running
   $id=$d.tag.owner.id;$job=$wire_pending[$id]
-  if $job==nil then return end
+  if $job==nil then wire_pump();return end
   $wire_pending=delete($wire_pending,$id)
+  $wire_running=delete($wire_running,$id)
+  wire_pump()
   $entry=wire_entry($job.account)
   $answer=if $d.rc==0 then $d.body else {rc:10,body:{error_code:"SERVER",message:"Mail worker failed"}} end
-  if $job.purpose!="settings" and (not deep_eq($entry,$job.entry) or ($wire_generations[$job.account] ?? 0)!=$job.generation) then
+  if not wire_current($job) then
     if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"}}) end
     return
   end
   if $job.command=="email.open" and ($wire_open_targets[$job.account]!=$id or ($job.account==$active and $job.mailbox!=$box)) then
-    if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"SUPERSEDED",message:"Another email was opened before this one loaded"}}) end
+    if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"SUPERSEDED",message:"Another email was opened in the reader before this one loaded"}}) end
     return
   end
+  if contains(["list","refresh-list"],$job.purpose) and $wire_list_targets[$job.account]!=$id then return end
   if $answer.rc==0 and $answer.session!=nil then
     $wire_sessions[$job.account]=$answer.session
     $raw=$answer.session.raw
@@ -128,6 +178,9 @@ fn wire_completed($d)
         if $first!=nil then $wire_data[$job.account][if $kind=="calendars" then "calendar" else "book" end]=$first.id end
       end
     end
+    for $kind in ["events","contacts"]
+      if $job.purpose==$kind then $wire_data[$job.account][$kind]=$answer.body[$kind] end
+    end
   end
   if $job.command=="email.account.connect" then
     if $answer.rc!=0 then $wire_views[$job.account]={state:if $answer.body.error_code=="NO_PASSWORD" then "no_password" else "failed" end,error:if $answer.body.error_code=="NO_PASSWORD" then nil else $answer.body.message end,has_password:$answer.body.error_code!="NO_PASSWORD"} end
@@ -137,6 +190,10 @@ fn wire_completed($d)
       $connected=true;$account=$entry.label.." · "..$entry.user;$status="";$box="";$rows=[]
       $inbox=filter($boxes,fn($b)=$b.role=="inbox")
       if len($inbox)>0 then wire_start("email.list",{mailbox:$inbox[0].id,limit:$mail_settings.page_size},nil,"list") end
+    end
+    if $answer.rc==0 then
+      wire_start("email.calendars",{account:$job.account},nil,"parents")
+      wire_start("email.books",{account:$job.account},nil,"parents")
     end
     $answer.body={id:$job.account}
   elif $answer.rc==0 and contains(["list","refresh-list"],$job.purpose) and $job.account==$active then
@@ -160,7 +217,8 @@ fn wire_completed($d)
   end
   if $answer.rc==0 and $job.purpose=="settings" then
     if $answer.settings!=nil then wire_session({state:merge($answer.settings,{binding:$mail_settings.binding,lost:false}),confirmed:true}) end
-    if ($job.command=="email.account.password.set" or ($job.command=="email.account.set" and contains(keys($job.args),"password"))) and wire_entry($answer.body.id)!=nil then wire_start("email.account.connect",{id:$answer.body.id},nil,"connect") end
+    $changed_id=$answer.body.id ?? $job.args.id
+    if ($job.command=="email.account.password.set" or ($job.command=="email.account.set" and contains(keys($job.args),"password"))) and wire_entry($changed_id)!=nil then wire_start("email.account.connect",{id:$changed_id},nil,"connect") end
   end
   if $job.token!=nil then viu_reply("finish",$job.token,{rc:$answer.rc,body:$answer.body}) end
   if $answer.rc==0 and contains(["email.mark","email.move","email.junk","email.delete","email.mailbox.create","email.mailbox.rename","email.mailbox.delete"],$job.command) then
