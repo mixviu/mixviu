@@ -90,6 +90,7 @@ pub(crate) fn digest() -> mix::evaluator::ExtFn {
             return Err(fail());
         };
         let hash = match algorithm.as_str() {
+            "std64"=>{use std::hash::{Hash,Hasher};let mut hash=std::hash::DefaultHasher::new();text.hash(&mut hash);format!("{:016x}",hash.finish())},
             "fnv1a64"=>{
                 let mut hash=0xcbf29ce484222325_u64;
                 for byte in text.as_bytes(){hash^=u64::from(*byte);hash=hash.wrapping_mul(0x100000001b3);}
@@ -108,6 +109,23 @@ pub(crate) fn digest() -> mix::evaluator::ExtFn {
             _ => return Err(fail()),
         };
         Ok(Value::String(hash))
+    })
+}
+
+pub(crate) fn markdown_html()->mix::evaluator::ExtFn{
+    mix::sync_ext(|args|{
+        let [Value::String(text)]=args.as_slice() else{return Err(MixError::RuntimeError{msg:"viu_markdown_html expects text".into(),span:None});};
+        if text.len()>8*1024*1024{return Err(MixError::RuntimeError{msg:"Markdown export exceeds 8 MiB".into(),span:None});}
+        Ok(Value::String(toolkit::markdown::export_html(text)))
+    })
+}
+pub(crate) fn palette()->mix::evaluator::ExtFn{
+    mix::sync_ext(|args|{
+        let fail=||MixError::RuntimeError{msg:"viu_palette expects a scheme and mode".into(),span:None};
+        let [Value::String(scheme),Value::String(mode)]=args.as_slice() else{return Err(fail());};
+        let theme=toolkit::Theme::for_context(design::DesignContext{scheme:design::Scheme::from_name(scheme).ok_or_else(fail)?,mode:design::Mode::from_name(mode).ok_or_else(fail)?,..Default::default()});
+        let v=toolkit::style::visuals(&theme);let hex=|c:egui::Color32|format!("#{:02x}{:02x}{:02x}",c.r(),c.g(),c.b());
+        crate::runtime::from_json(serde_json::json!({"text":hex(v.text_color()),"weak":hex(v.weak_text_color()),"panel":hex(v.panel_fill),"link":hex(v.hyperlink_color),"code":hex(v.code_bg_color),"rule":hex(v.widgets.noninteractive.bg_stroke.color)}))
     })
 }
 

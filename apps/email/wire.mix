@@ -43,6 +43,11 @@ fn wire_schedule($command,$args,$event,$purpose)
     if contains(["email.list","email.search"],$command) then $args.limit=$args.limit ?? $mail_settings.page_size end
     if contains(["email.events","email.event.create"],$command) then $args.calendar=$args.calendar ?? ($wire_data[$id] ?? {}).calendar end
     if contains(["email.contacts","email.contact.create"],$command) then $args.book=$args.book ?? ($wire_data[$id] ?? {}).book end
+    if $command=="email.print" then
+      $args.id=$argument_policy.text($args,"id") ?? ($wire_data[$id] ?? {}).message.id
+      if $args.id==nil then return wire_refuse("NOT_FOUND","No email is open") end
+      $args.markdown=$id==$active and ($message ?? {}).id==$args.id and $reader_markdown
+    end
   end
   if len(keys($wire_pending))>=512 then return wire_refuse("BUSY","Too many requests pending") end
   if $command=="email.account.connect" then $wire_generations[$id]=($wire_generations[$id] ?? 0)+1;$wire_sessions=delete($wire_sessions,$id) end
@@ -256,6 +261,7 @@ fn wire_completed($d)
     if ($job.command=="email.account.password.set" or ($job.command=="email.account.set" and contains(keys($job.args),"password"))) and wire_entry($changed_id)!=nil then wire_start("email.account.connect",{id:$changed_id},nil,"connect") end
   end
   if $job.command=="email.account.migrate" then config_migrate_finish($answer) end
+  if $job.command=="email.print" and $answer.rc==0 then $status=if $answer.body.opened then "The print page is open in the browser: "..$answer.body.path else "No browser to print with: open "..$answer.body.path.." yourself" end end
   if $job.token!=nil then viu_reply("finish",$job.token,{rc:$answer.rc,body:$answer.body}) end
   if $answer.rc==0 and contains(["email.mark","email.move","email.junk","email.delete","email.mailbox.create","email.mailbox.rename","email.mailbox.delete"],$job.command) then
     wire_start("email.mailboxes",{account:$job.account},nil,"boxes")

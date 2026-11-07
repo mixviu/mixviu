@@ -2,7 +2,7 @@
 -- CBC only: format and test the reusable Email frame additions.
 $rc=0
 try
-  for $a in [["cargo","fmt","-p","viu"],["cargo","test","--locked","-p","viu","--lib","file_data::tests"],["cargo","test","--locked","-p","viu","--test","email_frame","--","--nocapture"],["cargo","test","--locked","-p","viu","--test","email_wire","--test","ports_round5"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
+  for $a in [["cargo","fmt","-p","viu","-p","toolkit"],["cargo","test","--locked","-p","toolkit","--lib","markdown::html"],["cargo","test","--locked","-p","viu","--lib","file_data::tests"],["cargo","test","--locked","-p","viu","--test","email_frame","--","--nocapture"],["cargo","test","--locked","-p","viu","--test","email_wire","--test","ports_round5"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
     $r=run_argv($a,{timeout:1800,max_output:16000000,env:{CARGO_BUILD_JOBS:"6",TMPDIR:"/dev/shm"}});print($r)
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
   end

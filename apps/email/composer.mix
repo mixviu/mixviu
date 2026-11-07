@@ -118,14 +118,16 @@ fn composer_close($key,$answer=nil)
 end
 fn composer_quit()
   global $compose_quitting,$chrome,$status
-  if any(values($composers),fn($c)=$c.busy) then return wire_refuse("BUSY","Sending…") end
+  $waiting=filter(keys($composers),fn($key)=$composers[$key].revision>0 or $composers[$key].restored==true or len($composers[$key].attachments)>0 or len(keys($composers[$key].attempt))>0)
+  $answer={rc:0,body:{quitting:len($waiting)==0,confirming:len($waiting)>0,windows:$waiting}}
   $compose_quitting=true
   for $key in keys($composers)
+    if $composers[$key].busy then return $answer end
     composer_close($key)
-    if $composers[$key]!=nil then return {rc:0,body:{quitting:false}} end
+    if $composers[$key]!=nil then return $answer end
   end
   if not $fixture then try config_save() catch $unsaved $status="Window settings not saved" end end
-  $chrome.window_close=true;return {rc:0,body:{quitting:true}}
+  $chrome.window_close=true;return $answer
 end
 fn composer_attachments($command,$a)
   global $composers
@@ -195,7 +197,7 @@ fn composer_intent($a)
         end
       end
     elif $a.action=="command" then
-      if $a.value=="attach" then $composers[$key].chooser=true
+      if $a.value=="attach" then return composer_run($key,"compose.attach","ui")
       elif $a.value=="identities" then composer_identity_open($key)
       elif contains(["show_cc","show_bcc","show_reply_to"],$a.value) then $composers[$key][$a.value]=not $c[$a.value] end
     elif $a.action=="picked" then $composers[$key].attachments=unique(concat($c.attachments,$a.value));$composers[$key].chooser=false
@@ -223,7 +225,7 @@ fn composer_command($key,$id)
   if contains(["compose.undo","compose.redo","compose.cut","compose.copy","compose.paste"],$id) then
     $composers[$key].edit_serial=($composers[$key].edit_serial ?? 0)+1;$composers[$key].edit_command=split($id,".")[1];return {rc:0,body:{executed:$id}}
   end
-  if starts_with($id,"view.") then return execute_email($id,"menu") end
+  if starts_with($id,"view.") then return apply_email($id,"menu") end
   if $id=="mail.send" then
     $c=$composers[$key]
     if $c==nil then return wire_refuse("NOT_FOUND","No compose is open") end
@@ -290,7 +292,15 @@ fn composer_sent($key,$answer)
   if $composers[$key]==nil then return end
   $composers[$key].busy=false;$composers[$key].attempt=$answer.attempt ?? $composers[$key].attempt
   if $answer.rc==0 then composer_close($key,"discard")
-  else $composers[$key].error=$answer.body.message;composer_save($key) end
+  else $composers[$key].error=$answer.body.message;composer_save($key);if $compose_quitting then composer_quit() end end
+end
+fn composer_run($key,$id,$origin)
+  $r=composer_command($key,$id)
+  if $r.rc==0 then
+    send "viu-local" "native.executed" body={id:$id,origin:$origin,params:nil,result:nil}
+    publish_email();$r.body={executed:$id}
+  end
+  return $r
 end
 fn composer_document_start($key,$operation,$a)
   $c=$composers[$key]

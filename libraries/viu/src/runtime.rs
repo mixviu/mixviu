@@ -217,6 +217,8 @@ impl Runtime {
                         eval.register("viu_editor_write",crate::native_primitives::editor_write());
                         eval.register("viu_digest",crate::native_primitives::digest());
                         eval.register("viu_markdown_detect",crate::native_primitives::markdown_detect());
+                        eval.register("viu_markdown_html",crate::native_primitives::markdown_html());
+                        eval.register("viu_palette",crate::native_primitives::palette());
                         eval.register("viu_instants",crate::native_primitives::instants());
                         eval.register("viu_action_event",crate::native_primitives::action_event());
                         eval.register("viu_files",crate::file_data::binding());

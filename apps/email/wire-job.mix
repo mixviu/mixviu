@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
-$arg=require("arguments.mix");$protocol=require("protocol.mix");$accounts=require("accounts.mix");$pim=require("pim.mix");$attachments=require("attachments.mix");$sending=require("sending.mix");$suggest=require("suggest.mix")
+$arg=require("arguments.mix");$protocol=require("protocol.mix");$accounts=require("accounts.mix");$pim=require("pim.mix");$attachments=require("attachments.mix");$sending=require("sending.mix");$suggest=require("suggest.mix");$printing=require("printing.mix")
 on job.run
   $a=$event.args
   try
@@ -23,6 +23,7 @@ on job.run
       else $p.mailbox=$arg.required($p,"mailbox") end
       $answer=$protocol.list($e,$s,$p)
     elif contains(["email.get","email.open","email.reply","email.forward"],$command) then $answer=$protocol.get($e,$s,$p.id)
+    elif $command=="email.print" then $answer=$printing.execute($protocol.get($e,$s,$p.id),$p.markdown ?? false)
     elif $command=="email.contacts.suggest" then $answer=$suggest.contacts($e,$s,$p)
     elif $command=="email.attachments" then
       $email=$protocol.get($e,$s,$p.id);$answer={id:$email.id,attachments:$attachments.metadata($email)}

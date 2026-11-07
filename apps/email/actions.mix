@@ -11,11 +11,13 @@ fn registry($s)
     if starts_with($a.id,"view.theme.") or starts_with($a.id,"view.mode") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.") then $a.enabled=true end
     if $a.id=="help.macros" then $a.enabled=$s.macros_open or $s.dialog==nil end
     if $a.id=="mail.compose" then $a.enabled=$s.connected and $s.dialog==nil end
+    if $a.id=="compose.new" then $a.enabled=($s.accounts ?? 0)>0 and $s.dialog==nil end
     if contains(["mail.flag","mail.mark_unread"],$a.id) then $a.enabled=$s.targeted==true and $s.dialog==nil end
     if contains(["mail.delete","mail.move","mail.junk","mail.not_junk"],$a.id) then $a.enabled=$s.targeted==true and $s.dialog==nil and $s.form==nil end
     if $a.id=="calendar.new_event" then $a.enabled=$s.connected and ($s.calendars ?? 0)>0 and $s.dialog==nil and $s.form==nil end
     if $a.id=="contacts.new_contact" then $a.enabled=$s.connected and ($s.books ?? 0)>0 and $s.dialog==nil and $s.form==nil end
     if starts_with($a.id,"mail.reply") or $a.id=="mail.forward" then $a.enabled=$s.reading==true and $s.dialog==nil end
+    if $a.id=="mail.print" then $a.enabled=$s.reading==true and $s.dialog==nil end
     if contains(["view.next_account","view.previous_account"],$a.id) then $a.enabled=($s.accounts ?? 0)>1 and $s.dialog==nil end
     if $a.id=="view.reader.markdown" then $a.enabled=$s.reading==true and $s.dialog==nil;$a.checked=$s.markdown==true end
     if $a.id=="view.attachments_inline" then $a.checked=$s.attachments_inline!=false end

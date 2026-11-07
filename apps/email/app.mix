@@ -173,6 +173,14 @@ on email.intent
 end
 
 fn execute_email($id,$origin)
+  $r=apply_email($id,$origin)
+  if $r.rc==0 then
+    send "viu-local" "native.executed" body={id:$id,origin:$origin,params:nil,result:nil}
+    publish_email();$r.body={executed:$id}
+  end
+  return $r
+end
+fn apply_email($id,$origin)
   global $chrome,$view,$serial,$busy,$pending,$status,$reader_markdown,$reader_auto,$attachments_inline
   $s=action_context()
   $found=filter($actions.registry($s),fn($a)=$a.id==$id)
@@ -192,10 +200,11 @@ fn execute_email($id,$origin)
   elif $id=="help.macros" then $chrome.macros_open=not $chrome.macros_open
   elif $id=="view.search" then
     $chrome.search=true;$chrome.search_serial=($chrome.search_serial ?? 0)+1
-  elif $id=="mail.compose" then
+  elif $id=="mail.compose" or $id=="compose.new" then
     if not $fixture then $opened=composer_open({});publish_email();return $opened else $view="Compose" end
   elif $id=="calendar.new_event" then $out=form_open("event");publish_email();return $out
   elif $id=="contacts.new_contact" then $out=form_open("contact");publish_email();return $out
+  elif $id=="mail.print" then return wire_start("email.print",{},nil,"print")
   elif $id=="mail.delete" then $out=form_open("delete");publish_email();return $out
   elif $id=="mail.move" then $out=form_open("move");publish_email();return $out
   elif contains(["mail.junk","mail.not_junk"],$id) then
@@ -228,7 +237,6 @@ fn execute_email($id,$origin)
     $out=theme_email($edit)
     if $out.rc!=0 then return $out end
   else return {rc:10,body:{error_code:"DISABLED",message:"That command cannot run now"}} end
-  send "viu-local" "native.executed" body={id:$id,origin:$origin,params:nil,result:nil}
   publish_email()
   return {rc:0,body:{executed:$id}}
 end
@@ -246,10 +254,10 @@ on email.actions
   reply(0,json_encode({actions:$actions.registry(action_context())}))
 end
 on email.execute
-  if $event.args.window!=nil or (starts_with($event.args.id ?? "","compose.") and $composers[$compose_focused]!=nil) or ($event.args.id=="mail.send" and $composers[$compose_focused]!=nil) then
+  if $event.args.id!="compose.new" and ($event.args.window!=nil or (starts_with($event.args.id ?? "","compose.") and $composers[$compose_focused]!=nil) or ($event.args.id=="mail.send" and $composers[$compose_focused]!=nil)) then
     $window=$event.args.window ?? $compose_focused
     if $composers[$window]==nil then reply(10,json_encode({error_code:"NOT_FOUND",message:"No compose is open"}));return end
-    $out=composer_command($window,$event.args.id);publish_email();reply($out.rc,json_encode($out.body));return
+    $out=composer_run($window,$event.args.id,"bus");publish_email();reply($out.rc,json_encode($out.body));return
   end
   $out=execute_email($event.args.id,"bus");reply($out.rc,json_encode($out.body))
 end
@@ -267,7 +275,7 @@ on viu.keymap.changed
   if $rc==0 then $chrome.bindings=$reply.bindings;publish_email() end
 end
 on viu.frame.intent
-  if $event.args.window!=nil then $out=composer_command($event.args.window,$event.args.value.command);publish_email();reply($out.rc,json_encode($out.body));return end
+  if $event.args.window!=nil then $out=composer_run($event.args.window,$event.args.value.command,$event.args.value.origin ?? "menu");publish_email();reply($out.rc,json_encode($out.body));return end
   $out=execute_email($event.args.value.command,$event.args.value.origin ?? "menu")
   reply($out.rc,json_encode($out.body))
 end
@@ -326,6 +334,7 @@ on viu.frame.close
   composer_quit();publish_email()
 end
 on email.quit
+  send "viu-local" "native.executed" body={id:"file.quit",origin:"bus",params:nil,result:nil}
   $out=composer_quit();publish_email();reply($out.rc,json_encode($out.body))
 end
 on email.dialog
@@ -527,4 +536,7 @@ end
 
 on email.contacts.suggest
   $r=wire_start("email.contacts.suggest",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.print
+  $r=wire_start("email.print",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
