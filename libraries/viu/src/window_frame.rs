@@ -70,7 +70,10 @@ impl WindowFrame {
     /// Match a viewport created with decorations disabled, without issuing a
     /// redundant native decoration transition on its first frame.
     pub fn undecorated() -> Self {
-        Self { server: Some(false), ..Default::default() }
+        Self {
+            server: Some(false),
+            ..Default::default()
+        }
     }
     /// Describe the controls actually drawn by this adapter. Requested hosted
     /// actions remain in the application row until native hosting is wired.
