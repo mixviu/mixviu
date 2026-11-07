@@ -811,7 +811,11 @@ impl Host {
                                 .as_deref()
                                 .is_some_and(|id| a.iter().any(|v| v == id))
                         });
-                        if (self.view.text_input_active() || ui.ctx().memory(|m| m.focused().is_some())) && !editor_focus && !allowed {
+                        if (self.view.text_input_active()
+                            || ui.ctx().memory(|m| m.focused().is_some()))
+                            && !editor_focus
+                            && !allowed
+                        {
                             continue;
                         }
                         if binding["enabled"] == false {
