@@ -1711,3 +1711,11 @@ Seven new primitive regressions cover matching/latched release and clamping, thr
 Next CBC term-pointer-order-0bffd1a7 at exact code above, term_gate --prepare. Read full saved log, fix failures, apply fmt/lock and repeat exact source. Then fetch verified artifact and drive native primary middle-paste, drag/word/line/copy-on-select/reporting/cancellation and matched captures against gold. Full input/IME/search/Prefs, Bus/topics/errors/enforcement/conformance and release acceptance remain open, including matched long-idle grant-pool behaviour noted above. NOT ACCEPTED. No Fable deviation, install or gold/desktop changes.
 
 branch: lab/parity-term; head SHA: 0bffd1a7b7e486e94bf77cca8c90a4a20fbe0689 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — ordered pointer gate/native mouse captures and remaining full parity/release acceptance open; CBC job ids: term-osc52-exact-c1afd701-a1 (green exact; native repeat passed), term-pointer-order-0bffd1a7 (next await).
+
+### Pointer gate compile repair
+
+CBC term-pointer-order-0bffd1a7-a1 failed before tests with E0027: the new MouseWheel match omitted egui phase/source fields. Read the complete 71956-byte saved log in four chunks and applied its formatting patch. Code dd61895fb832f36b39769134f371da7072e00673 ignores those fields in the match and explicitly supplies Move/Unknown in the wheel regression fixture. No behaviour assertion was weakened. Seven Mix suites passed before the compile failure; the new pointer and ordered-focus tests have not run yet.
+
+Next CBC term-pointer-fields-dd61895f runs term_gate --prepare on that exact code. Read its full saved log, repair any failures and apply returned diffs before an exact-source repeat. Native pointer/selection captures, remaining full functional/Bus/Prefs/conformance checks and the release visual gate remain open. NOT ACCEPTED; gold and desks remain untouched.
+
+branch: lab/parity-term; head SHA: dd61895fb832f36b39769134f371da7072e00673 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — pointer compile repair gate and native mouse proof pending, remaining full parity/release acceptance open; CBC job ids: term-pointer-order-0bffd1a7-a1 (E0027; full log read; fmt applied), term-pointer-fields-dd61895f (next await).
