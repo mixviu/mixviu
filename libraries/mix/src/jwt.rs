@@ -81,9 +81,15 @@ pub(crate) fn sign_rs256(
         let item = from_buf(&mut pem_cursor)
             .map_err(|_| MixError::structured("JWT_KEY_INVALID", "Failed to read PEM"))?
             .ok_or_else(|| MixError::structured("JWT_KEY_INVALID", "No PEM item found"))?;
-        if matches!(item.0,
-            SectionKind::Certificate | SectionKind::PublicKey | SectionKind::RsaPrivateKey
-            | SectionKind::PrivateKey | SectionKind::EcPrivateKey | SectionKind::Crl | SectionKind::Csr
+        if matches!(
+            item.0,
+            SectionKind::Certificate
+                | SectionKind::PublicKey
+                | SectionKind::RsaPrivateKey
+                | SectionKind::PrivateKey
+                | SectionKind::EcPrivateKey
+                | SectionKind::Crl
+                | SectionKind::Csr
         ) {
             break item;
         }
