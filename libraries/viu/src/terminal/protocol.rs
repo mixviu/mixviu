@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 /// Broker provenance is required even when no Unix principal was delivered.
-fn stamped(command: &::bus::native_client::IncomingCommand) -> bool {
+pub(crate) fn stamped(command: &::bus::native_client::IncomingCommand) -> bool {
     let origins: Vec<_> = command
         .headers
         .iter()
@@ -27,7 +27,7 @@ fn stamped(command: &::bus::native_client::IncomingCommand) -> bool {
 
 /// Replay namespace, never an admission decision. Mesh ingress has no Unix
 /// principal, so use the broker's delivered peer and sender instead.
-fn caller_key(event: &VerifiedCommand) -> String {
+pub(crate) fn caller_key(event: &VerifiedCommand) -> String {
     if let Some(actor) = event.trusted_context() {
         return match &actor.session {
             Some(session) => format!(
@@ -49,7 +49,7 @@ fn caller_key(event: &VerifiedCommand) -> String {
     )
 }
 
-fn caller_epoch(event: &VerifiedCommand, broker_epoch: HexBytes<16>) -> HexBytes<16> {
+pub(crate) fn caller_epoch(event: &VerifiedCommand, broker_epoch: HexBytes<16>) -> HexBytes<16> {
     if let Some(actor) = event.trusted_context() {
         return actor.connection_id;
     }
@@ -58,7 +58,7 @@ fn caller_epoch(event: &VerifiedCommand, broker_epoch: HexBytes<16>) -> HexBytes
     HexBytes(digest[..16].try_into().expect("SHA-256 prefix"))
 }
 
-fn caller_label(event: &VerifiedCommand) -> String {
+pub(crate) fn caller_label(event: &VerifiedCommand) -> String {
     event
         .trusted_context()
         .map(principal_label)
@@ -259,7 +259,11 @@ impl Request {
                 Ok("term.pane.select")
             }
             ("term.props.set", Some("input")) => {
-                self.text = self.value.as_ref().and_then(Value::as_str).map(str::to_owned);
+                self.text = self
+                    .value
+                    .as_ref()
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
                 Ok("term.type")
             }
             _ if !command.starts_with("term.props.") => Ok(command),
@@ -304,7 +308,7 @@ struct Failure {
     pub details: Option<Value>,
 }
 impl Reply {
-    fn ok(value: Value) -> Self {
+    pub(crate) fn ok(value: Value) -> Self {
         Self {
             rc: 0,
             body: value.to_string(),
@@ -639,8 +643,14 @@ mod request_tests {
         let spaced = serde_json::to_string_pretty(&body()).unwrap();
         assert!(Request::decode(&plain).is_ok());
         assert!(Request::decode(&spaced).is_ok());
-        assert_ne!(request_digest("term.type", &plain), request_digest("term.type", &spaced));
-        assert_ne!(request_digest("term.type", &plain), request_digest("term.snapshot", &plain));
+        assert_ne!(
+            request_digest("term.type", &plain),
+            request_digest("term.type", &spaced)
+        );
+        assert_ne!(
+            request_digest("term.type", &plain),
+            request_digest("term.snapshot", &plain)
+        );
     }
 
     #[test]
@@ -648,7 +658,10 @@ mod request_tests {
         let mut value = body();
         value["property"] = json!("contents");
         let mut request = Request::decode(&value.to_string()).ok().unwrap();
-        assert_eq!(request.operation("term.props.get").ok(), Some("term.snapshot"));
+        assert_eq!(
+            request.operation("term.props.get").ok(),
+            Some("term.snapshot")
+        );
         assert!(request.contents);
         value["property"] = json!("input");
         value["value"] = json!("hello");
@@ -665,16 +678,28 @@ mod request_tests {
 
     #[test]
     fn child_failures_keep_recovery_details_but_denials_are_uniform() {
-        let answer = shell_refusal(r#"{"error_code":"BUSY","operation_id":"18446744073709551615","reason":"running"}"#, true);
+        let answer = shell_refusal(
+            r#"{"error_code":"BUSY","operation_id":"18446744073709551615","reason":"running"}"#,
+            true,
+        );
         let value: Value = serde_json::from_str(&answer.body).unwrap();
         assert_eq!(value["details"]["operation_id"], u64::MAX.to_string());
         for code in ["FORBIDDEN", "UNSUPPORTED", "REFUSED"] {
-            let reply = shell_refusal(&json!({"error_code":code,"secret":"must not relay"}).to_string(), true);
+            let reply = shell_refusal(
+                &json!({"error_code":code,"secret":"must not relay"}).to_string(),
+                true,
+            );
             let value: Value = serde_json::from_str(&reply.body).unwrap();
             assert!(value.get("details").is_none());
             assert!(!reply.body.contains("secret"));
         }
-        assert_eq!(serde_json::from_str::<Value>(&shell_refusal("not json", true).body).unwrap()["error_code"], "UNKNOWN_OUTCOME");
-        assert_eq!(serde_json::from_str::<Value>(&shell_refusal("not json", false).body).unwrap()["error_code"], "DISCONNECTED");
+        assert_eq!(
+            serde_json::from_str::<Value>(&shell_refusal("not json", true).body).unwrap()["error_code"],
+            "UNKNOWN_OUTCOME"
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&shell_refusal("not json", false).body).unwrap()["error_code"],
+            "DISCONNECTED"
+        );
     }
 }

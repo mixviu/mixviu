@@ -2,6 +2,7 @@
 //! Reusable native terminal facilities. Mix owns application composition.
 //! Session descriptor wire constants are retained for the existing Mix login
 //! bootstrap; importing them does not grant authority to an unverified child.
+mod admission;
 mod blink;
 mod clusters;
 pub mod config;
@@ -12,8 +13,8 @@ pub mod ime;
 pub mod input;
 pub mod metrics;
 pub mod model;
-pub mod protocol;
 pub mod native_session;
+pub mod protocol;
 pub mod raster;
 pub mod session_actor;
 pub mod session_fd;
