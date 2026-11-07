@@ -115,7 +115,7 @@ fn scheme($p, $hint)
 end
 
 fn scheme_name($mode)
-  return if $mode == "light" then "MixViu-Light" else "MixViu-Dark" end
+  return if $mode == "light" then "MixOS-Light" else "MixOS-Dark" end
 end
 
 -- A whole .colors file for one mode.
@@ -225,7 +225,7 @@ fn plan($v, $pal, $fonts, $icons)
   return {
     mode: $mode,
     files: {kdeglobals: $globals, kwinrc: $kwin},
-    schemes: {"MixViu-Dark": scheme_file($pal.dark, $hint), "MixViu-Light": scheme_file($pal.light, $hint)},
+    schemes: {"MixOS-Dark": scheme_file($pal.dark, $hint), "MixOS-Light": scheme_file($pal.light, $hint)},
     panels: panel_edges($v),
     notes: $notes
   }

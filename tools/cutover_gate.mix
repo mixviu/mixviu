@@ -68,7 +68,11 @@ if $mode == "mixtest" then
   if not $b.ok then exit(1) end
   $bad = 0
   for $f in slice(args(), 1)
-    $r = gate_step(["target/debug/mix", $f], "6")
+    print("STEP_BEGIN " .. $f)
+    $r = run_argv(["target/debug/mix", $f], {timeout: 1800, max_output: 64000000, env: {MIX_TEST_MIX_EXE: realpath("target/debug/mix")}})
+    print($r.stdout)
+    print($r.stderr)
+    print("STEP_RC=" .. to_string($r.exit_code ?? 124) .. " " .. $f)
     if not $r.ok then $bad = $bad + 1 end
   end
   print("MIXTEST_FAILED " .. to_string($bad))

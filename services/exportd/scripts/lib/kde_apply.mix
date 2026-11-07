@@ -298,7 +298,7 @@ end
 -- unreachable session bus is made good on the next run.
 fn apply($ctx, $plan, $dry)
   $list = changes($ctx, $plan)
-  -- The [MixViu] stamp alone is no reason to write (or to wake Plasma).
+  -- The [MixOS] stamp alone is no reason to write (or to wake Plasma).
   if len(filter($list, fn($c) = $c.group != "MixOS")) == 0 then $list = [] end
   $schemes = scheme_changes($ctx, $plan)
   $report = {changed: len($list), keys: map($list, fn($c) = $c.file .. " [" .. $c.group .. "] " .. $c.key .. "=" .. $c.new),

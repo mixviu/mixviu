@@ -168,7 +168,7 @@ for $bad in [["--user", "emit", "org.kde.KGlobalSettings", "/KGlobalSettings", "
   check("busctl double rejects shifted or short argv", run_argv(concat($BUSCTL, $bad)).exit_code == 2)
 end
 $kg = $p.files.kdeglobals
-check("dark scheme name", $kg.General.ColorScheme == "MixViu-Dark")
+check("dark scheme name", $kg.General.ColorScheme == "MixOS-Dark")
 check("accent", $kg.General.AccentColor == "53,132,228" and $kg["Colors:Selection"].BackgroundNormal == "53,132,228")
 check("window colours from chrome", $kg["Colors:Window"].BackgroundNormal == "3,3,3")
 check("inactive header text is text_dim", $kg["Colors:Header][Inactive"].ForegroundNormal == "131,131,131" and $kg["Colors:Header"].ForegroundNormal == "238,238,238")
@@ -181,7 +181,7 @@ check("motion normal", $kg.KDE.AnimationDurationFactor == "1")
 $deco = $p.files.kwinrc["org.kde.kdecoration2"]
 check("buttons right", $deco.ButtonsOnRight == "IAX" and $deco.ButtonsOnLeft == "M")
 check("the decoration plugin is never written", $deco.library == nil and $deco.theme == nil)
-check("both scheme files", contains($p.schemes["MixViu-Light"], "ColorScheme=MixViu-Light") and contains($p.schemes["MixViu-Dark"], "[Colors:Header][Inactive]"))
+check("both scheme files", contains($p.schemes["MixOS-Light"], "ColorScheme=MixOS-Light") and contains($p.schemes["MixOS-Dark"], "[Colors:Header][Inactive]"))
 check("panels follow each enabled panel's gap", deep_eq($p.panels, {bottom: false}))
 $v = sample_values("light")
 $v["appearance.mode"] = "auto"
@@ -194,7 +194,7 @@ $v["window.hint_colour"] = "#102030"
 $v["appearance.icon_theme"] = "missing-theme"
 $v["accessibility.reduced_motion"] = true
 $p2 = $map.plan($v, palette("#3584E4FF"), $fonts, ["breeze", "breeze-dark"])
-check("auto writes the resolved mode", $p2.files.kdeglobals.General.ColorScheme == "MixViu-Light")
+check("auto writes the resolved mode", $p2.files.kdeglobals.General.ColorScheme == "MixOS-Light")
 check("buttons left", $p2.files.kwinrc["org.kde.kdecoration2"].ButtonsOnLeft == "XI" and $p2.files.kwinrc["org.kde.kdecoration2"].ButtonsOnRight == "")
 check("compact borders", $p2.files.kwinrc["org.kde.kdecoration2"].BorderSize == "Tiny")
 check("gap floats the panel on its edge", deep_eq($p2.panels, {bottom: true, top: true}))
@@ -236,20 +236,20 @@ try
   $seed = "[General]\nColorScheme=BreezeDark\nXftAntialias=true\nfont[$i]=Locked,9\n\n[KDE]\nLookAndFeelPackage=org.kde.breezedark.desktop\n"
   write_file($ctx.config_home .. "/kdeglobals", $seed)
   write_file($ctx.config_home .. "/kwinrc", "[org.kde.kdecoration2]\nlibrary=org.kde.klassy\ntheme=Klassy\n")
-  write_file($ctx.data_home .. "/color-schemes/MixViu-Dark.colors", "user's own bytes\n")
+  write_file($ctx.data_home .. "/color-schemes/MixOS-Dark.colors", "user's own bytes\n")
   $r = $app.apply($ctx, $p, true)
   check("dry run reports without writing", $r.changed > 100 and read_file($ctx.config_home .. "/kdeglobals") == $seed and not is_file($ctx.state_dir .. "/undo.json"))
   $r = $app.apply($ctx, $p, false)
   $after = $kc.read_groups($ctx.config_home .. "/kdeglobals")
-  check("scheme written into kdeglobals", $kc.lookup($after, "General", "ColorScheme") == "MixViu-Dark"
+  check("scheme written into kdeglobals", $kc.lookup($after, "General", "ColorScheme") == "MixOS-Dark"
     and $kc.lookup($after, "Colors:Header][Inactive", "BackgroundNormal") == "3,3,3")
   check("foreign and suffixed keys untouched", $kc.lookup($after, "General", "XftAntialias") == "true"
     and $kc.lookup($after, "General", "font[$i]") == "Locked,9" and $kc.lookup($after, "KDE", "LookAndFeelPackage") == "org.kde.breezedark.desktop")
   $kwin = $kc.read_groups($ctx.config_home .. "/kwinrc")
   check("kwinrc buttons written, decoration plugin kept", $kc.lookup($kwin, "org.kde.kdecoration2", "ButtonsOnRight") == "IAX"
     and $kc.lookup($kwin, "org.kde.kdecoration2", "library") == "org.kde.klassy")
-  check("scheme files written", read_file($ctx.data_home .. "/color-schemes/MixViu-Dark.colors") == $p.schemes["MixViu-Dark"]
-    and is_file($ctx.data_home .. "/color-schemes/MixViu-Light.colors"))
+  check("scheme files written", read_file($ctx.data_home .. "/color-schemes/MixOS-Dark.colors") == $p.schemes["MixOS-Dark"]
+    and is_file($ctx.data_home .. "/color-schemes/MixOS-Light.colors"))
   $notified = map(lines_of($kwlog), fn($l) = json_parse($l))
   check("an immutable key is skipped and named", $kc.lookup($after, "General", "font") == nil and contains($r.notes, "immutable: kdeglobals|General|font"))
   check("each watched key went through kwriteconfig6 --notify", len(filter($notified, fn($n) = $n.key == "menuFont" and $n.notify)) == 1
@@ -259,7 +259,7 @@ try
   $calls = len(lines_of($buslog))
   check("second run writes nothing and calls nothing", $app.apply($ctx, $p, false).changed == 0 and len(lines_of($buslog)) == $calls)
   $stamp = $p
-  $stamp.files.kdeglobals.MixViu.Revision = "8"
+  $stamp.files.kdeglobals.MixOS.Revision = "8"
   check("a new revision alone writes nothing", $app.apply($ctx, $stamp, false).changed == 0)
   -- A mode flip writes exactly the keys whose values differ between the plans.
   $expected = 0
@@ -274,10 +274,10 @@ try
   $r = $app.apply($ctx, $p2, false)
   if $r.changed != $expected then print("changed " .. to_string($r.changed) .. " expected " .. to_string($expected)) end
   check("a mode flip writes exactly the difference", $r.changed == $expected)
-  check("light now", scheme_now($ctx.config_home .. "/kdeglobals") == "MixViu-Light")
+  check("light now", scheme_now($ctx.config_home .. "/kdeglobals") == "MixOS-Light")
   check("panel floats again", panel_floating($panels, 1) == true)
   $u = $app.undo($ctx)
-  check("undo puts back the previous burst", $u.restored == $r.changed and scheme_now($ctx.config_home .. "/kdeglobals") == "MixViu-Dark")
+  check("undo puts back the previous burst", $u.restored == $r.changed and scheme_now($ctx.config_home .. "/kdeglobals") == "MixOS-Dark")
   check("undo puts the panel back", panel_floating($panels, 1) == false)
 
   -- 4. A concurrent KConfig writer during bursts loses nothing.
@@ -293,7 +293,7 @@ try
   end
   $foreign = $kc.read_groups($ctx.config_home .. "/kdeglobals")["Foreign"] ?? {}
   check("all 40 concurrent foreign writes survived the bursts", len(keys($foreign)) == 40 and $foreign.k39 == "39")
-  check("and the bursts landed too", scheme_now($ctx.config_home .. "/kdeglobals") == "MixViu-Dark")
+  check("and the bursts landed too", scheme_now($ctx.config_home .. "/kdeglobals") == "MixOS-Dark")
 
   -- 5. The dirty marker: an unreachable bus is made good on the next run.
   write_file($busdown, "")
@@ -317,8 +317,8 @@ try
     and $kc.lookup($back, "General", "AccentColor") == nil and $kc.lookup($back, "General", "font[$i]") == "Locked,9")
   check("restore leaves no empty owned groups", $back["Colors:View"] == nil and $back["MixOS"] == nil and $back["WM"] == nil)
   check("restore keeps foreign writes", len(keys($back["Foreign"] ?? {})) == 40)
-  check("restore gives a user's scheme file its bytes back", read_file($ctx.data_home .. "/color-schemes/MixViu-Dark.colors") == "user's own bytes\n")
-  check("restore removes the scheme file it created", not is_file($ctx.data_home .. "/color-schemes/MixViu-Light.colors"))
+  check("restore gives a user's scheme file its bytes back", read_file($ctx.data_home .. "/color-schemes/MixOS-Dark.colors") == "user's own bytes\n")
+  check("restore removes the scheme file it created", not is_file($ctx.data_home .. "/color-schemes/MixOS-Light.colors"))
   check("restore puts back the panels", panel_floating($panels, 1) == true)
 
   -- 7. The real KDE tools, where installed.
@@ -358,7 +358,7 @@ try
   $script = realpath($here .. "/../scripts/kde.mix")
   $citizen = spawn([$mix, "--serve", $script, "--name", "exportd-kde"], {detach: true, env: $kenv, stdout: {file: $tmp .. "/kde.log"}, stderr: "stdout"})
   push($procs, $citizen)
-  check("reconciles at start", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixViu-Dark"))
+  check("reconciles at start", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixOS-Dark"))
   check("citizen ready", eventually(fn() = call("exportd-kde", "exportd.kde.status", {}).rc == 0))
   sleep(1.5)
   $c = call("authority", "fake.calls", {}).v
@@ -384,20 +384,20 @@ try
   authority($fake, "light", true, "12", "#3584E4FF")
   call("settingsd", "fake.publish", {prefix: "appearance"})
   call("settingsd", "fake.publish", {prefix: "accessibility"})
-  check("follows a mode flip", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixViu-Light"))
+  check("follows a mode flip", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixOS-Light"))
   sleep(1)
   $c = call("authority", "fake.calls", {}).v
   check("two topics of one revision reconcile once", $c.get == 3 and $c.palette == 3)
   authority($fake, "dark", true, "13", "#AABBCCFF")
   call("authority", "fake.skew", {count: -1})
   call("settingsd", "fake.publish", {prefix: "appearance"})
-  check("mixed revisions are refused before writes", eventually(fn() = call("exportd-kde", "exportd.kde.status", {}).v.error.code == "MOVED") and scheme_now($live .. "/config/kdeglobals") == "MixViu-Light")
+  check("mixed revisions are refused before writes", eventually(fn() = call("exportd-kde", "exportd.kde.status", {}).v.error.code == "MOVED") and scheme_now($live .. "/config/kdeglobals") == "MixOS-Light")
   call("authority", "fake.skew", {count: 1})
   call("settingsd", "fake.publish", {prefix: "appearance"})
-  check("a moving palette is retried and then adopted", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixViu-Dark"))
+  check("a moving palette is retried and then adopted", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixOS-Dark"))
   authority($fake, "light", true, "14", "#3584E4FF")
   call("settingsd", "fake.publish", {prefix: "appearance"})
-  check("mode restored for restart test", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixViu-Light"))
+  check("mode restored for restart test", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixOS-Light"))
   -- A restart between the write and the restore.
   $k = kill($citizen, 15)
   check("citizen stopped", eventually(fn() = not process_alive($citizen)))
@@ -406,17 +406,17 @@ try
   check("restarted citizen ready", eventually(fn() = call("exportd-kde", "exportd.kde.status", {}).rc == 0))
   $rs = call("exportd-kde", "exportd.kde.restore", {})
   check("restore after a restart", $rs.rc == 0 and $rs.v.paused == true and $rs.v.restored > 100
-    and not is_file($live .. "/data/color-schemes/MixViu-Light.colors") and scheme_now($live .. "/config/kdeglobals") == nil)
+    and not is_file($live .. "/data/color-schemes/MixOS-Light.colors") and scheme_now($live .. "/config/kdeglobals") == nil)
   authority($fake, "dark", true, "15", "#3584E4FF")
   call("settingsd", "fake.publish", {prefix: "appearance"})
   sleep(1.5)
   check("paused: a new revision writes nothing", scheme_now($live .. "/config/kdeglobals") == nil)
   $rc = call("exportd-kde", "exportd.kde.reconcile", {})
-  check("reconcile clears the pause and writes", $rc.v.paused == false and scheme_now($live .. "/config/kdeglobals") == "MixViu-Dark")
+  check("reconcile clears the pause and writes", $rc.v.paused == false and scheme_now($live .. "/config/kdeglobals") == "MixOS-Dark")
   authority($fake, "light", false, "16", "#3584E4FF")
   call("settingsd", "fake.publish", {prefix: "appearance"})
   check("status reports the gate", eventually(fn() = call("exportd-kde", "exportd.kde.status", {}).v.gated == true))
-  check("export_desktop false stops writing", scheme_now($live .. "/config/kdeglobals") == "MixViu-Dark")
+  check("export_desktop false stops writing", scheme_now($live .. "/config/kdeglobals") == "MixOS-Dark")
 finally
   for $pid in $procs
     try
