@@ -87,7 +87,10 @@ fn settings_authority_loss_keeps_the_accepted_palette_and_geometry() {
     snapshot["state"]["values"]["appearance.mode"] = json!("dark");
     let (recovered, _) = viu::appearance::session_base(&snapshot, "backdrop", &file, &ui).unwrap();
     viu::appearance::install_theme(&ctx, &recovered).unwrap();
-    assert_ne!(before.visuals.panel_fill, ctx.global_style().visuals.panel_fill);
+    assert_ne!(
+        before.visuals.panel_fill,
+        ctx.global_style().visuals.panel_fill
+    );
 }
 #[test]
 fn shared_design_applies_session_density_roundness_and_text_scale_once() {
