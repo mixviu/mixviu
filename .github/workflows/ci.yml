@@ -1,0 +1,109 @@
+# CI for mixviu. The gate recipe lives in tools/ci.mix (run by the mix built
+# from this tree), so agents run the identical gate on CBC before a PR.
+# The required check is `ci-ok`. Changes here are Tier 2 (CODEOWNERS).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE-*'
+
+  fmt:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: cargo fmt --all -- --check
+
+  lint:
+    name: mix lint + viud egui-free
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: mix
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --locked -p mix --bin mix
+      - run: target/debug/mix tools/ci.mix viud
+      - run: target/debug/mix tools/ci.mix mix-lint
+
+  test:
+    name: clippy + test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config clang libudev-dev libinput-dev libgbm-dev libseat-dev libxkbcommon-dev libwayland-dev libdrm-dev libegl-dev libgles-dev libegl1-mesa-dev libpixman-1-dev libsystemd-dev libdbus-1-dev libfontconfig-dev libfreetype-dev libpipewire-0.3-dev libasound2-dev libxcb1-dev mesa-vulkan-drivers libvulkan1 fonts-dejavu-core
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: workspace
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --locked -p mix --bin mix
+      - run: target/debug/mix tools/ci.mix clippy
+      - run: target/debug/mix tools/ci.mix test
+
+  ci-ok:
+    if: always()
+    needs: [changes, fmt, lint, test]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo "all CI jobs passed or were skipped for a docs-only change"
