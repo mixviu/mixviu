@@ -41,6 +41,7 @@ struct Host {
     paste_deadline: Option<Instant>,
     platform_results: std::collections::VecDeque<Value>,
     calls: crate::calls::Calls,
+    close_replies: BTreeMap<String, Value>,
     timers: crate::timers::Timers,
     timer_results: std::collections::VecDeque<Value>,
     documents: crate::documents::Documents,
@@ -194,8 +195,14 @@ impl Host {
         }
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
+        let mut close_reply = None;
         if self.native_drive {
             if r.command == format!("{}.window", self.app) && r.args["action"] == "close" {
+                close_reply = toolkit::drive::request(ctx, 0, "window.state", &json!({})).map(|answer| {
+                    let mut body = answer.body;
+                    body["requested"] = json!("close");
+                    body
+                });
                 r.command = format!("{}.quit", self.app);
             }
         }
@@ -271,6 +278,7 @@ impl Host {
             }
             _ => match self.calls.begin(r.reply, r.close_after_reply) {
                 Ok(token) => {
+                    if let Some(body) = close_reply { self.close_replies.insert(token.clone(), body); }
                     let mut headers = r.headers;
                     headers.insert("viu-call".into(), token);
                     self.dispatch(r.command, r.args, headers, None);
@@ -514,7 +522,8 @@ impl Host {
                 } else {
                     (0, self.state())
                 };
-                self.calls.complete(&reply, answer.0, answer.1);
+                let body = self.close_replies.remove(&reply).filter(|_| answer.0 == 0).unwrap_or(answer.1);
+                self.calls.complete(&reply, answer.0, body);
             }
         }
         for _ in self.held_requests.len()..32 {
@@ -996,6 +1005,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         paste_deadline: None,
         platform_results: Default::default(),
         calls,
+        close_replies: Default::default(),
         timers,
         timer_results: Default::default(),
         documents,
