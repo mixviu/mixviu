@@ -1,13 +1,13 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- Private headless compositor; never connects to a live desktop.
--- MIXOS_TEST_COMPD can name a CBC-built compd. Requires wl-clipboard.
+-- MIX_TEST_VIUD_EXE can name a CBC-built viud. Requires wl-clipboard.
 $pb = require("../../../tests/lib/private_bus.mix")
-$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
-$blobd = env("MIXOS_TEST_BLOBD", mixos_path("prefix") .. "/bin/blobd")
-$compd = env("MIXOS_TEST_COMPD", mixos_path("prefix") .. "/bin/compd")
-if not is_file($compd) or which("wl-copy") == nil or which("wl-paste") == nil then
-  raise("DEPENDENCY", "Wayland test needs compd, wl-copy and wl-paste")
+$mix = env("MIX_TEST_MIX_EXE", mix_path("prefix") .. "/bin/mix")
+$blobd = env("MIX_TEST_BLOBD_EXE", mix_path("prefix") .. "/bin/blobd")
+$viud = env("MIX_TEST_VIUD_EXE", mix_path("prefix") .. "/bin/viud")
+if not is_file($viud) or which("wl-copy") == nil or which("wl-paste") == nil then
+  raise("DEPENDENCY", "Wayland test needs viud, wl-copy and wl-paste")
 end
 $script = realpath(dirname($0) .. "/../scripts/clipd.mix")
 $tmp = "/var/tmp/clipd-wayland-" .. uuid()
@@ -51,10 +51,10 @@ try
   copy(realpath(dirname($0) .. "/../../../tests/desktop/smoke-settings.json"), $tmp .. "/compositor.conf.mix")
   write_file($tmp .. "/clipboard.conf.mix", "{schema:1,password_timeout:1,eager_text_bytes:64}\n")
   $env = merge($pb.client_env($bus), {XDG_RUNTIME_DIR: $tmp .. "/runtime", WAYLAND_DISPLAY: "clipboard-test",
-    MIX_STATS: "off", LIBGL_ALWAYS_SOFTWARE: "1", MIXOS_CLIPD_SESSION: "test",
-    MIXOS_CLIPD_CONFIG: $tmp .. "/clipboard.conf.mix", MIXOS_CLIPD_MODE: "wayland"})
-  push($pids, spawn([$compd, "--headless", "--socket", "clipboard-test", "--size", "640x480", "--config-file", $tmp .. "/compositor.conf.mix", "--bus-service", "cliptestcomp"],
-    {detach: true, env: $env, stdout: {file: $tmp .. "/compd.log"}, stderr: "stdout"}))
+    MIX_STATS: "off", LIBGL_ALWAYS_SOFTWARE: "1", MIX_CLIPD_SESSION: "test",
+    MIX_CLIPD_CONFIG: $tmp .. "/clipboard.conf.mix", MIX_CLIPD_MODE: "wayland"})
+  push($pids, spawn([$viud, "--headless", "--socket", "clipboard-test", "--size", "640x480", "--config-file", $tmp .. "/compositor.conf.mix", "--bus-service", "cliptestcomp"],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/viud.log"}, stderr: "stdout"}))
   check("private compositor socket", eventually(fn() = exists($tmp .. "/runtime/clipboard-test")))
   push($pids, spawn([$mix, "--serve", $script, "--name", "clipd"], {detach: true, env: $env,
     stdout: {file: $tmp .. "/clipd.log"}, stderr: "stdout"}))

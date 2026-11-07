@@ -47,7 +47,7 @@ check("app defaults to source", $a.record.app == "claude@vt4")
 $b = $n.add($s, {summary: "Is this okay?", actions: $yes_no, timeout_ms: 5000}, 100, $T)
 $s = $b.state
 check("deadline is now + timeout", $b.record.deadline_t == 105)
-check("app defaults to MixOS", $n.add($n.new_state(), {summary: "x"}, 1, $T).record.app == "MixOS")
+check("app defaults to MixViu", $n.add($n.new_state(), {summary: "x"}, 1, $T).record.app == "MixViu")
 
 for $level in ["info", "critical", "low", "unknown", 42, {}, nil]
   check("unknown level defaults normal: " .. json_encode($level), $n.add($s, {summary: "x", level: $level}, 1, $T).record.urgency == "normal")

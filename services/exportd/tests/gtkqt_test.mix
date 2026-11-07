@@ -64,7 +64,7 @@ end
 $env = {config: "/c", have_icon: $have, have_theme: fn($n) = $n == "adw-gtk3-dark"}
 $p = $T.plan({"appearance.icon_theme": "breeze"}, "dark", $pal, $env)
 check("plan writes both css and four qt schemes", len($p.files) == 6)
-check("plan links both gtk.css to the mode", $p.links[0].target == "mixos/dark.css" and $p.links[1].target == "../gtk-4.0/mixos/dark.css")
+check("plan links both gtk.css to the mode", $p.links[0].target == "mix/dark.css" and $p.links[1].target == "../gtk-4.0/mix/dark.css")
 $gtk3 = $p.ini[0]
 check("gtk3 ini names the font, icons and adw theme", deep_eq($gtk3.pairs, [["gtk-application-prefer-dark-theme", "true"],
   ["gtk-font-name", "Inter 12"], ["gtk-decoration-layout", "menu:minimize,maximize,close"],

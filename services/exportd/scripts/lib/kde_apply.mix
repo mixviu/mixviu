@@ -37,10 +37,10 @@ fn new_context()
   return {
     config_home: $config,
     data_home: $data,
-    state_dir: env("MIXOS_KDE_EXPORT_STATE", $state .. "/mixos/kde-export"),
-    reconfigure: env("MIXOS_KDE_EXPORT_RECONFIGURE", "1") == "1",
-    kwrite: tool("MIXOS_KDE_EXPORT_KWRITECONFIG", ["kwriteconfig6"]),
-    busctl: tool("MIXOS_KDE_EXPORT_BUSCTL", ["busctl"])
+    state_dir: env("MIX_EXPORTD_KDE_STATE", $state .. "/mix/kde-export"),
+    reconfigure: env("MIX_EXPORTD_KDE_RECONFIGURE", "1") == "1",
+    kwrite: tool("MIX_EXPORTD_KDE_KWRITECONFIG", ["kwriteconfig6"]),
+    busctl: tool("MIX_EXPORTD_KDE_BUSCTL", ["busctl"])
   }
 end
 
@@ -298,7 +298,7 @@ end
 -- unreachable session bus is made good on the next run.
 fn apply($ctx, $plan, $dry)
   $list = changes($ctx, $plan)
-  -- The [MixOS] stamp alone is no reason to write (or to wake Plasma).
+  -- The [MixViu] stamp alone is no reason to write (or to wake Plasma).
   if len(filter($list, fn($c) = $c.group != "MixOS")) == 0 then $list = [] end
   $schemes = scheme_changes($ctx, $plan)
   $report = {changed: len($list), keys: map($list, fn($c) = $c.file .. " [" .. $c.group .. "] " .. $c.key .. "=" .. $c.new),

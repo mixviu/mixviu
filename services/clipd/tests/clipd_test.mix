@@ -4,8 +4,8 @@
 -- Two real store citizens on a private broker exercise allowlisted transfer.
 $pb = require("../../../tests/lib/private_bus.mix")
 $here = dirname(realpath($0))
-$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
-$blobd = env("MIXOS_TEST_BLOBD", mixos_path("prefix") .. "/bin/blobd")
+$mix = env("MIX_TEST_MIX_EXE", mix_path("prefix") .. "/bin/mix")
+$blobd = env("MIX_TEST_BLOBD_EXE", mix_path("prefix") .. "/bin/blobd")
 $script = realpath($here .. "/../scripts/clipd.mix")
 $tmp = "/var/tmp/clipd-test-" .. uuid()
 $bus = nil
@@ -48,7 +48,7 @@ end
 mkdir($tmp, {parents: true})
 try
   $bus = $pb.start({dir: $tmp .. "/bus", name: "clipboard-test"})
-  $base = merge($pb.client_env($bus), {MIXOS_CLIPD_MODE: "store", MIX_STATS: "off", WAYLAND_DISPLAY: ""})
+  $base = merge($pb.client_env($bus), {MIX_CLIPD_MODE: "store", MIX_STATS: "off", WAYLAND_DISPLAY: ""})
   push($pids, spawn([$mix, "--serve", $here .. "/fixtures/listener.mix", "--name", "listener"],
     {detach: true, env: merge($base, {CLIPBOARD_TEST_EVENTS: $tmp .. "/events"}), stdout: {file: $tmp .. "/listener.log"}, stderr: "stdout"}))
   check("topic listener ready", eventually(fn() = call("listener", "listener.ready", {}).rc == 0))
@@ -58,7 +58,7 @@ try
     write_file($tmp .. "/" .. $name .. ".conf.mix", data_encode({schema: 1, password_timeout: 1,
       peers: {"clipboard-test": {target: $target, follow: true}}}))
     push($pids, spawn([$mix, "--serve", $script, "--name", $name], {detach: true,
-      env: merge($base, {MIXOS_CLIPD_CONFIG: $tmp .. "/" .. $name .. ".conf.mix", MIXOS_CLIPD_SESSION: $name}),
+      env: merge($base, {MIX_CLIPD_CONFIG: $tmp .. "/" .. $name .. ".conf.mix", MIX_CLIPD_SESSION: $name}),
       stdout: {file: $tmp .. "/" .. $name .. ".log"}, stderr: "stdout"}))
   end
   check("both store citizens ready", wait_ready("clipd") and wait_ready("peerclip"))

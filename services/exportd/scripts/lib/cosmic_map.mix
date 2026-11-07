@@ -45,7 +45,7 @@ $_PANELS = [["top", "Panel"], ["bottom", "Dock"]]
 $_EDGES = {top: "Top", bottom: "Bottom", left: "Left", right: "Right"}
 $_PANEL_BG = {match: "ThemeDefault", light: "Light", dark: "Dark"}
 $_FIT = {fill: "Zoom", stretch: "Stretch"}
--- MixOS applet ids the COSMIC panel has an equivalent for. A reverse-DNS
+-- MixViu applet ids the COSMIC panel has an equivalent for. A reverse-DNS
 -- id passes through as a COSMIC applet; any other id is not exported.
 $_APPLETS = {
   launcher: "com.system76.CosmicPanelLauncherButton",
@@ -194,7 +194,7 @@ fn _font($family)
     ["stretch", $ron.ident("Normal")], ["style", $ron.ident("Normal")]])
 end
 
--- The fonts are the palette's: what MixOS draws, the session's choices
+-- The fonts are the palette's: what MixViu draws, the session's choices
 -- over the design's. COSMIC takes the family alone (no size setting).
 fn _tk($v, $fonts)
   $density = $_DENSITY[_get($v, "appearance.density", "comfortable")]
@@ -276,7 +276,7 @@ fn _panel($v, $id, $name, $radius_xl, $space_none)
   $start = $v[$p .. "applets.start"] ?? nil
   $center = $v[$p .. "applets.center"] ?? nil
   $end = $v[$p .. "applets.end"] ?? nil
-  -- Applet lists are written only once MixOS authors them; until then
+  -- Applet lists are written only once MixViu authors them; until then
   -- the bar keeps COSMIC's own.
   if $start != nil or $end != nil then
     push($out, ["plugins_wings", $ron.some($ron.tuple([_applets($start ?? []), _applets($end ?? [])]))])
@@ -317,7 +317,7 @@ fn _background_entry($v, $output, $image)
   return $ron.struct($fields)
 end
 
--- The wallpaper keys: nothing while MixOS has no wallpaper of its own
+-- The wallpaper keys: nothing while MixViu has no wallpaper of its own
 -- (image, colour and slideshow all unset), so COSMIC keeps its own.
 fn _background($v)
   $out = []

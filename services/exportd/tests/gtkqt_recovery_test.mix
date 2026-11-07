@@ -3,7 +3,7 @@
 -- Recovery and destination-policy regressions, on a private broker and temp trees.
 $here = dirname(realpath($0))
 $pb = require("../../../tests/lib/private_bus.mix")
-$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$mix = env("MIX_TEST_MIX_EXE", mix_path("prefix") .. "/bin/mix")
 $tmp = "/var/tmp/gtkqt-recovery-" .. uuid()
 $bus = nil
 $pids = []
@@ -26,7 +26,7 @@ fn start_case($cfg, $home, $state)
   $name = "gtkqt-" .. slice(uuid(), 0, 8)
   $env = merge($pb.client_env($bus), {MIX_STATS: "off", HOME: $home, XDG_CONFIG_HOME: $cfg,
     XDG_DATA_HOME: $tmp .. "/data", XDG_DATA_DIRS: $tmp .. "/none", PATH: "/nonexistent",
-    MIXOS_SETTINGS_INSTANCE: "toolkit-test", MIXOS_EXPORTD_STATE: $state})
+    MIX_SETTINGS_INSTANCE: "toolkit-test", MIX_EXPORTD_STATE: $state})
   $pid = spawn([$mix, "--serve", $here .. "/../scripts/gtkqt.mix", "--name", $name],
     {detach: true, env: $env, stdout: {file: $tmp .. "/" .. $name .. ".log"}, stderr: "stdout"})
   push($pids, $pid)
@@ -92,16 +92,16 @@ try
   -- A late reconcile error follows several successful file writes.
   $dir = $tmp .. "/partial"
   $cfg = $dir .. "/config"
-  mkdir($cfg .. "/gtk-4.0/mixos")
-  write_file($cfg .. "/gtk-4.0/mixos/dark.css", "original css\n")
+  mkdir($cfg .. "/gtk-4.0/mix")
+  write_file($cfg .. "/gtk-4.0/mix/dark.css", "original css\n")
   mkdir($cfg .. "/gtk-3.0/settings.ini")
   $case = start_case($cfg, $tmp .. "/home", $dir .. "/state")
-  check("late failure reached after writes", eventually(fn() = status($case).outcome == "error") and read_file($cfg .. "/gtk-4.0/mixos/dark.css") != "original css\n")
-  check("original durable before reconcile completed", json_parse(read_file($dir .. "/state/records.json")).files[$cfg .. "/gtk-4.0/mixos/dark.css"].original.data == "original css\n")
+  check("late failure reached after writes", eventually(fn() = status($case).outcome == "error") and read_file($cfg .. "/gtk-4.0/mix/dark.css") != "original css\n")
+  check("original durable before reconcile completed", json_parse(read_file($dir .. "/state/records.json")).files[$cfg .. "/gtk-4.0/mix/dark.css"].original.data == "original css\n")
   stop_case($case)
   remove_dir($cfg .. "/gtk-3.0/settings.ini")
   $case = start_case($cfg, $tmp .. "/home", $dir .. "/state")
-  check("undo after restart keeps original bytes", call($case.name, "exportd.gtkqt.undo").rc == 0 and read_file($cfg .. "/gtk-4.0/mixos/dark.css") == "original css\n")
+  check("undo after restart keeps original bytes", call($case.name, "exportd.gtkqt.undo").rc == 0 and read_file($cfg .. "/gtk-4.0/mix/dark.css") == "original css\n")
   stop_case($case)
 
   -- Crash windows immediately before/after a journalled atomic write.

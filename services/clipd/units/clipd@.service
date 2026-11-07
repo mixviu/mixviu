@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
-Description=MixOS clipboard for session %i
+Description=MixViu clipboard for session %i
 # The session target chooses the broker (noded@%i or the system noded.service);
 # this unit only orders after both. Never Wants= or Requires= a broker: on a desk
 # with the system broker noded@%i is masked.
@@ -9,10 +9,10 @@ PartOf=session@%i.target
 
 [Service]
 Type=simple
-User=mixos
+User=mix
 EnvironmentFile=@{etc}/session/%i.env
-Environment=MIXOS_CLIPD_SESSION=vt%i
-Environment=MIXOS_CLIPD_MODE=wayland
+Environment=MIX_CLIPD_SESSION=vt%i
+Environment=MIX_CLIPD_MODE=wayland
 Environment=MIX_STATS=off
 ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/clipd/clipd.mix --name clipd
 KillMode=control-group

@@ -9,7 +9,7 @@ $here = dirname(realpath($0))
 $map = require($here .. "/../scripts/lib/cosmic_map.mix")
 $store = require($here .. "/../scripts/lib/cosmic_store.mix")
 $ron = require($here .. "/../scripts/lib/ron.mix")
-$golden = $here .. "/../../../libs/design/tests/fixtures/palette/mixos.json"
+$golden = $here .. "/../../../libraries/design/tests/fixtures/palette/mixos.json"
 $pal = json_parse(read_file($golden))
 $failures = 0
 

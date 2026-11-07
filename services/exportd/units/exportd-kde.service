@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 # kde-export in a KDE Plasma user session (a user unit, `systemctl --user`):
-# writes the settings authority's look into kdeglobals, kwinrc and the MixOS
+# writes the settings authority's look into kdeglobals, kwinrc and the MixViu
 # colour schemes, and asks Plasma and KWin to reconfigure. It runs only in a
 # Plasma session; another desktop sharing the same home does not start it.
 [Unit]
-Description=MixOS settings export to KDE Plasma (exportd kde)
+Description=MixViu settings export to KDE Plasma (exportd kde)
 Documentation=https://mixos.dev/exportd/
 # The broker is the system noded.service, which a user unit cannot order
 # after; `mix --serve` is supervised and keeps retrying until it answers.

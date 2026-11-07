@@ -30,13 +30,13 @@
 -- {error_code, message}.
 --
 -- State is one JSON file, written atomically on every change:
--- $MIXOS_NOTIFYD_STATE, else $XDG_STATE_HOME/mixos/notifyd/state.json. After a
+-- $MIX_NOTIFYD_STATE, else $XDG_STATE_HOME/mix/notifyd/state.json. After a
 -- restart, open records stay open (nothing is answered for the human) and
 -- their timeouts are re-armed.
 
 $n = require("lib/notify.mix")
 
-$STATE_FILE = env("MIXOS_NOTIFYD_STATE", env("XDG_STATE_HOME", env("HOME") .. "/.local/state") .. "/mixos/notifyd/state.json")
+$STATE_FILE = env("MIX_NOTIFYD_STATE", env("XDG_STATE_HOME", env("HOME") .. "/.local/state") .. "/mix/notifyd/state.json")
 $S = $n.new_state()
 if is_file($STATE_FILE) then
   try

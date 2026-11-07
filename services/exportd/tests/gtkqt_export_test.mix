@@ -5,7 +5,7 @@
 -- first reconcile, a mode flip, a hand edit that survives, the gate, undo.
 $pb = require("../../../tests/lib/private_bus.mix")
 $here = dirname(realpath($0))
-$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$mix = env("MIX_TEST_MIX_EXE", mix_path("prefix") .. "/bin/mix")
 $script = realpath($here .. "/../scripts/gtkqt.mix")
 $tmp = "/var/tmp/exportd-gtkqt-test-" .. uuid()
 $cfg = $tmp .. "/config"
@@ -55,8 +55,8 @@ write_file($cfg .. "/gtk-3.0/settings.ini", "[Settings]\ngtk-cursor-theme-name=m
 try
   $bus = $pb.start({dir: $tmp .. "/bus", name: "toolkit-test"})
   $base = merge($pb.client_env($bus), {MIX_STATS: "off", HOME: $tmp .. "/home", XDG_CONFIG_HOME: $cfg,
-    XDG_DATA_HOME: $tmp .. "/data", XDG_DATA_DIRS: $tmp .. "/none", MIXOS_EXPORTD_STATE: $tmp .. "/state",
-    MIXOS_SETTINGS_INSTANCE: "toolkit-test", PATH: "/nonexistent"})
+    XDG_DATA_HOME: $tmp .. "/data", XDG_DATA_DIRS: $tmp .. "/none", MIX_EXPORTD_STATE: $tmp .. "/state",
+    MIX_SETTINGS_INSTANCE: "toolkit-test", PATH: "/nonexistent"})
   push($pids, spawn([$mix, "--serve", $here .. "/fixtures/gtkqt_settingsd.mix", "--name", "settingsd"],
     {detach: true, env: $base, stdout: {file: $tmp .. "/settingsd.log"}, stderr: "stdout"}))
   check("stand-in settingsd ready", eventually(fn() = call("settingsd", "settings.get", {binding: {}}).rc == 0))
@@ -68,10 +68,10 @@ try
   $help = call("exportd-gtkqt", "HELP", {}).v
   if type($help) == "string" then $help = json_parse($help) end
   check("Bus registry matches runtime commands", deep_eq($expected, sort(map(filter($help, fn($r) = starts_with($r.name, "exportd.gtkqt.") and not starts_with($r.name, "exportd-gtkqt.props.")), fn($r) = $r.name))))
-  check("dark css written", contains(read_file($cfg .. "/gtk-4.0/mixos/dark.css"), "@define-color window_bg_color rgba(16, 16, 16, 1.00);"))
-  check("light css written", is_file($cfg .. "/gtk-4.0/mixos/light.css"))
-  check("gtk4 link names the mode", read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/dark.css")
-  check("gtk3 link names the mode", read_link($cfg .. "/gtk-3.0/gtk.css") == "../gtk-4.0/mixos/dark.css")
+  check("dark css written", contains(read_file($cfg .. "/gtk-4.0/mix/dark.css"), "@define-color window_bg_color rgba(16, 16, 16, 1.00);"))
+  check("light css written", is_file($cfg .. "/gtk-4.0/mix/light.css"))
+  check("gtk4 link names the mode", read_link($cfg .. "/gtk-4.0/gtk.css") == "mix/dark.css")
+  check("gtk3 link names the mode", read_link($cfg .. "/gtk-3.0/gtk.css") == "../gtk-4.0/mix/dark.css")
   check("a foreign gtk.css is kept once", read_file($cfg .. "/gtk-3.0/gtk.css.bak") == "/* the user's own */\n")
   $ini = read_file($cfg .. "/gtk-3.0/settings.ini")
   check("settings.ini keeps the user's keys", contains($ini, "gtk-cursor-theme-name=mine"))
@@ -82,30 +82,30 @@ try
 
   $flip = call("settingsd", "fake.set", {mode: "light", values: {"appearance.font_size": 16}})
   check("mode flip", $flip.rc == 0)
-  check("links flip to light", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/light.css"))
+  check("links flip to light", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mix/light.css"))
   check("font follows", eventually(fn() = contains(read_file($cfg .. "/gtk-3.0/settings.ini"), "gtk-font-name=Inter 12")))
   check("qt follows the mode", contains(read_file($cfg .. "/qt5ct/qt5ct.conf"), "MixOSLight.conf"))
 
   write_file($cfg .. "/gtk-3.0/settings.ini", replace(read_file($cfg .. "/gtk-3.0/settings.ini"), "gtk-font-name=Inter 12", "gtk-font-name=Mine 11"))
   check("another change", call("settingsd", "fake.set", {mode: "dark", values: {"appearance.font_size": 14}}).rc == 0)
-  check("links flip back to dark", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/dark.css"))
+  check("links flip back to dark", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mix/dark.css"))
   check("a hand-edited key is kept", contains(read_file($cfg .. "/gtk-3.0/settings.ini"), "gtk-font-name=Mine 11"))
   check("and reported", any(status().kept, fn($k) = contains($k, "Settings/gtk-font-name")))
   check("gtk4 ini still follows", contains(read_file($cfg .. "/gtk-4.0/settings.ini"), "gtk-font-name=Inter 10.5"))
 
   check("gate off", call("settingsd", "fake.set", {mode: "light", values: {"appearance.export_toolkits": false}}).rc == 0)
   check("gated", eventually(fn() = status().outcome == "gated"))
-  check("gated writes nothing", read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/dark.css")
+  check("gated writes nothing", read_link($cfg .. "/gtk-4.0/gtk.css") == "mix/dark.css")
   check("gate on", call("settingsd", "fake.set", {values: {"appearance.export_toolkits": true}}).rc == 0)
-  check("writes resume", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/light.css"))
-  write_file($cfg .. "/gtk-4.0/mixos/light.css", "/* hand edited CSS */\n")
+  check("writes resume", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mix/light.css"))
+  write_file($cfg .. "/gtk-4.0/mix/light.css", "/* hand edited CSS */\n")
 
   $u = call("exportd-gtkqt", "exportd.gtkqt.undo", {})
   check("undo answers", $u.rc == 0 and len($u.v.restored) > 0)
   check("undo restores the user's gtk.css", read_file($cfg .. "/gtk-3.0/gtk.css") == "/* the user's own */\n")
   check("undo replaced the link, not its CSS target", not stat($cfg .. "/gtk-3.0/gtk.css", {follow_symlinks: false}).is_symlink)
   check("undo removes a link that was not there", lstat_absent($cfg .. "/gtk-4.0/gtk.css"))
-  check("undo removes our css", not is_file($cfg .. "/gtk-4.0/mixos/dark.css"))
+  check("undo removes our css", not is_file($cfg .. "/gtk-4.0/mix/dark.css"))
   $after = read_file($cfg .. "/gtk-3.0/settings.ini")
   check("undo strips our keys and keeps the user's", contains($after, "gtk-cursor-theme-name=mine") and
     contains($after, "gtk-font-name=Mine 11") and not contains($after, "gtk-icon-theme-name"))
@@ -115,7 +115,7 @@ try
   check("paused after undo", status().outcome == "paused")
   check("reconcile resumes", call("exportd-gtkqt", "exportd.gtkqt.reconcile", {}).v.outcome == "written")
   check("hand edit remains protected after undo and reconcile", contains(read_file($cfg .. "/gtk-3.0/settings.ini"), "gtk-font-name=Mine 11"))
-  check("hand edited files remain protected too", read_file($cfg .. "/gtk-4.0/mixos/light.css") == "/* hand edited CSS */\n")
+  check("hand edited files remain protected too", read_file($cfg .. "/gtk-4.0/mix/light.css") == "/* hand edited CSS */\n")
   send exportd-gtkqt QUIT timeout=5
 finally
   for $pid in $pids

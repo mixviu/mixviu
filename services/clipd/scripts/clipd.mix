@@ -1,23 +1,23 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- clipd is a per-session Mix citizen; wl-clipboard stays outside mix.
--- Configuration: MIXOS_CLIPD_CONFIG (strict data), MIXOS_CLIPD_MODE=store|wayland|auto,
--- MIXOS_CLIPD_SESSION. Never persist clipboard content or log request bodies.
+-- Configuration: MIX_CLIPD_CONFIG (strict data), MIX_CLIPD_MODE=store|wayland|auto,
+-- MIX_CLIPD_SESSION. Never persist clipboard content or log request bodies.
 $clip = require("lib/clipboard.mix")
-$config_path = env("MIXOS_CLIPD_CONFIG", mixos_path("etc") .. "/clipboard.conf.mix")
+$config_path = env("MIX_CLIPD_CONFIG", mix_path("etc") .. "/clipd/clipboard.conf.mix")
 $C = $clip.settings(if is_file($config_path) then load_data($config_path) else {} end)
 -- The node identity is the machine's: a user session's own etc (the Plasma
 -- clipd on a hybrid host) has none, so fall back to the system tier.
-$node_config = env("MIXOS_NODE_CONFIG", mixos_path("etc") .. "/node.conf.mix")
-if env("MIXOS_NODE_CONFIG", "") == "" and not is_file($node_config) then $node_config = mixos_path("etc", "node.conf.mix", {tier: "system"}) end
+$node_config = env("MIX_NODE_CONFIG", mix_path("etc") .. "/node.conf.mix")
+if env("MIX_NODE_CONFIG", "") == "" and not is_file($node_config) then $node_config = mix_path("etc", "node.conf.mix", {tier: "system"}) end
 $node = if is_file($node_config) then load_data($node_config).node else nil end
 if type($node) != "string" or $node == "" then raise("NODE", "clipboard needs the native node identity") end
-$S = $clip.new_state($node, env("MIXOS_CLIPD_SESSION", "store"))
-$mode = env("MIXOS_CLIPD_MODE", "auto")
+$S = $clip.new_state($node, env("MIX_CLIPD_SESSION", "store"))
+$mode = env("MIX_CLIPD_MODE", "auto")
 if not contains(["auto", "store", "wayland"], $mode) then raise("MODE", "invalid clipboard mode") end
 if $mode == "auto" then $mode = if env("WAYLAND_DISPLAY", "") != "" then "wayland" else "store" end end
 if $mode == "wayland" and (which("wl-paste") == nil or which("wl-copy") == nil) then raise("DEPENDENCY", "Wayland clipd requires wl-paste and wl-copy") end
-$mix_bin = mixos_path("prefix") .. "/bin/mix"
+$mix_bin = mix_path("prefix") .. "/bin/mix"
 $here = dirname(realpath($0))
 $watch_token = uuid()
 $watchers = {}
@@ -588,7 +588,7 @@ end
 
 fn start_watcher($which)
   return spawn(concat(wl_argv("wl-paste", $which), ["--watch", $mix_bin, $here .. "/watch.mix", $which]),
-    {exit_event: true, tag: $which, env: {MIXOS_CLIPD_TARGET: serve_name(), MIXOS_CLIPD_WATCH_TOKEN: $watch_token, MIX_STATS: "off"}, stderr: "inherit"})
+    {exit_event: true, tag: $which, env: {MIX_CLIPD_TARGET: serve_name(), MIX_CLIPD_WATCH_TOKEN: $watch_token, MIX_STATS: "off"}, stderr: "inherit"})
 end
 
 on proc.exited

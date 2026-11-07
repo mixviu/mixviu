@@ -3,8 +3,8 @@
 -- The real COSMIC citizen on a private broker; never a desktop config.
 $here = dirname(realpath($0))
 $pb = require("../../../tests/lib/private_bus.mix")
-$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
-$pal = json_parse(read_file($here .. "/../../../libs/design/tests/fixtures/palette/mixos.json"))
+$mix = env("MIX_TEST_MIX_EXE", mix_path("prefix") .. "/bin/mix")
+$pal = json_parse(read_file($here .. "/../../../libraries/design/tests/fixtures/palette/mixos.json"))
 $tmp = "/var/tmp/cosmic-live-" .. uuid()
 $root = $tmp .. "/cosmic"
 $fake = $tmp .. "/authority"
@@ -41,13 +41,13 @@ try
   authority("1", "dark", 0, "one")
   $bus = $pb.start({dir: $tmp .. "/bus", name: "cosmic-test"})
   $env = merge($pb.client_env($bus), {MIX_STATS: "off", FAKE_SETTINGS_DIR: $fake,
-    MIXOS_SETTINGS_SERVICE: "authority", MIXOS_SETTINGS_INSTANCE: "test", MIXOS_EXPORTD_COSMIC_ROOT: $root,
-    MIXOS_EXPORTD_STATE: $tmp .. "/state", HOME: $tmp .. "/home"})
+    MIX_SETTINGS_SERVICE: "authority", MIX_SETTINGS_INSTANCE: "test", MIX_EXPORTD_COSMIC_ROOT: $root,
+    MIX_EXPORTD_STATE: $tmp .. "/state", HOME: $tmp .. "/home"})
   push($pids, spawn([$mix, "--serve", $here .. "/fixtures/fake_settingsd.mix", "--name", "authority"],
     {detach: true, env: $env, stdout: {file: $tmp .. "/authority.log"}, stderr: "stdout"}))
   check("authority ready", eventually(fn() = call("authority", "fake.calls", {}).rc == 0))
   -- Reserved settings topics must be published by settingsd. The alternate
-  -- read endpoint independently proves MIXOS_SETTINGS_SERVICE is honoured.
+  -- read endpoint independently proves MIX_SETTINGS_SERVICE is honoured.
   push($pids, spawn([$mix, "--serve", $here .. "/fixtures/fake_settingsd.mix", "--name", "settingsd"],
     {detach: true, env: $env, stdout: {file: $tmp .. "/publisher.log"}, stderr: "stdout"}))
   check("publisher ready", eventually(fn() = call("settingsd", "fake.calls", {}).rc == 0))

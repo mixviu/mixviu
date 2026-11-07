@@ -105,7 +105,7 @@ fn add($state, $args, $now, $now_iso)
   $body = _text($args, "body", $BODY_MAX, false)
   $source = _text($args, "source", $TEXT_MAX, false)
   $app = _text($args, "app", $TEXT_MAX, false)
-  if $app == "" then $app = if $source != "" then $source else "MixOS" end end
+  if $app == "" then $app = if $source != "" then $source else "MixViu" end end
   $urgency = $args.urgency
   if $urgency == nil then
     $level = $args.level

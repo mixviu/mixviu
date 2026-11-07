@@ -57,7 +57,7 @@ fn qt_scheme($qt)
     "inactive_colors=" .. qt_group($qt.inactive)], "\n") .. "\n"
 end
 
--- Points from MixOS px at 96 dpi, times the text scale, to the nearest
+-- Points from MixViu px at 96 dpi, times the text scale, to the nearest
 -- half point (the rule every exporter shares): 13.333 px is 10 pt.
 fn points($px, $scale)
   $s = if type($scale) == "number" and $scale > 0 then $scale else 1 end
@@ -65,7 +65,7 @@ fn points($px, $scale)
 end
 
 -- The palette's resolved fonts (settings.palette `fonts`), refused when the
--- answer has none: the families, size and weight MixOS draws.
+-- answer has none: the families, size and weight MixViu draws.
 fn fonts($palette, $mode)
   $f = ($palette[$mode] ?? {}).fonts
   $ok = type($f) == "map" and type($f.ui) == "map" and type($f.mono) == "map"
@@ -113,7 +113,7 @@ fn decoration_layout($v)
 end
 
 -- The icon theme to name: `<name>-dark` under dark when installed, else
--- `<name>`; a desk without it keeps MixOS's own `mixos` theme (Craft title
+-- `<name>`; a desk without it keeps MixViu's own `mixos` theme (Craft title
 -- bars draw their buttons from it) and reports `icon_theme_missing`.
 fn icon_theme($v, $mode, $have)
   $name = $v["appearance.icon_theme"]
@@ -135,15 +135,15 @@ fn plan($v, $mode, $palette, $env)
   for $m in ["dark", "light"]
     $t = ($palette[$m] ?? {}).toolkit
     if type($t) != "map" then raise("PALETTE", "settings.palette has no toolkit block for " .. $m .. " (settingsd too old)") end
-    push($files, {path: $cfg .. "/gtk-4.0/mixos/" .. $m .. ".css", content: gtk_css($t.gtk)})
+    push($files, {path: $cfg .. "/gtk-4.0/mix/" .. $m .. ".css", content: gtk_css($t.gtk)})
     $scheme = qt_scheme($t.qt)
     $title = if $m == "dark" then "MixOSDark" else "MixOSLight" end
     for $q in ["qt5ct", "qt6ct"]
       push($files, {path: $cfg .. "/" .. $q .. "/colors/" .. $title .. ".conf", content: $scheme})
     end
   end
-  push($links, {path: $cfg .. "/gtk-4.0/gtk.css", target: "mixos/" .. $mode .. ".css"})
-  push($links, {path: $cfg .. "/gtk-3.0/gtk.css", target: "../gtk-4.0/mixos/" .. $mode .. ".css"})
+  push($links, {path: $cfg .. "/gtk-4.0/gtk.css", target: "mix/" .. $mode .. ".css"})
+  push($links, {path: $cfg .. "/gtk-3.0/gtk.css", target: "../gtk-4.0/mix/" .. $mode .. ".css"})
 
   $icons = icon_theme($v, $mode, $env.have_icon)
   $f = fonts($palette, $mode)

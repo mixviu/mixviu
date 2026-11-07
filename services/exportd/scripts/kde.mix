@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- kde-export: the settings authority's look, written into a KDE Plasma
--- session (kdeglobals, kwinrc, the MixOS colour schemes, panel floating).
+-- session (kdeglobals, kwinrc, the MixViu colour schemes, panel floating).
 -- A `mix --serve` citizen in the Plasma user's session. It reconciles once
 -- at start, then once per settings revision that moves a prefix it reads
 -- (the retained topics wake it; deliveries of a revision it already
@@ -10,22 +10,22 @@
 -- previous values for undo. Undo and restore pause it until
 -- exportd.kde.reconcile, so the next revision does not write the look back.
 --
--- Environment: MIXOS_SETTINGS_INSTANCE (default: this node's name),
--- MIXOS_KDE_EXPORT_DRY=1 (plan only), MIXOS_KDE_EXPORT_STATE (undo record),
--- MIXOS_KDE_EXPORT_RECONFIGURE=0 (no D-Bus calls), and for tests
--- MIXOS_KDE_EXPORT_KWRITECONFIG / MIXOS_KDE_EXPORT_BUSCTL (JSON argv).
+-- Environment: MIX_SETTINGS_INSTANCE (default: this node's name),
+-- MIX_EXPORTD_KDE_DRY=1 (plan only), MIX_EXPORTD_KDE_STATE (undo record),
+-- MIX_EXPORTD_KDE_RECONFIGURE=0 (no D-Bus calls), and for tests
+-- MIX_EXPORTD_KDE_KWRITECONFIG / MIX_EXPORTD_KDE_BUSCTL (JSON argv).
 $map = require("lib/kde_map.mix")
 $app = require("lib/kde_apply.mix")
 
-$node_config = env("MIXOS_NODE_CONFIG", mixos_path("etc") .. "/node.conf.mix")
+$node_config = env("MIX_NODE_CONFIG", mix_path("etc") .. "/node.conf.mix")
 $node = if is_file($node_config) then load_data($node_config).node else nil end
-$instance = env("MIXOS_SETTINGS_INSTANCE", $node ?? "")
-if $instance == "" then raise("BINDING", "kde-export needs MIXOS_SETTINGS_INSTANCE or the node identity") end
+$instance = env("MIX_SETTINGS_INSTANCE", $node ?? "")
+if $instance == "" then raise("BINDING", "kde-export needs MIX_SETTINGS_INSTANCE or the node identity") end
 -- The topic names in the `on` lines below are static, so the profile is too.
 $binding = {instance: $instance, profile: "default"}
-$dry = env("MIXOS_KDE_EXPORT_DRY", "0") == "1"
+$dry = env("MIX_EXPORTD_KDE_DRY", "0") == "1"
 $ctx = $app.new_context()
-$source = env("MIXOS_SETTINGS_SERVICE", "settingsd")
+$source = env("MIX_SETTINGS_SERVICE", "settingsd")
 $pause_file = $ctx.state_dir .. "/paused"
 $status = {binding: $binding, dry: $dry, revision: nil, incarnation: nil, gated: false, paused: is_file($pause_file), last: nil, error: nil, runs: 0}
 -- Retained for the command helpers; palettes are read at each record identity.
