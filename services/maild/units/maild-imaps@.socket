@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixViu implicit TLS IMAP socket
+Documentation=https://mixos.dev/maild/
+
+[Socket]
+# Render every imap_imaps address from this instance's config in a drop-in.
+# No address is enabled by default. Example: ListenStream=192.0.2.10:993
+FreeBind=yes
+FileDescriptorName=imaps
+Service=maild@%i.service
+
+[Install]
+WantedBy=sockets.target

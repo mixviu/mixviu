@@ -1,0 +1,55 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$states=require("state.mix")
+$registry=require("registry.mix")
+$core=require("core.mix")
+$model=require("model.mix")
+$cli=require("launch-core.mix")
+$journal=require("journal.mix")
+$storage=require("storage.mix")
+$tmp=path_join("/var/tmp","screenshot-policy-"..uuid())
+try
+  if $cli.service_name("comp",false)!="screenshot" or $cli.service_name("comp-nested",true)!="screenshot-headless-comp-nested" then raise("LAUNCH","per-compositor namespace differs") end
+  if not starts_with($cli.service_name("headless",false),"screenshot--") then raise("LAUNCH","headless namespace collision") end
+  if $cli.parse_cli(["--debug=trace"]).debug!="trace" or $cli.parse_cli(["--debug"]).debug!="debug" then raise("LAUNCH","debug flags lost") end
+  for $args in [["--comp","bad.name"],["--headless","--capture","region"],["--window","3:1"],["--bogus"],["--debug="],["--debug=bad"],["/tmp/a.png","/tmp/b.png"]]
+    $refused=false;try $cli.parse_cli($args) catch $m $refused=true end
+    if not $refused then raise("LAUNCH","invalid CLI accepted") end
+  end
+  $s=$states.initial("comp",path_join($tmp,"saved"),path_join($tmp,"raw"))
+  $event_state=$s
+  for $i=1 to 258 $event_state=$journal.record_action($event_state,"example.action",nil,nil) end
+  if len($event_state.action_queue)!=256 or $event_state.action_lost!=2 or $event_state.action_queue[0].seq!=3 then raise("JOURNAL","bounded action journal lost sequence or drop accounting") end
+  $large=$journal.bounded(repeat("x",4097))
+  if $large.bytes!=4099 or len($large.sha256)!=64 then raise("JOURNAL","large action payload was not bounded") end
+  $view=$model.render($s)
+  $shot={path:"/tmp/a.png",width:0,height:4294967295,annotated:false,saved_at:"",ignored:1}
+  if len(keys($storage.ledger_shot($shot)))!=5 then raise("LEDGER","unknown fields must be removed like gold's Saved type") end
+  for $bad in [merge($shot,{width:"320"}),merge($shot,{height:-1}),merge($shot,{width:1.5}),merge($shot,{height:4294967296}),merge($shot,{annotated:1}),merge($shot,{saved_at:nil})]
+    $refused=false;try $storage.ledger_shot($bad) catch $m $refused=true end
+    if not $refused then raise("LEDGER","malformed saved shot accepted") end
+  end
+  if $view.values.preview.colour!="design.canvas" then raise("PREFS","canvas must follow the live design") end
+  if $registry.entry($s,"capture.mode.region").checked!=true then raise("REGISTRY","gold starts in region mode") end
+  if $registry.entry($s,"file.save").enabled!=false then raise("REGISTRY","empty document cannot save") end
+  for $mode in ["light","dark"]
+    $s.effective.mode=$mode;$s.look.mode=$mode
+    if $registry.entry($s,"view.mode").checked!=false then raise("REGISTRY","gold's generic mode toggle never has a checked flag") end
+  end
+  $s.look.mode=nil
+  $s.document={dirty:true,undo:1,redo:0,crop:nil,objects:[],width:320,height:240,original_width:320,original_height:240}
+  for $tool in $registry.tools $s.ui.tool=$tool;$model.render($s) end
+  if not $registry.entry($s,"edit.undo").enabled or not $registry.entry($s,"file.save").enabled then raise("REGISTRY","document actions were not enabled") end
+  $s.busy=true;$s.job="capture"
+  if $registry.entry($s,"file.save").enabled or not $registry.entry($s,"capture.cancel").enabled then raise("REGISTRY","busy admission differs from gold") end
+  $r=$core.request({mode:"region",output:"DP-1",region:{x:0,y:0,width:20,height:10,output:"DP-1"}})
+  $core.request({mode:"window",window:{id:1,generation:2},output:"DP-1"})
+  for $a in [{mode:nil},{delay:nil},{cursor:nil},{mode:"region",output:"DP-1",region:{x:0,y:0,width:20,height:10,output:"DP-2"}}]
+    $refused=false
+    try $core.request($a) catch $m $refused=true end
+    if not $refused then raise("ARGUMENT","invalid capture request accepted") end
+  end
+  print("Screenshot gold initial registry, document/busy admission and corrected capture shapes pass")
+finally
+  if is_dir($tmp) then remove_dir($tmp) end
+end

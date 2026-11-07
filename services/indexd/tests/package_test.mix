@@ -1,0 +1,85 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- The actual indexd binary in the desktop tarball, with owned unit/config.
+$root = dirname(dirname(dirname(dirname(realpath($0)))))
+if len(args()) != 1 then raise("USAGE", "package_test.mix PATH_TO_INDEXD") end
+$binary = realpath(args()[0])
+$mix_bin = realpath("/proc/self/exe")
+$version = toml_parse(read_file($root .. "/Cargo.toml")).workspace.package.version
+$commit = trim(run_argv_must(["git", "-C", $root, "rev-parse", "HEAD"], {timeout: 15}))
+$case_dir = "/var/tmp/indexd-package-" .. uuid()
+mkdir($case_dir .. "/bin", {parents:true})
+try
+  copy($mix_bin, $case_dir .. "/bin/mix")
+  copy($binary, $case_dir .. "/bin/indexd")
+  for $name in ["mixos-mcp", "noded", "hostd", "monitord", "maild", "editd", "portald", "settingsd", "backdrop", "workshop", "ced", "viud", "dopus", "email", "monitor", "prefs", "screenshot", "term"]
+    copy("/usr/bin/true", $case_dir .. "/bin/" .. $name)
+  end
+  run_argv_must([$mix_bin, $root .. "/tools/package.mix", "--release", $version,
+    "--commit", $commit, "--package", "desktop", "--fixture-binaries", "--bin-dir", $case_dir .. "/bin",
+    "--out", $case_dir .. "/out"], {timeout:120})
+  $manifest = load_data($case_dir .. "/out/release.manifest.mx")
+  if (len($manifest.archives) != 1 or $manifest.archives[0].name != "mixos-desktop" or
+      is_file($case_dir .. "/out/mixos-server-" .. $version .. "-linux-" .. platform().arch .. ".tar.gz")) then
+    raise("PACKAGE_SELECTION", "desktop-only package included server output")
+  end
+  $top_name = "mixos-desktop-" .. $version .. "-linux-" .. platform().arch
+  mkdir($case_dir .. "/extracted")
+  run_argv_must(["tar", "-xzf", $case_dir .. "/out/" .. $top_name .. ".tar.gz", "-C", $case_dir .. "/extracted"], {timeout:60})
+  $top = $case_dir .. "/extracted/" .. $top_name
+  if hash_file($binary, "sha256") != hash_file($top .. "/bin/indexd", "sha256") then
+    raise("PACKAGE_BINARY", "indexd differs from built binary")
+  end
+  if hash_file($mix_bin, "sha256") != hash_file($top .. "/bin/mix", "sha256") then
+    raise("PACKAGE_BINARY", "desktop lacks its Mix runtime")
+  end
+  if not is_file($top .. "/bin/mixos-mcp") then raise("PACKAGE_PROFILE", "desktop lacks base MCP binary") end
+  for $service in ["noded", "hostd", "monitord", "editd", "portald", "settingsd"]
+    if not is_file($top .. "/bin/" .. $service) or not is_dir($top .. "/share/" .. $service .. "/units") then
+      raise("PACKAGE_PROFILE", "desktop lacks " .. $service .. " binary or unit")
+    end
+  end
+  if not is_dir($top .. "/lib/releasesd") then raise("PACKAGE_PROFILE", "desktop lacks releasesd scripts") end
+  $identity = json_parse(run_argv_must([$top .. "/bin/indexd", "--version", "--json"]))
+  if $identity.component != "indexd" then raise("PACKAGE_IDENTITY", "wrong packaged binary") end
+  for $name in ["indexd.service", "sysusers.conf"]
+    if hash_file($root .. "/services/indexd/units/" .. $name, "sha256") != hash_file($top .. "/share/indexd/units/" .. $name, "sha256") then
+      raise("PACKAGE_UNIT", $name .. " differs from component source")
+    end
+  end
+  if hash_file($root .. "/services/indexd/examples/config.conf.mix", "sha256") != hash_file($top .. "/share/indexd/examples/config.conf.mix", "sha256") then
+    raise("PACKAGE_EXAMPLE", "sample config differs from component source")
+  end
+  $server_out = $case_dir .. "/server-out"
+  run_argv_must([$mix_bin, $root .. "/tools/package.mix", "--release", $version,
+    "--commit", $commit, "--package", "server", "--fixture-binaries",
+    "--bin-dir", $case_dir .. "/bin", "--out", $server_out], {timeout:120})
+  $server_top_name = "mixos-server-" .. $version .. "-linux-" .. platform().arch
+  run_argv_must(["tar", "-xzf", $server_out .. "/" .. $server_top_name .. ".tar.gz",
+    "-C", $case_dir .. "/extracted"], {timeout:60})
+  $server_top = $case_dir .. "/extracted/" .. $server_top_name
+  if not is_file($server_top .. "/bin/mixos-mcp") then raise("PACKAGE_PROFILE", "server lacks base MCP binary") end
+  for $service in ["noded", "hostd", "monitord"]
+    if (not is_file($server_top .. "/bin/" .. $service) or
+        not is_dir($server_top .. "/share/" .. $service .. "/units")) then
+      raise("PACKAGE_PROFILE", "server lacks base service or unit " .. $service)
+    end
+  end
+  if (not is_file($server_top .. "/bin/maild") or
+      stat($server_top .. "/bin/maild", {follow_symlinks: false}).is_symlink) then
+    raise("PACKAGE_PROFILE", "server lacks a real maild binary")
+  end
+  for $service in ["editd", "portald", "settingsd"]
+    if (exists($server_top .. "/bin/" .. $service, {follow_symlinks: false}) or
+        exists($server_top .. "/share/" .. $service, {follow_symlinks: false})) then
+      raise("PACKAGE_PROFILE", "desktop service leaked into server: " .. $service)
+    end
+  end
+  if (exists($server_top .. "/lib/releasesd", {follow_symlinks: false}) or
+      exists($server_top .. "/share/releasesd", {follow_symlinks: false})) then
+    raise("PACKAGE_PROFILE", "desktop release service leaked into server")
+  end
+  print("indexd package: desktop and server profile membership, binary, unit and config passed")
+finally
+  remove_dir($case_dir)
+end

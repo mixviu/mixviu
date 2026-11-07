@@ -1,0 +1,21 @@
+[package]
+name = "viu-dopus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+macros = { path = "../../libraries/macros" }
+viu = { path = "../../libraries/viu", package = "lib-viu" }
+dopus-core = { path = "rust-core" }
+bus = { path = "../../libraries/bus", features = ["native"] }
+serde_json = "=1.0.151"
+tracing.workspace = true
+eframe = { version = "=0.37.0", default-features = false, features = ["default_fonts", "wayland", "wgpu_no_default_features"] }
+wgpu = { version = "30.0", default-features = false, features = ["std", "vulkan", "gles", "wgsl"] }
+tokio = { version = "=1.53.1", features = ["rt", "time", "macros", "sync"] }
+
+[dev-dependencies]
+tempfile.workspace = true

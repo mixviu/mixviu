@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixViu host service socket
+
+[Socket]
+ListenStream=/run/mix/hostd/hostd.sock
+SocketUser=root
+SocketMode=0666
+DirectoryMode=0755
+Accept=no
+
+[Install]
+WantedBy=sockets.target

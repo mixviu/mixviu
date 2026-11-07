@@ -1,0 +1,24 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Existing native activation protocol; never request client-side focus.
+on job.run
+  try
+    $a=$event.args
+    $comp=env("MIX_COMP_SERVICE","comp")
+    send $comp "comp.window.wait" body={match:{app_id:$a.app_id},until:"mapped",timeout_ms:3000} timeout=5
+    if $rc!=0 then raise("ACTIVATION",to_string($result)) end
+    send $comp "comp.windows.list" body={} timeout=5
+    if $rc!=0 then raise("ACTIVATION",to_string($result)) end
+    $matches=filter($reply.windows,fn($w)=$w.app_id==$a.app_id and $w.pid==$a.pid)
+    if len($matches)!=1 then raise("ACTIVATION","Owned window is not uniquely known to the compositor") end
+    $target={id:$matches[0].id,generation:$matches[0].generation}
+    send $comp "comp.window.restore" body=$target timeout=5
+    if $rc!=0 or $reply.minimized!=false then raise("ACTIVATION",to_string($result)) end
+    $target.raise=true
+    send $comp "comp.window.focus" body=$target timeout=5
+    if $rc!=0 or $reply.focused!=true then raise("ACTIVATION",to_string($result)) end
+    reply(0,json_encode({shown:true,target:$reply}))
+  catch $message
+    reply(10,json_encode({error_code:"ACTIVATION",message:$message}))
+  end
+end

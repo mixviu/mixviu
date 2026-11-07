@@ -1,0 +1,320 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- lint: globals app_launch app_args
+$controller=require("controller.mix");$model=require("model.mix");$frame=require("frame.mix");$presentation=require("presentation.mix");$discovery=require("discovery.mix");$work=require("work.mix");$counter=require("counter.mix")
+$saved=require("saved.mix")
+$actions=require("actions.mix");$macros=require("macro.mix")
+$agent_ui=require("agent-ui.mix")
+$state=$model.initial();$ctx=viu_context();$state.mesh.observer=$ctx.citizen
+try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$launcher.plan($app_args) end
+$state.comp=$launch.comp ?? env("MIX_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
+fn publish_workshop($s)
+  $s=$saved.reconcile($s)
+  $s.busy=$model.busy($s)
+  if $s.quitting and not $s.busy then $s.window_close=true end
+  $projection=$frame.project($s,$presentation.project($s));$persist=$saved.project($s)
+  for $key in keys($persist) $projection[$key]=$persist[$key] end
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$projection}
+  return $s
+end
+fn handle($s,$event)
+  try return $controller.request($s,$event)
+  catch $message, $error return $controller.refused($s,if contains(["BUSY","DISCONNECTED","ARGUMENT"],$error.code) then $error.code else "ARGUMENT" end,$message) end
+end
+$state=publish_workshop($state)
+on workshop.ping
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.info
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.actions
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.execute
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.theme
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.dialog
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.call
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.refresh
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.quit
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.select
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.body
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.filter
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.tree
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.reply
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.split
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.dock
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.expand
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.select_row
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on viu.frame.intent
+  $out=$controller.execute($state,$event.args.value.command,$event.args.value.origin ?? "ui");$state=$out.state
+  $state=publish_workshop($state);reply($out.rc,$counter.wire($out.body))
+end
+on viu.frame.close
+  $state.quitting=true;$state=publish_workshop($state)
+end
+on workshop.dialog.intent
+  $a=$event.args
+  if $state.dialog=="new_macro" and $a.action=="edit" then $state.macro_new_title=$a.value
+  elif $a.value.instance==$state.dialog then
+    if $state.dialog=="new_macro" and $a.value.choice=="create" and trim($state.macro_new_title)!="" then
+      $state=$macros.enqueue($state,"macros.new",{app:$macros.app($state),title:$state.macro_new_title},nil)
+    end
+    $state.dialog=nil
+  end
+  $state=publish_workshop($state)
+end
+on viu.viewport.changed
+  $state.window_width=$event.args.width;$state.window_height=$event.args.height;$state=publish_workshop($state)
+end
+on viu.saved.loaded
+  $state=$saved.load($state,$event.args);$state=publish_workshop($state)
+end
+on workshop.layout
+  $a=$event.args
+  if $a.node=="inspector" then $state.split=$model.share(clamp(if type($a.value)=="map" then $a.value.fraction else $a.value end,0.1,0.8))
+  elif $a.value.child=="traffic" then
+    if $model.effective_dock($state)=="right" then $state.dock_width=clamp($a.value.fraction,0.2,0.5)
+    else $state.dock_height=clamp($a.value.fraction,0.12,0.5) end
+  end
+  $state=publish_workshop($state);reply(0,"{}")
+end
+on workshop.intent
+  $a=$event.args
+  if $state.dialog!=nil then reply(10,json_encode({error_code:"BUSY",message:"An operation is already running"}));return end
+  if $a.id=="filter" then $state.filter=$a.value
+  elif $a.id=="mesh-canvas" then
+    if $a.action=="inspect" then $state.mesh_inspected=$a.value
+    elif $a.action=="edge" then $state.traffic_filter=$a.value.id;$state.dock_open=true
+    elif $a.action=="node" then $state.row_key="node:"..$a.value;$state.selection=nil;$state.macro_selected=nil end
+  elif $a.id=="mesh-ping" or $a.id=="mesh-start" then $out=$controller.execute($state,if $a.id=="mesh-ping" then "mesh.ping" else "bus.observe" end,"ui");$state=$out.state
+  elif starts_with($a.id,"agent-") then $state=$agent_ui.intent($state,$a,$event.headers)
+  elif $a.id=="macro-source" then
+    if byte_length($a.value)<=262144 then
+      $state.macro_draft=$a.value
+      if $state.macro_selected!=nil then $state.macro_drafts[$state.macro_selected[0]..":"..$state.macro_selected[1]]=$a.value end
+    end
+  elif $a.id=="macro-target" then $state.macro_target=if $a.value=="Target app" then "" else $a.value end
+  elif $a.id=="macro-destination" then $state.macro_destination=if $a.value=="Move to app" then "" else $a.value end
+  elif $a.id=="macro-new" then $out=$controller.execute($state,"macro.new","ui");$state=$out.state
+  elif $a.id=="macro-delete-cancel" then $state.macro_confirm_delete=false
+  elif $a.id=="macro-delete-confirm" then $state.macro_confirm_delete=false;$state=$macros.invoke($state,"macros.remove",{},nil)
+  elif starts_with($a.id,"macro-") then $state=$macros.ui_command($state,"macros."..strip_prefix($a.id,"macro-"))
+  elif $a.id=="body" then
+    if $state.call==nil and byte_length($a.value)<=65536 then $state.body=$a.value end
+  elif $a.id=="services-tree" then
+    $event.command=if $a.action=="expand" then "workshop.expand" else "workshop.select_row" end;$event.args=$a.value
+    $out=handle($state,$event);$state=$out.state
+  elif $a.id=="traffic-toggle" then $state.dock_open=not $state.dock_open
+  elif $a.id=="traffic-side" then $state.dock_side=if $model.effective_dock($state)=="right" then "bottom" else "right" end
+  elif $a.id=="traffic-pause" then $state.traffic_paused=$a.value
+  elif $a.id=="traffic-filter" then $state.traffic_filter=$a.value
+  else
+    $id=if $a.id=="clear" then "edit.clear" elif $a.id=="call" then "bus.call" else $a.id end
+    $out=$controller.execute($state,$id,"ui");$state=$out.state
+  end
+  $state=publish_workshop($state);reply(0,"{}")
+end
+on viu.theme.changed
+  $state.theme_effective=$event.args;$state=publish_workshop($state)
+end
+on viu.macros.changed
+  $state.macros_open=$event.args.open;$state=publish_workshop($state)
+end
+on viu.keymap.changed
+  send "viu-local" "native.bindings" body={defaults:$actions.defaults(),overrides:$event.args}
+  if $rc==0 then $state.bindings=$reply.bindings;$state=publish_workshop($state) end
+end
+on bus.connected
+  $state.connected=true;$state.status="Connected";$state=$discovery.begin($state,nil);$state=publish_workshop($state)
+end
+on bus.disconnected
+  $state.connected=false;$state.status="Disconnected — requests are never replayed";$state=publish_workshop($state)
+end
+on viu.job.completed
+  $state=$controller.follow_up($controller.received($state,$event.args));$state=publish_workshop($state)
+end
+on viu.tick
+  $state=$controller.follow_up($state)
+  if $state.row_key=="nodes:mesh" or ($state.row_key!=nil and starts_with($state.row_key,"agent:")) then $state=publish_workshop($state) end
+end
+on workshop.agents
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.agents.select
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.agents.refresh
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.agents.filter
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.agents.new
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.agents.prompt
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.agents.cancel
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.agents.close
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.agents.resume
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.agents.set
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.agents.answer
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.open
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.list
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.reload
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.run
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.status
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.output
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.stop
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.new
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.get
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.put
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.remove
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.move
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.copy
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.ced
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.macros.dopus
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.notice
+  $state=$controller.follow_up($controller.notice($state,$event));$state=publish_workshop($state)
+end
+on workshop.mesh
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.mesh.ping
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.traffic
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on workshop.observe
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+on noded.observe.event
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end
+
+on workshop.show
+  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end

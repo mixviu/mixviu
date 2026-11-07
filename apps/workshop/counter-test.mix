@@ -1,0 +1,20 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$c=require("counter.mix")
+fn check($v,$why) if not $v then raise("COUNTER_TEST",$why) end end
+check($c.add(1,2)==3,"small counters stay numeric")
+check($c.add("9007199254740991",1)=="9007199254740992","exact transition past 2^53")
+check($c.add("18446744073709551614",1)=="18446744073709551615","exact u64 maximum")
+check($c.add("18446744073709551615",1)=="18446744073709551615","saturating add")
+check($c.compare("9007199254740993","9007199254740992")==1,"comparison preserves low bit")
+check($c.extract('{"args":{"dropped_count":18446744073709551615}}',["args","dropped_count"])=="18446744073709551615","lossless original JSON")
+check($c.wire({seq:"9007199254740993",title:"9007199254740993"})=='{"seq":9007199254740993,"title":"9007199254740993"}',"exact numeric wire fields preserve ordinary strings")
+$raw='{"events":[{"seq":9007199254740993,"kind":"tool_call","update":{"toolCallId":"a","seq":"123","bytes":18446744073709551615}}],"sessions":[{"session":"a","permissions":[{"request":18446744073709551615,"seq":"42"}]}]}'
+$parsed=$c.decode($raw);$event=$parsed.events[0]
+check($event.seq=="9007199254740993" and contains($event._workshop_tool_json,"18446744073709551615"),"opaque JSON is captured before numeric conversion")
+$tool={item:"tool",raw:$event.update,_workshop_tool_json:$event._workshop_tool_json}
+$wire=$c.wire({tool:$tool,row:$parsed.sessions[0],payload:{seq:"123"}})
+check(jq($wire,'fromjson|.tool.raw.seq|type')=="string","tool strings retain their JSON type")
+check(jq($wire,'fromjson|.tool.raw.bytes|tostring')=="18446744073709551615","opaque tool integers retain every bit")
+check(jq($wire,'fromjson|.row.permissions[0].request|tostring')=="18446744073709551615","opaque permission request keys retain every bit")
+check(jq($wire,'fromjson|.payload.seq|type')=="string" and not contains($wire,"_workshop_"),"opaque payloads retain types and private witnesses stay private")
+print("Workshop exact counter contracts PASS")

@@ -1,0 +1,76 @@
+# cargo-deny policy for mixviu (run by .github/workflows/security.yml).
+# Changes here are Tier 2 (CODEOWNERS).
+
+[graph]
+all-features = false
+
+[advisories]
+# Unmaintained crates warn; known vulnerabilities fail.
+unmaintained = "workspace"
+# clipboard-win (Windows-only, never built here) is yanked upstream.
+yanked = "warn"
+# Security debt inherited from mixos 8779f33 at the cut-over. This list only
+# shrinks: each fix PR removes its lines. A NEW advisory fails CI.
+ignore = [
+  { id = "RUSTSEC-2023-0071", reason = "rsa 0.9 Marvin timing (no fixed release); inherited debt" },
+  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained; inherited debt" },
+  { id = "RUSTSEC-2026-0118", reason = "hickory-proto NSEC3 loop (dnsd, Tier 2); inherited debt" },
+  { id = "RUSTSEC-2026-0119", reason = "hickory-proto name compression CPU (dnsd, Tier 2); inherited debt" },
+  { id = "RUSTSEC-2026-0194", reason = "quick-xml duplicate-attribute quadratic; inherited debt" },
+  { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader allocation; inherited debt" },
+  { id = "RUSTSEC-2026-0346", reason = "rustls Debug exposes secrets; inherited debt" },
+  { id = "RUSTSEC-2026-0347", reason = "rustls ECH buffered data; inherited debt" },
+  { id = "RUSTSEC-2026-0348", reason = "rustls brotli cert decompression; inherited debt" },
+  { id = "RUSTSEC-2026-0349", reason = "rustls ServerHello downgrade; inherited debt" },
+  { id = "RUSTSEC-2026-0367", reason = "zip SUID preservation on extract; inherited debt" },
+  { id = "RUSTSEC-2026-0368", reason = "zip symlink escape on extract; inherited debt" },
+  { id = "RUSTSEC-2026-0369", reason = "zip permissions through symlinks; inherited debt" },
+  { id = "RUSTSEC-2026-0381", reason = "webpki-roots distrusted emSign; inherited debt" },
+  { id = "RUSTSEC-2026-0382", reason = "rustls-webpki distrusted intermediates; inherited debt" },
+  { id = "RUSTSEC-2026-0385", reason = "ctutils non-constant-time mask; inherited debt" },
+  { id = "RUSTSEC-2026-0386", reason = "tokio AsyncFd I/O safety; inherited debt" },
+  { id = "RUSTSEC-2026-0429", reason = "zip symlink large size abort; inherited debt" },
+]
+
+[licenses]
+# Permissive licences only. No GPL/AGPL/LGPL in anything we ship.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "MPL-2.0",
+  "CC0-1.0",
+  "BSL-1.0",
+  "0BSD",
+  "Unlicense",
+  "OFL-1.1",
+  "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+# Permissive, crate-specific licences.
+exceptions = [
+  { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+  { crate = "libbz2-rs-sys", allow = ["bzip2-1.0.6"] },
+]
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "allow"
+# warn until theme, viu, overlays and ui-surface say publish = false (debt).
+wildcards = "warn"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Our own crates only, pinned by rev in Cargo.lock.
+allow-git = ["https://github.com/markc/spamlite"]

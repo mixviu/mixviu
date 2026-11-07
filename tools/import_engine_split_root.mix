@@ -1,0 +1,82 @@
+-- Track A1 lab: derive the workspace Cargo.toml and Cargo.lock from MixOS at
+-- an exact revision, trimmed to the imported closure plus the seed crates.
+-- usage: mix tools/import_engine_split_root.mix SRC_REPO REV
+
+$a = args()
+if len($a) != 2 then
+  raise("USAGE", "import_engine_split_root.mix SRC_REPO REV")
+end
+$src_repo = $a[0]
+$rev = $a[1]
+$root = path_join(dirname(realpath(script_path())), "..")
+
+$members = ["libraries/expr", "libraries/scene", "libraries/strict", "libraries/mix",
+  "libraries/bus", "libraries/props", "libraries/logging", "libraries/config",
+  "libraries/buildinfo", "libraries/paths", "libraries/mimedb", "libraries/test-broker",
+  "libraries/mesh", "libraries/mesh-trust", "engines/mix-shell", "engines/mix", "engines/mixd", "services/noded", "libraries/design", "libraries/settings", "libraries/edit", "services/settingsd", "services/editd", "libraries/mds", "services/monitord", "services/dnsd", "services/dnsd/crates/dns-core", "services/blobd", "services/hostd", "services/mixtrayd", "libraries/assets", "libraries/daemon", "libraries/davproto", "libraries/files", "services/maild", "services/maild/crates/maild-auth", "services/maild/crates/maild-bayesian", "services/maild/crates/maild-rules", "services/webd", "services/indexd"]
+-- workspace.dependencies path entries kept, by crate key -> new path
+$keep = {}
+for $m in $members
+  if starts_with($m, "libraries/") then
+    $keep[basename($m)] = $m
+  end
+end
+
+$src = run_argv_must(["git", "-C", $src_repo, "show", $rev .. ":Cargo.toml"])
+$lock = run_argv_must(["git", "-C", $src_repo, "show", $rev .. ":Cargo.lock"])
+
+$out = []
+$section = ""
+$dropped = []
+for $line in lines($src)
+  if starts_with($line, "[") then
+    $section = trim($line)
+  end
+  if starts_with($section, "[patch") or starts_with($section, "[profile") then
+    continue
+  end
+  if starts_with($line, "members =") then
+    push($out, "members = " .. json_encode($members))
+    continue
+  end
+  if starts_with($line, "exclude =") then
+    continue
+  end
+  if starts_with($line, "repository =") then
+    push($out, "repository = \"https://github.com/mixviu/mixviu\"")
+    continue
+  end
+  if $section == "[workspace.dependencies]" and contains($line, "path = \"") then
+    $key = trim(split($line, "=")[0])
+    if has_key($keep, $key) then
+      $p = re_replace($line, "path = \"[^\"]*\"", "path = \"" .. $keep[$key] .. "\"")
+      push($out, $p)
+    else
+      push($dropped, $key)
+    end
+    continue
+  end
+  push($out, $line)
+end
+
+-- patches the closure needs, then the profiles verbatim from the source
+push($out, "[patch.crates-io]")
+push($out, "# dirs-sys without option-ext (MixOS vendor/README.md).")
+push($out, "dirs-sys = { path = \"vendor/dirs-sys\" }")
+push($out, "")
+$in_profile = false
+for $line in lines($src)
+  if starts_with($line, "[") then
+    $in_profile = starts_with(trim($line), "[profile")
+  end
+  if $in_profile then
+    push($out, $line)
+  end
+end
+push($out, "")
+push($out, "[workspace.lints.clippy]")
+push($out, "mod_module_files = \"deny\"")
+
+write_file(path_join($root, "Cargo.toml"), join($out, "\n") .. "\n")
+write_file(path_join($root, "Cargo.lock"), $lock)
+print "dropped path deps: " .. join($dropped, " ")

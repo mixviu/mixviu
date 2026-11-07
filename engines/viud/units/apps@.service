@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixViu application registry for session %i
+Requires=viud@%i.service
+After=viud@%i.service
+BindsTo=viud@%i.service
+PartOf=session@%i.target
+
+[Service]
+Type=simple
+User=mix
+EnvironmentFile=@{etc}/session/%i.env
+UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
+# A viud session is Wayland. Without this, libwebrtc (Firefox, Chromium,
+# Zoom) assumes X11, never asks the ScreenCast portal, and offers no screen.
+Environment=XDG_SESSION_TYPE=wayland
+# Name the desktop, as viud does for the processes it starts itself. Toolkit
+# apps on automatic decorations keep the MixViu title bar only when they can
+# see it; viud offers server-side decorations, so without it they hand the
+# frame to viud. A session env file that sets it still wins.
+Environment=XDG_CURRENT_DESKTOP=MixViu
+ExecStart=@{prefix}/bin/mix --serve @{share}/viud/scripts/apps.mix --name apps
+Delegate=yes
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=1

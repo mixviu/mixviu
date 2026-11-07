@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "wlcs"
+description = "wlcs C ABI adapter for an owned headless viud"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[package.metadata.mixviu]
+component = "viud"
+kind = "service"
+layer = "desktop"
+contract = "none"
+
+[lib]
+name = "viud_wlcs"
+crate-type = ["cdylib"]
+
+[dependencies]
+libc.workspace = true
+model.workspace = true
+serde_json.workspace = true
+wayland-client = "=0.31.15"
+
+[lints.clippy]
+mod_module_files = "deny"

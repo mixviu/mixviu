@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixViu furniture host (viu --host) for session %i
+# The shell furniture (panel, launcher, toasts, ...) runs here as a Wayland
+# client of viud; viud itself has no in-process UI.
+Requires=viud@%i.service
+After=viud@%i.service noded@%i.service noded.service
+BindsTo=viud@%i.service
+PartOf=session@%i.target
+
+[Service]
+Type=simple
+User=mix
+EnvironmentFile=@{etc}/session/%i.env
+UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
+ExecStart=@{prefix}/bin/viu --host
+KillMode=control-group
+TimeoutStopSec=10
+Restart=always
+RestartSec=1

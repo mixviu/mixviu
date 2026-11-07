@@ -1,0 +1,19 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pure launch policy, matching pinned gold main.rs.
+fn plan($args)
+  $app=nil;$id=nil;$headless=false;$i=0
+  while $i<len($args)
+    $arg=$args[$i];$i=$i+1
+    if $arg=="--headless" then $headless=true;continue end
+    if $i>=len($args) or $args[$i]=="" then raise("ARGUMENT",$arg.." needs a value") end
+    $value=$args[$i];$i=$i+1
+    if $arg=="--app" then $app=$value
+    elif $arg=="--id" then $id=$value
+    else raise("ARGUMENT","unknown option: "..$arg) end
+  end
+  $initial=if $app!=nil then {app:$app,id:$id} else nil end
+  $activation=[]
+  if $initial!=nil then push($activation,{command:"workshop.macros.open",body:$initial}) end
+  push($activation,{command:"workshop.show",body:{}})
+  return {headless:$headless,initial_macro:$initial,activation:$activation}
+end

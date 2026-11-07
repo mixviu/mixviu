@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$root=dirname(dirname(script_path()))
+$m=json_parse(read_file($root.."/provenance/app-ports-layer.json"))
+for $file in $m.files
+  if hash_file($root.."/"..$file.target,"sha256")!=$file.current_sha256 then raise("LAYER_ADAPTATION_CHANGED",$file.target) end
+end
+for $app in ["gallery","backdrop","monitor","screenshot","prefs","ced","workshop","email"]
+  if is_dir($root.."/apps/"..$app.."/src") or is_file($root.."/apps/"..$app.."/Cargo.toml") then raise("PER_APP_RUST",$app) end
+  if not is_file($root.."/apps/"..$app.."/scene.mix") then raise("SCENE",$app) end
+  $contract=json_parse(read_file($root.."/apps/"..$app.."/contract.json"))
+  if not is_file($root.."/apps/"..$app.."/"..($contract.host.behaviour ?? "app.mix")) then raise("BEHAVIOUR",$app) end
+end
+print("app ports: six native imports pinned, eight Mix bundles, zero per-app Rust hosts")

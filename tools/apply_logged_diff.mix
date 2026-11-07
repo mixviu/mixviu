@@ -1,0 +1,20 @@
+-- Apply a diff a CBC job printed between ==LOCKDIFF== and ==ENDLOCKDIFF==
+-- markers in its saved log to this worktree.
+-- usage: mix tools/apply_logged_diff.mix LOG PATCH_OUT
+$a = args()
+$log = read_file($a[0])
+$start = index_of($log, "==LOCKDIFF==\n")
+$end = index_of($log, "==ENDLOCKDIFF==")
+if $start == nil or $start < 0 or $end == nil or $end < $start then
+  raise("NO_DIFF", "markers not found in " .. $a[0])
+end
+$patch = substr($log, $start + len("==LOCKDIFF==\n"), $end - $start - len("==LOCKDIFF==\n"))
+write_file($a[1], $patch)
+$root = path_join(dirname(realpath(script_path())), "..")
+if trim($patch) == "" then
+  print "empty diff"
+else
+  run_argv_must(["git", "-C", $root, "apply", "--check", $a[1]])
+  run_argv_must(["git", "-C", $root, "apply", $a[1]])
+  print "applied " .. to_string(len(lines($patch))) .. " lines"
+end

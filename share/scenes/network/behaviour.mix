@@ -1,0 +1,563 @@
+-- version: 0.3.0
+-- The network popup: links, addresses, default route and DNS. Through
+-- hostd (lib/hostd.mix): a link configured (DHCP or static, net.link.apply),
+-- a WireGuard tunnel set up (net.wg.apply), a Wi-Fi network scanned for
+-- and joined (net.wifi.scan, net.wifi.connect). hostd keeps each change
+-- only if it comes up, and the newest one can be undone. Every Bus caller
+-- can use the same write and editor handlers as a panel click.
+-- rtnetlink link and address events (net_watch) re-read the whole snapshot
+-- (events are hints, state is truth); networkd, resolved and the route table
+-- are read with their own tools on each batch. There is no polling fallback.
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mix/scenes/lib")
+$r = require($LIB .. "/runtime.mix")
+$m = require($LIB .. "/models.mix")
+$n = require($LIB .. "/network.mix")
+$h = require($LIB .. "/hostd.mix")
+$ctx = $r.scene_context("network")
+$state = {ready: false, queued: false, sequence: 0, model: $m.network(nil),
+  watch: nil, started: 0, retry: 5, retrying: false, open: false,
+  snap: nil, access: {available: false, frozen: false}, edit: nil,
+  receipts: {}, inflight: nil, writing: false, wg_pub: {}, wg_last: {}, pass_gen: 0, scan_gen: 0}
+-- How long a link gets to come up before hostd rolls the change back.
+$WINDOW_S = 20
+-- How long to wait for hostd's answer to a write: up to 15 s queued behind
+-- another change, the window, networkd's reconfigure and a rollback; hostd
+-- itself allows about 90 s. Past this the outcome is unknown, not failed.
+$WRITE_WAIT_S = 100
+
+-- The editor as the model sees it: its link's newest receipt (for Undo)
+-- and whether a change to that link is in flight.
+fn ui()
+  $edit = $state.edit
+  if $edit != nil then
+    $edit.receipt = $state.receipts[$edit.link]
+    $edit.busy = $state.inflight == $edit.link
+    if $edit.kind == "wg" then $edit.wg_pubkey = $state.wg_pub[$edit.link] ?? "" end
+    $edit.pass_gen = $state.pass_gen
+  end
+  return {access: $state.access, edit: $edit}
+end
+
+-- Re-publish from the last snapshot (editor changes need no re-read).
+fn republish()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
+  if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
+  $state.model = $m.network($state.snap, ui())
+  return $r.publish_model($ctx, $state.model)
+end
+
+fn schedule()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
+  $state.sequence = $state.sequence + 1
+  if $state.ready and not $state.queued then
+    $state.queued = true
+    try
+      emit $ctx.citizen refresh
+    catch $message, $error
+      $state.queued = false
+      raise($error.code, $message, $error.details)
+    end
+  end
+end
+
+fn refresh()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
+  if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
+  $sequence = $state.sequence
+  try
+    $snap = $n.snapshot()
+  catch $message
+    return $r.failure("net_state_failed", to_string($message))
+  end
+  $access = $h.access_state()
+  if not $state.ready or $sequence != $state.sequence then return $r.failure("superseded", "A newer network event replaced this snapshot") end
+  $state.snap = $snap
+  $state.access = $access
+  return republish()
+end
+
+-- Only an I/O failure is retried (a local backoff); any other refusal (the
+-- handle limit, a retired evaluator) is terminal and logged once.
+fn start_watch()
+  if $state.watch != nil then return end
+  if not has_builtin("net_watch") then
+    eprint("network: link events unavailable: this mix has no net_watch")
+    return
+  end
+  try
+    $state.watch = net_watch({events: ["link", "addr"]})
+    $state.started = monotonic()
+  catch $message, $error
+    eprint("network: net_watch failed: " .. to_string($message))
+    if $error.code == "NET_WATCH_IO" then retry_watch() end
+  end
+end
+
+-- The link socket failed: subscribe again after a delay doubling to five
+-- minutes. A reconnect backoff, not a state poll.
+fn retry_watch()
+  if $state.retrying then return end
+  $state.retrying = true
+  try
+    task_start("net.retry", "{}")
+  catch $message
+    $state.retrying = false
+    eprint("network: net retry not scheduled: " .. to_string($message))
+  end
+end
+
+on refresh async
+  $state.queued = false
+  $r.respond($r.refresh_result(fn() = refresh()))
+end
+
+-- A closed batch from the live handle re-subscribes after the backoff; one
+-- from an older handle (already replaced) changes nothing.
+on net.changed async
+  if len(keys($event.headers)) != 0 then return end
+  $batch = type($event.args) == "map" ? $event.args : {}
+  if type($batch.closed) == "map" then
+    eprint("network: net_watch ended: " .. to_string($batch.closed.message))
+    if $batch.watch != $state.watch then return end
+    try
+      net_unwatch($batch.watch)
+    catch $e
+    end
+    $state.watch = nil
+    -- A subscription that outlived the delay was a working one: start over.
+    if monotonic() - $state.started >= $state.retry then $state.retry = 5 end
+    retry_watch()
+  end
+  schedule()
+end
+
+on net.retry async
+  if len(keys($event.headers)) != 0 then return end
+  try
+    sleep($state.retry)
+    $state.retry = min($state.retry * 2, 300)
+  finally
+    $state.retrying = false
+  end
+  start_watch()
+  schedule()
+end
+
+-- A route, metric or DNS change raises no link or address event (net_watch
+-- has no route source and resolved no watch here yet), so the popup also
+-- re-reads each time it opens. An inventory it cannot read counts as
+-- closed, so the next readable open re-reads; it never schedules by itself.
+on scenes.changed
+  $open = $n.popup_open($r.event_args($event), $ctx.name) ?? false
+  if $open and not $state.open then schedule() end
+  $state.open = $open
+end
+
+-- ── configure through hostd ─────────────────────────────────────────────
+
+-- The row's action as the last model computed it ("link", "wg", "wifi" or
+-- "" while frozen or unavailable), at the last refresh.
+fn row_action_of($id)
+  for each $row in $state.model.rows ?? []
+    if $row.id == $id then return $row.action ?? "" end
+  end
+  return ""
+end
+
+-- Does the snapshot have a link of this name?
+fn tunnel_exists($name)
+  for each $l in ($state.snap ?? {}).links ?? []
+    if $l.ifname == $name then return true end
+  end
+  return false
+end
+
+-- Open the editor of $kind for $link, unless it is already open on it.
+fn open_editor($kind, $link)
+  if $state.edit != nil and $state.edit.link == $link and $state.edit.kind == $kind then return end
+  -- A fresh editor never shows a passphrase typed into an earlier one.
+  $state.pass_gen = $state.pass_gen + 1
+  if $kind == "wg" then
+    $state.edit = $m.wg_prefill($state.snap, $link, $state.wg_last[$link])
+  elif $kind == "wifi" then
+    $state.edit = $m.wifi_prefill($link)
+  else
+    $state.edit = $m.edit_prefill($state.snap, $link)
+    $state.edit.kind = "link"
+  end
+end
+
+-- A click on a link row opens its editor. Allowed while a change is in
+-- flight: its result lands in $state.receipts, not in the editor.
+on net_row
+  $id = $r.item_id($event)
+  if $id == nil or not starts_with($id, "if_") then $r.respond($r.failure("invalid_args", "item.id must be a link row")); return end
+  $action = row_action_of($id)
+  if $action == "" then reply(0, "{}"); return end
+  $link = slice($id, 3, length($id))
+  open_editor($action, $link)
+  if $action == "wifi" and not $state.edit.scanned then start_scan($link) end
+  $r.respond(republish())
+end
+-- Open a new tunnel editor for the requested name.
+on net_wg_new
+  $id = $r.item_id($event)
+  if $id == nil or not starts_with($id, "wg_") then $r.respond($r.failure("invalid_args", "item.id must be a new tunnel")); return end
+  $name = slice($id, 3, length($id))
+  if not $h.writable($state.access) then reply(0, "{}"); return end
+  open_editor("wg", $name)
+  $r.respond(republish())
+end
+on net_mode_dhcp
+  if $state.edit != nil and $state.inflight != $state.edit.link then $state.edit.mode = "dhcp" end
+  $r.respond(republish())
+end
+on net_mode_static
+  if $state.edit != nil and $state.inflight != $state.edit.link then $state.edit.mode = "static" end
+  $r.respond(republish())
+end
+on net_wg_handshake
+  if $state.edit != nil and $state.edit.kind == "wg" and $state.inflight != $state.edit.link then
+    $state.edit.handshake = $state.edit.handshake == false
+  end
+  $r.respond(republish())
+end
+
+-- Typed text is kept, not re-published, so the caret stays put; a later
+-- publish carries it in the model. One handler per field, each storing
+-- only into its own editor key.
+$TYPED = {net_edit_addr: "addresses", net_edit_gw: "gateway", net_edit_dns: "dns",
+  net_wg_addr: "wg_addresses", net_wg_port: "wg_port", net_peer_key: "peer_key",
+  net_peer_ep: "peer_endpoint", net_peer_allowed: "peer_allowed", net_peer_ka: "peer_keepalive"}
+fn typed($event, $field)
+  $v = $r.event_args($event).value
+  if $state.edit != nil and type($v) == "string" then $state.edit[$TYPED[$field]] = $v end
+  reply(0, "{}")
+end
+on net_edit_addr
+  typed($event, "net_edit_addr")
+end
+on net_edit_gw
+  typed($event, "net_edit_gw")
+end
+on net_edit_dns
+  typed($event, "net_edit_dns")
+end
+on net_wg_addr
+  typed($event, "net_wg_addr")
+end
+on net_wg_port
+  typed($event, "net_wg_port")
+end
+on net_peer_key
+  typed($event, "net_peer_key")
+end
+on net_peer_ep
+  typed($event, "net_peer_ep")
+end
+on net_peer_allowed
+  typed($event, "net_peer_allowed")
+end
+on net_peer_ka
+  typed($event, "net_peer_ka")
+end
+on net_close
+  $state.edit = nil
+  $state.pass_gen = $state.pass_gen + 1
+  $r.respond(republish())
+end
+
+-- A note for $link's editor, if the editor is (still) on that link.
+fn note_for($link, $text)
+  if $state.edit != nil and $state.edit.link == $link then $state.edit.note = $text end
+end
+
+-- ── Wi-Fi: scan, pick, connect ─────────────────────────────────────────
+
+-- A scan runs as an internal task, like a write, so the click is answered
+-- at once.
+fn start_scan($device)
+  if $state.edit == nil or $state.edit.scanning == true then return end
+  $state.edit.scanning = true
+  $state.scan_gen = $state.scan_gen + 1
+  $state.edit.scan_gen = $state.scan_gen
+  try
+    task_start("net.scan", json_encode({device: $device, gen: $state.scan_gen}))
+  catch $message
+    $state.edit.scanning = false
+    note_for($device, $m.text("net_task_failed"))
+  end
+end
+on net.scan async
+  if len(keys($event.headers)) != 0 then return end
+  $device = to_string(($event.args ?? {}).device)
+  $gen = ($event.args ?? {}).gen
+  if $state.edit == nil or $state.edit.kind != "wifi" or $state.edit.link != $device or $state.edit.scan_gen != $gen or not $state.edit.scanning then return end
+  $out = $h.call("net.wifi.scan", {device: $device}, 30)
+  -- Only the scan this editor started last may land in it.
+  if $state.edit != nil and $state.edit.kind == "wifi" and $state.edit.link == $device and $state.edit.scan_gen == $gen then
+    $state.edit.scanning = false
+    $state.edit.scanned = true
+    $state.edit.selected = nil
+    if $out.ok then
+      $nets = type($out.body.networks) == "list" ? $out.body.networks : []
+      $state.edit.networks = sort_by($nets, function ($w) = -(to_number($w.signal_dbm) ?? -200))
+    else
+      $state.edit.networks = []
+      note_for($device, $m.net_refusal($out.status, $device, $out.body))
+    end
+  end
+  republish()
+end
+on net_wifi_scan
+  if $state.edit != nil and $state.edit.kind == "wifi" then
+    note_for($state.edit.link, "")
+    start_scan($state.edit.link)
+  end
+  $r.respond(republish())
+end
+on net_wifi_pick
+  $id = $r.item_id($event)
+  if $state.edit != nil and $state.edit.kind == "wifi" and $id != nil and starts_with($id, "ssid_") then
+    $i = to_number(slice($id, 5, length($id)))
+    if $i != nil and $i >= 0 and $i < length($state.edit.networks ?? []) then
+      $state.edit.selected = $i
+      hold_pass()
+      note_for($state.edit.link, "")
+    end
+  end
+  $r.respond(republish())
+end
+
+-- ── writes ──────────────────────────────────────────────────────────────
+
+-- One hostd write at a time from this panel; hostd serialises host-wide
+-- anyway. The click is answered at once and the write runs as an internal
+-- task (net.write), so the scene host never waits on hostd. The result is
+-- kept per link (the newest receipt), so the editor may close or move to
+-- another link while the write runs. A Wi-Fi passphrase travels only in the
+-- task's body, straight to hostd; it is never kept in state or a model.
+$WRITE_COMMANDS = ["net.link.apply", "net.wg.apply", "net.wifi.connect", "hostd.undo"]
+fn start_write($link, $command, $body, $done_key, $form = nil)
+  $state.inflight = $link
+  $state.writing = false
+  try
+    task_start("net.write", json_encode({link: $link, command: $command, body: $body, done: $done_key, form: $form}))
+  catch $message
+    $state.inflight = nil
+    -- Not the message: it could carry the task body, passphrase included.
+    note_for($link, $m.text("net_task_failed"))
+  end
+end
+
+-- The write task validates the pending link and typed command.
+on net.write async
+  if len(keys($event.headers)) != 0 then return end
+  $a = type($event.args) == "map" ? $event.args : {}
+  $link = to_string($a.link)
+  $command = $a.command
+  if $state.writing or $state.inflight != $link or not contains($WRITE_COMMANDS, $command) then return end
+  $state.writing = true
+  try
+    $out = $h.call($command, $a.body, $WRITE_WAIT_S)
+  finally
+    $state.inflight = nil
+    $state.writing = false
+  end
+  if $out.ok then
+    if $command == "hostd.undo" then
+      $state.receipts = delete($state.receipts, $link)
+      -- The tunnel is back to its earlier setup, which this panel didn't
+      -- record: forget the form, so the next Apply warns again.
+      $state.wg_last = delete($state.wg_last, $link)
+    else
+      $state.receipts[$link] = $out.body.receipt
+    end
+    -- hostd hands back a tunnel's public key, for the peer's side.
+    if $command == "net.wg.apply" and type($out.body.public_key) == "string" then $state.wg_pub[$link] = $out.body.public_key end
+    if $command == "net.wg.apply" and type($a.form) == "map" then $state.wg_last[$link] = $a.form end
+    note_for($link, $m.text($a.done, {link: $link}))
+  elif $h.uncertain($out) then
+    -- No answer to a request that left, or hostd's own timeout: hostd may
+    -- still finish the change (it runs to the end even when the caller
+    -- hangs up), so the old receipt can no longer be trusted to be newest.
+    $state.receipts = delete($state.receipts, $link)
+    $state.wg_last = delete($state.wg_last, $link)
+    note_for($link, $m.text("net_no_answer", {link: $link}))
+  else
+    -- A refusal or a rollback leaves the previous newest change in force,
+    -- so its receipt stays (undo checks the current state itself).
+    note_for($link, $m.net_refusal($out.status, $link, $out.body))
+  end
+  schedule()
+  republish()
+end
+
+-- Apply (link or tunnel) or Connect (Wi-Fi, open or saved network; one that
+-- needs a passphrase connects on Enter in the passphrase field).
+on net_apply
+  $e = $state.edit
+  if $e == nil then reply(0, "{}"); return end
+  if $state.inflight != nil then
+    note_for($e.link, $m.text("hostd_busy"))
+    $r.respond(republish()); return
+  end
+  if $e.kind == "wifi" then
+    connect_wifi($e, nil)
+  elif $e.kind == "wg" then
+    $req = $h.wg_request($e.link, $e, $WINDOW_S + 5)
+    -- An existing tunnel this panel never set up: hostd can't hand its
+    -- setup back, so a peerless Apply would silently drop its peers.
+    -- Say so, and replace only on a second Apply.
+    $unknown = $state.wg_last[$e.link] == nil and tunnel_exists($e.link)
+    if $req.error != nil then
+      note_for($e.link, $m.text($req.error))
+    elif $unknown and length($req.request.peers) == 0 and $e.confirmed != true then
+      $state.edit.confirmed = true
+      note_for($e.link, $m.text("net_wg_replace_confirm", {link: $e.link}))
+    else
+      -- A confirmation covers one replacement only: an Undo or any later
+      -- Apply on this tunnel has to be confirmed again.
+      $state.edit.confirmed = false
+      note_for($e.link, $m.text("net_applying", {link: $e.link, n: $WINDOW_S + 5}))
+      start_write($e.link, "net.wg.apply", $req.request, "net_tunnel_applied", $m.wg_form($e))
+    end
+  else
+    $req = $h.link_request($e.link, $e, $WINDOW_S)
+    if $req.error != nil then
+      note_for($e.link, $m.text($req.error))
+    else
+      note_for($e.link, $m.text("net_applying", {link: $e.link, n: $WINDOW_S}))
+      start_write($e.link, "net.link.apply", $req.request, "net_applied")
+    end
+  end
+  $r.respond(republish())
+end
+
+-- Connect to the picked network. $passphrase comes only from Enter in the
+-- (masked) passphrase field and goes only into the write task's body.
+fn connect_wifi($e, $passphrase)
+  $picked = ($e.selected != nil and $e.selected < length($e.networks ?? [])) ? $e.networks[$e.selected] : nil
+  if $picked == nil then
+    note_for($e.link, $m.text("net_wifi_pick")); return
+  end
+  $needs = $picked.security != "open" and $picked.known != true
+  if $needs and ($passphrase == nil or $passphrase == "") then
+    note_for($e.link, $m.text("net_wifi_need_pass")); return
+  end
+  $req = $h.wifi_request($e.link, to_string($picked.ssid), $needs ? $passphrase : nil, 30)
+  note_for($e.link, $m.text("net_connecting", {ssid: $picked.ssid, link: $e.link, n: 30}))
+  start_write($e.link, "net.wifi.connect", $req.request, "net_wifi_connected")
+end
+-- Hide the passphrase field under a new generation: the hidden revision
+-- gives it a non-empty value, so when it returns (value "") the scene host
+-- drops whatever was typed. It returns only once the scene host reports
+-- that hidden revision applied (net.pass.release).
+fn hold_pass()
+  if $state.edit == nil then return end
+  $state.pass_gen = $state.pass_gen + 1
+  $state.edit.pass_hold = true
+  $state.edit.hold_gen = $state.pass_gen
+  try
+    task_start("net.pass.release", json_encode({gen: $state.pass_gen}))
+  catch $message
+    $state.edit.pass_hold = false
+  end
+end
+-- The scene host sends no event when it applies a revision, so this is a
+-- bounded wait (about 10 s, like the rename dialog's retries), never a
+-- standing poll. A VT switched away for longer leaves the field hidden;
+-- picking the network again starts a fresh reset.
+on net.pass.release async
+  if len(keys($event.headers)) != 0 then return end
+  $gen = ($event.args ?? {}).gen
+  $w = $r.call($ctx.host, "shell.scene.watch", {scene: $ctx.name})
+  $want = ($w.ok and type($w.value) == "map") ? $w.value.revision : nil
+  for $try = 1 to 50
+    if $state.edit == nil or $state.edit.hold_gen != $gen then return end
+    $w = $r.call($ctx.host, "shell.scene.watch", {scene: $ctx.name})
+    if $want != nil and $w.ok and type($w.value) == "map" and ($w.value.applied_revision ?? 0) >= $want then
+      $state.edit.pass_hold = false
+      republish()
+      return
+    end
+    sleep(0.2)
+  end
+  if $state.edit != nil and $state.edit.hold_gen == $gen then
+    note_for($state.edit.link, $m.text("net_wifi_pick_again"))
+    republish()
+  end
+end
+
+-- Enter in the passphrase field: its value arrives once, in this event.
+-- The field reports no keystrokes (no on_change), so this is the only
+-- place a passphrase crosses the Bus.
+on net_wifi_connect
+  $e = $state.edit
+  if $e == nil or $e.kind != "wifi" then reply(0, "{}"); return end
+  if $state.inflight != nil then
+    note_for($e.link, $m.text("hostd_busy"))
+    $r.respond(republish()); return
+  end
+  $v = $r.event_args($event).value
+  -- Hide the field for a moment: it comes back empty, so Enter can't resend
+  -- this passphrase.
+  hold_pass()
+  connect_wifi($e, type($v) == "string" ? $v : nil)
+  $r.respond(republish())
+end
+
+-- Undo the newest change this panel made to the editor's link.
+on net_undo
+  $e = $state.edit
+  if $e == nil or $state.receipts[$e.link] == nil then reply(0, "{}"); return end
+  if $state.inflight != nil then
+    note_for($e.link, $m.text("hostd_busy"))
+    $r.respond(republish()); return
+  end
+  note_for($e.link, "")
+  start_write($e.link, "hostd.undo", {receipt: $state.receipts[$e.link]}, "net_undone")
+  $r.respond(republish())
+end
+
+on network.open
+  $r.respond($r.popup($ctx, "open"))
+end
+on network.close
+  $r.respond($r.popup($ctx, "close"))
+end
+on network
+  $r.respond($r.popup($ctx, "toggle"))
+end
+-- Read-only state for agents and tests: which links this panel may
+-- configure, the hostd note, and a write in flight.
+on network.state
+  $editable = []
+  for each $row in $state.model.rows
+    if $row.editable then push($editable, $row.name) end
+  end
+  reply(0, json_encode({summary: $state.model.summary, count: length($state.model.rows),
+    editable: $editable, hostd_note: $state.model.hostd_note, writing: $state.inflight}))
+end
+on props.changed
+  $a = $r.event_args($event)
+  if not $state.ready and $a.path == "services.registered" then
+    $ready = $r.ready($ctx)
+    $state.ready = $ready.ok
+    if $state.ready then schedule() end
+  end
+end
+on bus.connected
+  if len(keys($event.headers)) != 0 then return end
+  $state.ready = false
+  $ready = $r.ready($ctx)
+  $state.ready = $ready.ok
+  schedule()
+end
+subscribe(env("MIX_NODED_SERVICE", "noded") .. ".props.changed")
+subscribe("scenes.changed")
+$ready = $r.ready($ctx)
+if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
+$state.ready = true
+start_watch()
+schedule()

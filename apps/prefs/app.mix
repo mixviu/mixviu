@@ -1,0 +1,765 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- lint: globals app_args
+$core=require("core.mix");$ctx=viu_context()
+$nav=require("navigation.mix")
+$pages=require("pages.mix")
+$actions=require("actions.mix")
+$look=require("look.mix")
+$email=require("email.mix")
+$software=require("software.mix")
+$gallery=require("gallery.mix")
+$bus_surface=json_parse(read_file(path_join(dirname(script_path()),"bus.json")))
+$state=$core.initial($app_args[0] ?? env("MIX_INSTANCE","desktop"))
+if $app_args[0]=="--page" then
+  $state=$core.initial(env("MIX_INSTANCE","desktop"))
+  $parts=split($app_args[1],"/")
+  try $state=$pages.open_page($state,$parts[0],$parts[1]) catch $ignored $state.nav=$nav.initial_nav() end
+end
+fn publish_prefs($s)
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
+end
+fn pump_look($s)
+  $before=$s.look.serial
+  $s.look=$look.prepare($s.look,$s.binding,$s.ui.dialog!=nil)
+  if $s.look.serial!=$before then
+    $path=path_join(dirname(script_path()),"job.mix")
+    send "viu-local" "jobs.start" id="prefs-look" owner=$s.look.serial path=$path source=read_file($path) command="job.run" args={op:"look",command:$s.look.job.command,body:$s.look.job.body}
+    if $rc!=0 then raise("JOB",to_string($result)) end
+  end
+  if $s.look.read and $s.look.uncertain==nil and not $s.busy then $s=refresh_prefs($s) end
+  return $s
+end
+
+on viu.frame.close
+  if $state.ui.dialog==nil then $state.quitting=true;publish_prefs($state) end
+end
+on viu.macros.closed
+  $state.ui.macros_open=false;publish_prefs($state)
+end
+on viu.keymap.changed
+  send "viu-local" "native.bindings" body={defaults:$actions.binding_defaults(),overrides:$event.args}
+  if $rc==0 then $state.bindings=$reply.bindings;publish_prefs($state) end
+end
+on viu.frame.intent
+  $id=$event.args.value.command
+  $state=execute_origin($state,$id,{},$event.args.value.origin ?? "menu")
+  publish_prefs($state);reply(0,"{}")
+end
+fn start_prefs($s,$payload)
+  if $s.busy then raise("BUSY","A settings operation is active") end
+  $s.serial=$s.serial+1;$s.busy=true;$s.pending=$payload;$s.status="Settings request in progress"
+  $path=path_join(dirname(script_path()),"job.mix")
+  send "viu-local" "jobs.start" body={id:"prefs-work",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:$payload}
+  if $rc!=0 then raise("JOB",to_string($result)) end
+  return $s
+end
+fn refresh_prefs($s)
+  $s.needs_read=false
+  return start_prefs($s,{op:"read",binding:$s.binding})
+end
+fn queued_prefs($s)
+  if $s.busy or len(keys($s.queue_changes))==0 or $s.uncertain then return $s end
+  $changes={};$reset=[]
+  for $key in keys($s.queue_changes)
+    if $s.queue_changes[$key]==nil then push($reset,$key) else $changes[$key]=$s.queue_changes[$key] end
+  end
+  $s.inflight_changes=$s.queue_changes;$s.queue_changes={}
+  return start_prefs($s,{op:"write",request:{binding:$s.binding,expected_incarnation:$s.incarnation,expected_revision:$s.revision,operation_id:viu_token(),changes:$changes,reset:$reset}})
+end
+fn release_request($s,$command,$body)
+  if $command!="releases.notes" and $s.release_busy then
+    if $command=="releases.list" then $s.release_relist=true end
+    return $s
+  end
+  if $command=="releases.notes" then send "viu-local" "jobs.cancel" id="prefs-notes" end
+  $s.release_serial=$s.release_serial+1
+  if $command=="releases.notes" then $s.notes_owner=$s.release_serial
+  else
+    $s.release_busy=true;$s.release_owner=$s.release_serial
+    $s.release_op=$software.operation($command,$body)
+    if not ($s.release_quiet ?? false) then $s.release_status=$software.progress($s.release_op);$s.release_failed=false end
+  end
+  $path=path_join(dirname(script_path()),"job.mix")
+  send "viu-local" "jobs.start" id=if $command=="releases.notes" then "prefs-notes" else "prefs-releases" end owner=$s.release_serial path=$path source=read_file($path) command="job.run" args={op:"release",command:$command,body:$body} timeout_seconds=14430
+  if $rc!=0 then raise("JOB",to_string($result)) end
+  return $s
+end
+fn execute_prefs($s,$id,$params)
+  return execute_origin($s,$id,$params,"bus")
+end
+fn execute_origin($s,$id,$params,$origin)
+  if not any($actions.registry,fn($a)=$a.id==$id) then raise("UNKNOWN_ACTION",$nav.text_for("unknown-action")) end
+  if not $actions.enabled($s,$id) then raise("DISABLED",$nav.text_for("command-disabled")) end
+  if $id=="file.quit" then $s.quitting=true
+  elif $id=="view.search" then $s.nav.searching=true;$s.ui.search_focus=true
+  elif $id=="sidebar.toggle" then $s.nav.sidebar=not $s.nav.sidebar
+  elif $id=="page.back" then $s=$pages.open_page($s,$nav.page($s.nav.page).parent,nil)
+  elif $id=="page.open" then
+    $pages.check_params($params,["page","row"],["page"])
+    if type($params.page)!="string" or ($params.row!=nil and type($params.row)!="string") then raise("ARGUMENT","page and row must be strings") end
+    $s=$pages.open_page($s,$params.page,$params.row)
+  elif $id=="set" then
+    $pages.check_params($params,["key","value"],["key","value"])
+    if type($params.key)!="string" then raise("ARGUMENT","key must be a string") end
+    $c=$pages.control_for($s,$params.key);$s=set_prefs($s,$params.key,$params.value)
+  elif $id=="item" then $pages.item_action($s,$params)
+  elif $id=="view.refresh" then
+    if $s.ui.section=="software" then $s=release_request($s,"releases.list",{})
+    else
+      if $s.nav.page=="wallpaper" then $s.gallery.scanned=nil;$s=scan_gallery($s) end
+      if $s.nav.page=="email" then $s=query_email($s) end
+      $s=hint_prefs($s)
+    end
+  elif starts_with($id,"appearance.") then $s.look=$look.decide($s.look,split($id,".")[1]);$s=pump_look($s)
+  elif $id=="terminal.reset" then
+    for $k in $s.catalog if starts_with($k.path,"terminal.") then $s.queue_changes[$k.path]=nil end end
+    $s=queued_prefs($s)
+  elif $id=="email.account.add" then $s.ui.email_account=nil;$s.email.form=$email.blank_form();$s.email.dirty=false;$s.email.password="";$s.email.secret_epoch=($s.email.secret_epoch ?? 0)+1
+  elif $id=="email.account.save" then
+    $form=$s.email.form
+    $args={op:if $form.id==nil then "add" else "update" end,name:$form.name,url:$form.url,email:$form.email,ca_path:$form.ca_path,signature:$form.signature}
+    if $form.id!=nil then $args.id=$form.id end
+    $errors=$email.field_errors($form)
+    if len(keys($errors))>0 then $s.email.form.errors=$errors;$s.status=$nav.text_for("email-fields-refused");$s.failed=true
+    else $s=apply_email($s,$args);$s.email.form.errors={};$s.email.dirty=false end
+  elif $id=="email.account.revert" then $s.email.form=$email.form_of($email.account($s,$s.ui.email_account));$s.email.dirty=false
+  elif $id=="email.account.remove" then $s.ui.dialog={remove_account:$s.ui.email_account}
+  elif $id=="email.account.up" or $id=="email.account.down" then $s=apply_email($s,{op:"move",id:$s.ui.email_account,direction:split($id,".")[2]})
+  elif $id=="email.account.default" then $s=apply_email($s,{op:"default",id:$s.ui.email_account})
+  elif $id=="email.account.enable" then $s=apply_email($s,{op:"enable",id:$s.ui.email_account,enabled:not $email.account($s,$s.ui.email_account).enabled})
+  elif $id=="email.password.forget" then $s.ui.dialog={forget_password:$s.ui.email_account}
+  elif $id=="email.reset" then $s.ui.dialog="reset_email"
+  elif $id=="email.account.connect" then $s=email_task($s,"connect",$s.ui.email_account,"email.account.connect",{id:$s.ui.email_account},true,nil)
+  elif $id=="email.password.set" then
+    $s=email_task($s,"password",$s.ui.email_account,"email.account.password.set",{id:$s.ui.email_account,password:$s.email.password},true,nil)
+    $s.email.password="";$s.email.secret_epoch=($s.email.secret_epoch ?? 0)+1
+  elif $id=="help.about" then $s.ui.dialog="about"
+  elif $id=="help.shortcuts" then $s.ui.dialog="shortcuts"
+  elif $id=="help.macros" then $s.ui.macros_open=not $s.ui.macros_open
+  elif $id=="apps.remove" then $s.ui.dialog={remove:$s.ui.selected}
+  elif $id=="apps.check" then $s=release_request($s,"releases.check",{})
+  elif $id=="apps.update_all" then $s=release_request($s,"releases.update",{apps:map(filter($nav.apps_view($s).visible,fn($r)=$r.installed!=nil),fn($r)=$r.app)})
+  elif $id=="apps.rollback" then $s=release_request($s,"releases.rollback",{app:$s.ui.selected})
+  elif $id=="apps.install" then
+    $r=$actions.selected($s)
+    $s=if $r.installed!=nil then release_request($s,"releases.update",{apps:[$r.app]}) else release_request($s,"releases.install",{app:$r.app}) end
+  elif $id=="view.mode" then $s=$actions.choose_theme($s,{mode:if $actions.theme_view($s).effective.mode=="light" then "dark" else "light" end})
+  elif starts_with($id,"view.section.") then $s=$nav.set_section($s,{name:substr($id,13)})
+  elif starts_with($id,"view.") then
+    $parts=split($id,".");$axis={theme:"scheme",style:"style",mode:"mode",decorations:"decorations",captions:"caption_side"}[$parts[1]]
+    if $axis==nil then raise("UNKNOWN_COMMAND","Unknown theme action") end
+    $choice={};$choice[$axis]=if $parts[2]=="session" then nil else $parts[2] end
+    $s=$actions.choose_theme($s,$choice)
+  else raise("UNKNOWN_COMMAND","Action implementation pending: "..$id) end
+  $s=enter_page($s)
+  send "viu-local" "native.executed" body={id:$id,origin:$origin,params:if contains(["page.open","set","item"],$id) then $params else nil end,result:$pages.action_result($s,$id,$params)}
+  $recorded=$rc
+  return $s
+end
+fn apply_email($s,$args)
+  $plan=$email.plan($s,$args)
+  $s.queue_changes=merge($s.queue_changes,$plan.changes);$s.email.added=$plan.added
+  return queued_prefs($s)
+end
+fn queue_keys($s,$changes)
+  if $pages.store_blocked($s)!=nil or not $s.connected or $s.quitting then raise("FAILED",$nav.text_for("store-unreachable")) end
+  $reset=[];$values={}
+  for $key in keys($changes) if $changes[$key]==nil then push($reset,$key) else $values[$key]=$changes[$key] end end
+  $checked=viu_settings("admit",$s.values,$values,$reset)
+  if not $checked.ok then raise("FAILED",join(map($checked.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
+  if $s.look.settings!="missing" then $s.store_error=nil end
+  $s.queue_changes=merge($s.queue_changes,$changes)
+  return queued_prefs($s)
+end
+fn gallery_action($s,$action,$value)
+  $plan=$gallery.action($s,$action,$value);$s=$plan.state
+  if len(keys($plan.changes))>0 then $s=queue_keys($s,$plan.changes) end
+  return scan_gallery($s)
+end
+fn enter_page($s)
+  if $s.nav.page=="wallpaper" then
+    if not ($s.gallery.entered ?? false) and ($s.gallery.error!=nil or monotonic()-($s.gallery.scanned_at ?? 0)>=60) then $s.gallery.scanned=nil end
+    $s.gallery.entered=true;$s=scan_gallery($s)
+  else $s.gallery.entered=false end
+  if $s.nav.page=="email" and not ($s.email.queried ?? false) then $s.email.queried=true;$s=query_email($s)
+  elif $s.nav.page!="email" then $s.email.queried=false end
+  return $s
+end
+fn scan_gallery($s)
+  $folder=$gallery.folder($s)
+  if $folder==nil or $s.quitting or $s.gallery.scanning!=nil or $s.gallery.scanned==$folder then return $s end
+  $s.gallery.serial=$s.gallery.serial+1;$s.gallery.scanning={owner:$s.gallery.serial,folder:$folder}
+  $path=path_join(dirname(script_path()),"gallery-job.mix")
+  send "viu-local" "jobs.start" id="prefs-gallery" owner=$s.gallery.serial path=$path source=read_file($path) command="job.run" args={folder:$folder}
+  if $rc!=0 then $s.gallery.scanning=nil;$s.gallery.error="Folder scan could not start" end
+  return $s
+end
+fn confirm_dialog($s,$answer)
+  if $s.ui.dialog==nil then raise("NO_DIALOG","no dialog is open") end
+  if not contains(["confirm","cancel"],$answer) then raise("ARGUMENT","answer must be confirm or cancel") end
+  $d=$s.ui.dialog
+  if $answer=="cancel" then $s.ui.dialog=nil;return $s end
+  if contains(["about","shortcuts"],$d) then raise("ARGUMENT","this dialog has nothing to confirm; answer cancel") end
+  $s.ui.dialog=nil
+  if $d=="reset_email" then
+    for $k in $s.catalog if starts_with($k.path,"email.") then $s.queue_changes[$k.path]=nil end end
+    $s.email.added=nil;$s=queued_prefs($s)
+  elif $d.remove!=nil then $s=release_request($s,"releases.remove",{app:$d.remove})
+  elif $d.remove_account!=nil then
+    if $s.email.service=="absent" then $removed=$email.removal($s,$d.remove_account);$s=apply_email($s,{op:"remove",id:$d.remove_account});$s.email.removed=$removed
+    else $s=email_task($s,"remove",$d.remove_account,"email.account.remove",{id:$d.remove_account},false,nil) end
+  elif $d.forget_password!=nil then $s=email_task($s,"forget",$d.forget_password,"email.account.password.set",{id:$d.forget_password,password:""},true,nil) end
+  return $s
+end
+fn set_prefs($s,$key,$value)
+  $admission=$s;$admission.busy=false
+  $request=$core.admitted($admission,$key,$value)
+  if $s.look.settings!="missing" then $s.store_error=nil end
+  $s.queue_changes=merge($s.queue_changes,$request.changes)
+  for $key in $request.reset $s.queue_changes[$key]=nil end
+  return queued_prefs($s)
+end
+fn hint_prefs($s)
+  if $s.look.uncertain!=nil then $s.look.read=true;return pump_look($s) end
+  $s.needs_read=true
+  if not $s.busy then return refresh_prefs($s) end
+  return $s
+end
+fn query_email($s)
+  if $s.email.accounts_owner!=nil then return $s end
+  $s.email.serial=$s.email.serial+1;$s.email.accounts_owner=$s.email.serial
+  $path=path_join(dirname(script_path()),"email-job.mix")
+  send "viu-local" "jobs.start" id="prefs-email-accounts" owner=$s.email.serial path=$path source=read_file($path) command="job.run" args={kind:"accounts",command:"email.accounts",body:{},launch:false}
+  if $rc!=0 then $s.email.accounts_owner=nil end
+  return $s
+end
+fn email_task($s,$kind,$id,$command,$body,$launch,$token)
+  if $s.email.task!=nil or not $s.connected or $s.quitting then raise("BUSY",$nav.text_for("busy")) end
+  $s.email.serial=$s.email.serial+1
+  $path=path_join(dirname(script_path()),"email-job.mix")
+  send "viu-local" "jobs.start" id="prefs-email-task" owner=$s.email.serial path=$path source=read_file($path) command="job.run" args={kind:$kind,command:$command,body:$body,launch:$launch}
+  if $rc!=0 then raise("BUSY","An Email task could not start") end
+  $s.email.task={action:$kind,account:$id,stage:"sending"};$s.email.task_owner=$s.email.serial;$s.email.reply_token=$token
+  $s.email.task_name=($email.account($s,$id) ?? {}).name ?? $id;$s.email.task_launch=$launch
+  $s.email.task_password=if $kind=="password" and $token==nil then $body.password else nil end
+  $s.email.outcome=nil;$s.failed=false
+  $s.status=$email.action_text({password:"email-password-sending",forget:"email-password-forgetting",remove:"email-removing",connect:"email-connecting"}[$kind],$s.email.task_name,"")
+  return $s
+end
+publish_prefs($state)
+on viu.tick
+  if not $state.subscribed then
+    for $prefix in ["wallpaper","appearance","window","shell.panels","workspaces","displays","sound","power","input","keymaps","apps_default","apps_startup","xwayland","time","region","accessibility","terminal","email","ced","apps","tune","state"] subscribe("settingsd.desktop.keys.default."..$prefix) end
+    subscribe("settingsd.desktop.look.default")
+    $state.subscribed=true
+  end
+  if not $state.release_started then $state.release_started=true;$state=release_request($state,"releases.list",{}) end
+  if not ($state.catalogue_started ?? false) then
+    $path=path_join(dirname(script_path()),"catalogue-job.mix")
+    send "viu-local" "jobs.start" id="prefs-catalogues" owner=1 path=$path source=read_file($path) command="job.run" args={}
+    if $rc==0 then $state.catalogue_started=true end
+  end
+  if $state.nav.page=="wallpaper" then
+    if not ($state.gallery.entered ?? false) and ($state.gallery.error!=nil or monotonic()-($state.gallery.scanned_at ?? 0)>=60) then $state.gallery.scanned=nil end
+    $state.gallery.entered=true;$state=scan_gallery($state)
+  else $state.gallery.entered=false end
+  if $state.nav.page=="email" and not ($state.email.queried ?? false) then $state.email.queried=true;$state=query_email($state)
+  elif $state.nav.page!="email" then $state.email.queried=false end
+  if not $state.busy and $state.needs_read then $state=refresh_prefs($state);publish_prefs($state) end
+  if not $state.busy then $state=queued_prefs($state) end
+end
+on prefs.ping
+  reply(0,json_encode({schema:"prefs.v1",version:"0.1.2"}))
+end
+on HELP
+  reply(0,json_encode($bus_surface.commands))
+end
+on app.describe
+  reply(0,json_encode($bus_surface))
+end
+on prefs.actions
+  reply(0,json_encode($actions.action_list($state)))
+end
+on prefs.execute
+  try
+    $pages.check_params($event.args,["id"],["id"])
+    if type($event.args.id)!="string" then raise("ARGUMENT","id must be a command id string") end
+    if contains(["page.open","set","item"],$event.args.id) then raise("DISABLED",$nav.text_for("command-disabled")) end
+    $state=execute_prefs($state,$event.args.id,$event.args.params ?? {});publish_prefs($state)
+    $body={executed:$event.args.id}
+    if $event.args.params!=nil then $body.result=$pages.action_result($state,$event.args.id,$event.args.params) end
+    reply(0,json_encode($body))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.show
+  try
+    if $state.quitting then raise("BUSY",$nav.text_for("busy")) end
+    $token=viu_token();$state.show_tokens=concat($state.show_tokens ?? [],[$token])
+    $path=path_join(dirname(script_path()),"show-job.mix")
+    send "viu-local" "jobs.start" id="prefs-show-"..$token owner=$token path=$path source=read_file($path) command="job.run" args={comp:env("MIX_COMP_SERVICE","comp")}
+    if $rc!=0 then raise("SHOW","Window activation could not start") end
+    send "viu-local" "requests.defer" token=$token
+    publish_prefs($state)
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.quit
+  if $state.ui.dialog!=nil then reply(10,json_encode({error_code:"BUSY",message:$nav.text_for("busy")}));return end
+  $state.quitting=true;publish_prefs($state);reply(0,json_encode({quitting:true}))
+end
+on prefs.theme
+  try
+    $state=$actions.choose_theme($state,$event.args);publish_prefs($state);reply(0,json_encode($actions.theme_view($state)))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.dialog
+  try
+    $a=$event.args
+    if contains(keys($a),"answer") then
+      if contains(keys($a),"open") then raise("ARGUMENT","give open or answer, not both") end
+      if $state.ui.dialog==nil then raise("NO_DIALOG","no dialog is open") end
+      if not contains(["confirm","cancel"],$a.answer) then raise("ARGUMENT","answer must be confirm or cancel") end
+      $state=confirm_dialog($state,$a.answer)
+    elif contains(keys($a),"open") and contains(["about","shortcuts",nil],$a.open) then
+      if $a.open!=nil and ($state.ui.dialog!=nil or $state.quitting) then raise("BUSY",$nav.text_for("busy")) end
+      $state.ui.dialog=$a.open
+    else raise("ARGUMENT","open must be \"about\", \"shortcuts\" or null") end
+    publish_prefs($state);reply(0,json_encode({dialog:$state.ui.dialog}))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.info
+  reply(0,json_encode($core.info($state)))
+end
+on prefs.email
+  reply(0,json_encode($email.view($state)))
+end
+on prefs.email.set
+  try
+    if $state.revision==nil then raise("NOT_READY",$nav.text_for("email-not-ready")) end
+    if not $email.view($state).can_edit then raise("BUSY",$nav.text_for("busy")) end
+    if $event.args.op=="remove" and $state.email.service!="absent" then
+      if $email.account($state,$event.args.id)==nil then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
+      $token=viu_token()
+      $state=email_task($state,"remove",$event.args.id,"email.account.remove",{id:$event.args.id},false,$token)
+      send "viu-local" "requests.defer" token=$token
+      publish_prefs($state);return
+    end
+    $plan=$email.plan($state,$event.args)
+    $state.queue_changes=merge($state.queue_changes,$plan.changes);$state.email.added=$plan.added
+    if $event.args.op=="remove" then $state.email.removed=$email.removal($state,$event.args.id) end
+    $state=queued_prefs($state);publish_prefs($state)
+    $body=$email.view($state);$body.applying=len(keys($plan.changes))>0
+    if $body.applying and $event.args.op!="remove" then $body.id=$plan.added end
+    reply(0,json_encode($body))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.email.password
+  try
+    $a=$event.args
+    if type($a.id)!="string" then raise("ARGUMENT","id must be an account id") end
+    if contains(keys($a),"forget") and type($a.forget)!="bool" then raise("ARGUMENT","forget must be true or false") end
+    $forget=$a.forget ?? false
+    if $forget and contains(keys($a),"password") then raise("ARGUMENT","give password or forget, not both") end
+    if not $forget then
+      if type($a.password)!="string" then raise("ARGUMENT","password must be a string") end
+      if $a.password=="" then raise("ARGUMENT",$nav.text_for("email-password-empty")) end
+      if $state.revision!=nil and $email.account($state,$a.id)==nil then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
+    end
+    if not re_match($a.id,"^[a-z0-9-]{1,64}$") then raise("ARGUMENT",$nav.text_for("email-unknown-account")) end
+    $token=viu_token()
+    $state=email_task($state,if $forget then "forget" else "password" end,$a.id,"email.account.password.set",{id:$a.id,password:if $forget then "" else $a.password end},true,$token)
+    send "viu-local" "requests.defer" token=$token
+    publish_prefs($state)
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.appearance
+  reply(0,json_encode($look.view($state)))
+end
+on prefs.appearance.set
+  try
+    if $state.ui.dialog!=nil or $state.quitting then raise("BUSY",$nav.text_for("busy")) end
+    $state.look=$look.edit($state.look,$event.args)
+    $state=pump_look($state);publish_prefs($state)
+    reply(0,json_encode($look.view($state)))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.refresh
+  $state.dirty=false
+  $state=refresh_prefs($state);publish_prefs($state);reply(0,json_encode({accepted:true}))
+end
+on prefs.section
+  try
+    $state=$nav.set_section($state,$event.args);publish_prefs($state)
+    reply(0,json_encode({section:$state.ui.section,category:$nav.section($state.ui.section).category,ui:$state.ui}))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.search
+  try reply(0,json_encode($nav.search_view($state,$event.args.query)))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.select
+  try
+    $previous=$state.ui.selected
+    $state=$nav.select_app($state,$event.args.app)
+    if $previous!=$state.ui.selected or ($state.notes==nil and $state.notes_owner==nil) then
+      $state.notes=nil;$state.notes_error=nil
+      $state=release_request($state,"releases.notes",{app:$state.ui.selected})
+    end
+    publish_prefs($state);reply(0,json_encode($nav.apps_view($state)))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.apps
+  reply(0,json_encode($nav.apps_view($state)))
+end
+on prefs.pages
+  reply(0,json_encode($pages.pages_view($state)))
+end
+on prefs.page
+  try reply(0,json_encode($pages.page_view($state,$event.args.page)))
+  catch $message, $error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on prefs.page.open
+  try
+    $state=execute_prefs($state,"page.open",$event.args);publish_prefs($state)
+    reply(0,json_encode({executed:"page.open",result:$pages.action_result($state,"page.open",$event.args)}))
+  catch $message, $error reply(10,json_encode({error_code:if $error.code=="FAILED" then "REFUSED" else $error.code end,message:$message})) end
+end
+on prefs.registry.select
+  $state=$core.choose($state,$event.args.key);publish_prefs($state);reply(0,"{}")
+end
+on prefs.set
+  try
+    $state=execute_prefs($state,"set",$event.args);publish_prefs($state)
+    reply(0,json_encode({executed:"set",result:$pages.action_result($state,"set",$event.args)}))
+  catch $message, $error reply(10,json_encode({error_code:if $error.code=="ARGUMENT" or $error.code=="DISABLED" then $error.code else "REFUSED" end,message:$message})) end
+end
+on prefs.item
+  try
+    $state=execute_prefs($state,"item",$event.args)
+    reply(0,json_encode({executed:"item",result:$pages.action_result($state,"item",$event.args)}))
+  catch $message, $error reply(10,json_encode({error_code:if $error.code=="FAILED" then "REFUSED" else $error.code end,message:$message})) end
+end
+on prefs.reset
+  $state=set_prefs($state,$event.args.key,nil);publish_prefs($state);reply(0,json_encode({accepted:true}))
+end
+on viu.job.completed
+  $d=$event.args
+  if $d.tag.id=="prefs-catalogues" then
+    if $d.rc==0 then $state.live.options=$d.body.options
+    else $state.status=$d.body.message ?? "Installed catalogues could not be read";$state.failed=true end
+    publish_prefs($state);return
+  end
+  if $d.tag.id=="prefs-gallery" then
+    $scan=$state.gallery.scanning
+    if $scan!=nil and $d.tag.owner==$scan.owner then
+      $state.gallery.scanning=nil;$state.gallery.scanned=$scan.folder;$state.gallery.scanned_at=monotonic()
+      $state.gallery.images=if $d.rc==0 then $d.body.images else [] end
+      $state.gallery.truncated=$d.body.truncated ?? false;$state.gallery.error=if $d.rc==0 then nil else $d.body.message end
+      $state=scan_gallery($state);publish_prefs($state)
+    end
+    return
+  end
+  if starts_with($d.tag.id,"prefs-show-") then
+    $token=$d.tag.owner
+    if contains($state.show_tokens ?? [],$token) then
+      $state.show_tokens=filter($state.show_tokens,fn($t)=$t!=$token)
+      send "viu-local" "requests.reply" token=$token rc=$d.rc value=$d.body
+      publish_prefs($state)
+    end
+    return
+  end
+  $answer=$d.body.answer ?? {}
+  if $d.tag.id=="prefs-email-accounts" and $d.tag.owner==$state.email.accounts_owner then
+    $state.email.accounts_owner=nil
+    if $d.rc==0 and $d.body.rc==0 then
+      $state.email.service="running";$state.email.passwords={}
+      for $a in $answer.accounts ?? [] $state.email.passwords[$a.id]=$a.has_password end
+    elif $d.body.absent ?? false then $state.email.service="absent";$state.email.passwords={}
+    elif $email.unknown_command($answer) then $state.email.service="unsupported";$state.email.passwords={} end
+    publish_prefs($state);return
+  end
+  if $d.tag.id=="prefs-email-task" and $d.tag.owner==$state.email.task_owner then
+    $task=$state.email.task;$token=$state.email.reply_token
+    $state.email.task=nil;$state.email.reply_token=nil
+    $finished=$email.completed($task,$state.email.task_name,$state.email.task_launch,if $d.rc==0 then $d.body.rc else 20 end,$answer,$d.body.absent ?? false)
+    if $finished.fallback then
+      $plan=$email.plan($state,{op:"remove",id:$task.account})
+      $state.queue_changes=merge($state.queue_changes,$plan.changes);$state.email.removed=$email.removal($state,$task.account)
+      $state=queued_prefs($state)
+      $body=$email.view($state);$body.applying=true;$code=0
+    else
+      $body=$finished.body;$code=$finished.code
+      $state.email.outcome=$finished.outcome;$state.status=$finished.outcome.text;$state.failed=$finished.outcome.failed
+      if $code!=0 and $state.email.task_password!=nil and $state.ui.email_account==$task.account and ($state.email.password ?? "")=="" then $state.email.password=$state.email.task_password;$state.email.secret_epoch=($state.email.secret_epoch ?? 0)+1 end
+      if $code==0 and $task.action=="remove" then $state=hint_prefs($state) end
+    end
+    $state.email.task_password=nil
+    if $token!=nil then send "viu-local" "requests.reply" token=$token rc=$code value=$body end
+    $state=query_email($state);publish_prefs($state);return
+  end
+  if $d.tag.id=="prefs-look" then
+    if $state.look.job!=nil and $d.tag.owner==$state.look.serial then
+      $state.look=$look.finished($state.look,$d.rc,$answer)
+      $state=pump_look($state);publish_prefs($state)
+    end
+    return
+  end
+  if $d.body.op=="release" then
+    if $d.body.command=="releases.notes" and $d.tag.owner==$state.notes_owner then
+      $state.notes_owner=nil
+      if $d.rc==0 then $state.notes=$answer;$state.notes_error=nil
+      else $state.notes_error=$answer.message ?? "Release notes could not be loaded" end
+    elif $d.tag.owner==$state.release_owner then
+      $state=$software.completed($state,$d.rc,$d.body)
+      if $state.reload_notes then $state=release_request($state,"releases.notes",{app:$state.ui.selected}) end
+      if $state.release_relist and (not $state.quitting or (($state.release_uncertain ?? nil)!=nil and not ($state.quit_settled ?? false))) then
+        if $state.quitting then $state.quit_settled=true end
+        $state.release_quiet=true;$state=release_request($state,"releases.list",{})
+      end
+    end
+    publish_prefs($state);return
+  end
+  if $d.tag.id=="prefs-work" and $state.busy and $d.tag.owner==$state.serial then
+    $state.busy=false;$state.read_at=monotonic()
+    if $d.rc==0 and $d.body.op=="read" then
+      $b=$d.body
+      if type($b.catalog.keys)!="list" or len($b.catalog.keys)>2048 or type($b.read.values)!="map" or type($b.read.revision)!="string" or not re_match($b.read.revision,"^(0|[1-9][0-9]*)$") or type($b.read.incarnation)!="string" then raise("REPLY","Malformed or oversized settings reply") end
+      $state.catalog=filter($b.catalog.keys,fn($k)=not contains($k.path,"<"))
+      $state.values=$b.read.values;$state.revision=$b.read.revision;$state.incarnation=$b.read.incarnation
+      $state.look=$look.observe($state.look,$b.read)
+      $state=$email.observed($state)
+      if ($state.email.removed ?? nil)!=nil and $email.account($state,$state.email.removed.id)==nil then
+        $removed=$state.email.removed;$state.email.removed=nil
+        if $state.email.service=="absent" then
+          $text=replace(replace($nav.text_for("email-forget-after-remove-failed"),"{ $account }",$removed.name),"{ $message }",$nav.text_for("email-not-running"))
+          $state.email.outcome={text:$text,failed:true};$state.status=$text;$state.failed=true
+        else $state=email_task($state,"forget",$removed.id,"email.account.password.set",{id:$removed.id,password:""},false,nil);$state.email.task_name=$removed.name end
+      end
+      $state.role=$b.status.role ?? "unknown";$state.stale=$b.status.stale ?? false;$state.uncertain=false
+      $state.status=if $state.email.outcome==nil then "Settings read" else $state.email.outcome.text end
+      if len($state.catalog)>0 then
+        if not any($state.catalog,fn($k)=$k.path==$state.key) then $state.key=$state.catalog[0].path end
+        $state=$core.choose($state,$state.key)
+      end
+    elif $d.rc==0 then
+      $state.inflight_changes={};$state.dirty=false;$state.status="Write accepted; reading authoritative values";$state=refresh_prefs($state)
+    elif $answer.status=="wrong_target" and not $state.retargeted and ($answer.binding ?? {}).profile=="default" then
+      $state.binding=$answer.binding;$state.retargeted=true;$state=refresh_prefs($state)
+    else
+      $state.status="Settings failed: "..json_encode($d.body)
+      if $state.pending.op=="read" then
+        $state.store_error=$answer.message ?? json_encode($answer)
+        if contains($state.store_error,"not found") then $state.look.settings="missing" end
+      end
+      if $state.pending.op=="write" then
+        $state.store_error=$answer.message ?? json_encode($answer)
+        if contains(["conflict","outcome_unknown","authority_unreachable"],$answer.status) or $d.rc>=20 or contains($answer.message ?? "","not found") then
+          $state.queue_changes=merge($state.inflight_changes,$state.queue_changes)
+          if $answer.status=="authority_unreachable" then $state.uncertain=true
+          else $state=refresh_prefs($state) end
+        end
+        $state.inflight_changes={}
+      end
+    end
+    if not $state.busy and $state.needs_read then $state=refresh_prefs($state) end
+    if not $state.busy then $state=queued_prefs($state) end
+    $state=pump_look($state)
+    publish_prefs($state)
+  end
+end
+on prefs.intent
+  try
+  $a=$event.args
+  if $a.id=="dialog" and $a.action=="answer" then
+    $state=confirm_dialog($state,$a.value.choice);publish_prefs($state);reply(0,"{}");return
+  end
+  if $a.id=="browser" then
+    if $a.action=="navigate" then $state=enter_page($pages.open_page($state,$a.value.page,$a.value.row))
+    elif $a.action=="query" then
+      $state.nav.query=$a.value;$state.nav.searching=$a.value!="";$state.ui.search_focus=false
+    elif $a.action=="drawer.close" then $state.nav.drawer=nil
+    elif $a.action=="focus.done" then $state.nav.focus=nil
+    elif $a.action=="problem" then $state.status=$a.value.message;$state.failed=true
+    elif $state.nav.page=="wallpaper" and ($a.action=="remove" or starts_with($a.value.row ?? "","gallery.") or $a.value.row=="display") then
+      $browser=$pages.browser($state)
+      viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,$a.action,$a.value)
+      $row=$a.value.row;$v=$a.value.value
+      if $row=="display" then $state.nav.output=if $v=="all" then nil else $v end
+      elif $row=="gallery.choose" and $v.action=="colour" then $state.nav.drawer="gallery.colour"
+      else
+        $action=if $a.action=="remove" then if $gallery.category($state).kind=="colours" then "remove_colour" else "remove_image" end
+        elif $row=="gallery.pick" then if $gallery.category($state).kind=="colours" then "pick_colour" else "pick_image" end
+        elif $row=="gallery.colour" then "pick_colour" else substr($row,8) end
+        if $row=="gallery.choose" then $action=$v.action;$v=$v.value end
+        $state=gallery_action($state,$action,$v)
+        if $row=="gallery.colour" then $state.nav.drawer=nil end
+      end
+    elif contains(["edit","activate"],$a.action) then
+      $browser=$pages.browser($state)
+      viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,$a.action,$a.value)
+      if $a.action=="edit" and $nav.page($a.value.page ?? $state.nav.page).kind=="custom" then
+        $browser=$pages.browser($state)
+        viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,"edit",$a.value)
+        $key=$a.value.row;$v=$a.value.value
+        if $key=="software.group" then $state=$nav.set_section($state,{name:"software",group:$v})
+        elif $key=="software.apps" then
+          $state=$nav.select_app($state,$v);$state=release_request($state,"releases.notes",{app:$v})
+        elif $key=="email.accounts" then $state=$email.select_account($state,$v)
+        elif starts_with($key,"email.form.") then
+          $field=substr($key,11);$state.email.form[$field]=$v;$state.email.dirty=true
+          $errors={};for $name in keys($state.email.form.errors) if $name!=$field then $errors[$name]=$state.email.form.errors[$name] end end;$state.email.form.errors=$errors
+        elif $key=="email.password" then $state.email.password=$v
+        elif $key=="email.enabled" then $state=apply_email($state,{op:"enable",id:$state.ui.email_account,enabled:$v})
+        elif $v=="email.identity.save" then
+          $d=$email.identity_draft($state);$state=apply_email($state,{op:"identities",id:$d.account,identities:$d.rows});$state.email.identities=nil
+        elif starts_with(to_string($v),"email.identity.") then $state=$email.identity_action($state,substr($v,15),nil)
+        elif starts_with($key,"email.identity.") then $state=$email.identity_action($state,substr($key,15),$v)
+        elif any($actions.registry,fn($act)=$act.id==$v) then $state=execute_origin($state,$v,{},"ui")
+        else
+          if contains(["terminal.font.family","ced.editor.font.family","email.reader.font.family","email.composer.font.family"],$key) and type($v)=="string" then $v=trim($v);if $v=="" then $v=nil end end
+          $state=set_prefs($state,$key,$v)
+        end
+        publish_prefs($state);reply(0,"{}");return
+      end
+      $p=$nav.page($a.value.page ?? $state.nav.page);$row_id=$a.value.row
+      if $a.action=="activate" and $a.value.page!=nil then $state.nav.page=$p.id end
+      if starts_with($row_id,"pick:") then $row_id=substr($row_id,5) end
+      $r=$pages.row_for($p,$row_id)
+      $why=$pages.row_blocked($state,$p,$r)
+      if $why!=nil then raise("FAILED",$why) end
+      if $a.action=="activate" and contains(["accent","colour"],$r.control.control) then $state.nav.drawer=$r.id
+      elif $a.action=="activate" and $r.control.control=="pick" then $state.nav.drawer=$r.id
+      elif $a.action=="activate" and $r.control.control=="drawer" then $state.nav.drawer=$r.control.drawer
+      elif $a.action=="activate" and $r.control.control=="ordered" then $state.nav.drawer=$r.control.add
+      elif $a.action=="activate" and $r.control.control=="page" then $state=$pages.open_page($state,$r.control.page,nil)
+      elif $a.action=="activate" and $r.control.control=="reset" then
+        $reset={}
+        for $key in $r.control.keys $reset[$key]=nil end
+        $state=queue_keys($state,$reset)
+      elif $a.action=="edit" then
+        $v=$a.value.value
+        if $r.control.control=="flag" then $v=if $v then $r.control.on else $r.control.off end
+        elif $r.control.control=="auto_mode" then $v=if $v then "auto" else "dark" end
+        elif $r.control.control=="hint_accent" then $v=if $v then "accent" else "#63cddd" end end
+        if $r.control.control=="append" then
+          $list=$pages.stored($state,$r.key) ?? []
+          if not contains($list,$v) then $v=concat($list,[$v]) else $v=$list end
+        end
+        $state=set_prefs($state,$r.key,$v)
+      end
+    end
+    publish_prefs($state);reply(0,"{}");return
+  end
+  if $state.busy then raise("BUSY","Wait for the current settings operation") end
+  if $a.id=="section" then $state.section=$a.value
+  elif $a.id=="search" then $state.search=$a.value
+  elif $a.id=="table" and contains(["select","activate"],$a.action) then $state=$core.choose($state,$a.value.key)
+  elif $a.id=="editor" then $state.draft=$a.value;$state.dirty=true
+  elif $a.id=="apply" then
+    $value=if $state.draft_kind=="field" then json_parse($state.draft) else $state.draft end
+    $state=set_prefs($state,$state.key,$value)
+  elif $a.id=="reset" then $state=set_prefs($state,$state.key,nil)
+  elif $a.id=="refresh" then $state.dirty=false;$state=refresh_prefs($state) end
+  publish_prefs($state);reply(0,"{}")  catch $message, $error
+    $state.status=$message;$state.failed=true;publish_prefs($state)
+    reply(10,json_encode({error_code:$error.code,message:$message}))
+  end
+end
+
+on settingsd.desktop.keys.default.wallpaper
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.appearance
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.window
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.shell.panels
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.workspaces
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.displays
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.sound
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.power
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.input
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.keymaps
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.apps_default
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.apps_startup
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.xwayland
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.time
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.region
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.accessibility
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.terminal
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.email
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.ced
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.apps
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.tune
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.state
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.look.default
+  $state=hint_prefs($state)
+end
+on bus.connected
+  $state.connected=true;$state=hint_prefs($state)
+end
+on bus.disconnected
+  $state.connected=false;$state.stale=true;$state.needs_read=true;publish_prefs($state)
+end

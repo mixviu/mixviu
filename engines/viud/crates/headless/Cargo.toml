@@ -1,0 +1,40 @@
+[package]
+name = "headless"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "viud render-node backend with a virtual output and no seat"
+
+[package.metadata.mixviu]
+component = "viud"
+kind = "service"
+layer = "desktop"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+ledger.workspace = true
+smithay = { workspace = true }
+model = { workspace = true }
+world = { workspace = true }
+frames = { workspace = true }
+outputs = { workspace = true }
+render-gles = { workspace = true }
+protocols = { workspace = true }
+graphics = { workspace = true }
+scenegraph = { workspace = true }
+slots = { workspace = true }
+decor = { workspace = true }
+screencopy = { workspace = true }
+
+[dev-dependencies]
+comp-model = { workspace = true }
+wayland-client = { version = "=0.31.15" }
+libc = { workspace = true }
+serde_json = { workspace = true }
+testkit = { workspace = true }
+wayland-protocols = { version = "=0.32.13", features = ["client"] }

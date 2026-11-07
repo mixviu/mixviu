@@ -1,0 +1,381 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+$state=require("state.mix");$core=require("core.mix");$store=require("storage.mix");$registry=require("registry.mix");$model=require("model.mix")
+$journal=require("journal.mix")
+fn refresh($s)
+  try
+    send $s.comp "comp.windows.list" body={} timeout=5
+    if $rc!=0 then raise("FAILED",to_string($result)) end
+    $s.windows=[]
+    for $w in $reply.windows
+      if $w.app_id!="dev.mixos.screenshot" or $w.pid!=pid() then $s.windows=push($s.windows,{target:{id:$w.id,generation:$w.generation},title:$w.title,app_id:$w.app_id,focused:$w.focused,minimized:$w.minimized}) end
+    end
+    send $s.comp "comp.props.get" body={path:"outputs"} timeout=5
+    if $rc!=0 then raise("FAILED",to_string($result)) end
+    $outputs=$reply.value ?? $reply;$s.outputs=[]
+    for $key in keys($outputs) if $outputs[$key].name!=nil then $s.outputs=push($s.outputs,$outputs[$key].name) end end
+    if not any($s.windows,fn($w)=deep_eq($w.target,$s.ui.window)) then $s.ui.window=if len($s.windows)>0 then $s.windows[0].target else nil end end
+    if not contains($s.outputs,$s.ui.output) then $s.ui.output=if len($s.outputs)==1 then $s.outputs[0] else nil end end
+    $s.windows_error=nil
+  catch $message
+    $s.windows_error=$message
+  end
+  return $s
+end
+fn work($s,$payload,$hold)
+  if $s.busy then raise("BUSY","Another operation is still running") end
+  $s.serial=$s.serial+1;$s.pending=$payload;$s.busy=true
+  if contains(["capture","open"],$payload.op) then $s.after=nil end
+  $s.job=if $payload.op=="export" then "save" else $payload.op end
+  if contains(["open","copy"],$payload.op) then $s.status="Working…" end
+  $payload.pid=pid();$payload.comp=$s.comp
+  $payload.hide=not ($s.headless ?? false)
+  $payload.preview=path_join($s.raw,"preview-"..to_string(pid()).."-"..to_string($s.serial)..".png")
+  $path=path_join(dirname(script_path()),"job.mix")
+  send "viu-local" "jobs.start" body={id:"screenshot-work",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:$payload,timeout:180}
+  if $rc!=0 then raise("FAILED",to_string($result)) end
+  $s.pending_reply=if $hold then viu_reply("keep") else nil end
+  return $s
+end
+fn render($s)
+  if $s.headless ?? false then return $s end
+  $s.revision=($s.revision ?? 0)+1
+  if $s.rendering ?? false then return $s end
+  if $s.handle==nil then return $s end
+  $s.rendering=true;$s.render_revision=$s.revision;$s.render_handle=$s.handle
+  $path=path_join(dirname(script_path()),"job.mix")
+  $output=path_join($s.raw,"preview-"..to_string(pid()).."-r"..to_string($s.revision)..".png")
+  send "viu-local" "jobs.start" id="screenshot-preview" owner=$s.render_revision path=$path source=read_file($path) command="job.run" args={op:"render",handle:$s.handle,path:$output}
+  if $rc!=0 then $s.rendering=false end
+  return $s
+end
+fn edited($s,$op,$params)
+  $history=if $op=="undo" or $op=="redo" then $s.document[$op] else 1 end
+  $body=$params ?? {}
+  if $op=="annotate" then $body={shape:$params}
+  elif $op=="move" then $state.check_fields($body,["id","dx","dy"])
+  elif $op=="delete" then $state.check_fields($body,["id"])
+  elif $op=="crop" then $state.check_fields($body,["crop"])
+  end
+  $body.handle=$s.handle
+  try
+    $result=viu_document($op,$body)
+  catch $message
+    $code=if contains(["annotation limit reached","document point budget exceeded","annotation id exhausted"],$message) then "FAILED" else "ARGUMENT" end
+    raise($code,$message)
+  end
+  $s.document=$result.document
+  if not any($s.document.objects,fn($o)=$o.id==$s.ui.selected) then $s.ui.selected=nil end
+  $s=render($s)
+  $value=$result.document
+  if $result.id!=nil then $value.id=$result.id end
+  if $history>0 then $s=$journal.record_action($s,"edit."..$op,if contains(["undo","redo"],$op) then nil else $params end,$value) end
+  return {state:$s,result:$value}
+end
+fn capture_request($s,$mode)
+  $r={mode:$mode ?? $s.ui.mode,cursor:$s.ui.cursor,delay:$s.ui.delay,output:$s.ui.output}
+  if $r.mode=="window" then $r.window=$s.ui.window end
+  return $r
+end
+fn capture($s,$r,$hold,$focus)
+  $r=$core.request($r)
+  $s.ui.mode=$r.mode;$s.ui.cursor=$r.cursor;$s.ui.delay=$r.delay
+  if $r.mode=="window" then $s.ui.window=$r.window end
+  if $r.mode!="window" then $s.ui.output=$r.output end
+  $s.status=if $r.mode=="region" then "Drag to select an area · Esc to cancel" else "Taking a screenshot…" end
+  $p=path_join($s.raw,"capture-"..to_string(pid()).."-"..to_string($s.serial+1)..".png")
+  return work($s,{op:"capture",request:$r,path:$p,focus:$focus},$hold)
+end
+fn save($s,$path,$hold)
+  $state.require_document($s)
+  $payload={op:"export",handle:$s.handle}
+  if $path==nil then
+    mkdir($s.folder,{parents:true})
+    $name=date_format(time(),"%Y%m%d_%H%M%S");$payload.paths=[path_join($s.folder,$name..".png")]
+    for $n=2 to 999 $payload.paths=push($payload.paths,path_join($s.folder,$name.."_"..to_string($n)..".png")) end
+    $payload.path=$payload.paths[0]
+  else $payload.path=$state.path($path) end
+  $s.status="Working…"
+  return work($s,$payload,$hold)
+end
+fn open_dialog($s,$kind)
+  $s.ui.dialog=$kind;$s.dialog_serial=($s.dialog_serial ?? 0)+1;$s.dialog_error=""
+  if $kind=="open" then $s.ui.path=$s.folder.."/"
+  elif $kind=="save_as" then
+    $stem=date_format(time(),"%Y%m%d_%H%M%S");$s.ui.path=path_join($s.folder,$stem..".png");$n=2
+    while exists($s.ui.path,{follow_symlinks:false}) and $n<=999
+      $s.ui.path=path_join($s.folder,$stem.."_"..to_string($n)..".png");$n=$n+1
+    end
+  end
+  return $s
+end
+fn perform($s,$pending)
+  if $pending.op=="quit" then $state.dispose($s);$s.quitting=true;$s.close_after=true
+  elif $pending.op=="open-dialog" then $s=open_dialog($s,"open")
+  elif $pending.op=="open" then $s=work($s,{op:"open",path:$pending.path},false)
+  elif $pending.op=="capture" then $s=capture($s,$pending.request,false,true)
+  end
+  return $s
+end
+fn request($s,$pending)
+  if $s.ui.dialog!=nil then $s.after=$pending
+  elif $s.busy then
+    if $pending.op=="quit" then
+      $s.after=$pending
+      if $s.job=="capture" then $s=cancel($s) end
+    end
+  elif $s.document!=nil and $s.document.dirty then
+    $s.after=$pending;$s=open_dialog($s,"discard")
+  else $s=perform($s,$pending) end
+  return $s
+end
+fn cancel($s)
+  if $s.busy and $s.job=="capture" then
+    send "viu-local" "jobs.signal" id="screenshot-work" signal="cancel"
+  end
+  return $s
+end
+fn raise_window($s)
+  if $s.headless ?? false then return $s end
+  $path=path_join(dirname(script_path()),"job.mix")
+  try
+    send "viu-local" "jobs.start" body={id:"screenshot-raise",owner:$s.serial,path:$path,source:read_file($path),command:"job.run",args:{op:"show",comp:$s.comp,pid:pid()},timeout:30}
+  catch $message end
+  return $s
+end
+fn surface($s)
+  $out=json_parse(read_file(path_join(dirname(script_path()),"surface.json")))
+  if $s.headless ?? false then $out.commands=filter($out.commands,fn($r)=not starts_with($r.name,"screenshot.ui.") and not starts_with($r.name,"screenshot.window")) end
+  return $out
+end
+fn dialog_view($s)
+  if $s.ui.dialog==nil then return nil end
+  $form=$model.dialog_form($s);$buttons=[]
+  for $b in $form.choices push($buttons,{id:$b.id,label:$b.label,role:if $b.default ?? false then "default" elif $b.cancel ?? false then "cancel" else "other" end}) end
+  $result={kind:$s.ui.dialog,title:$form.title,buttons:$buttons}
+  if $s.ui.dialog=="discard" then $result.body=$form.body
+  elif contains(["open","save_as"],$s.ui.dialog) then $result.path=$s.ui.path;$result.status=$s.status end
+  return $result
+end
+fn answer($s,$a)
+  $kind=$s.ui.dialog
+  if $kind==nil then raise("NO_DIALOG","No dialog is open") end
+  if type($a.answer)!="string" then raise("ARGUMENT","answer must be a button id") end
+  if has_key($a,"path") then
+    if not contains(["open","save_as"],$kind) then raise("ARGUMENT","only Open and Save As take a path") end
+    if type($a.path)!="string" then raise("ARGUMENT","path must be a string") end
+  end
+  $view=dialog_view($s)
+  if not any($view.buttons,fn($b)=$b.id==$a.answer) then raise("ARGUMENT","the "..$kind.." dialog has no button "..json_encode($a.answer).."; it has "..join(map($view.buttons,fn($b)=$b.id),", ")) end
+  if $s.busy and not contains(["keep","cancel","done"],$a.answer) then raise("BUSY","Another operation is still running") end
+  if contains(["keep","cancel","done"],$a.answer) then
+    $s.ui.dialog=nil
+    if $a.answer=="keep" then $s.after=nil
+    elif $s.after!=nil then $pending=$s.after;$s.after=nil;$s=request($s,$pending) end
+  elif $a.answer=="discard" then
+    $s.ui.dialog=nil;$pending=$s.after;$s.after=nil;$s=perform($s,$pending)
+  elif $kind=="discard" and $a.answer=="save" then $s.ui.dialog=nil;$s=save($s,nil,false)
+  else
+    $s.ui.path=$a.path ?? $s.ui.path
+    try
+      $text=trim($s.ui.path)
+      if $text=="" or ends_with($text,"/") then raise("ARGUMENT","Name a file") end
+      if re_match($text,"^~/") then $text=path_join(env("HOME"),slice($text,2)) end
+      $path=$state.path($text)
+      if $kind=="save_as" and exists($path,{follow_symlinks:false}) then raise("ARGUMENT","That file already exists; choose a new name") end
+      $s.ui.dialog=nil
+      if $kind=="open" then
+        if $s.document!=nil and $s.document.dirty then
+          $s.after={op:"open",path:$path};$s=open_dialog($s,"discard")
+        else $s=work($s,{op:"open",path:$path},false) end
+      else $s=save($s,$path,false) end
+    catch $message
+      $s.ui.dialog=$kind;$s.status=$message;$s.dialog_error=$message
+    end
+  end
+  return $s
+end
+fn restyle($s,$width)
+  if $s.ui.selected!=nil and not $s.busy and $s.ui.dialog==nil then
+    $object=filter($s.document.objects,fn($o)=$o.id==$s.ui.selected)[0]
+    if $object!=nil then
+      $w=if $width then clamp($s.ui.width/($s.view_scale ?? 1),0.5,512) else $object.shape.width end
+      $r=viu_document("restyle",{handle:$s.handle,id:$s.ui.selected,colour:$s.ui.colour,width:$w})
+      $s.document=$r.document;$s=render($s)
+    end
+  end
+  return $s
+end
+fn execute($s,$id,$params,$alias)
+  $entry=$registry.entry($s,$id)
+  if $entry.schema==nil and $params!=nil and not (type($params)=="map" and len(keys($params))==0) then raise("ARGUMENT","this command takes no parameters") end
+  if $entry.schema==nil then $params=nil end
+  if not $entry.enabled and not ($alias and contains(["edit.undo","edit.redo"],$id)) then
+    if starts_with($id,"edit.") and $entry.reason!="disabled" then
+      $code=if $entry.reason=="no image" then "NO_IMAGE" elif $entry.reason=="dialog open" then "DIALOG" elif $entry.reason=="busy" then "BUSY" else "DISABLED" end
+      raise($code,$entry.reason)
+    end
+    raise("DISABLED","That command cannot run now")
+  end
+  $action_result=nil
+  if contains(["edit.annotate","edit.move","edit.delete","edit.crop","edit.undo","edit.redo"],$id) then
+    $edit=edited($s,slice($id,5),$params);$s=$edit.state;$action_result=$edit.result
+  elif $id=="file.open" then $s=request($s,{op:"open-dialog"})
+  elif $id=="file.save" then
+    if $s.saved!=nil and not $s.document.dirty then $s.status="Already saved to "..$s.saved.path else $s=save($s,nil,false) end
+  elif $id=="file.save_as" then $s=open_dialog($s,"save_as")
+  elif $id=="file.copy" then $s=work($s,{op:"copy",handle:$s.handle,path:path_join($s.raw,"clipboard-"..to_string(pid()).."-"..to_string($s.serial+1)..".png")},false)
+  elif $id=="file.quit" then $s=request($s,{op:"quit"})
+  elif $id=="edit.delete_selected" then $r=edited($s,"delete",{id:$s.ui.selected});$s=$r.state
+  elif $id=="edit.uncrop" then $r=edited($s,"crop",{crop:nil});$s=$r.state
+  elif $id=="edit.deselect" then $s.ui.selected=nil
+  elif contains(["capture.take","capture.region","capture.screen","capture.window"],$id) then
+    $mode=if $id=="capture.take" then nil else slice($id,8) end
+    $r=$core.request(capture_request($s,$mode));$s=request($s,{op:"capture",request:$r})
+  elif $id=="capture.cancel" then $s=cancel($s)
+  elif starts_with($id,"capture.mode.") then if not $s.busy then $s.ui.mode=slice($id,13) end
+  elif starts_with($id,"capture.delay.") then if not $s.busy then $s.ui.delay=to_number(slice($id,14)) end
+  elif $id=="capture.pointer" then if not $s.busy then $s.ui.cursor=not $s.ui.cursor end
+  elif $id=="capture.refresh" then $s=refresh($s)
+  elif $id=="capture.output.pointer" then if not $s.busy then $s.ui.output=nil end
+  elif $id=="capture.output.next" then
+    if not $s.busy and len($s.outputs)>0 then
+      $n=0;for $i=0 to len($s.outputs)-1 if $s.outputs[$i]==$s.ui.output then $n=$i+1 end end
+      $s.ui.output=$s.outputs[$n % len($s.outputs)]
+    end
+  elif starts_with($id,"tool.") then $s.ui.tool=slice($id,5);if $s.ui.tool!="select" then $s.ui.selected=nil end
+  elif starts_with($id,"annotate.colour.") then if $s.ui.dialog==nil then $s.ui.colour=$registry.inks[slice($id,16)];$s=restyle($s,false) end
+  elif starts_with($id,"annotate.width.") then if $s.ui.dialog==nil then $s.ui.width=$registry.widths[slice($id,15)];$s=restyle($s,true) end
+  elif starts_with($id,"annotate.size.") then if $s.ui.dialog==nil then $s.ui.text_size=$registry.sizes[slice($id,14)] end
+  elif $id=="view.zoom_in" then $s.ui.zoom=clamp($s.ui.zoom*1.25,0.1,8)
+  elif $id=="view.zoom_out" then $s.ui.zoom=clamp($s.ui.zoom/1.25,0.1,8)
+  elif $id=="view.fit" then $s.ui.zoom=1;$s.ui.pan={x:0,y:0}
+  elif $id=="view.mode" then
+    $mode=$s.look.mode
+    if $mode==nil then
+      send "viu-local" "native.theme.file" body={}
+      if $rc!=0 then raise("FAILED",to_string($result)) end
+      $mode=$reply.mode
+    end
+    $s.look.mode=if $mode=="light" then "dark" else "light" end
+  elif starts_with($id,"view.") then
+    for $p in [{prefix:"view.theme.",axis:"scheme"},{prefix:"view.mode.",axis:"mode"},{prefix:"view.style.",axis:"style"},{prefix:"view.decorations.",axis:"decorations"},{prefix:"view.captions.",axis:"captions"}]
+      if starts_with($id,$p.prefix) then $name=slice($id,len($p.prefix));$s.look[$p.axis]=if contains(["session","auto"],$name) then nil else $name end end
+    end
+  elif $id=="help.macros" then $s.ui.macros_open=not $s.ui.macros_open
+  elif $id=="help.about" then $s=open_dialog($s,"about")
+  elif $id=="help.shortcuts" then $s=open_dialog($s,"shortcuts")
+  end
+  if not contains(["edit.annotate","edit.move","edit.delete","edit.crop","edit.undo","edit.redo"],$id) then $s=$journal.record_action($s,$id,$params,$action_result) end
+  return {state:$s,result:$action_result}
+end
+fn select_ui($s,$a)
+  $state.check_fields($a,["tool","mode","window","output"])
+  if has_key($a,"tool") and not contains($registry.tools,$a.tool) then raise("ARGUMENT","tool must be select, crop or an annotation kind") end
+  if has_key($a,"mode") and not contains(["region","screen","window"],$a.mode) then raise("ARGUMENT","unknown capture mode") end
+  if $a.window!=nil then $core.target($a.window) end
+  if $a.output!=nil then
+    if type($a.output)!="string" then raise("ARGUMENT","output must be a name or null") end
+    $core.request({output:$a.output})
+  end
+  if has_key($a,"tool") then $s.ui.tool=$a.tool;if $a.tool!="select" then $s.ui.selected=nil end end
+  for $key in ["mode","window","output"] if has_key($a,$key) then $s.ui[$key]=$a[$key] end end
+  return $s
+end
+fn dispatch($s,$command,$a)
+  $s.origin="bus"
+  $body=nil;$deferred=false;$rc=0
+  try
+    $state.check_fields($a,keys($a))
+    if contains(["screenshot.ping","screenshot.info","screenshot.cancel","screenshot.undo","screenshot.redo","screenshot.save","screenshot.actions","screenshot.show","screenshot.quit"],$command) and len(keys($a))>0 then raise("ARGUMENT","this command takes an empty object") end
+    if $command=="HELP" then $body=surface($s).commands
+    elif $command=="app.describe" then $body=surface($s)
+    elif $command=="screenshot.ping" then $body={schema:"screenshot.v1",version:"0.1.2",comp:$s.comp,headless:$s.headless ?? false}
+    elif $command=="screenshot.info" then $body=$state.info($s)
+    elif $command=="screenshot.actions" then $body={actions:$registry.describe($s)}
+    elif $command=="screenshot.recent" then
+      $limit=if has_key($a,"limit") then $a.limit else 10 end
+      if type($limit)!="number" or floor($limit)!=$limit or $limit<1 or $limit>100 then raise("ARGUMENT","limit must be 1..100") end
+      $body={folder:$s.folder,shots:$store.recent($s.state_dir,$limit)}
+    elif $command=="screenshot.cancel" then $body={cancelling:$s.busy and $s.job=="capture"};$s=cancel($s);if $body.cancelling then $s=$journal.record_action($s,"capture.cancel",nil,nil) end
+    elif $command=="screenshot.theme" then
+      for $key in ["scheme","mode"]
+        if has_key($a,$key) and $a[$key]!=nil and not any($registry.definitions,fn($r)=$r.id==(if $key=="scheme" then "view.theme." else "view.mode." end)..to_string($a[$key])) then raise("ARGUMENT","unknown "..$key.." "..json_encode($a[$key])) end
+      end
+      for $key in ["scheme","mode"] if has_key($a,$key) then $s.look[$key]=$a[$key] end end
+      $body={scheme:$s.look.scheme,mode:$s.look.mode}
+    elif $command=="screenshot.execute" then
+      $state.check_fields($a,["id","params"])
+      if type($a.id)!="string" then raise("ARGUMENT","expected command id") end
+      if ($s.headless ?? false) and contains(["file.open","file.save_as","help.about","help.shortcuts","help.macros"],$a.id) then raise("HEADLESS","A headless instance has no window") end
+      $r=execute($s,$a.id,$a.params,false);$s=$r.state;$body={executed:$a.id,result:$r.result,status:$s.status,dialog:$s.ui.dialog,job:$s.job}
+    elif $command=="screenshot.take" then
+      $state.check_fields($a,["mode","window","comp","region"])
+      if has_key($a,"comp") and type($a.comp)!="string" then raise("ARGUMENT","comp must be a string") end
+      if has_key($a,"comp") and $a.comp!=$s.comp then raise("COMPOSITOR","this instance captures through compositor "..json_encode($s.comp)..", not "..json_encode($a.comp)) end
+      if has_key($a,"mode") and not contains(["screen","window","region"],$a.mode) then raise("ARGUMENT","mode must be screen, window or region") end
+      if has_key($a,"window") then $core.request({mode:"window",window:$a.window}) end
+      if has_key($a,"region") then $core.request({mode:"region",region:$a.region});if $a.region==nil then raise("ARGUMENT","invalid region") end end
+      $mode=$a.mode ?? $s.ui.mode
+      if has_key($a,"window") and $mode!="window" then raise("ARGUMENT","window only applies to window mode") end
+      if has_key($a,"region") and $mode!="region" then raise("ARGUMENT","region only applies to region mode") end
+      if $s.ui.dialog!=nil then $s=raise_window($s);$body={state:"asking"}
+      elif $s.busy then $s.status=if $s.job=="capture" then "Capture in progress" else "Another operation is still running" end;$body={state:"in_progress",job:$s.job}
+      else
+        if ($s.headless ?? false) and $s.document!=nil and $s.document.dirty then raise("UNSAVED","Save or undo the unsaved annotations first") end
+        $r=capture_request($s,$mode)
+        if has_key($a,"window") then $r.window=$a.window end
+        if has_key($a,"region") then $r.region=$a.region;if $a.region.output!=nil then $r.output=$a.region.output end end
+        $r=$core.request($r);$s.ui.mode=$mode
+        if has_key($a,"window") then $s.ui.window=$a.window end
+        $s=request($s,{op:"capture",request:$r})
+        if $s.ui.dialog=="discard" then $s=raise_window($s) end
+        $body={state:if $s.busy then "capturing" else "asking" end}
+      end
+    elif $command=="screenshot.dialog" then
+      $state.check_fields($a,["open","answer","path"])
+      if has_key($a,"open") and has_key($a,"answer") then raise("ARGUMENT","give open or answer, not both") end
+      if has_key($a,"open") then
+        if has_key($a,"path") then raise("ARGUMENT","path goes with answer") end
+        if $a.open==nil then $s.ui.dialog=nil;$s.after=nil
+        else
+          if not contains(["about","shortcuts"],$a.open) then raise("ARGUMENT","open must be about, shortcuts or null") end
+          if $s.headless ?? false then raise("HEADLESS","a headless instance has no window") end
+          $state.idle($s);$s=open_dialog($s,$a.open)
+        end
+      elif has_key($a,"answer") then $s=answer($s,$a)
+      elif has_key($a,"path") then raise("ARGUMENT","path goes with answer") end
+      $body={dialog:dialog_view($s)}
+    else
+      if $command=="screenshot.show" then
+        if $s.busy or $s.quitting then raise("BUSY","Another operation is still running") end
+      else $state.idle($s) end
+      if contains(["screenshot.annotate","screenshot.move","screenshot.delete","screenshot.crop","screenshot.undo","screenshot.redo"],$command) then
+        $state.require_document($s);$r=execute($s,"edit."..slice($command,11),$a,true);$s=$r.state;$body=$r.result
+      elif $command=="screenshot.capture" then
+        try $r=$core.request($a) catch $m raise("ARGUMENT",$m) end
+        $state.clean($s);$s=capture($s,$r,true,false);$deferred=true
+      elif $command=="screenshot.open" then
+        $state.check_fields($a,["path"]);$path=$state.path($a.path);$state.clean($s)
+        $s=work($s,{op:"open",path:$path},true);$deferred=true
+      elif $command=="screenshot.export" or $command=="screenshot.save" then
+        $path=nil
+        if $command=="screenshot.export" then $state.check_fields($a,["path"]);$path=$state.path($a.path) end
+        $s=save($s,$path,true);$deferred=true
+        if $command=="screenshot.save" then $s=$journal.record_action($s,"file.save",nil,nil) end
+      elif $command=="screenshot.select" then $s=select_ui($s,$a);$body={ui:$s.ui}
+      elif $command=="screenshot.show" then
+        if $s.headless ?? false then raise("HEADLESS","a headless instance has no window") end
+        $s=work($s,{op:"show"},true);$deferred=true
+      elif $command=="screenshot.quit" then $state.clean($s);$s=perform($s,{op:"quit"});$s=$journal.record_action($s,"file.quit",nil,nil);$body={quitting:true}
+      elif $command=="screenshot.targets" then $s=refresh($s);$body={windows:$s.windows,outputs:$s.outputs}
+      else raise("UNKNOWN_COMMAND","unknown screenshot command") end
+    end
+  catch $message,$error
+    $rc=10;$code=$error.code
+    if contains(["DELAY","OUTPUT","WINDOW","REGION"],$code) then $code="ARGUMENT" end
+    if contains(["screenshot.annotate","screenshot.move","screenshot.delete","screenshot.crop"],$command) and $code=="FAILED" then $code="ARGUMENT" end
+    $body={error_code:$code,message:$message}
+  end
+  return {state:$s,rc:$rc,body:$body,deferred:$deferred}
+end

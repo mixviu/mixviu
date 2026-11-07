@@ -1,0 +1,196 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
+-- CBC-only private desk; uses the existing native Bus test harness.
+$root=dirname(dirname(script_path()))
+$n=require($root.."/../mixos/tests/desktop/nested_host_lib.mix")
+$sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+if trim(run_argv_must(["git","status","--porcelain"]))!="" then raise("DIRTY_SOURCE","Rehearsal needs committed source") end
+$binary_source=args()[0] ?? $sha
+run_argv_must(["git","diff","--exit-code",$binary_source,$sha,"--","Cargo.toml","Cargo.lock","engines","libraries","services","vendor"])
+$bin="/build/es-artifacts/"..$binary_source
+export MIXOS_TEST_MIX=$bin.."/mix"
+$run=$n.new_run("/build/es-artifacts/rehearsal-"..$sha)
+$children=[];$records=[]
+for $name in ["noded","settingsd","editd","monitord"]
+  run_argv_must(["ln","-s",$bin.."/mixd",$run.path.."/"..$name])
+end
+$bus=$n.private_bus({dir:$run.path.."/broker",name:"p2-desk",noded:$run.path.."/noded"})
+export MIXOS_NODED_URL=$bus.url
+export MIXOS_NODE_CONFIG=$bus.conf
+export MIXOS_RUN=$bus.dir.."/run"
+export MIXOS_BROKER_ACCOUNT=$bus.account
+export MIXOS_TEST_MIX=$bin.."/mix"
+$runtime=$run.path.."/wayland"
+mkdir($runtime,{parents:true});chmod($runtime,0o700)
+copy($root.."/../mixos/tests/desktop/smoke-settings.json",$run.path.."/settings.json")
+write_file($run.path.."/preferences.json",json_encode({scene_host:false}))
+$env={HOME:$run.path.."/home",XDG_RUNTIME_DIR:$runtime,XDG_CONFIG_HOME:$run.path.."/config",XDG_DATA_HOME:$run.path.."/data",XDG_STATE_HOME:$run.path.."/state",XDG_CACHE_HOME:$run.path.."/cache",MIXOS_ETC:$run.path.."/etc",MIXOS_VAR:$run.path.."/var",MIXOS_RUN:$bus.dir.."/run",MIXOS_NODE_CONFIG:$bus.conf,MIXOS_NODED_URL:$bus.url,DISPLAY:nil,DBUS_SESSION_BUS_ADDRESS:nil,MIXOS_VT:nil,NOTIFY_SOCKET:nil,MESA_VK_WSI_PRESENT_MODE:"mailbox"}
+mkdir($env.HOME,{parents:true})
+mkdir($env.HOME.."/Documents",{parents:true})
+write_file($env.HOME.."/readme.txt","Private P2 file-browser fixture.\n")
+fn launch($argv,$name,$extra)
+  $e=merge($env,$extra)
+  return spawn($argv,{env:$e,stdout:{file:$run.path.."/"..$name..".log"},stderr:"stdout",detach:true})
+end
+fn checked($service,$command,$body)
+  $r=$n.call_within($service,$command,$body,10)
+  if $r.rc!=0 then raise("BUS_CALL",json_encode({service:$service,command:$command,reply:$r})) end
+  return $r.result
+end
+fn await_service($service,$command)
+  $deadline=monotonic()+30
+  while monotonic()<$deadline
+    $r=$n.call_within($service,$command,{},3)
+    if $r.rc==0 then return $r.result end
+    sleep(0.1)
+  end
+  raise("SERVICE_TIMEOUT",$service.." "..$command)
+end
+fn await_app($service)
+  $deadline=monotonic()+30
+  while monotonic()<$deadline
+    $r=$n.call_within($service,"viu.state",{},3)
+    if $r.rc==0 and $r.result.ready then
+      if $r.result.error!="" then raise("APP_ERROR",json_encode($r)) end
+      return $r.result
+    end
+    write_file($run.path.."/"..$service.."-pending.json",json_encode($r))
+    sleep(0.1)
+  end
+  raise("APP_TIMEOUT",$service)
+end
+fn proc_ticks($p)
+  $s=read_file("/proc/"..to_string($p).."/stat")
+  $parts=split($s,")")
+  $fields=split(trim($parts[len($parts)-1])," ")
+  return to_number($fields[11])+to_number($fields[12])
+end
+fn panel_is_mapped($row)
+  if $row.mapped!=true or type($row.layer)!="map" then return false end
+  return ($row.layer.exclusive_zone ?? 0)>0
+end
+try
+  push($records,{service:"noded",ping:checked("noded","noded.info",{})})
+  $parent=launch([$bin.."/viud","--headless","--size","1440x1000","--socket","p2-parent","--bus-service","comp-parent","--config-file",$run.path.."/settings.json"],"parent",{})
+  push($children,$parent)
+  push($records,{service:"comp-parent",pid:$parent,ping:await_service("comp-parent","comp.ping")})
+  $comp=launch([$bin.."/viud","--nested","--socket","p2-desk","--bus-service","comp-p2","--config-file",$run.path.."/settings.json"],"viud",{WAYLAND_DISPLAY:"p2-parent"})
+  push($children,$comp)
+  push($records,{service:"comp-p2",pid:$comp,ping:await_service("comp-p2","comp.ping")})
+  $env.WAYLAND_DISPLAY="p2-desk";$env.MIXOS_COMP_SERVICE="comp-p2";$env.VIU_COMP_SERVICE="comp-p2";$env.MIXOS_INSTANCE="example"
+  print(run_argv_must([$run.path.."/settingsd","init","--root",$run.path.."/settings","--instance","example"],{env:$env}))
+  for $item in [{name:"settingsd",argv:["serve","--root",$run.path.."/settings","--instance","example"],service:"settingsd",ping:"HELP"},{name:"editd",argv:["serve"],service:"edit",ping:"edit.ping"},{name:"monitord",argv:["serve","--db",$run.path.."/monitor.sqlite"],service:"monitord",ping:"monitord.status"}]
+    $p=launch(concat([$run.path.."/"..$item.name],$item.argv),$item.name,{})
+    push($children,$p)
+    push($records,{service:$item.service,pid:$p,ping:await_service($item.service,$item.ping)})
+  end
+  $cold=monotonic()
+  $host=launch([$bin.."/viu","--host"],"furniture",{})
+  push($children,$host)
+  $ping=await_service("shell","shell.ping")
+  push($records,{engine:"furniture",service:"shell",ping:$ping,cold_to_bus_ms:(monotonic()-$cold)*1000,pid:$host})
+  for $scene in ["panel","launcher","toast"]
+    checked("shell","shell.scene.load",{source:read_file($root.."/share/scenes/"..$scene.."/scene.mix"),output:"winit"})
+  end
+  $mapped=false;$until=monotonic()+20
+  while monotonic()<$until
+    $surfaces=checked("comp-p2","comp.props.get",{path:"surfaces"})
+    if any(values($surfaces),fn($row)=panel_is_mapped($row)) then $mapped=true;break end
+    sleep(0.05)
+  end
+  if not $mapped then raise("PANEL_MAP","Furniture panel did not map and reserve its edge") end
+  push($records,{engine:"furniture",cold_to_mapped_panel_ms:(monotonic()-$cold)*1000})
+  $audio=launch([$bin.."/mixd","serve",$root.."/tools/p2-audio.mix","--name","audio-fixture"],"audio-fixture",{})
+  push($children,$audio)
+  await_service("audio-fixture","snapshot")
+  for $app in [{dir:"backdrop",service:"backdrop"},{dir:"gallery",service:"gallery-mix"},{dir:"monitor",service:"monitor"},{dir:"quoin/volume",service:"quoin-volume"},{dir:"dopus",service:"dopus-mix"}]
+    $cold=monotonic()
+    $p=launch([$bin.."/viu","run",$root.."/apps/"..$app.dir],$app.service,{})
+    push($children,$p)
+    $state=await_app($app.service)
+    push($records,{app:$app.service,pid:$p,cold_to_model_ms:(monotonic()-$cold)*1000,state:$state})
+  end
+  checked("gallery-mix","gallery.execute",{id:"slider",action:"set",value:72})
+  if checked("gallery-mix","viu.state",{}).model.values.slider!=72 then raise("GALLERY_REDUCER","Slider model differs") end
+  $monitor=checked("monitor","monitor.refresh",{})
+  if $monitor.snapshot==nil or len($monitor.processes)==0 then raise("MONITOR_DATA","No real samples") end
+  if $monitor.processes[0].cpu<$monitor.processes[len($monitor.processes)-1].cpu then raise("SORT_CPU","Default CPU ordering differs") end
+  checked("monitor","monitor.pause",{on:true})
+  $before=checked("monitor","monitor.info",{});sleep(1.2)
+  if checked("monitor","monitor.info",{}).serial!=$before.serial then raise("PAUSE","Sampler advanced while paused") end
+  checked("monitor","viu.ui.focus",{id:"filter"})
+  checked("monitor","viu.ui.text",{text:"monitord"})
+  $filtered=checked("monitor","monitor.info",{})
+  if $filtered.filter!="monitord" or len($filtered.processes)==0 or not all($filtered.processes,fn($p)=contains(lower($p.name.." "..$p.cmdline),"monitord")) then raise("FILTER","Native field callback did not filter real rows") end
+  checked("monitor","monitor.filter",{text:""})
+  checked("monitor","monitor.sort",{column:"memory",reverse:false})
+  $sorted=checked("monitor","monitor.rows",{})
+  if $sorted.rows[0].memory<$sorted.rows[len($sorted.rows)-1].memory then raise("SORT_MEMORY","Memory ordering differs") end
+  checked("monitor","monitor.tree",{on:true})
+  checked("monitor","monitor.tree",{on:false})
+  checked("monitor","monitor.sort",{column:"cpu",reverse:false})
+  checked("monitor","monitor.pause",{on:false})
+  $outputs=keys(checked("backdrop","viu.state",{}).outputs)
+  if len($outputs)!=1 then raise("BACKDROP_OUTPUT","Expected one private nested output") end
+  for $fit in ["fill","fit","centre","tile","stretch"]
+    $doc={schema:1,default:{colour:"#1234ab"},outputs:{}}
+    $doc.outputs[$outputs[0]]={image:$root.."/engines/viu/tests/fixtures/icon.png",fit:$fit,fallback:"#1234ab"}
+    checked("backdrop","backdrop.set",$doc)
+    sleep(0.5)
+    checked("comp-p2","comp.capture.frame",{path:$run.path.."/backdrop-"..$fit..".png",cursor:false})
+  end
+  $binding={instance:"example",profile:"default"}
+  $settings=checked("settingsd","settings.get",{binding:$binding,view:"values"})
+  checked("settingsd","settings.apply",{binding:$binding,expected_incarnation:$settings.incarnation,expected_revision:$settings.revision,operation_id:uuid(),changes:{"wallpaper.color":"#bada55","wallpaper.slideshow.enabled":false},reset:["wallpaper.image"]})
+  checked("backdrop","backdrop.follow",{on:true})
+  $until=monotonic()+10;$followed=false
+  while monotonic()<$until
+    if deep_eq(checked("backdrop","viu.state",{}).model.values.root.colour,[186,218,85]) then $followed=true;break end
+    sleep(0.1)
+  end
+  if not $followed then raise("BACKDROP_FOLLOW","Real settings authority change did not reach wallpaper") end
+  checked("dopus-mix","dopus.execute",{id:"view.refresh",params:{}})
+  checked("quoin-volume","volume.state",{})
+  sleep(2)
+  checked("comp-p2","comp.capture.frame",{path:$run.path.."/desk.png",cursor:false})
+  for $app in ["gallery-mix","monitor","quoin-volume","dopus-mix"]
+    $capture=checked($app,"viu.capture",{name:$app..".png"})
+    copy($capture.path,$run.path.."/"..$app..".png")
+  end
+  $toast=read_file($root.."/share/scenes/toast/scene.mix")
+  for $line in lines($toast)
+    if starts_with($line,"model: ") then
+      $model=json_parse(slice($line,7))
+      $model.app="P2 rehearsal";$model.summary_lines=["Split engines","Private Bus notification",""]
+      $model.summary_shown=[true,true,false]
+      $toast=replace($toast,$line,"model: "..json_encode($model))
+      break
+    end
+  end
+  checked("shell","shell.scene.load",{source:$toast,output:"o_winit"})
+  checked("shell","shell.toast.show",{scene:"toast",output:"o_winit",h:132})
+  $until=monotonic()+10;$shown=false
+  while monotonic()<$until
+    if any(values(checked("comp-p2","comp.props.get",{path:"surfaces"})),fn($s)=$s.mapped==true and $s.width==360 and $s.height==132) then $shown=true;break end
+    sleep(0.05)
+  end
+  if not $shown then raise("TOAST_MAP","The Mix toast scene did not map") end
+  checked("comp-p2","comp.capture.frame",{path:$run.path.."/toast.png",cursor:false})
+  checked("shell","shell.toast.hide",{scene:"toast",output:"o_winit"})
+  sleep(2)
+  $sample=map($children,fn($p)={pid:$p,ticks:proc_ticks($p)})
+  $start=monotonic();sleep(10);$wall=monotonic()-$start
+  $hz=to_number(trim(run_argv_must(["getconf","CLK_TCK"])))
+  $idle=map($sample,fn($row)={pid:$row.pid,cpu_percent:100*(proc_ticks($row.pid)-$row.ticks)/$hz/$wall})
+  write_file($run.path.."/results.json",json_encode({result:"pass",source:$sha,binary_source:$binary_source,records:$records,idle:$idle,idle_wall_seconds:$wall,clock_ticks_per_second:$hz,method:"Cold: spawn to Bus ping/model ready or mapped panel, includes polling and IPC; warm filesystem caches. Idle: delta process utime+stime over 10 seconds, percent of one core."}))
+  print({result:"pass",run:$run.path})
+finally
+  write_file($run.path.."/progress.json",json_encode($records))
+  for $p in reverse($children) if process_alive($p) then kill($p,15) end end
+  $n.stop_bus($bus)
+  sleep(1)
+  for $p in $children if process_alive($p) then kill($p,9) end end
+  write_file($run.path.."/closure.json",json_encode(map(concat($children,[$bus.pid]),fn($p)={pid:$p,alive:process_alive($p)})))
+end

@@ -1,0 +1,30 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Exact u64 counters use native jq integers beyond Mix's exact numeric range.
+fn compact($digits)
+  if len($digits)<16 or (len($digits)==16 and $digits<="9007199254740991") then return to_number($digits) end
+  return $digits
+end
+fn add($a,$b)
+  if type($a)=="number" and type($b)=="number" and $a+$b<=9007199254740991 then return $a+$b end
+  $digits=jq([to_string($a),to_string($b)],"map(tonumber)|add|if .>18446744073709551615 then 18446744073709551615 else . end|tostring")
+  return compact($digits)
+end
+fn compare($a,$b)
+  if type($a)=="number" and type($b)=="number" then return if $a<$b then -1 elif $a>$b then 1 else 0 end end
+  return jq([to_string($a),to_string($b)],"map(tonumber)|if .[0]<.[1] then -1 elif .[0]>.[1] then 1 else 0 end")
+end
+fn maximum($a,$b) return if compare($a,$b)>=0 then $a else $b end end
+fn decode($json)
+  -- Keep opaque tool/permission JSON before crossing Mix's numeric boundary.
+  -- These private witnesses are restored only by wire(), never exported.
+  return jq($json,'def annotate: if type=="object" then (if (.kind=="tool_call" or .kind=="tool_call_update") then .+{_workshop_event_bytes:(tojson|utf8bytelength),_workshop_tool_json:(.update|tojson)} else . end)|(if (.permissions|type)=="array" then .+{_workshop_permissions_json:(.permissions|tojson)}|.permissions|=map(if (.request|type)=="number" then .request|=tostring else . end) else . end) else . end; def envelope: if type=="object" then (if (.args|type)=="object" then .args|=envelope else . end)|(if (.events|type)=="array" then .events|=map(annotate) else . end)|(if (.sessions|type)=="array" then .sessions|=map(annotate) else . end)|(if (.session|type)=="object" then .session|=annotate else . end)|annotate else . end; fromjson|envelope|walk(if type=="object" then with_entries(if (.key|test("^(seq|turn|dropped_count)$")) and (.value|type)=="number" and .value>9007199254740991 and .value<=18446744073709551615 and (.value|floor)==.value then .value|=tostring else . end) else . end)')
+end
+fn extract($json,$path)
+  $digits=jq({text:$json,path:$path},". as $v|($v.text|fromjson|getpath($v.path))|if type==\"number\" and .>=0 and .<=18446744073709551615 and floor==. then tostring else \"0\" end")
+  return compact($digits)
+end
+fn wire($value)
+  -- Only counter/sequence fields are numeric on the protocol. User strings
+  -- (including titles and IDs made entirely of digits) retain their type.
+  return jq($value,"def thaw: if type==\"array\" then map(thaw) elif type==\"object\" then with_entries(if (.key==\"raw\" or .key==\"payload\" or .key==\"headers\" or .key==\"permissions\" or (.key|startswith(\"_workshop_\"))) then . else .value|=thaw end)|with_entries(if (.key|test(\"^(count|seq|turn|first|last|seen|since|dropped|ignored_observations|events_seen|ring_dropped|recent_capped|out_msgs|in_msgs|out_bytes|in_bytes|out_1m|in_1m|out_5m|in_5m|msgs|bytes|msgs_1m|msgs_5m|rejected|dropped_count)$\")) and (.value|type)==\"string\" and (.value|test(\"^[0-9]+$\")) then .value|=tonumber else . end)|(if (._workshop_tool_json|type)==\"string\" and has(\"raw\") then .raw=(._workshop_tool_json|fromjson) else . end)|(if (._workshop_permissions_json|type)==\"string\" then .permissions=(._workshop_permissions_json|fromjson) else . end)|del(._workshop_tool_json,._workshop_permissions_json,._workshop_event_bytes) else . end; thaw|tojson")
+end

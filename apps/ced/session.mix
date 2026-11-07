@@ -1,0 +1,78 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Session/recovery policy belongs to the application. Native bindings only
+-- resolve paths, hold mirrors and perform bounded durable file replacement.
+fn empty_session()
+  return {version:1,active:nil,tabs:[],recent:[]}
+end
+fn session_value($s)
+  $tabs=[]
+  for $t in $s.tabs
+    $m=$s.mail[$t.document]
+    $row={path:$t.path,recovery_id:if $t.path==nil or $m!=nil then $t.recovery_id else nil end,caret:$t.selection.head.offset,first_line:max(1,$t.first_line)}
+    if $m!=nil then $row.mail={disk:$m.disk,headers:$m.headers} end
+    push($tabs,$row)
+  end
+  return {version:1,active:if len($s.tabs)>0 then $s.active else nil end,tabs:$tabs,recent:slice($s.recent,0,20)}
+end
+fn session_changed($s)
+  if not $s.session_loaded or len(keys($s.restore))>0 then return $s end
+  $value=session_value($s)
+  if not deep_eq($value,$s.session_seen) then
+    $s.session_seen=$value;$s.session_dirty=true
+    viu_timer("session-save",1000,{kind:"session-save"})
+  end
+  return $s
+end
+fn save_session($s)
+  if $s.session_path==nil or not $s.session_dirty then return $s end
+  $s.queue=filter($s.queue,fn($j)=$j.kind!="session-save")
+  $s.session_dirty=false
+  return queue_job($s,"session-save",{path:$s.session_path,value:session_value($s)})
+end
+fn restore_session($s,$body)
+  $s.session_loaded=true;$s.session_path=$body.path
+  $value=$body.value ?? empty_session();$s.recent=slice($value.recent,0,20)
+  $s.restore_active=$value.active
+  for $i=0 to len($value.tabs)-1
+    $tab=$value.tabs[$i]
+    -- An explicit Open may arrive while the startup read is in flight.
+    -- Reuse its live/queued document instead of opening a duplicate tab.
+    if $tab.path!=nil and (any($s.tabs,fn($t)=$t.path==$tab.path) or any(concat($s.queue,values($s.running)),fn($j)=$j.kind=="open" and $j.payload.args.path==$tab.path)) then continue end
+    $s.next_tab=$s.next_tab+1;$key=to_string($s.next_tab)
+    $s.restore[$key]=$tab
+    $s=restore_mail($s,$key,$tab)
+    $s=queue_job($s,"open",{document:$key,args:{path:$tab.path,recovery_id:if $tab.path==nil or $s.mail[$key]!=nil then $tab.recovery_id else nil end,mail:$tab.mail}})
+  end
+  $s.session_seen=$value
+  return $s
+end
+fn request_probe($s)
+  if not any(concat($s.queue,values($s.running)),fn($j)=$j.kind=="probe") then $s=queue_job($s,"probe",{}) end
+  return $s
+end
+fn request_reattach($s,$t)
+  if $s.reattach_wait[$t.document] then return $s end
+  if not any(concat($s.queue,values($s.running)),fn($j)=$j.kind=="reattach" and $j.payload.document==$t.document) then
+    $m=$s.mail[$t.document]
+    $s=queue_job($s,"reattach",{document:$t.document,args:{path:$t.path,recovery_id:if $t.path==nil or $m!=nil then $t.recovery_id else nil end,mail:if $m!=nil then {disk:$m.disk} else nil end,existing_document:if $m!=nil then $t.document else nil end}})
+  end
+  return $s
+end
+fn recovered_rows($s,$list)
+  return filter($list.buffers,fn($b)=$b.recovered and len($b.holders)==0 and not any($s.tabs,fn($t)=$t.buffer==$b.buffer or ($t.path!=nil and $t.path==$b.path) or $t.recovery_id==$b.recovery_id))
+end
+fn dialog_cancel($s)
+  if $s.dialog_call!=nil and $s.waits[$s.dialog_call]!=nil then
+    $s=finish_call($s,$s.dialog_call,10,{error_code:"CONFLICT",message:"Command cancelled",reason:"cancelled"})
+  end
+  $s.dialog_call=nil;return $s
+end
+fn dialog_complete($s,$out)
+  if $s.dialog_call==nil or $s.waits[$s.dialog_call]==nil then return $s end
+  $token=$s.dialog_call;$s.dialog_call=nil
+  if $out.op_id!=nil then
+    $s.waits[$token]=merge($s.waits[$token],{kind:"outcome",op_id:$out.op_id,tab:$out.target ?? to_number(current($s).document)})
+    return check_calls($s)
+  end
+  return finish_call($s,$token,0,{id:$s.waits[$token].action,ok:true,result:$out.result})
+end

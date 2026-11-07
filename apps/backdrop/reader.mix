@@ -1,0 +1,49 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+$train=require("train.mix")
+fn fresh()
+  return {queue_at:nil,history_at:nil,gate_at:nil,generation:0,read_generation:0,config:nil,errors:{},hint:false,ticket:0}
+end
+fn remaining($at,$interval,$now)
+  return if $at==nil then 0 else max(0,$at+$interval-$now) end
+end
+fn plan($reader,$live,$snapshot,$visible,$hint,$now)
+  $key=[$live.train_service,$live.buildd_service,$live.hours]
+  if not deep_eq($reader.config,$key) then
+    $reader.queue_at=nil;$reader.history_at=nil;$reader.errors={};$reader.config=$key
+  end
+  $requests=[]
+  if remaining($reader.queue_at,if $hint then 2 else 10 end,$now)==0 then
+    push($requests,{key:"queue",target:$live.train_service,command:"train.queue",body:{},timeout:5})
+    push($requests,{key:"workers",target:$live.buildd_service,command:"buildd.queue",body:{},timeout:5})
+    $reader.queue_at=$now;$reader.hint=false
+  end
+  if remaining($reader.history_at,300,$now)==0 or ($reader.generation!=$reader.read_generation and remaining($reader.history_at,2,$now)==0) then
+    push($requests,{key:"history",target:$live.train_service,command:"train.history",body:{hours:$live.hours},timeout:5})
+    $reader.history_at=$now;$reader.read_generation=$reader.generation
+  end
+  if $visible and $reader.errors["train.queue"]==nil and $train.gating($snapshot)!=nil and remaining($reader.gate_at,15,$now)==0 then
+    push($requests,{key:"gate",target:$live.train_service,command:"train.gate",body:{},timeout:8});$reader.gate_at=$now
+  end
+  $reader.ticket=$reader.ticket+1
+  return {reader:$reader,requests:$requests,key:$key,ticket:$reader.ticket}
+end
+fn wait_seconds($reader,$snapshot,$visible,$now)
+  $wait=min(remaining($reader.queue_at,10,$now),remaining($reader.history_at,300,$now))
+  if $reader.hint then $wait=min($wait,remaining($reader.queue_at,2,$now)) end
+  if $reader.generation!=$reader.read_generation then $wait=min($wait,remaining($reader.history_at,2,$now)) end
+  if $visible and $train.gating($snapshot)!=nil then $wait=min($wait,remaining($reader.gate_at,15,$now)) end
+  return max(0.1,$wait)
+end
+fn received($reader,$snapshot,$live,$key,$results,$now)
+  if not deep_eq($key,[$live.train_service,$live.buildd_service,$live.hours]) then return {reader:$reader,snapshot:$snapshot} end
+  for $r in $results
+    if $r.rc==0 and type($r.body)=="map" then
+      $snapshot[$r.key]=$r.body;$reader.errors=delete($reader.errors,$r.command)
+    else $reader.errors[$r.command]=$r.command..": "..($r.message ?? to_string($r.body)) end
+  end
+  if $reader.errors["train.queue"]!=nil or $train.gating($snapshot)==nil then $snapshot.gate=nil;$reader.errors=delete($reader.errors,"train.gate") end
+  $snapshot.now=floor($now/60)*60;$snapshot.hours=$live.hours
+  $snapshot.error=if len(keys($reader.errors))==0 then nil else join(map(sort(keys($reader.errors)),fn($key)=$reader.errors[$key]),"; ") end
+  return {reader:$reader,snapshot:$snapshot}
+end

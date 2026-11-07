@@ -1,0 +1,142 @@
+-- hostd client for scene behaviours: one request per connection over the
+-- local socket (NUL-terminated JSON frames, docs/hostd/README.md). Writes go only
+-- this way; hostd also accepts local Bus writes. Every answer is a map:
+--   {ok: true, body}                  rc 0
+--   {ok: false, status, body}         hostd refused (rc 10; status from body)
+--   {ok: false, status: "unavailable", message, sent}   no socket, no
+--                                     unix_connect, or the connection failed;
+--                                     sent says whether the request may have
+--                                     reached hostd (then its outcome is unknown)
+$SOCKET = env("MIX_HOSTD_SOCKET", "/run/mix/hostd/hostd.sock")
+-- net.state on a host with many links passes 64 KiB.
+$MAX_REPLY = 1048576
+
+fn unavailable($message, $sent = false)
+  return {ok: false, status: "unavailable", message: to_string($message), sent: $sent}
+end
+
+-- One call. $wait_s bounds the reply (a write's window plus hostd's own
+-- slack: up to 15 s queued behind another change, then the window).
+fn call($command, $body, $wait_s = 10)
+  if not has_builtin("unix_connect") then return unavailable("this mix has no unix_connect (needs 0.115.0)") end
+  try
+    $h = unix_connect($SOCKET, {frame: "nul", timeout: 5})
+  catch $message, $error
+    return unavailable($error.code)
+  end
+  -- From the first send on, the request may have reached hostd.
+  try
+    tcp_send($h, json_encode({command: $command, body: $body ?? {}}) .. chr(0))
+    $line = tcp_recv_line($h, {timeout: $wait_s, max: $MAX_REPLY})
+  catch $message
+    try
+      tcp_close($h)
+    catch $e
+    end
+    return unavailable($message, true)
+  end
+  try
+    tcp_close($h)
+  catch $e
+  end
+  if $line == nil then return unavailable("no reply within " .. to_string($wait_s) .. " s", true) end
+  try
+    $reply = json_parse($line)
+  catch $message
+    return unavailable("unreadable reply", true)
+  end
+  if type($reply) != "map" then return unavailable("unreadable reply", true) end
+  $body = $reply.body ?? {}
+  if $reply.rc == 0 then return {ok: true, body: $body} end
+  return {ok: false, status: type($body) == "map" ? to_string($body.status ?? "refused") : "refused", body: $body}
+end
+
+-- Is a failed write's outcome unknown? hostd's own timeout (the change
+-- runs on), or no answer to a request that may have reached it. A connect
+-- that failed before sending is a plain failure: nothing changed.
+fn uncertain($out)
+  if $out.ok then return false end
+  return $out.status == "timeout" or ($out.status == "unavailable" and $out.sent == true)
+end
+
+-- Host availability and freeze state apply equally to every local caller.
+fn access_state()
+  $out = call("hostd.status", {})
+  if not $out.ok then return {available: $out.status != "unavailable", frozen: false} end
+  return {available: true, frozen: $out.body.frozen != nil}
+end
+
+fn writable($access)
+  return $access != nil and $access.available and not $access.frozen
+end
+
+-- Split a typed list ("a, b c") into its non-empty items.
+fn items($text)
+  $out = []
+  for each $part in split(replace(to_string($text ?? ""), ",", " "), " ")
+    if trim($part) != "" then push($out, trim($part)) end
+  end
+  return $out
+end
+
+-- The net.link.apply body for an editor state, or {error} for input the
+-- widget can see is wrong before asking. hostd validates everything again.
+fn link_request($link, $edit, $window_s = 20)
+  $config = {mode: $edit.mode}
+  if $edit.mode == "static" then
+    $config.addresses = items($edit.addresses)
+    if length($config.addresses) == 0 then return {error: "net_need_address"} end
+    for each $a in $config.addresses
+      if not contains($a, "/") then return {error: "net_need_prefix"} end
+    end
+    if trim(to_string($edit.gateway ?? "")) != "" then $config.gateway = trim($edit.gateway) end
+  elif $edit.mode != "dhcp" then
+    return {error: "net_bad_mode"}
+  end
+  $dns = items($edit.dns)
+  if length($dns) > 0 then $config.dns = $dns end
+  return {request: {link: $link, config: $config, window_s: $window_s}}
+end
+
+-- The net.wg.apply body for a tunnel editor, or {error}. One peer (the
+-- editor's); with no peer key typed the tunnel has no peers. require_handshake
+-- is sent only when turned off (hostd's default is on): the first side of a
+-- new pair has no peer to answer yet.
+fn wg_request($name, $edit, $window_s = 25)
+  $req = {name: $name, addresses: items($edit.wg_addresses), window_s: $window_s}
+  if length($req.addresses) == 0 then return {error: "net_need_address"} end
+  for each $a in $req.addresses
+    if not contains($a, "/") then return {error: "net_need_prefix"} end
+  end
+  $port = trim(to_string($edit.wg_port ?? ""))
+  if $port != "" then
+    $n = to_number($port)
+    if $n == nil or floor($n) != $n or $n < 1 or $n > 65535 then return {error: "net_bad_port"} end
+    $req.listen_port = $n
+  end
+  $req.peers = []
+  $key = trim(to_string($edit.peer_key ?? ""))
+  if $key != "" then
+    $peer = {public_key: $key, allowed_ips: items($edit.peer_allowed)}
+    if length($peer.allowed_ips) == 0 then return {error: "net_need_allowed"} end
+    $ep = trim(to_string($edit.peer_endpoint ?? ""))
+    if $ep != "" then $peer.endpoint = $ep end
+    $ka = trim(to_string($edit.peer_keepalive ?? ""))
+    if $ka != "" then
+      $k = to_number($ka)
+      if $k == nil or floor($k) != $k or $k < 1 or $k > 3600 then return {error: "net_bad_keepalive"} end
+      $peer.keepalive_s = $k
+    end
+    $req.peers = push($req.peers, $peer)
+  end
+  if $edit.handshake == false then $req.require_handshake = false end
+  return {request: $req}
+end
+
+-- The net.wifi.connect body. The passphrase is passed straight through:
+-- the caller never keeps it, and hostd hands it only to iwd.
+fn wifi_request($device, $ssid, $passphrase, $window_s = 30)
+  $req = {device: $device, ssid: $ssid, window_s: $window_s}
+  if $passphrase != nil and $passphrase != "" then $req.passphrase = $passphrase end
+  return {request: $req}
+end

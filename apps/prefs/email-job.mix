@@ -1,0 +1,8 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$app=require("../../libraries/viu/mix/app-call.mix")
+on job.run
+  $a=$event.args
+  if $a.launch then $r=$app.viu_app_call("dev.mixos.email",$a.command,$a.body,16)
+  else $r=$app.viu_app_raw("email",$a.command,$a.body) end
+  reply(0,json_encode({kind:$a.kind,rc:$r.rc,answer:$r.body,absent:$app.viu_app_absent($r,"email")}))
+end

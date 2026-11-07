@@ -1,0 +1,61 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
+-- Exact-source CBC integration gates. Invoke each mode through cbc-build.
+$mode=args()[0] ?? "build"
+fn p2_run($argv)
+  print("STEP_BEGIN "..join($argv," "))
+  $r=run_argv($argv,{timeout:7200,max_output:64000000,env:{CARGO_BUILD_JOBS:"6"}})
+  print($r.stdout)
+  print($r.stderr)
+  print("STEP_RC="..to_string($r.exit_code))
+  if not $r.ok then exit($r.exit_code ?? 124) end
+end
+$sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+$binary_source=args()[1] ?? $sha
+if $mode!="build" then
+  run_argv_must(["git","diff","--exit-code",$binary_source,$sha,"--","Cargo.toml","Cargo.lock","engines","libraries","services","vendor"])
+end
+$art="/build/es-artifacts/"..$binary_source
+if $mode=="build" then
+  mkdir($art,{parents:true})
+  $group=args()[2] ?? "all"
+  if not contains(["all","headless","desktop"],$group) then raise("USAGE","build group must be all, headless or desktop") end
+  $engines=if $group=="headless" then [["mix","mix"],["mixd","mixd"]] elif $group=="desktop" then [["viud","viud"],["viu","viu"]] else [["mix","mix"],["mixd","mixd"],["viud","viud"],["viu","viu"]] end
+  for $pair in $engines
+    p2_run(["cargo","build","--release","--locked","-p",$pair[0]])
+    if $pair[1]=="viud" then
+      $tree=run_argv_must(["cargo","tree","--locked","-p","viud","-e","normal"])
+      $egui=filter(lines($tree),fn($line)=contains($line,"egui"))
+      print("VIUD_EGUI_MATCH_LINES="..to_string(len($egui)))
+      if len($egui)!=0 then raise("VIUD_TOOLKIT_DEPENDENCY",join($egui,"\n")) end
+    end
+    copy("target/release/"..$pair[1],$art.."/"..$pair[1])
+    $ldd=run_argv_must(["ldd",$art.."/"..$pair[1]])
+    print({engine:$pair[1],sha256:hash_file($art.."/"..$pair[1],"sha256"),ldd:$ldd})
+    if contains(["mix","mixd"],$pair[1]) then
+      $dynamic=run_argv_must(["readelf","-d",$art.."/"..$pair[1]])
+      for $line in lines($dynamic)
+        if contains($line,"(NEEDED)") and not any(["[libc.so.6]","[libm.so.6]","[libgcc_s.so.1]"],fn($ok)=contains($line,$ok)) then raise("D2_SHARED_LIBRARY",$line) end
+      end
+    end
+  end
+  if $group!="headless" then
+    p2_run(["cargo","build","--release","--locked","-p","compd","--features","backend-all"])
+    copy("target/release/compd",$art.."/compd-oracle")
+  end
+elif $mode=="tests" then
+  p2_run(["cargo","test","--locked","-p","mixd","-p","noded","-p","settingsd","-p","editd","-p","monitord","-p","dnsd","-p","blobd","-p","hostd","-p","mixtrayd","-p","maild","-p","webd","-p","indexd"])
+  p2_run(["cargo","test","--locked","-p","lib-viu","-p","viu"])
+  p2_run(["cargo","clippy","--locked","--all-targets","-p","lib-viu","-p","viu"])
+  p2_run(["/opt/mixos/bin/mix","tools/engine_split_smoke.mix",$art.."/mix",$art.."/mixd"])
+elif $mode=="furniture" then
+  p2_run(["env","COMPD_NATIVE_TEST_BINARY="..$art.."/viud","COMPD_INPROC_TEST_BINARY="..$art.."/compd-oracle","cargo","test","--locked","-p","viu","--test","furniture","--","--ignored","--nocapture","--test-threads=1"])
+elif $mode=="native" then
+  p2_run(["/opt/mixos/bin/mix","tools/gate_comp_split.mix","native"])
+elif $mode=="oracle" then
+  p2_run(["/opt/mixos/bin/mix","tools/gate_comp_split.mix","default"])
+else
+  raise("USAGE","p2_gate.mix build|tests|furniture|native|oracle")
+end

@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run only through CBC. Include the shared macro UI constructor in formatting;
+-- the parity gate prints and retires all worker formatting/lockfile changes.
+$format=run_argv(["cargo","fmt","-p","toolkit"])
+print($format)
+if not $format.ok then exit($format.exit_code ?? 124) end
+$gate=run_argv(["/opt/mixos/bin/mix","tools/gold_parity_gate.mix","--prepare"],{timeout:3600,max_output:16000000})
+print($gate)
+if not contains([0,97],$gate.exit_code) then exit($gate.exit_code ?? 124) end
+for $argv in [["cargo","test","--locked","-p","toolkit","--lib","menu"],["cargo","test","--locked","-p","toolkit","--test","menu"]]
+  print({argv:$argv})
+  $check=run_argv($argv,{timeout:1200,max_output:16000000})
+  print($check)
+  if not $check.ok then exit($check.exit_code ?? 124) end
+end
+if $gate.exit_code==0 and contains(args(),"--release") then
+  $build=run_argv(["cargo","build","--locked","--release","-p","viu","--bin","viu"],{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}})
+  print($build)
+  if not $build.ok then exit($build.exit_code ?? 124) end
+  $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+  $artifact="/build/gold-parity-artifacts/"..$sha.."/release"
+  mkdir($artifact,{parents:true})
+  copy("target/release/viu",$artifact.."/viu")
+  print({release_artifact:$artifact,sha256:hash_file($artifact.."/viu","sha256")})
+end
+exit($gate.exit_code)

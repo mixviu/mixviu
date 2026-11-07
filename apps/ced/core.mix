@@ -1,0 +1,186 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- lint: globals frame ctx
+-- Tab, transport and application policy. Text and mirror mechanics remain
+-- in-process; only this Mix owner schedules editd requests.
+fn current($s)
+  if len($s.tabs)==0 then raise("EMPTY","Open a document first") end
+  return $s.tabs[$s.active]
+end
+fn open_location($raw)
+  $path=$raw;$position=nil
+  if not exists($path) then
+    $tail=rsplit_once($path,":")
+    if $tail!=nil and $tail[0]!="" and re_match($tail[1],"^\\+?[0-9]+$") then
+      $path=$tail[0];$position={line:to_number($tail[1]),col:1}
+      $middle=rsplit_once($path,":")
+      if $middle!=nil and $middle[0]!="" and re_match($middle[1],"^\\+?[0-9]+$") then $path=$middle[0];$position={line:to_number($middle[1]),col:$position.line} end
+    end
+  end
+  return {path:if starts_with($path,"/") then $path else path_join(cwd(),$path) end,position:$position}
+end
+fn locate_open($s,$key,$position)
+  if $position!=nil then
+    $t=viu_document("state",$key,{})
+    if $t.phase=="live" then
+      try
+        $v=viu_document("select",$key,{anchor:$position,head:$position})
+        $v=viu_document("restore-view",$key,{caret:$v.selection.head.offset,first_line:max(1,$position.line-5)})
+      catch $message
+        -- Gold ignores a location outside the opened text.
+      end
+    else $s.locations[$key]=$position end
+  end
+  return $s
+end
+fn refresh_tabs($s)
+  for $i=0 to len($s.tabs)-1
+    $old=$s.tabs[$i];$s.tabs[$i]=viu_document("state",$old.document,{});$t=$s.tabs[$i]
+    if $t.phase=="live" and $s.locations[$t.document]!=nil then $s=locate_open($s,$t.document,$s.locations[$t.document]);$s.locations=delete($s.locations,$t.document);$s.tabs[$i]=viu_document("state",$t.document,{}) end
+    $m=$s.mail[$t.document]
+    if $m!=nil then
+      $s.tabs[$i].path=$m.path
+      $s.tabs[$i].dirty=not deep_eq($m.headers,$m.saved_headers) or $m.body_hash!=$m.saved_body_hash or $m.hash_gen!=$t.view_gen
+      if $t.phase=="live" and $m.hash_gen!=$t.view_gen and $m.hash_wanted!=$t.view_gen then
+        $s.mail[$t.document].hash_wanted=$t.view_gen
+        $s=queue_job($s,"mail-hash",{document:$t.document})
+      end
+    elif $t.phase=="live" and not $s.classified[$t.document] then
+      $s.classified[$t.document]=true
+      $s=queue_job($s,"classify",{document:$t.document})
+    end
+    if any(concat($s.queue,values($s.running)),fn($j)=contains(["classify","mail-seed"],$j.kind) and $j.payload.document==$t.document) then $s.tabs[$i].phase="bootstrapping" end
+    if $t.phase=="live" and $t.path!=nil and $s.diagnostics[$t.path]!=nil and ($old.phase!="live" or $old.resyncs!=$t.resyncs or ($old.dirty and not $t.dirty)) then
+      for $source in keys($s.diagnostics[$t.path]) $s=queue_job($s,"diagnostics",{request:$s.diagnostics[$t.path][$source],documents:[$t.document]}) end
+    end
+  end
+  for $t in $s.tabs
+    if $s.edit.epoch!=nil then
+      $selection={buffer:$t.buffer,epoch:$t.epoch,anchor:$t.selection.anchor.offset,head:$t.selection.head.offset}
+      if not deep_eq($s.caret_wanted[$t.document],$selection) then
+        $s.caret_wanted[$t.document]=$selection;viu_timer($t.document..":caret",200,{kind:"caret",document:$t.document})
+      end
+    end
+    if $t.phase=="live" and contains(["mix","scene","mix-data"],$t.language) and $s.lex_requested[$t.document]!=$t.view_gen then
+      $s.lex_requested[$t.document]=$t.view_gen;viu_timer($t.document..":lex",150,{kind:"lex",document:$t.document})
+    end
+    if $t.phase=="live" and $t.language=="markdown" and ($s.previews[$t.document] ?? "source")!="source" and $s.preview_requested[$t.document]!=$t.view_gen then
+      $s.preview_requested[$t.document]=$t.view_gen
+      $s=queue_job($s,"preview",{document:$t.document})
+    end
+    if $s.restore[$t.document]!=nil and $t.phase=="live" then
+      $v=viu_document("restore-view",$t.document,$s.restore[$t.document]);$s.restore=delete($s.restore,$t.document)
+    end
+  end
+  if len(keys($s.restore))==0 and $s.restore_active!=nil then
+    $s.active=min(max(0,$s.restore_active),max(0,len($s.tabs)-1));$s.restore_active=nil
+  end
+  $s.busy=any($s.tabs,fn($t)=$t.phase!="live" or not $t.idle) or len($s.running)>0 or len($s.queue)>0
+  return $s
+end
+fn queue_job($s,$kind,$payload)
+  $s.serial=$s.serial+1
+  $s.queue=push($s.queue,{id:"ced-"..to_string($s.serial),kind:$kind,payload:$payload})
+  return $s
+end
+fn pump($s)
+  $s=refresh_tabs($s)
+  $s=mail_pump($s)
+  for $t in $s.tabs
+    if $t.reattach_needed then $s=request_reattach($s,$t) end
+    $effects=viu_document("effects",$t.document,{})
+    for $request in $effects.out $s=queue_job($s,"io",{document:$t.document,request:$request}) end
+    if $effects.retry_ms!=nil then viu_timer($t.document..":retry",$effects.retry_ms,{document:$t.document,kind:"retry"}) end
+    if $effects.echo!=nil then viu_timer($t.document..":echo",$effects.echo[1],{document:$t.document,kind:"echo",op_id:$effects.echo[0]}) end
+    for $outcome in $effects.outcomes
+      $s.outcomes[$outcome.op_id]=$outcome
+      if not $outcome.ok and $outcome.error.reason=="disk_modified" then
+        if $s.save_prompts[$outcome.op_id] ?? true then $s.disk_dialog=$t.document
+        else $s=notify_ced($s,$t,"An agent's save was refused: the file changed on disk","warning") end
+      end
+      $s.save_prompts=delete($s.save_prompts,$outcome.op_id)
+    end
+  end
+  for $id in keys($s.close_after ?? {})
+    if $s.outcomes[$id]!=nil then
+      $key=$s.close_after[$id];$s.close_after=delete($s.close_after,$id)
+      if $s.outcomes[$id].ok and any($s.tabs,fn($t)=$t.document==$key) then $tab=viu_document("state",$key,{});$s=queue_job($s,"close",{document:$key,buffer:$tab.buffer,force:false}) end
+    end
+  end
+  while len($s.queue)>0 and len(keys($s.running))<4
+    $job=$s.queue[0];$s.queue=slice($s.queue,1)
+    if $job.kind=="session-save" and any(values($s.running),fn($j)=$j.kind=="session-save") then $s.queue=concat([$job],$s.queue);break end
+    $p=path_join(dirname(script_path()),"job.mix")
+    send "viu-local" "jobs.start" id=$job.id owner=$job path=$p source=read_file($p) command="job.run" args=$job
+    if $rc!=0 then $s.queue=concat([$job],$s.queue);viu_timer("drain",25,{kind:"drain"});break end
+    $s.running[$job.id]=$job
+  end
+  return check_calls(session_changed(refresh_tabs($s)))
+end
+fn notify_ced($s,$tab,$text,$level)
+  $text=basename($tab.path ?? "untitled-"..$tab.document)..": "..$text
+  if monotonic()-($s.notice_at[$text] ?? -100)>5 then
+    $s.notice_at[$text]=monotonic();$s=queue_job($s,"notify",{text:$text,level:$level})
+  end
+  return $s
+end
+fn operation($s,$op,$a)
+  if $op=="open" or $op=="new" then
+    $position=nil
+    if $op=="open" then
+      if type($a.path)!="string" then raise("PATH","File path required") end
+      $location=open_location($a.path);$a.path=$location.path;$position=$location.position
+    end
+    for $i=0 to len($s.tabs)-1
+      if $op=="open" and $s.tabs[$i].path==$a.path then $s.active=$i;$s.last_open=$s.tabs[$i].document;return locate_open($s,$s.last_open,$position) end
+    end
+    for $job in concat($s.queue,values($s.running))
+      if $op=="open" and $job.kind=="open" and $job.payload.args.path==$a.path then $s.last_open=$job.payload.document;if $position!=nil then $s.locations[$s.last_open]=$position end;return $s end
+    end
+    $s.next_tab=$s.next_tab+1;$s.last_open=to_string($s.next_tab)
+    if $position!=nil then $s.locations[$s.last_open]=$position end
+    return pump(queue_job($s,"open",{document:to_string($s.next_tab),args:if $op=="new" then {text:$a.text ?? "",language:$a.language ?? "text"} else {path:$a.path,create:$a.create ?? false} end}))
+  end
+  $t=current($s)
+  if $op=="apply" then return pump($s) end
+  if $op=="refresh" then $v=viu_document("suspect",$t.document,{})
+  elif $op=="close" then
+    return pump(queue_job($s,"close",{document:$t.document,buffer:$t.buffer,force:$a.force ?? false,prompt:$a.prompt ?? true}))
+  elif contains(["keep-mine","take-theirs"],$op) then $v=viu_document($op,$t.document,{})
+  elif contains(["save","reload","undo","redo","duplicate-line","delete-line","move-line-up","move-line-down","toggle-comment","indent","outdent","select-all"],$op) then
+    $v=viu_document("command",$t.document,{name:$op,path:$a.path,force:$a.force ?? false})
+    if $v.op_id!=nil then $s.last_op=$v.op_id end
+  else raise("OP","Unknown edit operation") end
+  return pump($s)
+end
+fn publish_ced($s)
+  $t=if len($s.tabs)>0 then current($s) else {document:"",path:"No document",rev:nil,phase:"empty",language:"text",pending:0,dirty:false} end
+  $has=len($s.tabs)>0;$look=$s.look.appearance;$prefs=$s.look.values
+  $density=if $look.density=="compact" then 0.85 elif $look.density=="spacious" then 1.2 else 1 end
+  $labels={};$choices=[]
+  for $i=0 to len($s.tabs)-1
+    $k=to_string($i);push($choices,$k)
+    $labels[$k]=basename($s.tabs[$i].path ?? "Untitled")..if $s.tabs[$i].dirty or $s.tabs[$i].pending>0 then " *" else "" end
+  end
+  if not $has then $choices=["none"] end
+  $window={"window.decorations":"ssd","window.header_seamless":true}
+  for $k in keys($prefs) if starts_with($k,"window.") then $window[$k]=$prefs[$k] end end
+  $items=map(["save","undo","redo","refresh","close"],fn($op)={id:$op,label:$op,enabled:$has and $t.phase=="live"})
+  $mail=$s.mail[$t.document]
+  $editor={id:"editor",kind:"editor",label:"Editing buffer",initial:"",properties:{native_document:true,font_size:max(3,min(144,(($prefs["ced.editor.font.size"] ?? 13)+($s.zoom ?? 0))*($look.text_scale ?? 1))),padding:round(($prefs["ced.editor.padding"] ?? 8)*$density),light:$prefs["ced.editor.light"] ?? false,soft_wrap:$s.wrap,line_numbers:$s.line_numbers,whitespace:$s.whitespace,remote_carets:$s.remote_carets,read_only:not $has or $t.phase!="live" or ($mail!=nil and ($mail.sending or ($mail.saving and not $mail.parked)))}}
+  $model={editor:$editor,window_close:$s.window_close,tabs:{id:"tabs",kind:"tabs",label:"Documents",initial:if $has then to_string($s.active) else "none" end,properties:{labels:$labels,choices:$choices}},values:{editor:if $has then {document:$t.document} else "" end,"open-dialog":{open:$s.open_dialog,title:"Open file",body:"Absolute UTF-8 file path",field:$s.path,instance:1,choices:[{id:"open",label:"Open",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}}}
+  $model.shortcuts=[];$model.on_shortcut="ced.key"
+  $preview=if $has and $t.language=="markdown" then $s.previews[$t.document] ?? "source" else "source" end
+  $model.preview_mode=$preview
+  $model.preview={id:"preview",kind:"markdown",label:"Markdown preview",initial:"",properties:$editor.properties}
+  $model.values.preview=if $has then {document:$t.document} else "" end
+  for $action in action_rows($s)
+    if not contains(["edit.cut","edit.copy","edit.paste"],$action.id) or len($s.keys[$action.id] ?? [])>0 then
+      for $chord in $action.keys $model.shortcuts=push($model.shortcuts,{chord:$chord,id:$action.id,enabled:$action.enabled,text_scopes:if contains(["file.save","file.send"],$action.id) then ["mail-fields"] else [] end}) end
+    end
+  end
+  $status=if $has then $t.phase.." · rev "..to_string($t.rev).." · "..$t.language.." · pending "..to_string($t.pending) else $s.status end
+  $model=ced_ui_model($s,$model)
+  $local=$s.local_theme ?? {};if $local.decorations!=nil then $window["window.decorations"]=$local.decorations end;if $local.captions!=nil then $window["window.caption_side"]=$local.captions end
+  $model=$frame.apply($model,{padding_top:0,padding_bottom:0,identity:($local.decorations ?? "ssd")!="ssd",icon:"file-text",title:"MixViu Editor",menus:ced_menus($s),toolbar:ced_toolbar($s),status:ced_status($s,$t),appearance:$look,window:$window})
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+end

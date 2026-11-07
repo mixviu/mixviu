@@ -1,0 +1,28 @@
+# Tier 2 paths only: changes here need a code-owner review on top of the
+# normal approval. Never add a catch-all (`*`): it would gate every PR on one
+# person. Tiers are explained in REVIEW.md.
+
+# CI, security policy and release
+/.github/                         @markc
+/tools/ci.mix                     @markc
+/tools/ci/                        @markc
+/deny.toml                        @markc
+
+# mixd and its network personalities
+/engines/mixd/                    @markc
+/services/maild/                  @markc
+/services/webd/                   @markc
+/services/dnsd/                   @markc
+/services/noded/                  @markc
+/services/hostd/                  @markc
+
+# Bus protocol, mesh and trust
+/libraries/bus/                   @markc
+/libraries/mesh/                  @markc
+/libraries/mesh-trust/            @markc
+
+# viud input and focus
+/engines/viud/crates/seat/        @markc
+/engines/viud/crates/dispatcher/  @markc
+/engines/viud/crates/policy/      @markc
+/engines/viud/crates/policy-host/ @markc

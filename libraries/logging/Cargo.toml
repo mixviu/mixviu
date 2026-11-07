@@ -1,0 +1,101 @@
+[package]
+name = "logging"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+repository.workspace = true
+description = "Unified logging surface: CLI, sinks, filter, reload handle and stats recorder"
+
+[lib]
+name = "logging"
+path = "src/lib.rs"
+
+[features]
+# The core needs no Bus connection. Keep `cargo test --no-default-features` passing.
+default = []
+# Tiny release builds compile out info/debug/trace; live verbosity is lost.
+release-max-level-warn = ["tracing/release_max_level_warn"]
+# Exposes the `<svc>.stats.snapshot` Bus command handler
+# (`stats::handle_snapshot_bus`), using `bus::native_client::IncomingCommand`.
+bus-handlers = ["dep:bus"]
+# Durable log namespace and live filter watcher.
+props = ["dep:props", "props/sqlite", "props/router", "dep:tokio", "tokio/sync"]
+# Per-daemon Prometheus `/metrics` endpoint. Dependency-pure
+# (`metrics-exporter-prometheus` + the 0.20 `metrics-util` alias +
+# `tokio` for the HTTP listener). Independent of the property store.
+prometheus = [
+    "dep:metrics-exporter-prometheus",
+    "dep:metrics-util-prometheus",
+    "dep:tokio",
+]
+
+[dependencies]
+props = { workspace = true, optional = true, features = ["sqlite", "router"] }
+config.workspace = true
+log = "0.4"
+tracing-log = "0.2"
+tracing.workspace = true
+# `reload` is unconditionally enabled — the live-reloadable filter is
+# now a core capability (the `LogReloadHandle` wrapper hands runtime
+# filter swaps to consumers; a property watcher drives it).
+# `tracing-log` is listed explicitly so the `log`-crate → tracing bridge
+# survives even if some future build flips `default-features = false`:
+# `try_init()` installs the `LogTracer` from this feature (we do NOT call
+# `LogTracer::init()` ourselves — doing so double-installs and makes
+# `try_init()` fail with SetLoggerError).
+tracing-subscriber = { workspace = true, features = ["env-filter", "json", "tracing-log"] }
+tracing-appender.workspace = true
+# journald sink is opt-in per `LogDefaults.journald` but always linked
+# so binaries can flip it via CLI without a recompile.
+tracing-journald = "0.3"
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = "2"
+
+# Stats subsystem. `metrics` is the facade every binary uses via the
+# `counter!`/`gauge!`/`histogram!` macros; `metrics-util` provides the
+# Registry + AtomicStorage primitives the substrate `StatsRecorder`
+# composes. Both are core. `metrics-exporter-prometheus` ships the
+# per-daemon `/metrics` endpoint and is gated behind `prometheus`.
+metrics = { workspace = true }
+metrics-util = { workspace = true }
+metrics-exporter-prometheus = { workspace = true, optional = true }
+# `MetricKindMask` lives in `metrics_util`, but
+# `metrics-exporter-prometheus 0.18` depends on `metrics-util 0.20`
+# while the workspace's primary `metrics-util` pin is `0.18`. Pull a
+# 0.20 alias under a distinct package name for the prometheus attach
+# path only.
+metrics-util-prometheus = { package = "metrics-util", version = "0.20", optional = true }
+# `chrono` is core — the `Snapshot.captured_at` and JSONL `ts` fields
+# are on the core API surface.
+chrono = { workspace = true }
+# FxHash for labels_hash canonical encoding.
+rustc-hash = { workspace = true }
+
+# `handle_snapshot_bus` takes the Bus client's `IncomingCommand` wire frame.
+bus = { workspace = true, features = ["client"], optional = true }
+# The property watcher and the Prometheus listener spawn upkeep tasks.
+# The `/metrics` listener spawns its
+# upkeep task and serves over a WG-only HTTP listener. `rt`/`sync`/
+# `macros` cover the spawn + Notify; `rt-multi-thread` for the
+# listener future.
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "sync", "macros"], optional = true }
+
+[dev-dependencies]
+libc.workspace = true
+# Property tests exercise a real in-memory SQLite store and async hooks.
+tempfile = "3"
+rusqlite.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
+
+[package.metadata.mixviu]
+component = "logging"
+kind = "lib"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"

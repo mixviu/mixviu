@@ -1,0 +1,135 @@
+# Changelog
+
+## Unreleased — 2026-10-27
+
+- `viud --backends` prints the backends compiled in (`native winit headless`)
+  and exits, so an install can refuse a viud built without `native` (KMS).
+- Animate drag tile previews with cubic ease-out and continuous retargeting.
+  Add a clock testkit can advance and a demand-driven one-shot timer: no
+  preview work at idle. Shared edges dwell before arming; preview delay gates
+  both visibility and release. Quoin hot corners remain independent.
+- Expose eight validated live `tiling.*` props, persisted in `preferences.json`:
+  drag enablement, top maximise, corner ratio, side/top bands, shared-edge
+  dwell, preview delay and animation duration.
+- Re-fit saved floating centres when usable areas change. Restore tiled and
+  maximised windows to floating on output removal; workspace sends preserve
+  the tile and use the destination split. Apply geometry and configure when
+  unmaximising during fullscreen exit-ack.
+
+- Apply session font weight and size to Quoin scenes and panels. Window titles
+  preserve the design's display weight offset, clamped to the bundled faces,
+  and scale with interface size and text scale. Load Inter Bold for titles.
+  Existing settings events rebuild and activate these resources together.
+- Fit title glyphs within the fixed bar and its padding, including maximum
+  interface and accessibility sizes. Keep titles vertically centred without
+  changing frame extents. Invalid optional overlays warn once and fall back
+  to the selected design.
+- Install the shell's text scale through the shared theme so native controls
+  follow it alongside egui text styles.
+- Apply interface size to scene layout and painting, corner menus, tooltip
+  measurements and scene frame titles as well as egui controls.
+
+- Exclude Email composer app IDs from hosted menus and action bars. Composers
+  request client decorations and keep their own single complete title row.
+- Resolve other dotted app IDs to their first Bus service segment. Route titlebar
+  menu requests with the suffix as `viewport`, and actions with it as `window`,
+  so owned viewports receive their own input under server decorations.
+
+- Use the shared design title band layout for all four groups and centre
+  MixOS titles by default. Host registered apps' revisioned Action Bars through
+  the existing scene-host registry and Bus client, with shared Lucide rasters,
+  hover and toggle states, disabled colours and the existing tooltip cards.
+  `comp.window.action` dispatches enabled registry commands; `comp.props`
+  reports hosting and per-surface item counts.
+- Add pull-only `comp.debug.recent` with structured fields, bounded retention
+  only above the recorded baseline, lazy journald and zero-cost default checks.
+
+- Add `--debug[=LEVEL]`, `comp.debug` and `comp.debug.set` for live tracing
+  levels from off through trace, with a warn baseline and per-binary journal
+  identity. Record mapping, placement, grabs and initial placement configures
+  at debug; keep configure streams and motion detail at trace. The separate
+  developer logger is unchanged.
+
+## 0.2.0
+
+- Add `comp.window.place_as`, `comp.window.tile_key` and `comp.tiles.get`.
+  Super+arrow uses the same tiling transition as agents, including mirrored
+  slots across adjacent outputs. Super+PageUp toggles maximise,
+  Super+PageDown minimises, and Super+Backspace restores and focuses.
+  Window props expose placement and saved floating geometry; placement
+  changes publish one sequenced `comp.window.placement.changed` event.
+  Restore leaves fullscreen first, otherwise restores floating geometry.
+
+- `comp.window.wait` accepts `match.pid` alongside the app ID and title
+  filters, so a mapping wait cannot resolve to another instance of an app.
+
+- `comp.window.maximize` accepts optional `output` (key or native name),
+  including retargeting an already maximised window. Normal restore geometry
+  survives, and focus and workspace stay unchanged. Unknown outputs refuse
+  before effects. Toolkit uses this to restore saved maximised frames.
+
+- The user keys belong to the user. viud enforces the rule itself, ahead
+  of its own bindings, because on a MixOS VT it reads the keyboard itself.
+  The user keys are bare F1–F12 and Right Ctrl, Right Alt or Right Shift with
+  an arrow, matched side-exact with inputd's classifier and press-latched
+  disposition. A user key fires the session user's binding, or goes to the
+  focused client when the user bound it `passthrough`; otherwise it is
+  swallowed, and no client sees its press, repeat or release. Under a
+  session lock every user key is swallowed and nothing fires.
+  - The bindings are read from keymap.v1 (`inputd/keymap.json` in the
+    user's MixOS config dir, or `$MIXOS_USER_KEYMAP`) and reloaded when the
+    file changes. A bad file keeps the last good keymap, and a missing one
+    binds nothing.
+  - A `comp.*` command runs as its Bus request does. Any other command is sent to
+    its service fire-and-forget, with the row's args as the body.
+    `repeat: allow` rows repeat at the seat's rate while held.
+  - `bindings.user` lists the rows.
+  - viud ships no user-key binding. The opt-in bare-F9 Bus key can no
+    longer fire.
+- `comp.region.select` 0.2.0: a click (under 4 logical px of travel, with
+  no drag on the way) and Enter or keypad Enter now select the whole output
+  under the pointer, answering exactly as a drag from corner to corner does;
+  a click used to re-arm the selection. A drag stays a drag even if it
+  returns to its start. The overlay dims the output (clear inside a drag),
+  outlines the selection in the theme's focus-ring colour and shows a hint
+  ("Drag to select an area · Click or Enter for the whole screen · Esc to
+  cancel"), only on the selected output, in the session look (followed on
+  every change); a selected reply waits for a frame of that output without
+  the overlay.
+- While a `comp.region.select` run holds the seat the cursor is a
+  crosshair (the theme's `crosshair`, else `cross` or `tcross`, else the
+  arrow); the normal cursor is back on the frame that ends the run, however
+  it ends, so the clean frame never shows the crosshair. A cursor's hotspot
+  is now read after its shape is chosen, so a change of shape lands in place
+  on its first frame.
+- The capture panels (the setup chooser, region border and dim, Stop
+  buttons and the Continue, Save, Encoding and error dialogs) draw in the
+  session theme, followed on every change like the region overlay, with
+  the embedded theme until the shell delivers one. Open panels repaint at
+  once.
+- Workspaces: `comp.workspaces.list`, `comp.workspaces.set_count {count,
+  persist}` and `comp.workspace.rename {index, name, persist}`, and the
+  `comp.workspace.changed` topic. The count and names persist in
+  `preferences.json` (`workspaces_count`, `workspace_names`) and viud
+  starts with them. `workspaces.list` rows carry `name`.
+- The pointer moves at the same logical speed at every output scale: a
+  relative delta is multiplied by the output scale as well as
+  `cursor_sensitivity`, so a scale-2.5 output no longer needs a sensitivity
+  of 2.5.
+
+- viud's own UI is egui: capture overlays and dialogs, the frame-rate
+  overlay, notifications and the Mix Scenes shell are egui programs painted
+  with egui-wgpu into textures on viud's own EGL context, on the same MixOS
+  look the apps draw with (`toolkit`).
+- Mix Scenes are laid out as flexbox with taffy, as Quoin lays them out;
+  `shell.scene.layout` reports the rectangles each node was drawn and
+  hit-tested at.
+- The session look follows settingsd through the shared consumer on the scene
+  host's own connection (compact schema-2 deliveries, offline cache), and
+  window decorations take their themes from the same look.
+- A UI surface off screen is suspended: its animations stop waking the
+  compositor until it is shown again.
+- The whole `comp.*` command catalogue is registered, and a registry test keeps
+  it exact.
+- Window titles are shaped with cosmic-text over the apps' embedded faces, so
+  they match the apps' type and need no fonts installed.

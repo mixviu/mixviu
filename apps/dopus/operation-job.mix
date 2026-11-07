@@ -1,0 +1,11 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$operations=require("operations.mix")
+on job.run
+  try
+    $result=$operations.dp_execute_operation($event.args)
+    reply(if $result.ok then 0 else 10 end,json_encode($result))
+  catch $message,$error
+    reply(10,json_encode({ok:false,error_code:$error.code,message:$message,completed:[]}))
+  end
+end

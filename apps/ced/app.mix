@@ -1,0 +1,302 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- lint: globals app_args
+$ctx=viu_context();$frame=require("../../libraries/viu/mix/gold-frame.mix")
+include "core.mix"
+include "session.mix"
+include "bus.mix"
+include "actions.mix"
+include "mail.mix"
+include "ui.mix"
+include "menus.mix"
+include "dialogs.mix"
+$state={tabs:[],active:0,busy:false,serial:0,next_tab:0,queue:[],running:{},timers:{},outcomes:{},last_op:nil,status:"Open a UTF-8 document",path:"",wrap:false,line_numbers:true,window_close:false,open_dialog:false,event_seq:nil,look:{appearance:{scheme:"studio",mode:"dark"},values:{},revision:nil}}
+$state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_loaded=false;$state.session_dirty=false;$state.session_seen=nil;$state.restore={};$state.restore_active=nil;$state.exit_after_save=false;$state.edit={epoch:nil,version:nil,volatile:nil}
+$state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).commands;$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:false,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.preview_requested={};$state.lex_requested={};$state.caret_wanted={};$state.caret_published={};$state.caret_at={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
+$state.macro_panel={epoch:0,serial:0,page:"closed",id:nil,filter:"",form:{open:false,title:"",body:"",field:nil,choices:[]}}
+$state.local_theme={};$state.info_commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).info_commands
+$state.recovered=[];$state.recovery_open=false;$state.recovery_checked=false;$state.dialog_call=nil;$state.locations={};$state.save_prompts={};$state.notice_at={}
+publish_ced($state)
+on ced.ping
+  reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
+end
+on ced.info
+  $state=bus_command($state,$event)
+end
+on ced.specimen
+  $state=refresh_tabs($state);reply(0,json_encode($state))
+end
+on ced.command
+  $state=operation($state,$event.args.op,$event.args);publish_ced($state);reply(0,json_encode({accepted:true,op_id:$state.last_op}))
+end
+on ced.draft
+  $t=current($state)
+  $v=viu_document("command",$t.document,{name:"select-all"})
+  $v=viu_document("command",$t.document,{name:"insert",text:$event.args.text})
+  $state=pump($state);publish_ced($state);reply(0,"{}")
+end
+on ced.intent
+  $a=$event.args
+  if $a.id=="editor" then $state=pump($state)
+  elif contains(["problems-list","close-dialog","disk-dialog","find-bar","save-dialog","goto-dialog","help-dialog","macros-dialog","mail-fields","notice-actions","recovered-dialog"],$a.id) then $state=ced_ui_intent($state,$a)
+  elif $a.id=="tabs" then
+    $i=to_number($a.value)
+    if $i<0 or floor($i)!=$i or $i>=len($state.tabs) then raise("TAB","Unknown tab") end
+    $state.active=$i
+    if $a.action=="close" then $state=do_action($state,"file.close",{}).state end
+  elif $a.id=="open-dialog" then
+    $state.path=if $a.action=="edit" then $a.value else $a.value.field end
+    if $a.action=="answer" then
+      $state=ced_ui_intent_open($state,$a.value.choice,$state.path)
+    end
+  else $state=operation($state,$a.id,$a) end
+  $state=session_changed($state);publish_ced($state);reply(0,"{}")
+end
+on viu.frame.intent
+  $op=$event.args.value.command
+  if $op=="open" then $state.open_dialog=true
+  elif contains(["wrap","line_numbers"],$op) then $state[$op]=not $state[$op]
+  elif contains(["save","undo","redo","refresh","close"],$op) then $state=operation($state,$op,{})
+  else $state=do_action($state,$op,{},nil,nil,nil,if $event.args.id=="gold-menu" then "menu" else "ui" end).state end
+  publish_ced($state);reply(0,"{}")
+end
+on viu.frame.close
+  $state=refresh_tabs($state)
+  if any($state.tabs,fn($t)=$state.mail[$t.document]!=nil and ($t.dirty or $state.mail[$t.document].saving or $state.mail[$t.document].sending)) then raise("DRAFT","Save or confirm discard of mail changes before quitting") end
+  $state.exit_after_save=true;$state=pump(save_session(session_changed($state)))
+  if not any(concat($state.queue,values($state.running)),fn($j)=contains(["session-save","action-publish"],$j.kind)) then $state.window_close=true end
+  publish_ced($state);reply(0,"{}")
+end
+on viu.job.completed
+  $job=$event.args.tag.owner
+  if $state.running[$job.id]!=nil then
+    $state.running=delete($state.running,$job.id)
+    $state=mail_completed($state,$job,$event.args)
+    if contains(["show","diagnostics"],$job.kind) and $job.payload.call!=nil then $state=finish_call($state,$job.payload.call,$event.args.rc,$event.args.body) end
+    if $job.kind=="macro-panel" and $event.args.rc==0 then $state.macro_panel=$event.args.body end
+    if $job.kind=="macro" then $state=finish_call($state,$job.payload.call,if $event.args.rc==0 then $event.args.body.rc else 10 end,if $event.args.rc==0 then $event.args.body.body else $event.args.body end) end
+    if $event.args.rc==0 then
+      if $job.kind=="notify" and $event.args.body.fallback then $state.status=$event.args.body.text;$state.status_until=monotonic()+6 end
+      if $job.kind=="io" and $event.args.body.deadline_after_ms!=nil then
+        viu_timer($job.payload.document..":deadline:"..$job.payload.request.op_id,$event.args.body.deadline_after_ms,{document:$job.payload.document,kind:"deadline",op_id:$job.payload.request.op_id})
+      end
+      if $job.kind=="session-load" then $state=restore_session($state,$event.args.body)
+      elif $job.kind=="recovered-list" then $state.recovered=recovered_rows($state,$event.args.body);$state.recovery_open=len($state.recovered)>0;$state.recovery_checked=true
+      elif $job.kind=="probe" then
+        $state.reattach_wait={}
+        $state.edit=$event.args.body
+        for $t in $state.tabs
+          if $t.epoch!=$state.edit.epoch then $v=viu_document("epoch",$t.document,{}) end
+        end
+      elif $job.kind=="open" then
+        if $event.args.body.mail_missing then $state.mail=delete($state.mail,$job.payload.document);$state.classified=delete($state.classified,$job.payload.document) end
+        $t=viu_document("state",$job.payload.document,{})
+        $state.tabs=push($state.tabs,$t);$state.active=len($state.tabs)-1
+        $state.tabs=sort_by($state.tabs,fn($t)=to_number($t.document))
+        if $t.path!=nil and $state.diagnostics[$t.path]!=nil then
+          for $source in keys($state.diagnostics[$t.path]) $state=queue_job($state,"diagnostics",{request:$state.diagnostics[$t.path][$source],documents:[$t.document]}) end
+        end
+        if $t.path!=nil then $state.recent=slice(concat([$t.path],filter($state.recent,fn($p)=$p!=$t.path)),0,20) end
+      elif $job.kind=="close" then
+        $v=viu_document("close",$job.payload.document,{})
+        $state.tabs=filter($state.tabs,fn($t)=$t.document!=$job.payload.document);$state.active=0
+        $state.mail=delete($state.mail,$job.payload.document);$state.classified=delete($state.classified,$job.payload.document)
+      end
+    else
+      if $job.kind!="close" then $state.status="Failed: "..json_encode($event.args.body) end
+      if $job.kind=="preview" then $state.preview_requested=delete($state.preview_requested,$job.payload.document) end
+      if $job.kind=="open" then $state.restore=delete($state.restore,$job.payload.document);$state.open_errors[$job.payload.document]=$event.args.body end
+      if $job.kind=="close" then
+        $dirty=$event.args.body.reason=="dirty"
+        if $dirty and ($job.payload.prompt ?? false) then $state.close_dialog=$job.payload.document end
+        for $token in keys($state.waits)
+          $w=$state.waits[$token]
+          if $w.kind=="close" and $w.tab==to_number($job.payload.document) then $state=finish_call($state,$token,10,{error_code:"CONFLICT",message:$event.args.body.message ?? "Close refused",reason:if $dirty then "dirty" else "refused" end}) end
+        end
+      end
+      if $job.kind=="reattach" then $state.reattach_wait[$job.payload.document]=true;viu_timer($job.payload.document..":reattach",30000,{kind:"reattach",document:$job.payload.document}) end
+      if $job.kind=="session-save" then $state.session_dirty=true;$state.exit_after_save=false end
+    end
+    $state=pump($state);publish_ced($state)
+    if $state.exit_after_save and not any(concat($state.queue,values($state.running)),fn($j)=contains(["session-save","action-publish"],$j.kind)) then $state.window_close=true;publish_ced($state) end
+  end
+end
+on edit.changed
+  $e=$event.args
+  if $state.event_seq!=nil and $e.event_seq>$state.event_seq+1 then
+    for $t in $state.tabs $v=viu_document("suspect",$t.document,{}) end
+  end
+  $state.event_seq=$e.event_seq
+  for $t in $state.tabs $v=viu_document("event",$t.document,$e) end
+  $state=pump($state);publish_ced($state)
+end
+on bus.connected
+  if not $state.recovery_checked then viu_timer("recovery-survey",500,{kind:"recovery-survey"}) end
+  if not $state.session_loaded and not any(concat($state.queue,values($state.running)),fn($j)=$j.kind=="session-load") then $state=queue_job($state,"session-load",{}) end
+  subscribe("edit.changed")
+  subscribe("noded.props.changed")
+  $state=request_probe($state)
+  for $t in $state.tabs $v=viu_document("suspect",$t.document,{}) end
+  $state=pump($state);publish_ced($state)
+end
+on bus.overflow
+  for $t in $state.tabs $v=viu_document("suspect",$t.document,{}) end
+  $state=pump($state);publish_ced($state)
+end
+on viu.timer
+  $t=$event.args.value
+  if $t.kind=="recovery-survey" then
+    if not $state.session_loaded or len(keys($state.restore))>0 or any(concat($state.queue,values($state.running)),fn($j)=contains(["session-load","open"],$j.kind)) then viu_timer("recovery-survey",250,{kind:"recovery-survey"})
+    elif not $state.recovery_checked then $state=queue_job($state,"recovered-list",{}) end
+  elif $t.kind=="call" then
+    if $state.waits[$t.token]!=nil then
+      $w=$state.waits[$t.token];$left=$w.timeout_ms-(monotonic()-$w.started)*1000
+      if $left>1 then viu_timer("call:"..$t.token,min(90000,$left),{kind:"call",token:$t.token})
+      else $state=finish_call($state,$t.token,10,{error_code:"CONFLICT",message:"Command timed out",reason:"timeout"}) end
+    end
+  elif $t.kind=="caret" then
+    if any($state.tabs,fn($tab)=$tab.document==$t.document) then
+      $tab=viu_document("state",$t.document,{})
+      $left=1-(monotonic()-($state.caret_at[$t.document] ?? -100))
+      if not $tab.idle or $tab.phase!="live" then viu_timer($t.document..":caret",200,{kind:"caret",document:$t.document})
+      elif $left>0 then viu_timer($t.document..":caret",$left*1000,{kind:"caret",document:$t.document})
+      elif not deep_eq($state.caret_wanted[$t.document],$state.caret_published[$t.document]) then
+        $state.caret_at[$t.document]=monotonic();$state.caret_published[$t.document]=$state.caret_wanted[$t.document]
+        $state=queue_job($state,"caret",{buffer:$tab.buffer,ranges:[{anchor:$tab.selection.anchor.offset,head:$tab.selection.head.offset}],origin:"human:ced"})
+      end
+    end
+  elif $t.kind=="lex" then $state=queue_job($state,"lex",{document:$t.document})
+  elif $t.kind=="session-save" then $state=save_session($state)
+  elif $t.kind=="reattach" then
+    $state.reattach_wait=delete($state.reattach_wait,$t.document)
+    for $tab in $state.tabs if $tab.document==$t.document then $state=request_reattach($state,$tab) end end
+  elif $t.kind!="drain" and any($state.tabs,fn($tab)=$tab.document==$t.document) then $v=viu_document($t.kind,$t.document,{op_id:$t.op_id}) end
+  $state=pump($state);publish_ced($state)
+end
+on noded.props.changed
+  if $event.args.path=="services.registered" and contains($event.args.new,"edit") then $state=pump(request_probe($state)) end
+end
+on viu.session
+  $state.keys=$event.args.keymap ?? $state.keys
+  $state.look.appearance=$event.args.appearance;$state.look.revision=$event.args.state.revision
+  if not $event.args.state.lost then $state.look.values=$event.args.state.values end
+  publish_ced($state)
+end
+
+on viu.call.cancelled
+  $state.waits=delete($state.waits,$event.args.token)
+end
+on bus.disconnected
+  for $token in keys($state.waits) $state=finish_call($state,$token,10,{error_code:"CONFLICT",message:"Bus disconnected",reason:"cancelled"}) end
+end
+on ced.open
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.dialog
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.new
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.tabs
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.focus
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.state
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.select
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.type
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.wait
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.list
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.reload
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.run
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.status
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.output
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.stop
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.macros.new
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.actions
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.execute
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.stats
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.layout
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.show
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.diagnostics
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on ced.problems
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on app.describe
+  $state=bus_command($state,$event);publish_ced($state)
+end
+on app.quit
+  $state=bus_command($state,$event);publish_ced($state)
+end
+
+on ced.key
+  $out=do_action($state,$event.args.id,{},nil,nil,nil,"shortcut");$state=$out.state;publish_ced($state)
+end
+
+on viu.platform.completed
+  $pending=$state.pastes[$event.args.id]
+  if $pending!=nil then
+    $state.pastes=delete($state.pastes,$event.args.id)
+    if any($state.tabs,fn($t)=$t.document==$pending.document) and $event.args.text!="" then $v=viu_document("command",$pending.document,{name:"insert",text:$event.args.text,caller:$pending.caller});$state=pump($state);publish_ced($state) end
+  end
+end
+
+on ced.macros.get
+  $state=bus_command($state,$event);publish_ced($state)
+end
+
+on ced.macros.put
+  $state=bus_command($state,$event);publish_ced($state)
+end
+
+on ced.macros.remove
+  $state=bus_command($state,$event);publish_ced($state)
+end
+
+on ced.macros.move
+  $state=bus_command($state,$event);publish_ced($state)
+end
+
+on ced.macros.copy
+  $state=bus_command($state,$event);publish_ced($state)
+end
+
+on INFO
+  reply(0,json_encode({service:"ced",schema:"ced.v1",commands:$state.info_commands}))
+end

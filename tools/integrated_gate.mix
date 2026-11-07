@@ -1,0 +1,53 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
+$rc=0
+fn checked_step($argv)
+  print({argv:$argv})
+  $r=run_argv($argv,{timeout:7200,max_output:64000000,env:{CARGO_BUILD_JOBS:"6"}})
+  print($r)
+  if not $r.ok then raise("GATE",to_string($r.exit_code ?? 124)) end
+end
+try
+  if contains(args(),"--prepare") then checked_step(["cargo","fmt","--all"]) else checked_step(["cargo","fmt","--all","--","--check"]) end
+  checked_step(["cargo","clippy","--locked","--workspace","--exclude","mix","--all-targets"])
+  checked_step(["cargo","clippy","--locked","-p","mix","--all-targets"])
+  -- App policies must use this source's language contracts, not the frozen
+  -- installed oracle interpreter. Build profiles separately to avoid Cargo
+  -- unifying the shell and service builtin sets.
+  checked_step(["cargo","build","--locked","-p","mix"])
+  checked_step(["cargo","build","--locked","-p","mixd"])
+  $policy_mix=realpath("target/debug/mix")
+  if $policy_mix==nil then raise("POLICY_MIX","Missing source-built Mix") end
+  print({policy_mix:$policy_mix,sha256:hash_file($policy_mix,"sha256")})
+  checked_step(["cargo","test","--locked","-p","mix","--no-fail-fast"])
+  checked_step(["cargo","test","--locked","--workspace","--exclude","mix","--no-fail-fast"])
+  for $case in ["core-test.mix","history-test.mix","wire-test.mix","fetch-test.mix"] checked_step([$policy_mix,"apps/monitor/"..$case]) end
+  -- Prefs policy scripts use native Viu settings admission and registry APIs.
+  checked_step(["cargo","test","--locked","-p","lib-viu","--test","prefs_parity"])
+  checked_step([$policy_mix,"apps/screenshot/policy-test.mix"])
+  for $case in ["core","document","schedule","launch","engine","train","wire"]
+    checked_step([$policy_mix,"apps/backdrop/"..$case.."-test.mix"])
+  end
+  for $file in glob("apps/workshop/*-test.mix")
+    checked_step([$policy_mix,$file])
+  end
+  checked_step(["cargo","test","--locked","-p","viu","--no-default-features","--test","shell_profile"])
+  checked_step(["cargo","test","--locked","-p","lib-viu","--test","bulk_profile","--test","ports_round5","--","--nocapture"])
+  checked_step(["/opt/mixos/bin/mix","tools/p2_gate.mix","build"])
+  checked_step(["/opt/mixos/bin/mix","tools/p2_gate.mix","furniture"])
+  $sha=trim(run_argv_must(["git","rev-parse","HEAD"]));$art="/build/es-artifacts/"..$sha
+  checked_step(["/opt/mixos/bin/mix","tools/engine_split_smoke.mix",$art.."/mix",$art.."/mixd"])
+  $sums=""
+  for $engine in ["mix","mixd","viud","viu"] $sums=$sums..hash_file($art.."/"..$engine,"sha256").."  "..$engine.."\n" end
+  write_file($art.."/SHA256SUMS",$sums);print({artifact:$art,sums:$sums})
+catch $message
+  print($message);$rc=1
+finally
+  $diff=run_argv_must(["git","diff","--binary"])
+  print("INTEGRATION_PATCH_BEGIN");print($diff);print("INTEGRATION_PATCH_END")
+  if $diff!="" and $rc==0 then $rc=97 end
+  run_argv_must(["git","checkout","-q","--","."])
+end
+exit($rc)

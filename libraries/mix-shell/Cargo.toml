@@ -1,0 +1,115 @@
+[package]
+name = "mix-shell"
+version = "0.119.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Mix shell and native ABP citizen runtime"
+
+# The shell is a library shared by the two Mix engines: `engines/mix` (the
+# shell profile) and `engines/mixd` (the service profile) both run
+# `mix_shell::main`. Its process-level tests live in engines/mix/tests, against
+# the `mix` binary. Doc comments here were never doctests.
+[lib]
+doctest = false
+
+# The shell ships in one flavour. Bus client + citizen runtime
+# are unconditional deps (~1-3 MB size cost accepted for
+# one-binary-per-package simplicity); the bare-host vs mesh-host
+# distinction is made at runtime by the lazy-probe state machine in
+# `bus::MixBusHandler`, not at build time.
+
+[dependencies]
+paths = { path = "../../libraries/paths" }
+# mix is a sibling crate within the mix repo — relative
+# path stays one level up.
+# Shell profile (the `mix` engine). The service profile adds the rest through
+# this package's `service-builtins` feature, which only `mixd` turns on. Build
+# each engine with `-p`: Cargo unifies features within one build.
+mix = { workspace = true, features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "ws", "archive"] }
+# Explicit Rust dependency names, shared by the legacy Bus runtime and native
+# bootstrap. Both packages are siblings in this workspace (bus <- mix).
+bus = { workspace = true, features = ["native"] }
+config.workspace = true
+buildinfo.workspace = true
+# SPEC 07 §2 read surface so a Mix citizen's
+# `<svc>.props.{get,list,describe}` is byte-consistent with cos-side
+# daemons. The substrate-shaped `props` (storage,
+# audit, SPEC 12 mutation router) lives in cos and is NOT pulled
+# here. The `bus` feature on props pulls
+# bus + chrono (for SPEC 07 §3/§4 wire builders).
+props = { workspace = true, features = ["bus"] }
+# Shared logging core (bus). `mix --serve` initialises journald-primary
+# logging through `logging::init` (the serve preset). Pure core only
+# — no `props`, so no live SPEC-12 `<svc>.log` swap;
+# RUST_LOG + restart is the serve control surface.
+logging.workspace = true
+# Node-config + shutdown-signal helpers are inlined locally
+# (`src/mix_paths.rs`, `src/main.rs`, `src/node_config.rs`)
+# rather than depending on cos-side `config` /
+# `daemon` — mix has no cos dependency.
+rustyline = "15"
+unicode-segmentation = "1"
+unicode-width = "0.2"
+dirs = "6"
+libc = "0.2"
+signal-hook = "0.3"
+tokio = { version = "1", features = ["rt", "macros", "time", "signal"] }
+tokio-util = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+glob = "0.3"
+indexmap = "2"
+tracing = "0.1"
+# `mix man` resolves the canonical manual from mixos.dev. This matches
+# mix's existing ureq 2 dependency, so Cargo unifies the HTTP/TLS
+# stack rather than adding another client.
+ureq = "2"
+# RFC3339 `lifecycle.started_at` (SPEC 18 WS4), matching the indexd
+# reference's chrono-formatted start timestamp.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rusqlite.workspace = true
+blake3 = "1"
+ed25519-dalek = { version = "2", features = ["zeroize"] }
+zeroize = "1"
+sha2 = "0.10"
+# `mix man` reads the manual built into the binary (src/manual.rs): docs/mix
+# packed into one zstd frame by build.rs. The same pure-Rust codec and pin as
+# mix's archive feature, so no second zstd enters the binary.
+structured-zstd = "0.0.58"
+
+[features]
+default = []
+# The service profile: builtins only `mixd` carries (engine-split decision).
+service-builtins = ["mix/dkim", "mix/serde", "mix/markdown", "mix/datastar", "mix/xml", "mix/yaml", "mix/mime", "mix/dns"]
+# Bus-citizen serving (`mixd serve`, legacy `--serve`). Without it, `mix
+# --serve` re-executes under mixd.
+serve = []
+
+[dev-dependencies]
+# Property-based testing for the shell-dispatch tokenizer (P0 of the mix
+# tokenizer fuzz/property corpus — see _doc/planned/mix-tokenizer-fuzz-corpus.md
+# in the mixos hub). Test-only; never linked into the shipped binary.
+proptest = "1"
+tempfile = "3"
+test-broker = { path = "../../libraries/test-broker" }
+# A WebSocket peer for the ws_recv SIGTERM test; already in the lock (mix's ws).
+tungstenite = "0.26"
+# The S3 fixture uses Term's actual sealed-fd implementation and pinned PTY hook.
+
+[build-dependencies]
+# Captures mix HEAD sha + build time for serve-citizen provenance.
+buildinfo.workspace = true
+# Compresses docs/mix into the embedded manual (src/manual.rs).
+structured-zstd = "0.0.58"
+
+[package.metadata.mixviu]
+component = "mix-shell"
+kind = "cli"
+layer = "mix"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"

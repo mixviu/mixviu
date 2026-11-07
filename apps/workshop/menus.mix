@@ -1,0 +1,28 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$actions=require("actions.mix")
+fn registry($s) return $actions.registry($s) end
+fn menus($s)
+  $actions=registry($s);$out=[]
+  for $menu in ["File","Edit","View","Bus","Macros","Help"]
+    $children=[];$last=nil;$theme=[];$theme_group=nil;$placement=[]
+    for $a in filter($actions,fn($a)=$a.menu==$menu)
+      $group=if contains(["file.quit","edit.copy","mesh.ping","bus.observe","help.about"],$a.id) or starts_with($a.id,"view.traffic") then 1 else 0 end
+      -- Prefix checks stay explicit: identifiers are public command data.
+      $is_theme=starts_with($a.id,"view.theme.") or starts_with($a.id,"view.mode.") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.")
+      $row={id:$a.id,label:$a.label,enabled:$a.enabled,checked:$a.checked,shortcut:$a.shortcut}
+      if starts_with($a.id,"view.traffic.") then push($placement,$row)
+      elif $is_theme then
+        $tg=if starts_with($a.id,"view.theme.") then (if contains(["pro","studio","classic","breeze","adwaita","mixos"],slice($a.id,11)) then 1 elif $a.id=="view.theme.session" then 2 else 0 end) elif starts_with($a.id,"view.mode.") then 3 elif starts_with($a.id,"view.style.") then 4 else 5 end
+        if $theme_group!=nil and $theme_group!=$tg then push($theme,{separator:true}) end
+        push($theme,$row);$theme_group=$tg
+      else
+        if $last!=nil and $last!=$group then push($children,{separator:true}) end
+        push($children,$row);$last=$group
+      end
+    end
+    if len($theme)>0 then $children=concat([{id:"theme-menu",label:"Theme",enabled:true,children:$theme},{separator:true}],$children) end
+    if len($placement)>0 then push($children,{id:"traffic-placement",label:"Traffic placement",enabled:true,children:$placement}) end
+    push($out,{id:$menu,label:$menu,enabled:true,children:$children})
+  end
+  return $out
+end

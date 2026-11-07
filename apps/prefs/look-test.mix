@@ -1,0 +1,40 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("look.mix")
+fn observed($l,$values,$revision)
+  return $m.observe($l,{incarnation:"inc",revision:$revision,values:$values})
+end
+$binding={instance:"example",profile:"default"}
+$l=observed($m.initial(),{"appearance.scheme":"studio","appearance.mode":"dark"},"9007199254740993")
+$l=$m.edit($l,{mode:"light"});$l=$m.prepare($l,$binding,false)
+if $l.job.body.expected_revision!="9007199254740993" or not deep_eq($l.job.body.changes,{"appearance.mode":"light"}) then raise("FENCE","Only edited axes and exact decimal fence may be sent") end
+$l=$m.edit($l,{mode:"dark"})
+$l=$m.finished($l,0,{receipt:{}})
+$l=observed($l,{"appearance.scheme":"studio","appearance.mode":"light"},"9007199254740994")
+$l=$m.prepare($l,$binding,false)
+if $l.job.body.changes["appearance.mode"]!="dark" then raise("REVERSAL","Edit queued behind accepted write was lost") end
+$l=$m.finished($l,20,{message:"timeout"})
+$l=$m.prepare($l,$binding,false)
+if $l.job.command!="settings.status" or $l.job.body.operation_id!=$l.uncertain then raise("RECEIPT","A lost apply requires its receipt before any other apply") end
+$operation=$l.uncertain
+$l=$m.finished($l,0,{status:"unknown_operation",recovering:true})
+if $l.uncertain!=$operation or $l.read then raise("RECOVERING","Recovering authority must keep the outcome uncertain without a retry loop") end
+$l=$m.decide($l,"recheck");$l=$m.prepare($l,$binding,false)
+$l=$m.finished($l,0,{status:"current",receipt:{operation_id:$operation}})
+$l=observed($l,{"appearance.mode":"dark","appearance.scheme":"studio"},"9007199254740995")
+if $l.uncertain!=nil or $l.sent!=nil then raise("RECEIPT","Accepted receipt must settle after authoritative read") end
+$l=$m.edit($l,{scheme:"forest"});$l=$m.prepare($l,$binding,false)
+$l=$m.finished($l,10,{status:"conflict"})
+$l=observed($l,{"appearance.mode":"dark","appearance.scheme":"crimson"},"9007199254740996")
+if not contains($l.conflicts,"scheme") then raise("CONFLICT","Another writer changed an edited axis without a decision") end
+$l=$m.prepare($l,$binding,false)
+if $l.job!=nil then raise("CONFLICT","Conflicting draft must not apply automatically") end
+$l=$m.decide($l,"keep");$l=$m.prepare($l,$binding,false)
+if $l.job.body.changes["appearance.scheme"]!="forest" then raise("KEEP","Keep must use the fresh fence and retained edit") end
+$l=$m.finished($l,10,{status:"invalid",message:"refused"})
+if not $l.hold or $l.edited.scheme!="forest" then raise("HELD","Refused edit must remain available for Apply/Revert") end
+$l=$m.decide($l,"revert")
+if len(keys($l.edited))!=0 or $l.hold or $l.problem!=nil then raise("REVERT","Revert must retire the held draft and its problem") end
+$before=$l;$refused=false
+try $m.edit($l,{mode:"light",density:5}) catch $message $refused=true end
+if not $refused or not deep_eq($before,$l) then raise("ATOMIC","Every axis must be checked before changing the draft") end
+print("prefs appearance: exact fences, queued reversal, receipt uncertainty/recovery, conflict Keep/Revert and atomic admission pass")

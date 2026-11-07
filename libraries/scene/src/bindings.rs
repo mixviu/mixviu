@@ -250,7 +250,20 @@ pub fn reevaluate(
     path: &str,
     value: &JsonValue,
 ) -> Result<ReEval, Vec<Diagnostic>> {
-    if too_large(value) {
+    reevaluate_with_model_limit(tree, set, path, value, crate::MAX_DOCUMENT_BYTES)
+}
+
+/// Re-evaluate with a host-owned model-data budget, independently of the
+/// authored document limit. The legacy entry point retains its original cap.
+/// Hosts must bound initial models with the same budget before resolving them.
+pub fn reevaluate_with_model_limit(
+    tree: &ResolvedScene,
+    set: &BindingSet,
+    path: &str,
+    value: &JsonValue,
+    max_model_bytes: usize,
+) -> Result<ReEval, Vec<Diagnostic>> {
+    if too_large_for(value, max_model_bytes) {
         return Err(vec![Diagnostic::error(
             "model-path",
             1,
@@ -276,7 +289,7 @@ pub fn reevaluate(
     // A sequence of individually small patches must not grow an unbounded
     // model. The host also bounds authored ports and metadata together with
     // this model before committing a revision.
-    if too_large(&next.model) {
+    if too_large_for(&next.model, max_model_bytes) {
         return Err(vec![Diagnostic::error(
             "model-path",
             1,
@@ -336,10 +349,10 @@ pub fn reevaluate(
 }
 
 /// Whether `value` serialises past the document limit (or not at all).
-fn too_large(value: &JsonValue) -> bool {
+fn too_large_for(value: &JsonValue, limit: usize) -> bool {
     serde_json::to_vec(value)
         .ok()
-        .is_none_or(|bytes| bytes.len() > crate::MAX_DOCUMENT_BYTES)
+        .is_none_or(|bytes| bytes.len() > limit)
 }
 
 /// Instantiate one template node for one row, with a fresh budget.

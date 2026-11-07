@@ -1,16 +1,16 @@
 # mixviu source guide
 
-mixviu is a Mix-first rebuild informed by measured MixOS experience. Mark's
+mixviu is a Mix-first rebuild informed by measured MixViu experience. Mark's
 latest directions take precedence. This repository owns the eventual mix,
 mixd, viu and viud sources, shared libraries and Mix applications. Earlier
 desktop-only ownership is superseded. Mix/mixd separation is future work.
 
 ## Current scope
 
-Only a source seed and workspace preparation exist. Feature implementation is
-on hold. No runtime, shell replacement or app port is implemented or accepted
-by this import. Seed library checks are permitted; do not start engine work,
-install or deploy until Mark resumes implementation.
+Mark resumed implementation on 2026-11-05. The isolated lab branch implements
+the first bounded client-runtime/Quoin specimen. Prototype code stays on the
+lab branch for an independent whole-specimen survey; do not merge it into main.
+No production install, engine migration or desktop replacement is authorised.
 
 Application/compound-widget composition and behaviour start in Mix. Do not
 assign future UI to Rust because it looks dense or complicated. A particular
@@ -20,9 +20,10 @@ available; runtime wiring must not hide untested application policy in Rust.
 
 ## Layout
 
-- engines/: eventual thin mix, mixd, viu, viud hosts; import as needed.
-- libraries/: reusable native code; currently scene, expr and strict only.
-- apps/: Mix-first shell/application bundles; currently a Quoin volume specimen.
+- engines/: the four engines, mix, mixd, viu and viud (engines/README.md).
+  Build and test each with its own -p; tools/cutover_gate.mix is the gate.
+- libraries/: shared scene, expression, Mix, widget, icon, Bus and native facilities.
+- apps/: Mix-first bundles, paired galleries and the active Dopus comparison lab.
 - tools/: small Mix checks; no copied deployment/orchestration framework.
 - docs/: public architecture, development and contracts.
 - provenance/: immutable source revisions, file hashes and adaptation notes.

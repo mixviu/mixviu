@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Preserve the seed's registry identities while the runtime lock grows.
+$root = dirname(dirname(script_path()))
+$baseline = json_parse(read_file($root .. "/provenance/seed-external-pins.json"))
+if $baseline.schema != 1 then raise("PIN_SCHEMA", "unsupported pin inventory") end
+$lock = toml_parse(read_file($root .. "/Cargo.lock"))
+for $pin in $baseline.packages
+  $found = false
+  for $package in $lock.package
+    if $package.name == $pin.name and $package.version == $pin.version and $package.source == $pin.source and $package.checksum == $pin.checksum then
+      $found = true
+      break
+    end
+  end
+  if not $found then raise("SEED_PIN_CHANGED", $pin.name .. " " .. $pin.version) end
+end
+print("Seed external pins verified: " .. to_string(length($baseline.packages)) .. " registry identities/checksums")

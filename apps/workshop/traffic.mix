@@ -1,0 +1,59 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Bounded observation ring and redaction, adapted from gold inspector/workshop.rs.
+$counter=require("counter.mix")
+fn redact($v)
+  if type($v)=="map" then
+    for $key in keys($v)
+      if any(["password","token","secret","credential","authorization","cookie"],fn($word)=contains(lower($key),$word)) then $v[$key]="[redacted]"
+      else $v[$key]=redact($v[$key]) end
+    end
+  elif type($v)=="list" then $v=map($v,fn($item)=redact($item)) end
+  return $v
+end
+fn retain($s,$row)
+  if $s.traffic_paused then return $s end
+  $row=redact($row)
+  if not has_key($row,"service") then $row.service=$row.to end
+  $bytes=byte_length(json_encode($row))
+  if $bytes>8388608 then $s.dropped=$s.dropped+1;return $s end
+  while len($s.traffic)>=1024 or $s.traffic_bytes+$bytes>8388608
+    $s.traffic_bytes=$s.traffic_bytes-byte_length(json_encode($s.traffic[0]));$s.traffic=slice($s.traffic,1);$s.dropped=$s.dropped+1
+  end
+  $s.traffic=push($s.traffic,$row);$s.traffic_bytes=$s.traffic_bytes+$bytes
+  return $s
+end
+fn clock_ms($v)
+  if type($v)!="string" then return nil end
+  try
+    $clock=if len($v)>=23 then substr($v,11,12) else $v end
+    $parts=split($clock,":");if len($parts)!=3 then return nil end
+    $sec=split($parts[2],".");if len($sec)!=2 then return nil end
+    $h=to_number($parts[0]);$m=to_number($parts[1]);$s=to_number($sec[0]);$ms=to_number($sec[1])
+    if $h<0 or $h>=24 or $m<0 or $m>=60 or $s<0 or $s>=60 or $ms<0 or $ms>=1000 then return nil end
+    return (($h*60+$m)*60+$s)*1000+$ms
+  catch $why return nil end
+end
+fn observed($s,$frame)
+  $s.dropped=$counter.add($s.dropped,$frame.dropped_count ?? 0)
+  if $s.traffic_paused then return $s end
+  if $frame.message_type=="response" and type($frame.correlation_id)=="string" then
+    $index=nil
+    for $i=0 to len($s.traffic)-1
+      $r=$s.traffic[$i]
+      if $r.pending==true and $r.correlation_id==$frame.correlation_id and $r.from==$frame.to and $r.to==$frame.from then $index=$i end
+    end
+    if $index!=nil then
+      $row=$s.traffic[$index];$s.traffic_bytes=$s.traffic_bytes-byte_length(json_encode($row))
+      $s.traffic=concat(slice($s.traffic,0,$index),slice($s.traffic,$index+1));$row.pending=false;$row.rc=$frame.rc
+      $mesh=contains(["mesh_out","mesh_in"],$row.direction) or contains(["mesh_out","mesh_in"],$frame.direction)
+      $start=clock_ms($row.ts);$end=clock_ms($frame.ts)
+      if not $mesh and $start!=nil and $end!=nil then $row.ms=($end+86400000-$start)%86400000 end
+      $row.response=$frame;return retain($s,$row)
+    end
+    $frame.service=$frame.from
+  elif $frame.message_type=="request" then $frame.pending=true end
+  return retain($s,$frame)
+end
+fn rows($s,$limit,$filter)
+  return reverse(take(filter(reverse($s.traffic),fn($row)=contains(json_encode($row),$filter)),min($limit,1024)))
+end

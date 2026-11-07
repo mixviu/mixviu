@@ -1,0 +1,48 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
+$rc=0
+$prepare=contains(args(),"--prepare")
+if $prepare then print(run_argv(["cargo","fmt","-p","lib-viu","-p","viu"])) end
+try
+  for $case in ["core-test.mix","history-test.mix","wire-test.mix","fetch-test.mix"]
+    $result=run_argv(["/opt/mixos/bin/mix","apps/monitor/"..$case]);print($result)
+    if not $result.ok then exit($result.exit_code ?? 1) end
+  end
+  for $a in [["cargo","fmt","-p","lib-viu","-p","viu","--","--check"],["cargo","check","--locked","-p","lib-viu","-p","viu","--all-targets"],["cargo","test","--locked","-p","lib-viu","-p","viu"],["cargo","clippy","--locked","-p","lib-viu","-p","viu","--all-targets"],["cargo","build","--locked","-p","viu","--bin","viu"]]
+    if contains(args(),"--frame-only") and $a[1]=="test" then $a=["cargo","test","--locked","-p","lib-viu","--test","gold_frame"] end
+    if contains(args(),"--visual-repair") and $a[1]=="test" then $a=["cargo","test","--locked","-p","lib-viu","--test","frame_geometry","--test","gold_frame","--test","monitor_signal","--test","monitor_performance","--test","dashboard_contract","--test","app_ports"] end
+    if $prepare and $a[1]=="check" then $a=filter($a,fn($arg)=$arg!="--locked") end
+    print({argv:$a})
+    $r=run_argv($a,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}})
+    print($r)
+    if not $r.ok then $rc=$r.exit_code ?? 124;break end
+  end
+  if $rc==0 then
+    $release=run_argv(["cargo","build","--locked","--release","-p","viu","--bin","viu"],{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}})
+    print($release)
+    if not $release.ok then $rc=$release.exit_code ?? 124 end
+  end
+  if $rc==0 then
+    $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+    $artifact="/build/gold-parity-artifacts/"..$sha
+    mkdir($artifact,{parents:true})
+    copy("target/debug/viu",$artifact.."/viu")
+    print({artifact:$artifact,sha256:hash_file($artifact.."/viu","sha256")})
+    $release_artifact="/build/es-artifacts/"..$sha
+    mkdir($release_artifact,{parents:true})
+    copy("target/release/viu",$release_artifact.."/viu")
+    $receipt={source:$sha,profile:"release",binary:"viu",sha256:hash_file($release_artifact.."/viu","sha256")}
+    write_file($release_artifact.."/viu.json",json_encode($receipt))
+    print({release_artifact:$release_artifact,receipt:$receipt})
+  end
+finally
+  print("GOLD_PARITY_PATCH_BEGIN")
+  $diff=run_argv_must(["git","diff","--binary"])
+  print($diff)
+  if $diff!="" and $rc==0 then $rc=97 end
+  print("GOLD_PARITY_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+end
+exit($rc)

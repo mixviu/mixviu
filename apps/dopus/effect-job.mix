@@ -1,0 +1,30 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Shared edge integration. Both independent controllers submit an owned
+-- in-process Mix job; file-manager selection/navigation policy stays in each.
+$apps=require("../../libraries/viu/mix/app-call.mix")
+$edge=require("effects.mix")
+on job.run
+  try
+    $effect=$event.args
+    if $effect.kind=="open" then
+      -- Opening a user-selected application intentionally outlives this job.
+      -- Native detached spawn double-forks/reaps; no shell or copied engine.
+      $child=spawn($edge.dopus_open_argv($effect.path),{detach:true})
+      reply(0,json_encode({message:"Opened "..basename($effect.path),pid:$child}))
+    elif $effect.kind=="mail" then
+      $paths=$effect.paths
+      if type($paths)!="list" or len($paths)==0 or any($paths,fn($p)=type($p)!="string" or not starts_with($p,"/")) then raise("INVALID_ARGUMENT","Mail requires absolute paths") end
+      $reply=$apps.viu_app_call("dev.mixos.email","email.compose",{attachments:$paths},10)
+      $added=false
+      if $reply.rc>=10 and $reply.body.error_code=="BUSY" then
+        $reply=$apps.viu_app_call("dev.mixos.email","email.compose.attachment.add",{paths:$paths},10)
+        $added=true
+      end
+      if $reply.rc>=10 then reply($reply.rc,json_encode($reply.body))
+      else reply(0,json_encode({added:$added,count:len($paths),message:if $added then "Added attachments to the current message" else "Opened a message with attachments" end})) end
+    else raise("INVALID_ARGUMENT","Unknown effect kind") end
+  catch $message,$error
+    reply(10,json_encode({error_code:$error.code,message:$message}))
+  end
+end

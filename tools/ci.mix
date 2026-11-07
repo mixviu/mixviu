@@ -1,0 +1,269 @@
+#!/usr/bin/env mix
+-- version: 0.1.0
+-- tools/ci.mix: the one gate recipe, run by GitHub CI and by agents before a
+-- PR (on CBC: cbc-build.mix --repo mixviu --commit SHA -- mix tools/ci.mix all).
+--
+--   mix tools/ci.mix STAGE [--mix PATH]
+--   STAGE: fmt | env | clippy | viud | test | mix-lint | mix-lint-baseline | all
+--
+-- MixViu has four engines: mix, mixd, viu, viud. The `mix` package is built and tested apart from the
+-- rest of the workspace: the workspace build would unify features and ship
+-- a service-profile mix, which its compile guard refuses.
+-- Mix-level tests run with the mix built from this tree (--mix, default
+-- target/debug/mix, built on demand), never an installed mix.
+-- mix-lint is a ratchet: diagnostics may only shrink against
+-- tools/ci/mix-lint-baseline.json. Regenerate it only in a PR that fixes lint.
+
+$o = getopt(args(), {mix: {arg: true}})
+if len($o.errors) > 0 or len($o.rest) != 1 then
+  eprint("usage: mix tools/ci.mix fmt|env|clippy|viud|test|mix-lint|mix-lint-baseline|all [--mix PATH]")
+  exit(64)
+end
+$stage = $o.rest[0]
+$mix = $o.opts.mix ?? "target/debug/mix"
+$baseline_path = "tools/ci/mix-lint-baseline.json"
+
+fn run_step($argv, $env = {})
+  print("::group::" + join($argv, " "))
+  $r = run_argv($argv, {timeout: 14400, stdout: "inherit", stderr: "inherit", env: $env})
+  print("::endgroup::")
+  if $r.exit_code != 0 then
+    print("::error::step failed (rc " + to_string($r.exit_code ?? 124) + "): " + join($argv, " "))
+    exit(1)
+  end
+end
+
+fn ensure_mix($mix)
+  if not exists($mix) then
+    run_step(["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"])
+  end
+end
+
+fn tracked_mix_files()
+  $files = []
+  for $p in split(trim(run_argv_must(["git", "ls-files", "*.mix"])), "\n")
+    if $p != "" and not contains($p, "/fixtures/") then
+      push($files, $p)
+    end
+  end
+  return $files
+end
+
+-- {file: {code: count}} for every error and warning diagnostic.
+fn lint_counts($mix)
+  $r = run_argv(concat([$mix, "lint", "--json"], tracked_mix_files()), {timeout: 1800, max_output: 256000000})
+  if $r.stdout == "" then
+    print("::error::mix lint produced no JSON: " + $r.stderr)
+    exit(1)
+  end
+  $counts = {}
+  for $d in json_parse($r.stdout).diagnostics
+    if $d.severity == "error" or $d.severity == "warning" then
+      if not has_key($counts, $d.file) then
+        $counts[$d.file] = {}
+      end
+      $counts[$d.file][$d.code] = ($counts[$d.file][$d.code] ?? 0) + 1
+    end
+  end
+  return $counts
+end
+
+fn stage_fmt()
+  run_step(["cargo", "fmt", "--all", "--", "--check"])
+end
+
+fn stage_clippy()
+  run_step(["cargo", "clippy", "--locked", "--workspace", "--exclude", "mix", "--all-targets"])
+  run_step(["cargo", "clippy", "--locked", "-p", "mix", "--all-targets"])
+end
+
+fn stage_test($mix)
+  -- Shell process tests hand --serve to the sibling service engine.
+  run_step(["cargo", "build", "--locked", "-p", "mixd"])
+  -- Tests that run a real interpreter get the one built from this tree,
+  -- never an installed one; offline `cargo metadata` tests need every
+  -- platform's crates in the cache.
+  ensure_mix($mix)
+  $abs = realpath($mix)
+  $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
+  run_step(["cargo", "fetch", "--locked"])
+  run_step(["cargo", "test", "--locked", "-p", "mix", "--no-fail-fast"], $test_env)
+  run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
+  for $case in ["apps/monitor/core-test.mix", "apps/monitor/history-test.mix", "apps/monitor/wire-test.mix", "apps/monitor/fetch-test.mix", "apps/screenshot/policy-test.mix"]
+    if exists($case) then
+      run_step([$mix, $case])
+    end
+  end
+end
+
+-- The MIX_* registry (Fable ruling, 2026-11-07): every MIX_* name in the tree
+-- is listed in etc/env.conf.mix with owner, scope and meaning, every listed
+-- name is still used, and MIXOS_ or /opt/mixos appears only on allowed paths
+-- (gold comparison, provenance, the host's gold mix, desk gold-compat).
+fn git_grep($args)
+  $r = run_argv(concat(["git", "grep", "-I"], $args), {timeout: 300, max_output: 64000000})
+  -- git grep exits 1 when nothing matches.
+  if $r.exit_code > 1 then
+    print("::error::git grep failed: " + $r.stderr)
+    exit(1)
+  end
+  return $r.stdout
+end
+
+fn stage_env()
+  $reg_path = "etc/env.conf.mix"
+  if not exists($reg_path) then
+    print("::error::" + $reg_path + " is missing: every MIX_* name must be registered")
+    exit(1)
+  end
+  $reg = load_data($reg_path)
+  $listed = {}
+  for $v in $reg.vars
+    if $v.scope != "runtime" and $v.scope != "test" then
+      print("::error::" + $v.name + ": scope must be runtime or test")
+      exit(1)
+    end
+    $listed[$v.name] = true
+  end
+  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path]
+  $used = {}
+  $prefix_used = {}
+  for $tok in split(git_grep(concat(["-o", "-h", "-w", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
+    -- A token ending in _ is a prefix code matches against, not a name;
+    -- it must be one of the registry's listed prefixes.
+    if $tok != "" and ends_with($tok, "_") then
+      $prefix_used[$tok] = true
+    elif $tok != "" then
+      $used[$tok] = true
+    end
+  end
+  $bad = []
+  for $n in sort(keys($used))
+    if not has_key($listed, $n) then
+      push($bad, "unregistered " + $n)
+    end
+  end
+  for $n in sort(keys($listed))
+    if not has_key($used, $n) then
+      push($bad, "registered but unused " + $n)
+    end
+  end
+  $prefixes = $reg.prefixes ?? []
+  for $n in sort(keys($prefix_used))
+    if not contains($prefixes, $n) then
+      push($bad, "unlisted prefix " + $n)
+    end
+  end
+  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path])), "\n")
+    if $f != "" then
+      $ok = false
+      for $re in $reg.mixos_allowed ?? []
+        if re_match($f, $re) then
+          $ok = true
+        end
+      end
+      if not $ok then
+        push($bad, "MIXOS_ or /opt/mixos outside the allowed paths: " + $f)
+      end
+    end
+  end
+  for $line in $bad
+    print("::error::env registry: " + $line)
+  end
+  print("env registry: " + to_string(len(keys($listed))) + " names, " + to_string(len($bad)) + " problems")
+  if len($bad) > 0 then
+    exit(1)
+  end
+end
+
+-- viud is compd without the egui widget toolkit; keep it that way.
+fn stage_viud_egui_free()
+  $r = run_argv(["cargo", "tree", "--locked", "-p", "viud", "-e", "normal", "--prefix", "none"], {timeout: 600})
+  if $r.exit_code != 0 then
+    print("::error::cargo tree -p viud failed: " + $r.stderr)
+    exit(1)
+  end
+  $bad = []
+  for $line in split($r.stdout, "\n")
+    $crate = split($line, " ")[0]
+    if $crate == "egui" or $crate == "egui-wgpu" or $crate == "egui-winit" or $crate == "eframe" or $crate == "toolkit" then
+      push($bad, $line)
+    end
+  end
+  if len($bad) > 0 then
+    print("::error::viud links the egui toolkit: " + join($bad, "; "))
+    exit(1)
+  end
+  print("viud: no egui/toolkit crates in its normal dependency tree")
+end
+
+fn stage_mix_lint($mix)
+  ensure_mix($mix)
+  $now = lint_counts($mix)
+  $base = {}
+  if exists($baseline_path) then
+    $base = json_parse(read_file($baseline_path))
+  end
+  $worse = []
+  $better = 0
+  for $file in keys($now)
+    for $code in keys($now[$file])
+      $was = 0
+      if has_key($base, $file) then
+        $was = $base[$file][$code] ?? 0
+      end
+      if $now[$file][$code] > $was then
+        push($worse, $file + " " + $code + ": " + to_string($was) + " -> " + to_string($now[$file][$code]))
+      end
+      if $now[$file][$code] < $was then
+        $better = $better + 1
+      end
+    end
+  end
+  for $line in $worse
+    print("::error::mix lint regression " + $line)
+  end
+  print("mix lint: " + to_string(len(keys($now))) + " files with diagnostics, " + to_string(len($worse)) + " regressions, " + to_string($better) + " improvements")
+  if len($worse) > 0 then
+    print("Fix the new diagnostics (run: mix lint FILE). The baseline only shrinks.")
+    exit(1)
+  end
+end
+
+fn stage_mix_lint_baseline($mix)
+  ensure_mix($mix)
+  mkdir("tools/ci")
+  $json = json_encode(lint_counts($mix)) + "\n"
+  write_file($baseline_path, $json)
+  -- Printed between markers so a CBC run can hand the file back.
+  print("== mix-lint baseline begin ==")
+  print($json)
+  print("== mix-lint baseline end ==")
+  print("wrote " + $baseline_path)
+end
+
+if $stage == "fmt" then
+  stage_fmt()
+elif $stage == "clippy" then
+  stage_clippy()
+elif $stage == "test" then
+  stage_test($mix)
+elif $stage == "viud" then
+  stage_viud_egui_free()
+elif $stage == "env" then
+  stage_env()
+elif $stage == "mix-lint" then
+  stage_mix_lint($mix)
+elif $stage == "mix-lint-baseline" then
+  stage_mix_lint_baseline($mix)
+elif $stage == "all" then
+  stage_fmt()
+  stage_env()
+  stage_clippy()
+  stage_viud_egui_free()
+  stage_test($mix)
+  stage_mix_lint($mix)
+else
+  eprint("unknown stage: " + $stage)
+  exit(64)
+end

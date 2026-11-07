@@ -1,0 +1,20 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$mail=require("mail.mix")
+on job.run
+  $a=$event.args
+  if $a.op=="connect" then
+    $s=$mail.session($a.entry);$boxes=$mail.mailboxes($a.entry,$s.account)
+    reply(0,json_encode({session:$s,mailboxes:$boxes}))
+  elif $a.op=="page" then
+    reply(0,json_encode($mail.page($a.entry,$a.account,$a.mailbox,$a.offset)))
+  elif $a.op=="read" then
+    reply(0,json_encode($mail.message($a.entry,$a.account,$a.id)))
+  elif $a.op=="send" then
+    if $a.entry.submit_service==nil then raise("ROUTE","No explicit maild submission route configured") end
+    send $a.entry.submit_service "maild.submit" body=$a.request timeout=8
+    if $rc!=0 then raise("SUBMISSION","Submission outcome unconfirmed; keep the same operation ID") end
+    if $reply.operation_id!=$a.request.operation_id or $reply.status!="accepted" or type($reply.submission_id)!="string" then raise("SUBMISSION","Invalid submission receipt; outcome unconfirmed") end
+    reply(0,json_encode($reply))
+  else raise("OP","Unknown mail operation") end
+end

@@ -1,0 +1,140 @@
+# CI for mixviu. The gate recipe lives in tools/ci.mix (run by the mix built
+# from this tree), so agents run the identical gate on CBC before a PR.
+# The required check is `ci-ok`. Changes here are Tier 2 (CODEOWNERS).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+  # Hosted runners have ~14 GB free; full debug info for the whole workspace
+  # overflows it (the linker dies with SIGBUS). Line tables keep file:line in
+  # backtraces at a fraction of the size.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE-*'
+
+  fmt:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: cargo fmt --all -- --check
+
+  lint:
+    name: mix lint + viud egui-free
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    # Every job that compiles runs on the target distro (see `test`).
+    container:
+      image: archlinux:base-devel@sha256:2de80105abb49f813a85393c6758a4334deb6bcec4a2411bd2f059c0bee6ee4c
+      # A login-like environment: the shell's session tests expect USER.
+      env:
+        USER: root
+      # A real init as PID 1 reaps orphans, as systemd does on a host.
+      options: --init
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - name: System libraries
+        run: pacman -Syu --noconfirm --needed git rustup clang pkgconf
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The container runs as root over a runner-owned checkout.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: mix
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --locked -p mix --bin mix
+      - run: target/debug/mix tools/ci.mix env
+      - run: target/debug/mix tools/ci.mix viud
+      - run: target/debug/mix tools/ci.mix mix-lint
+
+  test:
+    name: clippy + test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    # Arch, like the CBC workers and the desks: viud's libinput needs >= 1.26
+    # (tablet dial API), newer than Ubuntu 24.04 ships.
+    container:
+      image: archlinux:base-devel@sha256:2de80105abb49f813a85393c6758a4334deb6bcec4a2411bd2f059c0bee6ee4c
+      # A login-like environment: the shell's session tests expect USER.
+      env:
+        USER: root
+      # A real init as PID 1 reaps orphans, as systemd does on a host.
+      options: --init
+    permissions:
+      contents: read
+    timeout-minutes: 180
+    steps:
+      - name: System libraries
+        run: pacman -Syu --noconfirm --needed git rustup clang pkgconf libinput libxkbcommon wayland libdrm mesa seatd pixman systemd-libs dbus fontconfig freetype2 pipewire libpulse alsa-lib libxcb vulkan-icd-loader ttf-dejavu inetutils
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The container runs as root over a runner-owned checkout.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: workspace
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --locked -p mix --bin mix
+      - run: target/debug/mix tools/ci.mix clippy
+      - run: target/debug/mix tools/ci.mix test
+      - if: always()
+        run: df -h / /__w
+
+  ci-ok:
+    if: always()
+    needs: [changes, fmt, lint, test]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo "all CI jobs passed or were skipped for a docs-only change"

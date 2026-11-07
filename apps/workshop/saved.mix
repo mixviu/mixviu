@@ -1,0 +1,84 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Passive arrangement restore, matching pinned gold saved::Pending.
+$tree=require("tree.mix")
+fn defaults() return {selected:nil,row_key:nil,expanded:["nodes"],nodes_layout:true,filter:"",macros_open:false,dock_side:"auto",dock_open:true,paused:false,traffic_filter:""} end
+fn envelope()
+  return {schema_version:1,writable:true,window:{size:nil,maximised:false,theme:{scheme:nil,style:nil,mode:nil,decorations:nil,captions:nil},placement:nil},widgets:{panels:{services:0.3400000035762787,"traffic-right":0.30000001192092896,"traffic-bottom":0.2800000011920929},scrolls:{},groups:{},open:{}},windows:{},app:{version:1,value:defaults()}}
+end
+fn valid($a)
+  if type($a)!="map" then return false end
+  for $key in ["filter","traffic_filter"] if has_key($a,$key) and type($a[$key])!="string" then return false end end
+  for $key in ["nodes_layout","macros_open","dock_open","paused"] if has_key($a,$key) and type($a[$key])!="bool" then return false end end
+  if has_key($a,"dock_side") and not contains(["auto","bottom","right"],$a.dock_side) then return false end
+  if has_key($a,"expanded") and (type($a.expanded)!="list" or any($a.expanded,fn($k)=type($k)!="string")) then return false end
+  if $a.row_key!=nil and type($a.row_key)!="string" then return false end
+  if $a.selected!=nil and (type($a.selected)!="map" or type($a.selected.service)!="string" or type($a.selected.command)!="string") then return false end
+  return true
+end
+fn load($s,$notice)
+  $s.saved=$notice.state;$s.saved_ready=true;$raw=$notice.state.app.value;$ok=valid($raw)
+  $s.saved_preserve_app=$notice.app_loaded and not $ok
+  $a=defaults()
+  if $notice.app_loaded and $ok then for $key in keys($a) if has_key($raw,$key) then $a[$key]=$raw[$key] end end end
+  if $notice.app_loaded and $ok and not ($raw.nodes_layout ?? false) and not any($a.expanded,fn($k)=starts_with($k,"nodes")) then $a.expanded=push($a.expanded,"nodes") end
+  $s.expanded=$a.expanded;$s.filter=$a.filter;$s.macros_open=$a.macros_open;$s.dock_side=$a.dock_side;$s.dock_open=$a.dock_open;$s.traffic_paused=$a.paused;$s.traffic_filter=$a.traffic_filter
+  $panels=$notice.state.widgets.panels
+  if type($panels)=="map" then
+    if type($panels.services)=="number" then $s.split=clamp($panels.services,0.1,0.8) end
+    if type($panels["traffic-right"])=="number" then $s.dock_width=clamp($panels["traffic-right"],0.2,0.5) end
+    if type($panels["traffic-bottom"])=="number" then $s.dock_height=clamp($panels["traffic-bottom"],0.12,0.5) end
+  end
+  $s.saved_restore={done:false,shown:false,row_key:$a.row_key,selected:$a.selected,expanded:if $notice.app_loaded and $ok then $a.expanded else nil end,seen:[]}
+  $choice=$notice.state.window.theme ?? {}; $s.theme_choice={scheme:$choice.scheme,style:$choice.style,mode:$choice.mode,decorations:$choice.decorations,caption_side:$choice.captions}
+  return reconcile($s)
+end
+fn reconcile($s)
+  if not $s.saved_ready or $s.saved_restore.done then return $s end
+  $p=$s.saved_restore;$unfiltered=$s;$unfiltered.filter="";$rows=$tree.flatten_rows($tree.tree($unfiltered),0,false);$keys=map($rows,fn($r)=$r.key)
+  if $p.expanded!=nil then
+    for $node in $s.snapshot.nodes
+      $key="node:"..$node.name
+      if $node.local and not contains($p.seen,$key) and not contains($p.expanded,$key) then $s.expanded=filter($s.expanded,fn($k)=$k!=$key) end
+    end
+    for $key in $keys if not contains($p.seen,$key) and contains($p.expanded,$key) and not contains($s.expanded,$key) then $s.expanded=push($s.expanded,$key) end end
+  end
+  $p.seen=unique(concat($p.seen,$keys))
+  if $s.row_key!=nil then $p.row_key=nil;$p.selected=nil end
+  if $p.row_key!=nil and contains($keys,$p.row_key) then
+    $parents=[]
+    for $r in $rows
+      $parents=slice($parents,0,$r.depth)
+      if $r.key==$p.row_key then break end
+      push($parents,$r.key)
+    end
+    $s.expanded=unique(concat($s.expanded,$parents));$s.row_key=$p.row_key;$s.selection=nil
+    if $p.selected!=nil then
+      $found=$s.snapshot.services[$p.selected.service] ?? {}
+      if any($found.Ok ?? [],fn($c)=$c.name==$p.selected.command) then $s.selection=$p.selected end
+    end
+    $p.row_key=nil;$p.selected=nil;$p.shown=true;$s.reveal_key=$s.row_key;$s.reveal_serial=$s.reveal_serial+1
+  end
+  if $s.snapshot.error==nil and $s.macro_pending==0 and $s.snapshot.progress!=nil and $s.snapshot.progress.finished then
+    $s.expanded=filter($s.expanded,fn($k)=contains($keys,$k));$p.row_key=nil;$p.selected=nil;$p.done=true
+  end
+  $s.saved_restore=$p;return $s
+end
+fn capture($s)
+  $a={selected:$s.selection,row_key:$s.row_key,expanded:sort(unique($s.expanded)),nodes_layout:true,filter:$s.filter,macros_open:$s.macros_open,dock_side:$s.dock_side,dock_open:$s.dock_open,paused:$s.traffic_paused,traffic_filter:$s.traffic_filter}
+  if not $s.saved_restore.done and $s.saved_restore.row_key!=nil and $a.row_key==nil then $a.row_key=$s.saved_restore.row_key;$a.selected=$s.saved_restore.selected end
+  return $a
+end
+fn project($s)
+  $out={}
+  if $s.saved_ready then
+    if not $s.saved_preserve_app then $out.saved_app=capture($s) end
+    $out.saved_panels={services:$s.split,"traffic-right":$s.dock_width,"traffic-bottom":$s.dock_height}
+  end
+  return $out
+end
+fn describe($s)
+  $out=$s.saved
+  if not $s.saved_preserve_app then $out.app={version:1,value:capture($s)} end
+  $out.widgets.panels={services:$s.split,"traffic-right":$s.dock_width,"traffic-bottom":$s.dock_height}
+  return $out
+end

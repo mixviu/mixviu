@@ -1,0 +1,10 @@
+-- version: 0.1.0
+-- Exact-source verifier for the native Bus/configuration closure.
+$root=dirname(dirname(script_path()))
+$manifest=json_parse(read_file($root.."/provenance/gallery-native-bus.json"))
+for $file in $manifest.files
+  if hash_file($root.."/"..$file.path,"sha256")!=$file.current_sha256 then
+    raise("IMPORT_CHANGED",$file.path)
+  end
+end
+print("gallery native imports verified: "..to_string(len($manifest.files)))
