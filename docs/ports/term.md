@@ -2259,3 +2259,22 @@ Seven paired states cover initial appearance, auto mode without daylight, app li
 Private native.FvWYHJ retained a mismatched initial baseline: Gold contains one echoed command line above the same output, while its six subsequent transition pairs are exact. The first baseline originals and full figures were inspected; no acceptance is claimed for that baseline. The repeat adds an explicit interactive Mix prompt readiness guard before typing; all seven states then match. No product change or assertion relaxation, and the earlier startup mismatch is not classified as a C1 defect.
 
 Next CBC `term-raster-bench-7a886e4f` runs the existing ignored cached ASCII/emoji/box-glyph raster benchmark serially in release mode at the same source. It checks warm painting performs no new shaping/resampling and records mean/p50/p99 CPU paint time. This is bounded raster timing, not presented GPU latency or a Gold performance comparison. Read the full saved log and retain its limits. Full Bus/authority/input/settings/conformance/performance and final acceptance work remains open. No install, desk/VT or merge work. Overall NOT ACCEPTED.
+
+
+### Release raster timing and local scrollback checkpoint
+
+Exact source remains `7a886e4fccbf4fa6bc772570bf5d201030f4d9dd`; verified release executable SHA256 `3bb3c630ea8c3e0a557426d7285cc8ac5193d980fcdf8d9083c0bda1a4951a28`. CBC `term-raster-bench-7a886e4f-a1` passed serially in release mode. The complete 5,841-byte saved log was read and archived privately. At 90 columns by 25 rows, scale 2.5, 1800×950 pixels, 200 measured frames after 20 warm frames, full dirty-row CPU painting measured:
+
+| Fixture | Mean ms | p50 ms | p99 ms |
+| --- | ---: | ---: | ---: |
+| ASCII M | 1.173 | 1.164 | 1.592 |
+| Woman technologist emoji | 2.611 | 2.583 | 3.017 |
+| Box/block glyphs | 0.941 | 0.927 | 1.694 |
+
+The unchanged warm-cache miss assertion passed for all three fixtures. These are one-worker CPU render_into timings, excluding GPU presentation, and provide no Gold performance comparison. The exact-source full release gate remains term-query-release-7a886e4f-a1 (487 tests, eleven existing ignores); scoped/foreign term-query-exact-7a886e4f-a1.
+
+Private native.WZ9Pqm drives real Mix output and native local-history input against the same release bytes and canonical sequential Gold service. All 120 numbered fixture rows remain in matching full-history text. Fourteen states prove half-cell wheel accumulation, direction reversal resetting the fraction, live terminal.scroll.speed 20/40/80 on unchanged PIDs, Shift+PageUp/PageDown overlap by one row, Shift+Home/End history edges, and input returning a scrolled viewport to live output. Structured offsets and history counts match Gold; snapshots continue to describe the live screen while the viewport moves.
+
+All 14 PNG pairs are byte-identical at 900×560, Studio Dark, scale 1. Whole/header/tabs/grid/content SSIM and RMSE distortions are zero. Six unique Gold originals and twelve full figures inspected; all other originals and figures have explicit file-hash/decoded-pixel inspection reuse. Header, tab geometry and each visible scroll position match; no unexplained region remains in these states. All seven owned PIDs stopped. Native scripts, settings/PTY/readbacks, binary receipts, comparison figures, benchmark metrics and closure remain private. No product change was required.
+
+Remaining full parity work: Bus/action/topic/broker faults and deeper callbacks, issuer expiry/revoke, paired platform IME and remaining input/search/show faults, remaining Prefs/tune, wider conformance/representative performance and final acceptance. The earlier intermittent Gold input/startup observations remain retained and unclassified. No Fable question, install, desk/VT or merge work. Overall NOT ACCEPTED.
