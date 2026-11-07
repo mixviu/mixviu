@@ -49,6 +49,8 @@ impl Facilities {
             if manifest.native_debug {
                 commands.extend(toolkit::debug::describe(&app));
             }
+            let mut names = std::collections::BTreeSet::new();
+            commands.retain(|command| names.insert(command["name"].as_str().unwrap().to_owned()));
         }
         let macros = manifest
             .native_macros

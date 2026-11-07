@@ -1082,7 +1082,7 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     let mut logging_args = std::iter::once("viu".to_owned())
         .chain(args.iter().cloned())
         .collect::<Vec<_>>();
-    let _logging = toolkit::debug::init(preview.manifest.app(), "warn", &mut logging_args)
+    let _logging = toolkit::debug::init(preview.manifest.app(), preview.manifest.log_filter.as_deref().unwrap_or("warn"), &mut logging_args)
         .unwrap_or_else(|e| {
             eprintln!("viu logging: {e}");
             std::process::exit(2)
