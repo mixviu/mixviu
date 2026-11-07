@@ -119,7 +119,7 @@ impl Images {
                 Slot {
                     path: path.into(),
                     texture: None,
-                    answered: !accepted,
+                    answered: !accepted && value["natural"] != true,
                 },
             );
         }

@@ -833,7 +833,7 @@ impl SceneView {
                 self.layout_change(node, key, json!({"focus":focus}), events);
             }
         }
-        let pane_ctx=ui.ctx().clone();
+        let pane_ctx = ui.ctx().clone();
         let frame = |which: &str| {
             let ring = if text(node, "focus") == which {
                 let palette = &toolkit::chrome::Chrome::of(&pane_ctx).palette;
