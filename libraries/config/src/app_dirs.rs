@@ -43,17 +43,17 @@ impl AppDirs {
                 get("MIX_VAR")
                     .and_then(absolute)
                     .or_else(|| get("MIX_ROOT").and_then(absolute).map(|p| p.join("var")))
-                    .map(|p| p.join("apps").join(component))
+                    .map(|p| p.join(component))
             })
             .or_else(|| {
                 get("XDG_STATE_HOME")
                     .and_then(absolute)
-                    .map(|p| p.join("mix/apps").join(component))
+                    .map(|p| p.join("mix").join(component))
             })
             .or_else(|| {
                 get("HOME")
                     .and_then(absolute)
-                    .map(|p| p.join(".local/state/mix/apps").join(component))
+                    .map(|p| p.join(".local/state/mix").join(component))
             })?;
         Some(Self { root })
     }
@@ -88,10 +88,10 @@ mod tests {
         let expected = [
             "/one",
             "/two/ced",
-            "/three/apps/ced",
-            "/four/var/apps/ced",
-            "/five/mix/apps/ced",
-            "/six/.local/state/mix/apps/ced",
+            "/three/ced",
+            "/four/var/ced",
+            "/five/mix/ced",
+            "/six/.local/state/mix/ced",
         ];
         for (offset, expected) in expected.into_iter().enumerate() {
             let dirs = AppDirs::resolve_with("ced", |key| {
@@ -129,7 +129,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             dirs.root(),
-            Path::new("/home/user/.local/state/mix/apps/ced")
+            Path::new("/home/user/.local/state/mix/ced")
         );
     }
 }
