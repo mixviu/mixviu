@@ -468,13 +468,14 @@ mod tests {
             // The embedded broker runs as this test's user, unlike the installed
             // noded account. Isolate its configuration in a subprocess; neither
             // the test runner nor the real PTY launcher changes global env.
+            for mode in ["close", "exit"] {
             let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
                     "terminal::sessions::tests::lazy_owner_issues_the_first_real_mix_shell_and_revokes_on_close",
                     "--nocapture",
                 ])
-                .env(CHILD, "1")
+                .env(CHILD, mode)
                 .env_remove(super::super::session_fd::MARKER)
                 .env("HOME", home.path())
                 .env("MIXOS", home.path())
@@ -497,10 +498,11 @@ mod tests {
                 .unwrap();
             assert!(
                 output.status.success(),
-                "isolated owner test failed:\n{}\n{}",
+                "isolated owner {mode} test failed:\n{}\n{}",
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
+            }
             return;
         }
         let sessions = Sessions::with_native(Arc::new(|| {}));
@@ -513,13 +515,13 @@ mod tests {
         let native = sessions.native_handle().unwrap();
         let handle = created["handle"].as_str().unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-        loop {
+        let bound = loop {
             if let Some(generation) = native.pane_generation(1) {
                 let snapshot = sessions.call("snapshot", handle, json!({})).unwrap();
                 if native.child_binding(1, generation).is_some()
                     && snapshot.as_str().unwrap().contains("VIU_OWNER>")
                 {
-                    break;
+                    break native.child_binding(1, generation).unwrap();
                 }
             }
             assert!(
@@ -529,10 +531,45 @@ mod tests {
                 sessions.call("snapshot", handle, json!({})).unwrap()
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
-        }
+        };
         assert!(sessions.native.lock().unwrap().attempted);
-        sessions.call("close", handle, json!({})).unwrap();
+        let natural_exit = std::env::var(CHILD).unwrap() == "exit";
+        if natural_exit {
+            sessions.call("type", handle, json!({"text":"exit\n"})).unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            loop {
+                let state = sessions.call("state", handle, json!({})).unwrap();
+                if state["exited"] == true && native.pane_generation(1).is_none() {
+                    break;
+                }
+                assert!(std::time::Instant::now() < deadline, "real Mix exit did not invalidate its still-owned terminal");
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        } else {
+            sessions.call("close", handle, json!({})).unwrap();
+        }
         assert!(native.pane_generation(1).is_none());
+        // Observe the real broker before dropping/closing a naturally exited
+        // Terminal. Otherwise explicit close could make this proof vacuous.
+        let (options, url) = bus::client_helpers::BrokerEnvironment::capture().resolve().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async {
+            use bus::native_client::{NodedClient, UnixConnectOutcome};
+            let UnixConnectOutcome::VerifiedUnix(observer) = NodedClient::connect_unix("", &url, &options, None).await.unwrap() else {
+                panic!("verified native observer required");
+            };
+            tokio::time::timeout(std::time::Duration::from_secs(15), async {
+                loop {
+                    let record = observer.session_self(bound.record_id).await.unwrap().record;
+                    if record.state == bus::native_session::BindingState::Revoked {break;}
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+            }).await.expect("real shell close/exit must revoke at the broker");
+            observer.client().close().await;
+        });
+        if natural_exit {
+            sessions.call("close", handle, json!({})).unwrap();
+        }
         let pid = created["pid"].as_i64().unwrap() as libc::pid_t;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while unsafe { libc::kill(pid, 0) } == 0 {
