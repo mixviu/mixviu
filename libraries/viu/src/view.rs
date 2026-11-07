@@ -849,7 +849,7 @@ impl SceneView {
  ui.allocate_ui_with_layout(Vec2::new(ui.available_width(),height),egui::Layout::left_to_right(egui::Align::Center),|ui|draw(ui));
  } else { ui.horizontal(|ui| draw(ui)); }
                                 } else if node.ports.get("scroll")==Some(&Value::Bool(true)) {
-                                    egui::ScrollArea::vertical().id_salt((&key,"scroll")).auto_shrink(false).show(ui,|ui|draw(ui));
+                                    egui::ScrollArea::vertical().id_salt(&key).min_scrolled_height(0.0).max_height(ui.available_height()).show(ui,|ui| { ui.vertical(|ui| draw(ui)); });
 
 
                                 } else {

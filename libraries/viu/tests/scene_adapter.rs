@@ -96,11 +96,11 @@ fn scrolling_form_fits_inside_a_short_bottom_panel() {
                 "body":{"edge":"fill","panel":true,"frame":"native"}
             }},
             "buttons":{"widget":"column","padding":0,"children":["accept"]},
-            "accept":{"widget":"control","definition":{"id":"accept","kind":"button","label":"Save","initial":""}},
+            "accept":{"widget":"control","definition":{"id":"accept","kind":"command-bar","label":"","initial":[{"id":"save","label":"Save","enabled":true}]}},
             "controls":{"widget":"column","padding":0,"children":["scroll"]},
             "scroll":{"widget":"column","padding":0,"scroll":scroll,"children":["name"]},
             "name":{"widget":"control","definition":{"id":"name","kind":"field","label":"File name","initial":"draft.txt"}},
-            "body":{"widget":"column","padding":0,"children":["listing"]},
+            "body":{"widget":"dock","children":["listing"],"placements":{"listing":{"edge":"fill"}}},
             "listing":{"widget":"control","definition":{"id":"listing","kind":"label","label":"","initial":"Files"}}
         }));
         let mut view = SceneView::new(&source).unwrap();
@@ -123,6 +123,8 @@ fn scrolling_form_fits_inside_a_short_bottom_panel() {
         }
         let field = view.geometry["name"];
         let button = view.geometry["accept"];
+        let body = view.geometry["body"];
+        assert!(body.bottom() <= field.top(), "fill paints over the short form: {body:?} {field:?}");
         assert!(
             field.bottom() <= button.top(),
             "field clipped behind footer: {field:?} {button:?}"
