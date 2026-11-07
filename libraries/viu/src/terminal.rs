@@ -17,6 +17,7 @@ mod metadata;
 pub mod metrics;
 pub mod model;
 pub mod native_session;
+mod pointer;
 pub mod protocol;
 pub mod raster;
 mod recipient;

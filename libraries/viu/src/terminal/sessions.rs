@@ -170,6 +170,14 @@ impl Sessions {
         self.changed.lock().unwrap().extend(handles);
         (self.wake)();
     }
+    pub(crate) fn clear_other_selections(&self, selected: &str) {
+        let panes=self.state.lock().unwrap().sessions.iter().filter(|(handle,_)|handle.as_str()!=selected).map(|(_,pane)|pane.clone()).collect::<Vec<_>>();
+        for pane in panes {pane.lock().unwrap().selection_clear();}
+    }
+    #[cfg(test)]
+    pub(super) fn fixture_pane(&self, handle: &str, bytes: &[u8]) {
+        self.state.lock().unwrap().sessions.insert(handle.into(),Arc::new(Mutex::new(Terminal::from_test_vt(80,24,bytes))));
+    }
 
     pub(crate) fn placed(
         &self,

@@ -679,6 +679,7 @@ impl Widgets {
     /// Begin exactly once before drawing an application frame. Geometry is
     /// retained after finish_frame for automation until the next begin_frame.
     pub fn begin_frame(&mut self) {
+        self.terminal_views.begin_frame();
         self.geometry.clear();
         self.text_input_active = false;
         self.focus_error = None;
@@ -714,6 +715,7 @@ impl Widgets {
     /// Call once after drawing an application frame (including individual
     /// `widget` calls). A disappeared target must not latch future replies.
     pub fn finish_frame(&mut self) -> Result<(), String> {
+        self.terminal_views.finish_frame();
         self.images.finish();
         if let Some(images) = &mut self.surfaces {
             images.finish();

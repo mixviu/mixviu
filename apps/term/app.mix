@@ -75,6 +75,13 @@ fn command($s,$name,$args)
   $out.state=pump_events($out.state);publish_term($out.state);reply($out.rc,$out.body)
   return $out.state
 end
+fn request_paste($s,$handle,$primary)
+  $s.paste_seq=($s.paste_seq ?? 0)+1
+  $token="terminal-paste-"..to_string($s.identity.instance).."-"..to_string($s.paste_seq)
+  $s.pastes[$token]=$handle
+  viu_platform("paste",$token,{primary:$primary})
+  return $s
+end
 fn act($s,$id,$args,$origin)
   $out=$actions.invoke($bus.refresh($s,$native),$id,$args,$native);$s=$out.state
   for $effect in $out.effects
@@ -84,7 +91,7 @@ fn act($s,$id,$args,$origin)
     elif $effect.kind=="copy" and $effect.text!=nil then viu_platform("copy","terminal-copy",{text:$effect.text})
     elif $effect.kind=="paste" then
       if $effect.supplied then $done=$native("paste",$effect.handle,{text:$effect.text})
-      else $s.paste_seq=($s.paste_seq ?? 0)+1;$token="terminal-paste-"..to_string($s.identity.instance).."-"..to_string($s.paste_seq);$s.pastes[$token]=$effect.handle;viu_platform("paste",$token,{}) end
+      else $s=request_paste($s,$effect.handle,$effect.primary) end
     elif $effect.kind=="font" then $s=font_event($s,{kind:if $effect.reset then "reset" else "zoom" end,size:$effect.size}) end
   end
   if $out.rc==0 then
@@ -168,14 +175,19 @@ on term.intent
       if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$model.select_pane($state.layout,$p.id);$state=pump_events($state);publish_term($state) end
     end
   elif $a.id=="terminal" and $a.action=="command" then $out=act($state,$a.value,{},"shortcut");$state=$out.state
+  elif $a.id=="terminal" and $a.action=="selection" then
+    viu_platform("copy","terminal-selection",{text:$a.value.text,primary:$a.value.primary})
   elif $a.id=="terminal" and $a.action=="clipboard" then
     $target=filter(values($state.layout.panes),fn($p)=$p.handle==$a.value.handle)
     if len($target)==1 then
       $kind=$a.value.kind
-      if $kind!="cut" or $bus.target_handle($state,$bus.active($state))==$a.value.handle then
+      if $kind=="read" then
+        $state=request_paste($state,$a.value.handle,$a.value.primary==true)
+      elif $kind!="cut" or $bus.target_handle($state,$bus.active($state))==$a.value.handle then
         $params={clipboard_handle:$a.value.handle}
+        $params.primary=$a.value.primary==true
         if $kind=="paste" then $params.paste_text=$a.value.text end
-        $out=act($state,if $kind=="copy" then "edit.copy" elif $kind=="paste" then "edit.paste" else "pane.close" end,$params,"shortcut");$state=$out.state
+        $out=act($state,if $kind=="copy" then "edit.copy" elif $kind=="paste" or $kind=="read" then "edit.paste" else "pane.close" end,$params,"shortcut");$state=$out.state
       end
     end
   end
