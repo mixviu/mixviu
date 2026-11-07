@@ -45,7 +45,7 @@ pub async fn run(noded_url: &str) -> Result<()> {
     let started_instant = Instant::now();
     let started_at_iso = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
-    let log_dir = config::path(config::Dir::Var).join("log");
+    let log_dir = logging::default_log_dir("noded");
     let _ = std::fs::create_dir_all(&log_dir);
     let bus_log_path = log_dir.join("bus.log");
     let log_path_str = bus_log_path.to_string_lossy().to_string();
