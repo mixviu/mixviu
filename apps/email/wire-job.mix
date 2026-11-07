@@ -1,3 +1,5 @@
+-- Each job owns its transport state; protocol helpers return refreshed session tokens.
+$email_protocol_transport={tokens:{},ambiguous:true}
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 $arg=require("arguments.mix");$protocol=require("protocol.mix");$accounts=require("accounts.mix");$pim=require("pim.mix");$attachments=require("attachments.mix");$sending=require("sending.mix");$suggest=require("suggest.mix");$printing=require("printing.mix")

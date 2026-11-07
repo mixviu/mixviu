@@ -1,6 +1,11 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- All composers belong to this interpreter. Native viewports only draw them.
-$composers={};$compose_serial=0;$compose_focused=nil;$compose_quitting=false;$compose_restore=[]
+$composers={};$compose_serial=0;$compose_focused=nil;$compose_quitting=false;$compose_restore=[];$compose_mru=[]
+fn composer_focus($key)
+  global $compose_focused,$compose_mru
+  if $composers[$key]==nil then return end
+  $compose_focused=$key;$compose_mru=concat(filter($compose_mru,fn($k)=$k!=$key),[$key])
+end
 $compose_addresses=require("addresses.mix");$compose_sending=require("sending.mix");$compose_ids=require("identity.mix")
 $compose_quoting=require("quoting.mix")
 $compose_suggest=require("suggest.mix")
@@ -91,7 +96,7 @@ fn composer_open($a,$raw_to=nil)
     $c.stale=nil;$c.send_origin=nil;$c.reply_quote=$a.reply_quote;$c.reply_signature=$a.reply_signature;$c.reply_position=$a.reply_position
     $c.connection={url:$e.url,user:$e.user,ca_file:$e.ca_file,enabled:$e.enabled}
     $c=composer_files($c,true)
-    $composers[$key]=$c;$compose_focused=$key
+    $composers[$key]=$c;composer_focus($key)
     return {rc:0,body:{composing:$id,window:$key,compose:composer_info($c)}}
   catch $message,$error return wire_refuse($error.code,$message) end
 end
@@ -123,7 +128,7 @@ fn composer_owner_close()
   return {rc:0,body:{}}
 end
 fn composer_close($key,$answer=nil)
-  global $composers,$compose_quitting,$chrome,$compose_owner_closing,$status,$compose_focused
+  global $composers,$compose_quitting,$chrome,$compose_owner_closing,$status,$compose_focused,$compose_mru
   $c=$composers[$key]
   if $c==nil then return wire_refuse("NOT_FOUND","No compose is open") end
   if $c.busy then return wire_refuse("BUSY","Sending…") end
@@ -141,7 +146,8 @@ fn composer_close($key,$answer=nil)
   else return wire_refuse("INVALID_ARGUMENT","Unknown draft answer") end
   viu_timer("draft:"..$key,nil,{})
   $composers=delete($composers,$key)
-  if $compose_focused==$key then $compose_focused=keys($composers)[0] end
+  $compose_mru=filter($compose_mru,fn($k)=$k!=$key)
+  if $compose_focused==$key then $compose_focused=if len($compose_mru)>0 then $compose_mru[len($compose_mru)-1] else nil end end
   if $compose_owner_closing and $compose_root!=nil and len(keys($composers))==1 and $composers[$compose_root]!=nil then composer_close($compose_root) end
   if ($compose_owner_closing or $compose_only) and len(keys($composers))==0 then $chrome.window_close=true end
   if $compose_quitting then composer_quit() end
@@ -427,7 +433,7 @@ fn composer_restore_answer($choice)
   end
   $compose_serial=$compose_serial+1;$key="compose-"..to_string($compose_serial)
   $c=merge($d,{draft_id:$d.id,revision:0,restored:true,busy:false,error:nil,attempt:$d.attempt ?? {},confirm:false,show_cc:$d.cc!="",show_bcc:$d.bcc!="",show_reply_to:($d.reply_to ?? "")!="",chooser:false,stale:nil,send_origin:nil})
-  $composers[$key]=composer_files($c);$compose_focused=$key;$compose_restore=slice($compose_restore,1)
+  $composers[$key]=composer_files($c);composer_focus($key);$compose_restore=slice($compose_restore,1)
   return {rc:0,body:{window:$key,compose:composer_info($composers[$key])}}
 end
 fn composer_restore_model($m)

@@ -128,11 +128,12 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("on_action", "string", false, None),
         p("focused", "bool", false, None),
     ];
-    static CONTENT: [Port; 4] = [
+    static CONTENT: [Port; 5] = [
         p("children", "list", true, None),
         p("settings", "object", false, Some("{}")),
         p("scroll", "bool", false, Some("true")),
         pe("surface", "\"panel\"", &["panel", "editor"]),
+        p("keyboard_scroll", "object", false, None),
     ];
     static PANES: [Port; 14] = [
         p("children", "list", true, None),
@@ -252,13 +253,14 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pnd("row_gap", "3", None),
         pnd("min_column_width", "0", None),
     ];
-    static DOCK: [Port; 6] = [
+    static DOCK: [Port; 7] = [
         p("children", "list", true, None),
         p("placements", "object", true, None),
         p("on_change", "string", false, None),
         p("outline", "string", false, None),
         pn("outline_width", false, Some(0.0)),
         p("passthrough_single", "bool", false, Some("false")),
+        p("focus_target", "string", false, None),
     ];
     static BAND: [Port; 2] = [
         p("children", "list", true, None),

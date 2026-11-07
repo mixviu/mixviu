@@ -504,7 +504,30 @@ impl SceneView {
                         let fill=if node.ports.get("surface").and_then(Value::as_str)==Some("editor") {ui.ctx().data(|d|d.get_temp::<editor::Palette>(egui::Id::unique("viu-gold-editor-palette"))).map(|p|p.background).unwrap_or(ui.visuals().panel_fill)} else if content.light {toolkit::chrome::Chrome::for_theme(toolkit::content::light_theme()).palette.canvas}else{ui.visuals().panel_fill};
                         toolkit::content::surface_filled(ui,&content,fill,|ui|{
                             let mut draw=|ui:&mut egui::Ui|for child in children(node){self.node(ui,child,nodes,route,depth+1,events);};
-                            if node.ports.get("scroll")!=Some(&Value::Bool(false)){egui::ScrollArea::vertical().id_salt((&key,"body")).auto_shrink(false).show(ui,|ui|draw(ui));}else{draw(ui);}
+                            if node.ports.get("scroll")!=Some(&Value::Bool(false)){
+                                let marker=egui::Id::unique((&key,"keyboard-scroll"));
+                                let mut scroll=egui::ScrollArea::vertical().id_salt((&key,"body")).auto_shrink(false);
+                                if let Some(target)=node.ports.get("keyboard_scroll").and_then(|v|v["focus"].as_str()) {
+                                    if ui.memory(|m|m.has_focus(egui::Id::unique(target))) {
+                                        let line=node.ports["keyboard_scroll"]["line"].as_f64().unwrap_or(48.0) as f32;
+                                        let page=ui.available_height()*node.ports["keyboard_scroll"]["page_fraction"].as_f64().unwrap_or(0.9) as f32;
+                                        let step=ui.input_mut(|i|{
+                                            let mut step=0.0;
+                                            for (key,delta) in [(egui::Key::ArrowDown,line),(egui::Key::ArrowUp,-line),(egui::Key::PageDown,page),(egui::Key::PageUp,-page)] {
+                                                if i.consume_key(egui::Modifiers::NONE,key){step+=delta;}
+                                            }
+                                            step
+                                        });
+                                        if step!=0.0 {
+                                            if let Some(id)=ui.ctx().data(|d|d.get_temp::<egui::Id>(marker)) {
+                                                if let Some(state)=egui::scroll_area::State::load(ui.ctx(),id){scroll=scroll.vertical_scroll_offset((state.clamped_offset().y+step).max(0.0));}
+                                            }
+                                        }
+                                    }
+                                }
+                                let shown=scroll.show(ui,|ui|draw(ui));
+                                ui.ctx().data_mut(|d|d.insert_temp(marker,shown.id));
+                            }else{draw(ui);}
                         });
                     },
                     "section"=>{
@@ -1090,6 +1113,19 @@ impl SceneView {
         depth: usize,
         events: &mut Vec<Event>,
     ) {
+        if let Some(target) = node.ports.get("focus_target").and_then(Value::as_str) {
+            let area = ui.max_rect();
+            let id = egui::Id::unique(target);
+            let back = ui.interact(area, id, Sense::focusable_noninteractive());
+            if ui.input(|i| i.pointer.primary_pressed()) && ui.rect_contains_pointer(area) {
+                back.request_focus();
+            }
+            if ui.memory(|m| m.has_focus(id)) {
+                ui.memory_mut(|m| m.set_focus_lock_filter(id, egui::EventFilter {
+                    tab: true, horizontal_arrows: true, vertical_arrows: true, ..Default::default()
+                }));
+            }
+        }
         let area = ui.available_rect_before_wrap();
         let mut remaining = area;
         let placements = &node.ports["placements"];

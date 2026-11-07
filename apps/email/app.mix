@@ -350,7 +350,7 @@ on email.compose.attachment.remove
   $out=composer_attachments("email.compose.attachment.remove",$event.args);publish_email();reply($out.rc,json_encode($out.body))
 end
 on viu.window.focused
-  $compose_focused=$event.args.window
+  if $event.args.window!=nil then composer_focus($event.args.window) end
 end
 on viu.files.dropped
   mail_drop($event.args);publish_email()

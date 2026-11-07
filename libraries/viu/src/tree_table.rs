@@ -959,7 +959,7 @@ fn draw_outline(
                                     } else {
                                         crate::icons::Icon::ChevronRight
                                     };
-                                    let r = ui.add(
+                                    let mut r = ui.add(
                                         crate::icons::image_of(
                                             ui.ctx(),
                                             icon,
@@ -968,6 +968,9 @@ fn draw_outline(
                                         )
                                         .sense(Sense::click()),
                                     );
+                                    if let Some(label) = row["disclosure_label"].as_str() {
+                                        r = r.accessible_name(label);
+                                    }
                                     geometry.insert(format!("{id}.expand.{key}"), r.rect);
                                     if r.clicked() {
                                         if keyboard {

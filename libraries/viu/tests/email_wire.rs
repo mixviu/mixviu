@@ -102,6 +102,7 @@ fn probe_module(
             source: format!(
                 r#"
 $m=require("{module}")
+$email_protocol_transport={{tokens:{{}},ambiguous:true}}
 on probe
   try
     $e=$event.args.entry
@@ -129,7 +130,9 @@ end
     let done = runtime.try_completion().unwrap();
     assert!(done.error.is_none(), "{:?}", done.error);
     let reply = done.reply.unwrap();
-    server.join().unwrap_or_else(|_| panic!("HTTP fixture failed: rc={} body={}", reply.rc, reply.body));
+    server
+        .join()
+        .unwrap_or_else(|_| panic!("HTTP fixture failed: rc={} body={}", reply.rc, reply.body));
     (reply.rc, reply.body)
 }
 

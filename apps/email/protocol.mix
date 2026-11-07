@@ -1,13 +1,15 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- JMAP wire policy, derived from gold 8779f3328. No UI or storage access.
 $legacy=require("mail.mix");$accounts=require("accounts.mix");$arguments=require("arguments.mix")
-$tokens={};$last_ambiguous=true
+-- The owning worker supplies this caller-global transport state. Required
+-- module values are copied per call; tokens and reply ambiguity must survive
+-- successive calls in one job and be returned in its session receipt.
 fn session($s)
-  if contains(keys($tokens),$s.api) then $s.token=$tokens[$s.api] end
+  if contains(keys(($email_protocol_transport ?? {}).tokens ?? {}),$s.api) then $s.token=$email_protocol_transport.tokens[$s.api] end
   return $s
 end
 fn ambiguous()
-  return $last_ambiguous
+  return ($email_protocol_transport ?? {}).ambiguous ?? true
 end
 fn origin($url)
   $u=url_parse($url)
@@ -57,18 +59,21 @@ fn connect($e)
   return {account:$account,token:$token,api:$s.apiUrl,using:keys($s.capabilities),raw:$s}
 end
 fn post($e,$s,$body)
-  $last_ambiguous=true;$s=session($s)
+  global $email_protocol_transport
+  $email_protocol_transport=$email_protocol_transport ?? {tokens:{},ambiguous:true}
+  $email_protocol_transport.ambiguous=true;$s=session($s)
   $r=http($e,$s.api,"POST",$body,$s.token)
   if $r.status==401 and $s.token!=nil then
     try $token=exchange($e)
-    catch $message $last_ambiguous=false;raise("SERVER","unauthorized: token expired and the re-exchange was refused") end
-    $tokens[$s.api]=$token
+    catch $message $email_protocol_transport.ambiguous=false;raise("SERVER","unauthorized: token expired and the re-exchange was refused") end
+    $email_protocol_transport.tokens[$s.api]=$token
     $r=http($e,$s.api,"POST",$body,$token)
   end
-  if $r.status>=400 and $r.status<500 and $r.status!=408 then $last_ambiguous=false end
+  if $r.status>=400 and $r.status<500 and $r.status!=408 then $email_protocol_transport.ambiguous=false end
   return $r
 end
 fn call($e,$s,$method,$args)
+  global $email_protocol_transport
   $args.accountId=$s.account
   $r=post($e,$s,json_encode({using:$s.using,methodCalls:[[$method,$args,"c0"]]}))
   if $r.status!=200 then raise("SERVER","JMAP HTTP "..to_string($r.status)) end
@@ -76,7 +81,7 @@ fn call($e,$s,$method,$args)
   if type($reply.methodResponses)!="list" or len($reply.methodResponses)!=1 then raise("SERVER","Invalid JMAP response count") end
   $v=$reply.methodResponses[0]
   if len($v)!=3 or $v[2]!="c0" or type($v[1])!="map" then raise("SERVER","Invalid JMAP response identity") end
-  if $v[0]=="error" then $last_ambiguous=false;raise(if $v[1].type=="notFound" then "NOT_FOUND" else "SERVER" end,"JMAP "..to_string($v[1].type)..": "..to_string($v[1].description ?? "")) end
+  if $v[0]=="error" then $email_protocol_transport.ambiguous=false;raise(if $v[1].type=="notFound" then "NOT_FOUND" else "SERVER" end,"JMAP "..to_string($v[1].type)..": "..to_string($v[1].description ?? "")) end
   if $v[0]!=$method then raise("SERVER","JMAP method did not match request") end
   return $v[1]
 end
