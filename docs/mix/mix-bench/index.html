@@ -242,10 +242,10 @@ and score command do not describe a tool that can be built here.</p>
 <table><thead><tr><th>Source</th><th>Coverage</th><th>Cargo package</th></tr></thead><tbody>
 <tr><td><code>libs/mix/src</code> and <code>libs/mix/tests</code></td><td>Lexer, parser, evaluator, builtins, strict data and language regression scripts</td><td><code>mix</code></td></tr>
 <tr><td><code>cli/mix-shell/src</code> and <code>cli/mix-shell/tests</code></td><td>Shell library and lint coverage</td><td><code>mix-shell</code></td></tr>
-<tr><td><code>cli/system/tests</code></td><td>Shipped executable, native sessions, processes, manuals and shell integration</td><td><code>system</code></td></tr>
+<tr><td><code>engines/mix/tests</code></td><td>Shipped executable, native sessions, processes, manuals and shell integration</td><td><code>mix</code></td></tr>
 </tbody></table>
 <p>In the designated Rust build environment, run the relevant suites with:</p>
-<pre><code class="language-text">cargo test --locked -p mix -p mix-shell -p system
+<pre><code class="language-text">cargo test --locked -p lib-mix -p mix-shell -p mix
 </code></pre>
 <p>These are correctness tests, not a replacement performance score. Check
 the current manifests and test sources when selecting a workload.</p>

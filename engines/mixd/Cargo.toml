@@ -8,9 +8,8 @@ repository.workspace = true
 publish = false
 description = "The service engine: the Mix service profile plus headless personalities, chosen by argv[0]"
 
-# Lab (mixviu engine-split decision, 2026-11-06). Inverts MixOS cli/system:
-# no `mix` personality; `mixd run`/`mixd serve` run scripts under the service
-# profile. Personalities (noded, maild, ...) join as optional deps later.
+# mixviu engine-split decision, 2026-11-06: no `mix` personality (`mix` is its
+# own engine); `mixd run`/`mixd serve` run scripts under the service profile.
 
 [lints.clippy]
 mod_module_files = "deny"
@@ -36,7 +35,7 @@ settingsd = ["dep:settingsd"]
 editd = ["dep:editd"]
 
 [dependencies]
-mix-shell = { path = "../mix-shell", features = ["service-builtins", "serve"] }
+mix-shell = { path = "../../libraries/mix-shell", features = ["service-builtins", "serve"] }
 noded = { path = "../../services/noded", optional = true }
 settingsd = { path = "../../services/settingsd", optional = true }
 editd = { path = "../../services/editd", optional = true }

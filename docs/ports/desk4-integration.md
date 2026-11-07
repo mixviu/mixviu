@@ -46,3 +46,23 @@ CBC `20261107-080318-8bce8633-a1` passed fmt, normal Clippy, 59 scoped Rust test
 Monitor quick recheck on these same release bytes passes 46/46 structured replies and 10 comparison sets covering Processes and every Performance page. Whole/header/options/content/status SSIM and RMSE distortion are zero. This is a quick recheck, not a claim to have repeated the first set's entire live Prefs matrix on the editor merge. All owned services/apps/brokers are stopped. Private archive: `gold-parity-20261107/editor-integration/4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0`.
 
 Use the second set for the integrated Ced/bulk/Monitor handoff; the first CBC2 set is retained as a separately verified checkpoint. No installation, desktop or VT work was performed.
+
+
+## Prefs and Screenshot close-out: gate interrupted
+
+Tested source awaiting completion: `1804bb98a5ab305111bd35412bf6f3902bc24013`. The worker receipt for CBC `20261107-123118-5c7ba675-a1` on cbc2 records **cancelled, rc 143**, detail `cancel requested`. This is not rc 75 and is not a passing gate. The complete saved 823,451-byte, 14,422-line log was read; its SHA256 is `ab8bea10e5e302071cdb137e726bc91e84a693882b5236803b63c728fc96d11a`. It records 397 completed test batches, including preparation, with 8,444 passes and no reported test failure before cancellation. The remaining workspace tests, release build, furniture and Track A stages did not complete. These totals do not imply a full workspace pass.
+
+The latest brief permits requeueing only for rc 75. No replacement job was submitted after establishing rc 143; resuming this cancelled gate requires that instruction to be clarified. No four-engine release acceptance is claimed for 1804bb9. Its release-byte app suites and same-worker performance comparison remain pending.
+
+The previous 4755e9e checkpoint has an available four-engine set on cbc3 at `/build/es-artifacts/4755e9e10bd2071cded1d18c7865c29d754a1009/`, SHA256SUMS `9a70a839e3b4629c8a6ab8ccd6fa7748dd1c403fe4935bd8e37878b5e165c199`. This is historical evidence, not the final repaired integration. Its Monitor, ced and Prefs rechecks passed; Screenshot exposed menu-ID and authority-loss regressions subsequently fixed at 36a65f4/4083f51 and verified in native debug preflight.
+
+| Historical 4755e9e engine | SHA256 |
+| --- | --- |
+| mix | `ee513d7d447d2aec70b43f623d1d7d15f65d86eb350c9054397822d3c3d4dc15` |
+| mixd | `c363b520026ed8301267d53983a7bcdc3b3247e32dec7f4ed405b5dcbe6cdacd` |
+| viud | `036fe93c9ebc367aeb8eac5607e4b6c51420c7a1b214b273d5962ea13a4d9b8a` |
+| viu | `bf16c811b8a99d1a93bad0a55a5ac920307b8d8ba08bccaf00e4e2495fab972d` |
+
+The [22 inherited import-hash mismatches](import-hash-debt.md) are fully enumerated with both hashes, source pins, divergence dates and adaptation commits. They are unchanged from 4f2c0fd. The import verifier remains failing until the overlapping inventories are reconciled; behavioural acceptance does not clear that provenance debt before production derivation.
+
+The subsequent Backdrop/Workshop integration brief has been read and both requested remote heads verified (250f87d and 493ae42). They have not been merged because that brief explicitly follows this close-out. Workshop's shared editor field and integrated acceptance remain next work.

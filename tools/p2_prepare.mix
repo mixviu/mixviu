@@ -1,8 +1,12 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
 -- CBC only: resolve the integrated workspace and return lock/fmt changes.
 try
   $metadata=run_argv_must(["cargo","metadata","--no-deps","--format-version","1"])
   $metadata=run_argv_must(["cargo","metadata","--format-version","1"])
-  print(run_argv_must(["cargo","fmt","-p","dispatcher","-p","toolkit","-p","viu-engine","-p","viud","-p","viu"]))
+  print(run_argv_must(["cargo","fmt","-p","dispatcher","-p","toolkit","-p","viu","-p","viud","-p","lib-viu"]))
 finally
   print("P2_PATCH_BEGIN")
   print(run_argv_must(["git","diff","--binary"]))

@@ -1,5 +1,7 @@
-# system
+# mix
 
-The system binary, `mix`: the Mix shell and every headless MixOS daemon in one file.
+The `mix` engine: the Mix shell profile, the login shell and script runner.
+The service profile and the headless daemons are the `mixd` engine; the shell
+itself is the `mix-shell` library (`libraries/mix-shell`).
 
-Documentation: <https://mixos.dev/system/> — source [`docs/system/README.md`](../../docs/system/README.md).
+Build with `cargo build -p mix`, never as part of a workspace-unified build.

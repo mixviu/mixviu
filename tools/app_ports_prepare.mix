@@ -1,3 +1,7 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- CBC adaptation pass, separate from the exact-source acceptance gate.
@@ -5,7 +9,7 @@ $rc=0
 $temporary=path_join(dirname(cwd()),".app-ports-tmp-"..to_string(pid()))
 mkdir($temporary)
 try
-  for $argv in [["cargo","fmt","--all"],["cargo","test","--locked","-p","viu","--test","ports_round2"],["cargo","build","--locked","-p","viu-client","--bin","viu"]]
+  for $argv in [["cargo","fmt","--all"],["cargo","test","--locked","-p","lib-viu","--test","ports_round2"],["cargo","build","--locked","-p","viu","--bin","viu"]]
     print({argv:$argv})
     $r=run_argv($argv,{env:{CARGO_BUILD_JOBS:"6",TMPDIR:$temporary,RUSTC_WRAPPER:""},timeout:1800,max_output:8000000});print($r)
     if not $r.ok then $rc=$r.exit_code ?? 124;break end

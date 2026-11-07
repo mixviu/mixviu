@@ -41,6 +41,8 @@ const WORKSPACE_TARGETS: &[&str] = &[
     "viu_engine",
     "furniture",
     "viu",
+    "lib_mix",
+    "lib_viu",
     "action",
     "annotation",
     "assets",

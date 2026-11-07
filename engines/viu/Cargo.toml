@@ -1,5 +1,5 @@
 [package]
-name = "viu-engine"
+name = "viu"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-viu = { path = "../../libraries/viu", default-features = false, features = ["shell-profile"] }
+viu = { path = "../../libraries/viu", package = "lib-viu", default-features = false, features = ["shell-profile"] }
 eframe.workspace = true
 comp-model.workspace = true
 toolkit = { workspace = true, features = ["layer"] }

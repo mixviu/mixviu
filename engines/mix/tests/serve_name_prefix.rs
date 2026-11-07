@@ -10,7 +10,7 @@
 //! - after RELOAD, a command the new script adds with `@.` answers under the
 //!   same serve name (the candidate generation resolves the same way).
 //!
-//! Run: `cargo test -p system --test serve_name_prefix`
+//! Run: `cargo test -p mix --test serve_name_prefix`
 #![cfg(target_os = "linux")]
 
 use std::fs::File;

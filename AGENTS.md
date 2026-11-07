@@ -20,7 +20,8 @@ available; runtime wiring must not hide untested application policy in Rust.
 
 ## Layout
 
-- engines/: eventual thin mix, mixd, viu, viud hosts; import as needed.
+- engines/: the four engines, mix, mixd, viu and viud (engines/README.md).
+  Build and test each with its own -p; tools/cutover_gate.mix is the gate.
 - libraries/: shared scene, expression, Mix, widget, icon, Bus and native facilities.
 - apps/: Mix-first bundles, paired galleries and the active Dopus comparison lab.
 - tools/: small Mix checks; no copied deployment/orchestration framework.

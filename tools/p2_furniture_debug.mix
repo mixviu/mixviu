@@ -1,3 +1,7 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
 -- CBC-only process reproduction against a newly built native compositor.
 $oracle=args()[0]
 fn debug_gate($argv)
@@ -10,4 +14,4 @@ $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
 $dir="/build/es-artifacts/"..$sha
 mkdir($dir,{parents:true})
 copy("target/debug/viud",$dir.."/viud-debug")
-debug_gate(["env","COMPD_NATIVE_TEST_BINARY="..$dir.."/viud-debug","COMPD_INPROC_TEST_BINARY="..$oracle,"cargo","test","-p","viu-engine","--test","furniture","--locked","--","--ignored","--nocapture","--test-threads=1"])
+debug_gate(["env","COMPD_NATIVE_TEST_BINARY="..$dir.."/viud-debug","COMPD_INPROC_TEST_BINARY="..$oracle,"cargo","test","-p","viu","--test","furniture","--locked","--","--ignored","--nocapture","--test-threads=1"])

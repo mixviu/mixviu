@@ -256,7 +256,7 @@ Bus daemon, and a family of one-shot meta commands (<code>mix help</code>, <code
 <code>ssh host '&lt;mix source&gt;'</code> is evaluated by Mix, not bash. This page covers how to
 start Mix in each mode and the rules that decide whether a <code>-c</code> / login-shell
 line runs as Mix code or dispatches a shell command.</p>
-<p>The binary is the oracle; page stamps are held fresh by <code>cargo test -p system --test man_pages</code>. Argument parsing
+<p>The binary is the oracle; page stamps are held fresh by <code>cargo test -p mix --test man_pages</code>. Argument parsing
 lives in <a href="https://github.com/markc/mixos/blob/main/cli/mix-shell/src/lib.rs"><code>mix-shell/src/lib.rs</code></a>;
 the shell-first classifier is in <code>mix-shell/src/shell.rs</code>.</p>
 <pre><code class="language-text">$ mix --version

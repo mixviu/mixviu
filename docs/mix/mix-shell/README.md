@@ -2,8 +2,8 @@
 
 `mix-shell` is the library behind the `mix` executable: the interactive shell,
 script runner, command dispatcher, linter, and supervised Bus citizen host for
-Mix programs. The executable itself is built by `cli/system`, the system
-binary, which runs the shell when started as `mix`.
+Mix programs. The executable itself is the `mix` engine (`engines/mix`),
+which runs the shell; the `mixd` engine runs it with the service profile.
 In the `bus <- mix <- cos` dependency chain it occupies the Mix layer: it
 depends on Bus protocol, client, logging, build-information, and property
 crates, and on the `mixos-lib-mix` language runtime, but it does not depend on

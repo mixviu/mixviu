@@ -9,7 +9,7 @@
 --   mix docs/_build/gen-builtins-md.mix [--mix BIN] --check   exit 1 if it differs
 --
 -- BIN is the binary whose table is documented (default the running mix).
--- cli/system/tests/man_pages.rs runs --check with the binary it just built, so
+-- engines/mix/tests/man_pages.rs runs --check with the binary it just built, so
 -- a builtin added or changed without regenerating fails the build.
 --
 -- The page is hand-written prose around one generated region: from the first

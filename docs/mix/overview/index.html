@@ -333,7 +333,7 @@ parity. Mix now occupies that role exclusively across the mixos stack.</p>
 <code>mix-bench</code>, is a development-only benchmark harness):</p>
 <table><thead><tr><th>Crate</th><th>What it is</th></tr></thead><tbody>
 <tr><td><strong><code>mixos-lib-mix</code></strong></td><td>The interpreter library — lexer, parser, evaluator, builtins, value model. Pure Rust, with the shared paths resolver; feature-gated capabilities (<code>json</code>, <code>regex</code>, <code>toml</code>, <code>datetime</code>, <code>url</code>, <code>crypto</code>, <code>http</code>, <code>sqlite</code>, <code>dkim</code>, <code>markdown</code>, <code>datastar</code>).</td></tr>
-<tr><td><strong><code>mix-shell</code></strong></td><td>The shell behind the <code>mix</code> binary (built by <code>cli/system</code>) — REPL, shell layer, Bus wiring, the <code>--serve</code> supervised-citizen runtime, and the <code>mix man</code>/<code>help</code>/<code>what</code> meta-commands.</td></tr>
+<tr><td><strong><code>mix-shell</code></strong></td><td>The shell behind the <code>mix</code> binary (built by <code>engines/mix</code>) — REPL, shell layer, Bus wiring, the <code>--serve</code> supervised-citizen runtime, and the <code>mix man</code>/<code>help</code>/<code>what</code> meta-commands.</td></tr>
 </tbody></table>
 <p>A standalone <code>mix</code> install runs as a normal scripting shell. When a Bus broker
 (<code>noded</code>, from the <a href="https://github.com/markc/mixos">cos</a> repo) later appears

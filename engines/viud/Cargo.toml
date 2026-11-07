@@ -5,17 +5,18 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-build = "../compd/build.rs"
+description = "The MixViu compositor: the compd compositor without the in-process egui widget toolkit"
+build = "build.rs"
 
 [package.metadata.mixos]
-component = "compd"
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "public"
 
 [[bin]]
 name = "viud"
-path = "../compd/src/main.rs"
+path = "src/main.rs"
 
 [lints.rust]
 warnings = "allow"
@@ -25,7 +26,6 @@ mod_module_files = "deny"
 
 [features]
 default = ["backend-all"]
-inproc-ui = ["dep:ui", "dep:scene-host", "dep:overlays"]
 # Optional compatibility adapters. The native session does not enable these.
 desktop-dbus = ["dep:zbus", "world/desktop-dbus", "graphics/desktop-dbus", "slots/desktop-dbus"]
 backend-native = ["dep:native"]
@@ -57,8 +57,6 @@ kms = { workspace = true }
 effects = { workspace = true }
 frames = { workspace = true }
 graphics = { workspace = true }
-ui = { workspace = true, optional = true }
-overlays = { workspace = true, optional = true }
 model = { workspace = true }
 native = { workspace = true, optional = true }
 policy = { workspace = true }
@@ -67,7 +65,6 @@ motion = { workspace = true }
 surfaces = { workspace = true }
 render-gles = { workspace = true }
 scenegraph = { workspace = true }
-scene-host = { workspace = true, optional = true }
 slots = { workspace = true }
 protocols = { workspace = true }
 nested = { workspace = true, optional = true }
@@ -81,7 +78,3 @@ zbus = { workspace = true, optional = true }
 
 [build-dependencies]
 buildinfo = { workspace = true }
-
-[dev-dependencies]
-egui = { workspace = true }
-tokio = { workspace = true }

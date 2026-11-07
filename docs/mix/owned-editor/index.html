@@ -316,8 +316,8 @@ gate. No production deployment is part of this preview.</p>
 <p>CI and local PTY gates <strong>must</strong> run serially: <code>openpty</code> cannot atomically set
 CLOEXEC, so concurrent fixture forks could inherit descriptors before duplication
 and closure. From the Cargo workspace, run:</p>
-<pre><code class="language-text">cargo test -p system --test owned_editor_pty -- --test-threads=1
-cargo test -p system --test job_control_pty -- --test-threads=1
+<pre><code class="language-text">cargo test -p mix --test owned_editor_pty -- --test-threads=1
+cargo test -p mix --test job_control_pty -- --test-threads=1
 </code></pre>
 <p>Apply <code>--test-threads=1</code> to broader test invocations which include these binaries
 as well. The output gates cover both an undrained master with bounded cleanup and

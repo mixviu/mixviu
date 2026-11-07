@@ -11,7 +11,7 @@ The aim is near-native median performance with a much shorter feature-edit loop.
 
 | Directory | Holds |
 |---|---|
-| engines/ | Eventual mix, mixd, viu and viud hosts |
+| engines/ | The four engines: mix, mixd, viu and viud |
 | libraries/ | Shared native facilities |
 | apps/ | Mix-first shell/application bundles |
 | tools/ | Small reproducible Mix checks |

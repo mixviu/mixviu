@@ -766,9 +766,9 @@ fn noninteractive_ssh_style_command_never_takes_terminal_or_group() {
     assert!(pty::wait(&mut p.shell).unwrap().success());
     // Source guard complements process observations (which cannot detect an
     // otherwise invisible tcsetpgrp to the already-owning group).
-    let source = include_str!("../../mix-shell/src/lib.rs");
+    let source = include_str!("../../../libraries/mix-shell/src/lib.rs");
     assert!(!source.contains("Controller::interactive"));
-    let exec = include_str!("../../mix-shell/src/exec.rs");
+    let exec = include_str!("../../../libraries/mix-shell/src/exec.rs");
     assert!(
         exec.contains("execute_pipeline_with_policy(pipeline, &ExecutionPolicy::NonInteractive)")
     );

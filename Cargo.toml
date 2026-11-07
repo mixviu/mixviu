@@ -6,7 +6,7 @@
 resolver = "3"
 exclude = ["vendor", "vendor/smithay", "vendor/eframe", "vendor/egui-wgpu", "vendor/calloop", "vendor/input"]
 # libs/* includes maildoc and every other shared library component.
-members = ["libraries/maildoc","engines/compd","engines/compd/crates/*","engines/viu","engines/viud","libraries/viu","libraries/theme","libraries/toolkit","libraries/thumbs","libraries/action","libraries/icons","libraries/editor","libraries/editor-model","libraries/macros","libraries/syntax","libraries/inputd-core","libraries/inputd-schema","libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","engines/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd"]
+members = ["libraries/maildoc","engines/viud/crates/*","libraries/ui","engines/viu","engines/viud","libraries/viu","libraries/theme","libraries/toolkit","libraries/thumbs","libraries/action","libraries/icons","libraries/editor","libraries/editor-model","libraries/macros","libraries/syntax","libraries/inputd-core","libraries/inputd-schema","libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","libraries/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd"]
 
 [workspace.package]
 version = "0.1.2"
@@ -24,38 +24,37 @@ maildoc = { path = "libraries/maildoc" }
 input = { path = "vendor/input" }
 calloop = { path = "vendor/calloop" }
 inputd-core = { path = "libraries/inputd-core" }
-world = { path = "engines/compd/crates/world" }
-ui = { path = "engines/compd/crates/ui" }
-surfaces = { path = "engines/compd/crates/surfaces" }
-slots = { path = "engines/compd/crates/slots" }
-render-gles = { path = "engines/compd/crates/render-gles" }
-policy = { path = "engines/compd/crates/policy" }
-motion = { path = "engines/compd/crates/motion" }
-model = { path = "engines/compd/crates/model" }
-ledger = { path = "engines/compd/crates/ledger" }
-kms = { path = "engines/compd/crates/kms" }
-graphics = { path = "engines/compd/crates/graphics" }
-testkit = { path = "engines/compd/crates/testkit" }
-seat = { path = "engines/compd/crates/seat" }
-scene-host = { path = "engines/compd/crates/scene-host" }
-scenegraph = { path = "engines/compd/crates/scenegraph" }
-recorder = { path = "engines/compd/crates/recorder" }
-policy-host = { path = "engines/compd/crates/policy-host" }
-outputs = { path = "engines/compd/crates/outputs" }
-headless = { path = "engines/compd/crates/headless" }
-nested = { path = "engines/compd/crates/nested" }
-native = { path = "engines/compd/crates/native" }
-frames = { path = "engines/compd/crates/frames" }
-edges = { path = "engines/compd/crates/edges" }
-x11-wm = { path = "engines/compd/crates/x11-wm" }
-screencopy = { path = "engines/compd/crates/screencopy" }
-protocols = { path = "engines/compd/crates/protocols" }
-effects = { path = "engines/compd/crates/effects" }
-drivers = { path = "engines/compd/crates/drivers" }
-dispatcher = { path = "engines/compd/crates/dispatcher" }
-decor = { path = "engines/compd/crates/decor" }
-comp-service = { path = "engines/compd/crates/comp-service" }
-comp-model = { path = "engines/compd/crates/comp-model" }
+world = { path = "engines/viud/crates/world" }
+ui = { path = "libraries/ui" }
+surfaces = { path = "engines/viud/crates/surfaces" }
+slots = { path = "engines/viud/crates/slots" }
+render-gles = { path = "engines/viud/crates/render-gles" }
+policy = { path = "engines/viud/crates/policy" }
+motion = { path = "engines/viud/crates/motion" }
+model = { path = "engines/viud/crates/model" }
+ledger = { path = "engines/viud/crates/ledger" }
+kms = { path = "engines/viud/crates/kms" }
+graphics = { path = "engines/viud/crates/graphics" }
+testkit = { path = "engines/viud/crates/testkit" }
+seat = { path = "engines/viud/crates/seat" }
+scenegraph = { path = "engines/viud/crates/scenegraph" }
+recorder = { path = "engines/viud/crates/recorder" }
+policy-host = { path = "engines/viud/crates/policy-host" }
+outputs = { path = "engines/viud/crates/outputs" }
+headless = { path = "engines/viud/crates/headless" }
+nested = { path = "engines/viud/crates/nested" }
+native = { path = "engines/viud/crates/native" }
+frames = { path = "engines/viud/crates/frames" }
+edges = { path = "engines/viud/crates/edges" }
+x11-wm = { path = "engines/viud/crates/x11-wm" }
+screencopy = { path = "engines/viud/crates/screencopy" }
+protocols = { path = "engines/viud/crates/protocols" }
+effects = { path = "engines/viud/crates/effects" }
+drivers = { path = "engines/viud/crates/drivers" }
+dispatcher = { path = "engines/viud/crates/dispatcher" }
+decor = { path = "engines/viud/crates/decor" }
+comp-service = { path = "engines/viud/crates/comp-service" }
+comp-model = { path = "engines/viud/crates/comp-model" }
 smithay = { path = "vendor/smithay", version = "0.7.0", default-features = false, features = ["backend_drm", "backend_egl", "backend_gbm", "backend_libinput", "backend_session_libseat", "backend_udev", "backend_winit", "desktop", "drm", "gbm", "renderer_gl", "renderer_multi", "renderer_pixman", "use_system_lib", "wayland-egl", "wayland_frontend", "xwayland"] }
 toolkit = { path = "libraries/toolkit" }
 thumbs = { path = "libraries/thumbs" }
@@ -66,8 +65,7 @@ editor = { path = "libraries/editor" }
 icons = { path = "libraries/icons" }
 action = { path = "libraries/action" }
 theme = { path = "libraries/theme" }
-ui-surface = { path = "engines/compd/crates/ui-surface" }
-overlays = { path = "engines/compd/crates/overlays" }
+ui-surface = { path = "engines/viud/crates/ui-surface" }
 async-stream = "0.3"
 async-trait = "0.1"
 bcrypt = "0.16"
@@ -173,7 +171,7 @@ config = { path = "libraries/config" }
 # The Mix lexer is opt-in (ced enables it); a plain-text editor does not need Mix.
 expr = { path = "libraries/expr" }
 logging = { path = "libraries/logging" }
-mix = { path = "libraries/mix" }
+mix = { path = "libraries/mix", package = "lib-mix" }
 props = { path = "libraries/props" }
 scene = { path = "libraries/scene" }
 strict = { path = "libraries/strict" }
@@ -186,7 +184,7 @@ davproto = { path = "libraries/davproto" }
 daemon = { path = "libraries/daemon" }
 files = { path = "libraries/files" }
 
-# The compositor (services/compd): smithay with compd's hooks and patches
+# The compositor (engines/viud): smithay with the compositor's hooks and patches
 # (vendor/smithay/PATCHES.md), and wgpu on the GL backend only, sharing
 # smithay's EGL context.
 wgpu = { version = "=30.0.1", default-features = false, features = ["gles", "parking_lot", "std", "wgsl"] }
@@ -202,7 +200,7 @@ image = { version = "=0.25.10", default-features = false, features = ["png", "jp
 pkg-config = "=0.3.34"
 pollster = "=1.0.1"
 xcursor = "=0.3.11"
-# Flexbox layout of Mix Scenes in scene-host.
+# Flexbox layout of Mix Scenes in viu.
 taffy = { version = "=0.14.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "content_size"] }
 # Scene icons: SVG rasterised at draw size (the version egui_extras already uses).
 resvg = { version = "=0.45.1", default-features = false, features = ["raster-images"] }
@@ -213,9 +211,9 @@ mpris = "=2.1.0"
 wayland-backend = "=0.3.17"
 wayland-scanner = "=0.31.11"
 
-# compd private crates (services/compd/crates/).
+# viud private crates (engines/viud/crates/).
 
-# inputd's pure crates (services/inputd/crates/): compd's user-key layer
+# inputd's pure crates (services/inputd/crates/): viud's user-key layer
 # reuses the classifier and the latch.
 
 # noded private crates (services/noded/crates/).

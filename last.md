@@ -1,23 +1,85 @@
-# Four-app integration: release gates pending
+# Four-engine layout for the cut-over: gate green
 
-Accepted Prefs 7d75a56 and Screenshot c073d5e are merged with Monitor, Ced and the bulk primitives. Reconciliation preserves both text/raster documents, both deferred reply contracts, both job timeout contracts, canonical app identities and live service aliases, app-owned HELP, both gold dialog presentations and toolbar direction. Broker edit origins stay distinct from opaque retained-reply addresses.
+Branch `cutover/four-engines`, from `lab/gold-parity` 4755e9e, with
+origin/lab/gold-parity merged in twice (through 6f77a75; no rebase, no force
+push). Moves and edits are separate commits (7404a61 moves only).
+MixViu now has exactly four engines, each its own package and binary: `mix`,
+`mixd`, `viu`, `viud`. viud owns compd's sources and is egui-free by
+construction; the compd package, `inproc-ui`, `mix-standalone` and the mix
+personality table are gone. Full mapping: `provenance/four-engine-layout.md`.
 
-Native preflight: Monitor 46/46 replies and ten exact whole/region captures; Ced action, interaction, native-input, recovery, visual, live Prefs and mail checks; Prefs ten native groups and 69 functional comparisons; Screenshot structured replies, matched captures, live Prefs, CLI, lifecycle/clipboard/topics and >22-second retained requests. Prefs shortcuts and blank-account validation were separately re-captured pixel-identically after resolving their shared-widget conflicts. These are debug preflight evidence, not final release acceptance.
+## Old -> new
 
-The generic host settles AccessKit click geometry across matching layout passes. Normal mouse input and the Dopus/Email action path remain outside that fence. No assertion was weakened; policy scripts needing Viu primitives run in their owning native Runtime harness.
+Packages and binaries:
 
-Final full CBC, four release-byte acceptance reruns, Track A, P2 furniture, same-worker 2,000-row comparison and four-engine hashes remain pending. No installation, desktop or VT work.
+| Old | New |
+|---|---|
+| package `system` (bins `mix`, `mix-standalone`), `engines/mix` | package `mix`, bin `mix` (shell profile only) |
+| package `mix` (interpreter lib), `libraries/mix` | package `lib-mix`, lib name `mix` |
+| package `viu` (Viu runtime lib), `libraries/viu` | package `lib-viu`, lib name `viu` |
+| package `viu-engine` (called `viu-client` in older scripts), bin `viu`, lib `furniture`, `engines/viu` | package `viu`, bin `viu`, lib `furniture` |
+| package `compd`, bin `compd`, `engines/compd` | removed; package/bin `viud`, `engines/viud` |
+| package `viud` (built from `../compd/src`) | package `viud`, own `src/`, `build.rs`, `tests/` |
+| packages `scene-host`, `overlays` | removed (in-process egui UI only) |
+| `mix-shell`, `ui` | unchanged names |
 
-Branch lab/gold-parity; head is this reconciliation checkpoint; final per-app release revalidation PENDING; artifacts PENDING; CBC repair 20261107-094429-bcd953fb-a1, 20261107-095334-81fb50bb-a1, 20261107-100003-d1362cb1-a1 PASS; final CBC PENDING.
+Dependents use `mix = { package = "lib-mix" }` and `viu = { package = "lib-viu" }`,
+so no `use` lines changed.
 
-CBC source-pair repair: the first full gate found a stale sibling mixd on its worker (5990e13) retaining MIX_ENGINE_HANDOFF. Rebuilding the service engine at the tested source makes the unchanged seven lifecycle tests pass: CBC 20261107-102349-faeedebf-a1. The full gate now builds that companion before shell process tests. Final release evidence remains pending.
+Paths: `engines/compd/{src,build.rs,tests,crates,i18n,layers.conf.mix,scripts,units,README.md,CHANGELOG.md}`
+-> `engines/viud/...`; `engines/compd/crates/ui` -> `libraries/ui`;
+`engines/mix-shell` -> `libraries/mix-shell`.
 
-Branch lab/gold-parity; head is this gate-recipe checkpoint; per-app final release revalidation and four-engine artifacts PENDING; CBC lifecycle 20261107-102349-faeedebf-a1 PASS; final full CBC PENDING.
+Scripts: `-p system` -> `-p mix`, `-p mix` -> `-p lib-mix`, `-p viu` -> `-p lib-viu`,
+`-p viu-engine`/`viu-client` -> `-p viu` in every `tools/*.mix` and `apps/**/*.mix`.
+New `tools/cutover_gate.mix` is the four-engine gate. Lab-only (note at the top:
+needs gold compd from mixos 8779f33 for any compd/oracle step): p2_gate,
+p2_rehearsal, p2_prepare, p2_furniture_debug, gate_furniture, gate_comp_split,
+engine_split_smoke, engine_split_size_ablation, check_comp_profiles,
+check_native_chrome, gold_parity_gate, integrated_gate, integrated_prepare,
+app_ports_gate/prepare, email_list_gate, email_wire_prepare, bulk_prepare, and
+docs/ports/parity-method.md.
 
-Native reply deadlines reconciled explicitly: generic/Ced 180 seconds, Prefs 95 seconds, Screenshot 10 seconds plus its retained-reply flag. The retained-reply witness keeps its original 10-second transport deadline and waits 22 seconds. Final merged release gates and captures remain PENDING.
+## Gate (CBC, tools/cutover_gate.mix gate at 5d1ec61)
 
-Branch lab/gold-parity; head this deadline checkpoint; per-app final release revalidation PENDING; artifact set PENDING; CBC final PENDING.
+fmt, workspace clippy (excluding mix), mix clippy, `build -p mixd`,
+`test -p mix`, `test --workspace --exclude mix`: all pass.
+`cargo tree --locked -p viud -e normal`: 0 egui/egui-wgpu/egui-winit/toolkit lines.
 
-Applied cbc3 rustfmt output from 20261107-104049-3211425a-a1. That preparation was interrupted by the user turn during its final palette unit test; 81 preceding unit cases had passed. Repeating preparation and the full release gate on the frozen source. Import audit: all 22 hash mismatches are inherited unchanged from 4f2c0fd; per-file history is being recorded.
+Tests: 10,484 passed, 0 failed, 90 ignored. The base (4755e9e, integrated_gate
+on CBC 20261107-111516-437fd7b1) was 10,735 passed, 0 failed, 100 ignored. The
+difference of 251 passed and 10 ignored is exactly the removed code (counted at
+base, CBC cutover-removed-4755e9e):
 
-Branch lab/gold-parity; head this source-freeze checkpoint; per-app release revalidation PENDING; four-engine artifact set PENDING; CBC preparation 20261107-104049-3211425a-a1 interrupted; final CBC PENDING.
+- scene-host unit tests: 232 passed, 10 ignored. The in-process egui scene host.
+- scene-host tests/registry.rs: 3. Same crate.
+- overlays unit test: 1. In-process capture/fps/notify overlays.
+- compd bin unit tests: 13. The same `src/main.rs` tests still run once, as viud's.
+- compd tests/bus_wake.rs: 1. Gated on `inproc-ui`.
+- mix `src/main.rs` personality_name test: 1. argv[0] dispatch removed.
+- Also removed, never compiled before: tests/personalities.rs (cfg on features
+  that did not exist), mix-standalone (0 tests), tests/settings_test.mix
+  (scene-host's settings fixture, not part of any gate).
+
+Release sizes (bytes, base from /build/es-artifacts/4755e9e on cbc2):
+mix 20,521,752 -> 20,518,872; mixd 65,896,480 -> 65,896,416;
+viu 55,726,024 -> 55,722,568; viud 32,489,704 -> 32,489,144.
+
+CBC: base 20261107-111516-437fd7b1 (cbc2); first run cutover-gate-b916abc
+(cbc3, one failure: logging's own-target list lacked lib_mix/lib_viu, fixed in
+5d1ec61); final cutover-gate-5d1ec61 (cbc2) PASS; removed-test count
+cutover-removed-4755e9e (cbc3); logging check 20261107-124729-ab35c975.
+
+## Open items for Mark
+
+- `engines/viud/units/*.service` still start `@{prefix}/bin/compd` and are named
+  `compd@`/`compd-headless@`. They are deployment units; renaming them changes
+  how desks start, so they are left for an explicit decision.
+- Runtime names keep compd: Bus service `comp`, config dir `compd`, `COMPD_*`
+  variables, user-facing `compd:` messages, wlcs shim `libcompd_wlcs.so`.
+- The furniture comparison test and p2 furniture gate need a compd-oracle
+  binary; on this branch that comes only from gold compd (mixos 8779f33).
+- docs/mix still describes MixOS paths (`libs/mix`, `cli/mix-shell`) outside the
+  `-p system`/`cli/system` lines changed here.
+
+Branch cutover/four-engines; head is this last.md commit (gated source 5d1ec61; later commits are docs-only lab merges and this file); gate PASS 10,484/0/90 vs base 10,735/0/100 less 251/10 removed; CBC cutover-gate-5d1ec61, cutover-gate-b916abc, 20261107-111516-437fd7b1, cutover-removed-4755e9e.

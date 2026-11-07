@@ -1,8 +1,12 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 $rc=0
 try
-  for $a in [["cargo","fmt","-p","viu","-p","viu-engine"],["cargo","test","-p","viu","--lib","http::tests","--","--nocapture"],["cargo","test","-p","viu","--test","email_wire","--test","text_input","--","--nocapture"],["cargo","build","-p","viu-engine","--bin","viu"]]
+  for $a in [["cargo","fmt","-p","lib-viu","-p","viu"],["cargo","test","-p","lib-viu","--lib","http::tests","--","--nocapture"],["cargo","test","-p","lib-viu","--test","email_wire","--test","text_input","--","--nocapture"],["cargo","build","-p","viu","--bin","viu"]]
     $r=run_argv($a,{env:{CARGO_BUILD_JOBS:"6",RUSTC_WRAPPER:""},timeout:1800,max_output:8000000});print($r)
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
   end

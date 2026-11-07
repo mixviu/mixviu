@@ -1,18 +1,16 @@
 [package]
-name = "system"
+name = "mix"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "The system binary: the mix shell and the headless daemons, chosen by argv[0]"
+description = "The mix engine: the Mix shell profile"
 
-# docs/docs/decisions/2026-10-12-one-system-binary.md. The one package allowed a
-# non-dev dependency on a `kind = "cli"` package (AGENTS.md §6), and the one
-# whose principal binary is not named after its directory (§2.3).
+# The service profile and the headless daemons are the mixd engine.
 [package.metadata.mixos]
-component = "system"
+component = "mix"
 kind = "cli"
 layer = "core"
 contract = "none"
@@ -24,24 +22,12 @@ mod_module_files = "deny"
 name = "mix"
 path = "src/main.rs"
 
-[[bin]]
-name = "mix-standalone"
-path = "src/standalone.rs"
-
-[features]
-# Traditional split (Mark, 2026-11-02): `mix` is the shell only and every
-# daemon ships as its own binary. The personalities stay buildable on request
-# while the mix + mixd reshuffle is decided.
-default = []
-
-# One entry per personality. Each component's program is its own library's
-# `main`; this package adds only the dispatcher and the global allocator.
 [dependencies]
-mix-shell = { path = "../mix-shell" }
+mix-shell = { path = "../../libraries/mix-shell" }
 mimalloc.workspace = true
 
 # The shell's process-level tests (tests/), which run `mix` as built here.
-# Versions match cli/mix-shell's, so the lock gains no second copy.
+# Versions match libraries/mix-shell's, so the lock gains no second copy.
 [dev-dependencies]
 # serde: tests/lint_functions.rs hydrates fixtures with mix::from_value. Test
 # builds only; the shipped shell profile carries no serde.

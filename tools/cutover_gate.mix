@@ -1,0 +1,86 @@
+-- Four-engine gate (mix, mixd, viu, viud). Run on CBC only, through
+-- ~/.mix/_bin/cbc-build.mix --repo mixviu --commit SHA -- /opt/mixos/bin/mix tools/cutover_gate.mix [gate|lock]
+--   gate: fmt, clippy, tests per engine boundary, the viud egui check and a
+--         release build of each engine with its size. Every step runs; the
+--         gate fails if any did. The tree must stay clean.
+--   lock: re-resolve the workspace packages only and print the Cargo.lock
+--         diff, then restore the tree (apply the diff locally).
+$mode = args()[0] ?? "gate"
+$failed = []
+$totals = {passed: 0, failed: 0, ignored: 0, filtered: 0}
+
+fn gate_step($argv, $jobs)
+  print("STEP_BEGIN " .. join($argv, " "))
+  $r = run_argv($argv, {timeout: 7200, max_output: 64000000, env: {CARGO_BUILD_JOBS: $jobs}})
+  print($r.stdout)
+  print($r.stderr)
+  print("STEP_RC=" .. to_string($r.exit_code ?? 124) .. " " .. join($argv, " "))
+  return $r
+end
+
+if $mode == "lock" then
+  $r = gate_step(["cargo", "update", "--workspace"], "6")
+  print("LOCK_PATCH_BEGIN")
+  print(run_argv_must(["git", "diff", "--", "Cargo.lock"]))
+  print("LOCK_PATCH_END")
+  run_argv_must(["git", "checkout", "-q", "--", "."])
+  exit(if $r.ok then 0 else 1 end)
+end
+if $mode != "gate" then raise("USAGE", "cutover_gate.mix gate|lock") end
+
+$checks = [
+  ["cargo", "fmt", "--all", "--", "--check"],
+  ["cargo", "clippy", "--locked", "--workspace", "--exclude", "mix", "--all-targets"],
+  ["cargo", "clippy", "--locked", "-p", "mix", "--all-targets"],
+  -- Shell process tests hand --serve to the sibling service engine.
+  ["cargo", "build", "--locked", "-p", "mixd"],
+  ["cargo", "test", "--locked", "-p", "mix", "--no-fail-fast"],
+  ["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"]
+]
+for $argv in $checks
+  $r = gate_step($argv, "6")
+  if not $r.ok then push($failed, join($argv, " ")) end
+  if $argv[1] == "test" then
+    for $line in lines($r.stdout)
+      $found = re_find($line, "^test result: [a-zA-Z]+\\. ([0-9]+) passed; ([0-9]+) failed; ([0-9]+) ignored; [0-9]+ measured; ([0-9]+) filtered out")
+      if len($found) > 0 then
+        $m = $found[0].groups
+        $totals.passed = $totals.passed + to_number($m[0])
+        $totals.failed = $totals.failed + to_number($m[1])
+        $totals.ignored = $totals.ignored + to_number($m[2])
+        $totals.filtered = $totals.filtered + to_number($m[3])
+      end
+    end
+  end
+end
+print("TEST_TOTALS " .. json_encode($totals))
+
+-- viud is egui-free by construction (default features).
+$tree = run_argv(["cargo", "tree", "--locked", "-p", "viud", "-e", "normal"], {max_output: 64000000})
+$egui = filter(lines($tree.stdout), fn($line) = re_match($line, "(^|[^a-z_-])(egui|egui-wgpu|egui-winit|toolkit) v[0-9]"))
+print("VIUD_EGUI_MATCH_LINES=" .. to_string(len($egui)))
+if not $tree.ok or len($egui) != 0 then
+  print(join($egui, "\n"))
+  push($failed, "viud egui tree check")
+end
+
+-- Release engines, one package per command; cold release builds stay capped.
+$sizes = {}
+for $pair in [["mix", "mix"], ["mixd", "mixd"], ["viu", "viu"], ["viud", "viud"]]
+  $r = gate_step(["cargo", "build", "--release", "--locked", "-p", $pair[0]], "2")
+  if $r.ok then
+    $sizes[$pair[1]] = stat("target/release/" .. $pair[1]).size
+  else
+    push($failed, "release " .. $pair[0])
+  end
+end
+print("RELEASE_SIZES " .. json_encode($sizes))
+
+$dirty = run_argv_must(["git", "status", "--porcelain", "--untracked-files=no"])
+if $dirty != "" then
+  print("DIRTY_TREE\n" .. $dirty)
+  push($failed, "tree changed")
+  run_argv_must(["git", "checkout", "-q", "--", "."])
+end
+print("GATE_FAILED " .. json_encode($failed))
+exit(if len($failed) == 0 then 0 else 1 end)

@@ -9,7 +9,7 @@ use std::{
     process::{Child, Command},
     time::{Duration, Instant},
 };
-#[path = "../../compd/crates/headless/tests/support/pattern.rs"]
+#[path = "../../viud/crates/headless/tests/support/pattern.rs"]
 #[allow(dead_code)]
 mod pattern;
 struct Owned {

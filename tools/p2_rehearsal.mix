@@ -1,3 +1,7 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
 -- CBC-only private desk; uses the existing native Bus test harness.
 $root=dirname(dirname(script_path()))
 $n=require($root.."/../mixos/tests/desktop/nested_host_lib.mix")

@@ -1,3 +1,7 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
 -- A8 size attribution without cargo-bloat: build the shell-profile `mix`
 -- release once as the baseline, then once per lib-mix feature with that
 -- feature removed from mix-shell's profile, and report the size delta (or
@@ -15,7 +19,7 @@ $features = map(split($m[0].groups[0], ","), fn($f) = trim(replace(trim($f), "\"
 $targets = if len(args()) > 0 then args() else $features end
 
 fn build()
-  $r = run_argv(["cargo", "build", "--release", "-p", "system", "--locked"], {timeout: 3600, max_output: 8000000})
+  $r = run_argv(["cargo", "build", "--release", "-p", "mix", "--locked"], {timeout: 3600, max_output: 8000000})
   if not $r.ok then
     return {ok: false, err: slice(trim($r.stderr), max(0, len(trim($r.stderr)) - 600), len(trim($r.stderr)))}
   end
