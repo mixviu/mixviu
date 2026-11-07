@@ -478,7 +478,7 @@ impl SceneView {
             return;
         }
         let allocated = ui.available_rect_before_wrap();
-        if node.family == "dock" {
+        if node.family == "dock" && node.ports.get("enabled") != Some(&Value::Bool(false)) {
             paint_outline(ui, node, allocated);
         }
         let key = route.map_or_else(
@@ -487,7 +487,7 @@ impl SceneView {
         );
         let response = ui
             .push_id(&key, |ui| {
-                if node.ports.get("enabled") == Some(&Value::Bool(false)) { ui.disable(); }
+                if node.ports.get("enabled") == Some(&Value::Bool(false)) { ui.disable(); if node.family == "dock" { paint_outline(ui,node,allocated); } }
                 if let Some(width) = num(node, "width").or(num(node, "min_width")) {
                     ui.set_width(width);
                 }

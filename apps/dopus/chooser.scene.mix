@@ -7,7 +7,7 @@ citizen: files
 {
  root:{widget:"dock",children:["form","identity-pane","buttons-pane","controls-pane","places-pane","pane"],placements:"= {form:{edge:\"top\",size:0},\"identity-pane\":{edge:\"top\",size:\"content\",panel:true,frame:\"native\",max_fraction:1},\"buttons-pane\":{edge:\"bottom\",size:\"content\",panel:true,frame:\"native\",max_fraction:1},\"controls-pane\":{edge:\"bottom\",size:if $model.form_rows*(($model.__viu_metrics.field_height ?? 28)+($model.__viu_metrics.item_spacing_y ?? 8))+2*($model.__viu_metrics.item_spacing_y ?? 8)<($model.__viu_metrics.height ?? 600)*($model.__viu_metrics.dialog_resize_max_share ?? 0.8)/2 then $model.form_rows*(($model.__viu_metrics.field_height ?? 28)+($model.__viu_metrics.item_spacing_y ?? 8))+2*($model.__viu_metrics.item_spacing_y ?? 8) else ($model.__viu_metrics.height ?? 600)*($model.__viu_metrics.dialog_resize_max_share ?? 0.8)/2 end,exact:true,panel:true,frame:\"native\",max_fraction:1},\"places-pane\":{edge:\"left\",size:170,measure:\"places\",panel:true,frame:\"native\",max_fraction:0.35},pane:{edge:\"fill\",panel:true,frame:\"native\"}}"},
  form:{widget:"control",on_intent:"chooser.intent",definition:{id:"form",kind:"dialog-form",label:"",initial:{open:false,title:"",body:"",field:null,choices:[]},properties:{style:"gold"}}},
- "identity-pane":{enabled:"= $model.values.form.open != true",widget:"column",children:["identity","claim"],gap:"= $model.__viu_metrics.item_spacing_y ?? 8",padding:0},
+ "identity-pane":{widget:"column",children:["identity","claim"],gap:"= $model.__viu_metrics.item_spacing_y ?? 8",padding:0},
  identity:{widget:"control",hidden:"= $model.identity_hidden",definition:{id:"identity",kind:"label",label:"",initial:""}},
  claim:{widget:"control",hidden:"= $model.claim_hidden",definition:{id:"claim",kind:"label",label:"",initial:"",properties:{weak:true}}},
  "buttons-pane":{enabled:"= $model.values.form.open != true",widget:"column",children:["footer"],padding:0},
@@ -18,7 +18,7 @@ citizen: files
  "name-label":{widget:"control",definition:{id:"name-label",kind:"label",label:"",initial:"File name"}},
  name:{widget:"control",on_intent:"chooser.intent",definition:{id:"name",kind:"field",label:"",initial:"",properties:{accessible_name:"File name",fill:true,cancel_on_escape:true}}},
  options:{widget:"control",on_intent:"chooser.intent",hidden:"= $model.options_hidden",definition:{id:"options",kind:"form-fields",label:"",initial:[]}},
- "places-pane":{enabled:"= $model.values.form.open != true",widget:"column",children:["places"],padding:0},
+ "places-pane":{widget:"column",children:["places"],padding:0},
  places:{widget:"control",on_intent:"chooser.intent",definition:{id:"places",kind:"navigation-list",label:"Places",initial:{rows:[]}}},
  pane:{enabled:"= $model.values.form.open != true",clip:false,widget:"dock",children:["pane-flow"],outline:"design.selection.background",outline_width:1,placements:{"pane-flow":{edge:"fill"}}},
  "pane-flow":{clip:false,widget:"column",children:["location-row","files","summary-row"],gap:"= $model.__viu_metrics.item_spacing_y ?? 8",padding:0,padding_top:2},

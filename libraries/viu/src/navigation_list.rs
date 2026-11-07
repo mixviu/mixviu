@@ -36,7 +36,7 @@ pub fn draw(
             toolkit::panel::section_label(ui, label);
         }
         let font = egui::TextStyle::Body.resolve(ui.style());
-        egui::ScrollArea::vertical()
+        ui.add_enabled_ui(value["enabled"] != false, |ui| { egui::ScrollArea::vertical()
             .auto_shrink(false)
             .show(ui, |ui| {
                 for row in value["rows"].as_array().unwrap() {
@@ -71,7 +71,7 @@ pub fn draw(
                         });
                     });
                 }
-            });
+            }); });
     })
     .response
 }

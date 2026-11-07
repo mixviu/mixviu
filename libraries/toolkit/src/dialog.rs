@@ -321,7 +321,12 @@ impl Dialog {
 }
 
 /// The button row, right-aligned and laid out left to right.
-fn button_row(ui: &mut Ui, choices: &[Choice], os: OperatingSystem, buttons: &mut Vec<(usize, egui::Rect)>) -> Option<usize> {
+fn button_row(
+    ui: &mut Ui,
+    choices: &[Choice],
+    os: OperatingSystem,
+    buttons: &mut Vec<(usize, egui::Rect)>,
+) -> Option<usize> {
     let font = crate::fonts::bound(
         ui.ctx(),
         crate::fonts::medium(crate::button::push_size_of(ui.ctx())),
