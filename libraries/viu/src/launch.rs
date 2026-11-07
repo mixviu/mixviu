@@ -124,8 +124,8 @@ mod tests {
         assert_eq!(bundle.manifest.app(), "monitor");
         assert_eq!(bundle.manifest.service, "monitor.test");
         assert!(bundle.program.source.contains("comp-test"));
-        assert_eq!(super::app_id(&bundle), "mixviu.monitor.test");
-        assert!(bundle.program.source.contains("mixviu.monitor.test"));
+        assert_eq!(super::app_id(&bundle), "dev.mixos.monitor");
+        assert!(bundle.program.source.contains("dev.mixos.monitor"));
         assert!(bundle.program.source.contains("peer"));
         assert!(!bundle.program.source.contains("\\\"--service\\\""));
     }
@@ -133,6 +133,8 @@ mod tests {
     fn explicit_window_app_id_survives_service_override() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
         let mut bundle = super::load(&root, &["--service".into(), "term.other".into()]).unwrap();
+        assert_eq!(super::app_id(&bundle), "mixviu.term.other");
+        assert!(bundle.program.source.contains("mixviu.term.other"));
         bundle.manifest.bus_surface = Some(serde_json::json!({"app_id":"example.terminal"}));
         assert_eq!(super::app_id(&bundle), "example.terminal");
         bundle.manifest.service = "term.third".into();
