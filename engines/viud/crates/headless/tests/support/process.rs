@@ -93,11 +93,11 @@ fn spawn_options(
                 .unwrap()
                 .parent()
                 .unwrap()
-                .join("compd")
+                .join("viud")
         });
     assert!(
         binary.is_file(),
-        "build compd with backend-headless before this test: {}",
+        "build viud with backend-headless before this test: {}",
         binary.display()
     );
     let root = std::env::temp_dir().join(format!("compd-headless-{}-{label}", std::process::id()));

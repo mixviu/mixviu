@@ -151,7 +151,7 @@ impl Process {
         let fd = child_socket.as_raw_fd();
         let log = fs::File::create(root.join("compd.log"))?;
         let mut command = Command::new(
-            std::env::var_os("COMPD_WLCS_BINARY").unwrap_or_else(|| "target/debug/compd".into()),
+            std::env::var_os("COMPD_WLCS_BINARY").unwrap_or_else(|| "target/debug/viud".into()),
         );
         command
             .args([

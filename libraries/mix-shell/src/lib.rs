@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The mix shell. The `mix` binary is built by `cli/system`, which runs
-//! [`main`] when started as `mix` (docs/docs/decisions/2026-10-12-one-system-binary.md).
+//! The mix shell. The `mix` engine (`engines/mix`) runs [`main`] with the shell
+//! profile; the `mixd` engine runs it with the service profile.
 
 // Crate-wide CLI output policy. Declared before the modules so every
 // print!/println!/eprintln! in main, meta, the REPL, and shell surface
@@ -67,7 +67,7 @@ use mix::value::Value;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// This component's version, for the system binary's `--personalities`.
+/// This component's version, for `mixd --personalities`.
 pub const COMPONENT_VERSION: &str = VERSION;
 
 /// Which engine features this build of the shell carries. The `mix` engine
@@ -2352,7 +2352,7 @@ fn check_syntax(source: &str, filename: &str) -> i32 {
 /// microseconds before process exit — semantically unchanged.
 const MAIN_STACK_SIZE: usize = 64 * 1024 * 1024;
 
-/// The whole shell program. `cli/system` runs it for the `mix` personality.
+/// The whole shell program, as the `mix` and `mixd` engines run it.
 /// argv as this process should see it. An engine binary that carries the
 /// shell (`mixd run FILE`, `mixd serve FILE`) rewrites its own argv once,
 /// before `main`, through [`main_with_args`]; every reader below goes through

@@ -121,29 +121,6 @@ mod authority_tests {
     }
 }
 
-/// What docked Mix Scenes panels reserve on each output: the scene
-/// host keys its panels by compd's output key (`make model serial`), the
-/// usable area by output name. Empty with no scene host.
-#[cfg(feature = "inproc-ui")]
-fn refresh_scene_reserved(lp: &mut Loop) {
-    use dispatcher::wire::trait_::wire_trait::WireTrait;
-    let mut reserved = std::collections::BTreeMap::new();
-    for output in lp.inner.host_space().state.outputs() {
-        let zones = scene_host::exclusive_zones(&world::state::output_key(output));
-        if zones.is_empty() {
-            continue;
-        }
-        let mut edges = world::comp::usable::Reserved::default();
-        for (edge, px) in zones {
-            edges.add(edge.as_str(), px);
-        }
-        reserved.insert(output.name(), edges);
-    }
-    if reserved != lp.inner.comp.reserved {
-        lp.inner.comp.reserved = reserved;
-    }
-}
-
 /// Reconcile settings-owned panels before frame work, even without a comp Bus
 /// port. Scene activation runs after the port; do not leave windows using the
 /// previous reservation until another dispatch happens to arrive.
@@ -169,38 +146,6 @@ pub(crate) fn reconcile_scene_geometry(lp: &mut Loop) {
 pub(crate) fn refresh_placement_geometry(lp: &mut Loop) {
     refresh_scene_reserved(lp);
     policy_host::control::refresh_usable(lp);
-}
-
-/// The scene host's surfaces and keyboard focus as comp.props rows: they stand
-/// in for Quoin's layer surfaces, so `surfaces.*`, `stack` and
-/// `focus.keyboard` must carry them too. Positions are made global from
-/// each output's logical origin; outputs are keyed as comp.props keys them.
-#[cfg(feature = "inproc-ui")]
-fn refresh_scene_surfaces(lp: &mut Loop) {
-    use dispatcher::wire::trait_::wire_trait::WireTrait;
-    let mut inputs = Vec::new();
-    let space = &lp.inner.host_space().state;
-    for output in space.outputs() {
-        let Some(geometry) = space.output_geometry(output) else {
-            continue;
-        };
-        let (ox, oy) = (geometry.loc.x as f32, geometry.loc.y as f32);
-        for surface in scene_host::surfaces(&world::state::output_key(output)) {
-            inputs.push(world::comp::scenes::SceneInput {
-                key: surface.id,
-                output: comp_model::snapshot::output_key(&output.name()),
-                x: ox + surface.x,
-                y: oy + surface.y,
-                width: surface.width,
-                height: surface.height,
-                stratum: surface.stratum,
-                interactivity: surface.interactivity,
-                exclusive_zone: surface.exclusive_zone.max(0.0).ceil() as i32,
-            });
-        }
-    }
-    let focus = scene_host::focused_scene(lp);
-    lp.inner.comp.set_scene_surfaces(inputs, focus.as_deref());
 }
 
 /// The service name: `--bus-service`, else the default (`comp` on KMS,
@@ -414,7 +359,6 @@ impl Bus {
         };
         let noded_url = identity.noded_url.clone();
         let (wiring, starter) = comp_service::prepare(identity, waker)?;
-        #[cfg(not(feature = "inproc-ui"))]
         comp_service::chrome::install_emitters(wiring.fires.clone());
         let pending = Rc::new(Cell::new(false));
         let flag = Rc::clone(&pending);
@@ -487,7 +431,6 @@ impl Bus {
         refresh_scene_reserved(lp);
         // ... and its surfaces and keyboard focus, for comp.props.
         refresh_scene_surfaces(lp);
-        #[cfg(not(feature = "inproc-ui"))]
         {
             use dispatcher::wire::trait_::wire_trait::WireTrait;
             comp_service::chrome::targets(
@@ -560,7 +503,6 @@ impl Bus {
         // The renderer's occlusion decisions since the last pass, as row
         // changes for the edge pass below (F6).
         world::comp::occlusion::service(lp);
-        #[cfg(not(feature = "inproc-ui"))]
         {
             let hover = policy_host::chrome::hover(lp);
             if hover != self.chrome_hover {
@@ -1159,7 +1101,6 @@ impl CompEngine for Engine<'_> {
 
     // Panel holders are the only consumer of the live set.
     fn services_live(&mut self, live: &BTreeSet<String>) {
-        #[cfg(not(feature = "inproc-ui"))]
         if decor::window::menu_services(live.clone()) {
             self.lp
                 .state
@@ -1189,9 +1130,7 @@ impl CompEngine for Engine<'_> {
     }
 }
 
-#[cfg(not(feature = "inproc-ui"))]
 fn refresh_scene_reserved(_lp: &mut Loop) {}
-#[cfg(not(feature = "inproc-ui"))]
 fn refresh_scene_surfaces(lp: &mut Loop) {
     lp.inner.comp.set_scene_surfaces(Vec::new(), None);
 }

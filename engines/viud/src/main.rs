@@ -6,9 +6,6 @@ extern crate model;
 mod cli;
 mod comp;
 mod event_loop;
-#[cfg(feature = "inproc-ui")]
-mod scenes;
-#[cfg(not(feature = "inproc-ui"))]
 #[path = "scenes_none.rs"]
 mod scenes;
 mod shutdown;
@@ -39,12 +36,8 @@ static WORLD_DIVERGENCE_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(not(feature = "inproc-ui"))]
     comp_service::chrome::enable();
-    #[cfg(not(feature = "inproc-ui"))]
     world::comp::corners::enable_panel_input();
-    #[cfg(feature = "inproc-ui")]
-    overlays::register();
     // Answer `--version`/`-V` (and `--version --json`) as
     // `compd <semver> (<sha12>, built <ts>)` BEFORE any side effect, then exit 0.
     buildinfo::exit_on_version!();
@@ -539,15 +532,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // SIGTERM / SIGINT -> stop the loop, so the teardown below actually runs. Registered
     // late, with everything it will tear down already wired.
     shutdown::register(&mut event_loop);
-
-    // Widget and renderer worker notifications must restart an idle output as
-    // well as wake calloop. Independent of the Bus and GPU publish wake paths.
-    #[cfg(feature = "inproc-ui")]
-    ui::engine::wake::register(&event_loop.handle(), |state: &mut world::state::Loop| {
-        state
-            .state
-            .schedule_redraw(dispatcher::state::RedrawReason::Ui);
-    })?;
 
     // The native `comp` Bus service. Its worker dials noded on
     // its own thread and retries with backoff, so a missing broker never holds up

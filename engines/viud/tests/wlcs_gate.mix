@@ -2,9 +2,9 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- wlcs v1.8.1: isolate each case so a protocol abort cannot hide later tests.
 -- Run from the repository root. This gate never builds or installs anything.
--- mix services/compd/tests/wlcs_gate.mix --wlcs /build/wlcs/build/wlcs
---   --shim /build/mixos/target/debug/libcompd_wlcs.so
---   --compd /build/mixos/target/debug/compd --output-dir /build/wlcs/run-1
+-- mix engines/viud/tests/wlcs_gate.mix --wlcs /build/wlcs/build/wlcs
+--   --shim /build/mixviu/target/debug/libcompd_wlcs.so
+--   --compd /build/mixviu/target/debug/viud --output-dir /build/wlcs/run-1
 -- First observation only: --record (refuses to overwrite an expectation file).
 $g = getopt(args(), {
   wlcs: {arg: true}, shim: {arg: true}, compd: {arg: true},

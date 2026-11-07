@@ -946,7 +946,7 @@ impl Stage {
         let g = gate_read.as_raw_fd();
         let e = error_write.as_raw_fd();
         let mut command = Command::new(executable);
-        // argv[0] "mix": the system binary picks its personality from argv[0].
+        // argv[0] "mix": an engine that routes by argv[0] (mixd) runs the shell.
         command
             .arg0("mix")
             .args([STAGE_ARG, &g.to_string(), &e.to_string(), program])
@@ -1098,8 +1098,8 @@ pub fn stage_entry() {
     drop(gate);
     let mut command = Command::new(program);
     // A self-resolved `mix` stage arrives as `/proc/self/exe` (see
-    // `executable`); give it argv[0] "mix" so the system binary runs it as
-    // the shell. A string compare only: this runs between the gate and exec,
+    // `executable`); give it argv[0] "mix" so an engine that routes by
+    // argv[0] (mixd) runs it as the shell. A string compare only: this runs between the gate and exec,
     // where a ^Z can land.
     if program == "/proc/self/exe" {
         command.arg0("mix");

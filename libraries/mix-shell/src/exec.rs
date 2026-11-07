@@ -1894,8 +1894,8 @@ fn command_for(program: &str) -> Command {
     if program == "mix"
         && let Ok(exe) = std::env::current_exe()
     {
-        // argv[0] "mix": the system binary picks its personality from
-        // argv[0], and current_exe names its real file.
+        // argv[0] "mix": an engine that routes by argv[0] (mixd) runs the
+        // shell, and current_exe names its real file.
         use std::os::unix::process::CommandExt;
         let mut command = Command::new(exe);
         command.arg0("mix");

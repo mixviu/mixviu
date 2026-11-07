@@ -2,7 +2,7 @@
 
 #[test]
 fn backend_probe_exits_before_config_or_display_initialisation() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_compd"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_viud"))
         .arg("--backends")
         .env("COMPOSITOR_ENVIRONMENT", "invalid configuration")
         .env("WAYLAND_DISPLAY", "missing-probe-display")

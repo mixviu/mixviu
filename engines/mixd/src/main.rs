@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! `mixd`, the service engine (lab). It carries the Mix interpreter built with
-//! the service profile and, later, the headless personalities as argv[0]
-//! symlinks, the way MixOS `cli/system` did, but without the shell
-//! personality: `mix` is its own engine.
+//! the service profile and the headless personalities as argv[0] symlinks.
+//! It has no shell personality: `mix` is its own engine.
 //!
 //! - `mixd run FILE [ARGS]`: run a script under the service profile.
 //! - `mixd serve FILE [ARGS]`: run a script as a Bus citizen (`--serve`).
