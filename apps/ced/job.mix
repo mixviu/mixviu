@@ -1,7 +1,7 @@
 -- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
-$mail=require("mail.mix")
+$ced_mail=require("mail.mix")
 $macros=require("../../libraries/viu/mix/macro-policy.mix");$app_call=require("../../libraries/viu/mix/app-call.mix")
 fn load_session()
   $dirs=viu_app_dirs("ced");$path=if $dirs!=nil then path_join($dirs.state,"session.json") else nil end
@@ -36,7 +36,7 @@ fn open_recovery($a)
   end
   if $a.mail!=nil then
     if $a.existing_document!=nil then
-      send "edit" "edit.open" body={text:$mail.document_text($a.existing_document,8388608),language:"markdown",origin:"human:ced"} timeout=30
+      send "edit" "edit.open" body={text:$ced_mail.document_text($a.existing_document,8388608),language:"markdown",origin:"human:ced"} timeout=30
       if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
       return $reply
     end
@@ -63,11 +63,11 @@ on job.run
   elif $job.kind=="caret" then send "edit" "edit.select" body=$a timeout=5;reply($rc,json_encode($reply));return
   elif $job.kind=="lex" then $v=viu_document("lex",$a.document,{});reply(0,"{}");return
   elif $job.kind=="preview" then $v=viu_document("preview",$a.document,{});reply(0,json_encode($v));return
-  elif $job.kind=="classify" then reply(0,json_encode($mail.classify_document($a.document)));return
+  elif $job.kind=="classify" then reply(0,json_encode($ced_mail.classify_document($a.document)));return
   elif $job.kind=="mail-hash" then
     $state=viu_document("state",$a.document,{})
-    $text=$mail.document_text($a.document,8388608)
-    reply(0,json_encode({hash:viu_digest("blake3",$mail.canonical_body($text)),view_gen:$state.view_gen}));return
+    $text=$ced_mail.document_text($a.document,8388608)
+    reply(0,json_encode({hash:viu_digest("blake3",$ced_mail.canonical_body($text)),view_gen:$state.view_gen}));return
   elif $job.kind=="mail-seed" then
     send "edit" "edit.open" body={text:$a.body,language:"markdown",origin:"human:ced"} timeout=30
     if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
@@ -75,7 +75,7 @@ on job.run
     send "edit" "edit.close" body={buffer:$a.buffer} timeout=5
   elif $job.kind=="mail-save" then
     try
-      $text=viu_maildoc("write",$mail.header_document($a.headers,$mail.document_text($a.document,8388608)))
+      $text=viu_maildoc("write",$ced_mail.header_document($a.headers,$ced_mail.document_text($a.document,8388608)))
     catch $message
       reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:$message,reason:nil}));return
     end
