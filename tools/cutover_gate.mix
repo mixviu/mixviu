@@ -8,7 +8,8 @@
 --   fmt:  run cargo fmt and print the diff to apply locally, then restore.
 --   lint DIR...: build mix and lint every tracked .mix file under DIR.
 --   mixtest FILE...: run Mix test scripts with this tree's debug mix.
---   bundle: build a debug mix and pack apps.tar to /tmp as a light check.
+--   bundle [STORE]: build a debug mix and pack apps.tar to /tmp as a light
+--         check, with STORE as the asset store (rebuilt from the pins).
 --   builtins: build mix, regenerate docs/mix/builtins.md, print the diff.
 --   lock: re-resolve the workspace packages only and print the Cargo.lock
 --         diff, then restore the tree (apply the diff locally).
@@ -25,9 +26,9 @@ fn gate_step($argv, $jobs)
   return $r
 end
 
--- The pinned asset store: a staged copy on the CBC workers, else the gold install.
+-- The asset store apps_bundle.mix rebuilds from the pins when anything is missing.
 fn asset_store()
-  return if is_dir("/build/mixviu-assets/assets") then "/build/mixviu-assets" else "/opt/mixos/share" end
+  return if is_dir("/build") then "/build/mixviu-assets" else "/tmp/mixviu-assets" end
 end
 
 if $mode == "lock" then
@@ -59,7 +60,7 @@ if $mode == "bundle" then
   -- Light check of the apps.tar step with a debug mix; prints the summary.
   $b = gate_step(["cargo", "build", "--locked", "-p", "mix"], "6")
   if not $b.ok then exit(1) end
-  $r = gate_step(["target/debug/mix", "tools/apps_bundle.mix", "/tmp/cutover-apps-check.tar", "--mix", "target/debug/mix", "--assets", asset_store()], "6")
+  $r = gate_step(["target/debug/mix", "tools/apps_bundle.mix", "/tmp/cutover-apps-check.tar", "--mix", "target/debug/mix", "--assets", args()[1] ?? asset_store()], "6")
   exit(if $r.ok then 0 else 1 end)
 end
 if $mode == "mixtest" then
