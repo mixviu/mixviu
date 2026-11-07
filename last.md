@@ -67,18 +67,24 @@ word in a lab usage line (reworded). Existing test names moved to
 (`ADMIT_DELAY_MS`, `CLAIM_DELAY_MS`, `RESERVE_HOLD_MS`, `RESULT_TORN`) are
 still read by runtime code without a test gate: the process tests drive the
 built binary, so a cfg(test) gate would remove them; needs a decision.
-`etc/env.conf.mix`: 133 names, loads with load_data, matches every
+Engine settings are all MIX_<ENGINE> names (Mark, Fable rule 5): the
+former VIUD settings take the viud engine word (MIX_VIUD_XWAYLAND), their
+test-only ones the test word first (MIX_TEST_VIUD_RENDER_NODE), and likewise
+viu (MIX_VIU_SERVICE, VIU_BIN -> MIX_VIU_EXE), noded (MIX_NODED_SERVICE),
+dlnad, hostd, indexd and maild. Labels and error codes that only share a
+spelling (VIUD_READY, VIUD_PRESENTATION_PROBE) are not variables and stay.
+`etc/env.conf.mix`: 180 names, loads with load_data, matches every
 `MIX_[A-Z0-9_]+` token outside vendor/, provenance/ and Cargo.lock (a few
 entries are Rust constants or a file name sharing the spelling; said so).
 
-Shell versus product directories: the Mix shell keeps its own files in
-`$XDG_STATE_HOME/mix` (`~/.local/state/mix`: history, stats). It has no files
-in `~/.config/mix` or `$XDG_RUNTIME_DIR/mix`. viud's own files now sit in its
-owner subdirectory (`~/.config/mix/viud`, `~/.local/state/mix/viud`,
-`~/.local/share/mix/viud`, `$XDG_RUNTIME_DIR/mix/viud`). NOT yet done (needs
-its own change): moving the other owners' top-level files under
-`<dir>/mix/<owner>/` (config::store `<service>.conf.mix`, scenes, macros,
-apps data); `node.conf.mix` and the Bus socket are shared system files.
+Owner subdirectories (Mark): every daemon, app and the viu runtime keeps its
+files in `<dir>/mix/<owner>/` (one commit per owner; table below). The Mix
+shell's own files stay at the top of the user tree (`~/.local/state/mix`:
+history, stats). The top of the system tree holds only shared system
+configuration (`node.conf.mix`, `theme.conf.mix`, `mesh.conf.mix`,
+`session/<vt>.env`, `desk.env`, `/run/mix/mode`, `/run/mix/session/<vt>/`)
+and the Bus socket, which already sits in noded's own `/run/mix/noded/`.
+Logs: `~/.local/log/mix/<owner>/`, system tier `/var/log/mix/<owner>/`.
 
 `tools/command_registry.mix` cannot run on this branch or on the base: it
 requires `tools/lib/command_registry_source.mix`, which was never imported.
@@ -119,8 +125,38 @@ citizen, logging, buildinfo):
 | `MIXOS_EDIT_RECOVERY(_DIR)`, `MIXOS_INDEXD_SEARCH`, `MIXOS_WEBD_SESSION_KEY_PATH`, `MIXOS_SPEC_DIR`, `MIXOS_SPEC_RELEASE_DIR`, `MIXOS_SPEC_RELEASE_SHA256`, `MIXOS_NODED_EXPECTED_SERVER_PID` | `MIX_EDITD_RECOVERY(_DIR)`, `MIX_INDEXD_SEARCH`, `MIX_WEBD_SESSION_KEY_PATH`, `MIX_NODED_SPEC_DIR`, `MIX_NODED_SPEC_RELEASE_DIR`, `MIX_NODED_SPEC_RELEASE_SHA256`, `MIX_NODED_EXPECTED_SERVER_PID` | no |
 | `MIXOS_MACRO_{APP,ID,PATH,TARGET,TIER}`, `MIXOS_MIX` | `MIX_MACRO_*`, `MIX_EXE` | no |
 | `MIXOS_BIN`, `MIXOS_SRC`, `MIXOS_TERM_BIN`, `MIXOS_AGENT_CLI_MIX`, `MIXOS_MAN_SOURCE`, `MIXOS_MAN_URL` | `MIX_BIN`, `MIX_SRC`, `MIX_TERM_EXE`, `MIX_AGENT_CLI_EXE`, `MIX_MAN_SOURCE`, `MIX_MAN_URL` | no |
-| `COMPD_*` (`COMPD_XWAYLAND`, `COMPD_FRAME_TRACE*`, `COMPD_KEYMAPS`, `COMPD_CAPTURE_*`, ...) | `VIUD_*` | no |
+| `COMPD_*` runtime (`COMPD_XWAYLAND`, `COMPD_FRAME_TRACE*`, `COMPD_KEYMAPS`, `COMPD_CAPTURE_*`, `COMPD_TEARING`, ...) | `MIX_VIUD_XWAYLAND`, `MIX_VIUD_FRAME_TRACE`, ... (viud engine word) | no |
+| `COMPD_*` test-only (`COMPD_TEST_RENDER_NODE`, `COMPD_TEST_BINARY`, `COMPD_WLCS_*`, `COMPD_NATIVE_TEST_BINARY`, ...) | `MIX_TEST_VIUD_RENDER_NODE`, `MIX_TEST_VIUD_EXE`, ... (EXE for binaries) | no |
+| `VIU_SERVICE`, `VIU_BIN`, `VIU_COMP_SERVICE`, `NODED_SERVICE`, `DLNAD_CONF`, `DLNAD_STATE`, `HOSTD_SOCKET` | `MIX_VIU_SERVICE`, `MIX_VIU_EXE`, `MIX_VIU_COMP_SERVICE`, `MIX_NODED_SERVICE`, `MIX_DLNAD_CONF`, `MIX_DLNAD_STATE`, `MIX_HOSTD_SOCKET` | no |
 | build env `MIXOS_GIT_SHA(_FULL)`, `MIXOS_GIT_DIRTY`, `MIXOS_BUILD_TIME`, `MIXOS_BUILDINFO_MARKER` | `MIX_*` | compile time only |
+
+Data paths by owner (the list desk4 moves data by; `<etc>`, `<var>`, `<run>`
+are the tier roots: `/etc/mix`, `/var/lib/mix`, `/run/mix` for the system
+tier, `~/.config/mix`, `~/.local/share/mix`, `$XDG_RUNTIME_DIR/mix` for a
+user):
+
+| Owner | Old | New | Gold reads |
+|---|---|---|---|
+| maild | `<var>/jmap/{mail.db,blobs,mds,spamlite}`, unit `StateDirectory=... mix/jmap` | `<var>/maild/jmap/...`, `StateDirectory=mix/maild` | no |
+| maild | `<etc>/jmap.conf.mix` | `<etc>/maild/jmap.conf.mix` | no |
+| webd | `<var>/web.db` (default without --db-path) | `<var>/webd/web.db` | no |
+| editd | `<var>/edit/recovery`, `~/.local/state/mix/edit/recovery` | `.../editd/recovery` | no |
+| settingsd | `<etc>/settings/<profile>` | `<etc>/settingsd/<profile>` | no (term/portald use the Bus) |
+| viud | `<etc>/comp/xwayland-enabled.<socket>` | `<etc>/viud/xwayland-enabled.<socket>` | no |
+| viud | `~/.config/compd/*.json`, `~/.local/state/compd`, `~/.local/share/compd`, `$XDG_RUNTIME_DIR/compd/<socket>.xwayland.env` | `~/.config/mix/viud`, `~/.local/state/mix/viud`, `~/.local/share/mix/viud`, `$XDG_RUNTIME_DIR/mix/viud` | no |
+| every config::store user | `<etc>/<service>.conf.mix` | `<etc>/<service>/<service>.conf.mix` | lib only at gold (no caller in term/portald/inputd) |
+| logging, noded | `<var>/log/<identity>.log`, `<var>/log/bus.log` | `~/.local/log/mix/<owner>/` or `/var/log/mix/<owner>/` (noded: `noded/bus.log`) | term, portald, inputd write their own logs under `/var/lib/mixos/log` (gold libs/logging) |
+| apps | `~/.local/state/mix/apps/<app>`, `<var>/apps/<app>` | `~/.local/state/mix/<app>`, `<var>/<app>` | term keeps its gold home (`~/.local/state/mixos/apps/term`) |
+| indexd | `~/.config/mix/indexd.conf.mix` | `~/.config/mix/indexd/config.conf.mix` | no |
+| hostd | `/run/hostd/hostd.sock` | `/run/mix/hostd/hostd.sock` (unit, hostd, mixtrayd, Quoin/scenes clients) | no |
+| viu | `$XDG_RUNTIME_DIR/viu-captures` | `$XDG_RUNTIME_DIR/mix/viu/captures` | no |
+| inputd keymap | gold inputd writes `~/.config/mixos/inputd/keymap.json` | viud reads `~/.config/mix/inputd/keymap.json` | yes: gold inputd is the writer; copy or point it at the new file |
+
+Already per owner, only the prefix changed: noded (`<etc>/noded`, `<var>/noded`,
+`<run>/noded/bus.sock`), maild (`<var>/maild/{dkim,tls,rules}`,
+`<etc>/maild/config.conf.mix`), webd (`<var>/webd/{session.key,acme}`), dnsd,
+blobd, dlnad and indexd system paths, scenes (`~/.config/mix/scenes`,
+`~/.local/share/mix/scenes`), macros (`~/.config/mix/macros`).
 
 Directories (gold term, portald and inputd all resolve these through
 libs/paths and libs/config; portald's unit reads the session env file):
@@ -175,28 +211,39 @@ libs/paths and libs/config; portald's unit reads the session env file):
    include paths and the viud README naming gold compd.
 
 Other decisions for Mark:
-- Fable rule 5 suggests engine runtime variables be `MIX_VIUD_*`; Mark's compd
-  instruction named them `VIUD_*`. Left as `VIUD_*`.
-- User-visible app names now say MixViu (e.g. "MixViu Editor", "About MixViu
-  Editor") in both the Mix apps and their contract JSON, so they differ from
-  the gold apps' "MixOS" text in parity captures.
+- User-visible app names say MixViu ("MixViu Editor"): a Mark-mandated
+  difference from the gold apps.
+- Category 2 wire names stay until one deliberate PR after desk4's gold
+  binaries are gone (Mark).
+- Mix-script tests and parity gates that run under the host's gold mix
+  (`/opt/mixos/bin/mix`) now see MIX_* names and the `mix_path` builtin, which
+  gold mix does not know; they need this tree's mix (indexd's Bus test now
+  prefers `target/debug/mix`; others, such as dlnad's limits_test, still
+  default to gold).
+- Lab scripts (tools/bulk_native, p2_rehearsal, p2 furniture) still set the
+  old VIU_COMP_SERVICE / COMPD_NATIVE_TEST_BINARY names.
 - The furniture comparison (`COMPD_INPROC_TEST_BINARY`) still names the gold
   oracle; lab scripts pass the old `COMPD_NATIVE_TEST_BINARY`, now
   `VIUD_NATIVE_TEST_BINARY` in the test.
 
 ## Gate status
 
-No full gate yet on the renamed tree at head: the coordinator holds cbc2/cbc3
-for the parity jobs and will call one full cutover gate on the final
-integrated tree. Latest full run, cutover-gate-2d7e1c7 (cbc2, before the last
-rustfmt and indexd commits): 10,514 passed, 3 failed, 90 ignored; clippy
-clean; viud egui lines 0; release sizes mix 20,518,680, mixd 65,895,968,
-viu 56,745,544, viud 32,489,056 (viu grew with the merged Workshop/Backdrop
-work). Failures: indexd native_contract (the Bus script got MIX_* env but
-ran the host gold mix; fixed in c027612, passes on cachyos); the two
-workshop_frame tests, which fail identically at lab head 9bcfeee (light job
-20261107-171825-83bb29fb), so they come with the merge. rustfmt is clean at
-c027612 (cachyos 20261107-173952-9448392a). The test count rose from 10,484
-because the merges added the six-app work.
+No full gate on cbc2/cbc3 for this round (Mark: light worker only until the
+tree is final; parity has priority). Last full run, cutover-gate-2d7e1c7:
+10,514 passed, 3 failed, 90 ignored; one failure since fixed (indexd), two
+inherited from lab 9bcfeee (workshop_frame; the lab round is fixing them).
 
-Branch cutover/four-engines; head is this last.md commit (source c027612); gate: full run pending (last full 2d7e1c7: 10,514/3/90, 2 failures inherited from lab 9bcfeee, 1 fixed); CBC cutover-gate-5d1ec61, cutover-gate-43de632, cutover-gate-2d7e1c7, cutover-removed-4755e9e, 20261107-111516-437fd7b1.
+Light checks on cachyos at 34a8d52 (one or two crates per job):
+- config 61 passed, 1 failed; editd + daemon 144/0/2; settingsd + hostd 165/0/6;
+  maild 1,651/0/4; webd 490/0/0; noded + mixtrayd 277/0/2;
+  policy-host + comp-model 106/0/0; lib-viu 105 passed, 3 failed;
+  viu + viud 118/0/6; clippy lib-viu + viud clean.
+- The config and lib-viu failures (non-UTF-8 names, links) are the cachyos
+  filesystem: the same config and viu file_data tests fail at base 4755e9e
+  on cachyos (20261107-185148-df07c276, 20261107-185233-ce550d01) and pass on
+  cbc2 in every full gate. raster_decode's folder test (merged lab code) is
+  the same kind.
+- At 7fddb05: rustfmt clean (20261107-185355-f8c3d8cd); logging + indexd
+  green (20261107-185418-c5fe3256).
+
+Branch cutover/four-engines; head is this last.md commit (source 7fddb05); gate: full run held for parity, light checks green apart from cachyos filesystem cases; CBC last full cutover-gate-2d7e1c7, light 20261107-185355-f8c3d8cd, 20261107-185418-c5fe3256, earlier cutover-gate-5d1ec61, cutover-gate-43de632, cutover-removed-4755e9e, 20261107-111516-437fd7b1.
