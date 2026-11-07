@@ -218,3 +218,10 @@ Fractional layouts also need inspection at their actual width. Use the row's
 final rectangle inside the native scroll area when checking metadata placement;
 the parent's available width can differ after pixel rounding. A one-pixel text
 shift is a layout defect when it comes from that measurement error.
+
+Match the first data-bearing layout too. A resizable table can retain column
+widths from its first draw, so equal final dimensions and rows are insufficient.
+For Email, both lanes start without accounts, receive the same window placement,
+then receive the same saved account. Preserve the password/readiness requests,
+all assertions and deadlines. Keep the original unmatched captures alongside
+the corrected pair; do not resize columns manually to manufacture agreement.
