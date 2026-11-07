@@ -75,6 +75,7 @@ struct Host {
     scene_source: String,
     loaded: bool,
     active_scene: String,
+    owner_close_pending: bool,
     model: Value,
     output: Option<String>,
     outputs: BTreeMap<String, Value>,
@@ -295,9 +296,13 @@ impl eframe::App for Host {
             && ctx.input(|i| i.viewport().close_requested())
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
+            self.owner_close_pending=true;
         }
         self.pump(ctx);
+        if self.owner_close_pending && !toolkit::drive::pending(ctx) {
+            self.owner_close_pending=false;
+            self.dispatch("viu.frame.close".into(),json!({}),BTreeMap::new(),None);
+        }
     }
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
         if self.windows.raw_input(raw) {
@@ -942,7 +947,8 @@ impl Host {
                     .geometry
                     .extend(self.window_frame.geometry.clone());
                 if self.window_frame.close_requested {
-                    self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
+                    self.owner_close_pending=true;
+                    ui.ctx().request_repaint();
                 }
                 if self.model["window_close"] == true {
                     self.facilities.finish(ui.ctx());
@@ -1129,6 +1135,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         scene_source: bundle.scene,
         loaded: false,
         active_scene: String::new(),
+        owner_close_pending: false,
         model: json!({}),
         output: None,
         outputs: BTreeMap::new(),

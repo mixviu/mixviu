@@ -78,6 +78,7 @@ fn send_request()
 end
 include "wire.mix"
 include "surface.mix"
+include "navigation.mix"
 include "selection.mix"
 include "reader-files.mix"
 include "previews.mix"

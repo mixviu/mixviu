@@ -899,6 +899,22 @@ fn draw_outline(
 ) -> egui::Response {
     let id = &widget.id;
     let rows = value["rows"].as_array().unwrap();
+    let keyboard=widget.properties["keyboard"]==true;
+    let focus_id=Id::unique(id);
+    if keyboard {
+        let area=ui.available_rect_before_wrap();
+        let back=ui.interact(area,focus_id,Sense::focusable_noninteractive());
+        if ui.input(|i|i.pointer.primary_pressed()) && ui.rect_contains_pointer(area){back.request_focus();}
+        if ui.memory(|m|m.has_focus(focus_id)) {
+            ui.memory_mut(|m|m.set_focus_lock_filter(focus_id,egui::EventFilter{tab:true,horizontal_arrows:true,vertical_arrows:true,..Default::default()}));
+            for key in [egui::Key::ArrowUp,egui::Key::ArrowDown,egui::Key::ArrowLeft,egui::Key::ArrowRight] {
+                if ui.input_mut(|i|i.consume_key(egui::Modifiers::NONE,key)){emit(events,id,"navigate",json!({"key":format!("{key:?}")}));}
+            }
+            if ui.input_mut(|i|i.consume_key(egui::Modifiers::NONE,egui::Key::Enter)) {
+                if let Some(row)=rows.iter().find(|r|focused(value,r)).or_else(||rows.iter().find(|r|selected(value,r))).or(rows.first()) {emit(events,id,"select",json!({"key":row["key"]}));}
+            }
+        }
+    }
     ui.scope(|ui| {
         egui::ScrollArea::vertical()
             .id_salt((id, "outline"))
@@ -928,6 +944,7 @@ fn draw_outline(
                                     );
                                     geometry.insert(format!("{id}.expand.{key}"), r.rect);
                                     if r.clicked() {
+                                        if keyboard {ui.memory_mut(|m|m.request_focus(focus_id));}
                                         emit(events, id, "expand", json!({"key":key}));
                                     }
                                 } else {
@@ -957,6 +974,7 @@ fn draw_outline(
                                 let r = toolkit::selectable(ui, selected(value, row), label);
                                 geometry.insert(format!("{id}.key.{key}"), r.rect);
                                 if r.clicked() {
+                                    if keyboard {ui.memory_mut(|m|m.request_focus(focus_id));}
                                     emit(events, id, "select", json!({"key":key}));
                                 }
                             },
@@ -969,7 +987,7 @@ fn draw_outline(
                             },
                         );
                     });
-                    if focused(value, row) {
+                    if focused(value, row) && (!keyboard || ui.memory(|m|m.has_focus(focus_id))) {
                         ui.painter().rect_stroke(
                             shown.response.rect,
                             ui.visuals().widgets.inactive.corner_radius,
