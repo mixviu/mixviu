@@ -287,6 +287,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             pn("max_width", false, None),
             pn("min_height", false, None),
             pn("max_height", false, None),
+            pn("reserve_height", false, None),
         ]);
         ports
             .iter_mut()

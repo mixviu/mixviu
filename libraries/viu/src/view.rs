@@ -474,6 +474,9 @@ impl SceneView {
                 }
                 if let Some(height) = num(node, "max_height") { ui.set_max_height(height); }
                 if let Some(height) = num(node, "min_height") { ui.set_min_height(height); }
+                if let Some(reserve) = num(node, "reserve_height") {
+                    ui.set_height((ui.available_height()-reserve).max(num(node,"min_height").unwrap_or(0.)));
+                }
                 if node.family!="control" {
                     ui.spacing_mut().item_spacing=if node.ports.get("native_spacing")==Some(&Value::Bool(true)){ui.ctx().global_style().spacing.item_spacing}else{Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0))};
                 }
