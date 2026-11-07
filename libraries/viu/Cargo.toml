@@ -7,6 +7,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+rio-vt = { git = "https://github.com/raphamorim/rio", rev = "932c1a7d9e07b4db5924f7a0dd689e823c3a1442", default-features = false, features = ["pty"] }
+paths = { path = "../paths" }
+fontdb = "=0.23.0"
+swash = "0.2.10"
+assets.workspace = true
 ed25519-dalek = { workspace = true, features = ["zeroize"] }
 zeroize = "1"
 teletypewriter = { git = "https://github.com/raphamorim/rio", rev = "932c1a7d9e07b4db5924f7a0dd689e823c3a1442", default-features = false }

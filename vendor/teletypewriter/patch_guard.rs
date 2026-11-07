@@ -20,6 +20,7 @@ fn verify(term: &str, vendor: &str, workspace: &str, source: &str) -> Result<(),
     let revision = record["upstream_rev"].as_str().ok_or(MANIFEST_SHAPE)?;
     for (manifest, dependency) in [
         (term, "teletypewriter ="),
+        (term, "rio-vt ="),
         (vendor, "corcovado ="),
     ] {
         let line = manifest
