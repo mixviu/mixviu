@@ -10,14 +10,14 @@ fn registry($s)
     if $s.dialog!=nil then $a.enabled=false end
     if starts_with($a.id,"view.theme.") or starts_with($a.id,"view.mode") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.") then $a.enabled=true end
     if $a.id=="help.macros" then $a.enabled=$s.macros_open or $s.dialog==nil end
-    if $a.id=="mail.compose" then $a.enabled=$s.composable==true and $s.dialog==nil end
+    if $a.id=="mail.compose" then $a.enabled=$s.composable==true and $s.dialog==nil and $s.form==nil end
     if $a.id=="compose.new" then $a.enabled=($s.accounts ?? 0)>0 and $s.dialog==nil end
-    if contains(["mail.flag","mail.mark_unread"],$a.id) then $a.enabled=$s.targeted==true and $s.dialog==nil end
+    if contains(["mail.flag","mail.mark_unread"],$a.id) then $a.enabled=$s.targeted==true and $s.dialog==nil and $s.form==nil end
     if contains(["mail.delete","mail.move","mail.junk","mail.not_junk"],$a.id) then $a.enabled=$s.targeted==true and $s.dialog==nil and $s.form==nil end
     if $a.id=="calendar.new_event" then $a.enabled=$s.connected and ($s.calendars ?? 0)>0 and $s.dialog==nil and $s.form==nil end
     if $a.id=="contacts.new_contact" then $a.enabled=$s.connected and ($s.books ?? 0)>0 and $s.dialog==nil and $s.form==nil end
-    if starts_with($a.id,"mail.reply") or $a.id=="mail.forward" then $a.enabled=$s.reading==true and $s.dialog==nil end
-    if $a.id=="mail.send_as_new" then $a.enabled=$s.reading==true and $s.dialog==nil end
+    if starts_with($a.id,"mail.reply") or $a.id=="mail.forward" then $a.enabled=$s.reading==true and $s.dialog==nil and $s.form==nil end
+    if $a.id=="mail.send_as_new" then $a.enabled=$s.reading==true and $s.dialog==nil and $s.form==nil end
     if $a.id=="mail.flag" then $a.label=if $s.all_flagged==true then "Remove Star" else "Star" end end
     if $a.id=="mail.mark_unread" then $a.label=if $s.some_unread==true then "Mark as Read" else "Mark as Unread" end end
     if $a.id=="mail.junk" then $a.enabled=$a.enabled and $s.in_junk!=true and $s.has_junk==true;$a.label=if $s.has_junk==false then "Junk (this account has no Junk folder)" else "Junk" end end

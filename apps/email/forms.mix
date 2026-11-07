@@ -73,16 +73,17 @@ fn form_model($m)
   $v={open:true,instance:$f.instance,title:"",body:"",choices:[{id:"save",label:"Save",enabled:not $f.busy,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}],fields:[],error:$f.error}
   if $f.kind=="event" then
     $v.title="New Event"
-    for $r in [["title","Title",""],["start","Start","2026-10-17T09:00:00+10:00"],["end","End","2026-10-17T09:00:00+10:00"],["location","Location","optional"]] $v.fields=push($v.fields,{id:$r[0],label:$r[1],hint:$r[2],value:$f[$r[0]],enabled:not $f.busy}) end
+    for $r in [["title","Title",""],["start","Starts","2026-10-17T09:00:00+10:00"],["end","Ends","2026-10-17T09:00:00+10:00"],["location","Location","optional"]] $v.fields=push($v.fields,{id:$r[0],label:$r[1],hint:$r[2],value:$f[$r[0]],enabled:not $f.busy}) end
   elif $f.kind=="contact" then
     $v.title="New Contact"
-    for $r in [["name","Name",""],["email","Email","optional"],["phone","Phone","optional"],["organization","Company","optional"]] $v.fields=push($v.fields,{id:$r[0],label:$r[1],hint:$r[2],value:$f[$r[0]],enabled:not $f.busy}) end
+    for $r in [["name","Full name",""],["email","Email","optional"],["phone","Phone","optional"],["organization","Company","optional"]] $v.fields=push($v.fields,{id:$r[0],label:$r[1],hint:$r[2],value:$f[$r[0]],enabled:not $f.busy}) end
   elif $f.kind=="delete" then
     $v.title="Delete";$v.body="Move to the Trash? Emails: "..to_string(len($f.ids));$v.choices[0].label="Delete"
   else
     $v.title="Move To";$v.body="Choose the mailbox to move this email to.";$v.choices=[$v.choices[1]];$v.items=[];$v.row_layout="selectable"
     for $b in ($wire_data[$f.account] ?? {}).boxes ?? [] if $b.id!=$box then $v.items=push($v.items,{label:"",choices:[{id:$b.id,label:$b.name,enabled:true}]}) end end
   end
+  if len($v.fields)==0 then $v=delete($v,"fields") end
   $m.native_overlays=push($m.native_overlays,{command:"email.form.intent",definition:{id:"email-form",kind:"dialog-form",label:"",initial:$v,properties:{style:"gold"}}})
   return $m
 end
