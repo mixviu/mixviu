@@ -13,19 +13,25 @@ try
   if contains(args(),"--prepare") then checked_step(["cargo","fmt","--all"]) else checked_step(["cargo","fmt","--all","--","--check"]) end
   checked_step(["cargo","clippy","--locked","--workspace","--exclude","mix","--all-targets"])
   checked_step(["cargo","clippy","--locked","-p","mix","--all-targets"])
-  -- Shell process tests hand --serve to the sibling service engine.
+  -- App policies must use this source's language contracts, not the frozen
+  -- installed oracle interpreter. Build profiles separately to avoid Cargo
+  -- unifying the shell and service builtin sets.
+  checked_step(["cargo","build","--locked","-p","mix"])
   checked_step(["cargo","build","--locked","-p","mixd"])
+  $policy_mix=realpath("target/debug/mix")
+  if $policy_mix==nil then raise("POLICY_MIX","Missing source-built Mix") end
+  print({policy_mix:$policy_mix,sha256:hash_file($policy_mix,"sha256")})
   checked_step(["cargo","test","--locked","-p","mix","--no-fail-fast"])
   checked_step(["cargo","test","--locked","--workspace","--exclude","mix","--no-fail-fast"])
-  for $case in ["core-test.mix","history-test.mix","wire-test.mix","fetch-test.mix"] checked_step(["/opt/mixos/bin/mix","apps/monitor/"..$case]) end
+  for $case in ["core-test.mix","history-test.mix","wire-test.mix","fetch-test.mix"] checked_step([$policy_mix,"apps/monitor/"..$case]) end
   -- Prefs policy scripts use native Viu settings admission and registry APIs.
   checked_step(["cargo","test","--locked","-p","lib-viu","--test","prefs_parity"])
-  checked_step(["/opt/mixos/bin/mix","apps/screenshot/policy-test.mix"])
+  checked_step([$policy_mix,"apps/screenshot/policy-test.mix"])
   for $case in ["core","document","schedule","launch","engine","train","wire"]
-    checked_step(["/opt/mixos/bin/mix","apps/backdrop/"..$case.."-test.mix"])
+    checked_step([$policy_mix,"apps/backdrop/"..$case.."-test.mix"])
   end
   for $file in glob("apps/workshop/*-test.mix")
-    checked_step(["/opt/mixos/bin/mix",$file])
+    checked_step([$policy_mix,$file])
   end
   checked_step(["cargo","test","--locked","-p","viu","--no-default-features","--test","shell_profile"])
   checked_step(["cargo","test","--locked","-p","lib-viu","--test","bulk_profile","--test","ports_round5","--","--nocapture"])
