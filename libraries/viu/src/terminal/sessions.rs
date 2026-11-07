@@ -499,6 +499,29 @@ impl Sessions {
                 Ok(json!({"pasted":true}))
             }
             "selection" => Ok(json!(t.selection_text())),
+            "search" => {
+                let flag = |key: &str, default| match a.get(key) {
+                    None => Ok(default),
+                    Some(value) => value.as_bool().ok_or_else(|| format!("{key} must be a boolean")),
+                };
+                let mut pattern = super::model::SearchPattern::new(
+                    a["query"].as_str().ok_or("search query required")?,
+                    flag("regex", false)?,
+                    flag("case_sensitive", true)?,
+                )?;
+                let origin = a.get("origin").map(|value| {
+                    serde_json::from_value::<super::model::SearchPoint>(value.clone())
+                        .map_err(|_| "search origin requires signed row and non-negative col".to_owned())
+                }).transpose()?;
+                let max_lines = match a.get("max_lines") {
+                    None => 10000,
+                    Some(value) => crate::widgets::whole(value)
+                        .filter(|n| (1..=10000).contains(n))
+                        .ok_or("search line budget must be 1..10000")? as usize,
+                };
+                serde_json::to_value(t.search(&mut pattern, origin, flag("backwards", false)?, max_lines)?)
+                    .map_err(|error| error.to_string())
+            }
             "clear-selection" => {
                 t.selection_clear();
                 Ok(json!({}))
@@ -537,6 +560,30 @@ impl Sessions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_bridge_reads_the_owned_grid_and_refuses_malformed_options() {
+        let sessions = Sessions::default();
+        sessions.state.lock().unwrap().sessions.insert(
+            "fixture".into(),
+            Arc::new(Mutex::new(Terminal::from_test_vt(12, 3, b"needle [x]"))),
+        );
+        let result = sessions.call("search", "fixture", json!({"query":"[x]"})).unwrap();
+        assert_eq!(result["matched"]["start"], json!({"row":0,"col":7}));
+        assert_eq!(result["matched"]["end"], json!({"row":0,"col":9}));
+        assert_eq!(result["limited"], false);
+        assert_eq!(sessions.call("selection", "fixture", json!({})).unwrap(), json!(null));
+        for options in [
+            json!({"query":"needle","regex":"true"}),
+            json!({"query":"needle","max_lines":0}),
+            json!({"query":"needle","origin":{"row":0,"col":12}}),
+            json!({"query":"needle","origin":{"row":0.5,"col":0}}),
+            json!({"query":"[","regex":true}),
+        ] {
+            assert!(sessions.call("search", "fixture", options).is_err());
+        }
+        assert!(sessions.call("search", "absent", json!({"query":"needle"})).is_err());
+    }
 
     #[test]
     fn lazy_owner_issues_the_first_real_mix_shell_and_revokes_on_close() {

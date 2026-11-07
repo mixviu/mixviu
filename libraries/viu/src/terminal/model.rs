@@ -9,6 +9,9 @@ mod mouse;
 pub use mouse::MouseModifiers;
 #[path = "selection.rs"]
 mod selection;
+#[path = "search.rs"]
+mod search;
+pub use search::{SearchOutcome, SearchPattern, SearchPoint, SearchRange};
 use rio_vt::selection::SelectionRange;
 use rio_vt::{
     ansi::CursorShape,

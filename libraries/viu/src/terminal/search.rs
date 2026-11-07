@@ -1,0 +1,158 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Bounded grid search. Coordinates belong to the current native grid; Mix
+//! owns the query, navigation and presentation. No output mirror or selection
+//! mutation is needed to find text in retained history or soft-wrapped rows.
+use super::Terminal;
+use rio_vt::crosswords::{
+    Direction, Side,
+    grid::Dimensions,
+    pos::{Column, Line, Pos},
+    search::RegexSearch,
+};
+use serde::{Deserialize, Serialize};
+
+pub struct SearchPattern(RegexSearch);
+
+impl SearchPattern {
+    /// Reuse Rio's bounded DFA construction. Explicit flags avoid inheriting
+    /// its smart-case default when the caller has chosen case sensitivity.
+    pub fn new(query: &str, regular_expression: bool, case_sensitive: bool) -> Result<Self, String> {
+        if query.is_empty() || query.len() > 4096 {
+            return Err("search query must contain 1..4096 UTF-8 bytes".into());
+        }
+        let pattern = if regular_expression {
+            query.to_owned()
+        } else {
+            regex::escape(query)
+        };
+        let flag = if case_sensitive { "-i" } else { "i" };
+        RegexSearch::new(&format!("(?{flag}:{pattern})"))
+            .map(Self)
+            .map_err(|error| format!("invalid search expression: {error}"))
+    }
+}
+
+/// Inclusive cell coordinates: negative rows address retained scrollback.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct SearchPoint {
+    pub row: i32,
+    pub col: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct SearchRange {
+    pub start: SearchPoint,
+    pub end: SearchPoint,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SearchOutcome {
+    pub matched: Option<SearchRange>,
+    pub wrapped: bool,
+    /// A no-match in a bounded window is not proof the entire history lacks it.
+    pub limited: bool,
+}
+
+impl Terminal {
+    /// Search the live Rio grid under its lock, leaving selection, scroll and
+    /// PTY input untouched. Results are observations, not persistent anchors:
+    /// output/resize/eviction can move them before a later presentation step.
+    pub fn search(
+        &self,
+        pattern: &mut SearchPattern,
+        origin: Option<SearchPoint>,
+        backwards: bool,
+        max_lines: usize,
+    ) -> Result<SearchOutcome, String> {
+        if !(1..=10000).contains(&max_lines) {
+            return Err("search line budget must be 1..10000".into());
+        }
+        let term = self.grid.lock();
+        let origin = origin.unwrap_or_else(|| SearchPoint {
+            row: -(term.display_offset() as i32)
+                + if backwards { term.screen_lines() as i32 - 1 } else { 0 },
+            col: if backwards { term.columns() - 1 } else { 0 },
+        });
+        if origin.row < term.grid.topmost_line().0
+            || origin.row > term.grid.bottommost_line().0
+            || origin.col >= term.columns()
+        {
+            return Err("search origin is outside the retained grid".into());
+        }
+        let position = Pos::new(Line(origin.row), Column(origin.col));
+        let found = term.search_next(
+            &mut pattern.0,
+            position,
+            if backwards { Direction::Left } else { Direction::Right },
+            if backwards { Side::Right } else { Side::Left },
+            Some(max_lines),
+        );
+        let wrapped = found.as_ref().is_some_and(|range| {
+            if backwards { *range.end() > position } else { *range.start() < position }
+        });
+        let point = |p: &Pos| SearchPoint { row: p.row.0, col: p.col.0 };
+        Ok(SearchOutcome {
+            matched: found.map(|range| SearchRange { start: point(range.start()), end: point(range.end()) }),
+            wrapped,
+            limited: max_lines < term.grid.total_lines(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn literal_regex_case_and_reverse_navigation_use_real_cells() {
+        let t = Terminal::from_test_vt(20, 3, b"A[1] A11 a[1]");
+        let mut literal = SearchPattern::new("A[1]", false, true).unwrap();
+        let first = t.search(&mut literal, None, false, 10000).unwrap();
+        assert_eq!(first.matched.unwrap(), SearchRange { start: SearchPoint { row: 0, col: 0 }, end: SearchPoint { row: 0, col: 3 } });
+        assert!(!first.wrapped);
+        let mut insensitive = SearchPattern::new("A[1]", false, false).unwrap();
+        let second = t.search(&mut insensitive, Some(SearchPoint { row: 0, col: 5 }), false, 10000).unwrap();
+        assert_eq!(second.matched.unwrap().start.col, 9);
+        let wrapped = t.search(&mut literal, Some(SearchPoint { row: 0, col: 5 }), false, 10000).unwrap();
+        assert!(wrapped.wrapped);
+        assert_eq!(wrapped.matched.unwrap().start.col, 0);
+        let mut expression = SearchPattern::new("A[0-9]+", true, true).unwrap();
+        let found = t.search(&mut expression, Some(SearchPoint { row: 0, col: 12 }), true, 10000).unwrap();
+        assert_eq!(found.matched.unwrap(), SearchRange { start: SearchPoint { row: 0, col: 5 }, end: SearchPoint { row: 0, col: 7 } });
+    }
+
+    #[test]
+    fn history_and_wide_wrapped_search_do_not_change_selection_or_scroll() {
+        let t = Terminal::from_test_vt(12, 2, b"old\r\nmiddle\r\nlast");
+        t.selection_start(0, 0, super::super::SelectionSide::Left, super::super::SelectionType::Simple);
+        t.selection_update(2, 0, super::super::SelectionSide::Right);
+        let selected = t.selection_text();
+        let mut pattern = SearchPattern::new("old", false, true).unwrap();
+        let result = t.search(&mut pattern, Some(SearchPoint { row: -1, col: 0 }), false, 10000).unwrap();
+        assert_eq!(result.matched.unwrap().start, SearchPoint { row: -1, col: 0 });
+        assert_eq!(t.display_offset(), 0);
+        assert_eq!(t.selection_text(), selected);
+        assert!(t.search(&mut pattern, None, false, 1).unwrap().limited);
+        let wide = Terminal::from_test_vt(5, 3, "abcd中z".as_bytes());
+        let mut pattern = SearchPattern::new("中z", false, true).unwrap();
+        let result = wide.search(&mut pattern, None, false, 10000).unwrap();
+        assert_eq!(result.matched.unwrap(), SearchRange { start: SearchPoint { row: 1, col: 0 }, end: SearchPoint { row: 1, col: 2 } });
+    }
+
+    #[test]
+    fn malformed_patterns_origins_and_budgets_refuse_without_mutation() {
+        assert!(SearchPattern::new("", false, true).is_err());
+        assert!(SearchPattern::new(&"a".repeat(4097), false, true).is_err());
+        assert!(SearchPattern::new("[", true, true).is_err());
+        let t = Terminal::from_test_vt(8, 2, b"untouched");
+        let before = t.snapshot();
+        let mut pattern = SearchPattern::new("absent", false, true).unwrap();
+        for origin in [SearchPoint { row: -100, col: 0 }, SearchPoint { row: 2, col: 0 }, SearchPoint { row: 0, col: 8 }] {
+            assert!(t.search(&mut pattern, Some(origin), false, 10000).is_err());
+        }
+        assert!(t.search(&mut pattern, None, false, 0).is_err());
+        assert!(t.search(&mut pattern, None, false, 10001).is_err());
+        assert!(t.search(&mut pattern, None, false, 10000).unwrap().matched.is_none());
+        assert_eq!(t.snapshot(), before);
+    }
+}
