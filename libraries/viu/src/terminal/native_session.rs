@@ -14,6 +14,7 @@ pub trait SessionIssuer: Send + Sync {
 pub struct PaneSession {
     exited: Arc<dyn Fn() + Send + Sync>,
     revoke: Arc<dyn Fn() + Send + Sync>,
+    cleanup: Arc<dyn Fn() + Send + Sync>,
     rejected: Arc<dyn Fn(&str) + Send + Sync>,
 }
 
@@ -21,9 +22,10 @@ impl PaneSession {
     pub fn new(
         exited: Arc<dyn Fn() + Send + Sync>,
         revoke: Arc<dyn Fn() + Send + Sync>,
+        cleanup: Arc<dyn Fn() + Send + Sync>,
         rejected: Arc<dyn Fn(&str) + Send + Sync>,
     ) -> Self {
-        Self { exited, revoke, rejected }
+        Self { exited, revoke, cleanup, rejected }
     }
 
     pub fn exit_notifier(&self) -> impl Fn() + Send + Sync + use<> {
@@ -31,11 +33,21 @@ impl PaneSession {
         move || exited()
     }
 
-    pub fn reject_launch(&self, reason: &str) {
-        (self.rejected)(reason);
+    pub fn reject_launch(self, reason: &str) {
+        let rejected = self.rejected.clone();
+        drop(self);
+        rejected(reason);
     }
 
     pub fn revoke_before_cleanup(self) {
+        (self.cleanup)();
+    }
+}
+
+impl Drop for PaneSession {
+    fn drop(&mut self) {
+        // Covers failed PTY launches as well as ordinary close. As in gold,
+        // issuer invalidation must be idempotent.
         (self.revoke)();
     }
 }

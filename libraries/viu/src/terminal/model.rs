@@ -34,6 +34,10 @@ use std::{
 };
 
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
+
+#[cfg(test)]
+#[path = "conformance.rs"]
+mod conformance;
 pub type Stats = Arc<Mutex<Metrics>>;
 type Grid = Arc<FairMutex<Crosswords<Listener>>>;
 type WeakGrid = std::sync::Weak<FairMutex<Crosswords<Listener>>>;

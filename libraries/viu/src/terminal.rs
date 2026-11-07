@@ -7,11 +7,16 @@ mod clusters;
 pub mod config;
 pub mod control;
 pub mod font;
+pub mod gpu;
+pub mod ime;
 pub mod metrics;
 pub mod model;
 pub mod native_session;
 pub mod raster;
 pub use model::{Terminal, Key, Screen, ScrollRequest};
+
+#[cfg(test)]
+mod gpu_parity;
 
 #[cfg(test)]
 #[path = "../../../vendor/teletypewriter/patch_guard.rs"]

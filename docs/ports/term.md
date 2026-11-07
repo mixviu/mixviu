@@ -33,3 +33,28 @@ app-local imitation broker.
 The scene is deliberately empty while the compound widget is extracted;
 no terminal, menu, Bus or visual parity is claimed by this checkpoint.
 The window follows the generic host's live settings path.
+
+## Native extraction, round 2
+
+Fable D6 permits rio-vt's `simdutf` as **Viu debt**, with no change to D2's
+strict Mix/mixd tier. The pinned source has scalar fallbacks, but these do
+not establish equal malformed-UTF-8/base64 behaviour. This extraction retains
+the pinned gold implementation and adds the foreign policy/gate. Viu, Rio
+and simdutf are explicitly forbidden in all strict dependency closures.
+The exit path is behaviour-tested pure-Rust validation/transcoding/base64.
+
+`libraries/viu/src/terminal` now contains the gold native model, PTY Machine,
+damage tracking, cluster interning, selection, mouse protocols, bracketed
+paste, clipboard request queue, glyph raster, atlas/GPU grid and pane-owned
+IME cancellation machine. Original tests remain; self-exec names are qualified
+under the Viu module. Provenance records original source hashes and adaptations.
+
+Native lease and write-permit mechanisms use in-process callbacks. This
+separates lifecycle from the original Rust-owned TabSet; it does **not** claim
+verified supervisor attachment, reconnect or generation acceptance. Those are
+open integration work. No gold application/tab/pane Rust policy is imported.
+
+Added conformance witnesses cover cursor address/insert/erase/alternate screen,
+all UTF-8 and escape chunk boundaries in a representative stream, scrollback
+and selection, and real Mix PTY input/resize/exit/reaping. Gold's GPU/CPU parity
+and IME tests are included in the native gate. Results remain pending.

@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+test-support = []
+
 [dependencies]
 rio-vt = { git = "https://github.com/raphamorim/rio", rev = "932c1a7d9e07b4db5924f7a0dd689e823c3a1442", default-features = false, features = ["pty"] }
 paths = { path = "../paths" }
@@ -59,5 +62,6 @@ tokio = { version = "=1.53.1", features = ["rt", "time", "macros", "sync"] }
 egui = { version = "=0.37.0", default-features = false, features = ["default_fonts"] }
 
 [dev-dependencies]
+egui_kittest.workspace = true
 editor-model = { workspace = true, features = ["fake"] }
 tempfile.workspace = true

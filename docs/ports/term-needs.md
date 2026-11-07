@@ -1,6 +1,7 @@
 # Term native widget requirements (round-5 checkpoint)
 
-No Term implementation or VT/PTY work is started. Fable D6 requires reusable
+The Term parity branch has begun native extraction; no replacement is accepted.
+Fable D6 requires reusable
 facilities in libraries/viu; no per-app Rust host. The round-2 input inventory
 is now supplemented by pinned MixOS 8779f3328 Term Cargo manifests,
 term-core native_session/native_lane and the frontend IME ownership code.
