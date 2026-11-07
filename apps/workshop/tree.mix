@@ -2,7 +2,7 @@
 -- Tree policy adapted from pinned gold inspector/engine.rs.
 $agents=require("agents.mix")
 fn row($key,$kind,$label,$children,$s)
-  return {key:$key,kind:$kind,label:$label,children:$children,expanded:contains($s.expanded,$key) or $s.filter!="",selected:$s.row_key==$key}
+  return {key:$key,kind:$kind,label:$label,children:$children,expanded:contains(["nodes","node","service","macros"],$kind) and (contains($s.expanded,$key) or $s.filter!=""),selected:$s.row_key==$key}
 end
 fn service_label($s,$route)
   $i=$s.snapshot.identities[$route]

@@ -13,6 +13,9 @@ $s=$m.select_target($s,{service:"echo",command:"ping"});$rows=$tree.rows($s)
 check(any($rows,fn($r)=$r.selected and $r.key=="command:example-node:echo:ping"),"select target opens service")
 $s.filter="Echo";$rows=$tree.rows($s)
 check(any($rows,fn($r)=$r.key=="command:example-node:echo:echo"),"command/description search")
+check(not $tree.find_row($s,"nodes:mesh").expanded,"search never expands the Mesh leaf")
+$s.catalogues={global:{macros:[]}}
+check($tree.find_row($s,"macros:global").expanded,"search keeps an empty macro group expanded")
 check($m.command($s,{service:"echo",command:"echo"}).read_only,"read only metadata")
 $s.filter="";$s.catalogues={global:{macros:[{id:"test",title:"Test",tier:"user-global"}]}}
 check($tree.find_row($s,"macro:global:test").macro_id=="test","hidden macro rows remain selectable")
