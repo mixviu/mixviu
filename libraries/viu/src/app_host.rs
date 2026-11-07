@@ -1493,7 +1493,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
     let services = crate::runtime::Services {
         clipboard: Some(clipboard),
-        options: json!({"headless":bundle.manifest.surface=="headless"}),
+        options: json!({"headless":bundle.manifest.surface=="headless" || bundle.launch["headless"]==true}),
         max_string_bytes: bundle.manifest.max_string_bytes,
         platform: Some(platform.clone()),
         ui_state: Some(ui_state.clone()),
