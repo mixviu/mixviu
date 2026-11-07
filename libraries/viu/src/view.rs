@@ -781,6 +781,9 @@ impl SceneView {
         depth: usize,
         events: &mut Vec<Event>,
     ) {
+        if node.ports.get("clip")==Some(&Value::Bool(false)) {
+            ui.set_clip_rect(ui.ctx().content_rect());
+        }
         let children = children(node).collect::<Vec<_>>();
         let width = ui.available_width();
         let frame = |which: &str| {

@@ -132,11 +132,12 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("settings", "object", false, Some("{}")),
         p("scroll", "bool", false, Some("true")),
     ];
-    static PANES: [Port; 6] = [
+    static PANES: [Port; 7] = [
         p("children", "list", true, None),
         pnd("left_fraction", "0.18", None),
         pnd("right_fraction", "0.42", None),
         p("right_visible", "bool", false, Some("true")),
+        p("clip", "bool", false, Some("true")),
         pe("focus", "\"center\"", &["left", "center", "right"]),
         p("on_change", "string", false, None),
     ];

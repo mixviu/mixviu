@@ -21,6 +21,19 @@ end
 fn address_display($a)
   return if $a==nil then "" elif $a.name!=nil and $a.name!="" then $a.name else $a.email ?? "" end
 end
+fn action_context()
+  return merge($chrome,{connected:$connected,reading:$mode=="mail" and $message!=nil,targeted:$mode=="mail" and (len($mail_selection)>0 or $message!=nil),accounts:len($entries),markdown:$reader_markdown,attachments_inline:$attachments_inline})
+end
+fn surface_toggle_target($flag)
+  $ids=if len($mail_selection)>0 then $mail_selection elif $message!=nil then [$message.id] else [] end
+  if len($ids)==0 then return wire_refuse("DISABLED","That command cannot run now") end
+  $keyword=if $flag then "$flagged" else "$seen" end
+  $items=filter($mail_emails,fn($m)=contains($ids,$m.id))
+  if len($items)==0 and $message!=nil then $items=[$message] end
+  $on=not all($items,fn($m)=($m.keywords ?? {})[$keyword]==true)
+  $args={ids:$ids};$args[if $flag then "flagged" else "read" end]=$on
+  return wire_start("email.mark",$args,nil,"mutation")
+end
 fn compact_date($stamp)
   if $stamp==nil or $stamp=="" then return "" end
   try

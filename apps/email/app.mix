@@ -28,7 +28,7 @@ fn publish_email()
   $m.values.view=$view;$m.mail_hidden=$view!="Mail";$m.compose_hidden=$view!="Compose"
   $m.values["reader-body"]=if $message!=nil then $message.text ?? $message.html ?? "" else "" end
   if not $fixture then $m=surface_model($m) end
-  $look=merge($chrome,{fixture:$fixture,accounts:len($entries),connected:$connected,status:$status})
+  $look=merge(action_context(),{fixture:$fixture,accounts:len($entries),connected:$connected,status:$status})
   if not $fixture then
     $current=wire_entry($active);$state=$wire_views[$active] ?? {}
     $look.status=if $current==nil then "" else $current.name.." — "..(if $state.state=="ready" then "Connected" elif $state.state=="connecting" then "Connecting…" else "Not connected" end) end
@@ -162,8 +162,8 @@ on email.intent
 end
 
 fn execute_email($id,$origin)
-  global $chrome,$view,$serial,$busy,$pending,$status
-  $s=merge($chrome,{connected:$connected})
+  global $chrome,$view,$serial,$busy,$pending,$status,$reader_markdown,$reader_auto,$attachments_inline
+  $s=action_context()
   $found=filter($actions.registry($s),fn($a)=$a.id==$id)
   if len($found)==0 then return {rc:10,body:{error_code:"UNKNOWN_ACTION",message:"No such command"}} end
   if not $found[0].enabled then return {rc:10,body:{error_code:"DISABLED",message:"That command cannot run now"}} end
@@ -184,7 +184,17 @@ fn execute_email($id,$origin)
   elif $id=="mail.compose" then
     if not $fixture then $opened=composer_open({});publish_email();return $opened else $view="Compose" end
   elif $id=="file.refresh" then
-    if len($entries)>0 then begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting" end
+    if not $fixture then
+      wire_start("email.mailboxes",{},nil,"boxes")
+      if $box!="" then wire_start("email.list",{mailbox:$box,offset:$offset},nil,"refresh-list") end
+      wire_start("email.calendars",{},nil,"parents");wire_start("email.books",{},nil,"parents")
+    elif len($entries)>0 then begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting" end
+  elif contains(["view.mail","view.calendar","view.contacts"],$id) then surface_mode(split($id,".")[1])
+  elif contains(["mail.flag","mail.mark_unread"],$id) then surface_toggle_target($id=="mail.flag")
+  elif $id=="view.reader.markdown" then $reader_markdown=not $reader_markdown;$reader_auto=false
+  elif $id=="view.attachments_inline" then $attachments_inline=not $attachments_inline
+  elif contains(["view.next_account","view.previous_account"],$id) then
+    $at=index_of(map($entries,fn($e)=$e.id),$active);$at=($at+len($entries)+(if $id=="view.next_account" then 1 else -1 end))%len($entries);surface_account($entries[$at].id)
   elif starts_with($id,"view.theme.") or starts_with($id,"view.mode") or starts_with($id,"view.style.") or starts_with($id,"view.decorations.") or starts_with($id,"view.captions.") then
     $axis=if starts_with($id,"view.theme.") then "scheme" elif starts_with($id,"view.style.") then "style" elif starts_with($id,"view.decorations.") then "decorations" elif starts_with($id,"view.captions.") then "caption_side" else "mode" end
     $parts=split($id,".");$value=$parts[len($parts)-1]
@@ -212,7 +222,7 @@ fn theme_email($args)
   return {rc:0,body:$body}
 end
 on email.actions
-  reply(0,json_encode({actions:$actions.registry(merge($chrome,{connected:$connected}))}))
+  reply(0,json_encode({actions:$actions.registry(action_context())}))
 end
 on email.execute
   $out=execute_email($event.args.id,"bus");reply($out.rc,json_encode($out.body))
