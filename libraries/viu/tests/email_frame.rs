@@ -168,7 +168,9 @@ end
     let reply = complete(&runtime, &rx).reply.unwrap();
     assert_eq!(reply.body["alive"], true);
     assert_eq!(reply.body["closing"], false);
-    runtime.event("test.root.account.gone".into(), json!({})).unwrap();
+    runtime
+        .event("test.root.account.gone".into(), json!({}))
+        .unwrap();
     let reply = complete(&runtime, &rx).reply.unwrap();
     assert_eq!(reply.body["parked"], true);
     assert_eq!(reply.body["closing"], true);
@@ -329,6 +331,35 @@ end
     assert!(view.geometry.contains_key("compose-error"));
     assert!(view.geometry["compose-body"].bottom() <= view.geometry["compose-footer"].top() + 1.0);
     assert!(view.geometry["compose-error"].bottom() < 701.0);
+}
+
+#[test]
+fn reader_preview_ownership_follows_installed_reads_and_retires_stale_outputs() {
+    let bundle = Bundle::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
+        &["--fixture".into()],
+    ).unwrap();
+    let mut program = bundle.program;
+    program.source.push_str(r#"
+on test.preview.fence
+  $entries=[{id:"a",enabled:true,url:"https://example.test",user:"user@example.test",ca_file:nil}];$active="a"
+  $wire_generations={a:2};$wire_data={a:{open_ticket:"installed"}};$wire_open_targets={a:"pending-new"}
+  $attachments_inline=true;$mode="mail";$message={id:"current",attachments:[]}
+  $preview_owner={account:"a",generation:2,email:"current",ticket:"installed"};$preview_epoch=2
+  $preview_entries={current:{state:"shown",path:"current.png"}}
+  $path=path_join(viu_app_dirs("email").state,"stale-preview.png");viu_atomic_replace($path,"old output")
+  $preview_jobs={old:{ticket:"old",epoch:1,blob:"previous",destination:$path}}
+  preview_completed({account:"a",generation:1,entry:$entries[0],args:{ticket:"old"}},{rc:0,body:{}})
+  previews_sync()
+  reply(0,json_encode({epoch:$preview_epoch,current:$preview_entries.current.state,jobs:len(keys($preview_jobs)),removed:not exists($path)}))
+end
+"#);
+    let (_root, mut runtime, rx) = isolated_runtime();
+    runtime.load(program).unwrap();
+    complete(&runtime, &rx);
+    runtime.event("test.preview.fence".into(), json!({})).unwrap();
+    let reply = complete(&runtime, &rx).reply.unwrap();
+    assert_eq!(reply.body, json!({"epoch":2,"current":"shown","jobs":0,"removed":true}));
 }
 
 #[test]

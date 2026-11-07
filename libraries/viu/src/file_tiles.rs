@@ -103,6 +103,7 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
         })
         .unwrap_or(ui.available_height());
     ui.scope(|ui| {
+        let start_y = ui.cursor().top();
         toolkit::bars::hairline(ui);
         let items = v["items"].as_array().unwrap();
         let mut toggle = false;
@@ -173,9 +174,15 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
             emit(events, id, "toggle", Value::Null);
         }
         if v["expanded"] == true {
+            // The caller's limit covers the entire bar. Reserve its measured
+            // controls and trailing space before sizing the tile scroll area.
+            // Otherwise an exact bottom panel can clip those controls when
+            // the tile list alone consumes the whole height budget.
+            let trailing = ui.spacing().item_spacing.y * 2.0;
+            let tiles_height = (limit - (ui.cursor().top() - start_y) - trailing).max(0.0);
             egui::ScrollArea::vertical()
                 .id_salt("attachment-tiles")
-                .max_height(limit)
+                .max_height(tiles_height)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     ui.with_layout(
@@ -254,7 +261,7 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                         },
                     );
                 });
-            ui.add_space(ui.spacing().item_spacing.y * 2.0);
+            ui.add_space(trailing);
         }
     })
     .response

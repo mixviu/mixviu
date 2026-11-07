@@ -261,7 +261,7 @@ fn wire_completed($d)
       $part=($m.textBody ?? [])[0] ?? {};$kind=lower(trim(split($part.type ?? "",";")[0]))
       $reader_detected=contains(["text/markdown","text/x-markdown"],$kind) or (contains(["","text/plain"],$kind) and viu_markdown_detect($m.text ?? ""));$reader_markdown=$reader_detected;$reader_auto=true
     end
-    $message=$m;$selected=$m.id;$reader=reader_text($message);$wire_data[$job.account].message=$m
+    $message=$m;$selected=$m.id;$reader=reader_text($message);$wire_data[$job.account].message=$m;$wire_data[$job.account].open_ticket=$id
     if $mail_settings.mark_read_on_open and ($m.keywords ?? {})["$seen"]!=true then wire_start("email.mark",{ids:[$m.id],read:true},nil,"mutation") end
     $answer.body={account:$job.account,id:$m.id,subject:$m.subject}
   end

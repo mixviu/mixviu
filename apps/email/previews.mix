@@ -6,7 +6,7 @@ fn preview_eligible($p)
 end
 fn previews_sync()
   global $preview_owner,$preview_epoch,$preview_entries,$preview_serial,$preview_jobs
-  $owner=if $attachments_inline and $mode=="mail" and $message!=nil then {account:$active,generation:$wire_generations[$active] ?? 0,email:$message.id,ticket:$wire_open_targets[$active]} else nil end
+  $owner=if $attachments_inline and $mode=="mail" and $message!=nil then {account:$active,generation:$wire_generations[$active] ?? 0,email:$message.id,ticket:($wire_data[$active] ?? {}).open_ticket} else nil end
   if not deep_eq($owner,$preview_owner) then
     for $p in values($preview_entries) if $p.path!=nil then try viu_files("remove",{path:$p.path}) catch $ignored nil end end end
     $preview_owner=$owner;$preview_epoch=$preview_epoch+1;$preview_entries={}
