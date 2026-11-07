@@ -59,7 +59,12 @@ fn grid_geometry(
     (size, grid, border)
 }
 
-fn shortcut(p: &Value, key: egui::Key, modifiers: egui::Modifiers, alternate: bool) -> Option<&Value> {
+fn shortcut(
+    p: &Value,
+    key: egui::Key,
+    modifiers: egui::Modifiers,
+    alternate: bool,
+) -> Option<&Value> {
     p["shortcuts"].as_array()?.iter().find(|s| {
         s["key"].as_str() == Some(key.name())
             && (s["ctrl"] == true) == modifiers.ctrl
@@ -98,15 +103,27 @@ mod tests {
 
     #[test]
     fn alternate_screen_keeps_scroll_keys_but_not_other_commands() {
-        let shift = egui::Modifiers { shift: true, ..egui::Modifiers::NONE };
+        let shift = egui::Modifiers {
+            shift: true,
+            ..egui::Modifiers::NONE
+        };
         let properties = json!({"shortcuts":[
             {"key":"PageUp","shift":true,"command":"history","normal_screen_only":true},
             {"key":"T","shift":true,"command":"open"}
         ]});
-        assert!(shortcut(&properties,egui::Key::PageUp,shift,false).is_some());
-        assert!(shortcut(&properties,egui::Key::PageUp,shift,true).is_none());
-        assert_eq!(shortcut(&properties,egui::Key::T,shift,true).unwrap()["command"],"open");
-        assert_eq!(input::keys_for(egui::Key::PageUp,shift).into_iter().flat_map(super::super::model::encode).collect::<Vec<_>>(),vec![27,b'[',b'5',b'~']);
+        assert!(shortcut(&properties, egui::Key::PageUp, shift, false).is_some());
+        assert!(shortcut(&properties, egui::Key::PageUp, shift, true).is_none());
+        assert_eq!(
+            shortcut(&properties, egui::Key::T, shift, true).unwrap()["command"],
+            "open"
+        );
+        assert_eq!(
+            input::keys_for(egui::Key::PageUp, shift)
+                .into_iter()
+                .flat_map(super::super::model::encode)
+                .collect::<Vec<_>>(),
+            vec![27, b'[', b'5', b'~']
+        );
     }
 
     #[test]
@@ -114,18 +131,62 @@ mod tests {
         let sessions = Sessions::fixture();
         let mut views = Views::default();
         let ctx = egui::Context::default();
-        crate::fonts::install(&ctx,400,600);
-        let mut widget = Widget::new("vt","terminal","Terminal",json!("vt-1"));
-        for (repeat, allowed, expected) in [(false,false,1),(true,false,0),(true,true,1)] {
+        crate::fonts::install(&ctx, 400, 600);
+        let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
+        for (repeat, allowed, expected) in [(false, false, 1), (true, false, 0), (true, true, 1)] {
             widget.properties = json!({"focus_serial":1,"shortcuts":[{"key":"T","ctrl":true,"command":"open","repeat":allowed}]});
             let mut events = Vec::new();
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 560.0),
+                    )),
+                    events: vec![egui::Event::Key {
+                        key: egui::Key::T,
+                        physical_key: None,
+                        pressed: true,
+                        repeat,
+                        modifiers: egui::Modifiers {
+                            ctrl: true,
+                            ..egui::Modifiers::NONE
+                        },
+                    }],
+                    ..Default::default()
+                },
+                |ui| {
+                    views.draw(ui, &widget, &json!("vt-1"), &sessions, &mut events);
+                },
+            )
+            .drop_without_applying_deltas();
+            assert_eq!(
+                events.iter().filter(|e| e.action == "command").count(),
+                expected
+            );
+            assert!(!events.iter().any(|e| e.action == "error"));
+        }
+    }
+
+    #[test]
+    fn tab_stays_in_terminal_with_another_focusable_control() {
+        let sessions = Sessions::fixture();
+        let mut views = Views::default();
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx, 400, 600);
+        let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
+        widget.properties = json!({"focus_serial":1,"shortcuts":[{"key":"Tab","command":"next"}]});
+        for pressed in [false,true] {
+            let mut events = Vec::new();
+            let input = if pressed {vec![egui::Event::Key {key:egui::Key::Tab,physical_key:None,pressed:true,repeat:false,modifiers:egui::Modifiers::NONE}]} else {vec![]};
             ctx.run_ui(egui::RawInput {
                 screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,560.0))),
-                events:vec![egui::Event::Key {key:egui::Key::T,physical_key:None,pressed:true,repeat,modifiers:egui::Modifiers {ctrl:true,..egui::Modifiers::NONE}}],
+                events:input,
                 ..Default::default()
-            }, |ui| {views.draw(ui,&widget,&json!("vt-1"),&sessions,&mut events);}).drop_without_applying_deltas();
-            assert_eq!(events.iter().filter(|e| e.action=="command").count(),expected);
-            assert!(!events.iter().any(|e| e.action=="error"));
+            }, |ui| {
+                views.draw(ui,&widget,&json!("vt-1"),&sessions,&mut events);
+                let _ = ui.button("Other focus target");
+            }).drop_without_applying_deltas();
+            if pressed {assert!(events.iter().any(|e|e.action=="command" && e.value=="next"));}
         }
     }
 
@@ -438,6 +499,17 @@ impl Views {
         );
         let id = ui.make_persistent_id((&widget.id, handle));
         let response = ui.interact(area, id, Sense::click_and_drag());
+        ui.memory_mut(|m| {
+            m.set_focus_lock_filter(
+                id,
+                egui::EventFilter {
+                    tab: true,
+                    horizontal_arrows: true,
+                    vertical_arrows: true,
+                    escape: true,
+                },
+            )
+        });
         let ((cols, rows), grid, border) = grid_geometry(
             area,
             cell,
