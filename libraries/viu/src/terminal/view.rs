@@ -29,6 +29,21 @@ struct Surface {
     grid_size: (u16, u16, u16, u16),
 }
 
+// Gold's pane arithmetic: fit in physical pixels, retain a legal minimum
+// grid even for tiny panes, and respect the common GPU texture ceiling.
+fn grid_geometry(area: Rect, cell: (u32, u32), scale: f32, border: f32, padding: f32) -> ((u16, u16), Rect, f32) {
+    let border = (border * scale).round().max(1.0) / scale;
+    let inset = ((padding * scale).round() / scale).max(border);
+    let fit = |logical: f32, cell: u32, minimum: u32, maximum: u32| {
+        ((((logical - 2.0 * inset).max(0.0) * scale + 0.01) / cell.max(1) as f32) as u32)
+            .clamp(minimum, maximum.min(4096 / cell.max(1)).max(minimum)) as u16
+    };
+    let size = (fit(area.width(), cell.0, 2, 240), fit(area.height(), cell.1, 1, 100));
+    let grid = Rect::from_min_size(area.min + egui::vec2(inset, inset),
+        egui::vec2(size.0 as f32 * cell.0 as f32 / scale, size.1 as f32 * cell.1 as f32 / scale));
+    (size, grid, border)
+}
+
 pub fn validate(value: &Value) -> Result<(), String> {
     fn node(value: &Value, depth: usize, handles: &mut std::collections::BTreeSet<String>) -> bool {
         if depth >= 64 || handles.len() >= 256 {
@@ -55,6 +70,28 @@ pub fn validate(value: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pane_geometry_matches_gold_at_fractional_scales_and_texture_limits() {
+        let area = |w, h| Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
+        for (w, h, cell, scale, expected) in [
+            (816.0, 496.0, (8,16), 1.0, (100,30)),
+            (815.0, 495.0, (8,16), 1.0, (99,29)),
+            (400.0, 200.0, (20,40), 2.5, (48,11)),
+            (3.0, 3.0, (8,16), 1.0, (2,1)),
+            (9000.0, 9000.0, (40,80), 1.0, (102,51)),
+        ] { assert_eq!(grid_geometry(area(w,h),cell,scale,1.0,8.0).0, expected); }
+        for scale in [1.0,1.25,1.5,2.5] {
+            for width in 1..=4 {
+                for padding in [0,1,4,8,16] {
+                    let (_, rect, border) = grid_geometry(area(832.0,512.0),(19,40),scale,width as f32,padding as f32);
+                    assert!((rect.min.x * scale).fract().abs() < 0.001);
+                    assert!(rect.min.x >= border);
+                    assert!(border * scale >= 1.0);
+                }
+            }
+        }
+    }
 
     #[test]
     fn malformed_and_aliased_layouts_are_refused() {
@@ -220,29 +257,18 @@ impl Views {
             r.set_cursor(cursor);
             r.cell()
         };
-        let padding = p["padding"].as_f64().unwrap_or(4.0).max(0.0) as f32;
+        let padding = p["padding"].as_f64().unwrap_or(8.0).max(0.0) as f32;
         let available = ui.available_size().max(egui::vec2(1.0, 1.0));
         let (area, _) = ui.allocate_exact_size(available, Sense::hover());
+        let area = Rect::from_min_max(
+            egui::pos2((area.min.x * scale).ceil() / scale, (area.min.y * scale).ceil() / scale),
+            egui::pos2((area.max.x * scale).floor() / scale, (area.max.y * scale).floor() / scale),
+        );
         let id = ui.make_persistent_id((&widget.id, handle));
         let response = ui.interact(area, id, Sense::click_and_drag());
-        let inner = area.shrink(padding);
-        let origin = egui::pos2(
-            (inner.min.x * scale).ceil() / scale,
-            (inner.min.y * scale).ceil() / scale,
-        );
-        let cols = ((inner.max.x - origin.x) * scale / cell.0 as f32)
-            .floor()
-            .clamp(1.0, 240.0) as u16;
-        let rows = ((inner.max.y - origin.y) * scale / cell.1 as f32)
-            .floor()
-            .clamp(1.0, 100.0) as u16;
-        let grid = Rect::from_min_size(
-            origin,
-            egui::vec2(
-                cols as f32 * cell.0 as f32 / scale,
-                rows as f32 * cell.1 as f32 / scale,
-            ),
-        );
+        let ((cols, rows), grid, border) = grid_geometry(area, cell, scale,
+            p["border_width"].as_f64().unwrap_or(1.0).max(0.0) as f32, padding);
+        let inner = area.shrink(border);
         let grid_size = (
             cols,
             rows,
@@ -432,7 +458,14 @@ impl Views {
                 })
             });
         }
-        ui.painter().rect_filled(area, 0.0, Color32::BLACK);
+        let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
+        let ring = if focus_target && p["show_focus"] == true {
+            if p["focus_ring"] == "accent" {
+                palette.card_border.lerp_to_gamma(palette.accent, p["focus_strength"].as_f64().unwrap_or(0.25).clamp(0.0,1.0) as f32)
+            } else { palette.card_border.lerp_to_gamma(palette.text, 0.25) }
+        } else { palette.card_border };
+        ui.painter().rect_filled(area, 0.0, ring);
+        ui.painter().rect_filled(inner, 0.0, palette.canvas);
         surface.pane.update(snapshot.screen, snapshot.dirty_rows);
         ui.painter()
             .with_clip_rect(inner)
