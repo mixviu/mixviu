@@ -150,3 +150,40 @@ four Mix suites, then failed actual scene validation: the dock root had
 unsupported padding/gap ports. Repair `849b2aec8e4d99291108a7671625354c0d7910f3`
 removes those ports and applies the full worker fmt patch. Lifecycle
 assertions remain intact. Next gate: `term-live-tabs-dock-849b2ae`.
+
+## Native lifecycle witness and pane repair
+
+`term-live-tabs-dock-849b2ae-a1` passed at exact source
+`849b2aec8e4d99291108a7671625354c0d7910f3`: four Mix suites, both
+actual-bundle tests (including real split/tab sessions and replay), 134
+native tests, five retained ignores, dependency gate and debug host build.
+Complete log read; no worker diff. Fetched and verified debug SHA256
+`56d0f178788e13a333e733f2a9e037058cda8378c20368b5b1626addb8a29e1b`.
+
+Private `term-parity-20261107/native.sf7min` runs the matching source and
+artifact. Native Bus exercise passed split output, split replay, inactive
+pane input without focus movement, tab close, shell exit preserving its
+sibling and normal window close. Every tracked PID was stopped. Retained
+captures include the original matched command output and a live split.
+
+Inspected originals, full side-by-side/difference and the split capture.
+Private `lifecycle-diagnostic-regions` retains figures and inspection.
+Candidate PNG SHA256
+`fa3de4df1adba1ed987db9ab00c108f22642f09368a6b422b15fac737cd6c2a4`;
+gold and rectangles match the earlier diagnostic. ImageMagick 7.1.2-35
+normalised distortions (zero identical):
+
+| Region | SSIM | RMSE | Finding |
+| --- | ---: | ---: | --- |
+| Full | 0.0337594 | 0.0253796 | FAIL: header and pane surround |
+| Header | 0.0749878 | 0.0752184 | Menus/actions absent |
+| Tabs | 0 | 0 | Pixel-identical |
+| Content | 0.0141672 | 0.0128128 | Grid output/origin matches; black surround |
+| Bottom | 0.274618 | 0.0483722 | Black remaining-cell band, missing pane border |
+
+Repair code `0a34c03037ca0e3bdda34f2b87208c93868b5bec` paints the native
+pane canvas/border from gold theme roles, adds its split focus ring and
+live border/focus settings, and applies gold's physical-pixel grid fit,
+texture ceiling and minimum dimensions. Representative fractional-scale,
+small-pane and texture-limit cases are retained as tests. Native validation
+and new captures are pending `term-pane-paint-0a34c03`. NOT ACCEPTED.

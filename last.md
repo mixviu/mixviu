@@ -393,4 +393,31 @@ source if changed; fetch matching artifact and run isolated lifecycle,
 input, shell exit and matched captures. All earlier open parity items
 remain open. Gold untouched; NOT ACCEPTED; no Fable decision required.
 
-branch: lab/parity-term; head SHA: 849b2aec8e4d99291108a7671625354c0d7910f3 (code; receipt HEAD contains this checkpoint); open items: repaired lifecycle gate, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-widget-r2-node-fixed-a1 (green), term-live-tabs-39e1208-a1 (scene validation failure), term-live-tabs-dock-849b2ae (next await).
+## Live lifecycle green; pane painting repair next
+
+Read full `term-live-tabs-dock-849b2ae-a1` log: green, no worker diff,
+four Mix suites, two actual-bundle tests (expanded real PTY lifecycle),
+134 native tests/five ignores, dependency gate and debug host build.
+Exact tested source 849b2aec8e4d99291108a7671625354c0d7910f3.
+Fetched/verified debug SHA256
+56d0f178788e13a333e733f2a9e037058cda8378c20368b5b1626addb8a29e1b.
+
+Private native.sf7min uses matching source/artifact, real Mix output,
+split/replay/inactive target/tab close/shell exit preserving sibling and
+normal close. All tracked PIDs stopped. New diagnostic comparison against
+native.gWIe4o: tabs pixel-identical, full SSIM distortion 0.0337594,
+content 0.0141672, bottom 0.274618; header still absent menus/actions.
+Inspected originals, side/diff and split. FAIL, no Fable deviation.
+
+Code 0a34c03037ca0e3bdda34f2b87208c93868b5bec repairs pane painting:
+theme canvas instead of black surround, gold border/focus ring and live
+settings, physical-pixel fitting, legal minimum grid and texture ceiling.
+Added representative sizing cases. Next CBC term-pane-paint-0a34c03 at
+that exact code, mix tools/term_gate.mix --prepare; automatic resumption.
+Read complete log, apply worker fmt and repeat exact source if changed,
+then retake native matched captures. Continue full outstanding Bus/topics/
+actions/menu/dialogs/macros, verified native issuer/control and Mix shell
+integration, input/clipboard/IME/search, full live Prefs and release visual
+acceptance. Gold unchanged. NOT ACCEPTED. No Fable question.
+
+branch: lab/parity-term; head SHA: 0a34c03037ca0e3bdda34f2b87208c93868b5bec (code; receipt HEAD contains this checkpoint); open items: pane paint gate, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-live-tabs-dock-849b2ae-a1 (green), term-pane-paint-0a34c03 (next await).
