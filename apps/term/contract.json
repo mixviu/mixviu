@@ -23,7 +23,6 @@
     "term.show"
   ],
   "host": {
-    "activation": "term.show",
     "command_descriptors": [
       {
         "args": [],
