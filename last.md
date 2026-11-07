@@ -1521,3 +1521,45 @@ Then continue Mix-owned session metadata/layout adapter, remaining native
 enforcement coverage, full app inventory and exact release acceptance.
 NOT ACCEPTED. No Fable deviation or gold/desktop changes.
 branch: lab/parity-term; head SHA: 50b1e98f99d76bec4b5cdda9e8451b685b9f1aca (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — child task fixture repeat, Mix metadata/layout adapter and remaining full parity/release acceptance open; CBC job ids: term-child-forward-dd1a5ac5-a1 (failed at missing-cwd fixture; fmt applied), term-task-cwd-50b1e98f (next await).
+
+### Exact child-forwarding gate passes; Mix metadata integration checkpoint
+
+`term-task-cwd-50b1e98f-a1` passed all scoped checks at exact clean code
+50b1e98f99d76bec4b5cdda9e8451b685b9f1aca: 166 terminal tests, five existing
+ignores, seven input tests, two bundle tests, six Mix suites, search/dialog,
+foreign gate and debug build. Full 37440-byte saved log read in two chunks;
+TERM_PATCH empty. Both isolated close/exit modes passed real protected input,
+evaluation completion/retry, missing-cwd task refusal, valid typed task
+result 42/retry and execution/task result/cancel separation. This does not
+replace the full original exact-current-shell/bootstrap/enforcement suite.
+
+3d5dcd16db31351d73f1f6857a07cc13fab9774b adds a read-only in-process
+metadata document. Mix projects tab order, title, active tab, selected pane
+and split membership from its existing model on publish_term. The generic
+native terminal binding validates 32 total slots, unique/positive ids,
+sanitised titles, one active tab, selected membership and references to
+owned native panes, then replaces the accepted document atomically. It
+does not derive tab policy or carry native session authority.
+
+Protected session/list/tabs/panes and state-property readbacks now combine
+this Mix-authored document with native pane generations, dimensions/PIDs,
+recipient lease, caller epoch/high-water and retained limits. Unbound panes
+and partially unbound tabs are filtered as gold does. Target authority stays
+native. Live tab metadata changes do not replace the child or its identity.
+
+Added Mix projection assertions for reordering, title/active/selected/split
+membership and an empty closed model; all six Mix suites pass. Native tests
+add malformed/duplicate/inconsistent metadata validation, rejected missing
+pane updates retaining prior state, protected metadata/alias fields, live
+title publication with unchanged PID, and forwarding using the epoch read
+from term.session. These native additions and bundle integration await CBC.
+
+Protected layout mutations still need the Mix mailbox/commit adapter and
+affected-pane/generation validation. Remaining full Bus/input/clipboard/IME/
+search/Prefs, original enforcement/reconnect coverage and exact release
+acceptance remain open. NOT ACCEPTED. No Fable deviation or gold changes.
+
+Next CBC `term-mix-metadata-3d5dcd16`, exact code above, term_gate --prepare.
+Read full saved log; fix failures, apply fmt/lock and repeat exact source.
+Then continue protected Mix layout commitment and matched native evidence.
+branch: lab/parity-term; head SHA: 3d5dcd16db31351d73f1f6857a07cc13fab9774b (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — Mix metadata gate, protected layout commit adapter and remaining full parity/release acceptance open; CBC job ids: term-task-cwd-50b1e98f-a1 (green exact; no diff), term-mix-metadata-3d5dcd16 (next await).
