@@ -4,6 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Let new releases soak a week before we take them (yanks, compromises).
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       cargo-minor:
@@ -12,6 +15,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       actions:
