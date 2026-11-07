@@ -192,7 +192,7 @@ impl Endpoint {
                         _=responses.join_next(),if !responses.is_empty()=>continue,
                         hint=hint_rx.recv(),if publishing.is_none()=>{if let Some(hint)=hint {publishing=Some(Box::pin(send_hint(native.clone(),hint)));}continue;},
                         (topic,ok,probe_ok)=async{publishing.as_mut().expect("guarded hint future").await},if publishing.is_some()=>{publishing=None;post(Notice{command:"bus.hint.completed".into(),args:json!({"topic":topic,"ok":ok,"probe_ok":probe_ok}),headers:BTreeMap::new()});continue;},
-                        changed=state.changed()=>{if changed.is_err(){break;}let connected=native.is_connected();post(Notice{command:if connected{"bus.connected"}else{"bus.disconnected"}.into(),args:json!({"generation":native.connection_generation()}),headers:BTreeMap::new()});continue;},
+                        changed=state.changed()=>{if changed.is_err(){break;}let connected=native.is_connected();post(Notice{command:if connected{"bus.connected"}else{"bus.disconnected"}.into(),args:json!({"generation":native.connection_generation(),"service":registered}),headers:BTreeMap::new()});continue;},
                         event=incoming.recv()=>match event{Some(event)=>event,None=>break}
                     };
                     let command=match event{
