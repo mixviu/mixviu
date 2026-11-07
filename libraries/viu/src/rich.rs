@@ -689,7 +689,7 @@ pub(crate) fn draw(
                     ui.ctx().viewport_id(),
                     id,
                     "gold-dialog",
-                    text(value, "instance"),
+                    value["instance"].to_string(),
                 ));
                 let choices: Vec<_> = value["choices"]
                     .as_array()
@@ -709,10 +709,21 @@ pub(crate) fn draw(
                         .enabled(c["enabled"] == true)
                     })
                     .collect();
+                let mut submitted = false;
                 let shown = toolkit::dialog::Dialog::new(dialog_id, text(value, "title"))
                     .buttons(choices)
                     .show(ui.ctx(), |ui| {
-                        if let Some(rows) = value["grid"].as_array() {
+                        if let Some(initial) = value["field"].as_str() {
+                            let mut field = initial.to_owned();
+                            let response = ui.add(egui::TextEdit::singleline(&mut field).id(dialog_id.with("field")).desired_width(f32::INFINITY))
+                                .accessible_name(value["field_label"].as_str().unwrap_or("Name"));
+                            submitted = response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                            if !response.has_focus() && ui.memory(|memory| memory.focused().is_none()) { response.request_focus(); }
+                            if response.changed() { emit(events, id, "edit", json!(field)); }
+                            if let Some(error) = value["error"].as_str().filter(|error| !error.is_empty()) {
+                                ui.label(egui::RichText::new(error).small().color(ui.visuals().warn_fg_color));
+                            }
+                        } else if let Some(rows) = value["grid"].as_array() {
                             egui::ScrollArea::vertical()
                                 .max_height(360.0)
                                 .show(ui, |ui| {
@@ -739,7 +750,10 @@ pub(crate) fn draw(
                             ui.add(egui::Label::new(text(value, "body")).wrap());
                         }
                     });
-                if let Some(index) = shown.chosen {
+                let chosen = shown.chosen.or_else(|| {
+                    (submitted && !shown.dismissed).then(|| value["choices"].as_array().unwrap().iter().position(|choice| choice["default"] == true && choice["enabled"] == true)).flatten()
+                });
+                if let Some(index) = chosen {
                     let choice = &value["choices"][index];
                     emit(
                         events,

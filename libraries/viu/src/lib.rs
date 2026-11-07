@@ -7,6 +7,7 @@ pub mod bundle;
 pub mod capture;
 pub mod chooser;
 pub mod chooser_host;
+pub mod command_palette;
 pub mod debug;
 mod debug_recent;
 mod design_style;

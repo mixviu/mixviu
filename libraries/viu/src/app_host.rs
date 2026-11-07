@@ -743,8 +743,7 @@ impl Host {
                 }
             }
             self.view.geometry.extend(self.overlays.geometry.clone());
-            if !self.native_drive
-                && self.facilities.macros.is_some()
+            if self.facilities.macros.is_some()
                 && toolkit::macros::show_app(ui.ctx(), &self.app, self.model["macros_open"] == true)
             {
                 self.dispatch(

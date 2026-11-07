@@ -69,6 +69,7 @@ fn dp_menus($state,$contract)
   return map($contract.menus,fn($item)=dp_toolbar_item($state,$contract,$item))
 end
 fn dp_toolbar_item($state,$contract,$item)
+  if $contract.ui_labels[$item.id]!=nil then $item.label=$contract.ui_labels[$item.id] end
   if $item.children!=nil then
     $children=[]
     for $child in $item.children push($children,dp_toolbar_item($state,$contract,$child)) end

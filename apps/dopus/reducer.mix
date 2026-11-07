@@ -93,7 +93,8 @@ fn dp_form($s,$kind,$title,$body,$field,$operation)
   if len($s.form_queue)>=16 then raise("BUSY","Dialog queue is full") end
   if contains(["mkdir","rename"],$kind) and (($s.reservation!=nil and contains(["mkdir","rename"],$s.reservation.kind)) or any($s.form_queue,fn($q)=contains(["mkdir","rename"],$q.reservation.kind))) then raise("BUSY","A name edit is already pending") end
   $s.next_token=$s.next_token+1
-  $form={open:true,title:$title,body:$body,field:$field,instance:$s.next_token,error:"",choices:[{id:"cancel",label:"Cancel",enabled:true,cancel:true},{id:"ok",label:if $kind=="delete" then "Delete" else "OK" end,enabled:true,default:true}]}
+  $form={open:true,title:$title,body:$body,field:$field,instance:$s.next_token,error:"",choices:[{id:"ok",label:if $kind=="delete" then "Yes" elif $kind=="message" then "Done" else "OK" end,enabled:true,default:true}]}
+  if $kind!="message" then $form.choices=push($form.choices,{id:"cancel",label:if $kind=="delete" then "No" else "Cancel" end,enabled:true,cancel:true}) end
   $reservation={kind:$kind,operation:$operation}
   if $s.form.open then $s.form_queue=push($s.form_queue,{form:$form,reservation:$reservation})
   else $s.form=$form;$s.reservation=$reservation end
@@ -254,7 +255,7 @@ fn dp_intent($s,$contract,$a)
       $s.form.field=$value
       if $s.reservation.kind=="search" then $s.form.choices=dp_search_choices($s,$contract) end
       return $s
-    elif $action=="answer" then return dp_handle_answer($s,$contract,$value.choice) end
+    elif $action=="answer" then return dp_handle_answer($s,$contract,if $value.choice=="close" then "cancel" else $value.choice end) end
   elif $id=="panes" then $s.split=clamp($value,0.2,0.8);return $s
   elif $id=="root" then
     if $value.child=="places-pane" then $s.places_width=clamp($value.fraction,0.1,0.3)
