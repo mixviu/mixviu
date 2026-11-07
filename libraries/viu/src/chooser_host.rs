@@ -116,7 +116,11 @@ impl Window {
             session_values: json!({}),
             session_snapshot: json!({}),
             style_snapshot: Value::Null,
-            app: app_dir.file_name().and_then(|name|name.to_str()).unwrap_or("files").into(),
+            app: app_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("files")
+                .into(),
             file_theme: toolkit::Theme::load(),
             last_ui: Default::default(),
         })
@@ -134,7 +138,7 @@ impl Window {
                 )
             })
             .collect();
-        json!({"settings":self.session_values,"ready":self.ready&&self.view.is_some(),"request":self.id,"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len(),"endpoint":"model applied/native input consumed; physical presentation unmeasured"})
+        json!({"settings":self.session_values,"ready":self.ready&&self.mapped&&self.view.as_ref().is_some_and(|view|view.current_revision_drawn()),"request":self.id,"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len(),"endpoint":"model applied/native input consumed; physical presentation unmeasured"})
     }
     fn call(&mut self, args: Value) {
         match self.worker.event("chooser.call".into(), args) {
@@ -199,11 +203,21 @@ impl Window {
         self.mapped = true;
         let ctx = ui.ctx().clone();
         let framed = self.model["frame"].is_object();
-        let style_key=json!({"values":self.session_snapshot["state"]["values"],"lost":self.session_snapshot["state"]["lost"]});
-        if framed && style_key["values"].is_object() && self.style_snapshot!=style_key {
-            match crate::appearance::install_session(&ctx,&self.session_snapshot,&self.app,&self.file_theme,&self.last_ui) {
-                Ok(common) => {self.last_ui=common;self.style_snapshot=style_key;ctx.request_repaint();},
-                Err(error) => self.error=error,
+        let style_key = json!({"values":self.session_snapshot["state"]["values"],"lost":self.session_snapshot["state"]["lost"]});
+        if framed && style_key["values"].is_object() && self.style_snapshot != style_key {
+            match crate::appearance::install_session(
+                &ctx,
+                &self.session_snapshot,
+                &self.app,
+                &self.file_theme,
+                &self.last_ui,
+            ) {
+                Ok(common) => {
+                    self.last_ui = common;
+                    self.style_snapshot = style_key;
+                    ctx.request_repaint();
+                }
+                Err(error) => self.error = error,
             }
         }
         if !framed {
