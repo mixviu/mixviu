@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 pub fn validate(v: &Value) -> bool {
     v["enabled"].is_boolean()
+        && (v["chooser_only"].is_null() || v["chooser_only"].is_boolean())
         && v["fields"].as_array().is_some_and(|rows| {
             rows.len() <= 32
                 && rows.iter().all(|r| {
@@ -130,6 +131,9 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
     };
     let response = ui
         .scope(|ui| {
+            if v["chooser_only"] == true {
+                return;
+            }
             if v["native_spacing"] != true {
                 ui.spacing_mut().item_spacing.y = 0.0;
             }

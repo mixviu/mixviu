@@ -10,7 +10,7 @@ fn mail_drop($a)
     if len($files)>0 then composer_attachments("email.compose.attachment.add",{window:$a.window,paths:$files}) end
     return
   end
-  $account=$mail_settings.default_account ?? $active;$entry=wire_entry($account)
+  $account=composer_account();$entry=wire_entry($account)
   if $entry==nil then $status="No account is selected";return end
   if len($documents)==0 then
     $opened=composer_open({account:$account,attachments:$files})

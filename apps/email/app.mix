@@ -305,7 +305,9 @@ on viu.frame.intent
   reply($out.rc,json_encode($out.body))
 end
 on email.compose
-  $out=composer_open($event.args);publish_email();reply($out.rc,json_encode($out.body))
+  $a=$event.args
+  if type($a)=="map" and not contains(keys($a),"account") then $a.account=$active end
+  $out=composer_open($a);publish_email();reply($out.rc,json_encode($out.body))
 end
 on email.reply
   $out=composer_begin("email.reply",$event.args,$event);publish_email();reply($out.rc,json_encode($out.body))
