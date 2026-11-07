@@ -39,4 +39,19 @@ $replay=$b.dispatch($out.state,"term.pane.split",{dir:"v",request_id:"event-spli
 check(len($replay.state.layout.events)==len($out.state.layout.events),"replay never duplicates change events")
 $closing=$b.shut($watched,$n)
 check($closing.closed and len($closing.layout.tabs)==0 and any($closing.layout.events,fn($e)=$e.topic=="term.tabs.changed" and $e.body.kind=="removed"),"quit retains final removal records for bounded drain")
+-- Gold keeps TERM and history capacity on existing shells; new sessions use
+-- the latest terminal profile for both tab and split creation.
+fn profile_native($op,$handle,$a)
+  if $op=="create" then
+    check($a.term=="vt100" and $a.scrollback==17 and contains([nil,"/tmp"],$a.cwd),"new PTY receives current terminal profile and requested cwd")
+    return {handle:"vt-profile",pid:44}
+  end
+  return native($op,$handle,$a)
+end
+$profile=$s;$profile.look.values={"terminal.env.term":"vt100","terminal.scrollback.lines":17}
+$profile_native=fn($op,$handle,$a)=profile_native($op,$handle,$a)
+for $command in ["term.tab.new","term.pane.split"]
+  $out=$b.dispatch($profile,$command,if $command=="term.tab.new" then {cwd:"/tmp"} else {dir:"v"} end,$profile_native)
+  check($out.rc==0 and $out.state.layout.panes["1"].handle=="vt-1","profile updates configure only newly created sessions")
+end
 print("term dispatch: live targets, replay, native metadata and validation checks passed")

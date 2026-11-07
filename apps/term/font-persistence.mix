@@ -2,6 +2,18 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- Gold apps/term/src/font.rs at 8779f33, expressed as Mix policy.
 -- Caller supplies monotonic milliseconds and performs returned actions.
+fn answer($completion)
+  $failed={rc:20,body:{}}
+  if type($completion)!="map" or $completion.rc!=0 then return $failed end
+  $reply=$completion.body
+  if type($reply)=="string" then
+    try $reply=json_parse($reply) catch $message return $failed end
+  end
+  if type($reply)!="map" or type($reply.rc)!="number" then return $failed end
+  -- Native refusals can have an empty/null body. They still settle the
+  -- request so that a later hint or reconnect can retry the pending zoom.
+  return {rc:$reply.rc,body:if type($reply.body)=="map" then $reply.body else {} end}
+end
 fn initial()
   return {pending:nil,unsaved:false,sent:nil,fence_ready:false,reading:false,read_again:false,debounce_at:nil}
 end

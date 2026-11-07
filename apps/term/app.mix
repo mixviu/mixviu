@@ -47,9 +47,7 @@ fn font_event($s,$event)
   return $s
 end
 fn font_received($s,$done)
-  $answer=$done.body
-  if type($answer)=="string" then $answer=json_parse($answer) end
-  if $done.rc!=0 then $answer={rc:20,body:{}} end
+  $answer=$font.answer($done)
   $body=$answer.body
   if $done.tag.owner.operation=="read" then
     if $body.status=="wrong_target" and not ($s.font_retargeted ?? false) and type($body.binding)=="map" and $body.binding.profile=="default" then

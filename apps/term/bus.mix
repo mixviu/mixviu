@@ -69,7 +69,7 @@ fn dispatch($s,$command,$a,$native)
       $body=join($lines,"\n")
     elif $command=="term.tab.new" or $command=="term.pane.split" then
       $model.ensure_slot($s.layout)
-      $session=$native("create","",{cwd:$a.cwd,scrollback:$s.look.values["terminal.scrollback"] ?? 1000})
+      $session=$native("create","",{cwd:$a.cwd,scrollback:$s.look.values["terminal.scrollback.lines"] ?? 1000,term:$s.look.values["terminal.env.term"] ?? "xterm-256color"})
       if $command=="term.tab.new" then
         $s.layout=$model.open_tab($s.layout,$session,$a.title);$t=active($s)
         $body="opened id="..to_string($t.tab).." "..identity($s,$t).." binding=unavailable"

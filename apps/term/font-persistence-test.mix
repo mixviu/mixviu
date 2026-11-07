@@ -4,6 +4,12 @@ $font=require("font-persistence.mix")
 $good={kind:"read-answered",usable:true,following:true,continued:false}
 $bad={kind:"read-answered",usable:false,following:true,continued:false}
 fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+for $body in [nil,"",[],"not JSON","null",{rc:10,body:nil},{rc:10,body:""},{rc:10,body:[]}]
+  $answer=$font.answer({rc:0,body:$body})
+  check($answer.rc!=0 and type($answer.body)=="map","empty native failure settles without dereferencing a null body")
+end
+check($font.answer({rc:20,body:{rc:0,body:{status:"changed"}}}).rc==20,"job failure takes precedence over an apparent reply")
+check(deep_eq($font.answer({rc:0,body:json_encode({rc:0,body:{status:"current"}})}),{rc:0,body:{status:"current"}}),"encoded native reply retains its typed body")
 fn feed($s,$e,$at,$expected)
   $out=$font.event($s,$e,$at)
   check(deep_eq($out.actions,$expected),json_encode({event:$e,state:$s,expected:$expected,actual:$out}))
