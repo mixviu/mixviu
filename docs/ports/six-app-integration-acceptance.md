@@ -3,7 +3,13 @@
 Tested runtime source: `2894a603a903d05f5a53f734dc5c591a11e69a91`,
 branch `lab/gold-parity`. This integrates the accepted Monitor, Ced, Prefs,
 Screenshot and Backdrop work, Workshop's shared editor, and the bulk
-primitives from `4c1d715`. Overall acceptance is **OPEN**.
+primitives from `4c1d715`. Overall acceptance is **OPEN**. Source `2894a603`
+is **NOT_ACCEPTED**: final inspection found Workshop retaining client chrome
+after authority loss where gold removes it. Its saved worker handoff says
+NOT_ACCEPTED. Successor bundle repair `5bdc85c3a833e471fa5b5d7a5b666bb32ada8202`
+sets the existing `retain_window_on_loss` policy to false for Workshop.
+That paired repair capture is pixel-exact; detached full gate
+`gold-six-full-20261107-r7` and successor release-byte repetition are pending.
 
 ## Exact-source gate and artifacts
 
@@ -31,13 +37,40 @@ artifacts are not yet an accepted desk handoff; no installation is authorised.
 
 ## Open acceptance work
 
-The exact-release six-app suites, deferred-reply witnesses, paired captures
-and same-worker comparison are running. The concurrent Workshop editor
+The exact-release six-app suites and deferred-reply witnesses executed.
+Monitor has 46/46 replies and ten exact pairs; Ced has eleven suites and
+35 pairs (31 exact); Prefs has 69 functional checks, 42 pages and 91 pairs
+(88 exact); Screenshot has 55 Bus comparisons, eleven suites and 47 image
+comparisons; Backdrop has its four native groups and 44 pairs. Workshop
+matches 99/99 protocol replies and 25/25 macro replies, with native UI,
+editor, panels, persistence and live Prefs runs. These results do not close
+the remaining visual mismatch or grant acceptance to the set.
+
+The concurrent Workshop editor
 witness passed New macro, Unicode typing, undo/redo and Save, then received
 `BUSY/Full` from `workshop.info` after launching Ced. That failed run is
 preserved. An isolated repetition on identical release bytes will distinguish
-load-dependent admission from a reproducible editor launch failure; it does
-not erase the failure or grant acceptance automatically.
+load-dependent admission from a reproducible editor launch failure. That
+unchanged isolated witness passed, including both window effects and cleanup
+of all thirteen owned PIDs. It does not erase the concurrent failure. The
+successor recipe runs the strict editor witness before the other app groups,
+without retrying or ignoring refused requests.
+
+Expanded Traffic regions were inspected separately from the collapsed
+layout. Bottom/right headers, static content, controls and status all have
+SSIM/RMSE distortion 0. Populated traffic data has whole distortion
+0.0184629/0.00517524 and data-region distortion 0.082597/0.0218041;
+timestamps, observations and message sizes are truthful S2 data. Clearing
+traffic produces whole-window and every-region distortion 0 in both docks.
+
+The persistence witness initially compared selection reveal at different
+initial viewport sizes. Setting both saved window sizes to 1040×680 before
+restart gives equal restored offsets (809.5px) and a pixel-exact restored
+capture; the raw 70px restart capture is also exact. The original strict
+offset and passive-state assertions remain intact. Startup sizing and
+in-progress wheel captures are retained as diagnostics, rather than being
+presented as matched settled visual states. This fixture correction changes
+no application behaviour and claims no scroll waiver.
 
 The preceding source `73bda564` passed CBC but failed visual acceptance:
 background appearance retention leaked into ordinary windows after authority
@@ -61,3 +94,28 @@ derivation.
 
 Workshop's installed native Dopus interoperability follows gold. Moving
 Dopus itself to the generic host remains a separate open port.
+
+## Same-worker 2,000-row comparison
+
+CBC `gold-six-perf-2894a603a903-a1` passed on cbc2 against
+`4c1d7153f6e13da0e1f67317af9c3b4518ff5e09`. The complete log was read.
+All four engine hashes verify; 510 native samples pass row-count, sorting,
+selection, refresh-witness and applied-model checks. No compiler was active.
+Thirty Latin-rotated rounds use 2,000 actual files and alternating Email
+order. ACK timing is separate from applied-model readback and does not
+measure physical presentation.
+
+| Operation | Median before → after, ms | p95 before → after, ms |
+|---|---:|---:|
+| view.sort-size | 112.847 → 114.924 | 124.971 → 121.356 |
+| view.sort-name | 110.874 → 110.420 | 119.234 → 116.129 |
+| view.refresh | 101.629 → 102.429 | 117.606 → 108.119 |
+| selection.first | 63.192 → 64.241 | 74.526 → 67.123 |
+| selection.last | 64.335 → 64.797 | 68.835 → 71.276 |
+| email.list | 115.287 → 117.390 | 135.131 → 140.187 |
+
+Bulk correctness and hot paths are retained. Residual timing shifts remain
+visible, including Email's 1.8% median increase; these are not identical
+measurements or a claim to have reached a new latency target. Full raw
+distributions, model readbacks, original gold timings and cleanup receipts
+remain in the private evidence.
