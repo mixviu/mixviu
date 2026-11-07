@@ -115,7 +115,7 @@ enum Command {
         #[arg(long)]
         www_dir: Option<PathBuf>,
 
-        /// Path to the SQLite database (default: $MIX_VAR/web.db)
+        /// Path to the SQLite database (default: $MIX_VAR/webd/web.db)
         #[arg(long)]
         db_path: Option<PathBuf>,
 
@@ -166,7 +166,7 @@ enum Command {
     },
     /// Initialise the SQLite database
     Init {
-        /// Path to the SQLite database (default: $MIX_VAR/web.db)
+        /// Path to the SQLite database (default: $MIX_VAR/webd/web.db)
         #[arg(long)]
         db_path: Option<PathBuf>,
     },
@@ -7097,7 +7097,7 @@ async fn async_main() -> Result<()> {
             daemon::selfcert::write_self_signed(&fqdn, &cert, &key)?;
         }
         Command::Init { db_path } => {
-            let db_path = db_path.unwrap_or_else(|| config::path(config::Dir::Var).join("web.db"));
+            let db_path = db_path.unwrap_or_else(|| config::path(config::Dir::Var).join("webd").join("web.db"));
             if let Some(parent) = db_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -7165,7 +7165,7 @@ async fn async_main() -> Result<()> {
                 .expect("Failed to install rustls crypto provider");
 
             let var_dir = config::path(config::Dir::Var);
-            let db_path = db_path.unwrap_or_else(|| var_dir.join("web.db"));
+            let db_path = db_path.unwrap_or_else(|| var_dir.join("webd").join("web.db"));
 
             // Resolve config: CLI args override node.conf.mix
             let node_cfg = config::node::load_node_config()?;
