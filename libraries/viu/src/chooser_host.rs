@@ -124,7 +124,7 @@ impl Window {
                 )
             })
             .collect();
-        json!({"ready":self.ready&&self.view.is_some(),"request":self.id,"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len(),"endpoint":"model applied/native input consumed; physical presentation unmeasured"})
+        json!({"settings":self.session_values,"ready":self.ready&&self.view.is_some(),"request":self.id,"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len(),"endpoint":"model applied/native input consumed; physical presentation unmeasured"})
     }
     fn call(&mut self, args: Value) {
         match self.worker.event("chooser.call".into(), args) {

@@ -36,42 +36,46 @@ pub fn draw(
             toolkit::panel::section_label(ui, label);
         }
         let font = egui::TextStyle::Body.resolve(ui.style());
-        ui.add_enabled_ui(value["enabled"] != false, |ui| { egui::ScrollArea::vertical()
-            .auto_shrink(false)
-            .show(ui, |ui| {
-                for row in value["rows"].as_array().unwrap() {
-                    ui.push_id(row["key"].as_str().unwrap(), |ui| {
-                        ui.horizontal(|ui| {
-                            let icon = crate::icons::Icon::from_name(row["icon"].as_str().unwrap())
-                                .unwrap();
-                            ui.add(crate::icons::image_of(
-                                ui.ctx(),
-                                icon,
-                                16.0,
-                                ui.visuals().weak_text_color(),
-                            ));
-                            let width = (ui.available_width()
-                                - 2.0 * ui.spacing().button_padding.x)
-                                .max(0.0);
-                            let text = crate::elide::fit(
-                                ui,
-                                row["cells"][0].as_str().unwrap(),
-                                &font,
-                                width,
-                            );
-                            let response = toolkit::selectable(ui, row["selected"] == true, text)
-                                .on_hover_text(row["path"].as_str().unwrap_or(""));
-                            if response.clicked() {
-                                events.push(crate::widgets::Intent {
-                                    id: id.into(),
-                                    action: "select".into(),
-                                    value: json!({"key":row["key"]}),
-                                });
-                            }
+        ui.add_enabled_ui(value["enabled"] != false, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink(false)
+                .show(ui, |ui| {
+                    for row in value["rows"].as_array().unwrap() {
+                        ui.push_id(row["key"].as_str().unwrap(), |ui| {
+                            ui.horizontal(|ui| {
+                                let icon =
+                                    crate::icons::Icon::from_name(row["icon"].as_str().unwrap())
+                                        .unwrap();
+                                ui.add(crate::icons::image_of(
+                                    ui.ctx(),
+                                    icon,
+                                    16.0,
+                                    ui.visuals().weak_text_color(),
+                                ));
+                                let width = (ui.available_width()
+                                    - 2.0 * ui.spacing().button_padding.x)
+                                    .max(0.0);
+                                let text = crate::elide::fit(
+                                    ui,
+                                    row["cells"][0].as_str().unwrap(),
+                                    &font,
+                                    width,
+                                );
+                                let response =
+                                    toolkit::selectable(ui, row["selected"] == true, text)
+                                        .on_hover_text(row["path"].as_str().unwrap_or(""));
+                                if response.clicked() {
+                                    events.push(crate::widgets::Intent {
+                                        id: id.into(),
+                                        action: "select".into(),
+                                        value: json!({"key":row["key"]}),
+                                    });
+                                }
+                            });
                         });
-                    });
-                }
-            }); });
+                    }
+                });
+        });
     })
     .response
 }

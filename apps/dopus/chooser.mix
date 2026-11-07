@@ -43,10 +43,20 @@ fn ch_scan($s)
   if not any($s.rows,fn($r)=$r.key==$s.cursor) then $s.cursor=nil end
   return $s
 end
-fn ch_go($s,$folder)
+fn ch_go($s,$folder,$remember=true)
+  if $remember and $s.folder!=viu_files("uri",{path:$folder}) then $s.back=concat($s.back ?? [],[$s.folder]);$s.forward=[] end
   $s.folder=viu_files("uri",{path:$folder});$s.location=viu_files("display-path",{path:$s.folder});$s.selected=[];$s.anchor=nil;$s.cursor=nil;return ch_scan($s)
 end
 fn ch_key($s,$a)
+  if $a.ctrl and $a.key=="R" then return ch_scan($s) end
+  if $a.alt and $a.key=="Home" then return ch_go($s,$s.home) end
+  if $a.alt and contains(["ArrowLeft","ArrowRight"],$a.key) then
+    $from=if $a.key=="ArrowLeft" then "back" else "forward" end;$to=if $from=="back" then "forward" else "back" end
+    if len($s[$from] ?? [])>0 then
+      $history=$s[$from];$target=$history[len($history)-1];$s[$from]=slice($history,0,len($history)-1);$s[$to]=concat($s[$to] ?? [],[$s.folder]);return ch_go($s,$target,false)
+    end
+    return $s
+  end
   if $a.ctrl and $a.key=="L" then $s.focus={id:"location",selection:[0,len($s.location)]};return $s end
   if $a.ctrl and $a.key=="H" then $s.hidden=not $s.hidden;return ch_scan($s) end
   if $a.key=="Escape" then return ch_effect($s,"cancel",{request:$s.id}) end
@@ -193,7 +203,8 @@ on chooser.call
         if $v.choice=="replace" then $candidate.pending.replace=true;$candidate=ch_effect($candidate,"accept",$candidate.pending) end
         $candidate.form.open=false
       elif $id=="files" then
-        if $action=="sort" then
+        if $action=="activate-pane" then $candidate=$candidate
+        elif $action=="sort" then
           if not contains(["name","size","modified"],$v.column) then raise("INVALID_ARGUMENT","Unknown column") end
           $candidate.ascending=if $candidate.sort==$v.column then not $candidate.ascending else true end
           $candidate.sort=$v.column;$candidate=ch_scan($candidate)
