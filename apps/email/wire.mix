@@ -36,7 +36,7 @@ fn wire_schedule($command,$args,$event,$purpose)
   end
   $id=$argument_policy.text($args,"account") ?? $active;$entry=wire_entry($id)
   if $command=="email.account.connect" then $id=$argument_policy.required($args,"id");$entry=wire_entry($id) end
-  if $settings then $request_policy.validate($command,$args) end
+  if $settings then $request_policy.check_request($command,$args) end
   if not $settings then
     if $entry==nil then return wire_refuse("UNKNOWN_ACCOUNT",if $id=="" or $id==nil then "No account is selected" else "No account "..to_string($id) end) end
     if $entry.enabled==false then return wire_refuse("NOT_CONNECTED","Not connected") end
@@ -50,7 +50,7 @@ fn wire_schedule($command,$args,$event,$purpose)
       if $args.id==nil then return wire_refuse("NOT_FOUND","No email is open") end
       $args.markdown=$id==$active and ($message ?? {}).id==$args.id and $reader_markdown
     end
-    $request_policy.validate($command,$args)
+    $request_policy.check_request($command,$args)
   end
   if len(keys($wire_pending))>=512 then return wire_refuse("BUSY","Too many requests pending") end
   if $command=="email.account.connect" then $wire_generations[$id]=($wire_generations[$id] ?? 0)+1;$wire_sessions=delete($wire_sessions,$id) end

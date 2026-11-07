@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Validate in gold's observable order before allocating asynchronous work.
 $arg=require("arguments.mix");$addresses=require("addresses.mix");$pim=require("pim.mix")
-fn validate($command,$a)
+fn check_request($command,$a)
   if contains(["email.account.remove","email.account.connect"],$command) then $arg.required($a,"id")
   elif $command=="email.account.password.set" then
     if $arg.text($a,"password")==nil then raise("INVALID_ARGUMENT","password is required") end
