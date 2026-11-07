@@ -63,14 +63,26 @@ fn scrolling_column_keeps_its_authored_padding() {
         }));
         let mut view = SceneView::new(&source).unwrap();
         for _ in 0..3 {
-            ctx.run_ui(egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,700.0))),
-                ..Default::default()
-            }, |ui| {view.show(ui);}).drop_without_applying_deltas();
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 700.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            )
+            .drop_without_applying_deltas();
         }
         positions.push(view.geometry["label"].min);
     }
-    assert_eq!(positions[0],positions[1],"scrolling must not discard the container frame");
+    assert_eq!(
+        positions[0], positions[1],
+        "scrolling must not discard the container frame"
+    );
 }
 
 #[test]
