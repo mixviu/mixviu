@@ -272,3 +272,28 @@ Superseded own jobs were cancelled using their explicit native interest
 tokens; no other session job was touched. No acceptance or install claimed.
 
 branch lab/parity-dopus; head SHA d95a5a3966fd6c7d3493917c382b5feafd6b0b19 (implementation; receipt-only commit follows); OPEN: exact-source release gate/suite, final regional inspection and acceptance record; CBC 20261107-155151-c9e6be4a PASS scoped checks/debug build with no worker diff, dopus-r4-accept-chooser-a1 cancelled as superseded, dopus-r4-final cancelled before execution, dopus-r4-release-frame RUNNING detached.
+
+### Round four final source frozen
+
+Implementation `7c96aaed75fcd276bf196038154169ac5eff5b9c` restores the missing
+mode palette entry, installs live appearance in each chooser viewport and
+reports readiness after the first drawn scene. Initial decoration negotiation
+matches the undecorated native builder. Gold and candidate chooser captures
+now wait for mapping and complete the same native resize/repaint sequence
+before capture. Matched effective legacy radii leave only truthful caller
+identities in the chooser difference figure; images are never rescaled.
+
+Prior-source `955bd3f2b76b` passed its heavy gate and all twelve release-native
+groups. Its audit exercises all 44 gold descriptors and 33 core actions;
+the missing search row is closed. Those receipts remain prior-source evidence.
+An additional native chooser probe refuses 65,537 names with SCAN_BUDGET,
+preserving the prior folder, complete rows and serial and leaving the request
+open. This diagnostic still needs the final release-byte repeat.
+
+Final source and recipes are frozen as `accept-7c96aaed75fc-final`.
+`dopus-r4-accept-settled` is detached in the heavy CBC queue. Owned follow-ons
+verify the exact release hash, run the complete suite, repeat the matched
+chooser/budget probe and generate the region audit. Full log and image
+inspection remain required before ACCEPTED. No installation or desk action.
+
+branch lab/parity-dopus; head SHA 7c96aaed75fcd276bf196038154169ac5eff5b9c (tested implementation; receipt-only commit follows); OPEN: final exact-source release gate/native suite and inspection; CBC dopus-r4-release-frame-a1 PASS, dopus-r4-native-final-a1 PASS, 20261107-163547-a13208ea PASS scoped checks/debug with formatting applied, dopus-r4-accept-settled QUEUED detached.
