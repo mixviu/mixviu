@@ -59,6 +59,7 @@ end
 fn dp_command($state,$contract,$id)
   $a=filter($contract.actions,fn($a)=$a.id==$id)[0]
   if $a==nil then raise("UNKNOWN_ACTION",$id) end
+  $a.label=$contract.ui_labels[$id] ?? $a.label
   $id=$contract.action_aliases[$id] ?? $id
   $a.enabled=dp_enabled($state,$id)
   $a.shortcut=$a.keys[0]
@@ -147,7 +148,7 @@ fn dp_project($state,$contract,$cache)
   if $window["viu.hosted-menu"] ?? false then $header_groups.menu.preferred=0;$header_groups.menu.minimum=0 end
   if $window["viu.hosted-actions"] ?? false then $header_groups.toolbar.preferred=0;$header_groups.toolbar.minimum=0 end
   $caption_control={id:"caption-title",kind:"label",label:"",initial:"",properties:{align:$title_align,emphasis:true,truncate:true}}
-  $context=map($contract.context,fn($id)=dp_command($state,$contract,$id))
+  $context=map(["file.open","file.mail","file.copy-other-pane","file.move-other-pane","file.rename","file.delete","file.new-folder","view.refresh","view.toggle-hidden"],fn($id)=dp_command($state,$contract,$id))
   $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
   $values={"caption-title":$dp.dp_display($state.panes[$state.active].path),menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
   $values.window={side:$caption_side,enabled:true}

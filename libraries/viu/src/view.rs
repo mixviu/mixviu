@@ -699,7 +699,7 @@ impl SceneView {
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(id), |ui| {
             if nodes
                 .get(id)
-                .is_none_or(|node| node.ports.get("clip") != Some(&Value::Bool(false)))
+                .is_none_or(|node| node.ports.get("clip") != Some(&Value::Bool(false)) || num(node,"clip_below").is_some_and(|width| ui.ctx().content_rect().width() < width))
             {
                 ui.set_clip_rect(ui.clip_rect().intersect(rect));
             }

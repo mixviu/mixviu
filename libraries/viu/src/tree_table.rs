@@ -423,7 +423,7 @@ pub(crate) fn draw(
                     let toggle=ui.interact(chevron,Id::unique((ui.ctx().viewport_id(),id,key,"expand")),Sense::click());
                     toggle.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,true,format!("{} {}",if row["expanded"]==true{"Collapse"}else{"Expand"},row["cells"][0].as_str().unwrap_or(""))));
                     geometry.insert(format!("{id}.expand.{index}"),chevron);
-                    icon(ui,if row["expanded"]==true{"chevron-down"}else{"chevron-right"},chevron.shrink(2.0),ui.visuals().weak_text_color());
+                    if let Some(icon) = crate::icons::Icon::from_name(if row["expanded"]==true{"chevron-down"}else{"chevron-right"}) { crate::icons::image_of(ui.ctx(),icon,12.8,ui.visuals().weak_text_color()).paint_at(ui,chevron.shrink(1.0)); }
                     if toggle.clicked(){emit(events,id,"expand",json!({"key":key}));toggled=true;}
                 }
                 tx+=18.0;
