@@ -3,7 +3,7 @@
 //! this module draws and reports intents, never executes application policy.
 use egui::{Color32, Id, Rect, Sense, Vec2};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const KINDS: &[&str] = &[
     "mark",
@@ -57,6 +57,7 @@ pub const KINDS: &[&str] = &[
     "image-canvas",
     "macro-window",
     "swatches",
+    "composition",
     "window-controls",
     "settings-browser",
 ];
@@ -459,6 +460,7 @@ impl Widget {
             "image-view" => return crate::image_view::validate(value),
             "image-fill" => return crate::image_view::validate_fill(value),
             "image-canvas" => return crate::image_view::validate_canvas(value),
+            "composition" => return crate::composition::validate(value),
             "tree-table" => return crate::tree_table::validate(value),
             "icon" => {
                 value["name"]
@@ -830,8 +832,14 @@ pub struct Widgets {
     editors: crate::editor::Editors,
     documents: crate::documents::Documents,
     canvases: Option<crate::image_view::Images>,
+    rasters: Option<crate::raster::Rasters>,
+    compositions: BTreeMap<String, crate::composition::Composition>,
+    visible_compositions: BTreeSet<String>,
 }
 impl Widgets {
+    pub fn set_rasters(&mut self, rasters: crate::raster::Rasters) {
+        self.rasters = Some(rasters);
+    }
     pub fn set_native_menus(&mut self, enabled: bool) {
         self.gold_menus = enabled;
     }
@@ -849,9 +857,15 @@ impl Widgets {
     pub fn image_states(&self) -> Value {
         self.images.states()
     }
+    pub fn raster_states(&self) -> Value {
+        self.surfaces
+            .as_ref()
+            .map_or(Value::Null, |images| images.states())
+    }
     /// Begin exactly once before drawing an application frame. Geometry is
     /// retained after finish_frame for automation until the next begin_frame.
     pub fn begin_frame(&mut self) {
+        self.visible_compositions.clear();
         self.geometry.clear();
         self.text_input_active = false;
         self.focus_error = None;
@@ -890,6 +904,8 @@ impl Widgets {
     /// Call once after drawing an application frame (including individual
     /// `widget` calls). A disappeared target must not latch future replies.
     pub fn finish_frame(&mut self) -> Result<(), String> {
+        self.compositions
+            .retain(|id, _| self.visible_compositions.contains(id));
         self.images.finish();
         if let Some(images) = &mut self.canvases {
             images.finish();
@@ -1121,10 +1137,21 @@ impl Widgets {
                 .canvases
                 .get_or_insert_with(crate::image_view::Images::document)
                 .draw_canvas(ui, id, value, events),
-            "image-fill" => self
-                .surfaces
-                .get_or_insert_with(crate::image_view::Images::surface)
-                .draw_fill(ui, id, value),
+            "composition" => {
+                self.visible_compositions.insert(id.into());
+                let rasters = self.rasters.clone().unwrap_or_default();
+                self.compositions
+                    .entry(id.into())
+                    .or_default()
+                    .draw(ui, value, &rasters)
+            }
+            "image-fill" => {
+                let images = self
+                    .surfaces
+                    .get_or_insert_with(crate::image_view::Images::surface);
+                images.set_rasters(self.rasters.clone());
+                images.draw_fill(ui, id, value)
+            }
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" | "settings-browser" => {

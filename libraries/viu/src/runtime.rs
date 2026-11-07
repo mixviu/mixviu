@@ -29,6 +29,7 @@ pub struct Services {
     pub calls: Option<crate::calls::Calls>,
     pub timers: Option<crate::timers::Timers>,
     pub documents: Option<crate::documents::Documents>,
+    pub rasters: Option<crate::raster::Rasters>,
     pub macros: Option<macros::Session>,
     pub chooser: Option<crate::chooser::Service>,
     pub annotations: crate::annotation::Documents,
@@ -227,6 +228,7 @@ impl Runtime {
                         eval.set_serve_runtime(local.clone());
                         eval.register("viu_thumbnail",crate::native_primitives::thumbnail(worker_stop.clone()));
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
+                        eval.register("viu_store",crate::native_primitives::store());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_process",crate::process::binding());
@@ -253,7 +255,8 @@ impl Runtime {
                         eval.register("viu_fonts",crate::native_primitives::installed_fonts());
                         if let Some(documents)=services.documents.clone(){eval.register("viu_text_document",documents.binding());}
                         if let Some(timers)=services.timers.clone(){eval.register("viu_timer",timers.binding());}
-                        if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());}
+                        if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());eval.register("viu_exit",state.exit_binding());}
+                        if let Some(rasters)=services.rasters.clone(){eval.register("viu_raster",rasters.binding());}
                         if let Some(platform)=services.platform.clone(){eval.register("viu_platform",platform.binding());}
                         eval.register("viu_app_dirs",crate::native_primitives::app_dirs());
                         eval.register("viu_maildoc",crate::native_primitives::mail_document());

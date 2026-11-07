@@ -7,15 +7,50 @@ use std::{
     sync::{Arc, Mutex},
 };
 #[derive(Clone, Default)]
-pub struct UiState(Arc<Mutex<Value>>);
+pub struct UiState(
+    Arc<Mutex<Value>>,
+    Arc<Mutex<Value>>,
+    Arc<Mutex<Option<(u8, String)>>>,
+);
 impl UiState {
+    pub fn take_exit(&self) -> Option<(u8, String)> {
+        self.2.lock().unwrap().take()
+    }
+    pub fn exit_binding(&self) -> mix::evaluator::ExtFn {
+        let state = self.clone();
+        mix::sync_ext(move |args| {
+            let fail = || mix::MixError::RuntimeError {
+                msg: "viu_exit expects an integer exit code 0..255 and message".into(),
+                span: None,
+            };
+            let [code, mix::value::Value::String(message)] = args.as_slice() else {
+                return Err(fail());
+            };
+            let code = crate::runtime::to_json(code)?
+                .as_u64()
+                .filter(|n| *n <= 255)
+                .ok_or_else(fail)?;
+            *state.2.lock().unwrap() = Some((code as u8, message.clone()));
+            Ok(mix::value::Value::Nil)
+        })
+    }
+    pub fn set_outputs(&self, outputs: &BTreeMap<String, Value>) {
+        *self.1.lock().unwrap() = json!(outputs);
+    }
     pub fn set(&self, window: egui::Rect, geometry: &BTreeMap<String, egui::Rect>, stats: Value) {
         let rect = |r: egui::Rect| json!([r.min.x, r.min.y, r.width(), r.height()]);
         *self.0.lock().unwrap() = json!({"window":rect(window),"geometry":geometry.iter().map(|(id,r)|(id.clone(),rect(*r))).collect::<serde_json::Map<_,_>>(),"stats":stats});
     }
     pub fn binding(&self) -> mix::evaluator::ExtFn {
         let state = self.clone();
-        mix::sync_ext(move |_| crate::runtime::from_json(state.0.lock().unwrap().clone()))
+        mix::sync_ext(move |_| {
+            let mut value = state.0.lock().unwrap().clone();
+            if !value.is_object() {
+                value = json!({});
+            }
+            value["outputs"] = state.1.lock().unwrap().clone();
+            crate::runtime::from_json(value)
+        })
     }
 }
 #[derive(Default)]

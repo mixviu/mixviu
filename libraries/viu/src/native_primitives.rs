@@ -283,6 +283,38 @@ pub(crate) fn atomic_replace() -> mix::evaluator::ExtFn {
     })
 }
 
+/// Durable replacement with a structured post-rename uncertainty receipt.
+/// The caller supplies serialised text and owns the decision to apply it.
+pub(crate) fn store() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let fail = |msg: &str| MixError::RuntimeError {
+            msg: msg.into(),
+            span: None,
+        };
+        let [Value::String(path), Value::String(text)] = args.as_slice() else {
+            return Err(fail("viu_store expects absolute path and text"));
+        };
+        let path = std::path::Path::new(path);
+        if !path.is_absolute() || text.len() > 1024 * 1024 {
+            return Err(fail("store requires an absolute path and at most 1 MiB"));
+        }
+        let result = match config::atomic::create_directory(
+            path.parent().ok_or_else(|| fail("missing parent"))?,
+        ) {
+            Err(e) => {
+                serde_json::json!({"stored":false,"unconfirmed":false,"message":e.to_string()})
+            }
+            Ok(_) => match config::atomic::replace(path, text.as_bytes()) {
+                Ok(()) => serde_json::json!({"stored":true,"unconfirmed":false,"message":null}),
+                Err(e) => {
+                    serde_json::json!({"stored":e.may_have_replaced,"unconfirmed":e.may_have_replaced,"message":e.to_string()})
+                }
+            },
+        };
+        crate::runtime::from_json(result)
+    })
+}
+
 /// Bounded, nonblocking optional text read through the existing held-directory
 /// primitive. Only NotFound means absent; unreadable/linked/special files fail.
 pub(crate) fn read_optional() -> mix::evaluator::ExtFn {

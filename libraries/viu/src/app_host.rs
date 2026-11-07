@@ -35,6 +35,8 @@ fn validate_overlays(model: &Value) -> Result<(), String> {
     Ok(())
 }
 struct Host {
+    require_bus: bool,
+    forward_output: bool,
     platform: crate::platform::Platform,
     paste_waits: std::collections::VecDeque<String>,
     paste_deadline: Option<Instant>,
@@ -43,6 +45,7 @@ struct Host {
     timers: crate::timers::Timers,
     timer_results: std::collections::VecDeque<Value>,
     documents: crate::documents::Documents,
+    rasters: crate::raster::Rasters,
     ui_state: crate::ui_state::UiState,
     measurements: crate::ui_state::Measurements,
     input_at: Option<Instant>,
@@ -228,7 +231,9 @@ impl Host {
                 10,
                 self.unknown_command.as_ref().map_or_else(
                     || json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
-                    |message| json!({"error_code":"UNKNOWN_COMMAND","message":message}),
+                    |message| if message.contains("{command}") {
+                        json!({"error_code":"UNKNOWN_COMMAND","message":message.replace("{command}",&r.command),"command":r.command})
+                    } else { json!({"error_code":"UNKNOWN_COMMAND","message":message}) },
                 ),
             ));
             return;
@@ -589,6 +594,18 @@ impl Host {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         while let Some(done) = self.runtime.try_completion() {
+            if let Some((code, message)) = self.ui_state.take_exit() {
+                if !message.is_empty() {
+                    eprintln!("{}: {message}", self.app);
+                }
+                std::process::exit(i32::from(code));
+            }
+            if self.forward_output {
+                use std::io::Write;
+                print!("{}", done.stdout);
+                let _ = std::io::stdout().flush();
+                eprint!("{}", done.stderr);
+            }
             self.measurements
                 .model(done.elapsed.as_micros().min(u64::MAX as u128) as u64);
             self.inflight.remove(&done.sequence);
@@ -633,6 +650,7 @@ impl Host {
                             .map(|view| {
                                 self.view = view;
                                 self.view.set_documents(self.documents.clone());
+                                self.view.set_rasters(self.rasters.clone());
                                 self.view.set_native_menus(self.native_drive);
                                 self.loaded = true;
                             })
@@ -788,6 +806,7 @@ impl Host {
                 match SceneView::with_model(&self.scene_source, projected.clone()) {
                     Ok(view) => {
                         self.view = view;
+                        self.view.set_rasters(self.rasters.clone());
                         self.loaded = true;
                     }
                     Err(e) => self.error = e,
@@ -1236,7 +1255,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let mut command_names = BTreeSet::new();
     commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
-    let bus = Endpoint::start_policy(
+    let bus = if !bundle.manifest.bus { Endpoint::offline() } else { Endpoint::start_policy(
         std::env::var("VIU_SERVICE").unwrap_or(service),
         bundle.manifest.bus_url(),
         {
@@ -1290,8 +1309,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             owner_help: bundle.manifest.owner_help,
             timeout: Duration::from_secs(bundle.manifest.reply_timeout_secs),
         },
-    );
+    ) };
     let documents = crate::documents::Documents::default();
+    let rasters = crate::raster::Rasters::default();
     let timers = crate::timers::Timers::default();
     let calls = crate::calls::Calls::default();
     let ui_state = crate::ui_state::UiState::default();
@@ -1321,6 +1341,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         calls: Some(calls.clone()),
         timers: Some(timers.clone()),
         documents: Some(documents.clone()),
+        rasters: Some(rasters.clone()),
         ..Default::default()
     };
     let mut jobs = crate::jobs::Jobs::new(bundle.manifest.job_limit, wake.clone());
@@ -1339,6 +1360,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        require_bus: bundle.manifest.require_bus,
+        forward_output: bundle.manifest.forward_output,
         platform,
         paste_waits: Default::default(),
         paste_deadline: None,
@@ -1347,6 +1370,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         timers,
         timer_results: Default::default(),
         documents,
+        rasters,
         ui_state,
         measurements: Default::default(),
         input_at: None,
@@ -1380,7 +1404,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         last_ui: settings::model::CommonUi::default(),
         session_dirty: false,
         session_key: Value::Null,
-        session: bundle.manifest.frame.as_ref().map(|_| {
+        session: (bundle.manifest.frame.is_some() || bundle.manifest.follow_settings).then(|| {
             crate::session::Session::embedded(
                 bundle.manifest.app(),
                 &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_| "default".into()),
@@ -1465,10 +1489,15 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             eprintln!("viu logging: {e}");
             std::process::exit(2)
         });
-    if matches!(
-        logging_args.get(3).map(String::as_str),
-        Some("--help" | "-h")
-    ) {
+    if logging_args
+        .iter()
+        .skip(3)
+        .any(|a| matches!(a.as_str(), "--help" | "-h"))
+    {
+        if let Some(help) = &preview.manifest.help {
+            print!("{help}");
+            return Ok(());
+        }
         println!(
             "Usage: viu run APP_DIR [--service NAME] [--comp NAME] [--noded-url URL] [APP_ARGS]"
         );
@@ -1533,6 +1562,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             host: None,
             views: BTreeMap::new(),
             contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            reported: BTreeMap::new(),
         };
         if let Err(e) = crate::layer::run(options, layer) {
             eprintln!("viu layer: {e}");
@@ -1601,9 +1631,52 @@ struct LayerHost {
     host: Option<Host>,
     views: BTreeMap<String, (SceneView, bool)>,
     contexts: Arc<std::sync::Mutex<Vec<egui::Context>>>,
+    reported: BTreeMap<String, crate::layer::SurfaceInfo>,
 }
 impl crate::layer::LayerProgram for LayerHost {
+    fn strict_frame_callbacks(&self) -> bool {
+        self.host
+            .as_ref()
+            .is_some_and(|h| h.model["layer"]["strict_callbacks"] == true)
+    }
+    fn frame_interval(&self) -> Duration {
+        Duration::from_millis(
+            self.host
+                .as_ref()
+                .and_then(|h| h.model["layer"]["frame_ms"].as_u64())
+                .unwrap_or(0),
+        )
+    }
+    fn visibility(&mut self, ctx: &egui::Context, visible: bool) {
+        if let (Some(host), Some(output)) = (
+            &mut self.host,
+            ctx.data(|d| d.get_temp::<String>(egui::Id::unique("viu-layer-output"))),
+        ) {
+            let changed = host
+                .outputs
+                .get(&output)
+                .is_none_or(|state| state["visible"] != visible);
+            if let Some(state) = host.outputs.get_mut(&output) {
+                state["visible"] = json!(visible);
+            }
+            host.ui_state.set_outputs(&host.outputs);
+            if changed {
+                let _ = host.runtime.notify(
+                    "viu.layer.visibility".into(),
+                    json!({"output":output,"visible":visible}),
+                );
+            }
+        }
+    }
     fn should_close(&self) -> bool {
+        if self.host.as_ref().is_some_and(|h| {
+            h.require_bus
+                && h.bus
+                    .registration_failed
+                    .load(std::sync::atomic::Ordering::Acquire)
+        }) {
+            std::process::exit(1);
+        }
         self.host.as_ref().is_some_and(|h| {
             h.bus
                 .close_requested
@@ -1624,16 +1697,35 @@ impl crate::layer::LayerProgram for LayerHost {
                 }),
             ));
         }
+        if let Some(host) = &self.host {
+            let _ = crate::appearance::install_theme(ctx, &host.file_theme);
+        }
     }
     fn show(&mut self, ui: &mut egui::Ui, surface: &crate::layer::SurfaceInfo) {
         let host = self.host.as_mut().unwrap();
         let output = surface.output.clone().unwrap_or_default();
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::unique("viu-layer-output"), output.clone()));
         let frames = host
             .outputs
             .get(&output)
             .and_then(|o| o["presented_frames"].as_u64())
             .unwrap_or(0);
-        host.outputs.insert(output.clone(),json!({"width":surface.width,"height":surface.height,"scale":surface.scale,"presented_frames":frames}));
+        let state = host
+            .outputs
+            .entry(output.clone())
+            .or_insert_with(|| json!({}));
+        let changed = state["width"] != surface.width
+            || state["height"] != surface.height
+            || state["scale"] != surface.scale;
+        state["width"] = json!(surface.width);
+        state["height"] = json!(surface.height);
+        state["scale"] = json!(surface.scale);
+        state["presented_frames"] = json!(frames);
+        host.ui_state.set_outputs(&host.outputs);
+        if changed {
+            let _=host.runtime.notify("viu.layer.configure".into(),json!({"output":output,"width":surface.width,"height":surface.height,"scale":surface.scale}));
+        }
         let (view, loaded) = self
             .views
             .entry(output.clone())
@@ -1643,7 +1735,53 @@ impl crate::layer::LayerProgram for LayerHost {
         host.output = Some(output);
         // Layer hosts use the same owner loop; eframe's Frame is not needed.
         host.pump(ui.ctx());
+        if host.model["layer"]["observe_input"] == true {
+            if let Some(pos) = ui.input(|i| {
+                i.pointer
+                    .button_pressed(egui::PointerButton::Primary)
+                    .then(|| i.pointer.interact_pos())
+                    .flatten()
+            }) {
+                let _ = host.runtime.notify(
+                    "viu.layer.input".into(),
+                    json!({"output":host.output,"x":pos.x,"y":pos.y}),
+                );
+            }
+        }
+        if let Some(session) = &host.session {
+            if session.snapshot["state"].is_object() {
+                let stamp = json!([
+                    session.snapshot["state"]["incarnation"],
+                    session.snapshot["state"]["revision"],
+                    session.snapshot["state"]["lost"]
+                ]);
+                let key = egui::Id::unique("viu-layer-look-revision");
+                if ui.ctx().data(|d| d.get_temp::<Value>(key)).as_ref() != Some(&stamp) {
+                    if let Ok(common) = crate::appearance::install_session(
+                        ui.ctx(),
+                        &session.snapshot,
+                        &host.app,
+                        &host.file_theme,
+                        &host.last_ui,
+                    ) {
+                        host.last_ui = common;
+                        ui.ctx().data_mut(|d| d.insert_temp(key, stamp));
+                    }
+                }
+            }
+        }
         host.frame(ui);
+        if let Some(state) = host.outputs.get_mut(host.output.as_ref().unwrap()) {
+            let raster = host.view.raster_states();
+            if let Some(shows) = host.model["layer"]["content"].as_str() {
+                state["shows"] = json!(shows);
+                state["error"] = Value::Null;
+            } else if raster["root"].is_object() {
+                for key in ["shows", "error", "fit"] {
+                    state[key] = raster["root"][key].clone();
+                }
+            }
+        }
         std::mem::swap(&mut host.view, view);
         std::mem::swap(&mut host.loaded, loaded);
     }
@@ -1652,18 +1790,39 @@ impl crate::layer::LayerProgram for LayerHost {
         self.views.remove(&output);
         if let Some(host) = &mut self.host {
             host.outputs.remove(&output);
+            let _ = host
+                .runtime
+                .notify("viu.layer.removed".into(), json!({"output":output}));
+            host.ui_state.set_outputs(&host.outputs);
         }
         self.contexts.lock().unwrap().retain(|c| c != ctx);
     }
     fn presented(&mut self, surface: &crate::layer::SurfaceInfo) {
         let output = surface.output.clone().unwrap_or_default();
         if let Some(host) = &mut self.host {
+            if host.model["layer"]["observe_presentation"] == true
+                && self.reported.get(&output) != Some(surface)
+            {
+                self.reported.insert(output.clone(), surface.clone());
+                let _=host.runtime.notify("viu.layer.presented".into(),json!({"output":output,"width":surface.width,"height":surface.height,"scale":surface.scale}));
+            }
             if let Some(state) = host.outputs.get_mut(&output) {
+                state["presented_view_frames"] =
+                    json!(if state["_presented_shows"] == state["shows"] {
+                        state["presented_view_frames"].as_u64().unwrap_or(0) + 1
+                    } else {
+                        1
+                    });
+                state["_presented_shows"] = state["shows"].clone();
                 state["presented_frames"] =
                     json!(state["presented_frames"].as_u64().unwrap_or(0) + 1);
-                state["presented_revision"] =
-                    json!(self.views.get(&output).map(|(v, _)| v.revision));
+                state["presented_revision"] = json!(
+                    self.views
+                        .get(&output)
+                        .map(|(v, _)| v.model()["serial"].as_u64().unwrap_or(v.revision))
+                );
             }
+            host.ui_state.set_outputs(&host.outputs);
         }
     }
 }

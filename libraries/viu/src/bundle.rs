@@ -9,6 +9,8 @@ pub struct Manifest {
     pub behaviour: String,
     pub service: String,
     pub title: String,
+    pub help: Option<String>,
+    pub service_pattern: Option<String>,
     pub size: [f32; 2],
     pub commands: Vec<String>,
     pub command_descriptors: Vec<bus::CommandDescriptor>,
@@ -39,6 +41,11 @@ pub struct Manifest {
     pub unknown_command: Option<String>,
     pub app: Option<String>,
     pub bus_url: Option<String>,
+    pub bus: bool,
+    pub require_bus: bool,
+    pub forward_output: bool,
+    pub allow_native_overrides: bool,
+    pub launch_variants: std::collections::BTreeMap<String, String>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -46,6 +53,8 @@ impl Default for Manifest {
             behaviour: "app.mix".into(),
             service: "viu-app".into(),
             title: "Viu".into(),
+            help: None,
+            service_pattern: None,
             size: [800.0, 600.0],
             commands: vec![],
             command_descriptors: vec![],
@@ -72,6 +81,11 @@ impl Default for Manifest {
             unknown_command: None,
             app: None,
             bus_url: None,
+            bus: true,
+            require_bus: false,
+            forward_output: false,
+            allow_native_overrides: true,
+            launch_variants: Default::default(),
         }
     }
 }
@@ -128,6 +142,19 @@ impl Bundle {
         } else {
             Manifest::default()
         };
+        if let Some(variant) = args.iter().find_map(|a| manifest.launch_variants.get(a)) {
+            let path = root
+                .join(variant)
+                .canonicalize()
+                .map_err(|e| e.to_string())?;
+            if !path.starts_with(&root) {
+                return Err("launch variant escapes bundle".into());
+            }
+            let value: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(path).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            manifest = serde_json::from_value(value["host"].clone()).map_err(|e| e.to_string())?;
+        }
         manifest.app = Some(manifest.app().to_owned());
         if let Some(service) = options.service {
             manifest.service = service;

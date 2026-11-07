@@ -45,6 +45,15 @@ pub struct SceneView {
 }
 
 impl SceneView {
+    pub fn raster_states(&self) -> Value {
+        self.widgets.raster_states()
+    }
+    pub fn set_rasters(&mut self, rasters: crate::raster::Rasters) {
+        self.widgets.set_rasters(rasters.clone());
+        if let Some(frame) = self.frame.as_mut() {
+            frame.set_rasters(rasters);
+        }
+    }
     pub fn set_native_menus(&mut self, enabled: bool) {
         self.widgets.set_native_menus(enabled);
         if let Some(frame) = self.frame.as_mut() {
