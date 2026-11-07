@@ -175,18 +175,37 @@ mod tests {
         crate::fonts::install(&ctx, 400, 600);
         let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
         widget.properties = json!({"focus_serial":1,"shortcuts":[{"key":"Tab","command":"next"}]});
-        for pressed in [false,true] {
+        for pressed in [false, true] {
             let mut events = Vec::new();
-            let input = if pressed {vec![egui::Event::Key {key:egui::Key::Tab,physical_key:None,pressed:true,repeat:false,modifiers:egui::Modifiers::NONE}]} else {vec![]};
-            ctx.run_ui(egui::RawInput {
-                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,560.0))),
-                events:input,
-                ..Default::default()
-            }, |ui| {
-                views.draw(ui,&widget,&json!("vt-1"),&sessions,&mut events);
-                let _ = ui.button("Other focus target");
-            }).drop_without_applying_deltas();
-            if pressed {assert!(events.iter().any(|e|e.action=="command" && e.value=="next"));}
+            let input = if pressed {
+                vec![egui::Event::Key {
+                    key: egui::Key::Tab,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }]
+            } else {
+                vec![]
+            };
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 560.0),
+                    )),
+                    events: input,
+                    ..Default::default()
+                },
+                |ui| {
+                    views.draw(ui, &widget, &json!("vt-1"), &sessions, &mut events);
+                    let _ = ui.button("Other focus target");
+                },
+            )
+            .drop_without_applying_deltas();
+            if pressed {
+                assert!(events.iter().any(|e| e.action == "command" && e.value == "next"));
+            }
         }
     }
 
