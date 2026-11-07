@@ -6,9 +6,7 @@ use std::{
     sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
-use viu::{
-    runtime::{Completion, Runtime},
-};
+use viu::runtime::{Completion, Runtime};
 fn done(r: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
     rx.recv_timeout(Duration::from_secs(30)).unwrap();
     let c = r.try_completion().unwrap();
@@ -36,7 +34,14 @@ fn dopus_2000_sort_refresh_stage_profile() {
     let config = json!({"schema_version":2,"left":{"path":folder,"previews":false},"right":{"path":empty,"previews":false}});
     std::fs::write(tmp.path().join("config.conf.mix"), config.to_string()).unwrap();
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/dopus");
-    let bundle = viu::launch::load(&path, &["--profile".into(), tmp.path().to_string_lossy().into_owned()]).unwrap();
+    let bundle = viu::launch::load(
+        &path,
+        &[
+            "--profile".into(),
+            tmp.path().to_string_lossy().into_owned(),
+        ],
+    )
+    .unwrap();
     let (tx, rx) = mpsc::channel();
     let mut r = Runtime::new(
         8,

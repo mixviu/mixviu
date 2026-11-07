@@ -6,9 +6,7 @@ use std::{
     sync::{Arc, mpsc},
     time::Duration,
 };
-use viu::{
-    runtime::{Completion, Runtime},
-};
+use viu::runtime::{Completion, Runtime};
 
 fn done(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> Completion {
     wakes.recv_timeout(Duration::from_secs(30)).unwrap();
@@ -35,7 +33,14 @@ fn generic_bundle_mounts_frame_and_preserves_both_panes_on_scan_refusal() {
     )
     .unwrap();
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/dopus");
-    let mut bundle = viu::launch::load(&root, &["--profile".into(), fixture.path().to_string_lossy().into_owned()]).unwrap();
+    let mut bundle = viu::launch::load(
+        &root,
+        &[
+            "--profile".into(),
+            fixture.path().to_string_lossy().into_owned(),
+        ],
+    )
+    .unwrap();
     assert_eq!(bundle.manifest.frame.as_deref(), Some("gold"));
     bundle.program.source.push_str(
         r#"
@@ -105,13 +110,35 @@ end
 fn mix_launch_plan_preserves_literal_paths_and_print_config_stays_before_the_host() {
     let fixture = tempfile::tempdir().unwrap();
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/dopus");
-    let profile=fixture.path().to_string_lossy().into_owned();
-    let bundle=viu::launch::load(&root,&["--profile".into(),profile.clone(),"--headless".into(),"--".into(),"--literal-path".into()]).unwrap();
-    assert_eq!(bundle.launch_plan["headless"],true);
-    assert_eq!(bundle.launch_plan["activation"][0]["body"]["paths"][0], std::env::current_dir().unwrap().join("--literal-path").to_string_lossy().as_ref());
-    let printed=viu::launch::load(&root,&["--profile".into(),profile,"--print-config".into()]).unwrap();
-    assert_eq!(printed.launch_plan["exit"],true);
-    let config:serde_json::Value=serde_json::from_str(printed.launch_plan["stdout"].as_str().unwrap()).unwrap();
-    assert_eq!(config["schema_version"],2);
-    assert!(viu::launch::load(&root,&["--unknown".into()]).is_err());
+    let profile = fixture.path().to_string_lossy().into_owned();
+    let bundle = viu::launch::load(
+        &root,
+        &[
+            "--profile".into(),
+            profile.clone(),
+            "--headless".into(),
+            "--".into(),
+            "--literal-path".into(),
+        ],
+    )
+    .unwrap();
+    assert_eq!(bundle.launch_plan["headless"], true);
+    assert_eq!(
+        bundle.launch_plan["activation"][0]["body"]["paths"][0],
+        std::env::current_dir()
+            .unwrap()
+            .join("--literal-path")
+            .to_string_lossy()
+            .as_ref()
+    );
+    let printed = viu::launch::load(
+        &root,
+        &["--profile".into(), profile, "--print-config".into()],
+    )
+    .unwrap();
+    assert_eq!(printed.launch_plan["exit"], true);
+    let config: serde_json::Value =
+        serde_json::from_str(printed.launch_plan["stdout"].as_str().unwrap()).unwrap();
+    assert_eq!(config["schema_version"], 2);
+    assert!(viu::launch::load(&root, &["--unknown".into()]).is_err());
 }

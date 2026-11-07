@@ -42,7 +42,11 @@ struct Hint {
 }
 type HintFuture = std::pin::Pin<Box<dyn std::future::Future<Output = (String, bool, bool)> + Send>>;
 /// Launch-time activation uses the existing native SDK and compositor path.
-pub fn activate_existing(service: &str, commands: &[(&str, Value)], url: &str) -> Result<bool, String> {
+pub fn activate_existing(
+    service: &str,
+    commands: &[(&str, Value)],
+    url: &str,
+) -> Result<bool, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -64,17 +68,19 @@ pub fn activate_existing(service: &str, commands: &[(&str, Value)], url: &str) -
                 return Ok(false);
             }
             for (command, args) in commands {
-            let (rc, body, error) = client
-                .call_with_headers_raw_within(
-                    service,
-                    command,
-                    &BTreeMap::new(),
-                    &args.to_string(),
-                    Duration::from_secs(10),
-                )
-                .await
-                .map_err(|e| e.to_string())?;
-            if rc != 0 { return Err(error.unwrap_or(body)); }
+                let (rc, body, error) = client
+                    .call_with_headers_raw_within(
+                        service,
+                        command,
+                        &BTreeMap::new(),
+                        &args.to_string(),
+                        Duration::from_secs(10),
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if rc != 0 {
+                    return Err(error.unwrap_or(body));
+                }
             }
             Ok(true)
         }

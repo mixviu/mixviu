@@ -1120,8 +1120,12 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         eprintln!("viu: {e}");
         std::process::exit(2)
     });
-    if let Some(output)=bundle.launch_plan["stdout"].as_str() { print!("{output}"); }
-    if bundle.launch_plan["exit"]==true { return Ok(()); }
+    if let Some(output) = bundle.launch_plan["stdout"].as_str() {
+        print!("{output}");
+    }
+    if bundle.launch_plan["exit"] == true {
+        return Ok(());
+    }
     if bundle.manifest.surface == "background" {
         let mut options = crate::layer::LayerOptions::background(&bundle.manifest.service);
         options.exclusive_zone = 0;
@@ -1137,8 +1141,22 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         }
         return Ok(());
     }
-    let activation = bundle.launch_plan["activation"].as_array().map(|rows| rows.iter().map(|row| (row["command"].as_str().unwrap(), row["body"].clone())).collect::<Vec<_>>()).unwrap_or_else(|| bundle.manifest.activation.as_ref().map(|command| vec![(command.as_str(),json!({}))]).unwrap_or_default());
-    if !activation.is_empty() && bundle.launch_plan["headless"]!=true {
+    let activation = bundle.launch_plan["activation"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| (row["command"].as_str().unwrap(), row["body"].clone()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| {
+            bundle
+                .manifest
+                .activation
+                .as_ref()
+                .map(|command| vec![(command.as_str(), json!({}))])
+                .unwrap_or_default()
+        });
+    if !activation.is_empty() && bundle.launch_plan["headless"] != true {
         match crate::native_bus::activate_existing(
             &bundle.manifest.service,
             &activation,
@@ -1152,22 +1170,43 @@ pub fn run(args: Vec<String>) -> eframe::Result {
             }
         }
     }
-    if bundle.launch_plan["headless"]==true {
-        bundle.manifest.native_ui=false;
-        bundle.manifest.native_drive=false;
-        bundle.manifest.frame=None;
-        let prefix=format!("{}.",bundle.manifest.app());
-        if let Some(commands)=bundle.manifest.bus_surface.as_mut().and_then(|surface|surface["commands"].as_array_mut()) {
-            commands.retain(|row|row["name"].as_str().and_then(|name|name.strip_prefix(&prefix)).is_none_or(|suffix|!toolkit::drive::COMMANDS.contains(&suffix)));
+    if bundle.launch_plan["headless"] == true {
+        bundle.manifest.native_ui = false;
+        bundle.manifest.native_drive = false;
+        bundle.manifest.frame = None;
+        let prefix = format!("{}.", bundle.manifest.app());
+        if let Some(commands) = bundle
+            .manifest
+            .bus_surface
+            .as_mut()
+            .and_then(|surface| surface["commands"].as_array_mut())
+        {
+            commands.retain(|row| {
+                row["name"]
+                    .as_str()
+                    .and_then(|name| name.strip_prefix(&prefix))
+                    .is_none_or(|suffix| !toolkit::drive::COMMANDS.contains(&suffix))
+            });
         }
-        let thread=std::thread::current();
-        let mut host=create(bundle,Arc::new(move || thread.unpark()));
-        let context=egui::Context::default();
+        let thread = std::thread::current();
+        let mut host = create(bundle, Arc::new(move || thread.unpark()));
+        let context = egui::Context::default();
         crate::appearance::install(&context);
         loop {
             host.pump(&context);
-            if !host.error.is_empty() { return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(host.error.clone())))); }
-            if host.model["window_close"]==true || host.bus.close_requested.load(std::sync::atomic::Ordering::Acquire) { break; }
+            if !host.error.is_empty() {
+                return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                    host.error.clone(),
+                ))));
+            }
+            if host.model["window_close"] == true
+                || host
+                    .bus
+                    .close_requested
+                    .load(std::sync::atomic::Ordering::Acquire)
+            {
+                break;
+            }
             std::thread::park_timeout(Duration::from_millis(20));
         }
         return Ok(());

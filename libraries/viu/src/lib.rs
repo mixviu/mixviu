@@ -22,7 +22,7 @@ pub mod http;
 pub mod icons;
 pub mod image_view;
 pub mod jobs;
-mod launch;
+pub mod launch;
 mod local_ui;
 pub mod macro_host;
 pub mod native_bus;
