@@ -74,6 +74,7 @@ struct Host {
     session: Option<crate::session::Session>,
     session_appearance: Option<Value>,
     session_window: Option<Value>,
+    retain_window_on_loss: bool,
     app: String,
     file_theme: toolkit::Theme,
     last_ui: settings::model::CommonUi,
@@ -263,7 +264,8 @@ impl Host {
                 }
                 self.drive_serial += 1;
                 let id = self.drive_serial;
-                if let Some(answer) = toolkit::drive::request(ctx, id, suffix, &r.args) {
+                if let Some(mut answer) = toolkit::drive::request(ctx, id, suffix, &r.args) {
+                    crate::app_facilities::remap(ctx, &mut answer.body);
                     let _ = r.reply.send((answer.rc, answer.body));
                 } else {
                     self.drive_replies.insert(id, r.reply);
@@ -409,8 +411,9 @@ impl Host {
             self.drive_answers.extend(toolkit::drive::logic(ctx));
         }
         if self.inflight.is_empty() && self.view.current_revision_drawn() {
-            while let Some(answer) = self.drive_answers.pop_front() {
+            while let Some(mut answer) = self.drive_answers.pop_front() {
                 if let Some(reply) = self.drive_replies.remove(&answer.id) {
+                    crate::app_facilities::remap(ctx, &mut answer.body);
                     let _ = reply.send((answer.rc, answer.body));
                 }
             }
@@ -849,7 +852,9 @@ impl Host {
                             self.session_notice = Some(snapshot.clone());
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
-                            let mut window = if snapshot["state"]["lost"] == true {
+                            let mut window = if snapshot["state"]["lost"] == true
+                                && self.retain_window_on_loss
+                            {
                                 self.session_window
                                     .clone()
                                     .unwrap_or_else(|| self.model["window_settings"].clone())
@@ -1386,6 +1391,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         }),
         session_appearance: None,
         session_window: None,
+        retain_window_on_loss: bundle.manifest.retain_window_on_loss,
         framed: bundle.manifest.frame.is_some(),
         title: bundle.manifest.title.clone(),
         unknown_command: bundle.manifest.unknown_command.clone(),

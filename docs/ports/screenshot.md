@@ -8,6 +8,17 @@ Overall verdict: **ACCEPTED**. Functional, Bus, live Prefs and visual parity
 are complete. Opus resolved S2 on 2026-11-07: the truthful About source stamp
 is runtime data, with gold's layout, format and position preserved.
 
+The generic-host integration must also retain truthful live debug-filter
+data: its additional Viu tracing targets are enabled alongside gold's own
+targets. Compare every shared target level and dependency clamp, and verify
+the additional own-target levels; retain the raw filter strings. Those
+readings are S2 runtime data, not fabricated gold strings. All other debug
+reply fields remain exact. Native menu replies expose application command
+IDs, including replies completed after a later input pass. Authority loss
+uses Screenshot's automatic window-decoration fallback, independently of
+the retained appearance palette. Integration release revalidation is
+recorded separately from this original branch acceptance.
+
 ## Inventory
 
 Mix owns application layout, policy, storage, launch and compatibility dispatch.
