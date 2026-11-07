@@ -169,6 +169,35 @@ fn insert_mode_and_carriage_return_line_feed_remain_independent() {
 }
 
 #[test]
+fn erase_display_modes_preserve_cursor_and_include_its_cell() {
+    for (mode, expected) in [
+        (0, ["AAAAAAAA", "BBB     ", "        "]),
+        (1, ["        ", "    BBBB", "CCCCCCCC"]),
+        (2, ["        ", "        ", "        "]),
+    ] {
+        let t = Terminal::from_test_vt(
+            8,
+            3,
+            b"AAAAAAAA\x1b[2;1HBBBBBBBB\x1b[3;1HCCCCCCCC\x1b[2;4H",
+        );
+        t.advance_test_vt(format!("\x1b[{mode}J").as_bytes());
+        for (n, text) in expected.into_iter().enumerate() {
+            assert_eq!(row(&t, n), text, "ED {mode}, row {n}");
+        }
+        assert_eq!(t.screen(false).cursor, (3, 1), "ED {mode}");
+    }
+}
+
+#[test]
+fn dec_special_graphics_returns_to_ascii_after_charset_reset() {
+    let t = Terminal::from_test_vt(6, 3, b"\x1b(0lqk\r\nx x\r\nmqj\x1b(BA");
+    assert_eq!(row(&t, 0), "┌─┐   ");
+    assert_eq!(row(&t, 1), "│ │   ");
+    assert_eq!(row(&t, 2), "└─┘A  ");
+    assert_eq!(t.screen(false).cursor, (4, 2));
+}
+
+#[test]
 fn parser_retains_every_utf8_and_escape_chunk_boundary() {
     let bytes = "aé中e\u{301}\r\n\x1b[38;2;12;34;56mcolour\x1b[0m\x1b[2;8H!".as_bytes();
     let expected = Terminal::from_test_vt(20, 4, bytes).screen(false);
