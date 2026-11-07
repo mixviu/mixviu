@@ -15,7 +15,6 @@
 //! ([`ReadError::TimedOut`]), so a source that keeps its pipe open forever
 //! costs one closed descriptor, not a wedged clipboard.
 
-use smithay_client_toolkit as sctk;
 use sctk::data_device_manager::data_device::{DataDevice, DataDeviceHandler};
 use sctk::data_device_manager::data_offer::{DataOfferError, DataOfferHandler, DragOffer};
 use sctk::data_device_manager::data_source::{CopyPasteSource, DataSourceHandler};
@@ -46,6 +45,7 @@ use sctk::{
     delegate_data_device, delegate_pointer, delegate_primary_selection, delegate_registry,
     delegate_seat, registry_handlers,
 };
+use smithay_client_toolkit as sctk;
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::os::fd::AsRawFd;

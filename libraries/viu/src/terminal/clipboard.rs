@@ -10,6 +10,7 @@
 //! is outstanding at a time: another while it runs is refused at once.
 
 use super::selection_worker::{Answer, ReadError, Request, WRITE_ANSWER};
+use smithay_client_toolkit as sctk;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -42,7 +43,11 @@ impl Clipboard {
             Some(raw_window_handle::RawDisplayHandle::Wayland(handle)) => {
                 // SAFETY: the caller keeps the display alive.
                 unsafe {
-                    super::selection_worker::spawn(handle.display.as_ptr(), tx.clone(), wake.clone())
+                    super::selection_worker::spawn(
+                        handle.display.as_ptr(),
+                        tx.clone(),
+                        wake.clone(),
+                    )
                 }
             }
             _ => None,

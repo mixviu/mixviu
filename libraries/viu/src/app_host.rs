@@ -325,20 +325,31 @@ impl Host {
         self.facilities.prepare(ctx, &self.bus);
         for request in self.platform.take() {
             if request["kind"] == "copy" {
-                self.selection.write(ctx, request["body"]["text"].as_str().unwrap_or("").into(),request["body"]["primary"]==true);
+                self.selection.write(
+                    ctx,
+                    request["body"]["text"].as_str().unwrap_or("").into(),
+                    request["body"]["primary"] == true,
+                );
             } else {
-                self.selection_sequence=self.selection_sequence.checked_add(1).expect("selection id exhausted");
-                self.selection_waits.insert(self.selection_sequence,request["id"].as_str().unwrap_or("").into());
-                self.selection.read(self.selection_sequence,request["body"]["primary"]==true);
+                self.selection_sequence = self
+                    .selection_sequence
+                    .checked_add(1)
+                    .expect("selection id exhausted");
+                self.selection_waits.insert(
+                    self.selection_sequence,
+                    request["id"].as_str().unwrap_or("").into(),
+                );
+                self.selection
+                    .read(self.selection_sequence, request["body"]["primary"] == true);
             }
         }
-        for (sequence,result) in self.selection.take() {
-            if let Some(id)=self.selection_waits.remove(&sequence) {
+        for (sequence, result) in self.selection.take() {
+            if let Some(id) = self.selection_waits.remove(&sequence) {
                 self.platform_results.push_back(match result {
-                    Ok(text)=>json!({"id":id,"text":text}),
-                    Err(reason)=>json!({"id":id,"text":"","reason":format!("{reason:?}")}),
+                    Ok(text) => json!({"id":id,"text":text}),
+                    Err(reason) => json!({"id":id,"text":"","reason":format!("{reason:?}")}),
                 });
-            } else if let Err(reason)=result {
+            } else if let Err(reason) = result {
                 eprintln!("viu: clipboard write refused: {reason:?}");
             }
         }
@@ -1156,12 +1167,17 @@ pub fn run(args: Vec<String>) -> eframe::Result {
                     .insert(state.target_format);
             }
             let ctx = cc.egui_ctx.clone();
-            let wake: crate::runtime::Wake=Arc::new(move || ctx.request_repaint());
-            let mut host=create(bundle,wake.clone());
+            let wake: crate::runtime::Wake = Arc::new(move || ctx.request_repaint());
+            let mut host = create(bundle, wake.clone());
             use raw_window_handle::HasDisplayHandle;
             // SAFETY: eframe keeps its display alive until after Host drops,
             // matching the pinned gold window/selection-worker ownership.
-            host.selection=unsafe {crate::terminal::clipboard::Clipboard::new(cc.display_handle().ok().map(|display|display.as_raw()),wake)};
+            host.selection = unsafe {
+                crate::terminal::clipboard::Clipboard::new(
+                    cc.display_handle().ok().map(|display| display.as_raw()),
+                    wake,
+                )
+            };
             Ok(Box::new(host))
         }),
     )
