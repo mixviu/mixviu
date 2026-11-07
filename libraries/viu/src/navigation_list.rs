@@ -28,6 +28,7 @@ pub fn draw(
     value: &Value,
     events: &mut Vec<crate::widgets::Intent>,
 ) -> egui::Response {
+    *ui.spacing_mut() = ui.ctx().global_style().spacing.clone();
     ui.vertical(|ui| {
         toolkit::panel::section_label(ui, label);
         let font = egui::TextStyle::Body.resolve(ui.style());
