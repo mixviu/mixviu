@@ -84,7 +84,7 @@ fn dp_wire_panes($s)
   $out=[]
   for $i=0 to 1
     $p=$s.panes[$i]
-    push($out,{pane:$i,path:$core.dp_display($p.path),active:$s.active==$i,show_hidden:$p.show_hidden,previews:$p.previews,preview:if $s.preview_slots[$i].value.phase=="ready" then $s.preview_slots[$i].value.path else nil end,sort:$p.sort,ascending:$p.ascending,selected:$p.selected,selected_paths:$p.selected_paths,rows:len($p.entries),status:$core.dp_display($p.path),summary:$p.summary})
+    push($out,{pane:$i,path:$core.dp_display($p.path),active:$s.active==$i,show_hidden:$p.show_hidden,previews:$p.previews,preview:if $s.preview_slots[$i].value.phase=="ready" then $s.preview_slots[$i].value.path else nil end,sort:$p.sort,ascending:$p.ascending,selected:$p.selected,selected_paths:$p.selected_paths,rows:len($p.entries),status:$p.summary,summary:$p.summary})
   end
   return $out
 end

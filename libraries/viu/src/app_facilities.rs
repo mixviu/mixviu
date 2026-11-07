@@ -96,7 +96,7 @@ impl Facilities {
         self.events.lost_batch(lost);
         for record in records {
             self.events
-                .push(toolkit::executed::topic(&self.app), record.body(), 0);
+                .push(toolkit::executed::topic(&self.service), record.body(), 0);
         }
         if self.ui && !self.installed {
             toolkit::drive::install(ctx, &self.app);
@@ -111,7 +111,7 @@ impl Facilities {
         }
         while let Ok(body) = self.finished.try_recv() {
             self.events
-                .push(format!("{}.macros.finished", self.app), body, 0);
+                .push(format!("{}.macros.finished", self.service), body, 0);
         }
         if self.publishing.is_none() {
             if let Some((topic, body)) = self.events.front() {

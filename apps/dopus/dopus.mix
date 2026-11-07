@@ -82,6 +82,7 @@ fn dp_request($request)
       $profile_start=if $dopus_profile then monotonic() else 0 end
       $a=$request.args;$name=$request.command
       $candidate=$state;$candidate.focus=nil;$candidate.reply={ok:true}
+      $candidate.effect_context={token:$request.token,origin:$request.origin ?? if $name=="dopus.intent" then "ui" else "bus" end}
       $candidate.appearance_reset=nil
       if $name=="dopus.execute" then $candidate=$app.dp_action($candidate,$contract,$a.id,$a.params ?? {})
       elif $name=="dopus.dialog" then
@@ -151,10 +152,14 @@ fn dp_request($request)
       $profile_prepared=if $dopus_profile then monotonic() else 0 end
       $row_cache=dp_publish($state,$contract,$row_cache)
       if $dopus_profile then print(json_encode({profile:"dopus",phase:"callback",serial:$state.serial,command:$name,action:$a.id,reduce_us:($profile_reduced-$profile_start)*1000000,preview_us:($profile_prepared-$profile_reduced)*1000000})) end
-      if $name=="dopus.execute" and $state.reply.error_code==nil then
+      if $name=="dopus.execute" and $state.reply.error_code==nil and (viu_context().native_backend ?? true) then
         send "viu-local" "native.executed" body={id:$a.id,origin:$request.origin ?? "bus",params:nil,result:nil}
-      elif $name=="dopus.intent" and $a.action=="command" and $state.reply.error_code==nil then
+      elif $name=="dopus.intent" and $a.action=="command" and $state.reply.error_code==nil and (viu_context().native_backend ?? true) then
         send "viu-local" "native.executed" body={id:$a.value.command,origin:"menu",params:nil,result:nil}
+      end
+      if $name=="dopus.execute" and $a.id=="file.mail" and $request.token!=nil and $state.reply.error_code==nil then
+        if not viu_reply("hold",$request.token,{}) then raise("CALL","Native mail receipt is unavailable") end
+        return
       end
       reply(if $state.reply.error_code!=nil then 10 else 0 end,json_encode($state.reply))
     catch $message,$error
@@ -168,9 +173,14 @@ end
 fn dp_job_completed($completion)
   global $state, $row_cache
   if $state!=nil and $completion.tag.owner==viu_context().generation then
-    if $state.effect_jobs[$completion.tag.id]==true then
+    if has_key($state.effect_jobs,$completion.tag.id) then
+      $effect=$state.effect_jobs[$completion.tag.id]
       $state.effect_jobs=delete($state.effect_jobs,$completion.tag.id)
       $state.info=$completion.body.message ?? if $completion.rc==0 then "Completed" else "Application effect failed" end
+      if $effect.kind=="mail" and $effect.token!=nil then
+        $body=if $completion.rc==0 then {id:"file.mail",ok:true,result:$completion.body} else $completion.body end
+        $finished=viu_reply("finish",$effect.token,{rc:$completion.rc,body:$body})
+      end
     elif $state.job==$completion.tag.id then
       $state.busy=false;$state.job=nil
       $result=$completion.body
@@ -212,7 +222,7 @@ on dopus.execute
     reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:if type($raw.pane)=="string" then "params: pane must be left, right, active, 0 or 1" elif type($raw.pane)=="number" and $raw.pane==floor($raw.pane) and $raw.pane>=0 and $raw.pane<=255 then "params: pane index must be 0 or 1" else "params: data did not match any variant of untagged enum Target" end,reason:nil}));return
   end
   $params=if $raw.pane==nil then {} else {pane:$raw.pane} end
-  dp_request({command:"dopus.execute",args:{id:$a.id,params:$params}})
+  dp_request({command:"dopus.execute",token:$event.headers["viu-call"],args:{id:$a.id,params:$params}})
 end
 
 on viu.job.completed

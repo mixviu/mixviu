@@ -21,8 +21,8 @@ on job.run
         $reply=$apps.viu_app_call("dev.mixos.email","email.compose.attachment.add",{paths:$paths},10)
         $added=true
       end
-      if $reply.rc>=10 then reply($reply.rc,json_encode($reply.body))
-      else reply(0,json_encode({added:$added,count:len($paths),message:if $added then "Added attachments to the current message" else "Opened a message with attachments" end})) end
+      if $reply.rc>=10 then reply(10,json_encode({error_code:$reply.body.error_code,message:if $reply.body.error_code=="OUTCOME_UNKNOWN" then "Email may have received the files; check the message before trying again" else $reply.body.message end}))
+      else reply(0,json_encode({added:$added,count:len($paths),message:if $added then "Added "..to_string(len($paths))..if len($paths)==1 then " file" else " files" end.." to the message being written" else "Opened a new message with "..to_string(len($paths))..if len($paths)==1 then " file" else " files" end end})) end
     else raise("INVALID_ARGUMENT","Unknown effect kind") end
   catch $message,$error
     reply(10,json_encode({error_code:$error.code,message:$message}))

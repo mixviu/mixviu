@@ -67,8 +67,9 @@ fn dp_persist($s)
   end
   return $s
 end
-fn dp_go($s,$index,$path)
-  $s.active=$index;$s.panes[$index]=$dp.dp_navigate($s.panes[$index],$path);$s.locations[$index]=$s.panes[$index].path
+fn dp_go($s,$index,$path,$activate=true)
+  if $activate then $s.active=$index end
+  $s.panes[$index]=$dp.dp_navigate($s.panes[$index],$path);$s.locations[$index]=$s.panes[$index].path
   return $s
 end
 fn dp_start_operation($s,$operation)
@@ -88,7 +89,8 @@ fn dp_start_effect($s,$effect)
   send "viu-local" "jobs.start" id=$id owner=$s.owner path=$path source=read_file($path) command="job.run" args=$effect
   if $rc!=0 then raise("BUSY",to_string($result)) end
   if $s.effect_jobs==nil then $s.effect_jobs={} end
-  $s.effect_jobs[$id]=true
+  $context=$s.effect_context ?? {}
+  $s.effect_jobs[$id]={kind:$effect.kind,token:if $effect.kind=="mail" then $context.token else nil end}
   $s.reply={accepted:true,id:$id};$s.info="Working…"
   return $s
 end
@@ -198,14 +200,13 @@ fn dp_action($s,$contract,$id,$params)
   if $params.pane!=nil then
     if not contains(["left","right","active",0,1],$params.pane) then raise("INVALID_ARGUMENT","Unknown pane") end
     $i=if $params.pane=="left" or $params.pane==0 then 0 elif $params.pane=="right" or $params.pane==1 then 1 else $s.active end
-    $s.active=$i
   end
   if $id=="place.open" then return dp_go($s,$i,$params.path) end
   if not any($contract.actions,fn($a)=$a.id==$id) then raise("UNKNOWN_ACTION",to_string($id)) end
   $p=$s.panes[$i]
   $n=len($p.selected_paths)
   if $id=="file.mail" then
-    if not $view.dp_enabled($s,$id) then raise("UNAVAILABLE","Select one or more regular files to mail") end
+    if $n==0 or not all(filter($p.entries,fn($r)=contains($p.selected_paths,$r.path)),fn($r)=$r.file) then raise("UNAVAILABLE","Select one or more regular files to mail") end
   elif contains(["file.open","file.rename","file.copy-other-pane","file.move-other-pane","file.delete"],$id) and $n==0 then raise("UNAVAILABLE","Nothing is selected")
   end
   if $id=="file.rename" and $n!=1 then raise("UNAVAILABLE","Select one item to rename") end
@@ -216,10 +217,10 @@ fn dp_action($s,$contract,$id,$params)
   end
   if ($s.headless ?? false) and starts_with($id,"theme.") then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
   if ($s.headless ?? false) and contains(["file.new-folder","file.rename","file.delete"],$id) then return $s end
-  if $id=="nav.switch-pane" then $s.active=1-$i
+  if $id=="nav.switch-pane" then $s.active=1-$s.active
   elif $id=="nav.back" or $id=="nav.forward" then $s.panes[$i]=$dp.dp_history($p,$id=="nav.back");$s.locations[$i]=$s.panes[$i].path
-  elif $id=="nav.parent" then return dp_go($s,$i,$dp.dp_parent($p.path))
-  elif $id=="nav.home" then return dp_go($s,$i,env("HOME","/"))
+  elif $id=="nav.parent" then return dp_go($s,$i,$dp.dp_parent($p.path),false)
+  elif $id=="nav.home" then return dp_go($s,$i,env("HOME","/"),false)
   elif $id=="location.focus" then $s.focus={id:if $i==0 then "left-location" else "right-location" end,selection:[0,len($s.locations[$i])]}
   elif $id=="view.toggle-places" then $s.places_open=not $s.places_open
   elif $id=="view.toggle-properties" then $s.properties_open=not $s.properties_open
@@ -227,7 +228,7 @@ fn dp_action($s,$contract,$id,$params)
   elif $id=="view.toggle-hidden" then $p.show_hidden=not $p.show_hidden;$s.panes[$i]=$dp.dp_relist($p)
   elif $id=="view.toggle-previews" then $s.panes[$i].previews=not $p.previews
   elif starts_with($id,"view.sort-") then
-    $key=slice($id,len("view.sort-"));$p.ascending=true;$p.sort=$key;$s.panes[$i]=$dp.dp_refresh($p)
+    $key=slice($id,len("view.sort-"));$p.ascending=if $p.sort==$key then not $p.ascending else true end;$p.sort=$key;$s.panes[$i]=$dp.dp_refresh($p)
   elif starts_with($id,"selection.") then
     $keys={next:"ArrowDown",previous:"ArrowUp",first:"Home",last:"End"}
     $s.panes[$i]=$dp.dp_select_key($p,$keys[slice($id,10)],$params.ctrl ?? false,$params.shift ?? false)
@@ -239,7 +240,7 @@ fn dp_action($s,$contract,$id,$params)
   elif $id=="file.copy-other-pane" or $id=="file.move-other-pane" then return dp_start_operation($s,{kind:if $id=="file.copy-other-pane" then "copy" else "move" end,sources:$dp.dp_sources($p),destination:$s.panes[1-$i].path})
   elif $id=="file.open" then
     $entry=filter($p.entries,fn($r)=$r.path==$p.selected)[0]
-    if $entry.dir then return dp_go($s,$i,$entry.path) end
+    if $entry.dir then return dp_go($s,$i,$entry.path,false) end
     if $s.headless ?? false then return $s end
     return dp_start_effect($s,{kind:"open",path:$entry.path})
   elif $id=="file.mail" then
