@@ -919,6 +919,10 @@ impl Widgets {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
             "label" => {
+                if widget.properties["role"] == "section" {
+                    let response = toolkit::panel::section_label(ui, value.as_str().unwrap_or(""));
+                    return self.remember(ui, id, &response);
+                }
                 let text = label_text(ui, widget, value);
                 if widget.properties["role"] == "title" {
                     let (rect, response) =

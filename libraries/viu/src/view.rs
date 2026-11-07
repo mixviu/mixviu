@@ -858,19 +858,41 @@ impl SceneView {
             }
             let placement = &placements[child];
             let edge = placement["edge"].as_str().unwrap_or("fill");
-            if edge == "bottom" && placement["panel"] == true {
+            if placement["minimum_window_width"]
+                .as_f64()
+                .is_some_and(|w| (area.width() as f64) < w)
+            {
+                continue;
+            }
+            if matches!(edge, "bottom" | "left" | "right") && placement["panel"] == true {
+                let horizontal = edge != "bottom";
+                let dimension = if horizontal { area.width() } else { area.height() };
+                let default_size = placement["size"].as_f64().map(|n| n as f32)
+                    .unwrap_or_else(|| dimension * placement["fraction"].as_f64().unwrap_or(0.2) as f32);
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
-                egui::Panel::bottom(egui::Id::unique((key, child)))
+                let id = egui::Id::unique((key, child));
+                let panel = match edge {
+                    "left" => egui::Panel::left(id),
+                    "right" => egui::Panel::right(id),
+                    _ => egui::Panel::bottom(id),
+                };
+                let shown = panel
                     .resizable(placement["resizable"] == true)
-                    .default_size(placement["size"].as_f64().unwrap_or(140.0) as f32)
+                    .default_size(default_size)
                     .size_range(
-                        0.0..=remaining.height()
+                        0.0..=dimension
                             * placement["max_fraction"].as_f64().unwrap_or(0.3) as f32,
                     )
                     .frame(toolkit::bars::dock_frame(ui.ctx()))
                     .show(&mut panel_ui, |ui| {
                         self.node(ui, child, nodes, route, depth + 1, events)
                     });
+                if horizontal && placement["resizable"] == true {
+                    let fraction = shown.response.rect.width() / area.width().max(1.0);
+                    if (fraction - placement["fraction"].as_f64().unwrap_or(0.2) as f32).abs() > 1.0 / area.width().max(1.0) {
+                        self.layout_change(node, key, json!({"child":child,"fraction":fraction}), events);
+                    }
+                }
                 remaining = panel_ui.available_rect_before_wrap();
                 continue;
             }

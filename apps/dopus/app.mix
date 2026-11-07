@@ -36,7 +36,7 @@ on viu.macros.changed
   $row_cache=dp_publish($state,$contract,$row_cache)
 end
 on viu.keymap.changed
-  $defaults=map($contract.actions,fn($a)={id:$a.id,shortcut:$state.default_keys[$a.id][0]})
+  $defaults=map($contract.actions,fn($a)={id:$a.id,shortcut:$state.default_keys[$a.id][0],keys:$state.default_keys[$a.id]})
   send "viu-local" "native.bindings" body={defaults:$defaults,overrides:$event.args}
   if $rc==0 then
     $state.bindings=[]
