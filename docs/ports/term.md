@@ -974,3 +974,42 @@ changed. Protected ControlLane adapter, original enforcement/bootstrap/
 reconnect suite, complete Bus/input/clipboard/IME/search/Prefs and exact
 release acceptance remain open. NOT ACCEPTED. No Fable deviation or
 desktop/gold changes.
+
+### Broker revoke regression passes; typed protected protocol checkpoint
+
+`term-owner-exit-b8cd6d1f-a1` passed: 153 terminal tests, five existing
+ignores, seven input tests, two bundle tests, six Mix suites, search/dialog,
+foreign gate and debug build. Complete saved log read in three chunks.
+Worker formatting applied in 68631fa7. The owner regression now proves
+Revoked through a fresh verified broker observer for both close and real
+Mix exit. For natural exit that observation happens before Terminal close
+or drop, while its retained handle reports exited and local authority is
+already invalid. This closes that regression case; it does not attest all
+parent-shutdown/broker-bounce/expiry cases.
+
+68631fa77fd858888be07bac85369ea4413de3d0 extracts the shared typed control
+protocol from pinned gold control.rs (source SHA256
+565a82602ad1a21262bf69ab1d5e4f09f2f6a50ebc704c7b613cda458a642d4b).
+Target/request types preserve canonical decimal u64 values in Rust rather
+than converting authority-bearing identifiers through Mix numbers. The
+actor now uses the shared command manifest and reply schema. Closed error
+vocabulary, child-refusal recovery details, uniform denials and the read/
+mutation unknown-response distinction retain gold's behaviour. Strict
+8192-byte decoding, property alias normalization and exact raw-byte retry
+digest are reusable helpers for the adapter. No TabSet policy was imported.
+
+Retained the two original vocabulary tests; added four regression tests
+for u64 boundaries/noncanonical encodings, JSON authority-field refusal,
+UTF-8 byte budgets and byte-distinct retries, property aliases and refusal
+detail confidentiality/recovery. These await native compilation. This is
+the protocol foundation, not an installed protected ControlLane: commands
+still refuse uniformly on that lane. Admission, liveness checks, replay,
+operation retention, child execute/task forwarding and in-process Mix
+layout policy dispatch remain the next implementation pieces.
+
+Next CBC `term-control-protocol-68631fa7`, exact code 68631fa7 above,
+term_gate --prepare. Read full saved log, apply returned fmt/lock and
+repeat exact source as needed. Keep the native.bu3oPA debug session witness
+and zero whole/header/tabs/terminal distortions as prior evidence; final
+release and complete Bus/input/clipboard/IME/search/Prefs inventory remain
+open. NOT ACCEPTED. No Fable deviation or gold/desktop changes.
