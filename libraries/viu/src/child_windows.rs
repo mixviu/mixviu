@@ -320,7 +320,18 @@ impl Child {
         if self.persist {
             toolkit::saved::secondary::capture(&ctx, app, &self.key);
         }
-        for request in std::mem::take(&mut self.requests) {
+        // A model can create this viewport and admit a native request before
+        // its first control pass. Keep that original request until the current
+        // scene has geometry, just as the root host fences native input.
+        let requests = if self.pending == 0 && self.view.current_revision_drawn() {
+            std::mem::take(&mut self.requests)
+        } else {
+            if !self.requests.is_empty() {
+                ctx.request_repaint();
+            }
+            Vec::new()
+        };
+        for request in requests {
             match request.command.as_str() {
                 "viu.state" | "viu.ui.tree" => {
                     let _ = request.reply.send((0, self.state()));
@@ -456,5 +467,82 @@ impl Child {
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_new_child_retains_native_input_until_its_scene_has_been_drawn() {
+        let ctx = egui::Context::default();
+        crate::appearance::install(&ctx);
+        let mut windows = Windows::default();
+        let source = "---\nscene: 1\nname: child\ncitizen: child\n---\n```mix\n{root:{widget:\"column\",padding_top:50,children:[\"button\"]},button:{widget:\"control\",on_intent:\"child.intent\",definition:{id:\"button\",kind:\"button\",label:\"Click\",initial:\"\"}}}\n```\n";
+        windows.sync(
+            &ctx,
+            "child-test",
+            &json!({"native_windows":[{"key":"new","title":"New","size":[400,300],"scene":source,"model":{}}]}),
+            &Default::default(),
+            false,
+        );
+        let child = windows.children["new"].clone();
+        let (reply, mut answer) = tokio::sync::oneshot::channel();
+        windows.request(
+            "new",
+            Request {
+                from: "test".into(),
+                command: "viu.ui.click".into(),
+                args: json!({"id":"button"}),
+                headers: Default::default(),
+                reply,
+                close_after_reply: Default::default(),
+                delivery: Default::default(),
+                deferred: Default::default(),
+            },
+            &ctx,
+        );
+        assert!(!child.lock().unwrap().view.current_revision_drawn());
+        let draw = |events| {
+            ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(400.0, 300.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| child.lock().unwrap().show(ui, "child-test"),
+            )
+            .drop_without_applying_deltas();
+        };
+        draw(Vec::new());
+        assert!(matches!(answer.try_recv(), Err(tokio::sync::oneshot::error::TryRecvError::Empty)));
+        assert_eq!(child.lock().unwrap().requests.len(), 1);
+        assert!(child.lock().unwrap().view.current_revision_drawn());
+        draw(Vec::new());
+        assert!(child.lock().unwrap().requests.is_empty());
+        // Deliver the admitted gesture through actual native egui frames.
+        for _ in 0..3 {
+            let events = {
+                let mut c = child.lock().unwrap();
+                if c.input.now.is_empty() {
+                    c.input.later.pop_front().unwrap_or_default()
+                } else {
+                    std::mem::take(&mut c.input.now)
+                }
+            };
+            draw(events);
+        }
+        let (key, event) = windows.take_one().expect("one native child intent");
+        assert_eq!(key, "new");
+        assert_eq!(event.command, "child.intent");
+        assert_eq!(event.body["action"], "activate");
+        child.lock().unwrap().pending = 0;
+        draw(Vec::new());
+        assert_eq!(answer.try_recv().expect("one completed original request").0, 0);
+        assert!(windows.take_one().is_none());
     }
 }
