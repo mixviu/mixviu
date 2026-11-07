@@ -1364,3 +1364,43 @@ Next CBC `term-control-admission-18dd4d9c`, exact code above,
 term_gate --prepare. Read complete log, apply fmt/lock and repeat exact
 source if changed; continue through replay/commitment and host adapter.
 branch: lab/parity-term; head SHA: 18dd4d9cb3d9c84516037fda700225832a8298b5 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — typed admission gate, protected handler/replay/Mix adapter and remaining full parity/release acceptance open; CBC job ids: term-control-protocol-68631fa7-a1 (green; fmt applied), term-control-admission-18dd4d9c (next await).
+
+### Admission probe passes; retained-operation store checkpoint
+
+`term-control-admission-18dd4d9c-a1` passed: 160 terminal tests, five existing
+ignores, seven input tests, two bundle tests, six Mix suites, search/dialog,
+foreign gate and debug build. The actual broker/actor admission probe passed,
+including one-shot grantless epoch binding and the stale-recipient lease
+target refusal. Full 49246-byte saved log read in four chunks; worker
+formatting applied in a778efc5. No native artifact from that source was used
+as new visual or release evidence.
+
+a778efc597a39a5093bc3bf00dd97dc05ecd4cff ports gold's retained-operation
+state into a reusable exclusive-mutation store. Entry/History, reserve,
+forwarded ID allocation and outcome recording preserve gold's algorithms.
+Lookup/operation query are extracted from gold dispatch. Retention stays
+900 seconds, 1024 entries per caller, 4096 instance entries, 256 caller
+namespaces. Expiry retires outcomes but keeps request high-water marks;
+lost answers never make reserved IDs executable again. Capacity evicts
+cold caller namespaces as gold permits, and forward capacity evicts one
+mapping. Child operation IDs are remapped to instance operation IDs while
+retaining the child link. Settled notice outcomes remain separate from the
+original replay acknowledgement. The handler must retain gold's serialized
+admission/replay/commit ordering; mutable store access is not itself a
+recipient/pane/write permit.
+
+Six pending regressions cover exact retry/conflict and a lost committed
+outcome at u64::MAX; target/generation-scoped operation retention and expiry;
+child operation remapping/notice separation; per-caller and instance caps;
+cold namespace eviction after churn; distinct forwarded IDs for callers
+sharing request ID 1, stable retries, conflicts and one-at-a-time mapping
+eviction. No production handler is installed yet. Next connect admission,
+retained outcomes, pane guards/write permits and affected-layout validation,
+then implement child execute/task forwarding and in-process Mix dispatch.
+
+Next CBC `term-control-replay-a778efc5`, exact code above,
+term_gate --prepare. Read full saved log; apply fmt/lock and repeat exact
+source if changed. Remaining complete Bus/input/clipboard/IME/search/Prefs,
+full gold enforcement suite and exact release acceptance remain open.
+NOT ACCEPTED. No Fable deviation or gold/desktop changes.
+branch: lab/parity-term; head SHA: a778efc597a39a5093bc3bf00dd97dc05ecd4cff (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — replay gate, production protected handler/Mix adapter and remaining full parity/release acceptance open; CBC job ids: term-control-admission-18dd4d9c-a1 (green; fmt applied), term-control-replay-a778efc5 (next await).
