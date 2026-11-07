@@ -55,6 +55,7 @@ struct Host {
     drive_answers: std::collections::VecDeque<toolkit::drive::Answer>,
     drive_serial: u64,
     drive_geometry: Option<BTreeMap<String, egui::Rect>>,
+    drive_revision: Option<u64>,
     drive_geometry_stable: bool,
     macros: macros::Session,
     macro_ui: toolkit::macros::State,
@@ -109,12 +110,12 @@ struct Host {
     next_tick: Instant,
 }
 impl Host {
-    fn queued_drive_input(&self) -> bool {
+    fn queued_click(&self) -> bool {
         self.held_requests.front().is_some_and(|request| {
             request
                 .command
                 .strip_prefix(&format!("{}.", self.app))
-                .is_some_and(toolkit::drive::queues)
+                .is_some_and(|command| command == "ui.click")
         })
     }
     fn window_settings(&self, model: &Value) -> Value {
@@ -743,13 +744,11 @@ impl Host {
             if toolkit::drive::pending(ctx) || !self.drive_answers.is_empty() {
                 break;
             }
-            if self.queued_drive_input() && !self.drive_geometry_stable {
+            if self.queued_click() && (!self.inflight.is_empty() || !self.drive_geometry_stable) {
                 ctx.request_repaint();
                 break;
             }
             let request = self.held_requests.pop_front().unwrap();
-            self.drive_geometry = None;
-            self.drive_geometry_stable = false;
             self.request(request, ctx);
         }
         for _ in 0..32 {
@@ -1156,16 +1155,14 @@ impl Host {
         // A model's first layout can still use egui's previous grid sizes.
         // Resolve native input only after two matching control passes, so its
         // AccessKit target cannot move between resolution and the press pass.
-        if self.queued_drive_input() {
-            let geometry = self.view.geometry.clone();
-            self.drive_geometry_stable = self.drive_geometry.as_ref() == Some(&geometry);
-            self.drive_geometry = Some(geometry);
-            if !self.drive_geometry_stable {
-                ui.ctx().request_repaint();
-            }
-        } else {
-            self.drive_geometry = None;
-            self.drive_geometry_stable = false;
+        let unchanged = self.drive_geometry.as_ref() == Some(&self.view.geometry);
+        self.drive_geometry_stable = self.drive_revision == Some(self.view.revision) && unchanged;
+        self.drive_revision = Some(self.view.revision);
+        if !unchanged {
+            self.drive_geometry = Some(self.view.geometry.clone());
+        }
+        if self.queued_click() && !self.drive_geometry_stable {
+            ui.ctx().request_repaint();
         }
         self.settle(ui.ctx());
         if !self.error.is_empty() {
@@ -1354,6 +1351,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         drive_answers: Default::default(),
         drive_serial: 0,
         drive_geometry: None,
+        drive_revision: None,
         drive_geometry_stable: false,
         macro_ui: toolkit::macros::State::for_session(&bundle.manifest.service, macros.clone()),
         macros,
