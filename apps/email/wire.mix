@@ -4,7 +4,7 @@
 $account_policy=require("accounts.mix")
 $argument_policy=require("arguments.mix")
 $request_policy=require("request.mix")
-$wire_sequence=0;$wire_pending={};$wire_sessions={};$wire_views={};$wire_generations={};$wire_data={};$wire_open_targets={};$wire_list_targets={};$wire_waiting=[];$wire_running={}
+$wire_sequence=0;$wire_pending={};$wire_sessions={};$wire_views={};$wire_generations={};$wire_data={};$wire_open_targets={};$wire_list_targets={};$wire_pim_targets={};$wire_waiting=[];$wire_running={}
 $mail_settings={binding:{instance:env("MIXOS_INSTANCE","default"),profile:"default"},source:"cache",default_account:nil,page_size:100,mark_read_on_open:true,confirm_delete:true,quote_on_reply:true,reply_position:"above",revision:nil}
 fn wire_entry($id)
   for $e in $entries if $e.id==$id then return $e end end
@@ -26,7 +26,7 @@ fn wire_start($command,$args,$event=nil,$purpose="query")
   end
 end
 fn wire_schedule($command,$args,$event,$purpose)
-  global $wire_sequence,$wire_pending,$wire_views,$wire_sessions,$wire_generations,$wire_open_targets,$wire_list_targets,$wire_waiting
+  global $wire_sequence,$wire_pending,$wire_views,$wire_sessions,$wire_generations,$wire_open_targets,$wire_list_targets,$wire_pim_targets,$wire_waiting
   if type($args)!="map" then return wire_refuse("INVALID_ARGUMENT","arguments must be an object") end
   $settings=contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set","email.account.migrate"],$command)
   if $settings then $purpose="settings" end
@@ -59,6 +59,7 @@ fn wire_schedule($command,$args,$event,$purpose)
   $wire_sequence=$wire_sequence+1;$job="email-wire-"..to_string($wire_sequence)
   $owner={id:$job,account:$id,entry:$entry,generation:$wire_generations[$id] ?? 0,command:$command,args:$args,token:$token,purpose:$purpose}
   if contains(["list","refresh-list"],$purpose) then $wire_list_targets[$id]=$job end
+  if contains(["events","contacts"],$purpose) then $wire_pim_targets[$id.."/"..$purpose]=$job end
   if $command=="email.open" then
     if $id!=$active then surface_account($id) end
     $owner.mailbox=$box;$wire_open_targets[$id]=$job
@@ -186,6 +187,7 @@ fn wire_completed($d)
     return
   end
   if contains(["list","refresh-list"],$job.purpose) and $wire_list_targets[$job.account]!=$id then return end
+  if contains(["events","contacts"],$job.purpose) and $wire_pim_targets[$job.account.."/"..$job.purpose]!=$id then return end
   if $answer.rc==0 and $answer.session!=nil then
     $wire_sessions[$job.account]=$answer.session
     $raw=$answer.session.raw
@@ -205,7 +207,13 @@ fn wire_completed($d)
         $wire_data[$job.account][$kind]=$answer.body[$kind]
         $first=$answer.body[$kind][0]
         $selected_key=if $kind=="calendars" then "calendar" else "book" end
-        if $first!=nil and not any($answer.body[$kind],fn($p)=$p.id==$wire_data[$job.account][$selected_key]) then $wire_data[$job.account][$selected_key]=$first.id end
+        if not any($answer.body[$kind],fn($p)=$p.id==$wire_data[$job.account][$selected_key]) then $wire_data[$job.account][$selected_key]=($first ?? {}).id end
+        if $job.purpose=="parents" then
+          $child_kind=if $kind=="calendars" then "events" else "contacts" end
+          $wire_data[$job.account][if $kind=="calendars" then "open_event" else "open_contact" end]=nil
+          if $wire_data[$job.account][$selected_key]!=nil then wire_start("email."..$child_kind,{account:$job.account},nil,$child_kind)
+          else $wire_data[$job.account][$child_kind]=[] end
+        end
       end
     end
     for $kind in ["events","contacts"]
