@@ -905,6 +905,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             "viu.ui.focus",
             "viu.ui.text",
             "viu.ui.key",
+            "viu.ui.clipboard",
             "viu.ui.ime",
             "viu.ui.hover",
             "viu.ui.scroll",
