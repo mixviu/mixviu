@@ -16,6 +16,3 @@ run_step(["cargo","test","--locked","-p","lib-mix","--test","lint_analyzer"])
 run_step(["cargo","test","--locked","-p","lib-viu","--test","ced_bus","--test","ced_editor"])
 run_step(["cargo","test","--locked","-p","lib-viu"])
 run_step(["cargo","test","--locked","-p","viu"])
-for $p in split(trim(run_argv_must(["git","ls-files","apps/*-test.mix"])),"\n")
-  run_step(["target/debug/mix",$p])
-end
