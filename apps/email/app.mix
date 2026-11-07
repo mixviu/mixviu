@@ -200,13 +200,8 @@ fn apply_email($id,$origin)
   if not $found[0].enabled then return {rc:10,body:{error_code:"DISABLED",message:"That command cannot run now"}} end
   if $id=="file.quit" or $id=="compose.close" then return composer_quit()
   elif $id=="file.accounts" then
-    send "prefs" "prefs.section" body={name:"apps_email"}
-    if $rc!=0 then
-      send "apps" "apps.launch" body={id:"dev.mixos.prefs"}
-      if $rc!=0 then return {rc:10,body:{error_code:"LAUNCH",message:"Can't open Prefs: no launcher"}} end
-      send "prefs" "prefs.section" body={name:"apps_email"}
-      if $rc!=0 then return {rc:10,body:{error_code:"LAUNCH",message:"Prefs did not open its Email settings"}} end
-    end
+    $path=path_join(dirname(script_path()),"prefs-job.mix")
+    send "viu-local" "jobs.start" id="prefs-"..$compose_ids.mint() owner={prefs:true} path=$path source=read_file($path) command="job.run" args={}
   elif $id=="help.about" then $chrome.dialog="about"
   elif $id=="help.shortcuts" then $chrome.dialog="shortcuts"
   elif $id=="help.macros" then $chrome.macros_open=not $chrome.macros_open
@@ -378,6 +373,10 @@ end
 on viu.job.completed
   $d=$event.args
   if $d.tag.owner.drop!=nil then mail_drop_completed($d.tag.owner.drop,$d.rc,$d.body);publish_email();return end
+  if $d.tag.owner.prefs==true then
+    if $d.rc!=0 then $status=$d.body.message;publish_email() end
+    return
+  end
   if $d.tag.owner.composer_document!=nil then composer_document_completed($d.tag.owner.composer_document,$d.rc,$d.body);publish_email();return end
   if $d.tag.owner.desktop!=nil then viu_reply("finish",$d.tag.owner.desktop,{rc:$d.rc,body:$d.body});return end
   if $d.tag.owner.id!=nil then wire_completed($d);publish_email();return end
