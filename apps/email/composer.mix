@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- All composers belong to this interpreter. Native viewports only draw them.
-$composers={};$compose_serial=0;$compose_focused=nil;$compose_quitting=false
+$composers={};$compose_serial=0;$compose_focused=nil;$compose_quitting=false;$compose_restore=[]
 $compose_addresses=require("addresses.mix");$compose_sending=require("sending.mix");$compose_ids=require("identity.mix")
 $compose_quoting=require("quoting.mix")
 $compose_frame=require("../../libraries/viu/mix/gold-frame.mix")
@@ -55,7 +55,7 @@ fn composer_snapshot($info,$window=nil)
   if $c!=nil then $info.window=$key;$info.compose=composer_info($c);$info.confirm=if $c.confirm then "close_compose" else nil end end
   return $info
 end
-fn composer_open($a)
+fn composer_open($a,$raw_to=nil)
   global $composers,$compose_serial,$compose_focused
   try
     if type($a)!="map" then raise("INVALID_ARGUMENT","arguments must be an object") end
@@ -77,7 +77,8 @@ fn composer_open($a)
     $compose_serial=$compose_serial+1;$key="compose-"..to_string($compose_serial)
     $c={account:$id,identity:$sender.id,from:$sender.address,from_name:$sender.name,to:join(map($compose_addresses.field($a,"to"),fn($v)=$compose_addresses.format($v)),", "),cc:join(map($compose_addresses.field($a,"cc"),fn($v)=$compose_addresses.format($v)),", "),bcc:join(map($compose_addresses.field($a,"bcc"),fn($v)=$compose_addresses.format($v)),", "),reply_to:$a.reply_to ?? $sender.reply_to,subject:$a.subject ?? "",body:$a.body ?? (if $sender.signature!="" then "\n\n-- \n"..$sender.signature else "" end),attachments:$a.attachments ?? [],in_reply_to:$a.in_reply_to,references:$a.references ?? [],busy:false,error:nil,attempt:{},confirm:false,show_cc:$a.cc!=nil,show_bcc:$a.bcc!=nil,show_reply_to:$a.reply_to!=nil,chooser:false,revision:0,draft_id:replace($compose_ids.mint(),"-","")}
     if len($e.identities ?? [])==0 then $c.from_name="" end
-    if $a.body==nil then $c.body=$compose_quoting.signature($sender.signature ?? "") end
+    if $a.body==nil or $a.body=="" then $c.body=$compose_quoting.signature($sender.signature ?? "") end
+    if $raw_to!=nil then $c.to=$raw_to end
     $c.show_cc=$c.cc!="";$c.show_bcc=$c.bcc!="";$c.show_reply_to=($c.reply_to ?? "")!=""
     $c.stale=nil;$c.send_origin=nil;$c.reply_quote=$a.reply_quote;$c.reply_signature=$a.reply_signature;$c.reply_position=$a.reply_position
     $c=composer_files($c,true)
@@ -100,7 +101,7 @@ fn composer_close($key,$answer=nil)
   $c=$composers[$key]
   if $c==nil then return wire_refuse("NOT_FOUND","No compose is open") end
   if $c.busy then return wire_refuse("BUSY","Sending…") end
-  if $answer==nil and $c.revision>0 then $composers[$key].confirm=true;return {rc:0,body:{}} end
+  if $answer==nil and ($c.revision>0 or $c.restored==true or len($c.attachments)>0 or len(keys($c.attempt))>0) then composer_save($key);$composers[$key].confirm=true;return {rc:0,body:{}} end
   if $answer==nil then $answer="discard" end
   if $answer=="cancel" then $composers[$key].confirm=false;$compose_quitting=false;return {rc:0,body:{}} end
   if $answer=="keep" then composer_save($key)
@@ -108,6 +109,7 @@ fn composer_close($key,$answer=nil)
     $path=path_join(viu_app_dirs("email").state,"drafts/"..$c.draft_id..".json")
     if exists($path) then viu_files("remove",{path:$path}) end
   else return wire_refuse("INVALID_ARGUMENT","Unknown draft answer") end
+  viu_timer("draft:"..$key,nil,{})
   $composers=delete($composers,$key)
   if $compose_quitting then composer_quit() end
   return {rc:0,body:{}}
@@ -143,7 +145,7 @@ fn composer_intent($a)
   $key=$a.window ?? $compose_focused;$c=$composers[$key]
   if $c==nil then return wire_refuse("NOT_FOUND","No compose is open") end
   if $c.busy then return wire_refuse("BUSY","Sending…") end
-  if $a.id=="compose-confirm" then return composer_close($key,$a.value) end
+  if $a.id=="compose-confirm" then return composer_close($key,$a.value.choice ?? $a.value) end
   if $a.id=="compose-body" then $composers[$key].body=$a.value
   elif $a.id=="compose-headers" then
     if $a.action=="edit" then
@@ -169,7 +171,7 @@ fn composer_intent($a)
   end
   if $a.action=="picked" or $a.action=="remove" then $composers[$key]=composer_files($composers[$key]) end
   $composers[$key].revision=$c.revision+1
-  composer_save($key)
+  viu_timer("draft:"..$key,500,{kind:"draft",window:$key})
   return {rc:0,body:{}}
 end
 fn composer_command($key,$id)
@@ -229,6 +231,50 @@ fn composer_sent($key,$answer)
   $composers[$key].busy=false;$composers[$key].attempt=$answer.attempt ?? $composers[$key].attempt
   if $answer.rc==0 then composer_close($key,"discard")
   else $composers[$key].error=$answer.body.message;composer_save($key) end
+end
+fn composer_load_drafts()
+  global $compose_restore
+  $dir=path_join(viu_app_dirs("email").state,"drafts")
+  for $path in glob(path_join($dir,"*.json"))
+    try
+      $read=viu_read_optional($path);$d=json_parse($read.text)
+      if $d.schema_version!=1 or not re_match($d.id ?? "","^[0-9a-f]{1,64}$") or basename($path)!=$d.id..".json" then continue end
+      if not all(["account","from","to","cc","bcc","subject","body","saved_at"],fn($f)=type($d[$f])=="string") then continue end
+      if type($d.attachments)!="list" or not all($d.attachments,fn($p)=type($p)=="string") then continue end
+      push($compose_restore,$d)
+    catch $unreadable nil end
+  end
+  $compose_restore=sort_by($compose_restore,fn($d)=[$d.saved_at,$d.id]);$compose_restore=reverse($compose_restore)
+end
+fn composer_restore_answer($choice)
+  global $compose_restore,$composers,$compose_serial,$compose_focused
+  $d=$compose_restore[0]
+  if $d==nil then return wire_refuse("NOT_FOUND","No draft is offered") end
+  if $choice=="later" then $compose_restore=[];return {rc:0,body:{}} end
+  if $choice=="discard" then
+    viu_files("remove",{path:path_join(viu_app_dirs("email").state,"drafts/"..$d.id..".json")})
+    $compose_restore=slice($compose_restore,1);return {rc:0,body:{}}
+  end
+  if $choice!="restore" then return wire_refuse("INVALID_ARGUMENT","Unknown draft answer") end
+  $e=wire_entry($d.account)
+  if $e==nil then
+    $fallback=wire_entry($mail_settings.default_account ?? $active)
+    if $fallback!=nil then $d.account=$fallback.id;$d.from=$fallback.user;$d.from_name="";$d.reply_to=nil;$d.identity="" end
+  end
+  $compose_serial=$compose_serial+1;$key="compose-"..to_string($compose_serial)
+  $c=merge($d,{draft_id:$d.id,revision:0,restored:true,busy:false,error:nil,attempt:$d.attempt ?? {},confirm:false,show_cc:$d.cc!="",show_bcc:$d.bcc!="",show_reply_to:($d.reply_to ?? "")!="",chooser:false,stale:nil,send_origin:nil})
+  $composers[$key]=composer_files($c);$compose_focused=$key;$compose_restore=slice($compose_restore,1)
+  return {rc:0,body:{window:$key,compose:composer_info($composers[$key])}}
+end
+fn composer_restore_model($m)
+  if len($compose_restore)==0 or len(keys($composers))>0 or $mail_form!=nil then return $m end
+  $d=$compose_restore[0];$subject=if trim($d.subject)=="" then "(no subject)" else $d.subject end
+  $to=if trim($d.to)=="" then "(no recipients)" else rtrim(trim($d.to),",;") end
+  $saved="";try $saved=date_format(date_parse($d.saved_at),"%-d %b %Y, %H:%M") catch $bad nil end
+  $v={open:true,instance:$d.id,title:"Restore a draft?",body:"A draft was kept on this computer. Would you like to finish it?",details:[{text:$subject,strong:true},{text:"To: "..$to},{text:"Saved "..$saved,weak:true}],choices:[{id:"restore",label:"Restore Draft",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"later",label:"Later",enabled:true,cancel:true}]}
+  if len($compose_restore)>1 then $v.details=push($v.details,{text:to_string(len($compose_restore)-1).." more drafts kept",weak:true}) end
+  $m.native_overlays=push($m.native_overlays,{command:"email.restore.intent",definition:{id:"email-restore",kind:"dialog-form",label:"",initial:$v,properties:{style:"gold"}}})
+  return $m
 end
 fn composer_begin($command,$args,$event)
   try

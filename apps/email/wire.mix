@@ -29,7 +29,10 @@ fn wire_schedule($command,$args,$event,$purpose)
   if type($args)!="map" then return wire_refuse("INVALID_ARGUMENT","arguments must be an object") end
   $settings=contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set"],$command)
   if $settings then $purpose="settings" end
-  if $command=="email.send" and $purpose!="compose-send" then $args=delete($args,"attempt") end
+  if $command=="email.send" then
+    $args._compose_owner=$purpose=="compose-send"
+    if $purpose!="compose-send" then $args=delete($args,"attempt") end
+  end
   $id=$argument_policy.text($args,"account") ?? $active;$entry=wire_entry($id)
   if $command=="email.account.connect" then $id=$argument_policy.required($args,"id");$entry=wire_entry($id) end
   if not $settings then
@@ -142,7 +145,7 @@ fn wire_session($update)
   if $previous_page_size!=$mail_settings.page_size and $connected and $box!="" then wire_start("email.list",{mailbox:$box,limit:$mail_settings.page_size},nil,"list") end
 end
 fn wire_completed($d)
-  global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus,$reader_markdown,$reader_detected,$reader_auto,$wire_running
+  global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus,$reader_markdown,$reader_detected,$reader_auto,$wire_running,$mail_form
   $id=$d.tag.owner.id;$job=$wire_pending[$id]
   if $job==nil then wire_pump();return end
   $wire_pending=delete($wire_pending,$id)
@@ -151,11 +154,15 @@ fn wire_completed($d)
   $entry=wire_entry($job.account)
   $answer=if $d.rc==0 then $d.body else {rc:10,body:{error_code:"SERVER",message:"Mail worker failed"}} end
   if not wire_current($job) then
+    if $job.purpose=="form" and $mail_form!=nil then $mail_form.busy=false;$mail_form.error="This account changed while the form was open. Close it and open it again." end
     if $job.purpose=="compose-send" then composer_sent($job.args.window,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"},attempt:$answer.attempt}) end
     if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"}}) end
     return
   end
   if $job.purpose=="compose-send" then composer_sent($job.args.window,$answer) end
+  if $job.purpose=="form" and $mail_form!=nil then
+    if $answer.rc==0 then $mail_form=nil else $mail_form.busy=false;$mail_form.error=$answer.body.message end
+  end
   if $job.command=="email.open" and ($wire_open_targets[$job.account]!=$id or ($job.account==$active and $job.mailbox!=$box)) then
     if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"SUPERSEDED",message:"Another email was opened in the reader before this one loaded"}}) end
     return
@@ -192,7 +199,9 @@ fn wire_completed($d)
     end
   end
   if $answer.rc==0 and $job.purpose=="compose-open" then
-    $opened=composer_open($compose_quoting.make($job.command,$entry,$answer.body,$job.args,$mail_settings))
+    $draft_args=$compose_quoting.make($job.command,$entry,$answer.body,$job.args,$mail_settings);$raw_to=nil
+    if $job.command=="email.forward" then $raw_to=join($draft_args.to,", ");$draft_args.to=[] end
+    $opened=composer_open($draft_args,$raw_to)
     $answer.rc=$opened.rc;$answer.body=$opened.body
   end
   if $job.command=="email.account.connect" then

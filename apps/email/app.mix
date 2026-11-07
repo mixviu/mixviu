@@ -36,7 +36,7 @@ fn publish_email()
     if $mail_settings.source=="missing" then $look.status=$look.status.." — Settings service not running: showing the saved accounts, read-only" end
   end
   $m=$frame.apply($m,$look)
-  if not $fixture then $m=composer_models($m) end
+  if not $fixture then $m=composer_restore_model(form_model(composer_models($m))) end
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$m}
 end
 fn begin_mail($op,$data)
@@ -69,6 +69,8 @@ end
 include "wire.mix"
 include "surface.mix"
 include "composer.mix"
+include "forms.mix"
+if not $fixture then composer_load_drafts() end
 publish_email()
 on email.ping
   reply(0,json_encode({pong:true,schema:"email.v1",version:$ctx.version,pid:$ctx.pid}))
@@ -183,6 +185,12 @@ fn execute_email($id,$origin)
     return {rc:10,body:{error_code:"DISABLED",message:"Command search is awaiting the shared palette port"}}
   elif $id=="mail.compose" then
     if not $fixture then $opened=composer_open({});publish_email();return $opened else $view="Compose" end
+  elif $id=="calendar.new_event" then return form_open("event")
+  elif $id=="contacts.new_contact" then return form_open("contact")
+  elif $id=="mail.delete" then return form_open("delete")
+  elif $id=="mail.move" then return form_open("move")
+  elif contains(["mail.junk","mail.not_junk"],$id) then
+    return wire_start("email.junk",{ids:if len($mail_selection)>0 then $mail_selection else [$message.id] end,junk:$id=="mail.junk"},nil,"mutation")
   elif $id=="file.refresh" then
     if not $fixture then
       wire_start("email.mailboxes",{},nil,"boxes")
@@ -266,6 +274,19 @@ end
 on email.compose.intent
   $out=composer_intent($event.args);publish_email();reply($out.rc,json_encode($out.body))
 end
+on email.form.intent
+  $out=form_intent($event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.restore.intent
+  $out=composer_restore_answer($event.args.value.choice);publish_email();reply($out.rc,json_encode($out.body))
+end
+on viu.timer
+  $a=$event.args.value
+  if $a.kind=="draft" and $composers[$a.window]!=nil then
+    try composer_save($a.window) catch $failed $composers[$a.window].error="Draft not saved: "..$failed end
+    publish_email()
+  end
+end
 on email.compose.attachment.add
   $out=composer_attachments("email.compose.attachment.add",$event.args);publish_email();reply($out.rc,json_encode($out.body))
 end
@@ -285,6 +306,11 @@ on email.quit
   $out=composer_quit();publish_email();reply($out.rc,json_encode($out.body))
 end
 on email.dialog
+  if len($compose_restore)>0 and len(keys($composers))==0 and $mail_form==nil then
+    if $event.args.answer!=nil then $out=composer_restore_answer($event.args.answer);publish_email();reply($out.rc,json_encode($out.body))
+    else reply(0,json_encode({dialog:"restore_draft"})) end
+    return
+  end
   $window=$event.args.window ?? $compose_focused
   if $composers[$window]!=nil and $composers[$window].confirm then
     if $event.args.answer!=nil then $out=composer_close($window,$event.args.answer);publish_email();reply($out.rc,json_encode($out.body))

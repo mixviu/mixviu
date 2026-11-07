@@ -28,6 +28,7 @@ fn draft($e,$a)
   $references=[]
   for $v in $arg.list($a,"references") ?? [] $references=concat($references,filter(re_split($v,"\\s+"),fn($s)=$s!="")) end
   $d={from:$sender.address,from_name:$sender.name,to:$addr.field($a,"to"),cc:$addr.field($a,"cc"),bcc:$addr.field($a,"bcc"),reply_to:$arg.text($a,"reply_to") ?? $sender.reply_to,subject:$arg.required($a,"subject"),body:$arg.text($a,"body") ?? "",in_reply_to:$arg.text($a,"in_reply_to"),references:$references,attachments:$a.attachments ?? []}
+  if $a._compose_owner==true then $d.from_name=$a.from_name ?? "" end
   if len($d.to)==0 then raise("INVALID_ARGUMENT","to is required") end
   if type($d.attachments)!="list" or not all($d.attachments,fn($v)=type($v)=="string") then raise("INVALID_ARGUMENT","attachments must hold absolute file paths") end
   for $path in $d.attachments
@@ -141,6 +142,11 @@ fn execute($e,$s,$a)
       $recipients=map(concat($d.to,$d.cc,$d.bcc),fn($r)={email:$r.email})
       $attempt.ambiguous=true
       $submitted=$p.call($e,$s,"EmailSubmission/set",{create:{sub1:{emailId:$attempt.email_id,identityId:$identity.id,envelope:{mailFrom:{email:$d.from},rcptTo:$recipients}}}})
+      $refused=($submitted.notCreated ?? {}).sub1
+      if $refused!=nil then
+        $attempt.ambiguous=false
+        if contains(["invalidEmail","notFound"],$refused.type) then $attempt.email_id=nil;$attempt.fingerprint=nil end
+      end
       $attempt.submission_id=created($submitted,"sub1");$attempt.submitted=true;$attempt.ambiguous=false
     end
     $filed=false

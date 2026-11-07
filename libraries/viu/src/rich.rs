@@ -184,6 +184,9 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             {
                 return Err("modal form field must be string or null".into());
             }
+            if value.get("fields").is_some_and(|f|f.as_array().is_none_or(|rows|rows.len()>32 || rows.iter().any(|r|!r["id"].is_string() || !r["label"].is_string() || !r["value"].is_string() || !r["hint"].is_string() || !r["enabled"].is_boolean()))) {
+                return Err("modal fields require bounded labelled text".into());
+            }
             if value
                 .get("max_field_bytes")
                 .is_some_and(|v| v.as_u64().is_none_or(|n| n == 0 || n > 1_048_576))
@@ -318,6 +321,10 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
             }
         }
         "edit" => {
+            if let (Some(fields),Some(edits))=(current["fields"].as_array(),payload.as_object()) {
+                if current["open"]!=true || edits.is_empty() || edits.iter().any(|(key,v)|!v.as_str().is_some_and(|s|s.len()<=65536) || !fields.iter().any(|r|r["id"]==*key && r["enabled"]==true)) {return Err("form is not editable".into());}
+                return Ok(());
+            }
             if current["open"] != true
                 || !current["field"].is_string()
                 || payload.as_str().is_none_or(|s| {
@@ -896,7 +903,25 @@ fn gold_dialog(
             else if !response.has_focus() && !response.lost_focus(){response.request_focus();}
             if response.changed(){emit(events,id,"edit",json!(field));}
         }else if !text(value,"body").is_empty(){ui.label(text(value,"body"));}
+        if let Some(fields)=value["fields"].as_array(){
+            egui::Grid::new((id,"fields")).num_columns(2).show(ui,|ui|{
+                let mut edits=serde_json::Map::new();
+                for row in fields {
+                    let caption=ui.label(text(row,"label"));let mut text_value=text(row,"value").to_owned();
+                    let response=ui.add_enabled_ui(row["enabled"]==true,|ui|toolkit::field::text(ui,&mut text_value,text(row,"hint"),300.0_f32.max(ui.available_width())).accessible_name(text(row,"label")).labelled_by(caption.id)).inner;
+                    geometry.insert(format!("{id}.field.{}",text(row,"id")),response.rect);
+                    if response.changed(){edits.insert(text(row,"id").to_owned(),json!(text_value));}
+                    ui.end_row();
+                }
+                if !edits.is_empty(){emit(events,id,"edit",Value::Object(edits));}
+            });
+        }
+        if let Some(error)=value["error"].as_str(){ui.colored_label(ui.visuals().error_fg_color,error);}
         if let Some(footer)=value["footer"].as_str(){ui.weak(footer);}
+        if let Some(details)=value["details"].as_array(){
+            ui.add_space(4.0);
+            for row in details {let mut text=egui::RichText::new(text(row,"text"));if row["strong"]==true{text=text.strong();}if row["weak"]==true{text=text.weak();}ui.label(text);}
+        }
         if let Some(rows)=value["grid"].as_array(){
             egui::ScrollArea::vertical().max_height(360.0).show(ui,|ui|{
                 egui::Grid::new("shortcut-grid").show(ui,|ui|{
@@ -913,7 +938,17 @@ fn gold_dialog(
             });
         }
         if let Some(items)=value["items"].as_array(){
-          if value["row_layout"]=="inline" {
+          if value["row_layout"]=="selectable" {
+            egui::ScrollArea::vertical().max_height(320.0).show(ui,|ui|{
+                for row in items {
+                    for c in row["choices"].as_array().unwrap(){
+                        let response=ui.add_enabled_ui(c["enabled"]==true,|ui|toolkit::selectable(ui,false,text(c,"label"))).inner;
+                        geometry.insert(format!("{id}.choice.{}",text(c,"id")),response.rect);
+                        if response.clicked(){emit(events,id,"answer",json!({"choice":c["id"],"instance":value["instance"]}));}
+                    }
+                }
+            });
+          } else if value["row_layout"]=="inline" {
             for row in items {
               ui.horizontal(|ui|{
                 ui.label(text(row,"label"));
