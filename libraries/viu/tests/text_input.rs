@@ -69,7 +69,7 @@ fn gold_dialog_tab_keeps_button_focus_and_enter_cancels() {
         );
     }
 }
-    #[test]
+#[test]
 fn field_submits_latest_native_text_before_the_mix_model_echo() {
     let source = format!(
         "---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{}\n```\n",
@@ -106,7 +106,6 @@ fn field_submits_latest_native_text_before_the_mix_model_echo() {
         changed.iter().any(|e| e.body["value"] == "replacement"),
         "{changed:?}"
     );
-
 }
 #[test]
 fn native_document_preserves_unicode_selection_and_undo_across_model_echo() {

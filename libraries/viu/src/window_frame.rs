@@ -84,7 +84,6 @@ impl WindowFrame {
             server: Some(false),
             ..Default::default()
         }
-
     }
     /// Describe the controls actually drawn by this adapter. Requested hosted
     /// actions remain in the application row until native hosting is wired.

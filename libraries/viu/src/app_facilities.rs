@@ -123,7 +123,6 @@ impl Facilities {
             }));
             let mut names = std::collections::BTreeSet::new();
             commands.retain(|c| names.insert(c["name"].as_str().unwrap_or_default().to_owned()));
-
         }
         let macros = manifest
             .native_macros

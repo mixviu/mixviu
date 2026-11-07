@@ -78,7 +78,6 @@ fn application_plan(bundle: &Bundle, args: &[String]) -> Result<serde_json::Valu
     Ok(plan)
 }
 
-
 fn mix_json(value: &impl serde::Serialize) -> String {
     serde_json::to_string(&serde_json::to_string(value).unwrap())
         .unwrap()
@@ -86,7 +85,9 @@ fn mix_json(value: &impl serde::Serialize) -> String {
 }
 
 fn policy(bundle: &Bundle, args: &[String]) -> Result<serde_json::Value, String> {
-    if !bundle.manifest.launch_model { return application_plan(bundle, args); }
+    if !bundle.manifest.launch_model {
+        return application_plan(bundle, args);
+    }
     let Some(relative) = bundle.manifest.launch.as_ref() else {
         return Ok(serde_json::json!({}));
     };
@@ -149,13 +150,11 @@ fn policy(bundle: &Bundle, args: &[String]) -> Result<serde_json::Value, String>
                             .as_str()
                             .is_none_or(|s| s.is_empty() || s.len() > 128)
                             || !row["body"].is_object()
-
                     })
             })
         })
     {
         return Err("invalid bounded launch plan".into());
-
     }
     Ok(plan)
 }
@@ -216,7 +215,14 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     if let Some(index) = options.separator {
         policy_args.insert(index, "--".into());
     }
-    let plan = policy(&bundle, if bundle.manifest.launch_model { &policy_args } else { &options.args })?;
+    let plan = policy(
+        &bundle,
+        if bundle.manifest.launch_model {
+            &policy_args
+        } else {
+            &options.args
+        },
+    )?;
     if let Some(args) = plan["args"].as_array() {
         bundle = Bundle::load(
             root,

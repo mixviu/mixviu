@@ -82,7 +82,6 @@ pub fn activate_existing_plan(
                             .ok_or("activation command required")?,
                         &BTreeMap::new(),
                         &operation["body"].to_string(),
-
                         Duration::from_secs(10),
                     )
                     .await
@@ -738,7 +737,14 @@ mod tests {
     }
 }
 
-pub fn activate_existing_commands(service: &str, commands: &[(&str, Value)], url: &str) -> Result<bool, String> {
- let operations=commands.iter().map(|(command,body)|json!({"command":command,"body":body})).collect::<Vec<_>>();
- activate_existing_plan(service,&operations,url)
+pub fn activate_existing_commands(
+    service: &str,
+    commands: &[(&str, Value)],
+    url: &str,
+) -> Result<bool, String> {
+    let operations = commands
+        .iter()
+        .map(|(command, body)| json!({"command":command,"body":body}))
+        .collect::<Vec<_>>();
+    activate_existing_plan(service, &operations, url)
 }

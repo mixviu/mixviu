@@ -25,7 +25,6 @@ pub const KINDS: &[&str] = &[
     "network-map",
     "navigation-list",
     "command-palette",
-
     "widget-row",
     "divider",
     "time-series",
@@ -1338,7 +1337,14 @@ impl Widgets {
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" | "settings-browser" => {
-                crate::rich::draw(ui, widget, value, &mut self.geometry, events, &mut self.images)
+                crate::rich::draw(
+                    ui,
+                    widget,
+                    value,
+                    &mut self.geometry,
+                    events,
+                    &mut self.images,
+                )
             }
             "label" => {
                 if widget.properties["role"] == "section" {
@@ -2229,7 +2235,6 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
         text = text.heading();
     }
     if widget.properties["role"] == "status" || widget.properties["small"] == true {
-
         text = text.small();
     }
     if widget.properties["small"] == true {

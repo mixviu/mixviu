@@ -1325,7 +1325,6 @@ impl SceneView {
                 continue;
             }
             if matches!(edge, "bottom" | "fill") && placement["panel"] == true {
-
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
                 let panel = egui::CentralPanel::default();
                 let panel = if placement["frame"] == "native" {

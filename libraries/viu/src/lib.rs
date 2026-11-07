@@ -8,11 +8,11 @@ pub mod bundle;
 pub mod capture;
 mod child_windows;
 pub mod chooser;
+pub mod chooser_host;
 pub mod clipboard;
+pub mod command_palette;
 pub mod composition;
 mod cuboids;
-pub mod chooser_host;
-pub mod command_palette;
 
 pub mod debug;
 mod debug_recent;
@@ -36,11 +36,11 @@ mod native_events;
 pub mod native_menu;
 mod native_primitives;
 mod native_theme;
+pub mod navigation_list;
 pub mod raster;
 pub mod raster_decode;
 pub mod raster_fill;
 pub mod raster_fit;
-pub mod navigation_list;
 
 pub mod rich;
 pub mod runtime;

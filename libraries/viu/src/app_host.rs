@@ -38,6 +38,7 @@ pub(crate) fn validate_overlays(model: &Value) -> Result<(), String> {
 struct Host {
     require_bus: bool,
     forward_output: bool,
+    quit_reply_closes: bool,
     windows: crate::child_windows::Windows,
 
     platform: crate::platform::Platform,
@@ -291,9 +292,9 @@ impl Host {
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
-        if r.command == format!("{}.quit", self.app)
+        if self.quit_reply_closes && (r.command == format!("{}.quit", self.app)
             || (r.command == format!("{}.execute", self.app)
-                && matches!(r.args["id"].as_str(), Some("file.quit" | "app.quit")))
+                && matches!(r.args["id"].as_str(), Some("file.quit" | "app.quit"))))
         {
             r.close_after_reply
                 .store(true, std::sync::atomic::Ordering::Release);
@@ -1348,7 +1349,6 @@ impl Host {
             }
             if !self.native_drive
                 && self.facilities.macros.is_some()
-
                 && toolkit::macros::show_app(ui.ctx(), &self.app, self.model["macros_open"] == true)
             {
                 self.dispatch(
@@ -1694,6 +1694,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     Host {
         require_bus: bundle.manifest.require_bus,
         forward_output: bundle.manifest.forward_output,
+        quit_reply_closes: bundle.manifest.quit_reply_closes,
         windows: Default::default(),
 
         platform,
@@ -1974,9 +1975,8 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         });
     if !activation.is_empty() && bundle.launch_plan["headless"] != true {
         match crate::native_bus::activate_existing_commands(
-            &std::env::var("VIU_SERVICE").unwrap_or_else(|_|bundle.manifest.service.clone()),
+            &std::env::var("VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
             &activation,
-
             &bundle.manifest.bus_url(),
         ) {
             Ok(true) => return Ok(()),

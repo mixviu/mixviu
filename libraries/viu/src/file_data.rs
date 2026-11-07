@@ -542,7 +542,7 @@ mod tests {
         std::fs::remove_file(source).unwrap();
         assert_eq!(std::fs::read(&target).unwrap(), [0, 255, 42]);
         assert_eq!(std::fs::metadata(target).unwrap().mode() & 0o777, 0o600);
-}
+    }
     #[test]
     fn filtered_scans_charge_hidden_and_filtered_entries_before_returning_rows() {
         let d = tempfile::tempdir().unwrap();
@@ -571,7 +571,6 @@ mod tests {
             .unwrap(),
             json!({"bytes":"%6E%FF%2E%74%78%74"})
         );
-
     }
     #[test]
     fn directory_admission_stops_at_the_callers_remaining_work_budget() {
