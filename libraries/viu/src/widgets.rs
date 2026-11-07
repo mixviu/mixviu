@@ -15,6 +15,7 @@ pub const KINDS: &[&str] = &[
     "form-fields",
     "header-form",
     "file-tiles",
+    "file-previews",
     "status-line",
     "widget-row",
     "divider",
@@ -306,6 +307,7 @@ impl Widget {
             }
             "image-view" => return crate::image_view::validate(value),
             "file-tiles" => return crate::file_tiles::validate(value),
+            "file-previews" => return crate::file_previews::validate(value),
             "image-fill" => return crate::image_view::validate_fill(value),
             "tree-table" => return crate::tree_table::validate(value),
             "icon" => {
@@ -422,7 +424,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
-        if self.kind == "file-tiles" {
+        if self.kind == "file-tiles" || self.kind == "file-previews" {
             return vec!["toggle", "open", "save", "open-all", "save-all"];
         }
         if self.kind == "macro-menu" {
@@ -541,7 +543,7 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
-        if self.kind == "file-tiles" {
+        if self.kind == "file-tiles" || self.kind == "file-previews" {
             return if crate::file_tiles::intent(self.value(model), action, value) {
                 Ok(())
             } else {
@@ -663,6 +665,7 @@ pub struct Widgets {
     focus_error: Option<String>,
     images: crate::image_view::Images,
     surfaces: Option<crate::image_view::Images>,
+    media: Option<crate::image_view::Images>,
     editors: crate::editor::Editors,
     documents: crate::documents::Documents,
 }
@@ -694,6 +697,7 @@ impl Widgets {
         if let Some(images) = &mut self.surfaces {
             images.begin();
         }
+        if let Some(images) = &mut self.media { images.begin(); }
     }
     /// Draw one shared widget within an application-owned layout. Both Rust
     /// and Mix adapters can use this entry point without the catalogue grid.
@@ -726,6 +730,7 @@ impl Widgets {
         if let Some(images) = &mut self.surfaces {
             images.finish();
         }
+        if let Some(images) = &mut self.media { images.finish(); }
         if let Some(id) = self.focus.take() {
             self.focus_selection = None;
             Err(format!("focus target not drawn: {id}"))
@@ -931,6 +936,7 @@ impl Widgets {
             }
             "image-view" => self.images.draw(ui, id, value),
             "file-tiles" => crate::file_tiles::draw(ui, id, value, events),
+            "file-previews" => crate::file_previews::draw(ui,id,value,self.media.get_or_insert_with(crate::image_view::Images::media),events),
             "image-fill" => self
                 .surfaces
                 .get_or_insert_with(crate::image_view::Images::surface)

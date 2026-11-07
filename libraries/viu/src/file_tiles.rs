@@ -50,7 +50,7 @@ fn emit(events: &mut Vec<Intent>, id: &str, action: &str, key: Value) {
         value: key,
     });
 }
-fn menu(response: &egui::Response, p: &Value, v: &Value, id: &str, events: &mut Vec<Intent>) {
+pub(crate) fn menu(response: &egui::Response, p: &Value, v: &Value, id: &str, events: &mut Vec<Intent>) {
     if p["enabled"] == true && response.clicked() {
         emit(
             events,
@@ -99,6 +99,7 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
     ui.scope(|ui| {
         toolkit::bars::hairline(ui);
         let items = v["items"].as_array().unwrap();
+        let mut toggle = false;
         egui::Sides::new().show(
             ui,
             |ui| {
@@ -114,7 +115,7 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                         )
                         .clicked()
                     {
-                        emit(events, id, "toggle", Value::Null);
+                        toggle = true;
                     }
                     ui.add(toolkit::icons::image_of(
                         ui.ctx(),
@@ -162,6 +163,7 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                 });
             },
         );
+        if toggle { emit(events,id,"toggle",Value::Null); }
         if v["expanded"] == true {
             egui::ScrollArea::vertical()
                 .id_salt("attachment-tiles")

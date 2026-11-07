@@ -29,6 +29,7 @@ pub(crate) struct Images {
     decoder: crate::thumbnail::Decoder<Key>,
     slots: BTreeMap<String, Slot>,
     visible: BTreeSet<String>,
+    capacity: usize,
 }
 impl Default for Images {
     fn default() -> Self {
@@ -36,10 +37,14 @@ impl Default for Images {
             decoder: crate::thumbnail::Decoder::new("viu-preview-decode"),
             slots: BTreeMap::new(),
             visible: BTreeSet::new(),
+            capacity: 16,
         }
     }
 }
 impl Images {
+    pub fn media() -> Self {
+        Self { decoder: crate::thumbnail::Decoder::with_decoder("viu-media-decode", |path| crate::media_preview::decode(path,"image/png").ok()), capacity: 1024, ..Self::default() }
+    }
     pub fn surface() -> Self {
         Self {
             decoder: crate::thumbnail::Decoder::with_decoder("viu-surface-decode", decode_surface),
@@ -98,7 +103,7 @@ impl Images {
             self.slots.remove(id);
         }
         if !self.slots.contains_key(id) {
-            if self.slots.len() >= 16 {
+            if self.slots.len() >= self.capacity {
                 return ui.label("Preview capacity reached");
             }
             let key = (id.to_owned(), path.to_owned());
@@ -111,6 +116,9 @@ impl Images {
                     answered: !accepted,
                 },
             );
+        }
+        if value["natural"] == true && self.slots.get(id).is_some_and(|s| !s.answered) {
+            self.decoder.ask(&(id.to_owned(),path.to_owned()),std::path::Path::new(path),ui.ctx());
         }
         for ((id, path), image) in self.decoder.drain() {
             if let Some(slot) = self.slots.get_mut(&id).filter(|s| s.path == path) {
@@ -126,6 +134,10 @@ impl Images {
         }
         if let Some(texture) = self.slots.get(id).and_then(|s| s.texture.as_ref()) {
             let natural = texture.size_vec2() / ui.ctx().pixels_per_point();
+            if value["natural"] == true {
+                let size = natural * (ui.available_width()/natural.x).min(1.0);
+                return ui.add(egui::Image::new(texture).fit_to_exact_size(size).sense(egui::Sense::click()).alt_text(value["alt"].as_str().unwrap_or("")));
+            }
             if fill {
                 let fit = value["fit"].as_str().unwrap();
                 let scale = match fit {

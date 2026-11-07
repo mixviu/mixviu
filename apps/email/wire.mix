@@ -164,6 +164,7 @@ fn wire_completed($d)
   wire_pump()
   $entry=wire_entry($job.account)
   $answer=if $d.rc==0 then $d.body else {rc:10,body:{error_code:"SERVER",message:"Mail worker failed"}} end
+  if $job.purpose=="preview" then preview_completed($job,$answer);return end
   if not wire_current($job) then
     if $job.purpose=="bulk-ids" then selection_cancel($job.account) end
     if $job.purpose=="form" and $mail_form!=nil then $mail_form.busy=false;$mail_form.error="This account changed while the form was open. Close it and open it again." end

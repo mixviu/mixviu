@@ -16,7 +16,17 @@ on job.run
     if $command=="email.send" then
       $sent=$sending.execute($e,$s,$p);reply(0,json_encode(merge($sent,{session:$s})));return
     end
-    if $command=="email.mailboxes" or $command=="email.account.connect" then
+    if $command=="email.preview" then
+      try
+        $request=$protocol.request($e,replace($s.raw.downloadUrl,"{blobId}",$p.blob),"GET","",$s.token)
+        $request.response_file=$p.source;$request.max_response=16777216
+        $response=viu_http($request)
+        if $response.status!=200 then raise("UNAVAILABLE","Download HTTP "..to_string($response.status)) end
+        $answer=viu_preview($p.source,$p.mime,$p.destination)
+      finally
+        if exists($p.source) then viu_files("remove",{path:$p.source}) end
+      end
+    elif $command=="email.mailboxes" or $command=="email.account.connect" then
       $answer={mailboxes:$protocol.boxes($protocol.call($e,$s,"Mailbox/get",{}).list)}
     elif $command=="email.ids" then
       $answer=$protocol.call($e,$s,"Email/query",{filter:{inMailbox:$p.mailbox},sort:[{property:$p.sort,isAscending:$p.ascending}],position:$p.offset,limit:500,calculateTotal:true})

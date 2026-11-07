@@ -9,7 +9,7 @@ fn surface_info()
   $accounts=[]
   for $a in wire_accounts()
     $d=$wire_data[$a.id] ?? {};$open=$d.message ?? {}; $emails=$d.emails ?? []
-    $a.mail={mailboxes:$d.boxes ?? [],selected:$d.box,emails:map($emails,fn($m)={id:$m.id,subject:$m.subject,from:address_display(($m.from ?? [])[0]),date:$m.date ?? $m.receivedAt,read:($m.keywords ?? {})["$seen"]==true,flagged:($m.keywords ?? {})["$flagged"]==true}),total:$d.total ?? 0,open:$open.id,reader:if $open.id==nil then nil else {format:if $reader_markdown then "markdown" else "plain" end,auto:$reader_auto,attachments_expanded:$attachments_expanded,attachments_inline:$attachments_inline,attachments:map($open.attachments ?? [],fn($p)={part:$p.partId,preview:{state:"none"}})} end,attachments:if $open.id==nil then nil else reader_attachments($a.id,$open) end,busy:any(values($wire_pending),fn($p)=$p.account==$a.id and contains(["list","refresh-list"],$p.purpose)),selection:{ids:if $a.id==$active then $mail_selection else [] end,count:if $a.id==$active then selection_count() else 0 end,all:$a.id==$active and $mail_everything},sort:$mail_sort.column,order:if $mail_sort.order=="ascending" then "asc" else "desc" end,page:floor(($d.offset ?? 0)/$mail_settings.page_size),page_size:$mail_settings.page_size}
+    $a.mail={mailboxes:$d.boxes ?? [],selected:$d.box,emails:map($emails,fn($m)={id:$m.id,subject:$m.subject,from:address_display(($m.from ?? [])[0]),date:$m.date ?? $m.receivedAt,read:($m.keywords ?? {})["$seen"]==true,flagged:($m.keywords ?? {})["$flagged"]==true}),total:$d.total ?? 0,open:$open.id,reader:if $open.id==nil then nil else {format:if $reader_markdown then "markdown" else "plain" end,auto:$reader_auto,attachments_expanded:$attachments_expanded,attachments_inline:$attachments_inline,attachments:map($open.attachments ?? [],fn($p)={part:$p.partId,preview:preview_info($a.id,$open,$p)})} end,attachments:if $open.id==nil then nil else reader_attachments($a.id,$open) end,busy:any(values($wire_pending),fn($p)=$p.account==$a.id and contains(["list","refresh-list"],$p.purpose)),selection:{ids:if $a.id==$active then $mail_selection else [] end,count:if $a.id==$active then selection_count() else 0 end,all:$a.id==$active and $mail_everything},sort:$mail_sort.column,order:if $mail_sort.order=="ascending" then "asc" else "desc" end,page:floor(($d.offset ?? 0)/$mail_settings.page_size),page_size:$mail_settings.page_size}
     $a.calendar={calendars:$d.calendars ?? [],selected:$d.calendar,events:map($d.events ?? [],fn($e)={id:$e.id,title:$e.title ?? ($e.data ?? {}).title ?? "",start:$e.start,end:$e.end}),open:$d.open_event,busy:pim_busy($a.id,"events")}
     $a.contacts={books:$d.books ?? [],selected:$d.book,filter:$d.contact_filter ?? "",contacts:map($d.contacts ?? [],fn($c)={id:$c.id,name:contact_name($c),email:contact_email($c)}),open:$d.open_contact,busy:pim_busy($a.id,"contacts")}
     push($accounts,$a)
@@ -186,7 +186,7 @@ fn surface_intent($a)
     elif $kind=="density" then $mail_density=$p.density
     end
     $pane="list"
-  elif $a.id=="reader-files" then return reader_files_intent($a)
+  elif $a.id=="reader-files" or $a.id=="reader-previews" then return reader_files_intent($a)
   elif $a.id=="pim-list" then
     $wire_data[$active][if $mode=="calendar" then "open_event" else "open_contact" end]=$a.value.key;$pane="list"
   elif $a.id=="contact-filter" then

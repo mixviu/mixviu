@@ -31,7 +31,7 @@ fn reader_files_model($m)
     push($items,{key:$p.part,name:$p.name,size:human_size($p.size),label:$p.name.." ("..human_size($p.size)..")",icon:attachment_icon($p.type),enabled:not $p.undecodable,save_only:$p.save_only,note:$note})
   end
   $m.attachment_tiles={id:"reader-files",kind:"file-tiles",label:"",initial:{expanded:$attachments_expanded,items:$items,title:"Attachments",count:to_string(len($parts))..(if len($parts)==1 then " attachment" else " attachments" end),size:human_size($size),actions:"Attachment actions",save_all:"Save all",open_all:"Open all",save:"Save",open:"Open",save_only:"Programs and scripts are never opened from mail: save it and check it first",undecodable:"This attachment could not be decoded"},properties:{}}
-  return $m
+  return preview_model($m)
 end
 fn reader_transfer($part,$open)
   global $reader_transfers,$status

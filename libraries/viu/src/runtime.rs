@@ -225,6 +225,7 @@ impl Runtime {
                         eval.register("viu_process",crate::process::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_image",crate::native_primitives::image_file());
+                        eval.register("viu_preview",crate::media_preview::binding());
                         eval.register("viu_http",crate::http::binding());
                         if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}

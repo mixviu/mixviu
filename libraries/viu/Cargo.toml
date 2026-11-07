@@ -38,7 +38,7 @@ bus = { path = "../bus", features = ["native"] }
 egui_extras = { version = "=0.37.0", default-features = false, features = ["svg"] }
 mix = { path = "../mix", features = ["regex", "tokio-sleep", "json", "datetime", "mime", "url"] }
 thumbs.workspace = true
-image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 png = "=0.18.1"
 unicode-segmentation = "=1.13.3"
 scene = { path = "../scene" }

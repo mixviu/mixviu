@@ -19,6 +19,7 @@ fn entry()
   raise("ACCOUNT","No configured account selected")
 end
 fn publish_email()
+  if not $fixture then previews_sync() end
   if not $fixture then config_schedule() end
   $m=$c.model(if $fixture then $rows else [] end,if $fixture then $selected else nil end,$revision,$account,$mailbox,$reader,$draft)
   $m.fixture=$fixture
@@ -76,6 +77,7 @@ include "wire.mix"
 include "surface.mix"
 include "selection.mix"
 include "reader-files.mix"
+include "previews.mix"
 include "composer.mix"
 include "compose-identities.mix"
 include "forms.mix"
