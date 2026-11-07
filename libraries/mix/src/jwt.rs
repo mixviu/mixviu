@@ -9,7 +9,7 @@ use ring::rand::SystemRandom;
 use ring::signature::{RSA_PKCS1_SHA256, RsaKeyPair};
 use rustls_pki_types::{
     PrivateKeyDer as Item,
-    pem::{PemObject, from_buf},
+    pem::{PemObject, SectionKind, from_buf},
 };
 use serde_json::{Map, Value};
 use std::io::Cursor;
@@ -75,9 +75,19 @@ pub(crate) fn sign_rs256(
     }
 
     let mut pem_cursor = Cursor::new(private_pem.as_bytes());
-    let item = from_buf(&mut pem_cursor)
-        .map_err(|_| MixError::structured("JWT_KEY_INVALID", "Failed to read PEM"))?
-        .ok_or_else(|| MixError::structured("JWT_KEY_INVALID", "No PEM item found"))?;
+    // Match rustls-pemfile's recognised sections: skip other PEM labels,
+    // but still reject a certificate/public key before the private key.
+    let item = loop {
+        let item = from_buf(&mut pem_cursor)
+            .map_err(|_| MixError::structured("JWT_KEY_INVALID", "Failed to read PEM"))?
+            .ok_or_else(|| MixError::structured("JWT_KEY_INVALID", "No PEM item found"))?;
+        if matches!(item.0,
+            SectionKind::Certificate | SectionKind::PublicKey | SectionKind::RsaPrivateKey
+            | SectionKind::PrivateKey | SectionKind::EcPrivateKey | SectionKind::Crl | SectionKind::Csr
+        ) {
+            break item;
+        }
+    };
 
     let item = Item::from_pem(item.0, item.1);
     let key_pair = match item {
@@ -142,6 +152,15 @@ mod tests {
         );
         let error = sign_rs256("{}", &pem, None).unwrap_err();
         assert!(format!("{error:?}").contains("JWT_KEY_INVALID"));
+    }
+
+    #[test]
+    fn unrelated_pem_section_before_key_is_still_skipped() {
+        let pem = format!(
+            "-----BEGIN ECHCONFIG-----\nAQ==\n-----END ECHCONFIG-----\n{}",
+            get_test_key()
+        );
+        assert!(sign_rs256("{}", &pem, None).is_ok());
     }
 
     #[test]
