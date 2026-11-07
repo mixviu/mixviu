@@ -703,3 +703,26 @@ emits repeat=false. Native repeat and full alternate-screen session tests,
 verified session/control/sealed login-shell integration, full Bus, mouse,
 primary/OSC52/clipboard/IME/all Prefs, conformance and release acceptance
 remain. Overall **NOT ACCEPTED**. No Fable question or desk changes.
+
+### Focus regression setup corrected
+
+`term-focus-bee01878-a1` failed the new Tab regression; 141 terminal
+tests passed, five existing ignores, six Mix suites and two bundle tests
+passed before it. Complete saved log read; fmt-only test patch applied.
+No artifact was produced after that failure. Production focus-filter code
+compiled, but the prior native failure remains open.
+
+Source inspection of egui 0.37 memory::set_focus_lock_filter confirms it
+requires both had_focus_last_frame(id) and has_focus(id). The two-frame
+test requested initial focus and immediately sent Tab, before egui could
+install the filter. bd978a23 adds a focused setup frame, then sends Tab
+and retains the same command-delivery assertion with another focusable
+control. The old widget without the filter still cannot satisfy it.
+Production code is unchanged. This is fixture setup, not a parity waiver.
+
+Next gate `term-focus-ready-bd978a23` at
+`bd978a239b87164b81d34860c0c5d533d8a1da4c`, term_gate --prepare. Read the
+complete log; apply any fmt and repeat exact source if changed. Fetch
+matching artifact and repeat keyboard-65fafcd5.mix with its artifact path
+updated. Native Tab/Shift+Tab must pass before closing the focus defect.
+All remaining full-parity work listed above remains open; NOT ACCEPTED.

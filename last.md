@@ -1017,3 +1017,26 @@ verified session/control/sealed login-shell integration, full Bus, mouse,
 primary/OSC52/clipboard/IME/all Prefs, conformance and release acceptance
 remain. Overall **NOT ACCEPTED**. No Fable question or desk changes.
 branch: lab/parity-term; head SHA: bee0187865841e8c35d8afd7d9f586e8c43b427b (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — native terminal focus repair gate and remaining full parity/release acceptance open; CBC job ids: term-keyboard-65fafcd5-a1 (green with fmt; native Tab failed), term-focus-bee01878 (next await).
+### Focus regression setup corrected
+
+`term-focus-bee01878-a1` failed the new Tab regression; 141 terminal
+tests passed, five existing ignores, six Mix suites and two bundle tests
+passed before it. Complete saved log read; fmt-only test patch applied.
+No artifact was produced after that failure. Production focus-filter code
+compiled, but the prior native failure remains open.
+
+Source inspection of egui 0.37 memory::set_focus_lock_filter confirms it
+requires both had_focus_last_frame(id) and has_focus(id). The two-frame
+test requested initial focus and immediately sent Tab, before egui could
+install the filter. bd978a23 adds a focused setup frame, then sends Tab
+and retains the same command-delivery assertion with another focusable
+control. The old widget without the filter still cannot satisfy it.
+Production code is unchanged. This is fixture setup, not a parity waiver.
+
+Next gate `term-focus-ready-bd978a23` at
+`bd978a239b87164b81d34860c0c5d533d8a1da4c`, term_gate --prepare. Read the
+complete log; apply any fmt and repeat exact source if changed. Fetch
+matching artifact and repeat keyboard-65fafcd5.mix with its artifact path
+updated. Native Tab/Shift+Tab must pass before closing the focus defect.
+All remaining full-parity work listed above remains open; NOT ACCEPTED.
+branch: lab/parity-term; head SHA: bd978a239b87164b81d34860c0c5d533d8a1da4c (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — focus regression/native validation and remaining full parity/release acceptance open; CBC job ids: term-focus-bee01878-a1 (regression fixture failed), term-focus-ready-bd978a23 (next await).
