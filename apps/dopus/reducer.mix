@@ -167,13 +167,13 @@ end
 -- Retain the original command's open/answer forms alongside the explicitly
 -- generation-fenced Viu dialog endpoint. This policy belongs to the app.
 fn dp_legacy_dialog($s,$contract,$a)
-  if type($a)!="map" or any(keys($a),fn($k)=not contains(["open","answer","name"],$k)) or (has_key($a,"open") and len(keys($a))!=1) or (has_key($a,"name") and not has_key($a,"answer")) then raise("INVALID_ARGUMENT","Expected {}, {open: kind or nil}, or {answer: button, name?: text}") end
+  if type($a)!="map" or any(keys($a),fn($k)=not contains(["open","answer","name"],$k)) or (has_key($a,"open") and len(keys($a))!=1) or (has_key($a,"name") and not has_key($a,"answer")) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
   if has_key($a,"open") then
     if $a.open==nil then
       if $s.form.open then return dp_handle_answer($s,$contract,"cancel") end
       return $s
     end
-    if not contains(["about","shortcuts"],$a.open) then raise("INVALID_ARGUMENT","Unknown dialog kind") end
+    if not contains(["about","shortcuts"],$a.open) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
     if $s.form.open then raise("DIALOG_OPEN","Answer the open dialog first") end
     return dp_action($s,$contract,"help."..$a.open,{})
   elif has_key($a,"answer") then

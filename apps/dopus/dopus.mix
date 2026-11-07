@@ -97,7 +97,8 @@ fn dp_request($request)
         $paths=$a.paths ?? []
         if type($paths)!="list" or any($paths,fn($path)=type($path)!="string") then raise("INVALID_ARGUMENT","paths must contain text") end
         if $a.pane!=nil then
-          if len($paths)!=1 or not contains(["left","right","active",0,1],$a.pane) then raise("INVALID_ARGUMENT","pane-targeted open requires exactly one path and a valid pane") end
+          if len($paths)!=1 then raise("INVALID_ARGUMENT","pane-targeted open requires exactly one path") end
+          if not contains(["left","right","active",0,1],$a.pane) then raise("INVALID_ARGUMENT","invalid pane target") end
           $i=if contains(["left",0],$a.pane) then 0 elif contains(["right",1],$a.pane) then 1 else $candidate.active end
           $active=$candidate.active;$candidate=$app.dp_go($candidate,$i,$paths[0]);$candidate.active=$active
         else
