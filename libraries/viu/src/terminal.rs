@@ -16,6 +16,7 @@ pub mod model;
 pub mod native_session;
 pub mod protocol;
 pub mod raster;
+mod replay;
 pub mod session_actor;
 pub mod session_fd;
 pub mod sessions;

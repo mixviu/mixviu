@@ -48,9 +48,7 @@ impl Admission {
         }
         let capability = protocol::capability_of(&operation, request.contents)
             .ok_or_else(|| Reply::error("UNSUPPORTED"))?;
-        if own.1.target() != &parent.reference()
-            || !own.1.is_live(&own.0).unwrap_or(false)
-        {
+        if own.1.target() != &parent.reference() || !own.1.is_live(&own.0).unwrap_or(false) {
             return Err(Reply::error("FORBIDDEN"));
         }
         Ok(Self {
@@ -61,7 +59,9 @@ impl Admission {
             epoch: protocol::caller_epoch(event, parent.broker_epoch),
             label: protocol::caller_label(event),
             digest: protocol::request_digest(&command.command, &command.body),
-            grantless: event.trusted_context().is_none_or(|actor| actor.session.is_none()),
+            grantless: event
+                .trusted_context()
+                .is_none_or(|actor| actor.session.is_none()),
         })
     }
 
@@ -84,29 +84,46 @@ mod tests {
     use super::*;
     use crate::terminal::session_actor::{ControlLane, LaneFuture, Supervisor};
     use serde_json::{Value, json};
-    use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
 
     struct Probe {
         wake: Arc<tokio::sync::Notify>,
         stale_parent: AtomicBool,
     }
     impl ControlLane for Probe {
-        fn wake(&self) -> Arc<tokio::sync::Notify> {self.wake.clone()}
+        fn wake(&self) -> Arc<tokio::sync::Notify> {
+            self.wake.clone()
+        }
         fn invalidate(&self, _: Option<&RecordRef>) {}
         fn flush_notices<'a>(&'a self, _: &'a VerifiedConnection) -> LaneFuture<'a, ()> {
             Box::pin(async {})
         }
-        fn dispatch<'a>(&'a self, connection: &'a VerifiedConnection, parent: &'a SessionRecord, own: &'a (Hello, Deadline), event: &'a VerifiedCommand) -> LaneFuture<'a, Reply> {
+        fn dispatch<'a>(
+            &'a self,
+            connection: &'a VerifiedConnection,
+            parent: &'a SessionRecord,
+            own: &'a (Hello, Deadline),
+            event: &'a VerifiedCommand,
+        ) -> LaneFuture<'a, Reply> {
             Box::pin(async move {
                 let mut parent = parent.clone();
-                if self.stale_parent.load(Ordering::Acquire) {parent.binding_generation.0 += 1;}
+                if self.stale_parent.load(Ordering::Acquire) {
+                    parent.binding_generation.0 += 1;
+                }
                 match Admission::check(connection, &parent, own, event) {
                     Err(reply) => reply,
                     Ok(mut admitted) => {
                         if event.command().command == "term.type" {
-                            if let Err(reply) = admitted.mutation_epoch() {return reply;}
+                            if let Err(reply) = admitted.mutation_epoch() {
+                                return reply;
+                            }
                         }
-                        Reply::ok(json!({"operation":admitted.operation,"epoch":admitted.epoch,"identity":admitted.identity,"label":admitted.label}))
+                        Reply::ok(
+                            json!({"operation":admitted.operation,"epoch":admitted.epoch,"identity":admitted.identity,"label":admitted.label}),
+                        )
                     }
                 }
             })
@@ -119,10 +136,16 @@ mod tests {
         let broker = test_broker::Broker::start();
         let supervisor = Supervisor::with_options(broker.options(), broker.url.clone()).unwrap();
         crate::terminal::session_actor::tests::wait_ready(&supervisor.handle, 1);
-        let probe = Arc::new(Probe {wake: Arc::default(), stale_parent: AtomicBool::new(false)});
+        let probe = Arc::new(Probe {
+            wake: Arc::default(),
+            stale_parent: AtomicBool::new(false),
+        });
         let lane: Arc<dyn ControlLane> = probe.clone();
         supervisor.handle.install_control(&lane);
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         runtime.block_on(async {
             let UnixConnectOutcome::VerifiedUnix(caller) = NodedClient::connect_unix("", &broker.url, &broker.options(), None).await.unwrap() else {panic!("verified observer required")};
             let parent = caller.session_list().await.unwrap().records.into_iter().find(|r| r.role == Role::Term && r.state == BindingState::Attached).unwrap();

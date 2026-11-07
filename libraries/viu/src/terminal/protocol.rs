@@ -319,7 +319,7 @@ impl Reply {
     }
     /// Only for refusals whose details tell an authorised caller how to make
     /// progress. Never attach details to a denial.
-    fn refuse(code: &'static str, details: Option<Value>) -> Self {
+    pub(crate) fn refuse(code: &'static str, details: Option<Value>) -> Self {
         let error_code = match code {
             "INVALID_ARGUMENT" => FailureCode::InvalidArgument,
             "NOT_FOUND" => FailureCode::NotFound,
@@ -479,7 +479,7 @@ fn vocabulary(code: &str) -> Option<&'static str> {
 /// different payloads. A retry MUST replay the body byte for byte, and the
 /// refusal says so rather than leaving a caller to guess why its "identical"
 /// retry conflicted.
-fn mismatch() -> Value {
+pub(crate) fn mismatch() -> Value {
     json!({"reason":"request_mismatch","retry_requires":"byte_identical_body"})
 }
 /// The high-water mark is advanced before the command runs, so an ID can be retired
@@ -487,7 +487,7 @@ fn mismatch() -> Value {
 /// must never re-execute, even when its result was lost). An actor holding only
 /// Input or Terminate cannot read the mark back through term.session, so the
 /// refusal carries the floor it has to climb past to make progress again.
-fn retired(high_water: u64) -> Value {
+pub(crate) fn retired(high_water: u64) -> Value {
     json!({"reason":"retired_request_id","request_high_water":DecimalU64(high_water)})
 }
 /// Command classification for dispatch, independent of the caller's capabilities.
