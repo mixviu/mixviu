@@ -87,6 +87,7 @@ fn dp_start_operation($s,$operation)
   return $s
 end
 fn dp_start_effect($s,$effect)
+  if $effect.kind=="mail" then $effect.native_bus=$s.bus_connected end
   $s.next_token=$s.next_token+1
   $id="effect-"..to_string($s.next_token)
   $path=$s.app_dir.."/effect-job.mix"

@@ -15,6 +15,12 @@ $row_cache=dp_publish($state,$contract,$row_cache)
 on viu.frame.intent
   dp_request({command:"dopus.execute",origin:$event.args.value.origin ?? "menu",args:{id:$event.args.value.command,params:{}}})
 end
+on bus.connected
+  $state.bus_connected=true
+end
+on bus.disconnected
+  $state.bus_connected=false
+end
 on dopus.shortcut
   dp_request({command:"dopus.execute",origin:"shortcut",args:$event.args})
 end

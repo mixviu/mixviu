@@ -63,6 +63,7 @@ fn dp_start($initial)
   global $state, $row_cache
   $row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
   $state=$app.dp_initialise($initial)
+  $state.bus_connected=if viu_context().native_facilities ?? false then false else nil end
   $state.appearance_choice={}
   $state.appearance_session=$state.appearance
   $state.default_keys={}

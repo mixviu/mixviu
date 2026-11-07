@@ -13,6 +13,7 @@ on job.run
       $child=spawn($edge.dopus_open_argv($effect.path),{detach:true})
       reply(0,json_encode({message:"Opened "..basename($effect.path),pid:$child}))
     elif $effect.kind=="mail" then
+      if $effect.native_bus==false then reply(10,json_encode({error_code:"UNAVAILABLE",message:"The Bus is unavailable"}));return end
       $paths=$effect.paths
       if type($paths)!="list" or len($paths)==0 or any($paths,fn($p)=type($p)!="string" or not starts_with($p,"/")) then raise("INVALID_ARGUMENT","Mail requires absolute paths") end
       $reply=$apps.viu_app_call("dev.mixos.email","email.compose",{attachments:$paths},10)
@@ -21,7 +22,7 @@ on job.run
         $reply=$apps.viu_app_call("dev.mixos.email","email.compose.attachment.add",{paths:$paths},10)
         $added=true
       end
-      if $reply.rc>=10 then reply(10,json_encode({error_code:$reply.body.error_code,message:if $reply.body.error_code=="OUTCOME_UNKNOWN" then "Email may have received the files; check the message before trying again" else $reply.body.message end}))
+      if $reply.rc>=10 then reply(10,json_encode({error_code:if contains(["launch","wait"],$reply.stage) then "NOT_RUNNING" else $reply.body.error_code end,message:if $reply.stage=="launch" then "Email could not be launched" elif $reply.stage=="wait" then "Email did not become available in time" elif $reply.body.error_code=="OUTCOME_UNKNOWN" then "Email may have received the files; check the message before trying again" else $reply.body.message end}))
       else reply(0,json_encode({added:$added,count:len($paths),message:if $added then "Added "..to_string(len($paths))..if len($paths)==1 then " file" else " files" end.." to the message being written" else "Opened a new message with "..to_string(len($paths))..if len($paths)==1 then " file" else " files" end end})) end
     else raise("INVALID_ARGUMENT","Unknown effect kind") end
   catch $message,$error
