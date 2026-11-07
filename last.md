@@ -203,3 +203,26 @@ until this and the final exact-source release repeat pass. No Fable question
 or production action.
 
 branch lab/parity-dopus; head SHA 680bdad (implementation before this receipt); OPEN: native input regression, final release-byte full inventory/Bus/Prefs/visual repeat and acceptance; CBC dopus-r2-final-ad30f4a-a1 PASS cbc3 prior source, 20261107-134258-f578434e PASS debug, 20261107-134533-fff897f4 and 20261107-134817-ff89f5f2 PASS checks with formatting applied, 20261107-135257-c3507e31 PASS debug, dopus-r3-final-21829a5 RUNNING detached, dopus-r3-final-643da24 QUEUED detached.
+
+## Dopus round three — native audit converged
+
+Implementation `13e0977d3ce7290d85630f16fa099d1b083515aa` retires the
+remaining native input, modal focus, activation, headless typed-dialog,
+Email launch and close-reply defects. Full windowed and 17-state live Prefs
+diagnostics pass; mkdir/rename, preview, drop and hosted whole-surface pairs
+are exact. The native mode button works through pointer input. The 44 gold
+descriptors and 33 core actions remain separate from window UI commands.
+
+Gold publishes compositor toolbar/menu commands that its execute dispatcher
+then refuses. Both native replies and captures are retained. The port repairs
+that broken function under standing Fable C1 by routing the published IDs
+through its existing Mix window registry, preserving the 33-action catalogue
+and headless contract. No Fable question, installation or desk action.
+
+The release gate is detached and the source/recipes frozen privately. Continue
+with its exact executable/hash, the full native evidence suite, whole/region
+inspection, release 2,000-row measurements and real scan refusal, then write
+the acceptance record. Earlier diagnostic and prior-source gates are not the
+final acceptance receipt.
+
+branch lab/parity-dopus; head SHA 13e0977d3ce7290d85630f16fa099d1b083515aa (implementation; receipt-only commit follows); OPEN: exact release-byte repeat, final region inspection and acceptance record; CBC dopus-r3-final-scene-a1 PASS cbc3, dopus-r3-accept-b1315fd-a1 PASS cbc3, dopus-r3-accept-final-a1 PASS cbc2 prior sources, 20261107-145411-6f4b4ed8 PASS checks with formatting applied, dopus-r3-accept-chrome QUEUED detached.

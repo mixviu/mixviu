@@ -189,3 +189,30 @@ adapter medians were 15.194/15.196 ms; cold draw 10.487/10.672 ms. These are
 prior-source results, not final acceptance. Current exact-source release
 validation, applied-model performance/refusal, full visual repeat and authority
 recovery remain open. No Fable deviation is proposed.
+
+## Round three native audit checkpoint
+
+Implementation `13e0977d3ce7290d85630f16fa099d1b083515aa` closes native
+location submission, modal Tab focus, absolute-path single-instance activation,
+typed headless mkdir/rename/delete, asynchronous Email launch receipts and the
+window-close reply. Diagnostic mkdir, rename, preview, drag confirmation and
+hosted client/whole-surface captures are pixel-identical. The full windowed
+matrix passes 17 live Prefs variants on unchanged PIDs. Final release evidence
+is still required; debug captures do not grant acceptance.
+
+The native compositor audit exposed a gold C1 defect: its published
+`view.mode`, `help.macros`, `view.search`, `help.shortcuts` and theme-menu IDs
+are refused by `dopus.execute`. Private paired request/reply and capture
+receipts prove the refusal. The port routes these window UI commands through
+its existing Mix registry while keeping the core action catalogue at 33 and
+the headless core contract unchanged. The mode icon now uses gold's command
+and tooltip; live UI choices also reach the native theme owner. This restores
+function under the standing C1 ruling and needs no Fable question.
+
+The exact-source release gate is detached as `dopus-r3-accept-chrome`.
+Prior cbc3 gates `dopus-r3-final-scene-a1` and
+`dopus-r3-accept-b1315fd-a1`, plus cbc2 `dopus-r3-accept-final-a1`, passed at
+their earlier sources. Superseded modal/headless/hosted queue interests were
+cancelled before execution. The latest scoped modal keyboard regression
+passed; CBC formatting has been applied. The final source bundle and native
+recipes are frozen privately with a file-hash manifest.
