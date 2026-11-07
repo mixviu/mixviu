@@ -440,7 +440,9 @@ impl Widget {
             return vec!["select", "close"];
         }
         if self.kind == "header-form" {
-            return vec!["edit", "commit", "command", "remove", "picked", "save", "cancel"];
+            return vec![
+                "edit", "commit", "command", "remove", "picked", "save", "cancel",
+            ];
         }
         if self.kind == "form-fields" {
             return vec!["edit"];
