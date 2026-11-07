@@ -10072,7 +10072,6 @@ version = "0.1.2"
 dependencies = [
  "action",
  "base64 0.22.1",
-
  "blake3",
  "buildinfo",
  "bus",
