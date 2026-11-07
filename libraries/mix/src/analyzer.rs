@@ -575,8 +575,10 @@ fn has_dynamic_include(stmts: &[Stmt]) -> (bool, Option<usize>) {
 pub fn analyze(stmts: &[Stmt], file: Option<&str>, cfg: &AnalyzerConfig) -> Analysis {
     let mut cfg = cfg.clone();
     if matches!(cfg.source.as_deref().map(crate::parse_host_header),
-        Some(crate::HostHeader::Declared { host, .. }) if host == "viu") {
-        cfg.extensions.extend(VIU_EXTENSIONS.iter().map(|name| (*name).to_owned()));
+        Some(crate::HostHeader::Declared { host, .. }) if host == "viu")
+    {
+        cfg.extensions
+            .extend(VIU_EXTENSIONS.iter().map(|name| (*name).to_owned()));
         cfg.allow_globals.push("app_args".to_owned());
     }
     let cfg = &cfg;
@@ -5339,8 +5341,10 @@ fn analyse_remote_body(
         // stand down), but a FUNCTION name cannot ride in through
         // strict-data bindings, so callable checks keep running.
         suppress_name_checks: false,
-        // The remote end is the same mix binary, with the same extensions.
-        extensions: cfg.extensions.clone(),
+        // ssh_mix runs Mix, not the local viu widget host.
+        extensions: cfg.extensions.iter()
+            .filter(|name| !VIU_EXTENSIONS.contains(&name.as_str()))
+            .cloned().collect(),
         // The BODY's own text, never the enclosing file's — the spelling
         // rules must read the source they are reporting lines against.
         // Lint is the only gate this remote program ever passes through.

@@ -22,7 +22,6 @@ fn load_session()
   return {path:$path,value:$value}
 end
 fn open_recovery($a)
-  $mail=require("mail.mix")
   $missing=false
   if $a.recovery_id!=nil then
     send "edit" "edit.list" body={} timeout=30
