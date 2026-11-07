@@ -98,7 +98,7 @@ fn composer_models($m)
     if $c.confirm then $child.native_overlays=[{command:"email.compose.intent",definition:{id:"compose-confirm",kind:"dialog-form",label:"",initial:{open:true,instance:$c.draft_id,title:"Close draft?",body:"Keep this draft to finish later?",choices:[{id:"keep",label:"Keep Draft",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Keep Editing",enabled:true,cancel:true}]},properties:{style:"gold"}}}] end
     $menus=[{id:"File",label:"File",enabled:true,children:[{id:"mail.send",label:"Send",enabled:not $c.busy},{id:"file.close",label:"Close",enabled:not $c.busy}]}]
     $child=$compose_frame.apply($child,{icon:"square-pen",title:"Compose",menus:$menus,toolbar:[{id:"mail.send",label:"Send",icon:"send",enabled:not $c.busy}],status:$c.error ?? "",window:{"window.decorations":"csd"}})
-    push($m.native_windows,{key:$key,title:"Compose — "..$key,size:[900,700],persist:true,scene:$compose_scene,model:$child})
+    $m.native_windows=push($m.native_windows,{key:$key,title:"Compose — "..$key,size:[900,700],persist:true,scene:$compose_scene,model:$child})
   end
   return $m
 end
