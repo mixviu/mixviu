@@ -13,7 +13,7 @@ fn invoke(
     command: &str,
     args: serde_json::Value,
 ) -> viu::runtime::Completion {
-    invoke_raw(runtime,rx,command,&args.to_string())
+    invoke_raw(runtime, rx, command, &args.to_string())
 }
 fn invoke_raw(
     runtime: &mut viu::runtime::Runtime,
@@ -21,7 +21,9 @@ fn invoke_raw(
     command: &str,
     body: &str,
 ) -> viu::runtime::Completion {
-    let sequence = runtime.event_with_body(command.into(), body.into(), Default::default()).unwrap();
+    let sequence = runtime
+        .event_with_body(command.into(), body.into(), Default::default())
+        .unwrap();
     loop {
         if let Some(done) = runtime.try_completion() {
             assert!(
@@ -124,21 +126,55 @@ fn term_bundle_child() {
             .unwrap()
             .ends_with(&format!(" pid={}", std::process::id()))
     );
-    for (command,body,expected) in [
-        ("term.tab.select",r#"{"id":1.0}"#,"id must be a non-negative integer (u64)"),
-        ("term.tab.select",r#"{"id":1e0}"#,"id must be a non-negative integer (u64)"),
-        ("term.tab.select",r#"{"id":18446744073709551615}"#,"not-found: tab id=18446744073709551615"),
-        ("term.snapshot",r#"{"pane":18446744073709551615,"contents":false}"#,"not-found: pane id=18446744073709551615"),
-        ("term.type",r#"{"pane":null,"text":3}"#,"text must be a string"),
-        ("term.type",r#"{"pane":null,"text":""}"#,"invalid-argument: pane must be a non-negative integer (u64)"),
+    for (command, body, expected) in [
+        (
+            "term.tab.select",
+            r#"{"id":1.0}"#,
+            "id must be a non-negative integer (u64)",
+        ),
+        (
+            "term.tab.select",
+            r#"{"id":1e0}"#,
+            "id must be a non-negative integer (u64)",
+        ),
+        (
+            "term.tab.select",
+            r#"{"id":18446744073709551615}"#,
+            "not-found: tab id=18446744073709551615",
+        ),
+        (
+            "term.snapshot",
+            r#"{"pane":18446744073709551615,"contents":false}"#,
+            "not-found: pane id=18446744073709551615",
+        ),
+        (
+            "term.type",
+            r#"{"pane":null,"text":3}"#,
+            "text must be a string",
+        ),
+        (
+            "term.type",
+            r#"{"pane":null,"text":""}"#,
+            "invalid-argument: pane must be a non-negative integer (u64)",
+        ),
     ] {
-        let answer=invoke_raw(&mut runtime,&rx,command,body).reply.unwrap();
-        assert_eq!(answer.rc,10,"{command} {body}");
-        assert_eq!(answer.body,json!(expected),"{command} {body}");
+        let answer = invoke_raw(&mut runtime, &rx, command, body).reply.unwrap();
+        assert_eq!(answer.rc, 10, "{command} {body}");
+        assert_eq!(answer.body, json!(expected), "{command} {body}");
     }
-    let moved=invoke_raw(&mut runtime,&rx,"term.tab.move",r#"{"id":1,"index":18446744073709551615}"#).reply.unwrap();
-    assert_eq!(moved.rc,0,"{}",moved.body);
-    assert_eq!(moved.body,json!("moved id=1 index=0 tab=1 pane=1 revision=1"));
+    let moved = invoke_raw(
+        &mut runtime,
+        &rx,
+        "term.tab.move",
+        r#"{"id":1,"index":18446744073709551615}"#,
+    )
+    .reply
+    .unwrap();
+    assert_eq!(moved.rc, 0, "{}", moved.body);
+    assert_eq!(
+        moved.body,
+        json!("moved id=1 index=0 tab=1 pane=1 revision=1")
+    );
     let split = invoke(
         &mut runtime,
         &rx,
