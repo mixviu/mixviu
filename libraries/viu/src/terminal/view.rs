@@ -232,6 +232,7 @@ mod tests {
                     delta:egui::vec2(0.0,2.0),
                     modifiers:egui::Modifiers {ctrl:true,..egui::Modifiers::NONE},
                     phase:egui::TouchPhase::Move,
+                    source:egui::MouseWheelSource::Unknown,
                 });
             }
             ctx.run_ui(egui::RawInput {
