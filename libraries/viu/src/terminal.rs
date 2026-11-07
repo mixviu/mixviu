@@ -3,6 +3,7 @@
 //! Session descriptor wire constants are retained for the existing Mix login
 //! bootstrap; importing them does not grant authority to an unverified child.
 mod clusters;
+mod blink;
 pub mod config;
 pub mod control;
 pub mod font;

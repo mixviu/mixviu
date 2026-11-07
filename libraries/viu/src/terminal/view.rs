@@ -20,6 +20,7 @@ use std::{
 };
 
 struct Surface {
+    blink: super::blink::Blink,
     raster: Arc<Mutex<Raster>>,
     pane: Pane,
     look: (f32, f32, String, u16),
@@ -362,6 +363,7 @@ impl Views {
             self.surfaces.insert(
                 handle.into(),
                 Surface {
+                    blink: super::blink::Blink::default(),
                     raster: Arc::new(Mutex::new(raster)),
                     pane: Pane::new(),
                     look,
@@ -445,7 +447,10 @@ impl Views {
                 }
                 if let Some(clipboard) = self.clipboard.event(&event, self.modifiers) {
                     let result = match clipboard {
-                        input::Clipboard::Keys(keys) => terminal.keys(&keys, Instant::now()),
+                        input::Clipboard::Keys(keys) => {
+                            surface.blink.activity(Instant::now());
+                            terminal.keys(&keys, Instant::now())
+                        },
                         input::Clipboard::Ignore => Ok(()),
                         clipboard => {
                             let value = match clipboard {
@@ -496,13 +501,17 @@ impl Views {
                             });
                             Ok(())
                         } else {
-                            terminal.keys(&input::keys_for(key, modifiers), Instant::now())
+                            let keys = input::keys_for(key, modifiers);
+                            if !keys.is_empty() { surface.blink.activity(Instant::now()); }
+                            terminal.keys(&keys, Instant::now())
                         }
                     }
                     egui::Event::Text(text)
                         if !self.composition.has_owner() && !self.composition.stale() =>
                     {
-                        terminal.keys(&input::typed(&text, self.modifiers), Instant::now())
+                        let keys = input::typed(&text, self.modifiers);
+                        if !keys.is_empty() { surface.blink.activity(Instant::now()); }
+                        terminal.keys(&keys, Instant::now())
                     }
                     egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
                         if self.composition.preedit(&text, pane_id) {
@@ -515,6 +524,7 @@ impl Views {
                     egui::Event::Ime(egui::ImeEvent::Commit(text)) => {
                         surface.preedit.clear();
                         if self.composition.commit(pane_id) {
+                            surface.blink.activity(Instant::now());
                             terminal.keys(&input::text_keys(&text), Instant::now())
                         } else {
                             Ok(())
@@ -593,6 +603,9 @@ impl Views {
             }
         }
         let mut snapshot = terminal.grid_snapshot();
+        let (shown, next) = surface.blink.frame(Instant::now(), response.has_focus() && ui.input(|i|i.focused), p["cursor_blink"] == true, snapshot.screen.cursor_visible);
+        if let Some(next) = next { ui.ctx().request_repaint_after(next); }
+        if !shown { snapshot.screen.cursor_visible = false; }
         if p["cursor_visible"] == false {
             snapshot.screen.cursor_visible = false;
         }
