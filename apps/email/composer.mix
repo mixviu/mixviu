@@ -3,6 +3,7 @@
 $composers={};$compose_serial=0;$compose_focused=nil;$compose_quitting=false;$compose_restore=[]
 $compose_addresses=require("addresses.mix");$compose_sending=require("sending.mix");$compose_ids=require("identity.mix")
 $compose_quoting=require("quoting.mix")
+$compose_suggest=require("suggest.mix")
 $compose_frame=require("../../libraries/viu/mix/gold-frame.mix")
 $compose_scene=read_file(path_join(dirname(script_path()),"composer-scene.mix"))
 fn composer_info($c)
@@ -146,11 +147,26 @@ fn composer_intent($a)
   if $c==nil then return wire_refuse("NOT_FOUND","No compose is open") end
   if $c.busy then return wire_refuse("BUSY","Sending…") end
   if $a.id=="compose-confirm" then return composer_close($key,$a.value.choice ?? $a.value) end
+  if $a.action=="completion_close" then $composers[$key].suggest=nil;return {rc:0,body:{}} end
+  if $a.action=="completion_move" then
+    $s=$c.suggest
+    if $s!=nil and len($s.items)>0 then $composers[$key].suggest.cursor=($s.cursor+len($s.items)+$a.value.delta)%len($s.items) end
+    return {rc:0,body:{}}
+  end
+  if $a.action=="complete" then
+    $s=$c.suggest;$item=$s.items[$a.value.index]
+    if $s==nil or $s.field!=$a.value.field or $item==nil then return wire_refuse("STALE","Suggestion changed") end
+    $token=$compose_suggest.token($c[$s.field]);$prefix=$token.prefix
+    $composers[$key][$s.field]=(if $prefix=="" then "" else $prefix.." " end)..$compose_addresses.format($item)..", "
+    $composers[$key].suggest=nil;$composers[$key].revision=$c.revision+1;viu_timer("draft:"..$key,500,{kind:"draft",window:$key});return {rc:0,body:{}}
+  end
   if $a.id=="compose-body" then $composers[$key].body=$a.value
   elif $a.id=="compose-headers" then
     if $a.action=="edit" then
       for $field in keys($a.value)
-        if contains(["to","cc","bcc","reply_to","subject"],$field) then $composers[$key][$field]=$a.value[$field]
+        if contains(["to","cc","bcc","reply_to","subject"],$field) then
+          $composers[$key][$field]=$a.value[$field]
+          if contains(["to","cc","bcc","reply_to"],$field) then composer_suggest_typed($key,$field) end
         elif $field=="from" then
           for $e in $entries
             for $sender in $compose_sending.senders($e)
@@ -207,6 +223,7 @@ fn composer_models($m)
       if $e.enabled!=false then for $sender in $compose_sending.senders($e) push($senders,{account:$e.id,sender:$sender,label:$sender.name.." <"..$sender.address..">"}) end end
     end
     for $f in [{id:"from",label:"From",kind:"label",value:if $c.identity=="default" then $c.from else $c.from_name.." <"..$c.from..">" end,read_only:true,visible:true},{id:"to",label:"To",value:$c.to,visible:true},{id:"cc",label:"Cc",value:$c.cc,visible:$c.show_cc},{id:"bcc",label:"Bcc",value:$c.bcc,visible:$c.show_bcc},{id:"reply_to",label:"Reply-To",value:$c.reply_to ?? "",visible:$c.show_reply_to},{id:"subject",label:"Subject",value:$c.subject,visible:true}]
+      if $c.suggest!=nil and $c.suggest.field==$f.id then $f.suggestions=$c.suggest.items;$f.query=$c.suggest.query;$f.cursor=$c.suggest.cursor end
       $f.actions=[]
       if $f.id=="from" then
         $f.actions=[{id:"identities",label:"Identities…",icon:nil}]
@@ -220,10 +237,26 @@ fn composer_models($m)
     $child={values:{},headers:$headers,body_editor:$body,reader_content:$mail_settings.composer ?? {},native_overlays:[],shortcuts:[],window_close:false}
     if $c.confirm then $child.native_overlays=[{command:"email.compose.intent",definition:{id:"compose-confirm",kind:"dialog-form",label:"",initial:{open:true,instance:$c.draft_id,title:if $compose_quitting then "Quit with an unsent message?" else "Close this message?" end,body:"Your draft is kept on this computer and offered again when Email starts. Discard deletes it.",choices:[{id:"keep",label:"Keep Draft",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Keep Editing",enabled:true,cancel:true}]},properties:{style:"gold"}}}] end
     $menus=[{id:"File",label:"File",enabled:true,children:[{id:"compose.new",label:"New",enabled:true,shortcut:"Ctrl+N"},{id:"compose.open",label:"Open…",enabled:not $c.busy,shortcut:"Ctrl+O"},{id:"compose.save_as",label:"Save As…",enabled:not $c.busy,shortcut:"Ctrl+Shift+S"},{id:"mail.send",label:"Send",enabled:composer_sendable($c),shortcut:"Ctrl+Enter"},{separator:true},{id:"compose.close",label:"Close",enabled:true,shortcut:"Ctrl+W"},{id:"file.quit",label:"Quit",enabled:true,shortcut:"Ctrl+Q"}]},{id:"Edit",label:"Edit",enabled:true,children:map([["undo","Undo"],["redo","Redo"],["cut","Cut"],["copy","Copy"],["paste","Paste"]],fn($v)={id:"compose."..$v[0],label:$v[1],enabled:not $c.busy})},{id:"Attachments",label:"Attachments",enabled:true,children:[{id:"compose.attach",label:"Attach files…",enabled:not $c.busy,shortcut:"Ctrl+Shift+A"},{separator:true},{id:"compose.attachments.clear",label:"Remove all attachments",enabled:not $c.busy and len($c.attachments)>0}]},{id:"View",label:"View",enabled:true,children:composer_theme()}]
-    $child=$compose_frame.apply($child,{icon:"square-pen",title:"Compose",menus:$menus,toolbar:[{id:"mail.send",label:"Send",icon:"send",enabled:composer_sendable($c)}],status:$c.error ?? "",window:{"window.decorations":"csd"}})
-    $m.native_windows=push($m.native_windows,{key:$key,title:"Compose — "..$key,size:[900,700],persist:true,scene:$compose_scene,model:$child})
+    $child=$compose_frame.apply($child,{icon:"square-pen",title:"Compose",menus:$menus,toolbar:[{id:"mail.send",label:"Send",icon:"send",enabled:composer_sendable($c)},{id:"view.mode",label:"Toggle light/dark",icon:if $chrome.theme_effective.mode=="dark" then "sun" else "moon" end,enabled:true}],status:$c.error ?? "",window:{"window.decorations":"csd"}})
+    $child.frame.status_visible=false
+    $m.native_windows=push($m.native_windows,{key:$key,title:"Compose",size:[900,700],persist:true,scene:$compose_scene,model:$child})
   end
   return $m
+end
+fn composer_suggest_typed($key,$field)
+  global $composers
+  $c=$composers[$key];$token=$compose_suggest.token($c[$field]);$present=[]
+  try $present=map($compose_addresses.decode($token.head),fn($a)=$a.email) catch $bad nil end
+  if len($token.query)<2 then $composers[$key].suggest=nil;viu_timer("suggest:"..$key,nil,{});return end
+  $s={field:$field,query:$token.query,text:$c[$field],present:$present,items:$compose_suggest.ranked([],($wire_data[$c.account] ?? {}).recent ?? [],$token.query,8,$present),cursor:0}
+  $composers[$key].suggest=$s;viu_timer("suggest:"..$key,200,{kind:"suggest",window:$key,field:$field,text:$c[$field],query:$token.query,account:$c.account})
+end
+fn composer_suggest_completed($args,$answer)
+  global $composers
+  $c=$composers[$args.window];$s=$c.suggest
+  if $c==nil or $s==nil or $c.account!=$args.account or $s.field!=$args.field or $s.text!=$args.typed or $answer.rc!=0 then return end
+  $composers[$args.window].suggest.items=$compose_suggest.ranked($answer.body.suggestions,($wire_data[$c.account] ?? {}).recent ?? [],$s.query,8,$s.present)
+  $composers[$args.window].suggest.cursor=min($s.cursor,max(0,len($composers[$args.window].suggest.items)-1))
 end
 fn composer_sent($key,$answer)
   global $composers
@@ -271,8 +304,8 @@ fn composer_restore_model($m)
   $d=$compose_restore[0];$subject=if trim($d.subject)=="" then "(no subject)" else $d.subject end
   $to=if trim($d.to)=="" then "(no recipients)" else rtrim(trim($d.to),",;") end
   $saved="";try $saved=date_format(date_parse($d.saved_at),"%-d %b %Y, %H:%M") catch $bad nil end
-  $v={open:true,instance:$d.id,title:"Restore a draft?",body:"A draft was kept on this computer. Would you like to finish it?",details:[{text:$subject,strong:true},{text:"To: "..$to},{text:"Saved "..$saved,weak:true}],choices:[{id:"restore",label:"Restore Draft",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"later",label:"Later",enabled:true,cancel:true}]}
-  if len($compose_restore)>1 then $v.details=push($v.details,{text:to_string(len($compose_restore)-1).." more drafts kept",weak:true}) end
+  $v={open:true,instance:$d.id,title:"Restore a draft?",body:"A message you were writing was kept:",details:[{text:$subject,strong:true},{text:"To: "..$to},{text:"Saved "..$saved,weak:true}],choices:[{id:"restore",label:"Restore",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"later",label:"Later",enabled:true,cancel:true}]}
+  if len($compose_restore)>1 then $v.details=push($v.details,{text:to_string(len($compose_restore)-1).." more kept after this one",weak:true}) end
   $m.native_overlays=push($m.native_overlays,{command:"email.restore.intent",definition:{id:"email-restore",kind:"dialog-form",label:"",initial:$v,properties:{style:"gold"}}})
   return $m
 end

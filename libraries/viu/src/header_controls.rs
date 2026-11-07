@@ -65,6 +65,8 @@ pub fn admit(current: &Value, action: &str, payload: &Value) -> Result<(), Strin
                             .any(|r| r["id"] == key)
                     })
             }
+            "complete" => payload["field"].as_str().is_some_and(|key|current["fields"].as_array().unwrap().iter().any(|r|r["id"]==key && crate::widgets::whole(&payload["index"]).is_some_and(|i|r["suggestions"].as_array().is_some_and(|a|i<(a.len() as u64))))),
+            "completion_move"|"completion_close" => payload["field"].as_str().is_some_and(|key|current["fields"].as_array().unwrap().iter().any(|r|r["id"]==key && r["suggestions"].as_array().is_some_and(|a|!a.is_empty()))),
             "command" => {
                 payload == "attach"
                     || payload.as_str().is_some_and(|key| {
@@ -130,7 +132,9 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                 {
                     let key = r["id"].as_str().unwrap();
                     let mut text = r["value"].as_str().unwrap().to_owned();
-                    form::row(ui, r["label"].as_str().unwrap(), column, |ui, labelled| {
+                    let mut field_events=Vec::new();
+                    let height=if r["kind"]=="label" || r["choices"].is_array() {toolkit::chrome::Chrome::of(ui.ctx()).metrics.push_height.max(toolkit::field::height_of(ui.ctx()))} else {toolkit::field::height_of(ui.ctx())};
+                    form::row_of(ui, r["label"].as_str().unwrap(), column, height, |ui, labelled| {
                         let mut field = |ui: &mut Ui| {
                             if r["kind"] == "label" {
                                 ui.add(egui::Label::new(&text).truncate())
@@ -158,17 +162,43 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                                 }
                                 return;
                             }
+                            let field_id=Id::unique((id,&v["identity"],key));
+                            let suggestions=r["suggestions"].as_array().filter(|s|!s.is_empty());
+                            if suggestions.is_some() && ui.memory(|m|m.has_focus(field_id)) {
+                                ui.input_mut(|i|{
+                                    if i.consume_key(egui::Modifiers::NONE,egui::Key::ArrowDown){emit(&mut field_events,"completion_move",json!({"field":key,"delta":1}));}
+                                    if i.consume_key(egui::Modifiers::NONE,egui::Key::ArrowUp){emit(&mut field_events,"completion_move",json!({"field":key,"delta":-1}));}
+                                    if i.consume_key(egui::Modifiers::NONE,egui::Key::Enter)||i.consume_key(egui::Modifiers::NONE,egui::Key::Tab){emit(&mut field_events,"complete",json!({"field":key,"index":r["cursor"]}));}
+                                    if i.consume_key(egui::Modifiers::NONE,egui::Key::Escape){emit(&mut field_events,"completion_close",json!({"field":key}));}
+                                });
+                            }
                             let response = ui
                                 .add_enabled_ui(r["read_only"] != true, |ui| {
                                     form::text(
                                         ui,
-                                        Id::unique((id, &v["identity"], key)),
+                                        field_id,
                                         labelled,
                                         &mut text,
                                         ui.available_width(),
                                     )
                                 })
                                 .inner;
+                            if response.has_focus() {
+                              if let Some(suggestions)=suggestions {
+                                egui::Area::new(response.id.with("suggestions")).order(egui::Order::Foreground).fixed_pos(response.rect.left_bottom()).show(ui.ctx(),|ui|{
+                                  egui::Frame::popup(ui.style()).show(ui,|ui|{
+                                    ui.set_width(response.rect.width());
+                                    let body=egui::TextStyle::Body.resolve(ui.style());let bold=toolkit::fonts::bound(ui.ctx(),toolkit::fonts::heading(body.size));
+                                    for (index,item) in suggestions.iter().enumerate(){
+                                      let mut job=egui::text::LayoutJob::default();
+                                      if let Some(name)=item["name"].as_str().filter(|s|!s.is_empty()){append_match(&mut job,name,&bold,ui.visuals().strong_text_color(),ui.visuals().selection.bg_fill.gamma_multiply(0.5),r["query"].as_str().unwrap_or(""));job.append("  ",0.0,egui::TextFormat::simple(body.clone(),ui.visuals().weak_text_color()));}
+                                      append_match(&mut job,item["email"].as_str().unwrap_or(""),&body,ui.visuals().weak_text_color(),ui.visuals().selection.bg_fill.gamma_multiply(0.5),r["query"].as_str().unwrap_or(""));
+                                      if toolkit::selectable(ui,crate::widgets::whole(&r["cursor"])==Some(index as u64),job).clicked(){emit(&mut field_events,"complete",json!({"field":key,"index":index}));}
+                                    }
+                                  });
+                                });
+                              }
+                            }
                             let marker = Id::unique((id, key, "focus"));
                             if r["focus"] == true
                                 && ui.ctx().data(|d| d.get_temp::<Value>(marker)).as_ref()
@@ -229,6 +259,7 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                             );
                         }
                     });
+                    events.extend(field_events);
                 }
                 form::row(
                     ui,
@@ -318,4 +349,13 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
             .data_mut(|d| d.remove::<Arc<Mutex<toolkit::file_chooser::FileChooser>>>(chooser_id));
     }
     response
+}
+fn append_match(job:&mut egui::text::LayoutJob,text:&str,font:&egui::FontId,colour:egui::Color32,mark:egui::Color32,query:&str){
+    let base=egui::TextFormat::simple(font.clone(),colour);let mut folded=String::new();let mut source=Vec::new();
+    for (at,ch) in text.char_indices(){for lower in ch.to_lowercase(){folded.push(lower);}source.resize(folded.len(),at..at+ch.len_utf8());}
+    let needle=query.to_lowercase();
+    if let Some(at)=(!needle.is_empty()).then(||folded.find(&needle)).flatten(){
+        let range=source[at].start..source[at+needle.len()-1].end;
+        job.append(&text[..range.start],0.0,base.clone());job.append(&text[range.clone()],0.0,egui::TextFormat{background:mark,..base.clone()});job.append(&text[range.end..],0.0,base);
+    }else{job.append(text,0.0,base);}
 }

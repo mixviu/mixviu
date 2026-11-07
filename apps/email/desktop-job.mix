@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Calls only independent desktop citizens, off the application interpreter.
+fn invoke($service,$command,$body)
+  send $service $command body=$body
+  if $rc!=0 then raise("SERVER",json_encode($reply)) end
+  return $reply
+end
+on job.run
+  try
+    $a=$event.args
+    invoke($a.comp,"comp.window.wait",{match:{app_id:$a.app_id},until:"mapped",timeout_ms:10000})
+    $windows=invoke($a.comp,"comp.windows.list",{}).windows
+    $window=filter($windows,fn($w)=$w.app_id==$a.app_id and $w.pid==$a.pid)[0]
+    if $window==nil then raise("SERVER","window not known to compd") end
+    $target={id:$window.id,generation:$window.generation}
+    $state=invoke($a.comp,"comp.window.restore",$target)
+    if $state.minimized!=false then raise("SERVER","Window was not restored") end
+    $state=invoke($a.comp,"comp.window.focus",merge($target,{raise:true}))
+    if $state.focused!=true then raise("SERVER","Window was not focused") end
+    reply(0,json_encode({shown:true,target:$state}))
+  catch $message reply(10,json_encode({error_code:"SERVER",message:$message})) end
+end

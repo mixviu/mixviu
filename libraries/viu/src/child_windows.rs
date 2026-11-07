@@ -132,8 +132,8 @@ impl Windows {
             // descriptor. Its input is complete even though no later frame
             // will exist to paint an acknowledgement.
             if child.input.now.is_empty() && child.input.later.is_empty() {
-                if let Some(reply)=child.input_reply.take() {
-                    let _=reply.send((0,json!({"window":key,"closed":true})));
+                if let Some(reply) = child.input_reply.take() {
+                    let _ = reply.send((0, json!({"window":key,"closed":true})));
                 }
             }
             child.refuse_waits("Native window closed");

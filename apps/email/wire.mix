@@ -160,6 +160,7 @@ fn wire_completed($d)
     return
   end
   if $job.purpose=="compose-send" then composer_sent($job.args.window,$answer) end
+  if $job.purpose=="compose-suggest" then composer_suggest_completed($job.args,$answer) end
   if $job.purpose=="form" and $mail_form!=nil then
     if $answer.rc==0 then $mail_form=nil else $mail_form.busy=false;$mail_form.error=$answer.body.message end
   end
@@ -204,6 +205,9 @@ fn wire_completed($d)
     $opened=composer_open($draft_args,$raw_to)
     $answer.rc=$opened.rc;$answer.body=$opened.body
   end
+  if $answer.rc==0 and $job.command=="email.contacts.suggest" then
+    $answer.body.suggestions=$compose_suggest.ranked($answer.body.suggestions,($wire_data[$job.account] ?? {}).recent ?? [],$job.args.text,min(50,max(1,$job.args.limit ?? 8)))
+  end
   if $job.command=="email.account.connect" then
     if $answer.rc!=0 then $wire_views[$job.account]={state:if $answer.body.error_code=="NO_PASSWORD" then "no_password" else "failed" end,error:if $answer.body.error_code=="NO_PASSWORD" then nil else $answer.body.message end,has_password:$answer.body.error_code!="NO_PASSWORD"} end
     if $answer.rc==0 and $job.account==$active then
@@ -220,6 +224,13 @@ fn wire_completed($d)
     $answer.body={id:$job.account}
   elif $answer.rc==0 and contains(["list","refresh-list"],$job.purpose) and $job.account==$active then
     $mail_emails=$answer.body.emails;$rows=gold_rows($mail_emails);$total=$answer.body.total;$offset=$answer.body.offset;$box=$job.args.mailbox;$revision=$revision+1
+    $recent=($wire_data[$job.account] ?? {}).recent ?? [];$sent=(filter($boxes,fn($b)=$b.id==$box)[0] ?? {}).role=="sent"
+    for $email in $mail_emails
+      for $address in (if $sent then concat($email.to ?? [],$email.cc ?? []) else $email.from ?? [] end)
+        if trim($address.email ?? "")!="" and not any($recent,fn($s)=lower($s.email)==lower($address.email)) then push($recent,{name:$address.name ?? "",email:$address.email,source:"recent"}) end
+      end
+    end
+    $wire_data[$job.account].recent=slice($recent,max(0,len($recent)-500))
     if $job.purpose=="list" then $mail_selection=[];$mail_focus=nil
     else
       $mail_selection=filter($mail_selection,fn($id)=any($rows,fn($r)=$r.key==$id))

@@ -184,7 +184,18 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             {
                 return Err("modal form field must be string or null".into());
             }
-            if value.get("fields").is_some_and(|f|f.as_array().is_none_or(|rows|rows.len()>32 || rows.iter().any(|r|!r["id"].is_string() || !r["label"].is_string() || !r["value"].is_string() || !r["hint"].is_string() || !r["enabled"].is_boolean()))) {
+            if value.get("fields").is_some_and(|f| {
+                f.as_array().is_none_or(|rows| {
+                    rows.len() > 32
+                        || rows.iter().any(|r| {
+                            !r["id"].is_string()
+                                || !r["label"].is_string()
+                                || !r["value"].is_string()
+                                || !r["hint"].is_string()
+                                || !r["enabled"].is_boolean()
+                        })
+                })
+            }) {
                 return Err("modal fields require bounded labelled text".into());
             }
             if value
@@ -321,8 +332,19 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
             }
         }
         "edit" => {
-            if let (Some(fields),Some(edits))=(current["fields"].as_array(),payload.as_object()) {
-                if current["open"]!=true || edits.is_empty() || edits.iter().any(|(key,v)|!v.as_str().is_some_and(|s|s.len()<=65536) || !fields.iter().any(|r|r["id"]==*key && r["enabled"]==true)) {return Err("form is not editable".into());}
+            if let (Some(fields), Some(edits)) = (current["fields"].as_array(), payload.as_object())
+            {
+                if current["open"] != true
+                    || edits.is_empty()
+                    || edits.iter().any(|(key, v)| {
+                        !v.as_str().is_some_and(|s| s.len() <= 65536)
+                            || !fields
+                                .iter()
+                                .any(|r| r["id"] == *key && r["enabled"] == true)
+                    })
+                {
+                    return Err("form is not editable".into());
+                }
                 return Ok(());
             }
             if current["open"] != true

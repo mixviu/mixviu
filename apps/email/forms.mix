@@ -24,7 +24,7 @@ fn form_open($kind)
     if len($f.ids)==0 then return wire_refuse("DISABLED","That command cannot run now") end
   end
   $mail_form=$f
-  if $kind=="delete" and not $mail_settings.confirm_delete then return form_submit(nil) end
+  if $kind=="delete" and len($f.ids)==1 and not $mail_settings.confirm_delete then return form_submit(nil) end
   return {rc:0,body:{}}
 end
 fn form_submit($choice)
