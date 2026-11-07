@@ -17,8 +17,8 @@ fn refresh($s,$native)
   return $s
 end
 fn shut($s,$native)
-  for $p in values($s.layout.panes) $r=$native("close",$p.handle,{}) end
-  $s.layout.panes={};$s.layout.tabs=[];$s.layout.closing=true;$s.closed=true
+  for $tab in $s.layout.tabs $s=close_removed($s,$model.close_tab($s.layout,$tab.id),$native) end
+  $s.layout.closing=true;$s.closed=true
   return $s
 end
 fn close_removed($s,$out,$native)

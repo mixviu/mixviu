@@ -6,7 +6,7 @@ on events.publish
   $delivered=0
   for $note in slice($event.args.events,0,256)
     try
-      $published=publish($note.topic,json_encode($note.body))
+      $published=publish($note.topic,json_encode($note.body),{command:strip_prefix($note.topic,"term."),retain:false})
       if $published==0 then $delivered=$delivered+1 end
     catch $message
       -- Best effort; the next successful event retains its later revision.

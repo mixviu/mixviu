@@ -8,10 +8,14 @@ $state.layout=$model.open_tab($model.initial(),$native("create","",{}),nil)
 $state.identity=$native("identity","",{})
 $state.publishing=false;$state.event_job=0
 fn pump_events($s)
+  if $s.closed and not ($s.drain_expired ?? false) and ($s.publishing or len($s.layout.events)>0) then
+    if not ($s.drain_close ?? false) then viu_timer("terminal-events-close",2000,{kind:"terminal-events-close"}) end
+    $s.drain_close=true
+  elif not $s.publishing and len($s.layout.events)==0 then $s.drain_close=false end
   if $s.publishing or len($s.layout.events)==0 then return $s end
   $s.event_job=$s.event_job+1
   $path=path_join(dirname(script_path()),"event-job.mix")
-  send "viu-local" "jobs.start" body={id:"terminal-events-"..to_string($s.event_job),owner:{kind:"terminal-events"},path:$path,source:read_file($path),command:"events.publish",args:{events:$s.layout.events}}
+  send "viu-local" "jobs.start" id="terminal-events-"..to_string($s.event_job) owner={kind:"terminal-events"} path=$path source=read_file($path) command="events.publish" args={events:$s.layout.events}
   if $rc==0 then $s.publishing=true;$s.layout.events=[]
   else viu_timer("terminal-events-retry",500,{kind:"terminal-events"}) end
   return $s
@@ -42,19 +46,20 @@ on viu.terminal.changed
   if not deep_eq($old,$state.layout) then $state=pump_events($state);publish_term($state) end
 end
 on viu.job.completed
-  if $event.args.tag.owner.kind=="terminal-events" then $state.publishing=false;$state=pump_events($state) end
+  if $event.args.tag.owner.kind=="terminal-events" then $state.publishing=false;$state=pump_events($state);if $state.closed then publish_term($state) end end
 end
 on viu.timer
   if $event.args.value.kind=="terminal-events" then $state=pump_events($state) end
+  if $event.args.value.kind=="terminal-events-close" then $state.drain_expired=true;$state.drain_close=false;publish_term($state) end
 end
 on viu.frame.close
-  $state=$bus.shut($state,$native);publish_term($state)
+  $state=pump_events($bus.shut($state,$native));publish_term($state)
 end
 on app.quit
-  $state=$bus.shut($state,$native);publish_term($state);reply(0,"{}")
+  $state=pump_events($bus.shut($state,$native));publish_term($state);reply(0,"{}")
 end
 on viu.frame.intent
-  if $event.args.value.command=="close" then $state=$bus.shut($state,$native);publish_term($state) end
+  if $event.args.value.command=="close" then $state=pump_events($bus.shut($state,$native));publish_term($state) end
   reply(0,"{}")
 end
 on term.intent

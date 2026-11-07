@@ -2,7 +2,7 @@
 $frame=require("../../libraries/viu/mix/gold-frame.mix")
 $layout=require("model.mix")
 fn framed($s)
-  $model={window_close:$s.closed,values:{}};$look=$s.look.values
+  $model={window_close:$s.closed and not ($s.drain_close ?? false),layout_hidden:$s.closed,values:{}};$look=$s.look.values
   $tabs=$s.layout.tabs;$active=$tabs[$s.layout.active]
   $selected=if $active==nil then "" else to_string($active.id) end
   $items=map($tabs,fn($t)={id:to_string($t.id),name:$t.title,meta:"",dirty:false})

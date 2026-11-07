@@ -37,4 +37,6 @@ $out=$b.dispatch($watched,"term.pane.split",{dir:"v",request_id:"event-split"},$
 check($out.rc==0 and len($out.state.layout.events)>=2,"watched mutation queues identity-bearing changes")
 $replay=$b.dispatch($out.state,"term.pane.split",{dir:"v",request_id:"event-split"},$n)
 check(len($replay.state.layout.events)==len($out.state.layout.events),"replay never duplicates change events")
+$closing=$b.shut($watched,$n)
+check($closing.closed and len($closing.layout.tabs)==0 and any($closing.layout.events,fn($e)=$e.topic=="term.tabs.changed" and $e.body.kind=="removed"),"quit retains final removal records for bounded drain")
 print("term dispatch: live targets, replay, native metadata and validation checks passed")
