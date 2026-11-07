@@ -433,3 +433,20 @@ modifier changes in event order in the runtime widget. A clipboard event
 followed by Shift release in the same frame must retain its earlier Shift
 meaning; the native test now includes that case. Next CBC:
 `term-clipboard-order-cf75bd9`. No passing native clipboard claim yet.
+
+`term-clipboard-order-cf75bd9-a1` subsequently passed: 137 terminal
+tests (five existing ignores), both bundle tests, command-search/dialog
+tests, five Mix suites, foreign gate and host build. Complete saved log
+read; formatting-only patch applied in ff3161f8. Matching debug artifact
+fetched/verified, SHA256
+`fbcdfd9e4949f4a6d8b86de4d4adc8c15cc65291dde7a491fb00c5ddec6130a8`.
+
+The existing generic `viu.ui.*` input driver lacked platform clipboard
+event injection. Commit `06f6f251` adds `viu.ui.clipboard` with copy/cut/
+paste kinds, existing modifier flags, bounded supplied text and a native
+key-release/modifier-reset follow-up. It uses the existing host event
+queue, not a separate transport or app shortcut. Tests check refusal
+without partial input, Unicode text, modifiers and release. A private
+native harness is prepared to verify actual shell Ctrl-C, Shift-paste,
+plain-paste control-code refusal and Shift-Cut closing a split.
+Next CBC `term-platform-clipboard-06f6f251`; runtime witness pending.

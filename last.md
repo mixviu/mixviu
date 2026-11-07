@@ -676,3 +676,32 @@ valid historical evidence, not acceptance of these new clipboard bytes.
 Continue full brief; no Fable decision, install or VT change.
 
 branch: lab/parity-term; head SHA: cf75bd955fbc23c65c6b8b70e6c9e33d7441b166 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — clipboard native validation, full Bus/Prefs/session/input/search and release acceptance open; CBC job ids: term-seamless-e945bd9-a1 (green exact source), term-clipboard-327ab52-a1 (test compile failure), term-clipboard-order-cf75bd9 (next await).
+
+## Clipboard native tests green; platform event driver checkpoint
+
+Read complete saved log for term-clipboard-order-cf75bd9-a1: green,
+137 terminal tests/five existing ignores, two bundle tests, five Mix
+suites, command-search/dialog tests, foreign gate and debug build pass.
+Returned fmt-only patch applied/pushed as ff3161f8. Fetched cf75bd9
+debug executable verified SHA256
+fbcdfd9e4949f4a6d8b86de4d4adc8c15cc65291dde7a491fb00c5ddec6130a8.
+
+Native driver gap: key/text automation cannot generate Copy/Cut/Paste
+events. Added bounded clipboard operation to the existing generic
+viu.ui event queue (06f6f251), including modifiers and key-release/reset
+follow-up. Driver tests added to term gate. Prepared private
+platform-clipboard-06f6f251.mix (lint passes) for shell Ctrl-C, supplied
+Unicode Shift-paste, plain Ctrl-V rejecting supplied paste text and
+Shift-Cut closing the active split. No live clipboard witness yet.
+
+Next CBC term-platform-clipboard-06f6f251 at
+06f6f251e4d31d1184529a09f1ebe490b7278583, term_gate --prepare. Read full
+log/apply fmt/repeat exact source as needed. Fetch matching executable
+and bundle, update artifact path in prepared native harness and execute;
+verify endpoint/event settlement and actual shell behavior, save all
+replies/snapshots/cleanup. Then remaining clipboard primary/OSC52/mouse,
+verified session/control/sealed shell integration, full Bus/IME/search,
+zoom persistence/About/live Prefs and release acceptance. No Fable
+question, install, VT change or merge.
+
+branch: lab/parity-term; head SHA: 06f6f251e4d31d1184529a09f1ebe490b7278583 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — native platform clipboard witness, full Bus/Prefs/session/input/search and release acceptance open; CBC job ids: term-clipboard-order-cf75bd9-a1 (green, fmt applied), term-platform-clipboard-06f6f251 (next await).
