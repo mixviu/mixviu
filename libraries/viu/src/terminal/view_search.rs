@@ -52,12 +52,10 @@ fn compile(value: &Value) -> Result<Compiled, String> {
         let row = origin["row"]
             .as_f64()
             .filter(|n| {
-                n.is_finite()
-                    && n.fract() == 0.0
-                    && *n >= i32::MIN as f64
-                    && *n <= i32::MAX as f64
+                n.is_finite() && n.fract() == 0.0 && *n >= i32::MIN as f64 && *n <= i32::MAX as f64
             })
-            .ok_or("search origin requires signed row and non-negative col")? as i32;
+            .ok_or("search origin requires signed row and non-negative col")?
+            as i32;
         let col = crate::widgets::whole(&origin["col"])
             .filter(|n| *n <= 9_007_199_254_740_991)
             .ok_or("search origin requires signed row and non-negative col")?;
@@ -260,10 +258,7 @@ mod tests {
         let mut events = Vec::new();
         let painted = snapshot(&mut cache, &widget, "vt-1", &terminal, COLORS, &mut events);
         assert_eq!(painted.screen.cells[0].bg, COLORS.background);
-        assert_eq!(
-            events[0].value["matched"]["end"],
-            json!({"row":0,"col":2})
-        );
+        assert_eq!(events[0].value["matched"]["end"], json!({"row":0,"col":2}));
         assert_eq!(events[0].value["request"], json!(1.0));
         for (field, bad) in [
             ("request", json!(1.5)),
