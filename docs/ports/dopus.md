@@ -156,3 +156,36 @@ outline being painted after its contents; gold paints it first. The repair
 awaits the next paired capture. The gold witness separately completed 17
 live settings variants on one unchanged process. Full candidate behaviour,
 Prefs, release-byte revalidation and acceptance remain **OPEN**.
+
+## Round three validation in progress
+
+The baseline now matches gold pixel for pixel in all six regions. Native menu
+clicks carry the original command payload, the shortcut grid uses gold order
+and omits the separate search action, and the Look icon follows effective
+mode. The broad font/scale geometry drift was a navigation rail inheriting
+scene spacing; using native spacing removes the fractional panel growth.
+The latest broad debug pair has exact File/View/Go/Help menus, shortcuts,
+selection, delete, light/accent, Pro, SSD, caption placement, tunables and
+alignment captures. About differs only in the truthful source stamp.
+Compact mode still exposed a native-menu renderer ignoring its effective
+form; that repair is undergoing a fresh capture. Debug-only unaligned
+geometry markers and cursor blink must be rechecked on release bytes.
+
+Private native witnesses retain successful copy/move bytes, committed
+mkdir/rename/delete, mail success/BUSY fallback/DENIED payloads, macro
+creation/text/run/output/termination/move/removal and window operations.
+Executed-topic action order and envelopes match, as do macro completion
+payloads apart from actual timestamps. The chooser lifecycle passed ten
+cases across gold and the generic presenter: save-stem selection, replacement,
+save-files ordering/refusal, independent windows/stale addressing and Escape
+with idempotent cancellation. Launch witnesses passed duplicate headless
+refusal and an actual mapped offline window for both applications.
+
+CBC `dopus-r2-final-ad30f4a-a1` passed on cbc3 with no worker diff:
+65 library plus 11 focused tests, check, Clippy, release profile and executable.
+Its 21-sample release callback medians were 64.208 ms sort and 64.861 ms
+refresh; p95 65.321/65.949 ms and p99 70.358/66.451 ms. Fresh shared-frame
+adapter medians were 15.194/15.196 ms; cold draw 10.487/10.672 ms. These are
+prior-source results, not final acceptance. Current exact-source release
+validation, applied-model performance/refusal, full visual repeat and authority
+recovery remain open. No Fable deviation is proposed.

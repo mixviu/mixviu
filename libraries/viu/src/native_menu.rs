@@ -17,7 +17,12 @@ impl NativeMenu {
         events: &mut Vec<crate::widgets::Intent>,
     ) -> egui::Response {
         let compact = toolkit::menu::form(ui.ctx())["effective"] != "bar";
-        let response = draw(ui, value, compact, widget.properties["header_icon"].as_str());
+        let response = draw(
+            ui,
+            value,
+            compact,
+            widget.properties["header_icon"].as_str(),
+        );
         if let Some(command) = picked(ui.ctx()) {
             events.push(crate::widgets::Intent {
                 id: widget.id.clone(),
