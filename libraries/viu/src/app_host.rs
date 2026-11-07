@@ -189,14 +189,15 @@ impl Host {
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         if self.native_drive {
             if r.command == format!("{}.window", self.app) && r.args["action"] == "close" {
-                r.command = "app.quit".into();
+                r.command = format!("{}.quit", self.app);
             }
         }
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
         if r.command == format!("{}.quit", self.app)
-            || (r.command == format!("{}.execute", self.app) && r.args["id"] == "file.quit")
+            || (r.command == format!("{}.execute", self.app)
+                && matches!(r.args["id"].as_str(), Some("file.quit" | "app.quit")))
         {
             r.close_after_reply
                 .store(true, std::sync::atomic::Ordering::Release);

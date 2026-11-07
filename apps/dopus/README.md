@@ -1,4 +1,12 @@
-# Dopus comparison laboratory
+# Dopus generic-host parity laboratory
+
+Run the current Mix specimen with `viu run apps/dopus PROFILE_DIR`. It uses
+the shared gold frame and generic native host. The full gold inventory and
+checkpoint evidence are in [docs/ports/dopus.md](../../docs/ports/dopus.md).
+It is not yet accepted. The old per-app commands below describe historical
+comparators; their frame is no longer the current bundle composition.
+
+## Historical three-way laboratory
 
 This is an active three-way port, not a completed or accepted replacement.
 The retained original Rust application is the reference. This bundle adds

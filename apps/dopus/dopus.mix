@@ -119,6 +119,9 @@ fn dp_request($request)
         end
         if $candidate.reply.panel=="macros" then $candidate.macros_open=not ($candidate.macros_open ?? false) end
       end
+      if $name=="dopus.execute" and $candidate.reply.error_code==nil then
+        $candidate.reply=if $a.id=="app.quit" then {quitting:true} else {id:$a.id,ok:true,result:nil} end
+      end
       $candidate.serial=$candidate.serial+1
       $profile_reduced=if $dopus_profile then monotonic() else 0 end
       $state=$app.dp_update_previews($candidate)
@@ -127,7 +130,7 @@ fn dp_request($request)
       if $dopus_profile then print(json_encode({profile:"dopus",phase:"callback",serial:$state.serial,command:$name,action:$a.id,reduce_us:($profile_reduced-$profile_start)*1000000,preview_us:($profile_prepared-$profile_reduced)*1000000})) end
       reply(if $state.reply.error_code!=nil then 10 else 0 end,json_encode($state.reply))
     catch $message,$error
-      reply(10,json_encode({error_code:$error.code,message:$message}))
+      reply(10,json_encode({error_code:if $error.code=="UNKNOWN_ACTION" then "INVALID_ARGUMENT" else $error.code end,message:$message,reason:nil}))
     end
   end
 end
