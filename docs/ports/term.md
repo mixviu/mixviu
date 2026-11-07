@@ -673,3 +673,33 @@ shell encoding. Continue the full remaining verified session issuer/
 control/sealed login-shell handoff, Bus/clipboard/primary/OSC52/mouse/IME,
 all Prefs, conformance and exact release visual acceptance. Overall
 **NOT ACCEPTED**. No Fable deviation, installs, merges or VT changes.
+
+### Native Tab exposes missing terminal focus lock
+
+`term-keyboard-65fafcd5-a1` passed: six Mix suites, 141 terminal tests,
+five existing ignores, seven input tests, two bundle tests, search/dialog,
+foreign gate and debug build. Complete saved log read in three chunks.
+Worker formatting applied to view.rs. Matching debug artifact verified
+SHA256 `3c188251a1d40248ce847e88f3cae1cfbbafa8ea9083bfbb0a9d340a90e995a1`.
+The new native tests cover held command consumption and alternate-screen
+scroll key routing; they do not prove toolkit Tab delivery.
+
+Native `native.3A9c9v` fails plain Tab after splitting: toolkit navigation
+takes focus before the terminal widget sees the event. All tracked PIDs
+stopped; failed script/replies retained. Gold shell.rs lines 768 onward
+installs EventFilter with Tab, horizontal/vertical arrows and Escape all
+locked. The reusable widget now does the same after requesting focus,
+matching gold's order. Added a two-frame regression with another focusable
+control; it must still deliver Tab to the terminal command binding.
+
+Code `bee0187865841e8c35d8afd7d9f586e8c43b427b` includes the applied fmt
+and focus repair. Next gate `term-focus-bee01878`, term_gate --prepare.
+Read full log, apply any fmt and repeat exact source if changed. Fetch
+matching artifact/bundle and derive the repaired native witness using
+`keyboard-65fafcd5.mix` (replace artifact path and receipt source).
+Expected active pane 2 after split, 1 after Tab, 2 after Shift+Tab. Do not
+claim held native repeat coverage from this driver: term.ui.key currently
+emits repeat=false. Native repeat and full alternate-screen session tests,
+verified session/control/sealed login-shell integration, full Bus, mouse,
+primary/OSC52/clipboard/IME/all Prefs, conformance and release acceptance
+remain. Overall **NOT ACCEPTED**. No Fable question or desk changes.
