@@ -1903,7 +1903,8 @@ fn menu_state(ctx: &Context) -> Value {
     }
 }
 
-fn window_state(ctx: &Context) -> Value {
+/// Current native window readback, shared with owners that defer a close.
+pub fn window_state(ctx: &Context) -> Value {
     let content = ctx.viewport_rect();
     ctx.input(|i| {
         let v = i.viewport();

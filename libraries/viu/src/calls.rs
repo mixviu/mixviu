@@ -14,6 +14,7 @@ struct Entry {
     reply: Reply,
     held: bool,
     close: Arc<AtomicBool>,
+    success_body: Option<Value>,
 }
 #[derive(Default)]
 struct State {
@@ -24,6 +25,15 @@ struct State {
 pub struct Calls(Arc<Mutex<State>>);
 impl Calls {
     pub fn begin(&self, reply: Reply, close: Arc<AtomicBool>) -> Result<String, Reply> {
+        self.begin_with_success_body(reply, close, None)
+    }
+    /// Preserve an admitted native reply while Mix owns completion and refusal.
+    pub fn begin_with_success_body(
+        &self,
+        reply: Reply,
+        close: Arc<AtomicBool>,
+        success_body: Option<Value>,
+    ) -> Result<String, Reply> {
         let mut state = self.0.lock().unwrap();
         state.entries.retain(|_, e| !e.reply.is_closed());
         if state.entries.len() >= 32 {
@@ -37,6 +47,7 @@ impl Calls {
                 reply,
                 held: false,
                 close,
+                success_body,
             },
         );
         Ok(token)
@@ -47,6 +58,11 @@ impl Calls {
             if close && rc == 0 {
                 e.close.store(true, Ordering::Release);
             }
+            let body = if rc == 0 {
+                e.success_body.unwrap_or(body)
+            } else {
+                body
+            };
             e.reply.send((rc, body)).is_ok()
         } else {
             false

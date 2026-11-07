@@ -210,10 +210,13 @@ impl Host {
         }
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
-        if self.native_drive {
-            if r.command == format!("{}.window", self.app) && r.args["action"] == "close" {
-                r.command = "app.quit".into();
-            }
+        let success_body = if self.native_drive {
+            crate::window_frame::root_close_reply(ctx, &self.app, &r.command, &r.args)
+        } else {
+            None
+        };
+        if success_body.is_some() {
+            r.command = "app.quit".into();
         }
         let Some(mut r) = self.facilities.request(r, ctx) else {
             return;
@@ -294,7 +297,7 @@ impl Host {
                     }
                 }
             }
-            _ => match self.calls.begin(r.reply, r.close_after_reply) {
+            _ => match self.calls.begin_with_success_body(r.reply, r.close_after_reply, success_body) {
                 Ok(token) => {
                     let mut headers = r.headers;
                     headers.insert("viu-call".into(), token);

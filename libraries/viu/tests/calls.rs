@@ -65,3 +65,33 @@ fn mix_holds_a_reply_across_callbacks_without_blocking_the_evaluator() {
     assert!(runtime.try_completion().unwrap().error.is_none());
     assert_eq!(answer.try_recv().unwrap(), (0, json!({"finished":true})));
 }
+
+#[test]
+fn native_success_readback_keeps_mix_refusals_and_close_completion() {
+    let calls = viu::calls::Calls::default();
+    let snapshot = json!({"requested":"close","size":[900,560],"focused":true});
+    for rc in [0, 10] {
+        let close = Arc::new(AtomicBool::new(false));
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        let token = calls.begin_with_success_body(tx, close.clone(), Some(snapshot.clone())).unwrap();
+        let body = json!({"error":"unsaved work"});
+        assert!(calls.finish(&token, rc, body.clone(), true));
+        assert_eq!(rx.try_recv().unwrap(), (rc, if rc == 0 {snapshot.clone()} else {body}));
+        assert_eq!(close.load(Ordering::Acquire), rc == 0);
+        assert!(!calls.finish(&token, 0, json!({}), true));
+    }
+    let close = Arc::new(AtomicBool::new(false));
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    let token = calls.begin_with_success_body(tx, close.clone(), Some(snapshot)).unwrap();
+    calls.complete(&token, 0, json!({}));
+    assert_eq!(rx.try_recv().unwrap().1["requested"], "close");
+    assert!(!close.load(Ordering::Acquire));
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let token = calls.begin_with_success_body(tx, close.clone(), Some(json!({"old":true}))).unwrap();
+    drop(rx);
+    assert_eq!(calls.cancelled(), vec![token]);
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    let token = calls.begin(tx, close).unwrap();
+    calls.complete(&token, 0, json!({"fresh":true}));
+    assert_eq!(rx.try_recv().unwrap(), (0, json!({"fresh":true})));
+}
