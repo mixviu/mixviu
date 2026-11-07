@@ -39,7 +39,7 @@ fn gold_dialog_tab_keeps_button_focus_and_enter_cancels() {
         let source = format!(
             "---\nscene: 1\nname: modal\ncitizen: modal\n---\n```mix\n{}\n```\n",
             json!({"root":{"widget":"control","on_intent":"input","definition":{
-                "id":"prompt","kind":"dialog-form","label":"",
+                "id":"root","kind":"dialog-form","label":"",
                 "properties":{"style":"gold"},
                 "initial":{"open":true,"instance":1,"title":"New item","body":"Name",
                     "field":"","field_style":field_style,"placeholder":"Title",
@@ -62,8 +62,9 @@ fn gold_dialog_tab_keeps_button_focus_and_enter_cancels() {
         assert_ne!(field, button, "{field_style}: field reclaimed Tab focus");
         let events = draw(&ctx, &mut view, key(Key::Enter));
         assert!(
-            events.iter().any(|e| e.body["action"] == "answer"
-                && e.body["value"]["choice"] == "cancel"),
+            events
+                .iter()
+                .any(|e| e.body["action"] == "answer" && e.body["value"]["choice"] == "cancel"),
             "{field_style}: {events:?}"
         );
     }
