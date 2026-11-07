@@ -81,3 +81,7 @@ The four engines are saved together on **cbc2** at `/build/es-artifacts/1804bb98
 | viu | `6a995927feba6d70dfb028fc43e972e964f0b9009dfe4fdff7968f9142389299` |
 
 Four-app release-byte revalidation and the same-worker comparison are in progress. This gate receipt alone does not grant final integration acceptance. All 22 inherited provenance mismatches remain explained in [import-hash-debt.md](import-hash-debt.md); they predate this integration and must be reconciled before production derivation.
+
+## Four-app release integration at 1804bb9
+
+Release-byte revalidation **PASS**. Exact four-engine hashes, complete native/visual results, all residual figures, deferred-reply witnesses, two same-worker timing comparisons and provenance debt are in [four-app-integration-acceptance.md](four-app-integration-acceptance.md). The runtime source is `1804bb98a5ab305111bd35412bf6f3902bc24013`; following commits are documentation receipts.
