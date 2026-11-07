@@ -12,12 +12,20 @@ fn text<'a>(v: &'a Value, key: &str) -> &'a str {
 fn number(v: &Value, key: &str, default: f32) -> f32 {
     v[key].as_f64().unwrap_or(default as f64) as f32
 }
-fn sample_width(ui:&Ui,column:&Value)->Option<f32>{
-    let samples=column["samples"].as_array()?;
-    let size=TextStyle::Body.resolve(ui.style()).size;
-    let font=toolkit::fonts::bound(ui.ctx(),toolkit::fonts::medium(size));
-    let width=std::iter::once(text(column,"label")).chain(samples.iter().filter_map(Value::as_str)).map(|text|ui.painter().layout_no_wrap(text.into(),font.clone(),ui.visuals().text_color()).size().x).fold(0.0,f32::max);
-    Some(width+ui.spacing().item_spacing.x+2.0)
+fn sample_width(ui: &Ui, column: &Value) -> Option<f32> {
+    let samples = column["samples"].as_array()?;
+    let size = TextStyle::Body.resolve(ui.style()).size;
+    let font = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(size));
+    let width = std::iter::once(text(column, "label"))
+        .chain(samples.iter().filter_map(Value::as_str))
+        .map(|text| {
+            ui.painter()
+                .layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color())
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    Some(width + ui.spacing().item_spacing.x + 2.0)
 }
 fn emit(events: &mut Vec<Intent>, id: &str, action: &str, value: Value) {
     events.push(Intent {
@@ -501,6 +509,7 @@ fn draw_grid(
         let room = (ui.available_width()
             - ui.spacing().item_spacing.x * (columns.len().saturating_sub(1) as f32))
             .max(1.0);
+        let measured=columns.iter().map(|column|sample_width(ui,column)).collect::<Vec<_>>();
         let mut table = TableBuilder::new(ui)
             .id_salt(id)
             .auto_shrink([widget.properties["auto_shrink"] == true; 2])
@@ -513,8 +522,8 @@ fn draw_grid(
                 Sense::click()
             })
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
-        for column in columns {
-            let width = if let Some(width) = sample_width(ui,column) {
+        for (column,measured) in columns.iter().zip(measured) {
+            let width = if let Some(width) = measured {
                 Column::exact(width)
             } else if column["remainder"] == true {
                 Column::remainder()
@@ -661,7 +670,7 @@ fn draw_gold(
             let label = text(column, "label").replace(['\r', '\n', '{', '}'], " ");
             catalogue.push_str(&format!("{} = {}\n", COLUMN_KEYS[index], label));
             let min = number(column, "min_width", 40.0);
-            let width = if let Some(width)=sample_width(ui,column) {
+            let width = if let Some(width) = sample_width(ui, column) {
                 Width::Fixed(width)
             } else if column["remainder"] == true {
                 Width::Remainder { min }
