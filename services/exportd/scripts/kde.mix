@@ -29,7 +29,7 @@ $dry = env("MIX_EXPORTD_KDE_DRY", "0") == "1"
 -- config home that is the home directory's own .config gets a dry run only
 -- (a shared desk can bind the host user's home).
 $home_guard = nil
-if env("MIX_EXPORTD_KDE_HOME", "") != "1" and (env("XDG_CONFIG_HOME", "") == "" or env("XDG_CONFIG_HOME", "") == home() .. "/.config") then
+if env("MIX_EXPORTD_KDE_HOME", "") != "1" and (env("XDG_CONFIG_HOME", "") == "" or env("XDG_CONFIG_HOME", "") == env("HOME", "") .. "/.config") then
   $home_guard = "the config home is the home directory's own .config: set MIX_EXPORTD_KDE_HOME=1 to export there"
   $dry = true
 end
