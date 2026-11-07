@@ -220,6 +220,51 @@ fn parser_retains_every_utf8_and_escape_chunk_boundary() {
     }
 }
 
+fn query_replies(
+    receiver: &rio_vt::corcovado::channel::Receiver<rio_vt::event::Msg>,
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    while let Ok(message) = receiver.try_recv() {
+        if let rio_vt::event::Msg::Input(reply) = message {
+            bytes.extend_from_slice(&reply);
+        }
+    }
+    bytes
+}
+
+#[test]
+fn cursor_status_and_device_queries_survive_every_escape_chunk_boundary() {
+    // Independent wire expectations for CPR, DSR and Gold's advertised DA1.
+    // These replies go back to the program, never into the visible grid.
+    let queries = b"\x1b[5;7H\x1b[6n\x1b[5n\x1b[c";
+    let expected = b"\x1b[5;7R\x1b[0n\x1b[?62;4;6;22;52c";
+    for split in 0..=queries.len() {
+        let t = Terminal::from_test_vt(80, 24, b"untouched");
+        let receiver = t.listener.test_input_receiver();
+        let mut parser = rio_vt::performer::handler::Processor::default();
+        parser.advance(&mut *t.grid.lock(), &queries[..split]);
+        parser.advance(&mut *t.grid.lock(), &queries[split..]);
+        assert_eq!(query_replies(&receiver), expected, "split {split}");
+        assert_eq!(t.screen(false).cursor, (6, 4), "split {split}");
+        assert_eq!(row(&t, 0), format!("untouched{}", " ".repeat(71)));
+        for n in 1..24 {
+            assert_eq!(row(&t, n), " ".repeat(80), "split {split}, row {n}");
+        }
+    }
+}
+
+#[test]
+fn cursor_queries_follow_alternate_screen_entry_and_saved_main_cursor() {
+    let t = Terminal::from_test_vt(80, 24, b"main\x1b[2;4H");
+    let receiver = t.listener.test_input_receiver();
+    t.advance_test_vt(b"\x1b[?1049h\x1b[12;30H\x1b[6n\x1b[?1049l\x1b[6n");
+    assert_eq!(query_replies(&receiver), b"\x1b[12;30R\x1b[2;4R");
+    assert!(!t.alternate_screen());
+    assert_eq!(t.screen(false).cursor, (3, 1));
+    assert_eq!(row(&t, 0), format!("main{}", " ".repeat(76)));
+    assert_eq!(row(&t, 1), " ".repeat(80));
+}
+
 #[test]
 fn scrollback_pages_and_selection_use_the_native_grid() {
     let t = Terminal::from_test_vt(12, 3, b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
