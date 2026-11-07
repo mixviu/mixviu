@@ -246,7 +246,16 @@ pub(crate) struct Replay {
 
 impl Replay {
     pub fn child_operation(&self, target: &Target, operation: u64) -> Option<DecimalU64> {
-        self.state.history.values().flat_map(|h| &h.entries).find(|entry| entry.operation == operation && entry.target == *target && entry.at.elapsed() < RETENTION).and_then(|entry| entry.child_operation)
+        self.state
+            .history
+            .values()
+            .flat_map(|h| &h.entries)
+            .find(|entry| {
+                entry.operation == operation
+                    && entry.target == *target
+                    && entry.at.elapsed() < RETENTION
+            })
+            .and_then(|entry| entry.child_operation)
     }
     /// Direct pane mutations allocate an instance operation even on refusal;
     /// successful replies carry it. Forwarded child replies use record_outcome.

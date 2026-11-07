@@ -6,7 +6,10 @@ use crate::terminal::protocol::{Request, mismatch, refusal_code, shell_refusal};
 use crate::terminal::replay::Forward;
 
 impl Recipient {
-    #[expect(clippy::too_many_arguments, reason = "forwarding retains verified request identity and replay digest")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "forwarding retains verified request identity and replay digest"
+    )]
     pub(super) async fn forward_execute(
         &self,
         connection: &VerifiedConnection,
@@ -59,12 +62,21 @@ impl Recipient {
                 // mapping first is what lets a retry get past Term's own
                 // high-water mark, which is otherwise the thing that turns
                 // "your answer was lost" into "unknown, forever".
-                let forwarding = self.replay.lock().unwrap().forwarded_id(identity, sequence, digest);
+                let forwarding = self
+                    .replay
+                    .lock()
+                    .unwrap()
+                    .forwarded_id(identity, sequence, digest);
                 let forwarded = match forwarding {
                     Forward::Conflict => return Reply::refuse("CONFLICT", Some(mismatch())),
                     Forward::Retry(id) => id,
                     Forward::Fresh(id) => {
-                        if let Err(reply) = self.replay.lock().unwrap().reserve_request_id(identity, sequence, digest) {
+                        if let Err(reply) = self
+                            .replay
+                            .lock()
+                            .unwrap()
+                            .reserve_request_id(identity, sequence, digest)
+                        {
                             return reply;
                         }
                         id
@@ -107,12 +119,21 @@ impl Recipient {
                 // sequence) and not split by kind: splitting it would let one
                 // caller request id mint a fresh forwarded id on each surface
                 // and BOTH execute.
-                let forwarding = self.replay.lock().unwrap().forwarded_id(identity, sequence, digest);
+                let forwarding = self
+                    .replay
+                    .lock()
+                    .unwrap()
+                    .forwarded_id(identity, sequence, digest);
                 let forwarded = match forwarding {
                     Forward::Conflict => return Reply::refuse("CONFLICT", Some(mismatch())),
                     Forward::Retry(id) => id,
                     Forward::Fresh(id) => {
-                        if let Err(reply) = self.replay.lock().unwrap().reserve_request_id(identity, sequence, digest) {
+                        if let Err(reply) = self
+                            .replay
+                            .lock()
+                            .unwrap()
+                            .reserve_request_id(identity, sequence, digest)
+                        {
                             return reply;
                         }
                         id
@@ -152,7 +173,11 @@ impl Recipient {
                 let Some(operation) = request.operation_id else {
                     return Reply::error("INVALID_ARGUMENT");
                 };
-                let child_operation = self.replay.lock().unwrap().child_operation(&request.target, operation.0);
+                let child_operation = self
+                    .replay
+                    .lock()
+                    .unwrap()
+                    .child_operation(&request.target, operation.0);
                 let Some(child_operation) = child_operation else {
                     return Reply::error("UNKNOWN_OUTCOME");
                 };
@@ -243,9 +268,14 @@ impl Recipient {
         if let Some(sequence) = sequence
             && retain
         {
-            self.replay.lock().unwrap().record_outcome(identity, &request.target, sequence, digest, &mut reply);
+            self.replay.lock().unwrap().record_outcome(
+                identity,
+                &request.target,
+                sequence,
+                digest,
+                &mut reply,
+            );
         }
         reply
     }
-
 }

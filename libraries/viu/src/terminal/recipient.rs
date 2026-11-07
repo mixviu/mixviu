@@ -90,21 +90,40 @@ impl Recipient {
             Err(reply) => return reply,
         };
         {
-        let mut replay = self.replay.lock().unwrap();
-        if admitted.operation == "term.operation" {
-            return admitted.request.operation_id.map_or_else(
-                || Reply::error("INVALID_ARGUMENT"),
-                |id| replay.operation(&admitted.request.target, id.0),
-            );
-        }
-        if let Some(sequence) = admitted.request.request_id {
-            if let Some(reply) = replay.lookup(&admitted.identity, sequence.0, admitted.digest) {
-                return reply;
+            let mut replay = self.replay.lock().unwrap();
+            if admitted.operation == "term.operation" {
+                return admitted.request.operation_id.map_or_else(
+                    || Reply::error("INVALID_ARGUMENT"),
+                    |id| replay.operation(&admitted.request.target, id.0),
+                );
+            }
+            if let Some(sequence) = admitted.request.request_id {
+                if let Some(reply) = replay.lookup(&admitted.identity, sequence.0, admitted.digest)
+                {
+                    return reply;
+                }
             }
         }
-        }
-        if matches!(admitted.operation.as_str(), "term.execute" | "term.exec.result" | "term.exec.cancel" | "term.task.submit" | "term.task.result" | "term.task.cancel") {
-            return self.forward_execute(connection, admitted.epoch, &admitted.label, &admitted.operation, &admitted.request, &admitted.identity, admitted.digest).await;
+        if matches!(
+            admitted.operation.as_str(),
+            "term.execute"
+                | "term.exec.result"
+                | "term.exec.cancel"
+                | "term.task.submit"
+                | "term.task.result"
+                | "term.task.cancel"
+        ) {
+            return self
+                .forward_execute(
+                    connection,
+                    admitted.epoch,
+                    &admitted.label,
+                    &admitted.operation,
+                    &admitted.request,
+                    &admitted.identity,
+                    admitted.digest,
+                )
+                .await;
         }
         // Layout and session metadata still need the in-process Mix adapter.
         if !matches!(admitted.operation.as_str(), "term.snapshot" | "term.type") {

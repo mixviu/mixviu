@@ -704,7 +704,9 @@ mod tests {
                 }
             }).await.expect("forwarded evaluation must finish in the real shell");
             assert_eq!(invoke("term.execute",evaluation).await,(0,evaluated));
-            let submission=json!({"target":target,"request_id":"4","request_epoch":epoch,"source":"40 + 2","timeout_ms":"20000"});
+            let missing_cwd=json!({"target":target,"request_id":"4","request_epoch":epoch,"source":"40 + 2","timeout_ms":"20000"});
+            assert_eq!(invoke("term.task.submit",missing_cwd).await.1["error_code"],"INVALID_ARGUMENT");
+            let submission=json!({"target":target,"request_id":"5","request_epoch":epoch,"source":"40 + 2","cwd":std::env::var("HOME").unwrap(),"timeout_ms":"20000"});
             let (rc,task)=invoke("term.task.submit",submission.clone()).await;
             assert_eq!(rc,0,"{task}");
             assert_eq!(task["status"],"accepted");
