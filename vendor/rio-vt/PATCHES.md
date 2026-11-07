@@ -18,7 +18,9 @@ The native Gold and unpatched port both retain the first row after ED1.
 
 Second C1 correction: widening a wrapped line must calculate its cursor
 delta before clamping to the live viewport. `grow_columns` uses unbounded
-temporary positions for its two cursor subtractions. Clamping early loses
+temporary positions computed directly from the new column count. Grid row
+storage is temporarily taken during reflow, so the position helper cannot
+supply bounds at that point. Clamping early loses
 the column when the merge target is in history and leaves the rejoined
 text hidden above a blank live screen. Native Gold and the unmodified port
 reproduce this after a 98→48→98 column resize with identical real Mix output.

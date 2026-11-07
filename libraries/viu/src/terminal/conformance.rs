@@ -273,6 +273,29 @@ fn alternate_screen_resize_preserves_main_text_and_saved_cursor() {
 }
 
 #[test]
+fn widening_restores_wrapped_text_at_each_cursor_column() {
+    for width in 3..=10 {
+        for count in 1..=20 {
+            let text = "abcdefghijklmnopqrst"[..count].to_string();
+            let t = Terminal::from_test_vt(24, 8, text.as_bytes());
+            t.resize(width, 8, width * 10, 80);
+            t.resize(24, 8, 240, 80);
+            assert_eq!(
+                row(&t, 0),
+                format!("{text}{}", " ".repeat(24 - count)),
+                "width {width}, count {count}"
+            );
+            assert_eq!(
+                t.screen(false).cursor,
+                (count, 0),
+                "width {width}, count {count}"
+            );
+            assert_eq!(t.display_offset(), 0);
+        }
+    }
+}
+
+#[test]
 fn real_mix_login_input_resize_exit_and_reap() {
     struct Unbound;
     impl crate::terminal::native_session::SessionIssuer for Unbound {

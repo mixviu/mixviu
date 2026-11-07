@@ -14,7 +14,7 @@
     },
     {
       "file": "src/crosswords/grid/resize.rs",
-      "reason": "Fable C1 functional Gold defect: grow_columns must compute temporary cursor movement across the viewport boundary before relocating content; two Boundary::Cursor subtractions become Boundary::None. Native Gold/unmodified port hide the rejoined line and lose cursor column after narrow/wide. Exact text/selection/final cursor regression retained."
+      "reason": "Fable C1 functional Gold defect: grow_columns calculates temporary cursor movement directly using the new width before relocating content. Avoid viewport clamping and avoid position helpers consulting temporarily taken grid storage. Native Gold/unmodified port hide the rejoined line and lose cursor column after narrow/wide. Exact text/selection/final-cursor assertions and a width/cursor matrix are retained."
     }
   ],
   "exit_path": "Upstream ED1 and cursor reflow corrections, replace local patches with a fixed reviewed Rio revision, rerun conformance and native parity.",

@@ -3,7 +3,7 @@
 // which is licensed under Apache 2.0 license.
 
 use crate::crosswords::grid::{Dimensions, Grid, ReflowRemap};
-use crate::crosswords::pos::{Boundary, Column, Line};
+use crate::crosswords::pos::{Boundary, Column, Line, Pos};
 use crate::crosswords::square::{Square, Wide};
 use crate::crosswords::Row;
 use std::cmp::{max, min, Ordering};
@@ -220,12 +220,20 @@ impl Grid<Square> {
                 // above the viewport. Preserve that delta until the content
                 // relocation below; clamping here loses its column and leaves
                 // the rejoined text hidden in history after a shrink/grow.
-                let mut target = self.cursor.pos.sub(self, Boundary::None, num_wrapped);
+                // Pos::sub consults grid bounds even with Boundary::None.
+                // The raw rows are taken during reflow, so calculate against
+                // the known new width without consulting that empty storage.
+                let mut target = Pos::new(
+                    self.cursor.pos.row
+                        - usize::from(self.cursor.pos.col.0 < num_wrapped),
+                    Column((columns + self.cursor.pos.col.0 - num_wrapped) % columns),
+                );
 
                 // Clamp to the last column, if no content was reflown with the cursor.
                 if target.col.0 == 0 && row.is_clear() {
                     self.cursor.should_wrap = true;
-                    target = target.sub(self, Boundary::None, 1);
+                    target.row -= 1;
+                    target.col = Column(columns - 1);
                 }
                 self.cursor.pos.col = target.col;
 
