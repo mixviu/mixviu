@@ -149,7 +149,7 @@ impl Host {
                 )
             })
             .collect();
-        json!({"ready":self.ready,"model":self.view.model(),"revision":self.view.revision,"geometry":geometry,"outputs":self.outputs,"error":self.error,"session":self.session.as_ref().map(|session| &session.snapshot)})
+        json!({"ready":self.ready,"model":self.view.model(),"revision":self.view.revision,"geometry":geometry,"outputs":self.outputs,"stats":self.ui_state.stats(),"error":self.error,"session":self.session.as_ref().map(|session| &session.snapshot)})
     }
     fn dispatch(
         &mut self,

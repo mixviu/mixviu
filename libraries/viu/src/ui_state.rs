@@ -9,6 +9,9 @@ use std::{
 #[derive(Clone, Default)]
 pub struct UiState(Arc<Mutex<Value>>);
 impl UiState {
+    pub(crate) fn stats(&self) -> Value {
+        self.0.lock().unwrap()["stats"].clone()
+    }
     pub fn set(&self, window: egui::Rect, geometry: &BTreeMap<String, egui::Rect>, stats: Value) {
         let rect = |r: egui::Rect| json!([r.min.x, r.min.y, r.width(), r.height()]);
         *self.0.lock().unwrap() = json!({"window":rect(window),"geometry":geometry.iter().map(|(id,r)|(id.clone(),rect(*r))).collect::<serde_json::Map<_,_>>(),"stats":stats});
