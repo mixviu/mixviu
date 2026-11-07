@@ -1038,19 +1038,15 @@ impl SceneView {
                     &mut Vec::new(),
                 );
                 let height = measure.min_rect().height().ceil().min(limit);
-                let mut rect = remaining;
-                rect.min.y = (rect.max.y - height).max(rect.min.y);
-                let mut child_ui = ui.new_child(
-                    egui::UiBuilder::new()
-                        .max_rect(rect)
-                        .layout(egui::Layout::top_down(egui::Align::Min)),
-                );
-                child_ui.set_clip_rect(rect.intersect(ui.clip_rect()));
-                self.node(&mut child_ui, child, nodes, route, depth + 1, events);
+                let mut panel_ui=ui.new_child(egui::UiBuilder::new().max_rect(remaining));
+                egui::Panel::bottom(egui::Id::unique((key,child,"intrinsic")))
+                    .frame(egui::Frame::new()).exact_size(height).show(&mut panel_ui,|ui| {
+                        self.node(ui,child,nodes,route,depth+1,events);
+                    });
                 ui.ctx().data_mut(|d| {
                     d.remove::<f32>(marker);
                 });
-                remaining.max.y = rect.min.y;
+                remaining=panel_ui.available_rect_before_wrap();
                 continue;
             }
             if edge == "bottom" && placement["size"] == "content" {

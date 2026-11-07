@@ -3,6 +3,7 @@
 -- lint: globals app_args
 $c=require("core.mix");$mail=require("mail.mix");$ctx=viu_context()
 $fixture=len($app_args)>0 and $app_args[0]=="--fixture"
+$compose_only=len($app_args)>0 and $app_args[0]=="--compose";$compose_launch_pending=$compose_only;$compose_launch_document=if $compose_only then $app_args[1] else nil end
 $rows=[];$selected=nil;$revision=0;$account="No account connected";$mailbox="No mailbox";$reader="No message open";$draft={to:"",subject:"",text:""}
 $entries=[];$active="";$session=nil;$boxes=[];$box="";$offset=0;$total=0;$message=nil;$connected=false;$busy=false;$serial=0;$pending=nil;$status="Choose an account and Connect"
 $submission=nil;$receipt=nil;$last_receipt=nil
@@ -10,7 +11,7 @@ $view="Mail"
 if not $fixture then $status="" end
 $frame=require("frame.mix");$actions=require("actions.mix")
 $chrome={bindings:{},theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark"},dialog:nil,macros_open:false,window_close:false}
-if not $fixture and len($app_args)>0 then
+if not $fixture and not $compose_only and len($app_args)>0 then
   $entries=$mail.accounts($app_args[0])
   if len($entries)>0 then $active=$entries[0].id end
 end
@@ -19,6 +20,7 @@ fn entry()
   raise("ACCOUNT","No configured account selected")
 end
 fn publish_email()
+  composer_launch()
   if not $fixture then previews_sync() end
   if not $fixture then config_schedule() end
   $m=$c.model(if $fixture then $rows else [] end,if $fixture then $selected else nil end,$revision,$account,$mailbox,$reader,$draft)
@@ -79,6 +81,7 @@ include "surface.mix"
 include "selection.mix"
 include "reader-files.mix"
 include "previews.mix"
+include "drops.mix"
 include "composer.mix"
 include "compose-identities.mix"
 include "forms.mix"
@@ -348,11 +351,15 @@ end
 on viu.window.focused
   $compose_focused=$event.args.window
 end
+on viu.files.dropped
+  mail_drop($event.args);publish_email()
+end
 on viu.window.close
   composer_close($event.args.window);publish_email()
 end
 on viu.frame.close
-  composer_quit();publish_email()
+  if $event.args.window!=nil then composer_close($event.args.window) else composer_owner_close() end
+  publish_email()
 end
 on email.quit
   send "viu-local" "native.executed" body={id:"file.quit",origin:"bus",params:nil,result:nil}
@@ -367,6 +374,7 @@ on email.dialog.intent
 end
 on viu.job.completed
   $d=$event.args
+  if $d.tag.owner.drop!=nil then mail_drop_completed($d.tag.owner.drop,$d.rc,$d.body);publish_email();return end
   if $d.tag.owner.composer_document!=nil then composer_document_completed($d.tag.owner.composer_document,$d.rc,$d.body);publish_email();return end
   if $d.tag.owner.desktop!=nil then viu_reply("finish",$d.tag.owner.desktop,{rc:$d.rc,body:$d.body});return end
   if $d.tag.owner.id!=nil then wire_completed($d);publish_email();return end

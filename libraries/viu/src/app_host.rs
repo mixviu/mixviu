@@ -74,6 +74,7 @@ struct Host {
     commands: BTreeSet<String>,
     scene_source: String,
     loaded: bool,
+    active_scene: String,
     model: Value,
     output: Option<String>,
     outputs: BTreeMap<String, Value>,
@@ -118,9 +119,16 @@ impl Host {
             .and_then(|output| model["surfaces"].get(output))
             .unwrap_or(model)
             .clone();
+        if model["native_root"].is_object() {
+            projected=model["native_root"]["model"].clone();
+            projected["native_windows"]=model["native_windows"].clone();
+            projected["native_root"]=model["native_root"].clone();
+            projected["window_close"]=model["window_close"].clone();
+            projected["__viu_root_key"]=model["native_root"]["key"].clone();
+        }
         if self.framed {
             projected["__viu_window_client"] =
-                json!(crate::window_frame::is_client(&self.window_settings(model)));
+                json!(crate::window_frame::is_client(&self.window_settings(&projected)));
             projected["__viu_header_hosted"] = json!(
                 projected["__viu_window_client"] == false
                     && toolkit::menu::form(ctx)["hosted"] == true
@@ -146,10 +154,13 @@ impl Host {
     fn dispatch(
         &mut self,
         command: String,
-        body: Value,
+        mut body: Value,
         mut headers: BTreeMap<String, String>,
         reply: Option<Reply>,
     ) {
+        if reply.is_none() && !headers.contains_key("viu-call") && body.is_object() {
+            if let Some(key)=self.model["__viu_root_key"].as_str() { body["window"]=json!(key); }
+        }
         // Only the host supplies this receipt. A Bus caller cannot forge it.
         let token = if let Some(reply) = reply {
             match self
@@ -190,13 +201,8 @@ impl Host {
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         if r.command.starts_with("viu.") {
             if let Some(key) = r.args["window"].as_str().map(str::to_owned) {
-                self.windows.request(&key, r, ctx);
-                return;
-            }
-        }
-        if self.native_drive {
-            if r.command == format!("{}.window", self.app) && r.args["action"] == "close" {
-                r.command = "app.quit".into();
+                if self.model["__viu_root_key"]==key {r.args.as_object_mut().unwrap().remove("window");}
+                else {self.windows.request(&key, r, ctx);return;}
             }
         }
         let Some(r) = self.facilities.request(r, ctx) else {
@@ -277,11 +283,23 @@ impl Host {
 }
 impl eframe::App for Host {
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        if self.framed && self.model["window_close"]!=true && ctx.input(|i|i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.dispatch("viu.frame.close".into(),json!({}),BTreeMap::new(),None);
+        }
         self.pump(ctx);
     }
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
         if self.windows.raw_input(raw) {
             return;
+        }
+        raw.dropped_files.append(&mut self.input.dropped);
+        if !raw.dropped_files.is_empty() {
+            let paths=raw.dropped_files.iter().filter_map(|f|f.path.as_ref().map(|p|p.to_string_lossy().into_owned())).collect::<Vec<_>>();
+            if !paths.is_empty(){self.dispatch("viu.files.dropped".into(),json!({"paths":paths}),BTreeMap::new(),None);}
+        }
+        if raw.events.contains(&egui::Event::WindowFocused(true)) {
+            self.dispatch("viu.window.focused".into(),json!({}),BTreeMap::new(),None);
         }
         if self.paste_deadline.is_some() {
             raw.events.retain(|event| {
@@ -473,6 +491,7 @@ impl Host {
             if self.error.is_empty() {
                 if let Some(model) = done.model {
                     let projected = self.projection(&model, ctx);
+                    let source=model["native_root"]["scene"].as_str().unwrap_or(&self.scene_source).to_owned();
                     let appearance = if self.framed
                         && self.session_appearance.is_none()
                         && (!self.loaded || self.model["appearance"] != model["appearance"])
@@ -483,20 +502,22 @@ impl Host {
                     };
                     let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
                         validate_overlays(&projected)?;
+                        if model["native_root"].is_object() {self.windows.validate(&json!({"native_windows":[model["native_root"].clone()]}))?;}
                         self.windows.validate(&model)?;
-                        if self.loaded {
+                        if self.loaded && self.active_scene==source {
                             self.view.apply_model(projected)
                         } else {
                             (if self.framed {
-                                crate::gold_frame::mount(&self.scene_source, projected)
+                                crate::gold_frame::mount(&source, projected)
                             } else {
-                                SceneView::with_model(&self.scene_source, projected)
+                                SceneView::with_model(&source, projected)
                             })
                             .map(|view| {
                                 self.view = view;
                                 self.view.set_documents(self.documents.clone());
                                 self.view.set_native_menus(self.native_drive);
                                 self.loaded = true;
+                                self.active_scene=source;
                             })
                         }
                     });
@@ -513,7 +534,13 @@ impl Host {
                                 &self.documents,
                                 self.native_drive,
                             );
-                            self.model = model;
+                            if let Some(root)=model.get("native_root").filter(|v|v.is_object()) {
+                                let key=root["key"].as_str().unwrap();
+                                toolkit::drive::register_viewport(ctx,egui::ViewportId::ROOT,key,egui::ViewportId::ROOT);
+                                let title=root["title"].as_str().unwrap();
+                                if self.title!=title {self.title=title.into();ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.into()));ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(root["size"][0].as_f64().unwrap() as f32,root["size"][1].as_f64().unwrap() as f32)));}
+                                self.model=self.projection(&model,ctx);
+                            } else {self.model = model;}
                         }
                         Err(e) => self.error = e,
                     }
@@ -919,6 +946,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             "viu.ui.hover",
             "viu.ui.scroll",
             "viu.ui.drag",
+            "viu.ui.drop",
             "viu.capture",
             "viu.quit",
             "viu.clipboard.image",
@@ -1049,6 +1077,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         commands: declared,
         scene_source: bundle.scene,
         loaded: false,
+        active_scene: String::new(),
         model: json!({}),
         output: None,
         outputs: BTreeMap::new(),

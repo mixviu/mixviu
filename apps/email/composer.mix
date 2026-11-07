@@ -51,7 +51,7 @@ fn composer_files($c,$strict=false)
   return $c
 end
 fn composer_snapshot($info,$window=nil)
-  $info.compose_windows=map(keys($composers),fn($key)={window:$key,root:false,compose:composer_info($composers[$key])})
+  $info.compose_windows=map(keys($composers),fn($key)={window:$key,root:$key==$compose_root,compose:composer_info($composers[$key])})
   $key=$window ?? $compose_focused;$c=$composers[$key]
   if $c!=nil then $info.window=$key;$info.compose=composer_info($c);$info.confirm=if $c.confirm then (if $compose_quitting then "quit" else "close_compose" end) else nil end end
   return $info
@@ -105,14 +105,35 @@ fn composer_save($key)
   $saved={schema_version:1,id:$c.draft_id,account:$c.account,from:$c.from,from_name:$c.from_name,identity:$c.identity,to:$c.to,cc:$c.cc,bcc:$c.bcc,reply_to:$c.reply_to,subject:$c.subject,body:$c.body,attachments:$c.attachments,in_reply_to:$c.in_reply_to,references:$c.references,saved_at:date_format(time(),"%Y-%m-%dT%H:%M:%SZ",{utc:true}),attempt:$c.attempt}
   viu_atomic_replace($path,json_encode($saved))
 end
+$compose_owner_closing=false;$compose_root=nil
+fn composer_launch()
+  global $compose_launch_pending,$compose_root,$status
+  if not $compose_launch_pending then return end
+  if len($entries)==0 then return end
+  $compose_launch_pending=false
+  $a={};if $compose_launch_document!=nil then $a.document=if starts_with($compose_launch_document,"/") then $compose_launch_document else path_join(viu_context().cwd,$compose_launch_document) end end
+  $opened=composer_open($a)
+  if $opened.rc==0 then $compose_root=$opened.body.window else $status=$opened.body.message end
+end
+fn composer_owner_close()
+  global $compose_owner_closing,$chrome,$status
+  if len(keys($composers))>0 and not $compose_quitting then
+    $compose_owner_closing=true;$status="Close the other compose windows first. This window owns the Email process and will close when they finish."
+  else $chrome.window_close=true end
+  return {rc:0,body:{}}
+end
 fn composer_close($key,$answer=nil)
-  global $composers,$compose_quitting,$chrome
+  global $composers,$compose_quitting,$chrome,$compose_owner_closing,$status,$compose_focused
   $c=$composers[$key]
   if $c==nil then return wire_refuse("NOT_FOUND","No compose is open") end
   if $c.busy then return wire_refuse("BUSY","Sending…") end
+  if $key==$compose_root and len(keys($composers))>1 and not $compose_quitting then
+    $compose_owner_closing=true;$status="Close the other compose windows first. This window owns the Email process and will close when they finish."
+    return {rc:0,body:{}}
+  end
   if $answer==nil and ($c.revision>0 or $c.restored==true or len($c.attachments)>0 or len(keys($c.attempt))>0) then composer_save($key);$composers[$key].confirm=true;return {rc:0,body:{}} end
   if $answer==nil then $answer="discard" end
-  if $answer=="cancel" then $composers[$key].confirm=false;$compose_quitting=false;return {rc:0,body:{}} end
+  if $answer=="cancel" then $composers[$key].confirm=false;$compose_quitting=false;$compose_owner_closing=false;return {rc:0,body:{}} end
   if $answer=="keep" then composer_save($key)
   elif $answer=="discard" then
     $path=path_join(viu_app_dirs("email").state,"drafts/"..$c.draft_id..".json")
@@ -120,6 +141,9 @@ fn composer_close($key,$answer=nil)
   else return wire_refuse("INVALID_ARGUMENT","Unknown draft answer") end
   viu_timer("draft:"..$key,nil,{})
   $composers=delete($composers,$key)
+  if $compose_focused==$key then $compose_focused=keys($composers)[0] end
+  if $compose_owner_closing and $compose_root!=nil and len(keys($composers))==1 and $composers[$compose_root]!=nil then composer_close($compose_root) end
+  if ($compose_owner_closing or $compose_only) and len(keys($composers))==0 then $chrome.window_close=true end
   if $compose_quitting then composer_quit() end
   return {rc:0,body:{}}
 end
@@ -295,7 +319,8 @@ fn composer_models($m)
       $help=$frame.apply({values:{}},merge(action_context(),{dialog:$c.dialog}))
       for $overlay in $help.native_overlays ?? [] $child.native_overlays=push($child.native_overlays,$overlay) end
     end
-    $m.native_windows=push($m.native_windows,{key:$key,title:"Compose",size:[900,700],persist:true,scene:$compose_scene,model:$child})
+    $descriptor={key:$key,title:"Compose",size:[900,700],persist:true,scene:$compose_scene,model:$child}
+    if $key==$compose_root then $m.native_root=$descriptor else $m.native_windows=push($m.native_windows,$descriptor) end
   end
   return $m
 end
@@ -338,7 +363,7 @@ fn composer_document_start($key,$operation,$a)
       $args.document={from:$c.from,reply_to:$c.reply_to,subject:$c.subject,body:rtrim($c.body),in_reply_to:$c.in_reply_to,references:$c.references,attachments:$c.attachments,to:map($compose_addresses.decode($c.to),fn($v)=$compose_addresses.format($v)),cc:map($compose_addresses.decode($c.cc),fn($v)=$compose_addresses.format($v)),bcc:map($compose_addresses.decode($c.bcc),fn($v)=$compose_addresses.format($v))}
     end
     $path=path_join(dirname(script_path()),"document-job.mix")
-    send "viu-local" "jobs.start" id="document-"..$compose_ids.mint() owner={composer_document:{key:$key,revision:$c.revision,generation:$wire_generations[$c.account] ?? 0,operation:$operation}} path=$path source=read_file($path) command="job.run" args=$args
+    send "viu-local" "jobs.start" id="document-"..$compose_ids.mint() owner={composer_document:{key:$key,revision:$c.revision,generation:$wire_generations[$c.account] ?? 0,operation:$operation,path:$a.path,dropped:$a.dropped==true}} path=$path source=read_file($path) command="job.run" args=$args
     if $rc!=0 then return wire_refuse("BUSY","Document worker unavailable") end
     return {rc:0,body:{}}
   catch $message return wire_refuse("DOCUMENT_INVALID_VALUE",$message) end
@@ -348,7 +373,11 @@ fn composer_document_completed($tag,$rc,$body)
   $c=$composers[$tag.key]
   if $c==nil then return end
   if $tag.revision!=$c.revision or $tag.generation!=($wire_generations[$c.account] ?? 0) then $composers[$tag.key].error="The composer changed while the document was loading; open it again";return end
-  if $rc!=0 then $composers[$tag.key].error=$body.message;return end
+  if $rc!=0 then
+    if $tag.dropped==true then composer_attachments("email.compose.attachment.add",{window:$tag.key,paths:[$tag.path]})
+    else $composers[$tag.key].error=$body.message end
+    return
+  end
   if $tag.operation=="save" then $composers[$tag.key].notice="Saved "..$body.path;return end
   if $c.revision>0 or $c.restored==true or len($c.attachments)>0 then $composers[$tag.key].pending_document=$body.document
   else composer_document_apply($tag.key,$body.document) end

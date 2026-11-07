@@ -8,6 +8,7 @@ use std::collections::VecDeque;
 pub struct Input {
     pub now: Vec<egui::Event>,
     pub later: VecDeque<Vec<egui::Event>>,
+    pub dropped: Vec<egui::DroppedFile>,
     menu_path: VecDeque<String>,
     menu_wait_frames: u8,
     menu_depth: usize,
@@ -33,6 +34,11 @@ impl Input {
         };
         let mut now = vec![egui::Event::ModifiersChanged(modifiers)];
         match command {
+            "drop" => {
+                let paths=a["paths"].as_array().filter(|p|!p.is_empty() && p.len()<=1024).ok_or("expected 1..1024 paths")?;
+                let files=paths.iter().map(|p|p.as_str().filter(|s|s.len()<=4096 && std::path::Path::new(s).is_absolute()).map(|s|egui::DroppedFile{path:Some(s.into()),..Default::default()}).ok_or("expected absolute file paths")).collect::<Result<Vec<_>,_>>()?;
+                self.dropped=files;
+            }
             "ime" => {
                 let text = a["text"].as_str().unwrap_or("");
                 if text.len() > 65536 {

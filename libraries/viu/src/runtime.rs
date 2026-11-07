@@ -239,6 +239,7 @@ impl Runtime {
                             "version":env!("CARGO_PKG_VERSION"),"git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"),
                             "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
                             "loader": "viu-local", "host": "viu-local"
+                            ,"cwd":std::env::current_dir().ok().map(|p|p.to_string_lossy().into_owned())
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));

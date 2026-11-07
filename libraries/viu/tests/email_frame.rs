@@ -117,6 +117,38 @@ end
 }
 
 #[test]
+fn compose_launch_keeps_one_fixed_root_and_owner_close_waits_for_children() {
+    let bundle=Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),&["--compose".into()]).unwrap();
+    let mut program=bundle.program;
+    program.source.push_str(r#"
+on test.root
+  $entries=[{id:"a",name:"Fixture",label:"Fixture",user:"user@example.test",email:"user@example.test",enabled:true,signature:"",identities:[]}];$active="a"
+  composer_launch();$root=$compose_root
+  $composers[$root].revision=1;$composers[$root].body="Root text"
+  $child=composer_open({subject:"Other"}).body.window
+  composer_close($root);$held=$compose_owner_closing and not $composers[$root].confirm and len(keys($composers))==2
+  publish_email();reply(0,json_encode({root:$root,child:$child,held:$held,info:composer_snapshot(surface_info())}))
+end
+on test.root.child.close
+  composer_close($event.args.window);publish_email();reply(0,json_encode({waiting:$composers[$compose_root].confirm,root:$compose_root}))
+end
+on test.root.cancel
+  composer_close($compose_root,"cancel");publish_email();reply(0,json_encode({alive:$composers[$compose_root]!=nil,closing:$compose_owner_closing}))
+end
+"#);
+    let (_root,mut runtime,rx)=isolated_runtime();runtime.load(program).unwrap();complete(&runtime,&rx);
+    runtime.event("test.root".into(),json!({})).unwrap();let done=complete(&runtime,&rx);let reply=done.reply.unwrap();
+    assert_eq!(reply.body["held"],true);assert_eq!(reply.body["info"]["compose_windows"][0]["root"],true);
+    let model=done.model.unwrap();assert_eq!(model["native_windows"].as_array().unwrap().len(),1);
+    let root=&model["native_root"];assert_eq!(root["key"],reply.body["root"]);
+    viu::gold_frame::mount(root["scene"].as_str().unwrap(),root["model"].clone()).unwrap();
+    runtime.event("test.root.child.close".into(),json!({"window":reply.body["child"]})).unwrap();
+    assert_eq!(complete(&runtime,&rx).reply.unwrap().body["waiting"],true);
+    runtime.event("test.root.cancel".into(),json!({})).unwrap();let reply=complete(&runtime,&rx).reply.unwrap();
+    assert_eq!(reply.body["alive"],true);assert_eq!(reply.body["closing"],false);
+}
+
+#[test]
 fn connected_email_model_mounts_all_panes_and_draws_native_rows() {
     let bundle = Bundle::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
