@@ -26,11 +26,15 @@ fn dp_initialise($a)
   $config_path=path_join($a.profile,"config.conf.mix")
   $loaded=$configuration.dp_load_config($config_path)
   $config=$loaded.value;$save=$loaded.save_allowed;$warning=$loaded.warning
+  $original_paths=[$config.left.path,$config.right.path]
   for $i=0 to min(1,len($a.paths ?? [])-1)
     $path=$dp.dp_path($a.paths[$i])
     $config[if $i==0 then "left" else "right" end].path=if $dp.dp_is_file($path) then $dp.dp_parent($path) else $path end
   end
   $panes=[$dp.dp_pane($config.left),$dp.dp_pane($config.right)]
+  for $i=0 to min(1,len($a.paths ?? [])-1)
+    if $panes[$i].path!=$dp.dp_path($original_paths[$i]) then $panes[$i].back=[$dp.dp_path($original_paths[$i])] end
+  end
   $places=$configuration.dp_places($config)
   return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.15,0.1,0.3),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.3),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"studio",style:"default"},window_choice:{},appearance_choice:{},appearance_session:{mode:"dark",scheme:"studio",style:"default"},busy:false,job:nil,effect_jobs:{},form_queue:[],form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Select a file or folder" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
 end
@@ -91,7 +95,7 @@ fn dp_start_effect($s,$effect)
   if $s.effect_jobs==nil then $s.effect_jobs={} end
   $context=$s.effect_context ?? {}
   $s.effect_jobs[$id]={kind:$effect.kind,token:if $effect.kind=="mail" then $context.token else nil end}
-  $s.reply={accepted:true,id:$id};$s.info="Working…"
+  $s.reply={accepted:true,id:$id}
   return $s
 end
 fn dp_form($s,$kind,$title,$body,$field,$operation)
@@ -142,7 +146,7 @@ fn dp_search_choices($s,$contract)
   $query=lower($s.form.field)
   $choices=[]
   for $action in $contract.actions
-    if $action.id!="search" and (contains(lower($action.label),$query) or contains($action.id,$query)) then
+    if $action.id!="view.search" and (contains(lower($action.label),$query) or contains($action.id,$query)) then
       $choice=$view.dp_command($s,$contract,$action.id)
       $choice.default=len($choices)==0
       push($choices,$choice)
@@ -203,6 +207,8 @@ fn dp_action($s,$contract,$id,$params)
   end
   if $id=="place.open" then return dp_go($s,$i,$params.path) end
   if not any($contract.actions,fn($a)=$a.id==$id) then raise("UNKNOWN_ACTION",to_string($id)) end
+  $id=$contract.action_aliases[$id] ?? $id
+  if $s.dialog_status!=nil and (starts_with($id,"nav.") or starts_with($id,"selection.") or contains(["view.refresh","view.toggle-hidden"],$id)) then $s.dialog_status=nil;$s.info="Select a file or folder" end
   $p=$s.panes[$i]
   $n=len($p.selected_paths)
   if $id=="file.mail" then
@@ -259,7 +265,7 @@ fn dp_action($s,$contract,$id,$params)
   elif $id=="help.macros" then $s.reply={panel:"macros"}
   elif $id=="help.shortcuts" then return dp_form($s,"message","Keyboard Shortcuts","",nil,{legacy_kind:"shortcuts"})
   elif $id=="help.about" then return dp_form($s,"message","About DOpus","DOpus, the MixOS twin-pane file manager.",nil,{legacy_kind:"about"})
-  elif $id=="search" then
+  elif $id=="view.search" then
     if $s.form.open then raise("BUSY","Answer the current dialog first") end
     $s=dp_form($s,"search","Search commands","","",{})
     $s.form.choice_layout="list";$s.form.choices=dp_search_choices($s,$contract)

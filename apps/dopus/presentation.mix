@@ -59,16 +59,20 @@ end
 fn dp_command($state,$contract,$id)
   $a=filter($contract.actions,fn($a)=$a.id==$id)[0]
   if $a==nil then raise("UNKNOWN_ACTION",$id) end
+  $id=$contract.action_aliases[$id] ?? $id
   $a.enabled=dp_enabled($state,$id)
-  $a.shortcut=join($a.keys," / ")
+  $a.shortcut=$a.keys[0]
   $p=$state.panes[$state.active]
-  $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open elif contains(["theme.scheme-session","theme.mode-session","theme.style-session"],$id) then $state.appearance_choice[replace(slice($id,len("theme.")),"-session","")]==nil elif starts_with($id,"theme.decorations-") then ($state.window_choice["window.decorations"] ?? "auto")==slice($id,len("theme.decorations-")) elif starts_with($id,"theme.captions-") then ($state.window_choice["window.caption_side"] ?? "auto")==slice($id,len("theme.captions-")) elif starts_with($id,"theme.scheme-") then $state.appearance_choice.scheme==slice($id,13) elif starts_with($id,"theme.style-") then $state.appearance_choice.style==slice($id,12) elif starts_with($id,"theme.mode-") then $state.appearance_choice.mode==slice($id,11) else false end
+  if $id=="nav.back" then $a.enabled=len($p.back)>0
+  elif $id=="nav.forward" then $a.enabled=len($p.forward)>0 end
+  $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open elif contains(["theme.scheme-session","theme.mode-session","theme.style-session"],$id) then $state.appearance_choice[replace(slice($id,len("theme.")),"-session","")]==nil elif starts_with($id,"theme.decorations-") then ($state.window_choice["window.decorations"] ?? "auto")==slice($id,len("theme.decorations-")) elif starts_with($id,"theme.captions-") then ($state.window_choice["window.caption_side"] ?? "auto")==slice($id,len("theme.captions-")) elif starts_with($id,"theme.scheme-") then $state.appearance_choice.scheme==slice($id,13) elif starts_with($id,"theme.style-") then $state.appearance_choice.style==slice($id,12) elif starts_with($id,"theme.mode-") then $state.appearance_choice.mode==slice($id,11) else nil end
   return $a
 end
 fn dp_menus($state,$contract)
   return map($contract.menus,fn($item)=dp_toolbar_item($state,$contract,$item))
 end
 fn dp_toolbar_item($state,$contract,$item)
+  if $item.separator ?? false then return $item end
   if $contract.ui_labels[$item.id]!=nil then $item.label=$contract.ui_labels[$item.id] end
   if $item.children!=nil then
     $children=[]
@@ -118,8 +122,8 @@ fn dp_legacy_view($s)
       push($buttons,{id:$c.id,label:$c.label,role:if $c.cancel ?? false then "cancel" elif $c.default ?? false then "default" else "other" end})
     end
   end
-  $out={kind:if contains(["mkdir","rename"],$kind) then "name" elif $kind=="message" then $s.reservation.operation.legacy_kind ?? "message" else $kind end,title:$s.form.title,buttons:$buttons,status:$s.info ?? ""}
-  if $s.form.field!=nil then $out.name=$s.form.field else $out.body=$s.form.body end
+  $out={kind:if contains(["mkdir","rename"],$kind) then "name" elif $kind=="message" then $s.reservation.operation.legacy_kind ?? "message" else $kind end,title:$s.form.title,buttons:$buttons,status:$s.dialog_status}
+  if $s.form.field!=nil then $out.name=$s.form.field elif $s.reservation.operation.legacy_kind!="shortcuts" then $out.body=$s.form.body end
   if $kind=="drop" then $out.paths=$s.reservation.operation.sources;$out.path=$s.reservation.operation.destination end
   return $out
 end

@@ -477,6 +477,7 @@ impl SceneView {
         {
             return;
         }
+        let allocated = ui.available_rect_before_wrap();
         let key = route.map_or_else(
             || id.to_owned(),
             |(_, _, item)| format!("{}#{id}", item["id"].as_str().unwrap_or("")),
@@ -658,14 +659,14 @@ impl SceneView {
                 .and_then(|name| crate::appearance::colour(ui.ctx(), name))
         }) {
             ui.painter().rect_stroke(
-                response.rect.shrink(0.5),
+                (if node.family=="dock" { allocated } else { response.rect }).shrink(0.5),
                 2.0,
                 egui::Stroke::new(num(node, "outline_width").unwrap_or(1.0), outline),
                 egui::StrokeKind::Inside,
             );
         }
         if node.family != "control" {
-            self.geometry.insert(key, response.rect);
+            self.geometry.insert(key, if node.family=="dock" { allocated } else { response.rect });
         }
     }
 

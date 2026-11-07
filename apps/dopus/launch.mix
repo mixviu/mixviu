@@ -2,7 +2,8 @@
 -- Resolve app policy before any Bus connection or window creation.
 -- lint: globals app_args
 $configuration=require("config.mix")
-$profile=path_join(env("XDG_CONFIG_HOME",path_join(env("HOME"),".config")),"dopus")
+$dirs=viu_app_dirs("dopus") ?? {}
+$profile=$dirs.config ?? path_join(env("HOME","/"),".local/state/mixos/apps/dopus/config")
 $paths=[];$only_paths=false;$headless=false;$print_config=false
 $i=0
 while $i<len($app_args)

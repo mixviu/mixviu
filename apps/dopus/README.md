@@ -1,6 +1,6 @@
 # Dopus on generic Viu
 
-Run the Mix file manager with `viu run apps/dopus PROFILE_DIR`. Its configuration is `PROFILE_DIR/config.conf.mix`. Use disposable files for mutation tests. The full inventory and acceptance state are in [the port record](../../docs/ports/dopus.md).
+Run the Mix file manager with `viu run apps/dopus [LEFT [RIGHT]]`. It uses the native application config directory and forwards paths to a running instance. `--headless` serves the core without a window; `--print-config` resolves config before connecting. Tests can isolate persistence with `--profile PROFILE_DIR`. Use disposable files for mutation tests. The full inventory and acceptance state are in [the port record](../../docs/ports/dopus.md).
 
 The generic executable also hosts the reusable file chooser: `viu run apps/dopus --choose-service PROFILE_DIR --service files`. Application behaviour and composition remain in `chooser.mix`, `chooser-engine.mix` and `chooser.scene.mix`; Viu owns native viewports, bounded runtime delivery, captures and reply fences.
 

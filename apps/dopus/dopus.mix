@@ -48,7 +48,7 @@ fn dp_framed($s,$contract,$cache)
     end
   end
   $search=$s.form.open and $s.reservation.kind=="search"
-  $model.values.palette={open:$search,commands:map(filter($contract.actions,fn($a)=$a.id!="search"),fn($a)={id:$a.id,label:$contract.ui_labels[$a.id] ?? $a.label,enabled:$projection.dp_enabled($s,$a.id)})}
+  $model.values.palette={open:$search,commands:map(filter($contract.actions,fn($a)=$a.id!="view.search"),fn($a)={id:$a.id,label:$contract.ui_labels[$a.id] ?? $a.label,enabled:$projection.dp_enabled($s,$a.id)})}
   $model.native_overlays=[{definition:{id:"palette",kind:"command-palette",label:"",initial:{open:false,commands:[]}},command:"dopus.palette"}]
   if $search then $model.values.form.open=false end
   $model.local_theme={theme:$s.appearance_choice.scheme,mode:$s.appearance_choice.mode,style:$s.appearance_choice.style,decorations:$s.window_choice["window.decorations"],captions:$s.window_choice["window.caption_side"]}
@@ -69,6 +69,7 @@ fn dp_start($initial)
   $state.owner=viu_context().generation
   $state=$app.dp_update_previews($state)
   $row_cache=dp_publish($state,$contract,$row_cache)
+  if (viu_context().native_facilities ?? true) and $state.save_allowed then viu_timer("config-save",350,{}) end
 end
 on dopus.initialise
   dp_start($event.args)
@@ -148,13 +149,15 @@ fn dp_request($request)
       end
       $candidate.serial=$candidate.serial+1
       $profile_reduced=if $dopus_profile then monotonic() else 0 end
+      $save=(viu_context().native_facilities ?? true) and $candidate.save_allowed and not deep_eq($app.dp_config($state),$app.dp_config($candidate))
       $state=$app.dp_update_previews($candidate)
       $profile_prepared=if $dopus_profile then monotonic() else 0 end
       $row_cache=dp_publish($state,$contract,$row_cache)
+      if $save then viu_timer("config-save",350,{}) end
       if $dopus_profile then print(json_encode({profile:"dopus",phase:"callback",serial:$state.serial,command:$name,action:$a.id,reduce_us:($profile_reduced-$profile_start)*1000000,preview_us:($profile_prepared-$profile_reduced)*1000000})) end
-      if $name=="dopus.execute" and $state.reply.error_code==nil and (viu_context().native_backend ?? true) then
+      if $name=="dopus.execute" and $state.reply.error_code==nil and (viu_context().native_facilities ?? true) then
         send "viu-local" "native.executed" body={id:$a.id,origin:$request.origin ?? "bus",params:nil,result:nil}
-      elif $name=="dopus.intent" and $a.action=="command" and $state.reply.error_code==nil and (viu_context().native_backend ?? true) then
+      elif $name=="dopus.intent" and $a.action=="command" and $state.reply.error_code==nil and (viu_context().native_facilities ?? true) then
         send "viu-local" "native.executed" body={id:$a.value.command,origin:"menu",params:nil,result:nil}
       end
       if $name=="dopus.execute" and $a.id=="file.mail" and $request.token!=nil and $state.reply.error_code==nil then
@@ -176,7 +179,10 @@ fn dp_job_completed($completion)
     if has_key($state.effect_jobs,$completion.tag.id) then
       $effect=$state.effect_jobs[$completion.tag.id]
       $state.effect_jobs=delete($state.effect_jobs,$completion.tag.id)
-      $state.info=$completion.body.message ?? if $completion.rc==0 then "Completed" else "Application effect failed" end
+      if $effect.kind=="mail" or $completion.rc!=0 then
+        $state.info=$completion.body.message ?? "Application effect failed"
+        $state.dialog_status=$state.info
+      end
       if $effect.kind=="mail" and $effect.token!=nil then
         $body=if $completion.rc==0 then {id:"file.mail",ok:true,result:$completion.body} else $completion.body end
         $finished=viu_reply("finish",$effect.token,{rc:$completion.rc,body:$body})
@@ -228,4 +234,14 @@ end
 on viu.job.completed
   -- Reuse the app's existing job reducer through the same in-process handler.
   dp_job_completed($event.args)
+end
+
+on viu.timer
+  if $event.args.timer=="config-save" then
+    try $state=$app.dp_persist($state)
+    catch $message
+      $state.info=$message;$state.dialog_status=$message
+      $row_cache=dp_publish($state,$contract,$row_cache)
+    end
+  end
 end
