@@ -8,7 +8,7 @@ use std::sync::{
 };
 
 /// Pure resolution through the shared native application-root contract.
-pub(crate) fn app_dirs(application_roots:Option<std::path::PathBuf>) -> mix::evaluator::ExtFn {
+pub(crate) fn app_dirs(application_roots: Option<std::path::PathBuf>) -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
         let [Value::String(component)] = args.as_slice() else {
             return Err(MixError::RuntimeError {
@@ -16,7 +16,13 @@ pub(crate) fn app_dirs(application_roots:Option<std::path::PathBuf>) -> mix::eva
                 span: None,
             });
         };
-        let dirs=if let Some(root)=&application_roots {config::AppDirs::resolve_with(component,|key|(key=="MIXOS_APPS_HOME").then(||root.clone()))} else {config::AppDirs::resolve(component)};
+        let dirs = if let Some(root) = &application_roots {
+            config::AppDirs::resolve_with(component, |key| {
+                (key == "MIXOS_APPS_HOME").then(|| root.clone())
+            })
+        } else {
+            config::AppDirs::resolve(component)
+        };
         crate::runtime::from_json(match dirs {
             Some(d) => {
                 serde_json::json!({"root":d.root(),"config":d.config(),"state":d.state(),"cache":d.cache()})
@@ -90,17 +96,31 @@ pub(crate) fn digest() -> mix::evaluator::ExtFn {
             return Err(fail());
         };
         let hash = match algorithm.as_str() {
-            "std64"=>{use std::hash::{Hash,Hasher};let mut hash=std::hash::DefaultHasher::new();text.hash(&mut hash);format!("{:016x}",hash.finish())},
-            "fnv1a64"=>{
-                let mut hash=0xcbf29ce484222325_u64;
-                for byte in text.as_bytes(){hash^=u64::from(*byte);hash=hash.wrapping_mul(0x100000001b3);}
+            "std64" => {
+                use std::hash::{Hash, Hasher};
+                let mut hash = std::hash::DefaultHasher::new();
+                text.hash(&mut hash);
+                format!("{:016x}", hash.finish())
+            }
+            "fnv1a64" => {
+                let mut hash = 0xcbf29ce484222325_u64;
+                for byte in text.as_bytes() {
+                    hash ^= u64::from(*byte);
+                    hash = hash.wrapping_mul(0x100000001b3);
+                }
                 format!("{hash:016x}")
-            },
-            "blake3-hex"=>{
-                if text.len()>16*1024*1024 || text.len()%2!=0 || !text.is_ascii(){return Err(fail());}
-                let bytes=(0..text.len()).step_by(2).map(|i|u8::from_str_radix(&text[i..i+2],16)).collect::<Result<Vec<_>,_>>().map_err(|_|fail())?;
+            }
+            "blake3-hex" => {
+                if text.len() > 16 * 1024 * 1024 || text.len() % 2 != 0 || !text.is_ascii() {
+                    return Err(fail());
+                }
+                let bytes = (0..text.len())
+                    .step_by(2)
+                    .map(|i| u8::from_str_radix(&text[i..i + 2], 16))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| fail())?;
                 blake3::hash(&bytes).to_hex().to_string()
-            },
+            }
             "blake3" => blake3::hash(text.as_bytes()).to_hex().to_string(),
             "sha256" => {
                 use sha2::Digest;
@@ -112,20 +132,42 @@ pub(crate) fn digest() -> mix::evaluator::ExtFn {
     })
 }
 
-pub(crate) fn markdown_html()->mix::evaluator::ExtFn{
-    mix::sync_ext(|args|{
-        let [Value::String(text)]=args.as_slice() else{return Err(MixError::RuntimeError{msg:"viu_markdown_html expects text".into(),span:None});};
-        if text.len()>8*1024*1024{return Err(MixError::RuntimeError{msg:"Markdown export exceeds 8 MiB".into(),span:None});}
+pub(crate) fn markdown_html() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let [Value::String(text)] = args.as_slice() else {
+            return Err(MixError::RuntimeError {
+                msg: "viu_markdown_html expects text".into(),
+                span: None,
+            });
+        };
+        if text.len() > 8 * 1024 * 1024 {
+            return Err(MixError::RuntimeError {
+                msg: "Markdown export exceeds 8 MiB".into(),
+                span: None,
+            });
+        }
         Ok(Value::String(toolkit::markdown::export_html(text)))
     })
 }
-pub(crate) fn palette()->mix::evaluator::ExtFn{
-    mix::sync_ext(|args|{
-        let fail=||MixError::RuntimeError{msg:"viu_palette expects a scheme and mode".into(),span:None};
-        let [Value::String(scheme),Value::String(mode)]=args.as_slice() else{return Err(fail());};
-        let theme=toolkit::Theme::for_context(design::DesignContext{scheme:design::Scheme::from_name(scheme).ok_or_else(fail)?,mode:design::Mode::from_name(mode).ok_or_else(fail)?,..Default::default()});
-        let v=toolkit::style::visuals(&theme);let hex=|c:egui::Color32|format!("#{:02x}{:02x}{:02x}",c.r(),c.g(),c.b());
-        crate::runtime::from_json(serde_json::json!({"text":hex(v.text_color()),"weak":hex(v.weak_text_color()),"panel":hex(v.panel_fill),"link":hex(v.hyperlink_color),"code":hex(v.code_bg_color),"rule":hex(v.widgets.noninteractive.bg_stroke.color)}))
+pub(crate) fn palette() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let fail = || MixError::RuntimeError {
+            msg: "viu_palette expects a scheme and mode".into(),
+            span: None,
+        };
+        let [Value::String(scheme), Value::String(mode)] = args.as_slice() else {
+            return Err(fail());
+        };
+        let theme = toolkit::Theme::for_context(design::DesignContext {
+            scheme: design::Scheme::from_name(scheme).ok_or_else(fail)?,
+            mode: design::Mode::from_name(mode).ok_or_else(fail)?,
+            ..Default::default()
+        });
+        let v = toolkit::style::visuals(&theme);
+        let hex = |c: egui::Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
+        crate::runtime::from_json(
+            serde_json::json!({"text":hex(v.text_color()),"weak":hex(v.weak_text_color()),"panel":hex(v.panel_fill),"link":hex(v.hyperlink_color),"code":hex(v.code_bg_color),"rule":hex(v.widgets.noninteractive.bg_stroke.color)}),
+        )
     })
 }
 
@@ -386,10 +428,19 @@ pub(crate) fn private_directory() -> mix::evaluator::ExtFn {
 pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
         let fail = |msg: String| MixError::RuntimeError { msg, span: None };
-        let [Value::String(path),rest @ ..] = args.as_slice() else {
-            return Err(fail("viu_read_optional expects an absolute path and optional byte budget".into()));
+        let [Value::String(path), rest @ ..] = args.as_slice() else {
+            return Err(fail(
+                "viu_read_optional expects an absolute path and optional byte budget".into(),
+            ));
         };
-        let limit=match rest {[]=>1024*1024,[value]=>crate::widgets::whole(&crate::runtime::to_json(value)?).filter(|n|*n>0 && *n<=32*1024*1024).ok_or_else(||fail("read limit must be 1..32 MiB".into()))? as usize,_=>return Err(fail("unexpected read arguments".into()))};
+        let limit = match rest {
+            [] => 1024 * 1024,
+            [value] => crate::widgets::whole(&crate::runtime::to_json(value)?)
+                .filter(|n| *n > 0 && *n <= 32 * 1024 * 1024)
+                .ok_or_else(|| fail("read limit must be 1..32 MiB".into()))?
+                as usize,
+            _ => return Err(fail("unexpected read arguments".into())),
+        };
         let path = std::path::Path::new(path);
         if !path.is_absolute() {
             return Err(fail("expected an absolute path".into()));
