@@ -25,6 +25,7 @@ $keys=$s.session_keys($state.values,"dopus")
 if not deep_eq($keys["nav.parent"],["Ctrl+U"]) then raise("TEST","key binding") end
 $state=$s.session_answer($state,10,nil,"Service not found")
 if not $state.lost then raise("TEST","absence") end
+if not deep_eq($state.values,{}) or not deep_eq($state.accepted_values,$before.values) then raise("TEST","keys clear but accepted appearance remains") end
 $state=$s.session_answer($state,0,{incarnation:"one",revision:"18446744073709551614",values:$before.values},nil)
 if not $state.changed or $state.lost then raise("TEST","same revision after reconnect") end
 on verify
@@ -72,6 +73,8 @@ fn settings_authority_loss_keeps_the_accepted_palette_and_geometry() {
     let ctx = egui::Context::default();
     viu::appearance::install_theme(&ctx, &accepted).unwrap();
     let before = ctx.global_style();
+    snapshot["state"]["accepted_values"] = snapshot["state"]["values"].clone();
+    snapshot["state"]["values"] = json!({});
     snapshot["state"]["lost"] = json!(true);
     let (retained, _) = viu::appearance::session_base(&snapshot, "backdrop", &file, &ui).unwrap();
     viu::appearance::install_theme(&ctx, &retained).unwrap();
@@ -84,6 +87,7 @@ fn settings_authority_loss_keeps_the_accepted_palette_and_geometry() {
     assert_eq!(before.spacing.interact_size, after.spacing.interact_size);
     assert_eq!(before.text_styles, after.text_styles);
     snapshot["state"]["lost"] = json!(false);
+    snapshot["state"]["values"] = snapshot["state"]["accepted_values"].clone();
     snapshot["state"]["values"]["appearance.mode"] = json!("dark");
     let (recovered, _) = viu::appearance::session_base(&snapshot, "backdrop", &file, &ui).unwrap();
     viu::appearance::install_theme(&ctx, &recovered).unwrap();
