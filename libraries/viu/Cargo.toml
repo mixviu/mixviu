@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+ed25519-dalek = { workspace = true, features = ["zeroize"] }
+zeroize = "1"
+teletypewriter = { git = "https://github.com/raphamorim/rio", rev = "932c1a7d9e07b4db5924f7a0dd689e823c3a1442", default-features = false }
 settings = { path = "../settings", default-features = false }
 editor = { workspace = true, features = ["mix"] }
 editor-model.workspace = true

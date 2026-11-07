@@ -1,0 +1,8 @@
+---
+scene: 1
+name: term
+citizen: term
+---
+```mix
+{root:{widget:"column",children:[],padding:0,gap:0}}
+```

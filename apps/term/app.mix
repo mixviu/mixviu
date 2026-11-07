@@ -1,0 +1,24 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- lint: globals app_args
+$ctx=viu_context()
+$core=require("core.mix")
+$state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false}
+fn publish_term($s)
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
+end
+publish_term($state)
+on term.ping
+  reply(0,json_encode({schema:"term.v1",version:$ctx.version}))
+end
+on viu.settings
+  $state.look=$event.args
+  publish_term($state)
+end
+on viu.frame.intent
+  if $event.args.value.command=="close" then
+    $state.closed=true
+    publish_term($state)
+  end
+  reply(0,"{}")
+end

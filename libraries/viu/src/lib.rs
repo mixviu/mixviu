@@ -33,6 +33,7 @@ pub mod runtime;
 pub mod session;
 mod shortcuts;
 pub mod templates;
+pub mod terminal;
 pub mod thumbnail;
 pub mod timers;
 pub mod tree_table;

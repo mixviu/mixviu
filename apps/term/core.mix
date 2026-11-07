@@ -1,0 +1,7 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Shared frame adoption specimen. Native terminal attachment follows separately.
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
+fn framed($s)
+  $model={window_close:$s.closed,values:{}}
+  return $frame.apply($model,{icon:"terminal",title:"Terminal",native_title:"Terminal",menus:[],toolbar:[],status:"",appearance:$s.look.appearance,window:$s.look.values})
+end

@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run on a CBC worker through cbc-build, never on the client machine.
+$prepare=contains(args(),"--prepare")
+$rc=0
+try
+  for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--lib","terminal::"]]
+    if $prepare and $argv[1]=="fmt" then $argv=["cargo","fmt","-p","viu"] end
+    if $prepare and $argv[1]=="test" then $argv=filter($argv,fn($v)=$v!="--locked") end
+    $r=run_argv($argv,{timeout:1800,max_output:16000000});print($r)
+    if not $r.ok then $rc=$r.exit_code ?? 124;break end
+  end
+finally
+  print("TERM_PATCH_BEGIN")
+  print(run_argv_must(["git","diff","--binary"]))
+  print("TERM_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+end
+exit($rc)
