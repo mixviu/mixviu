@@ -597,7 +597,10 @@ fn draw_outline(
     events: &mut Vec<Intent>,
 ) -> egui::Response {
     let id = &widget.id;
-    if widget.properties["reveal_row"].as_str().is_some_and(|key| !key.is_empty()) {
+    if widget.properties["reveal_row"]
+        .as_str()
+        .is_some_and(|key| !key.is_empty())
+    {
         let marker = Id::unique((ui.ctx().viewport_id(), id, "reveal-scroll"));
         let serial = widget.properties["reveal_serial"].clone();
         let changed = ui.ctx().data_mut(|data| {
