@@ -1,5 +1,19 @@
 # Email gold parity
 
+## Round 4 checkpoint, 2026-11-07: OPEN
+
+Settled-state capture now waits for Calendar details in the rendered widget tree. Private round2/pair.g0x2Wa at fa565275e521870f258daec8703bee8a45584e7e has zero SSIM/RMSE distortion for all six baseline states and every region: inbox, dark/light reader, calendar, contacts and composer. Calendar originals, montage and difference were inspected. The previous premature calendar capture is superseded, not discarded. All eight owned processes stopped.
+
+The live Prefs run keeps both PIDs and draft contents. Every main-window variant is exact. Composer light, scheme, style/accent, compact density/roundness, app overrides, auto-night/day and own-surface settings are exact. Font/scale and mono/icon/tune variants retain a paperclip alignment difference (full SSIM distortion 0.000153700, RMSE 0.00393402; header 0.00000000111203 / 0.0000113206). The inspected diff isolates the attachment control. Native stacked-row layout is now ported; its capture repeat is pending. No unexplained difference is accepted.
+
+Private round2/pair.uiG2dG at dee1267051a9a9897ce507e04265aef202bdbc4f has no refusal mismatches across 255 same-request probes, and exact HELP/app.describe including all 86 descriptors. Dynamic actions match too. Repairs cover validation order, complete dialog reply fields and exclusivity, debug parser routing, descriptor deduplication, compose success fields and the debug baseline. Truthful PID, compositor window identities, capture paths and AccessKit IDs differ; these need explicit field-level classification. This is not yet a full success/stale/topic/Quit acceptance matrix.
+
+Real-maild focused round2/native.QgLIhJ passed 24 requests: native stale-From adoption in both directions, reconnect, stopping the owned maild, sending failure, preserved draft text, visible error footer, discard and owned daemon recovery. Stale and error screenshots were inspected. All six PIDs stopped. Native reply-position toggles both directions also passed before the separate native.QCDj3q run stopped at its stale-control drive case. Gold-named UI clicking of that stale footer still needs closure; the successful focused witness uses the generic native input command.
+
+CBC 20261107-130258-ee55799d, 20261107-130623-938614e9 and 20261107-130812-0193389a passed focused checks. Debug SHA256 at dee1267: c831b8531a951ad0a0c2c88df189d5a30f7cbc6c562f1cdc3e07553be113fc84. Formatter patches applied and pushed. The full gate plus release artifact recipe was submitted with --detach as email-r4-b25ec324aa51 at b25ec324aa51edf235278e65227364c872763fc7; it is queued on heavy CBC workers and does not attest subsequent attachment-row changes.
+
+Release-byte 2,000-row evidence remains the verified earlier cohort: median 13.752336 ms, p95 19.176699 ms, p99 21.413170 ms, CBC 20261107-111355-394fcb63-a1. Final release bytes/captures, remaining inventory and full Bus coverage remain open. No deviation is proposed.
+
 ## Round 3 native, Prefs and Bus checkpoint: OPEN
 
 Code checkpoint `d0c003814fbf0bf2433ba5386ba19901c0fd85f5` remains incomplete. The latest real-maild witness, private `round2/native.4L2vTD`, passed **89 Bus requests and 99 total evidence records** at `69ac705d8dd5f2d22cee3f6b435391c636dc1a40`, debug SHA256 `e1ab8a2500eaa83639e7d8ee3d3107a6579a29ea693380bb146b416aa964588d`. The earlier `native.3wUH77` has the same counts; 99 denotes records, not requests. These cover account, mail and PIM CRUD, partial failures, MIME send/delivery/body readback, attachment byte/collision saves, native PIM form submission, contact completion, two same-PID composers with native edits and independent Keep/Discard, reply/forward, Show and restart/restore. All six owned PIDs stopped. A failed intervening restore-close probe was a missing draw barrier in the harness; the retained failure and corrected run are separate receipts.
