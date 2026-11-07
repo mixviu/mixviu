@@ -25,7 +25,7 @@ $keys=$s.session_keys($state.values,"dopus")
 if not deep_eq($keys["nav.parent"],["Ctrl+U"]) then raise("TEST","key binding") end
 $state=$s.session_answer($state,10,nil,"Service not found")
 if not $state.lost then raise("TEST","absence") end
-if not deep_eq($state.values,{}) or not deep_eq($state.accepted_values,$before.values) then raise("TEST","keys clear but accepted appearance remains") end
+if not deep_eq($state.values,{}) or not deep_eq($state.accepted_values,$s.session_appearance_values($before.values)) or $state.accepted_values["keymaps.dopus.nav.parent"]!=nil then raise("TEST","keys clear but accepted appearance remains") end
 $state=$s.session_answer($state,0,{incarnation:"one",revision:"18446744073709551614",values:$before.values},nil)
 if not $state.changed or $state.lost then raise("TEST","same revision after reconnect") end
 on verify

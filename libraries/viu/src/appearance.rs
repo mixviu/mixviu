@@ -53,13 +53,20 @@ pub fn session_base(
     let lost = snapshot["state"]["lost"] == true;
     let raw = if lost && snapshot["state"]["accepted_values"].is_object() {
         &snapshot["state"]["accepted_values"]
-    } else { &snapshot["state"]["values"] };
-    let values: settings::registry::Values = serde_json::from_value(raw.clone()).map_err(|e| e.to_string())?;
+    } else {
+        &snapshot["state"]["values"]
+    };
+    let values: settings::registry::Values =
+        serde_json::from_value(raw.clone()).map_err(|e| e.to_string())?;
     let look = settings::view::Look::of(&values);
     let theme = toolkit::session_look::session_theme(
         // Active values (notably keys) clear on loss; appearance alone keeps
         // the separately retained accepted snapshot, also on new outputs.
-        if lost && values.is_empty() { None } else { Some(&look) },
+        if lost && values.is_empty() {
+            None
+        } else {
+            Some(&look)
+        },
         Some(app),
         look.appearance.source.is_some(),
         file,
