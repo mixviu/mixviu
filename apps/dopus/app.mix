@@ -70,7 +70,7 @@ on dopus.ping
   reply(0,json_encode({pong:true,service:$ctx.name,schema:"dopus.v1",pid:$ctx.pid,headless:false}))
 end
 on dopus.actions
-  reply(0,json_encode({actions:map($contract.actions,fn($a)={id:$a.id,label:$a.label,keys:$a.keys,enabled:$projection.dp_enabled($state,$a.id)})}))
+  reply(0,json_encode({actions:map(filter($contract.actions,fn($a)=contains($contract.bus_actions,$a.id)),fn($a)={id:$a.id,label:$a.label,keys:$a.keys,enabled:$projection.dp_enabled($state,$a.id)})}))
 end
 fn dp_wire_panes($s)
   $out=[]
