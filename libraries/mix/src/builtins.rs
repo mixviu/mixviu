@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+#[cfg(feature = "http")]
+use rustls_pki_types::pem::PemObject as _;
 use crate::builtin_table;
 use crate::contract;
 use crate::error::{MixError, MixResult};
@@ -21900,7 +21902,7 @@ fn ca_http_agent(name: &str, pem: &[u8]) -> MixResult<std::sync::Arc<ureq::rustl
     let mut roots = rustls::RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let mut added = 0usize;
-    for cert in rustls_pemfile::certs(&mut &pem[..]) {
+    for cert in rustls_pki_types::CertificateDer::pem_reader_iter(&mut &pem[..]) {
         let cert = cert.map_err(|e| http_tls_err(name, format!("invalid PEM: {e}")))?;
         roots
             .add(cert)

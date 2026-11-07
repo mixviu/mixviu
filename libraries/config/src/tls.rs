@@ -4,6 +4,7 @@
 //! Shared node TLS loading and SNI identity selection (feature `tls`).
 
 pub mod sni;
+use rustls_pki_types::pem::PemObject as _;
 pub use sni::{SniCertResolver, TlsIdentity, pick_identity};
 
 /// Load a PEM chain and private key into a server acceptor without client auth.
@@ -18,10 +19,10 @@ pub fn load_tls_config(
     let _ = rustls::crypto::ring::default_provider().install_default();
     let cert_data = std::fs::read(cert_path)?;
     let key_data = std::fs::read(key_path)?;
-    let certs: Vec<_> = rustls_pemfile::certs(&mut &cert_data[..])
+    let certs: Vec<_> = rustls_pki_types::CertificateDer::pem_reader_iter(&mut &cert_data[..])
         .filter_map(|r| r.ok())
         .collect();
-    let key = rustls_pemfile::private_key(&mut &key_data[..])
+    let key = rustls_pki_types::PrivateKeyDer::pem_reader_iter(&key_data[..]).next().transpose()
         .ok()
         .flatten()
         .ok_or_else(|| anyhow::anyhow!("no private key found in {key_path}"))?;
