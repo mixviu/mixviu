@@ -638,6 +638,7 @@ impl Intent {
 
 #[derive(Default)]
 pub struct Widgets {
+    edits: BTreeMap<String, (String, std::collections::VecDeque<String>)>,
     native_menu: crate::native_menu::NativeMenu,
     gold_menus: bool,
     pub geometry: BTreeMap<String, Rect>,
@@ -1049,7 +1050,17 @@ impl Widgets {
                 response
             }
             "field" | "multiline" | "editor" => {
-                let mut text = value.as_str().unwrap_or_default().to_owned();
+                let owner = value.as_str().unwrap_or_default().to_owned();
+                if let Some((base, pending)) = self.edits.get_mut(id) {
+                    if let Some(at) = pending.iter().position(|text| text == &owner) {
+                        pending.drain(..=at);
+                        *base = owner.clone();
+                    } else if *base != owner {
+                        pending.clear();
+                    }
+                    if pending.is_empty() { self.edits.remove(id); }
+                }
+                let mut text = self.edits.get(id).and_then(|(_, pending)| pending.back()).cloned().unwrap_or_else(|| owner.clone());
                 if self.focus.as_deref() == Some(id) {
                     if let Some(range) = &mut self.focus_selection {
                         let len = text.chars().count();
@@ -1099,6 +1110,9 @@ impl Widgets {
                             i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)
                         }));
                 if r.changed() {
+                    let (_, pending) = self.edits.entry(id.clone()).or_insert_with(|| (owner, Default::default()));
+                    pending.push_back(text.clone());
+                    if pending.len() > 256 { pending.pop_front(); }
                     // Preserve native edit-before-submit/cancel ordering when
                     // a single input pass contains both text and a key.
                     events.push(Intent::set(id, json!(text)));
