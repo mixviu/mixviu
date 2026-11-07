@@ -28,6 +28,7 @@ on viu.session
 end
 on viu.theme.changed
   $state.appearance=$event.args
+  for $key in keys($state.appearance_choice) $state.appearance[$key]=$state.appearance_choice[$key] end
   $row_cache=dp_publish($state,$contract,$row_cache)
 end
 on viu.macros.changed

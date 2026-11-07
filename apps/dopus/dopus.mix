@@ -32,6 +32,7 @@ fn dp_framed($s,$contract,$cache)
   $title=$core.dp_display($s.panes[$s.active].path).." — MixOS DOpus"
   $model=$frame.apply($model,{icon:"folder",title:$title,native_title:$title,menus:$model.values.menu,toolbar:$model.values.toolbar,status:{left:$s.info,right:[],icon:nil},appearance:$s.appearance,window:$model.window_settings})
   $model.macros_open=$s.macros_open ?? false
+  $model.local_theme={theme:$s.appearance_choice.scheme,mode:$s.appearance_choice.mode,style:$s.appearance_choice.style,decorations:$s.window_choice["window.decorations"],captions:$s.window_choice["window.caption_side"]}
   $model.native_focus=if $s.focus==nil then nil else {id:$s.focus.id,serial:$s.serial} end
   $model.shortcuts=if $s.form.open then [] else $s.bindings ?? [] end
   $model.on_shortcut="dopus.shortcut"
