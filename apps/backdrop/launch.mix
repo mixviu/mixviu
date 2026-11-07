@@ -6,7 +6,7 @@ fn absolute($path,$cwd)
   return path_join($cwd,$path)
 end
 -- Generic host consumes --service/--comp/--noded-url before this parser.
-fn options($arguments,$cwd)
+fn options($arguments,$cwd,$validate_startup=true)
   $out={config:nil,colour:nil,image:nil,fit:nil,probe:false};$i=0
   while $i<len($arguments)
     $flag=$arguments[$i];$i=$i+1
@@ -17,17 +17,20 @@ fn options($arguments,$cwd)
     else raise("ARGUMENT","unknown option "..$flag.." (see --help)") end
   end
   if $out.probe and len($arguments)!=1 then raise("ARGUMENT","--probe runs alone: no wallpaper or service option goes with it") end
-  if $out.colour!=nil and $out.image!=nil then raise("ARGUMENT","--colour and --image each set the default: use one") end
-  if $out.fit!=nil and $out.image==nil then raise("ARGUMENT","--fit goes with --image") end
+  if $out.fit!=nil and not contains(["fill","fit","centre","tile","stretch"],$out.fit) then raise("ARGUMENT","--fit needs fill, fit, centre, tile or stretch") end
   if $out.config!=nil then $out.config=absolute($out.config,$cwd) end
-  if $out.image!=nil then
-    $out.image=absolute($out.image,$cwd)
-    $checked=$document.fill({image:$out.image,fit:$out.fit},"command line")
-  end
-  if $out.colour!=nil then $checked=$document.rgb($out.colour) end
+  if $out.image!=nil then $out.image=absolute($out.image,$cwd) end
+  if $validate_startup then validate_default($out) end
   return $out
 end
+fn validate_default($out)
+  if $out.colour!=nil and $out.image!=nil then raise("ARGUMENT","--colour and --image each set the default: use one") end
+  if $out.fit!=nil and $out.image==nil then raise("ARGUMENT","--fit goes with --image") end
+  if $out.image!=nil then $checked=$document.fill({image:$out.image,fit:$out.fit},"command line") end
+  if $out.colour!=nil then $checked=$document.rgb($out.colour) end
+end
 fn override($value,$options)
+  validate_default($options)
   if $options.colour!=nil then $value.default={colour:$options.colour}
   elif $options.image!=nil then
     $value.default={image:$options.image}

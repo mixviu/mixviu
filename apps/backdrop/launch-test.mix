@@ -19,4 +19,10 @@ $refused=false
 try $l.override({schema:1,outputs:$outputs},$options) catch $message $refused=true end
 check($refused,"CLI default counts toward resident-source cap")
 check($l.options(["--probe"],"/home/user").probe,"probe alone")
+for $arguments in [["--fit","fit"],["--colour","red"],["--colour","#000000","--image","a.png"]]
+  $parsed=$l.options($arguments,"/home/user",false)
+  $refused=false
+  try $l.override({schema:1},$parsed) catch $message $refused=true end
+  check($refused,"semantic CLI errors must refuse in startup phase")
+end
 print("backdrop launch: strict flags, relative paths, default-only override and combined resident cap pass")

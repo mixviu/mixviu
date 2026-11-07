@@ -2,7 +2,7 @@
 -- version: 0.2.0
 -- lint: globals app_args
 $wire=require("wire.mix");$engine=require("engine.mix");$projection=require("projection.mix");$launch=require("launch.mix");$schedule=require("schedule.mix")
-$ctx=viu_context();$options=$launch.options($app_args,cwd())
+$ctx=viu_context();$options=$launch.options($app_args,cwd(),false)
 $startup_code=1
 if $options.probe then raise("PROBE_RUNTIME","Probe rendering is not yet ported") end
 $dirs=viu_app_dirs("backdrop")
