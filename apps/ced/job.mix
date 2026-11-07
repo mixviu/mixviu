@@ -1,6 +1,7 @@
 -- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
+$mail=require("mail.mix")
 $macros=require("../../libraries/viu/mix/macro-policy.mix");$app_call=require("../../libraries/viu/mix/app-call.mix")
 fn load_session()
   $dirs=viu_app_dirs("ced");$path=if $dirs!=nil then path_join($dirs.state,"session.json") else nil end

@@ -1,17 +1,18 @@
 -- version: 0.1.0
 -- Focused CBC regression recipe; always uses the interpreter from this tree.
-fn step($argv)
+fn run_step($argv)
   print(join($argv," "))
   $r=run_argv($argv,{stdout:"inherit",stderr:"inherit",timeout:14400})
   if $r.exit_code!=0 then exit($r.exit_code ?? 124) end
 end
-step(["cargo","build","--locked","-p","mix"])
-step(["cargo","test","--locked","-p","lib-mix","--test","lint_viu"])
-step(["cargo","test","--locked","-p","lib-viu"])
-step(["cargo","test","--locked","-p","viu"])
-step(["cargo","test","--locked","-p","dopus"])
+run_step(["cargo","build","--locked","-p","mix"])
+run_step(["cargo","test","--locked","-p","lib-mix","--test","lint_viu"])
+run_step(["cargo","test","--locked","-p","lib-viu"])
+run_step(["cargo","test","--locked","-p","viu"])
+run_step(["cargo","test","--locked","-p","dopus"])
 for $p in split(trim(run_argv_must(["git","ls-files","apps/*-test.mix"])),"\n")
-  step(["target/debug/mix",$p])
+  run_step(["target/debug/mix",$p])
 end
-step(["target/debug/mix","tools/ci.mix","env"])
-step(["target/debug/mix","tools/ci.mix","mix-lint-baseline"])
+run_step(["target/debug/mix","tools/ci.mix","env"])
+run_step(["target/debug/mix","tools/ci.mix","mix-lint-baseline"])
+run_step(["git","checkout","-q","--","tools/ci/mix-lint-baseline.json"])
