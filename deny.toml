@@ -19,7 +19,6 @@ ignore = [
   { id = "RUSTSEC-2026-0368", reason = "zip symlink escape on extract; inherited debt" },
   { id = "RUSTSEC-2026-0369", reason = "zip permissions through symlinks; inherited debt" },
   { id = "RUSTSEC-2026-0385", reason = "ctutils non-constant-time mask; inherited debt" },
-  { id = "RUSTSEC-2026-0386", reason = "tokio AsyncFd I/O safety; inherited debt" },
   { id = "RUSTSEC-2026-0429", reason = "zip symlink large size abort; inherited debt" },
 ]
 
