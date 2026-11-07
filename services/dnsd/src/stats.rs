@@ -65,7 +65,7 @@ impl DnsStats {
     /// matching counter. Runs inline on the serve path (UDP + every TCP
     /// query) — a single relaxed atomic add, no allocation, no block.
     pub fn record(&self, resp: &Message) {
-        let bucket = match resp.response_code() {
+        let bucket = match resp.metadata.response_code {
             ResponseCode::NoError => &self.noerror,
             ResponseCode::NXDomain => &self.nxdomain,
             ResponseCode::Refused => &self.refused,
@@ -107,8 +107,8 @@ mod tests {
     use hickory_proto::op::Message;
 
     fn resp(rc: ResponseCode) -> Message {
-        let mut m = Message::new();
-        m.set_response_code(rc);
+        let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
+        m.metadata.response_code = rc;
         m
     }
 

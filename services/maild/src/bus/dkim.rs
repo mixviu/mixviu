@@ -707,22 +707,21 @@ mod tests {
             let (n, peer) = socket.recv_from(&mut buf).await.unwrap();
             let query = Message::from_vec(&buf[..n]).unwrap();
             assert_eq!(
-                query.queries()[0].name().to_utf8(),
+                query.queries.as_slice()[0].name().to_utf8(),
                 "s2026a._domainkey.example.com."
             );
-            let mut answer = Message::new();
-            answer
-                .set_id(query.id())
-                .set_message_type(MessageType::Response)
-                .set_recursion_available(true);
-            answer.add_queries(query.queries().iter().cloned());
+            let mut answer = Message::new(0, hickory_resolver::proto::op::MessageType::Query, hickory_resolver::proto::op::OpCode::Query);
+            answer.metadata.id = query.metadata.id;
+            answer.metadata.message_type = MessageType::Response;
+            answer.metadata.recursion_available = true;
+            answer.add_queries(query.queries.as_slice().iter().cloned());
             let parts = txt
                 .as_bytes()
                 .chunks(200)
                 .map(|s| String::from_utf8(s.to_vec()).unwrap())
                 .collect();
             answer.add_answer(Record::from_rdata(
-                query.queries()[0].name().clone(),
+                query.queries.as_slice()[0].name().clone(),
                 300,
                 RData::TXT(TXT::new(parts)),
             ));

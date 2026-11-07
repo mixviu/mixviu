@@ -47,19 +47,19 @@ fn list(v: &Value) -> Vec<Value> {
 }
 
 fn answer(req: &Message, tcp: bool) -> Message {
-    let q = req.queries()[0].clone();
-    let mut resp = Message::response(req.id(), req.op_code());
+    let q = req.queries.as_slice()[0].clone();
+    let mut resp = Message::response(req.metadata.id, req.metadata.op_code);
     resp.add_query(q.clone());
-    resp.set_recursion_desired(req.recursion_desired());
-    resp.set_recursion_available(req.recursion_desired());
+    resp.metadata.recursion_desired = req.metadata.recursion_desired;
+    resp.metadata.recursion_available = req.metadata.recursion_desired;
     let name = q.name().clone();
     let text = name.to_ascii().to_ascii_lowercase();
     let in_zone = text.ends_with("example.test.") || text.ends_with(".2.0.192.in-addr.arpa.");
     if !in_zone {
-        resp.set_response_code(ResponseCode::Refused);
+        resp.metadata.response_code = ResponseCode::Refused;
         return resp;
     }
-    resp.set_authoritative(true);
+    resp.metadata.authoritative = true;
     let rdata = match (text.as_str(), q.query_type()) {
         ("mail.example.test.", RecordType::AAAA) => Some(RData::AAAA(AAAA(
             Ipv6Addr::from_str("2001:db8::25").unwrap(),
@@ -73,12 +73,12 @@ fn answer(req: &Message, tcp: bool) -> Message {
         )
         .unwrap()))),
         ("big.example.test.", RecordType::A) if !tcp => {
-            resp.set_truncated(true);
+            resp.metadata.truncation = true;
             None
         }
         ("big.example.test.", RecordType::A) => Some(RData::A(A(Ipv4Addr::new(192, 0, 2, 80)))),
         _ => {
-            resp.set_response_code(ResponseCode::NXDomain);
+            resp.metadata.response_code = ResponseCode::NXDomain;
             None
         }
     };
@@ -108,7 +108,7 @@ fn fixture() -> u16 {
             // Noise first: a reply with the wrong id must be ignored.
             let mut stray = answer(&req, false);
             let mut header = *stray.header();
-            header.set_id(req.id().wrapping_add(1));
+            header.metadata.id = req.metadata.id.wrapping_add(1);
             stray.set_header(header);
             let _ = udp.send_to(&stray.to_vec().unwrap(), from);
             let _ = udp.send_to(&answer(&req, false).to_vec().unwrap(), from);

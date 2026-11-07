@@ -25,17 +25,17 @@ use std::collections::HashSet;
 const RESPONSE_EDNS_PAYLOAD: u16 = 1232;
 
 pub fn resolve(snap: &ZoneSnapshot, req: &Message) -> Message {
-    let mut resp = Message::new();
-    resp.set_id(req.id());
-    resp.set_message_type(MessageType::Response);
-    resp.set_op_code(req.op_code());
-    resp.set_recursion_desired(req.recursion_desired());
-    resp.set_recursion_available(false);
+    let mut resp = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
+    resp.metadata.id = req.metadata.id;
+    resp.metadata.message_type = MessageType::Response;
+    resp.metadata.op_code = req.metadata.op_code;
+    resp.metadata.recursion_desired = req.metadata.recursion_desired;
+    resp.metadata.recursion_available = false;
 
     // Echo an OPT advertising our payload when the query had one. The
     // resolver never *uses* the size (it cannot truncate); the serve
     // loop computes `max_payload` independently for `wire::encode_udp`.
-    if req.extensions().is_some() {
+    if req.edns.as_ref().is_some() {
         let mut edns = Edns::new();
         edns.set_version(0);
         edns.set_max_payload(RESPONSE_EDNS_PAYLOAD);
@@ -43,21 +43,21 @@ pub fn resolve(snap: &ZoneSnapshot, req: &Message) -> Message {
     }
 
     // opcode ≠ QUERY → NOTIMP.
-    if req.op_code() != OpCode::Query {
-        resp.set_authoritative(false);
-        resp.set_response_code(ResponseCode::NotImp);
+    if req.metadata.op_code != OpCode::Query {
+        resp.metadata.authoritative = false;
+        resp.metadata.response_code = ResponseCode::NotImp;
         return resp;
     }
 
     // QDCOUNT ≠ 1 → FORMERR.
-    if req.queries().len() != 1 {
-        resp.set_authoritative(false);
-        resp.set_response_code(ResponseCode::FormErr);
+    if req.queries.as_slice().len() != 1 {
+        resp.metadata.authoritative = false;
+        resp.metadata.response_code = ResponseCode::FormErr;
         return resp;
     }
 
     // QUESTION echoed verbatim (original case — 0x20).
-    let query = req.queries()[0].clone();
+    let query = req.queries.as_slice()[0].clone();
     let qclass = query.query_class();
     let qtype_h = query.query_type();
     let qname = Name::from_hickory(query.name());
@@ -65,16 +65,16 @@ pub fn resolve(snap: &ZoneSnapshot, req: &Message) -> Message {
 
     // QCLASS ∉ {IN, ANY} → REFUSED.
     if qclass != DNSClass::IN && qclass != DNSClass::ANY {
-        resp.set_authoritative(false);
-        resp.set_response_code(ResponseCode::Refused);
+        resp.metadata.authoritative = false;
+        resp.metadata.response_code = ResponseCode::Refused;
         return resp;
     }
 
     // Longest-suffix zone match.
     let Some((zname, zstate)) = match_zone(snap, &qname) else {
         // Out-of-zone → REFUSED, AA=0. Never recurse/forward.
-        resp.set_authoritative(false);
-        resp.set_response_code(ResponseCode::Refused);
+        resp.metadata.authoritative = false;
+        resp.metadata.response_code = ResponseCode::Refused;
         return resp;
     };
 
@@ -102,11 +102,11 @@ pub fn resolve(snap: &ZoneSnapshot, req: &Message) -> Message {
     // nor wildcard-covered. (There is NO HINFO/RFC-8482 variant anywhere —
     // HINFO is not a model type and cannot be constructed.)
     if qtype_h == HRecordType::ANY {
-        resp.set_authoritative(true);
+        resp.metadata.authoritative = true;
         if name_covered {
-            resp.set_response_code(ResponseCode::NoError);
+            resp.metadata.response_code = ResponseCode::NoError;
         } else {
-            resp.set_response_code(ResponseCode::NXDomain);
+            resp.metadata.response_code = ResponseCode::NXDomain;
             add_soa_authority(&mut resp, zname, zstate);
         }
         return resp;
@@ -115,14 +115,14 @@ pub fn resolve(snap: &ZoneSnapshot, req: &Message) -> Message {
     // Positive apex SOA / NS — answered ONLY from the soa/ns fields
     // (assembly contract: never duplicated into rrsets).
     if is_apex && qtype_h == HRecordType::SOA {
-        resp.set_authoritative(true);
-        resp.set_response_code(ResponseCode::NoError);
+        resp.metadata.authoritative = true;
+        resp.metadata.response_code = ResponseCode::NoError;
         resp.add_answer(soa_record(zname, zstate));
         return resp;
     }
     if is_apex && qtype_h == HRecordType::NS {
-        resp.set_authoritative(true);
-        resp.set_response_code(ResponseCode::NoError);
+        resp.metadata.authoritative = true;
+        resp.metadata.response_code = ResponseCode::NoError;
         for ns in &zstate.ns {
             resp.add_answer(RData::Ns(ns.clone()).to_hickory_record(
                 zname.name(),
@@ -143,8 +143,8 @@ pub fn resolve(snap: &ZoneSnapshot, req: &Message) -> Message {
             rr_type: rt,
         };
         if let Some(rrset) = zstate.rrsets.get(&key) {
-            resp.set_authoritative(true);
-            resp.set_response_code(ResponseCode::NoError);
+            resp.metadata.authoritative = true;
+            resp.metadata.response_code = ResponseCode::NoError;
             for rd in &rrset.rdatas {
                 resp.add_answer(rd.to_hickory_record(&qname, rrset.ttl, zstate.emitted_serial.0));
                 // Additional-section glue for in-zone MX/SRV targets.
@@ -170,8 +170,8 @@ pub fn resolve(snap: &ZoneSnapshot, req: &Message) -> Message {
                 rr_type: rt,
             };
             if let Some(rrset) = zstate.rrsets.get(&wkey) {
-                resp.set_authoritative(true);
-                resp.set_response_code(ResponseCode::NoError);
+                resp.metadata.authoritative = true;
+                resp.metadata.response_code = ResponseCode::NoError;
                 for rd in &rrset.rdatas {
                     // Owner is the QUERIED name, not the `*` owner.
                     resp.add_answer(rd.to_hickory_record(
@@ -194,11 +194,11 @@ pub fn resolve(snap: &ZoneSnapshot, req: &Message) -> Message {
     // above): NODATA if the name exists as a node OR is wildcard-covered,
     // else NXDOMAIN. Both carry the SOA in AUTHORITY with `emitted_serial`,
     // AA=1.
-    resp.set_authoritative(true);
+    resp.metadata.authoritative = true;
     if name_covered {
-        resp.set_response_code(ResponseCode::NoError);
+        resp.metadata.response_code = ResponseCode::NoError;
     } else {
-        resp.set_response_code(ResponseCode::NXDomain);
+        resp.metadata.response_code = ResponseCode::NXDomain;
     }
     add_soa_authority(&mut resp, zname, zstate);
     resp
@@ -245,7 +245,7 @@ fn soa_record(zname: &ZoneName, zstate: &ZoneAnswerState) -> hickory_proto::rr::
 }
 
 fn add_soa_authority(resp: &mut Message, zname: &ZoneName, zstate: &ZoneAnswerState) {
-    resp.add_name_server(soa_record(zname, zstate));
+    resp.add_authority(soa_record(zname, zstate));
 }
 
 /// Add A/AAAA glue for an in-zone MX exchange / SRV target.
