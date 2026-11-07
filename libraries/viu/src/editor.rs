@@ -104,8 +104,17 @@ impl Editors {
             if serial > doc.command_serial && !view.read_only {
                 doc.command_serial = serial;
                 let name = widget.properties["command"]["name"].as_str().unwrap_or("");
+                if name=="paste" {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                } else if matches!(name,"cut"|"copy") {
+                    let selection=doc.local.selection();
+                    let text=doc.local.contents();
+                    let range=selection.anchor.min(selection.head)..selection.anchor.max(selection.head);
+                    if let Some(text)=text.get(range).filter(|s|!s.is_empty()) {ui.ctx().copy_text(text.to_owned());}
+                }
                 if !view.read_only {
                     let command = match name {
+                        "cut" => Some(editor::EditCommand::Delete),
                         "select-all" => Some(editor::EditCommand::SelectAll),
                         "duplicate-line" => Some(editor::EditCommand::DuplicateLine),
                         "delete-line" => Some(editor::EditCommand::DeleteLine),

@@ -501,7 +501,7 @@ impl SceneView {
                     "panes"=>self.panes(ui,&key,node,nodes,route,depth,events),
                     "content"=>{
                         let content:settings::content::Content=serde_json::from_value(node.ports.get("settings").cloned().unwrap_or_else(|| json!({}))).expect("validated prose content");
-                        let fill=if content.light {toolkit::chrome::Chrome::for_theme(toolkit::content::light_theme()).palette.canvas}else{ui.visuals().panel_fill};
+                        let fill=if node.ports.get("surface").and_then(Value::as_str)==Some("editor") {ui.ctx().data(|d|d.get_temp::<editor::Palette>(egui::Id::unique("viu-gold-editor-palette"))).map(|p|p.background).unwrap_or(ui.visuals().panel_fill)} else if content.light {toolkit::chrome::Chrome::for_theme(toolkit::content::light_theme()).palette.canvas}else{ui.visuals().panel_fill};
                         toolkit::content::surface_filled(ui,&content,fill,|ui|{
                             let mut draw=|ui:&mut egui::Ui|for child in children(node){self.node(ui,child,nodes,route,depth+1,events);};
                             if node.ports.get("scroll")!=Some(&Value::Bool(false)){egui::ScrollArea::vertical().id_salt((&key,"body")).auto_shrink(false).show(ui,|ui|draw(ui));}else{draw(ui);}

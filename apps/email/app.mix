@@ -167,7 +167,7 @@ fn execute_email($id,$origin)
   $found=filter($actions.registry($s),fn($a)=$a.id==$id)
   if len($found)==0 then return {rc:10,body:{error_code:"UNKNOWN_ACTION",message:"No such command"}} end
   if not $found[0].enabled then return {rc:10,body:{error_code:"DISABLED",message:"That command cannot run now"}} end
-  if $id=="file.quit" or $id=="compose.close" then $chrome.window_close=true
+  if $id=="file.quit" or $id=="compose.close" then return composer_quit()
   elif $id=="file.accounts" then
     send "prefs" "prefs.section" body={name:"apps_email"}
     if $rc!=0 then
@@ -229,6 +229,11 @@ on email.actions
   reply(0,json_encode({actions:$actions.registry(action_context())}))
 end
 on email.execute
+  if $event.args.window!=nil or (starts_with($event.args.id ?? "","compose.") and $composers[$compose_focused]!=nil) or ($event.args.id=="mail.send" and $composers[$compose_focused]!=nil) then
+    $window=$event.args.window ?? $compose_focused
+    if $composers[$window]==nil then reply(10,json_encode({error_code:"NOT_FOUND",message:"No compose is open"}));return end
+    $out=composer_command($window,$event.args.id);publish_email();reply($out.rc,json_encode($out.body));return
+  end
   $out=execute_email($event.args.id,"bus");reply($out.rc,json_encode($out.body))
 end
 on email.theme
@@ -261,6 +266,12 @@ end
 on email.compose.intent
   $out=composer_intent($event.args);publish_email();reply($out.rc,json_encode($out.body))
 end
+on email.compose.attachment.add
+  $out=composer_attachments("email.compose.attachment.add",$event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.compose.attachment.remove
+  $out=composer_attachments("email.compose.attachment.remove",$event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
 on viu.window.focused
   $compose_focused=$event.args.window
 end
@@ -268,16 +279,16 @@ on viu.window.close
   composer_close($event.args.window);publish_email()
 end
 on viu.frame.close
-  $chrome.window_close=true;publish_email()
+  composer_quit();publish_email()
 end
 on email.quit
-  $chrome.window_close=true;publish_email();reply(0,json_encode({quitting:true}))
+  $out=composer_quit();publish_email();reply($out.rc,json_encode($out.body))
 end
 on email.dialog
   $window=$event.args.window ?? $compose_focused
   if $composers[$window]!=nil and $composers[$window].confirm then
     if $event.args.answer!=nil then $out=composer_close($window,$event.args.answer);publish_email();reply($out.rc,json_encode($out.body))
-    else reply(0,json_encode({dialog:"close_compose"})) end
+    else reply(0,json_encode({dialog:if $compose_quitting then "quit" else "close_compose" end})) end
     return
   end
   if contains(keys($event.args),"open") then

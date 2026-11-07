@@ -20,10 +20,7 @@ pub fn validate(v: &Value) -> bool {
                                 && a.iter().all(|a| {
                                     a["id"].is_string()
                                         && a["label"].is_string()
-                                        && a["icon"]
-                                            .as_str()
-                                            .and_then(crate::icons::Icon::from_name)
-                                            .is_some()
+                                        && (a["icon"].is_null() || a["icon"].as_str().and_then(crate::icons::Icon::from_name).is_some())
                                 })
                         })
                 })
@@ -31,7 +28,7 @@ pub fn validate(v: &Value) -> bool {
         && v["attachments"].as_array().is_some_and(|a| {
             a.len() <= 1024
                 && a.iter()
-                    .all(|p| p.as_str().is_some_and(|s| s.len() <= 65536))
+                    .all(|p| p.as_str().is_some_and(|s| s.len() <= 65536) || (p["path"].is_string() && p["text"].is_string()))
         })
         && v["attachment_label"].is_string()
         && v["attach_label"].is_string()
@@ -134,6 +131,14 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                                     .labelled_by(labelled);
                                 return;
                             }
+                            if let Some(choices)=r["choices"].as_array() {
+                                let names=choices.iter().filter_map(Value::as_str).map(str::to_owned).collect::<Vec<_>>();
+                                let mut at=names.iter().position(|n| *n==text).unwrap_or(0);
+                                if toolkit::combo::show(ui, (id,key), &mut at, &names, Some(ui.available_width())).labelled_by(labelled).changed() {
+                                    edits.insert(key.to_owned(),json!(names[at]));
+                                }
+                                return;
+                            }
                             let response = ui
                                 .add_enabled_ui(r["read_only"] != true, |ui| {
                                     form::text(
@@ -173,24 +178,22 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
+                                    ui.spacing_mut().item_spacing.x=2.0;
                                     for a in r["actions"].as_array().unwrap().iter().rev() {
-                                        let icon = crate::icons::Icon::from_name(
-                                            a["icon"].as_str().unwrap(),
-                                        )
-                                        .unwrap();
-                                        if ui
-                                            .add(
+                                        let response=if let Some(icon)=a["icon"].as_str().and_then(crate::icons::Icon::from_name) {
+                                            ui.add(
                                                 toolkit::button::IconButton::new(icon)
                                                     .size(toolkit::field::height_of(ui.ctx()))
                                                     .selected(a["selected"] == true)
                                                     .tooltip(a["label"].as_str().unwrap()),
                                             )
-                                            .clicked()
-                                        {
+                                        } else {ui.add(toolkit::button::PushButton::secondary(a["label"].as_str().unwrap()))};
+                                        if response.clicked() {
                                             emit(events, "command", a["id"].clone());
                                         }
                                     }
-                                    field(ui);
+                                    ui.add_space(form::GAP-2.0);
+                                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center),|ui|{field(ui);});
                                 },
                             );
                         }
@@ -218,13 +221,14 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                                 emit(events, "command", json!("attach"));
                             }
                             for (i, p) in v["attachments"].as_array().unwrap().iter().enumerate() {
-                                let p = p.as_str().unwrap();
+                                let path=p.as_str().or_else(||p["path"].as_str()).unwrap();
+                                let text=p.as_str().or_else(||p["text"].as_str()).unwrap();
                                 if form::attachment_chip(
                                     ui,
                                     i,
-                                    std::path::Path::new(p),
-                                    p,
-                                    false,
+                                    std::path::Path::new(path),
+                                    text,
+                                    p["bad"]==true,
                                     toolkit::field::height_of(ui.ctx()),
                                     v["remove_label"].as_str().unwrap(),
                                 ) {

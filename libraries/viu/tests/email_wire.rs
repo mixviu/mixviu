@@ -138,7 +138,10 @@ fn account_urls_refuse_credentials_before_reaching_settings_and_keep_path_at_sig
         let entry = json!({"name":"Example","url":url,"email":"user@example.test","enabled":true,"signature":"","identities":[],"ca_path":null});
         let (rc, body) = probe_module(
             vec![],
-            &format!("$m.validate_entry(json_parse({}))",json!(entry.to_string())),
+            &format!(
+                "$m.validate_entry(json_parse({}))",
+                json!(entry.to_string())
+            ),
             "accounts.mix",
             vec![],
         );
@@ -151,14 +154,24 @@ fn account_urls_refuse_credentials_before_reaching_settings_and_keep_path_at_sig
 
 #[test]
 fn reply_quotes_strip_signatures_preserve_nesting_and_skip_active_html() {
-    for (call,expected) in [
+    for (call, expected) in [
         (r#"$m.unsigned("Lunch?\r\n-- \r\nAnn")"#, "Lunch?"),
-        (r#"$m.quoted("hi\n> earlier\n\nend")"#, "> hi\n>> earlier\n>\n> end"),
-        (r#"$m.arrange("","On today, Ann wrote:\n> Lunch?","-- \nBob\n","above")"#, "\n\n-- \nBob\n\nOn today, Ann wrote:\n> Lunch?\n"),
-        (r#"$m.html_text("<head><style>p{x}</style></head><p>Hi &amp; bye</p><script>alert(1)</script><div>&lt;tag&gt;</div>")"#, "Hi & bye\n\n<tag>"),
+        (
+            r#"$m.quoted("hi\n> earlier\n\nend")"#,
+            "> hi\n>> earlier\n>\n> end",
+        ),
+        (
+            r#"$m.arrange("","On today, Ann wrote:\n> Lunch?","-- \nBob\n","above")"#,
+            "\n\n-- \nBob\n\nOn today, Ann wrote:\n> Lunch?\n",
+        ),
+        (
+            r#"$m.html_text("<head><style>p{x}</style></head><p>Hi &amp; bye</p><script>alert(1)</script><div>&lt;tag&gt;</div>")"#,
+            "Hi & bye\n\n<tag>",
+        ),
     ] {
-        let (rc,body)=probe_module(vec![],call,"quoting.mix",vec![]);
-        assert_eq!(rc,0,"{body}");assert_eq!(body,expected);
+        let (rc, body) = probe_module(vec![], call, "quoting.mix", vec![]);
+        assert_eq!(rc, 0, "{body}");
+        assert_eq!(body, expected);
     }
 }
 
