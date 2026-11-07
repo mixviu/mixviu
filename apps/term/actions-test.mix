@@ -3,6 +3,7 @@ $a=require("actions.mix");$m=require("model.mix")
 $controls=require("controls.mix")
 fn check($ok,$message) if not $ok then raise("TEST",$message) end end
 fn native($op,$handle,$args)
+  if $op=="font-size" then return $args.base+$args.steps*2/3 end
   if $op=="create" then return {handle:"vt-2",pid:12} end
   if $op=="state" then return {title:"",pid:11,cols:80,rows:24,geometry:{x:0,y:0,w:0,h:0}} end
   return nil

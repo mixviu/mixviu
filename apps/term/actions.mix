@@ -97,12 +97,12 @@ fn invoke($s,$id,$args,$native)
     $profile=$s.font_profile ?? $s.look.values["terminal.font.size"] ?? 14.667
     $base=$s.font_base ?? $profile
     if $id=="view.zoom_reset" then
-      $s.font_base=$profile;$s.zoom_steps=0;$s.zoom=0;$s.font_current=$profile
-      push($effects,{kind:"font",size:$profile,reset:true})
+      $s.font_base=$profile;$s.zoom_steps=0;$s.zoom=0;$s.font_current=$native("font-size","",{base:$profile,steps:0})
+      push($effects,{kind:"font",size:$s.font_current,reset:true})
     else
       $steps=($s.zoom_steps ?? 0)+(if $id=="view.zoom_in" then 1 else -1 end)
       if $base+$steps*2/3>=6 and $base+$steps*2/3<=48 then
-        $s.font_base=$base;$s.zoom_steps=$steps;$s.zoom=$steps*2/3;$s.font_current=$base+$s.zoom
+        $s.font_base=$base;$s.zoom_steps=$steps;$s.zoom=$steps*2/3;$s.font_current=$native("font-size","",{base:$base,steps:$steps})
         push($effects,{kind:"font",size:$s.font_current,reset:false})
       end
     end
