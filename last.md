@@ -729,3 +729,33 @@ replies, snapshots and cleanup. Continue all remaining parity work as
 above. No Fable question, installs or VT changes.
 
 branch: lab/parity-term; head SHA: b2a7b8aaf8ce3c97467af5febc8393d3febedc2a (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — platform clipboard runtime witness, full Bus/Prefs/session/input/search and release acceptance open; CBC job ids: term-platform-clipboard-06f6f251-a1 (green, fmt applied; runtime catalogue defect), term-clipboard-catalogue-b2a7b8aa (next await).
+
+## Clipboard runtime witness passes; live cursor blink checkpoint
+
+term-clipboard-catalogue-b2a7b8aa-a1 green, no worker diff; full log read.
+Fetched exact matching debug executable/bundle, verified SHA256
+b2ceef799e80f1069f85f7d8226750946530af9a2a950627efdc53ae0d7353d3.
+Native.fjLLL5 passes Copy→Ctrl-C at real login Mix, Shift platform Paste
+Unicode supplied text, plain platform Paste→Ctrl-V without supplied text,
+Shift-Cut active split close/sibling retention, normal close and tracked
+PIDs all stopped. Private platform-witness.json retains exact scope.
+
+Native.R56uYX and native.TkKsDs failed harness assumptions: bracketed
+paste waits for explicit Enter; Ctrl-V quotes the next Ctrl-C, requiring
+a second Ctrl-C to clear. Snapshots show correct shell behaviour; only
+the private harness changed. No application change or acceptance waiver.
+Selection-copy readback/primary/OSC52/races remain open.
+
+27c71218 adds reusable gold 530 ms cursor phase and live blink Prefs
+wiring. Focus/typing restarts shown phase; no scheduled blink while
+unfocused, disabled or program-hidden. Deterministic phase/no-wake tests
+added. Next CBC term-cursor-blink-27c71218 at
+27c71218f895f016917498fceb47cd391997ce78. Read full log/apply fmt and
+repeat exact source if changed. Fetch matching artifact/bundle; native
+live terminal.cursor.blink toggle on unchanged PID and capture cursor
+phase/steady unfocused/typing reset; preserve matched captures with blink
+off. Continue remaining primary/OSC52/mouse, verified session/control/
+sealed Mix shell, full Bus/IME/search/zoom/About/all Prefs/release gate.
+No Fable question, installs or VT changes.
+
+branch: lab/parity-term; head SHA: 27c71218f895f016917498fceb47cd391997ce78 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — blink native validation, remaining clipboard/session/Bus/Prefs/input/search and release acceptance open; CBC job ids: term-clipboard-catalogue-b2a7b8aa-a1 (green exact source and scoped native witness), term-cursor-blink-27c71218 (next await).

@@ -461,3 +461,29 @@ Native run `native.JxY16p` exposed missing host catalogue registration:
 All recorded PIDs stopped. Commit b2a7b8aa adds the driver to the existing
 generic host catalogue. Repeat gate/native witness required; unit tests
 alone did not cover that host registration. Overall **NOT ACCEPTED**.
+
+### Platform clipboard runtime checkpoint; cursor blink
+
+`term-clipboard-catalogue-b2a7b8aa-a1` passed with no worker diff; full
+saved log read. Verified matching debug executable SHA256
+`b2ceef799e80f1069f85f7d8226750946530af9a2a950627efdc53ae0d7353d3`.
+Native `native.fjLLL5` passes platform Copy→shell Ctrl-C, Shift-Paste
+of Unicode supplied text, plain Paste→Ctrl-V without inserting the
+supplied text, Shift-Cut closing the focused split while retaining its
+sibling, normal close and all tracked PIDs stopped.
+
+Two earlier runs are retained (`native.R56uYX`, `native.TkKsDs`): the
+harness initially expected bracketed paste to execute immediately, then
+expected a single Ctrl-C to clear Ctrl-V's literal-next-character state.
+Snapshots demonstrated correct shell behaviour. The corrected witness
+uses explicit Enter and a second Ctrl-C for recovery; no application code
+was changed to satisfy those mistaken expectations. This does not yet
+attest selection-copy readback, primary selection, OSC52 or every clipboard
+ownership race.
+
+Code `27c71218` wires live `terminal.cursor.blink` to a reusable native
+530 ms phase, matching gold. Focus and typed input restart the shown phase;
+unfocused, disabled or program-hidden cursors schedule no blink repaint.
+Tests cover phase edges, focus recovery, activity and no-wake cases. CBC
+`term-cursor-blink-27c71218` and native live-Prefs phase evidence pending.
+Overall **NOT ACCEPTED**.
