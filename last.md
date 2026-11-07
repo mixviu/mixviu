@@ -377,4 +377,20 @@ supervisor and shell integration; input/clipboard/IME/search completeness;
 live full Prefs; exact release and visual acceptance. NOT ACCEPTED. No
 Fable question, install, merge, gold or VT changes.
 
-branch: lab/parity-term; head SHA: 39e1208653a54e0f0bc1b0a040713abc112fa721 (code; receipt HEAD contains this checkpoint); open items: lifecycle gate, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-widget-r2-node-fixed-a1 (green), term-live-tabs-39e1208 (queued; awaiting).
+## Lifecycle scene repair
+
+Read complete saved log for `term-live-tabs-39e1208-a1` (rc101). Rust
+compiled and all four Mix suites passed. The actual-bundle test rejected
+unsupported `padding` and `gap` ports on the dock root; no lifecycle test
+was weakened. Removed those ports and applied the complete worker fmt
+patch to the host, shared strip, native sessions and bundle test.
+
+Repair code `849b2aec8e4d99291108a7671625354c0d7910f3` is pushed.
+Next exact-source gate: `term-live-tabs-dock-849b2ae`, same CBC recipe
+`mix tools/term_gate.mix --prepare`, with native automatic resumption.
+On result: read complete log, repair/apply any worker patch, repeat exact
+source if changed; fetch matching artifact and run isolated lifecycle,
+input, shell exit and matched captures. All earlier open parity items
+remain open. Gold untouched; NOT ACCEPTED; no Fable decision required.
+
+branch: lab/parity-term; head SHA: 849b2aec8e4d99291108a7671625354c0d7910f3 (code; receipt HEAD contains this checkpoint); open items: repaired lifecycle gate, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-widget-r2-node-fixed-a1 (green), term-live-tabs-39e1208-a1 (scene validation failure), term-live-tabs-dock-849b2ae (next await).

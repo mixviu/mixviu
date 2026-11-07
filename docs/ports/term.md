@@ -144,3 +144,9 @@ This is partial Bus implementation. Topic publication after props.watch,
 the full action/menu/dialog/macro surface, raw-envelope validation and exact
 large integer handling remain open, alongside verified native authority,
 complete input/clipboard/search/Prefs and release visual acceptance.
+
+CBC `term-live-tabs-39e1208-a1` compiled the Rust changes and passed all
+four Mix suites, then failed actual scene validation: the dock root had
+unsupported padding/gap ports. Repair `849b2aec8e4d99291108a7671625354c0d7910f3`
+removes those ports and applies the full worker fmt patch. Lifecycle
+assertions remain intact. Next gate: `term-live-tabs-dock-849b2ae`.
