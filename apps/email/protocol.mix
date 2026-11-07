@@ -57,7 +57,6 @@ fn connect($e)
   return {account:$account,token:$token,api:$s.apiUrl,using:keys($s.capabilities),raw:$s}
 end
 fn post($e,$s,$body)
-  global $tokens,$last_ambiguous
   $last_ambiguous=true;$s=session($s)
   $r=http($e,$s.api,"POST",$body,$s.token)
   if $r.status==401 and $s.token!=nil then
@@ -70,7 +69,6 @@ fn post($e,$s,$body)
   return $r
 end
 fn call($e,$s,$method,$args)
-  global $last_ambiguous
   $args.accountId=$s.account
   $r=post($e,$s,json_encode({using:$s.using,methodCalls:[[$method,$args,"c0"]]}))
   if $r.status!=200 then raise("SERVER","JMAP HTTP "..to_string($r.status)) end

@@ -24,7 +24,15 @@ fn probe_module(
     let url = format!("http://{}", listener.local_addr().unwrap());
     let bodies: Vec<_> = replies
         .iter()
-        .map(|r| (r["_status"].as_u64().unwrap_or(200), r.get("_body").unwrap_or(r).to_string().replace("ORIGIN", &url)))
+        .map(|r| {
+            (
+                r["_status"].as_u64().unwrap_or(200),
+                r.get("_body")
+                    .unwrap_or(r)
+                    .to_string()
+                    .replace("ORIGIN", &url),
+            )
+        })
         .collect();
     let server = std::thread::spawn(move || {
         for (index, (status, body)) in bodies.into_iter().enumerate() {
@@ -121,30 +129,43 @@ end
     let done = runtime.try_completion().unwrap();
     assert!(done.error.is_none(), "{:?}", done.error);
     let reply = done.reply.unwrap();
-    server.join().unwrap();
+    server.join().unwrap_or_else(|_| panic!("HTTP fixture failed: rc={} body={}", reply.rc, reply.body));
     (reply.rc, reply.body)
 }
 
 #[test]
 fn expired_bearer_reexchanges_once_and_explicit_submission_refusal_is_unambiguous() {
-    let call = r#"$m.call($e,{account:"a",api:$e.url,token:"expired",using:[]},"EmailSubmission/set",{})"#;
+    let call =
+        r#"$m.call($e,{account:"a",api:$e.url,token:"expired",using:[]},"EmailSubmission/set",{})"#;
     let (rc, body) = probe_module(
-        vec![json!({"_status":401,"_body":{}}), json!({"token":"fresh"}),
-             json!({"methodResponses":[["EmailSubmission/set",{"created":{"x":{"id":"s"}}},"c0"]]})],
-        call, "protocol.mix", vec!["Bearer expired", "Basic dXNlcjpzZWNyZXQ=", "Bearer fresh"],
+        vec![
+            json!({"_status":401,"_body":{}}),
+            json!({"token":"fresh"}),
+            json!({"methodResponses":[["EmailSubmission/set",{"created":{"x":{"id":"s"}}},"c0"]]}),
+        ],
+        call,
+        "protocol.mix",
+        vec!["Bearer expired", "Basic dXNlcjpzZWNyZXQ=", "Bearer fresh"],
     );
     assert_eq!(rc, 0, "{body}");
     assert_eq!(body["created"]["x"]["id"], "s");
     let (rc, body) = probe_module(
         vec![json!({"methodResponses":[["error",{"type":"forbiddenToSend"},"c0"]]})],
         &format!("nil\ntry\n{call}\ncatch $message\nnil\nend\n$r=$m.ambiguous()"),
-        "protocol.mix", vec!["Bearer expired"],
+        "protocol.mix",
+        vec!["Bearer expired"],
     );
     assert_eq!(rc, 0, "{body}");
     assert_eq!(body, false);
     let (rc, body) = probe_module(
-        vec![json!({"_status":401,"_body":{}}), json!({"token":"fresh"}), json!({"_status":401,"_body":{}})],
-        call, "protocol.mix", vec!["Bearer expired", "Basic dXNlcjpzZWNyZXQ=", "Bearer fresh"],
+        vec![
+            json!({"_status":401,"_body":{}}),
+            json!({"token":"fresh"}),
+            json!({"_status":401,"_body":{}}),
+        ],
+        call,
+        "protocol.mix",
+        vec!["Bearer expired", "Basic dXNlcjpzZWNyZXQ=", "Bearer fresh"],
     );
     assert_eq!(rc, 10);
     assert_eq!(body["code"], "SERVER");

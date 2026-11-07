@@ -1095,7 +1095,11 @@ impl SceneView {
         let placements = &node.ports["placements"];
         if node.ports.get("passthrough_single") == Some(&Value::Bool(true)) {
             let visible = children(node)
-                .filter(|id| nodes.get(*id).is_some_and(|n| n.ports.get("hidden") != Some(&Value::Bool(true))))
+                .filter(|id| {
+                    nodes
+                        .get(*id)
+                        .is_some_and(|n| n.ports.get("hidden") != Some(&Value::Bool(true)))
+                })
                 .collect::<Vec<_>>();
             if visible.len() == 1 && placements[visible[0]]["edge"] == "fill" {
                 self.node(ui, visible[0], nodes, route, depth + 1, events);
