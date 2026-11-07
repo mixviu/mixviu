@@ -558,3 +558,34 @@ the standing truthful-runtime-data ruling, not a fabricated gold version.
 Exact-source repeat `term-about-exact-8c5f6333` at
 `8c5f6333c002bb1db8ad4684457394c06e60ef25` pending before final artifact
 evidence. Overall **NOT ACCEPTED**; full remaining inventory applies.
+
+### Exact About and Mix zoom-persistence checkpoint
+
+`term-about-exact-8c5f6333-a1` passed with no worker diff; full saved log
+read. Matching debug executable SHA256
+`f361ee4f3e477144fb03b814a9d5d8fe6344b1533b015435eb058d36b04891c1`.
+Native `native.3l2dVA` repeats About, normal close and stopped-process
+receipt. Inspected exact-source About figures: header and regions above/
+below provenance 0/0; whole SSIM/RMSE .0046487/.038541, entirely actual
+version/SHA/time data. Authority-loss/recovery and release coverage remain.
+
+The gold zoom-persistence machine is now Mix-owned: 400 ms debounce,
+one read/write in flight, fenced settings.apply, fresh-read conflict
+retry, event-driven failure retry, refusal clear/restore and reset's
+unwritten cancellation or in-flight correction. It uses existing Viu
+Jobs/timers and settingsd, with native process identity/counters for
+operation IDs. Added a pure scenario suite and provenance source hash.
+Six local Mix suites pass.
+
+Composite diagnostic `native.mnoDiz` (8c5f6333 executable, 78d62995
+bundle) passes saving a zoom and reset before writing; all recorded PIDs
+stop. Earlier native.o6EiK2/native.pLLrd4 exposed uuid() being unavailable
+in the embedded evaluator; replaced it with native identity/counters,
+also fixing the clipboard-read token path. They are retained failures.
+The final f32 size bridge reuses gold FontSize for exact persisted values;
+that native change is not covered by the composite diagnostic.
+
+Next gate `term-zoom-persist-f0d36085` at
+`f0d3608585f7791e4b3f536a6a6c78237466f26d`. Exact-source zoom persistence
+tests, native conflict/failure/reconnect/reset races and release evidence
+are still required. Overall **NOT ACCEPTED**.

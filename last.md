@@ -857,3 +857,40 @@ OSC52/mouse, verified session/control/sealed shell, full Bus/IME/search/
 all Prefs and release acceptance. No Fable question, installs or VT work.
 
 branch: lab/parity-term; head SHA: 8c5f6333c002bb1db8ad4684457394c06e60ef25 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — exact About repeat, zoom persistence and remaining clipboard/session/Bus/Prefs/input/search/release acceptance open; CBC job ids: term-about-provenance-43dcbf58-a1 (green, lock/fmt applied), term-about-exact-8c5f6333 (next await).
+
+## Exact About passed; zoom persistence wired in Mix
+
+term-about-exact-8c5f6333-a1 green, no worker diff; complete log read.
+Exact executable SHA256
+f361ee4f3e477144fb03b814a9d5d8fe6344b1533b015435eb058d36b04891c1.
+Native.3l2dVA About/close/cleanup passes. Inspected about-8c5f6333-exact:
+all measured non-data regions 0/0; full .0046487 SSIM/.038541 RMSE,
+only own version/SHA/time data differs. About authority-loss/recovery
+and release still pending.
+
+Implemented gold font.rs persistence machine as pure Mix, tested debounce,
+reset/in-flight correction, conflicts, refused/failed writes, queued reads,
+retarget and no timer retries after failure. Wired existing Jobs/timers
+to serial native settings.get/settings.apply with revision/incarnation
+fences. Configured size stays distinct from an unsaved local zoom; fresh
+profile becomes the reset target. Added source hash/provenance.
+
+Composite native.mnoDiz passes actual settings save and reset cancellation
+(8c executable +78d bundle), tracked PIDs stopped. Earlier native.o6EiK2/
+native.pLLrd4 failed when write reached missing embedded uuid(); trace
+retained. Native process identity plus counters now name operations and
+clipboard-read tokens. Final native font-size bridge uses gold f32
+FontSize; composite did not cover those final bytes. Six Mix suites pass.
+
+Next CBC term-zoom-persist-f0d36085 at
+f0d3608585f7791e4b3f536a6a6c78237466f26d, term_gate --prepare. Read full
+log, apply patch and exact repeat as needed. Fetch matching executable/
+bundle; derive exact zoom harness from zoom-78d62995-diagnostic.mix,
+updating artifact path. Verify settings size equals measured native f32,
+400ms latest zoom, reset cancellation/correction, conflict fresh fence,
+authority absence/return and failure no-poll retries. Continue remaining
+primary/OSC52/mouse, verified session/control/sealed Mix shell handoff,
+full Bus/IME/search/all Prefs and release acceptance. No Fable question,
+installs, merges or VT changes.
+
+branch: lab/parity-term; head SHA: f0d3608585f7791e4b3f536a6a6c78237466f26d (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — zoom exact/native gate and remaining clipboard/session/Bus/Prefs/input/search/release acceptance open; CBC job ids: term-about-exact-8c5f6333-a1 (green exact source/native About), term-zoom-persist-f0d36085 (next await).
