@@ -450,7 +450,7 @@ impl Views {
                         input::Clipboard::Keys(keys) => {
                             surface.blink.activity(Instant::now());
                             terminal.keys(&keys, Instant::now())
-                        },
+                        }
                         input::Clipboard::Ignore => Ok(()),
                         clipboard => {
                             let value = match clipboard {
@@ -502,7 +502,9 @@ impl Views {
                             Ok(())
                         } else {
                             let keys = input::keys_for(key, modifiers);
-                            if !keys.is_empty() { surface.blink.activity(Instant::now()); }
+                            if !keys.is_empty() {
+                                surface.blink.activity(Instant::now());
+                            }
                             terminal.keys(&keys, Instant::now())
                         }
                     }
@@ -510,7 +512,9 @@ impl Views {
                         if !self.composition.has_owner() && !self.composition.stale() =>
                     {
                         let keys = input::typed(&text, self.modifiers);
-                        if !keys.is_empty() { surface.blink.activity(Instant::now()); }
+                        if !keys.is_empty() {
+                            surface.blink.activity(Instant::now());
+                        }
                         terminal.keys(&keys, Instant::now())
                     }
                     egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
@@ -603,9 +607,18 @@ impl Views {
             }
         }
         let mut snapshot = terminal.grid_snapshot();
-        let (shown, next) = surface.blink.frame(Instant::now(), response.has_focus() && ui.input(|i|i.focused), p["cursor_blink"] == true, snapshot.screen.cursor_visible);
-        if let Some(next) = next { ui.ctx().request_repaint_after(next); }
-        if !shown { snapshot.screen.cursor_visible = false; }
+        let (shown, next) = surface.blink.frame(
+            Instant::now(),
+            response.has_focus() && ui.input(|i| i.focused),
+            p["cursor_blink"] == true,
+            snapshot.screen.cursor_visible,
+        );
+        if let Some(next) = next {
+            ui.ctx().request_repaint_after(next);
+        }
+        if !shown {
+            snapshot.screen.cursor_visible = false;
+        }
         if p["cursor_visible"] == false {
             snapshot.screen.cursor_visible = false;
         }
