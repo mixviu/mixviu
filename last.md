@@ -280,8 +280,9 @@ mode palette entry, installs live appearance in each chooser viewport and
 reports readiness after the first drawn scene. Initial decoration negotiation
 matches the undecorated native builder. Gold and candidate chooser captures
 now wait for mapping and complete the same native resize/repaint sequence
-before capture. Matched effective legacy radii leave only truthful caller
-identities in the chooser difference figure; images are never rescaled.
+before capture. Matched effective legacy radii close the control geometry;
+the later region audit found an outer-corner defect in this source. Images
+are never rescaled. The next checkpoint records its repair.
 
 Prior-source `955bd3f2b76b` passed its heavy gate and all twelve release-native
 groups. Its audit exercises all 44 gold descriptors and 33 core actions;
@@ -297,3 +298,23 @@ chooser/budget probe and generate the region audit. Full log and image
 inspection remain required before ACCEPTED. No installation or desk action.
 
 branch lab/parity-dopus; head SHA 7c96aaed75fcd276bf196038154169ac5eff5b9c (tested implementation; receipt-only commit follows); OPEN: final exact-source release gate/native suite and inspection; CBC dopus-r4-release-frame-a1 PASS, dopus-r4-native-final-a1 PASS, 20261107-163547-a13208ea PASS scoped checks/debug with formatting applied, dopus-r4-accept-settled QUEUED detached.
+
+### Native chooser corners closed
+
+Implementation `4bccf5913312900b504054fc3c2d277078071c4a` installs the same
+native toolkit frame facility as the main generic host and honours the Mix
+chooser's explicit client-side frame. This closes the square outer corners
+missed by the earlier whole-image inspection. Save, replacement, options and
+600x300 pairs now have zero SSIM and RMSE distortion in header, navigation,
+pane and form regions at matched effective settings. Only truthful caller
+connection text differs. The native 65,537-name refusal still preserves the
+chooser folder, complete rows and serial and keeps the request open.
+
+Scoped CBC `20261107-165508-fcc5458e` passed all twenty focused tests and the
+debug host build with no worker diff; the complete saved log was read. Final
+source/recipes are frozen as `accept-4bccf5913312-final`. Detached heavy job
+`dopus-r4-accept-framing` replaces own queued job `dopus-r4-accept-settled`,
+cancelled before execution. Owned follow-ons retain the exact release suite,
+matched chooser/budget repeat and regional figures for final inspection.
+
+branch lab/parity-dopus; head SHA 4bccf5913312900b504054fc3c2d277078071c4a (implementation; receipt-only commit follows); OPEN: final exact-source release gate/native suite and inspection; CBC 20261107-165508-fcc5458e PASS scoped debug, dopus-r4-accept-settled cancelled before execution, dopus-r4-accept-framing QUEUED detached.
