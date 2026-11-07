@@ -297,17 +297,22 @@ impl Host {
                     }
                 }
             }
-            _ => match self.calls.begin_with_success_body(r.reply, r.close_after_reply, success_body) {
-                Ok(token) => {
-                    let mut headers = r.headers;
-                    headers.insert("viu-call".into(), token);
-                    let raw = self.preserve_request_body.then_some(r.body);
-                    self.dispatch_body(r.command, r.args, raw, headers, None);
+            _ => {
+                match self
+                    .calls
+                    .begin_with_success_body(r.reply, r.close_after_reply, success_body)
+                {
+                    Ok(token) => {
+                        let mut headers = r.headers;
+                        headers.insert("viu-call".into(), token);
+                        let raw = self.preserve_request_body.then_some(r.body);
+                        self.dispatch_body(r.command, r.args, raw, headers, None);
+                    }
+                    Err(reply) => {
+                        let _ = reply.send((10, json!({"error_code":"BUSY"})));
+                    }
                 }
-                Err(reply) => {
-                    let _ = reply.send((10, json!({"error_code":"BUSY"})));
-                }
-            },
+            }
         }
     }
 }

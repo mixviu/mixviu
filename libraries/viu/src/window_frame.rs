@@ -59,9 +59,18 @@ mod title_tests {
                 Some(expected),
             );
             for (command, args) in [
-                ("term.window", serde_json::json!({"action":"close","viewport":"macro-editor"})),
-                ("term.window", serde_json::json!({"action":"close","viewport":null})),
-                ("term.window", serde_json::json!({"action":"close","viewport":7})),
+                (
+                    "term.window",
+                    serde_json::json!({"action":"close","viewport":"macro-editor"}),
+                ),
+                (
+                    "term.window",
+                    serde_json::json!({"action":"close","viewport":null}),
+                ),
+                (
+                    "term.window",
+                    serde_json::json!({"action":"close","viewport":7}),
+                ),
                 ("term.window", serde_json::json!({"action":"minimize"})),
                 ("other.window", serde_json::json!({"action":"close"})),
             ] {
