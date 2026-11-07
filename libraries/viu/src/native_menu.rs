@@ -16,7 +16,8 @@ impl NativeMenu {
         value: &Value,
         events: &mut Vec<crate::widgets::Intent>,
     ) -> egui::Response {
-        let response = draw(ui, value, false, widget.properties["header_icon"].as_str());
+        let compact = toolkit::menu::effective(ui.ctx()) != design::MenuStyle::Bar;
+        let response = draw(ui, value, compact, widget.properties["header_icon"].as_str());
         if let Some(command) = picked(ui.ctx()) {
             events.push(crate::widgets::Intent {
                 id: widget.id.clone(),
@@ -257,6 +258,54 @@ pub fn picked(ctx: &egui::Context) -> Option<Value> {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn scene_native_menu_collapses_and_restores_at_gold_viewport_boundary() {
+        fn has_label(shape: &egui::Shape, label: &str) -> bool {
+            match shape {
+                egui::Shape::Text(text) => text.galley.job.text == label,
+                egui::Shape::Vec(shapes) => shapes.iter().any(|shape| has_label(shape, label)),
+                _ => false,
+            }
+        }
+        let ctx = egui::Context::default();
+        crate::appearance::install(&ctx);
+        let menus = serde_json::json!([{"label":"File","children":[{"id":"file.refresh","label":"Refresh","enabled":true}]}]);
+        let widget = crate::widgets::Widget::new("menu", "menubar", "", menus.clone());
+        let mut menu = super::NativeMenu;
+        for (width, bar) in [
+            (900.0, true),
+            (450.0, false),
+            (639.0, false),
+            (640.0, true),
+            (900.0, true),
+        ] {
+            for _ in 0..2 {
+                let out = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(width, 560.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        menu.draw(ui, &widget, &menus, &mut vec![]);
+                    },
+                );
+                assert_eq!(
+                    out.shapes.iter().any(|shape| has_label(&shape.shape, "File")),
+                    bar,
+                    "viewport width {width}"
+                );
+                assert_eq!(
+                    super::application_id(&ctx, super::command_slot(0).unwrap()).as_deref(),
+                    Some("file.refresh")
+                );
+                out.drop_without_applying_deltas();
+            }
+        }
+    }
+
     #[test]
     fn hosted_tail_commands_keep_their_owned_identity_across_menu_frames() {
         let ctx = egui::Context::default();
