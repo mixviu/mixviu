@@ -4,6 +4,7 @@
 --         release build of each engine with its size. Every step runs; the
 --         gate fails if any did. The tree must stay clean.
 --   fmt:  run cargo fmt and print the diff to apply locally, then restore.
+--   builtins: build mix, regenerate docs/mix/builtins.md, print the diff.
 --   lock: re-resolve the workspace packages only and print the Cargo.lock
 --         diff, then restore the tree (apply the diff locally).
 $mode = args()[0] ?? "gate"
@@ -35,7 +36,16 @@ if $mode == "fmt" then
   run_argv_must(["git", "checkout", "-q", "--", "."])
   exit(if $r.ok then 0 else 1 end)
 end
-if $mode != "gate" then raise("USAGE", "cutover_gate.mix gate|lock|fmt") end
+if $mode == "builtins" then
+  $b = gate_step(["cargo", "build", "--locked", "-p", "mix"], "6")
+  $r = gate_step(["target/debug/mix", "docs/_build/gen-builtins-md.mix", "--mix", "target/debug/mix"], "6")
+  print("BUILTINS_PATCH_BEGIN")
+  print(run_argv_must(["git", "diff"]))
+  print("BUILTINS_PATCH_END")
+  run_argv_must(["git", "checkout", "-q", "--", "."])
+  exit(if $b.ok and $r.ok then 0 else 1 end)
+end
+if $mode != "gate" then raise("USAGE", "cutover_gate.mix gate|lock|fmt|builtins") end
 
 $checks = [
   ["cargo", "fmt", "--all", "--", "--check"],
