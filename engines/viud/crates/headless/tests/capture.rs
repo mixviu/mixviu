@@ -103,7 +103,7 @@ impl Drop for Bus {
 }
 fn helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output {
     let mut command = Command::new(
-        std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
+        std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
     );
     command
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/bus.mix"))

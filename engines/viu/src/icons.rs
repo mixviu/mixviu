@@ -21,7 +21,7 @@ fn resolver() -> &'static Resolver {
 }
 
 pub(crate) fn resolve(source: &str, size: u32, app: Option<&str>) -> Option<PathBuf> {
-    if source.starts_with("mixos:") {
+    if source.starts_with("mix:") {
         let path = paths::resolve(source).ok()?;
         return path.is_file().then_some(path);
     }

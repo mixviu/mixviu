@@ -138,7 +138,7 @@ fn provenance_json(
 /// prefix is immediately followed by `{`, and keeps only JSON naming the
 /// right crate.
 pub fn marker_prefix() -> String {
-    format!("{}{}", "MIX_ROOT-BUILD", "INFO:1:")
+    format!("{}{}", "MIXOS-BUILD", "INFO:1:")
 }
 
 /// Every well-formed marker JSON object in `bytes` (a binary's contents), in

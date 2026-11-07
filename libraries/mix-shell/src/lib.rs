@@ -3084,7 +3084,7 @@ mod serve_name_tests {
         // whitespace) is a launch error, not a nameless citizen.
         assert!(derive_serve_name(Some(""), "/x/s.mix").is_err());
         assert!(derive_serve_name(Some("   "), "/x/s.mix").is_err());
-        assert!(derive_serve_name(Some("mixos-"), "/x/s.mix").is_err());
+        assert!(derive_serve_name(Some("mix-"), "/x/s.mix").is_err());
     }
 
     #[test]

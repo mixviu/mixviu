@@ -64,7 +64,7 @@ fn all_config_paths_resolve_through_both_loaders() {
 
 #[test]
 fn invalid_logical_paths_fail_and_user_paths_keep_their_meaning() {
-    for invalid in ["mix:var/../escape", "mixos:unknown/file"] {
+    for invalid in ["mix:var/../escape", "mix:unknown/file"] {
         let cfg = Config {
             blob_dir: invalid.into(),
             ..Default::default()

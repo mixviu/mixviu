@@ -1040,7 +1040,7 @@ fn language_table() {
     assert_eq!(d("/x/scene.mix", ""), "scene");
     assert_eq!(d("/x/node.conf.mix", ""), "mix-data");
     assert_eq!(d("/x/a.mix", ""), "mix");
-    assert_eq!(d("/x/tool", "#!/opt/mix/bin/mix"), "mix");
+    assert_eq!(d("/x/tool", "#!/opt/mixos/bin/mix"), "mix");
     assert_eq!(d("/x/tool", "#!/usr/bin/env mix"), "mix");
     assert_eq!(d("/x/tool.sh", "#!/usr/bin/env -S mix --quiet"), "mix");
     assert_eq!(d("/x/tool.sh", "#!/bin/sh"), "shell");
@@ -1067,7 +1067,7 @@ fn language_table() {
         assert_eq!(d(p, ""), l, "{p}");
     }
     assert_eq!(detect(None, ""), "text");
-    assert_eq!(detect(None, "#!/opt/mix/bin/mix"), "mix");
+    assert_eq!(detect(None, "#!/opt/mixos/bin/mix"), "mix");
 }
 
 // ---- OT ------------------------------------------------------------------------

@@ -118,8 +118,8 @@ the native build service, never local Cargo.
 With both galleries running on the current session Bus:
 
 ```
-/opt/mix/bin/mix /path/to/apps/gallery/check.mix parity
-/opt/mix/bin/mix /path/to/apps/gallery/check.mix stress 20 /tmp/gallery-stress.json
+/opt/mixos/bin/mix /path/to/apps/gallery/check.mix parity
+/opt/mixos/bin/mix /path/to/apps/gallery/check.mix stress 20 /tmp/gallery-stress.json
 ```
 
 The driver exercises every declared widget action, alternates language order

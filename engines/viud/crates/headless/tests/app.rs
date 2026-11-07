@@ -184,7 +184,7 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     let reference_frame = root.join("reference.png");
     let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testkit/scripts/app_reference.mix");
     let output = Command::new(
-        std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
+        std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
     )
     .arg(helper)
     .arg(&reference_frame)

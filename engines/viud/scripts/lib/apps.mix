@@ -517,7 +517,7 @@ fn resolve_exec($cmd, $cwd)
   -- the launch cwd. Checked up front because the env(1) -u wrapper would
   -- otherwise spawn successfully and fail only after apps.launch replied.
   if type($cmd) != "string" or $cmd == "" then return nil end
-  if starts_with($cmd, "mixos:") then $cmd = mix_path($cmd) end
+  if starts_with($cmd, "mix:") then $cmd = mix_path($cmd) end
   if not contains($cmd, "/") then return which($cmd) end
   $path = $cmd
   if not starts_with($path, "/") and $cwd != "" then $path = $cwd .. "/" .. $path end

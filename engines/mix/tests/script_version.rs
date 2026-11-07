@@ -84,7 +84,7 @@ fn assert_version_line(o: &Output, name: &str, version: &str, body: &str) -> Str
 }
 
 const VERSIONED: &str =
-    "#!/opt/mix/bin/mix\n-- deploy something\n-- version: 1.2.3\nprint(\"SCRIPT-BODY-RAN\")\n";
+    "#!/opt/mixos/bin/mix\n-- deploy something\n-- version: 1.2.3\nprint(\"SCRIPT-BODY-RAN\")\n";
 const UNVERSIONED: &str = "print(\"SCRIPT-BODY-RAN\")\n";
 
 #[test]
@@ -322,7 +322,7 @@ fn lint(args: &[&str]) -> (i32, String) {
 #[test]
 fn lint_notes_an_unversioned_shebang_or_bin_script() {
     let d = tempfile::tempdir().unwrap();
-    let shebang = write(d.path(), "tool.mix", "#!/opt/mix/bin/mix\nprint(1)\n");
+    let shebang = write(d.path(), "tool.mix", "#!/opt/mixos/bin/mix\nprint(1)\n");
     let in_bin = write(d.path(), "_bin/deploy.mix", "print(1)\n");
     for p in [&shebang, &in_bin] {
         let (code, out) = lint(&["--deny-warnings", p.to_str().unwrap()]);

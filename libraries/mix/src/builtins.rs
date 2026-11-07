@@ -7189,7 +7189,7 @@ fn builtin_run_argv_impl(caller: &str, args: &[Value]) -> MixResult<Value> {
     let mut argv = parse_run_argv_argv(caller, &args[0])?;
     // Resolve at the executing process, including inside ssh_exec's remote
     // driver. A remote logical executable must never use the caller's prefix.
-    if argv[0].starts_with("mixos:") {
+    if argv[0].starts_with("mix:") {
         argv[0] = paths::resolve(&argv[0])
             .map_err(|message| MixError::structured("LAYOUT_PATH", message))?
             .into_os_string()
@@ -14151,7 +14151,7 @@ fn builtin_mix_path(args: Vec<Value>) -> MixResult<Option<Value>> {
         _ => return Err(error("mix_path opts must be a map".into())),
     }
     .map_err(error)?;
-    let path = if name.starts_with("mixos:") {
+    let path = if name.starts_with("mix:") {
         if args
             .get(1)
             .is_some_and(|v| !matches!(v, Value::String(s) if s.is_empty()))

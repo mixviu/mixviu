@@ -141,9 +141,9 @@ fn helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output
         .env("MIX_VAR", root.join("var"))
         .env("MIX_NODE_CONFIG", root.join("etc/node.conf.mix"))
         .output()
-        .expect("cannot start native Mix; set MIX_TEST_MIX_EXE to its binary path (default /opt/mix/bin/mix)")
+        .expect("cannot start native Mix; set MIX_TEST_MIX_EXE to its binary path (default /opt/mixos/bin/mix)")
 }
 
 fn mix_binary() -> std::ffi::OsString {
-    std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into())
+    std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into())
 }
