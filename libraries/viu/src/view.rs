@@ -686,6 +686,8 @@ impl SceneView {
                                 };
                                 if node.family == "row" {
                                     ui.horizontal(|ui| draw(ui));
+                                } else if node.ports.get("scroll")==Some(&Value::Bool(true)) {
+                                    egui::ScrollArea::vertical().id_salt((&key,"scroll")).auto_shrink(false).show(ui,|ui|draw(ui));
                                 } else {
                                     ui.vertical(|ui| draw(ui));
                                 }

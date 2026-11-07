@@ -36,6 +36,11 @@ fn publish_email()
     if $mail_settings.source=="missing" then $look.status=$look.status.." — Settings service not running: showing the saved accounts, read-only" end
   end
   $m=$frame.apply($m,$look)
+  if $chrome.search==true then
+    $choices=map($actions.registry(action_context()),fn($a)={id:$a.id,label:$a.label,enabled:$a.enabled and $a.id!="view.search"})
+    $choices=push($choices,{id:"cancel",label:"Cancel",enabled:true,cancel:true})
+    $m.native_overlays=push($m.native_overlays,{command:"email.search.intent",definition:{id:"email-search",kind:"dialog-form",label:"",initial:{open:true,instance:$chrome.search_serial,title:"Search menus",body:"",choices:$choices},properties:{style:"command-search"}}})
+  end
   if not $fixture then $m=composer_restore_model(form_model(composer_models($m))) end
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$m}
 end
@@ -182,7 +187,7 @@ fn execute_email($id,$origin)
   elif $id=="help.shortcuts" then $chrome.dialog="shortcuts"
   elif $id=="help.macros" then $chrome.macros_open=not $chrome.macros_open
   elif $id=="view.search" then
-    return {rc:10,body:{error_code:"DISABLED",message:"Command search is awaiting the shared palette port"}}
+    $chrome.search=true;$chrome.search_serial=($chrome.search_serial ?? 0)+1
   elif $id=="mail.compose" then
     if not $fixture then $opened=composer_open({});publish_email();return $opened else $view="Compose" end
   elif $id=="calendar.new_event" then $out=form_open("event");publish_email();return $out
@@ -280,6 +285,11 @@ end
 on email.restore.intent
   $out=composer_restore_answer($event.args.value.choice);publish_email();reply($out.rc,json_encode($out.body))
 end
+on email.search.intent
+  $chrome.search=false
+  if $event.args.value.choice!="cancel" then $out=execute_email($event.args.value.choice,"palette") end
+  publish_email();reply(0,"{}")
+end
 on viu.timer
   $a=$event.args.value
   if $a.kind=="suggest" then
@@ -333,6 +343,7 @@ on email.dialog.intent
 end
 on viu.job.completed
   $d=$event.args
+  if $d.tag.owner.composer_document!=nil then composer_document_completed($d.tag.owner.composer_document,$d.rc,$d.body);publish_email();return end
   if $d.tag.owner.desktop!=nil then viu_reply("finish",$d.tag.owner.desktop,{rc:$d.rc,body:$d.body});return end
   if $d.tag.owner.id!=nil then wire_completed($d);publish_email();return end
   wire_pump()
@@ -411,7 +422,7 @@ on email.show
   $token=$event.headers["viu-call"]
   if not viu_reply("hold",$token,{}) then reply(10,json_encode({error_code:"BUSY",message:"Request receipt unavailable"}));return end
   $path=path_join(dirname(script_path()),"desktop-job.mix")
-  send "viu-local" "jobs.start" id="show-"..uuid() owner={desktop:$token} path=$path source=read_file($path) command="job.run" args={comp:env("MIXOS_COMP_SERVICE","compd"),app_id:"dev.mixos.email",pid:$ctx.pid}
+  send "viu-local" "jobs.start" id="show-"..$compose_ids.mint() owner={desktop:$token} path=$path source=read_file($path) command="job.run" args={comp:env("MIXOS_COMP_SERVICE","compd"),app_id:"dev.mixos.email",pid:$ctx.pid}
   if $rc!=0 then viu_reply("finish",$token,{rc:10,body:{error_code:"SERVER",message:"Desktop worker unavailable"}}) end
   reply(0,"{}")
 end

@@ -106,7 +106,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("h", false, None),
         p("chrome", "bool", false, Some("true")),
     ];
-    static BOX: [Port; 8] = [
+    static BOX: [Port; 9] = [
         p("children", "list", true, None),
         pnd("gap", "0", None),
         pnd("padding", "0", None),
@@ -117,6 +117,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("height", false, None),
         pn("radius", false, None),
         p("background", "string", false, None),
+        p("scroll", "bool", false, Some("false")),
     ];
     static SECTION: [Port; 7] = [
         p("children", "list", true, None),

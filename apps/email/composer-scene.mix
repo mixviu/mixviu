@@ -5,10 +5,10 @@ citizen: email
 ---
 ```mix
 {
-root:{widget:"column",native_spacing:true,padding:8,children:["compose-headers","compose-gap","compose-content"]},
-"compose-gap":{widget:"spacer",size:4},
+root:{widget:"column",native_spacing:true,padding:8,children:["compose-headers","compose-content"]},
 "compose-headers":{widget:"control",definition:"= $model.headers",on_intent:"email.compose.intent"},
-"compose-content":{widget:"content",surface:"editor",settings:"= $model.reader_content",scroll:false,children:["compose-body"]},
+"compose-content":{widget:"column",native_spacing:true,padding_top:4,children:["compose-surface"]},
+"compose-surface":{widget:"content",surface:"editor",settings:"= $model.reader_content",scroll:false,children:["compose-body"]},
 "compose-body":{widget:"control",definition:"= $model.body_editor",on_intent:"email.compose.intent"}
 }
 ```

@@ -147,6 +147,20 @@ fn composer_intent($a)
   if $c==nil then return wire_refuse("NOT_FOUND","No compose is open") end
   if $c.busy then return wire_refuse("BUSY","Sending…") end
   if $a.id=="compose-confirm" then return composer_close($key,$a.value.choice ?? $a.value) end
+  if $a.id=="compose-replace" then
+    $doc=$c.pending_document;$composers[$key].pending_document=nil
+    if $a.value.choice=="replace" then return composer_document_apply($key,$doc) end
+    return {rc:0,body:{}}
+  end
+  if $a.id=="compose-headers" and $c.document_mode!=nil then
+    if $a.action=="picked" then
+      $composers[$key].chooser=false;$composers[$key].document_mode=nil
+      return composer_document_start($key,"read",{path:$a.value[0]})
+    elif $a.action=="saved" then
+      $composers[$key].chooser=false;$composers[$key].document_mode=nil
+      return composer_document_start($key,"save",$a.value)
+    elif $a.action=="cancel" then $composers[$key].chooser=false;$composers[$key].document_mode=nil;return {rc:0,body:{}} end
+  end
   if $a.action=="completion_close" then $composers[$key].suggest=nil;return {rc:0,body:{}} end
   if $a.action=="completion_move" then
     $s=$c.suggest
@@ -196,6 +210,12 @@ fn composer_command($key,$id)
   if $id=="file.quit" then return composer_quit() end
   if $id=="file.close" or $id=="compose.close" then return composer_close($key) end
   if $id=="compose.attach" then $composers[$key].chooser=true;return {rc:0,body:{executed:$id}} end
+  if contains(["compose.open","compose.save_as"],$id) then
+    if $composers[$key].busy then return wire_refuse("BUSY","Sending…") end
+    $composers[$key].document_mode=if $id=="compose.open" then "open" else "save" end
+    $composers[$key].chooser=true;$composers[$key].chooser_instance=($composers[$key].chooser_instance ?? 0)+1
+    return {rc:0,body:{executed:$id}}
+  end
   if $id=="compose.attachments.clear" then $composers[$key].attachments=[];$composers[$key]=composer_files($composers[$key]);$composers[$key].revision=$composers[$key].revision+1;composer_save($key);return {rc:0,body:{executed:$id}} end
   if contains(["compose.undo","compose.redo","compose.cut","compose.copy","compose.paste"],$id) then
     $composers[$key].edit_serial=($composers[$key].edit_serial ?? 0)+1;$composers[$key].edit_command=split($id,".")[1];return {rc:0,body:{executed:$id}}
@@ -233,9 +253,11 @@ fn composer_models($m)
       push($fields,$f)
     end
     $headers={id:"compose-headers",kind:"header-form",label:"",initial:{native_spacing:true,enabled:not $c.busy,identity:$c.draft_id,fields:$fields,attachments:map($c.files,fn($f)={path:$f.path,text:$f.label.." · "..composer_size($f.size)..(if $f.state!="ready" then " — "..$f.state else "" end),bad:$f.state!="ready"}),attachment_label:"Files",attach_icon:"paperclip",attach_label:"Attach…",remove_label:"Remove attachment",chooser:{open:$c.chooser,title:"Attach files",directory:env("HOME")}},properties:{}}
+    if $c.document_mode!=nil then $headers.initial.chooser=merge($headers.initial.chooser,{mode:$c.document_mode,instance:$c.chooser_instance,title:if $c.document_mode=="open" then "Open mail document" else "Save mail document as" end,confirm:if $c.document_mode=="open" then "Open" else "Save" end}) end
     $body={id:"compose-body",kind:"editor",label:"Body",initial:$c.body,properties:{native_document:true,prose:true,document:$c.draft_id,language:"text",soft_wrap:true,line_numbers:false,remote_carets:false,read_only:$c.busy,command:{serial:$c.edit_serial ?? 0,name:$c.edit_command ?? ""}}}
     $child={values:{},headers:$headers,body_editor:$body,reader_content:$mail_settings.composer ?? {},native_overlays:[],shortcuts:[],window_close:false}
     if $c.confirm then $child.native_overlays=[{command:"email.compose.intent",definition:{id:"compose-confirm",kind:"dialog-form",label:"",initial:{open:true,instance:$c.draft_id,title:if $compose_quitting then "Quit with an unsent message?" else "Close this message?" end,body:"Your draft is kept on this computer and offered again when Email starts. Discard deletes it.",choices:[{id:"keep",label:"Keep Draft",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Keep Editing",enabled:true,cancel:true}]},properties:{style:"gold"}}}] end
+    if $c.pending_document!=nil then $child.native_overlays=push($child.native_overlays,{command:"email.compose.intent",definition:{id:"compose-replace",kind:"dialog-form",label:"",initial:{open:true,instance:$c.draft_id,title:"Replace message?",body:"Replace the message in this composer with the mail document?",choices:[{id:"replace",label:"Replace",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]},properties:{style:"gold"}}}) end
     $menus=[{id:"File",label:"File",enabled:true,children:[{id:"compose.new",label:"New",enabled:true,shortcut:"Ctrl+N"},{id:"compose.open",label:"Open…",enabled:not $c.busy,shortcut:"Ctrl+O"},{id:"compose.save_as",label:"Save As…",enabled:not $c.busy,shortcut:"Ctrl+Shift+S"},{id:"mail.send",label:"Send",enabled:composer_sendable($c),shortcut:"Ctrl+Enter"},{separator:true},{id:"compose.close",label:"Close",enabled:true,shortcut:"Ctrl+W"},{id:"file.quit",label:"Quit",enabled:true,shortcut:"Ctrl+Q"}]},{id:"Edit",label:"Edit",enabled:true,children:map([["undo","Undo"],["redo","Redo"],["cut","Cut"],["copy","Copy"],["paste","Paste"]],fn($v)={id:"compose."..$v[0],label:$v[1],enabled:not $c.busy})},{id:"Attachments",label:"Attachments",enabled:true,children:[{id:"compose.attach",label:"Attach files…",enabled:not $c.busy,shortcut:"Ctrl+Shift+A"},{separator:true},{id:"compose.attachments.clear",label:"Remove all attachments",enabled:not $c.busy and len($c.attachments)>0}]},{id:"View",label:"View",enabled:true,children:composer_theme()}]
     $child=$compose_frame.apply($child,{icon:"square-pen",title:"Compose",menus:$menus,toolbar:[{id:"mail.send",label:"Send",icon:"send",enabled:composer_sendable($c)},{id:"view.mode",label:"Toggle light/dark",icon:if $chrome.theme_effective.mode=="dark" then "sun" else "moon" end,enabled:true}],status:$c.error ?? "",window:{"window.decorations":"csd"}})
     $child.frame.status_visible=false
@@ -264,6 +286,40 @@ fn composer_sent($key,$answer)
   $composers[$key].busy=false;$composers[$key].attempt=$answer.attempt ?? $composers[$key].attempt
   if $answer.rc==0 then composer_close($key,"discard")
   else $composers[$key].error=$answer.body.message;composer_save($key) end
+end
+fn composer_document_start($key,$operation,$a)
+  $c=$composers[$key]
+  try
+    if $c==nil then return wire_refuse("NOT_FOUND","No compose is open") end
+    $args=merge($a,{operation:$operation})
+    if $operation=="save" then
+      $args.document={from:$c.from,reply_to:$c.reply_to,subject:$c.subject,body:rtrim($c.body),in_reply_to:$c.in_reply_to,references:$c.references,attachments:$c.attachments,to:map($compose_addresses.decode($c.to),fn($v)=$compose_addresses.format($v)),cc:map($compose_addresses.decode($c.cc),fn($v)=$compose_addresses.format($v)),bcc:map($compose_addresses.decode($c.bcc),fn($v)=$compose_addresses.format($v))}
+    end
+    $path=path_join(dirname(script_path()),"document-job.mix")
+    send "viu-local" "jobs.start" id="document-"..$compose_ids.mint() owner={composer_document:{key:$key,revision:$c.revision,generation:$wire_generations[$c.account] ?? 0,operation:$operation}} path=$path source=read_file($path) command="job.run" args=$args
+    if $rc!=0 then return wire_refuse("BUSY","Document worker unavailable") end
+    return {rc:0,body:{}}
+  catch $message return wire_refuse("DOCUMENT_INVALID_VALUE",$message) end
+end
+fn composer_document_completed($tag,$rc,$body)
+  global $composers
+  $c=$composers[$tag.key]
+  if $c==nil then return end
+  if $tag.revision!=$c.revision or $tag.generation!=($wire_generations[$c.account] ?? 0) then $composers[$tag.key].error="The composer changed while the document was loading; open it again";return end
+  if $rc!=0 then $composers[$tag.key].error=$body.message;return end
+  if $tag.operation=="save" then $composers[$tag.key].notice="Saved "..$body.path;return end
+  if $c.revision>0 or $c.restored==true or len($c.attachments)>0 then $composers[$tag.key].pending_document=$body.document
+  else composer_document_apply($tag.key,$body.document) end
+end
+fn composer_document_apply($key,$doc)
+  global $composers,$compose_focused
+  $old=$composers[$key];$opened=composer_open(merge($doc,{account:$old.account}))
+  if $opened.rc!=0 then $composers[$key].error=$opened.body.message;return $opened end
+  $next=$composers[$opened.body.window];$next.body=$doc.body
+  $path=path_join(viu_app_dirs("email").state,"drafts/"..$old.draft_id..".json")
+  if exists($path) then viu_files("remove",{path:$path}) end
+  $composers=delete($composers,$opened.body.window);$composers[$key]=$next;$compose_focused=$key
+  return {rc:0,body:{}}
 end
 fn composer_load_drafts()
   global $compose_restore

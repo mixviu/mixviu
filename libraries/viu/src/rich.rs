@@ -453,6 +453,24 @@ pub(crate) fn draw(
     events: &mut Vec<Intent>,
 ) -> egui::Response {
     let id = &widget.id;
+    if widget.kind=="dialog-form" && widget.properties["style"]=="command-search" {
+        let marker=egui::Id::unique((ui.ctx().viewport_id(),id,"search-instance"));
+        let first=ui.ctx().data(|d|d.get_temp::<Value>(marker)).as_ref()!=Some(&value["instance"]);
+        let mut registry=toolkit::Registry::<()>::new();let mut catalogue=String::new();
+        for choice in value["choices"].as_array().unwrap().iter().filter(|c|c["enabled"]==true && c["id"]!="cancel") {
+            let Some(slot)=crate::native_menu::native_id(ui.ctx(),text(choice,"id")) else {continue;};
+            catalogue.push_str(&format!("{} = {}\n",slot,text(choice,"label").replace(['\r','\n','{','}']," ")));
+            registry.add(toolkit::Action{id:slot,label:slot,menu:None,submenu:None,group:0,shortcut:None,icon:None,enabled:toolkit::action::always,run:|_|{}});
+        }
+        let strings=toolkit::Strings::new(&catalogue);
+        if first {toolkit::search::show(ui.ctx(),&registry,&(),&strings,false);ui.ctx().data_mut(|d|d.insert_temp(marker,value["instance"].clone()));}
+        if let Some(chosen)=toolkit::search::show(ui.ctx(),&registry,&(),&strings,value["open"]==true) {
+            let choice=chosen.and_then(|(slot,_)|crate::native_menu::application_id(ui.ctx(),slot)).unwrap_or_else(||"cancel".into());
+            toolkit::search::show(ui.ctx(),&registry,&(),&strings,false);
+            emit(events,id,"answer",json!({"choice":choice,"instance":value["instance"]}));
+        }
+        return ui.allocate_response(egui::Vec2::ZERO,egui::Sense::hover());
+    }
     if widget.kind == "dialog-form" && widget.properties["style"] == "gold" {
         return gold_dialog(ui, widget, value, geometry, events);
     }
