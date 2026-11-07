@@ -2,10 +2,10 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-service `.conf.mix` I/O.
 //!
-//! Each service owns its own file at `~/.config/mix/<service>.conf.mix`.
+//! Each service owns its own file at `~/.config/mix/<service>/<service>.conf.mix`.
 //! Define a typed `*Settings` struct with `Default + Serialize + Deserialize`,
 //! then call `load_service::<T>("name")` to read it. Missing files are
-//! materialized with defaults so `cat ~/.config/mix/<name>.conf.mix` is
+//! materialized with defaults so `cat ~/.config/mix/<name>/<name>.conf.mix` is
 //! always a self-documenting view of the live configuration.
 //!
 //! `.conf.mix` is the only config format. The legacy `.toml`
@@ -26,10 +26,10 @@ pub fn config_dir() -> PathBuf {
 }
 
 fn conf_mix_path(dir: &Path, service: &str) -> PathBuf {
-    dir.join(format!("{service}.conf.mix"))
+    dir.join(service).join(format!("{service}.conf.mix"))
 }
 
-/// Load a per-service `.conf.mix` file from `~/.config/mix/`.
+/// Load a per-service `.conf.mix` file from `~/.config/mix/<service>/`.
 ///
 /// Resolution order:
 /// 1. `<service>.conf.mix` — parsed via the strict-data serde bridge.
@@ -98,7 +98,8 @@ where
     T: serde::Serialize,
 {
     let path = conf_mix_path(dir, service);
-    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let parent = path.parent().unwrap_or(dir);
+    std::fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     let content = strict::to_string_pretty(settings)
         .map_err(|e| anyhow::anyhow!("serializing {service} settings: {e}"))?;
     std::fs::write(&path, content).with_context(|| format!("writing {}", path.display()))?;
@@ -144,7 +145,7 @@ mod tests {
             tags: vec!["x".into(), "y".into()],
         };
         save_service_in(&dir, &want, "demo").unwrap();
-        assert!(dir.join("demo.conf.mix").exists());
+        assert!(dir.join("demo").join("demo.conf.mix").exists());
         let got: Demo = load_service_in(&dir, "demo").unwrap();
         assert_eq!(got, want);
         let _ = std::fs::remove_dir_all(&dir);
@@ -156,8 +157,8 @@ mod tests {
         let got: Demo = load_service_in(&dir, "demo").unwrap();
         assert_eq!(got, Demo::default());
         // Materialised file is `.conf.mix`, not `.toml`.
-        assert!(dir.join("demo.conf.mix").exists());
-        assert!(!dir.join("demo.toml").exists());
+        assert!(dir.join("demo").join("demo.conf.mix").exists());
+        assert!(!dir.join("demo").join("demo.toml").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -174,7 +175,7 @@ mod tests {
         .unwrap();
         let got: Demo = load_service_in(&dir, "demo").unwrap();
         assert_eq!(got, Demo::default());
-        assert!(dir.join("demo.conf.mix").exists());
+        assert!(dir.join("demo").join("demo.conf.mix").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
