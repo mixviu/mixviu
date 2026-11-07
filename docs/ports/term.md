@@ -1130,3 +1130,50 @@ term_gate --prepare. Read complete log; fix failures, apply formatting/lock
 and repeat exact source. Fetch verified artifact for isolated protected
 input/snapshot/notice and unchanged matched-session captures, then continue
 the Mix policy adapter and child forwarding.
+
+### Protected input verified; child forwarding checkpoint
+
+`term-protected-input-7474c477-a1` passed: 166 terminal tests, five existing
+ignores, seven input tests, two bundle tests, six Mix suites, search/dialog,
+foreign gate and debug build. Full 62238-byte saved log read in three
+chunks. Formatting-only worker patch applied in dd1a5ac5. The installed
+recipient's real-Mix regression passed in both isolated close/exit modes:
+protected snapshot, real PTY input execution, identical retry, conflict,
+stale native pane/foreground refusal, retained PTY completion with exact
+written byte count and replay of the original acknowledgement.
+
+Fetched the worker debug artifact/source bundle; verified receipt source,
+profile and executable SHA256 before execution:
+de5576255c97a14d46766c49e258829444d55209d8221127b5bb4b4dc14358a0.
+Private host run native.H9rrqG passed enrolled panes/tab/split/focus/real
+shell exit and normal close; all seven tracked PIDs stopped. Its initial
+PNG remains byte-identical to retained gold, SHA256
+e31900b2f10ca55d792ca7556b5f19da05f151dcbb4ba000d334f9834a994865.
+This is a diagnostic debug witness after worker formatting, not a clean
+exact-source or release acceptance record; the formatting is now committed
+and needs the next source gate. Protected API cases above were exercised
+by the real-broker CBC regression, not asserted by the UI witness script.
+
+dd1a5ac59f9081038302de3d900d7eb9d01d346c adds pinned gold forward_execute
+as a recipient child module, including execute/result/cancel and task
+submit/result/cancel. The exact native child binding determines its shell
+Source. Prompt/task policy stays in the child; no pane or retained-state
+lock spans the five-second native RPC. Caller epoch, on-behalf-of label,
+shared forwarded-id mapping, request retirement, child operation mapping,
+refusal vocabulary/details and byte limits retain gold behaviour. Child
+answers are retained; timeout/transient resource/oversized placeholders
+are not, so exact retries can reach child dedupe. New absent task options
+stay omitted rather than relayed as null. The handler stays single-flight.
+
+Extended the real-Mix regression with current prompt generation, verified
+caller epoch, forwarded evaluation completion, isolated task result 42,
+identical execute/task retries and result/cancel family separation. These
+new cases await CBC. Layout/session metadata through the in-process Mix
+adapter, complete gold enforcement/reconnect/descriptor coverage, remaining
+app inventory and exact release acceptance remain open. NOT ACCEPTED.
+No Fable deviation or gold/desktop changes.
+
+Next CBC `term-child-forward-dd1a5ac5`, exact code above,
+term_gate --prepare. Read full log; fix failures, apply fmt/lock and repeat
+exact source if changed. Continue the Mix-owned metadata/layout adapter and
+native acceptance; do not treat these debug witnesses as final release.
