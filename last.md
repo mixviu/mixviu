@@ -260,11 +260,18 @@ The migration's `extract_bundle` still expects the old repo-relative layout
 tar root): it needs to unpack this tar at `/opt/mix` instead, and it can drop
 its `copy_tree` of gold `icons`, `wallpapers`, `brand` and `assets`.
 
-Asset store: the bundle copies the font set and wallpapers from a store and
-checks every byte against `share/assets/core.conf.mix` (SHA-256 and BLAKE3)
-and `share/wallpapers/manifest.conf.mix`. cbc2 and cbc3 have it at
-`/build/mixviu-assets` (staged from the host's gold install); elsewhere the
-gold `/opt/mixos/share` serves, read only.
+Asset store: `tools/apps_bundle.mix` rebuilds it from the pins. A missing
+font set is downloaded by `share/assets/install.mix` from each pinned upstream
+URL at its revision and checked by BLAKE3 and SHA-256 before it is stored.
+The wallpapers are not byte-reproducible from upstream (the photos are
+3840x2160 crops re-encoded at JPEG quality 92; the generated ones are
+ImageMagick plasma fields whose seeds were not recorded), so a missing one is
+copied read-only from the gold install and stored only when size and SHA-256
+match its pin. Gold is the last resort for fonts. Anything else is refused.
+The gate uses `/build/mixviu-assets`. Proof: cachyos job
+20261107-212900-1e453cb7 at b37f0d3 packed apps.tar from an empty scratch
+store: 17 font files downloaded and verified, 12 wallpapers from gold,
+360 entries.
 
 ## Ported Mix services
 
