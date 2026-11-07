@@ -20,7 +20,7 @@
 -- image layout from that tree and tars it to DIR/mixviu-KIND.oci.tar
 -- (deterministic: sorted entries, numeric owners, mtimes clamped to the
 -- snapshot day). prove unpacks the packed layer into DIR/verify and runs
--- `cargo build --locked -p mix` inside it under systemd-nspawn, with this
+-- `cargo build --locked -p mix` chrooted inside it (with_mounts), with this
 -- checkout bound read-only at /src. survey builds mixd, viu and viud there
 -- too and maps each engine's ldd output to the packages that own it. all
 -- runs build, pack, prove (build kind), survey (build kind) and, unless
@@ -116,17 +116,63 @@ fn mounts_under($dir)
   return $out
 end
 
--- systemd-nspawn on a tree: no machine registration, a stub init, the
--- host's resolver, toolchain env as in the image config.
-fn nspawn($root, $binds, $env, $cwd, $argv, $timeout)
-  $a = ["systemd-nspawn", "--quiet", "--register=no", "--as-pid2", "--console=pipe",
-    "--resolv-conf=copy-host", "--timezone=off", "-D", $root]
-  $a = concat($a, $binds)
-  for each $k in keys($env)
-    push($a, "--setenv=" .. $k .. "=" .. $env[$k])
+-- Run host argv while the tree has the mounts pacstrap gives chrooted
+-- scriptlets (proc, read-only sys, dev, run, tmp), each bind {src, dst, ro}
+-- and the host resolver. Everything is undone in finally, and the tree's own
+-- resolv.conf is put back.
+--
+-- Not systemd-nspawn: the CBC workers are LXC containers, where nspawn from
+-- an ssh session fails resetting the audit login UID and, from a systemd-run
+-- unit, the kernel refuses its fresh proc mount (lab, 2026-11-07).
+fn with_mounts($root, $binds, $argv, $timeout)
+  $plan = [
+    {at: "proc", argv: ["mount", "-t", "proc", "-o", "nosuid,noexec,nodev", "proc", $root .. "/proc"]},
+    {at: "sys", argv: ["mount", "-t", "sysfs", "-o", "ro,nosuid,noexec,nodev", "sys", $root .. "/sys"]},
+    {at: "dev", argv: ["mount", "--bind", "/dev", $root .. "/dev"]},
+    {at: "run", argv: ["mount", "-t", "tmpfs", "-o", "nosuid,nodev,mode=0755", "run", $root .. "/run"]},
+    {at: "tmp", argv: ["mount", "-t", "tmpfs", "-o", "nosuid,nodev,mode=1777", "tmp", $root .. "/tmp"]}
+  ]
+  $resolv = $root .. "/etc/resolv.conf"
+  $saved = if is_file($resolv) then read_file($resolv) else nil end
+  $done = []
+  try
+    for each $m in $plan
+      mkdir($root .. "/" .. $m.at)
+      capture($m.argv, 30)
+      push($done, $root .. "/" .. $m.at)
+    end
+    for each $b in $binds
+      $dst = $root .. $b.dst
+      mkdir($dst)
+      capture(["mount", "--bind", $b.src, $dst], 30)
+      push($done, $dst)
+      if $b.ro then capture(["mount", "-o", "remount,bind,ro", $dst], 30) end
+    end
+    -- Only into an installed tree: before pacman lays down filesystem, a
+    -- resolv.conf would conflict with the package's own.
+    if is_file($root .. "/usr/bin/env") then write_file($resolv, read_file("/etc/resolv.conf")) end
+    -- A list timeout means "capture": [seconds] returns the output.
+    if type($timeout) == "List" then
+      return run_argv_must($argv, {timeout: $timeout[0], max_output: 64000000, stderr: "stdout"})
+    end
+    return run_logged($argv, $timeout)
+  finally
+    for each $p in reverse($done)
+      run_argv(["umount", $p], {timeout: 60})
+    end
+    if $saved != nil then write_file($resolv, $saved) elif exists($resolv) then remove($resolv) end
+    $left = mounts_under($root)
+    if len($left) > 0 then raise("IMAGE_MOUNT", "Still mounted: " .. join($left, " ")) end
   end
-  $a = concat($a, ["--chdir=" .. $cwd, "--"])
-  return run_logged(concat($a, $argv), $timeout)
+end
+
+-- argv chrooted into the tree with a clean environment and working directory.
+fn in_root($root, $binds, $env, $cwd, $argv, $timeout)
+  $a = ["chroot", $root, "/usr/bin/env", "-i", "-C", $cwd]
+  for each $k in sort(keys($env))
+    push($a, $k .. "=" .. $env[$k])
+  end
+  return with_mounts($root, $binds, concat($a, $argv), $timeout)
 end
 
 fn image_env($kind)
@@ -150,36 +196,14 @@ fn cmd_build($kind, $work, $cache)
   $day = snapshot()
   $root = $work .. "/root"
   $cache = $cache ?? ($work .. "/cache")
-  for each $d in ["var/lib/pacman", "etc", "dev", "proc", "sys", "run", "tmp"]
-    mkdir($root .. "/" .. $d)
-  end
+  mkdir($root .. "/var/lib/pacman")
   mkdir($cache)
   write_file($work .. "/pacman.conf", effective_conf($kind))
   $list = packages($kind)
   print("== " .. $kind .. " image: " .. to_string(len($list)) .. " packages asked for, snapshot " .. $day)
-  -- The mounts pacstrap gives install scriptlets and hooks (they run chrooted).
-  $mounts = [
-    ["proc", ["mount", "-t", "proc", "-o", "nosuid,noexec,nodev", "proc", $root .. "/proc"]],
-    ["sys", ["mount", "-t", "sysfs", "-o", "ro,nosuid,noexec,nodev", "sys", $root .. "/sys"]],
-    ["dev", ["mount", "--bind", "/dev", $root .. "/dev"]],
-    ["run", ["mount", "-t", "tmpfs", "-o", "nosuid,nodev,mode=0755", "run", $root .. "/run"]],
-    ["tmp", ["mount", "-t", "tmpfs", "-o", "nosuid,nodev,mode=1777", "tmp", $root .. "/tmp"]]
-  ]
-  $done = []
-  $ms = 0
-  try
-    for each $m in $mounts
-      capture($m[1], 30)
-      push($done, $root .. "/" .. $m[0])
-    end
-    $ms = run_logged(concat(["pacman", "--root", $root, "--config", $work .. "/pacman.conf", "--cachedir", $cache,
-      "--noconfirm", "--disable-download-timeout", "-Sy"], $list), 7200)
-  finally
-    for each $p in reverse($done)
-      run_argv(["umount", $p], {timeout: 60})
-    end
-  end
-  if len(mounts_under($work)) > 0 then raise("IMAGE_MOUNT", "Still mounted: " .. join(mounts_under($work), " ")) end
+  -- Scriptlets and hooks run chrooted, so they get the mounts too.
+  $ms = with_mounts($root, [], concat(["pacman", "--root", $root, "--config", $work .. "/pacman.conf",
+    "--cachedir", $cache, "--noconfirm", "--disable-download-timeout", "-Sy"], $list), 7200)
   $installed = lines(trim(capture(["pacman", "--root", $root, "-Q"], 60)))
   $names = map($installed, fn($l) = split($l, " ")[0])
   for each $bad in $LISTS.forbid[$kind]
@@ -194,9 +218,9 @@ fn cmd_build($kind, $work, $cache)
   if $kind == "build" then
     $tc = toolchain()
     $env = image_env("build")
-    $tc_ms = nspawn($root, [], $env, "/", ["rustup", "toolchain", "install", $tc, "--profile", "minimal",
+    $tc_ms = in_root($root, [], $env, "/", ["rustup", "toolchain", "install", $tc, "--profile", "minimal",
       "--component", "clippy,rustfmt"], 3600)
-    nspawn($root, [], $env, "/", ["rustup", "default", $tc], 300)
+    in_root($root, [], $env, "/", ["rustup", "default", $tc], 300)
     remove_dir($root .. $RUSTUP_HOME .. "/downloads")
     remove_dir($root .. $RUSTUP_HOME .. "/tmp")
   end
@@ -324,18 +348,23 @@ fn proof_env()
   return $env
 end
 
+-- This checkout read-only at /src; the scratch target and cargo home at /work.
+fn proof_binds($work)
+  return [{src: $REPO, dst: "/src", ro: true}, {src: $work .. "/prove", dst: "/work", ro: false}]
+end
+
 fn cmd_prove($work)
   need_work($work)
   $lb = layer_blob($work)
   $v = unpacked($work)
   mkdir($work .. "/prove")
-  $binds = ["--bind-ro=" .. $REPO .. ":/src", "--bind=" .. $work .. "/prove:/work"]
+  $binds = proof_binds($work)
   $env = proof_env()
-  nspawn($v, $binds, $env, "/src", ["rustc", "--version"], 120)
-  $ms = nspawn($v, $binds, $env, "/src", ["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"], 7200)
-  $ver = trim(capture(["systemd-nspawn", "--quiet", "--register=no", "--as-pid2", "--console=pipe",
-    "-D", $v, "--bind-ro=" .. $work .. "/prove:/work", "--", "/work/target/debug/mix", "--version"], 120))
+  $rustc = trim(in_root($v, $binds, $env, "/src", ["rustc", "--version"], [300]))
+  $ms = in_root($v, $binds, $env, "/src", ["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"], 7200)
+  $ver = trim(in_root($v, $binds, $env, "/src", ["/work/target/debug/mix", "--version"], [60]))
   evidence("prove", {manifest_digest: $lb.manifest, command: "cargo build --locked -p mix --bin mix",
+    isolation: "chroot", rustc: $rustc,
     cargo_ms: $ms, mix_version: $ver, mix_bytes: stat($work .. "/prove/target/debug/mix").size,
     source_revision: trim(capture(["git", "-C", $REPO, "rev-parse", "HEAD"], 30))})
 end
@@ -346,15 +375,14 @@ fn cmd_survey($work)
   need_work($work)
   $v = unpacked($work)
   mkdir($work .. "/prove")
-  $binds = ["--bind-ro=" .. $REPO .. ":/src", "--bind=" .. $work .. "/prove:/work"]
-  $ms = nspawn($v, $binds, proof_env(), "/src", ["cargo", "build", "--locked", "-p", "mixd", "-p", "viu", "-p", "viud", "--bins"], 7200)
+  $binds = proof_binds($work)
+  $ms = in_root($v, $binds, proof_env(), "/src", ["cargo", "build", "--locked", "-p", "mixd", "-p", "viu", "-p", "viud", "--bins"], 7200)
   $per = {}
   $all = []
   for each $e in $ENGINES
     $bin = $work .. "/prove/target/debug/" .. $e
     if not is_file($bin) then raise("IMAGE_SURVEY", "No binary " .. $e) end
-    $out = run_argv(["systemd-nspawn", "--quiet", "--register=no", "--as-pid2", "--console=pipe", "-D", $v,
-      "--bind-ro=" .. $work .. "/prove:/work", "--", "ldd", "/work/target/debug/" .. $e], {timeout: 120, stderr: "stdout"}).stdout
+    $out = in_root($v, $binds, proof_env(), "/", ["ldd", "/work/target/debug/" .. $e], [120])
     $libs = []
     $pkgs = []
     for each $l in lines($out)
