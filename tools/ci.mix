@@ -4,7 +4,7 @@
 -- PR (on CBC: cbc-build.mix --repo mixviu --commit SHA -- mix tools/ci.mix all).
 --
 --   mix tools/ci.mix STAGE [--mix PATH]
---   STAGE: fmt | clippy | viud | test | mix-lint | mix-lint-baseline | all
+--   STAGE: fmt | env | clippy | viud | test | mix-lint | mix-lint-baseline | all
 --
 -- MixViu has four engines: mix, mixd, viu, viud. The `mix` package is built and tested apart from the
 -- rest of the workspace: the workspace build would unify features and ship
@@ -16,7 +16,7 @@
 
 $o = getopt(args(), {mix: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
-  eprint("usage: mix tools/ci.mix fmt|clippy|viud|test|mix-lint|mix-lint-baseline|all [--mix PATH]")
+  eprint("usage: mix tools/ci.mix fmt|env|clippy|viud|test|mix-lint|mix-lint-baseline|all [--mix PATH]")
   exit(64)
 end
 $stage = $o.rest[0]
@@ -87,6 +87,75 @@ fn stage_test($mix)
     if exists($case) then
       run_step([$mix, $case])
     end
+  end
+end
+
+-- The MIX_* registry (Fable ruling, 2026-11-07): every MIX_* name in the tree
+-- is listed in etc/env.conf.mix with owner, scope and meaning, every listed
+-- name is still used, and MIXOS_ or /opt/mixos appears only on allowed paths
+-- (gold comparison, provenance, the host's gold mix, desk gold-compat).
+fn git_grep($args)
+  $r = run_argv(concat(["git", "grep", "-I"], $args), {timeout: 300, max_output: 64000000})
+  -- git grep exits 1 when nothing matches.
+  if $r.exit_code > 1 then
+    print("::error::git grep failed: " + $r.stderr)
+    exit(1)
+  end
+  return $r.stdout
+end
+
+fn stage_env()
+  $reg_path = "etc/env.conf.mix"
+  if not exists($reg_path) then
+    print("::error::" + $reg_path + " is missing: every MIX_* name must be registered")
+    exit(1)
+  end
+  $reg = load_data($reg_path)
+  $listed = {}
+  for $v in $reg.vars
+    if $v.scope != "runtime" and $v.scope != "test" then
+      print("::error::" + $v.name + ": scope must be runtime or test")
+      exit(1)
+    end
+    $listed[$v.name] = true
+  end
+  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!" + $reg_path]
+  $used = {}
+  for $tok in split(git_grep(concat(["-o", "-h", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
+    if $tok != "" then
+      $used[$tok] = true
+    end
+  end
+  $bad = []
+  for $n in sort(keys($used))
+    if not has_key($listed, $n) then
+      push($bad, "unregistered " + $n)
+    end
+  end
+  for $n in sort(keys($listed))
+    if not has_key($used, $n) then
+      push($bad, "registered but unused " + $n)
+    end
+  end
+  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock"])), "\n")
+    if $f != "" then
+      $ok = false
+      for $re in $reg.mixos_allowed ?? []
+        if re_match($f, $re) then
+          $ok = true
+        end
+      end
+      if not $ok then
+        push($bad, "MIXOS_ or /opt/mixos outside the allowed paths: " + $f)
+      end
+    end
+  end
+  for $line in $bad
+    print("::error::env registry: " + $line)
+  end
+  print("env registry: " + to_string(len(keys($listed))) + " names, " + to_string(len($bad)) + " problems")
+  if len($bad) > 0 then
+    exit(1)
   end
 end
 
@@ -164,12 +233,15 @@ elif $stage == "test" then
   stage_test($mix)
 elif $stage == "viud" then
   stage_viud_egui_free()
+elif $stage == "env" then
+  stage_env()
 elif $stage == "mix-lint" then
   stage_mix_lint($mix)
 elif $stage == "mix-lint-baseline" then
   stage_mix_lint_baseline($mix)
 elif $stage == "all" then
   stage_fmt()
+  stage_env()
   stage_clippy()
   stage_viud_egui_free()
   stage_test($mix)
