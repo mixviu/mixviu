@@ -7,6 +7,7 @@
 --         The tree must stay clean.
 --   fmt:  run cargo fmt and print the diff to apply locally, then restore.
 --   lint DIR...: build mix and lint every tracked .mix file under DIR.
+--   mixtest FILE...: run Mix test scripts with this tree's debug mix.
 --   bundle: build a debug mix and pack apps.tar to /tmp as a light check.
 --   builtins: build mix, regenerate docs/mix/builtins.md, print the diff.
 --   lock: re-resolve the workspace packages only and print the Cargo.lock
@@ -60,6 +61,18 @@ if $mode == "bundle" then
   if not $b.ok then exit(1) end
   $r = gate_step(["target/debug/mix", "tools/apps_bundle.mix", "/tmp/cutover-apps-check.tar", "--mix", "target/debug/mix", "--assets", asset_store()], "6")
   exit(if $r.ok then 0 else 1 end)
+end
+if $mode == "mixtest" then
+  -- Run Mix test scripts with this tree's (debug) mix.
+  $b = gate_step(["cargo", "build", "--locked", "-p", "mix"], "6")
+  if not $b.ok then exit(1) end
+  $bad = 0
+  for $f in slice(args(), 1)
+    $r = gate_step(["target/debug/mix", $f], "6")
+    if not $r.ok then $bad = $bad + 1 end
+  end
+  print("MIXTEST_FAILED " .. to_string($bad))
+  exit(if $bad == 0 then 0 else 1 end)
 end
 if $mode == "lint" then
   -- Lint the tracked .mix files under the given directories with this tree's mix.
