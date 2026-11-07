@@ -21,7 +21,7 @@ impl NativeMenu {
             events.push(crate::widgets::Intent {
                 id: widget.id.clone(),
                 action: "command".into(),
-                value: serde_json::json!({"command":command}),
+                value: command,
             });
         }
         response

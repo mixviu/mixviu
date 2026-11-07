@@ -716,24 +716,34 @@ pub(crate) fn draw(
                             egui::ScrollArea::vertical()
                                 .max_height(360.0)
                                 .show(ui, |ui| {
-                                    egui::Grid::new((id, "shortcuts")).striped(value["grid_striped"] == true).show(ui, |ui| {
-                                        for row in rows {
-                                            ui.label(text(row, "label"));
-                                            let keys = row["keys"]
-                                                .as_array()
-                                                .map(|keys| {
-                                                    keys.iter()
-                                                        .filter_map(Value::as_str)
-                                                        .filter_map(toolkit::keymap::parse_chord)
-                                                        .map(|s| ui.ctx().format_shortcut(&s))
-                                                        .collect::<Vec<_>>()
-                                                        .join(", ")
-                                                })
-                                                .unwrap_or_else(|| text(row, "shortcut").into());
-                                            if value["grid_monospace"] == true { ui.monospace(keys); } else { ui.weak(keys); }
-                                            ui.end_row();
-                                        }
-                                    });
+                                    egui::Grid::new((id, "shortcuts"))
+                                        .striped(value["grid_striped"] == true)
+                                        .show(ui, |ui| {
+                                            for row in rows {
+                                                ui.label(text(row, "label"));
+                                                let keys = row["keys"]
+                                                    .as_array()
+                                                    .map(|keys| {
+                                                        keys.iter()
+                                                            .filter_map(Value::as_str)
+                                                            .filter_map(
+                                                                toolkit::keymap::parse_chord,
+                                                            )
+                                                            .map(|s| ui.ctx().format_shortcut(&s))
+                                                            .collect::<Vec<_>>()
+                                                            .join(", ")
+                                                    })
+                                                    .unwrap_or_else(|| {
+                                                        text(row, "shortcut").into()
+                                                    });
+                                                if value["grid_monospace"] == true {
+                                                    ui.monospace(keys);
+                                                } else {
+                                                    ui.weak(keys);
+                                                }
+                                                ui.end_row();
+                                            }
+                                        });
                                 });
                         } else {
                             ui.add(egui::Label::new(text(value, "body")).wrap());

@@ -11,7 +11,7 @@ pub const KINDS: &[&str] = &[
     "notice-bar",
     "diagnostic-list",
     "command-search",
-            "document-tabs",
+    "document-tabs",
     "search-bar",
     "form-fields",
     "header-form",
@@ -424,7 +424,9 @@ impl Widget {
         if self.kind == "diagnostic-list" {
             return vec!["goto"];
         }
-        if self.kind == "command-search" { return vec!["command","close"]; }
+        if self.kind == "command-search" {
+            return vec!["command", "close"];
+        }
         if self.kind == "document-tabs" {
             return vec!["select", "close"];
         }
@@ -761,8 +763,8 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
-            "command-search" | "document-tabs" | "search-bar" | "form-fields" | "header-form" | "macro-menu"
-            | "diagnostic-list" | "notice-bar" => {
+            "command-search" | "document-tabs" | "search-bar" | "form-fields" | "header-form"
+            | "macro-menu" | "diagnostic-list" | "notice-bar" => {
                 crate::editor_controls::draw(ui, id, &widget.kind, value, events)
             }
             "widget-row" => {
