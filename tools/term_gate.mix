@@ -23,6 +23,8 @@ try
   if not $show_tests.ok then exit($show_tests.exit_code ?? 1) end
   $discovery_tests=run_argv(["/opt/mixos/bin/mix","apps/term/discovery-test.mix"]);print($discovery_tests)
   if not $discovery_tests.ok then exit($discovery_tests.exit_code ?? 1) end
+  $find_tests=run_argv(["/opt/mixos/bin/mix","apps/term/find-test.mix"]);print($find_tests)
+  if not $find_tests.ok then exit($find_tests.exit_code ?? 1) end
   for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--test","term_bundle"],["cargo","test","--locked","-p","viu","--test","runtime","--test","calls","--test","timers"],["cargo","test","--locked","-p","viu","--lib","terminal::"],["cargo","test","--locked","-p","viu","--lib","launch::"],["cargo","test","--locked","-p","viu","--lib","native_registration::"],["cargo","test","--locked","-p","viu","--lib","native_bus::tests::"],["cargo","test","--locked","-p","viu","--lib","input::tests::"],["cargo","test","--locked","-p","viu","--lib","editor_controls::"],["cargo","test","--locked","-p","viu","--lib","rich::tests::"]]
     if $prepare and $argv[1]=="fmt" then $argv=["cargo","fmt","-p","viu"] end
     if $prepare and $argv[1]=="test" then $argv=filter($argv,fn($v)=$v!="--locked") end

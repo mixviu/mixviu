@@ -3,7 +3,9 @@ $frame=require("../../libraries/viu/mix/gold-frame.mix")
 $layout=require("model.mix")
 $actions=require("actions.mix")
 $controls=require("controls.mix")
+$find=require("find.mix")
 fn framed($s)
+  $s=$find.sync($s)
   $model={window_close:$s.closed and not ($s.drain_close ?? false),layout_hidden:$s.closed,values:{}};$look=$s.look.values
   $tabs=$s.layout.tabs;$active=$tabs[$s.layout.active]
   $selected=if $active==nil then "" else to_string($active.id) end
@@ -13,6 +15,10 @@ fn framed($s)
   $tree=if $active==nil then "closed" else $layout.surface_tree($s.layout,$active.tree) end
   $model.terminal={id:"terminal",kind:"terminal",label:"Terminal",initial:$tree,properties:{focus_serial:$s.layout.focus_serial,focused_handle:$handle,font_family:$look["terminal.font.family"] ?? $look["appearance.mono_family"],font_size:$s.font_current ?? (($look["terminal.font.size"] ?? 14.667)+($s.zoom ?? 0)),text_scale:$look["accessibility.text_scale"] ?? 1,font_weight:$look["terminal.font.weight"] ?? 400,padding:$look["terminal.padding"] ?? 8,border_width:$look["terminal.border.width"] ?? 1,show_focus:$active!=nil and len($layout.leaves($active.tree))>1,focus_ring:$look["terminal.focus.ring"] ?? "neutral",focus_strength:$look["terminal.focus.strength"] ?? 0.25,cursor_blink:$look["terminal.cursor.blink"] ?? false,cursor:$look["terminal.cursor.shape"] ?? "underline",scroll_speed:$look["terminal.scroll.speed"] ?? 40,copy_on_select:$look["terminal.mouse.copy_on_select"] ?? false,wheel_zoom:{increase:"view.zoom_in",decrease:"view.zoom_out"}}}
   $model.terminal.properties.shortcuts=$actions.terminal_shortcuts($s)
+  $model.terminal.properties.search=$find.request($s)
+  $model.find_open=($s.find.open ?? false) and not $s.closed
+  $model.find_bar={id:"terminal-find",kind:"search-bar",label:"Find terminal output",initial:merge($s.find ?? $find.initial(),{replace:false,replacement:""}),properties:{}}
+  $model.find_status={id:"terminal-find-status",kind:"label",label:"Search result",initial:if $model.find_open then $find.message($s) else "" end,properties:{weak:true}}
   $model.show_paste_notice=$s.notice!=nil and not $s.closed
   $font=$s.font ?? {}; $model.show_font_notice=$font.unsaved==true and not $s.closed
   $model.paste_notice={id:"paste-notice-text",kind:"label",label:"Clipboard notice",initial:$s.notice ?? "",properties:{tone:"warning"}}

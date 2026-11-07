@@ -9,6 +9,7 @@ $state.identity=$native("identity","",{})
 $actions=require("actions.mix");$controls=require("controls.mix")
 $protected_layout=require("protected-layout.mix")
 $clipboard=require("clipboard.mix")
+$find=require("find.mix");$state.find=$find.initial()
 $discovery=require("discovery.mix")
 $window_show=require("../../libraries/viu/mix/window-show.mix");$state.shows={};$state.show_seq=0
 $font=require("font-persistence.mix");$state.font=$font.initial();$state.font_job=0
@@ -29,8 +30,10 @@ fn pump_events($s)
   return $s
 end
 fn publish_term($s)
+  $s=$find.sync($s)
   $published=$native("metadata","",$model.metadata($s.layout))
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
+  return $s
 end
 fn font_event($s,$event)
   if $s.closed then return $s end
@@ -75,7 +78,7 @@ fn font_received($s,$done)
 end
 fn command($s,$name,$args)
   $out=$bus.dispatch_inspected($s,$event.command,$name,$event.body,$native,fn($body)=viu_json_numbers($body))
-  $out.state=pump_events($out.state);publish_term($out.state);reply($out.rc,$out.body)
+  $out.state=pump_events($out.state);$out.state=publish_term($out.state);reply($out.rc,$out.body)
   return $out.state
 end
 fn request_paste($s,$handle,$primary)
@@ -102,10 +105,10 @@ fn act($s,$id,$args,$origin)
     if len($s.layout.events)>=256 then $s.layout.events=slice($s.layout.events,1) end
     $s.layout.events=push($s.layout.events,$note)
   end
-  $s=pump_events($s);publish_term($s)
+  $s=pump_events($s);$s=publish_term($s)
   return {state:$s,rc:$out.rc,body:$out.body}
 end
-publish_term($state)
+$state=publish_term($state)
 on term.ping
   reply(0,json_encode({schema:"term.v1",version:$ctx.version}))
 end
@@ -140,7 +143,7 @@ on viu.session
   $state.font_profile=$state.look.values["terminal.font.size"] ?? 14.667
   if $state.font.pending==nil then $state.font_current=$state.font_profile;$state.font_base=$state.font_profile;$state.zoom_steps=0;$state.zoom=0 end
   $state=font_event($state,{kind:"read-requested"})
-  publish_term($state)
+  $state=publish_term($state)
 end
 on bus.connected
   $state.service=$event.args.service ?? "term"
@@ -152,10 +155,10 @@ on settingsd.desktop.keys.default.terminal
 end
 on viu.keymap.changed
   send "viu-local" "native.bindings" body={defaults:$actions.binding_defaults(),overrides:$event.args}
-  if $rc==0 then $state.bindings=$reply.bindings;publish_term($state) end
+  if $rc==0 then $state.bindings=$reply.bindings;$state=publish_term($state) end
 end
 on viu.theme.changed
-  $state.effective=$event.args;publish_term($state)
+  $state.effective=$event.args;$state=publish_term($state)
 end
 on viu.terminal.changed
   $old=$state.layout
@@ -163,12 +166,12 @@ on viu.terminal.changed
   $exited=[]
   for $p in values($state.layout.panes) if $p.exited then push($exited,$p.id) end end
   for $id in $exited $state=$bus.close_removed($state,$model.close_pane($state.layout,$id),$native) end
-  if not deep_eq($old,$state.layout) then $state=pump_events($state);publish_term($state) end
+  if not deep_eq($old,$state.layout) then $state=pump_events($state);$state=publish_term($state) end
 end
 on viu.terminal.control
   $request=$native("control.inspect","",{})
   $out=$protected_layout.apply($state,$request,$native)
-  $state=pump_events($out.state);publish_term($state)
+  $state=pump_events($out.state);$state=publish_term($state)
   $finished=$native("control.finish","",{rc:$out.rc,body:$out.body})
 end
 on viu.job.completed
@@ -180,8 +183,8 @@ on viu.job.completed
       $finished=viu_reply("finish",$token,{rc:$out.rc,body:$out.body})
     end
   end
-  if $event.args.tag.owner.kind=="terminal-events" then $state.publishing=false;$state=pump_events($state);if $state.closed then publish_term($state) end end
-  if $event.args.tag.owner.kind=="terminal-font" then $state=font_received($state,$event.args);publish_term($state) end
+  if $event.args.tag.owner.kind=="terminal-events" then $state.publishing=false;$state=pump_events($state);if $state.closed then $state=publish_term($state) end end
+  if $event.args.tag.owner.kind=="terminal-font" then $state=font_received($state,$event.args);$state=publish_term($state) end
 end
 on term.show
   $token=$event.headers["viu-call"]
@@ -201,15 +204,15 @@ on viu.call.cancelled
   $state.shows=delete($state.shows,$event.args.token)
 end
 on viu.timer
-  if $event.args.value.kind=="terminal-font" then $state=font_event($state,{kind:"timer"});publish_term($state) end
+  if $event.args.value.kind=="terminal-font" then $state=font_event($state,{kind:"timer"});$state=publish_term($state) end
   if $event.args.value.kind=="terminal-events" then $state=pump_events($state) end
-  if $event.args.value.kind=="terminal-events-close" then $state.drain_expired=true;$state.drain_close=false;publish_term($state) end
+  if $event.args.value.kind=="terminal-events-close" then $state.drain_expired=true;$state.drain_close=false;$state=publish_term($state) end
 end
 on viu.frame.close
-  $state=pump_events($bus.shut($state,$native));publish_term($state)
+  $state=pump_events($bus.shut($state,$native));$state=publish_term($state)
 end
 on app.quit
-  $state=pump_events($bus.shut($state,$native));publish_term($state);reply(0,"{}")
+  $state=pump_events($bus.shut($state,$native));$state=publish_term($state);reply(0,"{}")
 end
 on viu.frame.intent
   $id=if $event.args.value.command=="close" then "app.quit" else $event.args.value.command end
@@ -222,9 +225,14 @@ on term.intent
     $state=command($state,$name,{id:to_number($a.value)})
   elif $a.id=="terminal" and $a.action=="focus" then
     for $p in values($state.layout.panes)
-      if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$model.select_pane($state.layout,$p.id);$state=pump_events($state);publish_term($state) end
+      if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$model.select_pane($state.layout,$p.id);$state=pump_events($state);$state=publish_term($state) end
     end
-  elif $a.id=="terminal" and $a.action=="command" then $out=act($state,$a.value,{},"shortcut");$state=$out.state
+  elif $a.id=="terminal-find" then $state=$find.intent($state,$a,$native);$state=publish_term($state)
+  elif $a.id=="terminal" and $a.action=="search" then $state=$find.observed($state,$a.value,$native);$state=publish_term($state)
+  elif $a.id=="terminal" and $a.action=="command" then
+    if $a.value=="terminal.find" then $state=$find.start($state,$native);$state=publish_term($state)
+    elif contains(["terminal.find.next","terminal.find.prev"],$a.value) then $state=$find.intent($state,{action:if $a.value=="terminal.find.prev" then "prev" else "next" end},$native);$state=publish_term($state)
+    else $out=act($state,$a.value,{},"shortcut");$state=$out.state end
   elif $a.id=="terminal" and $a.action=="selection" then
     viu_platform("copy","terminal-selection",{text:$a.value.text,primary:$a.value.primary})
   elif $a.id=="terminal" and $a.action=="clipboard" then
@@ -253,7 +261,7 @@ on term.actions
   reply(0,json_encode({actions:$actions.registry($state),state:$actions.observed_state($state)}))
 end
 on term.dialog
-  $out=$controls.dialog($state,$event.args);$state=$out.state;publish_term($state);reply($out.rc,json_encode($out.body))
+  $out=$controls.dialog($state,$event.args);$state=$out.state;$state=publish_term($state);reply($out.rc,json_encode($out.body))
 end
 on term.overlay
   $a=$event.args
@@ -263,12 +271,12 @@ on term.overlay
     $state.search_open=false
     if $a.action=="command" then $out=act($state,$a.value.command,{},"palette");$state=$out.state end
   end
-  publish_term($state)
+  $state=publish_term($state)
 end
 on viu.platform.completed
   $previous_notice=$state.notice
   $state=$clipboard.completed($state,$event.args,$native)
-  if $previous_notice!=$state.notice then publish_term($state) end
+  if $previous_notice!=$state.notice then $state=publish_term($state) end
 end
 on term.tabs
   $state=command($state,"term.tabs",$event.args)

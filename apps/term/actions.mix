@@ -57,6 +57,13 @@ fn terminal_shortcuts($s)
     end
   end
   $tab=$s.layout.tabs[$s.layout.active]
+  if not $s.closed then
+    push($out,{command:"terminal.find",key:"F",ctrl:true,shift:true,alt:false,enabled:true,repeat:false})
+    $find=$s.find ?? {}
+    if $find.open ?? false then
+      for $shift in [false,true] push($out,{command:if $shift then "terminal.find.prev" else "terminal.find.next" end,key:"F3",ctrl:false,shift:$shift,alt:false,enabled:true,repeat:false}) end
+    end
+  end
   if $tab!=nil and len($layout.leaves($tab.tree))>1 then
     for $shift in [false,true] push($out,{command:if $shift then "pane.prev" else "pane.next" end,key:"Tab",ctrl:false,shift:$shift,alt:false,enabled:true,repeat:false}) end
   end
