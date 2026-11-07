@@ -105,13 +105,14 @@ fn wire_accounts()
   return map($entries,fn($e)=merge({id:$e.id,name:$e.label,url:$e.url,email:$e.user,ca_path:$e.ca_file,enabled:$e.enabled ?? true,signature:$e.signature ?? "",identities:$e.identities ?? [],default:$e.id==$default,has_password:false,state:if $e.enabled==false then "disabled" else "connecting" end,error:nil,session:nil,unread:0,migrating:$config_migration!=nil},$wire_views[$e.id] ?? {}))
 end
 fn wire_session($update)
-  global $entries,$active,$mail_settings,$wire_sessions,$wire_views,$wire_data,$wire_generations,$connected,$box,$boxes,$rows,$total,$offset,$message,$mail_emails,$mail_selection,$mail_focus
+  global $entries,$active,$mail_settings,$wire_sessions,$wire_views,$wire_data,$wire_generations,$connected,$box,$boxes,$rows,$total,$offset,$message,$mail_emails,$mail_selection,$mail_focus,$status
   if $fixture then return end
   $state=$update.state
   if $state==nil then return end
   if $state.lost==true then $mail_settings.source="missing";return end
   $v=$state.values
   if type($v)!="map" then return end
+  if $mail_settings.source=="missing" then $status="Settings service back: the accounts can be changed again" end
   $mail_settings.source="settings";$mail_settings.revision=$state.revision
   $previous_page_size=$mail_settings.page_size
   if $state.binding!=nil then $mail_settings.binding=$state.binding end

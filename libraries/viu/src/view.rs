@@ -1016,19 +1016,41 @@ impl SceneView {
             }
             let horizontal = ["left", "right"].contains(&edge);
             if edge == "bottom" && placement["size"] == "content" && placement["measure"] == true {
-                let limit = remaining.height() * placement["max_fraction"].as_f64().unwrap_or(1.0) as f32;
-                let marker = egui::Id::unique((ui.ctx().viewport_id(), "viu.dock.intrinsic-height"));
+                let limit =
+                    remaining.height() * placement["max_fraction"].as_f64().unwrap_or(1.0) as f32;
+                let marker =
+                    egui::Id::unique((ui.ctx().viewport_id(), "viu.dock.intrinsic-height"));
                 ui.ctx().data_mut(|d| d.insert_temp(marker, limit));
-                let mut measure = ui.new_child(egui::UiBuilder::new().id_salt((child,"measure")).max_rect(remaining).layout(egui::Layout::top_down(egui::Align::Min)).invisible().sizing_pass());
-                self.node(&mut measure, child, nodes, route, depth+1, &mut Vec::new());
+                let mut measure = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt((child, "measure"))
+                        .max_rect(remaining)
+                        .layout(egui::Layout::top_down(egui::Align::Min))
+                        .invisible()
+                        .sizing_pass(),
+                );
+                self.node(
+                    &mut measure,
+                    child,
+                    nodes,
+                    route,
+                    depth + 1,
+                    &mut Vec::new(),
+                );
                 let height = measure.min_rect().height().ceil().min(limit);
                 let mut rect = remaining;
-                rect.min.y = (rect.max.y-height).max(rect.min.y);
-                let mut child_ui=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                rect.min.y = (rect.max.y - height).max(rect.min.y);
+                let mut child_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
                 child_ui.set_clip_rect(rect.intersect(ui.clip_rect()));
-                self.node(&mut child_ui, child, nodes, route, depth+1, events);
-                ui.ctx().data_mut(|d| {d.remove::<f32>(marker);});
-                remaining.max.y=rect.min.y;
+                self.node(&mut child_ui, child, nodes, route, depth + 1, events);
+                ui.ctx().data_mut(|d| {
+                    d.remove::<f32>(marker);
+                });
+                remaining.max.y = rect.min.y;
                 continue;
             }
             if edge == "bottom" && placement["size"] == "content" {
