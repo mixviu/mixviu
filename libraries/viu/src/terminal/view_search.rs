@@ -8,6 +8,15 @@ use crate::widgets::{Intent, Widget};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+pub(super) fn colors(ctx: &egui::Context) -> SearchColors {
+    let palette = toolkit::chrome::Chrome::of(ctx).palette;
+    let rgb = |c: egui::Color32| [c.r(), c.g(), c.b()];
+    SearchColors {
+        foreground: rgb(palette.menu_highlight_text),
+        background: rgb(palette.menu_highlight),
+    }
+}
+
 #[derive(Deserialize)]
 struct Options {
     query: String,
@@ -147,6 +156,27 @@ mod tests {
         foreground: [1, 2, 3],
         background: [80, 90, 100],
     };
+
+    #[test]
+    fn studio_search_uses_a_readable_theme_pair_in_dark_and_light_modes() {
+        let luminance = |rgb: [u8; 3]| {
+            let channels = rgb.map(|v| {
+                let v = v as f64 / 255.0;
+                if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+            });
+            0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+        };
+        for mode in ["dark", "light"] {
+            let ctx = egui::Context::default();
+            let appearance = crate::appearance::resolve(&json!({"scheme":"studio","mode":mode})).unwrap();
+            crate::appearance::install_style(&ctx, &json!({"scheme":"studio","mode":mode}), appearance);
+            let colors = colors(&ctx);
+            let foreground = luminance(colors.foreground);
+            let background = luminance(colors.background);
+            let contrast = (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05);
+            assert!(contrast >= 4.5, "{mode}: {colors:?} contrast={contrast}");
+        }
+    }
 
     #[test]
     fn owner_request_output_and_invalid_origin_keep_search_and_clipboard_separate() {

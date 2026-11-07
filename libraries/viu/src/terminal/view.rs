@@ -145,7 +145,6 @@ mod tests {
         );
         widget.properties["search"] = Value::Null;
         draw(&widget, &json!("vt-1"), &mut events);
-        drop(draw);
         assert!(views.surfaces["vt-1"].search.is_none());
         assert!(Arc::ptr_eq(&owner, &sessions.get("vt-1").unwrap()));
         assert!(owner.lock().unwrap().selection_text().is_none());
@@ -1175,20 +1174,12 @@ impl Views {
                 },
             )
         });
-        let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
         let mut snapshot = super::view_search::snapshot(
             &mut surface.search,
             widget,
             handle,
             &terminal,
-            super::model::SearchColors {
-                foreground: [palette.text.r(), palette.text.g(), palette.text.b()],
-                background: [
-                    palette.row_selected.r(),
-                    palette.row_selected.g(),
-                    palette.row_selected.b(),
-                ],
-            },
+            super::view_search::colors(ui.ctx()),
             events,
         );
         terminal
