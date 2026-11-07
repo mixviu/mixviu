@@ -1,4 +1,6 @@
-{
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Immutable gold 8779f33 Bus contract; see provenance/terminal-native.json.
+$catalogue = {
   "core_help": [
     {
       "args": [],
@@ -488,7 +490,7 @@
           "name": "optional plain file name ending .png",
           "viewport": "optional owned window name (for example macro-editor or compose-2), honoured by every drive command; omitted for the app window"
         },
-        "description": "Screenshot the window to a new PNG in $XDG_RUNTIME_DIR/<app>/captures and answer with its path",
+        "description": "Screenshot the window to a new PNG in \$XDG_RUNTIME_DIR/<app>/captures and answer with its path",
         "name": "term.ui.capture",
         "read_only": true
       },
@@ -1034,7 +1036,7 @@
         "name",
         "viewport"
       ],
-      "description": "Screenshot the window to a new PNG in $XDG_RUNTIME_DIR/<app>/captures and answer with its path",
+      "description": "Screenshot the window to a new PNG in \$XDG_RUNTIME_DIR/<app>/captures and answer with its path",
       "name": "term.ui.capture",
       "read_only": true
     },
