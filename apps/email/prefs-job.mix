@@ -1,13 +1,13 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Match gold's asynchronous citizen call: launch only after definite absence.
-fn missing()
-  return type($result)=="string" and $result=="Service 'prefs' not found"
+fn missing($value)
+  return type($value)=="string" and $value=="Service 'prefs' not found"
 end
 on job.run
   try
     send "prefs" "prefs.section" body={name:"apps_email"} timeout=30
     if $rc==0 then reply(0,"{}");return end
-    if not missing() then reply(10,json_encode({message:"Prefs did not open its Email settings"}));return end
+    if not missing($result) then reply(10,json_encode({message:"Prefs did not open its Email settings"}));return end
     try
       send "apps" "apps.launch" body={id:"dev.mixos.prefs"} timeout=30
       if $rc!=0 then reply(10,json_encode({message:"Can't open Prefs: no launcher"}));return end
@@ -20,7 +20,7 @@ on job.run
       if monotonic()>=$until then break end
       send "prefs" "prefs.section" body={name:"apps_email"} timeout=30
       if $rc==0 then reply(0,"{}");return end
-      if not missing() then break end
+      if not missing($result) then break end
     end
     reply(10,json_encode({message:"Prefs did not open its Email settings"}))
   catch $message
