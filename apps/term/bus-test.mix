@@ -1,0 +1,33 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$b=require("bus.mix");$m=require("model.mix");$w=require("wire.mix")
+fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+fn native($op,$handle,$a)
+  if $op=="state" then return {pid:42,title:"osc",cols:80,rows:24,exited:false,geometry:{x:0,y:0,w:100,h:80}} end
+  if $op=="create" then return {handle:"vt-9",pid:43} end
+  if $op=="snapshot" then return "cols=80 rows=24" end
+  return {}
+end
+$n=fn($op,$handle,$a)=native($op,$handle,$a)
+$s={layout:$m.open_tab($m.initial(),{handle:"vt-1",pid:42},nil),identity:{instance:7,pid:40},replies:[],look:{values:{}},closed:false,event_revision:0}
+$out=$b.dispatch($s,"term.type",{text:"wrong",request_id:"retry"},$n)
+check($out.rc==10 and len($out.state.replies)==0,"validation never consumes replay ID")
+$out=$b.dispatch($out.state,"term.type",{pane:1,text:"x",request_id:"retry"},$n);$s=$out.state
+check($out.rc==0 and contains($out.body,"tab=1 pane=1 revision=1"),"type resolves explicit pane")
+$conflict=$b.dispatch($s,"term.type",{text:"mistyped retry",request_id:"retry"},$n)
+check(starts_with($conflict.body,"conflict:"),"recorded ID conflicts before command argument validation like gold")
+$out=$b.dispatch($s,"term.tab.new",{title:"pinned",request_id:"open"},$n);$s=$out.state
+check($out.rc==0 and len($s.layout.tabs)==2 and $s.layout.tabs[1].title=="pinned","new tab owns supplied native session")
+$out=$b.dispatch($s,"term.tab.new",{request_id:"open",title:"pinned"},$n)
+check(len($out.state.layout.tabs)==2,"request key order does not reopen a tab")
+$out=$b.dispatch($s,"term.snapshot",{pane:1},$n)
+check(starts_with($out.body,"tab=1 pane=1 revision=2 ") and $out.state.layout.active==1,"read selector preserves focus")
+$out=$b.dispatch($s,"term.type",{pane:1,tab:2,text:"x",request_id:"fixed"},$n)
+check($out.rc==10 and len($out.state.replies)==2,"membership validation remains retryable")
+$out=$b.dispatch($s,"term.panes",{tab:1},$n)
+check($out.rc==0 and contains($out.body,"x=0 y=0 w=100 h=80 tab=1 revision=2 instance=7 pid=40"),"native geometry and process identity reported")
+for $args in [{contents:1},{scrollback_lines:10001},{pane:nil}]
+  check($w.arguments("term.snapshot",$args)!=nil,"snapshot refuses invalid optional fields")
+end
+check($w.arguments("term.scroll",{page:1})==nil and $w.arguments("term.scroll",{to:"top",lines:1})!=nil,"one scroll mode required")
+check($w.arguments("term.type",{pane:1,text:repeat("𝐀",2100)})!=nil,"envelope bound uses UTF-8 bytes")
+print("term dispatch: live targets, replay, native metadata and validation checks passed")

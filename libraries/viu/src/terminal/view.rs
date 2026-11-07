@@ -249,6 +249,7 @@ impl Views {
             cols.saturating_mul(cell.0 as u16),
             rows.saturating_mul(cell.1 as u16),
         );
+        sessions.placed(handle, area);
         if grid_size != surface.grid_size {
             terminal.resize(grid_size.0, grid_size.1, grid_size.2, grid_size.3);
             surface.grid_size = grid_size;

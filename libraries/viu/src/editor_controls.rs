@@ -292,8 +292,13 @@ pub fn draw(
         }
         let tabs = items
             .iter()
-            .map(|i| toolkit::tabs::DocTab {
-                name: i["name"].as_str().unwrap().into(),
+            .map(|i| {
+                let name = i["name"].as_str().unwrap();
+                let (marker, name) = if value["split_markers"] == true {
+                    toolkit::tabs::split_marker(name)
+                } else { (None, name) };
+                toolkit::tabs::DocTab {
+                name: name.into(),
                 title: i["title"]
                     .as_str()
                     .unwrap_or(i["name"].as_str().unwrap())
@@ -301,8 +306,8 @@ pub fn draw(
                 meta: i["meta"].as_str().unwrap().into(),
                 dirty: i["dirty"] == true,
                 progress: (i["opening"] == true).then_some(0.0),
-                marker: None,
-            })
+                marker,
+            }})
             .collect::<Vec<_>>();
         let selected = items
             .iter()
@@ -316,7 +321,9 @@ pub fn draw(
                     &tabs,
                     selected,
                     None,
-                    if value["light"] == true {
+                    if value["body"] == "canvas" {
+                        toolkit::chrome::Chrome::of(ui.ctx()).palette.canvas
+                    } else if value["light"] == true {
                         editor::Palette::from_theme(toolkit::content::light_theme()).background
                     } else {
                         ui.ctx()

@@ -75,11 +75,26 @@ fn refresh_titles($s)
   end
   return $s
 end
+fn sanitise_title($title)
+  $out=""
+  for $c in chars($title)
+    if not re_match($c,"[\\p{Cc}\\u{2028}\\u{2029}]") then
+      if byte_length($out)+byte_length($c)>256 then break end
+      $out=$out..$c
+    end
+  end
+  return $out
+end
+fn set_title($s,$id,$title)
+  $i=tab_index($s,$id);$title=sanitise_title($title)
+  $s.tabs[$i].user_title=if $title=="" then nil else $title end
+  return refresh_titles($s)
+end
 fn open_tab($s,$session,$title)
   ensure_slot($s)
   $added=insert_pane($s,$session);$s=$added.state;$pane=$added.id
   $id=$s.next_tab;$s.next_tab=$id+1;$s.revision=$s.revision+1
-  $s.tabs=push($s.tabs,{id:$id,title:"mix",user_title:$title,active_pane:$pane,tree:{kind:"leaf",pane:$pane},revision:$s.revision})
+  $s.tabs=push($s.tabs,{id:$id,title:"mix",user_title:if $title==nil or sanitise_title($title)=="" then nil else sanitise_title($title) end,active_pane:$pane,tree:{kind:"leaf",pane:$pane},revision:$s.revision})
   $s.active=len($s.tabs)-1;$s.focus_serial=$s.focus_serial+1
   return refresh_titles($s)
 end

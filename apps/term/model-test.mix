@@ -27,6 +27,11 @@ $out=$m.close_pane($s,2);$s=$out.state
 check(len($s.tabs)==1 and not $s.closing,"last pane closes its tab")
 $out=$m.close_tab($s,$s.tabs[0].id);$s=$out.state
 check($s.closing and len($s.tabs)==0 and len(keys($s.panes))==0,"last tab closes application")
+check($m.sanitise_title("a\n\r\t\e\u{85}\u{2028}\u{2029}b")=="ab","gold strips controls and line separators")
+check($m.sanitise_title(repeat("𝐀",100))==repeat("𝐀",64),"title bound is UTF-8 bytes")
+$s=$m.open_tab($m.initial(),session(1),nil);$s=$m.open_tab($s,session(2),nil);$s=$m.open_tab($s,session(3),nil)
+$s=$m.select_tab($s,2);$s=$m.close_tab($s,2).state
+check($s.tabs[$s.active].id==3,"closing middle active tab selects its following neighbour")
 $s=$m.open_tab($m.initial(),session(1),nil)
 for $i=2 to 32 $s=$m.split_pane($s,"v",session($i)) end
 $refused=false

@@ -1230,6 +1230,10 @@ impl Terminal {
     pub fn display_offset(&self) -> usize {
         self.grid.lock().display_offset()
     }
+    pub(crate) fn dimensions(&self) -> (usize, usize) {
+        let grid = self.grid.lock();
+        (grid.columns(), grid.screen_lines())
+    }
     /// Like `screen(true)`, and also reports which rows changed since the
     /// previous consuming read (by either method).
     pub fn grid_snapshot(&self) -> GridSnapshot {

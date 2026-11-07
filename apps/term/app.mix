@@ -1,14 +1,18 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.1.0
+-- version: 0.2.0
 -- lint: globals app_args
-$ctx=viu_context()
-$core=require("core.mix")
-$wire=require("wire.mix")
-$state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false}
-$state.session=viu_terminal("create","",{})
-$state.identity=viu_terminal("identity","",{});$state.replies=[]
+$ctx=viu_context();$core=require("core.mix");$wire=require("wire.mix");$model=require("model.mix");$bus=require("bus.mix")
+$native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
+$state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,replies:[],watching:false,event_revision:0,zoom:0}
+$state.layout=$model.open_tab($model.initial(),$native("create","",{}),nil)
+$state.identity=$native("identity","",{})
 fn publish_term($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
+end
+fn command($s,$name,$args)
+  $out=$bus.dispatch($s,$name,$args,$native)
+  publish_term($out.state);reply($out.rc,$out.body)
+  return $out.state
 end
 publish_term($state)
 on term.ping
@@ -19,50 +23,74 @@ on viu.session
   if not $event.args.state.lost then $state.look.values=$event.args.state.values end
   publish_term($state)
 end
+on viu.terminal.changed
+  $old=$state.layout
+  $state=$bus.refresh($state,$native)
+  $exited=[]
+  for $p in values($state.layout.panes) if $p.exited then push($exited,$p.id) end end
+  for $id in $exited $state=$bus.close_removed($state,$model.close_pane($state.layout,$id),$native) end
+  if not deep_eq($old,$state.layout) then publish_term($state) end
+end
 on viu.frame.close
-  if not $state.closed then $closed=viu_terminal("close",$state.session.handle,{}) end
-  $state.closed=true
-  publish_term($state)
+  $state=$bus.shut($state,$native);publish_term($state)
 end
 on app.quit
-  if not $state.closed then $closed=viu_terminal("close",$state.session.handle,{}) end
-  $state.closed=true
-  publish_term($state)
-  reply(0,"{}")
+  $state=$bus.shut($state,$native);publish_term($state);reply(0,"{}")
 end
 on viu.frame.intent
-  if $event.args.value.command=="close" then
-    $closed=viu_terminal("close",$state.session.handle,{})
-    $state.closed=true
-    publish_term($state)
-  end
+  if $event.args.value.command=="close" then $state=$bus.shut($state,$native);publish_term($state) end
   reply(0,"{}")
-end
-on term.snapshot
-  reply(0,"tab=1 pane=1 revision=1 "..viu_terminal("snapshot",$state.session.handle,$event.args))
-end
-on term.type
-  $a=$event.args
-  $invalid=$wire.type_args($a)
-  if $invalid!=nil then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:$invalid}));return end
-  if $a.instance!=nil and $a.instance!=$state.identity.instance then
-    reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"instance "..to_string($a.instance).." is not this term process (instance="..to_string($state.identity.instance).."); re-read term.panes"}));return
-  end
-  $cached=$wire.replay($state.replies,"term.type",$a)
-  if $cached!=nil then reply($cached.rc,$cached.body);return end
-  if ($a.pane!=nil and $a.pane!=1) or ($a.tab!=nil and $a.tab!=1) then
-    $body="not-found: pane or tab";$state.replies=$wire.remember($state.replies,"term.type",$a,10,$body);reply(10,$body);return
-  end
-  try
-    $written=viu_terminal("type",$state.session.handle,$a)
-    $body="DIAGNOSTIC synthetic keys queued; inspect input_written for actual writes tab=1 pane=1 revision=1"
-    $state.replies=$wire.remember($state.replies,"term.type",$a,0,$body)
-    reply(0,$body)
-  catch $message
-    $state.replies=$wire.remember($state.replies,"term.type",$a,10,$message)
-    reply(10,$message)
-  end
 end
 on term.intent
-  reply(0,"{}")
+  $a=$event.args
+  if $a.id=="tabs" then
+    $name=if $a.action=="close" then "term.tab.close" else "term.tab.select" end
+    $state=command($state,$name,{id:to_number($a.value)})
+  elif $a.id=="terminal" and $a.action=="focus" then
+    for $p in values($state.layout.panes)
+      if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$model.select_pane($state.layout,$p.id);publish_term($state) end
+    end
+  end
+end
+on term.tabs
+  $state=command($state,"term.tabs",$event.args)
+end
+on term.panes
+  $state=command($state,"term.panes",$event.args)
+end
+on term.tab.new
+  $state=command($state,"term.tab.new",$event.args)
+end
+on term.tab.select
+  $state=command($state,"term.tab.select",$event.args)
+end
+on term.tab.close
+  $state=command($state,"term.tab.close",$event.args)
+end
+on term.tab.title
+  $state=command($state,"term.tab.title",$event.args)
+end
+on term.tab.move
+  $state=command($state,"term.tab.move",$event.args)
+end
+on term.pane.split
+  $state=command($state,"term.pane.split",$event.args)
+end
+on term.pane.select
+  $state=command($state,"term.pane.select",$event.args)
+end
+on term.pane.close
+  $state=command($state,"term.pane.close",$event.args)
+end
+on term.snapshot
+  $state=command($state,"term.snapshot",$event.args)
+end
+on term.type
+  $state=command($state,"term.type",$event.args)
+end
+on term.scroll
+  $state=command($state,"term.scroll",$event.args)
+end
+on term.props.watch
+  $state=command($state,"term.props.watch",$event.args)
 end

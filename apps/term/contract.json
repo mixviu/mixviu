@@ -1,1 +1,49 @@
-{"commands":["term.ping","term.snapshot","term.type","app.quit"],"host":{"commands":["term.ping","term.snapshot","term.type","app.quit"],"follow_settings":true,"frame":"gold","native_drive":true,"service":"term","size":[900,560],"title":"Terminal"}}
+{
+  "commands": [
+    "term.tabs",
+    "term.panes",
+    "term.tab.new",
+    "term.tab.select",
+    "term.tab.close",
+    "term.tab.title",
+    "term.tab.move",
+    "term.pane.split",
+    "term.pane.select",
+    "term.pane.close",
+    "term.snapshot",
+    "term.type",
+    "term.scroll",
+    "term.props.watch",
+    "term.ping",
+    "app.quit"
+  ],
+  "host": {
+    "commands": [
+      "term.tabs",
+      "term.panes",
+      "term.tab.new",
+      "term.tab.select",
+      "term.tab.close",
+      "term.tab.title",
+      "term.tab.move",
+      "term.pane.split",
+      "term.pane.select",
+      "term.pane.close",
+      "term.snapshot",
+      "term.type",
+      "term.scroll",
+      "term.props.watch",
+      "term.ping",
+      "app.quit"
+    ],
+    "follow_settings": true,
+    "frame": "gold",
+    "native_drive": true,
+    "service": "term",
+    "size": [
+      900,
+      560
+    ],
+    "title": "Terminal"
+  }
+}

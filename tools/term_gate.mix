@@ -9,6 +9,8 @@ try
   if not $wire_tests.ok then exit($wire_tests.exit_code ?? 1) end
   $model_tests=run_argv(["/opt/mixos/bin/mix","apps/term/model-test.mix"]);print($model_tests)
   if not $model_tests.ok then exit($model_tests.exit_code ?? 1) end
+  $bus_tests=run_argv(["/opt/mixos/bin/mix","apps/term/bus-test.mix"]);print($bus_tests)
+  if not $bus_tests.ok then exit($bus_tests.exit_code ?? 1) end
   for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--test","term_bundle"],["cargo","test","--locked","-p","viu","--lib","terminal::"]]
     if $prepare and $argv[1]=="fmt" then $argv=["cargo","fmt","-p","viu"] end
     if $prepare and $argv[1]=="test" then $argv=filter($argv,fn($v)=$v!="--locked") end

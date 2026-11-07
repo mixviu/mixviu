@@ -7,13 +7,14 @@ use super::{
 };
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex, atomic::Ordering},
 };
 
 struct State {
     next: u64,
     sessions: BTreeMap<String, Arc<Mutex<Terminal>>>,
+    geometry: BTreeMap<String, [f32; 4]>,
 }
 
 #[derive(Clone)]
@@ -21,6 +22,7 @@ pub struct Sessions {
     state: Arc<Mutex<State>>,
     wake: crate::runtime::Wake,
     issuer: Option<Arc<dyn super::native_session::SessionIssuer>>,
+    changed: Arc<Mutex<BTreeSet<String>>>,
 }
 
 impl Default for Sessions {
@@ -52,9 +54,30 @@ impl Sessions {
             state: Arc::new(Mutex::new(State {
                 next: 0,
                 sessions: BTreeMap::new(),
+                geometry: BTreeMap::new(),
             })),
             wake,
             issuer,
+            changed: Arc::default(),
+        }
+    }
+
+    pub(crate) fn take_changes(&self) -> BTreeSet<String> {
+        std::mem::take(&mut *self.changed.lock().unwrap())
+    }
+
+    pub(crate) fn retry_changes(&self, handles: BTreeSet<String>) {
+        self.changed.lock().unwrap().extend(handles);
+        (self.wake)();
+    }
+
+    pub(crate) fn placed(&self, handle: &str, rect: egui::Rect) {
+        let geometry = [rect.min.x, rect.min.y, rect.width(), rect.height()];
+        let mut state = self.state.lock().unwrap();
+        if state.geometry.get(handle) != Some(&geometry) {
+            state.geometry.insert(handle.into(), geometry);
+            self.changed.lock().unwrap().insert(handle.into());
+            (self.wake)();
         }
     }
 
@@ -140,8 +163,14 @@ impl Sessions {
                 id,
                 cwd,
             )?;
-            t.set_wake(self.wake.clone());
             let handle = format!("vt-{id}");
+            let changed = self.changed.clone();
+            let wake = self.wake.clone();
+            let owner = handle.clone();
+            t.set_wake(Arc::new(move || {
+                changed.lock().unwrap().insert(owner.clone());
+                wake();
+            }));
             let answer = json!({"handle":handle,"pid":t.pid});
             self.state
                 .lock()
@@ -151,13 +180,12 @@ impl Sessions {
             return Ok(answer);
         }
         if op == "close" {
-            let t = self
-                .state
-                .lock()
-                .map_err(|_| "terminal owner poisoned")?
-                .sessions
-                .remove(handle)
-                .ok_or("stale terminal handle")?;
+            let t = {
+                let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
+                let t = state.sessions.remove(handle).ok_or("stale terminal handle")?;
+                state.geometry.remove(handle);
+                t
+            };
             // Serialize with native input before any teardown. Removal makes
             // this handle permanently stale; new panes receive a new handle.
             let mut t = t.lock().map_err(|_| "terminal poisoned")?;
@@ -169,9 +197,14 @@ impl Sessions {
         let t = self.get(handle)?;
         let t = t.lock().map_err(|_| "terminal poisoned")?;
         match op {
-            "state" => Ok(
-                json!({"pid":t.pid,"title":t.listener.title(),"exited":t.listener.quit.load(Ordering::Acquire),"display_offset":t.display_offset(),"alternate":t.alternate_screen()}),
-            ),
+            "state" => {
+                let (cols, rows) = t.dimensions();
+                let g = self.state.lock().map_err(|_| "terminal owner poisoned")?
+                    .geometry.get(handle).copied().unwrap_or([0.0; 4]);
+                Ok(json!({"pid":t.pid,"title":t.listener.title(),"cols":cols,"rows":rows,
+                    "geometry":{"x":g[0],"y":g[1],"w":g[2],"h":g[3]},
+                    "exited":t.listener.quit.load(Ordering::Acquire),"display_offset":t.display_offset(),"alternate":t.alternate_screen()}))
+            }
             "snapshot" => Ok(json!(t.snapshot_with(
                 a["contents"] != false,
                 crate::widgets::whole(&a["scrollback_lines"]).unwrap_or(0) as usize
@@ -196,6 +229,9 @@ impl Sessions {
                     Some("bottom") => ScrollRequest::Bottom,
                     Some("page-up") => ScrollRequest::PageUp,
                     Some("page-down") => ScrollRequest::PageDown,
+                    _ if a["page"].is_number() => ScrollRequest::Pages(a["page"].as_f64()
+                        .filter(|n| n.is_finite() && n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0)
+                        .ok_or("whole scroll pages required")? as i64),
                     _ => {
                         let n = a["lines"]
                             .as_f64()
