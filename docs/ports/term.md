@@ -423,3 +423,13 @@ Remaining clipboard work includes primary selection, middle/right mouse,
 copy-on-select, OSC52 window integration and full native clipboard-owner
 tests. Verified session/control/shell, full Bus, IME/search/Prefs and final
 release acceptance remain open. Overall **NOT ACCEPTED**.
+
+Clipboard gate `term-clipboard-327ab52-a1` failed compiling the new test:
+egui 0.37 has `ModifiersChanged` events rather than a `RawInput.modifiers`
+field. The five Mix suites and two bundle tests passed before that failure;
+terminal tests did not execute. Complete saved log read and returned fmt
+patch applied. Repair `cf75bd9` uses the current native event API and keeps
+modifier changes in event order in the runtime widget. A clipboard event
+followed by Shift release in the same frame must retain its earlier Shift
+meaning; the native test now includes that case. Next CBC:
+`term-clipboard-order-cf75bd9`. No passing native clipboard claim yet.

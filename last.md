@@ -656,3 +656,23 @@ search, zoom persistence/About/all Prefs, release gate and acceptance.
 No Fable question, installs, merges or VT changes.
 
 branch: lab/parity-term; head SHA: 327ab521c783643a6c7430c09e9c4641ef1b5382 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — clipboard native gate, full Bus/Prefs/session/input/search and release acceptance open; CBC job ids: term-seamless-e945bd9-a1 (green exact source), term-clipboard-327ab52 (next await).
+
+## Clipboard gate repair
+
+Read complete log for term-clipboard-327ab52-a1, rc 101. Five Mix suites
+and both bundle tests pass. Terminal test compile failed because the new
+test used removed RawInput.modifiers. No terminal tests ran. Applied
+returned fmt patch; cf75bd9 uses ModifiersChanged events and fixes runtime
+modifier ordering: clipboard/text events see modifiers at their position
+in the native event stream, not the frame's final state. Added same-frame
+clipboard-before-Shift-release coverage. No weakening of expected results.
+
+Next CBC term-clipboard-order-cf75bd9 at
+cf75bd955fbc23c65c6b8b70e6c9e33d7441b166, term_gate --prepare. Read full
+saved log, apply any fmt patch and repeat exact source if changed. Then
+fetch matching artifact and perform the platform clipboard event witness
+specified above. The e945bd9 exact-source pixel/Prefs checkpoint remains
+valid historical evidence, not acceptance of these new clipboard bytes.
+Continue full brief; no Fable decision, install or VT change.
+
+branch: lab/parity-term; head SHA: cf75bd955fbc23c65c6b8b70e6c9e33d7441b166 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — clipboard native validation, full Bus/Prefs/session/input/search and release acceptance open; CBC job ids: term-seamless-e945bd9-a1 (green exact source), term-clipboard-327ab52-a1 (test compile failure), term-clipboard-order-cf75bd9 (next await).
