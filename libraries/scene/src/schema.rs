@@ -106,7 +106,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("h", false, None),
         p("chrome", "bool", false, Some("true")),
     ];
-    static BOX: [Port; 8] = [
+    static BOX: [Port; 9] = [
         p("children", "list", true, None),
         pnd("gap", "0", None),
         pnd("padding", "0", None),
@@ -117,9 +117,48 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("height", false, None),
         pn("radius", false, None),
         p("background", "string", false, None),
+        p("scroll", "bool", false, Some("false")),
+    ];
+    static SECTION: [Port; 7] = [
+
+        p("children", "list", true, None),
+        p("titles", "list", true, None),
+        pe("frame", "\"plain\"", &["plain", "dock"]),
+        p("on_change", "string", false, None),
+        p("actions", "list", false, None),
+        p("on_action", "string", false, None),
+        p("focused", "bool", false, None),
+    ];
+    static CONTENT: [Port; 5] = [
+        p("children", "list", true, None),
+        p("settings", "object", false, Some("{}")),
+        p("scroll", "bool", false, Some("true")),
+        pe("surface", "\"panel\"", &["panel", "editor"]),
+        p("keyboard_scroll", "object", false, None),
+    ];
+    static PANES: [Port; 14] = [
+        p("children", "list", true, None),
+        pnd("left_fraction", "0.18", None),
+        pnd("right_fraction", "0.42", None),
+        p("right_visible", "bool", false, Some("true")),
+        p("clip", "bool", false, Some("true")),
+        pe("focus", "\"center\"", &["left", "center", "right"]),
+        p("on_change", "string", false, None),
+        pn("compact_below", false, None),
+        pn("narrow_below", false, None),
+        p("narrow_left_range", "list", false, None),
+        p("narrow_right_range", "list", false, None),
+        p("keyboard", "bool", false, Some("false")),
+        p("focus_targets", "object", false, None),
+        p("pane_labels", "object", false, None),
+    ];
+    static SIDES: [Port; 2] = [
+        p("children", "list", true, None),
+        p("wrap", "bool", false, Some("false")),
     ];
     static ROW: [Port; 12] = [
         p("children", "list", true, None),
+        p("wrap", "bool", false, Some("false")),
         pnd("gap", "0", None),
         pnd("padding", "0", None),
         p("fill", "bool", false, Some("false")),
@@ -138,7 +177,6 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("on_click", "string", false, None),
         // A secondary (right) click: the `context` event kind.
         p("on_context", "string", false, None),
-        p("wrap", "bool", false, None),
     ];
     static TEXT: [Port; 12] = [
         p("text", "string", true, None),
@@ -216,13 +254,16 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pnd("row_gap", "3", None),
         pnd("min_column_width", "0", None),
     ];
-    static DOCK: [Port; 6] = [
+    static DOCK: [Port; 7] = [
+
         p("children", "list", true, None),
         p("placements", "object", true, None),
         p("clip", "bool", false, None),
         p("on_change", "string", false, None),
         p("outline", "string", false, None),
         pn("outline_width", false, Some(0.0)),
+        p("passthrough_single", "bool", false, Some("false")),
+        p("focus_target", "string", false, None),
     ];
     static BAND: [Port; 2] = [
         p("children", "list", true, None),
@@ -240,6 +281,10 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     let family: &[Port] = match f {
         "window" => &WINDOW,
         "column" => &BOX,
+        "section" => &SECTION,
+        "content" => &CONTENT,
+        "panes" => &PANES,
+        "sides" => &SIDES,
         "row" => &ROW,
         "text" => &TEXT,
         "field" => &FIELD,
@@ -334,6 +379,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             p("scroll_key", "string", false, None),
             p("scroll_ready", "bool", false, None),
             p("reserve_panel_after", "bool", false, None),
+
             pn("row_gap", false, None),
             pn("column_gap", false, None),
             pn("padding_top", false, None),

@@ -6,6 +6,7 @@ pub mod app_host;
 pub mod appearance;
 pub mod bundle;
 pub mod capture;
+mod child_windows;
 pub mod chooser;
 pub mod clipboard;
 pub mod composition;
@@ -56,9 +57,13 @@ pub mod platform;
 pub mod ui_state;
 
 pub mod editor_controls;
+pub mod file_previews;
+pub mod file_tiles;
 pub mod header_controls;
 mod media_gallery;
 pub mod settings_browser;
+pub mod media_preview;
+
 
 pub mod process;
 

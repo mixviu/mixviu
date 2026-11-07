@@ -1,0 +1,90 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Calendar and address-book presentation policy, copied from pinned gold.
+fn contact_name($c)
+  return $c.full_name ?? (($c.data ?? {}).name ?? {}).full ?? ""
+end
+fn contact_email($c)
+  if $c.email!=nil then return $c.email end
+  $emails=values(($c.data ?? {}).emails ?? {})
+  return if len($emails)>0 then $emails[0].address ?? "" else "" end
+end
+fn event_title($e)
+  return $e.title ?? ($e.data ?? {}).title ?? ""
+end
+fn event_range($e)
+  $out=[]
+  for $stamp in [$e.start,$e.end]
+    try
+      if $stamp!=nil then push($out,date_format(date_parse($stamp),"%d %b %H:%M",{utc:true})) end
+    catch $invalid
+      if len($out)==0 then return "" end
+    end
+  end
+  return join($out," – ")
+end
+fn surface_mode($name)
+  global $mode
+  if $name==nil or $name=="" then return wire_refuse("INVALID_ARGUMENT","name is required") end
+  if type($name)!="string" then return wire_refuse("INVALID_ARGUMENT","name must be a string") end
+  if not contains(["mail","calendar","contacts"],$name) then return wire_refuse("INVALID_ARGUMENT","name must be mail, calendar or contacts") end
+  $mode=$name;$d=$wire_data[$active] ?? {}
+  if ($wire_views[$active] ?? {}).state=="ready" then
+    if $mode=="calendar" and $d.calendar!=nil and $d.events==nil then wire_start("email.events",{},nil,"events")
+    elif $mode=="contacts" and $d.book!=nil and $d.contacts==nil then wire_start("email.contacts",{},nil,"contacts") end
+  end
+  return {rc:0,body:{mode:$mode}}
+end
+fn surface_parent($account,$id,$is_event)
+  global $wire_data
+  $r=surface_account($account)
+  if $r.rc!=0 then return $r end
+  if $id==nil or $id=="" then return wire_refuse("INVALID_ARGUMENT","id is required") end
+  if type($id)!="string" then return wire_refuse("INVALID_ARGUMENT","id must be a string") end
+  $d=$wire_data[$account] ?? {};$kind=if $is_event then "calendars" else "books" end
+  if not any($d[$kind] ?? [],fn($p)=$p.id==$id) then return wire_refuse("NOT_FOUND","No such "..to_string($id)) end
+  $wire_data[$account][if $is_event then "calendar" else "book" end]=$id
+  $wire_data[$account][if $is_event then "open_event" else "open_contact" end]=nil
+  $wire_data[$account][if $is_event then "events" else "contacts" end]=[]
+  surface_mode(if $is_event then "calendar" else "contacts" end)
+  wire_start(if $is_event then "email.events" else "email.contacts" end,{},nil,if $is_event then "events" else "contacts" end)
+  return {rc:0,body:{account:$account,id:$id}}
+end
+fn pim_busy($account,$kind)
+  return any(values($wire_pending),fn($p)=$p.account==$account and $p.purpose==$kind)
+end
+fn pim_model($m)
+  $d=$wire_data[$active] ?? {};$is_event=$mode=="calendar";$items=$d[if $is_event then "events" else "contacts" end] ?? []
+  $open=$d[if $is_event then "open_event" else "open_contact" end]
+  $parents=$d[if $is_event then "calendars" else "books" end] ?? [];$parent=$d[if $is_event then "calendar" else "book" end]
+  $found=filter($parents,fn($p)=$p.id==$parent);$m.pim_titles=[if len($found)>0 then $found[0].name elif $is_event then "Calendar" else "Contacts" end]
+  $m.mail_mode=$mode=="mail";$m.pim_mode=$mode!="mail";$m.contacts_mode=$mode=="contacts"
+  $m.values["contact-filter"]=$d.contact_filter ?? ""
+  $m.pim_table={id:"pim-list",kind:"tree-table",label:"",initial:{key:if $is_event then "events" else "contacts" end,rows:map($items,fn($item)=merge(outline_row($item.id,0,if $is_event then event_title($item) else contact_name($item) end,if $is_event then "calendar" else "contact" end),{cells:[if $is_event then event_title($item) else contact_name($item) end,if $is_event then event_range($item) else contact_email($item) end]})),columns:[{id:"name",label:""},{id:"detail",label:""}],selected_keys:if $open==nil then [] else [$open] end,busy:pim_busy($active,if $is_event then "events" else "contacts" end),empty:"No items",loading:"Loading…"},properties:{style:"sides"}}
+  $found=filter($items,fn($p)=$p.id==$open);$item=$found[0];$m.pim_open=$item!=nil
+  $m.values["pim-empty"]=if $is_event then "Select an event to see its details." else "Select a contact to see their details." end
+  $lines=[];$body=[]
+  if $item!=nil then
+    $m.values["pim-title"]=if $is_event then event_title($item) else contact_name($item) end
+    if $is_event then
+      push($lines,"When: "..event_range($item))
+      $found=filter($parents,fn($p)=$p.id==$item.calendarId)
+      if len($found)>0 then push($lines,"Calendar: "..$found[0].name) end
+      push($body,($item.data ?? {}).description ?? "No description.")
+    else
+      for $value in [["",contact_email($item)],["Phone: ",$item.phone],["Company: ",$item.company]]
+        if $value[1]!=nil and $value[1]!="" then push($lines,$value[0]..$value[1]) end
+      end
+      $found=filter($parents,fn($p)=$p.id==$item.addressBookId)
+      if len($found)>0 then push($lines,"Address book: "..$found[0].name) end
+      for $value in values(($item.data ?? {}).emails ?? {})
+        if $value.address!=nil and $value.address!=contact_email($item) then push($body,$value.address) end
+      end
+    end
+  end
+  for $i=0 to 3
+    $m.values["pim-line-"..to_string($i)]=$lines[$i] ?? ""
+    $m["pim_line_"..to_string($i)]=$lines[$i]!=nil
+  end
+  $m.values["pim-body"]=join($body,"\n")
+  return $m
+end

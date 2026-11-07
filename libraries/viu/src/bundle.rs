@@ -37,6 +37,10 @@ pub struct Manifest {
     pub retain_appearance_on_loss: bool,
     /// App-authored compatibility surface; native facilities append descriptors.
     pub bus_surface: Option<serde_json::Value>,
+    pub log_filter: Option<String>,
+    /// Compatibility refusals for application commands with non-object arguments.
+    pub argument_error: Option<String>,
+    pub argument_error_overrides: std::collections::BTreeMap<String, String>,
     pub native_ui: bool,
     pub native_macros: bool,
     /// Let the bundle implement its declared macro workflows.
@@ -86,6 +90,9 @@ impl Default for Manifest {
             retain_window_on_loss: true,
             retain_appearance_on_loss: false,
             bus_surface: None,
+            log_filter: None,
+            argument_error: None,
+            argument_error_overrides: Default::default(),
             native_ui: false,
             native_macros: false,
             macro_workflow: false,
@@ -195,6 +202,22 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
+            || manifest
+                .log_filter
+                .as_ref()
+                .is_some_and(|filter| filter.len() > 4096)
+            || manifest.argument_error_overrides.len() > 256
+            || manifest
+                .argument_error
+                .iter()
+                .chain(manifest.argument_error_overrides.values())
+                .any(|code| {
+                    code.is_empty()
+                        || code.len() > 64
+                        || !code
+                            .bytes()
+                            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+                })
             || manifest.command_descriptors.len() > 256
             || manifest.command_descriptors.iter().any(|d| {
                 !manifest.commands.contains(&d.name)

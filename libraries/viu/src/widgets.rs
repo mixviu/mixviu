@@ -14,6 +14,8 @@ pub const KINDS: &[&str] = &[
     "search-bar",
     "form-fields",
     "header-form",
+    "file-tiles",
+    "file-previews",
     "status-line",
     "block-list",
     "label-run",
@@ -483,6 +485,8 @@ impl Widget {
                     && value["enabled"].is_boolean()
             }
             "image-view" => return crate::image_view::validate(value),
+            "file-tiles" => return crate::file_tiles::validate(value),
+            "file-previews" => return crate::file_previews::validate(value),
             "image-fill" => return crate::image_view::validate_fill(value),
             "image-canvas" => return crate::image_view::validate_canvas(value),
             "composition" => return crate::composition::validate(value),
@@ -541,7 +545,13 @@ impl Widget {
                 {
                     return Err("editor light must be bool".into());
                 }
-                for key in ["native_document", "soft_wrap", "line_numbers", "find_bar"] {
+                for key in [
+                    "native_document",
+                    "soft_wrap",
+                    "line_numbers",
+                    "find_bar",
+                    "prose",
+                ] {
                     if self.properties.get(key).is_some_and(|v| !v.is_boolean()) {
                         return Err(format!("editor {key} requires bool"));
                     }
@@ -554,6 +564,9 @@ impl Widget {
                                 "",
                                 "undo",
                                 "redo",
+                                "cut",
+                                "copy",
+                                "paste",
                                 "select-all",
                                 "duplicate-line",
                                 "delete-line",
@@ -609,6 +622,9 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind == "file-tiles" || self.kind == "file-previews" {
+            return vec!["toggle", "open", "save", "open-all", "save-all"];
+        }
         if self.kind == "macro-menu" {
             return vec!["close"];
         }
@@ -622,7 +638,9 @@ impl Widget {
             return vec!["select", "close"];
         }
         if self.kind == "header-form" {
-            return vec!["edit", "commit", "command", "remove", "picked", "cancel"];
+            return vec![
+                "edit", "commit", "command", "remove", "picked", "save", "cancel",
+            ];
         }
         if self.kind == "form-fields" {
             return vec!["edit"];
@@ -753,9 +771,17 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
+        if self.kind == "file-tiles" || self.kind == "file-previews" {
+            return if crate::file_tiles::intent(self.value(model), action, value) {
+                Ok(())
+            } else {
+                Err("invalid file tile action".into())
+            };
+        }
         if self.properties["enabled"] == false
             || (self.kind == "swatches" && self.properties["read_only"] == true)
         {
+
             return Err("DISABLED".into());
         }
         if [
@@ -886,6 +912,7 @@ pub struct Widgets {
     focus_error: Option<String>,
     images: crate::image_view::Images,
     surfaces: Option<crate::image_view::Images>,
+    media: Option<crate::image_view::Images>,
     editors: crate::editor::Editors,
     documents: crate::documents::Documents,
     canvases: Option<crate::image_view::Images>,
@@ -931,6 +958,9 @@ impl Widgets {
             images.begin();
         }
         if let Some(images) = &mut self.surfaces {
+            images.begin();
+        }
+        if let Some(images) = &mut self.media {
             images.begin();
         }
     }
@@ -1006,6 +1036,9 @@ impl Widgets {
             images.finish();
         }
         if let Some(images) = &mut self.surfaces {
+            images.finish();
+        }
+        if let Some(images) = &mut self.media {
             images.finish();
         }
         if let Some(id) = self.focus.take() {
@@ -1262,6 +1295,16 @@ impl Widgets {
             "block-list" | "form-grid" | "cell-grid" | "history-lines" | "label-run" => {
                 crate::data_panels::draw(ui, widget, value, &mut self.geometry, events)
             }
+            "file-tiles" => crate::file_tiles::draw(ui, id, value, events),
+            "file-previews" => crate::file_previews::draw(
+                ui,
+                id,
+                value,
+                self.media
+                    .get_or_insert_with(crate::image_view::Images::media),
+                events,
+            ),
+
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" | "settings-browser" => {
@@ -1284,6 +1327,53 @@ impl Widgets {
                         })
                         .inner;
                     return self.remember(ui, id, &r);
+                }
+                if matches!(
+                    widget.properties["role"].as_str(),
+                    Some("warning" | "error")
+                ) {
+                    let colour = if widget.properties["role"] == "warning" {
+                        ui.visuals().warn_fg_color
+                    } else {
+                        ui.visuals().error_fg_color
+                    };
+                    let response = ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(value.as_str().unwrap_or_default()).color(colour),
+                        )
+                        .wrap(),
+                    );
+                    return self.remember(ui, id, &response);
+                }
+                if widget.properties["role"] == "panel-header" {
+                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), chrome.style.panel_header as f32),
+                        Sense::hover(),
+                    );
+                    let font = toolkit::fonts::bound(
+                        ui.ctx(),
+                        toolkit::fonts::medium(chrome.style.panel_pill_size as f32),
+                    );
+                    let galley = ui.painter().layout_no_wrap(
+                        value.as_str().unwrap_or_default().into(),
+                        font,
+                        chrome.palette.text,
+                    );
+                    ui.painter().galley(
+                        egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        chrome.palette.text,
+                    );
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Label,
+                            ui.is_enabled(),
+                            value.as_str().unwrap_or_default(),
+                        )
+                    });
+                    return self.remember(ui, id, &response);
+
                 }
                 let text = label_text(ui, widget, value);
                 if widget.properties["role"] == "title" {
@@ -1310,6 +1400,8 @@ impl Widgets {
                 let mut label = egui::Label::new(text);
                 if widget.properties["truncate"] == true {
                     label = label.truncate();
+                } else if widget.properties["wrap"] == true {
+                    label = label.wrap();
                 }
                 if widget.properties["align"] == "center" {
                     label = label.halign(egui::Align::Center);
@@ -1350,6 +1442,7 @@ impl Widgets {
                         .tooltip(&widget.label),
                     )
                 } else if widget.properties["style"] == "primary" {
+
                     ui.add(toolkit::button::PushButton::primary(widget.text("text")))
                 } else if widget.properties["style"] == "secondary" {
                     ui.add(toolkit::button::PushButton::secondary(widget.text("text")))
@@ -1508,7 +1601,12 @@ impl Widgets {
                 let r = if widget.kind == "checkbox" {
                     ui.checkbox(&mut checked, widget.text("text"))
                 } else {
-                    if widget.properties["style"] == "selectable" {
+                    if widget.properties["style"] == "gold" {
+                        ui.add_enabled(
+                            widget.properties["enabled"] != false,
+                            toolkit::toggle::Toggle::new(&mut checked, widget.text("text")),
+                        )
+                    } else if widget.properties["style"] == "selectable" {
                         let response = toolkit::selectable(ui, checked, widget.text("text"));
                         if response.clicked() {
                             checked = !checked;
@@ -1970,8 +2068,15 @@ impl Widgets {
                 .label(value.as_str().unwrap_or("Hover for help"))
                 .on_hover_text(widget.text("body")),
             "separator" => {
-                let r = ui.separator();
-                ui.small(value.as_str().unwrap_or("Section boundary"));
+                let r = if widget.properties["style"] == "hairline" {
+                    let rect = toolkit::bars::hairline(ui);
+                    ui.interact(rect, ui.scope_id().with(id), Sense::hover())
+                } else {
+                    ui.separator()
+                };
+                if let Some(text) = value.as_str().filter(|s| !s.is_empty()) {
+                    ui.small(text);
+                }
                 r
             }
             "icon" => {
@@ -2056,6 +2161,9 @@ fn icon_button(ui: &mut egui::Ui, name: &str, text: &str, selected: bool) -> egu
 
 fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
+    if widget.properties["role"] == "heading" {
+        text = text.heading();
+    }
     if widget.properties["role"] == "status" {
         text = text.small();
     }

@@ -508,10 +508,94 @@ impl SceneView {
                 if let Some(reserve) = num(node, "reserve_height") {
                     ui.set_height((ui.available_height()-reserve).max(num(node,"min_height").unwrap_or(0.)));
                 }
-                if node.family!="control" {
-                    ui.spacing_mut().item_spacing=if node.ports.get("native_spacing")==Some(&Value::Bool(true)){ui.ctx().global_style().spacing.item_spacing}else{Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0))};
+                if matches!(node.family.as_str(),"panes"|"content"|"section"|"sides") || node.ports.get("native_spacing")==Some(&Value::Bool(true)) {
+                    ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
+                } else if node.family!="control" {
+                    ui.spacing_mut().item_spacing=Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0));
                 }
                 match node.family.as_str() {
+                    "sides"=>{
+                        let children=children(node).collect::<Vec<_>>();
+                        let draw=std::cell::RefCell::new((&mut *self,&mut *events));
+                        let sides=if node.ports.get("wrap")==Some(&Value::Bool(true)){egui::Sides::new().wrap()}else{egui::Sides::new()};
+                        sides.show(ui,|ui|{let mut draw=draw.borrow_mut();let (view,events)=&mut *draw;view.node(ui,children[0],nodes,route,depth+1,events);},|ui|{let mut draw=draw.borrow_mut();let (view,events)=&mut *draw;view.node(ui,children[1],nodes,route,depth+1,events);});
+                    },
+                    "panes"=>self.panes(ui,&key,node,nodes,route,depth,events),
+                    "content"=>{
+                        let content:settings::content::Content=serde_json::from_value(node.ports.get("settings").cloned().unwrap_or_else(|| json!({}))).expect("validated prose content");
+                        let fill=if node.ports.get("surface").and_then(Value::as_str)==Some("editor") {ui.ctx().data(|d|d.get_temp::<editor::Palette>(egui::Id::unique("viu-gold-editor-palette"))).map(|p|p.background).unwrap_or(ui.visuals().panel_fill)} else if content.light {toolkit::chrome::Chrome::for_theme(toolkit::content::light_theme()).palette.canvas}else{ui.visuals().panel_fill};
+                        toolkit::content::surface_filled(ui,&content,fill,|ui|{
+                            let mut draw=|ui:&mut egui::Ui|for child in children(node){self.node(ui,child,nodes,route,depth+1,events);};
+                            if node.ports.get("scroll")!=Some(&Value::Bool(false)){
+                                let marker=egui::Id::unique((&key,"keyboard-scroll"));
+                                let mut scroll=egui::ScrollArea::vertical().id_salt((&key,"body")).auto_shrink(false);
+                                if let Some(target)=node.ports.get("keyboard_scroll").and_then(|v|v["focus"].as_str()) {
+                                    if ui.memory(|m|m.has_focus(egui::Id::unique(target))) {
+                                        let line=node.ports["keyboard_scroll"]["line"].as_f64().unwrap_or(48.0) as f32;
+                                        let page=ui.available_height()*node.ports["keyboard_scroll"]["page_fraction"].as_f64().unwrap_or(0.9) as f32;
+                                        let step=ui.input_mut(|i|{
+                                            let mut step=0.0;
+                                            for (key,delta) in [(egui::Key::ArrowDown,line),(egui::Key::ArrowUp,-line),(egui::Key::PageDown,page),(egui::Key::PageUp,-page)] {
+                                                if i.consume_key(egui::Modifiers::NONE,key){step+=delta;}
+                                            }
+                                            step
+                                        });
+                                        if step!=0.0 {
+                                            if let Some(id)=ui.ctx().data(|d|d.get_temp::<egui::Id>(marker)) {
+                                                if let Some(state)=egui::scroll_area::State::load(ui.ctx(),id){scroll=scroll.vertical_scroll_offset((state.clamped_offset().y+step).max(0.0));}
+                                            }
+                                        }
+                                    }
+                                }
+                                let shown=scroll.show(ui,|ui|draw(ui));
+                                ui.ctx().data_mut(|d|d.insert_temp(marker,shown.id));
+                            }else{draw(ui);}
+                        });
+                    },
+                    "section"=>{
+                        ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
+                        let titles=node.ports["titles"].as_array().expect("validated section titles").iter().map(|v|v.as_str().expect("validated section title")).collect::<Vec<_>>();
+                        let mut draw=|ui:&mut egui::Ui| {
+                            let mut actions=Vec::new();
+                            let shown=if let Some(items)=node.ports.get("actions").and_then(Value::as_array) {
+                                toolkit::panel::group_with_actions(ui,&key,|ui|{
+                                    ui.horizontal(|ui|for item in items {
+                                        if item["separator"]==true {toolkit::bars::divider(ui,16.0);continue;}
+                                        if let Some(icon)=item["icon"].as_str().and_then(crate::icons::Icon::from_name) {
+                                            if let Some(children)=item["children"].as_array() {
+                                                let button=ui.add_enabled(item["enabled"]!=false,toolkit::button::IconButton::new(icon).size(ui.spacing().interact_size.y*0.8));
+                                                egui::Popup::menu(&button).show(|ui|for child in children {
+                                                    if ui.add_enabled(child["enabled"]!=false,egui::Button::new(child["label"].as_str().unwrap_or(""))).clicked(){actions.push(child["id"].clone());}
+                                                });
+                                                continue;
+                                            }
+                                            let r=ui.add_enabled(item["enabled"]!=false,toolkit::button::Link::new(icon,item["label"].as_str().unwrap_or("")));
+                                            if r.clicked(){actions.push(item["id"].clone());}
+                                        }
+                                    });
+                                },|ui,_|for child in children(node){self.node(ui,child,nodes,route,depth+1,events);})
+                            }else{
+                                toolkit::panel::group(ui,&key,&titles,|ui,_|{
+                                    for child in children(node){self.node(ui,child,nodes,route,depth+1,events);}
+                                })
+                            };
+                            if let Some(command)=node.ports.get("on_action").and_then(Value::as_str) {
+                                for action in actions {events.push(Event{command:command.into(),body:json!({"id":action,"origin":"panel"})});}
+                            }
+                            if shown.handle.drag_stopped() {
+                                if let Some(command)=node.ports.get("on_change").and_then(Value::as_str) {
+                                    events.push(Event{command:command.into(),body:json!({"id":key,"selected":shown.state.selected,"collapsed":shown.state.collapsed})});
+                                }
+                            }
+                        };
+                        if text(node,"frame")=="dock" {
+                            let focused=node.ports.get("focused")==Some(&Value::Bool(true));
+                            let ring=if focused{let palette=&toolkit::chrome::Chrome::of(ui.ctx()).palette;palette.card_border.lerp_to_gamma(palette.accent,0.25)}else{Color32::TRANSPARENT};
+                            let frame=toolkit::bars::dock_frame(ui.ctx());
+                            let frame=if node.ports.contains_key("focused"){frame.stroke(egui::Stroke::new(1.0,ring))}else{frame};
+                            frame.show(ui,|ui|draw(ui));
+                        }else{draw(ui);}
+                    },
                     "column" if !text(node,"group_title").is_empty() => {
                         let title=text(node,"group_title");
                         let group_key=if text(node,"group_key").is_empty(){&key}else{text(node,"group_key")};
@@ -545,6 +629,7 @@ impl SceneView {
                         let rect=if node.ports.get("native_frame")==Some(&Value::Bool(true)){toolkit::bars::dock_frame(ui.ctx()).show(ui,|ui|draw_scroll(ui)).inner}else{draw_scroll(ui)};
                         ui.interact(rect,ui.scope_id().with((&key,"scroll")),Sense::hover());
                     }
+
                     "dock"=>self.dock(ui,&key,node,nodes,route,depth,events),
                     "band"=>{
                         let area=ui.available_rect_before_wrap();
@@ -744,6 +829,9 @@ impl SceneView {
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
                                     } else { ui.horizontal(|ui| draw(ui)); }
+                                } else if node.ports.get("scroll")==Some(&Value::Bool(true)) {
+                                    egui::ScrollArea::vertical().id_salt((&key,"scroll")).auto_shrink(false).show(ui,|ui|draw(ui));
+
                                 } else {
                                     ui.vertical(|ui| draw(ui));
                                 }
@@ -824,6 +912,212 @@ impl SceneView {
                 &self.tree.name,
                 Intent::set(id, value),
             ));
+        }
+    }
+
+    /// Native resizable navigation/detail panes. Applications provide every
+    /// child and persist the returned fractions; this owns only layout.
+    fn panes(
+        &mut self,
+        ui: &mut egui::Ui,
+        key: &str,
+        node: &Node,
+        nodes: &BTreeMap<String, Node>,
+        route: Option<(&str, &Node, &Value)>,
+        depth: usize,
+        events: &mut Vec<Event>,
+    ) {
+        if node.ports.get("clip") == Some(&Value::Bool(false)) {
+            ui.set_clip_rect(ui.ctx().content_rect());
+        }
+        let children = children(node).collect::<Vec<_>>();
+        let width = ui.available_width();
+        if node.ports.get("keyboard") == Some(&Value::Bool(true)) && !ui.ctx().text_edit_focused() {
+            let targets = node.ports.get("focus_targets").cloned().unwrap_or_default();
+            // A compact pane is mounted on the frame after its intent is
+            // applied. Retake its focus then: the target was absent in the
+            // frame that consumed Tab, so egui may have retired that request.
+            let marker = egui::Id::unique((ui.ctx().viewport_id(), key, "pane-model-focus"));
+            let model_focus = text(node, "focus");
+            let previous_model = ui.ctx().data_mut(|d| {
+                let previous = d.get_temp::<String>(marker);
+                d.insert_temp(marker, model_focus.to_owned());
+                previous
+            });
+            if previous_model.is_some_and(|previous| previous != model_focus) {
+                if let Some(target) = targets[model_focus].as_str() {
+                    if let Some(id) = target.strip_prefix("table:") {
+                        toolkit::datatable::focus(ui.ctx(), id);
+                    } else {
+                        ui.memory_mut(|m| m.request_focus(egui::Id::unique(target)));
+                    }
+                }
+            }
+            let names = ["left", "center", "right"];
+            let count = if node.ports.get("right_visible") == Some(&Value::Bool(false)) {
+                2
+            } else {
+                3
+            };
+            let mut focus = text(node, "focus");
+            let previous = ui.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab));
+            let next =
+                !previous && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Tab));
+            if previous || next {
+                let at = names[..count].iter().position(|n| *n == focus).unwrap_or(0);
+                focus = names[(at + count + if next { 1 } else { count - 1 }) % count];
+                if let Some(target) = targets[focus].as_str() {
+                    if let Some(id) = target.strip_prefix("table:") {
+                        toolkit::datatable::focus(ui.ctx(), id);
+                    } else {
+                        ui.memory_mut(|m| m.request_focus(egui::Id::unique(target)));
+                    }
+                }
+            } else {
+                for name in &names[..count] {
+                    if let Some(target) = targets[*name].as_str() {
+                        let focused = if let Some(id) = target.strip_prefix("table:") {
+                            toolkit::datatable::is_focused(ui.ctx(), id)
+                        } else {
+                            ui.memory(|m| m.has_focus(egui::Id::unique(target)))
+                        };
+                        if focused {
+                            focus = name;
+                            break;
+                        }
+                    }
+                }
+            }
+            if focus != text(node, "focus") {
+                self.layout_change(node, key, json!({"focus":focus}), events);
+            }
+        }
+        let pane_ctx = ui.ctx().clone();
+        let frame = |which: &str| {
+            let ring = if text(node, "focus") == which {
+                let palette = &toolkit::chrome::Chrome::of(&pane_ctx).palette;
+                palette.card_border.lerp_to_gamma(palette.accent, 0.25)
+            } else {
+                Color32::TRANSPARENT
+            };
+            toolkit::bars::dock_frame(&pane_ctx).stroke(egui::Stroke::new(1.0, ring))
+        };
+        let left_frame = frame("left");
+        let right_frame = frame("right");
+        let center_frame = frame("center");
+        if width < num(node, "compact_below").unwrap_or(0.0) {
+            let focus = if text(node, "focus") == "right"
+                && node.ports.get("right_visible") == Some(&Value::Bool(false))
+            {
+                "center"
+            } else {
+                text(node, "focus")
+            };
+            egui::Panel::top(egui::Id::unique((key, "compact-panes"))).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    for (name, label) in
+                        [("left", "Left"), ("center", "Centre"), ("right", "Right")]
+                    {
+                        if name == "right"
+                            && node.ports.get("right_visible") == Some(&Value::Bool(false))
+                        {
+                            continue;
+                        }
+                        let label = node
+                            .ports
+                            .get("pane_labels")
+                            .and_then(|v| v[name].as_str())
+                            .unwrap_or(label);
+                        if toolkit::selectable(ui, focus == name, label).clicked() {
+                            self.layout_change(node, key, json!({"focus":name}), events);
+                        }
+                    }
+                });
+            });
+            egui::CentralPanel::default()
+                .frame(frame(focus))
+                .show(ui, |ui| {
+                    self.node(
+                        ui,
+                        children[if focus == "left" {
+                            0
+                        } else if focus == "right" {
+                            2
+                        } else {
+                            1
+                        }],
+                        nodes,
+                        route,
+                        depth + 1,
+                        events,
+                    );
+                });
+            return;
+        }
+        let narrow = width < num(node, "narrow_below").unwrap_or(0.0);
+        let mut left_panel = egui::Panel::left(egui::Id::unique((
+            ui.ctx().viewport_id(),
+            key,
+            if narrow { "left-narrow" } else { "left" },
+        )))
+        .resizable(true)
+        .default_size(width * num(node, "left_fraction").unwrap_or(0.18))
+        .frame(left_frame);
+        if narrow {
+            let range = node
+                .ports
+                .get("narrow_left_range")
+                .cloned()
+                .unwrap_or_default();
+            let low = range[0].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+            let high = range[1].as_f64().unwrap_or(1.0).clamp(low as f64, 1.0) as f32;
+            left_panel = left_panel.size_range(width * low..=width * high);
+        }
+        let left = left_panel.show(ui, |ui| {
+            self.node(ui, children[0], nodes, route, depth + 1, events)
+        });
+        let left_fraction = left.response.rect.width() / width.max(1.0);
+        let mut right_fraction = num(node, "right_fraction").unwrap_or(0.42);
+        if node.ports.get("right_visible") != Some(&Value::Bool(false)) {
+            let remaining = ui.available_width();
+            let mut right_panel = egui::Panel::right(egui::Id::unique((
+                ui.ctx().viewport_id(),
+                key,
+                if narrow { "right-narrow" } else { "right" },
+            )))
+            .resizable(true)
+            .default_size(remaining * right_fraction)
+            .frame(right_frame);
+            if narrow {
+                let range = node
+                    .ports
+                    .get("narrow_right_range")
+                    .cloned()
+                    .unwrap_or_default();
+                let low = range[0].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+                let high = range[1].as_f64().unwrap_or(1.0).clamp(low as f64, 1.0) as f32;
+                right_panel = right_panel.size_range(remaining * low..=remaining * high);
+            }
+            let right = right_panel.show(ui, |ui| {
+                self.node(ui, children[2], nodes, route, depth + 1, events)
+            });
+            right_fraction = right.response.rect.width() / remaining.max(1.0);
+        }
+        egui::CentralPanel::default()
+            .frame(center_frame)
+            .show(ui, |ui| {
+                self.node(ui, children[1], nodes, route, depth + 1, events)
+            });
+        if !narrow
+            && ((left_fraction - num(node, "left_fraction").unwrap_or(0.18)).abs() > 0.005
+                || (right_fraction - num(node, "right_fraction").unwrap_or(0.42)).abs() > 0.005)
+        {
+            self.layout_change(
+                node,
+                key,
+                json!({"left":left_fraction,"right":right_fraction}),
+                events,
+            );
         }
     }
 
@@ -955,11 +1249,46 @@ impl SceneView {
         depth: usize,
         events: &mut Vec<Event>,
     ) {
+        if let Some(target) = node.ports.get("focus_target").and_then(Value::as_str) {
+            let area = ui.max_rect();
+            let id = egui::Id::unique(target);
+            let back = ui.interact(area, id, Sense::focusable_noninteractive());
+            if ui.input(|i| i.pointer.primary_pressed()) && ui.rect_contains_pointer(area) {
+                back.request_focus();
+            }
+            if ui.memory(|m| m.has_focus(id)) {
+                ui.memory_mut(|m| {
+                    m.set_focus_lock_filter(
+                        id,
+                        egui::EventFilter {
+                            tab: true,
+                            horizontal_arrows: true,
+                            vertical_arrows: true,
+                            ..Default::default()
+                        },
+                    )
+                });
+            }
+        }
         let area = ui.available_rect_before_wrap();
         let mut remaining = area;
         let placements = &node.ports["placements"];
         if node.ports.get("clip") == Some(&Value::Bool(true)) {
             ui.set_clip_rect(ui.clip_rect().intersect(area));
+        }
+        if node.ports.get("passthrough_single") == Some(&Value::Bool(true)) {
+            let visible = children(node)
+                .filter(|id| {
+                    nodes
+                        .get(*id)
+                        .is_some_and(|n| n.ports.get("hidden") != Some(&Value::Bool(true)))
+                })
+                .collect::<Vec<_>>();
+            if visible.len() == 1 && placements[visible[0]]["edge"] == "fill" {
+                self.node(ui, visible[0], nodes, route, depth + 1, events);
+                return;
+            }
+
         }
         for child in children(node) {
             if nodes
@@ -1015,6 +1344,65 @@ impl SceneView {
                 continue;
             }
             let horizontal = ["left", "right"].contains(&edge);
+            if edge == "bottom" && placement["size"] == "content" && placement["measure"] == true {
+                let limit =
+                    remaining.height() * placement["max_fraction"].as_f64().unwrap_or(1.0) as f32;
+                let marker =
+                    egui::Id::unique((ui.ctx().viewport_id(), "viu.dock.intrinsic-height"));
+                ui.ctx().data_mut(|d| d.insert_temp(marker, limit));
+                let mut measure = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt((child, "measure"))
+                        .max_rect(remaining)
+                        .layout(egui::Layout::top_down(egui::Align::Min))
+                        .invisible()
+                        .sizing_pass(),
+                );
+                self.node(
+                    &mut measure,
+                    child,
+                    nodes,
+                    route,
+                    depth + 1,
+                    &mut Vec::new(),
+                );
+                let height = measure.min_rect().height().ceil().min(limit);
+                let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
+                let panel = egui::Panel::bottom(egui::Id::unique((key, child, "intrinsic")))
+                    .frame(egui::Frame::new())
+                    .exact_size(height)
+                    .show(&mut panel_ui, |ui| {
+                        self.node(ui, child, nodes, route, depth + 1, events);
+                    });
+                ui.ctx().data_mut(|d| {
+                    d.remove::<f32>(marker);
+                });
+                remaining = panel_ui.available_rect_before_wrap();
+                remaining.max.y = remaining.max.y.min(panel.response.rect.top());
+                continue;
+            }
+            if edge == "bottom" && placement["size"] == "content" {
+                // Reserve the last measured height, then repaint at the new
+                // height when live text or typography changes the footer.
+                let marker = egui::Id::unique((ui.ctx().viewport_id(), key, child, "dock-height"));
+                let height = ui.ctx().data(|d| d.get_temp::<f32>(marker)).unwrap_or(0.0);
+                let mut rect = remaining;
+                rect.min.y = (rect.max.y - height).max(rect.min.y);
+                let mut child_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                child_ui.set_clip_rect(remaining.intersect(ui.clip_rect()));
+                self.node(&mut child_ui, child, nodes, route, depth + 1, events);
+                let measured = child_ui.min_rect().height().min(remaining.height());
+                if (measured - height).abs() > 0.1 {
+                    ui.ctx().data_mut(|d| d.insert_temp(marker, measured));
+                    ui.ctx().request_repaint();
+                }
+                remaining.max.y = rect.min.y;
+                continue;
+            }
             // A top strip may follow its intrinsic content height. This keeps
             // forms and search rows correct when live typography changes.
             if edge == "top" && placement["size"] == "content" {
@@ -1038,6 +1426,11 @@ impl SceneView {
                     .min_rect()
                     .bottom()
                     .clamp(remaining.top(), remaining.bottom());
+                if placement["native_spacing"] == true {
+                    remaining.min.y = (remaining.min.y
+                        + ui.ctx().global_style().spacing.item_spacing.y)
+                        .min(remaining.max.y);
+                }
                 continue;
             }
             let dimension = placement["reference_extent"]
@@ -1132,7 +1525,20 @@ impl SceneView {
                 "bottom" => remaining.max.y = rect.min.y,
                 _ => {}
             }
-            self.child_rect(ui, child, rect, nodes, route, depth, events);
+            if placement["clip"] == false || placement["clip"] == "vertical" {
+                ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(child), |ui| {
+                    if placement["clip"] == "vertical" {
+                        let mut clip = ui.clip_rect();
+                        clip.min.y = clip.min.y.max(rect.min.y);
+                        clip.max.y = clip.max.y.min(rect.max.y);
+                        ui.set_clip_rect(clip);
+                    }
+                    self.node(ui, child, nodes, route, depth + 1, events);
+                });
+            } else {
+                self.child_rect(ui, child, rect, nodes, route, depth, events);
+            }
+
             if edge == "bottom" && placement["size"] == "design.status_height" {
                 // The native panel rounds its frame and integer margins after
                 // applying live scale. Reserve its painted bounds, rather than
@@ -1381,7 +1787,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                         "max_fraction",
                     ] {
                         if let Some(v) = p.get(key) {
-                            if key == "size" && v == "content" && edge == "top" {
+                            if key == "size" && v == "content" && matches!(edge, "top" | "bottom") {
                                 continue;
                             }
                             if key == "size" && design_length(v, None).is_some() {
@@ -1429,6 +1835,55 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
             }
             "text" | "button" | "field" | "toggle" | "row" | "column" | "list" | "spacer"
             | "grid" => {}
+            "panes" => {
+                if children(node).count() != 3 {
+                    return Err("panes requires left, center, right children".into());
+                }
+                for key in ["left_fraction", "right_fraction"] {
+                    if num(node, key).is_none_or(|v| !(0.05..=0.95).contains(&v)) {
+                        return Err("pane fractions must be 0.05..0.95".into());
+                    }
+                }
+            }
+            "sides" => {
+                if children(node).count() != 2 {
+                    return Err("sides requires left and right children".into());
+                }
+            }
+            "content" => {
+                let content: settings::content::Content = serde_json::from_value(
+                    node.ports
+                        .get("settings")
+                        .cloned()
+                        .unwrap_or_else(|| json!({})),
+                )
+                .map_err(|e| e.to_string())?;
+                if !content.font.size.is_finite()
+                    || !(6.0..=48.0).contains(&content.font.size)
+                    || ![1, 2, 4, 8, 16].contains(&content.padding)
+                    || content
+                        .font
+                        .family
+                        .as_deref()
+                        .is_some_and(|f| !["Inter", "JetBrains Mono"].contains(&f))
+                {
+                    return Err("invalid prose content settings".into());
+                }
+            }
+            "section" => {
+                let titles = node
+                    .ports
+                    .get("titles")
+                    .and_then(Value::as_array)
+                    .filter(|t| !t.is_empty() && t.len() <= 32)
+                    .ok_or("section requires 1..32 titles")?;
+                if titles
+                    .iter()
+                    .any(|t| t.as_str().is_none_or(|s| s.len() > 4096))
+                {
+                    return Err("invalid section title".into());
+                }
+            }
             family => return Err(format!("unsupported scene content family {family}")),
         }
     }
@@ -1442,7 +1897,10 @@ fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
             c.metrics.mark + c.metrics.mark_gap + c.metrics.title_bar_margin
         })),
         "design.title_bar_height" => {
-            Some(ctx.map_or(38.0, |ctx| crate::window_frame::Metrics::of(ctx).height))
+            use egui::emath::GuiRounding;
+            Some(ctx.map_or(38.0, |ctx| {
+                crate::window_frame::Metrics::of(ctx).height.round_ui()
+            }))
         }
         "design.status_height" => Some(ctx.map_or(30.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.bars.status

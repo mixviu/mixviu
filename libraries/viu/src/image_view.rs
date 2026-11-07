@@ -72,6 +72,16 @@ impl Images {
     pub fn set_rasters(&mut self, rasters: Option<crate::raster::Rasters>) {
         self.rasters = rasters;
     }
+    pub fn media() -> Self {
+        Self {
+            decoder: crate::thumbnail::Decoder::with_decoder("viu-media-decode", |path| {
+                crate::media_preview::decode(path, "image/png").ok()
+            }),
+            capacity: 1024,
+            ..Self::default()
+        }
+    }
+
     pub fn surface() -> Self {
         Self {
             decoder: crate::thumbnail::Decoder::with_decoder("viu-surface-decode", decode_surface),
@@ -403,12 +413,20 @@ impl Images {
                     Slot {
                         path: path.into(),
                         texture: None,
-                        answered: !accepted,
+                        answered: !accepted && value["natural"] != true,
                         pixels: None,
                         _lease: None,
                     },
                 );
             }
+
+        }
+        if value["natural"] == true && self.slots.get(id).is_some_and(|s| !s.answered) {
+            self.decoder.ask(
+                &(id.to_owned(), path.to_owned()),
+                std::path::Path::new(path),
+                ui.ctx(),
+            );
         }
         for ((id, path), image) in self.decoder.drain() {
             if let Some(slot) = self.slots.get_mut(&id).filter(|s| s.path == path) {
@@ -437,6 +455,16 @@ impl Images {
                     },
                 )
                 / ui.ctx().pixels_per_point();
+            if value["natural"] == true {
+                let size = natural * (ui.available_width() / natural.x).min(1.0);
+                return ui.add(
+                    egui::Image::new(texture)
+                        .fit_to_exact_size(size)
+                        .sense(egui::Sense::click())
+                        .alt_text(value["alt"].as_str().unwrap_or("")),
+                );
+            }
+
             if fill {
                 if value["canvas"] == true {
                     use crate::annotation::{document::Point, viewport::Viewport};

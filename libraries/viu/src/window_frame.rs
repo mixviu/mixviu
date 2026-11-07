@@ -144,6 +144,8 @@ impl WindowFrame {
             return;
         }
         let metrics = Metrics::of(ui.ctx());
+        use egui::emath::GuiRounding;
+
         let height = metrics.height.round_ui();
         let gap = ui.spacing().item_spacing.y;
         ui.spacing_mut().item_spacing.y = 0.0;

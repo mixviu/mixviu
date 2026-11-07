@@ -1,0 +1,293 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Native jobs own waits; request receipts remain held across callbacks.
+-- lint: globals ctx entries active session boxes box rows total offset selected message reader account mailbox connected revision serial status fixture c
+$account_policy=require("accounts.mix")
+$argument_policy=require("arguments.mix")
+$request_policy=require("request.mix")
+$wire_sequence=0;$wire_pending={};$wire_sessions={};$wire_views={};$wire_generations={};$wire_data={};$wire_open_targets={};$wire_list_targets={};$wire_pim_targets={};$wire_waiting=[];$wire_running={}
+$mail_settings={binding:{instance:env("MIXOS_INSTANCE","default"),profile:"default"},source:"cache",default_account:nil,page_size:100,mark_read_on_open:true,confirm_delete:true,quote_on_reply:true,reply_position:"above",revision:nil}
+fn wire_entry($id)
+  for $e in $entries if $e.id==$id then return $e end end
+  return nil
+end
+fn wire_refuse($code,$message)
+  return {rc:10,body:{error_code:$code,message:$message}}
+end
+fn wire_current($job)
+  if $job.purpose=="settings" then return true end
+  $entry=wire_entry($job.account)
+  return $entry!=nil and $entry.enabled!=false and $entry.url==$job.entry.url and $entry.user==$job.entry.user and $entry.ca_file==$job.entry.ca_file and ($wire_generations[$job.account] ?? 0)==$job.generation
+end
+fn wire_start($command,$args,$event=nil,$purpose="query")
+  try
+    return wire_schedule($command,$args,$event,$purpose)
+  catch $message,$error
+    return wire_refuse(if $error.code=="INVALID_ARGUMENT" then "INVALID_ARGUMENT" else "SERVER" end,$message)
+  end
+end
+fn wire_schedule($command,$args,$event,$purpose)
+  global $wire_sequence,$wire_pending,$wire_views,$wire_sessions,$wire_generations,$wire_open_targets,$wire_list_targets,$wire_pim_targets,$wire_waiting
+  if type($args)!="map" then return wire_refuse("INVALID_ARGUMENT","arguments must be an object") end
+  $settings=contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set","email.account.migrate"],$command)
+  if $settings then $purpose="settings" end
+  if $command=="email.send" then
+    $args._compose_owner=$purpose=="compose-send"
+    if $purpose!="compose-send" then $args=delete($args,"attempt") end
+  end
+  $id=$argument_policy.text($args,"account") ?? $active;$entry=wire_entry($id)
+  if $command=="email.account.connect" then $id=$argument_policy.required($args,"id");$entry=wire_entry($id) end
+  if $settings then $request_policy.check_request($command,$args) end
+  if not $settings then
+    if $entry==nil then return wire_refuse("UNKNOWN_ACCOUNT",if $id=="" or $id==nil then "No account is selected" else "No account "..to_string($id) end) end
+    if $entry.enabled==false then return wire_refuse("NOT_CONNECTED","Not connected") end
+    if $command!="email.account.connect" and $wire_sessions[$id]==nil then return wire_refuse("NOT_CONNECTED","Not connected") end
+    if $command=="email.list" then $args.mailbox=$args.mailbox ?? ($wire_data[$id] ?? {}).box ?? (if $id==$active then $box else nil end) end
+    if contains(["email.list","email.search"],$command) then $args.limit=$args.limit ?? $mail_settings.page_size end
+    if contains(["email.events","email.event.create"],$command) then $args.calendar=$args.calendar ?? ($wire_data[$id] ?? {}).calendar end
+    if contains(["email.contacts","email.contact.create"],$command) then $args.book=$args.book ?? ($wire_data[$id] ?? {}).book end
+    if $command=="email.print" then
+      $args.id=$argument_policy.text($args,"id") ?? ($wire_data[$id] ?? {}).message.id
+      if $args.id==nil then return wire_refuse("NOT_FOUND","No email is open") end
+      $args.markdown=$id==$active and ($message ?? {}).id==$args.id and $reader_markdown
+    end
+    $request_policy.check_request($command,$args)
+  end
+  if len(keys($wire_pending))>=512 then return wire_refuse("BUSY","Too many requests pending") end
+  if $command=="email.account.connect" then $wire_generations[$id]=($wire_generations[$id] ?? 0)+1;$wire_sessions=delete($wire_sessions,$id) end
+  $token=if $event!=nil then $event.headers["viu-call"] else nil end
+  if $token!=nil and not viu_reply("hold",$token,{}) then return wire_refuse("BUSY","Request receipt unavailable") end
+  $wire_sequence=$wire_sequence+1;$job="email-wire-"..to_string($wire_sequence)
+  $owner={id:$job,account:$id,entry:$entry,generation:$wire_generations[$id] ?? 0,command:$command,args:$args,token:$token,purpose:$purpose}
+  if contains(["list","refresh-list"],$purpose) then $wire_list_targets[$id]=$job end
+  if contains(["events","contacts"],$purpose) then $wire_pim_targets[$id.."/"..$purpose]=$job end
+  if $command=="email.open" then
+    if $id!=$active then surface_account($id) end
+    $owner.mailbox=$box;$wire_open_targets[$id]=$job
+  end
+  $owner.session=if $command=="email.account.connect" then nil else $wire_sessions[$id] end
+  $owner.binding=$mail_settings.binding
+  $wire_pending[$job]=$owner
+  push($wire_waiting,$job)
+  if $command=="email.account.connect" then $wire_views[$id]={state:"connecting",error:nil,has_password:false} end
+  wire_pump()
+  return {rc:0,body:{}}
+end
+fn wire_pump()
+  global $wire_waiting,$wire_running,$wire_pending
+  while len(keys($wire_running))<4 and len($wire_waiting)>0
+    $id=$wire_waiting[0];$job=$wire_pending[$id]
+    if $job.purpose=="settings" and any(keys($wire_running),fn($id)=($wire_pending[$id] ?? {}).purpose=="settings") then return end
+    if not wire_current($job) then
+      $wire_waiting=slice($wire_waiting,1);$wire_pending=delete($wire_pending,$id)
+      if $job.purpose=="bulk-ids" then selection_cancel($job.account) end
+      if $job.purpose=="preview" then preview_completed($job,{rc:10,body:{message:"The account changed"}}) end
+      if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"}}) end
+      continue
+    end
+    $path=path_join(dirname(script_path()),"wire-job.mix")
+    try
+      send "viu-local" "jobs.start" id=$id owner={id:$id} path=$path source=read_file($path) command="job.run" args={entry:$job.entry,command:$job.command,args:$job.args,session:$job.session,binding:$job.binding}
+      if $rc!=0 and $reply.error_code=="BUSY" then return end
+      $accepted=$rc==0
+    catch $failure
+      $accepted=false
+    end
+    $wire_waiting=slice($wire_waiting,1)
+    if $accepted then $wire_running[$id]=true
+    else
+      $wire_pending=delete($wire_pending,$id)
+      if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"SERVER",message:"Mail worker unavailable"}}) end
+    end
+  end
+end
+fn wire_accounts()
+  $default=$mail_settings.default_account
+  if $default==nil or not any($entries,fn($e)=$e.id==$default and $e.enabled!=false) then
+    $enabled=filter($entries,fn($e)=$e.enabled!=false);$default=if len($enabled)>0 then $enabled[0].id else nil end
+  end
+  return map($entries,fn($e)=merge({id:$e.id,name:$e.label,url:$e.url,email:$e.user,ca_path:$e.ca_file,enabled:$e.enabled ?? true,signature:$e.signature ?? "",identities:$e.identities ?? [],default:$e.id==$default,has_password:false,state:if $e.enabled==false then "disabled" else "connecting" end,error:nil,session:nil,unread:0,migrating:$config_migration!=nil},$wire_views[$e.id] ?? {}))
+end
+fn wire_session($update)
+  global $entries,$active,$mail_settings,$wire_sessions,$wire_views,$wire_data,$wire_generations,$connected,$box,$boxes,$rows,$total,$offset,$message,$mail_emails,$mail_selection,$mail_focus,$status
+  if $fixture then return end
+  $state=$update.state
+  if $state==nil then return end
+  if $state.lost==true then $mail_settings.source="missing";return end
+  $v=$state.values
+  if type($v)!="map" then return end
+  if $mail_settings.source=="missing" then $status="Settings service back: the accounts can be changed again" end
+  $mail_settings.source="settings";$mail_settings.revision=$state.revision
+  $previous_page_size=$mail_settings.page_size
+  if $state.binding!=nil then $mail_settings.binding=$state.binding end
+  if $update.binding!=nil then $mail_settings.binding=$update.binding end
+  $next=map($v["email.accounts"] ?? [],fn($e)=$account_policy.entry($e))
+  -- Gold keeps a nonempty cache when an authority temporarily advertises [].
+  if len($next)==0 and len($entries)>0 and $update.confirmed!=true then $next=$entries end
+  $old=$entries;$entries=$next
+  for $removed in $old
+    if not any($entries,fn($e)=$e.id==$removed.id) then
+      $wire_generations[$removed.id]=($wire_generations[$removed.id] ?? 0)+1
+      $wire_sessions=delete($wire_sessions,$removed.id);$wire_views=delete($wire_views,$removed.id);$wire_data=delete($wire_data,$removed.id)
+    end
+  end
+  $mail_settings.default_account=$v["email.default_account"]
+  for $pair in [["page_size",100],["mark_read_on_open",true],["confirm_delete",true],["quote_on_reply",true],["reply_position","above"]]
+    $mail_settings[$pair[0]]=$v["email.mail."..$pair[0]] ?? $v["email.compose."..$pair[0]] ?? $pair[1]
+  end
+  for $surface in ["reader","composer"]
+    $font={}
+    for $key in ["family","size"]
+      $value=$v["email."..$surface..".font."..$key]
+      if $value!=nil then $font[$key]=$value end
+    end
+    $mail_settings[$surface]={padding:$v["email."..$surface..".padding"] ?? 8,light:$v["email."..$surface..".light"] ?? false,font:$font}
+  end
+  if not any($entries,fn($e)=$e.id==$active) then
+    $active=if len($entries)>0 then $entries[0].id else "" end
+    $connected=false;$box="";$boxes=[];$rows=[];$mail_emails=[];$mail_selection=[];$mail_focus=nil;$total=0;$offset=0;$message=nil
+    if $active!="" then surface_account($active) end
+  end
+  for $e in $entries
+    $previous=filter($old,fn($a)=$a.id==$e.id)
+    if len($previous)==0 or $previous[0].url!=$e.url or $previous[0].user!=$e.user or $previous[0].ca_file!=$e.ca_file or $previous[0].enabled!=$e.enabled then
+      $wire_sessions=delete($wire_sessions,$e.id)
+      if $e.enabled!=false then wire_start("email.account.connect",{id:$e.id},nil,"connect") else $wire_views[$e.id]={state:"disabled",error:nil,has_password:false} end
+    end
+  end
+  if $previous_page_size!=$mail_settings.page_size and $connected and $box!="" then wire_start("email.list",{mailbox:$box,limit:$mail_settings.page_size},nil,"list") end
+  config_migrate_start()
+  composer_reconcile()
+end
+fn wire_completed($d)
+  global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus,$reader_markdown,$reader_detected,$reader_auto,$wire_running,$mail_form,$mail_everything
+  $id=$d.tag.owner.id;$job=$wire_pending[$id]
+  if $job==nil then wire_pump();return end
+  $wire_pending=delete($wire_pending,$id)
+  $wire_running=delete($wire_running,$id)
+  wire_pump()
+  $entry=wire_entry($job.account)
+  $answer=if $d.rc==0 then $d.body else {rc:10,body:{error_code:"SERVER",message:"Mail worker failed"}} end
+  if $job.purpose=="preview" then preview_completed($job,$answer);return end
+  if not wire_current($job) then
+    if $job.purpose=="bulk-ids" then selection_cancel($job.account) end
+    if $job.purpose=="form" and $mail_form!=nil then $mail_form.busy=false;$mail_form.error="This account changed while the form was open. Close it and open it again." end
+    if $job.purpose=="compose-send" then composer_sent($job.args.window,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"},attempt:$answer.attempt}) end
+    if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"}}) end
+    return
+  end
+  if $job.purpose=="bulk-ids" then selection_completed($job,$answer);return end
+  if $job.purpose=="reader-transfer" then reader_transfer_completed($job,$answer) end
+  if $job.purpose=="compose-send" then composer_sent($job.args.window,$answer) end
+  if $job.purpose=="compose-suggest" then composer_suggest_completed($job.args,$answer) end
+  if $job.purpose=="form" and $mail_form!=nil then
+    if $answer.rc==0 then $mail_form=nil else $mail_form.busy=false;$mail_form.error=$answer.body.message end
+  end
+  if $job.command=="email.open" and ($wire_open_targets[$job.account]!=$id or ($job.account==$active and $job.mailbox!=$box)) then
+    if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"SUPERSEDED",message:"Another email was opened in the reader before this one loaded"}}) end
+    return
+  end
+  if contains(["list","refresh-list"],$job.purpose) and $wire_list_targets[$job.account]!=$id then return end
+  if contains(["events","contacts"],$job.purpose) and $wire_pim_targets[$job.account.."/"..$job.purpose]!=$id then return end
+  if $answer.rc==0 and $answer.session!=nil then
+    $wire_sessions[$job.account]=$answer.session
+    $raw=$answer.session.raw
+    $wire_views[$job.account]={state:"ready",error:nil,has_password:true,session:{account_name:$raw.accounts[$answer.session.account].name ?? "",account_id:$answer.session.account,max_size_upload:($raw.capabilities["urn:ietf:params:jmap:core"] ?? {}).maxSizeUpload},unread:($wire_views[$job.account] ?? {}).unread ?? 0}
+  end
+  if $answer.rc==0 and $job.purpose!="settings" then
+    $wire_data[$job.account]=$wire_data[$job.account] ?? {}
+    if $answer.body.mailboxes!=nil then
+      $wire_data[$job.account].boxes=$answer.body.mailboxes
+      if $job.account==$active then $boxes=$answer.body.mailboxes end
+      $view=$wire_views[$job.account] ?? {};$view.unread=0
+      for $mailbox_count in $answer.body.mailboxes $view.unread=$view.unread+$mailbox_count.unreadEmails end
+      $wire_views[$job.account]=$view
+    end
+    for $kind in ["calendars","books"]
+      if $answer.body[$kind]!=nil then
+        $wire_data[$job.account][$kind]=$answer.body[$kind]
+        $first=$answer.body[$kind][0]
+        $selected_key=if $kind=="calendars" then "calendar" else "book" end
+        if not any($answer.body[$kind],fn($p)=$p.id==$wire_data[$job.account][$selected_key]) then $wire_data[$job.account][$selected_key]=($first ?? {}).id end
+        if $job.purpose=="parents" then
+          $child_kind=if $kind=="calendars" then "events" else "contacts" end
+          $wire_data[$job.account][if $kind=="calendars" then "open_event" else "open_contact" end]=nil
+          if $wire_data[$job.account][$selected_key]!=nil then wire_start("email."..$child_kind,{account:$job.account},nil,$child_kind)
+          else $wire_data[$job.account][$child_kind]=[] end
+        end
+      end
+    end
+    for $kind in ["events","contacts"]
+      $parent_key=if $kind=="events" then "calendar" else "book" end
+      if $job.purpose==$kind and $job.args[$parent_key]==$wire_data[$job.account][$parent_key] then
+        $wire_data[$job.account][$kind]=$answer.body[$kind]
+        $wire_data[$job.account][if $kind=="events" then "open_event" else "open_contact" end]=nil
+      end
+    end
+  end
+  if $answer.rc==0 and $job.purpose=="compose-open" then
+    $draft_args=$compose_quoting.make($job.command,$entry,$answer.body,$job.args,$mail_settings);$raw_to=nil
+    if $job.command=="email.forward" then $raw_to=join($draft_args.to,", ");$draft_args.to=[] end
+    $opened=composer_open($draft_args,$raw_to)
+    $answer.rc=$opened.rc;$answer.body=$opened.body
+  end
+  if $answer.rc==0 and $job.command=="email.contacts.suggest" then
+    $answer.body.suggestions=$compose_suggest.ranked($answer.body.suggestions,($wire_data[$job.account] ?? {}).recent ?? [],$job.args.text,min(50,max(1,$job.args.limit ?? 8)))
+  end
+  if $job.command=="email.account.connect" then
+    if $answer.rc!=0 then $wire_views[$job.account]={state:if $answer.body.error_code=="NO_PASSWORD" then "no_password" else "failed" end,error:if $answer.body.error_code=="NO_PASSWORD" then nil else $answer.body.message end,has_password:$answer.body.error_code!="NO_PASSWORD"} end
+    if $answer.rc==0 and $job.account==$active then
+      $session={account:$answer.session.account,accounts:map(keys($answer.session.raw.accounts),fn($k)=merge({id:$k},$answer.session.raw.accounts[$k]))}
+      $boxes=$answer.body.mailboxes
+      $connected=true;$account=$entry.label.." · "..$entry.user;$status="";$box="";$rows=[]
+      $inbox=filter($boxes,fn($b)=$b.role=="inbox")
+      if len($inbox)>0 then wire_start("email.list",{mailbox:$inbox[0].id,limit:$mail_settings.page_size},nil,"list") end
+    end
+    if $answer.rc==0 then
+      wire_start("email.calendars",{account:$job.account},nil,"parents")
+      wire_start("email.books",{account:$job.account},nil,"parents")
+    end
+    $answer.body={id:$job.account}
+  elif $answer.rc==0 and contains(["list","refresh-list"],$job.purpose) and $job.account==$active then
+    $mail_emails=$answer.body.emails;$rows=gold_rows($mail_emails);$total=$answer.body.total;$offset=$answer.body.offset;$box=$job.args.mailbox;$revision=$revision+1
+    $recent=($wire_data[$job.account] ?? {}).recent ?? [];$sent=(filter($boxes,fn($b)=$b.id==$box)[0] ?? {}).role=="sent"
+    for $email in $mail_emails
+      for $address in (if $sent then concat($email.to ?? [],$email.cc ?? []) else $email.from ?? [] end)
+        if trim($address.email ?? "")!="" and not any($recent,fn($s)=lower($s.email)==lower($address.email)) then push($recent,{name:$address.name ?? "",email:$address.email,source:"recent"}) end
+      end
+    end
+    $wire_data[$job.account].recent=slice($recent,max(0,len($recent)-500))
+    if $job.purpose=="list" then $mail_selection=[];$mail_focus=nil;$mail_everything=false
+    else
+      $mail_selection=if $mail_everything then map($rows,fn($r)=$r.key) else filter($mail_selection,fn($id)=any($rows,fn($r)=$r.key==$id)) end
+      if $mail_focus!=nil and $mail_focus>=len($rows) then $mail_focus=nil end
+    end
+    $wire_data[$job.account].emails=$mail_emails;$wire_data[$job.account].total=$total;$wire_data[$job.account].offset=$offset;$wire_data[$job.account].box=$box
+    $match=filter($boxes,fn($b)=$b.id==$box);$mailbox=if len($match)>0 then $match[0].name else "" end
+  elif $answer.rc==0 and $job.command=="email.open" and $job.account==$active then
+    $m=$answer.body;$old=$message ?? {}
+    if $old.id!=$m.id or $old.text!=$m.text then
+      $part=($m.textBody ?? [])[0] ?? {};$kind=lower(trim(split($part.type ?? "",";")[0]))
+      $reader_detected=contains(["text/markdown","text/x-markdown"],$kind) or (contains(["","text/plain"],$kind) and viu_markdown_detect($m.text ?? ""));$reader_markdown=$reader_detected;$reader_auto=true
+    end
+    $message=$m;$selected=$m.id;$reader=reader_text($message);$wire_data[$job.account].message=$m;$wire_data[$job.account].open_ticket=$id
+    if $mail_settings.mark_read_on_open and ($m.keywords ?? {})["$seen"]!=true then wire_start("email.mark",{ids:[$m.id],read:true},nil,"mutation") end
+    $answer.body={account:$job.account,id:$m.id,subject:$m.subject}
+  end
+  if $answer.rc==0 and $job.purpose=="settings" then
+    if $answer.settings!=nil then wire_session({state:merge($answer.settings,{binding:$mail_settings.binding,lost:false}),confirmed:true}) end
+    $changed_id=$answer.body.id ?? $job.args.id
+    if ($job.command=="email.account.password.set" or ($job.command=="email.account.set" and contains(keys($job.args),"password"))) and wire_entry($changed_id)!=nil then wire_start("email.account.connect",{id:$changed_id},nil,"connect") end
+  end
+  if $job.command=="email.account.migrate" then config_migrate_finish($answer) end
+  if $job.command=="email.print" and $answer.rc==0 then $status=if $answer.body.opened then "The print page is open in the browser: "..$answer.body.path else "No browser to print with: open "..$answer.body.path.." yourself" end end
+  if $job.token!=nil then viu_reply("finish",$job.token,{rc:$answer.rc,body:$answer.body}) end
+  if $answer.rc==0 and contains(["email.mark","email.move","email.junk","email.delete","email.mailbox.create","email.mailbox.rename","email.mailbox.delete"],$job.command) then
+    wire_start("email.mailboxes",{account:$job.account},nil,"boxes")
+    if $job.account==$active and $box!="" then wire_start("email.list",{account:$job.account,mailbox:$box,offset:$offset,limit:$mail_settings.page_size},nil,"refresh-list") end
+  end
+  if $answer.rc==0 and $job.account==$active and ($answer.body.calendars!=nil or $answer.body.books!=nil) then surface_mode($mode) end
+  if $answer.rc==0 and contains(["email.event.create","email.event.update","email.event.delete","email.contact.create","email.contact.update","email.contact.delete"],$job.command) then
+    $is_event=starts_with($job.command,"email.event.")
+    wire_start(if $is_event then "email.events" else "email.contacts" end,{account:$job.account},nil,if $is_event then "events" else "contacts" end)
+  end
+end

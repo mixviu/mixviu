@@ -1,0 +1,57 @@
+-- Each job owns its transport state; protocol helpers return refreshed session tokens.
+$email_protocol_transport={tokens:{},ambiguous:true}
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$arg=require("arguments.mix");$protocol=require("protocol.mix");$accounts=require("accounts.mix");$pim=require("pim.mix");$attachments=require("attachments.mix");$sending=require("sending.mix");$suggest=require("suggest.mix");$printing=require("printing.mix")
+on job.run
+  $a=$event.args
+  try
+    if contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set","email.account.migrate"],$a.command) then
+      $answer=$accounts.update($a.command,$a.args,$a.binding)
+      $snapshot=$accounts.settings_call("settings.get",{binding:$a.binding,view:"values"})
+      reply(0,json_encode({rc:0,body:$answer,settings:$snapshot}));return
+    end
+    $e=$a.entry
+    if $e.password_file==nil and $accounts.password($e.id)=="" then raise("NO_PASSWORD","No password is saved for "..$e.user) end
+    $s=$a.session ?? $protocol.connect($e)
+    $command=$a.command;$p=$a.args
+    if $command=="email.send" then
+      $sent=$sending.execute($e,$s,$p);reply(0,json_encode(merge($sent,{session:$protocol.session($s)})));return
+    end
+    if $command=="email.preview" then
+      try
+        $request=$protocol.request($e,replace($s.raw.downloadUrl,"{blobId}",$p.blob),"GET","",$s.token)
+        $request.response_file=$p.source;$request.max_response=16777216
+        $response=viu_http($request)
+        if $response.status!=200 then raise("UNAVAILABLE","Download HTTP "..to_string($response.status)) end
+        $answer=viu_preview($p.source,$p.mime,$p.destination)
+      finally
+        if exists($p.source) then viu_files("remove",{path:$p.source}) end
+      end
+    elif $command=="email.mailboxes" or $command=="email.account.connect" then
+      $answer={mailboxes:$protocol.boxes($protocol.call($e,$s,"Mailbox/get",{}).list)}
+    elif $command=="email.ids" then
+      $answer=$protocol.call($e,$s,"Email/query",{filter:{inMailbox:$p.mailbox},sort:[{property:$p.sort,isAscending:$p.ascending}],position:$p.offset,limit:500,calculateTotal:true})
+      if type($answer.ids)!="list" or len($answer.ids)>500 or type($answer.total)!="number" or $answer.total<0 or any($answer.ids,fn($id)=type($id)!="string" or $id=="") then raise("SERVER","Invalid query identities") end
+      $answer={ids:$answer.ids,total:$answer.total}
+    elif $command=="email.list" or $command=="email.search" then
+      if $command=="email.search" then $p.query=$arg.required($p,"text")
+      else $p.mailbox=$arg.required($p,"mailbox") end
+      $answer=$protocol.list($e,$s,$p)
+    elif contains(["email.get","email.open","email.reply","email.forward"],$command) then $answer=$protocol.get($e,$s,$p.id)
+    elif $command=="email.print" then $answer=$printing.execute($protocol.get($e,$s,$p.id),$p.markdown ?? false)
+    elif $command=="email.contacts.suggest" then $answer=$suggest.contacts($e,$s,$p)
+    elif $command=="email.attachments" then
+      $email=$protocol.get($e,$s,$p.id);$answer={id:$email.id,attachments:$attachments.metadata($email)}
+    elif $command=="email.attachment.save" or $command=="email.attachment.open" then
+      $p._open=$command=="email.attachment.open";$answer=$attachments.save($e,$s,$p)
+    elif contains(["email.mark","email.move","email.junk","email.delete"],$command) then $answer=$protocol.batch($e,$s,$command,$p)
+    elif contains(["email.mailbox.create","email.mailbox.rename","email.mailbox.delete"],$command) then $answer=$protocol.mailbox_write($e,$s,$command,$p)
+    elif contains(["email.calendars","email.events","email.event.get","email.event.create","email.event.update","email.event.delete","email.books","email.contacts","email.contact.get","email.contact.create","email.contact.update","email.contact.delete"],$command) then $answer=$pim.dispatch($e,$s,$command,$p)
+    else raise("UNKNOWN_COMMAND","Unknown Email command") end
+    reply(0,json_encode({rc:0,body:$answer,session:$protocol.session($s)}))
+  catch $message,$error
+    $code=if contains(["UNKNOWN_ACCOUNT","NO_PASSWORD","NOT_FOUND","INVALID_ARGUMENT","SETTINGS","SECRETS","REFUSED","UNAVAILABLE","CONFLICT","OUTCOME_UNKNOWN"],$error.code) then $error.code else "SERVER" end
+    reply(0,json_encode({rc:10,body:{error_code:$code,message:$message}}))
+  end
+end

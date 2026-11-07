@@ -19,6 +19,8 @@ pub struct Facilities {
     installed: bool,
     context: Option<egui::Context>,
     pub surface: Option<Value>,
+    argument_error: String,
+    argument_error_overrides: BTreeMap<String, String>,
     pub macros: Option<macros::Session>,
     next: u64,
     pending: BTreeMap<u64, Reply>,
@@ -120,6 +122,7 @@ impl Facilities {
             }));
             let mut names = std::collections::BTreeSet::new();
             commands.retain(|c| names.insert(c["name"].as_str().unwrap_or_default().to_owned()));
+
         }
         let macros = manifest
             .native_macros
@@ -146,6 +149,11 @@ impl Facilities {
             installed: false,
             context: None,
             surface,
+            argument_error: manifest
+                .argument_error
+                .clone()
+                .unwrap_or_else(|| "ARGUMENT".into()),
+            argument_error_overrides: manifest.argument_error_overrides.clone(),
             macros,
             next: 0,
             pending: BTreeMap::new(),
@@ -269,11 +277,14 @@ impl Facilities {
             .as_ref()
             .is_some_and(|s| s["arguments_any"] != true)
             && !r.command.starts_with(&format!("{}.macros.", self.app))
+            && !(self.debug
+                && (r.command == format!("{}.debug", self.app)
+                    || r.command.starts_with(&format!("{}.debug.", self.app))))
             && !r.args.is_object()
         {
             let _ = r.reply.send((
                 10,
-                json!({"error_code":"ARGUMENT","message":"arguments must be a JSON object"}),
+                json!({"error_code":self.argument_error_overrides.get(&r.command).unwrap_or(&self.argument_error),"message":"arguments must be a JSON object"}),
             ));
             return None;
         }
