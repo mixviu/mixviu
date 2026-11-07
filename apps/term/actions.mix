@@ -18,7 +18,8 @@ fn registry($s)
         $a.checked=if $value=="session" then $choice==nil elif $value=="auto" then ($choice ?? "auto")=="auto" else $choice==$value end
       end
     end
-    if $a.id=="view.mode" then $a.checked=($s.effective.mode ?? $s.look.appearance.mode)=="light" end
+    -- Gold theme_menu registers this toggle with an always-false checked readback.
+    if $a.id=="view.mode" then $a.checked=false end
     push($out,$a)
   end
   return $out
