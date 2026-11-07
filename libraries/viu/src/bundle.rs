@@ -21,6 +21,9 @@ pub struct Manifest {
     pub max_string_bytes: Option<usize>,
     /// App-authored compatibility surface; native facilities append descriptors.
     pub bus_surface: Option<serde_json::Value>,
+    /// Compatibility refusals for application commands with non-object arguments.
+    pub argument_error: Option<String>,
+    pub argument_error_overrides: std::collections::BTreeMap<String, String>,
     pub native_ui: bool,
     pub native_macros: bool,
     pub native_debug: bool,
@@ -46,6 +49,8 @@ impl Default for Manifest {
             native_drive: false,
             max_string_bytes: None,
             bus_surface: None,
+            argument_error: None,
+            argument_error_overrides: Default::default(),
             native_ui: false,
             native_macros: false,
             native_debug: false,
@@ -101,6 +106,10 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
+            || manifest.argument_error_overrides.len() > 256
+            || manifest.argument_error.iter().chain(manifest.argument_error_overrides.values()).any(|code| {
+                code.is_empty() || code.len() > 64 || !code.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+            })
             || manifest.command_descriptors.len() > 256
             || manifest.command_descriptors.iter().any(|d| {
                 !manifest.commands.contains(&d.name)

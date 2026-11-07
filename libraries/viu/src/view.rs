@@ -1417,7 +1417,8 @@ fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
             c.metrics.mark + c.metrics.mark_gap + c.metrics.title_bar_margin
         })),
         "design.title_bar_height" => {
-            Some(ctx.map_or(38.0, |ctx| crate::window_frame::Metrics::of(ctx).height))
+            use egui::emath::GuiRounding;
+            Some(ctx.map_or(38.0, |ctx| crate::window_frame::Metrics::of(ctx).height.round_ui()))
         }
         "design.status_height" => Some(ctx.map_or(30.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.bars.status
