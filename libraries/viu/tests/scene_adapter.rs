@@ -109,19 +109,34 @@ fn scrolling_form_fits_inside_a_short_bottom_panel() {
         for _ in 0..3 {
             ctx.run_ui(
                 egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(820., 600.))),
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(820., 600.),
+                    )),
                     ..Default::default()
                 },
-                |ui| { view.show(ui); },
-            ).drop_without_applying_deltas();
+                |ui| {
+                    view.show(ui);
+                },
+            )
+            .drop_without_applying_deltas();
         }
         let field = view.geometry["name"];
         let button = view.geometry["accept"];
-        assert!(field.bottom() <= button.top(), "field clipped behind footer: {field:?} {button:?}");
-        assert!(field.top() >= button.top() - 52., "field left its short panel: {field:?} {button:?}");
+        assert!(
+            field.bottom() <= button.top(),
+            "field clipped behind footer: {field:?} {button:?}"
+        );
+        assert!(
+            field.top() >= button.top() - 52.,
+            "field left its short panel: {field:?} {button:?}"
+        );
         positions.push(field);
     }
-    assert_eq!(positions[0], positions[1], "scrolling must preserve the short form's geometry");
+    assert_eq!(
+        positions[0], positions[1],
+        "scrolling must preserve the short form's geometry"
+    );
 }
 
 #[test]

@@ -191,7 +191,10 @@ end
         json!({"mode":"dark","scheme":"pro"}),
     ] {
         runtime
-            .event("viu.session".into(), json!({"state":{"values":{}},"appearance":appearance}))
+            .event(
+                "viu.session".into(),
+                json!({"state":{"values":{}},"appearance":appearance}),
+            )
             .unwrap();
         let model = done(&runtime, &rx).model.unwrap();
         let expected = if appearance.as_object().unwrap().is_empty() {
