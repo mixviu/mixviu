@@ -65,6 +65,7 @@ fn dp_command($state,$contract,$id)
   $p=$state.panes[$state.active]
   if $id=="nav.back" then $a.enabled=len($p.back)>0
   elif $id=="nav.forward" then $a.enabled=len($p.forward)>0 end
+  if $state.form.open and not starts_with($id,"theme.") and $id!="view.search" then $a.enabled=false end
   $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open elif contains(["theme.scheme-session","theme.mode-session","theme.style-session"],$id) then $state.appearance_choice[replace(slice($id,len("theme.")),"-session","")]==nil elif starts_with($id,"theme.decorations-") then ($state.window_choice["window.decorations"] ?? "auto")==slice($id,len("theme.decorations-")) elif starts_with($id,"theme.captions-") then ($state.window_choice["window.caption_side"] ?? "auto")==slice($id,len("theme.captions-")) elif starts_with($id,"theme.scheme-") then $state.appearance_choice.scheme==slice($id,13) elif starts_with($id,"theme.style-") then $state.appearance_choice.style==slice($id,12) elif starts_with($id,"theme.mode-") then $state.appearance_choice.mode==slice($id,11) else nil end
   return $a
 end

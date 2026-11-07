@@ -42,7 +42,8 @@ fn dp_framed($s,$contract,$cache)
       $model.values.form.field_fill=true;$model.values.form.field_label="Name"
     elif $s.reservation.operation.legacy_kind=="shortcuts" then
       $model.values.form.body=""
-      $model.values.form.shortcuts=map($contract.actions,fn($a)={id:$a.id,label:$contract.ui_labels[$a.id] ?? $a.label,keys:$a.keys,enabled:true})
+      $order=["file.open","file.mail","file.new-folder","file.rename","file.copy-other-pane","file.move-other-pane","file.delete","app.quit","view.toggle-places","view.toggle-properties","view.toggle-hidden","view.toggle-previews","view.refresh","view.sort-name","view.sort-size","view.sort-modified","nav.back","nav.forward","nav.parent","nav.home","location.focus","nav.switch-pane","selection.next","selection.previous","selection.first","selection.last","theme.mode-toggle","theme.scheme-ocean","theme.scheme-crimson","theme.scheme-stone","theme.scheme-forest","theme.scheme-sunset","theme.scheme-mono","help.shortcuts","view.search"]
+      $model.values.form.shortcuts=map($order,fn($id)={id:$id,label:$contract.ui_labels[$id] ?? filter($contract.actions,fn($a)=$a.id==$id)[0].label,keys:filter($contract.actions,fn($a)=$a.id==$id)[0].keys,enabled:true})
     elif $s.reservation.operation.legacy_kind=="about" then
       $model.values.form.footer=viu_context().version.." ("..viu_context().git_sha..")"
     end
