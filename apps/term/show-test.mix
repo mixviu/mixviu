@@ -1,31 +1,33 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $show=require("../../libraries/viu/mix/window-show.mix")
-global $calls,$answers
-$calls=[];$answers=[]
+$test_root=trim(run_argv_must(["mktemp","-d","-t","viu-term-show.XXXXXX"]))
+$fixture=$test_root.."/requests.json"
 fn check($ok,$message) if not $ok then raise("TEST",$message) end end
 fn request($command,$args)
-  global $calls,$answers
-  push($calls,{command:$command,args:$args})
-  check(len($answers)>0,"no extra compositor request")
-  $answer=$answers[0];$answers=slice($answers,1)
+  $state=json_parse(read_file($fixture))
+  $state.calls=push($state.calls,{command:$command,args:$args})
+  check(len($state.answers)>0,"no extra compositor request")
+  $answer=$state.answers[0];$state.answers=slice($state.answers,1)
+  write_file($fixture,json_encode($state))
   if $answer.transport!=nil then raise("TRANSPORT",$answer.transport) end
   return $answer
 end
 fn perform($replies)
-  global $calls,$answers
-  $calls=[];$answers=$replies
+  write_file($fixture,json_encode({calls:[],answers:$replies}))
   return $show.perform("example.term",42,fn($command,$args)=request($command,$args))
 end
+fn call_log() return json_parse(read_file($fixture)).calls end
+try
 $wait={rc:0,body:{mapped:true}}
 $list={rc:0,body:{windows:[{id:1,generation:1,app_id:"example.term",pid:41},{id:2,generation:2,app_id:"other",pid:42},{id:3,generation:7,app_id:"example.term",pid:42}]}}
 $restore={rc:0,body:{id:3,generation:7,minimized:false}}
 $focus={rc:0,body:{id:3,generation:7,focused:true}}
 $out=perform([$wait,$list,$restore,$focus])
 check(deep_eq($out,{rc:0,body:{shown:true,target:$focus.body}}),"gold successful show shape")
-check(deep_eq($calls,[{command:"comp.window.wait",args:{match:{app_id:"example.term"},until:"mapped",timeout_ms:10000}},{command:"comp.windows.list",args:{}},{command:"comp.window.restore",args:{id:3,generation:7}},{command:"comp.window.focus",args:{id:3,generation:7,raise:true}}]),"map then app-id/PID lookup then generation-bound restore and raise/focus")
+check(deep_eq(call_log(),[{command:"comp.window.wait",args:{match:{app_id:"example.term"},until:"mapped",timeout_ms:10000}},{command:"comp.windows.list",args:{}},{command:"comp.window.restore",args:{id:3,generation:7}},{command:"comp.window.focus",args:{id:3,generation:7,raise:true}}]),"map then app-id/PID lookup then generation-bound restore and raise/focus")
 for $case in [{answers:[{rc:10,body:"wait refused"}],message:"wait refused",count:1},{answers:[$wait,{rc:10,body:"list refused"}],message:"list refused",count:2},{answers:[$wait,{rc:0,body:{windows:[]}}],message:"window not known to compd",count:2},{answers:[$wait,$list,{rc:0,body:{minimized:true}}],message:'{"minimized":true}',count:3},{answers:[$wait,$list,{rc:10,body:'{"error_code":"STALE_TARGET"}'}],message:'{"error_code":"STALE_TARGET"}',count:3},{answers:[$wait,$list,$restore,{rc:0,body:{focused:false}}],message:'{"focused":false}',count:4},{answers:[$wait,$list,$restore,{transport:"compositor disconnected"}],message:"compositor disconnected",count:4}]
   $out=perform($case.answers)
-  check(deep_eq($out,$show.failure($case.message)) and len($calls)==$case.count,"refusal stops before a later stage or wrong generation")
+  check(deep_eq($out,$show.failure($case.message)) and len(call_log())==$case.count,"refusal stops before a later stage or wrong generation")
 end
 $out=$show.completion({rc:0,body:json_encode({shown:true,target:$focus.body})})
 check($out.rc==0 and $out.body.shown,"native job completion unwraps the ordinary reply")
@@ -33,3 +35,6 @@ $out=$show.completion({rc:10,body:json_encode($show.failure("unmapped").body)})
 check(deep_eq($out,$show.failure("unmapped")),"native job retains activation refusal")
 check($show.completion({rc:20,body:{error_code:"JOB_FAILED"}}).body.reason=="show_failed","failed job settles as activation refusal")
 print("term show: ordered map/lookup/restore/focus, ownership, stale target and refusal completion checked")
+finally
+  print(run_argv_must(["rm","-r",$test_root]))
+end
