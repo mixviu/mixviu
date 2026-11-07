@@ -69,7 +69,7 @@ pub fn activate_existing(service: &str, command: &str, url: &str) -> Result<bool
                     command,
                     &BTreeMap::new(),
                     "{}",
-                    Duration::from_secs(if command.ends_with(".show") {20} else {10}),
+                    Duration::from_secs(if command.ends_with(".show") { 20 } else { 10 }),
                 )
                 .await
                 .map_err(|e| e.to_string())?;

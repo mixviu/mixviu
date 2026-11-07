@@ -26,6 +26,7 @@
     "activation": "term.show",
     "command_descriptors": [
       {
+        "args": [],
         "description": "Restore and focus the existing window",
         "name": "term.show",
         "read_only": false

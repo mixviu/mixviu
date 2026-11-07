@@ -46,7 +46,13 @@ pub fn parse(args: &[String]) -> Result<Options, String> {
     Ok(out)
 }
 pub fn app_id(bundle: &Bundle) -> String {
-    bundle.manifest.bus_surface.as_ref().and_then(|s| s["app_id"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("mixviu.{}", bundle.manifest.service))
+    bundle
+        .manifest
+        .bus_surface
+        .as_ref()
+        .and_then(|s| s["app_id"].as_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("mixviu.{}", bundle.manifest.service))
 }
 pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     let options = parse(args)?;
@@ -60,7 +66,8 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     let comp = options
         .comp
         .unwrap_or_else(|| std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()));
-    let launch = serde_json::to_string(&serde_json::json!({"comp":comp,"app_id":app_id(&bundle)})).unwrap();
+    let launch =
+        serde_json::to_string(&serde_json::json!({"comp":comp,"app_id":app_id(&bundle)})).unwrap();
     bundle.program.source = format!(
         "$app_launch = json_parse({})\n{}",
         serde_json::to_string(&launch)
