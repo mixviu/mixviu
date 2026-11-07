@@ -425,6 +425,7 @@ pub(crate) fn draw(
     value: &Value,
     geometry: &mut BTreeMap<String, Rect>,
     events: &mut Vec<Intent>,
+    images: &mut crate::image_view::Images,
 ) -> egui::Response {
     let id = &widget.id;
     if widget.kind == "dialog-form" && widget.properties["style"] == "gold" {
@@ -677,6 +678,10 @@ pub(crate) fn draw(
                     .id_salt((id, "fields"))
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
+                        if widget.properties["preview"]["phase"] == "ready" {
+                            images.draw(ui, &format!("{id}.preview"), &widget.properties["preview"]);
+                            ui.add_space(8.0);
+                        }
                         for field in value.as_array().into_iter().flatten() {
                             ui.label(egui::RichText::new(text(field, "label")).small().weak());
                             ui.add(egui::Label::new(text(field, "value")).wrap());

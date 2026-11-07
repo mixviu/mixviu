@@ -246,6 +246,9 @@ impl Widget {
     }
     pub fn validate(&self, value: &Value) -> Result<(), String> {
         if crate::rich::KINDS.contains(&self.kind.as_str()) {
+            if self.kind == "property-grid" && !self.properties["preview"].is_null() {
+                crate::image_view::validate(&self.properties["preview"])?;
+            }
             if self.kind == "menubar" && self.properties["style"] == "gold" {
                 crate::native_menu::validate(value)?;
             }
@@ -924,7 +927,7 @@ impl Widgets {
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" => {
-                crate::rich::draw(ui, widget, value, &mut self.geometry, events)
+                crate::rich::draw(ui, widget, value, &mut self.geometry, events, &mut self.images)
             }
             "label" => {
                 if widget.properties["role"] == "section" {
