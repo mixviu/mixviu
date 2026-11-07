@@ -37,7 +37,7 @@ fn font_event($s,$event)
     else
       $s.font_job=$s.font_job+1;$path=path_join(dirname(script_path()),"font-job.mix")
       $args={kind:$a.kind,binding:$s.font_binding}
-      if $a.kind=="write" then $args.body={binding:$s.font_fence.binding,expected_incarnation:$s.font_fence.incarnation,expected_revision:$s.font_fence.revision,operation_id:uuid(),changes:{"terminal.font.size":$a.size}} end
+      if $a.kind=="write" then $args.body={binding:$s.font_fence.binding,expected_incarnation:$s.font_fence.incarnation,expected_revision:$s.font_fence.revision,operation_id:"term-font-"..to_string($s.identity.instance).."-"..to_string($s.identity.pid).."-"..to_string($s.font_job),changes:{"terminal.font.size":$a.size}} end
       send "viu-local" "jobs.start" id="terminal-font-"..to_string($s.font_job) owner={kind:"terminal-font",operation:$a.kind} path=$path source=read_file($path) command="font.request" args=$args
       if $rc!=0 then
         $s=font_event($s,if $a.kind=="read" then {kind:"read-answered",usable:false,following:false,continued:false} else {kind:"write-settled",reply:"failed"} end)
@@ -52,8 +52,8 @@ fn font_received($s,$done)
   if $done.rc!=0 then $answer={rc:20,body:{}} end
   $body=$answer.body
   if $done.tag.owner.operation=="read" then
-    if $body.status=="wrong_target" and type($body.binding)=="map" and $body.binding.profile=="default" then
-      $s.font_binding=$body.binding
+    if $body.status=="wrong_target" and not ($s.font_retargeted ?? false) and type($body.binding)=="map" and $body.binding.profile=="default" then
+      $s.font_binding=$body.binding;$s.font_retargeted=true
       return font_event($s,{kind:"read-answered",usable:false,following:false,continued:true})
     end
     $usable=$answer.rc==0 and type($body.values)=="map" and type($body.incarnation)=="string" and type($body.revision)=="string" and type($body.binding)=="map"
@@ -84,7 +84,7 @@ fn act($s,$id,$args,$origin)
     elif $effect.kind=="copy" and $effect.text!=nil then viu_platform("copy","terminal-copy",{text:$effect.text})
     elif $effect.kind=="paste" then
       if $effect.supplied then $done=$native("paste",$effect.handle,{text:$effect.text})
-      else $token=uuid();$s.pastes[$token]=$effect.handle;viu_platform("paste",$token,{}) end
+      else $s.paste_seq=($s.paste_seq ?? 0)+1;$token="terminal-paste-"..to_string($s.identity.instance).."-"..to_string($s.paste_seq);$s.pastes[$token]=$effect.handle;viu_platform("paste",$token,{}) end
     elif $effect.kind=="font" then $s=font_event($s,{kind:if $effect.reset then "reset" else "zoom" end,size:$effect.size}) end
   end
   if $out.rc==0 then
