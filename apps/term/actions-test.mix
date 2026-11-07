@@ -26,6 +26,8 @@ check($out.state.choice.scheme=="ocean" and $out.effects[0].kind=="theme","local
 check($a.invoke($s,"absent",{},$n).body.error_code=="UNKNOWN_ACTION","unknown action refuses")
 check($a.toolbar($s)[0].id=="help.macros" and len($a.toolbar($s))==4,"gold standard action tail")
 $out=$controls.dialog($s,{open:"keys"});check($out.rc==0 and $out.body.dialog.kind=="keys","Bus opens keyboard dialog")
+$overlays=$controls.overlays($out.state,"test")
+check(len($overlays[len($overlays)-1].definition.initial.grid)>0,"keyboard dialog includes the bound command rows")
 check($controls.dialog($out.state,{open:"about"}).body.error_code=="DIALOG_OPEN","second dialog refuses")
 $out=$controls.dialog($out.state,{answer:"done"});check($out.state.dialog==nil,"dialog answer closes")
 check($controls.dialog($out.state,{answer:"done"}).body.error_code=="NO_DIALOG","closed dialog refuses late answer")
