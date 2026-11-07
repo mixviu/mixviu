@@ -23,17 +23,17 @@ fn visible()
   return any(values($outputs),fn($output)=$output.visible==true)
 end
 fn train_poll($reader,$snapshot,$live,$busy,$selected,$hint=false)
-  if $selected!="train" then viu_timer("backdrop-train",nil,{});return {reader:$reader,busy:$busy} end
+  $drawn=$selected=="train" and visible()
   $reader.hint=$reader.hint or $hint
   if $busy!=nil then return {reader:$reader,busy:$busy} end
-  $plan=$reader_module.plan($reader,$live,$snapshot,visible(),$reader.hint,monotonic());$reader=$plan.reader
+  $plan=$reader_module.plan($reader,$live,$snapshot,$drawn,$reader.hint,monotonic());$reader=$plan.reader
   if len($plan.requests)>0 then
     $path=path_join(dirname(script_path()),"read-job.mix");$id="backdrop-read-"..to_string($plan.ticket)
     $tag={kind:"train",key:$plan.key,ticket:$plan.ticket}
     send "viu-local" "jobs.start" id=$id owner=$tag path=$path source=read_file($path) command="job.run" args={requests:$plan.requests}
     if $rc==0 then $busy=$tag end
   end
-  if $busy==nil then viu_timer("backdrop-train",$reader_module.wait_seconds($reader,$snapshot,visible(),monotonic())*1000,{})
+  if $busy==nil then viu_timer("backdrop-train",$reader_module.wait_seconds($reader,$snapshot,$drawn,monotonic())*1000,{})
   else viu_timer("backdrop-train",nil,{}) end
   return {reader:$reader,busy:$busy}
 end
@@ -212,7 +212,10 @@ on viu.job.completed
       $train_busy=nil
       if $d.rc==0 then
         $result=$reader_module.received($reader,$snapshot,$live,$d.tag.owner.key,$d.body.results,time());$reader=$result.reader
-        if not deep_eq($snapshot,$result.snapshot) then $snapshot=$result.snapshot;$train_generation=$train_generation+1;show_state($s) end
+        if not deep_eq($snapshot,$result.snapshot) then
+          $snapshot=$result.snapshot;$train_generation=$train_generation+1
+          if $s.view=="train" and visible() then show_state($s) end
+        end
       end
       $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view);$reader=$poll.reader;$train_busy=$poll.busy
     end
