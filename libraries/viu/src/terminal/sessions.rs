@@ -91,6 +91,18 @@ impl Sessions {
     }
 
     pub fn call(&self, op: &str, handle: &str, a: Value) -> Result<Value, String> {
+        if op == "identity" {
+            // Gold's process token: OS-random seed, exact through JSON/Mix
+            // numbers, independent of reusable pane counters and PID reuse.
+            use std::hash::{BuildHasher, Hasher};
+            static INSTANCE: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+            let instance = INSTANCE.get_or_init(|| {
+                let mut hasher = std::hash::RandomState::new().build_hasher();
+                hasher.write_u32(std::process::id());
+                (hasher.finish() & ((1 << 53) - 1)).max(1)
+            });
+            return Ok(json!({"instance":instance,"pid":std::process::id()}));
+        }
         if op == "create" {
             let term = a["term"].as_str().unwrap_or("xterm-256color");
             if term.is_empty() || term.len() > 128 || term.chars().any(char::is_control) {

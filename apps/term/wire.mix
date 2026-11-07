@@ -1,0 +1,43 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Global-lane admission and replay policy; native input cannot choose focus.
+fn whole_id($v)
+  return type($v)=="number" and $v>=0 and $v<=9007199254740991 and floor($v)==$v
+end
+fn type_args($a)
+  if type($a)!="map" then return "arguments must be an object" end
+  for $key in keys($a)
+    if not contains(["pane","tab","instance","text","request_id"],$key) then return "unexpected argument: "..$key end
+  end
+  if type($a.text)!="string" then return "term.type requires text" end
+  for $key in ["pane","tab","instance"]
+    if contains(keys($a),$key) and not whole_id($a[$key]) then return $key.." must be an unsigned integer" end
+  end
+  if $a.pane==nil and $a.tab==nil then return "term.type requires pane or tab" end
+  if contains(keys($a),"request_id") and type($a.request_id)!="string" then return "request_id must be text" end
+  if len(json_encode($a))>8192 then return "request body exceeds 8192 bytes" end
+  return nil
+end
+fn request_digest($command,$a)
+  $payload={}
+  for $key in keys($a)
+    if $key!="request_id" then $payload[$key]=$a[$key] end
+  end
+  return $command..":"..json_encode($payload)
+end
+fn replay($history,$command,$a)
+  if $a.request_id==nil then return nil end
+  $digest=request_digest($command,$a)
+  for $entry in $history
+    if $entry.id==$a.request_id then
+      if $entry.digest!=$digest then return {rc:10,body:"conflict: request_id reused with different command or arguments"} end
+      return {rc:$entry.rc,body:$entry.body}
+    end
+  end
+  return nil
+end
+fn remember($history,$command,$a,$rc,$body)
+  if $a.request_id==nil then return $history end
+  if len($history)>=128 then $history=slice($history,1) end
+  push($history,{id:$a.request_id,digest:request_digest($command,$a),rc:$rc,body:$body})
+  return $history
+end

@@ -5,6 +5,8 @@ $rc=0
 try
   $mix_tests=run_argv(["/opt/mixos/bin/mix","apps/term/core-test.mix"]);print($mix_tests)
   if not $mix_tests.ok then exit($mix_tests.exit_code ?? 1) end
+  $wire_tests=run_argv(["/opt/mixos/bin/mix","apps/term/wire-test.mix"]);print($wire_tests)
+  if not $wire_tests.ok then exit($wire_tests.exit_code ?? 1) end
   for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--lib","terminal::"]]
     if $prepare and $argv[1]=="fmt" then $argv=["cargo","fmt","-p","viu"] end
     if $prepare and $argv[1]=="test" then $argv=filter($argv,fn($v)=$v!="--locked") end
@@ -18,6 +20,14 @@ try
   if $rc==0 then
     $host=run_argv(["cargo","build","--locked","-p","viu-engine","--bin","viu"],{timeout:1800,max_output:16000000});print($host)
     if not $host.ok then $rc=$host.exit_code ?? 124 end
+  end
+  if $rc==0 then
+    $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+    $artifact="/build/term-artifacts/"..$sha
+    mkdir($artifact,{parents:true})
+    copy("target/debug/viu",$artifact.."/viu")
+    write_file($artifact.."/viu.json",json_encode({source:$sha,profile:"debug",sha256:hash_file($artifact.."/viu","sha256")}))
+    print({artifact:$artifact,profile:"debug",acceptance:false})
   end
 finally
   print("TERM_PATCH_BEGIN")

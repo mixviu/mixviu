@@ -3,8 +3,10 @@
 -- lint: globals app_args
 $ctx=viu_context()
 $core=require("core.mix")
+$wire=require("wire.mix")
 $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false}
 $state.session=viu_terminal("create","",{})
+$state.identity=viu_terminal("identity","",{});$state.replies=[]
 fn publish_term($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
@@ -31,14 +33,28 @@ on viu.frame.intent
   reply(0,"{}")
 end
 on term.snapshot
-  reply(0,viu_terminal("snapshot",$state.session.handle,$event.args))
+  reply(0,"tab=1 pane=1 revision=1 "..viu_terminal("snapshot",$state.session.handle,$event.args))
 end
 on term.type
+  $a=$event.args
+  $invalid=$wire.type_args($a)
+  if $invalid!=nil then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:$invalid}));return end
+  if $a.instance!=nil and $a.instance!=$state.identity.instance then
+    reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"instance "..to_string($a.instance).." is not this term process (instance="..to_string($state.identity.instance).."); re-read term.panes"}));return
+  end
+  $cached=$wire.replay($state.replies,"term.type",$a)
+  if $cached!=nil then reply($cached.rc,$cached.body);return end
+  if ($a.pane!=nil and $a.pane!=1) or ($a.tab!=nil and $a.tab!=1) then
+    $body="not-found: pane or tab";$state.replies=$wire.remember($state.replies,"term.type",$a,10,$body);reply(10,$body);return
+  end
   try
-    $written=viu_terminal("type",$state.session.handle,$event.args)
-    reply(0,json_encode($written))
+    $written=viu_terminal("type",$state.session.handle,$a)
+    $body="DIAGNOSTIC synthetic keys queued; inspect input_written for actual writes tab=1 pane=1 revision=1"
+    $state.replies=$wire.remember($state.replies,"term.type",$a,0,$body)
+    reply(0,$body)
   catch $message
-    reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:$message}))
+    $state.replies=$wire.remember($state.replies,"term.type",$a,10,$message)
+    reply(10,$message)
   end
 end
 on term.intent

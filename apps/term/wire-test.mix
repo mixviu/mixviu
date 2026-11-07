@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$wire=require("wire.mix")
+fn check($ok,$message)
+  if not $ok then raise("TEST",$message) end
+end
+check($wire.type_args({text:"x"})=="term.type requires pane or tab","no active-pane fallback")
+for $args in [{text:"x",pane:1.5},{text:"x",tab:-1},{text:"x",pane:true},{text:"x",pane:1,instance:"2"},{text:"x",pane:1,extra:true},{text:"x",pane:1,request_id:1}]
+  check($wire.type_args($args)!=nil,"mistyped and unknown arguments refused")
+end
+check($wire.type_args({text:"x",pane:1,instance:2})==nil,"explicit pane and instance")
+check($wire.type_args({text:"",tab:1})==nil,"empty input allowed")
+$a={text:"x",pane:1,request_id:"r1"}
+$history=$wire.remember([],"term.type",$a,0,"original")
+check($wire.replay($history,"term.type",$a).body=="original","replay has original result")
+check($wire.replay($history,"term.type",{text:"y",pane:1,request_id:"r1"}).rc==10,"changed payload conflicts")
+check($wire.replay($history,"term.tab.new",$a).rc==10,"changed command conflicts")
+for $i=2 to 129
+  $history=$wire.remember($history,"term.type",{text:"x",pane:1,request_id:to_string($i)},0,"saved")
+end
+check(len($history)==128,"replay budget")
+check($wire.replay($history,"term.type",$a)==nil,"FIFO eviction")
+print("term wire: selector and replay checks passed")

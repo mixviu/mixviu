@@ -43,7 +43,7 @@ mod tests {
         let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
         for size in [14.667, 14.667, 18.0, 18.0] {
             widget.properties = json!({"font_size":size});
-            let output = ctx.run_ui(
+            let mut output = ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -55,7 +55,7 @@ mod tests {
                     views.draw(ui, &widget, &json!("vt-1"), &sessions, &mut Vec::new());
                 },
             );
-            drop(output);
+            output.textures_delta.clear();
             assert!(Arc::ptr_eq(&owner, &sessions.get("vt-1").unwrap()));
             let t = owner.lock().unwrap();
             assert!(t.snapshot().contains("native fixture"));
