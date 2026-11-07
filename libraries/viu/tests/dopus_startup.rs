@@ -37,7 +37,13 @@ fn bundle_autostarts_and_embedded_host_initialises_before_first_command() {
         if embedded {
             mix_start::initialise(&mut runtime, &root, profile.path()).unwrap();
         } else {
-            runtime.load(Bundle::load(&root, &[profile.path().to_string_lossy().into_owned()]).unwrap().program).unwrap();
+            runtime
+                .load(
+                    Bundle::load(&root, &[profile.path().to_string_lossy().into_owned()])
+                        .unwrap()
+                        .program,
+                )
+                .unwrap();
         }
         let loaded = completion(&runtime, &rx);
         if embedded {
