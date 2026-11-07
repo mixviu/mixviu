@@ -38,7 +38,8 @@ fn act($s,$id,$args,$origin)
       if $rc==0 then $s.effective=$result end
     elif $effect.kind=="copy" and $effect.text!=nil then viu_platform("copy","terminal-copy",{text:$effect.text})
     elif $effect.kind=="paste" then
-      $token=uuid();$s.pastes[$token]=$effect.handle;viu_platform("paste",$token,{})
+      if $effect.supplied then $done=$native("paste",$effect.handle,{text:$effect.text})
+      else $token=uuid();$s.pastes[$token]=$effect.handle;viu_platform("paste",$token,{}) end
     elif $effect.kind=="font" then $s.font_unsaved=true end
   end
   if $out.rc==0 then
@@ -100,6 +101,16 @@ on term.intent
       if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$model.select_pane($state.layout,$p.id);$state=pump_events($state);publish_term($state) end
     end
   elif $a.id=="terminal" and $a.action=="command" then $out=act($state,$a.value,{},"shortcut");$state=$out.state
+  elif $a.id=="terminal" and $a.action=="clipboard" then
+    $target=filter(values($state.layout.panes),fn($p)=$p.handle==$a.value.handle)
+    if len($target)==1 then
+      $kind=$a.value.kind
+      if $kind!="cut" or $bus.target_handle($state,$bus.active($state))==$a.value.handle then
+        $params={clipboard_handle:$a.value.handle}
+        if $kind=="paste" then $params.paste_text=$a.value.text end
+        $out=act($state,if $kind=="copy" then "edit.copy" elif $kind=="paste" then "edit.paste" else "pane.close" end,$params,"shortcut");$state=$out.state
+      end
+    end
   end
 end
 on term.execute

@@ -172,6 +172,33 @@ mod tests {
             assert!(t.grid_snapshot().dirty_rows.iter().all(|dirty| !dirty));
         }
     }
+
+    #[test]
+    fn platform_clipboard_events_reach_mix_once_and_keep_the_pane_owner() {
+        let sessions = Sessions::fixture();
+        let mut views = Views::default();
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx, 400, 600);
+        let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
+        widget.properties = json!({"focus_serial":1});
+        let shifted = egui::Modifiers {ctrl:true,shift:true,..egui::Modifiers::NONE};
+        for (input_events, modifiers, expected) in [
+            (vec![], shifted, 0),
+            (vec![egui::Event::Copy,egui::Event::Copy], shifted, 1),
+            (vec![egui::Event::Key {key:egui::Key::C,physical_key:None,pressed:false,repeat:false,modifiers:shifted},egui::Event::Copy],shifted,1),
+            (vec![egui::Event::Paste("wide: 中".into())],shifted,1),
+            (vec![egui::Event::Copy],egui::Modifiers {ctrl:true,..egui::Modifiers::NONE},0),
+        ] {
+            let mut events = Vec::new();
+            ctx.run_ui(egui::RawInput {
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,560.0))),
+                events:input_events,modifiers,..Default::default()
+            }, |ui| { views.draw(ui,&widget,&json!("vt-1"),&sessions,&mut events); }).drop_without_applying_deltas();
+            let clipboard = events.iter().filter(|event| event.action=="clipboard").collect::<Vec<_>>();
+            assert_eq!(clipboard.len(),expected);
+            for event in clipboard { assert_eq!(event.value["handle"],"vt-1"); }
+        }
+    }
 }
 
 #[derive(Default)]
@@ -179,6 +206,7 @@ pub struct Views {
     surfaces: BTreeMap<String, Surface>,
     composition: Composition,
     focused: Option<String>,
+    clipboard: input::ClipboardInput,
 }
 
 impl Views {
@@ -355,12 +383,33 @@ impl Views {
             self.composition.focus(None);
             self.focused = None;
             surface.preedit.clear();
+            self.clipboard = input::ClipboardInput::default();
         }
         if response.has_focus() {
             self.focused = Some(handle.into());
             self.composition.focus(pane_id);
             let input_events = ui.input(|i| i.events.clone());
             for event in input_events {
+                if let Some(clipboard) = self.clipboard.event(&event, ui.input(|i| i.modifiers)) {
+                    let result = match clipboard {
+                        input::Clipboard::Keys(keys) => terminal.keys(&keys, Instant::now()),
+                        input::Clipboard::Ignore => Ok(()),
+                        clipboard => {
+                            let value = match clipboard {
+                                input::Clipboard::Copy => json!({"kind":"copy","handle":handle}),
+                                input::Clipboard::Cut => json!({"kind":"cut","handle":handle}),
+                                input::Clipboard::Paste(text) => json!({"kind":"paste","handle":handle,"text":text}),
+                                _ => unreachable!(),
+                            };
+                            events.push(Intent {id:widget.id.clone(),action:"clipboard".into(),value});
+                            Ok(())
+                        }
+                    };
+                    if let Err(error) = result {
+                        events.push(Intent {id:widget.id.clone(),action:"error".into(),value:json!(error)});
+                    }
+                    continue;
+                }
                 let result = match event {
                     egui::Event::Key {
                         key,
@@ -394,13 +443,6 @@ impl Views {
                             &input::typed(&text, ui.input(|i| i.modifiers)),
                             Instant::now(),
                         )
-                    }
-                    egui::Event::Paste(text) => terminal.paste(&text),
-                    egui::Event::Copy => {
-                        if let Some(text) = terminal.selection_text() {
-                            ui.ctx().copy_text(text);
-                        }
-                        Ok(())
                     }
                     egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
                         if self.composition.preedit(&text, pane_id) {

@@ -98,8 +98,8 @@ fn invoke($s,$id,$args,$native)
     $steps=($s.zoom_steps ?? 0)+$step;$base=$s.look.values["terminal.font.size"] ?? 14.667
     if $base+$steps*2/3>=6 and $base+$steps*2/3<=48 then $s.zoom_steps=$steps;$s.zoom=$steps*2/3;push($effects,{kind:"font",size:$base+$s.zoom}) end
   elif $id=="edit.copy" or $id=="edit.paste" then
-    $target=$bus.active($s);$handle=$bus.target_handle($s,$target)
-    push($effects,{kind:if $id=="edit.copy" then "copy" else "paste" end,handle:$handle,text:if $id=="edit.copy" then $native("selection",$handle,{}) else nil end})
+    $target=$bus.active($s);$handle=$args.clipboard_handle ?? $bus.target_handle($s,$target)
+    push($effects,{kind:if $id=="edit.copy" then "copy" else "paste" end,handle:$handle,supplied:contains(keys($args),"paste_text"),text:if $id=="edit.copy" then $native("selection",$handle,{}) else $args.paste_text end})
   elif $id=="help.macros" then $s.macros_open=not ($s.macros_open ?? false)
   elif $id=="help.keys" then $s.dialog="keys"
   elif $id=="help.about" then $s.dialog="about"
