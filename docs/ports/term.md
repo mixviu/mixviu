@@ -210,3 +210,40 @@ still required; this remains partial Bus parity.
 Next exact-source gate: `term-change-events-9b53f0d`. After its complete
 receipt and any returned patch are handled, fetch its matching artifact,
 retake the pane painting captures and exercise actual topic delivery.
+
+## Exact pane pixels; native topic repair witness
+
+CBC `term-change-events-9b53f0d-a1` passed all four Mix suites, both
+actual-bundle tests, 135 native tests/five ignores, the dependency gate and
+host build at `9b53f0d9f50eda3b337d05ed4be636bf2b5d4fdb`, without worker
+diff. Full saved log read. Verified debug executable SHA256:
+`ee189b5838344d4e988d34c2c4655fdc5ca5a9ba13b55f591502e1e2460f085e`.
+
+Private native.dtQmFV uses those exact executable/source bytes and repeats
+the real Mix session/lifecycle witness. It retains a failed topic probe:
+jobs.start was passed an incorrectly nested body. This is an application
+submission defect, not evidence that the native Bus cannot publish.
+The failed run and its cleanup receipt are retained.
+
+Its matched 900×560 capture is compared with native.gWIe4o in private
+pane-painted-regions. Originals, full side-by-side/difference inspected.
+Candidate PNG SHA256:
+`d9e33f4a2d258739995714eaa678373a9422fdde7e76528939584b7382fb1782`.
+At the same rectangles and ImageMagick convention as above, tabs, content
+and bottom each have SSIM/RMSE distortion **0/0**. Header remains
+0.0749878/0.0752184; full 0.00535614/0.0195939. Missing menus and actions
+keep the visual gate at **FAIL**. This single debug state does not accept
+all sessions, inputs, fonts, themes, scales or release bytes.
+
+Repair `ca019e33aada1112b34cacdbf4351ffa14f12eb4` passes the job fields
+directly, uses gold's suffix inner commands and retains final removal
+records with a total two-second drain bound. Private native.HINPJ0 is a
+composite repair witness (9b53f0d executable, ca019e3 Mix sources), explicitly
+not exact-source acceptance. It passed native lifecycle and delivered 22
+events, revisions 6..27 without gaps/reordering, including retitle and
+final pane/tab removals before exit. All tracked PIDs stopped.
+
+Next exact-source gate: `term-events-drain-ca019e3`; then repeat native
+topic/lifecycle evidence on its verified artifact. Full gold shell/native
+authority, menus/actions/Bus, input/clipboard/search/IME, live Prefs and
+release visual acceptance remain open.

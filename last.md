@@ -445,4 +445,39 @@ dialog/macro/Bus contracts, verified session issuer/control and shell
 integration, input/clipboard/IME/search, full live Prefs and release
 acceptance. No Fable question; no install/VT/gold changes. NOT ACCEPTED.
 
-branch: lab/parity-term; head SHA: 9b53f0d9f50eda3b337d05ed4be636bf2b5d4fdb (code; receipt HEAD contains this checkpoint); open items: exact change-events gate, native topic delivery and pane captures, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-live-tabs-dock-849b2ae-a1 (green), term-pane-paint-0a34c03-a1 (green with fmt patch), term-change-events-9b53f0d (next await).
+## Native topic delivery repaired; pane regions identical
+
+Read complete term-change-events-9b53f0d-a1 log: four Mix suites, two
+bundle tests, 135 native tests/five ignores, dependency gate and generic
+host build green, no worker diff. Exact source 9b53f0d, verified debug
+SHA256 ee189b5838344d4e988d34c2c4655fdc5ca5a9ba13b55f591502e1e2460f085e.
+
+Native.dtQmFV used matching sources/bytes and real Mix sessions. Matched
+capture versus native.gWIe4o: tabs/content/bottom each SSIM/RMSE 0/0.
+Full distortions 0.00535614/0.0195939, header 0.0749878/0.0752184.
+Inspected originals/side/diff; missing menus/actions keep visual FAIL.
+Private pane-painted-regions contains metrics/inspection; public port doc
+records full hashes. This state is debug-only, not overall acceptance.
+
+The same native run found jobs.start incorrectly nested under body and
+no topic delivery. Corrected to typed fields; gold inner commands are
+suffixes (pane.changed etc), now preserved. Added gold's two-second
+shutdown event-drain bound, with final removal records. Local tests pass.
+Repair code ca019e33aada1112b34cacdbf4351ffa14f12eb4 is pushed.
+
+Private native.HINPJ0 is an explicitly composite repair witness using
+9b53f0d binary and ca019e3 Mix sources: native lifecycle passed, 22
+events revisions 6..27 delivered serially without gaps, correct inner
+commands and final pane/tab removals before normal close. All tracked
+PIDs stopped. An earlier relocated harness path error is retained under
+repair-ca019e3/native.B9lkDi with cleanup, never used as acceptance.
+
+Next CBC term-events-drain-ca019e3 at that exact source, same prepare
+recipe with automatic resumption. Read full log/apply any patch/repeat
+exact source; fetch matching artifact and rerun native topic/lifecycle
+evidence. Continue gold menus/actions/dialogs/macros/full Bus, verified
+native issuer/control and Mix shell integration, input/clipboard/IME/
+search, full live Prefs and release visual acceptance. NOT ACCEPTED;
+no Fable question, install, VT change or gold change.
+
+branch: lab/parity-term; head SHA: ca019e33aada1112b34cacdbf4351ffa14f12eb4 (code; receipt HEAD contains this checkpoint); open items: exact drain gate/native repeat, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-change-events-9b53f0d-a1 (green), term-events-drain-ca019e3 (next await).
