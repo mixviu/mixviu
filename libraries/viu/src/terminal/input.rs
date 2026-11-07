@@ -244,7 +244,14 @@ impl Wheels {
     }
 
     /// (zoom gesture, whole steps); the caller owns command/scroll policy.
-    pub fn event(&mut self, owner: &str, wheel: Wheel, cell: f32, speed: f32, modifiers: Modifiers) -> (bool, i32) {
+    pub fn event(
+        &mut self,
+        owner: &str,
+        wheel: Wheel,
+        cell: f32,
+        speed: f32,
+        modifiers: Modifiers,
+    ) -> (bool, i32) {
         self.modifiers_changed(modifiers);
         if modifiers.ctrl {
             (true, wheel_steps(&mut self.zoom, wheel))
@@ -264,16 +271,43 @@ mod wheel_tests {
     #[test]
     fn zoom_and_scroll_gestures_keep_gold_fractional_ownership() {
         let mut wheels = Wheels::default();
-        let ctrl = Modifiers {ctrl:true,..Modifiers::NONE};
-        assert_eq!(wheels.event("a",Wheel::Points(20.0),20.0,40.0,ctrl),(true,0));
-        assert_eq!(wheels.event("b",Wheel::Points(20.0),20.0,40.0,ctrl),(true,1));
-        assert_eq!(wheels.event("b",Wheel::Points(20.0),20.0,40.0,ctrl),(true,0));
+        let ctrl = Modifiers {
+            ctrl: true,
+            ..Modifiers::NONE
+        };
+        assert_eq!(
+            wheels.event("a", Wheel::Points(20.0), 20.0, 40.0, ctrl),
+            (true, 0)
+        );
+        assert_eq!(
+            wheels.event("b", Wheel::Points(20.0), 20.0, 40.0, ctrl),
+            (true, 1)
+        );
+        assert_eq!(
+            wheels.event("b", Wheel::Points(20.0), 20.0, 40.0, ctrl),
+            (true, 0)
+        );
         wheels.modifiers_changed(Modifiers::NONE);
-        assert_eq!(wheels.event("b",Wheel::Points(20.0),20.0,40.0,ctrl),(true,0));
-        assert_eq!(wheels.event("a",Wheel::Points(10.0),20.0,40.0,Modifiers::NONE),(false,0));
-        assert_eq!(wheels.event("b",Wheel::Points(10.0),20.0,40.0,Modifiers::NONE),(false,0));
-        assert_eq!(wheels.event("b",Wheel::Points(10.0),20.0,40.0,Modifiers::NONE),(false,1));
-        assert_eq!(wheels.event("b",Wheel::Lines(-2.0),20.0,80.0,Modifiers::NONE),(false,-4));
+        assert_eq!(
+            wheels.event("b", Wheel::Points(20.0), 20.0, 40.0, ctrl),
+            (true, 0)
+        );
+        assert_eq!(
+            wheels.event("a", Wheel::Points(10.0), 20.0, 40.0, Modifiers::NONE),
+            (false, 0)
+        );
+        assert_eq!(
+            wheels.event("b", Wheel::Points(10.0), 20.0, 40.0, Modifiers::NONE),
+            (false, 0)
+        );
+        assert_eq!(
+            wheels.event("b", Wheel::Points(10.0), 20.0, 40.0, Modifiers::NONE),
+            (false, 1)
+        );
+        assert_eq!(
+            wheels.event("b", Wheel::Lines(-2.0), 20.0, 80.0, Modifiers::NONE),
+            (false, -4)
+        );
     }
 }
 

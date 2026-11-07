@@ -62,7 +62,6 @@ fn shortcut(
     p: &Value,
     key: egui::Key,
     modifiers: egui::Modifiers,
-    wheels: input::Wheels,
     alternate: bool,
 ) -> Option<&Value> {
     p["shortcuts"].as_array()?.iter().find(|s| {
@@ -222,26 +221,45 @@ mod tests {
         let ctx = egui::Context::default();
         crate::fonts::install(&ctx, 400, 600);
         let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
-        widget.properties = json!({"focus_serial":1,"wheel_zoom":{"increase":"larger","decrease":"smaller"}});
+        widget.properties =
+            json!({"focus_serial":1,"wheel_zoom":{"increase":"larger","decrease":"smaller"}});
         for wheel in [false, true] {
             let mut events = Vec::new();
-            let mut input = vec![egui::Event::PointerMoved(egui::pos2(100.0,100.0))];
+            let mut input = vec![egui::Event::PointerMoved(egui::pos2(100.0, 100.0))];
             if wheel {
                 input.push(egui::Event::MouseWheel {
-                    unit:egui::MouseWheelUnit::Line,
-                    delta:egui::vec2(0.0,2.0),
-                    modifiers:egui::Modifiers {ctrl:true,..egui::Modifiers::NONE},
-                    phase:egui::TouchPhase::Move,
-                    source:egui::MouseWheelSource::Unknown,
+                    unit: egui::MouseWheelUnit::Line,
+                    delta: egui::vec2(0.0, 2.0),
+                    modifiers: egui::Modifiers {
+                        ctrl: true,
+                        ..egui::Modifiers::NONE
+                    },
+                    phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Unknown,
                 });
             }
-            ctx.run_ui(egui::RawInput {
-                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,560.0))),
-                events:input,
-                ..Default::default()
-            }, |ui| {views.draw(ui,&widget,&json!("vt-1"),&sessions,&mut events);}).drop_without_applying_deltas();
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 560.0),
+                    )),
+                    events: input,
+                    ..Default::default()
+                },
+                |ui| {
+                    views.draw(ui, &widget, &json!("vt-1"), &sessions, &mut events);
+                },
+            )
+            .drop_without_applying_deltas();
             if wheel {
-                assert_eq!(events.iter().filter(|e|e.action=="command" && e.value=="larger").count(),2);
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|e| e.action == "command" && e.value == "larger")
+                        .count(),
+                    2
+                );
             }
         }
     }
@@ -417,6 +435,7 @@ pub struct Views {
     focused: Option<String>,
     clipboard: input::ClipboardInput,
     modifiers: egui::Modifiers,
+    wheels: input::Wheels,
 }
 
 impl Views {
@@ -759,7 +778,13 @@ impl Views {
                     }
                 }
                 for event in ui.input(|i| i.events.clone()) {
-                    if let egui::Event::MouseWheel { unit, delta, modifiers, .. } = event {
+                    if let egui::Event::MouseWheel {
+                        unit,
+                        delta,
+                        modifiers,
+                        ..
+                    } = event
+                    {
                         let (zoom, lines) = self.wheels.event(
                             handle,
                             input::Wheel::of(unit, delta),
@@ -768,14 +793,23 @@ impl Views {
                             modifiers,
                         );
                         if zoom {
-                            let command = &p["wheel_zoom"][if lines > 0 {"increase"} else {"decrease"}];
+                            let command =
+                                &p["wheel_zoom"][if lines > 0 { "increase" } else { "decrease" }];
                             if command.is_string() {
                                 for _ in 0..lines.unsigned_abs() {
-                                    events.push(Intent {id:widget.id.clone(),action:"command".into(),value:command.clone()});
+                                    events.push(Intent {
+                                        id: widget.id.clone(),
+                                        action: "command".into(),
+                                        value: command.clone(),
+                                    });
                                 }
                             }
                         } else {
-                            let mods = MouseModifiers {shift:modifiers.shift,alt:modifiers.alt,ctrl:modifiers.ctrl};
+                            let mods = MouseModifiers {
+                                shift: modifiers.shift,
+                                alt: modifiers.alt,
+                                ctrl: modifiers.ctrl,
+                            };
                             if !terminal.mouse_scroll(col, row, lines, mods) {
                                 terminal.scroll_wheel(lines, mods);
                             }
