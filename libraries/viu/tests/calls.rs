@@ -36,7 +36,9 @@ fn mix_holds_a_reply_across_callbacks_without_blocking_the_evaluator() {
     let calls = viu::calls::Calls::default();
     let (tx, mut answer) = tokio::sync::oneshot::channel();
     let retained = Arc::new(AtomicBool::new(false));
-    let token = calls.begin_with_retention(tx, Arc::new(AtomicBool::new(false)), retained.clone()).unwrap();
+    let token = calls
+        .begin_with_retention(tx, Arc::new(AtomicBool::new(false)), retained.clone())
+        .unwrap();
     assert!(!retained.load(Ordering::Acquire));
     let (wake, ready) = mpsc::channel();
     let mut runtime = Runtime::with_services(
@@ -59,7 +61,10 @@ fn mix_holds_a_reply_across_callbacks_without_blocking_the_evaluator() {
     ready.recv_timeout(Duration::from_secs(5)).unwrap();
     assert!(runtime.try_completion().unwrap().error.is_none());
     calls.complete(&token, 0, json!({"too_early":true}));
-    assert!(retained.load(Ordering::Acquire), "Mix hold did not retain the native endpoint response");
+    assert!(
+        retained.load(Ordering::Acquire),
+        "Mix hold did not retain the native endpoint response"
+    );
     assert!(answer.try_recv().is_err());
     runtime
         .event("finish".into(), json!({"token":token}))

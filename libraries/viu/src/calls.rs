@@ -45,7 +45,12 @@ impl Calls {
     pub fn begin(&self, reply: Reply, close: Arc<AtomicBool>) -> Result<String, Reply> {
         self.begin_with_retention(reply, close, Arc::new(AtomicBool::new(false)))
     }
-    pub fn begin_with_retention(&self, reply: Reply, close: Arc<AtomicBool>, deferred: Arc<AtomicBool>) -> Result<String, Reply> {
+    pub fn begin_with_retention(
+        &self,
+        reply: Reply,
+        close: Arc<AtomicBool>,
+        deferred: Arc<AtomicBool>,
+    ) -> Result<String, Reply> {
         let mut state = self.0.lock().unwrap();
         state.entries.retain(|_, e| !e.reply.is_closed());
         if state.entries.len() >= 32 {

@@ -221,3 +221,6 @@ Combined scoped preparation gold-eight-combined-prepare-r1-a1 passes locked Viu/
 
 
 Combined preparation r2 PASS at 68cfdfa9; full log read and formatting applied. Additional merge review found Calls hold receipts did not set the native endpoint retention flag. Connected the existing hold contract to that flag, preserving callback/native deadlines; strengthened the real Mix-binding test to assert retention across callback completion and one eventual reply. Scoped retained-reply/runtime/text/launch tests pending.
+
+
+Scoped tests r1 caught an Arc ownership error in new retention wiring before tests ran; cloned the shared native retention flag so both receipt systems retain the same flag. Complete 4,948-byte log read; formatting applied exactly. Repaired-source tests queued next, no assertion changed.
