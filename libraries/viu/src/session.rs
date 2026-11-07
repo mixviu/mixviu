@@ -15,8 +15,55 @@ pub struct Session {
     retry: Option<Instant>,
     pub snapshot: Value,
     pub error: String,
+    retain_appearance_on_loss: bool,
+}
+fn appearance_snapshot(mut snapshot: Value, retain: bool) -> Value {
+    if !retain && let Some(state) = snapshot["state"].as_object_mut() {
+        state.remove("accepted_values");
+    }
+    snapshot
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authority_loss_preserves_background_appearance_but_restores_window_file_palette() {
+        let file = toolkit::Theme::embedded();
+        let mut snapshot = json!({"state":{"lost":false,"values":{
+            "appearance.mode":"light","appearance.scheme":"mono",
+            "appearance.font_size":18,"appearance.density":"compact"
+        }}});
+        let (accepted, ui) =
+            crate::appearance::session_base(&snapshot, "fixture", &file, &Default::default())
+                .unwrap();
+        snapshot["state"]["accepted_values"] = snapshot["state"]["values"].clone();
+        snapshot["state"]["values"] = json!({});
+        snapshot["state"]["lost"] = json!(true);
+        let window = appearance_snapshot(snapshot.clone(), false);
+        let background = appearance_snapshot(snapshot, true);
+        let (fallback, _) =
+            crate::appearance::session_base(&window, "fixture", &file, &ui).unwrap();
+        let (retained, _) =
+            crate::appearance::session_base(&background, "fixture", &file, &ui).unwrap();
+        let colours = |theme: &toolkit::Theme| {
+            let ctx = egui::Context::default();
+            crate::appearance::install_theme(&ctx, theme).unwrap();
+            (ctx.global_style().visuals.panel_fill, ctx.global_style().visuals.dark_mode)
+        };
+        assert_ne!(colours(&accepted), colours(&file));
+        assert_eq!(colours(&fallback), colours(&file));
+        assert_eq!(colours(&retained), colours(&accepted));
+        assert_eq!(window["state"]["values"], json!({}));
+        assert_eq!(background["state"]["values"], json!({}));
+    }
 }
 impl Session {
+    pub fn with_appearance_retention(mut self, retain: bool) -> Self {
+        self.retain_appearance_on_loss = retain;
+        self
+    }
     pub fn embedded(
         app: &str,
         instance: &str,
@@ -85,6 +132,7 @@ impl Session {
             retry: None,
             snapshot: json!({}),
             error: String::new(),
+            retain_appearance_on_loss: false,
         })
     }
     pub fn hint(&mut self, topic: &str, body: &Value) {
@@ -109,6 +157,7 @@ impl Session {
                 self.error = error;
             }
             if let Some(snapshot) = result.model {
+                let snapshot = appearance_snapshot(snapshot, self.retain_appearance_on_loss);
                 self.error = snapshot["state"]["error"].as_str().unwrap_or("").into();
                 self.retry = snapshot["state"]["retry"]
                     .as_f64()
