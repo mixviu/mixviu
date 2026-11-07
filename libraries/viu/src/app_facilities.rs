@@ -47,8 +47,10 @@ fn native_descriptor_order_preserves_both_compatibility_contracts() {
         let macros = position("fixture.macros.list");
         assert_eq!(ui < debug, after_ui);
         assert!(macros > ui && macros > debug);
-        let names: std::collections::BTreeSet<_> =
-            commands.iter().map(|c| c["name"].as_str().unwrap()).collect();
+        let names: std::collections::BTreeSet<_> = commands
+            .iter()
+            .map(|c| c["name"].as_str().unwrap())
+            .collect();
         assert_eq!(names.len(), commands.len());
     }
 }
