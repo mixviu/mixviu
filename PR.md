@@ -149,8 +149,12 @@ shipped path.
   evidence). Lint/env gate: see `last.md`.
 - Observed: the table above; scratch `/build/image-lab-*` absent on both
   workers afterwards.
-- Not tested: the runtime kind (list and lean checks written, not built);
-  the desk output; publishing, signing and CI pinning (none of it exists);
+- Runtime kind: CBC job `20261107-212349-b8813fc4` (rc 0): 16 asked, 125
+  installed, rootfs 465,075,518 bytes, OCI tarball 168,785,920 bytes,
+  manifest `sha256:7fbb092044cd906f5783633508a57f39baeaeee697b4d56c20d01037f55d51f6`;
+  lean check passed (no python, perl, pacman or gnupg). No engine was run
+  in it.
+- Not tested: running the engines in the runtime image; the desk output; publishing, signing and CI pinning (none of it exists);
   aarch64; a build on a GitHub runner; viud `backend-all` linkage.
 
 ## How to undo
