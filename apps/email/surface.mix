@@ -23,7 +23,9 @@ fn address_display($a)
 end
 fn action_context()
   $d=$wire_data[$active] ?? {}
-  return merge($chrome,{connected:$connected,reading:$mode=="mail" and $message!=nil,targeted:$mode=="mail" and (selection_count()>0 or $message!=nil) and $bulk_fetches[$active]==nil,calendars:len($d.calendars ?? []),books:len($d.books ?? []),form:$mail_form,accounts:len($entries),markdown:$reader_markdown,attachments_inline:$attachments_inline,has_attachments:len(($message ?? {}).attachments ?? [])>0,attachments_expanded:$attachments_expanded,save_attachments:any(($message ?? {}).attachments ?? [],fn($p)=not $p.undecodable and $p.blobId!=nil and $p.blobId!="")})
+  $target=filter($mail_emails,fn($m)=$mail_everything or contains($mail_selection,$m.id))
+  if len($target)==0 and $message!=nil and len($mail_selection)==0 then $target=[$message] end
+  return merge($chrome,{connected:$connected,reading:$mode=="mail" and $message!=nil and not any(values($wire_pending),fn($p)=$p.account==$active and $p.command=="email.open"),targeted:$mode=="mail" and (selection_count()>0 or $message!=nil) and $bulk_fetches[$active]==nil,calendars:len($d.calendars ?? []),books:len($d.books ?? []),form:$mail_form,accounts:len($entries),composable:any($entries,fn($e)=$e.enabled!=false),all_flagged:len($target)>0 and all($target,fn($m)=($m.keywords ?? {})["$flagged"]==true),some_unread:any($target,fn($m)=($m.keywords ?? {})["$seen"]!=true),has_junk:any($boxes,fn($b)=$b.role=="junk"),has_inbox:any($boxes,fn($b)=$b.role=="inbox"),in_junk:(filter($boxes,fn($b)=$b.id==$box)[0] ?? {}).role=="junk",has_text:($message ?? {}).text!=nil,markdown:$reader_markdown,attachments_inline:$attachments_inline,has_attachments:len(($message ?? {}).attachments ?? [])>0,attachments_expanded:$attachments_expanded,save_attachments:any(($message ?? {}).attachments ?? [],fn($p)=not $p.undecodable and $p.blobId!=nil and $p.blobId!="")})
 end
 fn surface_toggle_target($flag)
   $ids=if len($mail_selection)>0 then $mail_selection elif $message!=nil then [$message.id] else [] end

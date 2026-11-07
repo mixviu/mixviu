@@ -697,7 +697,9 @@ impl Widgets {
         if let Some(images) = &mut self.surfaces {
             images.begin();
         }
-        if let Some(images) = &mut self.media { images.begin(); }
+        if let Some(images) = &mut self.media {
+            images.begin();
+        }
     }
     /// Draw one shared widget within an application-owned layout. Both Rust
     /// and Mix adapters can use this entry point without the catalogue grid.
@@ -730,7 +732,9 @@ impl Widgets {
         if let Some(images) = &mut self.surfaces {
             images.finish();
         }
-        if let Some(images) = &mut self.media { images.finish(); }
+        if let Some(images) = &mut self.media {
+            images.finish();
+        }
         if let Some(id) = self.focus.take() {
             self.focus_selection = None;
             Err(format!("focus target not drawn: {id}"))
@@ -936,7 +940,14 @@ impl Widgets {
             }
             "image-view" => self.images.draw(ui, id, value),
             "file-tiles" => crate::file_tiles::draw(ui, id, value, events),
-            "file-previews" => crate::file_previews::draw(ui,id,value,self.media.get_or_insert_with(crate::image_view::Images::media),events),
+            "file-previews" => crate::file_previews::draw(
+                ui,
+                id,
+                value,
+                self.media
+                    .get_or_insert_with(crate::image_view::Images::media),
+                events,
+            ),
             "image-fill" => self
                 .surfaces
                 .get_or_insert_with(crate::image_view::Images::surface)

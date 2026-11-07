@@ -49,10 +49,10 @@ pub mod platform;
 pub mod ui_state;
 
 pub mod editor_controls;
-pub mod file_tiles;
 pub mod file_previews;
-pub mod media_preview;
+pub mod file_tiles;
 pub mod header_controls;
+pub mod media_preview;
 
 pub mod process;
 

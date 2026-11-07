@@ -30,6 +30,7 @@ fn publish_email()
   $m.values.view=$view;$m.mail_hidden=$view!="Mail";$m.compose_hidden=$view!="Compose"
   $m.values["reader-body"]=if $message!=nil then $message.text ?? $message.html ?? "" else "" end
   if not $fixture then $m=surface_model($m) end
+  if $fixture then $m=reader_files_model($m) end
   $look=merge(action_context(),{fixture:$fixture,accounts:len($entries),connected:$connected,status:$status})
   if not $fixture then
     $current=wire_entry($active);$state=$wire_views[$active] ?? {}
@@ -231,6 +232,11 @@ fn apply_email($id,$origin)
   elif $id=="view.reader.markdown" then $reader_markdown=not $reader_markdown;$reader_auto=false
   elif $id=="mail.attachments" then $attachments_expanded=not $attachments_expanded
   elif $id=="mail.save_attachments" then reader_files_intent({action:"save-all"})
+  elif $id=="mail.send_as_new" then
+    $a={account:$active,to:map($message.to ?? [],fn($a)=$compose_addresses.format($a)),cc:map($message.cc ?? [],fn($a)=$compose_addresses.format($a)),subject:$message.subject ?? "",body:$message.text ?? ""}
+    $from=($message.from ?? [])[0].email
+    if any($compose_sending.senders(wire_entry($active)),fn($s)=lower($s.address)==lower($from ?? "")) then $a.from=$from end
+    return composer_open($a)
   elif $id=="view.attachments_inline" then $attachments_inline=not $attachments_inline
   elif contains(["view.next_account","view.previous_account"],$id) then
     $at=index_of(map($entries,fn($e)=$e.id),$active);$at=($at+len($entries)+(if $id=="view.next_account" then 1 else -1 end))%len($entries);surface_account($entries[$at].id)

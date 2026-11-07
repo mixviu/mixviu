@@ -50,7 +50,13 @@ fn emit(events: &mut Vec<Intent>, id: &str, action: &str, key: Value) {
         value: key,
     });
 }
-pub(crate) fn menu(response: &egui::Response, p: &Value, v: &Value, id: &str, events: &mut Vec<Intent>) {
+pub(crate) fn menu(
+    response: &egui::Response,
+    p: &Value,
+    v: &Value,
+    id: &str,
+    events: &mut Vec<Intent>,
+) {
     if p["enabled"] == true && response.clicked() {
         emit(
             events,
@@ -163,7 +169,9 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                 });
             },
         );
-        if toggle { emit(events,id,"toggle",Value::Null); }
+        if toggle {
+            emit(events, id, "toggle", Value::Null);
+        }
         if v["expanded"] == true {
             egui::ScrollArea::vertical()
                 .id_salt("attachment-tiles")
