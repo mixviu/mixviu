@@ -1,0 +1,29 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Package lists for tools/image.mix (strict data; read with load_data).
+-- Only these are asked for; pacman resolves their hard dependencies from
+-- the snapshot pinned in etc/image/pacman.conf.
+--
+-- runtime: the libraries the four engines (mix, mixd, viu, viud) load,
+--   from ldd of binaries built inside the build image (`tools/image.mix
+--   survey`), plus what they open at run time without linking it (Mesa's
+--   GL/EGL/Vulkan drivers, the Vulkan loader, XKB data, fonts, CA roots).
+-- build: runtime plus the toolchain and headers; the extra packages match
+--   the pacman line in .github/workflows/ci.yml (base-devel is the CI
+--   container's base). Rust itself comes from rustup at the version in
+--   rust-toolchain.toml, installed into the image.
+-- noextract: per-kind NoExtract lines added under [options].
+-- forbid: packages that must not arrive as a dependency.
+{
+  runtime: ["glibc", "gcc-libs", "systemd-libs", "dbus", "libinput", "libxkbcommon", "xkeyboard-config",
+    "wayland", "libdrm", "mesa", "vulkan-icd-loader", "seatd", "pixman", "fontconfig", "freetype2",
+    "ttf-dejavu", "pipewire", "libpulse", "alsa-lib", "libxcb", "ca-certificates"],
+  build: ["base-devel", "git", "rustup", "clang", "pkgconf", "inetutils"],
+  noextract: {
+    runtime: ["usr/include/* usr/share/gir-1.0/* usr/lib/python*/*", "usr/share/i18n/* usr/lib/pkgconfig/*"],
+    build: []
+  },
+  forbid: {
+    runtime: ["python", "perl", "pacman", "gnupg"],
+    build: []
+  }
+}

@@ -1,0 +1,420 @@
+#!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- tools/image.mix: one builder, one pinned package snapshot, image rootfs
+-- trees for MixViu (LAB: lab/image-builder, discovery only, never lands).
+--
+--   mix tools/image.mix conf  --kind build|runtime
+--   mix tools/image.mix all   --kind build|runtime --work DIR [--cache DIR] [--keep]
+--   mix tools/image.mix build --kind K --work DIR [--cache DIR]
+--   mix tools/image.mix pack  --kind K --work DIR
+--   mix tools/image.mix prove --work DIR
+--   mix tools/image.mix survey --work DIR
+--   mix tools/image.mix clean --work DIR [--cache DIR]
+--
+-- conf prints the effective pacman.conf for a kind. build installs the
+-- kind's package list (etc/image/packages.conf.mix) from the dated archive
+-- in etc/image/pacman.conf into DIR/root with pacman --root (the steps
+-- pacstrap takes, without needing arch-install-scripts); a build image also
+-- gets the rustup toolchain named by rust-toolchain.toml. pack writes an OCI
+-- image layout from that tree and tars it to DIR/mixviu-KIND.oci.tar
+-- (deterministic: sorted entries, numeric owners, mtimes clamped to the
+-- snapshot day). prove unpacks the packed layer into DIR/verify and runs
+-- `cargo build --locked -p mix` inside it under systemd-nspawn, with this
+-- checkout bound read-only at /src. survey builds mixd, viu and viud there
+-- too and maps each engine's ldd output to the packages that own it. all
+-- runs build, pack, prove (build kind), survey (build kind) and, unless
+-- --keep, clean. Each step prints one `IMAGE_EVIDENCE <json>` line.
+--
+-- Root only, on a build worker, in a scratch DIR that does not exist yet.
+-- It never creates a dataset, a machine or a registry push. clean refuses
+-- while anything is still mounted under DIR.
+
+$o = getopt(args(), {kind: {arg: true}, work: {arg: true}, cache: {arg: true}, keep: {}})
+if len($o.errors) > 0 or len($o.rest) != 1 then
+  eprint("usage: mix tools/image.mix conf|all|build|pack|prove|survey|clean --kind build|runtime --work DIR [--cache DIR] [--keep]")
+  exit(64)
+end
+$cmd = $o.rest[0]
+$KIND = $o.opts.kind
+$WORK = $o.opts.work
+$REPO = trim(run_argv_must(["git", "rev-parse", "--show-toplevel"], {timeout: 30}))
+$CONF = $REPO .. "/etc/image/pacman.conf"
+$LISTS = load_data($REPO .. "/etc/image/packages.conf.mix")
+$RUSTUP_HOME = "/usr/local/rustup"
+$CARGO_HOME = "/usr/local/cargo"
+$ENGINES = ["mix", "mixd", "viu", "viud"]
+
+fn evidence($what, $data)
+  $data.step = $what
+  print("IMAGE_EVIDENCE " .. json_encode($data))
+end
+
+-- Run argv with output streamed to the log; raise on failure.
+fn run_logged($argv, $timeout)
+  print("+ " .. join($argv, " "))
+  $r = run_argv($argv, {timeout: $timeout, stdout: "inherit", stderr: "inherit"})
+  if $r.exit_code != 0 then
+    raise("IMAGE_STEP", "rc " .. to_string($r.exit_code ?? 124) .. ": " .. join($argv, " "))
+  end
+  return $r.duration_ms
+end
+
+fn capture($argv, $timeout)
+  return run_argv_must($argv, {timeout: $timeout, max_output: 64000000, stderr: "stdout"})
+end
+
+-- The snapshot day: every Server line is the same dated archive.
+fn snapshot()
+  $day = nil
+  for each $line in lines(read_file($CONF))
+    if starts_with($line, "Server") then
+      $m = re_find($line, "^Server = https://archive\\.archlinux\\.org/repos/([0-9]{4})/([0-9]{2})/([0-9]{2})/\\$repo/os/\\$arch$")
+      if len($m) != 1 then raise("IMAGE_CONF", "Not a dated archive Server: " .. $line) end
+      $g = $m[0].groups
+      $d = $g[0] .. "-" .. $g[1] .. "-" .. $g[2]
+      if $day != nil and $day != $d then raise("IMAGE_CONF", "Two snapshot days: " .. $day .. " and " .. $d) end
+      $day = $d
+    end
+  end
+  if $day == nil then raise("IMAGE_CONF", "No Server lines in " .. $CONF) end
+  return $day
+end
+
+fn need_kind($kind)
+  if $kind != "build" and $kind != "runtime" then raise("USAGE", "--kind must be build or runtime") end
+end
+
+fn packages($kind)
+  if $kind == "runtime" then return $LISTS.runtime end
+  return concat($LISTS.runtime, $LISTS.build)
+end
+
+fn effective_conf($kind)
+  $text = read_file($CONF)
+  $extra = ""
+  for each $n in $LISTS.noextract[$kind]
+    $extra = $extra .. "NoExtract = " .. $n .. "\n"
+  end
+  if $extra == "" then return $text end
+  $out = replace($text, "\n[options]\n", "\n[options]\n" .. $extra)
+  if $out == $text then raise("IMAGE_CONF", "No [options] section in " .. $CONF) end
+  return $out
+end
+
+fn need_work($work)
+  if $work == nil or not starts_with($work, "/") then raise("USAGE", "--work needs an absolute path") end
+  if starts_with($work, "/var/lib/machines") then raise("USAGE", "--work may not be under /var/lib/machines") end
+end
+
+fn mounts_under($dir)
+  $out = []
+  for each $line in lines(read_file("/proc/self/mounts"))
+    $f = split($line, " ")
+    if len($f) > 1 and ($f[1] == $dir or starts_with($f[1], $dir .. "/")) then push($out, $f[1]) end
+  end
+  return $out
+end
+
+-- systemd-nspawn on a tree: no machine registration, a stub init, the
+-- host's resolver, toolchain env as in the image config.
+fn nspawn($root, $binds, $env, $cwd, $argv, $timeout)
+  $a = ["systemd-nspawn", "--quiet", "--register=no", "--as-pid2", "--console=pipe",
+    "--resolv-conf=copy-host", "--timezone=off", "-D", $root]
+  $a = concat($a, $binds)
+  for each $k in keys($env)
+    push($a, "--setenv=" .. $k .. "=" .. $env[$k])
+  end
+  $a = concat($a, ["--chdir=" .. $cwd, "--"])
+  return run_logged(concat($a, $argv), $timeout)
+end
+
+fn image_env($kind)
+  if $kind == "runtime" then return {PATH: "/usr/local/bin:/usr/bin"} end
+  return {PATH: $CARGO_HOME .. "/bin:/usr/local/bin:/usr/bin", RUSTUP_HOME: $RUSTUP_HOME,
+    CARGO_HOME: $CARGO_HOME, USER: "root"}
+end
+
+fn toolchain()
+  $m = re_find(read_file($REPO .. "/rust-toolchain.toml"), "channel = \"([0-9.]+)\"")
+  if len($m) != 1 then raise("IMAGE_TOOLCHAIN", "No pinned channel in rust-toolchain.toml") end
+  return $m[0].groups[0]
+end
+
+fn cmd_build($kind, $work, $cache)
+  need_kind($kind)
+  need_work($work)
+  if uid() != 0 then raise("ROOT_REQUIRED", "build runs as root on a build worker") end
+  if exists($work) then raise("IMAGE_WORK", $work .. " exists: use a fresh scratch directory") end
+  if not is_dir(dirname($work)) then raise("IMAGE_WORK", "No parent directory for " .. $work) end
+  $day = snapshot()
+  $root = $work .. "/root"
+  $cache = $cache ?? ($work .. "/cache")
+  for each $d in ["var/lib/pacman", "etc", "dev", "proc", "sys", "run", "tmp"]
+    mkdir($root .. "/" .. $d)
+  end
+  mkdir($cache)
+  write_file($work .. "/pacman.conf", effective_conf($kind))
+  $list = packages($kind)
+  print("== " .. $kind .. " image: " .. to_string(len($list)) .. " packages asked for, snapshot " .. $day)
+  -- The mounts pacstrap gives install scriptlets and hooks (they run chrooted).
+  $mounts = [
+    ["proc", ["mount", "-t", "proc", "-o", "nosuid,noexec,nodev", "proc", $root .. "/proc"]],
+    ["sys", ["mount", "-t", "sysfs", "-o", "ro,nosuid,noexec,nodev", "sys", $root .. "/sys"]],
+    ["dev", ["mount", "--bind", "/dev", $root .. "/dev"]],
+    ["run", ["mount", "-t", "tmpfs", "-o", "nosuid,nodev,mode=0755", "run", $root .. "/run"]],
+    ["tmp", ["mount", "-t", "tmpfs", "-o", "nosuid,nodev,mode=1777", "tmp", $root .. "/tmp"]]
+  ]
+  $done = []
+  $ms = 0
+  try
+    for each $m in $mounts
+      capture($m[1], 30)
+      push($done, $root .. "/" .. $m[0])
+    end
+    $ms = run_logged(concat(["pacman", "--root", $root, "--config", $work .. "/pacman.conf", "--cachedir", $cache,
+      "--noconfirm", "--disable-download-timeout", "-Sy"], $list), 7200)
+  finally
+    for each $p in reverse($done)
+      run_argv(["umount", $p], {timeout: 60})
+    end
+  end
+  if len(mounts_under($work)) > 0 then raise("IMAGE_MOUNT", "Still mounted: " .. join(mounts_under($work), " ")) end
+  $installed = lines(trim(capture(["pacman", "--root", $root, "-Q"], 60)))
+  $names = map($installed, fn($l) = split($l, " ")[0])
+  for each $bad in $LISTS.forbid[$kind]
+    if contains($names, $bad) then raise("IMAGE_LEAN", $bad .. " came in as a dependency") end
+  end
+  -- The sync databases and download cache are build state, not image.
+  remove_dir($root .. "/var/lib/pacman/sync")
+  remove_dir($root .. "/var/cache/pacman/pkg")
+  write_file($root .. "/etc/machine-id", "")
+  $tc = nil
+  $tc_ms = 0
+  if $kind == "build" then
+    $tc = toolchain()
+    $env = image_env("build")
+    $tc_ms = nspawn($root, [], $env, "/", ["rustup", "toolchain", "install", $tc, "--profile", "minimal",
+      "--component", "clippy,rustfmt"], 3600)
+    nspawn($root, [], $env, "/", ["rustup", "default", $tc], 300)
+    remove_dir($root .. $RUSTUP_HOME .. "/downloads")
+    remove_dir($root .. $RUSTUP_HOME .. "/tmp")
+  end
+  $meta = {kind: $kind, snapshot: $day, toolchain: $tc, packages: $installed,
+    pacman_conf_sha256: hash_file($CONF, "sha256"),
+    packages_conf_sha256: hash_file($REPO .. "/etc/image/packages.conf.mix", "sha256"),
+    source_revision: trim(capture(["git", "-C", $REPO, "rev-parse", "HEAD"], 30))}
+  mkdir($root .. "/usr/share/mixviu")
+  write_file($root .. "/usr/share/mixviu/image.json", json_encode($meta, true) .. "\n")
+  $bytes = to_number(split(trim(capture(["du", "-sb", $root], 600)), "\t")[0])
+  evidence("build", {kind: $kind, snapshot: $day, asked: len($list), installed: len($installed),
+    rootfs_bytes: $bytes, pacman_ms: $ms, toolchain: $tc, toolchain_ms: $tc_ms})
+end
+
+fn json_blob($oci, $value)
+  $tmp = $oci .. "/blob.tmp"
+  write_file($tmp, json_encode($value))
+  $d = hash_file($tmp, "sha256")
+  $size = stat($tmp).size
+  rename($tmp, $oci .. "/blobs/sha256/" .. $d)
+  return {digest: "sha256:" .. $d, size: $size}
+end
+
+fn cmd_pack($kind, $work)
+  need_kind($kind)
+  need_work($work)
+  $root = $work .. "/root"
+  if not is_file($root .. "/usr/share/mixviu/image.json") then raise("IMAGE_WORK", "No built tree in " .. $work) end
+  if len(mounts_under($work)) > 0 then raise("IMAGE_MOUNT", "Mounted under " .. $work) end
+  $meta = json_parse(read_file($root .. "/usr/share/mixviu/image.json"))
+  $day = $meta.snapshot
+  $epoch = trim(capture(["date", "-u", "-d", $day, "+%s"], 10))
+  $created = $day .. "T00:00:00Z"
+  $oci = $work .. "/oci"
+  mkdir($oci .. "/blobs/sha256")
+  $layer = $work .. "/layer.tar"
+  $tar_ms = run_logged(["tar", "--create", "--file", $layer, "--directory", $root, "--sort=name", "--numeric-owner",
+    "--mtime=@" .. $epoch, "--clamp-mtime", "--xattrs", "--xattrs-include=security.capability",
+    "--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime", "."], 3600)
+  $diff_id = hash_file($layer, "sha256")
+  $tar_bytes = stat($layer).size
+  $gz_ms = run_logged(["gzip", "-n", $layer], 3600)
+  $gz = $layer .. ".gz"
+  $layer_digest = hash_file($gz, "sha256")
+  $layer_size = stat($gz).size
+  rename($gz, $oci .. "/blobs/sha256/" .. $layer_digest)
+  $env = image_env($kind)
+  $envl = map(sort(keys($env)), fn($k) = $k .. "=" .. $env[$k])
+  $cfg = {architecture: "amd64", os: "linux", created: $created,
+    config: {Env: $envl, WorkingDir: "/", Cmd: if $kind == "build" then ["/usr/bin/bash"] else ["/usr/bin/true"] end},
+    rootfs: {type: "layers", diff_ids: ["sha256:" .. $diff_id]},
+    history: [{created: $created, created_by: "tools/image.mix build --kind " .. $kind}]}
+  $config = json_blob($oci, $cfg)
+  $ann = {"org.opencontainers.image.created": $created,
+    "org.opencontainers.image.source": "https://github.com/mixviu/mixviu",
+    "org.opencontainers.image.revision": $meta.source_revision,
+    "dev.mixviu.image.kind": $kind, "dev.mixviu.image.snapshot": $day}
+  $manifest = json_blob($oci, {schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json",
+    config: {mediaType: "application/vnd.oci.image.config.v1+json", digest: $config.digest, size: $config.size},
+    layers: [{mediaType: "application/vnd.oci.image.layer.v1.tar+gzip", digest: "sha256:" .. $layer_digest, size: $layer_size}],
+    annotations: $ann})
+  $tag = "lab-" .. $kind .. "-" .. replace($day, "-", "") .. "-" .. slice($meta.source_revision, 0, 7)
+  write_file($oci .. "/index.json", json_encode({schemaVersion: 2, mediaType: "application/vnd.oci.image.index.v1+json",
+    manifests: [{mediaType: "application/vnd.oci.image.manifest.v1+json", digest: $manifest.digest, size: $manifest.size,
+      annotations: {"org.opencontainers.image.ref.name": $tag}}]}))
+  write_file($oci .. "/oci-layout", json_encode({imageLayoutVersion: "1.0.0"}))
+  $out = $work .. "/mixviu-" .. $kind .. ".oci.tar"
+  run_logged(["tar", "--create", "--file", $out, "--directory", $oci, "--sort=name", "--numeric-owner",
+    "--owner=0", "--group=0", "--mtime=@" .. $epoch, "."], 1800)
+  verify_layout($oci)
+  evidence("pack", {kind: $kind, snapshot: $day, tag: $tag, manifest_digest: $manifest.digest,
+    config_digest: $config.digest, layer_digest: "sha256:" .. $layer_digest, diff_id: "sha256:" .. $diff_id,
+    layer_tar_bytes: $tar_bytes, layer_gz_bytes: $layer_size, oci_tar: $out, oci_tar_bytes: stat($out).size,
+    oci_tar_sha256: hash_file($out, "sha256"), packages: len($meta.packages), tar_ms: $tar_ms, gzip_ms: $gz_ms})
+end
+
+fn check_blob($oci, $desc)
+  $hex = replace($desc.digest, "sha256:", "")
+  $p = $oci .. "/blobs/sha256/" .. $hex
+  if not is_file($p) then raise("IMAGE_OCI", "Missing blob " .. $desc.digest) end
+  if stat($p).size != $desc.size then raise("IMAGE_OCI", "Size mismatch " .. $desc.digest) end
+  if hash_file($p, "sha256") != $hex then raise("IMAGE_OCI", "Digest mismatch " .. $desc.digest) end
+  return $p
+end
+
+-- Every blob the index reaches exists, has its size and hashes to its name.
+fn verify_layout($oci)
+  $index = json_parse(read_file($oci .. "/index.json"))
+  for each $m in $index.manifests
+    $man = json_parse(read_file(check_blob($oci, $m)))
+    check_blob($oci, $man.config)
+    for each $l in $man.layers
+      check_blob($oci, $l)
+    end
+  end
+end
+
+fn layer_blob($work)
+  $oci = $work .. "/oci"
+  $index = json_parse(read_file($oci .. "/index.json"))
+  $man = json_parse(read_file($oci .. "/blobs/sha256/" .. replace($index.manifests[0].digest, "sha256:", "")))
+  return {path: $oci .. "/blobs/sha256/" .. replace($man.layers[0].digest, "sha256:", ""), manifest: $index.manifests[0].digest}
+end
+
+-- The tree the proof runs in is unpacked from the packed layer, not the
+-- build tree, so the proof covers what would ship.
+fn unpacked($work)
+  $v = $work .. "/verify"
+  if not is_file($v .. "/usr/share/mixviu/image.json") then
+    mkdir($v)
+    run_logged(["tar", "--extract", "--gzip", "--file", layer_blob($work).path, "--directory", $v, "--numeric-owner",
+      "--xattrs", "--xattrs-include=security.capability"], 3600)
+  end
+  return $v
+end
+
+fn proof_env()
+  $env = image_env("build")
+  $env.CARGO_TARGET_DIR = "/work/target"
+  $env.CARGO_HOME = "/work/cargo"
+  $env.PATH = "/usr/local/bin:/usr/bin"
+  -- The worker's job cap, when cbc-build sets one, holds inside too.
+  $jobs = env("CARGO_BUILD_JOBS")
+  if $jobs != "" then $env.CARGO_BUILD_JOBS = $jobs end
+  return $env
+end
+
+fn cmd_prove($work)
+  need_work($work)
+  $lb = layer_blob($work)
+  $v = unpacked($work)
+  mkdir($work .. "/prove")
+  $binds = ["--bind-ro=" .. $REPO .. ":/src", "--bind=" .. $work .. "/prove:/work"]
+  $env = proof_env()
+  nspawn($v, $binds, $env, "/src", ["rustc", "--version"], 120)
+  $ms = nspawn($v, $binds, $env, "/src", ["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"], 7200)
+  $ver = trim(capture(["systemd-nspawn", "--quiet", "--register=no", "--as-pid2", "--console=pipe",
+    "-D", $v, "--bind-ro=" .. $work .. "/prove:/work", "--", "/work/target/debug/mix", "--version"], 120))
+  evidence("prove", {manifest_digest: $lb.manifest, command: "cargo build --locked -p mix --bin mix",
+    cargo_ms: $ms, mix_version: $ver, mix_bytes: stat($work .. "/prove/target/debug/mix").size,
+    source_revision: trim(capture(["git", "-C", $REPO, "rev-parse", "HEAD"], 30))})
+end
+
+-- Build the other engines in the same tree; map each engine's ldd to the
+-- owning packages (the runtime list's evidence).
+fn cmd_survey($work)
+  need_work($work)
+  $v = unpacked($work)
+  mkdir($work .. "/prove")
+  $binds = ["--bind-ro=" .. $REPO .. ":/src", "--bind=" .. $work .. "/prove:/work"]
+  $ms = nspawn($v, $binds, proof_env(), "/src", ["cargo", "build", "--locked", "-p", "mixd", "-p", "viu", "-p", "viud", "--bins"], 7200)
+  $per = {}
+  $all = []
+  for each $e in $ENGINES
+    $bin = $work .. "/prove/target/debug/" .. $e
+    if not is_file($bin) then raise("IMAGE_SURVEY", "No binary " .. $e) end
+    $out = run_argv(["systemd-nspawn", "--quiet", "--register=no", "--as-pid2", "--console=pipe", "-D", $v,
+      "--bind-ro=" .. $work .. "/prove:/work", "--", "ldd", "/work/target/debug/" .. $e], {timeout: 120, stderr: "stdout"}).stdout
+    $libs = []
+    $pkgs = []
+    for each $l in lines($out)
+      $m = re_find($l, "=> (/[^ ]+) \\(")
+      if len($m) == 1 then
+        $path = $m[0].groups[0]
+        push($libs, basename($path))
+        $own = run_argv(["pacman", "--root", $v, "-Qqo", $path], {timeout: 30})
+        $pkg = if $own.ok then trim($own.stdout) else "UNOWNED:" .. $path end
+        if not contains($pkgs, $pkg) then push($pkgs, $pkg) end
+        if not contains($all, $pkg) then push($all, $pkg) end
+      end
+    end
+    $per[$e] = {libs: sort($libs), packages: sort($pkgs), bytes: stat($bin).size}
+  end
+  $runtime = $LISTS.runtime
+  evidence("survey", {cargo_ms: $ms, engines: $per, linked_packages: sort($all),
+    linked_not_listed: sort(filter($all, fn($p) = not contains($runtime, $p))),
+    listed_not_linked: sort(filter($runtime, fn($p) = not contains($all, $p)))})
+end
+
+fn cmd_clean($work, $cache)
+  need_work($work)
+  $left = mounts_under($work)
+  if len($left) > 0 then raise("IMAGE_MOUNT", "Refusing to clean, still mounted: " .. join($left, " ")) end
+  capture(["rm", "-rf", "--one-file-system", $work], 1800)
+  if $cache != nil then
+    need_work($cache)
+    capture(["rm", "-rf", "--one-file-system", $cache], 600)
+  end
+  evidence("clean", {work: $work, removed: not exists($work)})
+end
+
+if $cmd == "conf" then
+  need_kind($KIND)
+  print("# snapshot " .. snapshot())
+  print(effective_conf($KIND))
+elif $cmd == "build" then
+  cmd_build($KIND, $WORK, $o.opts.cache)
+elif $cmd == "pack" then
+  cmd_pack($KIND, $WORK)
+elif $cmd == "prove" then
+  cmd_prove($WORK)
+elif $cmd == "survey" then
+  cmd_survey($WORK)
+elif $cmd == "clean" then
+  cmd_clean($WORK, $o.opts.cache)
+elif $cmd == "all" then
+  need_kind($KIND)
+  try
+    cmd_build($KIND, $WORK, $o.opts.cache)
+    cmd_pack($KIND, $WORK)
+    if $KIND == "build" then
+      cmd_prove($WORK)
+      cmd_survey($WORK)
+    end
+  finally
+    if not $o.opts.keep and exists($WORK) then cmd_clean($WORK, $o.opts.cache) end
+  end
+else
+  eprint("unknown command " .. $cmd)
+  exit(64)
+end
