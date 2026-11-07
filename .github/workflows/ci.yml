@@ -81,15 +81,19 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
+    # Arch, like the CBC workers and the desks: viud's libinput needs >= 1.26
+    # (tablet dial API), newer than Ubuntu 24.04 ships.
+    container:
+      image: archlinux:base-devel@sha256:2de80105abb49f813a85393c6758a4334deb6bcec4a2411bd2f059c0bee6ee4c
     permissions:
       contents: read
     timeout-minutes: 180
     steps:
+      - name: System libraries
+        run: pacman -Syu --noconfirm --needed git rustup clang pkgconf libinput libxkbcommon wayland libdrm mesa seatd pixman systemd-libs dbus fontconfig freetype2 pipewire libpulse alsa-lib libxcb vulkan-icd-loader ttf-dejavu
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: System libraries
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config clang libudev-dev libinput-dev libgbm-dev libseat-dev libxkbcommon-dev libwayland-dev libdrm-dev libegl-dev libgles-dev libegl1-mesa-dev libpixman-1-dev libsystemd-dev libdbus-1-dev libfontconfig-dev libfreetype-dev libpipewire-0.3-dev libpulse-dev libasound2-dev libxcb1-dev mesa-vulkan-drivers libvulkan1 fonts-dejavu-core
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: workspace
