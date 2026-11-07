@@ -126,7 +126,7 @@ fn dp_legacy_view($s)
     end
   end
   $out={kind:if contains(["mkdir","rename"],$kind) then "name" elif $kind=="message" then $s.reservation.operation.legacy_kind ?? "message" else $kind end,title:$s.form.title,buttons:$buttons,status:$s.dialog_status}
-  if $s.form.field!=nil then $out.name=$s.form.field elif $s.reservation.operation.legacy_kind!="shortcuts" then $out.body=$s.form.body end
+  if $s.form.field!=nil then $out.name=$s.form.field elif $kind!="drop" and $s.reservation.operation.legacy_kind!="shortcuts" then $out.body=$s.form.body end
   if $kind=="drop" then $out.paths=$s.reservation.operation.sources;$out.path=$s.reservation.operation.destination end
   return $out
 end

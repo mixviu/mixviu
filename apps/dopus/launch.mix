@@ -20,8 +20,8 @@ while $i<len($app_args)
 end
 $absolute=[]
 for $path in $paths
-  if $path=="~" then $path=env("HOME","/")
-  elif starts_with($path,"~/") then $path=path_join(env("HOME","/"),slice($path,2)) end
+  if $path=='~' then $path=env("HOME","/")
+  elif starts_with($path,'~/') then $path=path_join(env("HOME","/"),slice($path,2)) end
   push($absolute,if starts_with($path,"/") then $path else path_join(cwd(),$path) end)
 end
 $plan={args:concat(["--profile",$profile],$absolute),headless:$headless,exit:$print_config,activation:[{command:"dopus.open",body:{paths:$absolute}},{command:"dopus.show",body:{}}]}
