@@ -247,3 +247,23 @@ Light checks on cachyos at 34a8d52 (one or two crates per job):
   green (20261107-185418-c5fe3256).
 
 Branch cutover/four-engines; head is this last.md commit (source 7fddb05); gate: full run held for parity, light checks green apart from cachyos filesystem cases; CBC last full cutover-gate-2d7e1c7, light 20261107-185355-f8c3d8cd, 20261107-185418-c5fe3256, earlier cutover-gate-5d1ec61, cutover-gate-43de632, cutover-removed-4755e9e, 20261107-111516-437fd7b1.
+
+
+## Mix hygiene pre-PR change (2026-11-07)
+
+The four local Cargo shortcuts now refuse before touching source or installed
+binaries. CLI help and the manual point to the CI recipe and CBC. All four
+native-session fault variables use the explicit debug-only test-hooks feature;
+release builds reject it. The native PTY target requires that feature and CI
+enables it. No dependencies or deployment changed.
+
+Source 805db4c61b62812999081e9bb7eb39ab677fd7ab passed fmt, env and
+mix-hygiene on CBC job 20261107-204950-4537e2c4: 29 tests passed, expected
+release-feature rejection, 176 env names and zero registry problems. Full
+worker log was read. An earlier base implementation also passed on cbc3, job
+20261107-204601-09d3a4fd-a1. Intermediate rustfmt and help-test findings were
+fixed. Full workspace all gate and independent review remain unrun.
+
+PR.md contains the review draft; no PR opened under the binding brief.
+
+Branch fix/mix-hygiene; head SHA: this evidence commit (tested source 805db4c61b62812999081e9bb7eb39ab677fd7ab); gate: fmt/env/mix-hygiene GREEN; CBC jobs 20261107-204950-4537e2c4 and 20261107-204601-09d3a4fd-a1; Mark: independent review and human approval before merge.
