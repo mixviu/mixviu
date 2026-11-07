@@ -18,3 +18,9 @@ and command outcomes remain in Mix.
 collapsible content, forms, cell grids and small history lines using existing
 egui/toolkit controls. Workshop's corresponding Mix projections retain all
 session, permission and transcript policy.
+
+The reusable dock `reference_extent` placement input follows the pinned
+Workshop view's full-window fraction sizing, including its narrow-window
+available-size rule. Explicit root dock `clip:false` preserves native panel
+paint margins across the shared frame boundary. Default frame clipping is
+unchanged. Native paired captures cover both expanded Traffic placements.

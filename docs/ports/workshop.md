@@ -110,7 +110,7 @@ from remaining integration and visual work; no unapproved difference is accepted
 The oracle is MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`, executable
 SHA256 `21303df6158fbc7c856aa39525a9bacff31a258f05d03f1b6602de6aeb8e52e6`.
 The verified release code is `cc43ae6825511b907db43f932ba12b349fc479d4`.
-The later Traffic repair and its pending gate are identified below. Captures, scripts, fixtures, calls,
+The later Traffic repair and its focused gate are identified below. Captures, scripts, fixtures, calls,
 metrics, original PNGs, comparison figures and closure receipts are retained in
 the private `workshop-parity-20261107` archive.
 
@@ -123,14 +123,14 @@ and a `finally` cleanup receipt.
 
 ### Functional and Bus evidence
 
-`bus-cases.GCVOOt` matched **99/99** structured cases against gold, including
+`release-bus.Qvag7k` matched **99/99** structured cases against gold, including
 complete HELP/descriptors, payload/null/type refusals, Format, raw return codes,
 errors and whitespace, Unicode byte bounds, observation provenance and quit.
 Generated IDs, sequence numbers, timestamps, elapsed time and wire sizes remain
 in the raw receipts and are normalised only for comparison. Filtered Traffic
 retains payloads, outcomes and request/reply correlation.
 
-`macro-flow.3TO8DF` matched **25/25** macro protocol cases. The independent
+`release-macro.7TtyCS` matched **25/25** macro protocol cases. The independent
 target is the pinned native Dopus, running on the owned broker. Checks cover
 global and app builtin copy, user-tier shadowing, moving to a running app,
 execution and exact UTF-8 output, stop/exit 143, offline catalogue/get/put,
@@ -226,10 +226,51 @@ their run directories. The agent fixture SHA256 is
 `cc0b5f74c401dd7df96a5bed93a8568a9ca53edc66b126a2f8355152e344b211`;
 the Bus fixture is `118fed3aec43fa0202a2db11e2575667ca0ac33fe2de5abdffbd3c56d397185a`.
 
-The expanded-bottom Traffic capture exposed a separate sizing error: its
-fraction used content height instead of gold's full-window height. The
-reusable reference-extent repair is in `cfa94ff`, validated in `5a9acc5`;
-native recapture and a fresh exact-source gate are in progress. This does not
-invalidate the already recorded release evidence, but it is not yet closed.
-Overall acceptance remains **OPEN**, also awaiting Opus's shared editor/New
-field integration and the macro UI/window-effects repetition.
+### Traffic repair checkpoint
+
+The expanded-bottom capture exposed a sizing error: its fraction used content
+height instead of gold's full-window height. The reusable `reference_extent`
+placement input now supplies the full height, while narrow windows retain the
+gold available-height rule. The right-docked capture also exposed the frame
+clipping a native panel's separator paint margin. An explicit root dock
+`clip:false` lets native panels apply their own clipping; other applications
+retain the existing frame clipping. Gold's cosmetic divider endpoint is copied.
+
+Tested repair source: `5484446d1a990f81bc4367260aae6948e79cd42c`.
+CBC `20261107-113242-1ad7b79e` passed with no worker diff: Workshop and
+ports_round4 tests, native Bus and launch unit tests, all 72 scene tests,
+format check and the Viu debug build. The unchanged hundred-row timing test
+passed. The saved complete log was read:
+`20261107-113242-cachyos-5484446d1a99-20261107-113242-1ad7b79e-91ef16f5.log`.
+This used the documented one-app visual-check light override, with six jobs,
+nice 15 and idle I/O in the CBC shadow checkout. The exact worker command was
+`mix light-visual-check.mix`, which invokes `mix apps/workshop/gate.mix` and
+`cargo build --locked -p viu-engine --bin viu`; the executed helper is retained
+in the private archive. Earlier compile failures are retained, not counted as
+passes. The seed timing assertion was never relaxed.
+
+The verified **debug** executable SHA256 is
+`1fc5f449c10aff7764d30060c53bd4784aa301d60defb8f6d6aed5736f0f5bf9`.
+It does not attest new release bytes. `repair-native-margin.1y7BRh` has
+whole-image and every-region SSIM/RMSE distortion **0** for both
+`traffic-right-empty` and `traffic-bottom-empty`. Originals, montages and
+diffs were inspected. `repair-pair-margin.JrPbFw` repeats all five principal
+states: Command/About/Shortcuts/Agents remain 0 throughout; Mesh retains only
+the same S2 scrollbar difference. All 14 owned PIDs were confirmed stopped.
+
+Capture names are `gold-<state>.png` and `candidate-<state>.png`; readback
+receipts use the same stems with `.json`. Comparison sets are
+`figures-final-<state>/comparison.json`, with `<region>-gold.png`,
+`<region>-mix.png`, `<region>-side-by-side.png` and `<region>-diff.png`.
+The private `round4-evidence-index.json` indexes eleven release/repair runs,
+all generated comparison receipts and cleanup records. Each final run keeps
+its executed `harness.mix`; prior failures remain separate.
+
+Overall acceptance remains **OPEN**. Opus owns the checkpoint merge of the
+accepted shared native_document editor and New macro field support. After
+that merge, macro editor/New-dialog and Ced/Dopus window effects need native
+repetition, followed by the full exact-source release gate and native release
+verification including both Traffic repairs. The release Bus, macro storage
+and execution, repaired menus, live Prefs, compact diagnostic and two raster
+edge-case checks above are complete. No proposed deviation or C1 waiver is
+pending; the missing integrated capability is not labelled accepted.
