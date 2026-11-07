@@ -152,3 +152,29 @@ release performance and exact-source artifact validation are outstanding.
 No Fable deviation or question is proposed.
 
 branch lab/parity-dopus; head d1b655a (implementation SHA; receipt commit separately); parity evidence: frame adopted, scan-budget tests PASS at c10e6f7, features/Bus/Prefs OPEN, diagnostic SSIM whole 0.0466528 and regions recorded, no visual acceptance; CBC 20261107-112139-11c64519-a1 PASS, 20261107-114033-a67ba1a0 QUEUED.
+
+## Dopus round two — repair checkpoint
+
+Generic `viu run` now owns the native host and chooser presenter. The Dopus
+Rust package and comparator are retired; Mix retains application policy.
+The shared frame, native panel sizing, Places rows, location/pane/footer flow,
+macro icon, text-only status, dialogs and native search have been repaired.
+Gold's flat Theme menu, UI command IDs, separators and Ctrl+Slash binding
+replace incorrect inventory data. Targeted navigation preserves focus; mail
+holds its native receipt until completion. Native config-root resolution,
+launch forwarding, headless hosting and config-save debounce are present.
+
+The last inspected diagnostic has exact header/Places/Properties/status
+regions; pane distortion is 3.14659e-6, traced to outline paint order. The
+following generic repair paints the dock outline before its content, as gold
+does. This is not visual acceptance. The oracle completed 17 live Prefs
+variants on one process; candidate and final release witnesses remain open.
+
+CBC `20261107-124448-c8da34aa`: diagnostic scoped gate passed 65 library and
+11 focused tests, checks/Clippy, release bulk measurement and binary build.
+Later debug jobs passed the 11 focused tests and exported capture artifacts.
+Final exact-source release gate and handoff will run on cbc2/cbc3. Superseded
+heavy job `dopus-r2-final-3b53be1` was cancelled while queued, before execution.
+No installation or desktop action. No Fable deviation is proposed.
+
+branch lab/parity-dopus; head SHA 89db78f397c5c976bff2cea06aed67709eb41180 (implementation; receipt HEAD is the commit containing this checkpoint); OPEN: final features/44-descriptor and 33-action Bus/Prefs/release visual acceptance; CBC 20261107-124448-c8da34aa PASS diagnostic, 20261107-124952-1908ef48 PASS debug, 20261107-130315-f559f07f and 20261107-131012-f398b6e1 PASS checks with formatting returned, dopus-r2-final-3b53be1 cancelled before execution.

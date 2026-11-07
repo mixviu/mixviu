@@ -1090,7 +1090,9 @@ impl Widgets {
                 // The key which ends editing belongs to the field this frame.
                 let r = if let Some(name) = widget.properties["accessible_name"].as_str() {
                     r.accessible_name(name)
-                } else { r };
+                } else {
+                    r
+                };
                 self.text_input_active |= r.has_focus()
                     || (r.lost_focus()
                         && ui.input(|i| {

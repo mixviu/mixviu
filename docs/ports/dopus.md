@@ -119,3 +119,40 @@ host artifact. It must return its formatting patch, followed by a clean
 exact-source gate. Superseded queued jobs `20261107-112707-102d6304`,
 `20261107-112921-92b8ec74`, `20261107-113446-ec29f120` and
 `20261107-113825-38f97644` were explicitly cancelled before execution.
+
+## Round two repair checkpoint
+
+The per-app Cargo package, host and Rust comparator have been retired. Dopus
+now runs through `viu run`; the chooser presenter is a reusable Viu facility,
+with chooser policy retained in Mix. Retained chooser, raw-name, filesystem,
+config, form and opener checks run with the shared library. Bulk scanning and
+projection remain in place, including the atomic two-pane budget refusal.
+
+The generic host now evaluates optional bounded Mix launch policy before
+activation or window creation. Dopus owns path parsing, native config-root
+selection, print-config and activation arguments in `launch.mix`; Viu supplies
+native activation and a headless loop. App persistence uses the existing
+native one-shot timer and atomic replacement facilities.
+
+The gold native menu probe corrected the inventory: Theme is one flat menu,
+with `view.theme.*`, `view.mode.*`, `view.style.*`, decoration and caption IDs;
+its separators, labels and order matter. The Bus action table remains the
+original 33 entries. `view.search` and the live Ctrl+Slash shortcut are UI
+commands. Same-column sort toggles direction in the gold core. Targeted
+navigation preserves keyboard focus. Mail uses an owned native reply receipt
+until the Email result arrives, including BUSY attachment fallback.
+
+CBC `20261107-124448-c8da34aa` passed the 65 library tests, 11 focused tests,
+checks, Clippy, release bulk profile and binary build at `0a6b42d69bf6`, with
+no worker diff. This light-worker run is diagnostic; final release acceptance
+and the artifact handoff must use cbc2/cbc3. Subsequent debug repair jobs
+`20261107-124952-1908ef48`, `20261107-130315-f559f07f` and
+`20261107-131012-f398b6e1` passed the 11 focused checks and built the generic
+host. The latter two returned formatting patches, which have been applied.
+
+Private paired diagnostics now show pixel-identical header, Places,
+Properties and status regions. Remaining pixels were traced to the pane
+outline being painted after its contents; gold paints it first. The repair
+awaits the next paired capture. The gold witness separately completed 17
+live settings variants on one unchanged process. Full candidate behaviour,
+Prefs, release-byte revalidation and acceptance remain **OPEN**.
