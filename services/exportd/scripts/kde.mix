@@ -11,7 +11,8 @@
 -- exportd.kde.reconcile, so the next revision does not write the look back.
 --
 -- Environment: MIX_SETTINGS_INSTANCE (default: this node's name),
--- MIX_EXPORTD_KDE_DRY=1 (plan only), MIX_EXPORTD_KDE_STATE (undo record),
+-- MIX_EXPORTD_KDE_DRY=1 (plan only), MIX_EXPORTD_KDE_HOME=1 (allow writing the
+-- home directory's own .config; otherwise a dry run), MIX_EXPORTD_KDE_STATE (undo record),
 -- MIX_EXPORTD_KDE_RECONFIGURE=0 (no D-Bus calls), and for tests
 -- MIX_EXPORTD_KDE_KWRITECONFIG / MIX_EXPORTD_KDE_BUSCTL (JSON argv).
 $map = require("lib/kde_map.mix")
@@ -24,10 +25,18 @@ if $instance == "" then raise("BINDING", "kde-export needs MIX_SETTINGS_INSTANCE
 -- The topic names in the `on` lines below are static, so the profile is too.
 $binding = {instance: $instance, profile: "default"}
 $dry = env("MIX_EXPORTD_KDE_DRY", "0") == "1"
+-- Writing a real Plasma home is opt-in: unless MIX_EXPORTD_KDE_HOME=1, a
+-- config home that is the home directory's own .config gets a dry run only
+-- (a shared desk can bind the host user's home).
+$home_guard = nil
+if env("MIX_EXPORTD_KDE_HOME", "") != "1" and (env("XDG_CONFIG_HOME", "") == "" or env("XDG_CONFIG_HOME", "") == env("HOME", "") .. "/.config") then
+  $home_guard = "the config home is the home directory's own .config: set MIX_EXPORTD_KDE_HOME=1 to export there"
+  $dry = true
+end
 $ctx = $app.new_context()
 $source = env("MIX_SETTINGS_SERVICE", "settingsd")
 $pause_file = $ctx.state_dir .. "/paused"
-$status = {binding: $binding, dry: $dry, revision: nil, incarnation: nil, gated: false, paused: is_file($pause_file), last: nil, error: nil, runs: 0}
+$status = {binding: $binding, dry: $dry, home_guard: $home_guard, revision: nil, incarnation: nil, gated: false, paused: is_file($pause_file), last: nil, error: nil, runs: 0}
 -- Retained for the command helpers; palettes are read at each record identity.
 $palette_cache = {key: nil, answer: nil}
 
