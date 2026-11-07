@@ -589,3 +589,47 @@ Next gate `term-zoom-persist-f0d36085` at
 `f0d3608585f7791e4b3f536a6a6c78237466f26d`. Exact-source zoom persistence
 tests, native conflict/failure/reconnect/reset races and release evidence
 are still required. Overall **NOT ACCEPTED**.
+
+### Zoom recovery and new-session Prefs checkpoint
+
+`term-zoom-persist-f0d36085-a1` passed: 139 terminal tests, five existing
+ignores, seven input tests, two bundle tests, six Mix suites, search/dialog
+checks, foreign gate and debug host build. Complete saved log read; the
+fmt-only patch was applied in 9ba8cd5b. Fetched debug executable SHA256
+`63e08b125d12ac9abfca9014848d14a6816739ed22f752650455ecbab4c58632`.
+Native `native.8KmDfR` verifies persisted size exactly equals observed
+native f32 `15.333666801452637`, reset cancels the next unwritten zoom,
+and all tracked processes stop. Its initial same-command session PNG is
+byte-identical to gold (e31900b2f10ca55d792ca7556b5f19da05f151dcbb4ba000d334f9834a994865).
+These are debug witnesses, not final release acceptance.
+
+Authority-return comparison exposed an app defect: a missing settingsd
+read returns rc=10/body=null, and the unguarded field access left the
+persistence machine reading forever. Gold `native.4KfmwO` recovers;
+candidate `native.78tJtT` and traced `native.YaCgRO` retain the failure
+and all-stopped receipts. e1278485 normalises failed/empty/malformed job
+replies before applying the persistence event; regression cases cover
+null bodies and job failures. The pure machine's no-timer-retry rule is
+unchanged. An earlier outer harness timeout (`native.9qAtHu`) required
+explicit owned-process cleanup, recorded separately; no live service was
+touched. The harness now runs directly without the 30-second wrapper.
+
+Gold config changes affect TERM/history capacity only on new shells.
+The port now forwards `terminal.env.term` and the correct
+`terminal.scrollback.lines` key for tab and split creation. Dispatch
+tests verify profile arguments and preservation of existing sessions.
+Composite diagnostic `native.dWebDK` (f0d36085 executable plus scoped
+e1278485 Mix runtime changes) passes settings authority loss/return,
+retained local zoom saved as `16.000333786010742` on unchanged app PID,
+new shell `TERM=vt100`, history readback exactly 17 lines, and cleanup.
+`native.nSfFg8` retains the earlier wrong harness history-field assertion;
+its snapshot already returned 21 screen +17 history lines. No app change
+was made to satisfy that assertion. Six Mix suites pass after repairs.
+
+Next exact-source gate: `term-zoom-recovery-e1278485` at
+`e1278485b79544767f9b9416630c4a80968f0eca`, including applied worker fmt.
+Fetch the matching executable/bundle and repeat the native witness before
+claiming this checkpoint exact. Native conflict/refusal/in-flight reset,
+verified session issuer/control and sealed Mix shell integration, full
+Bus/clipboard/primary/OSC52/mouse/IME/Prefs, and final release captures
+remain open. Overall **NOT ACCEPTED**. No deviation or Fable question.
