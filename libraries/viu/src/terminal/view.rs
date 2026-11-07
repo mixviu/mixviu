@@ -354,6 +354,65 @@ mod tests {
     }
 
     #[test]
+    fn pane_readbacks_are_widget_local_while_pointer_areas_stay_in_the_window() {
+        let sessions = Sessions::fixture();
+        for handle in ["vt-2", "vt-3", "vt-4"] {
+            sessions.fixture_pane(handle, b"pane geometry");
+        }
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx, 400, 600);
+        let mut views = Views::default();
+        let widget = Widget::new("split", "terminal", "Terminal", json!(null));
+        let sibling = Widget::new("sibling", "terminal", "Terminal", json!(null));
+        let layout = json!({"dir":"v","ratio":0.5,"first":"vt-1",
+            "second":{"dir":"h","ratio":0.5,"first":"vt-2","second":"vt-3"}});
+        let expected = [
+            ("vt-1", [0.0, 0.0, 300.0, 400.0]),
+            ("vt-2", [300.0, 0.0, 300.0, 200.0]),
+            ("vt-3", [300.0, 200.0, 300.0, 200.0]),
+        ];
+        for origin in [egui::pos2(32.0, 70.0), egui::pos2(45.0, 110.0)] {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1000.0, 700.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    let mut child = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(Rect::from_min_size(origin, egui::vec2(600.0, 400.0)))
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                    );
+                    views.draw(&mut child, &widget, &layout, &sessions, &mut Vec::new());
+                    for (placement, (handle, rect)) in views.placements.iter().zip(expected) {
+                        assert_eq!(placement.handle, handle);
+                        assert_eq!(placement.area.min, origin + egui::vec2(rect[0], rect[1]));
+                        assert_eq!(placement.area.size(), egui::vec2(rect[2], rect[3]));
+                    }
+                    let mut other = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(Rect::from_min_size(
+                                egui::pos2(740.0, 65.0),
+                                egui::vec2(120.0, 100.0),
+                            ))
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                    );
+                    views.draw(&mut other, &sibling, &json!("vt-4"), &sessions, &mut Vec::new());
+                    assert_eq!(views.placements[0].area.min, egui::pos2(740.0, 65.0));
+                },
+            )
+            .drop_without_applying_deltas();
+            for (handle, rect) in expected.into_iter().chain([("vt-4", [0.0, 0.0, 120.0, 100.0])]) {
+                let state = sessions.call("state", handle, json!({})).unwrap();
+                assert_eq!(state["geometry"], json!({"x":rect[0],"y":rect[1],"w":rect[2],"h":rect[3]}));
+            }
+        }
+    }
+
+    #[test]
     fn malformed_and_aliased_layouts_are_refused() {
         assert!(validate(&json!({"dir":"v","ratio":0.5,"first":"vt-1","second":"vt-2"})).is_ok());
         for value in [
@@ -637,6 +696,7 @@ pub struct Views {
     mice: BTreeMap<String, super::pointer::Mouse>,
     mouse_seen: std::collections::BTreeSet<String>,
     placements: Vec<super::pointer::Placement>,
+    layout_origin: egui::Pos2,
 }
 
 impl Views {
@@ -861,6 +921,7 @@ impl Views {
     ) -> Response {
         self.mouse_seen.insert(widget.id.clone());
         self.placements.clear();
+        self.layout_origin = ui.available_rect_before_wrap().min;
         let response = self.draw_leaf(ui, widget, value, sessions, events);
         let another_grab = self
             .mice
@@ -1137,7 +1198,16 @@ impl Views {
             cols.saturating_mul(cell.0 as u16),
             rows.saturating_mul(cell.1 as u16),
         );
-        sessions.placed(handle, area, cell, scale, font_px);
+        // Session geometry is local to this compound widget, as Gold's pane
+        // readbacks and directional focus expect. Pointer/IME rectangles stay
+        // in window coordinates below.
+        sessions.placed(
+            handle,
+            area.translate(-self.layout_origin.to_vec2()),
+            cell,
+            scale,
+            font_px,
+        );
         self.placements.push(super::pointer::Placement {
             handle: handle.into(),
             id,
