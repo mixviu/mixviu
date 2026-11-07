@@ -86,6 +86,47 @@ fn scrolling_column_keeps_its_authored_padding() {
 }
 
 #[test]
+fn an_empty_dialog_error_does_not_reserve_an_invisible_row() {
+    let mut heights = Vec::new();
+    for error in [None, Some(""), Some("Name refused")] {
+        let mut value = json!({
+            "open":true,"title":"New Folder","body":"","field":"New Folder",
+            "field_fill":true,"instance":1,
+            "choices":[{"id":"ok","label":"OK","enabled":true,"default":true},
+                {"id":"cancel","label":"Cancel","enabled":true,"cancel":true}]
+        });
+        if let Some(error) = error {
+            value["error"] = json!(error);
+        }
+        let source = scene(json!({"root":{"widget":"control","definition":{
+            "id":"root","kind":"dialog-form","label":"",
+            "properties":{"style":"gold"},"initial":value
+        }}}));
+        let mut view = SceneView::new(&source).unwrap();
+        let ctx = egui::Context::default();
+        viu::appearance::install(&ctx);
+        for _ in 0..3 {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1040.0, 680.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            )
+            .drop_without_applying_deltas();
+        }
+        heights.push(view.geometry["root"].height());
+    }
+    assert_eq!(heights[0], heights[1]);
+    assert!(heights[2] > heights[1], "a real error must remain visible");
+}
+
+#[test]
 fn hosted_menu_popup_survives_a_hidden_client_band_and_returns_to_the_row() {
     let source = scene(
         json!({"root":{"widget":"column","children":["band"]},"band":{"widget":"column","hidden":"= $model.hidden","children":["menu"]},"menu":{"widget":"control","definition":{"id":"menu","kind":"menubar","label":"","initial":[]},"on_intent":"menu.intent"}}),

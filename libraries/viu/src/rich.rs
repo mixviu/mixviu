@@ -1357,7 +1357,7 @@ fn gold_dialog(
                 if !edits.is_empty(){emit(events,id,"edit",Value::Object(edits));}
             });
         }
-        if let Some(error)=value["error"].as_str(){if value["error_warning"]==true{ui.add_space(6.0);}ui.colored_label(if value["error_warning"]==true{ui.visuals().warn_fg_color}else{ui.visuals().error_fg_color},error);}
+        if let Some(error)=value["error"].as_str().filter(|error| !error.is_empty()){if value["error_warning"]==true{ui.add_space(6.0);}ui.colored_label(if value["error_warning"]==true{ui.visuals().warn_fg_color}else{ui.visuals().error_fg_color},error);}
         if let Some(lines)=value["lines"].as_str(){
             let max_height=ui.ctx().content_rect().height()*toolkit::chrome::Chrome::of(ui.ctx()).style.dialog_resize_max_share as f32/2.0;
             egui::ScrollArea::vertical().max_height(max_height).show(ui,|ui|{ui.label(lines);});
