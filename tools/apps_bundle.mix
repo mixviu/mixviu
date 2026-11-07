@@ -58,6 +58,7 @@ end
 fn runtime_file($f)
   $base = basename($f)
   if ends_with($f, ".rs") or $base == "Cargo.toml" or contains($f, "/src/") or contains($f, "/rust-core/") then return false end
+  if contains($f, "/units/") then return false end
   if contains($f, "/tests/") or ends_with($base, "-test.mix") or ends_with($base, "_test.mix") then return false end
   if $base == "gate.mix" or $base == "capture-build.mix" then return false end
   return true
@@ -81,13 +82,13 @@ for $svc in ["clipd", "notifyd", "exportd", "dlnad"]
   $base = "services/" .. $svc .. "/scripts/"
   for $f in tracked($base) place($stage, $f, "lib/" .. $svc .. "/" .. substr($f, len($base))) end
 end
--- Every unit template the engines, their personalities and the Mix services
--- carry (desk-specific drop-ins and session targets are the desk image's).
+-- Every unit template the engines, their personalities, the Mix services and
+-- the apps carry (desk-specific drop-ins and session targets are the desk image's).
 -- sysusers/tmpfiles snippets are prefixed with their owner when not already.
 for $f in tracked(".")
   $unit = re_match($f, "\\.(service|socket|target|slice|timer|path)$")
   $snippet = contains($f, "/units/") and ends_with($f, ".conf")
-  if ($unit or $snippet) and (starts_with($f, "engines/") or starts_with($f, "services/")) and not contains($f, "/tests/") then
+  if ($unit or $snippet) and (starts_with($f, "engines/") or starts_with($f, "services/") or starts_with($f, "apps/")) and not contains($f, "/tests/") then
     $owner = split($f, "/")[1]
     $name = basename($f)
     if $snippet and not starts_with($name, $owner .. ".") then $name = $owner .. "." .. $name end

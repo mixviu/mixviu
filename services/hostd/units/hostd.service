@@ -19,7 +19,7 @@ TimeoutStopSec=90
 # through net.link.apply and net.wg.apply, only its own 50-hostd-* files
 # in /etc/systemd/network. Each new write command adds exactly the paths it
 # needs.
-StateDirectory=hostd
+StateDirectory=mix/hostd
 StateDirectoryMode=0700
 ReadWritePaths=/etc/systemd/network
 ProtectSystem=strict
