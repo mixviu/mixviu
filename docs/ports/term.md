@@ -247,3 +247,37 @@ Next exact-source gate: `term-events-drain-ca019e3`; then repeat native
 topic/lifecycle evidence on its verified artifact. Full gold shell/native
 authority, menus/actions/Bus, input/clipboard/search/IME, live Prefs and
 release visual acceptance remain open.
+
+## Exact topic drain; gold command registry checkpoint
+
+CBC `term-events-drain-ca019e3-a1` passed at
+`ca019e33aada1112b34cacdbf4351ffa14f12eb4`, with no worker diff: four
+Mix suites, both bundle tests, 135 native tests/five ignores, dependency
+gate and debug host. Complete log read. Verified debug SHA256 remains
+`ee189b5838344d4e988d34c2c4655fdc5ca5a9ba13b55f591502e1e2460f085e`
+(the source change was entirely Mix). Private native.BG1pld now repeats
+the topic/lifecycle/final-close witness with matching executable/source,
+without composite repairs. All tracked PIDs stopped.
+
+Pinned gold native.oBJRB9 supplies its complete term.actions and native
+menu-list replies, archived privately. Its normal Quit again exceeded
+the eight-second harness bound; finally stopped the tracked processes.
+This repeated gold shutdown issue is retained as evidence, not accepted
+as a port requirement to hang or a new Fable request.
+
+Code `d85560415c58ce2ae023edc12dcf2461063e5e42` adopts all 61 registry
+entries, six menu trees, four toolbar actions and command chords as data.
+Mix owns dynamic enablement, target resolution, tab/pane navigation,
+directional geometry fallback, themes, zoom steps, clipboard effects,
+macro/help/search state and execute replies. Command search is a reusable
+Viu control; clipboard operations use the shared in-process platform
+facility, and existing native macro ownership is enabled. Five local Mix
+suites pass. New native command-search admission tests are in its owning
+library and added to the scoped gate.
+
+This checkpoint does not claim action parity. Native callbacks and menu
+pixels await `term-actions-d855604`. In particular zoom persistence,
+full action-state metrics, live binding resolution, complete About text,
+action-topic overflow and the broader Bus contract need further work.
+The verified session supervisor, input/clipboard/IME/search completeness,
+full live Prefs and exact release acceptance remain open. NOT ACCEPTED.

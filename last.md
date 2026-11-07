@@ -480,4 +480,37 @@ native issuer/control and Mix shell integration, input/clipboard/IME/
 search, full live Prefs and release visual acceptance. NOT ACCEPTED;
 no Fable question, install, VT change or gold change.
 
-branch: lab/parity-term; head SHA: ca019e33aada1112b34cacdbf4351ffa14f12eb4 (code; receipt HEAD contains this checkpoint); open items: exact drain gate/native repeat, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-change-events-9b53f0d-a1 (green), term-events-drain-ca019e3 (next await).
+## Exact topic drain green; command registry checkpoint
+
+Read full term-events-drain-ca019e3-a1 log: green, no worker diff;
+four Mix suites/two bundle tests/135 native tests/five ignores plus
+dependency gate and host build. Verified matching debug bytes (same
+SHA256 as 9b53f0d: ee189b58..., source changes only Mix). Private
+native.BG1pld reruns real lifecycle, topic sequence and final-close
+drain against exact ca019e3 bundle/artifact; passed and tracked PIDs
+stopped. No composite bytes in this witness.
+
+Captured pinned gold term.actions and native menu list in native.oBJRB9;
+retained its repeated normal-Quit timeout and finally cleanup. Imported
+only public registry/menu data, source/hash provenance recorded.
+
+Code d85560415c58ce2ae023edc12dcf2461063e5e42 adds 61 gold actions,
+File/Edit/View/Pane/Tabs/Help menus, standard four-icon tail, default
+chords and dynamic enablement. Mix handles tab/pane commands, directional
+focus with tree fallback, themes, zoom steps, clipboard effects, macro
+and help/search state. Shared native command-search control validates
+enabled command identity; help grid supports gold striped/monospace
+rendering without changing other users' defaults. Five local Mix suites
+pass; scoped CBC adds the owning command-search admission test.
+
+Next term-actions-d855604 exact-source prepare gate with automatic
+resumption. Read full log/apply worker fmt/repeat exact source if changed;
+fetch matching artifact and run isolated gold/candidate registry/menu/
+execute/native key/dialog/theme/clipboard witnesses and matched captures.
+Action-state currently lacks full pane/cell/scale reply metrics; zoom
+persistence, complete About body, keymap rebinding, action-topic overflow
+and full Bus matching remain open. Continue verified native session/
+control/shell integration, input/clipboard/IME/search, full live Prefs
+and release acceptance. NOT ACCEPTED. Gold untouched; no Fable question.
+
+branch: lab/parity-term; head SHA: d85560415c58ce2ae023edc12dcf2461063e5e42 (code; receipt HEAD contains this checkpoint); open items: command registry native gate/callbacks/captures, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release acceptance; CBC job ids: term-events-drain-ca019e3-a1 (green), term-actions-d855604 (next await).
