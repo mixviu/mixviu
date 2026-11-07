@@ -59,7 +59,9 @@ fn canonical_wire(command: &str, registered: &str, namespace: &str) -> Option<St
         return Some(command.into());
     }
     if command.starts_with(&format!("{registered}.")) {
-        return Some(crate::native_registration::rename(command, registered, namespace));
+        return Some(crate::native_registration::rename(
+            command, registered, namespace,
+        ));
     }
     (!command.contains('.')).then(|| command.to_owned())
 }
@@ -175,7 +177,15 @@ impl Endpoint {
         wake: crate::runtime::Wake,
         help: Option<Value>,
     ) -> Self {
-        Self::start_described_policy(name, url, commands, quit_command, wake, help, Policy::default())
+        Self::start_described_policy(
+            name,
+            url,
+            commands,
+            quit_command,
+            wake,
+            help,
+            Policy::default(),
+        )
     }
     pub fn start_described_policy(
         name: String,
@@ -566,13 +576,29 @@ mod tests {
     use super::*;
     #[test]
     fn selected_namespace_refuses_other_instances_but_keeps_host_controls() {
-        assert_eq!(canonical_wire("term-42.tabs", "term-42", "term"), Some("term.tabs".into()));
-        assert_eq!(canonical_wire("term.other.ui.capture", "term.other", "term"), Some("term.ui.capture".into()));
+        assert_eq!(
+            canonical_wire("term-42.tabs", "term-42", "term"),
+            Some("term.tabs".into())
+        );
+        assert_eq!(
+            canonical_wire("term.other.ui.capture", "term.other", "term"),
+            Some("term.ui.capture".into())
+        );
         for command in ["term.tabs", "term-420.tabs", "other.tabs"] {
             assert_eq!(canonical_wire(command, "term-42", "term"), None);
         }
-        for command in ["HELP", "INFO", "help", "app.describe", "app.quit", "viu.capture"] {
-            assert_eq!(canonical_wire(command, "term-42", "term"), Some(command.into()));
+        for command in [
+            "HELP",
+            "INFO",
+            "help",
+            "app.describe",
+            "app.quit",
+            "viu.capture",
+        ] {
+            assert_eq!(
+                canonical_wire(command, "term-42", "term"),
+                Some(command.into())
+            );
         }
     }
     #[test]
@@ -580,7 +606,11 @@ mod tests {
         let text = json!("line one\nquote: \"unicode 中\"\n");
         assert_eq!(wire_body(&text, true), "line one\nquote: \"unicode 中\"\n");
         assert_eq!(wire_body(&text, false), text.to_string());
-        for value in [json!({"shown":true,"target":{"id":7}}), json!([{"name":"HELP"}]), json!(null)] {
+        for value in [
+            json!({"shown":true,"target":{"id":7}}),
+            json!([{"name":"HELP"}]),
+            json!(null),
+        ] {
             assert_eq!(wire_body(&value, true), value.to_string());
         }
     }

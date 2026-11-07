@@ -211,10 +211,12 @@ impl Host {
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
-                self.unknown_reply.clone().unwrap_or_else(|| self.unknown_command.as_ref().map_or_else(
-                    || json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
-                    |message| json!({"error_code":"UNKNOWN_COMMAND","message":message}),
-                )),
+                self.unknown_reply.clone().unwrap_or_else(|| {
+                    self.unknown_command.as_ref().map_or_else(
+                        || json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
+                        |message| json!({"error_code":"UNKNOWN_COMMAND","message":message}),
+                    )
+                }),
             ));
             return;
         }
