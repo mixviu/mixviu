@@ -2,12 +2,7 @@
 //! Reusable terminal surface. Mix supplies session handles, focus requests,
 //! appearance and shortcut bindings; native output stays in native storage.
 use super::{
-    config::Cursor,
-    gpu::Pane,
-    ime::Composition,
-    input,
-    model::MouseModifiers,
-    raster::Raster,
+    config::Cursor, gpu::Pane, ime::Composition, input, model::MouseModifiers, raster::Raster,
     sessions::Sessions,
 };
 use crate::widgets::{Intent, Widget};
@@ -431,32 +426,100 @@ mod tests {
 #[cfg(test)]
 mod pointer_order_tests {
     use super::*;
-    use rio_vt::{corcovado::channel,event::Msg};
-    fn read(receiver:&channel::Receiver<Msg>)->Vec<u8> {
-        let mut out=Vec::new();while let Ok(message)=receiver.try_recv() {if let Msg::Input(bytes)=message {out.extend_from_slice(&bytes);}}out
+    use rio_vt::{corcovado::channel, event::Msg};
+    fn read(receiver: &channel::Receiver<Msg>) -> Vec<u8> {
+        let mut out = Vec::new();
+        while let Ok(message) = receiver.try_recv() {
+            if let Msg::Input(bytes) = message {
+                out.extend_from_slice(&bytes);
+            }
+        }
+        out
     }
     #[test]
     fn typing_before_and_after_a_same_frame_click_reaches_the_correct_pane() {
-        let sessions=Sessions::fixture();sessions.fixture_pane("vt-2",b"second");
-        let first=sessions.get("vt-1").unwrap().lock().unwrap().listener.test_input_receiver();
-        let second=sessions.get("vt-2").unwrap().lock().unwrap().listener.test_input_receiver();
-        let mut views=Views::default();let ctx=egui::Context::default();crate::fonts::install(&ctx,400,600);
-        let tree=json!({"dir":"v","ratio":0.5,"first":"vt-1","second":"vt-2"});
-        let mut widget=Widget::new("vt","terminal","Terminal",tree.clone());
-        widget.properties=json!({"focus_serial":1,"focused_handle":"vt-1"});
+        let sessions = Sessions::fixture();
+        sessions.fixture_pane("vt-2", b"second");
+        let first = sessions
+            .get("vt-1")
+            .unwrap()
+            .lock()
+            .unwrap()
+            .listener
+            .test_input_receiver();
+        let second = sessions
+            .get("vt-2")
+            .unwrap()
+            .lock()
+            .unwrap()
+            .listener
+            .test_input_receiver();
+        let mut views = Views::default();
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx, 400, 600);
+        let tree = json!({"dir":"v","ratio":0.5,"first":"vt-1","second":"vt-2"});
+        let mut widget = Widget::new("vt", "terminal", "Terminal", tree.clone());
+        widget.properties = json!({"focus_serial":1,"focused_handle":"vt-1"});
         for _ in 0..2 {
-            ctx.run_ui(egui::RawInput {screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,560.0))),..Default::default()},|ui| {views.draw(ui,&widget,&tree,&sessions,&mut Vec::new());}).drop_without_applying_deltas();
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 560.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    views.draw(ui, &widget, &tree, &sessions, &mut Vec::new());
+                },
+            )
+            .drop_without_applying_deltas();
         }
-        let pos=views.placements.iter().find(|p|p.handle=="vt-2").unwrap().grid.center();
-        let mut intents=Vec::new();
-        ctx.run_ui(egui::RawInput {screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,560.0))),events:vec![
-            egui::Event::Text("before".into()),egui::Event::PointerMoved(pos),
-            egui::Event::PointerButton {pos,button:egui::PointerButton::Primary,pressed:true,modifiers:Default::default()},
-            egui::Event::Text("after".into()),
-            egui::Event::PointerButton {pos,button:egui::PointerButton::Primary,pressed:false,modifiers:Default::default()},
-        ],..Default::default()},|ui| {views.draw(ui,&widget,&tree,&sessions,&mut intents);}).drop_without_applying_deltas();
-        assert_eq!(read(&first),b"before");assert_eq!(read(&second),b"after");
-        assert!(intents.iter().any(|intent|intent.action=="focus" && intent.value=="vt-2"));
+        let pos = views
+            .placements
+            .iter()
+            .find(|p| p.handle == "vt-2")
+            .unwrap()
+            .grid
+            .center();
+        let mut intents = Vec::new();
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900.0, 560.0),
+                )),
+                events: vec![
+                    egui::Event::Text("before".into()),
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: Default::default(),
+                    },
+                    egui::Event::Text("after".into()),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: Default::default(),
+                    },
+                ],
+                ..Default::default()
+            },
+            |ui| {
+                views.draw(ui, &widget, &tree, &sessions, &mut intents);
+            },
+        )
+        .drop_without_applying_deltas();
+        assert_eq!(read(&first), b"before");
+        assert_eq!(read(&second), b"after");
+        assert!(
+            intents
+                .iter()
+                .any(|intent| intent.action == "focus" && intent.value == "vt-2")
+        );
     }
 }
 
@@ -469,128 +532,95 @@ pub struct Views {
     clipboard: input::ClipboardInput,
     modifiers: egui::Modifiers,
     wheels: input::Wheels,
-    mice: BTreeMap<String,super::pointer::Mouse>,
+    mice: BTreeMap<String, super::pointer::Mouse>,
     mouse_seen: std::collections::BTreeSet<String>,
     placements: Vec<super::pointer::Placement>,
 }
 
 impl Views {
-    fn sync_keyboard_focus(&mut self,widget:&Widget,active:Option<&str>)->bool {
-        if active.is_none() && self.focused_widget.as_deref()!=Some(widget.id.as_str()) {return false;}
-        if self.focused.as_deref()==active {return false;}
-        self.composition.focus(active.and_then(|handle|handle.strip_prefix("vt-")).and_then(|s|s.parse().ok()));
-        if let Some(old)=self.focused.as_ref().and_then(|handle|self.surfaces.get_mut(handle)) {old.preedit.clear();}
-        self.focused=active.map(str::to_owned);
-        self.focused_widget=active.map(|_|widget.id.clone());
-        self.clipboard=input::ClipboardInput::default();self.modifiers=egui::Modifiers::NONE;
+    fn sync_keyboard_focus(&mut self, widget: &Widget, active: Option<&str>) -> bool {
+        if active.is_none() && self.focused_widget.as_deref() != Some(widget.id.as_str()) {
+            return false;
+        }
+        if self.focused.as_deref() == active {
+            return false;
+        }
+        self.composition.focus(
+            active
+                .and_then(|handle| handle.strip_prefix("vt-"))
+                .and_then(|s| s.parse().ok()),
+        );
+        if let Some(old) = self
+            .focused
+            .as_ref()
+            .and_then(|handle| self.surfaces.get_mut(handle))
+        {
+            old.preedit.clear();
+        }
+        self.focused = active.map(str::to_owned);
+        self.focused_widget = active.map(|_| widget.id.clone());
+        self.clipboard = input::ClipboardInput::default();
+        self.modifiers = egui::Modifiers::NONE;
         true
     }
-    fn keyboard(&mut self,widget:&Widget,handle:&str,event:&egui::Event,sessions:&Sessions,events:&mut Vec<Intent>) {
-        let Ok(owner)=sessions.get(handle) else {return};
-        let terminal=owner.lock().unwrap();let p=&widget.properties;
-        let Some(surface)=self.surfaces.get_mut(handle) else {return};
-        let pane_id=handle.strip_prefix("vt-").and_then(|s|s.parse::<u64>().ok());            self.focused = Some(handle.into());
-            self.composition.focus(pane_id);
-            let input_events = std::iter::once(event.clone());
-            for event in input_events {
-                if matches!(
-                    &event,
-                    egui::Event::Key { pressed: true, .. }
-                        | egui::Event::Text(_)
-                        | egui::Event::Ime(egui::ImeEvent::Commit(_))
-                ) {
-                    sessions.activity();
-                }
-                if let egui::Event::ModifiersChanged(modifiers) = &event {
-                    self.modifiers = *modifiers;
-                    self.wheels.modifiers_changed(*modifiers);
-                }
-                if let Some(clipboard) = self.clipboard.event(&event, self.modifiers) {
-                    let result = match clipboard {
-                        input::Clipboard::Keys(keys) => {
-                            surface.blink.activity(Instant::now());
-                            terminal.keys(&keys, Instant::now())
-                        }
-                        input::Clipboard::Ignore => Ok(()),
-                        clipboard => {
-                            let value = match clipboard {
-                                input::Clipboard::Copy => json!({"kind":"copy","handle":handle}),
-                                input::Clipboard::Cut => json!({"kind":"cut","handle":handle}),
-                                input::Clipboard::Paste(text) => {
-                                    json!({"kind":"paste","handle":handle,"text":text})
-                                }
-                                _ => unreachable!(),
-                            };
-                            events.push(Intent {
-                                id: widget.id.clone(),
-                                action: "clipboard".into(),
-                                value,
-                            });
-                            Ok(())
-                        }
-                    };
-                    if let Err(error) = result {
-                        events.push(Intent {
-                            id: widget.id.clone(),
-                            action: "error".into(),
-                            value: json!(error),
-                        });
-                    }
-                    continue;
-                }
-                let result = match event {
-                    egui::Event::Key {
-                        key,
-                        pressed: true,
-                        modifiers,
-                        repeat,
-                        ..
-                    } => {
-                        let command = shortcut(p, key, modifiers, terminal.alternate_screen());
-                        if let Some(command) = command {
-                            if !repeat || command["repeat"] == true {
-                                events.push(Intent {
-                                    id: widget.id.clone(),
-                                    action: "command".into(),
-                                    value: command["command"].clone(),
-                                });
-                            }
-                            Ok(())
-                        } else {
-                            let keys = input::keys_for(key, modifiers);
-                            if !keys.is_empty() {
-                                surface.blink.activity(Instant::now());
-                            }
-                            terminal.keys(&keys, Instant::now())
-                        }
-                    }
-                    egui::Event::Text(text)
-                        if !self.composition.has_owner() && !self.composition.stale() =>
-                    {
-                        let keys = input::typed(&text, self.modifiers);
-                        if !keys.is_empty() {
-                            surface.blink.activity(Instant::now());
-                        }
+    fn keyboard(
+        &mut self,
+        widget: &Widget,
+        handle: &str,
+        event: &egui::Event,
+        sessions: &Sessions,
+        events: &mut Vec<Intent>,
+    ) {
+        let Ok(owner) = sessions.get(handle) else {
+            return;
+        };
+        let terminal = owner.lock().unwrap();
+        let p = &widget.properties;
+        let Some(surface) = self.surfaces.get_mut(handle) else {
+            return;
+        };
+        let pane_id = handle
+            .strip_prefix("vt-")
+            .and_then(|s| s.parse::<u64>().ok());
+        self.focused = Some(handle.into());
+        self.composition.focus(pane_id);
+        let input_events = std::iter::once(event.clone());
+        for event in input_events {
+            if matches!(
+                &event,
+                egui::Event::Key { pressed: true, .. }
+                    | egui::Event::Text(_)
+                    | egui::Event::Ime(egui::ImeEvent::Commit(_))
+            ) {
+                sessions.activity();
+            }
+            if let egui::Event::ModifiersChanged(modifiers) = &event {
+                self.modifiers = *modifiers;
+                self.wheels.modifiers_changed(*modifiers);
+            }
+            if let Some(clipboard) = self.clipboard.event(&event, self.modifiers) {
+                let result = match clipboard {
+                    input::Clipboard::Keys(keys) => {
+                        surface.blink.activity(Instant::now());
                         terminal.keys(&keys, Instant::now())
                     }
-                    egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
-                        if self.composition.preedit(&text, pane_id) {
-                            surface.preedit = text;
-                        } else {
-                            surface.preedit.clear();
-                        }
+                    input::Clipboard::Ignore => Ok(()),
+                    clipboard => {
+                        let value = match clipboard {
+                            input::Clipboard::Copy => json!({"kind":"copy","handle":handle}),
+                            input::Clipboard::Cut => json!({"kind":"cut","handle":handle}),
+                            input::Clipboard::Paste(text) => {
+                                json!({"kind":"paste","handle":handle,"text":text})
+                            }
+                            _ => unreachable!(),
+                        };
+                        events.push(Intent {
+                            id: widget.id.clone(),
+                            action: "clipboard".into(),
+                            value,
+                        });
                         Ok(())
                     }
-                    egui::Event::Ime(egui::ImeEvent::Commit(text)) => {
-                        surface.preedit.clear();
-                        if self.composition.commit(pane_id) {
-                            surface.blink.activity(Instant::now());
-                            terminal.keys(&input::text_keys(&text), Instant::now())
-                        } else {
-                            Ok(())
-                        }
-                    }
-                    _ => Ok(()),
                 };
                 if let Err(error) = result {
                     events.push(Intent {
@@ -599,7 +629,70 @@ impl Views {
                         value: json!(error),
                     });
                 }
+                continue;
             }
+            let result = match event {
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    repeat,
+                    ..
+                } => {
+                    let command = shortcut(p, key, modifiers, terminal.alternate_screen());
+                    if let Some(command) = command {
+                        if !repeat || command["repeat"] == true {
+                            events.push(Intent {
+                                id: widget.id.clone(),
+                                action: "command".into(),
+                                value: command["command"].clone(),
+                            });
+                        }
+                        Ok(())
+                    } else {
+                        let keys = input::keys_for(key, modifiers);
+                        if !keys.is_empty() {
+                            surface.blink.activity(Instant::now());
+                        }
+                        terminal.keys(&keys, Instant::now())
+                    }
+                }
+                egui::Event::Text(text)
+                    if !self.composition.has_owner() && !self.composition.stale() =>
+                {
+                    let keys = input::typed(&text, self.modifiers);
+                    if !keys.is_empty() {
+                        surface.blink.activity(Instant::now());
+                    }
+                    terminal.keys(&keys, Instant::now())
+                }
+                egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
+                    if self.composition.preedit(&text, pane_id) {
+                        surface.preedit = text;
+                    } else {
+                        surface.preedit.clear();
+                    }
+                    Ok(())
+                }
+                egui::Event::Ime(egui::ImeEvent::Commit(text)) => {
+                    surface.preedit.clear();
+                    if self.composition.commit(pane_id) {
+                        surface.blink.activity(Instant::now());
+                        terminal.keys(&input::text_keys(&text), Instant::now())
+                    } else {
+                        Ok(())
+                    }
+                }
+                _ => Ok(()),
+            };
+            if let Err(error) = result {
+                events.push(Intent {
+                    id: widget.id.clone(),
+                    action: "error".into(),
+                    value: json!(error),
+                });
+            }
+        }
     }
     fn tree(
         &mut self,
@@ -650,63 +743,172 @@ impl Views {
         response
     }
 
-    pub fn begin_frame(&mut self) {self.mouse_seen.clear();}
-    pub fn finish_frame(&mut self) {self.mice.retain(|id,_|self.mouse_seen.contains(id));}
-    pub fn draw(&mut self,ui:&mut Ui,widget:&Widget,value:&Value,sessions:&Sessions,events:&mut Vec<Intent>)->Response {
-        self.mouse_seen.insert(widget.id.clone());self.placements.clear();
-        let response=self.draw_leaf(ui,widget,value,sessions,events);
-        let another_grab=self.mice.iter().any(|(id,mouse)|id!=&widget.id && mouse.grabbed());
-        let mut mouse=self.mice.remove(&widget.id).unwrap_or_default();
-        let raw=ui.input(|i|i.events.clone());
-        let accepting=ui.is_enabled() && ui.input(|i|i.focused);
-        let now=Instant::now();let copy=widget.properties["copy_on_select"]==true;
-        mouse.update(&self.placements,sessions,&[],accepting,copy,now);
-        let mut position=mouse.position();
+    pub fn begin_frame(&mut self) {
+        self.mouse_seen.clear();
+    }
+    pub fn finish_frame(&mut self) {
+        self.mice.retain(|id, _| self.mouse_seen.contains(id));
+    }
+    pub fn draw(
+        &mut self,
+        ui: &mut Ui,
+        widget: &Widget,
+        value: &Value,
+        sessions: &Sessions,
+        events: &mut Vec<Intent>,
+    ) -> Response {
+        self.mouse_seen.insert(widget.id.clone());
+        self.placements.clear();
+        let response = self.draw_leaf(ui, widget, value, sessions, events);
+        let another_grab = self
+            .mice
+            .iter()
+            .any(|(id, mouse)| id != &widget.id && mouse.grabbed());
+        let mut mouse = self.mice.remove(&widget.id).unwrap_or_default();
+        let raw = ui.input(|i| i.events.clone());
+        let accepting = ui.is_enabled() && ui.input(|i| i.focused);
+        let now = Instant::now();
+        let copy = widget.properties["copy_on_select"] == true;
+        mouse.update(&self.placements, sessions, &[], accepting, copy, now);
+        let mut position = mouse.position();
         for event in std::iter::once(None).chain(raw.iter().map(Some)) {
-            if let Some(event)=event {
-                if let egui::Event::ModifiersChanged(value)=event {self.wheels.modifiers_changed(*value);}
-                let pointer=matches!(event,egui::Event::PointerMoved(_) | egui::Event::PointerButton {..} | egui::Event::MouseWheel {..});
-                let mut delivered=event.clone();
-                if let egui::Event::PointerMoved(pos) | egui::Event::PointerButton {pos,..}=event {position=Some(*pos);}
-                if pointer && position.is_some_and(|pos|ui.ctx().layer_id_at(pos).is_some_and(|layer|layer!=ui.layer_id())) {
-                    mouse.cancel();delivered=egui::Event::PointerGone;
+            if let Some(event) = event {
+                if let egui::Event::ModifiersChanged(value) = event {
+                    self.wheels.modifiers_changed(*value);
+                }
+                let pointer = matches!(
+                    event,
+                    egui::Event::PointerMoved(_)
+                        | egui::Event::PointerButton { .. }
+                        | egui::Event::MouseWheel { .. }
+                );
+                let mut delivered = event.clone();
+                if let egui::Event::PointerMoved(pos) | egui::Event::PointerButton { pos, .. } =
+                    event
+                {
+                    position = Some(*pos);
+                }
+                if pointer
+                    && position.is_some_and(|pos| {
+                        ui.ctx()
+                            .layer_id_at(pos)
+                            .is_some_and(|layer| layer != ui.layer_id())
+                    })
+                {
+                    mouse.cancel();
+                    delivered = egui::Event::PointerGone;
                 }
                 if !pointer || !another_grab {
-                    let effects=mouse.update(&self.placements,sessions,std::slice::from_ref(&delivered),accepting,copy,now);
-                    for effect in effects {self.pointer_effect(ui,widget,sessions,events,effect);}
+                    let effects = mouse.update(
+                        &self.placements,
+                        sessions,
+                        std::slice::from_ref(&delivered),
+                        accepting,
+                        copy,
+                        now,
+                    );
+                    for effect in effects {
+                        self.pointer_effect(ui, widget, sessions, events, effect);
+                    }
                 }
             }
-            let active=if accepting {self.placements.iter().find(|p|ui.memory(|m|m.has_focus(p.id))).map(|p|p.handle.clone())} else {None};
-            if self.sync_keyboard_focus(widget,active.as_deref()) {ui.ctx().request_repaint();}
-            if let (Some(handle),Some(event))=(active,event) {self.keyboard(widget,&handle,event,sessions,events);}
+            let active = if accepting {
+                self.placements
+                    .iter()
+                    .find(|p| ui.memory(|m| m.has_focus(p.id)))
+                    .map(|p| p.handle.clone())
+            } else {
+                None
+            };
+            if self.sync_keyboard_focus(widget, active.as_deref()) {
+                ui.ctx().request_repaint();
+            }
+            if let (Some(handle), Some(event)) = (active, event) {
+                self.keyboard(widget, &handle, event, sessions, events);
+            }
         }
-        if !raw.is_empty() {ui.ctx().request_repaint();}
-        self.mice.insert(widget.id.clone(),mouse);
+        if !raw.is_empty() {
+            ui.ctx().request_repaint();
+        }
+        self.mice.insert(widget.id.clone(), mouse);
         response
     }
-    fn pointer_effect(&mut self,ui:&mut Ui,widget:&Widget,sessions:&Sessions,events:&mut Vec<Intent>,effect:super::pointer::Effect) {            use super::pointer::Effect;
-            match effect {
-                Effect::Focus(handle)=> {
-                    if let Some(placed)=self.placements.iter().find(|p|p.handle==handle) {
-                        let focused=ui.memory(|m|m.has_focus(placed.id));
-                        ui.memory_mut(|m|m.request_focus(placed.id));
-                        if !focused {events.push(Intent {id:widget.id.clone(),action:"focus".into(),value:json!(handle)});}
-                    }
-                }
-                Effect::Read {handle,primary}=>events.push(Intent {id:widget.id.clone(),action:"clipboard".into(),value:json!({"kind":"read","handle":handle,"primary":primary})}),
-                Effect::Write {text,primary}=>events.push(Intent {id:widget.id.clone(),action:"selection".into(),value:json!({"text":text,"primary":primary})}),
-                Effect::Wheel {handle,col,row,unit,delta,modifiers}=> {
-                    let Some(placed)=self.placements.iter().find(|p|p.handle==handle) else {return};
-                    let (zoom,lines)=self.wheels.event(&handle,input::Wheel::of(unit,delta),placed.cell.1,widget.properties["scroll_speed"].as_f64().unwrap_or(40.0) as f32,modifiers);
-                    if zoom {
-                        let command=&widget.properties["wheel_zoom"][if lines>0 {"increase"} else {"decrease"}];
-                        if command.is_string() {for _ in 0..lines.unsigned_abs() {events.push(Intent {id:widget.id.clone(),action:"command".into(),value:command.clone()});}}
-                    } else if let Ok(terminal)=sessions.get(&handle) {
-                        let terminal=terminal.lock().unwrap();let mods=MouseModifiers {shift:modifiers.shift,alt:modifiers.alt,ctrl:modifiers.ctrl};
-                        if !terminal.mouse_scroll(col,row,lines,mods) {terminal.scroll_wheel(lines,mods);}
+    fn pointer_effect(
+        &mut self,
+        ui: &mut Ui,
+        widget: &Widget,
+        sessions: &Sessions,
+        events: &mut Vec<Intent>,
+        effect: super::pointer::Effect,
+    ) {
+        use super::pointer::Effect;
+        match effect {
+            Effect::Focus(handle) => {
+                if let Some(placed) = self.placements.iter().find(|p| p.handle == handle) {
+                    let focused = ui.memory(|m| m.has_focus(placed.id));
+                    ui.memory_mut(|m| m.request_focus(placed.id));
+                    if !focused {
+                        events.push(Intent {
+                            id: widget.id.clone(),
+                            action: "focus".into(),
+                            value: json!(handle),
+                        });
                     }
                 }
             }
+            Effect::Read { handle, primary } => events.push(Intent {
+                id: widget.id.clone(),
+                action: "clipboard".into(),
+                value: json!({"kind":"read","handle":handle,"primary":primary}),
+            }),
+            Effect::Write { text, primary } => events.push(Intent {
+                id: widget.id.clone(),
+                action: "selection".into(),
+                value: json!({"text":text,"primary":primary}),
+            }),
+            Effect::Wheel {
+                handle,
+                col,
+                row,
+                unit,
+                delta,
+                modifiers,
+            } => {
+                let Some(placed) = self.placements.iter().find(|p| p.handle == handle) else {
+                    return;
+                };
+                let (zoom, lines) = self.wheels.event(
+                    &handle,
+                    input::Wheel::of(unit, delta),
+                    placed.cell.1,
+                    widget.properties["scroll_speed"].as_f64().unwrap_or(40.0) as f32,
+                    modifiers,
+                );
+                if zoom {
+                    let command = &widget.properties["wheel_zoom"]
+                        [if lines > 0 { "increase" } else { "decrease" }];
+                    if command.is_string() {
+                        for _ in 0..lines.unsigned_abs() {
+                            events.push(Intent {
+                                id: widget.id.clone(),
+                                action: "command".into(),
+                                value: command.clone(),
+                            });
+                        }
+                    }
+                } else if let Ok(terminal) = sessions.get(&handle) {
+                    let terminal = terminal.lock().unwrap();
+                    let mods = MouseModifiers {
+                        shift: modifiers.shift,
+                        alt: modifiers.alt,
+                        ctrl: modifiers.ctrl,
+                    };
+                    if !terminal.mouse_scroll(col, row, lines, mods) {
+                        terminal.scroll_wheel(lines, mods);
+                    }
+                }
+            }
+        }
     }
     fn draw_leaf(
         &mut self,
@@ -808,7 +1010,14 @@ impl Views {
             rows.saturating_mul(cell.1 as u16),
         );
         sessions.placed(handle, area, cell, scale, font_px);
-        self.placements.push(super::pointer::Placement {handle:handle.into(),id,area,grid,cell:(cell.0 as f32/scale,cell.1 as f32/scale),dimensions:(cols,rows)});
+        self.placements.push(super::pointer::Placement {
+            handle: handle.into(),
+            id,
+            area,
+            grid,
+            cell: (cell.0 as f32 / scale, cell.1 as f32 / scale),
+            dimensions: (cols, rows),
+        });
         if grid_size != surface.grid_size {
             terminal.resize(grid_size.0, grid_size.1, grid_size.2, grid_size.3);
             surface.grid_size = grid_size;
