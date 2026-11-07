@@ -849,7 +849,7 @@ pub(crate) fn draw(
                         .selected(item["checked"] == true)
                         .tooltip(tip),
                     );
-                    if item["macro_anchor"] == true {
+                    if item["macro_anchor"] == true || item["id"] == "help.macros" {
                         toolkit::macros::anchor(ui.ctx(), response.rect);
                     }
                     geometry.insert(format!("{id}.command.{}", text(item, "id")), response.rect);

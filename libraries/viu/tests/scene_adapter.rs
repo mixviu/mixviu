@@ -40,9 +40,37 @@ fn bottom_panel_reserves_space_before_the_fill_sibling() {
     }
     let footer = view.geometry["footer-label"];
     let body = view.geometry["body"];
-    assert!(footer.top() > 500.0, "footer painted over the body: {footer:?}");
-    assert!(body.bottom() <= footer.top(), "fill overlaps footer: {body:?} {footer:?}");
+    assert!(
+        footer.top() > 500.0,
+        "footer painted over the body: {footer:?}"
+    );
+    assert!(
+        body.bottom() <= footer.top(),
+        "fill overlaps footer: {body:?} {footer:?}"
+    );
     assert!(footer.bottom() <= 720.0);
+}
+
+#[test]
+fn scrolling_column_keeps_its_authored_padding() {
+    let ctx = egui::Context::default();
+    toolkit::install(&ctx, &toolkit::Theme::embedded());
+    let mut positions = Vec::new();
+    for scroll in [false, true] {
+        let source = scene(json!({
+            "root":{"widget":"column","native_spacing":true,"padding":8,"scroll":scroll,"children":["label"]},
+            "label":{"widget":"control","definition":{"id":"label","kind":"label","label":"","initial":"Content"}}
+        }));
+        let mut view = SceneView::new(&source).unwrap();
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,700.0))),
+                ..Default::default()
+            }, |ui| {view.show(ui);}).drop_without_applying_deltas();
+        }
+        positions.push(view.geometry["label"].min);
+    }
+    assert_eq!(positions[0],positions[1],"scrolling must not discard the container frame");
 }
 
 #[test]

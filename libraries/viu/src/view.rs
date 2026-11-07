@@ -631,7 +631,18 @@ impl SceneView {
                         }).inner_rect;
                         rect
                         };
-                        let rect=if node.ports.get("native_frame")==Some(&Value::Bool(true)){toolkit::bars::dock_frame(ui.ctx()).show(ui,|ui|draw_scroll(ui)).inner}else{draw_scroll(ui)};
+                        let frame = if node.ports.get("native_frame")==Some(&Value::Bool(true)) {
+                            toolkit::bars::dock_frame(ui.ctx())
+                        } else {
+                            let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
+                            egui::Frame::new().fill(background).inner_margin(egui::Margin {
+                                left: node_padding(node,"padding_left") as i8,
+                                right: node_padding(node,"padding_right") as i8,
+                                top: node_padding(node,"padding_top") as i8,
+                                bottom: node_padding(node,"padding_bottom") as i8,
+                            }).corner_radius(num(node,"radius").unwrap_or(0.0))
+                        };
+                        let rect=frame.show(ui,|ui|draw_scroll(ui)).inner;
                         ui.interact(rect,ui.scope_id().with((&key,"scroll")),Sense::hover());
                     }
 
