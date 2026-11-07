@@ -1,6 +1,6 @@
-# MixOS brand art
+# MixViu brand art
 
-The official MixOS mark: a rounded-flange "M" of five linked nodes. This is
+The official MixViu mark: a rounded-flange "M" of five linked nodes. This is
 the one source for the logo and favicons. The website, the desktop and the
 installer image take their copies from here and never keep a second original.
 
@@ -16,7 +16,7 @@ to Mark Constable's instructions.
 |---|---|
 | `logos/mixos-black-transparent.svg` | black mark, transparent background and node holes |
 | `logos/mixos-white-transparent.svg` | white mark, transparent background and node holes |
-| `logos/alien-cyclops.svg` | Alien Cyclops, the MixOS Desktop mascot and default launcher icon: the one-eyed alien "C", white ring and red eye, each with a single-pixel black outline (at 512 px), on transparent, 512 × 512. MIT OR Apache-2.0, © 2026 Mark Constable (SPDX header in the file); `install.mix` pins its sha256 |
+| `logos/alien-cyclops.svg` | Alien Cyclops, the MixViu Desktop mascot and default launcher icon: the one-eyed alien "C", white ring and red eye, each with a single-pixel black outline (at 512 px), on transparent, 512 × 512. MIT OR Apache-2.0, © 2026 Mark Constable (SPDX header in the file); `install.mix` pins its sha256 |
 | `favicons/black-on-white/` | opaque square set: black mark on white |
 | `favicons/white-on-black/` | opaque square set: white mark on black |
 | `logos/alien-cyclops-favicon.svg` | the favicon form of the mascot: the same geometry, scaled to fill the icon, with a thin black outline under the white ring so the C reads on light browser chrome. Transparent. The website's `favicon.svg` is a copy of it |
@@ -43,7 +43,7 @@ and vector/raster consistency, but not on physical Apple devices.
 
 `mix share/brand/install.mix --root <prefix>/share` installs
 `logos/alien-cyclops.svg` as the full-colour `dev.mixos` (in `scalable/apps`) and the
-transparent M as `dev.mixos-symbolic` (in `symbolic/apps`), in MixOS and hicolor.
+transparent M as `dev.mixos-symbolic` (in `symbolic/apps`), in MixViu and hicolor.
 `--check` validates the sources and indexes and writes nothing. A fresh image
 gets the small theme indexes needed for lookup; an existing index is preserved,
 with a warning when it omits a directory the installer writes. Include the

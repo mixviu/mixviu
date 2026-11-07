@@ -7,7 +7,7 @@ if len($g.errors) != 0 or len($g.rest) != 0 then raise("LAYOUT_ARGS", "layout ap
 if $g.opts.help then print("mix layout apply [--root DIR] [--dry-run] [--image]"); exit(0) end
 if $g.opts.image and $g.opts.root == nil then raise("LAYOUT_ARGS", "--image requires --root") end
 $roots = {}
-for $name in ["prefix", "share", "etc", "var", "run", "cache"] $roots[$name] = mixos_path($name) end
+for $name in ["prefix", "share", "etc", "var", "run", "cache"] $roots[$name] = mix_path($name) end
 $here = dirname(realpath($0))
 $files = require($here .. "/files.mix")
 $pending = $files.application($here, $roots, $g.opts)

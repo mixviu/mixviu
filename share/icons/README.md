@@ -1,6 +1,6 @@
-# MixOS icon theme
+# MixViu icon theme
 
-`share/icons` is the self-contained icon theme used by MixOS scenes, the panel
+`share/icons` is the self-contained icon theme used by MixViu scenes, the panel
 and third-party caption buttons. It holds:
 
 - `manifest.conf.mix`: the finite catalogue, strict data loaded with `load_data`
@@ -9,7 +9,7 @@ and third-party caption buttons. It holds:
 - `lucide/*.svg`: the 30 upstream SVGs, copied byte for byte. Each is pinned by
   its SHA-256 in the manifest.
 - `scalable/actions/window-{minimize,maximize,restore,close}-symbolic.svg`:
-  four original MixOS caption glyphs, under MIT OR Apache-2.0. The manifest's
+  four original MixViu caption glyphs, under MIT OR Apache-2.0. The manifest's
   `originals` list pins their paths and SHA-256 hashes. They use a 16×16 viewBox,
   no fill, a 1 px stroke, butt caps and square corners, matching the toolkit's
   line, square, overlapping squares and X. The restore front square is inset
@@ -27,7 +27,7 @@ mix share/icons/install.mix --check
 mix share/icons/install.mix --verify
 ```
 
-The default root is `$MIXOS_SHARE`, otherwise `<prefix>/share`. The installer
+The default root is `$MIX_SHARE`, otherwise `<prefix>/share`. The installer
 makes no network access.
 
 - **`--check`** validates the bundle and writes nothing, not even the root. It
@@ -98,14 +98,14 @@ in either order.
 ## Lookup
 
 The panel, the window fallback and the scene-host fallbacks resolve these names
-through the apps citizen (`services/compd/scripts/lib/apps.mix`):
+through the apps citizen (`engines/viud/scripts/lib/apps.mix`):
 
 - Panel status icons: the scene models' `PANEL_THEMED_ICONS` with `-symbolic`
   appended, except `start-here-kde`, which is the KDE launcher and not a bundle name.
 - `application-x-executable-symbolic`, the window fallback.
-- MixOS application aliases (`dev.mixos.<app>-symbolic`).
+- MixViu application aliases (`dev.mixos.<app>-symbolic`).
 
-The tests in `services/compd/tests/desktop_icons_test.mix` run the real lookup
+The tests in `engines/viud/tests/desktop_icons_test.mix` run the real lookup
 against every manifest alias and panel name at several sizes. Their rollback
 case is a real failure, not an injected one: the status directory is made
 read-only, so the publish replaces the app aliases and then a status rename is
@@ -123,9 +123,9 @@ decoded image cache.
 ## Scene coverage
 
 - Panel: Lucide status icons and the generic `start-here-symbolic` fallback.
-  Existing MixOS brand artwork has priority. Application and tray artwork
+  Existing MixViu brand artwork has priority. Application and tray artwork
   keeps its original lookup.
-- Launcher: the MixOS app aliases and generic executable fallback come from
+- Launcher: the MixViu app aliases and generic executable fallback come from
   this bundle; third-party application artwork keeps its original lookup.
 - Editor: eight order arrows use `go-previous-symbolic` and
   `go-next-symbolic`; eight size controls use `minus-symbolic` and `plus-symbolic`.
@@ -147,10 +147,10 @@ invalidation through Preferences are not implemented by this bundle.
 
 Portald selects `gtk-icon-theme-name=mixos` in the desk's private GTK 3
 settings file and exports caption order from settingsd's `appearance.caption_side`.
-Craft apps on the `MixOS` desktop resolve the four caption names through the
+Craft apps on the `MixViu` desktop resolve the four caption names through the
 freedesktop theme index in `$XDG_DATA_DIRS/icons`. They use each SVG as an alpha
 mask, so the app supplies the glyph colour. There is no icon-theme preference
-in MixOS.
+in MixViu.
 
 ## Not icon-family assets
 

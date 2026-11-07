@@ -1,7 +1,7 @@
 #!/usr/bin/env mix
 -- version: 0.2.1
--- Install the MixOS brand icons into the shared icon tree.
--- Default root: $MIXOS_SHARE (else derived share), otherwise <prefix>/share. --root for a sandbox.
+-- Install the MixViu brand icons into the shared icon tree.
+-- Default root: $MIX_SHARE (else derived share), otherwise <prefix>/share. --root for a sandbox.
 --
 --   mix share/brand/install.mix [--root /absolute/share]
 --   mix share/brand/install.mix --check    validate the sources; write nothing
@@ -31,10 +31,10 @@ if $g.opts.help then
 end
 $root = $g.opts.root
 if $root == nil then
-  $root = env("MIXOS_SHARE", nil)
+  $root = env("MIX_SHARE", nil)
   if $root == nil then
-    if not has_builtin("mixos_path") then raise("BRAND_ROOT", "N-1 bootstrap: specify --root TARGET_SHARE or MIXOS_SHARE") end
-    $root = mixos_path("share")
+    if not has_builtin("mix_path") then raise("BRAND_ROOT", "N-1 bootstrap: specify --root TARGET_SHARE or MIX_SHARE") end
+    $root = mix_path("share")
   end
 end
 if not $g.opts.check and (not starts_with($root, "/") or $root == "/") then
@@ -73,9 +73,9 @@ $INDEX_DIRS = ["scalable/apps", "symbolic/apps"]
 -- The mascot is pinned: a changed file must change this hash on purpose.
 $PINNED = {"logos/alien-cyclops.svg": "78c965ac326d2ba6375003c7581c8b78d779e76ab59ad266b6646cda096cf2e7"}
 $hicolor_src = read_file($brand .. "/hicolor-index.theme")
-$mixos_src = read_file($brand .. "/../icons/index.theme")
+$mix_src = read_file($brand .. "/../icons/index.theme")
 check_index("hicolor-index.theme", $hicolor_src, $INDEX_DIRS)
-check_index("../icons/index.theme", $mixos_src, $INDEX_DIRS)
+check_index("../icons/index.theme", $mix_src, $INDEX_DIRS)
 for each $src in sort(values($icons))
   check_svg($src, read_file($brand .. "/" .. $src))
   if has_key($PINNED, $src) and hash_file($brand .. "/" .. $src, "sha256") != $PINNED[$src] then
@@ -104,7 +104,7 @@ end
 $native_theme=$root .. "/icons/mixos"
 if not is_file($native_theme .. "/index.theme") then
   mkdir($native_theme,{parents:true})
-  write_atomic($native_theme .. "/index.theme",$mixos_src,{mode:0o644})
+  write_atomic($native_theme .. "/index.theme",$mix_src,{mode:0o644})
   print("installed " .. $native_theme .. "/index.theme")
 end
 for each $dest in sort(keys($icons))
