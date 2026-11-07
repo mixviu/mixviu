@@ -15,6 +15,7 @@ pub struct Facilities {
     service: String,
     ui: bool,
     debug: bool,
+    mix_describe: bool,
     installed: bool,
     context: Option<egui::Context>,
     pub surface: Option<Value>,
@@ -47,6 +48,8 @@ impl Facilities {
             if manifest.native_debug {
                 commands.extend(toolkit::debug::describe(&app));
             }
+            let mut names = std::collections::BTreeSet::new();
+            commands.retain(|command| names.insert(command["name"].as_str().unwrap().to_owned()));
         }
         let macros = manifest
             .native_macros
@@ -65,6 +68,7 @@ impl Facilities {
             service: manifest.service.clone(),
             ui: manifest.native_ui || manifest.native_drive,
             debug: manifest.native_debug || manifest.native_drive,
+            mix_describe: manifest.commands.iter().any(|name| name == "app.describe"),
             installed: false,
             context: None,
             surface,
@@ -179,7 +183,7 @@ impl Facilities {
                 r.args["id"] = json!(id);
             }
         }
-        if r.command == "app.describe" || r.command == "HELP" {
+        if (r.command == "app.describe" && !self.mix_describe) || r.command == "HELP" {
             if let Some(surface) = &self.surface {
                 let _ = r.reply.send((
                     0,

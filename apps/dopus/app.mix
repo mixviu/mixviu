@@ -87,3 +87,34 @@ on dopus.info
   $ctx=viu_context()
   reply(0,json_encode({version:$ctx.version,git_sha:$ctx.git_sha,build_time:$ctx.build_time,headless:false,panes:2,pane_states:dp_wire_panes($state),config_path:$state.config_path}))
 end
+fn dp_describe()
+  $description=$contract.describe
+  $description.version=viu_context().version
+  return $description
+end
+on app.describe
+  reply(0,json_encode(dp_describe()))
+end
+on dopus.describe
+  reply(0,json_encode(dp_describe()))
+end
+on dopus.show
+  try
+    $comp=$app_launch.comp ?? env("MIXOS_COMP_SERVICE","comp")
+    dp_comp_call($comp,"comp.window.wait",{match:{app_id:"dev.mixos.dopus"},until:"mapped",timeout_ms:10000})
+    $windows=dp_comp_call($comp,"comp.windows.list",{}).windows
+    $own=filter($windows,fn($w)=$w.app_id=="dev.mixos.dopus" and $w.pid==viu_context().pid)
+    if len($own)==0 then raise("ACTIVATION","window not known to compd") end
+    $target={id:$own[0].id,generation:$own[0].generation}
+    $restored=dp_comp_call($comp,"comp.window.restore",$target)
+    if $restored.minimized!=false then raise("ACTIVATION",json_encode($restored)) end
+    $target.raise=true;$focused=dp_comp_call($comp,"comp.window.focus",$target)
+    if $focused.focused!=true then raise("ACTIVATION",json_encode($focused)) end
+    reply(0,json_encode({shown:true,target:$focused}))
+  catch $message reply(10,json_encode({error_code:"ACTIVATION",message:$message,reason:"show_failed"})) end
+end
+fn dp_comp_call($comp,$command,$args)
+  send $comp $command body=$args timeout=15
+  if $rc!=0 then raise("ACTIVATION",to_string($result)) end
+  return $reply
+end
