@@ -91,7 +91,7 @@ fn dp_toolbar($state,$contract)
   $out=[]
   for $item in $contract.toolbar
     $item=dp_toolbar_item($state,$contract,$item)
-    if $item.id=="help.macros" then $item.macro_anchor=true;$item.checked=$state.macros_open ?? false end
+    if $item.id=="help.macros" then $item.macro_anchor=true end
     push($out,$item)
   end
   return $out
