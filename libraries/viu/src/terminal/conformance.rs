@@ -220,9 +220,7 @@ fn parser_retains_every_utf8_and_escape_chunk_boundary() {
     }
 }
 
-fn query_replies(
-    receiver: &rio_vt::corcovado::channel::Receiver<rio_vt::event::Msg>,
-) -> Vec<u8> {
+fn query_replies(receiver: &rio_vt::corcovado::channel::Receiver<rio_vt::event::Msg>) -> Vec<u8> {
     let mut bytes = Vec::new();
     while let Ok(message) = receiver.try_recv() {
         if let rio_vt::event::Msg::Input(reply) = message {
