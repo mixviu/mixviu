@@ -39,6 +39,7 @@ end
     assert_eq!(model["panes"][0]["rows"], 1);
     assert_eq!(model["values"]["gold-title"], format!("{} — MixOS DOpus", left.display()));
     let mut view = viu::gold_frame::mount(&bundle.scene, model.clone()).unwrap();
+    assert!(view.has_control_kind("navigation-list"));
     let ctx = egui::Context::default();
     viu::appearance::install(&ctx);
     ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1040.,680.))), ..Default::default() }, |ui| { view.show(ui); }).drop_without_applying_deltas();

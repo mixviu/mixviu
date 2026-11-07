@@ -15,6 +15,7 @@ pub const KINDS: &[&str] = &[
     "form-fields",
     "header-form",
     "status-line",
+    "navigation-list",
     "widget-row",
     "divider",
     "time-series",
@@ -282,6 +283,7 @@ impl Widget {
             "divider" => value.is_null(),
             "dashboard" => return crate::dashboard::validate(value),
             "time-series" => return crate::time_series::validate(value),
+            "navigation-list" => return crate::navigation_list::validate(value),
             "status-line" => {
                 value["left"].is_string()
                     && value["right"]
@@ -811,6 +813,7 @@ impl Widgets {
                 ui.response()
             }
             "dashboard" => crate::dashboard::draw(ui, id, value, events),
+            "navigation-list" => crate::navigation_list::draw(ui, id, &widget.label, value, events),
             "time-series" => crate::time_series::draw(ui, id, value),
             "status-line" => {
                 ui.spacing_mut().item_spacing.x = ui.ctx().global_style().spacing.item_spacing.x;

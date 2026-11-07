@@ -26,6 +26,7 @@ pub mod macro_host;
 pub mod native_bus;
 mod native_events;
 pub mod native_menu;
+pub mod navigation_list;
 mod native_primitives;
 mod native_theme;
 pub mod rich;
