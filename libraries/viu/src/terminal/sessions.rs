@@ -43,6 +43,7 @@ pub struct Sessions {
     changed: Arc<Mutex<BTreeSet<String>>>,
     native_enabled: bool,
     native: Arc<Mutex<NativeOwner>>,
+    layout: super::layout_control::Bridge,
 }
 
 impl Default for Sessions {
@@ -78,6 +79,7 @@ impl Sessions {
                 pane_ids: BTreeMap::new(),
                 metadata: super::metadata::Metadata::default(),
             })),
+            layout: super::layout_control::Bridge::new(wake.clone()),
             wake,
             issuer,
             changed: Arc::default(),
@@ -128,11 +130,11 @@ impl Sessions {
                     state.sessions.get(key).cloned()
                 });
                 let state = Arc::downgrade(&self.state);
-                let metadata = Arc::new(move || {
-                    Some(state.upgrade()?.lock().ok()?.metadata.clone())
-                });
-                let control: Arc<dyn super::session_actor::ControlLane> =
-                    Arc::new(super::recipient::Recipient::new(handle.clone(), pane, metadata));
+                let metadata =
+                    Arc::new(move || Some(state.upgrade()?.lock().ok()?.metadata.clone()));
+                let control: Arc<dyn super::session_actor::ControlLane> = Arc::new(
+                    super::recipient::Recipient::new(handle.clone(), pane, metadata),
+                );
                 handle.install_control(&control);
                 native.control = Some(control);
             }
@@ -149,6 +151,7 @@ impl Sessions {
     pub(crate) fn take_changes(&self) -> BTreeSet<String> {
         std::mem::take(&mut *self.changed.lock().unwrap())
     }
+    pub(crate) fn layout_bridge(&self) -> super::layout_control::Bridge {self.layout.clone()}
 
     pub(crate) fn retry_changes(&self, handles: BTreeSet<String>) {
         self.changed.lock().unwrap().extend(handles);
@@ -210,10 +213,16 @@ impl Sessions {
     }
 
     pub fn call(&self, op: &str, handle: &str, a: Value) -> Result<Value, String> {
+        if op.starts_with("control.") {return self.layout.call(op,a);}
         if op == "metadata" {
             let metadata = super::metadata::Metadata::decode(&a)?;
             let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
-            if metadata.tabs.iter().flat_map(|t| &t.panes).any(|id| !state.pane_ids.values().any(|p| p==id)) {
+            if metadata
+                .tabs
+                .iter()
+                .flat_map(|t| &t.panes)
+                .any(|id| !state.pane_ids.values().any(|p| p == id))
+            {
                 return Err("metadata references a missing native pane".into());
             }
             state.metadata = metadata;
@@ -781,7 +790,10 @@ mod tests {
         assert!(sessions.call("create", "", json!({"pane_id":41})).is_err());
         sessions.call("metadata","",json!({"tabs":[{"id":7,"title":"application","active":true,"selected":41,"panes":[41]}]})).unwrap();
         assert!(sessions.call("metadata","",json!({"tabs":[{"id":7,"title":"missing","active":true,"selected":42,"panes":[42]}]})).is_err());
-        assert_eq!(sessions.state.lock().unwrap().metadata.tabs[0].title,"application");
+        assert_eq!(
+            sessions.state.lock().unwrap().metadata.tabs[0].title,
+            "application"
+        );
         assert_eq!(
             sessions.call("state", "vt-1", json!({})).unwrap()["native_id"],
             41

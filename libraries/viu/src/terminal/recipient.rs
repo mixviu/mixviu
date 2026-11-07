@@ -2,6 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Verified native pane control. Mix owns the layout adapter; this recipient
 //! owns admission, replay and the final PTY write permit.
+use super::metadata::Metadata;
 use super::{
     Terminal,
     admission::Admission,
@@ -21,7 +22,6 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
-use super::metadata::Metadata;
 
 #[path = "recipient_forwarding.rs"]
 mod forwarding;
@@ -131,7 +131,10 @@ impl Recipient {
                 )
                 .await;
         }
-        let metadata_read=matches!(admitted.operation.as_str(), "term.session" | "term.list" | "term.tabs" | "term.panes");
+        let metadata_read = matches!(
+            admitted.operation.as_str(),
+            "term.session" | "term.list" | "term.tabs" | "term.panes"
+        );
         if !metadata_read && !matches!(admitted.operation.as_str(), "term.snapshot" | "term.type") {
             return Reply::error("UNSUPPORTED");
         }
@@ -158,9 +161,9 @@ impl Recipient {
             return Reply::error("FORBIDDEN");
         }
         if metadata_read {
-            let foreground=pane.listener.foreground_generation();
+            let foreground = pane.listener.foreground_generation();
             drop(pane);
-            return self.describe(&admitted,parent,&permit,foreground);
+            return self.describe(&admitted, parent, &permit, foreground);
         }
         let mut replay = self.replay.lock().unwrap();
         let mutation = admitted.capability == Capability::Input;

@@ -317,6 +317,11 @@ impl eframe::App for Host {
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
         if self.ready {
+            while let Some(job)=self.terminals.layout_bridge().take() {
+                if self.runtime.native_event("viu.terminal.control".into(),json!({}),job.context()).is_err() {
+                    job.complete(crate::terminal::protocol::Reply::error("RESOURCE_LIMIT"));
+                }
+            }
             let handles = self.terminals.take_changes();
             if !handles.is_empty()
                 && self

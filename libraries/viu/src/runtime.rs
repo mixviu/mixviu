@@ -18,6 +18,9 @@ use serde_json::{Value as Json, json};
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
 pub type BackendFactory = Box<dyn FnOnce() -> Rc<dyn BusHandler> + Send>;
 pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
+/// A native owner installs a non-serialisable scope only on the evaluator
+/// thread around its queued callback. Ordinary Bus/UI events cannot supply it.
+pub(crate) type NativeContext = Box<dyn FnOnce() -> Box<dyn std::any::Any> + Send>;
 
 /// Caller-owned native facilities shared by its root and job evaluators.
 /// Supplying one does not create a Bus citizen, broker or global registry.
@@ -133,7 +136,7 @@ impl RunFailure {
 
 enum Request {
     Load(u64, Program),
-    Event(u64, u64, String, Json, bool, BTreeMap<String, String>),
+    Event(u64, u64, String, Json, bool, BTreeMap<String, String>, Option<NativeContext>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -238,7 +241,8 @@ impl Runtime {
                         current = Some((generation, eval, local, stdout, stderr));
                         (generation, 0, outcome.map(|_| ()))
                     }
-                    Request::Event(generation, sequence, command, args, is_request, mut headers) => {
+                    Request::Event(generation, sequence, command, args, is_request, mut headers, native) => {
+                        let _native_scope = native.map(|enter| enter());
                         let outcome = match current.as_mut() {
                             Some((active, eval, ..)) if *active == generation => {
                                 headers.entry("from".into()).or_insert_with(||"viu-client".into());
@@ -297,7 +301,10 @@ impl Runtime {
     }
 
     pub fn event(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
-        self.submit_event(command, args, true, BTreeMap::new())
+        self.submit_event(command, args, true, BTreeMap::new(), None)
+    }
+    pub(crate) fn native_event(&mut self, command: String, args: Json, context: NativeContext) -> Result<u64, Refusal> {
+        self.submit_event(command, args, false, BTreeMap::new(), Some(context))
     }
     /// Preserve broker-stamped caller and topic metadata. Request correlation
     /// remains local to the mailbox; the native owner retains the wire reply.
@@ -307,13 +314,13 @@ impl Runtime {
         args: Json,
         headers: BTreeMap<String, String>,
     ) -> Result<u64, Refusal> {
-        self.submit_event(command, args, true, headers)
+        self.submit_event(command, args, true, headers, None)
     }
 
     /// Native Bus topic delivery has no reply obligation. It uses the same
     /// ordered mailbox and generation fences as UI requests.
     pub fn notify(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
-        self.submit_event(command, args, false, BTreeMap::new())
+        self.submit_event(command, args, false, BTreeMap::new(), None)
     }
     pub fn notify_with_headers(
         &mut self,
@@ -321,7 +328,7 @@ impl Runtime {
         args: Json,
         headers: BTreeMap<String, String>,
     ) -> Result<u64, Refusal> {
-        self.submit_event(command, args, false, headers)
+        self.submit_event(command, args, false, headers, None)
     }
 
     fn submit_event(
@@ -330,6 +337,7 @@ impl Runtime {
         args: Json,
         is_request: bool,
         headers: BTreeMap<String, String>,
+        native: Option<NativeContext>,
     ) -> Result<u64, Refusal> {
         let sequence = self.sequence.checked_add(1).expect("sequence overflow");
         self.enqueue(Request::Event(
@@ -339,6 +347,7 @@ impl Runtime {
             args,
             is_request,
             headers,
+            native,
         ))?;
         self.sequence = sequence;
         Ok(sequence)
