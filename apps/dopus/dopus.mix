@@ -149,8 +149,9 @@ fn dp_request($request)
       $candidate.serial=$candidate.serial+1
       $profile_reduced=if $dopus_profile then monotonic() else 0 end
       $save=(viu_context().native_facilities ?? true) and $candidate.save_allowed and not deep_eq($app.dp_config($state),$app.dp_config($candidate))
+      $sync_theme=$name=="dopus.theme.set" or not deep_eq($candidate.appearance_choice,$state.appearance_choice) or not deep_eq($candidate.window_choice,$state.window_choice)
       $state=$app.dp_update_previews($candidate)
-      if (viu_context().native_facilities ?? true) and ($name=="dopus.theme.set" or ($name=="dopus.execute" and any(["theme.","view.theme.","view.mode.","view.style.","view.decorations.","view.captions."],fn($prefix)=starts_with($a.id,$prefix)))) then
+      if (viu_context().native_facilities ?? true) and $sync_theme then
         send "viu-local" "native.theme" body={scheme:$state.appearance_choice.scheme,mode:$state.appearance_choice.mode,style:$state.appearance_choice.style,decorations:$state.window_choice["window.decorations"],caption_side:$state.window_choice["window.caption_side"]}
         if $rc!=0 then raise("THEME",to_string($result)) end
       end

@@ -75,7 +75,7 @@ fn dp_menus($state,$contract)
 end
 fn dp_toolbar_item($state,$contract,$item)
   if $item.separator ?? false then return $item end
-  if $item.id=="Look" then $item.icon=if $state.appearance.mode=="light" then "moon" else "sun" end end
+  if $item.id=="Look" or $item.id=="view.mode" then $item.icon=if $state.appearance.mode=="light" then "moon" else "sun" end end
   if $contract.ui_labels[$item.id]!=nil then $item.label=$contract.ui_labels[$item.id] end
   if $item.children!=nil then
     $children=[]
