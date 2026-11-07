@@ -1060,6 +1060,9 @@ impl SceneView {
                     .min_rect()
                     .bottom()
                     .clamp(remaining.top(), remaining.bottom());
+                if placement["native_spacing"] == true {
+                    remaining.min.y = (remaining.min.y + ui.ctx().global_style().spacing.item_spacing.y).min(remaining.max.y);
+                }
                 continue;
             }
             let dimension = if horizontal {

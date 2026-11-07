@@ -663,6 +663,14 @@ pub(crate) fn draw(
                     0.0
                 };
                 let mut x = bounds.right() - pad;
+                if crate::window_frame::client_of(ui.ctx())
+                    && chrome.band.actions.alignment() == design::title_band::Alignment::Right
+                    && chrome.captions.alignment(design::title_band::Alignment::Right) == design::title_band::Alignment::Right {
+                    let native_right = ui.ctx().content_rect().right() - 3.0 * chrome.metrics.caption_width;
+                    if (native_right - bounds.right()).abs() < 0.1 {
+                        x = native_right - pad;
+                    }
+                }
                 let width = chrome.style.icon_button as f32;
                 for item in value.as_array().unwrap().iter().rev() {
                     let rect = Rect::from_min_max(
