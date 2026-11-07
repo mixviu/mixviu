@@ -57,6 +57,17 @@ fn terminal_shortcuts($s)
   end
   return $out
 end
+fn observed_state($s)
+  $tab=$s.layout.tabs[$s.layout.active]
+  $ids=if $tab==nil then [] else $layout.leaves($tab.tree) end
+  $panes=[]
+  for $id in $ids
+    $p=$s.layout.panes[to_string($id)];$g=$p.geometry
+    push($panes,{id:$id,focused:$id==$tab.active_pane,grid:if $p.cell==nil then nil else [$p.cols,$p.rows] end,rect:[$g.x,$g.y,$g.w,$g.h]})
+  end
+  $active=if $tab==nil then {} else $s.layout.panes[to_string($tab.active_pane)] end
+  return {tabs:map($s.layout.tabs,fn($t)={id:$t.id,title:$t.title,active:$t.id==$tab.id}),panes:$panes,font_px:$active.font_px,cell:$active.cell,scale:$active.scale,paste_notice:$s.notice}
+end
 fn invoke($s,$id,$args,$native)
   $matches=filter(registry($s),fn($a)=$a.id==$id)
   if len($matches)==0 then return {state:$s,rc:10,body:{error_code:"UNKNOWN_ACTION",message:"Unknown action"},effects:[]} end

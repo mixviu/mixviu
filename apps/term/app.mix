@@ -103,7 +103,7 @@ on term.execute
 end
 on term.actions
   $state=$bus.refresh($state,$native)
-  reply(0,json_encode({actions:$actions.registry($state),state:{tabs:map($state.layout.tabs,fn($t)={id:$t.id,title:$t.title,active:$t.id==$state.layout.tabs[$state.layout.active].id}),font_px:($state.look.values["terminal.font.size"] ?? 14.667)+$state.zoom,cell:nil,scale:nil,paste_notice:$state.notice}}))
+  reply(0,json_encode({actions:$actions.registry($state),state:$actions.observed_state($state)}))
 end
 on term.dialog
   $out=$controls.dialog($state,$event.args);$state=$out.state;publish_term($state);reply($out.rc,json_encode($out.body))

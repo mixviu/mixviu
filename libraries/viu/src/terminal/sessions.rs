@@ -11,10 +11,18 @@ use std::{
     sync::{Arc, Mutex, atomic::Ordering},
 };
 
+#[derive(Clone, Copy, PartialEq)]
+struct Placement {
+    rect: [f32; 4],
+    cell: [f32; 2],
+    scale: f32,
+    font_px: f32,
+}
+
 struct State {
     next: u64,
     sessions: BTreeMap<String, Arc<Mutex<Terminal>>>,
-    geometry: BTreeMap<String, [f32; 4]>,
+    placements: BTreeMap<String, Placement>,
 }
 
 #[derive(Clone)]
@@ -54,7 +62,7 @@ impl Sessions {
             state: Arc::new(Mutex::new(State {
                 next: 0,
                 sessions: BTreeMap::new(),
-                geometry: BTreeMap::new(),
+                placements: BTreeMap::new(),
             })),
             wake,
             issuer,
@@ -71,11 +79,16 @@ impl Sessions {
         (self.wake)();
     }
 
-    pub(crate) fn placed(&self, handle: &str, rect: egui::Rect) {
-        let geometry = [rect.min.x, rect.min.y, rect.width(), rect.height()];
+    pub(crate) fn placed(&self, handle: &str, rect: egui::Rect, cell: (u32, u32), scale: f32, font_px: f32) {
+        let placement = Placement {
+            rect: [rect.min.x, rect.min.y, rect.width(), rect.height()],
+            cell: [cell.0 as f32 / scale, cell.1 as f32 / scale],
+            scale,
+            font_px,
+        };
         let mut state = self.state.lock().unwrap();
-        if state.geometry.get(handle) != Some(&geometry) {
-            state.geometry.insert(handle.into(), geometry);
+        if state.placements.get(handle) != Some(&placement) {
+            state.placements.insert(handle.into(), placement);
             self.changed.lock().unwrap().insert(handle.into());
             (self.wake)();
         }
@@ -186,7 +199,7 @@ impl Sessions {
                     .sessions
                     .remove(handle)
                     .ok_or("stale terminal handle")?;
-                state.geometry.remove(handle);
+                state.placements.remove(handle);
                 t
             };
             // Serialize with native input before any teardown. Removal makes
@@ -202,17 +215,18 @@ impl Sessions {
         match op {
             "state" => {
                 let (cols, rows) = t.dimensions();
-                let g = self
+                let placement = self
                     .state
                     .lock()
                     .map_err(|_| "terminal owner poisoned")?
-                    .geometry
+                    .placements
                     .get(handle)
-                    .copied()
-                    .unwrap_or([0.0; 4]);
+                    .copied();
+                let g = placement.map_or([0.0; 4], |p| p.rect);
                 Ok(
                     json!({"pid":t.pid,"title":t.listener.title(),"cols":cols,"rows":rows,
                     "geometry":{"x":g[0],"y":g[1],"w":g[2],"h":g[3]},
+                    "cell":placement.map(|p|p.cell),"scale":placement.map(|p|p.scale),"font_px":placement.map(|p|p.font_px),
                     "exited":t.listener.quit.load(Ordering::Acquire),"display_offset":t.display_offset(),"alternate":t.alternate_screen()}),
                 )
             }

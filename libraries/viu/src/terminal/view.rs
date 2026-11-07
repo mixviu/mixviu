@@ -135,8 +135,9 @@ mod tests {
         let ctx = egui::Context::default();
         crate::fonts::install(&ctx, 400, 600);
         let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
-        for size in [14.667, 14.667, 18.0, 18.0] {
-            widget.properties = json!({"font_size":size});
+        let mut previous_height = None;
+        for (size, text_scale) in [(14.667, 1.0), (14.667, 1.0), (18.0, 1.0), (18.0, 1.5), (18.0, 1.5)] {
+            widget.properties = json!({"font_size":size,"text_scale":text_scale});
             let mut output = ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(Rect::from_min_size(
@@ -151,6 +152,15 @@ mod tests {
             );
             output.textures_delta.clear();
             assert!(Arc::ptr_eq(&owner, &sessions.get("vt-1").unwrap()));
+            let observed = sessions.call("state", "vt-1", json!({})).unwrap();
+            assert_eq!(observed["font_px"], json!(size as f32));
+            assert_eq!(observed["scale"], json!(1.0));
+            let cell_height = observed["cell"][1].as_f64().unwrap();
+            assert!(cell_height > 0.0);
+            if let Some(previous) = previous_height {
+                assert!(cell_height >= previous);
+            }
+            previous_height = Some(cell_height);
             let t = owner.lock().unwrap();
             assert!(t.snapshot().contains("native fixture"));
             assert!(t.grid_snapshot().dirty_rows.iter().all(|dirty| !dirty));
@@ -236,7 +246,9 @@ impl Views {
         let terminal = owner.lock().unwrap();
         let p = &widget.properties;
         let scale = ui.ctx().pixels_per_point();
-        let size = p["font_size"].as_f64().unwrap_or(14.667) as f32;
+        let font_px = p["font_size"].as_f64().unwrap_or(14.667) as f32;
+        let text_scale = p["text_scale"].as_f64().filter(|n| n.is_finite()).unwrap_or(1.0).clamp(0.5, 3.0) as f32;
+        let size = font_px * text_scale;
         let family = p["font_family"].as_str().unwrap_or("");
         let weight = crate::widgets::whole(&p["font_weight"]).unwrap_or(400) as u16;
         let look = (scale, size, family.to_owned(), weight);
@@ -308,7 +320,7 @@ impl Views {
             cols.saturating_mul(cell.0 as u16),
             rows.saturating_mul(cell.1 as u16),
         );
-        sessions.placed(handle, area);
+        sessions.placed(handle, area, cell, scale, font_px);
         if grid_size != surface.grid_size {
             terminal.resize(grid_size.0, grid_size.1, grid_size.2, grid_size.3);
             surface.grid_size = grid_size;
