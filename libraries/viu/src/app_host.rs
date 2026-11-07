@@ -771,8 +771,7 @@ impl Host {
                 );
                 let settings = self.window_settings(&self.model);
                 if let Some(title) = self.model["window_title"].as_str() {
-                    ui.ctx()
-                        .send_viewport_cmd(egui::ViewportCommand::Title(title.into()));
+                    crate::window_frame::set_title(ui.ctx(), title);
                 }
                 crate::rich::configure_menu(ui.ctx(), &settings, None);
                 self.window_frame

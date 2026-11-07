@@ -5,6 +5,54 @@ use egui::{Rect, Ui, ViewportCommand as Command, pos2, vec2};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+/// Viewport commands request another repaint, even when their value is unchanged.
+pub(crate) fn set_title(ctx: &egui::Context, title: &str) {
+    let key = egui::Id::unique((ctx.viewport_id(), "viu-native-title"));
+    let changed = ctx.data_mut(|data| {
+        let previous = data.get_temp_mut_or_default::<Option<String>>(key);
+        if previous.as_deref() == Some(title) {
+            false
+        } else {
+            *previous = Some(title.to_owned());
+            true
+        }
+    });
+    if changed {
+        ctx.send_viewport_cmd(Command::Title(title.to_owned()));
+    }
+}
+
+#[cfg(test)]
+mod title_tests {
+    #[test]
+    fn stable_native_title_does_not_rearm_idle_frames_and_changes_are_delivered() {
+        let ctx = egui::Context::default();
+        for (title, expected) in [
+            ("Terminal", true),
+            ("Terminal", false),
+            ("Renamed", true),
+            ("Renamed", false),
+            ("Terminal", true),
+        ] {
+            let output = ctx.run_ui(Default::default(), |ui| super::set_title(ui.ctx(), title));
+            let commands = &output.viewport_output[&egui::ViewportId::ROOT].commands;
+            assert_eq!(
+                commands
+                    .iter()
+                    .filter(|cmd| matches!(cmd, egui::ViewportCommand::Title(_)))
+                    .count(),
+                usize::from(expected)
+            );
+            if expected {
+                assert!(commands.iter().any(
+                    |cmd| matches!(cmd, egui::ViewportCommand::Title(value) if value == title)
+                ));
+            }
+            output.drop_without_applying_deltas();
+        }
+    }
+}
+
 pub fn is_client(settings: &Value) -> bool {
     design::decorations::resolve_with_actions(
         settings["window.decorations"]
