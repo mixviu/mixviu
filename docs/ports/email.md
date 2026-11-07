@@ -1,5 +1,19 @@
 # Email gold parity
 
+## Round 3 release projection and native checkpoint, 2026-11-07: OPEN
+
+Code head `3140dbebeb93cb62aee1c7dbad10eb243c7cb557`; this is a repair checkpoint, not acceptance. Gold remains pinned to `8779f33284b7d3f1178c3d57a699efb9b0867b22`. No install or desktop change.
+
+Release CBC `20261107-111355-394fcb63-a1` on cbc2 passed release frame tests and the release host build at `27738f785b1e1ac5dfe3997b32c1d4fbb3017d27`. Actual executable SHA256 `4a655372a221a7aad903e5218c2f372bc694cf1c61615cbeb9c5ee747f0473d9`; its release/source/hash receipt was verified before the native run. Private `round2/native.A7CLGn` measures the actual modern bulk projection with 2,000 distinct dates: three warm-ups, 21 retained samples, median **13.7523 ms**, p95 **19.1767 ms**, p99 **21.4132 ms**. The fixture hash is `1ca642d313c13d9a6eb58c086f51336650076ed2897d2a18f0e94b43e36cd780`. Bus acknowledgement timings are retained separately and include process/transport overhead. All owned processes stopped. This attests those release bytes, not later feature changes. The first attempt failed in the harness because the fixture exceeded the process-argument limit; it was corrected to use a Mix request file without changing application bytes.
+
+CBC `20261107-114349-8a1c199d` passed focused checks/debug at `a38cd5af0eaf177c52242fe78bdb95e3da771aec`, SHA256 `29b2e67b9c78e15f52d38970dafc62b569a333dfa624fabcde1dc5e999a75d76`. Private `round2/native.3vSdbG` passes 85 requests against real isolated mixd maild: previous CRUD/send/transfer cases plus reply/forward creation, composer attachment add/remove and pristine close. Two composer surfaces remain in one PID with local intents. Every owned PID stopped. Later native PIM form input/submission and contact completions passed before the next run exposed an embedded-interpreter UUID call error in Show; the code now uses the existing identity module, awaiting rerun.
+
+Matched diagnostic `round2/pair.js7Buv` at that source has calendar and contacts header/places/list/reader SSIM and RMSE distortion 0/0. A short right-pane border remains in status (SSIM 0.000348970 / RMSE 0.00121496); whole image 0.0000151023 / 0.000255193. Composer full distortion is 0.0101222 / 0.025756. Originals, montages and diffs inspected: remaining composer status strip, body spacing, From alignment and theme action were repaired next. Main mail captures also exposed initial table-width instability; earlier exact captures do not close that later observation.
+
+CBC `20261107-115343-0e2890be` passed focused checks/debug at `2a4a7e59ccbbab9d134c06a114410c73789dfab3`; formatting returned and applied. Matched `round2/pair.OB5gwe` closes composer **header and form regions exactly (0/0)**. Body/full remain 0.00456722 / 0.0261336 and 0.00439362 / 0.0226108: an extra six-pixel spacer was identified and repaired. Originals inspected; figures retained, further figure inspection and final rerun remain required. This repair adds Mix-owned PIM/triage forms, draft restore/debounce/quit gates, contact-first completions, document chooser/save/replace flows and a reusable native command-search renderer. These newer flows remain under test.
+
+Still required: identity editing/stale identity reconciliation; account cache/migration/authority recovery; complete attachment previews/open/save-all and print; bulk selection/search/narrow/saved layouts; all Bus replies/refusals/stale/topic cases; live Prefs matrix; all main-state release comparisons and the final exact-source gate. No omission is approved. Overall **OPEN / INCOMPLETE**, with no proposed deviation or Fable question.
+
 ## Round 3 native composer/PIM checkpoint, 2026-11-07: IN PROGRESS
 
 Exact tested code `1a14f1c499c83df1398b58a2629d4b962faf8b82`, CBC
