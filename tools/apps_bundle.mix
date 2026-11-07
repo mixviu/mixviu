@@ -5,11 +5,19 @@
 --
 -- Run from the repository root at a committed revision. MIX is this tree's
 -- mix (target/release/mix in the gate): the icon and brand installers use
--- its builtins. DIR is an asset store holding the pinned font set at
--- assets/sets/<set_id>/ and the wallpapers at wallpapers/<path>; every byte is
+-- its builtins. DIR is the asset store (created if absent): the pinned font
+-- set at assets/sets/<set_id>/ and the wallpapers at wallpapers/<path>. The
+-- store is rebuilt from the pins whenever something is missing:
+-- - fonts: share/assets/install.mix --root DIR/assets downloads each pinned
+--   upstream URL at its revision and checks BLAKE3 and SHA-256 before storing;
+-- - wallpapers: the photos are 3840x2160 crops re-encoded at JPEG quality 92
+--   and the generated ones ImageMagick plasma fields with unrecorded seeds, so
+--   neither rebuilds byte for byte from upstream; they come from the gold
+--   install (/opt/mixos/share/wallpapers, read only) and are stored only when
+--   size and SHA-256 match the pin.
+-- Gold /opt/mixos/share/assets is the last resort for fonts too. Every byte is
 -- checked against share/assets/core.conf.mix and share/wallpapers/
--- manifest.conf.mix, so the store is trusted for availability only. The gold
--- install (/opt/mixos/share) is one such store; nothing is written there.
+-- manifest.conf.mix before it is stored and again before it is packed.
 --
 -- Layout inside the tar, as installed under /opt/mix:
 --   share/mixviu/apps/<app>/          every Mix app (runtime files only)
@@ -25,7 +33,9 @@ if len($g.errors) != 0 or len($g.rest) != 1 or $g.opts.mix == nil or $g.opts.ass
 end
 $out = $g.rest[0]
 $mix = realpath($g.opts.mix) ?? raise("USAGE", "no such mix: " .. $g.opts.mix)
-$store = realpath($g.opts.assets) ?? raise("ASSETS", "no asset store at " .. $g.opts.assets)
+mkdir($g.opts.assets, {parents: true})
+$store = realpath($g.opts.assets) ?? raise("ASSETS", "cannot create the asset store at " .. $g.opts.assets)
+$gold = "/opt/mixos/share"
 if trim(run_argv_must(["git", "status", "--porcelain", "--untracked-files=no"])) != "" then
   raise("DIRTY", "apps.tar is built from a committed tree")
 end
@@ -86,7 +96,29 @@ end
 $core_text = read_file("share/assets/core.conf.mix")
 $core = json_parse($core_text)
 $set = $store .. "/assets/sets/" .. $core.set_id
-if not is_dir($set) then raise("ASSETS", "asset store lacks set " .. $core.set_id .. " at " .. $set) end
+fn font_ok($dir, $file)
+  $path = $dir .. "/" .. $file.path
+  return is_file($path) and stat($path).size == $file.bytes and hash_file($path, "sha256") == $file.sha256 and hash_file($path, "blake3") == $file.blake3
+end
+if not is_dir($set) then
+  -- Rebuild from the pins: the installer downloads and verifies each file.
+  $fetch = run_argv([$mix, "share/assets/install.mix", "--root", $store .. "/assets"], {timeout: 1800, max_output: 8000000})
+  print({asset_fetch: $fetch.exit_code, output: $fetch.stdout .. $fetch.stderr})
+  if not $fetch.ok then
+    -- Last resort: the gold install, read only, file by file against the pins.
+    $gset = $gold .. "/assets/sets/" .. $core.set_id
+    if not is_dir($gset) then raise("ASSETS", "set " .. $core.set_id .. " could not be downloaded and gold has none") end
+    remove_dir($set)
+    for $file in $core.files
+      if not font_ok($gset, $file) then raise("ASSET_HASH", "gold copy differs from core.conf.mix: " .. $file.path) end
+      mkdir(dirname($set .. "/" .. $file.path), {parents: true})
+      copy($gset .. "/" .. $file.path, $set .. "/" .. $file.path)
+    end
+    write_file($set .. "/manifest.conf.mix", $core_text)
+    write_file($set .. "/fonts.css", $core.web_css)
+    print({asset_source: "gold", set: $core.set_id})
+  end
+end
 place($stage, "share/assets/core.conf.mix", "share/assets/core.conf.mix")
 place($stage, "share/assets/install.mix", "share/assets/install.mix")
 $dest = "share/assets/sets/" .. $core.set_id
@@ -104,8 +136,18 @@ symlink("sets/" .. $core.set_id, $stage .. "/share/assets/current")
 
 -- Wallpapers, pinned by hash.
 $walls = load_data("share/wallpapers/manifest.conf.mix")
+fn wall_ok($path, $file)
+  return is_file($path) and stat($path).size == $file.bytes and hash_file($path, "sha256") == $file.sha256
+end
 for $file in $walls.files
   $src = $store .. "/wallpapers/" .. $file.path
+  if not wall_ok($src, $file) then
+    $gpath = $gold .. "/wallpapers/" .. $file.path
+    if not wall_ok($gpath, $file) then raise("WALLPAPER_HASH", "neither the store nor gold has the pinned " .. $file.path) end
+    mkdir(dirname($src), {parents: true})
+    copy($gpath, $src)
+    print({wallpaper_source: "gold", path: $file.path})
+  end
   if not is_file($src) or stat($src).size != $file.bytes or hash_file($src, "sha256") != $file.sha256 then
     raise("WALLPAPER_HASH", "asset store copy differs from the manifest: " .. $file.path)
   end
