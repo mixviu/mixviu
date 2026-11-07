@@ -24,3 +24,7 @@ check($p.show_mesh and len($p.mesh_canvas.initial.nodes)==2 and $p.mesh_counts.i
 check($p.traffic_view.kind=="cell-grid","bottom traffic table")
 $s.dock_side="right";$p=$view.project($s);check($p.traffic_view.kind=="block-list","right traffic cards")
 print("Workshop view contracts PASS")
+
+$agent_view=require("agent-view.mix")
+$tool=$agent_view.blocks([{item:"tool",title:"Raw specimen",tool:"read",status:"completed",raw:{},_workshop_tool_json:'{"seq":"123","bytes":18446744073709551615}'}])[0]
+check($tool.text=="{\n  \"bytes\": 18446744073709551615,\n  \"seq\": \"123\"\n}","tool projection formats opaque JSON without rounding or changing types")
