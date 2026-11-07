@@ -12,6 +12,7 @@ pub mod gpu;
 pub mod ime;
 pub mod input;
 pub mod metrics;
+mod metadata;
 pub mod model;
 pub mod native_session;
 pub mod protocol;

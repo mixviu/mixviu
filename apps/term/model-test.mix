@@ -59,3 +59,9 @@ $s.events=[];$first=$s.event_revision
 for $i=1 to 300 $s=$m.changed($s,"pane.changed",1,1,"resized") end
 check(len($s.events)==256 and $s.event_revision==$first+300,"bounded best effort publication leaves detectable gaps")
 print("term model: ordered change topics and bounded queue checks passed")
+
+$s=$m.open_tab($m.initial(),session(1),nil);$s=$m.split_pane($s,"v",session(2));$s=$m.open_tab($s,session(3),"Pinned")
+$s=$m.move_tab($s,2,0)
+check(deep_eq($m.metadata($s).tabs,[{id:2,title:"Pinned",active:true,selected:3,panes:[3]},{id:1,title:"mix",active:false,selected:2,panes:[1,2]}]),"native metadata follows Mix order, titles, selection and split membership")
+check(deep_eq($m.metadata($m.initial()),{tabs:[]}),"closed metadata has no implicit active tab")
+print("term model: in-process metadata projection checks passed")

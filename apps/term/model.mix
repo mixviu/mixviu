@@ -4,6 +4,14 @@
 fn initial()
   return {tabs:[],active:0,panes:{},next_tab:1,next_pane:1,revision:0,focus_serial:0,closing:false,event_revision:0,events:[],watching:false}
 end
+fn metadata($s)
+  $tabs=[]
+  for $i=0 to len($s.tabs)-1
+    $tab=$s.tabs[$i]
+    push($tabs,{id:$tab.id,title:$tab.title,active:$i==$s.active,selected:$tab.active_pane,panes:leaves($tab.tree)})
+  end
+  return {tabs:$tabs}
+end
 fn changed($s,$topic,$tab,$pane,$kind)
   $s.event_revision=$s.event_revision+1
   if $s.watching and len($s.events)<256 then $s.events=push($s.events,{topic:"term."..$topic,body:{tab:$tab,pane:$pane,kind:$kind,revision:$s.event_revision}}) end

@@ -25,6 +25,7 @@ fn pump_events($s)
   return $s
 end
 fn publish_term($s)
+  $published=$native("metadata","",$model.metadata($s.layout))
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
 fn font_event($s,$event)

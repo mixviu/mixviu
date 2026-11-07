@@ -21,11 +21,15 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
+use super::metadata::Metadata;
 
 #[path = "recipient_forwarding.rs"]
 mod forwarding;
+#[path = "recipient_metadata.rs"]
+mod metadata_reader;
 
 type PaneLookup = Arc<dyn Fn(u64) -> Option<Arc<Mutex<Terminal>>> + Send + Sync>;
+type MetadataLookup = Arc<dyn Fn() -> Option<Metadata> + Send + Sync>;
 struct InputNotice {
     actor: String,
     expected: usize,
@@ -40,6 +44,7 @@ struct InputNotice {
 pub(crate) struct Recipient {
     native: NativeSession,
     pane: PaneLookup,
+    metadata: MetadataLookup,
     replay: Mutex<Replay>,
     permits: Mutex<Vec<Weak<Permit>>>,
     notice_tx: tokio::sync::mpsc::Sender<InputNotice>,
@@ -56,11 +61,12 @@ impl Drop for SingleFlight<'_> {
 }
 
 impl Recipient {
-    pub fn new(native: NativeSession, pane: PaneLookup) -> Self {
+    pub fn new(native: NativeSession, pane: PaneLookup, metadata: MetadataLookup) -> Self {
         let (notice_tx, notice_rx) = tokio::sync::mpsc::channel(256);
         Self {
             native,
             pane,
+            metadata,
             replay: Mutex::default(),
             permits: Mutex::default(),
             notice_tx,
@@ -125,8 +131,8 @@ impl Recipient {
                 )
                 .await;
         }
-        // Layout and session metadata still need the in-process Mix adapter.
-        if !matches!(admitted.operation.as_str(), "term.snapshot" | "term.type") {
+        let metadata_read=matches!(admitted.operation.as_str(), "term.session" | "term.list" | "term.tabs" | "term.panes");
+        if !metadata_read && !matches!(admitted.operation.as_str(), "term.snapshot" | "term.type") {
             return Reply::error("UNSUPPORTED");
         }
         // Do not hold retained-state locks while waiting for the pane: close
@@ -150,6 +156,11 @@ impl Recipient {
         let pane = pane.lock().unwrap();
         if !permit.valid() {
             return Reply::error("FORBIDDEN");
+        }
+        if metadata_read {
+            let foreground=pane.listener.foreground_generation();
+            drop(pane);
+            return self.describe(&admitted,parent,&permit,foreground);
         }
         let mut replay = self.replay.lock().unwrap();
         let mutation = admitted.capability == Capability::Input;

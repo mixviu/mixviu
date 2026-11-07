@@ -24,6 +24,7 @@ struct State {
     sessions: BTreeMap<String, Arc<Mutex<Terminal>>>,
     placements: BTreeMap<String, Placement>,
     pane_ids: BTreeMap<String, u64>,
+    metadata: super::metadata::Metadata,
 }
 
 #[derive(Default)]
@@ -75,6 +76,7 @@ impl Sessions {
                 sessions: BTreeMap::new(),
                 placements: BTreeMap::new(),
                 pane_ids: BTreeMap::new(),
+                metadata: super::metadata::Metadata::default(),
             })),
             wake,
             issuer,
@@ -125,8 +127,12 @@ impl Sessions {
                         .find(|(_, existing)| **existing == id)?;
                     state.sessions.get(key).cloned()
                 });
+                let state = Arc::downgrade(&self.state);
+                let metadata = Arc::new(move || {
+                    Some(state.upgrade()?.lock().ok()?.metadata.clone())
+                });
                 let control: Arc<dyn super::session_actor::ControlLane> =
-                    Arc::new(super::recipient::Recipient::new(handle.clone(), pane));
+                    Arc::new(super::recipient::Recipient::new(handle.clone(), pane, metadata));
                 handle.install_control(&control);
                 native.control = Some(control);
             }
@@ -204,6 +210,15 @@ impl Sessions {
     }
 
     pub fn call(&self, op: &str, handle: &str, a: Value) -> Result<Value, String> {
+        if op == "metadata" {
+            let metadata = super::metadata::Metadata::decode(&a)?;
+            let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
+            if metadata.tabs.iter().flat_map(|t| &t.panes).any(|id| !state.pane_ids.values().any(|p| p==id)) {
+                return Err("metadata references a missing native pane".into());
+            }
+            state.metadata = metadata;
+            return Ok(json!({"published":true}));
+        }
         if op == "session" {
             return Ok(self.native.lock().unwrap().supervisor.as_ref().map_or_else(
                 || json!({"diagnostic":"native identity unavailable; panes are graphics-only"}),
@@ -552,6 +567,7 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
         };
+        sessions.call("metadata","",json!({"tabs":[{"id":17,"title":"Mix metadata","active":true,"selected":1,"panes":[1]}]})).unwrap();
         assert_native_controls(&sessions, &bound);
         assert!(sessions.native.lock().unwrap().attempted);
         let natural_exit = std::env::var(CHILD).unwrap() == "exit";
@@ -638,6 +654,22 @@ mod tests {
                 let (rc,body,_)=tokio::time::timeout(std::time::Duration::from_secs(6),caller.client().call_with_headers_raw(&parent.name,command,&Default::default(),&body.to_string())).await.unwrap().unwrap();
                 (rc,serde_json::from_str::<Value>(&body).unwrap())
             };
+            let (rc,session)=invoke("term.session",json!({"target":target})).await;
+            assert_eq!(rc,0,"{session}");
+            assert_eq!(session["request_high_water"],"0");
+            assert_eq!(session["tabs"][0]["id"],17);
+            assert_eq!(session["tabs"][0]["title"],"Mix metadata");
+            assert_eq!(session["panes"][0]["tab_id"],17);
+            assert_eq!(session["panes"][0]["target"],target);
+            for command in ["term.list","term.tabs","term.panes"] {
+                assert_eq!(invoke(command,json!({"target":target})).await,(0,session.clone()));
+            }
+            assert_eq!(invoke("term.props.get",json!({"target":target,"property":"state"})).await,(0,session.clone()));
+            sessions.call("metadata","",json!({"tabs":[{"id":17,"title":"renamed by Mix","active":true,"selected":1,"panes":[1]}]})).unwrap();
+            let (rc,renamed)=invoke("term.session",json!({"target":target})).await;
+            assert_eq!(rc,0,"{renamed}");
+            assert_eq!(renamed["tabs"][0]["title"],"renamed by Mix");
+            assert_eq!(renamed["panes"][0]["child_pid"],session["panes"][0]["child_pid"]);
             let (rc,snapshot)=invoke("term.snapshot",json!({"target":target})).await;
             assert_eq!(rc,0,"{snapshot}");
             let generation=snapshot["foreground_generation"].as_u64().unwrap().to_string();
@@ -686,7 +718,11 @@ mod tests {
                 }
             }).await.expect("child prompt must be ready for forwarded evaluation");
             // The real verified connection supplies this epoch, never test JSON.
-            let epoch=caller.session_context().await.unwrap().connection_id;
+            let (rc,current)=invoke("term.session",json!({"target":target})).await;
+            assert_eq!(rc,0,"{current}");
+            assert_eq!(current["request_high_water"],"2");
+            let epoch=current["request_epoch"].clone();
+            assert_eq!(epoch,json!(caller.session_context().await.unwrap().connection_id));
             let evaluation=json!({"target":target,"request_id":"3","request_epoch":epoch,"prompt_generation":generation,"source":"print(\"FORWARDED_\" .. \"EVAL\")"});
             let (rc,evaluated)=invoke("term.execute",evaluation.clone()).await;
             assert_eq!(rc,0,"{evaluated}");
@@ -743,6 +779,9 @@ mod tests {
         assert_eq!(created["handle"], "vt-1");
         assert_eq!(created["native_id"], 41);
         assert!(sessions.call("create", "", json!({"pane_id":41})).is_err());
+        sessions.call("metadata","",json!({"tabs":[{"id":7,"title":"application","active":true,"selected":41,"panes":[41]}]})).unwrap();
+        assert!(sessions.call("metadata","",json!({"tabs":[{"id":7,"title":"missing","active":true,"selected":42,"panes":[42]}]})).is_err());
+        assert_eq!(sessions.state.lock().unwrap().metadata.tabs[0].title,"application");
         assert_eq!(
             sessions.call("state", "vt-1", json!({})).unwrap()["native_id"],
             41
