@@ -854,7 +854,7 @@ impl Host {
             }
         }
         while !self.held_requests.is_empty() {
-            if self.ready && !self.view.current_revision_drawn() {
+            if self.ready && !self.headless && !self.view.current_revision_drawn() {
                 ctx.request_repaint();
                 break;
             }
