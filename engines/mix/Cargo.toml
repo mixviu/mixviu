@@ -26,6 +26,13 @@ path = "src/main.rs"
 mix-shell = { path = "../../libraries/mix-shell" }
 mimalloc.workspace = true
 
+[features]
+test-hooks = ["mix-shell/test-hooks"]
+
+[[test]]
+name = "native_session_pty"
+required-features = ["test-hooks"]
+
 # The shell's process-level tests (tests/), which run `mix` as built here.
 # Versions match libraries/mix-shell's, so the lock gains no second copy.
 [dev-dependencies]
