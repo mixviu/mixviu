@@ -480,10 +480,16 @@ mod tests {
         crate::appearance::install(&ctx);
         let mut windows = Windows::default();
         let source = "---\nscene: 1\nname: child\ncitizen: child\n---\n```mix\n{root:{widget:\"column\",padding_top:50,children:[\"button\"]},button:{widget:\"control\",on_intent:\"child.intent\",definition:{id:\"button\",kind:\"button\",label:\"Click\",initial:\"\"}}}\n```\n";
+        let model = json!({"frame":{"groups":{
+            "gold-menu":{"preferred":80,"minimum":0,"align":"left","order":0,"shrink":1},
+            "gold-title":{"preferred":80,"minimum":0,"align":"center","order":1,"shrink":1},
+            "gold-toolbar":{"preferred":80,"minimum":0,"align":"right","order":2,"shrink":1},
+            "gold-captions":{"preferred":"window.captions","minimum":"window.captions","align":"window.captions","order":3,"shrink":null}
+        }}});
         windows.sync(
             &ctx,
             "child-test",
-            &json!({"native_windows":[{"key":"new","title":"New","size":[400,300],"scene":source,"model":{}}]}),
+            &json!({"native_windows":[{"key":"new","title":"New","size":[400,300],"scene":source,"model":model}]}),
             &Default::default(),
             false,
         );
@@ -519,7 +525,10 @@ mod tests {
             .drop_without_applying_deltas();
         };
         draw(Vec::new());
-        assert!(matches!(answer.try_recv(), Err(tokio::sync::oneshot::error::TryRecvError::Empty)));
+        assert!(matches!(
+            answer.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
         assert_eq!(child.lock().unwrap().requests.len(), 1);
         assert!(child.lock().unwrap().view.current_revision_drawn());
         draw(Vec::new());
@@ -542,7 +551,10 @@ mod tests {
         assert_eq!(event.body["action"], "activate");
         child.lock().unwrap().pending = 0;
         draw(Vec::new());
-        assert_eq!(answer.try_recv().expect("one completed original request").0, 0);
+        assert_eq!(
+            answer.try_recv().expect("one completed original request").0,
+            0
+        );
         assert!(windows.take_one().is_none());
     }
 }
