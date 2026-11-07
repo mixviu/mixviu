@@ -50,7 +50,10 @@ mod tests {
         let colours = |theme: &toolkit::Theme| {
             let ctx = egui::Context::default();
             crate::appearance::install_theme(&ctx, theme).unwrap();
-            (ctx.global_style().visuals.panel_fill, ctx.global_style().visuals.dark_mode)
+            (
+                ctx.global_style().visuals.panel_fill,
+                ctx.global_style().visuals.dark_mode,
+            )
         };
         assert_ne!(colours(&accepted), colours(&file));
         assert_eq!(colours(&fallback), colours(&file));
