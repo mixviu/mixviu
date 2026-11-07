@@ -184,7 +184,8 @@ on dopus.execute
   if not contains($contract.bus_actions,$a.id) then
     reply(10,json_encode({error_code:if $a.id=="place.open" then "UNAVAILABLE" else "INVALID_ARGUMENT" end,message:$a.id..if $a.id=="place.open" then " is not implemented by dopus" else " is not a dopus action" end,reason:if $a.id=="place.open" then "not_implemented" else nil end}));return
   end
-  $params=if $a.params.pane==nil then {} else {pane:$a.params.pane} end
+  $raw=$a.params ?? {}
+  $params=if $raw.pane==nil then {} else {pane:$raw.pane} end
   dp_request({command:"dopus.execute",args:{id:$a.id,params:$params}})
 end
 
