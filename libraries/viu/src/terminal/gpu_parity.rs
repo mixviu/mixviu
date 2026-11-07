@@ -161,6 +161,26 @@ fn a_dirty_row_rebuilds_alone_and_the_frame_still_matches() {
     assert_eq!(more, 0);
 }
 
+#[test]
+fn search_highlight_moves_and_clears_through_real_gpu_callbacks() {
+    use super::model::{SearchColors, SearchPattern, SearchPoint, SearchRequest};
+    let t = Terminal::from_test_vt(12, 3, b"hit\r\nother\r\nhit");
+    let raster = Arc::new(Mutex::new(Raster::for_test(1.0, 13.0, Cursor::Block).unwrap()));
+    let colors = SearchColors { foreground: [10, 20, 30], background: [200, 100, 50] };
+    let mut pattern = SearchPattern::new("hit", false, true).unwrap();
+    let mut frames = Vec::new();
+    for origin in [None, Some(SearchPoint { row: 2, col: 0 })] {
+        let (snapshot, _) = t.grid_snapshot_with_search(&mut pattern, SearchRequest { origin, ..Default::default() }, colors).unwrap();
+        frames.push((snapshot.screen, snapshot.dirty_rows));
+    }
+    let last = t.grid_snapshot();
+    let cpu = raster.lock().unwrap().render(&last.screen);
+    frames.push((last.screen, last.dirty_rows));
+    let frame = gpu_frames(raster, 1.0, frames);
+    let (_, more) = compare(&frame.gpu, &cpu, frame.width, "cleared search");
+    assert_eq!(more, 0);
+}
+
 /// Two panes share the atlas. When the right pane empties it during its
 /// reserve phase (as a full atlas does), the left pane, which has no new
 /// output and was drawn in an earlier frame, must rebuild from its retained

@@ -21,7 +21,7 @@ use rio_vt::{
     teletypewriter::{self, ChildEvent, EventedPty, ProcessReadWrite, WinsizeBuilder},
 };
 pub use rio_vt::{crosswords::pos::Side as SelectionSide, selection::SelectionType};
-pub use search::{SearchOutcome, SearchPattern, SearchPoint, SearchRange};
+pub use search::{SearchColors, SearchOutcome, SearchPattern, SearchPoint, SearchRange, SearchRequest};
 use std::{
     borrow::Cow,
     collections::VecDeque,
@@ -703,6 +703,7 @@ pub struct Terminal {
     damage: Mutex<Receiver<()>>,
     captured_cursor: Mutex<Option<((usize, usize), bool)>>,
     captured_selection: Mutex<Option<SelectionRange>>,
+    captured_search: Mutex<Option<(SearchRange, SearchColors)>>,
     clusters: Mutex<ClusterInterner>,
     pub pid: i32,
     thread: Option<JoinHandle<(Machine<MeteredPty, Listener>, rio_vt::performer::State)>>,
@@ -871,6 +872,7 @@ impl Terminal {
             damage: Mutex::new(rx),
             captured_cursor: Mutex::new(None),
             captured_selection: Mutex::new(None),
+            captured_search: Mutex::new(None),
             clusters: Mutex::new(ClusterInterner::default()),
             pid: 0,
             thread: None,
@@ -1118,6 +1120,7 @@ impl Terminal {
             damage: Mutex::new(rx),
             captured_cursor: Mutex::new(None),
             captured_selection: Mutex::new(None),
+            captured_search: Mutex::new(None),
             clusters: Mutex::new(ClusterInterner::default()),
             pid,
             thread: Some(thread),
@@ -1249,11 +1252,40 @@ impl Terminal {
         GridSnapshot { screen, dirty_rows }
     }
     fn capture(&self, consume: bool, dirty: Option<&mut Vec<bool>>) -> Screen {
+        self.capture_frame(consume, dirty, None)
+            .expect("capture without a search request cannot fail").0
+    }
+    /// Match and paint from the same grid lock. The range is an observation of
+    /// this frame only, and never becomes the clipboard selection.
+    pub fn grid_snapshot_with_search(
+        &self,
+        pattern: &mut SearchPattern,
+        request: SearchRequest,
+        colors: SearchColors,
+    ) -> Result<(GridSnapshot, SearchOutcome), String> {
+        let mut dirty_rows = Vec::new();
+        let (screen, outcome) = self.capture_frame(true, Some(&mut dirty_rows), Some((pattern, request, colors)))?;
+        Ok((GridSnapshot { screen, dirty_rows }, outcome.expect("search request has an outcome")))
+    }
+    fn capture_frame(
+        &self,
+        consume: bool,
+        dirty: Option<&mut Vec<bool>>,
+        search: Option<(&mut SearchPattern, SearchRequest, SearchColors)>,
+    ) -> Result<(Screen, Option<SearchOutcome>), String> {
         use rio_vt::config::{
             Colors,
             colors::{AnsiColor, term::List},
         };
         let mut term = self.grid.lock();
+        let (search_outcome, search_colors) = match search {
+            Some((pattern, request, colors)) => (
+                Some(pattern.find_grid(&term, request.origin, request.backwards, request.max_lines)?),
+                Some(colors),
+            ),
+            None => (None, None),
+        };
+        let highlight = search_outcome.as_ref().and_then(|outcome| outcome.matched).zip(search_colors);
         let palette = List::from(&Colors::default());
         let colour = |c: AnsiColor| -> [u8; 3] {
             let index = match c {
@@ -1313,6 +1345,18 @@ impl Terminal {
                     }) {
                         std::mem::swap(&mut fg, &mut bg);
                     }
+                    if let Some((range, colors)) = highlight {
+                        let line = y as i32 - offset as i32;
+                        let inside = range.contains(line, x)
+                            || (matches!(square.wide(), rio_vt::crosswords::square::Wide::Wide)
+                                && range.contains(line, x + 1))
+                            || (matches!(square.wide(), rio_vt::crosswords::square::Wide::Spacer)
+                                && x > 0 && range.contains(line, x - 1));
+                        if inside {
+                            fg = colors.foreground;
+                            bg = colors.background;
+                        }
+                    }
                     cells.push(Cell {
                         c: square.c(),
                         extra: if square
@@ -1368,8 +1412,19 @@ impl Terminal {
             cursor.1 < rows && term.mode().contains(rio_vt::crosswords::Mode::SHOW_CURSOR);
         let mut previous = self.captured_cursor.lock().unwrap();
         let mut previous_selection = self.captured_selection.lock().unwrap();
+        let mut previous_search = self.captured_search.lock().unwrap();
         if let Some(dirty) = dirty {
             *dirty = dirty_rows(&mut term, *self.captured_offset.lock().unwrap());
+            if *previous_search != highlight {
+                for (range, _) in previous_search.iter().chain(highlight.iter()) {
+                    for (y, row) in dirty.iter_mut().enumerate() {
+                        let line = y as i64 - offset as i64;
+                        if (i64::from(range.start.row)..=i64::from(range.end.row)).contains(&line) {
+                            *row = true;
+                        }
+                    }
+                }
+            }
             // Compare at capture time too: the parser can rotate or clear Rio's
             // selection without going through the frontend's selection methods.
             if *previous_selection != selection {
@@ -1397,6 +1452,7 @@ impl Terminal {
             }
         }
         if consume {
+            *previous_search = highlight;
             *previous_selection = selection;
             *previous = Some((cursor, cursor_visible));
             *self.captured_offset.lock().unwrap() = term.display_offset();
@@ -1410,7 +1466,7 @@ impl Terminal {
             .unwrap()
             .vt_updated
             .unwrap_or_else(Instant::now);
-        Screen {
+        Ok((Screen {
             clusters: clusters.snapshot.clone(),
             cols,
             rows,
@@ -1419,7 +1475,7 @@ impl Terminal {
             cursor_visible,
             cells,
             updated,
-        }
+        }, search_outcome))
     }
     pub fn snapshot(&self) -> String {
         self.snapshot_with(true, 0)
@@ -1839,6 +1895,7 @@ mod tests {
                 damage: Mutex::new(rx),
                 captured_cursor: Mutex::new(None),
                 captured_selection: Mutex::new(None),
+            captured_search: Mutex::new(None),
                 clusters: Mutex::new(ClusterInterner::default()),
                 pid: 0,
                 thread: None,

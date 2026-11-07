@@ -57,6 +57,33 @@ pub struct SearchOutcome {
     pub limited: bool,
 }
 
+#[derive(Clone, Copy)]
+pub struct SearchRequest {
+    pub origin: Option<SearchPoint>,
+    pub backwards: bool,
+    pub max_lines: usize,
+}
+
+impl Default for SearchRequest {
+    fn default() -> Self {
+        Self { origin: None, backwards: false, max_lines: 10000 }
+    }
+}
+
+/// Supplied by the current widget theme; never cached in the VT grid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SearchColors {
+    pub foreground: [u8; 3],
+    pub background: [u8; 3],
+}
+
+impl SearchRange {
+    pub(super) fn contains(&self, row: i32, col: usize) -> bool {
+        (self.start.row, self.start.col) <= (row, col)
+            && (row, col) <= (self.end.row, self.end.col)
+    }
+}
+
 impl Terminal {
     /// Search the live Rio grid under its lock, leaving selection, scroll and
     /// PTY input untouched. Results are observations, not persistent anchors:
@@ -68,10 +95,21 @@ impl Terminal {
         backwards: bool,
         max_lines: usize,
     ) -> Result<SearchOutcome, String> {
+        pattern.find_grid(&self.grid.lock(), origin, backwards, max_lines)
+    }
+}
+
+impl SearchPattern {
+    pub(super) fn find_grid(
+        &mut self,
+        term: &rio_vt::crosswords::Crosswords<super::Listener>,
+        origin: Option<SearchPoint>,
+        backwards: bool,
+        max_lines: usize,
+    ) -> Result<SearchOutcome, String> {
         if !(1..=10000).contains(&max_lines) {
             return Err("search line budget must be 1..10000".into());
         }
-        let term = self.grid.lock();
         let origin = origin.unwrap_or_else(|| SearchPoint {
             row: -(term.display_offset() as i32)
                 + if backwards {
@@ -89,7 +127,7 @@ impl Terminal {
         }
         let position = Pos::new(Line(origin.row), Column(origin.col));
         let found = term.search_next(
-            &mut pattern.0,
+            &mut self.0,
             position,
             if backwards {
                 Direction::Left
@@ -139,6 +177,56 @@ impl Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn highlight_moves_clears_and_rethemes_without_changing_selection() {
+        let t = Terminal::from_test_vt(12, 3, b"hit\r\nmiss\r\nhit");
+        t.selection_start(0, 1, super::super::SelectionSide::Left, super::super::SelectionType::Simple);
+        t.selection_update(3, 1, super::super::SelectionSide::Right);
+        let selected = t.selection_text();
+        let plain = t.grid_snapshot().screen;
+        let colors = SearchColors { foreground: [10, 20, 30], background: [200, 100, 50] };
+        let mut pattern = SearchPattern::new("hit", false, true).unwrap();
+        let (first, outcome) = t.grid_snapshot_with_search(&mut pattern, SearchRequest::default(), colors).unwrap();
+        assert_eq!(outcome.matched.unwrap().start.row, 0);
+        assert_eq!(first.dirty_rows, [true, false, false]);
+        assert_eq!(first.screen.cells[0].bg, colors.background);
+        assert_eq!(first.screen.cells[0].fg, colors.foreground);
+        assert_eq!(first.screen.cells[3].bg, plain.cells[3].bg);
+        let (idle, _) = t.grid_snapshot_with_search(&mut pattern, SearchRequest::default(), colors).unwrap();
+        assert!(idle.dirty_rows.iter().all(|dirty| !dirty));
+        let request = SearchRequest { origin: Some(SearchPoint { row: 2, col: 0 }), ..Default::default() };
+        let (moved, _) = t.grid_snapshot_with_search(&mut pattern, request, colors).unwrap();
+        assert_eq!(moved.dirty_rows, [true, false, true]);
+        assert_eq!(moved.screen.cells[0].bg, plain.cells[0].bg);
+        assert_eq!(moved.screen.cells[24].bg, colors.background);
+        let changed = SearchColors { background: [30, 40, 50], ..colors };
+        let (rethemed, _) = t.grid_snapshot_with_search(&mut pattern, request, changed).unwrap();
+        assert_eq!(rethemed.dirty_rows, [false, false, true]);
+        assert_eq!(rethemed.screen.cells[24].bg, changed.background);
+        let cleared = t.grid_snapshot();
+        assert_eq!(cleared.dirty_rows, [false, false, true]);
+        for (actual, expected) in cleared.screen.cells.iter().zip(&plain.cells) {
+            assert_eq!((actual.c, actual.fg, actual.bg), (expected.c, expected.fg, expected.bg));
+        }
+        assert_eq!(t.selection_text(), selected);
+        assert_eq!(t.display_offset(), 0);
+    }
+
+    #[test]
+    fn highlight_covers_both_wide_halves_but_not_the_leading_spacer() {
+        let t = Terminal::from_test_vt(5, 3, "abcd中z".as_bytes());
+        let plain = t.grid_snapshot().screen;
+        let colors = SearchColors { foreground: [10, 20, 30], background: [200, 100, 50] };
+        let mut pattern = SearchPattern::new("中", false, true).unwrap();
+        let (frame, _) = t.grid_snapshot_with_search(&mut pattern, SearchRequest::default(), colors).unwrap();
+        assert_eq!(frame.screen.cells[4].bg, plain.cells[4].bg);
+        for index in [5, 6] {
+            assert_eq!(frame.screen.cells[index].bg, colors.background);
+            assert_eq!(frame.screen.cells[index].fg, colors.foreground);
+        }
+        assert_eq!(frame.screen.cells[7].bg, plain.cells[7].bg);
+    }
 
     #[test]
     fn literal_regex_case_and_reverse_navigation_use_real_cells() {
@@ -271,9 +359,18 @@ mod tests {
             let mut pattern = SearchPattern::new(query, true, true).unwrap();
             for backwards in [false, true] {
                 for col in 0..5 {
-                    let result = t.search(&mut pattern, Some(SearchPoint { row: 0, col }), backwards, 10000).unwrap();
+                    let result = t
+                        .search(
+                            &mut pattern,
+                            Some(SearchPoint { row: 0, col }),
+                            backwards,
+                            10000,
+                        )
+                        .unwrap();
                     if let Some(range) = result.matched {
-                        assert!((range.start.row, range.start.col) <= (range.end.row, range.end.col));
+                        assert!(
+                            (range.start.row, range.start.col) <= (range.end.row, range.end.col)
+                        );
                     }
                 }
             }
