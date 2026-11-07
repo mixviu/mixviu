@@ -53,8 +53,12 @@ fn terminal_shortcuts($s)
     for $chord in $keys
       $parts=split($chord,"+");$key=$parts[len($parts)-1]
       $alias={"=":"Equals","-":"Minus","Left":"ArrowLeft","Right":"ArrowRight","Up":"ArrowUp","Down":"ArrowDown"}
-      push($out,{command:$a.id,key:$alias[$key] ?? $key,ctrl:contains($parts,"Ctrl"),shift:contains($parts,"Shift"),alt:contains($parts,"Alt"),enabled:$a.enabled})
+      push($out,{command:$a.id,key:$alias[$key] ?? $key,ctrl:contains($parts,"Ctrl"),shift:contains($parts,"Shift"),alt:contains($parts,"Alt"),enabled:$a.enabled,repeat:starts_with($a.id,"view.zoom_") or starts_with($a.id,"scroll."),normal_screen_only:starts_with($a.id,"scroll.")})
     end
+  end
+  $tab=$s.layout.tabs[$s.layout.active]
+  if $tab!=nil and len($layout.leaves($tab.tree))>1 then
+    for $shift in [false,true] push($out,{command:if $shift then "pane.prev" else "pane.next" end,key:"Tab",ctrl:false,shift:$shift,alt:false,enabled:true,repeat:false}) end
   end
   return $out
 end

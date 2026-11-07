@@ -11,6 +11,7 @@ end
 $n=fn($op,$handle,$args)=native($op,$handle,$args)
 $s={layout:$m.open_tab($m.initial(),{handle:"vt-1",pid:11},nil),closed:false,look:{values:{},appearance:{mode:"dark"}},choice:{},bindings:{},effective:{},zoom:0,replies:[]}
 check(len($a.registry($s))==61,"complete pinned registry")
+check(not any($a.terminal_shortcuts($s),fn($key)=$key.key=="Tab" and not $key.ctrl and not $key.alt),"single-pane Tab stays with the shell")
 check(any($a.terminal_shortcuts($s),fn($key)=$key.command=="tab.new" and $key.ctrl and $key.shift and $key.key=="T"),"terminal widget receives default command chords")
 check(deep_eq(map($a.menus($s),fn($v)=$v.label),["File","Edit","View","Pane","Tabs","Help"]),"gold menu order")
 check($a.invoke($s,"pane.next",{},$n).body.error_code=="DISABLED","pane cycling requires a split")
@@ -31,7 +32,10 @@ check($paste.effects[0].handle=="vt-1" and $paste.effects[0].supplied and $paste
 $paste=$a.invoke($s,"edit.paste",{},$n)
 check(not $paste.effects[0].supplied,"menu paste still requests native clipboard read")
 $rebound=$s;$rebound.bindings={"tab.new":{shortcut:"F2",keys:["F2","Ctrl+N"]},"edit.copy":{shortcut:nil,keys:[]}}
-check(deep_eq(filter($a.terminal_shortcuts($rebound),fn($key)=$key.command=="tab.new"),[{command:"tab.new",key:"F2",ctrl:false,shift:false,alt:false,enabled:true},{command:"tab.new",key:"N",ctrl:true,shift:false,alt:false,enabled:true}]),"all resolved live key bindings reach terminal input")
+check(deep_eq(filter($a.terminal_shortcuts($rebound),fn($key)=$key.command=="tab.new"),[{command:"tab.new",key:"F2",ctrl:false,shift:false,alt:false,enabled:true,repeat:false,normal_screen_only:false},{command:"tab.new",key:"N",ctrl:true,shift:false,alt:false,enabled:true,repeat:false,normal_screen_only:false}]),"all resolved live key bindings reach terminal input")
+check(any($a.terminal_shortcuts($s),fn($key)=$key.command=="view.zoom_reset" and $key.repeat),"gold font actions repeat")
+check(any($a.terminal_shortcuts($s),fn($key)=starts_with($key.command,"scroll.") and $key.repeat and $key.normal_screen_only),"scrollback chords belong to normal screen")
+check(any($a.terminal_shortcuts($s),fn($key)=$key.command=="pane.next" and $key.key=="Tab" and not $key.ctrl and not $key.repeat),"plain Tab cycles a split without autorepeat")
 check(len(filter($a.terminal_shortcuts($rebound),fn($key)=$key.command=="edit.copy"))==0,"unbound command has no stale terminal chord")
 $s.layout.panes["1"]=merge($s.layout.panes["1"],{cols:49,rows:23,geometry:{x:0,y:70,w:450,h:490},cell:[9,20],font_px:14.667,scale:1.25})
 $s.layout.panes["2"]=merge($s.layout.panes["2"],{cols:49,rows:23,geometry:{x:450,y:70,w:450,h:490},cell:[9,20],font_px:14.667,scale:1.25})

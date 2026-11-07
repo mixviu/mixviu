@@ -59,6 +59,16 @@ fn grid_geometry(
     (size, grid, border)
 }
 
+fn shortcut(p: &Value, key: egui::Key, modifiers: egui::Modifiers, alternate: bool) -> Option<&Value> {
+    p["shortcuts"].as_array()?.iter().find(|s| {
+        s["key"].as_str() == Some(key.name())
+            && (s["ctrl"] == true) == modifiers.ctrl
+            && (s["shift"] == true) == modifiers.shift
+            && (s["alt"] == true) == modifiers.alt
+            && !(s["normal_screen_only"] == true && alternate)
+    })
+}
+
 pub fn validate(value: &Value) -> Result<(), String> {
     fn node(value: &Value, depth: usize, handles: &mut std::collections::BTreeSet<String>) -> bool {
         if depth >= 64 || handles.len() >= 256 {
@@ -85,6 +95,39 @@ pub fn validate(value: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alternate_screen_keeps_scroll_keys_but_not_other_commands() {
+        let shift = egui::Modifiers { shift: true, ..egui::Modifiers::NONE };
+        let properties = json!({"shortcuts":[
+            {"key":"PageUp","shift":true,"command":"history","normal_screen_only":true},
+            {"key":"T","shift":true,"command":"open"}
+        ]});
+        assert!(shortcut(&properties,egui::Key::PageUp,shift,false).is_some());
+        assert!(shortcut(&properties,egui::Key::PageUp,shift,true).is_none());
+        assert_eq!(shortcut(&properties,egui::Key::T,shift,true).unwrap()["command"],"open");
+        assert_eq!(input::keys_for(egui::Key::PageUp,shift).into_iter().flat_map(super::super::model::encode).collect::<Vec<_>>(),vec![27,b'[',b'5',b'~']);
+    }
+
+    #[test]
+    fn held_commands_are_consumed_and_only_authored_repeats_run() {
+        let sessions = Sessions::fixture();
+        let mut views = Views::default();
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx,400,600);
+        let mut widget = Widget::new("vt","terminal","Terminal",json!("vt-1"));
+        for (repeat, allowed, expected) in [(false,false,1),(true,false,0),(true,true,1)] {
+            widget.properties = json!({"focus_serial":1,"shortcuts":[{"key":"T","ctrl":true,"command":"open","repeat":allowed}]});
+            let mut events = Vec::new();
+            ctx.run_ui(egui::RawInput {
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,560.0))),
+                events:vec![egui::Event::Key {key:egui::Key::T,physical_key:None,pressed:true,repeat,modifiers:egui::Modifiers {ctrl:true,..egui::Modifiers::NONE}}],
+                ..Default::default()
+            }, |ui| {views.draw(ui,&widget,&json!("vt-1"),&sessions,&mut events);}).drop_without_applying_deltas();
+            assert_eq!(events.iter().filter(|e| e.action=="command").count(),expected);
+            assert!(!events.iter().any(|e| e.action=="error"));
+        }
+    }
 
     #[test]
     fn pane_geometry_matches_gold_at_fractional_scales_and_texture_limits() {
@@ -483,22 +526,18 @@ impl Views {
                         key,
                         pressed: true,
                         modifiers,
+                        repeat,
                         ..
                     } => {
-                        let command = p["shortcuts"].as_array().and_then(|a| {
-                            a.iter().find(|s| {
-                                s["key"].as_str() == Some(key.name())
-                                    && (s["ctrl"] == true) == modifiers.ctrl
-                                    && (s["shift"] == true) == modifiers.shift
-                                    && (s["alt"] == true) == modifiers.alt
-                            })
-                        });
+                        let command = shortcut(p, key, modifiers, terminal.alternate_screen());
                         if let Some(command) = command {
-                            events.push(Intent {
-                                id: widget.id.clone(),
-                                action: "command".into(),
-                                value: command["command"].clone(),
-                            });
+                            if !repeat || command["repeat"] == true {
+                                events.push(Intent {
+                                    id: widget.id.clone(),
+                                    action: "command".into(),
+                                    value: command["command"].clone(),
+                                });
+                            }
                             Ok(())
                         } else {
                             let keys = input::keys_for(key, modifiers);
