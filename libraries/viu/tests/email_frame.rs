@@ -287,6 +287,14 @@ fn email_empty_frame_draws_and_primary_button_keeps_native_intent() {
     runtime
         .event("email.dialog".into(), json!({"open":"shortcuts"}))
         .unwrap();
+    let refused = complete(&runtime, &rx).reply.unwrap();
+    assert_eq!(refused.rc, 10);
+    assert_eq!(refused.body["error_code"], "DIALOG_OPEN");
+    runtime.event("email.dialog".into(), json!({"answer":"done"})).unwrap();
+    let closed = complete(&runtime, &rx).reply.unwrap();
+    assert_eq!(closed.rc, 0);
+    assert!(closed.body["dialog"].is_null());
+    runtime.event("email.dialog".into(), json!({"open":"shortcuts"})).unwrap();
     let model = complete(&runtime, &rx).model.unwrap();
     let widget = viu::widgets::Widget::decode(&model["native_overlays"][0]["definition"]).unwrap();
     assert!(widget.initial["grid"].as_array().unwrap().len() > 12);
