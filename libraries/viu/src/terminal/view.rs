@@ -482,7 +482,11 @@ mod pointer_order_tests {
             .unwrap()
             .grid
             .center();
-        let pos = if click_second { pos } else { egui::pos2(-20.0, -20.0) };
+        let pos = if click_second {
+            pos
+        } else {
+            egui::pos2(-20.0, -20.0)
+        };
         let mut intents = Vec::new();
         ctx.run_ui(
             egui::RawInput {
@@ -515,12 +519,23 @@ mod pointer_order_tests {
         )
         .drop_without_applying_deltas();
         assert_eq!(read(&first), b"before");
-        assert_eq!(read(&second), if click_second { b"after".as_slice() } else { b"" });
-        assert_eq!(views.focused.as_deref(), if click_second { Some("vt-2") } else { None });
+        assert_eq!(
+            read(&second),
+            if click_second {
+                b"after".as_slice()
+            } else {
+                b""
+            }
+        );
+        assert_eq!(
+            views.focused.as_deref(),
+            if click_second { Some("vt-2") } else { None }
+        );
         assert_eq!(
             intents
                 .iter()
-                .any(|intent| intent.action == "focus" && intent.value == "vt-2"), click_second
+                .any(|intent| intent.action == "focus" && intent.value == "vt-2"),
+            click_second
         );
     }
     #[test]
@@ -808,8 +823,16 @@ impl Views {
                     mouse.cancel();
                     delivered = egui::Event::PointerGone;
                 }
-                if let egui::Event::PointerButton { pos, pressed: true, .. } = event {
-                    let inside = self.placements.iter().any(|p| pos.x >= p.area.min.x && pos.x < p.area.max.x && pos.y >= p.area.min.y && pos.y < p.area.max.y);
+                if let egui::Event::PointerButton {
+                    pos, pressed: true, ..
+                } = event
+                {
+                    let inside = self.placements.iter().any(|p| {
+                        pos.x >= p.area.min.x
+                            && pos.x < p.area.max.x
+                            && pos.y >= p.area.min.y
+                            && pos.y < p.area.max.y
+                    });
                     if blocked || !inside {
                         for placed in &self.placements {
                             ui.memory_mut(|m| m.surrender_focus(placed.id));
