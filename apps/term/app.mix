@@ -22,7 +22,7 @@ fn pump_events($s)
   if $s.publishing or len($s.layout.events)==0 then return $s end
   $s.event_job=$s.event_job+1
   $path=path_join(dirname(script_path()),"event-job.mix")
-  send "viu-local" "jobs.start" id="terminal-events-"..to_string($s.event_job) owner={kind:"terminal-events"} path=$path source=read_file($path) command="events.publish" args={events:$s.layout.events}
+  send "viu-local" "jobs.start" id="terminal-events-"..to_string($s.event_job) owner={kind:"terminal-events"} path=$path source=read_file($path) command="events.publish" args={events:$s.layout.events,service:$s.service ?? "term"}
   if $rc==0 then $s.publishing=true;$s.layout.events=[]
   else viu_timer("terminal-events-retry",500,{kind:"terminal-events"}) end
   return $s
@@ -121,6 +121,7 @@ on viu.session
   publish_term($state)
 end
 on bus.connected
+  $state.service=$event.args.service ?? "term"
   subscribe("settingsd.desktop.keys.default.terminal")
   $state=font_event($state,{kind:"read-requested"})
 end

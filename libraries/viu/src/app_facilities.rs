@@ -12,7 +12,6 @@ use std::{
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 pub struct Facilities {
     app: String,
-    service: String,
     ui: bool,
     debug: bool,
     installed: bool,
@@ -62,7 +61,6 @@ impl Facilities {
         let (complete, completed) = mpsc::channel();
         Self {
             app,
-            service: manifest.service.clone(),
             ui: manifest.native_ui || manifest.native_drive,
             debug: manifest.native_debug || manifest.native_drive,
             installed: false,
@@ -100,7 +98,8 @@ impl Facilities {
             self.context = Some(ctx.clone());
         }
         if self.ui {
-            toolkit::drive::set_service(ctx, bus.client().as_ref().map(|_| self.service.as_str()));
+            let client = bus.client();
+            toolkit::drive::set_service(ctx, client.as_ref().map(|client| client.service_name()));
         }
         while let Ok((reply, answer)) = self.completed.try_recv() {
             let _ = reply.send(macro_answer(answer));

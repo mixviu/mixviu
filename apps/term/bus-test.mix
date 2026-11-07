@@ -33,6 +33,10 @@ check($w.arguments("term.scroll",{page:1})==nil and $w.arguments("term.scroll",{
 check($w.arguments("term.type",{pane:1,text:repeat("𝐀",2100)})!=nil,"envelope bound uses UTF-8 bytes")
 $out=$b.dispatch($s,"term.props.watch",{},$n)
 check($out.rc==0 and $out.state.layout.watching and json_parse($out.body).revision==$out.state.layout.event_revision,"watch returns the current event sequence")
+$alternate=$s;$alternate.service="term-42"
+$alternate=$b.dispatch($alternate,"term.props.watch",{},$n)
+check(deep_eq(json_parse($alternate.body).topics,["term-42.tabs.changed","term-42.pane.changed","term-42.title.changed"]),"watch reports the actual fallback service topics")
+check($b.change_topic("term-42","term.pane.changed")=="term-42.pane.changed" and $b.change_topic("term-42","terminal.pane.changed")=="terminal.pane.changed","publication uses the same exact namespace boundary as watch")
 $watched=$out.state
 $out=$b.dispatch($watched,"term.pane.split",{dir:"v",request_id:"event-split"},$n)
 check($out.rc==0 and len($out.state.layout.events)>=2,"watched mutation queues identity-bearing changes")
