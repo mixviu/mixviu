@@ -65,6 +65,7 @@ end
 fn session_row($value,$node)
   if type($value)!="map" or type($value.session)!="string" then return nil end
   $out={node:$node,session:$value.session,agent:$value.agent ?? "",cwd:$value.cwd ?? "",parent:$value.parent,status:$value.status ?? "unknown",seq:$value.seq ?? 0,turn:$value.turn ?? 0,created_at:$value.created_at ?? "",ended_at:$value.ended_at,exit_code:$value.exit_code,signal:$value.signal,end_reason:$value.end_reason,title:if ($value.title ?? "")!="" then $value.title else nil end,open_permissions:$value.open_permissions ?? 0,permission_requests:map($value.permission_requests ?? [],fn($key)=if type($key)=="string" then $key else json_encode($key) end),permissions:$value.permissions ?? []}
+  if $value._workshop_permissions_json!=nil then $out._workshop_permissions_json=$value._workshop_permissions_json end
   return $out
 end
 fn update_row($s,$node,$row)
@@ -197,11 +198,11 @@ fn passes($s,$row)
 end
 fn received($s,$task,$d)
   $node=$task.node;$command=$task.command;$ticket=$task.ticket
-  $body=nil;$transport=nil;$code=10
+  $body=nil;$transport=nil;$code=10;$valid_json=false
   if $d.rc!=0 then $transport=$d.body.transport_error ?? json_encode($d.body)
   else
     $code=$d.body.rc
-    try $body=$counter.decode($d.body.body) catch $why $body=nil end
+    try $body=$counter.decode($d.body.body);$valid_json=true catch $why $body=nil end
   end
   $data=if type($body)=="map" then $body else {} end
   if $task.acting then
@@ -213,7 +214,8 @@ fn received($s,$task,$d)
       $s.row_key="agent:"..$node..":"..$data.session;$s=select_session($s,$node,$data.session)
       if $task.reply==nil then $s.agents.new_cwd="" end
     end
-    $work.answer($task.reply,$code,$body);$s=refresh_node($s,$node)
+    if $transport==nil and $valid_json then $work.answer_json($task.reply,$code,$d.body.body) else $work.answer($task.reply,$code,$body) end
+    $s=refresh_node($s,$node)
     if $node!=local_name($s) and $s.agents.selected!=nil and $s.agents.selected.node==$node and not $s.agents.transcript.filling then $s=read_transcript($s) end
     return $s
   end

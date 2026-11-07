@@ -28,3 +28,6 @@ end
 fn answer($id,$rc,$value)
   if $id!=nil then send "viu-local" "native.reply" body={id:$id,rc:$rc,value_json:$counter.wire($value)} end
 end
+fn answer_json($id,$rc,$json)
+  if $id!=nil then send "viu-local" "native.reply" body={id:$id,rc:$rc,value_json:$json} end
+end

@@ -17,12 +17,13 @@ fn fold($out,$event)
   elif contains(["tool_call","tool_call_update"],$kind) then
     $id=$u.toolCallId ?? "";$index=nil
     for $i=0 to len($out)-1 if $out[$i].item=="tool" and $out[$i].id==$id then $index=$i end end
-    if $index==nil then push($out,{item:"tool",id:$id,title:$u.title ?? "",tool:$u.kind ?? "",status:$u.status ?? "pending",raw:$u})
+    $raw_json=$event._workshop_tool_json ?? json_encode($u)
+    if $index==nil then push($out,{item:"tool",id:$id,title:$u.title ?? "",tool:$u.kind ?? "",status:$u.status ?? "pending",raw:$u,_workshop_tool_json:$raw_json})
     else
       for $field in [["title","title"],["kind","tool"],["status","status"]]
         if type($u[$field[0]])=="string" then $out[$index][$field[1]]=$u[$field[0]] end
       end
-      $out[$index].raw=$u
+      $out[$index].raw=$u;$out[$index]._workshop_tool_json=$raw_json
     end
   elif $kind=="plan" then push($out,{item:"plan",entries:map($u.entries ?? [],fn($entry)="["..($entry.status ?? "pending").."] "..($entry.content ?? ""))})
   elif $kind=="stop" then push($out,{item:"stop",reason:$event.stop ?? ""})
@@ -41,10 +42,10 @@ fn push_event($t,$event)
   if $counter.compare($seq,$counter.add($t.seq,1))>0 then
     if len($t.events)==0 and $counter.compare($t.seq,0)==0 then $t.evicted=true else $t.gap=true end
   end
-  $size=byte_length(json_encode($event))
+  $size=event_bytes($event)
   if len($t.events)>=2000 or $t.bytes+$size>8388608 then
     while len($t.events)>0 and (len($t.events)>1800 or $t.bytes+$size>7549747)
-      $t.bytes=max(0,$t.bytes-byte_length(json_encode($t.events[0])));$t.events=slice($t.events,1)
+      $t.bytes=max(0,$t.bytes-event_bytes($t.events[0]));$t.events=slice($t.events,1)
     end
     $t.evicted=true;$t.items=[]
     for $old in $t.events $t.items=fold($t.items,$old) end
@@ -52,6 +53,7 @@ fn push_event($t,$event)
   $t.items=fold($t.items,$event);$t.events=push($t.events,$event);$t.bytes=$t.bytes+$size;$t.seq=$seq
   return $t
 end
+fn event_bytes($event) return $event._workshop_event_bytes ?? byte_length(json_encode($event)) end
 fn take_event($agents,$event)
   if contains(["ready","resumed"],$event.kind) then $agents.config_options=$event.config_options;$agents.modes=$event.modes end
   $update=$event.update ?? {}
