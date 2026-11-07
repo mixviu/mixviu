@@ -440,7 +440,7 @@ Run `mix builtins` for the full remit of all {count} built-in functions
 ## Subcommands
 - Reference    `help`  `builtins`  `what <name>`  `apropos <term>`  `man <topic>`  `keywords`  `syntax`  `operators`
 - Introspect   `vars`  `functions`  `aliases`  `all`  `type`  `config`  `status`
-- Build        `build`  `clean`  `update`  `test`
+- Disabled     `build`  `clean`  `update`  `test` — use `mix tools/ci.mix <stage>` on CBC/CI
 - Diagnostics  `doctor`  `stats`  `time`  `check`  `lint`  `trace`  `history`  `reload`
 - Files        `edit <file> <old> <new>`  exact-match one-line edit (refuses an ambiguous or absent needle)
 - Ecosystem    `mesh`  `ports`  `ping <svc>`

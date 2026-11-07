@@ -44,18 +44,22 @@ fn update_refuses_local_cargo() {
 
 #[test]
 fn help_describes_the_disabled_shortcuts() {
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
-        .arg("help")
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let text = String::from_utf8_lossy(&output.stdout);
-    for command in ["build", "clean", "update", "test"] {
-        let line = text
-            .lines()
-            .find(|line| line.trim_start().starts_with(&format!("mix {command} ")))
-            .unwrap_or_else(|| panic!("missing {command}: {text}"));
-        assert!(line.contains("Disabled"), "{line}");
+    for help in ["help", "--help"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_mix"))
+            .arg(help)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let text = String::from_utf8_lossy(&output.stdout);
+        for command in ["build", "clean", "update", "test"] {
+            let line = text
+                .lines()
+                .find(|line| line.contains(&format!("`{command}`")))
+                .unwrap_or_else(|| panic!("missing {command}: {text}"));
+            assert!(line.contains("Disabled"), "{line}");
+            assert!(line.contains("mix tools/ci.mix <stage>"), "{line}");
+            assert!(line.contains("CBC/CI"), "{line}");
+        }
     }
 }
 
