@@ -1040,6 +1040,7 @@ fn run_headless(bundle: Bundle) -> eframe::Result {
             .load(std::sync::atomic::Ordering::Acquire)
             || host.model_close_ready()
         {
+            output.drop_without_applying_deltas();
             break;
         }
         let repaint = output
@@ -1061,6 +1062,10 @@ fn run_headless(bundle: Bundle) -> eframe::Result {
         } else {
             let _ = rx.recv_timeout(delay);
         }
+    }
+    let failed = host.bus.startup_error.lock().unwrap_or_else(|e|e.into_inner()).clone();
+    if let Some(error) = failed {
+        return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(error))));
     }
     Ok(())
 }

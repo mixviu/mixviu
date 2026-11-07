@@ -139,6 +139,7 @@ pub struct Endpoint {
     pub requests: mpsc::Receiver<Request>,
     pub notices: mpsc::Receiver<Notice>,
     pub close_requested: Arc<AtomicBool>,
+    pub startup_error: Arc<Mutex<Option<String>>>,
     pub dropped_notices: Arc<AtomicU64>,
     client: SharedClient,
     hints: tokio::sync::mpsc::Sender<Hint>,
@@ -167,6 +168,8 @@ impl Endpoint {
         let (notice_tx, notices) = mpsc::sync_channel(32);
         let close_requested = Arc::new(AtomicBool::new(false));
         let close = close_requested.clone();
+        let startup_error = Arc::new(Mutex::new(None));
+        let failed = startup_error.clone();
         let dropped_notices = Arc::new(AtomicU64::new(0));
         let dropped = dropped_notices.clone();
         let client: SharedClient = Arc::new(Mutex::new(None));
@@ -178,7 +181,7 @@ impl Endpoint {
             rt.block_on(async move{
                 let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
                 let options=if help.is_none(){options.with_commands(commands)}else{options};
-                let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");close.store(true,Ordering::Release);wake();return;}}};
+                let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");*failed.lock().unwrap_or_else(|e|e.into_inner())=Some(e.to_string());close.store(true,Ordering::Release);wake();return;}}};
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=Some(native.clone());
                 let mut state=native.subscribe_state();
@@ -227,6 +230,7 @@ impl Endpoint {
             requests,
             notices,
             close_requested,
+            startup_error,
             dropped_notices,
             client,
             hints,
