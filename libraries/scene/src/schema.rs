@@ -219,6 +219,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     static DOCK: [Port; 5] = [
         p("children", "list", true, None),
         p("placements", "object", true, None),
+        p("clip", "bool", false, None),
         p("on_change", "string", false, None),
         p("outline", "string", false, None),
         pn("outline_width", false, Some(0.0)),

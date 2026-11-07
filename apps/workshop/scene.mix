@@ -5,7 +5,7 @@ citizen: workshop
 ---
 ```mix
 {
-root:{widget:"dock",children:["traffic","inspector"],placements:"= $model.placements",on_change:"workshop.layout"},
+root:{widget:"dock",clip:true,children:["traffic","inspector"],placements:"= $model.placements",on_change:"workshop.layout"},
 inspector:{widget:"dock",children:["services","details"],placements:"= $model.inspector_placements",on_change:"workshop.layout"},
 services:{widget:"column",group_title:"Nodes and services",group_frame:false,background:"design.dock",padding:8,children:["filter","services-tree"],gap:6},
 filter:{widget:"control",definition:{id:"filter",kind:"field",label:"Search services and commands",initial:"",properties:{placeholder:"Search services and commands",search:true}},on_intent:"workshop.intent"},
