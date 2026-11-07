@@ -17,7 +17,12 @@ impl NativeMenu {
         events: &mut Vec<crate::widgets::Intent>,
     ) -> egui::Response {
         let compact = toolkit::menu::effective(ui.ctx()) != design::MenuStyle::Bar;
-        let response = draw(ui, value, compact, widget.properties["header_icon"].as_str());
+        let response = draw(
+            ui,
+            value,
+            compact,
+            widget.properties["header_icon"].as_str(),
+        );
         if let Some(command) = picked(ui.ctx()) {
             events.push(crate::widgets::Intent {
                 id: widget.id.clone(),
@@ -293,7 +298,9 @@ mod tests {
                     },
                 );
                 assert_eq!(
-                    out.shapes.iter().any(|shape| has_label(&shape.shape, "File")),
+                    out.shapes
+                        .iter()
+                        .any(|shape| has_label(&shape.shape, "File")),
                     bar,
                     "viewport width {width}"
                 );
