@@ -2681,3 +2681,14 @@ The worker returned one rustfmt-only hunk collapsing the query helper signature.
 The last exact release evidence remains fa201ea1 (485 tests; inspected native macro/input/selection/wheel/query receipts above). Full remaining Bus/authority/input/settings/conformance/performance and final visual acceptance work stays open. No Fable question, install, desk/VT or merge work. Overall NOT ACCEPTED.
 
 branch: lab/parity-term; head SHA:7a886e4fccbf4fa6bc772570bf5d201030f4d9dd (formatted query tests; receipt HEAD contains checkpoint); NOT ACCEPTED — exact scoped/release validation and remaining full parity acceptance open; CBC job ids:term-query-exact-7a886e4f (next exact scoped), term-vt-query-fe66f620-a1 (green, formatting applied), term-mode-pro-release-fa201ea1-a1 (previous exact release green485 tests).
+
+
+### Exact query source passes scoped and native debug checks
+
+CBC `term-query-exact-7a886e4f-a1` passed on cbc2 at `7a886e4fccbf4fa6bc772570bf5d201030f4d9dd`, with an empty TERM_PATCH. The complete 64,746-byte saved log was read and archived privately. Eleven Term Mix suites, two bundle tests, fifteen runtime/call/timer tests, 217 terminal tests (five existing ignores), 23 scoped host tests, foreign gate and debug build pass. Both query conformance tests pass at the formatted source. All 17 foreign crates remain listed and the strict closures remain clean; existing warnings remain.
+
+Fetched debug executable SHA256 `c64384e9f9c280d4ca3fcbbd397cd741d47bfba2017431cd9b5316973491c2ae`; source/profile/hash and archived Mix bundle verified. Private native.L71aBB repeats both actual Mix PTY query cases: ordered cursor/status/DA1 and alternate/main saved cursor replies match Gold exactly. Whole/header/tabs/grid/report distortions are zero. Four originals match inspected native.kJoSyA originals by SHA256; four fresh full figures match inspected figures by decoded pixels, with explicit inspection reuse retained. All seven persistent owned PIDs stopped. This validates debug bytes only.
+
+Next CBC `term-query-release-7a886e4f` runs gold_parity_gate --prepare at that exact source. Read its complete saved log, process any worker diff and require an exact repeat if needed; fetch verified release bytes with term-fetch-release.mix and run the prepared query-protocol-7a886e4f-release.mix directly. Release proof, full Bus/authority/input/settings/conformance/performance and final acceptance remain open. No Fable question, install, desk/VT or merge work. Overall NOT ACCEPTED.
+
+branch: lab/parity-term; head SHA:7a886e4fccbf4fa6bc772570bf5d201030f4d9dd (exact tested debug source; receipt HEAD contains checkpoint); NOT ACCEPTED — release gate/native proof and remaining full parity acceptance open; CBC job ids:term-query-release-7a886e4f (next release), term-query-exact-7a886e4f-a1 (green exact scoped), term-vt-query-fe66f620-a1 (green before formatting).
