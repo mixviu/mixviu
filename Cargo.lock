@@ -10212,6 +10212,7 @@ version = "0.1.2"
 dependencies = [
  "assets",
  "blake3",
+ "buildinfo",
  "bus",
  "chrono",
  "config",

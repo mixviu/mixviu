@@ -172,10 +172,17 @@ fn term_bundle_child() {
     let about = invoke(&mut runtime, &rx, "term.dialog", json!({"open":"about"}));
     assert_eq!(about.reply.unwrap().rc, 0);
     let model = about.model.unwrap();
-    let dialog = model["native_overlays"].as_array().unwrap().iter()
-        .find(|overlay| overlay["definition"]["id"]=="term-dialog").unwrap();
+    let dialog = model["native_overlays"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|overlay| overlay["definition"]["id"] == "term-dialog")
+        .unwrap();
     let body = dialog["definition"]["initial"]["body"].as_str().unwrap();
-    assert!(body.contains(&buildinfo::build_info!().line()), "About must carry actual compiled host provenance: {body}");
+    assert!(
+        body.contains(&buildinfo::build_info!().line()),
+        "About must carry actual compiled host provenance: {body}"
+    );
     assert!(body.ends_with("Settings source: settingsd not connected"));
     invoke(&mut runtime, &rx, "term.dialog", json!({"answer":"done"}));
     let quit = invoke(&mut runtime, &rx, "app.quit", json!({}));
