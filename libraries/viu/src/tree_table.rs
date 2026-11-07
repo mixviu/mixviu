@@ -597,6 +597,23 @@ fn draw_outline(
     events: &mut Vec<Intent>,
 ) -> egui::Response {
     let id = &widget.id;
+    if widget.properties["reveal_row"].as_str().is_some_and(|key| !key.is_empty()) {
+        let marker = Id::unique((ui.ctx().viewport_id(), id, "reveal-scroll"));
+        let serial = widget.properties["reveal_serial"].clone();
+        let changed = ui.ctx().data_mut(|data| {
+            if data.get_temp::<Value>(marker).as_ref() == Some(&serial) {
+                false
+            } else {
+                data.insert_temp(marker, serial);
+                true
+            }
+        });
+        if changed {
+            if let Some(name) = widget.properties["saved_scroll"].as_str() {
+                toolkit::saved::widgets::forget_scroll(ui.ctx(), name);
+            }
+        }
+    }
     let area = egui::ScrollArea::vertical()
         .id_salt((id, "outline"))
         .auto_shrink([false, false]);
