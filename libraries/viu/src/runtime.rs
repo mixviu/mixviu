@@ -288,7 +288,7 @@ impl Runtime {
 
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
-                            "git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"), "loader": "viu-local", "host": "viu-local", "options":options,
+                            "git_sha":option_env!("MIXOS_GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("MIXOS_BUILD_TIME").unwrap_or("unknown"), "loader": "viu-local", "host": "viu-local", "options":options,
                             "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
                             "build":serde_json::from_str::<serde_json::Value>(&buildinfo::build_info!().json()).expect("build provenance JSON"),
                             "executable":std::env::current_exe().ok(),
