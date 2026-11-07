@@ -7,8 +7,12 @@ but an additional native keyboard witness found the shared gold dialog
 reclaiming Tab focus from Cancel. Its worker HANDOFF explicitly says
 NOT_ACCEPTED. The reusable renderer now follows gold: request field focus
 only when no widget owns keyboard focus. All seven text-input tests pass,
-including title/path Tab transfer and Enter cancellation. A CBC debug build
-and native focus-capture preflight precede the successor full release gate.
+including title/path Tab transfer and Enter cancellation. CBC debug build
+`gold-six-focus-debug-r8b-a1` passes. Its native editor witness preserves all
+existing creation/edit/undo/redo/Save and window-effect assertions, and adds
+explicit Tab focus assertions. The tabbed New macro capture is pixel-exact
+and inspected. Full gate `gold-six-full-20261107-r8` is running on that
+frozen source; release-byte acceptance is still pending.
 
 The original source-5bd Ced run retained two clean-checkout preparation
 refusals while documentation was being edited. The three cases they stopped
