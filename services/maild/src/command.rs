@@ -2339,7 +2339,7 @@ async fn async_main(inherited: crate::activation::InheritedSockets) -> Result<()
     //      falls through; permission-denied / IO error / parse error all
     //      hard-fail with a clear message so a typo or wrong perms can't
     //      silently re-route the caller to a different DB.
-    //   3. XDG user path (`$HOME/.config/mix/jmap.conf.mix`) — per-user
+    //   3. XDG user path (`$HOME/.config/mix/maild/jmap.conf.mix`) — per-user
     //      / dev installs.
     //   4. node-config-derived defaults (mesh-aware config).
     //   5. compile-time defaults.
