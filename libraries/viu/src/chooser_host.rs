@@ -112,7 +112,7 @@ impl Window {
             mapped: false,
             applied_focus: None,
             fatal: None,
-            frame: Default::default(),
+            frame: crate::window_frame::WindowFrame::undecorated(),
             session_values: json!({}),
             session_snapshot: json!({}),
             style_snapshot: Value::Null,
