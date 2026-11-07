@@ -1,5 +1,99 @@
 # Email gold parity
 
+## Round 6 acceptance record, 2026-11-07: OPEN pending exact-source gate
+
+Tested application source: `d80c067ca5f602f90a63828e7cb0406606869c7f`.
+Gold: `8779f33284b7d3f1178c3d57a699efb9b0867b22`, executable SHA256
+`79f18fb67c44a32e3f1aff7672c409bfec7d458b6f1b35f081f1d0bd0ff328fe`.
+Verified release host from CBC `email-r5-final-64a9e95dee75-a1`:
+`be31ad4b8dea2788d0d6000885a57bca7058ee3a8a27d9f89089c9e40cf018cb`.
+This host was tested with an exact archive of the application source above.
+The later exact-source gate `email-r6-d80c067ca5f6` must finish and its
+artifact must be verified before the overall verdict changes to ACCEPTED.
+The intervening gate `email-r5-final-ab0d62feb7e7` predates the Prefs-launch repair.
+No installation, desktop restart or production change is part of this record.
+
+All evidence names below are relative to the private
+`email-parity-20261107/round2` archive. Each run retains its executed requests,
+source archive, binary hashes, PNGs, settings revisions and process closure.
+The canonical service is `email`, gold first, with independent application
+homes and an owned native Bus, settingsd, headless compositor and real mixd
+maild personality. Captures use 1040×680, scale 1, Studio Dark, Inter 400 at
+14.667, client decorations, bar menus and row actions; composers are 900×700.
+Narrow captures use 760×680 and compact captures 600×680. No image is resized.
+
+| Gold inventory | Evidence on release bytes |
+| --- | --- |
+| Accounts, default/selection, passwords, connection/reconnect and live settings | `native.IPmqHI`, `native.m1XnN0`, `native.kGQ983`; poison-pill/cache/migration and token refresh covered by CBC frame/wire tests |
+| Folders, list/query/search, selection and triage, partial writes | `native.IPmqHI`; `native.sStjhQ` fetches and verifies 1,200 IDs before a folder-wide write and tests cancellation |
+| Reader, headers, plain/HTML-source/Markdown policy, attachments and previews | `pair.CLi31d`, `pair.WW9U1i`, `native.hakzPd`; byte-exact saves, collisions, preview/open-all, save-only and transfer failures |
+| Compose, MIME send/delivery, reply/forward, quote position, identities, stale sender and send errors | `native.IPmqHI` (117 requests), `native.m1XnN0` (52); independent same-PID windows use local intents |
+| Drafts, restore, fixed-root ownership, disabled accounts, documents and close/Quit gates | `native.kGQ983` (57), `native.YrvZRA` (48); Open/Save As/overwrite/Cancel/Replace and parked-root revival |
+| Calendar/contact CRUD, native forms, filtering/completion and details | `native.IPmqHI`, `pair.CLi31d`, `pair.3YbLAI`; Refresh reloads children and clears details with late-read fences |
+| Menus, shortcuts, command search, print, macros, desktop activation and Prefs launch | `pair.3YbLAI`, `pair.kmDqEB`; identical print HTML, async Prefs absence and positive section routing, macro run/output/stop/move/remove, Show and Quit |
+
+Gold inventory corrections remain binding: there is no conversation-thread
+view, mailbox search field or desktop notification implementation. Threading
+means Message-ID/References and reply policy; search is the Bus query surface;
+notices use status. HTML without plaintext is escaped source as in gold.
+
+ImageMagick 7.1.2-35 reports normalised **distortion**, zero identical.
+`pair.CLi31d`: inbox, dark/light reader, settled calendar, contacts and basic
+composer have full-image and every-region SSIM/RMSE **0/0**. Main regions are
+header `[0,0,1040,38]`, places `[0,38,226,612]`, list `[226,38,436,612]`,
+reader `[662,38,378,612]`, status `[0,650,1040,30]`; composer header/form/body
+are `[0,0,900,38]`, `[0,38,900,138]`, `[0,176,900,524]`.
+`pair.3YbLAI`: About, shortcuts, event/contact forms, Move, Delete and command
+search are exact full-image and in header/content/status regions. Print HTML
+is byte-identical. `pair.X4LwyJ`: all five narrow/compact/tree-cursor captures
+are exact full-image and in header/content/status. Originals were inspected.
+
+Live Prefs in `pair.CLi31d` keep both PIDs and draft text: ten variants cover
+mode, scheme, style/accent, density/roundness, fonts/scale, mono/icon/tune,
+app overrides, automatic day/night and reader/composer settings. Every main
+region is exact. All composer content/bottom regions and eight full images
+are exact. Two scaled headers differ only in rounded-corner antialiasing:
+header SSIM `1.11203e-9`, RMSE `.0000113206`; full SSIM `1.58862e-10`,
+RMSE `.00000427878`. Invalid input, authority loss/recovery and unchanged
+PIDs are retained. Paperclip alignment is repaired. Earlier failed captures
+are historical evidence, not substitute acceptance figures.
+
+**Standing Fable C1:** gold's expanded attachment panel paints over part of
+the disclosure/count/Save all header. The port reserves the measured header
+and spacing from the tile scroll budget. `pair.WW9U1i` keeps both originals:
+collapsed dark/light are exact; expanded and no-inline differ only in the
+repaired reader region (SSIM `.00368646`, RMSE `.0150809`; full `.00126013`
+and `.00881719`). Other regions are exact. Reader region is
+`[645,38,395,612]`, list `[226,38,419,612]`. The earlier vertical-clipping-only
+repair did **not** close this defect. `native.hakzPd` verifies the controls work.
+
+Bus `pair.kmDqEB` retains 255 same-request probes per implementation and 33
+additional success records: 86-command HELP/describe, validation order,
+dialog fields, actions/menu replies, macros, topics and Quit. No refusal
+rc/code/message differs. Refresh/PIM common labelled accessibility semantics
+match; the candidate additionally exposes the window title. Native IDs,
+containers, PIDs, compositor identities, paths, debug targets/events/cursors
+are truthful runtime data. The places fraction measures 225.5 versus 226
+logical points before raster snapping; the painted divider and matched
+images are identical. Both hosted titlebar forms work; gold emitted no
+titlebar-change notice in this transition, retained in `pair.b6JowQ`.
+The delivered action topic has matching v2 fields, IDs, origin and sequence.
+All owned PIDs in the completed release suites were confirmed stopped.
+
+The required historical 2,000-row release median is **13.752336 ms**:
+source `27738f785b1e1ac5dfe3997b32c1d4fbb3017d27`, CBC
+`20261107-111355-394fcb63-a1`, hash
+`4a655372a221a7aad903e5218c2f372bc694cf1c61615cbeb9c5ee747f0473d9`,
+`native.A7CLGn`, three warm-ups/21 retained samples, p95 19.176699 ms.
+`native.CT53c9` repeats on the verified newer release bytes: median
+13.075858 ms, p95 16.384905 ms, p99 19.675764 ms. Both use the bulk path and
+fixture SHA256 `1ca642d313c13d9a6eb58c086f51336650076ed2897d2a18f0e94b43e36cd780`.
+Acknowledgement timings are recorded separately from projection timings.
+
+Overall **OPEN** until the final exact-source gate, artifact verification and
+any required repeat on different final bytes finish. No proposed deviation
+or Fable question is pending.
+
 ## Round 5 acceptance work, 2026-11-07: OPEN
 
 The heavy release gate email-r5-e2b83bff89c8-a1 passed at e2b83bff89c82ac58c3d75786ce9c98b4a4cb266, release SHA256 cbc5cbaa58a6ad4de15efd625132d0f1aa04f72f8126f8dfe188729ea080b95d. Its release native repeat native.BGJDqA passes the wider mail/PIM/composer suite, stale address adoption in both directions, reply-position toggles, visible transport failure and draft recovery. This cohort does not attest later root, keyboard or clipping changes.
