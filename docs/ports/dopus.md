@@ -4,6 +4,77 @@ Oracle: MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`.
 Method: [parity-method.md](parity-method.md). Overall verdict: **OPEN**.
 The generic-host migration is a lab specimen, not an accepted replacement.
 
+## Current acceptance checkpoint: 2026-11-07 round four
+
+Implementation: `4bccf5913312900b504054fc3c2d277078071c4a`, branch
+`lab/parity-dopus`. Later checkpoint commits are receipts only. The native
+chooser frame is now complete: Mix composes the shared frame, Places rail,
+tree table, save controls, filter/choice fields and replacement dialog. The
+generic host initialises native window framing and honours the chooser's
+explicit client-side frame. No per-app Rust or `viu-dopus` remains.
+
+CBC `20261107-165508-fcc5458e` passed twenty focused tests and the debug host
+build with no worker diff; its complete saved log was read. Debug binary
+SHA256: `d3896dd7369d42082347b36ff63774745b5b079624bd63d94d0c8d493d87741f`.
+This is diagnostic evidence, not the required final release receipt.
+Pinned gold Dopus SHA256:
+`590cfad14856518ba668154e987d0282f85963f5c708bfd53c202e5d48a9e359`.
+
+The private `matched-chooser-4bccf5913312-d/round2.oDweAV` receipt retains
+gold and candidate whole-compositor PNGs, originals, side-by-side/difference
+figures, region maps, native replies and cleanup. Both run on the same owned
+native broker/compositor/settingsd, at 820×600 client pixels (short case:
+600×300), scale 1. They wait for mapping and complete the same native
+resize/repaint sequence; no capture is rescaled. Gold's chooser loads the
+file theme and ignores live Prefs. The port follows live Prefs as Mark
+requires. Paired captures therefore set identical effective legacy radii:
+small 6, large 12, field 4 and menu highlight 6, preserving the port's live
+follower. The untuned pairs remain retained separately.
+
+ImageMagick 7.1.2-35 reports normalised **distortion**, zero identical.
+Header, navigation, pane and form regions all have **SSIM 0 and RMSE 0**
+for save, replacement, options and short-window pairs. The inspected
+non-zero pixels are truthful caller connection text, in its gold format
+and position:
+
+| Chooser capture | Whole SSIM distortion | Whole RMSE distortion |
+| --- | ---: | ---: |
+| Save | 0.000254806 | 0.00698644 |
+| Replacement | 0.000210692 | 0.00799713 |
+| Options | 0.000259444 | 0.00889131 |
+| Short window | 0.000224497 | 0.0086332 |
+
+The earlier outer-corner residue was a real missing native frame facility,
+not merely debug raster marks. The shared initialisation repair above closes
+it; the complete region figures establish that result.
+
+Native save-stem/Enter, replacement clicks, filtered extensions, caller
+choices, independent windows, stale/ambiguous addressing and Escape with
+idempotent cancellation pass. Seventeen chooser live Prefs states pass on
+one continuing request. A real 65,537-name navigation probe refuses with
+`SCAN_BUDGET`/rc 10, preserves the prior folder, complete rows and serial,
+and leaves the request open. Every owned process exited.
+
+Prior-source release `955bd3f2b76bedd3c551317844bc15e57b596ff3` passed
+heavy CBC `dopus-r4-native-final-a1` and all twelve native groups. Its
+61-figure audit exercises all **44 gold descriptors and 33 core actions**;
+the extra diagnostic command and UI actions do not replace those inventories.
+The baseline and search palette match exactly. Main Prefs, authority recovery,
+hosted chrome, native input, headless mutations, operations, macros and
+scan refusal pass there. Those receipts do not attest the final source.
+
+The final source and complete recipe are frozen as
+`accept-4bccf5913312-final`. Heavy CBC `dopus-r4-accept-framing` is detached
+and queued. Its owned follow-on verifies the exact release executable's
+source/profile/hash, runs all twelve native groups, repeats the matched
+chooser and chooser budget probe, compares structured replies and generates
+the region audit. Final complete-log/image inspection, release 2,000-row
+numbers and the acceptance verdict remain **OPEN** until that run finishes.
+No Fable decision or installation is requested.
+
+The inventories and older checkpoints below retain the migration history;
+their pending statements are superseded only by the explicit evidence above.
+
 ## Gold inventory
 
 Gold source owns the contract, including the window's overrides of the
