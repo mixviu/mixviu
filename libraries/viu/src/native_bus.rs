@@ -153,6 +153,17 @@ impl Endpoint {
         wake: crate::runtime::Wake,
         help: Option<Value>,
     ) -> Self {
+        Self::start_described_policy(name, url, commands, quit_command, wake, help, false)
+    }
+    pub fn start_described_policy(
+        name: String,
+        url: String,
+        commands: Vec<CommandDescriptor>,
+        quit_command: String,
+        wake: crate::runtime::Wake,
+        help: Option<Value>,
+        pid_fallback: bool,
+    ) -> Self {
         let (tx, requests) = mpsc::sync_channel(32);
         let (notice_tx, notices) = mpsc::sync_channel(32);
         let close_requested = Arc::new(AtomicBool::new(false));
@@ -166,14 +177,13 @@ impl Endpoint {
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
-                let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
-                let options=if help.is_none(){options.with_commands(commands)}else{options};
-                let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");close.store(true,Ordering::Release);wake();return;}}};
+                let (registered,native)=tokio::select!{_=&mut stopped=>return,c=crate::native_registration::connect(&name,&url,&commands,help.is_none(),pid_fallback)=>match c{Ok((registered,c))=>(registered,Arc::new(c)),Err(e)=>{eprintln!("native Bus: {e}");if !pid_fallback {close.store(true,Ordering::Release);}wake();return;}}};
+                if registered!=name {eprintln!("{name} Bus name in use; serving this window as {registered}");}
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=Some(native.clone());
                 let mut state=native.subscribe_state();
                 let post=|notice:Notice|{if notice_tx.try_send(notice).is_err(){dropped.fetch_add(1,Ordering::Relaxed);}wake();};
-                post(Notice{command:"bus.connected".into(),args:json!({}),headers:BTreeMap::new()});
+                post(Notice{command:"bus.connected".into(),args:json!({"service":registered}),headers:BTreeMap::new()});
                 let mut responses=tokio::task::JoinSet::new();
                 let mut publishing:Option<HintFuture>=None;
                 loop{
@@ -195,7 +205,7 @@ impl Endpoint {
                     let (reply,response)=oneshot::channel();
                     let close_after_reply=Arc::new(AtomicBool::new(false));
                     let delivery=Arc::new(AtomicU8::new(0));
-                    let request=Request{from:command.from.clone(),command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
+                    let request=Request{from:command.from.clone(),command:crate::native_registration::rename(&command.command,&registered,&name),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
                     let admitted=tx.try_send(request).is_ok();
                     if admitted{wake();}
                     let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;

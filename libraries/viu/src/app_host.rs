@@ -956,7 +956,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let mut command_names = BTreeSet::new();
     commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
-    let bus = Endpoint::start_described(
+    let bus = Endpoint::start_described_policy(
         service,
         bundle.manifest.bus_url(),
         {
@@ -995,6 +995,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         "viu.quit".into(),
         wake.clone(),
         facilities.surface.as_ref().map(|s| s["commands"].clone()),
+        bundle.manifest.registration_pid_fallback,
     );
     let documents = crate::documents::Documents::default();
     let terminals = crate::terminal::sessions::Sessions::with_native(wake.clone());

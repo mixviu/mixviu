@@ -24,6 +24,7 @@ mod launch;
 mod local_ui;
 pub mod macro_host;
 pub mod native_bus;
+mod native_registration;
 mod native_events;
 pub mod native_menu;
 mod native_primitives;

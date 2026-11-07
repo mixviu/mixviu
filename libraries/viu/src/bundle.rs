@@ -25,6 +25,8 @@ pub struct Manifest {
     pub native_macros: bool,
     pub native_debug: bool,
     pub activation: Option<String>,
+    /// Retry a refused initial registration once as service-PID.
+    pub registration_pid_fallback: bool,
     pub unknown_command: Option<String>,
     pub app: Option<String>,
     pub bus_url: Option<String>,
@@ -50,6 +52,7 @@ impl Default for Manifest {
             native_macros: false,
             native_debug: false,
             activation: None,
+            registration_pid_fallback: false,
             unknown_command: None,
             app: None,
             bus_url: None,

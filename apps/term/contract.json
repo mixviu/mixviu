@@ -23,6 +23,7 @@
     "term.show"
   ],
   "host": {
+    "registration_pid_fallback": true,
     "command_descriptors": [
       {
         "args": [],
