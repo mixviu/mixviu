@@ -7,7 +7,9 @@ try
   if not $mix_tests.ok then exit($mix_tests.exit_code ?? 1) end
   $wire_tests=run_argv(["/opt/mixos/bin/mix","apps/term/wire-test.mix"]);print($wire_tests)
   if not $wire_tests.ok then exit($wire_tests.exit_code ?? 1) end
-  for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--lib","terminal::"]]
+  $model_tests=run_argv(["/opt/mixos/bin/mix","apps/term/model-test.mix"]);print($model_tests)
+  if not $model_tests.ok then exit($model_tests.exit_code ?? 1) end
+  for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--test","term_bundle"],["cargo","test","--locked","-p","viu","--lib","terminal::"]]
     if $prepare and $argv[1]=="fmt" then $argv=["cargo","fmt","-p","viu"] end
     if $prepare and $argv[1]=="test" then $argv=filter($argv,fn($v)=$v!="--locked") end
     $r=run_argv($argv,{timeout:1800,max_output:16000000});print($r)

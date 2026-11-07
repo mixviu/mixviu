@@ -29,9 +29,38 @@ struct Surface {
     grid_size: (u16, u16, u16, u16),
 }
 
+pub fn validate(value: &Value) -> Result<(), String> {
+    fn node(value: &Value, depth: usize, handles: &mut std::collections::BTreeSet<String>) -> bool {
+        if depth >= 64 || handles.len() >= 256 {
+            return false;
+        }
+        if let Some(handle) = value.as_str() {
+            return !handle.is_empty() && handle.len() <= 128 && handles.insert(handle.into());
+        }
+        value.is_object()
+            && matches!(value["dir"].as_str(), Some("h" | "v"))
+            && value["ratio"].as_f64().is_some_and(|r| r.is_finite() && (0.0..=1.0).contains(&r))
+            && node(&value["first"], depth + 1, handles)
+            && node(&value["second"], depth + 1, handles)
+    }
+    if node(value, 0, &mut Default::default()) {
+        Ok(())
+    } else {
+        Err("terminal layout requires bounded distinct session handles and h/v splits".into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn malformed_and_aliased_layouts_are_refused() {
+        assert!(validate(&json!({"dir":"v","ratio":0.5,"first":"vt-1","second":"vt-2"})).is_ok());
+        for value in [json!({"dir":"v","ratio":0.5,"first":"vt-1","second":"vt-1"}), json!({"dir":"x","ratio":0.5,"first":"vt-1","second":"vt-2"}), json!({"dir":"h","ratio":2,"first":"vt-1","second":"vt-2"})] {
+            assert!(validate(&value).is_err());
+        }
+    }
 
     #[test]
     fn live_font_change_keeps_session_and_idle_draw_does_not_resize_again() {

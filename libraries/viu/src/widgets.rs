@@ -307,6 +307,7 @@ impl Widget {
             "image-view" => return crate::image_view::validate(value),
             "image-fill" => return crate::image_view::validate_fill(value),
             "tree-table" => return crate::tree_table::validate(value),
+            "terminal" => return crate::terminal::view::validate(value),
             "icon" => {
                 value["name"]
                     .as_str()
