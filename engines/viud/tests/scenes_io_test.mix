@@ -123,7 +123,7 @@ fn inner_source($tmp)
   ], "\n") .. "\n"
 end
 
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-scenes-io-test.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-scenes-io-test.XXXXXXXX"]))
 $bus = nil
 try
   mkdir($tmp .. "/bin")

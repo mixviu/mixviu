@@ -27,7 +27,7 @@ for $handler in ["audio.changed async", "audio.retry async", "bus.connected"]
     raise("VOLUME_BEHAVIOUR_TEST", "missing internal-event guard: " .. $handler)
   end
 end
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-volume-behaviour-test.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-volume-behaviour-test.XXXXXXXX"]))
 $bus = nil
 $env = nil
 $shell_pid = nil

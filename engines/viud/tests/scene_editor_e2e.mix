@@ -25,7 +25,7 @@ if $noded == "" then $noded = (mix_path("prefix") .. "/bin/noded") end
 for each $bin in [$mix, $noded]
   if not exists($bin) then raise("TEST_CONFIG", "missing binary " .. $bin) end
 end
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-se-e2e.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-se-e2e.XXXXXXXX"]))
 $tag = slice(replace(uuid(), "-", ""), 0, 8)
 $node = $tmp .. "/node.conf.mix"
 $shell_log = $tmp .. "/shell-requests.jsonl"

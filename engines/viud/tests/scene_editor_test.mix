@@ -41,7 +41,7 @@ end
 -- ── 1. the template, evaluated ──────────────────────────────────────────
 $source = read_file($editor .. "/scene.mix")
 check(len($source) < 262144, "scene.mix stays under the 256 KiB document bound")
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-scene-editor.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-scene-editor.XXXXXXXX"]))
 
 fn fence($src)
   return data_parse(before(after($src, "```mix\n"), "\n```"))

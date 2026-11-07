@@ -27,7 +27,7 @@ for $handler in ["net.changed async", "net.retry async", "net.scan async", "net.
     raise("NETWORK_BEHAVIOUR_TEST", "missing internal-event guard: " .. $handler)
   end
 end
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-network-behaviour-test.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-network-behaviour-test.XXXXXXXX"]))
 $bus = nil
 $env = nil
 $shell_pid = nil

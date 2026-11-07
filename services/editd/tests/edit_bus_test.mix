@@ -26,7 +26,7 @@ if $noded == "" then $noded = (mix_path("prefix") .. "/bin/noded") end
 for each $bin in [$editd, $mix, $noded]
   if not exists($bin) then raise("TEST_CONFIG", "missing binary " .. $bin) end
 end
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-edit-bus-test.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-edit-bus-test.XXXXXXXX"]))
 $tag = uuid()
 $node = $tmp .. "/node.conf.mix"
 $env = {MIX_NODE_CONFIG: $node, MIX_STATS: "off", PATH: "/usr/bin:/bin",
@@ -378,7 +378,7 @@ finally
   for each $child in [$editd_pid, $obs_pid, $noded_pid]
     if $child != nil then $_kill = run_argv(["kill", "--", to_string($child)], {timeout: 10}) end
   end
-  if starts_with($tmp, "/tmp/mixos-edit-bus-test.") then
+  if starts_with($tmp, "/tmp/mix-edit-bus-test.") then
     $_remove = run_argv_must(["rm", "-rf", "--", $tmp])
   end
 end

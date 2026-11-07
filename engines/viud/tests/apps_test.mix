@@ -1,7 +1,7 @@
 -- Deterministic parser and icon-resolver tests against a fixture tree under
 -- a temp dir; no Bus, no desktop effects, no fixture app is ever launched.
 $a = require("../scripts/lib/apps.mix")
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-apps-lib-test.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-apps-lib-test.XXXXXXXX"]))
 fn check($condition, $message)
   if not $condition then raise("APPS_TEST", $message) end
 end
@@ -292,7 +292,7 @@ try
 
   print("PASS apps scan filters, locale precedence, subdir ids, dir precedence, queries, Exec quoting and field codes, icon exact/closest/scaled/inherit/hicolor/pixmap/absolute resolution, theme cache, XWayland launch DISPLAY, watch placement, shipped entries")
 finally
-  if starts_with($tmp, "/tmp/mixos-apps-lib-test.") then
+  if starts_with($tmp, "/tmp/mix-apps-lib-test.") then
     $_remove = run_argv_must(["rm", "-rf", "--", $tmp])
   end
 end

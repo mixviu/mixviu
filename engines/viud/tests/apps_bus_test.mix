@@ -21,7 +21,7 @@ $mix = env("MIX_TEST_MIX_EXE") != "" ? env("MIX_TEST_MIX_EXE") : "/opt/mixos/bin
 $noded = env("MIX_TEST_NODED_EXE") != "" ? env("MIX_TEST_NODED_EXE") : "/opt/mixos/bin/noded"
 $icons_install = $root .. "/share/icons/install.mix"
 $brand_install = $root .. "/share/brand/install.mix"
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-apps-bus-test.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-apps-bus-test.XXXXXXXX"]))
 $tag = uuid()
 -- Pre-bound so the finally block can run even when a setup step fails
 -- before the broker or the citizen exists.
@@ -344,5 +344,5 @@ finally
   stop_pid($svc_pid)
   if $bus != nil then $pb.stop($bus) end
   -- Only the unique mktemp tree created by this test is removed.
-  if starts_with($tmp, "/tmp/mixos-apps-bus-test.") then remove_dir($tmp) end
+  if starts_with($tmp, "/tmp/mix-apps-bus-test.") then remove_dir($tmp) end
 end

@@ -33,7 +33,7 @@ pub mod listen;
 pub fn log_dir() -> std::path::PathBuf {
     std::env::var("HOME")
         .map(|h| std::path::PathBuf::from(h).join(".local/log/mix"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/mixos-log"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/mix-log"))
 }
 
 /// Wait for a shutdown signal (Ctrl+C or SIGTERM on Unix).
