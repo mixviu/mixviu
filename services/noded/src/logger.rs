@@ -16,7 +16,7 @@
 //! the props surface or trigger the symmetric route_local + broadcast_tap
 //! drop pattern that crashed the box on 2026-04-28.
 //!
-//! Each tap message is appended to `~/.local/log/mix/bus.log`.
+//! Each tap message is appended to `~/.local/log/mix/noded/bus.log`.
 
 use std::io::Write;
 use std::sync::Arc;
