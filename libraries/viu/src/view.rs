@@ -1335,7 +1335,11 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                     }
                 }
             }
-            "sides" => {if children(node).count()!=2{return Err("sides requires left and right children".into());}}
+            "sides" => {
+                if children(node).count() != 2 {
+                    return Err("sides requires left and right children".into());
+                }
+            }
             "content" => {
                 let content: settings::content::Content = serde_json::from_value(
                     node.ports

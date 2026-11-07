@@ -74,6 +74,12 @@ end
         view.geometry
             .contains_key("account-tree.key.a/mailbox/inbox")
     );
+    runtime.event("email.info".into(),json!({})).unwrap();
+    let reply=complete(&runtime,&rx).reply.unwrap();
+    assert_eq!(reply.rc,0,"{}",reply.body);
+    assert_eq!(reply.body["schema"],"email.v1");
+    assert_eq!(reply.body["accounts"][0]["mail"]["emails"][0]["from"],"Example");
+    assert_eq!(reply.body["accounts"][0]["mail"]["emails"][0]["read"],false);
 }
 
 #[test]

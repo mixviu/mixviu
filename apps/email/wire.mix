@@ -63,6 +63,7 @@ fn wire_session($update)
   $v=$state.values
   if type($v)!="map" then return end
   $mail_settings.source="settings";$mail_settings.revision=$state.revision
+  $previous_page_size=$mail_settings.page_size
   if $state.binding!=nil then $mail_settings.binding=$state.binding end
   if $update.binding!=nil then $mail_settings.binding=$update.binding end
   $next=map($v["email.accounts"] ?? [],fn($e)=$account_policy.entry($e))
@@ -89,6 +90,7 @@ fn wire_session($update)
       if $e.enabled!=false then wire_start("email.account.connect",{id:$e.id},nil,"connect") else $wire_views[$e.id]={state:"disabled",error:nil,has_password:false} end
     end
   end
+  if $previous_page_size!=$mail_settings.page_size and $connected and $box!="" then wire_start("email.list",{mailbox:$box,limit:$mail_settings.page_size},nil,"list") end
 end
 fn wire_completed($d)
   global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus,$reader_markdown,$reader_detected,$reader_auto

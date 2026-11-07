@@ -12,6 +12,13 @@ fn text<'a>(v: &'a Value, key: &str) -> &'a str {
 fn number(v: &Value, key: &str, default: f32) -> f32 {
     v[key].as_f64().unwrap_or(default as f64) as f32
 }
+fn sample_width(ui:&Ui,column:&Value)->Option<f32>{
+    let samples=column["samples"].as_array()?;
+    let size=TextStyle::Body.resolve(ui.style()).size;
+    let font=toolkit::fonts::bound(ui.ctx(),toolkit::fonts::medium(size));
+    let width=std::iter::once(text(column,"label")).chain(samples.iter().filter_map(Value::as_str)).map(|text|ui.painter().layout_no_wrap(text.into(),font.clone(),ui.visuals().text_color()).size().x).fold(0.0,f32::max);
+    Some(width+ui.spacing().item_spacing.x+2.0)
+}
 fn emit(events: &mut Vec<Intent>, id: &str, action: &str, value: Value) {
     events.push(Intent {
         id: id.into(),
@@ -507,11 +514,8 @@ fn draw_grid(
             })
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
         for column in columns {
-            let width = if let Some(samples)=column["samples"].as_array() {
-                let size=TextStyle::Body.resolve(ui.style()).size;
-                let font=toolkit::fonts::bound(ui.ctx(),toolkit::fonts::medium(size));
-                let width=std::iter::once(text(column,"label")).chain(samples.iter().filter_map(Value::as_str)).map(|text|ui.painter().layout_no_wrap(text.into(),font.clone(),ui.visuals().text_color()).size().x).fold(0.0,f32::max);
-                Width::Fixed(width+ui.spacing().item_spacing.x+2.0)
+            let width = if let Some(width) = sample_width(ui,column) {
+                Column::exact(width)
             } else if column["remainder"] == true {
                 Column::remainder()
             } else if let Some(fraction) = column["fraction"].as_f64() {
@@ -657,7 +661,9 @@ fn draw_gold(
             let label = text(column, "label").replace(['\r', '\n', '{', '}'], " ");
             catalogue.push_str(&format!("{} = {}\n", COLUMN_KEYS[index], label));
             let min = number(column, "min_width", 40.0);
-            let width = if column["remainder"] == true {
+            let width = if let Some(width)=sample_width(ui,column) {
+                Width::Fixed(width)
+            } else if column["remainder"] == true {
                 Width::Remainder { min }
             } else if let Some(share) = column["fraction"].as_f64() {
                 Width::Share {
