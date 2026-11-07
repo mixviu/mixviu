@@ -1,0 +1,67 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- One account's editable identity list, local to its composer window.
+fn composer_identity_open($key)
+  global $composers
+  $c=$composers[$key];$entry=wire_entry($c.account)
+  if $entry==nil then return end
+  $composers[$key].identities={rows:$compose_sending.senders($entry),selected:0,error:nil}
+end
+fn composer_identity_intent($key,$a)
+  global $composers
+  $editor=$composers[$key].identities
+  if type($editor)!="map" then return wire_refuse("NOT_FOUND","No identities editor is open") end
+  if $a.action=="edit" then
+    for $field in keys($a.value)
+      if contains(["name","address","reply_to","signature"],$field) and $editor.rows[$editor.selected]!=nil then $editor.rows[$editor.selected][$field]=if $field=="reply_to" and $a.value[$field]=="" then nil else $a.value[$field] end end
+    end
+    $editor.error=nil
+  else
+    $choice=$a.value.choice
+    if $choice=="close" then $composers[$key].identities=nil;return {rc:0,body:{}} end
+    if $choice=="add" then
+      $n=len($editor.rows)+1
+      while any($editor.rows,fn($r)=$r.id=="identity-"..to_string($n)) $n=$n+1 end
+      $editor.rows=push($editor.rows,{id:"identity-"..to_string($n),name:"",address:"",signature:"",reply_to:nil});$editor.selected=len($editor.rows)-1;$editor.error=nil
+    elif $choice=="remove" then $editor.rows=concat(slice($editor.rows,0,$editor.selected),slice($editor.rows,$editor.selected+1));$editor.selected=max(0,min($editor.selected,len($editor.rows)-1));$editor.error=nil
+    elif starts_with($choice,"select-") then $editor.selected=to_number(substr($choice,7));$editor.error=nil
+    elif $choice=="save" then
+      try
+        $entry=wire_entry($composers[$key].account);$entry.identities=$editor.rows;$account_policy.validate_entry($entry)
+        $r=wire_start("email.account.set",{id:$entry.id,identities:$editor.rows},nil,"settings")
+        if $r.rc!=0 then raise("SETTINGS",$r.body.message) end
+        $composers[$key].identities=nil;return $r
+      catch $failed $editor.error="Not saved: "..$failed end
+    end
+  end
+  $composers[$key].identities=$editor
+  return {rc:0,body:{}}
+end
+fn composer_identity_model($key,$c)
+  $editor=$c.identities
+  if type($editor)!="map" then return nil end
+  $v={open:true,instance:$c.draft_id,title:"Identities",body:"",fields_layout:"stack",fields:[],picks:[],tools:[{id:"add",label:"Add",enabled:true},{id:"remove",label:"Remove",enabled:len($editor.rows)>0}],choices:[{id:"save",label:"Save",enabled:true,default:true},{id:"close",label:"Close",enabled:true,cancel:true}],error:$editor.error,error_warning:true}
+  for $i=0 to len($editor.rows)-1
+    $row=$editor.rows[$i];$v.picks=push($v.picks,{id:"select-"..to_string($i),label:if $row.name=="" then $row.id else $row.name.." <"..$row.address..">" end,selected:$editor.selected==$i,enabled:true})
+  end
+  $row=$editor.rows[$editor.selected]
+  if $row!=nil then for $f in [["name","Name"],["address","Address"],["reply_to","Reply-To"],["signature","Signature"]] $v.fields=push($v.fields,{id:$f[0],label:$f[1],hint:$f[1],value:$row[$f[0]] ?? "",enabled:true,multiline:$f[0]=="signature",rows:4}) end end
+  return {command:"email.compose.intent",definition:{id:"compose-identities",kind:"dialog-form",label:"",initial:$v,properties:{style:"gold"}}}
+end
+fn composer_choose_sender($key,$entry,$sender)
+  global $composers
+  $c=$composers[$key];$old_senders=$compose_sending.senders(wire_entry($c.account) ?? {});$old=filter($old_senders,fn($s)=$s.id==$c.identity)[0] ?? $old_senders[0]
+  if $c.body==$compose_quoting.signature($old.signature ?? "") then $composers[$key].body=$compose_quoting.signature($sender.signature ?? "") end
+  if $c.reply_to==nil or $c.reply_to==$old.reply_to then $composers[$key].reply_to=$sender.reply_to end
+  $composers[$key].account=$entry.id;$composers[$key].identity=$sender.id;$composers[$key].from=$sender.address;$composers[$key].from_name=if len($entry.identities ?? [])==0 then "" else $sender.name end
+  $composers[$key].connection={url:$entry.url,user:$entry.user,ca_file:$entry.ca_file,enabled:$entry.enabled};$composers[$key].stale=nil;$composers[$key].error=nil
+end
+fn composer_reconcile()
+  global $composers
+  for $key in keys($composers)
+    $c=$composers[$key];$entry=wire_entry($c.account)
+    if $entry==nil then continue end
+    $senders=$compose_sending.senders($entry);$sender=filter($senders,fn($s)=$s.id==$c.identity)[0] ?? $senders[0]
+    $connection={url:$entry.url,user:$entry.user,ca_file:$entry.ca_file,enabled:$entry.enabled}
+    if ($c.connection!=nil and not deep_eq($c.connection,$connection)) or $c.from!=$sender.address then $composers[$key].stale={account:$entry.id,generation:$wire_generations[$entry.id] ?? 0,address:$sender.address} end
+  end
+end

@@ -82,6 +82,7 @@ fn composer_open($a,$raw_to=nil)
     if $raw_to!=nil then $c.to=$raw_to end
     $c.show_cc=$c.cc!="";$c.show_bcc=$c.bcc!="";$c.show_reply_to=($c.reply_to ?? "")!=""
     $c.stale=nil;$c.send_origin=nil;$c.reply_quote=$a.reply_quote;$c.reply_signature=$a.reply_signature;$c.reply_position=$a.reply_position
+    $c.connection={url:$e.url,user:$e.user,ca_file:$e.ca_file,enabled:$e.enabled}
     $c=composer_files($c,true)
     $composers[$key]=$c;$compose_focused=$key
     return {rc:0,body:{window:$key,compose:composer_info($c)}}
@@ -116,13 +117,14 @@ fn composer_close($key,$answer=nil)
   return {rc:0,body:{}}
 end
 fn composer_quit()
-  global $compose_quitting,$chrome
+  global $compose_quitting,$chrome,$status
   if any(values($composers),fn($c)=$c.busy) then return wire_refuse("BUSY","Sending…") end
   $compose_quitting=true
   for $key in keys($composers)
     composer_close($key)
     if $composers[$key]!=nil then return {rc:0,body:{quitting:false}} end
   end
+  if not $fixture then try config_save() catch $unsaved $status="Window settings not saved" end end
   $chrome.window_close=true;return {rc:0,body:{quitting:true}}
 end
 fn composer_attachments($command,$a)
@@ -146,6 +148,7 @@ fn composer_intent($a)
   $key=$a.window ?? $compose_focused;$c=$composers[$key]
   if $c==nil then return wire_refuse("NOT_FOUND","No compose is open") end
   if $c.busy then return wire_refuse("BUSY","Sending…") end
+  if $a.id=="compose-identities" then return composer_identity_intent($key,$a) end
   if $a.id=="compose-confirm" then return composer_close($key,$a.value.choice ?? $a.value) end
   if $a.id=="compose-replace" then
     $doc=$c.pending_document;$composers[$key].pending_document=nil
@@ -185,7 +188,7 @@ fn composer_intent($a)
           for $e in $entries
             for $sender in $compose_sending.senders($e)
               if $sender.name.." <"..$sender.address..">"==$a.value.from then
-                $composers[$key].account=$e.id;$composers[$key].identity=$sender.id;$composers[$key].from=$sender.address;$composers[$key].from_name=$sender.name;$composers[$key].reply_to=$sender.reply_to;$composers[$key].stale=nil
+                composer_choose_sender($key,$e,$sender)
               end
             end
           end
@@ -193,7 +196,7 @@ fn composer_intent($a)
       end
     elif $a.action=="command" then
       if $a.value=="attach" then $composers[$key].chooser=true
-      elif $a.value=="identities" then $composers[$key].identities=true
+      elif $a.value=="identities" then composer_identity_open($key)
       elif contains(["show_cc","show_bcc","show_reply_to"],$a.value) then $composers[$key][$a.value]=not $c[$a.value] end
     elif $a.action=="picked" then $composers[$key].attachments=unique(concat($c.attachments,$a.value));$composers[$key].chooser=false
     elif $a.action=="cancel" then $composers[$key].chooser=false
@@ -258,6 +261,8 @@ fn composer_models($m)
     $child={values:{},headers:$headers,body_editor:$body,reader_content:$mail_settings.composer ?? {},native_overlays:[],shortcuts:[],window_close:false}
     if $c.confirm then $child.native_overlays=[{command:"email.compose.intent",definition:{id:"compose-confirm",kind:"dialog-form",label:"",initial:{open:true,instance:$c.draft_id,title:if $compose_quitting then "Quit with an unsent message?" else "Close this message?" end,body:"Your draft is kept on this computer and offered again when Email starts. Discard deletes it.",choices:[{id:"keep",label:"Keep Draft",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Keep Editing",enabled:true,cancel:true}]},properties:{style:"gold"}}}] end
     if $c.pending_document!=nil then $child.native_overlays=push($child.native_overlays,{command:"email.compose.intent",definition:{id:"compose-replace",kind:"dialog-form",label:"",initial:{open:true,instance:$c.draft_id,title:"Replace message?",body:"Replace the message in this composer with the mail document?",choices:[{id:"replace",label:"Replace",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]},properties:{style:"gold"}}}) end
+    $identity_model=composer_identity_model($key,$c)
+    if $identity_model!=nil then $child.native_overlays=push($child.native_overlays,$identity_model) end
     $menus=[{id:"File",label:"File",enabled:true,children:[{id:"compose.new",label:"New",enabled:true,shortcut:"Ctrl+N"},{id:"compose.open",label:"Open…",enabled:not $c.busy,shortcut:"Ctrl+O"},{id:"compose.save_as",label:"Save As…",enabled:not $c.busy,shortcut:"Ctrl+Shift+S"},{id:"mail.send",label:"Send",enabled:composer_sendable($c),shortcut:"Ctrl+Enter"},{separator:true},{id:"compose.close",label:"Close",enabled:true,shortcut:"Ctrl+W"},{id:"file.quit",label:"Quit",enabled:true,shortcut:"Ctrl+Q"}]},{id:"Edit",label:"Edit",enabled:true,children:map([["undo","Undo"],["redo","Redo"],["cut","Cut"],["copy","Copy"],["paste","Paste"]],fn($v)={id:"compose."..$v[0],label:$v[1],enabled:not $c.busy})},{id:"Attachments",label:"Attachments",enabled:true,children:[{id:"compose.attach",label:"Attach files…",enabled:not $c.busy,shortcut:"Ctrl+Shift+A"},{separator:true},{id:"compose.attachments.clear",label:"Remove all attachments",enabled:not $c.busy and len($c.attachments)>0}]},{id:"View",label:"View",enabled:true,children:composer_theme()}]
     $child=$compose_frame.apply($child,{icon:"square-pen",title:"Compose",menus:$menus,toolbar:[{id:"mail.send",label:"Send",icon:"send",enabled:composer_sendable($c)},{id:"view.mode",label:"Toggle light/dark",icon:if $chrome.theme_effective.mode=="dark" then "sun" else "moon" end,enabled:true}],status:$c.error ?? "",window:{"window.decorations":"csd"}})
     $child.frame.status_visible=false

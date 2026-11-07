@@ -27,7 +27,7 @@ end
 fn wire_schedule($command,$args,$event,$purpose)
   global $wire_sequence,$wire_pending,$wire_views,$wire_sessions,$wire_generations,$wire_open_targets,$wire_list_targets,$wire_waiting
   if type($args)!="map" then return wire_refuse("INVALID_ARGUMENT","arguments must be an object") end
-  $settings=contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set"],$command)
+  $settings=contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set","email.account.migrate"],$command)
   if $settings then $purpose="settings" end
   if $command=="email.send" then
     $args._compose_owner=$purpose=="compose-send"
@@ -143,6 +143,8 @@ fn wire_session($update)
     end
   end
   if $previous_page_size!=$mail_settings.page_size and $connected and $box!="" then wire_start("email.list",{mailbox:$box,limit:$mail_settings.page_size},nil,"list") end
+  config_migrate_start()
+  composer_reconcile()
 end
 fn wire_completed($d)
   global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus,$reader_markdown,$reader_detected,$reader_auto,$wire_running,$mail_form
@@ -253,6 +255,7 @@ fn wire_completed($d)
     $changed_id=$answer.body.id ?? $job.args.id
     if ($job.command=="email.account.password.set" or ($job.command=="email.account.set" and contains(keys($job.args),"password"))) and wire_entry($changed_id)!=nil then wire_start("email.account.connect",{id:$changed_id},nil,"connect") end
   end
+  if $job.command=="email.account.migrate" then config_migrate_finish($answer) end
   if $job.token!=nil then viu_reply("finish",$job.token,{rc:$answer.rc,body:$answer.body}) end
   if $answer.rc==0 and contains(["email.mark","email.move","email.junk","email.delete","email.mailbox.create","email.mailbox.rename","email.mailbox.delete"],$job.command) then
     wire_start("email.mailboxes",{account:$job.account},nil,"boxes")

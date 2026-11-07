@@ -82,13 +82,23 @@ pub(crate) fn mail_document() -> mix::evaluator::ExtFn {
 pub(crate) fn digest() -> mix::evaluator::ExtFn {
     mix::sync_ext(|args| {
         let fail = || MixError::RuntimeError {
-            msg: "viu_digest expects blake3/sha256 and text".into(),
+            msg: "viu_digest expects a supported digest and text".into(),
             span: None,
         };
         let [Value::String(algorithm), Value::String(text)] = args.as_slice() else {
             return Err(fail());
         };
         let hash = match algorithm.as_str() {
+            "fnv1a64"=>{
+                let mut hash=0xcbf29ce484222325_u64;
+                for byte in text.as_bytes(){hash^=u64::from(*byte);hash=hash.wrapping_mul(0x100000001b3);}
+                format!("{hash:016x}")
+            },
+            "blake3-hex"=>{
+                if text.len()>16*1024*1024 || text.len()%2!=0 || !text.is_ascii(){return Err(fail());}
+                let bytes=(0..text.len()).step_by(2).map(|i|u8::from_str_radix(&text[i..i+2],16)).collect::<Result<Vec<_>,_>>().map_err(|_|fail())?;
+                blake3::hash(&bytes).to_hex().to_string()
+            },
             "blake3" => blake3::hash(text.as_bytes()).to_hex().to_string(),
             "sha256" => {
                 use sha2::Digest;
@@ -357,9 +367,10 @@ pub(crate) fn private_directory() -> mix::evaluator::ExtFn {
 pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
         let fail = |msg: String| MixError::RuntimeError { msg, span: None };
-        let [Value::String(path)] = args.as_slice() else {
-            return Err(fail("viu_read_optional expects one absolute path".into()));
+        let [Value::String(path),rest @ ..] = args.as_slice() else {
+            return Err(fail("viu_read_optional expects an absolute path and optional byte budget".into()));
         };
+        let limit=match rest {[]=>1024*1024,[value]=>crate::widgets::whole(&crate::runtime::to_json(value)?).filter(|n|*n>0 && *n<=32*1024*1024).ok_or_else(||fail("read limit must be 1..32 MiB".into()))? as usize,_=>return Err(fail("unexpected read arguments".into()))};
         let path = std::path::Path::new(path);
         if !path.is_absolute() {
             return Err(fail("expected an absolute path".into()));
@@ -373,7 +384,7 @@ pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
                 &parent,
                 path.file_name()
                     .ok_or_else(|| std::io::Error::other("missing name"))?,
-                1024 * 1024,
+                limit,
             )
         };
         let value = match read() {

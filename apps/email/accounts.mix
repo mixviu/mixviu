@@ -54,6 +54,22 @@ fn update_once($command,$a,$binding,$new_id)
   end
   $view=settings_call("settings.get",{binding:$binding,view:"values"})
   $entries=$view.values["email.accounts"] ?? [];$default=$view.values["email.default_account"]
+  if $command=="email.account.migrate" then
+    $legacy=$a.entry;validate_entry($legacy)
+    $matched=filter($entries,fn($e)=$e.url==$legacy.url and lower($e.email)==lower($legacy.email))
+    $id=($matched[0] ?? $legacy).id;$changes={}
+    if len($matched)==0 then
+      if any($entries,fn($e)=$e.id==$legacy.id) then raise("REFUSED","The migration identity is already used by another account") end
+      push($entries,$legacy);$changes["email.accounts"]=$entries
+    end
+    if $default==nil then $changes["email.default_account"]=$id end
+    if len(keys($changes))>0 then settings_call("settings.apply",{binding:$binding,expected_incarnation:$view.incarnation,expected_revision:$view.revision,operation_id:$identity.mint(),changes:$changes}) end
+    $fresh=settings_call("settings.get",{binding:$binding,view:"values"})
+    $held=filter($fresh.values["email.accounts"] ?? [],fn($e)=$e.id==$id)[0]
+    if $held==nil or $held.url!=$legacy.url or lower($held.email)!=lower($legacy.email) then raise("CONFLICT","The migration account changed; try again") end
+    if $id!=$legacy.id and password($id)=="" then save_password($id,password($legacy.id)) end
+    return {id:$id}
+  end
   $id=$a.id;$changes={};$removed=false
   if $command=="email.account.set" then
     if $a.id==nil and len($entries)>=64 then raise("INVALID_ARGUMENT","At most 64 accounts are allowed") end
@@ -94,6 +110,8 @@ end
 fn validate_entry($entry)
   if byte_length($entry.name)>128 or byte_length($entry.url)>2048 or byte_length($entry.email)>254 then raise("INVALID_ARGUMENT","Account text exceeds its size limit") end
   if type($entry.enabled)!="bool" then raise("INVALID_ARGUMENT","enabled must be true or false") end
+  if trim($entry.name)!=$entry.name or $entry.name=="" or re_match($entry.name,"[\\x00-\\x1f\\x7f-\\x9f]") then raise("INVALID_ARGUMENT","Invalid account name") end
+  if not valid_address($entry.email) then raise("INVALID_ARGUMENT","Expected one address with one @") end
   if type($entry.signature)!="string" or len($entry.signature)>4096 then raise("INVALID_ARGUMENT","signature exceeds its limit") end
   try $url=url_parse($entry.url) catch $bad raise("INVALID_ARGUMENT","url must be an HTTPS URL") end
   $authority=re_split(split($entry.url,"://")[1] ?? "","[/?#]")[0]
@@ -106,7 +124,12 @@ fn validate_entry($entry)
     push($seen,$id.id)
     if any(keys($id),fn($key)=not contains(["id","name","address","signature","reply_to"],$key)) then raise("INVALID_ARGUMENT","Unknown identity field") end
     if type($id.name)!="string" or byte_length($id.name)>128 or type($id.address)!="string" or byte_length($id.address)>254 or type($id.signature ?? "")!="string" or len($id.signature ?? "")>4096 then raise("INVALID_ARGUMENT","Invalid identity text") end
+    if trim($id.name)!=$id.name or $id.name=="" or re_match($id.name,"[\\x00-\\x1f\\x7f-\\x9f]") then raise("INVALID_ARGUMENT","Invalid identity name") end
+    if not valid_address($id.address) or ($id.reply_to!=nil and not valid_address($id.reply_to)) then raise("INVALID_ARGUMENT","Expected one address with one @") end
   end
+end
+fn valid_address($address)
+  return type($address)=="string" and byte_length($address)<=254 and re_match($address,"^[^@\\s\\x00-\\x1f\\x7f-\\x9f]+@[^@\\s\\x00-\\x1f\\x7f-\\x9f]+$")
 end
 fn entry($value)
   -- The compatibility fields keep the measured list and legacy wire tests.

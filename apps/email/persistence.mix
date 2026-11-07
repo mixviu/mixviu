@@ -1,0 +1,105 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold schema-2 account cache and UI shape. Schema 1 remains intact until
+-- its secret, settings adoption and schema rewrite have all completed.
+$config_path=path_join(viu_app_dirs("email").config,"config.conf.mix")
+$config_save_allowed=true;$config_legacy=nil;$config_migration=nil;$config_last=nil
+fn config_load()
+  global $config_save_allowed,$config_legacy,$config_migration,$entries,$active,$places_ratio,$list_ratio,$mode,$attachments_inline,$tree_closed,$mail_settings
+  $before={entries:$entries,active:$active,places:$places_ratio,ratio:$list_ratio,mode:$mode,inline:$attachments_inline,closed:$tree_closed,settings:$mail_settings}
+  try
+    $read=viu_read_optional($config_path,8388608)
+    if not $read.found then return end
+    $v=data_parse($read.text);$schema=$v.schema_version ?? 1
+    if not contains([1,2],$schema) then $config_save_allowed=false;return end
+    $ui=$v.ui ?? {}
+    if type($ui)!="map" then raise("CONFIG","Invalid UI config") end
+    if $ui.places!=nil and type($ui.places)!="number" then raise("CONFIG","Invalid places fraction") end
+    if $ui.reader!=nil and type($ui.reader)!="number" then raise("CONFIG","Invalid reader fraction") end
+    if $ui.mode!=nil and not contains(["mail","calendar","contacts"],$ui.mode) then raise("CONFIG","Invalid mode") end
+    if $ui.attachments_inline!=nil and type($ui.attachments_inline)!="bool" then raise("CONFIG","Invalid inline flag") end
+    $places_ratio=min(0.35,max(0.1,$ui.places ?? 0.18));$list_ratio=1-min(0.6,max(0.25,$ui.reader ?? 0.42));$mode=$ui.mode ?? "mail";$attachments_inline=$ui.attachments_inline ?? true
+    $active=$ui.account ?? "";$tree_closed=filter(keys($ui.expanded ?? {}),fn($key)=$ui.expanded[$key]==false)
+    if $schema==1 then
+      if $v.account!=nil then
+        $old=$v.account
+        if type($old.url)!="string" or type($old.email)!="string" or type($old.password ?? "")!="string" then raise("CONFIG","Invalid legacy account") end
+        $url=rtrim(trim($old.url),"/");$email=trim($old.email)
+        -- A URL's authority credentials were never the login. Drop them as
+        -- gold does before deriving the stable migration identity.
+        $url=re_replace($url,"^(https?://)[^/?#]*@","$1")
+        $hash=viu_digest("fnv1a64",$url..json_parse("\"\\u0000\"")..lower($email));$little=""
+        for $i=0 to 7 $little=$little..substr($hash,(7-$i)*2,2) end
+        $id="acct-"..substr(viu_digest("blake3-hex",$little),0,12);$ca=nil
+        if $old.ca_pem!=nil then
+          $ca=path_join(dirname($config_path),"ca-"..$id..".pem");viu_private_directory(dirname($config_path));viu_atomic_replace($ca,$old.ca_pem)
+        end
+        $entry={id:$id,name:if byte_length($email)<=128 then $email else "Email" end,url:$url,email:$email,ca_path:$ca,enabled:true,signature:"",identities:[]}
+        $account_policy.validate_entry($entry)
+        $config_legacy=$old;$config_migration={entry:$entry,stage:"ready",adopted:nil}
+        try
+          if ($old.password ?? "")=="" then $config_migration.stage="stopped"
+          else $account_policy.save_password($id,$old.password) end
+        catch $secret $config_migration.stage="stopped" end
+        $entries=[$account_policy.entry($entry)];$active=$id
+      end
+    else
+      $cache=$v.cache ?? {}
+      if type($cache)!="map" or any(keys($cache),fn($k)=not contains(["accounts","default_account","mail","reader","composer"],$k)) then raise("CONFIG","Invalid cached settings") end
+      $accounts=$cache.accounts ?? []
+      if type($accounts)!="list" or len($accounts)>64 then raise("CONFIG","Invalid account cache") end
+      for $e in $accounts $account_policy.validate_entry(merge({enabled:true,signature:"",identities:[],ca_path:nil},$e)) end
+      $entries=map($accounts,fn($e)=$account_policy.entry(merge({enabled:true,signature:"",identities:[],ca_path:nil},$e)))
+      $mail_settings.default_account=$cache.default_account
+      for $field in ["page_size","mark_read_on_open","confirm_delete","quote_on_reply","reply_position"]
+        if ($cache.mail ?? {})[$field]!=nil then $mail_settings[$field]=$cache.mail[$field] end
+      end
+      for $field in ["reader","composer"] if $cache[$field]!=nil then $mail_settings[$field]=$cache[$field] end end
+      if ($mail_settings.composer.font ?? {}).family!=nil and $mail_settings.composer.font.family!="JetBrains Mono" then $mail_settings.composer.font.family=nil end
+      if not any($entries,fn($e)=$e.id==$active) then $active=($entries[0] ?? {}).id ?? "" end
+    end
+  catch $invalid
+    -- Never echo a legacy parser diagnostic: it may contain a password.
+    $config_save_allowed=false;$config_legacy=nil;$config_migration=nil
+    $entries=$before.entries;$active=$before.active;$places_ratio=$before.places;$list_ratio=$before.ratio;$mode=$before.mode;$attachments_inline=$before.inline;$tree_closed=$before.closed;$mail_settings=$before.settings
+  end
+  for $e in $entries if $e.enabled!=false then wire_start("email.account.connect",{id:$e.id},nil,"connect") end end
+end
+fn config_value()
+  $expanded={};for $key in $tree_closed $expanded[$key]=false end
+  $ui={places:$places_ratio,reader:1-$list_ratio,attachments_expanded:$attachments_expanded,attachments_inline:$attachments_inline,mode:$mode,account:if $active=="" then nil else $active end,expanded:$expanded}
+  if $config_legacy!=nil then return {schema_version:1,account:$config_legacy,ui:$ui} end
+  $accounts=map($entries,fn($e)={id:$e.id,name:$e.name,url:$e.url,email:$e.email,ca_path:$e.ca_path,enabled:$e.enabled,signature:$e.signature,identities:$e.identities})
+  return {schema_version:2,ui:$ui,cache:{accounts:$accounts,default_account:$mail_settings.default_account,mail:{page_size:$mail_settings.page_size,mark_read_on_open:$mail_settings.mark_read_on_open,confirm_delete:$mail_settings.confirm_delete,quote_on_reply:$mail_settings.quote_on_reply,reply_position:$mail_settings.reply_position},reader:$mail_settings.reader ?? {},composer:$mail_settings.composer ?? {}}}
+end
+fn config_schedule()
+  global $config_last
+  if not $config_save_allowed then return end
+  $value=config_value()
+  if not deep_eq($config_last,$value) then $config_last=$value;viu_timer("email-config",500,{kind:"config"}) end
+end
+fn config_save()
+  if not $config_save_allowed then return false end
+  viu_private_directory(dirname($config_path));viu_atomic_replace($config_path,data_encode(config_value()),8388608)
+  return true
+end
+fn config_migrate_start()
+  global $config_migration
+  if $config_migration==nil or $config_migration.stage!="ready" or $mail_settings.source!="settings" then return end
+  $config_migration.stage="applying"
+  $r=wire_start("email.account.migrate",{entry:$config_migration.entry},nil,"settings")
+  if $r.rc!=0 then $config_migration.stage="stopped" end
+end
+fn config_migrate_finish($answer)
+  global $config_migration,$config_legacy,$status
+  if $config_migration==nil or $config_migration.stage!="applying" then return end
+  if $answer.rc!=0 then $config_migration.stage="ready";$status="Account migration stopped: "..$answer.body.message;return end
+  $id=$answer.body.id;$e=wire_entry($id);$old=$config_migration.entry
+  if $e==nil or $e.url!=$old.url or lower($e.email)!=lower($old.email) then $config_migration.stage="ready";return end
+  $config_migration.adopted=$id;$legacy=$config_legacy;$config_legacy=nil
+  try
+    if not config_save() then raise("CONFIG","The config was left untouched") end
+    $config_migration=nil;$status="The account moved to Email Settings"
+  catch $failed
+    $config_legacy=$legacy;$config_migration.stage="stopped";$status="Account migration stopped: "..$failed
+  end
+end

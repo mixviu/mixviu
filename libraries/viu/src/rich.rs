@@ -214,6 +214,7 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             }
             let mut ids = BTreeSet::new();
             entries(&value["choices"], 0, &mut ids)?;
+            for key in ["picks","tools"] {if let Some(rows)=value.get(key){entries(rows,0,&mut ids)?;}}
             if let Some(items) = value.get("items") {
                 let items = items
                     .as_array()
@@ -319,6 +320,8 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
                     .get("instance")
                     .is_some_and(|instance| payload.get("instance") != Some(instance))
                 || find(&current["choices"], text(payload, "choice"))
+                    .or_else(||find(&current["picks"],text(payload,"choice")))
+                    .or_else(||find(&current["tools"],text(payload,"choice")))
                     .or_else(|| {
                         current["items"]
                             .as_array()
@@ -457,10 +460,11 @@ pub(crate) fn draw(
         let marker=egui::Id::unique((ui.ctx().viewport_id(),id,"search-instance"));
         let first=ui.ctx().data(|d|d.get_temp::<Value>(marker)).as_ref()!=Some(&value["instance"]);
         let mut registry=toolkit::Registry::<()>::new();let mut catalogue=String::new();
-        for choice in value["choices"].as_array().unwrap().iter().filter(|c|c["enabled"]==true && c["id"]!="cancel") {
+        for (index,choice) in value["choices"].as_array().unwrap().iter().filter(|c|c["enabled"]==true && c["id"]!="cancel").enumerate() {
             let Some(slot)=crate::native_menu::native_id(ui.ctx(),text(choice,"id")) else {continue;};
-            catalogue.push_str(&format!("{} = {}\n",slot,text(choice,"label").replace(['\r','\n','{','}']," ")));
-            registry.add(toolkit::Action{id:slot,label:slot,menu:None,submenu:None,group:0,shortcut:None,icon:None,enabled:toolkit::action::always,run:|_|{}});
+            let Some(label)=crate::native_menu::label_slot(index) else {continue;};
+            catalogue.push_str(&format!("{} = {}\n",label,text(choice,"label").replace(['\r','\n','{','}']," ")));
+            registry.add(toolkit::Action{id:slot,label,menu:None,submenu:None,group:0,shortcut:None,icon:None,enabled:toolkit::action::always,run:|_|{}});
         }
         let strings=toolkit::Strings::new(&catalogue);
         if first {toolkit::search::show(ui.ctx(),&registry,&(),&strings,false);ui.ctx().data_mut(|d|d.insert_temp(marker,value["instance"].clone()));}
@@ -943,7 +947,21 @@ fn gold_dialog(
             else if !response.has_focus() && !response.lost_focus(){response.request_focus();}
             if response.changed(){emit(events,id,"edit",json!(field));}
         }else if !text(value,"body").is_empty(){ui.label(text(value,"body"));}
-        if let Some(fields)=value["fields"].as_array(){
+        if let Some(picks)=value["picks"].as_array(){
+            ui.horizontal_wrapped(|ui|for pick in picks {if toolkit::selectable(ui,pick["selected"]==true,text(pick,"label")).clicked(){emit(events,id,"answer",json!({"choice":pick["id"],"instance":value["instance"]}));}});
+        }
+        if let Some(tools)=value["tools"].as_array(){
+            ui.horizontal(|ui|for tool in tools {if ui.add_enabled(tool["enabled"]==true,toolkit::button::PushButton::secondary(text(tool,"label"))).clicked(){emit(events,id,"answer",json!({"choice":tool["id"],"instance":value["instance"]}));}});
+            ui.add_space(8.0);
+        }
+        if let Some(fields)=value["fields"].as_array().filter(|_|value["fields_layout"]=="stack"){
+            for row in fields {
+                let mut buffer=text(row,"value").to_owned();
+                let response=ui.add_enabled_ui(row["enabled"]==true,|ui|if row["multiline"]==true {ui.add(egui::TextEdit::multiline(&mut buffer).desired_rows(crate::widgets::whole(&row["rows"]).unwrap_or(4) as usize).desired_width(f32::INFINITY).hint_text(text(row,"hint"))).accessible_name(text(row,"label"))} else {toolkit::field::text(ui,&mut buffer,text(row,"hint"),ui.available_width()).accessible_name(text(row,"label"))}).inner;
+                geometry.insert(format!("{id}.field.{}",text(row,"id")),response.rect);
+                if response.changed(){let mut edit=serde_json::Map::new();edit.insert(text(row,"id").into(),json!(buffer));emit(events,id,"edit",Value::Object(edit));}
+            }
+        } else if let Some(fields)=value["fields"].as_array(){
             egui::Grid::new((id,"fields")).num_columns(2).show(ui,|ui|{
                 let mut edits=serde_json::Map::new();
                 for row in fields {
@@ -956,7 +974,7 @@ fn gold_dialog(
                 if !edits.is_empty(){emit(events,id,"edit",Value::Object(edits));}
             });
         }
-        if let Some(error)=value["error"].as_str(){ui.colored_label(ui.visuals().error_fg_color,error);}
+        if let Some(error)=value["error"].as_str(){if value["error_warning"]==true{ui.add_space(6.0);}ui.colored_label(if value["error_warning"]==true{ui.visuals().warn_fg_color}else{ui.visuals().error_fg_color},error);}
         if let Some(footer)=value["footer"].as_str(){ui.weak(footer);}
         if let Some(details)=value["details"].as_array(){
             ui.add_space(4.0);

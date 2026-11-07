@@ -4,7 +4,7 @@ $arg=require("arguments.mix");$protocol=require("protocol.mix");$accounts=requir
 on job.run
   $a=$event.args
   try
-    if contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set"],$a.command) then
+    if contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set","email.account.migrate"],$a.command) then
       $answer=$accounts.update($a.command,$a.args,$a.binding)
       $snapshot=$accounts.settings_call("settings.get",{binding:$a.binding,view:"values"})
       reply(0,json_encode({rc:0,body:$answer,settings:$snapshot}));return

@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Account navigation and table policy. Native widgets only report intent.+-- lint: globals entries active boxes box rows total offset selected message revision connected wire_views wire_sessions wire_data mail_settings c
 $mail_emails=[];$mail_selection=[];$mail_focus=nil;$mail_sort={column:"date",order:"descending"};$mail_widths={};$mail_hidden_columns=[];$mail_density="compact"
-$pane="list";$places_ratio=0.18;$list_ratio=0.58;$tree_closed=[];$search_text="";$reader_markdown=false;$attachments_inline=true
+$pane="list";$places_ratio=0.18;$list_ratio=0.58;$tree_closed=[];$search_text="";$reader_markdown=false;$attachments_inline=true;$attachments_expanded=false
 $mode="mail";$attachment_policy=require("attachments.mix")
 $reader_detected=false;$reader_auto=true
 include "pim-surface.mix"

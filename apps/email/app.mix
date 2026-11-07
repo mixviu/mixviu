@@ -19,6 +19,7 @@ fn entry()
   raise("ACCOUNT","No configured account selected")
 end
 fn publish_email()
+  if not $fixture then config_schedule() end
   $m=$c.model(if $fixture then $rows else [] end,if $fixture then $selected else nil end,$revision,$account,$mailbox,$reader,$draft)
   $m.fixture=$fixture
   $m.status=if $fixture then $m.status else $status.." · "..to_string(len($rows)).." / "..to_string($total).." messages · offset "..to_string($offset) end
@@ -74,7 +75,10 @@ end
 include "wire.mix"
 include "surface.mix"
 include "composer.mix"
+include "compose-identities.mix"
 include "forms.mix"
+include "persistence.mix"
+if not $fixture then config_load() end
 if not $fixture then composer_load_drafts() end
 publish_email()
 on email.ping
@@ -292,6 +296,10 @@ on email.search.intent
 end
 on viu.timer
   $a=$event.args.value
+  if $a.kind=="config" then
+    try config_save() catch $failed $status="Window settings not saved: "..$failed end
+    return
+  end
   if $a.kind=="suggest" then
     $c=$composers[$a.window]
     if $c!=nil and $c.account==$a.account and $c.suggest.text==$a.text then wire_start("email.contacts.suggest",{account:$a.account,window:$a.window,field:$a.field,typed:$a.text,text:$a.query,limit:50},nil,"compose-suggest") end
