@@ -233,6 +233,7 @@ dirs-sys = { path = "vendor/dirs-sys" }
 mail-parser = { path = "vendor/mail-parser" }
 
 [patch."https://github.com/raphamorim/rio"]
+rio-vt = { path = "vendor/rio-vt" }
 teletypewriter = { path = "vendor/teletypewriter" }
 
 [profile.release]

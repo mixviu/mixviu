@@ -1,0 +1,377 @@
+{
+  "adaptations": [
+    {
+      "file": "Cargo.toml",
+      "reason": "Materialise upstream workspace package/dependency inheritance; all sibling Rio crates retain the same pinned git source. Preserve features and dependency flags."
+    },
+    {
+      "file": "src/crosswords/mod.rs",
+      "reason": "Fable C1 functional Gold defect: ED1 from second row must erase first row; guard cursor.row > 1 becomes > 0. Existing Viu ED assertions retained."
+    },
+    {
+      "file": "LICENSE",
+      "reason": "Copy upstream root MIT licence alongside this extracted crate."
+    }
+  ],
+  "exit_path": "Upstream the one-line ED1 correction, then replace local patch with a fixed reviewed Rio revision and rerun conformance and native parity.",
+  "files": [
+    {
+      "destination": "vendor/rio-vt/Cargo.toml",
+      "git_blob": "172628f5599a314692fd2aa7d14efced49028f72",
+      "sha256": "23a337920d0ed6260a291bd32b9156faf0ba87f21ab58117c6a4dacd52bb61ab",
+      "source": "rio-vt/Cargo.toml"
+    },
+    {
+      "destination": "vendor/rio-vt/README.md",
+      "git_blob": "c098ca72f6e1648f6519950ec4cb301dfce257c3",
+      "sha256": "091ed5ccae47db4d55dd3d302677295cab92e09d9a11008712e63757ba5dc42a",
+      "source": "rio-vt/README.md"
+    },
+    {
+      "destination": "vendor/rio-vt/benches/vt_input.rs",
+      "git_blob": "325932f36adbec0b75456573d2594169f5f478d0",
+      "sha256": "c3bf5e3049fe08b896b1504792793bbf1422486eab6fab874cc999216c1d76e0",
+      "source": "rio-vt/benches/vt_input.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/examples/ansi_flood.rs",
+      "git_blob": "787215e1de5ef567d4d256b5605b77c997c24308",
+      "sha256": "3c22b20426013fba9d802231b1ce33314be076c4a440562413397a9fd15c8ffb",
+      "source": "rio-vt/examples/ansi_flood.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/examples/kitty_image.rs",
+      "git_blob": "8b001eb89d13f83e5b65a602804dd6d7b8168f67",
+      "sha256": "41e586c65a7fb63d4f0044546b5dab4670a4d7f52bd3bf4a04c30d68780749f1",
+      "source": "rio-vt/examples/kitty_image.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/examples/quickstart.rs",
+      "git_blob": "28af962d3138e7719c7f4fa04733f6419e289a37",
+      "sha256": "e9f2690d062769f60a4bdf1ce06b91343f2f10ef878a43f7d274fb4ec7e45456",
+      "source": "rio-vt/examples/quickstart.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/examples/resize.rs",
+      "git_blob": "0924d54c606ead08a1b2915a3c97af3ac0e9d0ea",
+      "sha256": "88cdde0485b7bbdfca00f31d4a9ca07e67d54dc73fc63977fd8073c959fdf705",
+      "source": "rio-vt/examples/resize.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/examples/selection.rs",
+      "git_blob": "86a5079488d408482aee099662bada03eb957595",
+      "sha256": "feb2ae27463c6e6e4d2da9aea874f367c29c367ef241653d82c037f766798cab",
+      "source": "rio-vt/examples/selection.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/examples/sixel.rs",
+      "git_blob": "75bcc57cb7953b88fed7c1f0d5665d4b6ca200bb",
+      "sha256": "d2ab737675973ec3f236cf9ed47213bdd22a05e96b8ee50191ed75068590eb5f",
+      "source": "rio-vt/examples/sixel.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/ansi/charset.rs",
+      "git_blob": "f0374ff3874dd244a1b5c0065e57a250eb173a16",
+      "sha256": "cb5f483bb3eb38fd43c45d4f63a8df41aae46574542ae155709cce93e36955d8",
+      "source": "rio-vt/src/ansi/charset.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/ansi/control.rs",
+      "git_blob": "8dfd0738987aa687b10172b8567b7f4f0cfeb154",
+      "sha256": "9b3170fb2b399206becf525cb92a3a9efdbf8ec02b88dd490d5216cc4beb7f11",
+      "source": "rio-vt/src/ansi/control.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/ansi/glyph_protocol.rs",
+      "git_blob": "7e90e6256e9069afa76fe70989824fc5190a75b5",
+      "sha256": "17c0ed199aa47949eceaaebbaa484563122d9d1a44bd58e81ce26499ef72ce6a",
+      "source": "rio-vt/src/ansi/glyph_protocol.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/ansi/graphics.rs",
+      "git_blob": "ca241b1cd1d4636f9ea7add41260b9ffe93cefd0",
+      "sha256": "384f76044eda74b00784bbd5847e2d52768d541de50398248f150c64c450833e",
+      "source": "rio-vt/src/ansi/graphics.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/ansi/iterm2_image_protocol.rs",
+      "git_blob": "0f268f3e20c1d21cfe01d0aa5f83416decae5735",
+      "sha256": "255afee7c40d0b750c58db532701a9a6ecca988f9ca48b7072e167758cf5e033",
+      "source": "rio-vt/src/ansi/iterm2_image_protocol.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/ansi/kitty_graphics_protocol.rs",
+      "git_blob": "26010d29002dba76fcce726a360e6e84d605dccb",
+      "sha256": "622f54520b7d0773d9e877408a9af8d997c3e1c580e0ae63a503b736b1020cf5",
+      "source": "rio-vt/src/ansi/kitty_graphics_protocol.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/ansi/kitty_virtual.rs",
+      "git_blob": "fd481b4d8326cc7c67a2bbc9e5fea336b8f1a6ba",
+      "sha256": "c0551a42ad20ea67f7bb353cf90ba239af4236730456280738ddc1c5483290b7",
+      "source": "rio-vt/src/ansi/kitty_virtual.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/ansi/mod.rs",
+      "git_blob": "edce47f6630a36d529176ee569cdf8fd43e4a97d",
+      "sha256": "a2e9534e93b3d890b448da9ffc9371076a45104bdbde958f8d080adb0157891e",
+      "source": "rio-vt/src/ansi/mod.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/ansi/mode.rs",
+      "git_blob": "0c01d373d1bd77aa8648c16d7c92234909fc365b",
+      "sha256": "a6ebae9fa6a289e9e88e7fc500e2cf5bbcd6744a46275a2a47dda42cfe0a9d95",
+      "source": "rio-vt/src/ansi/mode.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/ansi/sixel.rs",
+      "git_blob": "50a447c8d459c4e0a675ffa22af8d0642c7890cd",
+      "sha256": "9ee000af12125c04d1618240f3865790a64a77e363d25e7fca0e34fee0b0a6a2",
+      "source": "rio-vt/src/ansi/sixel.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/clipboard.rs",
+      "git_blob": "0e9ae67af01f98cc98a8a5e353305ef1e9fc5dfa",
+      "sha256": "bf7d474defbd3d313bbe517385b8fe3ba662c18f587b9635a81f06cf647bce0b",
+      "source": "rio-vt/src/clipboard.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/codepoint_width.rs",
+      "git_blob": "abbb242fb9be9aab2672fe5f2a242f21f38c4e5e",
+      "sha256": "acaa3b9d990b8f81b54ed267778c45fbb6941b394f46bc10e8f10e1216dd54f7",
+      "source": "rio-vt/src/codepoint_width.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/config/colors/README.md",
+      "git_blob": "bcf693486bb3f4e488cefef77d3d8f2a5bb94790",
+      "sha256": "dda09061f7d3c513ad25c65e262a8c8fae5625f2009195bef6d5f0246628cc21",
+      "source": "rio-vt/src/config/colors/README.md"
+    },
+    {
+      "destination": "vendor/rio-vt/src/config/colors/defaults.rs",
+      "git_blob": "4b0af2d40ae83ffeb8a565364756d666bc0ea250",
+      "sha256": "971403fd1b432879c96775c6bd4ea14b7bec7f9238f5710acec81a2f79e1f68d",
+      "source": "rio-vt/src/config/colors/defaults.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/config/colors/mod.rs",
+      "git_blob": "dac598de49f63c5dd4d942ad7d4c849c7519a95f",
+      "sha256": "e0ce843f7862e17da959503096f5c388a5153091604d87271db4b276b56c8c5c",
+      "source": "rio-vt/src/config/colors/mod.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/config/colors/term.rs",
+      "git_blob": "f4567edd39c8a7af049b0abd8687b1861a714112",
+      "sha256": "2b11b903b2d5e01193f3148f06de90b7a380d3b1182d0e0c35c1d741f9b72b31",
+      "source": "rio-vt/src/config/colors/term.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/config/mod.rs",
+      "git_blob": "bb9b67f3635172c579cda4bdd5d62bf1e12bab4a",
+      "sha256": "2dd1d29d20f0d6f4e22383ecf80552db0ac9d0b863d2868db1e88a3e4a3e764b",
+      "source": "rio-vt/src/config/mod.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/attr.rs",
+      "git_blob": "fad04a1aea25d18cb7e9ac0203d11177ea542354",
+      "sha256": "3055689815e64b9959d2bb4d2c0996f9bc1286fdf27aaba45bf8b98c4196bfda",
+      "source": "rio-vt/src/crosswords/attr.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/formatter.rs",
+      "git_blob": "a69b478cbe34b0af0f268637854d632edd446f14",
+      "sha256": "2ed5eff5d3feb0650c69ebf5d75155bf95f28997ecc9ccde1ac58b1173de0813",
+      "source": "rio-vt/src/crosswords/formatter.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/grid/mod.rs",
+      "git_blob": "b7d510c763aa75c6e2afdba968b2bd33d05f071b",
+      "sha256": "86a3b6013ab3d6a82cd0895b1cc1ce55b6050396874166a0b0844e189bc6a2dd",
+      "source": "rio-vt/src/crosswords/grid/mod.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/grid/resize.rs",
+      "git_blob": "5bc3bb2cf08b604c14edcb42a4fd9ff4213663eb",
+      "sha256": "35a92a6e146ecd976e96ec86681362376d5057cc26d29c3f0e39651b0fe4ae8e",
+      "source": "rio-vt/src/crosswords/grid/resize.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/grid/row.rs",
+      "git_blob": "c3e470041eb76cda20cff4eb969fea07f779b60d",
+      "sha256": "537238dcf96a933c6a8fe256c269c8f0a2a375f8dae365b4e12dbd664f661591",
+      "source": "rio-vt/src/crosswords/grid/row.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/grid/storage.rs",
+      "git_blob": "8974326b805a596050c2cc94909285079ba59c1f",
+      "sha256": "2dbacd5fbc643996de2140cbfaa7b2f88f563af248733b070ad0df8f13e703e0",
+      "source": "rio-vt/src/crosswords/grid/storage.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/grid/tests.rs",
+      "git_blob": "52e90e474686a02138d750fc64508a0557fa7dc2",
+      "sha256": "8b0eaa2b79b5478ce0d5008146c88b0625acbedd988942a418662471a1c0283c",
+      "source": "rio-vt/src/crosswords/grid/tests.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/mod.rs",
+      "git_blob": "f52da70d325c1314efa60bce1405bdfe9f48d96d",
+      "sha256": "11c9c8c7163d02edc4e7266b44321a2bc6d5261e0ee9d984a669b568b0cc312a",
+      "source": "rio-vt/src/crosswords/mod.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/pos.rs",
+      "git_blob": "a83fba65f090513f71eda149d2c13f67b6ed32e0",
+      "sha256": "e34a1bb8d79fd5a2e1f0108f9d66791dc92b38929617a70e5eea30539826d72e",
+      "source": "rio-vt/src/crosswords/pos.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/search.rs",
+      "git_blob": "bfd92443ab91a9ec51e7071dc083f85c0ab993aa",
+      "sha256": "e0ab4c0177db3c017068c3bf283978603a20b1a9cb2bc699b692f450b7c780af",
+      "source": "rio-vt/src/crosswords/search.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/square.rs",
+      "git_blob": "d33d5bcb22ccdac00b7fbb7d29b8b1cf8af341ef",
+      "sha256": "9603d4627ee6519befb1853313d7f9bdc641c16d8886b3a28cdb65ebe3cd2e40",
+      "source": "rio-vt/src/crosswords/square.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/style.rs",
+      "git_blob": "5ccfcfe2ee20cc248b4eff2d33468bc449993842",
+      "sha256": "d4068b4b1308b349715b26ac68a2d5c7a43830cf8b14aef614ce37ed96019c2b",
+      "source": "rio-vt/src/crosswords/style.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/crosswords/vi_mode.rs",
+      "git_blob": "446b7f9922d06e774876bdfb3f854e7d55922aa9",
+      "sha256": "93a251c3a6b0e6d9e038610e2b94d8c5982e4073ba18cfb626087f6c3285ac73",
+      "source": "rio-vt/src/crosswords/vi_mode.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/error/mod.rs",
+      "git_blob": "f0deafd07ab58a7eeef3c7048eda519869a8c17e",
+      "sha256": "3dbb6321b8628a692955a23ba8fb66218a3a6f80c7e5049d99b3efb3a8fc1f8b",
+      "source": "rio-vt/src/error/mod.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/event/mod.rs",
+      "git_blob": "49a325d5be94d499444d00308f108d128bc1aaa3",
+      "sha256": "1076cfe24921831ec22590b6093e5eef559aa11d3f1e8153b7550d6ea305ffac",
+      "source": "rio-vt/src/event/mod.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/event/sync.rs",
+      "git_blob": "18074ee2956b455828bb97356ad85775696afef9",
+      "sha256": "9910cac27e33ac5663e75717e612c71ad015912be3fec0ac561764a89f709baf",
+      "source": "rio-vt/src/event/sync.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/grapheme_lut.rs",
+      "git_blob": "304efafe0ab9677ff23833ee8a240892d834686e",
+      "sha256": "e66ce870bc19b3875f0c135cbcf5e932d0840e71b174686a98a5bada44097a04",
+      "source": "rio-vt/src/grapheme_lut.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/lib.rs",
+      "git_blob": "64a2856a014952e0f8a4cef7750c52b4cbc86cbe",
+      "sha256": "15f263ec72f575991dfd28d5250ea1ef45b9856a3758b29f17f056138c37f6ff",
+      "source": "rio-vt/src/lib.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/performer/handler.rs",
+      "git_blob": "902696d8b3627e6be9a3938422af65bf87b171d5",
+      "sha256": "c566b6a6552f75c022d7ed68ef303844f22aa5db5541242fb4782907f6357f27",
+      "source": "rio-vt/src/performer/handler.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/performer/mod.rs",
+      "git_blob": "ad6d682c8a1a57db22ec8ae133918d036d504344",
+      "sha256": "0dcaac60a16aeb8a7f29086886074acd79e40863ad9a852204655637feed5228",
+      "source": "rio-vt/src/performer/mod.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/performer/osc.rs",
+      "git_blob": "be292e9f59d76177b051279e7f38cdc9d4dc1aa9",
+      "sha256": "2aef5712eaa12f219ee85fa4f85ba7cfd1cea704fb7d580ffb70fea66a291430",
+      "source": "rio-vt/src/performer/osc.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/performer/parser/mod.rs",
+      "git_blob": "d966dd20802dd2a61cdf32507b40593cf08cea88",
+      "sha256": "efba4f4de7d7b4b0a7115113cb934660c65f33523f00f816cdb1cdcd573d9985",
+      "source": "rio-vt/src/performer/parser/mod.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/performer/parser/params.rs",
+      "git_blob": "56b6dc0b477b9c30a88a2e3bc9d68c88960561c5",
+      "sha256": "08d6e56614c82350b25a24c243c33f817aa11e94020e86e0a354839108558e21",
+      "source": "rio-vt/src/performer/parser/params.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/selection.rs",
+      "git_blob": "536428626c7bff9207580dc819b82014b51bcbdc",
+      "sha256": "d2b99431fcade9291cd4c4bc66608d3c9ef7f77ee2751d8ff5998ff6afc4ec0c",
+      "source": "rio-vt/src/selection.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/simd_base64.rs",
+      "git_blob": "aed35cf80659b9aaa82c54bd41daddb4eea3ceaa",
+      "sha256": "e5ee7c8e7308853a88ddb5f49199c4553619351769bcf6a6280cded8ac7453a3",
+      "source": "rio-vt/src/simd_base64.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/simd_utf8.rs",
+      "git_blob": "73db84c2c993530c33e31c4f45dc3c61921e7e47",
+      "sha256": "408ab9fd12aa33fa53e6c6b3bca5bdb284a7820d7cb1383c334e00613920006b",
+      "source": "rio-vt/src/simd_utf8.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/src/time.rs",
+      "git_blob": "05f86eb58cc6d4120ea25a1412488b43d3a31763",
+      "sha256": "4cc5dbb17a273159c278a9909dccc39de9d9a375391fba4a252da3657a2fd49e",
+      "source": "rio-vt/src/time.rs"
+    },
+    {
+      "destination": "vendor/rio-vt/tests/sixel/testimage_im6.rgba",
+      "git_blob": "af6abfa317ddf0eb6330f672df51eb850593f8b5",
+      "sha256": "743620ccce715b537b66e03345dff512bc50f2084f69fb4a61d15865c3888460",
+      "source": "rio-vt/tests/sixel/testimage_im6.rgba"
+    },
+    {
+      "destination": "vendor/rio-vt/tests/sixel/testimage_im6.sixel",
+      "git_blob": "80752a7510c3c740123a5764104b10d207aa53f3",
+      "sha256": "b5268ba505d2447a0f085e18879083c5c8d3018129de9dcd3d0e4364b7b3b651",
+      "source": "rio-vt/tests/sixel/testimage_im6.sixel"
+    },
+    {
+      "destination": "vendor/rio-vt/tests/sixel/testimage_libsixel.rgba",
+      "git_blob": "a9e1d6c737a986b0d104673decc18d73ea4d7c5d",
+      "sha256": "97889d2f9e6136b4d548e83d8adb94905cbcaebf02b39481145f0d4d8dc9072b",
+      "source": "rio-vt/tests/sixel/testimage_libsixel.rgba"
+    },
+    {
+      "destination": "vendor/rio-vt/tests/sixel/testimage_libsixel.sixel",
+      "git_blob": "7063a4b0cd61a2f4dfed772e5c5240f4409b85d5",
+      "sha256": "0a76479c297404085b8f90fdef3edd5e7bacfdd4166713c4f14f52a9e797f5d2",
+      "source": "rio-vt/tests/sixel/testimage_libsixel.sixel"
+    },
+    {
+      "destination": "vendor/rio-vt/tests/sixel/testimage_ppmtosixel.rgba",
+      "git_blob": "902b150d070fa1255aef07d17e7310db0e0af271",
+      "sha256": "ee089f763fcd6037b6b2c1be741e470fc816a76779f0dab440240ce1b3485d93",
+      "source": "rio-vt/tests/sixel/testimage_ppmtosixel.rgba"
+    },
+    {
+      "destination": "vendor/rio-vt/tests/sixel/testimage_ppmtosixel.sixel",
+      "git_blob": "951f60286650542387ecdf5cc88cdeb1dc6357ec",
+      "sha256": "496007d077a9210c895b86d75c877cd874ea4be8eb7757cc51cbb752e923c4da",
+      "source": "rio-vt/tests/sixel/testimage_ppmtosixel.sixel"
+    }
+  ],
+  "foreign_policy": "No new foreign dependency; simdutf remains Viu-only debt under D6, forbidden to strict Mix/mixd.",
+  "license": "MIT",
+  "revision": "932c1a7d9e07b4db5924f7a0dd689e823c3a1442",
+  "upstream": "https://github.com/raphamorim/rio"
+}

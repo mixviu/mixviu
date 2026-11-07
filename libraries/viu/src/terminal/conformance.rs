@@ -175,11 +175,8 @@ fn erase_display_modes_preserve_cursor_and_include_its_cell() {
         (1, ["        ", "    BBBB", "CCCCCCCC"]),
         (2, ["        ", "        ", "        "]),
     ] {
-        let t = Terminal::from_test_vt(
-            8,
-            3,
-            b"AAAAAAAA\x1b[2;1HBBBBBBBB\x1b[3;1HCCCCCCCC\x1b[2;4H",
-        );
+        let t =
+            Terminal::from_test_vt(8, 3, b"AAAAAAAA\x1b[2;1HBBBBBBBB\x1b[3;1HCCCCCCCC\x1b[2;4H");
         t.advance_test_vt(format!("\x1b[{mode}J").as_bytes());
         for (n, text) in expected.into_iter().enumerate() {
             assert_eq!(row(&t, n), text, "ED {mode}, row {n}");
