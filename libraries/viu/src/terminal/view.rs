@@ -436,8 +436,7 @@ mod pointer_order_tests {
         }
         out
     }
-    #[test]
-    fn typing_before_and_after_a_same_frame_click_reaches_the_correct_pane() {
+    fn ordered_input(click_second: bool) {
         let sessions = Sessions::fixture();
         sessions.fixture_pane("vt-2", b"second");
         let first = sessions
@@ -475,6 +474,7 @@ mod pointer_order_tests {
             )
             .drop_without_applying_deltas();
         }
+        assert_eq!(views.focused.as_deref(), Some("vt-1"));
         let pos = views
             .placements
             .iter()
@@ -482,6 +482,7 @@ mod pointer_order_tests {
             .unwrap()
             .grid
             .center();
+        let pos = if click_second { pos } else { egui::pos2(-20.0, -20.0) };
         let mut intents = Vec::new();
         ctx.run_ui(
             egui::RawInput {
@@ -514,12 +515,21 @@ mod pointer_order_tests {
         )
         .drop_without_applying_deltas();
         assert_eq!(read(&first), b"before");
-        assert_eq!(read(&second), b"after");
-        assert!(
+        assert_eq!(read(&second), if click_second { b"after".as_slice() } else { b"" });
+        assert_eq!(views.focused.as_deref(), if click_second { Some("vt-2") } else { None });
+        assert_eq!(
             intents
                 .iter()
-                .any(|intent| intent.action == "focus" && intent.value == "vt-2")
+                .any(|intent| intent.action == "focus" && intent.value == "vt-2"), click_second
         );
+    }
+    #[test]
+    fn typing_before_and_after_a_same_frame_click_reaches_the_correct_pane() {
+        ordered_input(true);
+    }
+    #[test]
+    fn outside_click_preserves_preceding_text_then_surrenders_terminal_focus() {
+        ordered_input(false);
     }
 }
 
@@ -788,15 +798,23 @@ impl Views {
                 {
                     position = Some(*pos);
                 }
-                if pointer
+                let blocked = pointer
                     && position.is_some_and(|pos| {
                         ui.ctx()
                             .layer_id_at(pos)
                             .is_some_and(|layer| layer != ui.layer_id())
-                    })
-                {
+                    });
+                if blocked {
                     mouse.cancel();
                     delivered = egui::Event::PointerGone;
+                }
+                if let egui::Event::PointerButton { pos, pressed: true, .. } = event {
+                    let inside = self.placements.iter().any(|p| pos.x >= p.area.min.x && pos.x < p.area.max.x && pos.y >= p.area.min.y && pos.y < p.area.max.y);
+                    if blocked || !inside {
+                        for placed in &self.placements {
+                            ui.memory_mut(|m| m.surrender_focus(placed.id));
+                        }
+                    }
                 }
                 if !pointer || !another_grab {
                     let effects = mouse.update(
@@ -994,7 +1012,16 @@ impl Views {
             ),
         );
         let id = ui.make_persistent_id((&widget.id, handle));
+        // egui normally surrenders focus using the whole frame's pointer state.
+        // This compound surface dispatches that transition at the actual press,
+        // after any preceding keyboard events have reached their original pane.
+        let surrender = ui.memory_mut(|m| {
+            let previous = m.options.input_options.surrender_focus_on;
+            m.options.input_options.surrender_focus_on = egui::SurrenderFocusOn::Never;
+            previous
+        });
         let response = ui.interact(area, id, Sense::focusable_noninteractive());
+        ui.memory_mut(|m| m.options.input_options.surrender_focus_on = surrender);
         let ((cols, rows), grid, border) = grid_geometry(
             area,
             cell,
