@@ -65,7 +65,7 @@ end
 fn dp_filename($name)
   if type($name)!="string" then raise("INVALID_ARGUMENT","Name must be text") end
   $name=trim($name)
-  if $name=="" or contains([".",".."],$name) or contains($name,"/") or contains($name,"\u0000") then raise("INVALID_ARGUMENT","Enter a valid file name") end
+  if $name=="" or contains([".",".."],$name) or contains($name,"/") or contains($name,"\\") or contains($name,"\u0000") then raise("INVALID_ARGUMENT","Enter a single valid file name") end
   return $name
 end
 fn dp_path($path)

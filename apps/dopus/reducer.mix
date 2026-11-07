@@ -174,22 +174,26 @@ fn dp_legacy_dialog($s,$contract,$a)
       return $s
     end
     if not contains(["about","shortcuts"],$a.open) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
-    if $s.form.open then raise("DIALOG_OPEN","Answer the open dialog first") end
+    if $s.form.open then raise("DIALOG_OPEN","answer or close the open dialog first") end
     return dp_action($s,$contract,"help."..$a.open,{})
   elif has_key($a,"answer") then
-    if not $s.form.open then raise("NO_DIALOG","No dialog is open") end
+    if not $s.form.open then raise("NO_DIALOG","no dialog is open") end
     $choice=$a.answer
-    if type($choice)!="string" then raise("INVALID_ARGUMENT","Answer must be text") end
+    if type($choice)!="string" then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
     if $s.reservation.kind=="delete" then
-      if not contains(["yes","no"],$choice) then raise("INVALID_ARGUMENT","Unknown delete choice") end
+      if not contains(["yes","no"],$choice) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
       $choice=if $choice=="yes" then "ok" else "cancel" end
     elif $s.reservation.kind=="message" then
-      if $choice!="done" then raise("INVALID_ARGUMENT","Expected done") end
+      if $choice!="done" then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
       $choice="ok"
-    elif not any($s.form.choices,fn($c)=$c.id==$choice and $c.enabled) then raise("INVALID_ARGUMENT","Unknown dialog choice") end
+    elif not any($s.form.choices,fn($c)=$c.id==$choice and $c.enabled) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
     if has_key($a,"name") then
-      if type($a.name)!="string" or not contains(["mkdir","rename"],$s.reservation.kind) then raise("INVALID_ARGUMENT","Dialog has no name field") end
+      if type($a.name)!="string" or not contains(["mkdir","rename"],$s.reservation.kind) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
       $s.form.field=$a.name
+    end
+    if $choice=="ok" and contains(["mkdir","rename"],$s.reservation.kind) then
+      try $dp.dp_filename($s.form.field)
+      catch $message $s.reply={error_code:"ARGUMENT",message:$message};return $s end
     end
     return dp_handle_answer($s,$contract,$choice)
   end
