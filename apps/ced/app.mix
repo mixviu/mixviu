@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- host: viu
   $ced_core=require("core.mix")
@@ -7,7 +8,6 @@
   $ced_mail=require("mail.mix")
   $ced_ui=require("ui.mix")
   $ced_dialogs=require("dialogs.mix")
--- SPDX-License-Identifier: MIT OR Apache-2.0
 -- lint: globals app_args
 $ctx=viu_context();$frame=require("../../libraries/viu/mix/gold-frame.mix")
 $state={tabs:[],active:0,busy:false,serial:0,next_tab:0,queue:[],running:{},timers:{},outcomes:{},last_op:nil,status:"Open a UTF-8 document",path:"",wrap:false,line_numbers:true,window_close:false,open_dialog:false,event_seq:nil,look:{appearance:{scheme:"studio",mode:"dark"},values:{},revision:nil}}

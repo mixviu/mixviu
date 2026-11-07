@@ -23,6 +23,8 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 /// Supplying one does not create a Bus citizen, broker or global registry.
 #[derive(Clone, Default)]
 pub struct Services {
+    #[cfg(test)]
+    pub(crate) registry_observer: Option<Arc<dyn Fn(Vec<String>) + Send + Sync>>,
     pub max_string_bytes: Option<usize>,
     pub platform: Option<crate::platform::Platform>,
     pub ui_state: Option<crate::ui_state::UiState>,
@@ -275,6 +277,8 @@ impl Runtime {
                             "build":serde_json::from_str::<serde_json::Value>(&buildinfo::build_info!().json()).expect("build provenance JSON"),
                             "executable":std::env::current_exe().ok(),
                         }))));
+                        #[cfg(test)]
+                        if let Some(observe) = &services.registry_observer { observe(eval.extension_names()); }
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));
                         (generation, 0, outcome.map(|_| ()))

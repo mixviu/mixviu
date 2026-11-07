@@ -38,6 +38,42 @@ The CBC-generated baseline shrinks from 828 to 527 diagnostics (301 removed).
 existing warnings (two discarded validation results and one unchecked send)
 are unchanged. No baseline entry increases.
 
+## Per-area changes and round-two review
+
+- Lint vocabulary: generate names from viu's registration sites; an actual
+  fully provisioned evaluator registry now round-trips against that list.
+  A standalone lib-mix build warns clearly and omits the unavailable viu
+  vocabulary instead of failing when sibling sources are absent.
+- Macro-policy split: reusable functions live in `macro-policy.mix` while
+  the standalone handler remains in `macros.mix`. A Ced worker test now
+  exercises catalogue open, New and Close through `job.run`/`macro-panel`.
+- Ced migration: literal, lazy `require` imports preserve cyclic policy
+  calls; distinct `$ced_*` aliases avoid local-state collisions. SPDX is
+  restored to the first line of its entry script.
+- Backdrop inline: handler-owning runtime stays in the entry's original
+  startup error boundary. The duplicated inner metadata comments are gone.
+- Dopus entry: the bundle's injected argument list still auto-starts it;
+  the legacy comparison host explicitly sends `dopus.initialise` when it
+  deliberately injects nil. Tests require a model before the bundle's first
+  command and readiness after the comparison-host event. Only one version
+  header remains.
+- Workshop executable lookup: the removed `mixos_path()` call was initially
+  replaced with `which()`. Review tightened this to the existing
+  `mix_path("prefix", "bin/dopus")` contract, independent of session PATH.
+- Baseline regeneration: CBC's own Mix generated 527 diagnostics versus 828
+  originally; no entry grows. The 30 app scripts now each run in their own
+  native test process, so write-once script argv cannot leak to another test.
+
+### Dopus launcher audit
+
+| Launcher | Startup contract |
+| --- | --- |
+| Generic `viu run` / `app_host::run` | `launch::load` calls `Bundle::load`; the latter always injects a list as `$app_args`, even with no arguments. The entry auto-starts. The preview load only reads metadata. |
+| Generic launcher/test tools (`tools/bulk_native.mix`, `tools/p2_rehearsal.mix`) | Invoke `viu run` and inherit the same bundle contract. |
+| Legacy comparison host, Mix mode (`apps/dopus/src/main.rs`) | Deliberately injects nil, loads `app.mix`, then immediately sends `dopus.initialise` with `app_dir` and `profile` before creating its UI. Rust mode owns its own native initialisation. |
+| Installed desktop entries and Workshop | Launch the installed prefix Dopus binary directly; they do not load `app.mix` with nil arguments. Their native entry initialises itself. Workshop now resolves that binary by install prefix. |
+| systemd units | No Dopus launcher unit exists in the tree or the inspected system/user unit roots. No additional deferred Mix startup path was found. |
+
 ## Risk tier
 
 Tier 1: Mix lint and viu runtime/app integration. Module isolation is the
@@ -75,5 +111,5 @@ installation or external data migration is involved.
 ## Authorship and review
 
 Author: OpenAI Codex, committed and pushed through the mixviu-agent bot.
-Independent reviewer and human approval are pending. No PR has been opened,
+GLM-5.3 and DeepSeek approved with nits. This follow-up addresses their seven items; re-review of the new diff and human approval remain pending. No PR has been opened,
 as required by the pre-cut-over brief.

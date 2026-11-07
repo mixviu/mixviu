@@ -58,8 +58,8 @@ on job.run
         send "ced" "ced.open" body={paths:[$target]} timeout=30
         if $rc!=0 then reply($rc,json_encode($reply));return end
       else
-        $dopus=which("dopus")
-        if $dopus==nil then raise("UNAVAILABLE","Dopus is not installed") end
+        $dopus=mix_path("prefix","bin/dopus")
+        if not is_file($dopus) then raise("UNAVAILABLE","Dopus is not installed") end
         $child=spawn([$dopus,$target],{detach:true})
       end
       reply(0,json_encode({opened:true}));return

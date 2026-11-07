@@ -1,6 +1,5 @@
 -- host: viu
 -- lint: globals app_args
--- version: 0.1.0
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- Embedded Mix entry. Commands use the host's existing native Bus connection.
@@ -147,6 +146,8 @@ on dopus.execute
   dp_request({command:"dopus.execute",args:$event.args})
 end
 
+-- Bundle injects app_args (including []); the comparison host supplies nil
+-- and sends dopus.initialise with its explicit app_dir/profile instead.
 if $app_args!=nil then
 $profile=$app_args[0] ?? path_join(env("XDG_CONFIG_HOME",path_join(env("HOME"),".config")),"dopus")
 mkdir($profile,{parents:true})

@@ -4,9 +4,6 @@
 -- lint: globals app_args
 $startup_code=2
 try
-  -- SPDX-License-Identifier: MIT OR Apache-2.0
-  -- version: 0.2.0
-  -- lint: globals app_args
   $wire=require("wire.mix");$engine=require("engine.mix");$projection=require("projection.mix");$launch=require("launch.mix");$schedule=require("schedule.mix")
   $ctx=viu_context();$options=$launch.options($app_args,cwd(),false)
   $startup_code=1
