@@ -1,5 +1,17 @@
 # Email gold parity
 
+## Round 5 acceptance work, 2026-11-07: OPEN
+
+The heavy release gate email-r5-e2b83bff89c8-a1 passed at e2b83bff89c82ac58c3d75786ce9c98b4a4cb266, release SHA256 cbc5cbaa58a6ad4de15efd625132d0f1aa04f72f8126f8dfe188729ea080b95d. Its release native repeat native.BGJDqA passes the wider mail/PIM/composer suite, stale address adoption in both directions, reply-position toggles, visible transport failure and draft recovery. This cohort does not attest later root, keyboard or clipping changes.
+
+Native native.agzK2d at 0a21fb52a6a8de3eb00568d1a47298d4f2ca66bb passes 32 requests / 34 records: deferred mailbox-owner close, Keep Editing cancellation, exit after the final child, compose-only root launch, one initial native surface, fixed-root ownership with a sibling, deferred root confirmation and final exit. All six PIDs stopped. Debug SHA256 110fb5885949d24fc31cfc61645faacbca781801c1a39c1adea1260aa66064fa, CBC 20261107-141101-0a90cb2d PASS. The full saved log was read; its formatter patch is applied. Nine wire tests include bearer refresh once, explicit refusal ambiguity and a refused second 401.
+
+**Gold defect, Fable C1:** in pair.JoSejA the expanded attachment panel matches gold geometry, but gold paints the reader body across the upper part of the disclosure, count and Save all controls. Both gold and candidate originals are retained, including gold-attachments-expanded.png and mix-attachments-expanded.png; the inspected regional comparison isolates the one-pixel header clip elsewhere. The port now clips message painting vertically to the remaining body rectangle, preserving the full attachment controls. This fixes hidden function under the standing C1 ruling; it needs its own native capture. Cosmetic layout stays as gold.
+
+The paperclip repair is closed in diagnostic pair.pRs6SZ: every baseline region and composer content region is exact. Two scaled composer headers retain only inspected rounded-edge antialiasing, full SSIM distortion 1.58862e-10 / RMSE .00000427878. Release pair.pPCV5C completed all main states and ten live Prefs variants, but exposed one-pixel reader clipping and a short status-border extension after attachment changes. Repairs and the final exact-source release repeat remain required.
+
+The 2,000-row release median remains 13.752336 ms at the previously documented source and receipt. No later release projection is claimed yet. Complete Bus success/stale/topic/Quit coverage and the remaining inventory witnesses are still open. No proposed deviation requires a Fable decision.
+
 ## Round 4 checkpoint, 2026-11-07: OPEN
 
 Latest formatted code: 9077408a8d7687143bc832faf6b45ded1e8931a8. CBC 20261107-131332-aa236b2f passed the attachment-row repair. Its final visual repeat remains open. The queued old-source release job was superseded by detached email-r4-9077408a8d76 at this code SHA. No release acceptance is claimed.

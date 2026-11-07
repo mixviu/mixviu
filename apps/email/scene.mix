@@ -35,7 +35,7 @@ emails:{widget:"control",definition:"= $model.native_table",on_intent:"email.int
 "pim-line-3":{widget:"control",definition:{id:"pim-line-3",kind:"label",label:"",initial:"",properties:{weak:true}},hidden:"= !$model.pim_line_3"},
 "pim-rule":{widget:"control",definition:{id:"pim-rule",kind:"separator",label:"",initial:"",properties:{style:"hairline"}}},
 "pim-body":{widget:"control",definition:{id:"pim-body",kind:"label",label:"",initial:"",properties:{wrap:true}}},
-"reader-layout":{widget:"dock",passthrough_single:true,focus_target:"reader-focus",children:["reader-files","reader-message"],placements:{"reader-files":{edge:"bottom",size:"content",measure:true,max_fraction:0.4},"reader-message":{edge:"fill",clip:false}}},
+"reader-layout":{widget:"dock",passthrough_single:true,focus_target:"reader-focus",children:["reader-files","reader-message"],placements:{"reader-files":{edge:"bottom",size:"content",measure:true,max_fraction:0.4},"reader-message":{edge:"fill",clip:"vertical"}}},
 "reader-files":{widget:"control",definition:"= $model.attachment_tiles",on_intent:"email.intent",hidden:"= !$model.has_attachments"},
 "reader-message":{widget:"column",native_spacing:true,children:["selection-toolbar","reader-empty","message-content"]},
 "selection-toolbar":{widget:"column",native_spacing:true,children:["selection-line","selection-rule"],hidden:"= !$model.selection_toolbar"},

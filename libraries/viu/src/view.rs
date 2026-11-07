@@ -1121,9 +1121,17 @@ impl SceneView {
                 back.request_focus();
             }
             if ui.memory(|m| m.has_focus(id)) {
-                ui.memory_mut(|m| m.set_focus_lock_filter(id, egui::EventFilter {
-                    tab: true, horizontal_arrows: true, vertical_arrows: true, ..Default::default()
-                }));
+                ui.memory_mut(|m| {
+                    m.set_focus_lock_filter(
+                        id,
+                        egui::EventFilter {
+                            tab: true,
+                            horizontal_arrows: true,
+                            vertical_arrows: true,
+                            ..Default::default()
+                        },
+                    )
+                });
             }
         }
         let area = ui.available_rect_before_wrap();
@@ -1315,8 +1323,14 @@ impl SceneView {
                 }
                 _ => {}
             }
-            if placement["clip"] == false {
+            if placement["clip"] == false || placement["clip"] == "vertical" {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(child), |ui| {
+                    if placement["clip"] == "vertical" {
+                        let mut clip = ui.clip_rect();
+                        clip.min.y = clip.min.y.max(rect.min.y);
+                        clip.max.y = clip.max.y.min(rect.max.y);
+                        ui.set_clip_rect(clip);
+                    }
                     self.node(ui, child, nodes, route, depth + 1, events);
                 });
             } else {
