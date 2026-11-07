@@ -23,6 +23,7 @@ pub mod raster;
 mod recipient;
 mod replay;
 mod selection_worker;
+pub(crate) use selection_worker::WRITE_ANSWER;
 pub mod session_actor;
 pub mod session_fd;
 pub mod sessions;

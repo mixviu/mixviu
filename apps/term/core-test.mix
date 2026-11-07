@@ -11,6 +11,10 @@ assert($v.frame.icon=="icon:file-terminal","gold FileTerminal frame icon")
 assert(not $v.window_close,"initial window remains open")
 assert($v.frame.status_visible==false,"gold terminal has no status footer")
 assert($v.tabs.initial.selected=="1" and $v.terminal.initial=="vt-test","live tab and native surface")
+assert(not $v.show_paste_notice and not $v.show_font_notice,"no notice rows without a refusal")
+$s.notice="A paste is still being read";$s.font={unsaved:true};$v=$core.framed($s)
+assert($v.show_paste_notice and $v.show_font_notice,"paste and unsaved zoom each have their own notice row")
+assert($v.paste_notice.initial=="A paste is still being read" and $v.font_notice.initial=="Zoom is not saved","gold notice labels and warning tone")
 $s.look.appearance.mode="light"
 $s.look.values["window.decorations"]="ssd"
 $s.closed=true
@@ -21,4 +25,4 @@ assert($v.window_close,"Mix owns close")
 $s.drain_close=true;$v=$core.framed($s)
 assert(not $v.window_close and $v.layout_hidden,"bounded final-event drain hides removed sessions before host exit")
 assert(len($v.values["gold-menu"])==6 and len($v.values["gold-toolbar"])==4,"gold menus and standard tail")
-print("term frame model: 10 checks passed")
+print("term frame model: 13 checks passed")

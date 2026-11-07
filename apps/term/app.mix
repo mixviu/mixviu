@@ -8,6 +8,7 @@ $state.layout=$model.open_tab($model.initial(),$native("create","",{pane_id:1}),
 $state.identity=$native("identity","",{})
 $actions=require("actions.mix");$controls=require("controls.mix")
 $protected_layout=require("protected-layout.mix")
+$clipboard=require("clipboard.mix")
 $font=require("font-persistence.mix");$state.font=$font.initial();$state.font_job=0
 $settings=require("../../libraries/viu/mix/session.mix")
 $state.version=$ctx.version;$state.build_line=$ctx.build_line;$state.choice={};$state.bindings={};$state.effective={};$state.pastes={}
@@ -90,7 +91,7 @@ fn act($s,$id,$args,$origin)
       if $rc==0 then $s.effective=$result end
     elif $effect.kind=="copy" and $effect.text!=nil then viu_platform("copy","terminal-copy",{text:$effect.text})
     elif $effect.kind=="paste" then
-      if $effect.supplied then $done=$native("paste",$effect.handle,{text:$effect.text})
+      if $effect.supplied then $s=$clipboard.apply_text($s,$effect.handle,$effect.text,$native)
       else $s=request_paste($s,$effect.handle,$effect.primary) end
     elif $effect.kind=="font" then $s=font_event($s,{kind:if $effect.reset then "reset" else "zoom" end,size:$effect.size}) end
   end
@@ -216,13 +217,9 @@ on term.overlay
   publish_term($state)
 end
 on viu.platform.completed
-  $handle=$state.pastes[$event.args.id]
-  if $handle!=nil then
-    $state.pastes=delete($state.pastes,$event.args.id)
-    if any(values($state.layout.panes),fn($p)=$p.handle==$handle) then
-      try $result=viu_terminal("paste",$handle,{text:$event.args.text}) catch $message $state.notice=$message end
-    end
-  end
+  $previous_notice=$state.notice
+  $state=$clipboard.completed($state,$event.args,$native)
+  if $previous_notice!=$state.notice then publish_term($state) end
 end
 on term.tabs
   $state=command($state,"term.tabs",$event.args)

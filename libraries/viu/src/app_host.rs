@@ -380,8 +380,10 @@ impl Host {
                         Err(reason) => eprintln!("viu: OSC 52 read refused: {reason:?}"),
                     },
                 }
-            } else if let Err(reason) = result {
-                eprintln!("viu: clipboard write refused: {reason:?}");
+            } else if sequence == crate::terminal::WRITE_ANSWER
+                && let Err(reason) = result
+            {
+                self.platform_results.push_back(json!({"kind":"copy","reason":format!("{reason:?}")}));
             }
         }
         while let Some(result) = self.platform_results.front() {
