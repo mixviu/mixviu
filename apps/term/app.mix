@@ -135,6 +135,7 @@ on term.info
 end
 on viu.session
   $state.look.appearance=$event.args.appearance
+  $state.settings_lost=$event.args.state.lost
   $state.settings_connected=not $event.args.state.lost and $event.args.state.incarnation!=nil and $event.args.state.error==nil
   if not $event.args.state.lost then $state.look.values=$event.args.state.values end
   $configured=$native("clipboard.configure","",{read_allowed:$state.look.values["terminal.clipboard.osc52_read"]==true})

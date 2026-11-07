@@ -24,5 +24,6 @@ fn framed($s)
   $model.paste_notice={id:"paste-notice-text",kind:"label",label:"Clipboard notice",initial:$s.notice ?? "",properties:{tone:"warning"}}
   $model.font_notice={id:"font-notice-text",kind:"label",label:"Font notice",initial:"Zoom is not saved",properties:{tone:"warning"}}
   $model.native_overlays=$controls.overlays($s,$s.version ?? "")
-  return $frame.apply($model,{icon:"file-terminal",title:"Terminal",native_title:"Terminal",menus:$actions.menus($s),toolbar:$actions.toolbar($s),status:"",status_visible:false,appearance:$s.look.appearance,window:merge($s.look.values,{"window.header_seamless":true})})
+  $window=if $s.settings_lost ?? false then {} else $s.look.values end
+  return $frame.apply($model,{icon:"file-terminal",title:"Terminal",native_title:"Terminal",menus:$actions.menus($s),toolbar:$actions.toolbar($s),status:"",status_visible:false,appearance:$s.look.appearance,window:merge($window,{"window.header_seamless":true})})
 end
