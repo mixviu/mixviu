@@ -23,9 +23,9 @@ $stage = $o.rest[0]
 $mix = $o.opts.mix ?? "target/debug/mix"
 $baseline_path = "tools/ci/mix-lint-baseline.json"
 
-fn run_step($argv)
+fn run_step($argv, $env = {})
   print("::group::" + join($argv, " "))
-  $r = run_argv($argv, {timeout: 14400, stdout: "inherit", stderr: "inherit"})
+  $r = run_argv($argv, {timeout: 14400, stdout: "inherit", stderr: "inherit", env: $env})
   print("::endgroup::")
   if $r.exit_code != 0 then
     print("::error::step failed (rc " + to_string($r.exit_code ?? 124) + "): " + join($argv, " "))
@@ -80,9 +80,15 @@ end
 fn stage_test($mix)
   -- Shell process tests hand --serve to the sibling service engine.
   run_step(["cargo", "build", "--locked", "-p", "mixd"])
-  run_step(["cargo", "test", "--locked", "-p", "mix", "--no-fail-fast"])
-  run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"])
+  -- Tests that run a real interpreter get the one built from this tree,
+  -- never an installed one; offline `cargo metadata` tests need every
+  -- platform's crates in the cache.
   ensure_mix($mix)
+  $abs = realpath($mix)
+  $test_env = {MIXOS_E2E_MIX_BIN: $abs, MIXOS_TEST_MIX: $abs}
+  run_step(["cargo", "fetch", "--locked"])
+  run_step(["cargo", "test", "--locked", "-p", "mix", "--no-fail-fast"], $test_env)
+  run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
   for $case in ["apps/monitor/core-test.mix", "apps/monitor/history-test.mix", "apps/monitor/wire-test.mix", "apps/monitor/fetch-test.mix", "apps/screenshot/policy-test.mix"]
     if exists($case) then
       run_step([$mix, $case])
