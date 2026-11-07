@@ -22,9 +22,18 @@ Existing diagnostics outside
 the app migration, including the webd examples/widgets and intentional
 negative interpreter tests, remain in the ratchet.
 
-Baseline before: 828 diagnostics (728 E1102, 36 E1101, 50 W2401, 14 others).
-The final CBC-generated counts and test evidence are recorded below when
-the gate completes.
+The CBC-generated baseline shrinks from 828 to 527 diagnostics (301 removed).
+
+| Code | Before | After |
+| --- | ---: | ---: |
+| MIX-E1102 | 728 | 433 |
+| MIX-E1101 | 36 | 33 |
+| MIX-W2401 | 50 | 47 |
+| Other errors/warnings | 14 | 14 |
+
+`apps/` has no error or dynamic-include diagnostic remaining. Its three
+existing warnings (two discarded validation results and one unchecked send)
+are unchanged. No baseline entry increases.
 
 ## Risk tier
 
@@ -33,10 +42,16 @@ main behavioural risk; the native Ced, Backdrop and Dopus tests exercise it.
 
 ## How tested
 
-- Run: local Mix lint for changed scripts; CBC formatting and focused native
-  regression recipe (`tools/lint-viu-check.mix`). Final receipts pending.
-- Observed: initial host vocabulary and collision tests pass on CBC.
-- Not tested: interactive desktop, VT acceptance or production installation.
+- Run: CBC Mix build, all 142 lint regression tests, complete `lib-viu` and
+  `viu` test suites, and a fresh Workshop suite after its launcher fix.
+  `tools/ci.mix fmt`, `env`, `mix-lint` and `mix-lint-baseline` pass with the
+  tree's own interpreter. App Mix script receipt is pending.
+- Observed: native Ced editing/Bus/dialog/session tests, Backdrop transitions,
+  Dopus row projection and the 2,000-row runtime specimen all pass. The lint
+  ratchet reports zero regressions; the env registry reports zero problems.
+- Not tested: legacy Dopus Rust comparison executable (not a workspace
+  member), interactive desktop, VT acceptance or production installation.
+  Existing GPU/installed-icon tests remain ignored by their owning suites.
 
 ## How to undo
 
