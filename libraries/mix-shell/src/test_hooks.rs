@@ -29,7 +29,10 @@ mod tests {
             return;
         }
         let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "test_hooks::tests::hooks_follow_the_build_feature"])
+            .args([
+                "--exact",
+                "test_hooks::tests::hooks_follow_the_build_feature",
+            ])
             .env(HOOK, "1")
             .env("MIX_TEST_ADMIT_DELAY_MS", "1")
             .env("MIX_TEST_CLAIM_DELAY_MS", "1")
