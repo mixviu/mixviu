@@ -3,6 +3,7 @@
 $base=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
 $menu_template=json_parse(read_file(path_join(dirname(script_path()),"menus.json")))
 $layout=require("model.mix");$bus=require("bus.mix")
+fn binding_defaults() return $base end
 fn registry($s)
   $out=[];$running=not $s.closed and len($s.layout.tabs)>0
   $split=$running and len($layout.leaves($s.layout.tabs[$s.layout.active].tree))>1

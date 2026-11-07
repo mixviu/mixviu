@@ -58,6 +58,13 @@ on viu.session
   if not $event.args.state.lost then $state.look.values=$event.args.state.values end
   publish_term($state)
 end
+on viu.keymap.changed
+  send "viu-local" "native.bindings" body={defaults:$actions.binding_defaults(),overrides:$event.args}
+  if $rc==0 then $state.bindings=$reply.bindings;publish_term($state) end
+end
+on viu.theme.changed
+  $state.effective=$event.args;publish_term($state)
+end
 on viu.terminal.changed
   $old=$state.layout
   $state=$bus.refresh($state,$native)
