@@ -926,9 +926,14 @@ impl Widgets {
                 .draw_fill(ui, id, value),
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
-            "menubar" | "command-bar" | "property-grid" | "dialog-form" => {
-                crate::rich::draw(ui, widget, value, &mut self.geometry, events, &mut self.images)
-            }
+            "menubar" | "command-bar" | "property-grid" | "dialog-form" => crate::rich::draw(
+                ui,
+                widget,
+                value,
+                &mut self.geometry,
+                events,
+                &mut self.images,
+            ),
             "label" => {
                 if widget.properties["role"] == "section" {
                     let response = toolkit::panel::section_label(ui, value.as_str().unwrap_or(""));

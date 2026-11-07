@@ -679,7 +679,11 @@ pub(crate) fn draw(
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         if widget.properties["preview"]["phase"] == "ready" {
-                            images.draw(ui, &format!("{id}.preview"), &widget.properties["preview"]);
+                            images.draw(
+                                ui,
+                                &format!("{id}.preview"),
+                                &widget.properties["preview"],
+                            );
                             ui.add_space(8.0);
                         }
                         for field in value.as_array().into_iter().flatten() {
