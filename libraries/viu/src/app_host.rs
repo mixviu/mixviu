@@ -763,7 +763,11 @@ impl Host {
                 && self.model["native_focus"]["id"].is_string()
             {
                 if let Some(id) = self.model["native_focus"]["id"].as_str() {
-                    let _ = self.view.request_focus(id);
+                    let mut target = json!({"id":id});
+                    if self.model["native_focus"]["selection"].is_array() {
+                        target["selection"] = self.model["native_focus"]["selection"].clone();
+                    }
+                    let _ = self.view.request_focus_value(&target);
                 }
                 self.focus_serial = self.model["native_focus"]["serial"].clone();
                 ui.ctx().request_repaint();

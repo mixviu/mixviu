@@ -53,7 +53,7 @@ fn dp_framed($s,$contract,$cache)
   $model.native_overlays=[{definition:{id:"palette",kind:"command-palette",label:"",initial:{open:false,commands:[]}},command:"dopus.palette"}]
   if $search then $model.values.form.open=false end
   $model.local_theme={theme:$s.appearance_choice.scheme,mode:$s.appearance_choice.mode,style:$s.appearance_choice.style,decorations:$s.window_choice["window.decorations"],captions:$s.window_choice["window.caption_side"]}
-  $model.native_focus=if $s.focus==nil then nil else {id:$s.focus.id,serial:$s.serial} end
+  $model.native_focus=if $s.focus==nil then nil else {id:$s.focus.id,selection:$s.focus.selection,serial:$s.serial} end
   $model.shortcuts=if $s.form.open then [] else $s.bindings ?? [] end
   $model.on_shortcut="dopus.shortcut"
   return $model
