@@ -2705,3 +2705,16 @@ Next work tests a genuinely new settings authority incarnation with a lower revi
 Full remaining Bus/authority/input/settings/conformance/performance and final acceptance work remains open. No Fable question, install, desk/VT or merge work. Overall NOT ACCEPTED.
 
 branch: lab/parity-term; head SHA:7a886e4fccbf4fa6bc772570bf5d201030f4d9dd (exact tested release source; receipt HEAD contains checkpoint); NOT ACCEPTED — remaining full Bus/authority/input/settings/conformance/performance and final acceptance open; CBC job ids:term-query-release-7a886e4f-a1 (green exact release487 tests), term-query-exact-7a886e4f-a1 (green exact scoped/foreign).
+
+
+### New settings incarnation recovers at exact release bytes
+
+Private native.Y4inp9 uses the verified7a886e4f release executable and changes settings authority incarnation while each app remains running. Gold moves from revision6 to a new incarnation at2; candidate moves from7 to a new incarnation at2. The replacement authority applies supported Ocean/Dark instead of the preceding Studio/Light. Candidate acknowledges the new incarnation, revision and scheme; both apps retain their own unchanged PIDs. Invalid mode changes still refuse without advancing revision.
+
+Seven paired states cover initial appearance, auto mode without daylight, app light override/reset, light settings, authority loss and new-incarnation recovery. All seven PNG pairs are byte-identical; whole/header/tabs/grid/report SSIM and RMSE distortions zero. Four unique Gold originals and eight full figures inspected; other originals/full figures have explicit file-hash/decoded-pixel inspection reuse. All nine owned PIDs stopped. Binary, authority/PID, native output, comparison, inspection and closure receipts remain private. This closes the different-incarnation/lower-revision recovery case at release bytes.
+
+Private native.FvWYHJ retained a mismatched initial baseline: Gold contains one echoed command line above the same output, while its six subsequent transition pairs are exact. The first baseline originals and full figures were inspected; no acceptance is claimed for that baseline. The repeat adds an explicit interactive Mix prompt readiness guard before typing; all seven states then match. No product change or assertion relaxation, and the earlier startup mismatch is not classified as a C1 defect.
+
+Next CBC `term-raster-bench-7a886e4f` runs the existing ignored cached ASCII/emoji/box-glyph raster benchmark serially in release mode at the same source. It checks warm painting performs no new shaping/resampling and records mean/p50/p99 CPU paint time. This is bounded raster timing, not presented GPU latency or a Gold performance comparison. Read the full saved log and retain its limits. Full Bus/authority/input/settings/conformance/performance and final acceptance work remains open. No install, desk/VT or merge work. Overall NOT ACCEPTED.
+
+branch: lab/parity-term; head SHA:7a886e4fccbf4fa6bc772570bf5d201030f4d9dd (exact tested release source; receipt HEAD contains checkpoint); NOT ACCEPTED — remaining full Bus/authority/input/settings/conformance/performance and final acceptance open; CBC job ids:term-raster-bench-7a886e4f (next serial release benchmark), term-query-release-7a886e4f-a1 (green exact release487 tests), term-query-exact-7a886e4f-a1 (green exact scoped/foreign).
