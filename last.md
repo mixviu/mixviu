@@ -1329,3 +1329,38 @@ and zero whole/header/tabs/terminal distortions as prior evidence; final
 release and complete Bus/input/clipboard/IME/search/Prefs inventory remain
 open. NOT ACCEPTED. No Fable deviation or gold/desktop changes.
 branch: lab/parity-term; head SHA: 68631fa77fd858888be07bac85369ea4413de3d0 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — typed protocol gate and protected adapter, remaining full parity/release acceptance open; CBC job ids: term-owner-exit-b8cd6d1f-a1 (green; fmt applied), term-control-protocol-68631fa7 (next await).
+
+### Typed recipient admission checkpoint
+
+`term-control-protocol-68631fa7-a1` passed: 159 terminal tests (all six
+protocol cases), five existing ignores, seven input tests, two bundle
+tests, six Mix suites, search/dialog, foreign gate and debug build. Full
+52403-byte saved log read in four chunks. Worker formatting applied in
+18dd4d9c; this changed source still needs its own exact gate.
+
+18dd4d9cb3d9c84516037fda700225832a8298b5 adds typed recipient admission
+extracted from gold dispatch. It accepts native VerifiedCommand and
+VerifiedConnection plus the actor's current parent/Hello/Deadline.
+Connection loss, broker-origin stamps, strict decoding/property aliases,
+cross-incarnation outcome handling, target matching, supported capability
+and recipient lease binding/liveness retain gold's check order. No request
+body can supply these native values. No admission path performs a fresh
+lease RPC. Replay namespace, caller epoch, label and digest derive from
+the broker-stamped event. Mutation-epoch binding remains a separate check
+to preserve gold's later ordering after replay and affected-pane checks.
+
+Added a real embedded-broker/actor ControlLane probe test for an unbound
+verified caller: valid state/preflight and one-shot mutation epoch, stale
+epoch, wrong-instance denial versus unknown outcome, forged body metadata,
+and a recipient binding generation inconsistent with the actual lease.
+The probe performs no PTY writes or layout mutation. The test is pending
+CBC, not a protected-command acceptance claim. Production ControlLane is
+still uninstalled; replay/operation retention, pane/write commitment,
+child execute/task forwarding and in-process Mix application dispatch
+remain open. Complete input/clipboard/IME/search/Prefs/Bus and release
+acceptance are also open. NOT ACCEPTED. No Fable deviation or gold changes.
+
+Next CBC `term-control-admission-18dd4d9c`, exact code above,
+term_gate --prepare. Read complete log, apply fmt/lock and repeat exact
+source if changed; continue through replay/commitment and host adapter.
+branch: lab/parity-term; head SHA: 18dd4d9cb3d9c84516037fda700225832a8298b5 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — typed admission gate, protected handler/replay/Mix adapter and remaining full parity/release acceptance open; CBC job ids: term-control-protocol-68631fa7-a1 (green; fmt applied), term-control-admission-18dd4d9c (next await).
