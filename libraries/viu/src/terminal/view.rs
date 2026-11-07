@@ -25,7 +25,6 @@ struct Surface {
     pane: Pane,
     look: (f32, f32, String, u16),
     focus: u64,
-    wheel: f32,
     preedit: String,
     grid_size: (u16, u16, u16, u16),
 }
@@ -63,6 +62,7 @@ fn shortcut(
     p: &Value,
     key: egui::Key,
     modifiers: egui::Modifiers,
+    wheels: input::Wheels,
     alternate: bool,
 ) -> Option<&Value> {
     p["shortcuts"].as_array()?.iter().find(|s| {
@@ -211,6 +211,36 @@ mod tests {
                         .iter()
                         .any(|e| e.action == "command" && e.value == "next")
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn control_wheel_reaches_authored_commands_instead_of_scrollback() {
+        let sessions = Sessions::fixture();
+        let mut views = Views::default();
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx, 400, 600);
+        let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
+        widget.properties = json!({"focus_serial":1,"wheel_zoom":{"increase":"larger","decrease":"smaller"}});
+        for wheel in [false, true] {
+            let mut events = Vec::new();
+            let mut input = vec![egui::Event::PointerMoved(egui::pos2(100.0,100.0))];
+            if wheel {
+                input.push(egui::Event::MouseWheel {
+                    unit:egui::MouseWheelUnit::Line,
+                    delta:egui::vec2(0.0,2.0),
+                    modifiers:egui::Modifiers {ctrl:true,..egui::Modifiers::NONE},
+                    phase:egui::TouchPhase::Move,
+                });
+            }
+            ctx.run_ui(egui::RawInput {
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,560.0))),
+                events:input,
+                ..Default::default()
+            }, |ui| {views.draw(ui,&widget,&json!("vt-1"),&sessions,&mut events);}).drop_without_applying_deltas();
+            if wheel {
+                assert_eq!(events.iter().filter(|e|e.action=="command" && e.value=="larger").count(),2);
             }
         }
     }
@@ -497,7 +527,6 @@ impl Views {
                     pane: Pane::new(),
                     look,
                     focus: 0,
-                    wheel: 0.0,
                     preedit: String::new(),
                     grid_size: (0, 0, 0, 0),
                 },
@@ -584,6 +613,7 @@ impl Views {
             for event in input_events {
                 if let egui::Event::ModifiersChanged(modifiers) = &event {
                     self.modifiers = *modifiers;
+                    self.wheels.modifiers_changed(*modifiers);
                 }
                 if let Some(clipboard) = self.clipboard.event(&event, self.modifiers) {
                     let result = match clipboard {
@@ -728,15 +758,26 @@ impl Views {
                     }
                 }
                 for event in ui.input(|i| i.events.clone()) {
-                    if let egui::Event::MouseWheel { unit, delta, .. } = event {
-                        let lines = input::scroll_steps(
-                            &mut surface.wheel,
+                    if let egui::Event::MouseWheel { unit, delta, modifiers, .. } = event {
+                        let (zoom, lines) = self.wheels.event(
+                            handle,
                             input::Wheel::of(unit, delta),
                             cell.1 as f32 / scale,
                             p["scroll_speed"].as_f64().unwrap_or(40.0) as f32,
+                            modifiers,
                         );
-                        if !terminal.mouse_scroll(col, row, lines, mods) {
-                            terminal.scroll_wheel(lines, mods);
+                        if zoom {
+                            let command = &p["wheel_zoom"][if lines > 0 {"increase"} else {"decrease"}];
+                            if command.is_string() {
+                                for _ in 0..lines.unsigned_abs() {
+                                    events.push(Intent {id:widget.id.clone(),action:"command".into(),value:command.clone()});
+                                }
+                            }
+                        } else {
+                            let mods = MouseModifiers {shift:modifiers.shift,alt:modifiers.alt,ctrl:modifiers.ctrl};
+                            if !terminal.mouse_scroll(col, row, lines, mods) {
+                                terminal.scroll_wheel(lines, mods);
+                            }
                         }
                     }
                 }

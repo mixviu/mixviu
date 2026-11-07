@@ -222,6 +222,61 @@ pub fn wheel_steps(pending: &mut f32, wheel: Wheel) -> i32 {
 /// and a line per cell height of touchpad travel.
 pub const DEFAULT_SCROLL_SPEED: f32 = 40.0;
 
+/// Fractional wheel travel belongs to one gesture. Zoom is window-wide;
+/// scroll travel resets when modifiers or the pane under the pointer change.
+#[derive(Default)]
+pub struct Wheels {
+    zoom: f32,
+    scroll: f32,
+    owner: String,
+    modifiers: Modifiers,
+}
+
+impl Wheels {
+    pub fn modifiers_changed(&mut self, modifiers: Modifiers) {
+        if self.modifiers != modifiers {
+            self.scroll = 0.0;
+        }
+        if !modifiers.ctrl {
+            self.zoom = 0.0;
+        }
+        self.modifiers = modifiers;
+    }
+
+    /// (zoom gesture, whole steps); the caller owns command/scroll policy.
+    pub fn event(&mut self, owner: &str, wheel: Wheel, cell: f32, speed: f32, modifiers: Modifiers) -> (bool, i32) {
+        self.modifiers_changed(modifiers);
+        if modifiers.ctrl {
+            (true, wheel_steps(&mut self.zoom, wheel))
+        } else {
+            if self.owner != owner {
+                self.scroll = 0.0;
+                self.owner = owner.into();
+            }
+            (false, scroll_steps(&mut self.scroll, wheel, cell, speed))
+        }
+    }
+}
+
+#[cfg(test)]
+mod wheel_tests {
+    use super::*;
+    #[test]
+    fn zoom_and_scroll_gestures_keep_gold_fractional_ownership() {
+        let mut wheels = Wheels::default();
+        let ctrl = Modifiers {ctrl:true,..Modifiers::NONE};
+        assert_eq!(wheels.event("a",Wheel::Points(20.0),20.0,40.0,ctrl),(true,0));
+        assert_eq!(wheels.event("b",Wheel::Points(20.0),20.0,40.0,ctrl),(true,1));
+        assert_eq!(wheels.event("b",Wheel::Points(20.0),20.0,40.0,ctrl),(true,0));
+        wheels.modifiers_changed(Modifiers::NONE);
+        assert_eq!(wheels.event("b",Wheel::Points(20.0),20.0,40.0,ctrl),(true,0));
+        assert_eq!(wheels.event("a",Wheel::Points(10.0),20.0,40.0,Modifiers::NONE),(false,0));
+        assert_eq!(wheels.event("b",Wheel::Points(10.0),20.0,40.0,Modifiers::NONE),(false,0));
+        assert_eq!(wheels.event("b",Wheel::Points(10.0),20.0,40.0,Modifiers::NONE),(false,1));
+        assert_eq!(wheels.event("b",Wheel::Lines(-2.0),20.0,80.0,Modifiers::NONE),(false,-4));
+    }
+}
+
 /// Scrollback travel: touchpad points count in cell heights, and both
 /// scale by `speed` against [`DEFAULT_SCROLL_SPEED`].
 pub fn scroll_steps(pending: &mut f32, wheel: Wheel, cell_height: f32, speed: f32) -> i32 {
