@@ -281,3 +281,41 @@ full action-state metrics, live binding resolution, complete About text,
 action-topic overflow and the broader Bus contract need further work.
 The verified session supervisor, input/clipboard/IME/search completeness,
 full live Prefs and exact release acceptance remain open. NOT ACCEPTED.
+
+## Native command path diagnosis
+
+`term-actions-d855604-a1` passed five Mix suites, both bundle tests,
+135 terminal tests/five ignores, command-search admission, dependency
+gate and debug host. Complete log read; returned formatting changes
+applied. Fetched/verified debug SHA256:
+`94dfa290cf005964ef8dc0ce4eeb5b8ad3be28e4e5c9d0599dc7b996c93e96f2`.
+
+Private native.zPpnfQ rendered menus but failed menu-click New Tab.
+Diagnostic native.EjTjXv traces the shared adapter sending
+`value.command={command:"tab.new",origin:"menu"}` instead of the flat
+command payload already produced by the native menu. Generic repair
+388b38a preserves that payload unchanged, matching the other menu path.
+It also applies the full worker fmt patch. Native menu execution must
+be repeated on the repaired executable.
+
+The exact d855604 diagnostic capture versus native.gWIe4o is retained
+in actions-first-regions: tabs/content/bottom SSIM/RMSE each 0/0;
+header 0.0353355/0.0448267; full 0.00266545/0.0116771. Candidate PNG
+SHA256 `55ec46ee594d3b3fd0ca8b704237ff22a87331ad7a0678dd4614df9535283c56`.
+Originals, side-by-side and difference inspected. Menus/labels align;
+action-icon/caption raster and position differences remain. Overall FAIL.
+
+Separate native.LSmstT passed direct execute, Ctrl+Shift+T, targeted close,
+dialog open/answer, command-search typing/selection, local light/session
+theme, zoom/reset and normal close. These do not cover the faulty menu
+adapter. The first direct variant used an invalid pointer button name;
+the corrected primary-button harness and failed receipts are retained.
+All tracked PIDs stopped; spawned action tabs were closed natively.
+
+Inspection found an empty Keyboard Shortcuts body despite its bound rows
+being present in the model. Native.eaUKMo retains the model/readback and
+repeat screenshots; code 2b580ce adds a pure projection regression check.
+Renderer diagnosis remains open, alongside About text, action-state
+metrics, binding reload, zoom persistence and the broader inventory.
+Next exact-source gate: term-menu-intents-2b580ce at
+`2b580ce99bd8ea85049bebc444bcb38abeef22da`.

@@ -513,4 +513,43 @@ and full Bus matching remain open. Continue verified native session/
 control/shell integration, input/clipboard/IME/search, full live Prefs
 and release acceptance. NOT ACCEPTED. Gold untouched; no Fable question.
 
-branch: lab/parity-term; head SHA: d85560415c58ce2ae023edc12dcf2461063e5e42 (code; receipt HEAD contains this checkpoint); open items: command registry native gate/callbacks/captures, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release acceptance; CBC job ids: term-events-drain-ca019e3-a1 (green), term-actions-d855604 (next await).
+## Native actions: shared menu fix; shortcut renderer open
+
+Read complete term-actions-d855604-a1 log: five Mix suites/two bundle
+tests/135 terminal tests/five ignores plus command-search admission,
+dependency gate and host build green. Full worker formatting patch
+applied. Verified debug SHA256 94dfa290cf005964ef8dc0ce4eeb5b8ad3be28e4e5c9d0599dc7b996c93e96f2.
+
+Native.zPpnfQ rendered menus but menu New Tab failed. Diagnostic trace
+native.EjTjXv found NativeMenu::draw double-wrapping an already structured
+command (value.command was an object, so app lookup returned UNKNOWN_ACTION).
+Generic fix 388b38a passes it through unchanged, matching rich menu intent
+shape. Must verify native menu callbacks on the next compiled artifact.
+
+New matched actions-first-regions figure: tabs/content/bottom each 0/0,
+header SSIM/RMSE distortion 0.0353355/0.0448267, full 0.00266545/0.0116771.
+Inspected originals/side/diff. Labels/menus align; icon/caption differences
+remain. FAIL, debug only. No acceptance implied by low whole-frame score.
+
+Native.LSmstT passed direct execute, real Ctrl+Shift+T, targeted close,
+help dialog open/answer, command-search text+selection, local light/session
+theme, zoom/reset and normal close. Corrected an invalid pointer-button
+name in an earlier harness variant; failed runs retained. Recorded PIDs
+stopped; action-created tabs explicitly closed via native shutdown.
+
+Screenshot inspection found Keyboard Shortcuts body blank although native
+model has all 23 chord rows. Native.eaUKMo retains model and repeat
+captures; new pure projection assertion prevents omission at Mix level.
+Diagnose native dialog drawing (and capture settling) next; do not call
+the help dialog visually accepted merely because open/answer passes.
+
+Code 2b580ce99bd8ea85049bebc444bcb38abeef22da includes fmt/menu fix and
+projection assertion. Next CBC term-menu-intents-2b580ce, same prepare
+recipe with automatic resumption. Read full log/apply any patch/repeat
+exact source if changed, fetch artifact and repeat actual menu/native
+callbacks, match gold keyboard dialog and fix renderer. Then action
+metrics/keymaps/About/zoom persistence; full Bus/raw envelope/verified
+session/control/shell/input/clipboard/IME/search/live Prefs/release visual
+acceptance. NOT ACCEPTED; no Fable question, gold/install/VT changes.
+
+branch: lab/parity-term; head SHA: 2b580ce99bd8ea85049bebc444bcb38abeef22da (code; receipt HEAD contains this checkpoint); open items: menu callback gate/native repeat, shortcut dialog renderer, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release acceptance; CBC job ids: term-actions-d855604-a1 (green with fmt patch), term-menu-intents-2b580ce (next await).
