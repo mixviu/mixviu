@@ -782,8 +782,11 @@ mod tests {
     /// A pipe: (read end, write end).
     fn pipe() -> (OwnedFd, std::fs::File) {
         let mut fds = [0; 2];
+        // Other terminal tests launch real children concurrently. Match the
+        // Wayland receive pipe's atomic CLOEXEC creation: an inherited writer
+        // would keep EOF from reaching this fixture until that child exits.
         // SAFETY: two valid out slots.
-        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        assert_eq!(unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) }, 0);
         // SAFETY: both are new descriptors this test owns.
         unsafe {
             (
