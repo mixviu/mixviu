@@ -1531,7 +1531,7 @@ impl Widgets {
             "separator" => {
                 let r = if widget.properties["style"] == "hairline" {
                     let rect = toolkit::bars::hairline(ui);
-                    ui.interact(rect, ui.id().with(id), Sense::hover())
+                    ui.interact(rect, ui.scope_id().with(id), Sense::hover())
                 } else {
                     ui.separator()
                 };

@@ -27,18 +27,25 @@ fn sample_width(ui: &Ui, column: &Value) -> Option<f32> {
         .fold(0.0, f32::max);
     Some(width + ui.spacing().item_spacing.x + 2.0)
 }
-fn native_table_state(value:&Value)->Result<toolkit::datatable::TableState,String>{
-    if value.is_null(){return Ok(Default::default());}
-    if !value.is_object(){return Err("table state must be an object".into());}
-    let mut value=value.clone();
-    for key in ["page","page_size","focus"] {
-        if let Some(number)=value.get(key).filter(|n|!n.is_null()) {
-            let number=crate::widgets::whole(number).ok_or_else(||format!("table {key} must be a whole number"))?;
-            if key=="page_size" && (number==0 || number>u32::MAX as u64){return Err("invalid table page size".into());}
-            value[key]=json!(number);
+fn native_table_state(value: &Value) -> Result<toolkit::datatable::TableState, String> {
+    if value.is_null() {
+        return Ok(Default::default());
+    }
+    if !value.is_object() {
+        return Err("table state must be an object".into());
+    }
+    let mut value = value.clone();
+    for key in ["page", "page_size", "focus"] {
+        if let Some(number) = value.get(key).filter(|n| !n.is_null()) {
+            let number = crate::widgets::whole(number)
+                .ok_or_else(|| format!("table {key} must be a whole number"))?;
+            if key == "page_size" && (number == 0 || number > u32::MAX as u64) {
+                return Err("invalid table page size".into());
+            }
+            value[key] = json!(number);
         }
     }
-    serde_json::from_value(value).map_err(|e|format!("invalid table state: {e}"))
+    serde_json::from_value(value).map_err(|e| format!("invalid table state: {e}"))
 }
 
 #[cfg(test)]
@@ -50,13 +57,18 @@ mod numeric_state_tests {
         let state = native_table_state(&json!({
             "page": 2.0, "page_size": 100.0, "focus": 3.0,
             "selection": ["message-4"], "sort": {"column":"date", "order":"descending"}
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(state.page, 2);
         assert_eq!(state.page_size, 100);
         assert_eq!(state.focus, Some(3));
         assert_eq!(state.selection, ["message-4"]);
         assert!(state.sort.is_some());
-        for invalid in [json!({"page":1.5}), json!({"page_size":0.0}), json!({"focus":-1.0})] {
+        for invalid in [
+            json!({"page":1.5}),
+            json!({"page_size":0.0}),
+            json!({"focus":-1.0}),
+        ] {
             assert!(native_table_state(&invalid).is_err());
         }
     }
@@ -80,11 +92,20 @@ pub fn validate(value: &Value) -> Result<(), String> {
         .ok_or("tree-table requires 1..16 columns")?;
     let mut keys = BTreeSet::new();
     native_table_state(&value["state"])?;
-    if !value["total"].is_null() && crate::widgets::whole(&value["total"]).is_none(){return Err("table total must be a whole number".into());}
+    if !value["total"].is_null() && crate::widgets::whole(&value["total"]).is_none() {
+        return Err("table total must be a whole number".into());
+    }
     let mut column_keys = BTreeSet::new();
     for column in columns {
-        if let Some(samples)=column.get("samples") {
-            if samples.as_array().is_none_or(|samples|samples.len()>64 || samples.iter().any(|s|s.as_str().is_none_or(|s|s.len()>4096))){return Err("invalid column measurement samples".into());}
+        if let Some(samples) = column.get("samples") {
+            if samples.as_array().is_none_or(|samples| {
+                samples.len() > 64
+                    || samples
+                        .iter()
+                        .any(|s| s.as_str().is_none_or(|s| s.len() > 4096))
+            }) {
+                return Err("invalid column measurement samples".into());
+            }
         }
         if !column["fraction"].is_null()
             && column["fraction"]
@@ -876,7 +897,9 @@ fn draw_outline(
                                 }
                             },
                             |ui| {
-                                if let Some(n) = crate::widgets::whole(&row["count"]).filter(|n| *n > 0) {
+                                if let Some(n) =
+                                    crate::widgets::whole(&row["count"]).filter(|n| *n > 0)
+                                {
                                     ui.label(egui::RichText::new(n.to_string()).strong());
                                 }
                             },

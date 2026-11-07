@@ -31,9 +31,10 @@ fn compact_date($stamp)
   end
 end
 fn gold_rows($emails)
-  $dates={}
-  for $stamp in unique(rows_project($emails,fn($m)=$m.receivedAt ?? $m.date ?? "")) $dates[$stamp]=compact_date($stamp) end
-  return rows_project($emails,fn($m)={key:$m.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[$m.subject ?? "",len($m.from ?? [])>0 ? ($m.from[0].name ?? $m.from[0].email ?? "") : "",$dates[$m.receivedAt ?? $m.date ?? ""]],strong:($m.keywords ?? {})["$seen"]!=true,weak_cells:[false,false,($m.keywords ?? {})["$seen"]==true],markers:[$m.hasAttachment==true ? ((($m.keywords ?? {})["$flagged"]==true) ? ["paperclip","flag"] : ["paperclip"]) : ((($m.keywords ?? {})["$flagged"]==true) ? ["flag"] : []),[],[]]})
+  $stamps=rows_project($emails,fn($m)=$m.receivedAt ?? $m.date ?? "")
+  $instants=viu_instants($stamps);$now=$instants.now;$times=$instants.values
+  $dates=rows_project($stamps,fn($stamp)=$times[$stamp]==nil ? "" : date_format($times[$stamp].unix,$times[$stamp].day==$now.day ? "%H:%M" : ($now.day-$times[$stamp].day>=1 and $now.day-$times[$stamp].day<=6 ? "%a %H:%M" : ($times[$stamp].year==$now.year ? "%-d %b" : "%d/%m/%Y"))))
+  return rows_project($emails,fn($m,$i)={key:$m.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[$m.subject ?? "",len($m.from ?? [])>0 ? ($m.from[0].name!=nil and $m.from[0].name!="" ? $m.from[0].name : ($m.from[0].email ?? "")) : "",$dates[$i]],strong:($m.keywords ?? {})["$seen"]!=true,weak_cells:[false,false,($m.keywords ?? {})["$seen"]==true],markers:[$m.hasAttachment==true ? ((($m.keywords ?? {})["$flagged"]==true) ? ["paperclip","flag"] : ["paperclip"]) : ((($m.keywords ?? {})["$flagged"]==true) ? ["flag"] : []),[],[]]})
 end
 fn outline_row($key,$depth,$label,$icon,$branch=false,$count=0)
   return {key:$key,depth:$depth,branch:$branch,expanded:$branch and not contains($tree_closed,$key),selected:false,focused:false,cells:[$label],icon:$icon,count:$count,strong:$depth==0}

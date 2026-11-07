@@ -19,22 +19,41 @@ fn complete(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> Completion {
 
 #[test]
 fn modern_mail_row_projection_measures_2000_distinct_dates() {
-    let bundle=Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),&[]).unwrap();
-    let mut program=bundle.program;
+    let bundle = Bundle::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
+        &[],
+    )
+    .unwrap();
+    let mut program = bundle.program;
     program.source.push_str(r#"
 on test.rows
   $began=monotonic();$projected=gold_rows($event.args.emails)
   reply(0,json_encode({rows:len($projected),first:$projected[0],milliseconds:(monotonic()-$began)*1000}))
 end
 "#);
-    let (tx,rx)=mpsc::channel();let mut runtime=Runtime::new(8,Arc::new(move||{let _=tx.send(());}),None);
-    runtime.load(program).unwrap();complete(&runtime,&rx);
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(
+        8,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+    );
+    runtime.load(program).unwrap();
+    complete(&runtime, &rx);
     let emails=(0..2000).map(|n|json!({"id":format!("email-{n}"),"subject":format!("A realistic message {n}"),"from":[{"name":"Example Sender","email":"sender@example.test"}],"receivedAt":chrono::DateTime::from_timestamp(1794000000+n*120,0).unwrap().to_rfc3339(),"keywords":{},"hasAttachment":n%3==0})).collect::<Vec<_>>();
-    runtime.event("test.rows".into(),json!({"emails":emails})).unwrap();
-    let reply=complete(&runtime,&rx).reply.unwrap();assert_eq!(reply.rc,0,"{}",reply.body);
-    assert_eq!(reply.body["rows"],2000);assert_eq!(reply.body["first"]["strong"],true);
-    assert_eq!(reply.body["first"]["cells"][1],"Example Sender");
-    eprintln!("Email modern 2000-row projection: {} ms",reply.body["milliseconds"]);
+    runtime
+        .event("test.rows".into(), json!({"emails":emails}))
+        .unwrap();
+    let reply = complete(&runtime, &rx).reply.unwrap();
+    assert_eq!(reply.rc, 0, "{}", reply.body);
+    assert_eq!(reply.body["rows"], 2000);
+    assert_eq!(reply.body["first"]["strong"], true);
+    assert_eq!(reply.body["first"]["cells"][1], "Example Sender");
+    eprintln!(
+        "Email modern 2000-row projection: {} ms",
+        reply.body["milliseconds"]
+    );
 }
 
 #[test]

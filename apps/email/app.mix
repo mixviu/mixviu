@@ -315,6 +315,9 @@ end
 on email.attachments
   $r=wire_start("email.attachments",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
+on email.attachment.save
+  $r=wire_start("email.attachment.save",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
 on email.open
   $r=wire_start("email.open",$event.args,$event,"open");reply($r.rc,json_encode($r.body))
 end

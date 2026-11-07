@@ -9,7 +9,7 @@ fn endpoint($e,$url)
   if origin($e.url)!=origin($url) then raise("SERVER","Session endpoint is not the account's origin") end
   return $url
 end
-fn http($e,$url,$method,$body,$token=nil)
+fn request($e,$url,$method,$body,$token=nil)
   $request={url:endpoint($e,$url),method:$method,body:$body,headers:{"Content-Type":"application/json"},timeout:300,max_request:16777216,max_response:16777216}
   if $token!=nil then $request.headers.Authorization="Bearer "..$token
   else $request.basic={username:$e.user,password:if $e.password_file!=nil then $legacy.secret($e.password_file) else $accounts.password($e.id) end} end
@@ -18,7 +18,10 @@ fn http($e,$url,$method,$body,$token=nil)
     if not $ca.found or byte_length($ca.text)>65536 then raise("SERVER","Cannot read the CA bundle") end
     $request.ca_pem=$ca.text
   end
-  return viu_http($request)
+  return $request
+end
+fn http($e,$url,$method,$body,$token=nil)
+  return viu_http(request($e,$url,$method,$body,$token))
 end
 fn connect($e)
   $base=rtrim($e.url,"/")
