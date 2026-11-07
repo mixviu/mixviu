@@ -245,10 +245,24 @@ pub(crate) struct Replay {
 }
 
 impl Replay {
+    pub fn child_operation(&self, target: &Target, operation: u64) -> Option<DecimalU64> {
+        self.state.history.values().flat_map(|h| &h.entries).find(|entry| entry.operation == operation && entry.target == *target && entry.at.elapsed() < RETENTION).and_then(|entry| entry.child_operation)
+    }
     /// Direct pane mutations allocate an instance operation even on refusal;
     /// successful replies carry it. Forwarded child replies use record_outcome.
-    pub fn record_local_outcome(&mut self, identity: &str, target: &Target, sequence: u64, digest: [u8; 32], reply: &mut Reply) {
-        self.state.next_operation = self.state.next_operation.checked_add(1).expect("operation id exhausted");
+    pub fn record_local_outcome(
+        &mut self,
+        identity: &str,
+        target: &Target,
+        sequence: u64,
+        digest: [u8; 32],
+        reply: &mut Reply,
+    ) {
+        self.state.next_operation = self
+            .state
+            .next_operation
+            .checked_add(1)
+            .expect("operation id exhausted");
         let operation = self.state.next_operation;
         if reply.rc == 0 {
             let mut body: Value = serde_json::from_str(&reply.body).expect("owned reply JSON");
@@ -257,13 +271,36 @@ impl Replay {
         }
         let history = self.state.history.get_mut(identity).unwrap();
         history.last = Instant::now();
-        history.entries.push_back(Entry { target: target.clone(), outcome: None, sequence, operation, child_operation: None, digest, at: Instant::now(), reply: reply.clone() });
-        if history.entries.len() > PER_ACTOR {history.entries.pop_front();}
+        history.entries.push_back(Entry {
+            target: target.clone(),
+            outcome: None,
+            sequence,
+            operation,
+            child_operation: None,
+            digest,
+            at: Instant::now(),
+            reply: reply.clone(),
+        });
+        if history.entries.len() > PER_ACTOR {
+            history.entries.pop_front();
+        }
     }
 
-    pub fn settle_input(&mut self, identity: &str, sequence: Option<DecimalU64>, expected: usize, written: u64) {
-        if let Some(entry) = self.state.history.get_mut(identity).and_then(|h| h.entries.iter_mut().find(|e| Some(DecimalU64(e.sequence)) == sequence)) {
-            entry.outcome = Some(Reply::ok(json!({"operation_id":DecimalU64(entry.operation),"status":if written >= expected as u64 {"completed"} else {"unknown"},"boundary":"pty_write","reason":"input_lease_ended","delivered_bytes_lower_bound":written})));
+    pub fn settle_input(
+        &mut self,
+        identity: &str,
+        sequence: Option<DecimalU64>,
+        expected: usize,
+        written: u64,
+    ) {
+        if let Some(entry) = self.state.history.get_mut(identity).and_then(|h| {
+            h.entries
+                .iter_mut()
+                .find(|e| Some(DecimalU64(e.sequence)) == sequence)
+        }) {
+            entry.outcome = Some(Reply::ok(
+                json!({"operation_id":DecimalU64(entry.operation),"status":if written >= expected as u64 {"completed"} else {"unknown"},"boundary":"pty_write","reason":"input_lease_ended","delivered_bytes_lower_bound":written}),
+            ));
         }
     }
     /// Preserve high-water marks when entries expire, exactly as gold. A lost

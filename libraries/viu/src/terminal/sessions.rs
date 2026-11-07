@@ -119,12 +119,14 @@ impl Sessions {
                 let pane = Arc::new(move |id| {
                     let state = state.upgrade()?;
                     let state = state.lock().ok()?;
-                    let (key, _) = state.pane_ids.iter().find(|(_, existing)| **existing == id)?;
+                    let (key, _) = state
+                        .pane_ids
+                        .iter()
+                        .find(|(_, existing)| **existing == id)?;
                     state.sessions.get(key).cloned()
                 });
-                let control: Arc<dyn super::session_actor::ControlLane> = Arc::new(
-                    super::recipient::Recipient::new(handle.clone(), pane),
-                );
+                let control: Arc<dyn super::session_actor::ControlLane> =
+                    Arc::new(super::recipient::Recipient::new(handle.clone(), pane));
                 handle.install_control(&control);
                 native.control = Some(control);
             }
@@ -621,8 +623,13 @@ mod tests {
     fn assert_native_controls(sessions: &Sessions, child: &bus::native_session::SessionRecord) {
         use bus::native_client::{NodedClient, UnixConnectOutcome};
         use bus::native_session::Role;
-        let (options,url)=bus::client_helpers::BrokerEnvironment::capture().resolve().unwrap();
-        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let (options, url) = bus::client_helpers::BrokerEnvironment::capture()
+            .resolve()
+            .unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         runtime.block_on(async {
             let UnixConnectOutcome::VerifiedUnix(caller)=NodedClient::connect_unix("",&url,&options,None).await.unwrap() else {panic!("verified control caller required")};
             let parent=caller.session_list().await.unwrap().records.into_iter().find(|r|r.role==Role::Term && Some(r.instance_id)==child.parent_instance).unwrap();
@@ -668,6 +675,57 @@ mod tests {
                 }
             }).await.expect("retained input outcome must settle at the PTY boundary");
             assert_eq!(invoke("term.type",request).await,(0,accepted));
+            let child_target=json!({"version":1,"target":{"broker_epoch":child.broker_epoch,"record":child.reference(),"instance_id":child.instance_id,"pane_id":child.pane_id,"pane_generation":child.pane_generation}});
+            let generation=tokio::time::timeout(std::time::Duration::from_secs(20),async {
+                loop {
+                    let status=caller.client().call(&child.name,"shell.status",child_target.clone()).await.unwrap();
+                    if status["status"]["snapshot"]["phase"]=="prompt-ready" && status["status"]["snapshot"]["continuation"]==false {
+                        break status["status"]["snapshot"]["prompt_generation"].as_str().unwrap().to_owned();
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+            }).await.expect("child prompt must be ready for forwarded evaluation");
+            // The real verified connection supplies this epoch, never test JSON.
+            let epoch=caller.session_context().await.unwrap().connection_id;
+            let evaluation=json!({"target":target,"request_id":"3","request_epoch":epoch,"prompt_generation":generation,"source":"print(\"FORWARDED_\" .. \"EVAL\")"});
+            let (rc,evaluated)=invoke("term.execute",evaluation.clone()).await;
+            assert_eq!(rc,0,"{evaluated}");
+            assert_eq!(evaluated["status"],"accepted");
+            assert_eq!(evaluated["target"],target);
+            let operation=evaluated["operation_id"].clone();
+            tokio::time::timeout(std::time::Duration::from_secs(20),async {
+                loop {
+                    let (rc,result)=invoke("term.exec.result",json!({"target":target,"operation_id":operation})).await;
+                    assert_eq!(rc,0,"{result}");
+                    if result["state"]=="finished" {
+                        assert_eq!(result["result"]["outcome"],"completed");break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+            }).await.expect("forwarded evaluation must finish in the real shell");
+            assert_eq!(invoke("term.execute",evaluation).await,(0,evaluated));
+            let submission=json!({"target":target,"request_id":"4","request_epoch":epoch,"source":"40 + 2","timeout_ms":"20000"});
+            let (rc,task)=invoke("term.task.submit",submission.clone()).await;
+            assert_eq!(rc,0,"{task}");
+            assert_eq!(task["status"],"accepted");
+            assert_eq!(task["target"],target);
+            let operation=task["operation_id"].clone();
+            tokio::time::timeout(std::time::Duration::from_secs(30),async {
+                loop {
+                    let (rc,result)=invoke("term.task.result",json!({"target":target,"operation_id":operation})).await;
+                    assert_eq!(rc,0,"{result}");
+                    if result["state"]=="settled" {
+                        assert_eq!(result["report"]["outcome"]["kind"],"exited");
+                        assert_eq!(result["report"]["outcome"]["code"],0);
+                        assert!(result["report"]["result"]["data"].as_str().unwrap().contains("42"));break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+            }).await.expect("forwarded isolated task must return its real typed result");
+            assert_eq!(invoke("term.task.submit",submission).await,(0,task));
+            for command in ["term.exec.result","term.exec.cancel"] {
+                assert_eq!(invoke(command,json!({"target":target,"operation_id":operation})).await.1["error_code"],"UNKNOWN_OUTCOME");
+            }
             assert!(sessions.call("state","vt-1",json!({})).is_ok());
             caller.client().close().await;
         });

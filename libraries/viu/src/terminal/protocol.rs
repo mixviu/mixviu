@@ -354,7 +354,7 @@ impl Reply {
 }
 
 /// The child's own error code, if its answer was shaped like a refusal at all.
-fn refusal_code(body: &str) -> Option<String> {
+pub(crate) fn refusal_code(body: &str) -> Option<String> {
     serde_json::from_str::<serde_json::Value>(body)
         .ok()?
         .get("error_code")?
