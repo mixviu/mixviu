@@ -64,6 +64,9 @@ jobs:
     # Every job that compiles runs on the target distro (see `test`).
     container:
       image: archlinux:base-devel@sha256:2de80105abb49f813a85393c6758a4334deb6bcec4a2411bd2f059c0bee6ee4c
+      # A login-like environment: the shell's session tests expect USER.
+      env:
+        USER: root
     permissions:
       contents: read
     timeout-minutes: 60
@@ -92,6 +95,9 @@ jobs:
     # (tablet dial API), newer than Ubuntu 24.04 ships.
     container:
       image: archlinux:base-devel@sha256:2de80105abb49f813a85393c6758a4334deb6bcec4a2411bd2f059c0bee6ee4c
+      # A login-like environment: the shell's session tests expect USER.
+      env:
+        USER: root
     permissions:
       contents: read
     timeout-minutes: 180
