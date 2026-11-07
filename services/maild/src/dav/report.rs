@@ -157,12 +157,30 @@ fn parse(body: &[u8]) -> Parsed {
                 }
             }
             Ok(Event::Text(t)) => {
-                if let Ok(s) = t.unescape() {
+                if let Ok(s) = t.decode() {
                     if in_href {
                         cur.push_str(&s);
                     } else if in_token {
                         tok.push_str(&s);
                     }
+                }
+            }
+            Ok(Event::GeneralRef(reference)) => {
+                let resolved = match reference.resolve_char_ref() {
+                    Ok(Some(ch)) => Some(ch.to_string()),
+                    Ok(None) => reference.decode().ok().and_then(|name| {
+                        quick_xml::escape::resolve_predefined_entity(&name).map(str::to_owned)
+                    }),
+                    Err(_) => None,
+                };
+                if let Some(value) = resolved {
+                    if in_href {
+                        cur.push_str(&value);
+                    } else if in_token {
+                        tok.push_str(&value);
+                    }
+                } else {
+                    malformed = true;
                 }
             }
             Ok(Event::End(e)) => match local_name(e.name().as_ref()).as_str() {
@@ -814,6 +832,22 @@ async fn addressbook_report(
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn report_text_preserves_predefined_and_numeric_entities() {
+        let parsed = parse(br#"<D:calendar-multiget xmlns:D="DAV:"><D:href>/a&amp;b&#47;c&#x2E;ics</D:href></D:calendar-multiget>"#);
+        assert_eq!(parsed.hrefs, ["/a&b/c.ics"]);
+        assert!(!parsed.malformed);
+        let parsed = parse(br#"<D:sync-collection xmlns:D="DAV:"><D:sync-token>https://example.org/a&amp;b&#47;7</D:sync-token></D:sync-collection>"#);
+        assert_eq!(parsed.sync_token.as_deref(), Some("https://example.org/a&b/7"));
+        assert!(!parsed.malformed);
+    }
+
+    #[test]
+    fn unknown_report_entity_is_malformed() {
+        let parsed = parse(br#"<D:calendar-multiget xmlns:D="DAV:"><D:href>/a&unknown;</D:href></D:calendar-multiget>"#);
+        assert!(parsed.malformed);
+    }
 
     #[test]
     fn parses_calendar_multiget_hrefs() {
