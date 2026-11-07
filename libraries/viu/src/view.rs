@@ -619,7 +619,8 @@ impl SceneView {
                         } else { let mut draw=draw; draw(ui) };
                         ui.interact(rect,ui.scope_id().with((&key,"group")),Sense::hover());
                     }
-                    "column" if node.ports.get("scroll").and_then(Value::as_bool)==Some(true) => {
+                    "column" if node.ports.get("scroll").and_then(Value::as_bool)==Some(true)
+                        && (node.ports.contains_key("scroll_key") || node.ports.get("native_frame")==Some(&Value::Bool(true))) => {
                         let mut draw_scroll=|ui: &mut egui::Ui| {
                         let height=ui.available_height();
                         let context=node.ports.get("scroll_key").and_then(Value::as_str).filter(|s|!s.is_empty());

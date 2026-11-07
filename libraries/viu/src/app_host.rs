@@ -1173,12 +1173,19 @@ impl Host {
                                 ) {
                                     if let Ok(theme) = base.with_choice(&choice) {
                                         let _ = crate::appearance::install_theme(ctx, &theme);
-                                        let _ = self.runtime.notify(
-                                            "viu.theme.changed".into(),
-                                            crate::native_theme::describe(&theme),
-                                        );
                                     }
                                 }
+                            }
+                            if refresh_key.is_none() || key_changed {
+                                // Followers need the effective theme even when
+                                // no local override is selected (for example,
+                                // to switch the light/dark toolbar glyph).
+                                let _ = self.runtime.notify(
+                                    "viu.theme.changed".into(),
+                                    crate::native_theme::describe(
+                                        &crate::appearance::session_theme(ctx),
+                                    ),
+                                );
                             }
                         }
                         Err(error) => self.error = error,

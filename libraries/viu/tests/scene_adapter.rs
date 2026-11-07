@@ -86,6 +86,45 @@ fn scrolling_column_keeps_its_authored_padding() {
 }
 
 #[test]
+fn scrolling_form_fits_inside_a_short_bottom_panel() {
+    let mut positions = Vec::new();
+    for scroll in [false, true] {
+        let source = scene(json!({
+            "root":{"widget":"dock","children":["buttons","controls","body"],"placements":{
+                "buttons":{"edge":"bottom","panel":true,"size":"content","frame":"native","max_fraction":1},
+                "controls":{"edge":"bottom","panel":true,"size":42,"exact":true,"frame":"native","max_fraction":1},
+                "body":{"edge":"fill","panel":true,"frame":"native"}
+            }},
+            "buttons":{"widget":"column","padding":0,"children":["accept"]},
+            "accept":{"widget":"control","definition":{"id":"accept","kind":"button","label":"Save","initial":""}},
+            "controls":{"widget":"column","padding":0,"children":["scroll"]},
+            "scroll":{"widget":"column","padding":0,"scroll":scroll,"children":["name"]},
+            "name":{"widget":"control","definition":{"id":"name","kind":"field","label":"File name","initial":"draft.txt"}},
+            "body":{"widget":"column","padding":0,"children":["listing"]},
+            "listing":{"widget":"control","definition":{"id":"listing","kind":"label","label":"","initial":"Files"}}
+        }));
+        let mut view = SceneView::new(&source).unwrap();
+        let ctx = egui::Context::default();
+        toolkit::install(&ctx, &toolkit::Theme::embedded());
+        for _ in 0..3 {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(820., 600.))),
+                    ..Default::default()
+                },
+                |ui| { view.show(ui); },
+            ).drop_without_applying_deltas();
+        }
+        let field = view.geometry["name"];
+        let button = view.geometry["accept"];
+        assert!(field.bottom() <= button.top(), "field clipped behind footer: {field:?} {button:?}");
+        assert!(field.top() >= button.top() - 52., "field left its short panel: {field:?} {button:?}");
+        positions.push(field);
+    }
+    assert_eq!(positions[0], positions[1], "scrolling must preserve the short form's geometry");
+}
+
+#[test]
 fn an_empty_dialog_error_does_not_reserve_an_invisible_row() {
     let mut heights = Vec::new();
     for error in [None, Some(""), Some("Name refused")] {
