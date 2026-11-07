@@ -1,4 +1,4 @@
-# Four-app close-out complete; Backdrop and Workshop next
+# Four-app close-out complete; six-app integration active
 
 # Four-app integrated release revalidation
 
@@ -69,4 +69,6 @@ Full gate gold-six-full-20261107-r1-a1 stopped in all-target Clippy on a Worksho
 
 Review of the merged request path also found duplicate surface admission/HELP blocks. They are consolidated so Backdrop arguments_any and describe_list metadata are honoured while accepted menu remapping remains intact. The focused 9bcfeee5 fixtures and debug preflight are queued; the remaining admission consolidation is tested in the next exact-source gate.
 
-Branch lab/gold-parity; head request-path consolidation at this checkpoint; six-app artifacts/acceptance PENDING; accepted four-app artifacts cbc2:/build/es-artifacts/1804bb98a5ab305111bd35412bf6f3902bc24013/ SHA256SUMS=afd278113a2a7be85e047ab5a72cbbae1a8832b041d7a0616c429454ca1e2801; CBC gold-six-targeted-9bcfeee5 and gold-six-debug-9bcfeee5 QUEUED, gold-six-full-20261107-r1-a1 FAILED fixture compilation.
+Current runtime source is 2e9200e68325dec9f27cdd8d0b63a3af38d834cc; the following receipt changes documentation only. Focused fixtures and heavy-worker debug preflight remain queued at 9bcfeee5, immediately before the surface-admission consolidation. The private native editor watcher is running and will retain the paired result separately from release acceptance. The new six-app collector retains whole-window and region figures, requires Workshop 99/99 and macro 25/25 structured comparisons, and checks all Backdrop capture counts. Its output remains inspection-required. Updated Workshop Mix sources lint clean with their real embedder-provided function names declared. No six-app acceptance or artifact hash is claimed yet.
+
+Branch lab/gold-parity; head runtime source 2e9200e68325dec9f27cdd8d0b63a3af38d834cc (receipt-only follow-up); six-app release revalidation and artifacts PENDING; accepted four-app artifacts cbc2:/build/es-artifacts/1804bb98a5ab305111bd35412bf6f3902bc24013/ SHA256SUMS=afd278113a2a7be85e047ab5a72cbbae1a8832b041d7a0616c429454ca1e2801; CBC gold-six-targeted-9bcfeee5 and gold-six-debug-9bcfeee5 QUEUED, gold-six-full-20261107-r1-a1 FAILED fixture compilation.
