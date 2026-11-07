@@ -9,3 +9,7 @@ Debug-filter strings also differ because the generic Viu process truthfully name
 All 22 import-hash mismatches are inherited unchanged from 4f2c0fd. A complete per-file report (two source pins, divergence commits/dates, reasons and both hashes) is staged privately for the final handoff; provenance remains unresolved before any production derivation. Native captures are private; no installation or VT work.
 
 Branch lab/gold-parity; head this menu-reply repair checkpoint; final per-app revalidation PENDING; prior source 4755e9e artifacts cbc3:/build/es-artifacts/4755e9e10bd2071cded1d18c7865c29d754a1009/ (not final acceptance); CBC 20261107-105201-a587a3c3-a1 PASS; repaired-source CBC and same-worker performance PENDING.
+
+The visual sweep also found a dropped Screenshot authority-loss contract: its accepted host uses the authority's empty window map on loss (automatic decoration fallback), while Monitor/Ced/Prefs retain their last good window choices. A reusable retain_window_on_loss manifest setting now preserves both policies; Screenshot explicitly selects false. Palettes and all other live Prefs retain their existing semantics. Screenshots and raw figures are retained privately. Final acceptance remains pending on the repaired source.
+
+Branch lab/gold-parity; head this authority-policy checkpoint; final per-app revalidation PENDING; prior 4755e9e four-engine set remains on cbc3, not final acceptance; CBC 20261107-105201-a587a3c3-a1 PASS; repaired-source full CBC/native/performance PENDING.

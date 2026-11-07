@@ -28,6 +28,8 @@ pub struct Manifest {
     pub owner_help: bool,
     /// Ordinary Bus reply deadline; retained replies keep their own lifetime.
     pub reply_timeout_secs: u64,
+    /// Keep the last authority-owned window choices while settingsd is absent.
+    pub retain_window_on_loss: bool,
     /// App-authored compatibility surface; native facilities append descriptors.
     pub bus_surface: Option<serde_json::Value>,
     pub native_ui: bool,
@@ -61,6 +63,7 @@ impl Default for Manifest {
             command_metadata: vec![],
             owner_help: false,
             reply_timeout_secs: 180,
+            retain_window_on_loss: true,
             bus_surface: None,
             native_ui: false,
             native_macros: false,
