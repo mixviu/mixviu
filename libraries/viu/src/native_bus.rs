@@ -41,6 +41,28 @@ struct Hint {
     probe: Option<String>,
 }
 type HintFuture = std::pin::Pin<Box<dyn std::future::Future<Output = (String, bool, bool)> + Send>>;
+#[derive(Clone, Default)]
+pub struct Policy {
+    pub pid_fallback: bool,
+    pub namespace: Option<String>,
+    pub text_replies: bool,
+    pub unknown_reply: Option<Value>,
+}
+fn wire_body(value: &Value, text_replies: bool) -> String {
+    if text_replies && let Some(text) = value.as_str() {
+        return text.to_owned();
+    }
+    value.to_string()
+}
+fn canonical_wire(command: &str, registered: &str, namespace: &str) -> Option<String> {
+    if matches!(command, "app.describe" | "app.quit") || command.starts_with("viu.") {
+        return Some(command.into());
+    }
+    if command.starts_with(&format!("{registered}.")) {
+        return Some(crate::native_registration::rename(command, registered, namespace));
+    }
+    (!command.contains('.')).then(|| command.to_owned())
+}
 /// Launch-time activation uses the existing native SDK and compositor path.
 pub fn activate_existing(service: &str, command: &str, url: &str) -> Result<bool, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -153,7 +175,7 @@ impl Endpoint {
         wake: crate::runtime::Wake,
         help: Option<Value>,
     ) -> Self {
-        Self::start_described_policy(name, url, commands, quit_command, wake, help, false)
+        Self::start_described_policy(name, url, commands, quit_command, wake, help, Policy::default())
     }
     pub fn start_described_policy(
         name: String,
@@ -162,7 +184,7 @@ impl Endpoint {
         quit_command: String,
         wake: crate::runtime::Wake,
         help: Option<Value>,
-        pid_fallback: bool,
+        policy: Policy,
     ) -> Self {
         let (tx, requests) = mpsc::sync_channel(32);
         let (notice_tx, notices) = mpsc::sync_channel(32);
@@ -177,6 +199,8 @@ impl Endpoint {
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
+                let pid_fallback=policy.pid_fallback;
+                let text_replies=policy.text_replies;
                 let (registered,native)=tokio::select!{_=&mut stopped=>return,c=crate::native_registration::connect(&name,&url,&commands,help.is_none(),pid_fallback)=>match c{Ok((registered,c))=>(registered,Arc::new(c)),Err(e)=>{eprintln!("native Bus: {e}");if !pid_fallback {close.store(true,Ordering::Release);}wake();return;}}};
                 if registered!=name {eprintln!("{name} Bus name in use; serving this window as {registered}");}
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
@@ -202,17 +226,23 @@ impl Endpoint {
                     if command.id.is_none(){post(Notice{command:command.topic().unwrap_or(&command.command).to_owned(),args:command.args,headers:command.headers});continue;}
                     if close.load(Ordering::Acquire){let _=native.respond(&command,10,&json!({"error_code":"CLOSING"}).to_string()).await;continue;}
                     if responses.len()>=32{let _=native.respond(&command,10,&json!({"error_code":"BUSY"}).to_string()).await;continue;}
+                    let routed=if let Some(namespace)=&policy.namespace {
+                        match canonical_wire(&command.command,&registered,namespace) {
+                            Some(command)=>command,
+                            None=>{let body=policy.unknown_reply.clone().unwrap_or_else(||json!({"error_code":"UNKNOWN_COMMAND"}));let _=native.respond(&command,10,&wire_body(&body,text_replies)).await;continue;}
+                        }
+                    } else {crate::native_registration::rename(&command.command,&registered,&name)};
                     let (reply,response)=oneshot::channel();
                     let close_after_reply=Arc::new(AtomicBool::new(false));
                     let delivery=Arc::new(AtomicU8::new(0));
-                    let request=Request{from:command.from.clone(),command:crate::native_registration::rename(&command.command,&registered,&name),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
+                    let request=Request{from:command.from.clone(),command:routed,args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
                     let admitted=tx.try_send(request).is_ok();
                     if admitted{wake();}
                     let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;
                     responses.spawn(async move{
                         let ack=Delivery{state:delivery,wake:wake.clone()};
                         let answer=if admitted{match tokio::time::timeout(Duration::from_secs(180),response).await{Ok(Ok(value))=>value,_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
-                        let sent=matches!(tokio::time::timeout(Duration::from_secs(2),native.respond(&command,answer.0,&answer.1.to_string())).await,Ok(Ok(())));
+                        let sent=matches!(tokio::time::timeout(Duration::from_secs(2),native.respond(&command,answer.0,&wire_body(&answer.1,text_replies))).await,Ok(Ok(())));
                         ack.state.store(if sent{1}else{2},Ordering::Release);wake();
                         if (quit||close_after_reply.load(Ordering::Acquire))&&answer.0==0&&sent{close.store(true,Ordering::Release);wake();}
                     });
@@ -534,6 +564,26 @@ fn reply_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn selected_namespace_refuses_other_instances_but_keeps_host_controls() {
+        assert_eq!(canonical_wire("term-42.tabs", "term-42", "term"), Some("term.tabs".into()));
+        assert_eq!(canonical_wire("term.other.ui.capture", "term.other", "term"), Some("term.ui.capture".into()));
+        for command in ["term.tabs", "term-420.tabs", "other.tabs"] {
+            assert_eq!(canonical_wire(command, "term-42", "term"), None);
+        }
+        for command in ["HELP", "INFO", "help", "app.describe", "app.quit", "viu.capture"] {
+            assert_eq!(canonical_wire(command, "term-42", "term"), Some(command.into()));
+        }
+    }
+    #[test]
+    fn text_reply_policy_preserves_raw_bytes_and_structured_json() {
+        let text = json!("line one\nquote: \"unicode 中\"\n");
+        assert_eq!(wire_body(&text, true), "line one\nquote: \"unicode 中\"\n");
+        assert_eq!(wire_body(&text, false), text.to_string());
+        for value in [json!({"shown":true,"target":{"id":7}}), json!([{"name":"HELP"}]), json!(null)] {
+            assert_eq!(wire_body(&value, true), value.to_string());
+        }
+    }
     #[test]
     fn native_reply_routes_preserve_structured_refusals_and_scalar_bodies() {
         let body = json!({"error_code":"INVALID_NAME","message":"try another name","retry":true})

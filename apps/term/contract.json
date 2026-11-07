@@ -484,6 +484,7 @@
         "read_only": false
       }
     ],
+    "command_namespace": "term",
     "commands": [
       "term.session",
       "term.tabs",
@@ -555,7 +556,9 @@
       900,
       560
     ],
+    "text_replies": true,
     "title": "Terminal",
+    "unknown_reply": "unknown command; use HELP",
     "window_app_id": "dev.mixos.term"
   }
 }

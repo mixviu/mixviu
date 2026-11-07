@@ -71,6 +71,7 @@ struct Host {
     framed: bool,
     title: String,
     unknown_command: Option<String>,
+    unknown_reply: Option<Value>,
     window_frame: crate::window_frame::WindowFrame,
     jobs: crate::jobs::Jobs,
     job_results: std::collections::VecDeque<Value>,
@@ -210,10 +211,10 @@ impl Host {
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
-                self.unknown_command.as_ref().map_or_else(
+                self.unknown_reply.clone().unwrap_or_else(|| self.unknown_command.as_ref().map_or_else(
                     || json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
                     |message| json!({"error_code":"UNKNOWN_COMMAND","message":message}),
-                ),
+                )),
             ));
             return;
         }
@@ -999,7 +1000,12 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             .as_ref()
             .map(|s| s["commands"].clone())
             .or_else(|| bundle.manifest.authored_discovery.then(|| json!([]))),
-        bundle.manifest.registration_pid_fallback,
+        crate::native_bus::Policy {
+            pid_fallback: bundle.manifest.registration_pid_fallback,
+            namespace: bundle.manifest.command_namespace.clone(),
+            text_replies: bundle.manifest.text_replies,
+            unknown_reply: bundle.manifest.unknown_reply.clone(),
+        },
     );
     let documents = crate::documents::Documents::default();
     let terminals = crate::terminal::sessions::Sessions::with_native(wake.clone());
@@ -1074,6 +1080,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         framed: bundle.manifest.frame.is_some(),
         title: bundle.manifest.title.clone(),
         unknown_command: bundle.manifest.unknown_command.clone(),
+        unknown_reply: bundle.manifest.unknown_reply.clone(),
         window_frame: crate::window_frame::WindowFrame::default(),
         clipboard: crate::thumbnail::Decoder::with_decoder(
             "viu-clipboard-decode",

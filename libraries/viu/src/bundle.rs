@@ -28,6 +28,9 @@ pub struct Manifest {
     /// Discovery replies are owned by the authored behaviour instead of the SDK.
     pub authored_discovery: bool,
     pub window_app_id: Option<String>,
+    pub command_namespace: Option<String>,
+    pub text_replies: bool,
+    pub unknown_reply: Option<serde_json::Value>,
     /// Retry a refused initial registration once as service-PID.
     pub registration_pid_fallback: bool,
     pub unknown_command: Option<String>,
@@ -57,6 +60,9 @@ impl Default for Manifest {
             activation: None,
             authored_discovery: false,
             window_app_id: None,
+            command_namespace: None,
+            text_replies: false,
+            unknown_reply: None,
             registration_pid_fallback: false,
             unknown_command: None,
             app: None,
