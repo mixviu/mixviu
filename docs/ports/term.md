@@ -923,3 +923,54 @@ Then fetch and verify the artifact for isolated host/session evidence.
 Protected ControlLane, remaining gold enforcement tests and the complete
 Bus/input/clipboard/IME/Prefs/release acceptance remain open. NOT ACCEPTED.
 No Fable deviation proposed; no gold or desktop changes.
+
+### Verified host session witness and real-exit regression
+
+Exact code 5e4e7344c0472b2594aaa18eb5ac8c5c2bae07d7 passed CBC
+`term-owner-isolated-5e4e7344-a1`: 153 terminal tests, five existing
+ignores, seven input tests, two bundle tests, six Mix suites, search/dialog
+checks, foreign gate and debug build. Complete saved log read in three
+chunks; TERM_PATCH empty. Debug executable SHA256:
+`b38ca9c84ad947e14429a77a00dd9163f06e3e52f8567130c152568f5634cbb5`.
+Source/profile/byte hash verified against the fetched receipt before use.
+
+Private run native.bu3oPA uses the exact bundle/executable and native
+headless compd/settingsd/broker with the real installed Mix login shell.
+First pane, split pane and new-tab pane each reached child binding
+Attached. New tab replied binding=granted. Plain Tab/Shift+Tab kept split
+focus ownership. Real shell exit removed pane 3 and its tab, returning to
+the original two-pane tab. Normal window close stopped all seven tracked
+processes; closure.json records all dead. Parent shutdown logged an
+unconfirmed revoke, retaining gold's bounded expiry fallback; complete
+remote revocation/expiry acceptance remains open.
+
+Same-command initial capture is byte-identical to the retained gold
+native.4KfmwO capture: both PNG SHA256
+`e31900b2f10ca55d792ca7556b5f19da05f151dcbb4ba000d334f9834a994865`.
+Matched 900x560 client, scale 1, Studio Dark, Inter 400/14.667 and
+terminal 400/14.667. parity_compare generated compare-session with full,
+header [0,0,900,38], tabs [0,38,900,32] and terminal [0,70,900,490].
+ImageMagick 7.1.2-35 SSIM distortion and RMSE are zero in every region.
+Candidate, side-by-side and difference inspected: no region differences.
+This debug witness does not replace fresh release acceptance captures.
+
+Failed runs retained: native.sdIVrK stopped on a harness type builtin
+typo; native.khklo4 exposed the harness's 0700 capture-directory ancestor
+disabling native Unix ingress. Both cleanup receipts show all tracked
+processes dead. Corrected harness uses a separate owned traversable
+ingress sibling; capture/home directories retain their permissions.
+Earlier TCP-only visual/input evidence remains valid for those cases,
+but cannot attest native sealed-session enrolment.
+
+b8cd6d1f extends the owner regression to isolated close and natural-exit
+subprocesses. Both must enrol/show the real prompt. A fresh verified
+observer must read the child's Revoked state from the actual broker.
+Natural exit must invalidate the still-owned Terminal before any close
+or drop, preventing explicit cleanup from making the proof vacuous.
+Next CBC `term-owner-exit-b8cd6d1f` at
+`b8cd6d1fe3728a1f86f57515212e1490ea2667e2`, term_gate --prepare.
+Read complete log; apply formatting/lock and repeat exact source if
+changed. Protected ControlLane adapter, original enforcement/bootstrap/
+reconnect suite, complete Bus/input/clipboard/IME/search/Prefs and exact
+release acceptance remain open. NOT ACCEPTED. No Fable deviation or
+desktop/gold changes.
