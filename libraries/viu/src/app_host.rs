@@ -928,10 +928,18 @@ impl Host {
                 }
             }
         }
+        let mut stats = self.measurements.snapshot();
+        stats["repaint_causes"] = json!(ui
+            .ctx()
+            .repaint_causes()
+            .into_iter()
+            .take(16)
+            .map(|cause| json!({"file":cause.file,"line":cause.line,"reason":cause.reason}))
+            .collect::<Vec<_>>());
         self.ui_state.set(
             ui.ctx().content_rect(),
             &self.view.geometry,
-            self.measurements.snapshot(),
+            stats,
         );
         self.settle(ui.ctx());
         if !self.error.is_empty() {
