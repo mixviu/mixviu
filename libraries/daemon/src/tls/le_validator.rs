@@ -55,6 +55,7 @@
 //! per-vhost manual-PEM path) keep their `(chain, names, now)`
 //! signature.
 
+use rustls_pki_types::pem::PemObject as _;
 use anyhow::{Context, Result, anyhow};
 use rustls::pki_types::{CertificateDer, DnsName, ServerName, TrustAnchor, UnixTime};
 use sha2::{Digest, Sha256};
@@ -207,9 +208,9 @@ fn validate_le_chain_inner(
 }
 
 fn parse_pem_chain(pem: &[u8]) -> Result<Vec<CertificateDer<'static>>> {
-    let parsed: Vec<_> = rustls_pemfile::certs(&mut &pem[..])
+    let parsed: Vec<_> = rustls_pki_types::CertificateDer::pem_reader_iter(&mut &pem[..])
         .collect::<std::result::Result<_, _>>()
-        .map_err(|e| anyhow!("rustls_pemfile failed to parse chain: {e}"))?;
+        .map_err(|e| anyhow!("PEM parser failed to parse chain: {e}"))?;
     Ok(parsed)
 }
 

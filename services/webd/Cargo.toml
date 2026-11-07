@@ -70,9 +70,7 @@ clap.workspace = true
 mimalloc.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
 tokio-rustls.workspace = true
-rustls-pemfile = "2"
 rustls.workspace = true
-rustls-pemfile = "2"
 # SSR PIM Phase 2 — AEAD-sealed stateless session cookies. XChaCha20-
 # Poly1305 (192-bit random nonce → no birthday bound on per-seal random
 # nonces) carries the maild bearer token in an HttpOnly cookie. Chosen

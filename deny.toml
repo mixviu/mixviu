@@ -13,7 +13,6 @@ yanked = "warn"
 # shrinks: each fix PR removes its lines. A NEW advisory fails CI.
 ignore = [
   { id = "RUSTSEC-2023-0071", reason = "rsa 0.9 Marvin timing (no fixed release); inherited debt" },
-  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained; inherited debt" },
   { id = "RUSTSEC-2026-0194", reason = "quick-xml duplicate-attribute quadratic; inherited debt" },
   { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader allocation; inherited debt" },
   { id = "RUSTSEC-2026-0367", reason = "zip SUID preservation on extract; inherited debt" },
