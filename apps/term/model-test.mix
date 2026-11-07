@@ -1,0 +1,35 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix")
+fn check($ok,$message)
+  if not $ok then raise("TEST",$message) end
+end
+fn session($n) return {handle:"vt-"..to_string($n),pid:1000+$n} end
+$s=$m.open_tab($m.initial(),session(1),nil)
+check($s.tabs[0].id==1 and $s.tabs[0].active_pane==1,"first tab and pane")
+$s=$m.split_pane($s,"v",session(2));$s=$m.split_pane($s,"h",session(3))
+check(deep_eq($m.leaves($s.tabs[0].tree),[1,2,3]),"split traversal")
+$out=$m.close_pane($s,3);$s=$out.state
+check($s.tabs[0].active_pane==2 and deep_eq($out.removed,["vt-3"]),"closest sibling receives focus")
+$s=$m.open_tab($s,session(4),"Pinned");$active=$s.tabs[$s.active].id;$revision=$s.revision
+$r=$m.resolve($s,2,nil)
+check($r.tab==1 and $r.pane==2 and $s.tabs[$s.active].id==$active,"explicit pane does not change focus")
+$refused=false
+try $r=$m.resolve($s,2,$active) catch $message $refused=$message=="invalid-argument: pane does not belong to tab" end
+check($refused,"pane and tab must agree")
+check($m.surface_tree($s,$s.tabs[0].tree).second=="vt-2","Mix supplies native composition without policy in Rust")
+$s=$m.move_tab($s,1,100)
+check($s.tabs[$s.active].id==$active and $s.revision==$revision+1,"reorder preserves focus and advances gold layout revision")
+$s=$m.select_tab($s,1);$s=$m.select_pane($s,1)
+check($s.tabs[$s.active].active_pane==1,"focus an existing pane")
+$out=$m.close_pane($s,1);$s=$out.state
+check($s.tabs[$s.active].active_pane==2,"focus sibling when first leaf closes")
+$out=$m.close_pane($s,2);$s=$out.state
+check(len($s.tabs)==1 and not $s.closing,"last pane closes its tab")
+$out=$m.close_tab($s,$s.tabs[0].id);$s=$out.state
+check($s.closing and len($s.tabs)==0 and len(keys($s.panes))==0,"last tab closes application")
+$s=$m.open_tab($m.initial(),session(1),nil)
+for $i=2 to 32 $s=$m.split_pane($s,"v",session($i)) end
+$refused=false
+try $s=$m.open_tab($s,session(33),nil) catch $message $refused=$message=="tab limit (32) reached" end
+check($refused and len(keys($s.panes))==32,"gold 32-slot cap spans panes and tabs")
+print("term model: tab/pane lifecycle and cap checks passed")

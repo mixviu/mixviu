@@ -6,7 +6,7 @@ end
 $s={look:{appearance:{scheme:"studio",mode:"dark"},values:{"window.decorations":"csd"}},closed:false,session:{handle:"vt-test"}}
 $v=$core.framed($s)
 assert($v.window_title=="Terminal","gold native title")
-assert($v.frame.icon=="icon:terminal","terminal frame icon")
+assert($v.frame.icon=="icon:file-terminal","gold FileTerminal frame icon")
 assert(not $v.window_close,"initial window remains open")
 $s.look.appearance.mode="light"
 $s.look.values["window.decorations"]="ssd"

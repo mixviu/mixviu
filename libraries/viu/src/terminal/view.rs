@@ -72,6 +72,44 @@ pub struct Views {
 }
 
 impl Views {
+    fn tree(
+        &mut self,
+        ui: &mut Ui,
+        widget: &Widget,
+        value: &Value,
+        sessions: &Sessions,
+        events: &mut Vec<Intent>,
+        depth: usize,
+    ) -> Response {
+        if depth >= 64 {
+            return ui.colored_label(Color32::RED, "terminal layout nesting exceeds 64");
+        }
+        if value.is_string() {
+            return self.draw(ui, widget, value, sessions, events);
+        }
+        let (area, mut response) = ui.allocate_exact_size(ui.available_size(), Sense::hover());
+        let ratio = value["ratio"].as_f64().unwrap_or(0.5).clamp(0.0, 1.0) as f32;
+        let scale = ui.ctx().pixels_per_point();
+        let (mut first, mut second) = (area, area);
+        if value["dir"] == "v" {
+            let edge = ((area.min.x + area.width() * ratio) * scale).round() / scale;
+            first.max.x = edge;
+            second.min.x = edge;
+        } else if value["dir"] == "h" {
+            let edge = ((area.min.y + area.height() * ratio) * scale).round() / scale;
+            first.max.y = edge;
+            second.min.y = edge;
+        } else {
+            return ui.colored_label(Color32::RED, "terminal layout requires h/v direction");
+        }
+        for (part, rect) in [("first", first), ("second", second)] {
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+            child.set_clip_rect(ui.clip_rect().intersect(rect));
+            response = response.union(self.tree(&mut child, widget, &value[part], sessions, events, depth + 1));
+        }
+        response
+    }
+
     pub fn draw(
         &mut self,
         ui: &mut Ui,
@@ -80,6 +118,9 @@ impl Views {
         sessions: &Sessions,
         events: &mut Vec<Intent>,
     ) -> Response {
+        if value.is_object() {
+            return self.tree(ui, widget, value, sessions, events, 0);
+        }
         let handle = value.as_str().unwrap_or_default();
         self.surfaces
             .retain(|handle, _| sessions.get(handle).is_ok());
@@ -167,7 +208,8 @@ impl Views {
             surface.grid_size = grid_size;
         }
         let serial = crate::widgets::whole(&p["focus_serial"]).unwrap_or(0);
-        if response.clicked() || (serial > surface.focus) {
+        let focus_target = p["focused_handle"].as_str().is_none_or(|wanted| wanted == handle);
+        if response.clicked() || (focus_target && serial > surface.focus) {
             surface.focus = serial;
             response.request_focus();
             events.push(Intent {
