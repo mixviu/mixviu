@@ -104,7 +104,9 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
     };
     let response = ui
         .scope(|ui| {
-            if v["native_spacing"] != true {ui.spacing_mut().item_spacing.y = 0.0;}
+            if v["native_spacing"] != true {
+                ui.spacing_mut().item_spacing.y = 0.0;
+            }
             let column = form::column(
                 ui,
                 v["fields"]
@@ -128,7 +130,8 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                     form::row(ui, r["label"].as_str().unwrap(), column, |ui, labelled| {
                         let mut field = |ui: &mut Ui| {
                             if r["kind"] == "label" {
-                                ui.add(egui::Label::new(&text).truncate()).labelled_by(labelled);
+                                ui.add(egui::Label::new(&text).truncate())
+                                    .labelled_by(labelled);
                                 return;
                             }
                             let response = ui
@@ -199,7 +202,18 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                     column,
                     |ui, _| {
                         ui.horizontal_wrapped(|ui| {
-                            let attach=if let Some(icon)=v["attach_icon"].as_str().and_then(crate::icons::Icon::from_name){ui.add(toolkit::button::IconButton::new(icon).size(toolkit::field::height_of(ui.ctx())).tooltip(v["attach_label"].as_str().unwrap()))}else{ui.button(v["attach_label"].as_str().unwrap())};
+                            let attach = if let Some(icon) = v["attach_icon"]
+                                .as_str()
+                                .and_then(crate::icons::Icon::from_name)
+                            {
+                                ui.add(
+                                    toolkit::button::IconButton::new(icon)
+                                        .size(toolkit::field::height_of(ui.ctx()))
+                                        .tooltip(v["attach_label"].as_str().unwrap()),
+                                )
+                            } else {
+                                ui.button(v["attach_label"].as_str().unwrap())
+                            };
                             if attach.clicked() {
                                 emit(events, "command", json!("attach"));
                             }

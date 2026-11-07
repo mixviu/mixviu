@@ -190,6 +190,10 @@ fn wire_completed($d)
       end
     end
   end
+  if $answer.rc==0 and $job.purpose=="compose-open" then
+    $opened=composer_open($compose_quoting.make($job.command,$entry,$answer.body,$job.args,$mail_settings))
+    $answer.rc=$opened.rc;$answer.body=$opened.body
+  end
   if $job.command=="email.account.connect" then
     if $answer.rc!=0 then $wire_views[$job.account]={state:if $answer.body.error_code=="NO_PASSWORD" then "no_password" else "failed" end,error:if $answer.body.error_code=="NO_PASSWORD" then nil else $answer.body.message end,has_password:$answer.body.error_code!="NO_PASSWORD"} end
     if $answer.rc==0 and $job.account==$active then

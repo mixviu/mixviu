@@ -127,11 +127,38 @@ end
 
 #[test]
 fn account_urls_refuse_credentials_before_reaching_settings_and_keep_path_at_signs() {
-    for (url,accepted) in [("https://example.test/",true),("https://example.test/path@name",true),("http://example.test/",false),("https://user:secret@example.test/",false),("https://user@example.test/",false),("https://example.test/#fragment",false)] {
-        let entry=json!({"name":"Example","url":url,"email":"user@example.test","enabled":true,"signature":"","identities":[],"ca_path":null});
-        let (rc,body)=probe_module(vec![],&format!("$m.validate_entry({entry})"),"accounts.mix",vec![]);
-        assert_eq!(rc==0,accepted,"{url}: {body}");
-        if !accepted {assert_eq!(body["code"],"INVALID_ARGUMENT");}
+    for (url, accepted) in [
+        ("https://example.test/", true),
+        ("https://example.test/path@name", true),
+        ("http://example.test/", false),
+        ("https://user:secret@example.test/", false),
+        ("https://user@example.test/", false),
+        ("https://example.test/#fragment", false),
+    ] {
+        let entry = json!({"name":"Example","url":url,"email":"user@example.test","enabled":true,"signature":"","identities":[],"ca_path":null});
+        let (rc, body) = probe_module(
+            vec![],
+            &format!("$m.validate_entry(json_parse({}))",json!(entry.to_string())),
+            "accounts.mix",
+            vec![],
+        );
+        assert_eq!(rc == 0, accepted, "{url}: {body}");
+        if !accepted {
+            assert_eq!(body["code"], "INVALID_ARGUMENT");
+        }
+    }
+}
+
+#[test]
+fn reply_quotes_strip_signatures_preserve_nesting_and_skip_active_html() {
+    for (call,expected) in [
+        (r#"$m.unsigned("Lunch?\r\n-- \r\nAnn")"#, "Lunch?"),
+        (r#"$m.quoted("hi\n> earlier\n\nend")"#, "> hi\n>> earlier\n>\n> end"),
+        (r#"$m.arrange("","On today, Ann wrote:\n> Lunch?","-- \nBob\n","above")"#, "\n\n-- \nBob\n\nOn today, Ann wrote:\n> Lunch?\n"),
+        (r#"$m.html_text("<head><style>p{x}</style></head><p>Hi &amp; bye</p><script>alert(1)</script><div>&lt;tag&gt;</div>")"#, "Hi & bye\n\n<tag>"),
+    ] {
+        let (rc,body)=probe_module(vec![],call,"quoting.mix",vec![]);
+        assert_eq!(rc,0,"{body}");assert_eq!(body,expected);
     }
 }
 

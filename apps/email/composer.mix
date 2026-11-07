@@ -2,6 +2,7 @@
 -- All composers belong to this interpreter. Native viewports only draw them.
 $composers={};$compose_serial=0;$compose_focused=nil
 $compose_addresses=require("addresses.mix");$compose_sending=require("sending.mix");$compose_ids=require("identity.mix")
+$compose_quoting=require("quoting.mix")
 $compose_frame=require("../../libraries/viu/mix/gold-frame.mix")
 $compose_scene=read_file(path_join(dirname(script_path()),"composer-scene.mix"))
 fn composer_info($c)
@@ -21,6 +22,8 @@ fn composer_open($a)
     $sender=$compose_sending.identity($e,$a.from)
     $compose_serial=$compose_serial+1;$key="compose-"..to_string($compose_serial)
     $c={account:$id,identity:$sender.id,from:$sender.address,from_name:$sender.name,to:join(map($compose_addresses.field($a,"to"),fn($v)=$compose_addresses.format($v)),", "),cc:join(map($compose_addresses.field($a,"cc"),fn($v)=$compose_addresses.format($v)),", "),bcc:join(map($compose_addresses.field($a,"bcc"),fn($v)=$compose_addresses.format($v)),", "),reply_to:$a.reply_to ?? $sender.reply_to,subject:$a.subject ?? "",body:$a.body ?? (if $sender.signature!="" then "\n\n-- \n"..$sender.signature else "" end),attachments:$a.attachments ?? [],in_reply_to:$a.in_reply_to,references:$a.references ?? [],busy:false,error:nil,attempt:{},confirm:false,show_cc:$a.cc!=nil,show_bcc:$a.bcc!=nil,show_reply_to:$a.reply_to!=nil,chooser:false,revision:0,draft_id:replace($compose_ids.mint(),"-","")}
+    if len($e.identities ?? [])==0 then $c.from_name="" end
+    if $a.body==nil then $c.body=$compose_quoting.signature($sender.signature ?? "") end
     $composers[$key]=$c;$compose_focused=$key
     return {rc:0,body:{window:$key,compose:composer_info($c)}}
   catch $message,$error return wire_refuse($error.code,$message) end
@@ -108,4 +111,9 @@ fn composer_sent($key,$answer)
   $composers[$key].busy=false;$composers[$key].attempt=$answer.attempt ?? $composers[$key].attempt
   if $answer.rc==0 then composer_close($key,"discard")
   else $composers[$key].error=$answer.body.message;composer_save($key) end
+end
+fn composer_begin($command,$args,$event)
+  $target=$args.window ?? $compose_focused
+  if $composers[$target]!=nil then composer_close($target);return wire_refuse("BUSY","A compose is already open; close it first") end
+  return wire_start($command,$args,$event,"compose-open")
 end

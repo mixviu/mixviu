@@ -22,7 +22,7 @@ on job.run
       if $command=="email.search" then $p.query=$arg.required($p,"text")
       else $p.mailbox=$arg.required($p,"mailbox") end
       $answer=$protocol.list($e,$s,$p)
-    elif $command=="email.get" or $command=="email.open" then $answer=$protocol.get($e,$s,$p.id)
+    elif contains(["email.get","email.open","email.reply","email.forward"],$command) then $answer=$protocol.get($e,$s,$p.id)
     elif $command=="email.attachments" then
       $email=$protocol.get($e,$s,$p.id);$answer={id:$email.id,attachments:$attachments.metadata($email)}
     elif $command=="email.attachment.save" then $answer=$attachments.save($e,$s,$p)

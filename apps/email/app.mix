@@ -191,6 +191,10 @@ fn execute_email($id,$origin)
     elif len($entries)>0 then begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting" end
   elif contains(["view.mail","view.calendar","view.contacts"],$id) then surface_mode(split($id,".")[1])
   elif contains(["mail.flag","mail.mark_unread"],$id) then surface_toggle_target($id=="mail.flag")
+  elif starts_with($id,"mail.reply") or $id=="mail.forward" then
+    $args={id:$message.id,all:contains($id,"reply_all")}
+    if ends_with($id,"_unquoted") then $args.quote=false elif ends_with($id,"_quoted") then $args.quote=true end
+    wire_start(if $id=="mail.forward" then "email.forward" else "email.reply" end,$args,nil,"compose-open")
   elif $id=="view.reader.markdown" then $reader_markdown=not $reader_markdown;$reader_auto=false
   elif $id=="view.attachments_inline" then $attachments_inline=not $attachments_inline
   elif contains(["view.next_account","view.previous_account"],$id) then
@@ -247,6 +251,12 @@ on viu.frame.intent
 end
 on email.compose
   $out=composer_open($event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.reply
+  $out=composer_begin("email.reply",$event.args,$event);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.forward
+  $out=composer_begin("email.forward",$event.args,$event);publish_email();reply($out.rc,json_encode($out.body))
 end
 on email.compose.intent
   $out=composer_intent($event.args);publish_email();reply($out.rc,json_encode($out.body))

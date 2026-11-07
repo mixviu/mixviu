@@ -1,0 +1,75 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Plain-text quotation and reply/forward policy from pinned gold.
+$addresses=require("addresses.mix");$send=require("sending.mix");$arg=require("arguments.mix")
+fn unsigned($text)
+  $out=[]
+  for $line in split(replace($text,"\r\n","\n"),"\n")
+    if $line=="-- " then break end
+    push($out,$line)
+  end
+  while len($out)>0 and trim($out[len($out)-1])=="" $out=slice($out,0,len($out)-1) end
+  return join($out,"\n")
+end
+fn quoted($text)
+  return join(map(split(replace($text,"\r\n","\n"),"\n"),fn($line)=if $line=="" or starts_with($line,">") then ">"..$line else "> "..$line end),"\n")
+end
+fn html_text($html)
+  $out="";$rest=$html;$skip=nil
+  while contains($rest,"<")
+    $pieces=split($rest,"<");$before=$pieces[0];$tail=join(slice($pieces,1),"<")
+    if $skip==nil then $out=$out..$before end
+    if not contains($tail,">") then $rest="";break end
+    $parts=split($tail,">");$tag=lower(trim($parts[0]));$rest=join(slice($parts,1),">")
+    $name=re_replace(ltrim($tag,"/"),"[^a-z0-9].*$","")
+    if $skip!=nil then if starts_with($tag,"/") and $name==$skip then $skip=nil end;continue end
+    if contains(["script","style","head"],$name) and not starts_with($tag,"/") then $skip=$name
+    elif contains(["br","p","div","tr","li","h1","h2","h3","h4","h5","h6","blockquote","pre","table","ul","ol"],$name) then $out=$out.."\n" end
+  end
+  if $skip==nil then $out=$out..$rest end
+  for $pair in [["&nbsp;"," "],["&lt;","<"],["&gt;",">"],["&quot;","\""],["&#39;","'"],["&apos;","'"],["&amp;","&"]] $out=replace($out,$pair[0],$pair[1]) end
+  $lines=[]
+  for $line in split($out,"\n")
+    $line=rtrim($line)
+    if trim($line)=="" and (len($lines)==0 or trim($lines[len($lines)-1])=="") then continue end
+    push($lines,$line)
+  end
+  while len($lines)>0 and trim($lines[len($lines)-1])=="" $lines=slice($lines,0,len($lines)-1) end
+  return join($lines,"\n")
+end
+fn signature($text)
+  $text=rtrim($text)
+  return if $text=="" then "" else "\n\n-- \n"..$text.."\n" end
+end
+fn arrange($typed,$quote,$signature,$position)
+  $signature=trim($signature,"\n")
+  if $position=="below" then return $quote.."\n\n"..$typed..(if $signature=="" then "\n" else "\n\n"..$signature.."\n" end) end
+  return $typed.."\n\n"..(if $signature=="" then "" else $signature.."\n\n" end)..$quote.."\n"
+end
+fn make($command,$entry,$email,$args,$options)
+  $sender=$send.senders($entry)[0];$signature=signature($sender.signature ?? "")
+  $to=($email.from ?? []);$to=if len($to)>0 then [$to[0]] else [] end;$cc=[]
+  $from=join(map($email.from ?? [],fn($a)=$addresses.format($a)),", ");$recipients=join(map($email.to ?? [],fn($a)=$addresses.format($a)),", ")
+  if $command=="email.forward" then
+    $subject=$email.subject ?? "";$subject=if starts_with(lower($subject),"fwd:") then $subject elif $email.subject==nil then "Fwd:" else "Fwd: "..$subject end
+    $date="";try $date=date_format(date_parse($email.date ?? $email.receivedAt),"%b %d %H:%M",{utc:true}) catch $bad nil end
+    $body=rtrim($signature).."\n\n---------- Forwarded message ----------\nFrom: "..$from.."\nDate: "..$date.."\nSubject: "..($email.subject ?? "").."\nTo: "..$recipients.."\n\n"..($email.text ?? "")
+    return {account:$entry.id,to:$arg.list($args,"to") ?? [],subject:$subject,body:$body}
+  end
+  if $arg.flag($args,"all")==true then
+    $others=filter($email.to ?? [],fn($a)=lower($a.email)!=lower($entry.user))
+    for $a in $others
+      if len($to)==0 or lower($to[len($to)-1].email)!=lower($a.email) then push($to,$a) end
+    end
+    $cc=filter($email.cc ?? [],fn($a)=lower($a.email)!=lower($entry.user) and not any($to,fn($t)=lower($t.email)==lower($a.email)))
+  end
+  $subject=$email.subject ?? "";$subject=if starts_with(lower($subject),"re:") then $subject elif $email.subject==nil then "Re:" else "Re: "..$subject end
+  $body="";$quote=nil
+  if ($arg.flag($args,"quote") ?? $options.quote_on_reply) then
+    $date="";try $date=date_format(date_parse($email.date ?? $email.receivedAt),"%a %-d %b %Y, %H:%M") catch $bad nil end
+    $first=($email.from ?? [])[0] ?? {};$who=if trim($first.name ?? "")!="" then $first.name else $first.email ?? "" end
+    $attribution="On "..$date..", "..$who.." wrote:";$original=$email.text ?? html_text($email.html ?? "")
+    $quote=$attribution..(if trim($original)=="" then "" else "\n"..quoted(unsigned($original)) end)
+    $body=arrange("",$quote,$signature,$options.reply_position)
+  end
+  return {account:$entry.id,to:map($to,fn($a)=$addresses.format($a)),cc:map($cc,fn($a)=$addresses.format($a)),subject:$subject,body:$body,in_reply_to:($email.messageId ?? [])[0],reply_quote:$quote,reply_signature:$signature,reply_position:$options.reply_position}
+end
