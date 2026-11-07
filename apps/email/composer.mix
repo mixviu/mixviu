@@ -87,12 +87,12 @@ fn composer_models($m)
   $m.native_windows=[]
   for $key in keys($composers)
     $c=$composers[$key];$fields=[]
-    for $f in [{id:"from",label:"From",value:$c.from_name.." <"..$c.from..">",read_only:true,visible:true},{id:"to",label:"To",value:$c.to,visible:true},{id:"cc",label:"Cc",value:$c.cc,visible:$c.show_cc},{id:"bcc",label:"Bcc",value:$c.bcc,visible:$c.show_bcc},{id:"reply_to",label:"Reply-To",value:$c.reply_to ?? "",visible:$c.show_reply_to},{id:"subject",label:"Subject",value:$c.subject,visible:true}]
+    for $f in [{id:"from",label:"From",kind:"label",value:if $c.identity=="default" then $c.from else $c.from_name.." <"..$c.from..">" end,read_only:true,visible:true},{id:"to",label:"To",value:$c.to,visible:true},{id:"cc",label:"Cc",value:$c.cc,visible:$c.show_cc},{id:"bcc",label:"Bcc",value:$c.bcc,visible:$c.show_bcc},{id:"reply_to",label:"Reply-To",value:$c.reply_to ?? "",visible:$c.show_reply_to},{id:"subject",label:"Subject",value:$c.subject,visible:true}]
       $f.actions=[]
       if $f.id=="to" then $f.actions=[{id:"show_cc",label:"Show Cc",icon:"copy",selected:$c.show_cc},{id:"show_bcc",label:"Show Bcc",icon:"eye-off",selected:$c.show_bcc},{id:"show_reply_to",label:"Show Reply-To",icon:"reply",selected:$c.show_reply_to}] end
       push($fields,$f)
     end
-    $headers={id:"compose-headers",kind:"header-form",label:"",initial:{enabled:not $c.busy,identity:$c.draft_id,fields:$fields,attachments:$c.attachments,attachment_label:"Attachments",attach_label:"Attach…",remove_label:"Remove attachment",chooser:{open:$c.chooser,title:"Attach files",directory:env("HOME")}},properties:{}}
+    $headers={id:"compose-headers",kind:"header-form",label:"",initial:{native_spacing:true,enabled:not $c.busy,identity:$c.draft_id,fields:$fields,attachments:$c.attachments,attachment_label:"Files",attach_icon:"paperclip",attach_label:"Attach…",remove_label:"Remove attachment",chooser:{open:$c.chooser,title:"Attach files",directory:env("HOME")}},properties:{}}
     $body={id:"compose-body",kind:"editor",label:"Body",initial:$c.body,properties:{native_document:true,prose:true,document:$c.draft_id,language:"text",soft_wrap:true,line_numbers:false,remote_carets:false,read_only:$c.busy}}
     $child={values:{},headers:$headers,body_editor:$body,reader_content:$mail_settings.composer ?? {},native_overlays:[],shortcuts:[],window_close:false}
     if $c.confirm then $child.native_overlays=[{command:"email.compose.intent",definition:{id:"compose-confirm",kind:"dialog-form",label:"",initial:{open:true,instance:$c.draft_id,title:"Close draft?",body:"Keep this draft to finish later?",choices:[{id:"keep",label:"Keep Draft",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Keep Editing",enabled:true,cancel:true}]},properties:{style:"gold"}}}] end
