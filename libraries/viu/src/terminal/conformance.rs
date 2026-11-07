@@ -235,6 +235,36 @@ fn scrollback_pages_and_selection_use_the_native_grid() {
 }
 
 #[test]
+fn resize_reflows_a_logical_line_and_restores_its_cursor() {
+    let t = Terminal::from_test_vt(10, 4, b"abcdefgh");
+    t.resize(5, 4, 50, 40);
+    assert_eq!(row(&t, 0), "abcde");
+    assert_eq!(row(&t, 1), "fgh  ");
+    assert_eq!(t.screen(false).cursor, (3, 1));
+    t.selection_start(0, 0, SelectionSide::Left, SelectionType::Simple);
+    t.selection_update(2, 1, SelectionSide::Right);
+    assert_eq!(t.selection_text().as_deref(), Some("abcdefgh"));
+    t.selection_clear();
+    t.resize(10, 4, 100, 40);
+    assert_eq!(row(&t, 0), "abcdefgh  ");
+    assert_eq!(row(&t, 1), "          ");
+    assert_eq!(t.screen(false).cursor, (8, 0));
+}
+
+#[test]
+fn alternate_screen_resize_preserves_main_text_and_saved_cursor() {
+    let t = Terminal::from_test_vt(10, 4, b"main\x1b[?1049halt");
+    assert!(t.alternate_screen());
+    t.resize(6, 4, 60, 40);
+    assert_eq!(row(&t, 0), "alt   ");
+    t.advance_test_vt(b"\x1b[?1049l!");
+    assert!(!t.alternate_screen());
+    assert_eq!(row(&t, 0), "main! ");
+    assert_eq!(t.screen(false).cursor, (5, 0));
+    assert_eq!(row(&t, 1), "      ");
+}
+
+#[test]
 fn real_mix_login_input_resize_exit_and_reap() {
     struct Unbound;
     impl crate::terminal::native_session::SessionIssuer for Unbound {
