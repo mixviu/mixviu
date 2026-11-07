@@ -111,3 +111,20 @@ Frozen first source: 9643f9235819d33fc8e398ea0abfcc29d84192cf. Four release engi
 Merged accepted Ced d4e19db5259e448190f3e877a0021f735195635a; only last.md conflicted. No source conflict. Ced release-byte acceptance, Monitor quick check and the second four-engine set remain pending.
 
 Branch lab/gold-parity; head is the merge containing this receipt; first source 9643f9235819d33fc8e398ea0abfcc29d84192cf, CBC2 /build/es-artifacts/9643f9235819d33fc8e398ea0abfcc29d84192cf; final gates and second artifacts pending; CBC 20261107-064343-f05d5cfb-a1, 20261107-075258-c6071acd, 20261107-075542-24a1c263-a1, 20261107-075901-fe888f44.
+
+
+## Dopus frame migration checkpoint — OPEN
+
+Dopus now mounts the shared gold frame through `viu run apps/dopus`. Existing
+Mix reducer, bulk rows, file jobs, previews and persistence are retained.
+Native session/job/macro/keymap callbacks are wired in Mix; pane query and
+open handlers have been added. Full inventory and remaining acceptance work:
+[docs/ports/dopus.md](docs/ports/dopus.md). This is not parity acceptance.
+
+CBC 20261107-112139-11c64519-a1 passed the two inherited scan-budget tests
+and 2,000-row debug profile at c10e6f725a39. Complete log read. Debug callback
+medians: sort 328.02 ms, refresh 327.90 ms; release budget remains unmeasured.
+The new whole-bundle frame/atomic two-pane refusal test is queued at 8fd7120
+in CBC 20261107-112707-102d6304. No production install or VT action.
+
+branch lab/parity-dopus; head 8fd7120 (tested-code candidate; this receipt commit records its own HEAD); frame adopted, features/Bus/Prefs acceptance pending, SSIM/regions pending; CBC 20261107-112139-11c64519-a1 PASS, 20261107-112707-102d6304 pending.

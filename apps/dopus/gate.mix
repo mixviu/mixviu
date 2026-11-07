@@ -1,0 +1,18 @@
+-- CBC only. Save the full log and apply returned formatting before exact gate.
+$code=0
+try
+  if contains(args(),"--prepare") then print(run_argv_must(["cargo","fmt","-p","viu"])) end
+  for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--test","dopus_bundle","--test","scan_budget","--test","row_projection","--test","gold_frame"],["cargo","test","--locked","--release","-p","viu","--test","bulk_profile","--","--nocapture"]]
+    print({argv:$argv})
+    $r=run_argv($argv,{timeout:1800,max_output:16000000})
+    print($r)
+    if not $r.ok then $code=$r.exit_code ?? 124;break end
+  end
+finally
+  print("DOPUS_PATCH_BEGIN")
+  $diff=run_argv_must(["git","diff","--binary"]);print($diff)
+  print("DOPUS_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+  if $diff!="" and $code==0 then $code=97 end
+end
+exit($code)
