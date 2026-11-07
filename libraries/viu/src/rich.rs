@@ -630,9 +630,15 @@ pub(crate) fn draw(
                                 )
                             } else {
                                 if item["primary"] == true {
-                                    ui.add_enabled(item["enabled"] == true, toolkit::button::PushButton::primary(text(item, "label")))
+                                    ui.add_enabled(
+                                        item["enabled"] == true,
+                                        toolkit::button::PushButton::primary(text(item, "label")),
+                                    )
                                 } else {
-                                    ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
+                                    ui.add_enabled(
+                                        item["enabled"] == true,
+                                        egui::Button::new(label(item)),
+                                    )
                                 }
                             };
                             let response = response.on_hover_text(text(item, "label"));

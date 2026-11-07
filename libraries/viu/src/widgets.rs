@@ -181,7 +181,23 @@ impl Widget {
         self.validate_model(model)?;
         if self.kind == "navigation-list" {
             let font = egui::TextStyle::Body.resolve(ui.style());
-            return Ok(self.value(model)["rows"].as_array().unwrap().iter().map(|row|ui.painter().layout_no_wrap(row["cells"][0].as_str().unwrap().into(),font.clone(),ui.visuals().text_color()).size().x).fold(0.0_f32,f32::max)+2.0*ui.spacing().interact_size.x+2.0*ui.spacing().item_spacing.x);
+            return Ok(self.value(model)["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    ui.painter()
+                        .layout_no_wrap(
+                            row["cells"][0].as_str().unwrap().into(),
+                            font.clone(),
+                            ui.visuals().text_color(),
+                        )
+                        .size()
+                        .x
+                })
+                .fold(0.0_f32, f32::max)
+                + 2.0 * ui.spacing().interact_size.x
+                + 2.0 * ui.spacing().item_spacing.x);
         }
         if self.kind == "menubar" && self.properties["style"] == "gold" {
             let chrome = toolkit::chrome::Chrome::of(ui.ctx());

@@ -17,27 +17,67 @@ fn done(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> Completion {
 
 #[test]
 fn chooser_mix_mounts_shared_frame_and_keeps_native_save_focus_and_rows() {
-    let fixture=tempfile::tempdir().unwrap();
-    std::fs::write(fixture.path().join("notes.txt"),"fixture").unwrap();
-    let root=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/dopus");
-    let (tx,rx)=mpsc::channel();
-    let mut runtime=Runtime::new(8,Arc::new(move||{let _=tx.send(());}),None);
-    runtime.load(viu::runtime::Program{source:std::fs::read_to_string(root.join("chooser.mix")).unwrap(),path:root.join("chooser.mix"),scene:"chooser".into(),citizen:"files-window".into()}).unwrap();
-    done(&runtime,&rx);
+    let fixture = tempfile::tempdir().unwrap();
+    std::fs::write(fixture.path().join("notes.txt"), "fixture").unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/dopus");
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(
+        8,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+    );
+    runtime
+        .load(viu::runtime::Program {
+            source: std::fs::read_to_string(root.join("chooser.mix")).unwrap(),
+            path: root.join("chooser.mix"),
+            scene: "chooser".into(),
+            citizen: "files-window".into(),
+        })
+        .unwrap();
+    done(&runtime, &rx);
     runtime.event("chooser.open".into(),json!({"id":"request-test","caller":"local:test","home":fixture.path(),"profile":fixture.path(),"request":{"mode":"save","title":"Save file","accept_label":"Save","current_folder":fixture.path(),"current_name":"draft.txt","choices":[]}})).unwrap();
-    let completion=done(&runtime,&rx);
-    assert_eq!(completion.reply.unwrap().rc,0);
-    let model=completion.model.unwrap();
-    assert_eq!(model["values"]["files"]["rows"].as_array().unwrap().len(),1);
-    assert_eq!(model["focus"],json!({"id":"name","selection":[0,5]}));
-    assert_eq!(model["viewport"]["size"],json!([820,600]));
-    assert_eq!(model["frame"]["status_hidden"],true);
-    assert_eq!(model["values"]["identity"],"Requested by local:test");
-    let mut view=viu::gold_frame::mount(&std::fs::read_to_string(root.join("chooser.scene.mix")).unwrap(),model).unwrap();
-    let ctx=egui::Context::default();
+    let completion = done(&runtime, &rx);
+    assert_eq!(completion.reply.unwrap().rc, 0);
+    let model = completion.model.unwrap();
+    assert_eq!(
+        model["values"]["files"]["rows"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(model["focus"], json!({"id":"name","selection":[0,5]}));
+    assert_eq!(model["viewport"]["size"], json!([820, 600]));
+    assert_eq!(model["frame"]["status_hidden"], true);
+    assert_eq!(model["values"]["identity"], "Requested by local:test");
+    let mut view = viu::gold_frame::mount(
+        &std::fs::read_to_string(root.join("chooser.scene.mix")).unwrap(),
+        model,
+    )
+    .unwrap();
+    let ctx = egui::Context::default();
     viu::appearance::install(&ctx);
-    ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(820.,600.))),..Default::default()},|ui|{view.show(ui);}).drop_without_applying_deltas();
-    for id in ["gold-header","places","files","name","footer.command.accept"] {assert!(view.geometry.contains_key(id),"{id}");}
+    ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(820., 600.),
+            )),
+            ..Default::default()
+        },
+        |ui| {
+            view.show(ui);
+        },
+    )
+    .drop_without_applying_deltas();
+    for id in [
+        "gold-header",
+        "places",
+        "files",
+        "name",
+        "footer.command.accept",
+    ] {
+        assert!(view.geometry.contains_key(id), "{id}");
+    }
     assert!(!view.geometry.contains_key("gold-status"));
 }
 

@@ -873,11 +873,14 @@ impl SceneView {
             if edge == "fill" && placement["panel"] == true {
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
                 let panel = egui::CentralPanel::default();
-                let panel = if placement["frame"] == "native" {panel} else {panel.frame(toolkit::bars::dock_frame(ui.ctx()))};
-                panel
-                    .show(&mut panel_ui, |ui| {
-                        self.node(ui, child, nodes, route, depth + 1, events)
-                    });
+                let panel = if placement["frame"] == "native" {
+                    panel
+                } else {
+                    panel.frame(toolkit::bars::dock_frame(ui.ctx()))
+                };
+                panel.show(&mut panel_ui, |ui| {
+                    self.node(ui, child, nodes, route, depth + 1, events)
+                });
                 continue;
             }
             if placement["minimum_window_width"]
@@ -893,14 +896,19 @@ impl SceneView {
                 } else {
                     area.height()
                 };
-                let measured = placement["measure"].as_str().and_then(|id|nodes.get(id)).and_then(|node|Widget::decode(&node.ports["definition"]).ok()).and_then(|widget|widget.intrinsic_width(ui, &self.tree.model).ok());
-                let default_size = measured.unwrap_or_else(||
+                let measured = placement["measure"]
+                    .as_str()
+                    .and_then(|id| nodes.get(id))
+                    .and_then(|node| Widget::decode(&node.ports["definition"]).ok())
+                    .and_then(|widget| widget.intrinsic_width(ui, &self.tree.model).ok());
+                let default_size = measured.unwrap_or_else(|| {
                     placement["size"]
                         .as_f64()
                         .map(|n| n as f32)
                         .unwrap_or_else(|| {
                             dimension * placement["fraction"].as_f64().unwrap_or(0.2) as f32
-                        }));
+                        })
+                });
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
                 let id = egui::Id::unique((key, child));
                 let panel = match edge {
@@ -910,14 +918,24 @@ impl SceneView {
                     _ => egui::Panel::bottom(id),
                 };
                 let panel = panel.resizable(placement["resizable"] == true);
-                let panel = if placement["size"] == "content" && !horizontal {panel} else {panel.default_size(default_size)};
-                let panel = if placement["exact"] == true { panel.exact_size(default_size) } else {panel};
-                let panel = if placement["frame"] == "native" {panel} else {panel.frame(toolkit::bars::dock_frame(ui.ctx()))};
-                let shown = panel
-                    .size_range(
+                let panel = if placement["size"] == "content" && !horizontal {
+                    panel
+                } else {
+                    panel.default_size(default_size)
+                };
+                let panel = if placement["exact"] == true {
+                    panel.exact_size(default_size)
+                } else {
+                    panel.size_range(
                         0.0..=dimension * placement["max_fraction"].as_f64().unwrap_or(0.3) as f32,
                     )
-                    .show(&mut panel_ui, |ui| {
+                };
+                let panel = if placement["frame"] == "native" {
+                    panel
+                } else {
+                    panel.frame(toolkit::bars::dock_frame(ui.ctx()))
+                };
+                let shown = panel.show(&mut panel_ui, |ui| {
                         self.node(ui, child, nodes, route, depth + 1, events)
                     });
                 if horizontal && placement["resizable"] == true {
@@ -1216,7 +1234,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                         "max_fraction",
                     ] {
                         if let Some(v) = p.get(key) {
-                            if key == "size" && v == "content" && matches!(edge,"top" | "bottom") {
+                            if key == "size" && v == "content" && matches!(edge, "top" | "bottom") {
                                 continue;
                             }
                             if key == "size" && design_length(v, None).is_some() {
