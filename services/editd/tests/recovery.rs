@@ -720,12 +720,12 @@ async fn recovery_off_is_volatile() {
     let c = RecoveryConfig::from_vars(None, None, Some("/state"), Some("/home/u"));
     assert_eq!(
         (c.enabled, c.dir),
-        (true, Some(PathBuf::from("/state/mix/edit/recovery")))
+        (true, Some(PathBuf::from("/state/mix/editd/recovery")))
     );
     let c = RecoveryConfig::from_vars(None, None, Some("relative"), Some("/home/u"));
     assert_eq!(
         c.dir,
-        Some(PathBuf::from("/home/u/.local/state/mix/edit/recovery"))
+        Some(PathBuf::from("/home/u/.local/state/mix/editd/recovery"))
     );
     let c = RecoveryConfig::from_vars(None, Some("/explicit"), Some("/state"), None);
     assert_eq!(c.dir, Some(PathBuf::from("/explicit")));

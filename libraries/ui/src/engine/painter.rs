@@ -15,13 +15,13 @@
 use egui::epaint::{ClippedPrimitive, textures::TexturesDelta};
 
 /// The colour each frame is cleared to before egui draws: transparent, or
-/// opaque red when `VIUD_UI_DEBUG_CLEAR` is set (read once). A diagnosis
+/// opaque red when `MIX_VIUD_UI_DEBUG_CLEAR` is set (read once). A diagnosis
 /// switch: a surface that shows red has its clear reach the texture the
 /// compositor samples while egui's meshes do not; one that stays black never
 /// reaches that texture at all.
 fn clear_colour() -> wgpu::Color {
     static DEBUG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if *DEBUG.get_or_init(|| std::env::var_os("VIUD_UI_DEBUG_CLEAR").is_some()) {
+    if *DEBUG.get_or_init(|| std::env::var_os("MIX_VIUD_UI_DEBUG_CLEAR").is_some()) {
         wgpu::Color::RED
     } else {
         wgpu::Color::TRANSPARENT

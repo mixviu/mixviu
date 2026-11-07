@@ -30,7 +30,7 @@ for $name in [$service,$comp]
 end
 export MIX_NODED_URL=$url
 export MIX_COMP_SERVICE=$comp
-export VIU_SERVICE=$service
+export MIX_VIU_SERVICE=$service
 try
   send $service "prefs.ping" body="{}" timeout=2
   if $rc==0 then
@@ -44,7 +44,7 @@ try
     print("prefs: "..json_encode($reply));exit(1)
   end
 catch $not_running $absent=true end
-$launch=concat([env("VIU_BIN",path_join(env("MIX_PREFIX","/opt/mix"),"bin/viu")),"run",dirname(script_path())],$debug)
+$launch=concat([env("MIX_VIU_EXE",path_join(env("MIX_PREFIX","/opt/mix"),"bin/viu")),"run",dirname(script_path())],$debug)
 if $page!=nil then $launch=concat($launch,["--page",$page]) end
 $result=run_argv($launch,{timeout:0,max_output:1000000})
 print($result.stdout)

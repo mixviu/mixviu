@@ -109,7 +109,7 @@ The same input and intent paths serve people and automation. UI replies wait
 for the input frames and resulting worker callbacks; they are not photon
 latency receipts. Refusal/timeouts must be counted in stress results.
 
-`VIU_GALLERY_WITNESS` enables diagnostic JSON writes per rendered frame.
+`MIX_TEST_VIU_GALLERY_WITNESS` enables diagnostic JSON writes per rendered frame.
 Leave it unset for timing/resource measurements. Tests compare independently
 constructed definitions, every semantic action and reset between controllers,
 check refusal, and exercise all native widget renders. Rust verification uses

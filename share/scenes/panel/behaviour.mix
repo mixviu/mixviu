@@ -13,7 +13,7 @@ $COMP = env("COMP_SERVICE", "comp")
 $APPS = env("APPS_SERVICE", "apps")
 $TRAY = env("TRAY_SERVICE", "tray")
 $NOTIFY = env("NOTIFY_SERVICE", "notify")
-$NODED = env("NODED_SERVICE", "noded")
+$NODED = env("MIX_NODED_SERVICE", "noded")
 -- The shipped symbolic Lucide icons take the panel ink in either scheme.
 -- Empty means the apps citizen's selected theme, for status and tasks alike.
 -- An explicit panel override remains supported.

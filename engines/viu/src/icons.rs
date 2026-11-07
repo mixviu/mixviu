@@ -41,9 +41,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires VIUD_ICON_ROOT pointing to an installed icon tree"]
+    #[ignore = "requires MIX_VIUD_ICON_ROOT pointing to an installed icon tree"]
     fn installed_icons_resolve_without_generic_placeholders() {
-        let root = PathBuf::from(std::env::var_os("VIUD_ICON_ROOT").expect("VIUD_ICON_ROOT"));
+        let root =
+            PathBuf::from(std::env::var_os("MIX_VIUD_ICON_ROOT").expect("MIX_VIUD_ICON_ROOT"));
         let lookup = Lookup::in_data_dirs(
             "Adwaita",
             [root.join("usr/local/share"), root.join("usr/share")],

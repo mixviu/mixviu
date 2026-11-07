@@ -51,7 +51,7 @@ for $key in keys($good)
   $c.listen = "192.0.2.30"
   $c[$key] = 0
   write_file($conf, data_encode($c))
-  $r = run_argv(["/opt/mixos/bin/mix", "services/dlnad/scripts/dlnad.mix"], {env: {DLNAD_CONF: $conf}})
+  $r = run_argv(["/opt/mixos/bin/mix", "services/dlnad/scripts/dlnad.mix"], {env: {MIX_DLNAD_CONF: $conf}})
   check("startup refuses invalid " .. $key, $r.exit_code == 2 and contains($r.stderr, "refusing to start") and contains($r.stderr, $key))
 end
 run_argv_must(["rm", $conf])

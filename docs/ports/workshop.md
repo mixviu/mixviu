@@ -278,3 +278,5 @@ pending; the missing integrated capability is not labelled accepted.
 ## Integrated shared editor checkpoint
 
 Merged into the desk4 integration branch after four-app runtime 1804bb9. The macro-source editor uses the accepted shared native_document editor. New macro uses the reusable gold dialog title field presentation, leaving Ced path dialogs unchanged. The generic host now bridges native numeric deferrals through the existing Calls receipts rather than replacing the accepted apps' deadline/cancellation path. Workshop declares its job and reply-envelope limits in Mix bundle configuration. Integrated release-byte acceptance remains pending.
+
+The integrated native editor witness now passes New macro, Unicode edit, undo/redo and Save. The Ced effect uses the accepted editor bundle and its native ced.open Bus contract; the file is opened once after read-only readiness probes. The Dopus effect resolves the installed application through the active prefix, matching gold. Dopus generic-host migration remains a separate open port, not part of Workshop acceptance. Full release-byte repetition is still pending.

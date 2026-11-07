@@ -344,28 +344,28 @@ pub fn default_tls_key_root() -> PathBuf {
 
 fn default_db_path() -> String {
     ::config::path(::config::Dir::Var)
-        .join("jmap/mail.db")
+        .join("maild/jmap/mail.db")
         .to_string_lossy()
         .into_owned()
 }
 
 fn default_blob_dir() -> String {
     ::config::path(::config::Dir::Var)
-        .join("jmap/blobs")
+        .join("maild/jmap/blobs")
         .to_string_lossy()
         .into_owned()
 }
 
 fn default_mds_dir() -> String {
     ::config::path(::config::Dir::Var)
-        .join("jmap/mds")
+        .join("maild/jmap/mds")
         .to_string_lossy()
         .into_owned()
 }
 
 fn default_spam_dir() -> String {
     ::config::path(::config::Dir::Var)
-        .join("jmap/spamlite")
+        .join("maild/jmap/spamlite")
         .to_string_lossy()
         .into_owned()
 }
@@ -567,9 +567,9 @@ impl Config {
         Ok(Some(config.resolve_paths()?))
     }
 
-    /// XDG user config path: `~/.config/mix/jmap.conf.mix`.
+    /// XDG user config path: `~/.config/mix/maild/jmap.conf.mix`.
     pub fn config_path() -> PathBuf {
-        ::config::path(::config::Dir::Etc).join("jmap.conf.mix")
+        ::config::path(::config::Dir::Etc).join("maild/jmap.conf.mix")
     }
 
     /// System-wide config path: `mix:etc/maild/config.conf.mix`.

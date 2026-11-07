@@ -108,7 +108,7 @@ impl Dispatch<ZwpLinuxDmabufFeedbackV1, ()> for Feedback {
 #[ignore = "needs a GPU render node and built viud with backend-headless"]
 fn default_feedback_names_render_device_and_offers_formats() {
     let node =
-        std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     // Exercise explicit selection too: the process helper deliberately writes
     // an invalid configured node when an explicit node is supplied.
     let mut process = process::spawn(1, Some(&node), "feedback", None);

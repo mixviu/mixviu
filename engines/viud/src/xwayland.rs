@@ -43,7 +43,7 @@ use x11_wm::display;
 /// Failure is never fatal: a session without an X server is a session where X11 apps
 /// do not run, which is strictly better than one that will not start.
 ///
-/// Gated on the `xwayland.enabled` switch (`VIUD_XWAYLAND` > the
+/// Gated on the `xwayland.enabled` switch (`MIX_VIUD_XWAYLAND` > the
 /// persisted per-socket file > on), read once here; a props set takes effect
 /// at the next start. The switch gates the FIRST generation only: the one retry
 /// is a recovery of a server this session already chose to run.

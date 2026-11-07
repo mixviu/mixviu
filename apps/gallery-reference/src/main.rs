@@ -494,7 +494,7 @@ fn main() -> eframe::Result {
                 input: Vec::new(),
                 later_input: std::collections::VecDeque::new(),
                 input_replies: Vec::new(),
-                witness: std::env::var_os("VIU_GALLERY_WITNESS").map(PathBuf::from),
+                witness: std::env::var_os("MIX_TEST_VIU_GALLERY_WITNESS").map(PathBuf::from),
                 error: String::new(),
                 mode,
             }))

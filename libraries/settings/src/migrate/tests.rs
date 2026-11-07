@@ -482,7 +482,7 @@ fn compositor_keymaps_are_dropped_whole_and_reported() {
     });
     assert!(m.values.keys().all(|k| !k.starts_with("keymaps.comp")));
     assert_eq!(m.report.dropped.len(), 1);
-    assert_eq!(m.report.dropped[0].code, VIUD_KEYMAPS);
+    assert_eq!(m.report.dropped[0].code, MIX_VIUD_KEYMAPS);
     assert_eq!(m.report.dropped[0].from, "keymaps.comp");
 }
 

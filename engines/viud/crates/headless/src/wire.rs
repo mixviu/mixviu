@@ -115,15 +115,17 @@ pub fn wire(
         .kernel
         .get_mut(&render_gles::format::registrar::COMPOSITE_NODE_MUT) = Some(node);
     let renderer = render_gles::context::egl::create(&display)?;
-    let refresh = match std::env::var("VIUD_HEADLESS_REFRESH_HZ") {
+    let refresh = match std::env::var("MIX_VIUD_HEADLESS_REFRESH_HZ") {
         Ok(value) => value
             .parse::<i32>()
             .ok()
             .filter(|hz| (30..=60).contains(hz))
-            .ok_or("headless-refresh-invalid: VIUD_HEADLESS_REFRESH_HZ must be 30..=60")?,
+            .ok_or("headless-refresh-invalid: MIX_VIUD_HEADLESS_REFRESH_HZ must be 30..=60")?,
         Err(std::env::VarError::NotPresent) => 60,
         Err(_) => {
-            return Err("headless-refresh-invalid: VIUD_HEADLESS_REFRESH_HZ is not UTF-8".into());
+            return Err(
+                "headless-refresh-invalid: MIX_VIUD_HEADLESS_REFRESH_HZ is not UTF-8".into(),
+            );
         }
     };
     let mode = Mode {

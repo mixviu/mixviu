@@ -8,8 +8,8 @@
 //! [`restore`].
 //!
 //! # Where and when
-//! Directory: `MIX_EDITD_RECOVERY_DIR`, else `$XDG_STATE_HOME/mix/edit/recovery`,
-//! else `$HOME/.local/state/mix/edit/recovery`; dir `0700`, files `0600`.
+//! Directory: `MIX_EDITD_RECOVERY_DIR`, else `$XDG_STATE_HOME/mix/editd/recovery`,
+//! else `$HOME/.local/state/mix/editd/recovery`; dir `0700`, files `0600`.
 //! `MIX_EDITD_RECOVERY=0` disables recovery (E0 behaviour, `volatile:true`).
 //! Files exist only while a buffer is dirty. They are deleted ONLY when the
 //! buffer becomes clean through a **durable** save, a clean reload, or an
@@ -299,7 +299,7 @@ impl RecoveryConfig {
         let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
         let dir = var("MIX_EDITD_RECOVERY_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|| config::path(config::Dir::Var).join("edit/recovery"));
+            .unwrap_or_else(|| config::path(config::Dir::Var).join("editd/recovery"));
         let dir = dir.is_absolute().then_some(dir);
         Self {
             enabled: var("MIX_EDITD_RECOVERY").as_deref() != Some("0") && dir.is_some(),
@@ -308,8 +308,8 @@ impl RecoveryConfig {
     }
 
     /// `MIX_EDITD_RECOVERY=0` disables; the directory is
-    /// `MIX_EDITD_RECOVERY_DIR`, else `$XDG_STATE_HOME/mix/edit/recovery`,
-    /// else `$HOME/.local/state/mix/edit/recovery`. Relative XDG/HOME values
+    /// `MIX_EDITD_RECOVERY_DIR`, else `$XDG_STATE_HOME/mix/editd/recovery`,
+    /// else `$HOME/.local/state/mix/editd/recovery`. Relative XDG/HOME values
     /// are ignored (XDG base-directory rule); with no directory at all recovery
     /// is off.
     pub fn from_vars(
@@ -321,8 +321,8 @@ impl RecoveryConfig {
         let absolute = |v: Option<&str>| v.map(PathBuf::from).filter(|p| p.is_absolute());
         let dir = dir
             .map(PathBuf::from)
-            .or_else(|| absolute(xdg_state).map(|x| x.join("mix/edit/recovery")))
-            .or_else(|| absolute(home).map(|h| h.join(".local/state/mix/edit/recovery")));
+            .or_else(|| absolute(xdg_state).map(|x| x.join("mix/editd/recovery")))
+            .or_else(|| absolute(home).map(|h| h.join(".local/state/mix/editd/recovery")));
         Self {
             enabled: switch != Some("0") && dir.is_some(),
             dir,

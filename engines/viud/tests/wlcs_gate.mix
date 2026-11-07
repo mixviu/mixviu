@@ -27,7 +27,7 @@ end
 if $record and is_file($expected_path) then raise("WLCS_RECORD", "refusing to overwrite " .. $expected_path) end
 if not $record and not is_file($expected_path) then raise("WLCS_SETUP", "missing expectations: " .. $expected_path) end
 mkdir($out, {parents: true})
-$process_env = {VIUD_WLCS_BINARY: $viud_bin, WLCS_LOG_ROOT: $out, WLCS_KEEP_LOGS: "1"}
+$process_env = {MIX_TEST_VIUD_WLCS_EXE: $viud_bin, WLCS_LOG_ROOT: $out, WLCS_KEEP_LOGS: "1"}
 $listing = run_argv([$wlcs_bin, $shim, "--gtest_list_tests"], {env: $process_env, timeout: 60})
 write_file($out .. "/list.log", $listing.stdout .. $listing.stderr)
 if not $listing.ok then raise("WLCS_SETUP", "cannot list wlcs tests; see " .. $out .. "/list.log") end

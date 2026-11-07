@@ -217,7 +217,7 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     assert_eq!(record["row"]["window_x"], 80.0);
     assert_eq!(record["row"]["window_y"], 60.0);
     let target = &record["window"];
-    if let Some(reference) = std::env::var_os("VIUD_TEST_APP_REFERENCE") {
+    if let Some(reference) = std::env::var_os("MIX_TEST_VIUD_APP_REFERENCE") {
         assert!(compare(Path::new(&reference), &reference_frame, IDLE_MIN, true) >= IDLE_MIN);
     } else {
         println!("CONSOLE_REFERENCE not supplied; cross-backend SSIM not run");

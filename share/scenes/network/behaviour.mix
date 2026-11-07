@@ -554,7 +554,7 @@ on bus.connected
   $state.ready = $ready.ok
   schedule()
 end
-subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
+subscribe(env("MIX_NODED_SERVICE", "noded") .. ".props.changed")
 subscribe("scenes.changed")
 $ready = $r.ready($ctx)
 if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end

@@ -311,10 +311,10 @@ fn resolve_with(
 /// Environment knobs viud does not implement. Environment leaks in from parent
 /// sessions far more often than flags, so these warn instead of refusing.
 pub const UNSUPPORTED_ENV: &[&str] = &[
-    "VIUD_CAPTURE_DIR",
-    "VIUD_CAPTURE_EVERY",
-    "VIUD_CAPTURE_ON_SIGNAL",
-    "VIUD_QUOIN_PRIVATE_INTERACTION",
+    "MIX_VIUD_CAPTURE_DIR",
+    "MIX_VIUD_CAPTURE_EVERY",
+    "MIX_VIUD_CAPTURE_ON_SIGNAL",
+    "MIX_VIUD_QUOIN_PRIVATE_INTERACTION",
 ];
 
 #[cfg(test)]

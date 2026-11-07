@@ -7,7 +7,7 @@
 --                                     unix_connect, or the connection failed;
 --                                     sent says whether the request may have
 --                                     reached hostd (then its outcome is unknown)
-$SOCKET = env("HOSTD_SOCKET", "/run/hostd/hostd.sock")
+$SOCKET = env("MIX_HOSTD_SOCKET", "/run/mix/hostd/hostd.sock")
 -- net.state on a host with many links passes 64 KiB.
 $MAX_REPLY = 1048576
 

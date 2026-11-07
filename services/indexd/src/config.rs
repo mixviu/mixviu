@@ -210,7 +210,7 @@ pub fn load_indexd_config(cli_path: Option<&Path>) -> Result<(PathBuf, Config)> 
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")));
     if let Some(dir) = user_dir {
-        let path = dir.join("mix/indexd.conf.mix");
+        let path = dir.join("mix/indexd/config.conf.mix");
         if let Some(cfg) = load_optional(&path)? {
             return Ok((path, cfg));
         }

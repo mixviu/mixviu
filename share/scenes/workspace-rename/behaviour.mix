@@ -131,13 +131,13 @@ end
 
 on props.changed
   $a = $r.event_args($event)
-  if $event.headers.topic == env("NODED_SERVICE", "noded") .. ".props.changed" and $a.path == "services.registered" then
+  if $event.headers.topic == env("MIX_NODED_SERVICE", "noded") .. ".props.changed" and $a.path == "services.registered" then
     $state.ready = $r.ensure_ready($ctx, $state.ready)
   end
 end
 
 subscribe($ctx.host .. ".panel.changed")
-subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
+subscribe(env("MIX_NODED_SERVICE", "noded") .. ".props.changed")
 $ready = $r.ready($ctx)
 if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
 $state.ready = true

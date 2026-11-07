@@ -8,7 +8,7 @@
 -- live (no index): drop a file in and the next Browse shows it.
 --
 -- Run: mix --serve dlnad.mix          (Bus service "dlnad")
--- Config: <etc>/dlnad/dlnad.conf.mix (or $DLNAD_CONF), strict data:
+-- Config: <etc>/dlnad/dlnad.conf.mix (or $MIX_DLNAD_CONF), strict data:
 --   media_root  directory to serve (required)
 --   listen      the LAN IPv4 renderers reach; HTTP binds it, SSDP joins on it (required)
 --   port        HTTP port (default 8200)
@@ -18,7 +18,7 @@
 --               renderers that never join the SSDP multicast group
 --   announce_s  seconds between alive adverts (default 60)
 --   max_age     advert lifetime in seconds (default 1800)
--- State: <var>/dlnad/identity.conf.mix (or $DLNAD_STATE dir): {uuid, name}.
+-- State: <var>/dlnad/identity.conf.mix (or $MIX_DLNAD_STATE dir): {uuid, name}.
 --
 -- Commands (bodies are JSON objects; fields optional unless named):
 --   dlnad.status                      identity, config, counters
@@ -42,11 +42,11 @@ $CHUNK = 1048576
 $SEND_TIMEOUT = 3600
 
 fn conf_path()
-  return env("DLNAD_CONF") ?? mix_path("etc", "dlnad/dlnad.conf.mix")
+  return env("MIX_DLNAD_CONF") ?? mix_path("etc", "dlnad/dlnad.conf.mix")
 end
 
 fn state_dir()
-  return env("DLNAD_STATE") ?? mix_path("var", "dlnad")
+  return env("MIX_DLNAD_STATE") ?? mix_path("var", "dlnad")
 end
 
 fn load_conf($path)

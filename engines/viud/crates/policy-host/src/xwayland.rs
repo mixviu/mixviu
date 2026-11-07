@@ -6,10 +6,10 @@
 //! ([`startup`], called by viud's `xwayland::register`). A props set
 //! changes the CONFIGURED value that get/describe read and writes it to the
 //! per-socket file for the next start; the running lifecycle is untouched.
-//! Precedence: `VIUD_XWAYLAND` (env veto, works when the
+//! Precedence: `MIX_VIUD_XWAYLAND` (env veto, works when the
 //! file or the props surface is the problem) > the persisted file > `true`.
 //!
-//! The file is `<etc>/comp/xwayland-enabled.<socket>`, `<etc>` being the
+//! The file is `<etc>/viud/xwayland-enabled.<socket>`, `<etc>` being the
 //! MixViu etc dir (`config::path(Dir::Etc)`): `$MIX_ETC`, else
 //! `$MIX_ROOT/etc`, else `/etc/mix` for root, else `$XDG_CONFIG_HOME/mix`
 //! or `$HOME/.config/mix`.
@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The env override.
-pub const ENV: &str = "VIUD_XWAYLAND";
+pub const ENV: &str = "MIX_VIUD_XWAYLAND";
 
 struct Switch {
     path: PathBuf,
@@ -77,7 +77,7 @@ fn switch() -> &'static Switch {
             .filter(|name| !name.is_empty())
             .unwrap_or("wayland-0");
         let path = config::path(config::Dir::Etc)
-            .join("comp")
+            .join("viud")
             .join(format!("xwayland-enabled.{socket}"));
         let (file, read_note) = match std::fs::read_to_string(&path) {
             Ok(text) => (Some(text), None),
@@ -134,7 +134,9 @@ fn resolve(env: Option<&str>, file: Option<&str>) -> (bool, Option<&'static str>
     if let Some(value) = env {
         match parse_env(value) {
             Some(enabled) => return (enabled, None),
-            None => note = Some("unrecognised VIUD_XWAYLAND; fell through to the persisted file"),
+            None => {
+                note = Some("unrecognised MIX_VIUD_XWAYLAND; fell through to the persisted file")
+            }
         }
     }
     if let Some(text) = file {
@@ -390,7 +392,7 @@ mod tests {
     #[test]
     fn the_write_round_trips_through_the_parser() {
         let dir = std::env::temp_dir().join(format!("policy-host-xwayland-{}", std::process::id()));
-        let path = dir.join("comp").join("xwayland-enabled.wayland-test");
+        let path = dir.join("viud").join("xwayland-enabled.wayland-test");
         write(&path, false).unwrap();
         assert_eq!(
             parse_file(&std::fs::read_to_string(&path).unwrap()),

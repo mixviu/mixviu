@@ -12,7 +12,7 @@ use tokio::net::UnixStream;
 use crate::units;
 
 /// hostd's local socket; the kernel supplies caller identity for its audit log.
-pub const HOSTD_SOCKET: &str = "/run/hostd/hostd.sock";
+pub const HOSTD_SOCKET: &str = "/run/mix/hostd/hostd.sock";
 const HOSTD_COMMAND: &str = "unit.control";
 /// hostd waits for the unit job, so this covers its own budget plus a margin.
 const HOSTD_BUDGET: Duration = Duration::from_secs(75);

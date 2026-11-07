@@ -854,7 +854,7 @@ impl Host {
             }
         }
         while !self.held_requests.is_empty() {
-            if self.ready && !self.view.current_revision_drawn() {
+            if self.ready && !self.headless && !self.view.current_revision_drawn() {
                 ctx.request_repaint();
                 break;
             }
@@ -1415,7 +1415,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         Endpoint::offline()
     } else {
         Endpoint::start_policy(
-            std::env::var("VIU_SERVICE").unwrap_or(service),
+            std::env::var("MIX_VIU_SERVICE").unwrap_or(service),
             bundle.manifest.bus_url(),
             {
                 let mut described = bundle.manifest.command_descriptors.clone();
@@ -1493,7 +1493,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
     let services = crate::runtime::Services {
         clipboard: Some(clipboard),
-        options: json!({"headless":bundle.manifest.surface=="headless"}),
+        options: json!({"headless":bundle.manifest.surface=="headless" || bundle.launch["headless"]==true}),
         max_string_bytes: bundle.manifest.max_string_bytes,
         platform: Some(platform.clone()),
         ui_state: Some(ui_state.clone()),
@@ -1518,7 +1518,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let capture_root = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
-        .join("viu-captures");
+        .join("mix/viu/captures");
     Host {
         require_bus: bundle.manifest.require_bus,
         forward_output: bundle.manifest.forward_output,
@@ -1535,7 +1535,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         measurements: Default::default(),
         input_at: None,
         native_drive: bundle.manifest.native_drive,
-        service: std::env::var("VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
+        service: std::env::var("MIX_VIU_SERVICE")
+            .unwrap_or_else(|_| bundle.manifest.service.clone()),
         settings_reload: 0,
         session_update: None,
         deferred_replies: BTreeMap::new(),
@@ -1743,7 +1744,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         let fallback = vec![json!({"command":command,"body":{}})];
         let plan = bundle.launch["activation"].as_array().unwrap_or(&fallback);
         match crate::native_bus::activate_existing_plan(
-            &std::env::var("VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
+            &std::env::var("MIX_VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
             plan,
             &bundle.manifest.bus_url(),
         ) {
@@ -1759,7 +1760,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let size = bundle.manifest.size;
     let service = bundle.manifest.app().to_owned();
     let live_service =
-        std::env::var("VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone());
+        std::env::var("MIX_VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone());
     let app_id = bundle
         .manifest
         .app_id

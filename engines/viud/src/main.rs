@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if backend == cli::Backend::Headless {
         // SAFETY: before logging or any other threads are started. Also makes
         // the configured XWayland props agree with this backend's policy.
-        unsafe { std::env::set_var("VIUD_XWAYLAND", "0") };
+        unsafe { std::env::set_var("MIX_VIUD_XWAYLAND", "0") };
     }
     // Capture and remove $NOTIFY_SOCKET while still single-threaded.
     slots::sdnotify::init();

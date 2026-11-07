@@ -45,9 +45,49 @@ const BYTE_BUDGET_CEILING_MIB: u64 = 1024;
 // source-of-truth for the bound.
 pub(crate) const INTERVAL_SECONDS_CEILING: u64 = 3600;
 
-/// Logs live under the same owned persistent directory as other session state.
-pub fn default_log_dir() -> std::path::PathBuf {
-    config::path(config::Dir::Var).join("log")
+/// One owner's log directory. The system tier (`/var/lib/mix`) logs to
+/// `/var/log/mix/<owner>`, the user tier (`~/.local/share/mix`) to
+/// `~/.local/log/mix/<owner>`; any other var root (MIX_ROOT, MIX_VAR, a
+/// layout) keeps logs inside it, at `<var>/log/<owner>`.
+pub fn default_log_dir(owner: &str) -> std::path::PathBuf {
+    log_root_for(&config::path(config::Dir::Var)).join(owner)
+}
+
+fn log_root_for(var: &std::path::Path) -> std::path::PathBuf {
+    if var == std::path::Path::new("/var/lib/mix") {
+        return std::path::PathBuf::from("/var/log/mix");
+    }
+    if var.ends_with(".local/share/mix")
+        && let Some(home) = var
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+    {
+        return home.join(".local/log/mix");
+    }
+    var.join("log")
+}
+
+#[cfg(test)]
+mod log_dir_tests {
+    use super::log_root_for;
+    use std::path::Path;
+
+    #[test]
+    fn each_tier_has_its_own_log_root() {
+        assert_eq!(
+            log_root_for(Path::new("/var/lib/mix")),
+            Path::new("/var/log/mix")
+        );
+        assert_eq!(
+            log_root_for(Path::new("/home/user/.local/share/mix")),
+            Path::new("/home/user/.local/log/mix")
+        );
+        assert_eq!(
+            log_root_for(Path::new("/sandbox/var")),
+            Path::new("/sandbox/var/log")
+        );
+    }
 }
 
 /// Install the global tracing subscriber per `opts` + `defaults`.

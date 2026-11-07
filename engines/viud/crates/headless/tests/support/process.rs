@@ -84,7 +84,7 @@ fn spawn_options(
     service: Option<&str>,
     trace: bool,
 ) -> Process {
-    let binary = std::env::var_os("VIUD_TEST_BINARY")
+    let binary = std::env::var_os("MIX_TEST_VIUD_EXE")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             std::env::current_exe()
@@ -104,7 +104,7 @@ fn spawn_options(
     fs::create_dir(&root).unwrap();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
     let node =
-        std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     let mut config = model::environment::config::base::default_settings();
     // Default priority is realtime: headless must override the startup policy.
     assert_eq!(config.priority, "realtime");
@@ -138,16 +138,16 @@ fn spawn_options(
         .env("MIX_VAR", root.join("var"))
         .env("MIX_RUN", root.join("run"))
         .env("MIX_NODED_URL", bus.unwrap_or("ws://127.0.0.1:1"))
-        .env("VIUD_HEADLESS_REFRESH_HZ", refresh)
-        .env("VIUD_FRAME_TRACE", if trace { "1" } else { "0" })
-        .env("VIUD_FRAME_TRACE_FILE", root.join("frames.log"))
-        .env("VIUD_FRAME_TRACE_LIMIT", "0")
+        .env("MIX_VIUD_HEADLESS_REFRESH_HZ", refresh)
+        .env("MIX_VIUD_FRAME_TRACE", if trace { "1" } else { "0" })
+        .env("MIX_VIUD_FRAME_TRACE_FILE", root.join("frames.log"))
+        .env("MIX_VIUD_FRAME_TRACE_LIMIT", "0")
         // Fixed built-in 24px arrow: no host theme or cursor animation.
         .env("XCURSOR_PATH", root.join("cursors"))
         .env("XCURSOR_THEME", "headless-test")
         .env("XCURSOR_SIZE", "24")
         // Deliberately request XWayland: --headless must keep it off.
-        .env("VIUD_XWAYLAND", "1")
+        .env("MIX_VIUD_XWAYLAND", "1")
         .env_remove("NOTIFY_SOCKET")
         .env_remove("MIX_VT")
         .stdout(Stdio::from(stderr.try_clone().unwrap()))

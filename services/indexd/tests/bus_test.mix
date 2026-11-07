@@ -2,7 +2,7 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- Executed by bus::tests::native_contract on libs/test-broker. The Rust
 -- fixture seeds deterministic embedding-cache entries, never model weights.
-if env("INDEXD_TEST_BROKER") != "1" then
+if env("MIX_TEST_INDEXD_BROKER") != "1" then
   raise("TEST_CONFIG", "run cargo test -p indexd native_contract on CBC")
 end
 fn check($ok, $message)

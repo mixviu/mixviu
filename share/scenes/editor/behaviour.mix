@@ -14,7 +14,7 @@ $DIR = env("SCENE_DIR", cwd())
 $r = require($LIB .. "/runtime.mix")
 $e = require($DIR .. "/lib.mix")
 $ctx = $r.scene_context("editor")
-$NODED = env("NODED_SERVICE", "noded")
+$NODED = env("MIX_NODED_SERVICE", "noded")
 $SVC = {loader: $ctx.loader, host: $ctx.host, ced: env("CED_SERVICE", "ced"), apps: env("APPS_SERVICE", "apps")}
 $state = {ready: false, model: nil, ui: $e.default_ui(),
   data: {list: nil, templates: nil, props: nil, services: [], svc: $SVC},

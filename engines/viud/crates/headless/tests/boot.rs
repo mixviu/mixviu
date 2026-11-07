@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Real viud process, render node and Wayland registry. Build viud with
-//! backend-headless first; VIUD_TEST_BINARY may select an explicit binary.
+//! backend-headless first; MIX_TEST_VIUD_EXE may select an explicit binary.
 
 use std::{
     fs,
@@ -78,7 +78,7 @@ use process::spawn;
 
 fn boot(scale: i32, explicit_node: bool) {
     let node =
-        std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     let mut process = spawn(
         scale,
         explicit_node.then_some(node.as_str()),

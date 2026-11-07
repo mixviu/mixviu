@@ -265,7 +265,7 @@ end
 
 on props.changed
   $a = $r.event_args($event)
-  if $event.headers.from == env("NODED_SERVICE", "noded") and $a.path != "services.registered" then return end
+  if $event.headers.from == env("MIX_NODED_SERVICE", "noded") and $a.path != "services.registered" then return end
   schedule()
 end
 
@@ -277,7 +277,7 @@ on bus.connected
 end
 
 subscribe($NOTIFY .. ".changed")
-subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
+subscribe(env("MIX_NODED_SERVICE", "noded") .. ".props.changed")
 $ready = $r.ready($ctx)
 if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
 $state.ready = true

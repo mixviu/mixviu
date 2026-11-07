@@ -23,7 +23,7 @@ use tokio::{
 };
 
 /// The default socket; the unit's `hostd.socket` listens here.
-pub const SOCKET: &str = "/run/hostd/hostd.sock";
+pub const SOCKET: &str = "/run/mix/hostd/hostd.sock";
 /// Requests are small; anything larger is refused before parsing.
 const REQUEST_LIMIT: usize = 64 * 1024;
 /// A connection idle this long between requests is closed.

@@ -43,7 +43,7 @@ fn embedded_workers_refuse_global_environment_and_directory_mutation_but_keep_ar
     let (mut runtime, wakes) = runtime(4);
     runtime.load(program(r#"
 on export-host
-  try export VIU_TEST_HOST_ENV="bad";reply(0,"{}") catch $message reply(10,json_encode({message:$message})) end
+  try export MIX_TEST_VIU_HOST_ENV="bad";reply(0,"{}") catch $message reply(10,json_encode({message:$message})) end
 end
 on chdir-host
   try chdir("/");reply(0,"{}") catch $message reply(10,json_encode({message:$message})) end
@@ -55,7 +55,7 @@ end
 "#)).unwrap();
     assert!(next(&runtime, &wakes).error.is_none());
     let cwd = std::env::current_dir().unwrap();
-    let before = std::env::var_os("VIU_TEST_HOST_ENV");
+    let before = std::env::var_os("MIX_TEST_VIU_HOST_ENV");
     for event in ["export-host", "chdir-host"] {
         runtime.event(event.into(), json!({})).unwrap();
         let done = next(&runtime, &wakes);
@@ -63,7 +63,7 @@ end
         assert_eq!(done.reply.unwrap().rc, 10);
     }
     assert_eq!(std::env::current_dir().unwrap(), cwd);
-    assert_eq!(std::env::var_os("VIU_TEST_HOST_ENV"), before);
+    assert_eq!(std::env::var_os("MIX_TEST_VIU_HOST_ENV"), before);
     runtime.event("native-argv".into(), json!({})).unwrap();
     assert_eq!(
         next(&runtime, &wakes).reply.unwrap().body,
