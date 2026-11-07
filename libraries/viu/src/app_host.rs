@@ -292,9 +292,10 @@ impl Host {
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
-        if self.quit_reply_closes && (r.command == format!("{}.quit", self.app)
-            || (r.command == format!("{}.execute", self.app)
-                && matches!(r.args["id"].as_str(), Some("file.quit" | "app.quit"))))
+        if self.quit_reply_closes
+            && (r.command == format!("{}.quit", self.app)
+                || (r.command == format!("{}.execute", self.app)
+                    && matches!(r.args["id"].as_str(), Some("file.quit" | "app.quit"))))
         {
             r.close_after_reply
                 .store(true, std::sync::atomic::Ordering::Release);
@@ -416,7 +417,7 @@ impl Host {
                     }
                 }
             }
-            _ => match self.calls.begin(r.reply, r.close_after_reply) {
+            _ => match self.calls.begin_with_retention(r.reply, r.close_after_reply, r.deferred) {
                 Ok(token) => {
                     if let Some(body) = close_reply {
                         self.close_replies.insert(token.clone(), body);

@@ -218,3 +218,6 @@ Branch lab/gold-parity; head Dopus merge checkpoint (CBC source is containing co
 
 
 Combined scoped preparation gold-eight-combined-prepare-r1-a1 passes locked Viu/engine check; complete log read and returned formatting patch applied. Review found Dopus immediate successful-quit close semantics must not override Email/Ced unsaved cancellation: made that close-after-reply policy an explicit reusable bundle opt-in, enabled only in Dopus. Combined native/release acceptance still pending.
+
+
+Combined preparation r2 PASS at 68cfdfa9; full log read and formatting applied. Additional merge review found Calls hold receipts did not set the native endpoint retention flag. Connected the existing hold contract to that flag, preserving callback/native deadlines; strengthened the real Mix-binding test to assert retention across callback completion and one eventual reply. Scoped retained-reply/runtime/text/launch tests pending.
