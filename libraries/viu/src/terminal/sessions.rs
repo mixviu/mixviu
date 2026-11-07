@@ -227,7 +227,11 @@ impl Sessions {
 
     pub fn call(&self, op: &str, handle: &str, a: Value) -> Result<Value, String> {
         if op == "clipboard.configure" {
-            self.configure_clipboard(a["read_allowed"].as_bool().ok_or("read_allowed must be boolean")?);
+            self.configure_clipboard(
+                a["read_allowed"]
+                    .as_bool()
+                    .ok_or("read_allowed must be boolean")?,
+            );
             return Ok(json!({"configured":true}));
         }
         if op.starts_with("control.") {
@@ -360,7 +364,7 @@ impl Sessions {
                 }
             });
             let answer = json!({"handle":handle,"pid":t.pid,"binding":binding,"native_id":pane_id});
-            let mut state=self.state.lock().map_err(|_| "terminal owner poisoned")?;
+            let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
             t.set_osc52_read(self.osc52_read.load(Ordering::Acquire));
             state.sessions.insert(handle, Arc::new(Mutex::new(t)));
             return Ok(answer);
