@@ -1156,6 +1156,9 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                     if !["top", "bottom", "left", "right", "fill"].contains(&edge) {
                         return Err("invalid dock edge".into());
                     }
+                    if !p["reference_extent"].is_null() && p["reference_extent"].as_f64().is_none_or(|n| !n.is_finite() || n <= 0.0) {
+                        return Err("dock reference_extent must be a positive finite number".into());
+                    }
                     if edge == "fill" {
                         fill += 1;
                         if index + 1 != children.len() {
