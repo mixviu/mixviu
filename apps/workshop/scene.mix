@@ -28,7 +28,7 @@ reply:{widget:"control",definition:{id:"reply",kind:"editor",label:"Reply",initi
 "macro-editor-area":{widget:"column",children:["macro-source"],min_height:"= $model.macro_editor_height",max_height:"= $model.macro_editor_height"},
 "macro-source":{widget:"control",definition:"= $model.macro_editor",on_intent:"workshop.intent"},
 "macro-dirty":{widget:"control",hidden:"= !$model.macro_dirty",definition:{id:"macro-dirty",kind:"label",label:"",initial:"Unsaved changes",properties:{small:true}}},
-"macro-buttons":{widget:"row",wrap:true,gap:6,children:["macro-put","macro-target","macro-run","macro-stop","macro-destination","macro-copy","macro-move","macro-ced","macro-dopus","macro-remove"]},
+"macro-buttons":{widget:"row",native_spacing:true,wrap:true,gap:6,children:["macro-put","macro-target","macro-run","macro-stop","macro-destination","macro-copy","macro-move","macro-ced","macro-dopus","macro-remove"]},
 "macro-put":{widget:"control",definition:{id:"macro-put",kind:"button",label:"Save",initial:"",properties:{text:"Save"}},on_intent:"workshop.intent"},
 "macro-target":{widget:"control",hidden:"= !$model.macro_target_visible",definition:"= $model.macro_target",on_intent:"workshop.intent"},
 "macro-run":{widget:"control",definition:{id:"macro-run",kind:"button",label:"Run",initial:"",properties:{text:"Run"}},on_intent:"workshop.intent"},

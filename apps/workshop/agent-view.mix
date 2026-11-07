@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $agents=require("agents.mix")
+$text=require("text.mix")
 fn array($v) return if type($v)=="list" then $v else [] end end
 fn string($v,$default) return if type($v)=="string" then $v else $default end end
 fn selected_row($s)
@@ -29,7 +30,7 @@ fn blocks($items)
     if $item.item=="prompt" then push($out,{id:$id..":label",kind:"text",text:"You",strong:true,space:6});push($out,{id:$id,kind:"text",text:$text})
     elif $item.item=="message" then push($out,{id:$id,kind:"text",text:$text,space:4})
     elif $item.item=="thought" then push($out,{id:$id,kind:"collapse",title:"Thinking",weak:true,text:$text,body_style:{weak:true,italic:true}})
-    elif $item.item=="tool" then push($out,{id:$id,kind:"collapse",mono:true,title:(if $item.title!="" then $item.title elif $item.tool!="" then $item.tool else "tool" end).."  ["..$item.status.."]",text:if $item._workshop_tool_json!=nil then jq($item._workshop_tool_json,"fromjson|tojsonpretty") else json_encode($item.raw,true) end,body_style:{mono:true,small:true}})
+    elif $item.item=="tool" then push($out,{id:$id,kind:"collapse",mono:true,title:(if $item.title!="" then $item.title elif $item.tool!="" then $item.tool else "tool" end).."  ["..$item.status.."]",text:if $item._workshop_tool_json!=nil then $text.pretty($item._workshop_tool_json) else json_encode($item.raw,true) end,body_style:{mono:true,small:true}})
     elif $item.item=="plan" then
       for $j=0 to len($item.entries)-1 push($out,{id:$id..":"..to_string($j),kind:"text",text:$item.entries[$j],small:true}) end
     elif $item.item=="stop" then push($out,{id:$id,kind:"text",text:"Turn ended: "..$item.reason,weak:true,small:true});push($out,{id:$id..":line",kind:"separator"})

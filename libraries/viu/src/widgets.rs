@@ -598,6 +598,33 @@ impl Widgets {
         });
         intents
     }
+    /// Draw directly in the parent's native wrapping flow. A child Ui scope
+    /// wraps its contents independently and can split a button or field at
+    /// the remaining line width instead of moving it to the next line.
+    pub(crate) fn widget_inline(
+        &mut self,
+        ui: &mut egui::Ui,
+        definition: &Widget,
+        model: &Value,
+    ) -> Vec<Intent> {
+        if definition.properties["frame"] == "dock" {
+            return self.widget(ui, definition, model);
+        }
+        let mut intents = Vec::new();
+        if let Err(error) = definition.validate_model(model) {
+            ui.colored_label(Color32::RED, error);
+            return intents;
+        }
+        let value = model["values"]
+            .get(&definition.id)
+            .unwrap_or(&definition.initial);
+        ui.add_enabled(definition.properties["enabled"] != false, |ui: &mut egui::Ui| {
+            self.draw(ui, definition, value, model, &mut intents);
+            let rect = self.geometry.get(&definition.id).copied().unwrap_or(egui::Rect::NOTHING);
+            ui.interact(rect, egui::Id::unique(("inline-control", &definition.id)), egui::Sense::hover())
+        });
+        intents
+    }
     /// Call once after drawing an application frame (including individual
     /// `widget` calls). A disappeared target must not latch future replies.
     pub fn finish_frame(&mut self) -> Result<(), String> {

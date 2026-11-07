@@ -2,7 +2,12 @@
 -- Pinned gold inspector/model.rs: formatting and UTF-8 byte boundaries.
 fn pretty($body)
   if byte_length($body)>1000000 then return $body end
-  try return json_encode(json_parse($body),true) catch $message return $body end
+  -- Format before crossing Mix's floating-point value boundary. jq keeps
+  -- JSON integers exact, including opaque tool data and peer replies.
+  try
+    $pretty=jq($body,'def pretty($n): if type=="object" then if length==0 then "{}" else "{\n"+(to_entries|sort_by(.key)|map((" "*($n+2))+(.key|tojson)+": "+(.value|pretty($n+2)))|join(",\n"))+"\n"+(" "*$n)+"}" end elif type=="array" then if length==0 then "[]" else "[\n"+(map((" "*($n+2))+pretty($n+2))|join(",\n"))+"\n"+(" "*$n)+"]" end else tojson end; fromjson|pretty(0)')
+    return if type($pretty)=="string" then $pretty else $body end
+  catch $message return $body end
 end
 fn bounded($body)
   if byte_length($body)<=1000000 then return $body end

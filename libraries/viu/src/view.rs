@@ -646,7 +646,20 @@ impl SceneView {
                                 };
                                 if node.family == "row" {
                                     if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) {
-                                        ui.horizontal_wrapped(|ui| draw(ui));
+                                        ui.horizontal_wrapped(|ui| {
+                                            for child in children(node) {
+                                                let Some(control)=nodes.get(child) else {continue};
+                                                if control.ports.get("hidden")==Some(&Value::Bool(true)){continue;}
+                                                if node.ports.get("native_spacing")==Some(&Value::Bool(true)) && control.family=="control" {
+                                                    match Widget::decode(&control.ports["definition"]) {
+                                                        Ok(widget)=>for intent in self.widgets.widget_inline(ui,&widget,&self.tree.model) {
+                                                            if let Some(command)=control.ports.get("on_intent").and_then(Value::as_str){events.push(Event::from_intent(command,&self.tree.name,intent));}
+                                                        },
+                                                        Err(error)=>{ui.colored_label(Color32::RED,error);}
+                                                    }
+                                                } else {self.node(ui,child,nodes,route,depth+1,events);}
+                                            }
+                                        });
                                     } else if text(node,"justify")=="between" {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
                                         ui.horizontal(|ui| {if let Some(first)=active.first(){self.node(ui,first,nodes,route,depth+1,events);ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{for child in active.iter().skip(1).rev(){self.node(ui,child,nodes,route,depth+1,events);}});}});
