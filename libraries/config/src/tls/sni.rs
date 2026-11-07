@@ -3,10 +3,10 @@
 
 //! SNI certificate selection shared by node services.
 
-use rustls_pki_types::pem::PemObject as _;
 use anyhow::{Context, Result};
 use rustls::server::ResolvesServerCert;
 use rustls::sign::CertifiedKey;
+use rustls_pki_types::pem::PemObject as _;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
@@ -246,7 +246,9 @@ fn load_certified_key(cert_path: &str, key_path: &str) -> Result<CertifiedKey> {
         anyhow::bail!("no certificates found in {cert_path}");
     }
 
-    let key = rustls_pki_types::PrivateKeyDer::pem_reader_iter(&key_data[..]).next().transpose()
+    let key = rustls_pki_types::PrivateKeyDer::pem_reader_iter(&key_data[..])
+        .next()
+        .transpose()
         .with_context(|| format!("parsing key {key_path}"))?
         .ok_or_else(|| anyhow::anyhow!("no private key found in {key_path}"))?;
 

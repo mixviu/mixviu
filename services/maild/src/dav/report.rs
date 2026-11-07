@@ -839,7 +839,10 @@ mod tests {
         assert_eq!(parsed.hrefs, ["/a&b/c.ics"]);
         assert!(!parsed.malformed);
         let parsed = parse(br#"<D:sync-collection xmlns:D="DAV:"><D:sync-token>https://example.org/a&amp;b&#47;7</D:sync-token></D:sync-collection>"#);
-        assert_eq!(parsed.sync_token.as_deref(), Some("https://example.org/a&b/7"));
+        assert_eq!(
+            parsed.sync_token.as_deref(),
+            Some("https://example.org/a&b/7")
+        );
         assert!(!parsed.malformed);
     }
 
