@@ -398,6 +398,13 @@ impl HickoryResolver {
     /// Each upstream uses UDP with TCP fallback on the same configured port.
     pub fn with_resolvers(addrs: &[std::net::SocketAddr]) -> crate::error::Result<Self> {
         use hickory_resolver::config::{NameServerConfig, ResolverConfig};
+        if addrs.iter().any(|addr| {
+            matches!(addr, std::net::SocketAddr::V6(addr) if addr.scope_id() != 0)
+        }) {
+            return Err(crate::error::Error::Internal(
+                "Hickory 0.26 cannot represent scoped IPv6 DNS resolver addresses".into(),
+            ));
+        }
         if addrs.is_empty() {
             return Self::from_system();
         }
@@ -468,6 +475,13 @@ pub type HickoryDnsbl = Dnsbl<HickoryResolver>;
 #[cfg(test)]
 mod encode_tests {
     use super::*;
+
+    #[cfg(feature = "dnsbl")]
+    #[test]
+    fn scoped_ipv6_resolver_is_refused_before_its_scope_can_be_lost() {
+        let addr = std::net::SocketAddrV6::new("fe80::1".parse().unwrap(), 5300, 0, 7);
+        assert!(HickoryResolver::with_resolvers(&[addr.into()]).is_err());
+    }
 
     #[test]
     fn ipv4_reverse_order() {
