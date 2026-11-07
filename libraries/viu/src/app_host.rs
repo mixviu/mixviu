@@ -1091,7 +1091,11 @@ pub fn run(args: Vec<String>) -> eframe::Result {
             eprintln!("viu logging: {e}");
             std::process::exit(2)
         });
-    if logging_args.iter().skip(3).any(|a| matches!(a.as_str(), "--help" | "-h")) {
+    if logging_args
+        .iter()
+        .skip(3)
+        .any(|a| matches!(a.as_str(), "--help" | "-h"))
+    {
         if let Some(help) = &preview.manifest.help {
             print!("{help}");
             return Ok(());
@@ -1219,7 +1223,14 @@ impl crate::layer::LayerProgram for LayerHost {
         }
     }
     fn should_close(&self) -> bool {
-        if self.host.as_ref().is_some_and(|h| h.require_bus && h.bus.registration_failed.load(std::sync::atomic::Ordering::Acquire)) { std::process::exit(1); }
+        if self.host.as_ref().is_some_and(|h| {
+            h.require_bus
+                && h.bus
+                    .registration_failed
+                    .load(std::sync::atomic::Ordering::Acquire)
+        }) {
+            std::process::exit(1);
+        }
         self.host.as_ref().is_some_and(|h| {
             h.bus
                 .close_requested
