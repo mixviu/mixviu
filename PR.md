@@ -14,7 +14,11 @@ entries because `require` deliberately refuses handler-owning modules.
 Dopus's comparison harness loads the same entry with automatic startup
 disabled, then sends its existing initialise event.
 
-No newly exposed application defect remains. Existing diagnostics outside
+Newly exposed defect fixed: Workshop's open-in-Dopus job used the removed
+`mixos_path()` builtin. It now resolves the installed executable with
+`which("dopus")`, returning `UNAVAILABLE` if it is absent.
+
+Existing diagnostics outside
 the app migration, including the webd examples/widgets and intentional
 negative interpreter tests, remain in the ratchet.
 
