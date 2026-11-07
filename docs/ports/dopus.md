@@ -73,3 +73,49 @@ execution path. Private diagnostic captures, scripts and cleanup receipts
 live outside this tree. Exact-source release hashes, paired visual figures,
 SSIM/region inspection and live Prefs acceptance are pending. No Fable
 deviation is proposed at this checkpoint.
+
+## Diagnostic visual pair (not acceptance)
+
+An isolated native Bus/compositor run captured clean pinned gold and the
+generic-host specimen sequentially at 1040×680. Gold and candidate use the
+same real filesystem fixture. The candidate used the saved integration
+executable; later shared-widget changes have not been captured. This run
+did not include the required private settingsd matrix, so it cannot attest
+Prefs or exact-source release parity. All owned processes were confirmed
+stopped. Earlier failed diagnostic runs remain retained.
+
+The whole original, candidate, side-by-side and difference images were
+inspected, along with header/Places/status crops. ImageMagick 7.1.2-35 reports
+normalised **distortion**, zero identical:
+
+| Region | x,y,w,h | SSIM distortion | RMSE distortion |
+| --- | --- | ---: | ---: |
+| Full | 0,0,1040,680 | 0.0466528 | 0.0870047 |
+| Header | 0,0,1040,38 | 0.00241008 | 0.017971 |
+| Places | 0,38,147,612 | 0.0278773 | 0.0657722 |
+| Panes | 147,38,677,612 | 0.053698 | 0.0830627 |
+| Properties | 824,38,216,612 | 0.0529945 | 0.119515 |
+| Status | 0,650,1040,30 | 0.0315301 | 0.0935127 |
+
+Remaining differences: macro icon; Places header/row layout; sidebar widths
+after resize; pane outline colour, location/header/footer geometry; metadata
+wrapping; unwanted status icon. Reusable navigation-list and text-only status
+facilities address two of these; both await the new artifact and comparison.
+No difference is accepted or referred to Fable as a proposed deviation.
+
+Gold PNG SHA256: `d7a116de48c3fb15bc95ec9b50bcae64cd0276fd5633993a7ed6ef0162614b14`.
+Diagnostic candidate: `f8975ae8055625ccc85a7969b0f4f6125394ab64552af4cacb41f0bfc65afa14`.
+The private `parity-dopus/smoke.x7IJs2` archive retains figures, metrics,
+queries, logs and the all-stopped receipt.
+
+## Pending gate
+
+Source `d1b655a` includes native navigation-list, optional status icon,
+generic reply-fenced quit, Mix-owned describe replies, deduplicated explicit
+Bus descriptors and the pinned gold command/action inventories. CBC
+`20261107-114033-a67ba1a0` is queued for formatting preparation, focused
+tests, all-target checks/Clippy, release 2,000-row measurements and release
+host artifact. It must return its formatting patch, followed by a clean
+exact-source gate. Superseded queued jobs `20261107-112707-102d6304`,
+`20261107-112921-92b8ec74`, `20261107-113446-ec29f120` and
+`20261107-113825-38f97644` were explicitly cancelled before execution.

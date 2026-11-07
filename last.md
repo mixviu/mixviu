@@ -128,3 +128,27 @@ The new whole-bundle frame/atomic two-pane refusal test is queued at 8fd7120
 in CBC 20261107-112707-102d6304. No production install or VT action.
 
 branch lab/parity-dopus; head 8fd7120 (tested-code candidate; this receipt commit records its own HEAD); frame adopted, features/Bus/Prefs acceptance pending, SSIM/regions pending; CBC 20261107-112139-11c64519-a1 PASS, 20261107-112707-102d6304 pending.
+
+
+## Dopus current handoff — NOT ACCEPTED
+
+Current implementation source: d1b655a. Shared frame and generic runtime are
+connected; the retained per-app comparator is still in the tree. New reusable
+navigation-list and text-only status support replace two visible mismatches.
+The 44-entry gold HELP catalogue and 33-action Bus table are captured as data;
+Mix owns describe, activation and app callbacks. Native quit replies are fenced.
+
+Only the earlier c10e6f7 scan/profile gate has passed. The latest CBC gate is
+20261107-114033-a67ba1a0, still queued behind occupied workers. Preparation
+must return/apply formatting, then rerun the exact-source gate. Previous own
+queued sources were explicitly cancelled with their interest receipts, not
+reported as failures. Do not install this checkpoint.
+
+The inspected 1040x680 diagnostic pair has whole SSIM distortion 0.0466528;
+regional differences and retained evidence are in docs/ports/dopus.md. This
+is not visual acceptance: several geometry/content differences remain and
+private settingsd/live Prefs, full feature/Bus/chooser/launch/shutdown suites,
+release performance and exact-source artifact validation are outstanding.
+No Fable deviation or question is proposed.
+
+branch lab/parity-dopus; head d1b655a (implementation SHA; receipt commit separately); parity evidence: frame adopted, scan-budget tests PASS at c10e6f7, features/Bus/Prefs OPEN, diagnostic SSIM whole 0.0466528 and regions recorded, no visual acceptance; CBC 20261107-112139-11c64519-a1 PASS, 20261107-114033-a67ba1a0 QUEUED.
