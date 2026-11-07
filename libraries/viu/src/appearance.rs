@@ -15,7 +15,7 @@ pub struct ResolvedAppearance {
 }
 pub fn colour(ctx: &egui::Context, name: &str) -> Option<Color32> {
     if name == "selection.background" {
-        return Some(ctx.style().visuals.selection.bg_fill);
+        return Some(ctx.global_style().visuals.selection.bg_fill);
     }
     ctx.data(|d| {
         d.get_temp::<std::sync::Arc<std::collections::BTreeMap<String, Color32>>>(egui::Id::unique(

@@ -28,6 +28,8 @@ pub struct Manifest {
     pub unknown_command: Option<String>,
     pub app: Option<String>,
     pub bus_url: Option<String>,
+    /// Optional Mix launch policy, evaluated before Bus or window creation.
+    pub launch: Option<String>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -53,6 +55,7 @@ impl Default for Manifest {
             unknown_command: None,
             app: None,
             bus_url: None,
+            launch: None,
         }
     }
 }
@@ -71,6 +74,7 @@ pub struct Bundle {
     pub manifest: Manifest,
     pub scene: String,
     pub program: crate::runtime::Program,
+    pub launch_plan: serde_json::Value,
 }
 impl Bundle {
     pub fn load(root: &Path, args: &[String]) -> Result<Self, String> {
@@ -171,6 +175,7 @@ impl Bundle {
             manifest,
             scene,
             program,
+            launch_plan: serde_json::json!({}),
         })
     }
 }

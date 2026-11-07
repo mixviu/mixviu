@@ -26,6 +26,10 @@ fn dp_initialise($a)
   $config_path=path_join($a.profile,"config.conf.mix")
   $loaded=$configuration.dp_load_config($config_path)
   $config=$loaded.value;$save=$loaded.save_allowed;$warning=$loaded.warning
+  for $i=0 to min(1,len($a.paths ?? [])-1)
+    $path=$dp.dp_path($a.paths[$i])
+    $config[if $i==0 then "left" else "right" end].path=if $dp.dp_is_file($path) then $dp.dp_parent($path) else $path end
+  end
   $panes=[$dp.dp_pane($config.left),$dp.dp_pane($config.right)]
   $places=$configuration.dp_places($config)
   return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.15,0.1,0.3),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.3),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"studio",style:"default"},window_choice:{},appearance_choice:{},appearance_session:{mode:"dark",scheme:"studio",style:"default"},busy:false,job:nil,effect_jobs:{},form_queue:[],form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Select a file or folder" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
@@ -207,6 +211,11 @@ fn dp_action($s,$contract,$id,$params)
   if $id=="file.rename" and $n!=1 then raise("UNAVAILABLE","Select one item to rename") end
   if contains(["file.new-folder","file.rename","file.copy-other-pane","file.move-other-pane","file.delete"],$id) and $s.busy then raise("UNAVAILABLE","A file operation is still running") end
   if contains(["file.new-folder","file.rename"],$id) and $s.form.open and contains(["mkdir","rename"],$s.reservation.kind) then raise("UNAVAILABLE","A name edit is already pending") end
+  if contains(["view.toggle-places","view.toggle-properties","location.focus"],$id) and (($s.headless ?? false) or $s.form.open) then
+    raise(if $s.headless ?? false then "HEADLESS" else "WINDOW_BUSY" end,if $id=="location.focus" then "location focus needs an available window editor" else "sidebar toggles need an available window" end)
+  end
+  if ($s.headless ?? false) and starts_with($id,"theme.") then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
+  if ($s.headless ?? false) and contains(["file.new-folder","file.rename","file.delete"],$id) then return $s end
   if $id=="nav.switch-pane" then $s.active=1-$i
   elif $id=="nav.back" or $id=="nav.forward" then $s.panes[$i]=$dp.dp_history($p,$id=="nav.back");$s.locations[$i]=$s.panes[$i].path
   elif $id=="nav.parent" then return dp_go($s,$i,$dp.dp_parent($p.path))
@@ -231,6 +240,7 @@ fn dp_action($s,$contract,$id,$params)
   elif $id=="file.open" then
     $entry=filter($p.entries,fn($r)=$r.path==$p.selected)[0]
     if $entry.dir then return dp_go($s,$i,$entry.path) end
+    if $s.headless ?? false then return $s end
     return dp_start_effect($s,{kind:"open",path:$entry.path})
   elif $id=="file.mail" then
     return dp_start_effect($s,{kind:"mail",paths:$dp.dp_sources($p)})

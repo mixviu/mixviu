@@ -695,7 +695,10 @@ impl SceneView {
             }
         }
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(id), |ui| {
-            if nodes.get(id).is_none_or(|node| node.ports.get("clip") != Some(&Value::Bool(false))) {
+            if nodes
+                .get(id)
+                .is_none_or(|node| node.ports.get("clip") != Some(&Value::Bool(false)))
+            {
                 ui.set_clip_rect(ui.clip_rect().intersect(rect));
             }
             self.node(ui, id, nodes, route, depth + 1, events);
@@ -864,9 +867,11 @@ impl SceneView {
             let edge = placement["edge"].as_str().unwrap_or("fill");
             if edge == "fill" && placement["panel"] == true {
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
-                egui::CentralPanel::default().frame(toolkit::bars::dock_frame(ui.ctx())).show(&mut panel_ui, |ui| {
-                    self.node(ui, child, nodes, route, depth + 1, events)
-                });
+                egui::CentralPanel::default()
+                    .frame(toolkit::bars::dock_frame(ui.ctx()))
+                    .show(&mut panel_ui, |ui| {
+                        self.node(ui, child, nodes, route, depth + 1, events)
+                    });
                 continue;
             }
             if placement["minimum_window_width"]

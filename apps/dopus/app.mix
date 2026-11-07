@@ -1,9 +1,11 @@
 -- version: 0.1.0
 -- lint: globals app_args app_launch
 include "dopus.mix"
-$profile=$app_args[0] ?? path_join(env("XDG_CONFIG_HOME",path_join(env("HOME"),".config")),"dopus")
+$profile=if $app_args[0]=="--profile" then $app_args[1] else path_join(env("XDG_CONFIG_HOME",path_join(env("HOME"),".config")),"dopus") end
+$paths=if $app_args[0]=="--profile" then slice($app_args,2) else $app_args end
 mkdir($profile,{parents:true})
-dp_start({app_dir:dirname(script_path()),profile:$profile})
+dp_start({app_dir:dirname(script_path()),profile:$profile,paths:$paths})
+$state.headless=$app_launch.headless ?? false
 $state.bindings=[]
 for $action in $contract.actions
   for $chord in $action.keys $state.bindings=push($state.bindings,{id:$action.id,chord:$chord}) end
@@ -65,6 +67,7 @@ on dopus.quit
   dp_request({command:"dopus.quit",args:$event.args})
 end
 on dopus.dialog
+  if $state.headless then reply(10,json_encode({error_code:"UNAVAILABLE",message:"dialog state is owned by the app",reason:nil}));return end
   dp_request({command:"dopus.dialog",args:$event.args})
 end
 on dopus.dialog.answer
@@ -72,7 +75,7 @@ on dopus.dialog.answer
 end
 on dopus.ping
   $ctx=viu_context()
-  reply(0,json_encode({pong:true,service:$ctx.name,schema:"dopus.v1",pid:$ctx.pid,headless:false}))
+  reply(0,json_encode({pong:true,service:$ctx.name,schema:"dopus.v1",pid:$ctx.pid,headless:$state.headless}))
 end
 on dopus.actions
   reply(0,json_encode({actions:map(filter($contract.actions,fn($a)=contains($contract.bus_actions,$a.id)),fn($a)={id:$a.id,label:$a.label,keys:$a.keys,enabled:$projection.dp_enabled($state,$a.id)})}))
@@ -86,15 +89,16 @@ fn dp_wire_panes($s)
   return $out
 end
 on dopus.state
-  reply(0,json_encode({places:{open:$state.places_open,width:$state.places_width},properties:{open:$state.properties_open,width:$state.properties_width},panes:dp_wire_panes($state),theme_scheme:$state.appearance.scheme,theme_mode:$state.appearance.mode,appearance:{icons:"lucide",asset_set:nil,font_ui:"Inter",font_mono:"JetBrains Mono",font_ui_weight:400,icon_weight:nil}}))
+  reply(0,json_encode({places:{open:$state.places_open,width:$state.places_width},properties:{open:$state.properties_open,width:$state.properties_width},panes:dp_wire_panes($state),theme_scheme:if $state.headless then "" else $state.appearance.scheme end,theme_mode:if $state.headless then "" else $state.appearance.mode end,appearance:{icons:if $state.headless then "" else "lucide" end,asset_set:nil,font_ui:if $state.headless then "" else "Inter" end,font_mono:if $state.headless then "" else "JetBrains Mono" end,font_ui_weight:if $state.headless then 0 else 400 end,icon_weight:nil}}))
 end
 on dopus.info
   $ctx=viu_context()
-  reply(0,json_encode({version:$ctx.version,git_sha:$ctx.git_sha,build_time:$ctx.build_time,headless:false,panes:2,pane_states:dp_wire_panes($state),config_path:$state.config_path}))
+  reply(0,json_encode({version:$ctx.version,git_sha:$ctx.git_sha,build_time:$ctx.build_time,headless:$state.headless,panes:2,pane_states:dp_wire_panes($state),config_path:$state.config_path}))
 end
 fn dp_describe()
   $description=$contract.describe
   $description.version=viu_context().version
+  if $state.headless then $description.commands=filter($description.commands,fn($id)=not starts_with($id,"dopus.ui.") and not starts_with($id,"dopus.window")) end
   return $description
 end
 on app.describe
@@ -104,6 +108,7 @@ on dopus.describe
   reply(0,json_encode(dp_describe()))
 end
 on dopus.show
+  if $state.headless then reply(10,json_encode({error_code:"UNAVAILABLE",message:"a headless instance has no window",reason:"headless"}));return end
   try
     $comp=$app_launch.comp ?? env("MIXOS_COMP_SERVICE","comp")
     dp_comp_call($comp,"comp.window.wait",{match:{app_id:"dev.mixos.dopus"},until:"mapped",timeout_ms:10000})

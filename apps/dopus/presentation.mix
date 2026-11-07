@@ -45,6 +45,7 @@ fn dp_icon($row)
   return "file"
 end
 fn dp_enabled($state,$id)
+  if ($state.headless ?? false) and contains(["location.focus","view.toggle-places","view.toggle-properties"],$id) then return false end
   $p=$state.panes[$state.active]
   $n=len($p.selected_paths)
   if $id=="file.open" then return $n>0

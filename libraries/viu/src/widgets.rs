@@ -1067,7 +1067,11 @@ impl Widgets {
                 } else {
                     let edit = if widget.kind == "field" {
                         let edit = egui::TextEdit::singleline(&mut text);
-                        if widget.properties["weak"] == true { edit.text_color(ui.visuals().weak_text_color()) } else { edit }
+                        if widget.properties["weak"] == true {
+                            edit.text_color(ui.visuals().weak_text_color())
+                        } else {
+                            edit
+                        }
                     } else if widget.kind == "editor" {
                         egui::TextEdit::multiline(&mut text)
                             .code_editor()

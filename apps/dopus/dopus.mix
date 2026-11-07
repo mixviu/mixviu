@@ -96,10 +96,13 @@ fn dp_request($request)
           $i=if contains(["left",0],$a.pane) then 0 elif contains(["right",1],$a.pane) then 1 else $candidate.active end
           $active=$candidate.active;$candidate=$app.dp_go($candidate,$i,$paths[0]);$candidate.active=$active
         else
+          $active=$candidate.active
           for $i=0 to min(1,len($paths)-1) $candidate=$app.dp_go($candidate,$i,$paths[$i]) end
+          $candidate.active=$active
         end
         $candidate.reply={accepted:len($paths),opened:len($paths)>0}
       elif $name=="dopus.theme.set" then
+        if $candidate.headless ?? false then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
         if $a.mode!=nil then
           if not contains(["dark","light"],$a.mode) then raise("INVALID_ARGUMENT","Unknown theme mode") end
           $candidate.appearance.mode=$a.mode
@@ -155,7 +158,7 @@ fn dp_request($request)
       end
       reply(if $state.reply.error_code!=nil then 10 else 0 end,json_encode($state.reply))
     catch $message,$error
-      reply(10,json_encode({error_code:if $error.code=="UNKNOWN_ACTION" then "INVALID_ARGUMENT" else $error.code end,message:$message,reason:if $error.code=="UNAVAILABLE" then "not_offered" else nil end}))
+      reply(10,json_encode({error_code:if $error.code=="UNKNOWN_ACTION" then "INVALID_ARGUMENT" elif contains(["HEADLESS","WINDOW_BUSY"],$error.code) then "UNAVAILABLE" else $error.code end,message:$message,reason:if $error.code=="UNAVAILABLE" then "not_offered" elif $error.code=="HEADLESS" then "headless" elif $error.code=="WINDOW_BUSY" then "window_busy" else nil end}))
     end
   end
 end

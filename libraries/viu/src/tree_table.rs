@@ -360,9 +360,17 @@ pub(crate) fn draw(
     }
     measured[0] = (available - measured[1..visible].iter().sum::<f32>()).max(20.0);
     let reserve = if widget.properties["reserve_bottom_style"] == "small" {
-        ui.text_style_height(&TextStyle::Small) + number(&widget.properties, "reserve_bottom_padding", 0.0)
-    } else { 0.0 };
-    let height = number(&widget.properties, "height", ui.available_height() - reserve).max(32.0);
+        ui.text_style_height(&TextStyle::Small)
+            + number(&widget.properties, "reserve_bottom_padding", 0.0)
+    } else {
+        0.0
+    };
+    let height = number(
+        &widget.properties,
+        "height",
+        ui.available_height() - reserve,
+    )
+    .max(32.0);
     let row_h = number(
         &widget.properties,
         "row_height",
