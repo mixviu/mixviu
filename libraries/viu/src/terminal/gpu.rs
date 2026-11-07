@@ -246,6 +246,7 @@ struct PaneState {
     origin: [f32; 2],
     screen: [f32; 2],
     stats: Stats,
+    completed_prepare: Option<std::time::Duration>,
 }
 
 /// What a pane's instances were built against; any change rebuilds them all.
@@ -312,6 +313,12 @@ impl Pane {
     /// The counters from this pane's last prepare.
     pub fn stats(&self) -> Stats {
         self.state.lock().unwrap().stats
+    }
+
+    /// Consume a completed render-thread measurement once. An unrendered UI
+    /// frame has no prepare sample; callers must not time a queued callback.
+    pub fn take_prepare(&self) -> Option<std::time::Duration> {
+        self.state.lock().unwrap().completed_prepare.take()
     }
 
     /// A paint callback drawing the grid at `rect` (points). `raster` is the
@@ -738,6 +745,7 @@ impl egui_wgpu::CallbackTrait for PaneCallback {
         let mut raster = self.raster.lock().unwrap();
         let (origin, screen) = (state.origin, state.screen);
         state.build(device, queue, renderer, &mut raster, origin, screen);
+        state.completed_prepare = Some(std::time::Duration::from_nanos(state.stats.prepare_ns));
         Vec::new()
     }
 

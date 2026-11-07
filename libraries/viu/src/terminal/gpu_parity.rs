@@ -61,10 +61,13 @@ fn gpu_frames(raster: Arc<Mutex<Raster>>, scale: f32, screens: Vec<(Screen, Vec<
             ui.painter().add(ui_pane.callback(rect, ui_raster.clone()));
         });
     let mut image = None;
+    assert!(pane.take_prepare().is_none(), "queued work is not a completed GPU prepare");
     for (screen, dirty) in screens {
         pane.update(screen, dirty);
         harness.step();
         image = Some(harness.render().expect("offscreen render"));
+        assert!(pane.take_prepare().is_some(), "real GPU prepare publishes a measurement");
+        assert!(pane.take_prepare().is_none(), "each prepare is consumed once");
     }
     let image = image.unwrap();
     let mut gpu = Vec::with_capacity(width as usize * height as usize * 4);
