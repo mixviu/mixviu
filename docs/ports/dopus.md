@@ -216,3 +216,22 @@ their earlier sources. Superseded modal/headless/hosted queue interests were
 cancelled before execution. The latest scoped modal keyboard regression
 passed; CBC formatting has been applied. The final source bundle and native
 recipes are frozen privately with a file-hash manifest.
+
+
+### Round four chooser checkpoint — OPEN
+
+The chooser now uses the shared frame and Mix-authored native navigation,
+tree, caller identity, save/filter/choice controls and replacement dialog.
+Generic viewport settings follow live Prefs; the 17-state native witness
+passes without a restart. A shared dialog geometry repair restores native
+automation clicks. Enumeration and child-count work are charged to the same
+65,536-entry / depth-64 admission budget, with candidate state committed only
+after a successful scan. Short windows prioritise browsing as gold does.
+
+Ten retained lifecycle cases plus filtered extension and options pass. Paired
+full-window diagnostic captures have save/options SSIM distortions
+0.00115605 / 0.00102301, primarily truthful caller identity and debug raster
+markers; the replacement pair also needs settled-animation reinspection.
+These are diagnostic figures, not visual acceptance. The frozen exact-source
+release suite and its region inspection remain required. See the current
+`last.md` checkpoint for source and CBC job IDs.

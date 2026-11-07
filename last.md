@@ -226,3 +226,29 @@ the acceptance record. Earlier diagnostic and prior-source gates are not the
 final acceptance receipt.
 
 branch lab/parity-dopus; head SHA 13e0977d3ce7290d85630f16fa099d1b083515aa (implementation; receipt-only commit follows); OPEN: exact release-byte repeat, final region inspection and acceptance record; CBC dopus-r3-final-scene-a1 PASS cbc3, dopus-r3-accept-b1315fd-a1 PASS cbc3, dopus-r3-accept-final-a1 PASS cbc2 prior sources, 20261107-145411-6f4b4ed8 PASS checks with formatting applied, dopus-r3-accept-chrome QUEUED detached.
+
+
+## Dopus round four — chooser validation and frozen release gate
+
+Implementation `5570cea13a11ea912ed32c56102e64b6fa15caeb` composes the chooser in Mix on the shared
+frame, navigation list, tree table and gold dialogs. Native viewport creation,
+settings following, dialog target geometry, disabled controls and short-window
+browsing are reusable facilities. No per-app Rust has returned. The pane scan
+charges hidden/filtered names and child counts against 65,536 total entries
+and depth 64 before committing a candidate.
+
+Native save stem/Enter, raw names, replacement, filtered extension, caller
+choices, independent windows and cancellation pass. Seventeen live chooser
+Prefs states passed without restart; gold lacks this follower, so this is the
+standing Mark-mandated improvement. Initial paired save/options/replacement
+captures and difference figures are retained privately. Caller connection
+identities are truthful data. Final release pixels remain unaccepted.
+
+Source and the complete native recipe are frozen as `accept-5570cea13a11-final`.
+Detached heavy CBC job `dopus-r4-final` is queued. The owned native follow-on
+verifies the exact release receipt/hash before running Bus/features, 17 main
+Prefs states, hosted chrome, headless operations, chooser, release 2,000-row
+and real scan-refusal probes. Results still require full log and image review.
+No deployment, VT action or Fable question.
+
+branch lab/parity-dopus; head SHA 5570cea13a11ea912ed32c56102e64b6fa15caeb (implementation; this receipt-only commit follows); OPEN: compact chooser capture inspection, exact-source release suite, final whole/region inspection and acceptance record; CBC 20261107-153835-e12ca0e3 and 20261107-154200-5b579676 PASS checks with formatting returned, 20261107-154310-d23200a4 and 20261107-154537-cf8475d9 PASS checks with formatting applied, 20261107-154803-66891247 PASS checks with formatting applied, dopus-r4-final QUEUED detached.
