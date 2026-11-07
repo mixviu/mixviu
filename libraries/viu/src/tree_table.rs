@@ -359,7 +359,8 @@ pub(crate) fn draw(
         visible -= 1;
     }
     measured[0] = (available - measured[1..visible].iter().sum::<f32>()).max(20.0);
-    let reserve = if widget.properties["reserve_bottom_style"] == "small" {
+    let compact = ui.ctx().content_rect().height() < number(&widget.properties,"compact_below_height",0.0);
+    let reserve = if !compact && widget.properties["reserve_bottom_style"] == "small" {
         ui.text_style_height(&TextStyle::Small)
             + number(&widget.properties, "reserve_bottom_padding", 0.0)
     } else {
@@ -378,7 +379,8 @@ pub(crate) fn draw(
     );
     let result=ui.allocate_ui(vec2(available,height),|ui| {
         ui.set_min_size(vec2(available,height));
-        let header_h=ui.text_style_height(&TextStyle::Small)+8.0;
+        let header_h=if compact {0.0} else {ui.text_style_height(&TextStyle::Small)+8.0};
+        if !compact {
         let (header,_)=ui.allocate_exact_size(vec2(available,header_h),Sense::hover());
         let mut x=header.left();
         for i in 0..visible {
@@ -394,7 +396,8 @@ pub(crate) fn draw(
             if response.clicked(){emit(events,id,"sort",json!({"column":column["id"]}));}
         }
         ui.painter().hline(header.x_range(),header.bottom(),ui.visuals().widgets.noninteractive.bg_stroke);
-        let list_h=(height-header_h-ui.spacing().item_spacing.y).max(row_h);
+        }
+        let list_h=(height-header_h-if compact {0.0}else{ui.spacing().item_spacing.y}).max(row_h);
         let body=Rect::from_min_size(ui.cursor().min,vec2(available,list_h));
         let background=ui.interact(body,Id::unique((ui.ctx().viewport_id(),id,"background")),Sense::click());
         geometry.insert(format!("{id}.background"),body);
