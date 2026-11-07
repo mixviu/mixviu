@@ -151,8 +151,9 @@ fn with_mounts($root, $binds, $argv, $timeout)
     -- Only into an installed tree: before pacman lays down filesystem, a
     -- resolv.conf would conflict with the package's own.
     if is_file($root .. "/usr/bin/env") then write_file($resolv, read_file("/etc/resolv.conf")) end
-    -- A list timeout means "capture": [seconds] returns the output.
-    if type($timeout) == "List" then
+    -- A list timeout means "capture": [seconds] returns the output. (type()
+    -- spells it List from mix 0.119 and list before.)
+    if lower(type($timeout)) == "list" then
       return run_argv_must($argv, {timeout: $timeout[0], max_output: 64000000, stderr: "stdout"})
     end
     return run_logged($argv, $timeout)
