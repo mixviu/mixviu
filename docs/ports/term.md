@@ -1241,3 +1241,42 @@ acceptance remain open. NOT ACCEPTED. No Fable deviation or gold changes.
 Next CBC `term-mix-metadata-3d5dcd16`, exact code above, term_gate --prepare.
 Read full saved log; fix failures, apply fmt/lock and repeat exact source.
 Then continue protected Mix layout commitment and matched native evidence.
+
+### Metadata gate passes; native layout callback context checkpoint
+
+`term-mix-metadata-3d5dcd16-a1` passed: 167 terminal tests, five existing
+ignores, seven input tests, two bundle tests, six Mix suites, search/dialog,
+foreign gate and debug build. Real-Mix protected state/list/alias fields,
+live metadata publication with unchanged child PID and metadata epoch used
+for forwarding passed. Complete 52130-byte saved log read in three chunks;
+worker formatting applied in f47e845d. No new visual/release claim.
+
+f47e845d64f525ae2a585c49f6b71c3e2ba33398 adds a native-only context to
+the existing ordered runtime mailbox. An owner installs a non-serialisable
+scope on the evaluator thread for its one callback. Ordinary Bus/UI events
+cannot supply that context. A reusable terminal layout bridge queues at
+most 32 requests and binds scope calls to the owning bridge. It exposes
+inspect/begin/finish to the trusted Mix callback; begin invokes native guard
+validation once, and finish reports whether commitment began. Abandonment
+before begin refuses; abandonment after commitment reports unknown outcome.
+Cancellation and begin serialise under one state lock. Cancelled entries
+release capacity, and no authority enters the event's JSON arguments.
+
+Generic host pump dispatches these native requests through the existing
+runtime. No new transport/service/thread is introduced. Four pending tests
+cover native-owner scope and single use, cancellation/refusal/abandonment,
+bounded queue recovery, and actual Mix runtime rejection of forged ordinary
+events before/after a valid native callback. The scoped gate now also runs
+existing runtime/calls/timers integration tests because mailbox code changed.
+
+This is the secure handoff foundation: the recipient does not yet enqueue
+protected layout requests and Term has no policy reducer for them. Next
+connect the typed admission/permit/replay guards to this bridge, port gold's
+affected source/destination-pane calculation into Mix, and implement the
+Mix-owned tab/pane mutations with native commitment/retained replies.
+Remaining full inventory, enforcement/Prefs and exact release acceptance
+stay open. NOT ACCEPTED. No Fable deviation or gold/desktop changes.
+
+Next CBC `term-layout-context-f47e845d`, exact code above,
+term_gate --prepare. Read full saved log; repair failures, apply fmt/lock
+and repeat exact source if changed before continuing the policy adapter.
