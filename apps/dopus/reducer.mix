@@ -223,7 +223,6 @@ fn dp_action($s,$contract,$id,$params)
     raise(if $s.headless ?? false then "HEADLESS" else "WINDOW_BUSY" end,if $id=="location.focus" then "location focus needs an available window editor" else "sidebar toggles need an available window" end)
   end
   if ($s.headless ?? false) and starts_with($id,"theme.") then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
-  if ($s.headless ?? false) and contains(["file.new-folder","file.rename","file.delete"],$id) then return $s end
   if $id=="nav.switch-pane" then $s.active=1-$s.active
   elif $id=="nav.back" or $id=="nav.forward" then $s.panes[$i]=$dp.dp_history($p,$id=="nav.back");$s.locations[$i]=$s.panes[$i].path
   elif $id=="nav.parent" then return dp_go($s,$i,$dp.dp_parent($p.path),false)

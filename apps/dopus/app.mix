@@ -72,7 +72,6 @@ on dopus.quit
   dp_request({command:"dopus.quit",args:$event.args})
 end
 on dopus.dialog
-  if $state.headless then reply(10,json_encode({error_code:"UNAVAILABLE",message:"dialog state is owned by the app",reason:nil}));return end
   dp_request({command:"dopus.dialog",args:$event.args})
 end
 on dopus.dialog.answer
