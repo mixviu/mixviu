@@ -36,7 +36,34 @@ struct Compiled {
 }
 
 fn compile(value: &Value) -> Result<Compiled, String> {
-    let options: Options = serde_json::from_value(value.clone())
+    // Scene expressions use f64 numbers even for whole Mix values. Convert
+    // only validated numeric fields; never coerce strings or round fractions.
+    let mut value = value.clone();
+    for field in ["request", "max_lines"] {
+        if value.get(field).is_some() {
+            let number = crate::widgets::whole(&value[field])
+                .filter(|n| *n <= 9_007_199_254_740_991)
+                .ok_or_else(|| format!("search {field} requires a non-negative whole number"))?;
+            value[field] = json!(number);
+        }
+    }
+    if !value["origin"].is_null() {
+        let origin = &value["origin"];
+        let row = origin["row"]
+            .as_f64()
+            .filter(|n| {
+                n.is_finite()
+                    && n.fract() == 0.0
+                    && *n >= i32::MIN as f64
+                    && *n <= i32::MAX as f64
+            })
+            .ok_or("search origin requires signed row and non-negative col")? as i32;
+        let col = crate::widgets::whole(&origin["col"])
+            .filter(|n| *n <= 9_007_199_254_740_991)
+            .ok_or("search origin requires signed row and non-negative col")?;
+        value["origin"] = json!({"row":row,"col":col});
+    }
+    let options: Options = serde_json::from_value(value)
         .map_err(|error| format!("invalid terminal search options: {error}"))?;
     let _request = options.request;
     if !(1..=10000).contains(&options.max_lines) {
@@ -221,5 +248,38 @@ mod tests {
         let cleared = snapshot(&mut cache, &widget, "vt-1", &terminal, colors, &mut events);
         assert!(cache.is_none());
         assert_ne!(cleared.screen.cells[0].bg, colors.background);
+    }
+
+    #[test]
+    fn scene_float_numbers_accept_only_exact_whole_options_and_origins() {
+        let terminal = Terminal::from_test_vt(12, 3, b"hit");
+        let mut widget = Widget::new("one", "terminal", "Terminal", json!("vt-1"));
+        widget.properties = json!({"search":{"handle":"vt-1","query":"hit",
+            "request":1.0,"max_lines":10000.0,"origin":{"row":0.0,"col":0.0}}});
+        let mut cache = None;
+        let mut events = Vec::new();
+        let painted = snapshot(&mut cache, &widget, "vt-1", &terminal, COLORS, &mut events);
+        assert_eq!(painted.screen.cells[0].bg, COLORS.background);
+        assert_eq!(
+            events[0].value["matched"]["end"],
+            json!({"row":0,"col":2})
+        );
+        assert_eq!(events[0].value["request"], json!(1.0));
+        for (field, bad) in [
+            ("request", json!(1.5)),
+            ("request", json!("1")),
+            ("request", json!(-1.0)),
+            ("request", json!(9007199254740992.0)),
+            ("max_lines", json!(0.0)),
+            ("max_lines", json!(10001.0)),
+            ("origin", json!({"row":0.5,"col":0.0})),
+            ("origin", json!({"row":0.0,"col":-1.0})),
+            ("origin", json!({"row":2147483648.0,"col":0.0})),
+            ("origin", json!({"row":"0","col":0.0})),
+        ] {
+            let mut value = widget.properties["search"].clone();
+            value[field] = bad;
+            assert!(compile(&value).is_err(), "{value}");
+        }
     }
 }
