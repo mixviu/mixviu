@@ -1,5 +1,25 @@
 # Six-app integration: validation in progress
 
+Latest repair source: `0124e5c58c889f1d93c730b92993e2e74b707464`.
+Integration acceptance remains **OPEN**. The source-5bd release set passed
+full CBC, all original native suites and two 510-sample performance runs,
+but an additional native keyboard witness found the shared gold dialog
+reclaiming Tab focus from Cancel. Its worker HANDOFF explicitly says
+NOT_ACCEPTED. The reusable renderer now follows gold: request field focus
+only when no widget owns keyboard focus. All seven text-input tests pass,
+including title/path Tab transfer and Enter cancellation. A CBC debug build
+and native focus-capture preflight precede the successor full release gate.
+
+The original source-5bd Ced run retained two clean-checkout preparation
+refusals while documentation was being edited. The three cases they stopped
+were then executed unchanged against the same frozen source and binary from
+a clean checkout. All eleven Ced suites and their 35 pairs are accounted for;
+the original refusals remain in the private archive. Screenshot's Open-dialog
+caret-phase difference was closed with a paired left/right cursor reset:
+the additional whole-window capture has SSIM/RMSE distortion 0.
+
+The sections below retain the earlier integration checkpoints.
+
 Tested runtime source: `2894a603a903d05f5a53f734dc5c591a11e69a91`,
 branch `lab/gold-parity`. This integrates the accepted Monitor, Ced, Prefs,
 Screenshot and Backdrop work, Workshop's shared editor, and the bulk
