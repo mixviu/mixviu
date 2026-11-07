@@ -216,12 +216,16 @@ impl Grid<Square> {
 
             if i == cursor_buffer_line && reflow {
                 // Resize cursor's line and reflow the cursor if necessary.
-                let mut target = self.cursor.pos.sub(self, Boundary::Cursor, num_wrapped);
+                // Rejoining a row from history can temporarily put the cursor
+                // above the viewport. Preserve that delta until the content
+                // relocation below; clamping here loses its column and leaves
+                // the rejoined text hidden in history after a shrink/grow.
+                let mut target = self.cursor.pos.sub(self, Boundary::None, num_wrapped);
 
                 // Clamp to the last column, if no content was reflown with the cursor.
                 if target.col.0 == 0 && row.is_clear() {
                     self.cursor.should_wrap = true;
-                    target = target.sub(self, Boundary::Cursor, 1);
+                    target = target.sub(self, Boundary::None, 1);
                 }
                 self.cursor.pos.col = target.col;
 

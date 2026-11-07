@@ -11,9 +11,13 @@
     {
       "file": "LICENSE",
       "reason": "Copy upstream root MIT licence alongside this extracted crate."
+    },
+    {
+      "file": "src/crosswords/grid/resize.rs",
+      "reason": "Fable C1 functional Gold defect: grow_columns must compute temporary cursor movement across the viewport boundary before relocating content; two Boundary::Cursor subtractions become Boundary::None. Native Gold/unmodified port hide the rejoined line and lose cursor column after narrow/wide. Exact text/selection/final cursor regression retained."
     }
   ],
-  "exit_path": "Upstream the one-line ED1 correction, then replace local patch with a fixed reviewed Rio revision and rerun conformance and native parity.",
+  "exit_path": "Upstream ED1 and cursor reflow corrections, replace local patches with a fixed reviewed Rio revision, rerun conformance and native parity.",
   "files": [
     {
       "destination": "vendor/rio-vt/Cargo.toml",

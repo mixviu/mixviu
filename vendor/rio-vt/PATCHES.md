@@ -12,9 +12,18 @@ is introduced; simdutf remains Viu debt under Fable D6.
 
 Functional correction under Fable C1: `ClearMode::Above` must clear the
 first row when the cursor is on the second row. Rio's zero-based row guard
-was `cursor.row > 1`; it is now `cursor.row > 0`. All other Rust source is
-unchanged. Viu's real-parser ED0/1/2 conformance assertions are preserved.
+was `cursor.row > 1`; it is now `cursor.row > 0`.
+Viu's real-parser ED0/1/2 conformance assertions are preserved.
 The native Gold and unpatched port both retain the first row after ED1.
+
+Second C1 correction: widening a wrapped line must calculate its cursor
+delta before clamping to the live viewport. `grow_columns` uses unbounded
+temporary positions for its two cursor subtractions. Clamping early loses
+the column when the merge target is in history and leaves the rejoined
+text hidden above a blank live screen. Native Gold and the unmodified port
+reproduce this after a 98→48→98 column resize with identical real Mix output.
+The regression retains exact text, selection and final cursor assertions.
+All other imported Rust source is unchanged.
 
 Exit path: upstream the correction, review a fixed Rio revision, remove
 this local patch and repeat conformance and matched native captures.
