@@ -33933,8 +33933,11 @@ mod ssh_helpers_tests {
             "parent already carries MIX_TEST_RS_RAW — the test below would pass vacuously"
         );
         assert_eq!(
-            run_stream_opts(probe, vec![("env", env_map(vec![("MIX_TEST_RS_RAW", raw)]))])
-                .expect("spawn ok"),
+            run_stream_opts(
+                probe,
+                vec![("env", env_map(vec![("MIX_TEST_RS_RAW", raw)]))]
+            )
+            .expect("spawn ok"),
             Some(Value::Number(0.0))
         );
     }

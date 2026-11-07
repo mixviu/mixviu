@@ -68,7 +68,10 @@ fn native_bus_submission_replays_across_actors_without_duplicate_mail() -> Resul
         .env("MIX_NODE_CONFIG", &node_config)
         .env("MIX_TEST_NATIVE_MAIL_CHILD", "1")
         .env("MIX_TEST_NATIVE_MAIL_ROOT", &root)
-        .env("MIX_TEST_NATIVE_MAIL_URL", format!("ws://127.0.0.1:{port}/ws"))
+        .env(
+            "MIX_TEST_NATIVE_MAIL_URL",
+            format!("ws://127.0.0.1:{port}/ws"),
+        )
         .output()?;
     std::fs::write(root.join("maild-test.stdout"), &output.stdout)?;
     std::fs::write(root.join("maild-test.stderr"), &output.stderr)?;

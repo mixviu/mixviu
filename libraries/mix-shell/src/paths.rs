@@ -99,7 +99,10 @@ pub fn locate_root(env_root: Option<PathBuf>, exe: Option<&Path>) -> Option<Path
 fn resolve_all() -> ResolvedPaths {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/root"));
     let exe = std::env::current_exe().ok();
-    let root = locate_root(std::env::var_os("MIX_ROOT").map(PathBuf::from), exe.as_deref());
+    let root = locate_root(
+        std::env::var_os("MIX_ROOT").map(PathBuf::from),
+        exe.as_deref(),
+    );
 
     let src = env_or("MIX_SRC", || {
         root.clone().unwrap_or_else(|| default_root(&home))
@@ -154,10 +157,7 @@ mod tests {
             Some(root.clone())
         );
         // a system install has no checkout above it
-        assert_eq!(
-            locate_root(None, Some(Path::new("/opt/mix/bin/mix"))),
-            None
-        );
+        assert_eq!(locate_root(None, Some(Path::new("/opt/mix/bin/mix"))), None);
     }
 
     #[test]

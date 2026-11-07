@@ -2086,8 +2086,11 @@ fn stage_d_an_abandoned_admission_never_executes_and_its_retry_does_not_re_run()
         // Stall the editor past the admit budget, so the owner gives up while
         // the envelope is still queued — the one interleaving timing alone
         // cannot produce.
-        let mut f =
-            stage_d_fixture_with("owned", &[("MIX_TEST_ADMIT_DELAY_MS".into(), "2500".into())]).await;
+        let mut f = stage_d_fixture_with(
+            "owned",
+            &[("MIX_TEST_ADMIT_DELAY_MS".into(), "2500".into())],
+        )
+        .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let submission = execute_request(&f.bound, 1, generation, "print(\"MUST_NOT_RUN\")");
         let error = execute_call(&mut f.parent, &f.bound, "shell.execute", submission.clone())
@@ -2137,8 +2140,11 @@ fn stage_d_a_keystroke_during_the_reservation_refuses_the_admission_intact() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
         // Long enough that the human types while the reservation stands.
-        let mut f =
-            stage_d_fixture_with("owned", &[("MIX_TEST_RESERVE_HOLD_MS".into(), "1200".into())]).await;
+        let mut f = stage_d_fixture_with(
+            "owned",
+            &[("MIX_TEST_RESERVE_HOLD_MS".into(), "1200".into())],
+        )
+        .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let submitting = tokio::spawn({
             let name = f.bound.name.clone();
@@ -2385,8 +2391,11 @@ fn stage_d_paste_and_search_drafts_are_preserved_with_exact_refusals() {
 fn stage_d_an_abandoned_reservation_returns_the_prompt_to_the_human() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
-        let mut f =
-            stage_d_fixture_with("owned", &[("MIX_TEST_ADMIT_DELAY_MS".into(), "2500".into())]).await;
+        let mut f = stage_d_fixture_with(
+            "owned",
+            &[("MIX_TEST_ADMIT_DELAY_MS".into(), "2500".into())],
+        )
+        .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let _ = execute_call(
             &mut f.parent,
@@ -2415,8 +2424,11 @@ fn stage_d_an_abandoned_reservation_returns_the_prompt_to_the_human() {
 fn stage_d_a_refused_submission_may_be_retried_under_the_same_id() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
-        let mut f =
-            stage_d_fixture_with("owned", &[("MIX_TEST_RESERVE_HOLD_MS".into(), "1200".into())]).await;
+        let mut f = stage_d_fixture_with(
+            "owned",
+            &[("MIX_TEST_RESERVE_HOLD_MS".into(), "1200".into())],
+        )
+        .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let body = execute_request(&f.bound, 1, generation, "print(\"RETRY_RAN\")");
         let submitting = tokio::spawn({
@@ -2466,8 +2478,11 @@ fn stage_d_an_undetermined_admission_still_resolves_to_its_real_outcome() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
         // Stall AFTER the claim, past budget + grace, so abandon loses.
-        let mut f =
-            stage_d_fixture_with("owned", &[("MIX_TEST_CLAIM_DELAY_MS".into(), "2200".into())]).await;
+        let mut f = stage_d_fixture_with(
+            "owned",
+            &[("MIX_TEST_CLAIM_DELAY_MS".into(), "2200".into())],
+        )
+        .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let error = execute_call(
             &mut f.parent,

@@ -13,8 +13,7 @@ fn temp_table(tag: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let dir =
-        std::env::temp_dir().join(format!("viud-store-{tag}-{}-{nanos}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("viud-store-{tag}-{}-{nanos}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir.join("world.placeholder")
 }

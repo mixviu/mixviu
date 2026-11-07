@@ -14,19 +14,13 @@ fn default_prefix_without_layout_keeps_user_xdg_roots() {
     // changes the uid tier; installing defaults must not write a system map.
     let layout = Layout::from_source(&env, "").unwrap();
     assert_eq!(layout.root(Root::Prefix), Path::new("/opt/mix"));
-    assert_eq!(
-        layout.root(Root::Etc),
-        Path::new("/home/user/.config/mix")
-    );
+    assert_eq!(layout.root(Root::Etc), Path::new("/home/user/.config/mix"));
     assert_eq!(
         layout.root(Root::Var),
         Path::new("/home/user/.local/share/mix")
     );
     assert_eq!(layout.root(Root::Run), Path::new("/run/user/1000/mix"));
-    assert_eq!(
-        layout.root(Root::Cache),
-        Path::new("/home/user/.cache/mix")
-    );
+    assert_eq!(layout.root(Root::Cache), Path::new("/home/user/.cache/mix"));
     assert_eq!(layout.root(Root::Share), Path::new("/opt/mix/share"));
     // A root explicitly stored in layout.mx applies to every uid, like MIX_ROOT.
     let explicit = Layout::from_source(&env, "etc: '/etc/mix'").unwrap();
@@ -98,12 +92,7 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
         Fixture {
             name: "system-unit",
             env: &[("MIX_VAR", "/var/lib/mix")],
-            system: [
-                "/etc/mix",
-                "/var/lib/mix",
-                "/run/mix",
-                "/var/cache/mix",
-            ],
+            system: ["/etc/mix", "/var/lib/mix", "/run/mix", "/var/cache/mix"],
             user: [
                 "/root/.config/mix",
                 "/var/lib/mix",
@@ -117,12 +106,7 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
                 ("HOME", "/home/user"),
                 ("XDG_RUNTIME_DIR", "/run/user/1000"),
             ],
-            system: [
-                "/etc/mix",
-                "/var/lib/mix",
-                "/run/mix",
-                "/var/cache/mix",
-            ],
+            system: ["/etc/mix", "/var/lib/mix", "/run/mix", "/var/cache/mix"],
             user: [
                 "/home/user/.config/mix",
                 "/home/user/.local/share/mix",
@@ -133,12 +117,7 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
         Fixture {
             name: "bare-root",
             env: &[("HOME", "/root")],
-            system: [
-                "/etc/mix",
-                "/var/lib/mix",
-                "/run/mix",
-                "/var/cache/mix",
-            ],
+            system: ["/etc/mix", "/var/lib/mix", "/run/mix", "/var/cache/mix"],
             user: [
                 "/root/.config/mix",
                 "/root/.local/share/mix",

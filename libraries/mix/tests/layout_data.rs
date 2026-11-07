@@ -79,8 +79,7 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
     }
     // Self-location is never used: the child received every path input before
     // the process-global resolver was first called.
-    let prefix =
-        std::env::var_os("MIX_PREFIX").expect("front-door test needs an explicit prefix");
+    let prefix = std::env::var_os("MIX_PREFIX").expect("front-door test needs an explicit prefix");
     for (tier, uid) in [("system", 0), ("user", 1000)] {
         let inputs = paths::Environment {
             uid,

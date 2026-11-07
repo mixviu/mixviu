@@ -259,16 +259,10 @@ noded: {
             Some(PathBuf::from("/home/user/cfg")),
             Some(PathBuf::from("/home/user")),
         );
-        assert_eq!(
-            paths[0],
-            PathBuf::from("/home/user/cfg/mix/node.conf.mix")
-        );
+        assert_eq!(paths[0], PathBuf::from("/home/user/cfg/mix/node.conf.mix"));
         // MIX_ETC suppresses the system fallback.
         let paths = candidate_paths(Some(PathBuf::from("/sandbox/etc/mix")), None, None);
-        assert_eq!(
-            paths,
-            vec![PathBuf::from("/sandbox/etc/mix/node.conf.mix")]
-        );
+        assert_eq!(paths, vec![PathBuf::from("/sandbox/etc/mix/node.conf.mix")]);
         // No home at all still finds the system file.
         assert_eq!(
             candidate_paths(None, None, None),

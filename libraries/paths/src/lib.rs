@@ -539,10 +539,7 @@ mod tests {
                 let expected = if uid == 0 {
                     PathBuf::from("/run/mix")
                 } else {
-                    xdg.map_or_else(
-                        || PathBuf::from("/tmp/mix-run"),
-                        |path| path.join("mix"),
-                    )
+                    xdg.map_or_else(|| PathBuf::from("/tmp/mix-run"), |path| path.join("mix"))
                 };
                 let dirs = Dirs::from_source(&env, "").unwrap();
                 assert_eq!(dirs.try_root(Root::Run).unwrap(), expected);
@@ -625,10 +622,7 @@ mod tests {
     fn a_user_without_a_root_gets_the_xdg_defaults_under_home() {
         let dirs = Dirs::resolve(&user());
         assert_eq!(dirs.get(Dir::Etc), Path::new("/home/user/.config/mix"));
-        assert_eq!(
-            dirs.get(Dir::Var),
-            Path::new("/home/user/.local/share/mix")
-        );
+        assert_eq!(dirs.get(Dir::Var), Path::new("/home/user/.local/share/mix"));
         assert_eq!(dirs.get(Dir::Run), Path::new("/tmp/mix-run"));
         assert_eq!(dirs.get(Dir::Share), Path::new(DEFAULT_SHARE));
     }
@@ -657,10 +651,7 @@ mod tests {
         };
         let dirs = Dirs::resolve(&env);
         assert_eq!(dirs.get(Dir::Etc), Path::new("/home/user/.config/mix"));
-        assert_eq!(
-            dirs.get(Dir::Var),
-            Path::new("/home/user/.local/share/mix")
-        );
+        assert_eq!(dirs.get(Dir::Var), Path::new("/home/user/.local/share/mix"));
         assert_eq!(dirs.get(Dir::Run), Path::new("/tmp/mix-run"));
     }
 

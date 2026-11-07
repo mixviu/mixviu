@@ -3141,9 +3141,6 @@ mod serve_name_tests {
         assert_eq!(probe(Some("probe"), "/x/quoin-panel.mix").await, "probe\n");
         // Stem fallback, with the `mix-` prefix normalised away.
         assert_eq!(probe(None, "/x/quoin-panel.mix").await, "quoin-panel\n");
-        assert_eq!(
-            probe(None, "/opt/mix-statecache.mix").await,
-            "statecache\n"
-        );
+        assert_eq!(probe(None, "/opt/mix-statecache.mix").await, "statecache\n");
     }
 }

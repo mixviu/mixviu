@@ -37,10 +37,7 @@ fn all_config_paths_resolve_through_both_loaders() {
             (cfg.inbound_filter.unwrap(), "mix:etc/maild/filter.mix"),
             (cfg.spam_db_dir.unwrap(), "mix:var/maild/spam"),
             (cfg.spam_baseline_db.unwrap(), "mix:share/maild/spam.db"),
-            (
-                cfg.rules_pack_path.unwrap(),
-                "mix:etc/maild/rules.conf.mix",
-            ),
+            (cfg.rules_pack_path.unwrap(), "mix:etc/maild/rules.conf.mix"),
             (cfg.rule_stats_dir.unwrap(), "mix:var/maild/rules"),
             (
                 cfg.dkim.key_root.unwrap().to_str().unwrap().into(),

@@ -3513,10 +3513,7 @@ mod man_resolver_tests {
     fn local_candidates_are_keyed_off_the_root() {
         // a known root is the only candidate — no dot-dir fallbacks
         assert_eq!(
-            man_dir_candidates(
-                Some(Path::new("/home/tester")),
-                Some(Path::new("/srv/mix"))
-            ),
+            man_dir_candidates(Some(Path::new("/home/tester")), Some(Path::new("/srv/mix"))),
             vec![PathBuf::from("/srv/mix/docs/mix")]
         );
         // no root: the documented default clone location
