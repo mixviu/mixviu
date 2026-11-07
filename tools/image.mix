@@ -189,6 +189,31 @@ fn toolchain()
   return $m[0].groups[0]
 end
 
+-- What differs between two builds of one snapshot (lab --repro, 2026-11-07):
+-- each package's install time, the pacman log, generated caches whose
+-- entries carry build-time stamps, and the Java trust store p11-kit writes.
+-- Install times become the snapshot day; the rest is regenerated at run time
+-- or unused, so it goes.
+fn normalise($root, $day)
+  $epoch = trim(capture(["date", "-u", "-d", $day, "+%s"], 10))
+  $local = $root .. "/var/lib/pacman/local"
+  for each $p in ls($local)
+    $desc = $local .. "/" .. $p .. "/desc"
+    if is_file($desc) then
+      $t = read_file($desc)
+      $n = re_replace($t, "%INSTALLDATE%\\n[0-9]+\\n", "%INSTALLDATE%\n" .. $epoch .. "\n")
+      if $n == $t then raise("IMAGE_NORMALISE", "No install date in " .. $desc) end
+      write_file($desc, $n)
+    end
+  end
+  for each $f in ["/var/log/pacman.log", "/var/cache/ldconfig/aux-cache", "/etc/ca-certificates/extracted/java-cacerts.jks"]
+    remove($root .. $f)
+  end
+  for each $f in glob($root .. "/var/cache/fontconfig/*")
+    remove($f)
+  end
+end
+
 fn cmd_build($kind, $work, $cache)
   need_kind($kind)
   need_work($work)
@@ -226,6 +251,7 @@ fn cmd_build($kind, $work, $cache)
     remove_dir($root .. $RUSTUP_HOME .. "/downloads")
     remove_dir($root .. $RUSTUP_HOME .. "/tmp")
   end
+  normalise($root, $day)
   $meta = {kind: $kind, snapshot: $day, toolchain: $tc, packages: $installed,
     pacman_conf_sha256: hash_file($CONF, "sha256"),
     packages_conf_sha256: hash_file($REPO .. "/etc/image/packages.conf.mix", "sha256"),
@@ -420,7 +446,8 @@ fn cmd_repro($kind, $work, $cache)
   $second = json_parse(read_file($again .. "/pack.json"))
   $d = run_argv(["diff", "-rq", "--no-dereference", $work .. "/root", $again .. "/root"],
     {timeout: 1800, max_output: 4000000, stderr: "stdout"})
-  $files = map(lines(trim($d.stdout)), fn($l) = replace(replace($l, $work .. "/root", ""), $again .. "/root", ""))
+  $files = map(filter(lines(trim($d.stdout)), fn($l) = $l != ""),
+    fn($l) = replace(replace($l, $again .. "/root", ""), $work .. "/root", ""))
   evidence("repro", {same_diff_id: $first.diff_id == $second.diff_id, first: $first.diff_id, second: $second.diff_id,
     same_manifest: $first.manifest_digest == $second.manifest_digest, differing: len($files), files: slice($files, 0, 40)})
 end

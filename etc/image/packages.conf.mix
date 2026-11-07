@@ -6,18 +6,30 @@
 -- runtime: the libraries the four engines (mix, mixd, viu, viud) load,
 --   from ldd of binaries built inside the build image (`tools/image.mix
 --   survey`), plus what they open at run time without linking it (Mesa's
---   GL/EGL/Vulkan drivers, the Vulkan loader, XKB data, fonts, CA roots).
+--   GL/EGL/Vulkan drivers, the Vulkan loader, XKB data, CA roots).
 -- build: runtime plus the toolchain and headers; the extra packages match
 --   the pacman line in .github/workflows/ci.yml (base-devel is the CI
 --   container's base). Rust itself comes from rustup at the version in
 --   rust-toolchain.toml, installed into the image.
 -- noextract: per-kind NoExtract lines added under [options].
 -- forbid: packages that must not arrive as a dependency.
+--
+-- Survey 2026-11-07 (CBC job 20261107-210646-d7118b48, debug builds, default
+-- features): mix and mixd link glibc and libgcc only; viu adds libxkbcommon;
+-- viud links libinput, libdrm, mesa (gbm), seatd, pixman, systemd-libs,
+-- dbus, libpulse, libxcb, libxkbcommon and lua54, and their dependencies
+-- (glib2, libwacom, libevdev, mtdev, libgudev, libsndfile and its codecs,
+-- libxau, libxdmcp, pcre2, libffi, expat) arrive through those. Not linked
+-- but opened at run time: vulkan-icd-loader and mesa's drivers (wgpu),
+-- xkeyboard-config (XKB data), ca-certificates. viud's backend-all features
+-- (the desk build) are not surveyed yet.
 {
-  runtime: ["glibc", "gcc-libs", "systemd-libs", "dbus", "libinput", "libxkbcommon", "xkeyboard-config",
-    "wayland", "libdrm", "mesa", "vulkan-icd-loader", "seatd", "pixman", "fontconfig", "freetype2",
-    "ttf-dejavu", "pipewire", "libpulse", "alsa-lib", "libxcb", "ca-certificates"],
-  build: ["base-devel", "git", "rustup", "clang", "pkgconf", "inetutils"],
+  runtime: ["glibc", "libgcc", "libxkbcommon", "xkeyboard-config", "libinput", "libdrm", "mesa",
+    "vulkan-icd-loader", "seatd", "pixman", "systemd-libs", "dbus", "libpulse", "libxcb", "lua54",
+    "ca-certificates"],
+  -- CI's pacman line: what is not already in runtime, plus base-devel.
+  build: ["base-devel", "git", "rustup", "clang", "pkgconf", "inetutils", "gcc-libs", "wayland",
+    "fontconfig", "freetype2", "ttf-dejavu", "pipewire", "alsa-lib"],
   noextract: {
     runtime: ["usr/include/* usr/share/gir-1.0/* usr/lib/python*/*", "usr/share/i18n/* usr/lib/pkgconfig/*"],
     build: []
