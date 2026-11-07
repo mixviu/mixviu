@@ -635,28 +635,76 @@ pub(crate) fn draw(
                 || (gold && toolkit::titlebar::hosting::hosted(ui.ctx()))
             {
                 ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
-            } else if gold && value.as_array().unwrap().iter().all(|item| item["icon"].is_string() && item.get("children").is_none()) {
+            } else if gold
+                && value
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|item| item["icon"].is_string() && item.get("children").is_none())
+            {
                 // Match the native title bar's fixed cells. Repeated automatic
                 // layout quantises every advance and accumulates fractional
                 // drift under compact density and text scaling.
                 let chrome = toolkit::chrome::Chrome::of(ui.ctx());
                 let bounds = ui.available_rect_before_wrap();
-                let pad = if chrome.band.actions.alignment() == design::title_band::Alignment::Right {
-                    if crate::window_frame::client_of(ui.ctx()) && chrome.captions.alignment(design::title_band::Alignment::Right) == design::title_band::Alignment::Right {chrome.metrics.caption_gap} else {chrome.metrics.title_bar_margin}
-                } else {0.0};
+                let pad = if chrome.band.actions.alignment() == design::title_band::Alignment::Right
+                {
+                    if crate::window_frame::client_of(ui.ctx())
+                        && chrome
+                            .captions
+                            .alignment(design::title_band::Alignment::Right)
+                            == design::title_band::Alignment::Right
+                    {
+                        chrome.metrics.caption_gap
+                    } else {
+                        chrome.metrics.title_bar_margin
+                    }
+                } else {
+                    0.0
+                };
                 let mut x = bounds.right() - pad;
                 let width = chrome.style.icon_button as f32;
                 for item in value.as_array().unwrap().iter().rev() {
-                    let rect = Rect::from_min_max(egui::pos2(x-width,bounds.top()),egui::pos2(x,bounds.bottom()));
-                    let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-                    let tip = item["shortcut"].as_str().and_then(toolkit::keymap::parse_chord).map_or_else(||text(item,"label").to_owned(),|shortcut|format!("{} ({})",text(item,"label"),ui.ctx().format_shortcut(&shortcut)));
-                    let response = cell.add_enabled(item["enabled"]==true,toolkit::button::IconButton::new(crate::icons::Icon::from_name(text(item,"icon")).unwrap()).selected(item["checked"]==true).tooltip(tip));
-                    if item["macro_anchor"] == true {toolkit::macros::anchor(ui.ctx(),response.rect);}
-                    geometry.insert(format!("{id}.command.{}",text(item,"id")),response.rect);
-                    if response.clicked(){emit(events,id,"command",json!({"command":item["id"]}));}
+                    let rect = Rect::from_min_max(
+                        egui::pos2(x - width, bounds.top()),
+                        egui::pos2(x, bounds.bottom()),
+                    );
+                    let mut cell = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(rect)
+                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                    );
+                    let tip = item["shortcut"]
+                        .as_str()
+                        .and_then(toolkit::keymap::parse_chord)
+                        .map_or_else(
+                            || text(item, "label").to_owned(),
+                            |shortcut| {
+                                format!(
+                                    "{} ({})",
+                                    text(item, "label"),
+                                    ui.ctx().format_shortcut(&shortcut)
+                                )
+                            },
+                        );
+                    let response = cell.add_enabled(
+                        item["enabled"] == true,
+                        toolkit::button::IconButton::new(
+                            crate::icons::Icon::from_name(text(item, "icon")).unwrap(),
+                        )
+                        .selected(item["checked"] == true)
+                        .tooltip(tip),
+                    );
+                    if item["macro_anchor"] == true {
+                        toolkit::macros::anchor(ui.ctx(), response.rect);
+                    }
+                    geometry.insert(format!("{id}.command.{}", text(item, "id")), response.rect);
+                    if response.clicked() {
+                        emit(events, id, "command", json!({"command":item["id"]}));
+                    }
                     x -= width + chrome.style.title_control_spacing as f32;
                 }
-                ui.allocate_rect(bounds,egui::Sense::hover())
+                ui.allocate_rect(bounds, egui::Sense::hover())
             } else {
                 ui.allocate_ui_with_layout(
                     ui.available_size_before_wrap(),

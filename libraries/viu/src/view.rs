@@ -1022,8 +1022,11 @@ impl SceneView {
                 let height = ui.ctx().data(|d| d.get_temp::<f32>(marker)).unwrap_or(0.0);
                 let mut rect = remaining;
                 rect.min.y = (rect.max.y - height).max(rect.min.y);
-                let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)));
+                let mut child_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
                 child_ui.set_clip_rect(remaining.intersect(ui.clip_rect()));
                 self.node(&mut child_ui, child, nodes, route, depth + 1, events);
                 let measured = child_ui.min_rect().height().min(remaining.height());
@@ -1418,7 +1421,9 @@ fn design_length(value: &Value, ctx: Option<&egui::Context>) -> Option<f32> {
         })),
         "design.title_bar_height" => {
             use egui::emath::GuiRounding;
-            Some(ctx.map_or(38.0, |ctx| crate::window_frame::Metrics::of(ctx).height.round_ui()))
+            Some(ctx.map_or(38.0, |ctx| {
+                crate::window_frame::Metrics::of(ctx).height.round_ui()
+            }))
         }
         "design.status_height" => Some(ctx.map_or(30.0, |ctx| {
             toolkit::chrome::Chrome::of(ctx).metrics.bars.status

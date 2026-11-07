@@ -70,7 +70,10 @@ impl Facilities {
             installed: false,
             context: None,
             surface,
-            argument_error: manifest.argument_error.clone().unwrap_or_else(|| "ARGUMENT".into()),
+            argument_error: manifest
+                .argument_error
+                .clone()
+                .unwrap_or_else(|| "ARGUMENT".into()),
             argument_error_overrides: manifest.argument_error_overrides.clone(),
             macros,
             next: 0,

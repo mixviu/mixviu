@@ -107,9 +107,17 @@ impl Bundle {
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
             || manifest.argument_error_overrides.len() > 256
-            || manifest.argument_error.iter().chain(manifest.argument_error_overrides.values()).any(|code| {
-                code.is_empty() || code.len() > 64 || !code.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
-            })
+            || manifest
+                .argument_error
+                .iter()
+                .chain(manifest.argument_error_overrides.values())
+                .any(|code| {
+                    code.is_empty()
+                        || code.len() > 64
+                        || !code
+                            .bytes()
+                            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+                })
             || manifest.command_descriptors.len() > 256
             || manifest.command_descriptors.iter().any(|d| {
                 !manifest.commands.contains(&d.name)
