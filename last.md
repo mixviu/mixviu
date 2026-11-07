@@ -282,7 +282,22 @@ Unit templates: apps.tar carries every unit under engines/ and services/
 noded@, settingsd@, editd@, monitord, dnsd, blobd, hostd + socket, mixtrayd,
 maild + sockets, webd, indexd, dlnad, clipd, clipd@, notifyd@, exportd-*) and
 the sysusers/tmpfiles snippets, owner-prefixed. Desk-specific drop-ins and
-session@/seatd@/session-dbus@ (written by the desk image) are not in it.
+session@/seatd@/session-dbus@ (written by the desk image) are not in it,
+nor pipewire@/wireplumber@ (desk audio). Added since: monitord@ (per-session
+history in mix/monitord/%i), backdrop@ and viu-gallery@ (the gallery app
+ships in apps.tar); app unit templates come from apps/*/units. At 37e7f3b:
+390 entries, share/mixviu 224, 45,810,831 bytes (cachyos
+20261107-221523-0bbe5b3a; fonts upstream, wallpapers from the release).
+
+Directories per owner (37e7f3b): maild@ is one instance per session broker,
+so each keeps its own state: StateDirectory/RuntimeDirectory mix/maild/%i,
+MIX_VAR/HOME/WorkingDirectory %S/mix/maild/%i. maild.service RuntimeDirectory
+mix/maild; maild sysusers home @{var}/maild. hostd StateDirectory mix/hostd and
+code default /var/lib/mix/hostd. monitord StateDirectory mix/monitord, code
+default /var/lib/mix/monitord, sysusers home @{var}/monitord. dnsd tmpfiles
+creates @{etc}/dnsd (was @{prefix}/etc/dnsd). All other Directory= and
+sysusers homes were already mix/<owner>; noded@ and viud keep their
+session-scoped mix/session/%i/... runtime dirs; mixos-tls stays.
 viud@ and viud-headless@ no longer pass `--scene-service shell`: viud parses
 the flag (name check only) and its scene stub ignores it, because the shell
 furniture now runs in viu-host@ (`viu --host`), a new template in
