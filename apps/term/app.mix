@@ -11,8 +11,13 @@ publish_term($state)
 on term.ping
   reply(0,json_encode({schema:"term.v1",version:$ctx.version}))
 end
-on viu.settings
-  $state.look=$event.args
+on viu.session
+  $state.look.appearance=$event.args.appearance
+  if not $event.args.state.lost then $state.look.values=$event.args.state.values end
+  publish_term($state)
+end
+on viu.frame.close
+  $state.closed=true
   publish_term($state)
 end
 on viu.frame.intent

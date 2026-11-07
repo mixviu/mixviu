@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core=require("core.mix")
+fn assert($ok,$message)
+  if not $ok then raise("TEST",$message) end
+end
+$s={look:{appearance:{scheme:"studio",mode:"dark"},values:{"window.decorations":"csd"}},closed:false}
+$v=$core.framed($s)
+assert($v.window_title=="Terminal","gold native title")
+assert($v.frame.icon=="icon:terminal","terminal frame icon")
+assert(not $v.window_close,"initial window remains open")
+$s.look.appearance.mode="light"
+$s.look.values["window.decorations"]="ssd"
+$s.closed=true
+$v=$core.framed($s)
+assert($v.appearance.mode=="light","live appearance")
+assert($v.window_settings["window.decorations"]=="ssd","live decoration")
+assert($v.window_close,"Mix owns close")
+print("term frame model: 6 checks passed")
