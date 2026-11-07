@@ -773,8 +773,7 @@ impl eframe::App for Shell {
             drop(locked);
             ui.ctx().show_viewport_deferred(
                 viewport(&id),
-                egui::ViewportBuilder::default()
-                    .with_title(title)
+                toolkit::titlebar::viewport(&app_id, &title)
                     .with_inner_size(size)
                     .with_min_inner_size(minimum)
                     .with_app_id(app_id),
@@ -821,6 +820,7 @@ pub fn run(
         "Viu file chooser",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
+                .with_transparent(true)
                 .with_visible(false)
                 .with_app_id(&service_name),
             ..Default::default()
