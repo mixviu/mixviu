@@ -494,12 +494,17 @@ impl SceneView {
         {
             return;
         }
+        let allocated = ui.available_rect_before_wrap();
+        if node.family == "dock" && node.ports.get("enabled") != Some(&Value::Bool(false)) {
+            paint_outline(ui, node, allocated);
+        }
         let key = route.map_or_else(
             || id.to_owned(),
             |(_, _, item)| format!("{}#{id}", item["id"].as_str().unwrap_or("")),
         );
         let response = ui
             .push_id(&key, |ui| {
+                if node.ports.get("enabled") == Some(&Value::Bool(false)) { ui.disable(); if node.family == "dock" { paint_outline(ui,node,allocated); } }
                 if let Some(width) = num(node, "width").or(num(node, "min_width")) {
                     ui.set_width(width);
                 }
@@ -828,9 +833,12 @@ impl SceneView {
                                         ui.horizontal(|ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};ui.allocate_ui(egui::vec2(width,0.),|ui|{ui.set_min_width(width);self.node(ui,child,nodes,route,depth+1,events);});});
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
-                                    } else { ui.horizontal(|ui| draw(ui)); }
+                                    } else if let Some(height) = num(node, "height") {
+ ui.allocate_ui_with_layout(Vec2::new(ui.available_width(),height),egui::Layout::left_to_right(egui::Align::Center),|ui|draw(ui));
+ } else { ui.horizontal(|ui| draw(ui)); }
                                 } else if node.ports.get("scroll")==Some(&Value::Bool(true)) {
                                     egui::ScrollArea::vertical().id_salt((&key,"scroll")).auto_shrink(false).show(ui,|ui|draw(ui));
+
 
                                 } else {
                                     ui.vertical(|ui| draw(ui));
@@ -857,20 +865,18 @@ impl SceneView {
                 }
             })
             .response;
-        if let Some(outline) = color(text(node, "outline")).or_else(|| {
-            text(node, "outline")
-                .strip_prefix("design.")
-                .and_then(|name| crate::appearance::colour(ui.ctx(), name))
-        }) {
-            ui.painter().rect_stroke(
-                response.rect.shrink(0.5),
-                2.0,
-                egui::Stroke::new(num(node, "outline_width").unwrap_or(1.0), outline),
-                egui::StrokeKind::Inside,
-            );
+        if node.family != "dock" {
+            paint_outline(ui, node, response.rect);
         }
         if node.family != "control" {
-            self.geometry.insert(key, response.rect);
+            self.geometry.insert(
+                key,
+                if node.family == "dock" {
+                    allocated
+                } else {
+                    response.rect
+                },
+            );
         }
     }
 
@@ -900,7 +906,13 @@ impl SceneView {
             }
         }
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(id), |ui| {
-            ui.set_clip_rect(ui.clip_rect().intersect(rect));
+            if nodes.get(id).is_none_or(|node| {
+                node.ports.get("clip") != Some(&Value::Bool(false))
+                    || num(node, "clip_below")
+                        .is_some_and(|width| ui.ctx().content_rect().width() < width)
+            }) {
+                ui.set_clip_rect(ui.clip_rect().intersect(rect));
+            }
             self.node(ui, id, nodes, route, depth + 1, events);
         });
     }
@@ -1312,19 +1324,88 @@ impl SceneView {
                 self.node(ui, child, nodes, route, depth + 1, events);
                 continue;
             }
-            if edge == "bottom" && placement["panel"] == true {
+            if matches!(edge, "bottom" | "fill") && placement["panel"] == true {
+
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
-                egui::Panel::bottom(egui::Id::unique((key, child)))
-                    .resizable(placement["resizable"] == true)
-                    .default_size(placement["size"].as_f64().unwrap_or(140.0) as f32)
-                    .size_range(
-                        0.0..=remaining.height()
-                            * placement["max_fraction"].as_f64().unwrap_or(0.3) as f32,
+                let panel = egui::CentralPanel::default();
+                let panel = if placement["frame"] == "native" {
+                    panel
+                } else {
+                    panel.frame(toolkit::bars::dock_frame(ui.ctx()))
+                };
+                panel.show(&mut panel_ui, |ui| {
+                    self.node(ui, child, nodes, route, depth + 1, events)
+                });
+                continue;
+            }
+            if placement["minimum_window_width"]
+                .as_f64()
+                .is_some_and(|w| (area.width() as f64) < w)
+            {
+                continue;
+            }
+            if matches!(edge, "top" | "bottom" | "left" | "right") && placement["panel"] == true {
+                let horizontal = matches!(edge, "left" | "right");
+                let dimension = if horizontal {
+                    area.width()
+                } else {
+                    area.height()
+                };
+                let measured = placement["measure"]
+                    .as_str()
+                    .and_then(|id| nodes.get(id))
+                    .and_then(|node| Widget::decode(&node.ports["definition"]).ok())
+                    .and_then(|widget| widget.intrinsic_width(ui, &self.tree.model).ok());
+                let default_size = measured.unwrap_or_else(|| {
+                    placement["size"]
+                        .as_f64()
+                        .map(|n| n as f32)
+                        .unwrap_or_else(|| {
+                            dimension * placement["fraction"].as_f64().unwrap_or(0.2) as f32
+                        })
+                });
+                let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
+                let id = egui::Id::unique((key, child));
+                let panel = match edge {
+                    "left" => egui::Panel::left(id),
+                    "right" => egui::Panel::right(id),
+                    "top" => egui::Panel::top(id),
+                    _ => egui::Panel::bottom(id),
+                };
+                let panel = panel.resizable(placement["resizable"] == true);
+                let panel = if placement["size"] == "content" && !horizontal {
+                    panel
+                } else {
+                    panel.default_size(default_size)
+                };
+                let panel = if placement["exact"] == true {
+                    panel.exact_size(default_size)
+                } else {
+                    panel.size_range(
+                        0.0..=dimension * placement["max_fraction"].as_f64().unwrap_or(0.3) as f32,
                     )
-                    .frame(toolkit::bars::dock_frame(ui.ctx()))
-                    .show(&mut panel_ui, |ui| {
-                        self.node(ui, child, nodes, route, depth + 1, events)
-                    });
+                };
+                let panel = if placement["frame"] == "native" {
+                    panel
+                } else {
+                    panel.frame(toolkit::bars::dock_frame(ui.ctx()))
+                };
+                let shown = panel.show(&mut panel_ui, |ui| {
+                    self.node(ui, child, nodes, route, depth + 1, events)
+                });
+                if horizontal && placement["resizable"] == true {
+                    let fraction = shown.response.rect.width() / area.width().max(1.0);
+                    if (fraction - placement["fraction"].as_f64().unwrap_or(0.2) as f32).abs()
+                        > 1.0 / area.width().max(1.0)
+                    {
+                        self.layout_change(
+                            node,
+                            key,
+                            json!({"child":child,"fraction":serde_json::from_str::<Value>(&fraction.to_string()).expect("finite panel fraction")}),
+                            events,
+                        );
+                    }
+                }
                 remaining = panel_ui.available_rect_before_wrap();
                 continue;
             }
@@ -1998,4 +2079,19 @@ fn color(s: &str) -> Option<Color32> {
 
 fn node_padding(node: &Node, side: &str) -> f32 {
     num(node, side).or(num(node, "padding")).unwrap_or(0.0)
+}
+
+fn paint_outline(ui: &egui::Ui, node: &Node, rect: egui::Rect) {
+    if let Some(outline) = color(text(node, "outline")).or_else(|| {
+        text(node, "outline")
+            .strip_prefix("design.")
+            .and_then(|name| crate::appearance::colour(ui.ctx(), name))
+    }) {
+        ui.painter().rect_stroke(
+            rect.shrink(0.5),
+            2.0,
+            egui::Stroke::new(num(node, "outline_width").unwrap_or(1.0), outline),
+            egui::StrokeKind::Inside,
+        );
+    }
 }

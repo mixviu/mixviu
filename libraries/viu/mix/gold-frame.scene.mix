@@ -13,7 +13,8 @@ root:{widget:"dock",children:["gold-header","gold-status","gold-content"],placem
 "gold-captions":{widget:"spacer",slot_only:"window.header.content",hidden:"= $model.__viu_window_client == false"},
 "gold-title":{widget:"control",hidden:"= $model.__viu_window_client == false",definition:{id:"gold-title",kind:"label",label:"",initial:"",properties:{role:"title",weak:true}}},
 "gold-toolbar":{widget:"control",definition:{id:"gold-toolbar",kind:"command-bar",label:"",initial:[],properties:{style:"gold"}},on_intent:"viu.frame.intent"},
-"gold-status":{widget:"column",background:"design.chrome",padding:0,children:["gold-status-text"],hidden:"= ($model.frame.hide_status == true) or ($model.frame.status_visible == false)"},
+"gold-status":{widget:"column",background:"design.chrome",padding:0,children:["gold-status-text"],hidden:"= ($model.frame.hide_status == true) or ($model.frame.status_visible == false) or ($model.frame.status_hidden == true)"},
+
 
 "gold-status-text":{widget:"control",definition:{id:"gold-status-text",kind:"status-line",label:"",initial:{left:"",right:[],icon:"plug"}}},
 "gold-content":{widget:"column",children:[]}

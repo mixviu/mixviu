@@ -1,5 +1,134 @@
 -- version: 0.1.0
+-- lint: globals app_args app_launch
 include "dopus.mix"
-$profile=$app_args[0] ?? path_join(env("XDG_CONFIG_HOME",path_join(env("HOME"),".config")),"dopus")
+$dirs=viu_app_dirs("dopus") ?? {}
+$profile=if $app_args[0]=="--profile" then $app_args[1] else $dirs.config ?? path_join(env("HOME","/"),".local/state/mixos/apps/dopus/config") end
+$paths=if $app_args[0]=="--profile" then slice($app_args,2) else $app_args end
 mkdir($profile,{parents:true})
-dp_start({app_dir:dirname(script_path()),profile:$profile})
+dp_start({app_dir:dirname(script_path()),profile:$profile,paths:$paths})
+$state.headless=$app_launch.headless ?? false
+$state.bindings=[]
+for $action in $contract.actions
+  for $chord in $action.keys $state.bindings=push($state.bindings,{id:$action.id,chord:$chord}) end
+end
+$row_cache=dp_publish($state,$contract,$row_cache)
+on viu.frame.intent
+  dp_request({command:"dopus.execute",origin:$event.args.value.origin ?? "menu",args:{id:$event.args.value.command,params:{}}})
+end
+on bus.connected
+  $state.bus_connected=true
+end
+on bus.disconnected
+  $state.bus_connected=false
+end
+on dopus.shortcut
+  dp_request({command:"dopus.execute",origin:"shortcut",args:$event.args})
+end
+on dopus.palette
+  $state.form=$app.dp_closed_form();$state.reservation=nil
+  if $event.args.value!=nil then dp_request({command:"dopus.execute",origin:"palette",args:{id:$event.args.value.command,params:{}}})
+  else $row_cache=dp_publish($state,$contract,$row_cache) end
+end
+on viu.frame.close
+  $state=$app.dp_persist($state)
+  $model=dp_framed($state,$contract,$row_cache);$model.window_close=true
+  send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$model}
+  if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
+end
+on viu.session
+  $state.window=$event.args.state.values ?? {}
+  $state.appearance_session=$event.args.appearance
+  $row_cache=dp_publish($state,$contract,$row_cache)
+end
+on viu.theme.changed
+  $state.appearance=$event.args
+  for $key in keys($state.appearance_choice) $state.appearance[$key]=$state.appearance_choice[$key] end
+  $row_cache=dp_publish($state,$contract,$row_cache)
+end
+on viu.macros.changed
+  $state.macros_open=$event.args.open
+  $row_cache=dp_publish($state,$contract,$row_cache)
+end
+on viu.keymap.changed
+  $defaults=map($contract.actions,fn($a)={id:$a.id,shortcut:$state.default_keys[$a.id][0],keys:$state.default_keys[$a.id]})
+  send "viu-local" "native.bindings" body={defaults:$defaults,overrides:$event.args}
+  if $rc==0 then
+    $state.bindings=[]
+    for $i=0 to len($contract.actions)-1
+      $id=$contract.actions[$i].id
+      $contract.actions[$i].keys=$reply.bindings[$id].keys
+      for $chord in $reply.bindings[$id].keys $state.bindings=push($state.bindings,{id:$id,chord:$chord}) end
+    end
+  end
+  $row_cache=dp_publish($state,$contract,$row_cache)
+end
+on dopus.open
+  dp_request({command:"dopus.open",args:$event.args})
+end
+on dopus.theme.set
+  dp_request({command:"dopus.theme.set",args:$event.args})
+end
+on dopus.quit
+  dp_request({command:"dopus.quit",args:$event.args})
+end
+on dopus.dialog
+  dp_request({command:"dopus.dialog",args:$event.args})
+end
+on dopus.dialog.answer
+  dp_request({command:"dopus.dialog.answer",args:$event.args})
+end
+on dopus.ping
+  $ctx=viu_context()
+  reply(0,json_encode({pong:true,service:$ctx.name,schema:"dopus.v1",pid:$ctx.pid,headless:$state.headless}))
+end
+on dopus.actions
+  reply(0,json_encode({actions:map(filter($contract.actions,fn($a)=contains($contract.bus_actions,$a.id)),fn($a)={id:$a.id,label:$a.label,keys:$a.keys,enabled:$projection.dp_enabled($state,$a.id)})}))
+end
+fn dp_wire_panes($s)
+  $out=[]
+  for $i=0 to 1
+    $p=$s.panes[$i]
+    push($out,{pane:$i,path:$core.dp_display($p.path),active:$s.active==$i,show_hidden:$p.show_hidden,previews:$p.previews,preview:if $s.preview_slots[$i].value.phase=="ready" then $s.preview_slots[$i].value.path else nil end,sort:$p.sort,ascending:$p.ascending,selected:$p.selected,selected_paths:$p.selected_paths,rows:len($p.entries),status:$p.summary,summary:$p.summary})
+  end
+  return $out
+end
+on dopus.state
+  reply(0,json_encode({places:{open:$state.places_open,width:$state.places_width},properties:{open:$state.properties_open,width:$state.properties_width},panes:dp_wire_panes($state),theme_scheme:if $state.headless then "" else $state.appearance.scheme end,theme_mode:if $state.headless then "" else $state.appearance.mode end,appearance:{icons:if $state.headless then "" else "lucide" end,asset_set:nil,font_ui:if $state.headless then "" else "Inter" end,font_mono:if $state.headless then "" else "JetBrains Mono" end,font_ui_weight:if $state.headless then 0 else 400 end,icon_weight:nil}}))
+end
+on dopus.info
+  $ctx=viu_context()
+  reply(0,json_encode({version:$ctx.version,git_sha:$ctx.git_sha,build_time:$ctx.build_time,headless:$state.headless,panes:2,pane_states:dp_wire_panes($state),config_path:$state.config_path}))
+end
+fn dp_describe()
+  $description=$contract.describe
+  $description.version=viu_context().version
+  if $state.headless then $description.commands=filter($description.commands,fn($id)=not starts_with($id,"dopus.ui.") and not starts_with($id,"dopus.window")) end
+  return $description
+end
+on app.describe
+  reply(0,json_encode(dp_describe()))
+end
+on dopus.describe
+  reply(0,json_encode(dp_describe()))
+end
+on dopus.show
+  if $state.headless then reply(10,json_encode({error_code:"UNAVAILABLE",message:"a headless instance has no window",reason:"headless"}));return end
+  try
+    $comp=$app_launch.comp ?? env("MIXOS_COMP_SERVICE","comp")
+    dp_comp_call($comp,"comp.window.wait",{match:{app_id:"dev.mixos.dopus"},until:"mapped",timeout_ms:10000})
+    $windows=dp_comp_call($comp,"comp.windows.list",{}).windows
+    $own=filter($windows,fn($w)=$w.app_id=="dev.mixos.dopus" and $w.pid==viu_context().pid)
+    if len($own)==0 then raise("ACTIVATION","window not known to compd") end
+    $target={id:$own[0].id,generation:$own[0].generation}
+    $restored=dp_comp_call($comp,"comp.window.restore",$target)
+    if $restored.minimized!=false then raise("ACTIVATION",json_encode($restored)) end
+    $target.raise=true;$focused=dp_comp_call($comp,"comp.window.focus",$target)
+    if $focused.focused!=true then raise("ACTIVATION",json_encode($focused)) end
+    reply(0,json_encode({shown:true,target:$focused}))
+  catch $message reply(10,json_encode({error_code:"ACTIVATION",message:$message,reason:"show_failed"})) end
+end
+fn dp_comp_call($comp,$command,$args)
+  send $comp $command body=$args timeout=15
+  if $rc!=0 then raise("ACTIVATION",to_string($result)) end
+  return $reply
+end

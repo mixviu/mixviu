@@ -283,6 +283,9 @@ impl Runtime {
                         eval.register("viu_editor_write",crate::native_primitives::editor_write());
                         eval.register("viu_action_event",crate::native_primitives::action_event());
                         let options=services.options.clone();
+                        let native_backend=backend.is_some();
+                        let native_facilities=services.calls.is_some();
+
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
                             "git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"), "loader": "viu-local", "host": "viu-local", "options":options,
@@ -290,6 +293,8 @@ impl Runtime {
                             "build":serde_json::from_str::<serde_json::Value>(&buildinfo::build_info!().json()).expect("build provenance JSON"),
                             "executable":std::env::current_exe().ok(),
                             "cwd":std::env::current_dir().ok().map(|p|p.to_string_lossy().into_owned()),
+
+                            "native_backend":native_backend, "native_facilities":native_facilities,
 
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));

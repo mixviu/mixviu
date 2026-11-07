@@ -65,7 +65,7 @@ end
 fn dp_filename($name)
   if type($name)!="string" then raise("INVALID_ARGUMENT","Name must be text") end
   $name=trim($name)
-  if $name=="" or contains([".",".."],$name) or contains($name,"/") or contains($name,"\u0000") then raise("INVALID_ARGUMENT","Enter a valid file name") end
+  if $name=="" or contains([".",".."],$name) or contains($name,"/") or contains($name,"\\") or contains($name,"\u0000") then raise("INVALID_ARGUMENT","Enter a single valid file name") end
   return $name
 end
 fn dp_path($path)
@@ -208,6 +208,7 @@ fn dp_navigate($pane,$path)
   $path=dp_path($path)
   if dp_is_file($path) then $path=dp_parent($path) end
   if $path!=$pane.path then $pane.back=push($pane.back,$pane.path);$pane.forward=[] end
+  if len($pane.back)>128 then $pane.back=slice($pane.back,len($pane.back)-128) end
   $pane.path=$path;$pane.selected=nil;$pane.selected_paths=[];$pane.anchor=nil;$pane.expanded={};$pane.generation=$pane.generation+1
   return dp_refresh($pane)
 end

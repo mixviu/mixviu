@@ -1,0 +1,23 @@
+-- CBC repair check and debug capture artifact. Acceptance uses gate.mix on
+-- cbc2/cbc3, including release measurement and the exact release executable.
+$dir=args()[0]
+if type($dir)!="string" or not starts_with($dir,"/") then raise("ARTIFACT_ROOT","Supply an absolute artifact directory") end
+$code=0
+try
+  print(run_argv_must(["cargo","fmt","-p","viu","-p","toolkit","-p","scene","-p","files"]))
+  for $argv in [["cargo","test","--locked","-p","viu","--test","dopus_bundle","--test","dopus_contract","--test","scan_budget","--test","row_projection","--test","gold_frame","--test","text_input"],["cargo","build","--locked","-p","viu-engine","--bin","viu"]]
+    print({argv:$argv})
+    $r=run_argv($argv,{timeout:1200,max_output:16000000,env:{TMPDIR:"/dev/shm"}});print($r)
+    if not $r.ok then $code=$r.exit_code ?? 124;break end
+  end
+  if $code==0 then
+    $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+    $out=path_join($dir,$sha);mkdir($out,{parents:true});copy("target/debug/viu",$out.."/viu")
+    write_file($out.."/viu.json",json_encode({source:$sha,profile:"debug",binary:"viu",sha256:hash_file($out.."/viu","sha256")}))
+  end
+finally
+  print("DOPUS_PATCH_BEGIN");$diff=run_argv_must(["git","diff","--binary"]);print($diff);print("DOPUS_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+  if $code==0 and $diff!="" then $code=97 end
+end
+exit($code)

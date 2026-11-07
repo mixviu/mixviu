@@ -344,7 +344,7 @@ fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale: f32) -> Vec<f32> {
                 );
             }
         }
-        widths.push(width.max(number(column, "min_width", 40.0)));
+        widths.push(((width - 12.0).ceil() + 12.0).max(number(column, "min_width", 40.0)));
     }
     ui.data_mut(|d| {
         d.insert_temp(
@@ -507,7 +507,20 @@ pub(crate) fn draw(
         visible -= 1;
     }
     measured[0] = (available - measured[1..visible].iter().sum::<f32>()).max(20.0);
-    let height = number(&widget.properties, "height", ui.available_height()).max(32.0);
+    let compact =
+        ui.ctx().content_rect().height() < number(&widget.properties, "compact_below_height", 0.0);
+    let reserve = if !compact && widget.properties["reserve_bottom_style"] == "small" {
+        ui.text_style_height(&TextStyle::Small)
+            + number(&widget.properties, "reserve_bottom_padding", 0.0)
+    } else {
+        0.0
+    };
+    let height = number(
+        &widget.properties,
+        "height",
+        ui.available_height() - reserve,
+    )
+    .max(32.0);
     let row_h = number(
         &widget.properties,
         "row_height",
@@ -515,7 +528,8 @@ pub(crate) fn draw(
     );
     let result=ui.allocate_ui(vec2(available,height),|ui| {
         ui.set_min_size(vec2(available,height));
-        let header_h=ui.text_style_height(&TextStyle::Small)+8.0;
+        let header_h=if compact {0.0} else {ui.text_style_height(&TextStyle::Small)+8.0};
+        if !compact {
         let (header,_)=ui.allocate_exact_size(vec2(available,header_h),Sense::hover());
         let mut x=header.left();
         for i in 0..visible {
@@ -531,7 +545,8 @@ pub(crate) fn draw(
             if response.clicked(){emit(events,id,"sort",json!({"column":column["id"]}));}
         }
         ui.painter().hline(header.x_range(),header.bottom(),ui.visuals().widgets.noninteractive.bg_stroke);
-        let list_h=(height-header_h-ui.spacing().item_spacing.y).max(row_h);
+        }
+        let list_h=(height-header_h-if compact {0.0}else{ui.spacing().item_spacing.y}).max(row_h);
         let body=Rect::from_min_size(ui.cursor().min,vec2(available,list_h));
         let background=ui.interact(body,Id::unique((ui.ctx().viewport_id(),id,"background")),Sense::click());
         geometry.insert(format!("{id}.background"),body);
@@ -549,14 +564,18 @@ pub(crate) fn draw(
                 let colour=if is_selected{ui.visuals().selection.stroke.color}else{ui.visuals().text_color()};
                 let painter=ui.painter_at(rect);
                 if is_selected||response.hovered(){painter.rect_filled(rect,2.0,if is_selected{ui.visuals().selection.bg_fill}else{ui.visuals().widgets.hovered.weak_bg_fill});}
+                if row["branch"]==true && response.dnd_hover_payload::<DragRows>().is_some_and(|drag|drag.source!=*id) {
+                    painter.rect_stroke(rect.shrink(1.0),2.0,egui::Stroke::new(1.5,ui.visuals().selection.stroke.color),egui::StrokeKind::Inside);
+                }
                 if focused(value,row)&&value["active"]==true{painter.rect_stroke(rect.shrink(0.5),2.0,egui::Stroke::new(1.0,ui.visuals().selection.stroke.color.gamma_multiply(0.6)),egui::StrokeKind::Inside);}
                 let mut tx=rect.left()+4.0+number(row,"depth",0.0)*14.0;
                 let chevron=Rect::from_center_size(pos2(tx+8.0,rect.center().y),vec2(16.0,16.0));
                 let mut toggled=false;
                 if row["branch"]==true {
                     let toggle=ui.interact(chevron,Id::unique((ui.ctx().viewport_id(),id,key,"expand")),Sense::click());
+                    toggle.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,true,format!("{} {}",if row["expanded"]==true{"Collapse"}else{"Expand"},row["cells"][0].as_str().unwrap_or(""))));
                     geometry.insert(format!("{id}.expand.{index}"),chevron);
-                    icon(ui,if row["expanded"]==true{"chevron-down"}else{"chevron-right"},chevron.shrink(2.0),ui.visuals().weak_text_color());
+                    if let Some(icon) = crate::icons::Icon::from_name(if row["expanded"]==true{"chevron-down"}else{"chevron-right"}) { crate::icons::image_of(ui.ctx(),icon,12.8,ui.visuals().weak_text_color()).paint_at(ui,chevron.shrink(1.0)); }
                     if toggle.clicked(){emit(events,id,"expand",json!({"key":key}));toggled=true;}
                 }
                 tx+=18.0;

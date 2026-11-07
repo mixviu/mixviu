@@ -1,0 +1,24 @@
+-- CBC only. Save the full log and apply returned formatting before exact gate.
+$code=0
+try
+  if contains(args(),"--prepare") then print(run_argv_must(["cargo","fmt","-p","viu","-p","toolkit","-p","scene","-p","files"])) end
+  for $argv in [["cargo","fmt","-p","viu","-p","scene","-p","toolkit","-p","files","--","--check"],["cargo","test","--locked","-p","scene","--lib"],["cargo","test","--locked","-p","viu","--test","dopus_bundle","--test","dopus_contract","--test","scan_budget","--test","row_projection","--test","gold_frame","--test","text_input","--test","app_call"],["cargo","test","--locked","-p","viu","--lib"],["cargo","check","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","clippy","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","test","--locked","--release","-p","viu","--test","bulk_profile","--","--nocapture"],["cargo","build","--locked","--release","-p","viu-engine","--bin","viu"]]
+    print({argv:$argv})
+    $r=run_argv($argv,{timeout:1800,max_output:16000000,env:if $argv[1]=="test" then {TMPDIR:"/dev/shm"} else {} end})
+    print($r)
+    if not $r.ok then $code=$r.exit_code ?? 124;break end
+  end
+  if $code==0 then
+    $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+    $dir=env("CBC_ARTIFACT_ROOT","/build/es-artifacts").."/"..$sha;mkdir($dir,{parents:true})
+    copy("target/release/viu",$dir.."/viu")
+    write_file($dir.."/viu.json",json_encode({source:$sha,profile:"release",binary:"viu",sha256:hash_file($dir.."/viu","sha256")}))
+  end
+finally
+  print("DOPUS_PATCH_BEGIN")
+  $diff=run_argv_must(["git","diff","--binary"]);print($diff)
+  print("DOPUS_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+  if $diff!="" and $code==0 then $code=97 end
+end
+exit($code)

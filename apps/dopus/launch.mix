@@ -1,0 +1,34 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Resolve app policy before any Bus connection or window creation.
+-- lint: globals app_args
+$configuration=require("config.mix")
+$dirs=viu_app_dirs("dopus") ?? {}
+$profile=$dirs.config ?? path_join(env("HOME","/"),".local/state/mixos/apps/dopus/config")
+$paths=[];$only_paths=false;$headless=false;$print_config=false
+$i=0
+while $i<len($app_args)
+  $arg=$app_args[$i];$i=$i+1
+  if $only_paths then push($paths,$arg)
+  elif $arg=="--" then $only_paths=true
+  elif $arg=="--headless" then $headless=true
+  elif $arg=="--print-config" then $print_config=true
+  elif $arg=="--profile" then
+    if $i>=len($app_args) then raise("ARGUMENT","--profile needs a directory") end
+    $profile=$app_args[$i];$i=$i+1
+  elif starts_with($arg,"--") then raise("ARGUMENT","unknown option "..$arg.." (see --help)")
+  else push($paths,$arg) end
+end
+$absolute=[]
+for $path in $paths
+  if $path=='~' then $path=env("HOME","/")
+  elif starts_with($path,'~/') then $path=path_join(env("HOME","/"),slice($path,2)) end
+  push($absolute,if starts_with($path,"/") then $path else path_join(cwd(),$path) end)
+end
+$plan={args:concat(["--profile",$profile],$absolute),headless:$headless,exit:$print_config,activation:[{command:"dopus.open",body:{paths:$absolute}},{command:"dopus.show",body:{}}]}
+if $print_config then
+  $path=path_join($profile,"config.conf.mix")
+  $loaded=$configuration.dp_load_config($path)
+  $plan.stdout=if exists($path) then "-- "..$path.."\n" else "" end..json_encode($loaded.value).."\n"
+end
+send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$plan}
+if $rc!=0 then raise("LAUNCH_PLAN",to_string($result)) end

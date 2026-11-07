@@ -189,6 +189,9 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             }
         }
         "dialog-form" => {
+            if let Some(commands) = value.get("shortcuts") {
+                crate::command_palette::validate(&json!({"open":false,"commands":commands}))?;
+            }
             if !value["open"].is_boolean()
                 || !value["title"].is_string()
                 || !value["body"].is_string()
@@ -581,6 +584,7 @@ pub(crate) fn draw(
     value: &Value,
     geometry: &mut BTreeMap<String, Rect>,
     events: &mut Vec<Intent>,
+    images: &mut crate::image_view::Images,
 ) -> egui::Response {
     let id = &widget.id;
     if widget.kind == "dialog-form" && widget.properties["style"] == "command-search" {
@@ -969,10 +973,17 @@ pub(crate) fn draw(
                                     toolkit::button::PushButton::secondary(text(item, "label")),
                                 )
                             } else {
-                                ui.add_enabled(
-                                    item["enabled"] == true,
-                                    egui::Button::new(label(item)),
-                                )
+                                if item["primary"] == true {
+                                    ui.add_enabled(
+                                        item["enabled"] == true,
+                                        toolkit::button::PushButton::primary(text(item, "label")),
+                                    )
+                                } else {
+                                    ui.add_enabled(
+                                        item["enabled"] == true,
+                                        egui::Button::new(label(item)),
+                                    )
+                                }
                             };
                             if gold && item["id"] == "help.macros" {
                                 let viewport = ui.ctx().viewport_id();
@@ -1037,6 +1048,14 @@ pub(crate) fn draw(
                     .id_salt((id, "fields"))
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
+                        if widget.properties["preview"]["phase"] == "ready" {
+                            images.draw(
+                                ui,
+                                &format!("{id}.preview"),
+                                &widget.properties["preview"],
+                            );
+                            ui.add_space(8.0);
+                        }
                         for field in value.as_array().into_iter().flatten() {
                             ui.label(egui::RichText::new(text(field, "label")).small().weak());
                             ui.add(egui::Label::new(text(field, "value")).wrap());
@@ -1301,6 +1320,8 @@ fn gold_dialog(
         if let Some(field)=field.as_mut(){
             let response=if value["field_style"]=="title" {
                 ui.add(egui::TextEdit::singleline(field).hint_text(text(value,"placeholder"))).accessible_name(text(value,"placeholder"))
+            } else if value["field_fill"]==true {
+                ui.add(egui::TextEdit::singleline(field).id(key.with("field")).desired_width(f32::INFINITY)).accessible_name(value["field_label"].as_str().unwrap_or(""))
             } else {
                 toolkit::field::text(ui,field,text(value,"body"),420.0)
             };
@@ -1308,7 +1329,7 @@ fn gold_dialog(
             if response.lost_focus() && ui.input(|i|i.key_pressed(egui::Key::Enter)){accept=true;}
             else if !response.has_focus() && ui.memory(|m| m.focused().is_none()){response.request_focus();}
             if response.changed(){emit(events,id,"edit",json!(field));}
-        }else if !text(value,"body").is_empty(){ui.label(text(value,"body"));}
+        }else if !text(value,"body").is_empty(){ui.add(egui::Label::new(text(value,"body")).wrap());}
         if let Some(picks)=value["picks"].as_array(){
             ui.horizontal_wrapped(|ui|for pick in picks {if toolkit::selectable(ui,pick["selected"]==true,text(pick,"label")).clicked(){emit(events,id,"answer",json!({"choice":pick["id"],"instance":value["instance"]}));}});
         }
@@ -1337,6 +1358,12 @@ fn gold_dialog(
             });
         }
         if let Some(error)=value["error"].as_str(){if value["error_warning"]==true{ui.add_space(6.0);}ui.colored_label(if value["error_warning"]==true{ui.visuals().warn_fg_color}else{ui.visuals().error_fg_color},error);}
+        if let Some(lines)=value["lines"].as_str(){
+            let max_height=ui.ctx().content_rect().height()*toolkit::chrome::Chrome::of(ui.ctx()).style.dialog_resize_max_share as f32/2.0;
+            egui::ScrollArea::vertical().max_height(max_height).show(ui,|ui|{ui.label(lines);});
+        }
+        if let Some(commands)=value.get("shortcuts"){crate::command_palette::shortcuts(ui,commands);}
+
         if let Some(footer)=value["footer"].as_str(){ui.weak(footer);}
         if let Some(details)=value["details"].as_array(){
             ui.add_space(4.0);
@@ -1397,6 +1424,12 @@ fn gold_dialog(
           }
         }
     });
+    for (index, rect) in &shown.buttons {
+        geometry.insert(
+            format!("{id}.choice.{}", text(&choices[*index], "id")),
+            *rect,
+        );
+    }
     let chosen = shown.chosen.or_else(|| {
         if shown.dismissed {
             choices.iter().position(|c| c["cancel"] == true)

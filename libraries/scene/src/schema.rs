@@ -337,6 +337,9 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         if f != "text" {
             ports.push(p("hidden", "bool", false, None));
         }
+        ports.push(p("clip", "bool", false, None));
+        ports.push(p("enabled", "bool", false, None));
+        ports.push(pn("clip_below", false, None));
         ports.extend([
             p("align_self", "string", false, None),
             pn("grow", false, None),
@@ -361,6 +364,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(p("tooltip", "object", false, None));
     }
     if matches!(f, "row" | "column") {
+        ports.push(p("scroll", "bool", false, None));
         let mut justify = p("justify", "string", false, None);
         justify.enum_values = &["start", "center", "end", "between", "around", "evenly"];
         ports.extend([

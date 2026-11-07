@@ -4,6 +4,7 @@
 $app=require("reducer.mix")
 $projection=require("presentation.mix")
 $core=require("core.mix")
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
 $contract=json_parse(read_file(dirname(script_path()).."/contract.json"))
 $state=nil
 $row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
@@ -13,22 +14,56 @@ fn dp_publish($state,$contract,$cache)
     $start=monotonic()
     $cache=$projection.dp_prepare_rows($state,$cache)
     $prepared=monotonic()
-    $model=$projection.dp_project($state,$contract,$cache)
+    $model=dp_framed($state,$contract,$cache)
     $projected=monotonic()
     send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$model}
     $published=monotonic()
     print(json_encode({profile:"dopus",phase:"publication",serial:$state.serial,rows_us:($prepared-$start)*1000000,model_us:($projected-$prepared)*1000000,project_us:($projected-$start)*1000000,publish_us:($published-$projected)*1000000}))
   else
     $cache=$projection.dp_prepare_rows($state,$cache)
-    send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$projection.dp_project($state,$contract,$cache)}
+    send "viu-local" "scenes.model" body={generation:viu_context().generation,value:dp_framed($state,$contract,$cache)}
   end
   if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
   return $cache
+end
+fn dp_framed($s,$contract,$cache)
+  $model=$projection.dp_project($s,$contract,$cache)
+  $model.layout=delete(delete($model.layout,"topbar"),"status-pane")
+  $title=$core.dp_display($s.panes[$s.active].path).." — MixOS DOpus"
+  $model=$frame.apply($model,{icon:"folder",title:$title,native_title:$title,menus:$model.values.menu,toolbar:$model.values.toolbar,status:{left:$s.info,right:[],icon:nil},appearance:$s.appearance,window:$model.window_settings})
+  $model.macros_open=$s.macros_open ?? false
+  $model.properties_control={id:"properties",kind:"property-grid",label:"Properties",initial:[],properties:{preview:$model.values.preview}}
+  $model.location_controls={}
+  for $i=0 to 1
+    $side=if $i==0 then "left" else "right" end
+    $model.location_controls[$side]={id:$side.."-location",kind:"field",label:"",initial:"",properties:{accessible_name:"Path",cancel_on_escape:true,fill:true,notify_blur:true,placeholder:"",weak:$s.active!=$i}}
+  end
+  if $s.form.open then
+    if contains(["mkdir","rename"],$s.reservation.kind) then
+      $model.values.form.field_fill=true;$model.values.form.field_label="Name"
+    elif $s.reservation.operation.legacy_kind=="shortcuts" then
+      $model.values.form.body=""
+      $order=["file.open","file.mail","file.new-folder","file.rename","file.copy-other-pane","file.move-other-pane","file.delete","app.quit","view.toggle-places","view.toggle-properties","view.toggle-hidden","view.toggle-previews","view.refresh","view.sort-name","view.sort-size","view.sort-modified","nav.back","nav.forward","nav.parent","nav.home","location.focus","nav.switch-pane","selection.next","selection.previous","selection.first","selection.last","theme.mode-toggle","theme.scheme-ocean","theme.scheme-crimson","theme.scheme-stone","theme.scheme-forest","theme.scheme-sunset","theme.scheme-mono","help.shortcuts"]
+      $model.values.form.shortcuts=map($order,fn($id)={id:$id,label:$contract.ui_labels[$id] ?? filter($contract.actions,fn($a)=$a.id==$id)[0].label,keys:filter($contract.actions,fn($a)=$a.id==$id)[0].keys,enabled:true})
+    elif $s.reservation.operation.legacy_kind=="about" then
+      $model.values.form.footer=viu_context().version.." ("..viu_context().git_sha..")"
+    end
+  end
+  $search=$s.form.open and $s.reservation.kind=="search"
+  $model.values.palette={open:$search,commands:map($contract.registry_order,fn($id)={id:$id,label:$contract.ui_labels[$id] ?? filter($contract.actions,fn($a)=$a.id==$id)[0].label,enabled:$projection.dp_command($s,$contract,$id).enabled})}
+  $model.native_overlays=[{definition:{id:"palette",kind:"command-palette",label:"",initial:{open:false,commands:[]}},command:"dopus.palette"}]
+  if $search then $model.values.form.open=false end
+  $model.local_theme={theme:$s.appearance_choice.scheme,mode:$s.appearance_choice.mode,style:$s.appearance_choice.style,decorations:$s.window_choice["window.decorations"],captions:$s.window_choice["window.caption_side"]}
+  $model.native_focus=if $s.focus==nil then nil else {id:$s.focus.id,selection:$s.focus.selection,serial:$s.serial} end
+  $model.shortcuts=if $s.form.open then [] else $s.bindings ?? [] end
+  $model.on_shortcut="dopus.shortcut"
+  return $model
 end
 fn dp_start($initial)
   global $state, $row_cache
   $row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
   $state=$app.dp_initialise($initial)
+  $state.bus_connected=if viu_context().native_facilities ?? false then false else nil end
   $state.appearance_choice={}
   $state.appearance_session=$state.appearance
   $state.default_keys={}
@@ -37,6 +72,7 @@ fn dp_start($initial)
   $state.owner=viu_context().generation
   $state=$app.dp_update_previews($state)
   $row_cache=dp_publish($state,$contract,$row_cache)
+  if (viu_context().native_facilities ?? true) and $state.save_allowed then viu_timer("config-save",350,{}) end
 end
 on dopus.initialise
   dp_start($event.args)
@@ -50,32 +86,39 @@ fn dp_request($request)
       $profile_start=if $dopus_profile then monotonic() else 0 end
       $a=$request.args;$name=$request.command
       $candidate=$state;$candidate.focus=nil;$candidate.reply={ok:true}
+      $candidate.effect_context={token:$request.token,origin:$request.origin ?? if $name=="dopus.intent" then "ui" else "bus" end}
       $candidate.appearance_reset=nil
       if $name=="dopus.execute" then $candidate=$app.dp_action($candidate,$contract,$a.id,$a.params ?? {})
       elif $name=="dopus.dialog" then
         $candidate=$app.dp_legacy_dialog($candidate,$contract,$a)
-        $candidate.reply={dialog:$projection.dp_legacy_view($candidate)}
+        if $candidate.reply.error_code==nil then $candidate.reply={dialog:$projection.dp_legacy_view($candidate)} end
       elif $name=="dopus.intent" then $candidate=$app.dp_intent($candidate,$contract,$a)
       elif $name=="dopus.open" then
         $paths=$a.paths ?? []
-        if type($paths)!="list" or len($paths)==0 or any($paths,fn($path)=type($path)!="string" or $path=="") then raise("INVALID_ARGUMENT","paths must contain non-empty text") end
-        for $i=0 to min(1,len($paths)-1) $candidate=$app.dp_go($candidate,$i,$paths[$i]) end
+        if type($paths)!="list" or any($paths,fn($path)=type($path)!="string") then raise("INVALID_ARGUMENT","paths must contain text") end
+        if $a.pane!=nil then
+          if len($paths)!=1 then raise("INVALID_ARGUMENT","pane-targeted open requires exactly one path") end
+          if not contains(["left","right","active",0,1],$a.pane) then raise("INVALID_ARGUMENT","invalid pane target") end
+          $i=if contains(["left",0],$a.pane) then 0 elif contains(["right",1],$a.pane) then 1 else $candidate.active end
+          $active=$candidate.active;$candidate=$app.dp_go($candidate,$i,$paths[0]);$candidate.active=$active
+        else
+          $active=$candidate.active
+          for $i=0 to min(1,len($paths)-1) $candidate=$app.dp_go($candidate,$i,$paths[$i]) end
+          $candidate.active=$active
+        end
+        $candidate.reply={accepted:len($paths),opened:len($paths)>0}
       elif $name=="dopus.theme.set" then
-        if $a.mode!=nil then
-          if not contains(["dark","light"],$a.mode) then raise("INVALID_ARGUMENT","Unknown theme mode") end
-          $candidate.appearance.mode=$a.mode
-        end
+        if $candidate.headless ?? false then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
+        $invalid=nil
         if $a.scheme!=nil then
-          if $contract.schemes[$a.scheme]==nil then raise("INVALID_ARGUMENT","Unknown colour scheme") end
-          $candidate.appearance.scheme=$a.scheme
+          if type($a.scheme)!="string" or $contract.schemes[$a.scheme]==nil then $invalid="unknown scheme "..json_encode($a.scheme)
+          else $candidate.appearance.scheme=$a.scheme;$candidate.appearance_choice.scheme=$a.scheme end
         end
-        if $a.style!=nil then
-          if not contains($contract.styles,$a.style) then raise("INVALID_ARGUMENT","Unknown widget style") end
-          $candidate.appearance.style=$a.style
+        if $a.mode!=nil then
+          if not contains(["dark","light"],$a.mode) then $invalid="unknown mode "..json_encode($a.mode)
+          else $candidate.appearance.mode=$a.mode;$candidate.appearance_choice.mode=$a.mode end
         end
-        $candidate.reply={scheme:$candidate.appearance.scheme,mode:$candidate.appearance.mode}
-        if $a.style!=nil then $candidate.reply.style=$candidate.appearance.style end
-        for $key in ["mode","scheme","style"] if $a[$key]!=nil then $candidate.appearance_choice[$key]=$a[$key] end end
+        $candidate.reply=if $invalid!=nil then {error_code:"INVALID_ARGUMENT",message:$invalid,reason:nil} else {scheme:$candidate.appearance.scheme,mode:$candidate.appearance.mode} end
       elif $name=="dopus.session" then
         $candidate.window=$a.window ?? {}
         $appearance={mode:"dark",scheme:"studio",style:"default"}
@@ -92,40 +135,80 @@ fn dp_request($request)
         if $a.text!=nil and type($a.text)!="string" then raise("INVALID_ARGUMENT","Dialog text must be text") end
         if $a.text!=nil then $candidate.form.field=$a.text end
         $candidate=$app.dp_handle_answer($candidate,$contract,$a.choice)
-      elif $name=="dopus.quit" or $name=="dopus.persist" then $candidate=$app.dp_persist($candidate)
+      elif $name=="dopus.quit" or $name=="dopus.persist" then $candidate=$app.dp_persist($candidate);$candidate.reply={quitting:$name=="dopus.quit"}
       else raise("UNKNOWN_COMMAND",$name) end
       if $name=="dopus.execute" or $name=="dopus.intent" then
         for $key in ["mode","scheme","style"]
           if $candidate.appearance_reset!=$key and $candidate.appearance[$key]!=$state.appearance[$key] then $candidate.appearance_choice[$key]=$candidate.appearance[$key] end
         end
+        if $candidate.reply.panel=="macros" then $candidate.macros_open=not ($candidate.macros_open ?? false) end
+      end
+      if $name=="dopus.execute" and $candidate.reply.error_code==nil then
+        $candidate.reply=if $a.id=="app.quit" then {quitting:true} else {id:$a.id,ok:true,result:nil} end
       end
       $candidate.serial=$candidate.serial+1
       $profile_reduced=if $dopus_profile then monotonic() else 0 end
+      $save=(viu_context().native_facilities ?? true) and $candidate.save_allowed and not deep_eq($app.dp_config($state),$app.dp_config($candidate))
+      $sync_theme=$name=="dopus.theme.set" or not deep_eq($candidate.appearance_choice,$state.appearance_choice) or not deep_eq($candidate.window_choice,$state.window_choice)
       $state=$app.dp_update_previews($candidate)
+      if (viu_context().native_facilities ?? true) and $sync_theme then
+        send "viu-local" "native.theme" body={scheme:$state.appearance_choice.scheme,mode:$state.appearance_choice.mode,style:$state.appearance_choice.style,decorations:$state.window_choice["window.decorations"],caption_side:$state.window_choice["window.caption_side"]}
+        if $rc!=0 then raise("THEME",to_string($result)) end
+      end
       $profile_prepared=if $dopus_profile then monotonic() else 0 end
       $row_cache=dp_publish($state,$contract,$row_cache)
+      if $save then viu_timer("config-save",350,{}) end
       if $dopus_profile then print(json_encode({profile:"dopus",phase:"callback",serial:$state.serial,command:$name,action:$a.id,reduce_us:($profile_reduced-$profile_start)*1000000,preview_us:($profile_prepared-$profile_reduced)*1000000})) end
+      if $name=="dopus.execute" and $state.reply.error_code==nil and (viu_context().native_facilities ?? true) then
+        send "viu-local" "native.executed" body={id:$a.id,origin:$request.origin ?? "bus",params:nil,result:nil}
+      elif $name=="dopus.intent" and $a.action=="command" and $state.reply.error_code==nil and (viu_context().native_facilities ?? true) then
+        send "viu-local" "native.executed" body={id:$a.value.command,origin:"menu",params:nil,result:nil}
+      end
+      if $name=="dopus.execute" and $a.id=="file.mail" and $request.token!=nil and $state.reply.error_code==nil then
+        if not viu_reply("hold",$request.token,{}) then raise("CALL","Native mail receipt is unavailable") end
+        -- Complete this evaluator request while the native receipt remains
+        -- held for the owned effect. Silence would synthesise NO_REPLY first.
+        reply(0,"{}")
+        return
+      end
       reply(if $state.reply.error_code!=nil then 10 else 0 end,json_encode($state.reply))
     catch $message,$error
-      reply(10,json_encode({error_code:$error.code,message:$message}))
+      if $name=="dopus.dialog" then reply(10,json_encode({error_code:$error.code,message:$message}));return end
+      reply(10,json_encode({error_code:if $error.code=="UNKNOWN_ACTION" then "INVALID_ARGUMENT" elif contains(["HEADLESS","WINDOW_BUSY"],$error.code) then "UNAVAILABLE" else $error.code end,message:$message,reason:if $error.code=="UNAVAILABLE" then "not_offered" elif $error.code=="HEADLESS" then "headless" elif $error.code=="WINDOW_BUSY" then "window_busy" else nil end}))
     end
   end
 end
 on dopus.job.completed
-  if $state!=nil and $event.args.tag.owner==viu_context().generation then
-    if $state.effect_jobs[$event.args.tag.id]==true then
-      $state.effect_jobs=delete($state.effect_jobs,$event.args.tag.id)
-      $state.info=$event.args.body.message ?? if $event.args.rc==0 then "Completed" else "Application effect failed" end
-    elif $state.job==$event.args.tag.id then
+  dp_job_completed($event.args)
+end
+fn dp_job_completed($completion)
+  global $state, $row_cache
+  if $state!=nil and $completion.tag.owner==viu_context().generation then
+    if has_key($state.effect_jobs,$completion.tag.id) then
+      $effect=$state.effect_jobs[$completion.tag.id]
+      $state.effect_jobs=delete($state.effect_jobs,$completion.tag.id)
+      if $effect.kind=="mail" or $completion.rc!=0 then
+        $state.info=$completion.body.message ?? "Application effect failed"
+        $state.dialog_status=$state.info
+      end
+      if $effect.kind=="mail" and $effect.token!=nil then
+        $body=if $completion.rc==0 then {id:"file.mail",ok:true,result:$completion.body} else $completion.body end
+        $finished=viu_reply("finish",$effect.token,{rc:$completion.rc,body:$body})
+      end
+    elif $state.job==$completion.tag.id then
       $state.busy=false;$state.job=nil
-      $result=$event.args.body
-      $state.info=if $event.args.rc==0 then "Select a file or folder" else $result.message ?? "Operation failed" end
-      for $i=0 to 1 $state.panes[$i]=$core.dp_relist($state.panes[$i]) end
+      $result=$completion.body
+      $state.info=if $completion.rc==0 then "Select a file or folder" else $result.message ?? "Operation failed" end
+      $panes=$state.panes
+      try
+        for $i=0 to 1 $panes[$i]=$core.dp_relist($panes[$i]) end
+        $state.panes=$panes
+      catch $message $state.info=$message end
     else
       for $i=0 to 1
-        if $state.preview_slots[$i].job==$event.args.tag.id then
+        if $state.preview_slots[$i].job==$completion.tag.id then
           $state.preview_slots[$i].job=nil
-          $state.preview_slots[$i].value=if $event.args.rc==0 and $event.args.body.phase=="ready" then {phase:"ready",path:$event.args.body.path} else {phase:"none"} end
+          $state.preview_slots[$i].value=if $completion.rc==0 and $completion.body.phase=="ready" then {phase:"ready",path:$completion.body.path} else {phase:"none"} end
         end
       end
     end
@@ -141,5 +224,34 @@ on dopus.intent
   dp_request({command:"dopus.intent",args:$event.args})
 end
 on dopus.execute
-  dp_request({command:"dopus.execute",args:$event.args})
+  $a=$event.args
+  if type($a.id)!="string" or any(keys($a),fn($k)=not contains(["id","params"],$k)) or ($a.params!=nil and type($a.params)!="map") then
+    reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"body: expected id and optional params object",reason:nil}));return
+  end
+  -- The compositor invokes published UI rows through execute as well. Keep
+  -- the core action catalogue separate from the window's complete registry.
+  if not contains($contract.bus_actions,$a.id) and (($state.headless ?? false) or not any($contract.actions,fn($action)=$action.id==$a.id)) then
+    reply(10,json_encode({error_code:if $a.id=="place.open" then "UNAVAILABLE" else "INVALID_ARGUMENT" end,message:$a.id..if $a.id=="place.open" then " is not implemented by dopus" else " is not a dopus action" end,reason:if $a.id=="place.open" then "not_implemented" else nil end}));return
+  end
+  $raw=$a.params ?? {}
+  if has_key($raw,"pane") and not contains(["left","right","active",0,1],$raw.pane) then
+    reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:if type($raw.pane)=="string" then "params: pane must be left, right, active, 0 or 1" elif type($raw.pane)=="number" and $raw.pane==floor($raw.pane) and $raw.pane>=0 and $raw.pane<=255 then "params: pane index must be 0 or 1" else "params: data did not match any variant of untagged enum Target" end,reason:nil}));return
+  end
+  $params=if $raw.pane==nil then {} else {pane:$raw.pane} end
+  dp_request({command:"dopus.execute",token:$event.headers["viu-call"],args:{id:$a.id,params:$params}})
+end
+
+on viu.job.completed
+  -- Reuse the app's existing job reducer through the same in-process handler.
+  dp_job_completed($event.args)
+end
+
+on viu.timer
+  if $event.args.timer=="config-save" then
+    try $state=$app.dp_persist($state)
+    catch $message
+      $state.info=$message;$state.dialog_status=$message
+      $row_cache=dp_publish($state,$contract,$row_cache)
+    end
+  end
 end

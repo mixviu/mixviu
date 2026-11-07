@@ -43,6 +43,24 @@ pub fn resolve(args: &serde_json::Value) -> Result<serde_json::Value, String> {
         });
         ids.insert(id.to_owned(), slot);
     }
+    for item in &defaults {
+        if let Some(keys) = item["keys"].as_array() {
+            if keys.len() > 16 {
+                return Err("too many default chords".into());
+            }
+            let id = item["id"].as_str().unwrap();
+            let extra = keys
+                .iter()
+                .skip(1)
+                .map(|key| {
+                    key.as_str()
+                        .and_then(toolkit::keymap::parse_chord)
+                        .ok_or("invalid default chord")
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            registry.add_shortcuts(ids[id], extra);
+        }
+    }
     let mapped = overrides
         .iter()
         .filter_map(|(id, keys)| ids.get(id).map(|slot| (slot.to_string(), keys.clone())))
@@ -129,6 +147,27 @@ pub fn take(ctx: &egui::Context, chord: &egui::KeyboardShortcut) -> bool {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn secondary_defaults_survive_profile_changes_and_restore() {
+        let defaults = serde_json::json!([{"id":"parent","shortcut":"Backspace","keys":["Backspace","Alt+ArrowUp"]}]);
+        let original =
+            super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{}})).unwrap();
+        assert_eq!(
+            original["bindings"]["parent"]["keys"],
+            serde_json::json!(["Backspace", "Alt+ArrowUp"])
+        );
+        let changed = super::resolve(
+            &serde_json::json!({"defaults":defaults,"overrides":{"parent":["Ctrl+U"]}}),
+        )
+        .unwrap();
+        assert_eq!(
+            changed["bindings"]["parent"]["keys"],
+            serde_json::json!(["Ctrl+U"])
+        );
+        let restored =
+            super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{}})).unwrap();
+        assert_eq!(restored["bindings"], original["bindings"]);
+    }
     #[test]
     fn user_bindings_claim_defaults_and_restore_without_losing_extra_keys() {
         let defaults = serde_json::json!([{"id":"view.b","shortcut":"Ctrl+B"},{"id":"view.a","shortcut":"Ctrl+A"}]);

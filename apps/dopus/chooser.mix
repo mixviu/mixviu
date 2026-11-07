@@ -5,39 +5,58 @@
 $s=nil
 $config=require("config.mix")
 $files=require("core.mix")
+$presentation=require("presentation.mix")
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
 fn ch_item($id,$label)
   return {id:$id,label:$label,enabled:true}
 end
-fn ch_rows($s,$folder,$depth)
-  $rows=viu_files("scan",{folder:$folder,hidden:$s.hidden,filter:$s.request.current_filter})
+fn ch_rows($s,$folder,$depth,$remaining)
+  if $depth>64 then raise("SCAN_BUDGET","Chooser pane scan depth budget exceeded") end
+  $scan=viu_files("scan",{folder:$folder,hidden:$s.hidden,filter:$s.request.current_filter,directories_only:$s.request.directory or $s.request.mode=="save_files",work_budget:$remaining})
+  $rows=$scan.rows;$remaining=$remaining-$scan.work
   for $i=0 to len($rows)-1
     $rows[$i].depth=$depth;$rows[$i].child_count=nil
     if $rows[$i].dir then
-      try $rows[$i].child_count=viu_files("count",{folder:$rows[$i].key,hidden:$s.hidden,filter:$s.request.current_filter}) catch $message $rows[$i].child_count=nil end
+      try
+        $count=viu_files("count",{folder:$rows[$i].key,hidden:$s.hidden,filter:$s.request.current_filter,work_budget:$remaining})
+        $remaining=$remaining-$count.work;$rows[$i].child_count=$count.count
+      catch $message,$error
+        if $error.code=="SCAN_BUDGET" then raise($error.code,$message) end
+        $rows[$i].child_count=nil
+      end
     end
   end
   $out=[]
   for $row in $files.dp_sort($rows,$s.sort,$s.ascending)
     push($out,$row)
     if $row.dir and ($s.expanded[$row.key] ?? false) then
-      if $depth>=256 then raise("TREE_DEPTH","Expanded directory depth exceeds 256") end
-      $out=concat($out,ch_rows($s,$row.key,$depth+1))
+      $child=ch_rows($s,$row.key,$depth+1,$remaining);$remaining=$child.remaining
+      $out=concat($out,$child.rows)
     end
-    if len($out)>100000 then raise("TREE_ROWS","Expanded directory tree exceeds 100000 rows") end
   end
-  return $out
+  return {rows:$out,remaining:$remaining}
 end
 fn ch_scan($s)
-  $s.rows=ch_rows($s,$s.folder,0);$s.revision=($s.revision ?? 0)+1
+  $s.rows=ch_rows($s,$s.folder,0,65536).rows;$s.revision=($s.revision ?? 0)+1
   $s.selected=filter($s.selected,fn($p)=any($s.rows,fn($r)=$r.key==$p))
   if not any($s.rows,fn($r)=$r.key==$s.anchor) then $s.anchor=nil end
   if not any($s.rows,fn($r)=$r.key==$s.cursor) then $s.cursor=nil end
   return $s
 end
-fn ch_go($s,$folder)
+fn ch_go($s,$folder,$remember=true)
+  if $remember and $s.folder!=viu_files("uri",{path:$folder}) then $s.back=concat($s.back ?? [],[$s.folder]);$s.forward=[] end
   $s.folder=viu_files("uri",{path:$folder});$s.location=viu_files("display-path",{path:$s.folder});$s.selected=[];$s.anchor=nil;$s.cursor=nil;return ch_scan($s)
 end
 fn ch_key($s,$a)
+  if $a.ctrl and $a.key=="R" then return ch_scan($s) end
+  if $a.alt and $a.key=="Home" then return ch_go($s,$s.home) end
+  if $a.alt and contains(["ArrowLeft","ArrowRight"],$a.key) then
+    $from=if $a.key=="ArrowLeft" then "back" else "forward" end;$to=if $from=="back" then "forward" else "back" end
+    if len($s[$from] ?? [])>0 then
+      $history=$s[$from];$target=$history[len($history)-1];$s[$from]=slice($history,0,len($history)-1);$s[$to]=concat($s[$to] ?? [],[$s.folder]);return ch_go($s,$target,false)
+    end
+    return $s
+  end
   if $a.ctrl and $a.key=="L" then $s.focus={id:"location",selection:[0,len($s.location)]};return $s end
   if $a.ctrl and $a.key=="H" then $s.hidden=not $s.hidden;return ch_scan($s) end
   if $a.key=="Escape" then return ch_effect($s,"cancel",{request:$s.id}) end
@@ -62,7 +81,19 @@ fn ch_effect($s,$command,$body)
 end
 fn ch_accept($s,$replace)
   $paths=$s.selected
-  if $s.request.mode=="save" then $paths=[viu_files("join",{folder:$s.folder,name:$s.raw_name ?? $s.name})]
+  if $s.request.mode=="save" then
+    if contains($s.name,"/") then
+      $parts=split($s.name,"/");$tail=$parts[len($parts)-1];$folder=join(slice($parts,0,len($parts)-1),"/")
+      if $folder=="" then $folder="/" end
+      if not starts_with($folder,"/") then $folder=path_join(viu_files("display-path",{path:$s.folder}),$folder) end
+      if not is_dir($folder) then $s.error="Folder does not exist";return $s end
+      $s=ch_go($s,$folder);$s.name=$tail;$s.raw_name=nil;return $s
+    end
+    $name=viu_files("save-name",{name:$s.raw_name ?? $s.name,filter:$s.request.current_filter})
+    $paths=[viu_files("join",{folder:$s.folder,name:$name})]
+    try
+      if viu_files("stat",{path:$paths[0]}).is_dir then return ch_go($s,$paths[0]) end
+    catch $message end
   elif $s.request.mode=="save_files" then $paths=map($s.request.files,fn($n)=viu_files("join",{folder:$s.folder,name:$n}))
   elif $s.request.directory and len($paths)==0 then $paths=[$s.folder] end
   $s.pending={request:$s.id,paths:$paths,folder:$s.folder,choices:$s.choices,replace:$replace}
@@ -72,37 +103,41 @@ end
 fn ch_project($s)
   $rows=[]
   for $row in $s.rows
-    push($rows,{key:$row.key,path:$row.key,cells:[$row.name,if $row.dir then $files.dp_count($row.child_count) else $files.dp_size($row.size) end,$files.dp_date($row.modified)],depth:$row.depth,branch:$row.dir,expanded:$s.expanded[$row.key] ?? false,selected:contains($s.selected,$row.key),focused:$s.cursor==$row.key,icon:if $row.dir then "folder" else "file" end})
+    $row.path=$row.key;$row.expanded=$s.expanded[$row.key] ?? false
+    push($rows,{key:$row.key,path:$row.key,cells:[$row.name,if $row.dir then $files.dp_count($row.child_count) else $files.dp_size($row.size) end,$files.dp_date($row.modified)],depth:$row.depth,branch:$row.dir,expanded:$row.expanded,selected:contains($s.selected,$row.key),focused:$s.cursor==$row.key,icon:$presentation.dp_icon($row)})
   end
   $options=[]
-  if len($s.request.filters ?? [])>0 then
+  if $s.request.mode=="save_files" then push($options,{id:"save-files",type:"label",label:"",value:"Files: "..join(map($s.request.files,fn($name)=viu_files("name",{name:$name})),", "),read_only:true}) end
+  if $s.request.filter_menu then
     $filters=[]
     for $i=0 to len($s.request.filters)-1
-      $f=$s.request.filters[$i];$item=ch_item("filter:"..to_string($i),$f.name);$item.checked=deep_eq($f,$s.request.current_filter);push($filters,$item)
+      $f=$s.request.filters[$i];push($filters,{id:to_string($i),label:$f.name})
     end
-    push($options,{id:"filter",label:"Filter: "..if $s.request.current_filter==nil then "All" else $s.request.current_filter.name end,enabled:true,children:$filters})
+    $current=index_of(map($s.request.filters,fn($f)=json_encode($f)),json_encode($s.request.current_filter))
+    if $current<0 then $current=0 end
+    push($options,{id:"filter",type:"select",label:"File type",inline_label:false,value:to_string($current),options:$filters})
   end
   for $i=0 to len($s.request.choices)-1
-    $c=$s.request.choices[$i];$items=[]
-    if len($c.options)==0 then
-      for $v in ["true","false"] $item=ch_item("choice:"..to_string($i)..":"..$v,$v);$item.checked=$s.choices[$c.id]==$v;push($items,$item) end
-    else
-      for $j=0 to len($c.options)-1
-        $o=$c.options[$j];$item=ch_item("option:"..to_string($i)..":"..to_string($j),$o.label);$item.checked=$s.choices[$c.id]==$o.id;push($items,$item)
-      end
-    end
-    push($options,{id:"choice-menu:"..to_string($i),label:$c.label,enabled:true,children:$items})
+    $c=$s.request.choices[$i]
+    push($options,{id:"choice:"..to_string($i),type:if len($c.options)==0 then "checkbox" else "select" end,label:$c.label,value:$s.choices[$c.id],options:$c.options})
   end
-  $hidden=ch_item("hidden","Hidden files");$hidden.checked=$s.hidden
+  if $s.error!="" then push($options,{id:"error",type:"label",label:"",value:$s.error,read_only:true}) end
   $places=[]
   for $i=0 to len($s.places)-1
     $p=$s.places[$i];$selected=false
     try $selected=$s.folder==viu_files("uri",{path:$p.path}) catch $message $selected=false end
-    push($places,{key:to_string($i),path:$p.path,cells:[$p.name],depth:0,branch:false,expanded:false,selected:$selected,focused:false,icon:"folder"})
+    push($places,{key:to_string($i),path:$p.path,cells:[$p.name],selected:$selected,icon:({Home:"house",Filesystem:"hard-drive",Documents:"file-text",Downloads:"download",Music:"music",Pictures:"image",Videos:"film"})[$p.name] ?? "folder"})
   end
-  $values={form:$s.form,places:{key:"places",columns:[{id:"name",label:"Places"}],rows:$places,active:false,context:[],background_context:[]},location:$s.location,name:$s.name,files:{key:$s.folder,revision:$s.revision,sort:$s.sort,ascending:$s.ascending,columns:[{id:"name",label:"Name",min_width:250},{id:"size",label:"Size",min_width:80,align:"right"},{id:"modified",label:"Modified",min_width:95,align:"right"}],rows:$rows,active:true,context:[],background_context:[]},toolbar:[ch_item("parent","Parent folder"),ch_item("home","Home"),$hidden,ch_item("refresh","Refresh")],options:$options,footer:[ch_item("cancel","Cancel"),ch_item("accept",$s.request.accept_label)],status:$s.error}
-  return {values:$values,focus:$s.focus,appearance:{scheme:"studio",mode:"dark",style:"default"},save_hidden:$s.request.mode!="save",options_hidden:len($options)==0,effect:$s.effect,ready:true,request:$s.id,folder:$s.folder,selected:$s.selected,choices:$s.choices,current_filter:$s.request.current_filter,name:$s.name,serial:$s.serial}
+  $accept=ch_item("accept",$s.request.accept_label);$accept.primary=true
+  $values={form:$s.form,places:{enabled:not $s.form.open,heading:"heading",rows:$places},location:$s.location,name:$s.name,"name-label":"File name",options:$options,footer:[$accept,ch_item("cancel","Cancel")],summary:$files.dp_summary($s.rows),identity:if $s.caller=="local:portald" then "" else "Requested by "..$s.caller end,claim:if $s.request.on_behalf_of==nil then "" else "For "..$s.request.on_behalf_of..", says "..$s.caller end}
+  $values.files={key:$s.folder,revision:$s.revision,sort:$s.sort,ascending:$s.ascending,columns:[{id:"name",label:"Name",min_width:140},{id:"size",label:"Size",align:"right",min_width:0},{id:"modified",label:"Modified",align:"right",min_width:0}],rows:$rows,active:true,context:[],background_context:[]}
+  $model={values:$values,focus:$s.focus,save_hidden:$s.request.mode!="save",claim_hidden:$s.request.on_behalf_of==nil,identity_hidden:$s.caller=="local:portald",options_hidden:len($options)==0,form_rows:if $s.request.mode!="open" then 1 else 0 end+if $s.request.filter_menu then 1 else 0 end+len($s.request.choices)+if $s.error!="" then 2 else 0 end,effect:$s.effect,ready:true,request:$s.id,folder:$s.folder,selected:$s.selected,choices:$s.choices,current_filter:$s.request.current_filter,name:$s.name,serial:$s.serial,viewport:{size:[820,600],minimum:[360,240],app_id:"dev.mixos.dopus.choose."..$s.id}}
+  $model.__viu_metrics={field_height:28,item_spacing_x:8,item_spacing_y:8,height:600,dialog_resize_max_share:0.8}
+  $model=$frame.apply($model,{icon:"folder",title:$s.request.title,native_title:$s.request.title,menus:[],toolbar:[],status:"",status_hidden:true,window:{"window.decorations":"csd"}})
+  $model.frame.groups["gold-toolbar"].minimum=0
+  return $model
 end
+
 fn ch_publish($s)
   send "viu-local" "scenes.model" body={generation:viu_context().generation,value:ch_project($s)}
   if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
@@ -110,9 +145,11 @@ end
 on chooser.open
   try
     $r=$event.args.request;$name=""
+    $r.current_folder=$r.current_folder ?? $event.args.home
+    $r.filter_menu=len($r.filters ?? [])>0
     if $r.current_name!=nil then $name=viu_files("name",{name:$r.current_name}) end
     $choices={};for $c in $r.choices $choices[$c.id]=$c.default end
-    $s={id:$event.args.id,request:$r,folder:$r.current_folder,home:$event.args.home,name:$name,raw_name:$r.current_name,hidden:false,rows:[],selected:[],anchor:nil,choices:$choices,error:"",form:{open:false,title:"",body:"",field:nil,choices:[]},pending:nil,serial:0,effect:nil}
+    $s={id:$event.args.id,caller:$event.args.caller ?? "anon",request:$r,folder:$r.current_folder,home:$event.args.home,name:$name,raw_name:$r.current_name,hidden:false,rows:[],selected:[],anchor:nil,choices:$choices,error:"",form:{open:false,title:"",body:"",field:nil,choices:[]},pending:nil,serial:0,effect:nil}
     $s.sort="name";$s.ascending=true;$s.expanded={};$s.revision=0
     $s.location=viu_files("display-path",{path:$s.folder})
     if $r.mode=="save" then
@@ -130,7 +167,12 @@ on chooser.call
     if $a.command=="result" then
       if $a.rc!=0 then
         if $a.body.error_code=="EXISTS" then
-          $candidate.form={open:true,title:"Replace existing files?",body:"The selected destination already exists. Replace it?",field:nil,instance:$candidate.serial,choices:[{id:"cancel",label:"Cancel",enabled:true,cancel:true},{id:"replace",label:"Replace",enabled:true,default:true}]}
+          $collisions=[]
+          for $path in $candidate.pending.paths
+            try viu_files("stat",{path:$path,follow:false});push($collisions,viu_files("display-path",{path:$path})) catch $message end
+          end
+          $singular=len($collisions)==1
+          $candidate.form={open:true,title:if $singular then "Replace existing file?" else "Replace existing files?" end,body:if $singular then "This file already exists. Allow the caller to replace it?" else "These files already exist. Allow the caller to replace them?" end,lines:join($collisions,"\n"),field:nil,instance:$candidate.serial,choices:[{id:"replace",label:"Replace",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
         else $candidate.error=$a.body.message ?? json_encode($a.body) end
       end
     elif $a.command=="key" then $candidate=ch_key($candidate,$a)
@@ -151,12 +193,18 @@ on chooser.call
           $candidate.name=$v
           if $action=="submit" then $candidate=ch_accept($candidate,false) end
         end
+      elif $id=="options" and $action=="edit" then
+        for $field in $v
+          if $field.id=="filter" then $candidate.request.current_filter=$candidate.request.filters[to_number($field.value)];$candidate=ch_scan($candidate)
+          elif starts_with($field.id,"choice:") then $candidate.choices[$candidate.request.choices[to_number(slice($field.id,7))].id]=$field.value end
+        end
       elif $id=="form" then
         if not deep_eq($v.instance,$candidate.form.instance) then raise("STALE_FORM","Replace confirmation has changed") end
         if $v.choice=="replace" then $candidate.pending.replace=true;$candidate=ch_effect($candidate,"accept",$candidate.pending) end
         $candidate.form.open=false
       elif $id=="files" then
-        if $action=="sort" then
+        if $action=="activate-pane" then $candidate=$candidate
+        elif $action=="sort" then
           if not contains(["name","size","modified"],$v.column) then raise("INVALID_ARGUMENT","Unknown column") end
           $candidate.ascending=if $candidate.sort==$v.column then not $candidate.ascending else true end
           $candidate.sort=$v.column;$candidate=ch_scan($candidate)

@@ -50,6 +50,7 @@ pub fn activate_existing(service: &str, command: &str, url: &str) -> Result<bool
 pub fn activate_existing_plan(
     service: &str,
     operations: &[Value],
+
     url: &str,
 ) -> Result<bool, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -81,6 +82,7 @@ pub fn activate_existing_plan(
                             .ok_or("activation command required")?,
                         &BTreeMap::new(),
                         &operation["body"].to_string(),
+
                         Duration::from_secs(10),
                     )
                     .await
@@ -236,6 +238,7 @@ impl Endpoint {
         let close = close_requested.clone();
         let startup_error = Arc::new(Mutex::new(None));
         let startup_failed = startup_error.clone();
+
         let dropped_notices = Arc::new(AtomicU64::new(0));
         let dropped = dropped_notices.clone();
         let client: SharedClient = Arc::new(Mutex::new(None));
@@ -248,7 +251,8 @@ impl Endpoint {
             rt.block_on(async move{
                 let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
                 let options=if help.is_none() && !owner_help{options.with_commands(commands)}else{options};
-                let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");failed.store(true,Ordering::Release);*startup_failed.lock().unwrap_or_else(|e|e.into_inner())=Some(e.to_string());close.store(true,Ordering::Release);wake();return;}}};
+                let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");failed.store(true,Ordering::Release);*startup_failed.lock().unwrap_or_else(|e|e.into_inner())=Some(e.to_string());close.store(e.registration_rejection_typed().is_some(),Ordering::Release);wake();return;}}};
+
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=Some(native.clone());
                 let mut state=native.subscribe_state();
@@ -305,6 +309,7 @@ impl Endpoint {
             notices,
             close_requested,
             registration_failed,
+
             startup_error,
             dropped_notices,
             client,
@@ -731,4 +736,9 @@ mod tests {
             "test"
         );
     }
+}
+
+pub fn activate_existing_commands(service: &str, commands: &[(&str, Value)], url: &str) -> Result<bool, String> {
+ let operations=commands.iter().map(|(command,body)|json!({"command":command,"body":body})).collect::<Vec<_>>();
+ activate_existing_plan(service,&operations,url)
 }

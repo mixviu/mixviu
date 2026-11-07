@@ -23,15 +23,15 @@ fn viu_app_call($id,$command,$body,$wait_seconds,$call_seconds=30)
   $first=viu_app_raw($service,$command,$body,$call_seconds)
   if not viu_app_absent($first,$service) then return $first end
   $launch=viu_app_raw("apps","apps.launch",{id:$id})
-  if $launch.rc>=10 and $launch.body.error_code!="OUTCOME_UNKNOWN" then return $launch end
+  if $launch.rc>=10 and $launch.body.error_code!="OUTCOME_UNKNOWN" then $launch.stage="launch";return $launch end
   $deadline=monotonic()+$wait_seconds
   while monotonic()<$deadline
     sleep(min(0.25,$deadline-monotonic()))
     if monotonic()>=$deadline then break end
-    $reply=viu_app_raw($service,$command,$body,$call_seconds)
-    if not viu_app_absent($reply,$service) then return $reply end
+    $attempt=viu_app_raw($service,$command,$body,$call_seconds)
+    if not viu_app_absent($attempt,$service) then return $attempt end
   end
-  return {rc:10,body:{error_code:"NOT_RUNNING",message:"Application did not register before the wait limit"}}
+  return {rc:10,stage:"wait",body:{error_code:"NOT_RUNNING",message:"Application did not register before the wait limit"}}
 end
 
 fn viu_app_raw_within($service,$command,$body,$seconds) return viu_app_raw($service,$command,$body,$seconds) end

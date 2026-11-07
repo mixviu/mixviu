@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Thin native viewport/Bus host for the Mix-authored chooser scene. The
 //! imported files engine runs on an existing Viu evaluator worker.
-use super::{Reply, input::Input};
+use crate::input::Input;
+type Reply = tokio::sync::oneshot::Sender<(u8, serde_json::Value)>;
+use crate::{
+    native_bus::{Endpoint, Request},
+    runtime::{Program, Runtime, Services, Wake},
+    view::SceneView,
+};
 use eframe::egui;
 use serde_json::{Value, json};
 use std::{
@@ -11,11 +17,6 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicU8, Ordering},
     },
-};
-use viu::{
-    native_bus::{Endpoint, Request},
-    runtime::{Program, Runtime, Services, Wake},
-    view::SceneView,
 };
 fn viewport(id: &str) -> egui::ViewportId {
     egui::ViewportId::from_hash_of(("viu-files", id))
@@ -35,7 +36,7 @@ struct Window {
     requests: VecDeque<Request>,
     input_replies: Vec<Reply>,
     input_wait: bool,
-    capture: viu::capture::Capture,
+    capture: crate::capture::Capture,
     capture_reply: Option<Reply>,
     effect: Option<Value>,
     seen_effect: u64,
@@ -46,10 +47,17 @@ struct Window {
     mapped: bool,
     applied_focus: Option<Value>,
     fatal: Option<String>,
+    frame: crate::window_frame::WindowFrame,
+    session_values: Value,
+    session_snapshot: Value,
+    style_snapshot: Value,
+    app: String,
+    file_theme: toolkit::Theme,
+    last_ui: settings::model::CommonUi,
 }
 impl Window {
     fn new(
-        open: &viu::chooser::Prepared,
+        open: &crate::chooser::Prepared,
         app_dir: &std::path::Path,
         profile: &std::path::Path,
         home: &Value,
@@ -72,7 +80,7 @@ impl Window {
                 citizen: "files-window".into(),
             })
             .map_err(|e| format!("{e:?}"))?;
-        let sequence=worker.event("chooser.open".into(),json!({"id":id,"request":open.open.request.body().map_err(|e|e.message)?,"home":home,"profile":profile})).map_err(|e|format!("{e:?}"))?;
+        let sequence=worker.event("chooser.open".into(),json!({"id":id,"caller":open.open.caller,"request":open.open.request.body().map_err(|e|e.message)?,"home":home,"profile":profile})).map_err(|e|format!("{e:?}"))?;
         let captures = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_default()
@@ -93,7 +101,7 @@ impl Window {
             requests: VecDeque::new(),
             input_replies: Vec::new(),
             input_wait: false,
-            capture: viu::capture::Capture::new(captures, wake),
+            capture: crate::capture::Capture::new(captures, wake),
             capture_reply: None,
             effect: None,
             seen_effect: 0,
@@ -104,6 +112,17 @@ impl Window {
             mapped: false,
             applied_focus: None,
             fatal: None,
+            frame: crate::window_frame::WindowFrame::undecorated(),
+            session_values: json!({}),
+            session_snapshot: json!({}),
+            style_snapshot: Value::Null,
+            app: app_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("files")
+                .into(),
+            file_theme: toolkit::Theme::load(),
+            last_ui: Default::default(),
         })
     }
     fn state(&self) -> Value {
@@ -119,7 +138,7 @@ impl Window {
                 )
             })
             .collect();
-        json!({"ready":self.ready&&self.view.is_some(),"request":self.id,"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len(),"endpoint":"model applied/native input consumed; physical presentation unmeasured"})
+        json!({"settings":self.session_values,"ready":self.ready&&self.mapped&&self.view.as_ref().is_some_and(|view|view.current_revision_drawn()),"request":self.id,"model":self.model,"geometry":geometry,"error":self.error,"pending":self.pending.len(),"endpoint":"model applied/native input consumed; physical presentation unmeasured"})
     }
     fn call(&mut self, args: Value) {
         match self.worker.event("chooser.call".into(), args) {
@@ -154,13 +173,18 @@ impl Window {
                 }
             }
             if let Some(model) = result.model {
-                let style = (self.model["appearance"] != model["appearance"])
-                    .then(|| viu::appearance::resolve(&model["appearance"]))
+                let style = (model["frame"].is_null()
+                    && self.model["appearance"] != model["appearance"])
+                    .then(|| crate::appearance::resolve(&model["appearance"]))
                     .transpose()?;
                 if let Some(view) = &mut self.view {
                     view.apply_model(model.clone())?;
                 } else {
-                    self.view = Some(SceneView::with_model(&self.scene, model.clone())?);
+                    self.view = Some(if model["frame"].is_object() {
+                        crate::gold_frame::mount(&self.scene, model.clone())?
+                    } else {
+                        SceneView::with_model(&self.scene, model.clone())?
+                    });
                 }
                 let serial = model["effect"]["serial"].as_u64().unwrap_or(0);
                 if serial > self.seen_effect {
@@ -169,7 +193,7 @@ impl Window {
                 }
                 self.model = model;
                 if let Some(style) = style {
-                    viu::appearance::install_style(ctx, &self.model["appearance"], style);
+                    crate::appearance::install_style(ctx, &self.model["appearance"], style);
                 }
             }
         }
@@ -178,11 +202,63 @@ impl Window {
     fn show(&mut self, ui: &mut egui::Ui) {
         self.mapped = true;
         let ctx = ui.ctx().clone();
-        ui.painter().rect_filled(
-            ui.max_rect(),
-            0.0,
-            viu::appearance::colour(&ctx, "dock").unwrap_or(ui.visuals().panel_fill),
-        );
+        let framed = self.model["frame"].is_object();
+        let style_key = json!({"values":self.session_snapshot["state"]["values"],"lost":self.session_snapshot["state"]["lost"]});
+        if framed && style_key["values"].is_object() && self.style_snapshot != style_key {
+            match crate::appearance::install_session(
+                &ctx,
+                &self.session_snapshot,
+                &self.app,
+                &self.file_theme,
+                &self.last_ui,
+            ) {
+                Ok(common) => {
+                    self.last_ui = common;
+                    self.style_snapshot = style_key;
+                    ctx.request_repaint();
+                }
+                Err(error) => self.error = error,
+            }
+        }
+        if !framed {
+            ui.painter().rect_filled(
+                ui.max_rect(),
+                0.0,
+                crate::appearance::colour(&ctx, "dock").unwrap_or(ui.visuals().panel_fill),
+            );
+        }
+        if framed {
+            let mut settings = self.session_values.clone();
+            if let Some(values) = self.model["window_settings"].as_object() {
+                for (key, value) in values {
+                    settings[key] = value.clone();
+                }
+            }
+            if self.model["window_settings"]["window.decorations"] == "csd" {
+                toolkit::chrome::client_side(&ctx);
+            }
+            crate::rich::configure_menu(&ctx, &settings, None);
+            self.frame
+                .show_with_chrome(ui, &self.title, &settings, true, true);
+            if let Some(view) = &mut self.view {
+                let slots = self
+                    .frame
+                    .geometry
+                    .get("window.header.content")
+                    .map(|rect| BTreeMap::from([("window.header.content".into(), *rect)]))
+                    .unwrap_or_default();
+                if let Err(error) = view.set_slots(slots) {
+                    self.error = error;
+                }
+                let style = ctx.global_style();
+                let mut projected = self.model.clone();
+                projected["__viu_window_client"] = json!(crate::window_frame::is_client(&settings));
+                projected["__viu_metrics"] = json!({"item_spacing_x":style.spacing.item_spacing.x,"item_spacing_y":style.spacing.item_spacing.y,"control_row_height":toolkit::button::icon_button_of(&ctx).max(style.spacing.interact_size.y+4.0),"field_height":toolkit::field::height_of(&ctx),"height":ctx.content_rect().height(),"dialog_resize_max_share":toolkit::chrome::Chrome::of(&ctx).style.dialog_resize_max_share});
+                if let Err(error) = view.apply_model(projected) {
+                    self.error = error;
+                }
+            }
+        }
         if let Some((_, result)) = self.capture.poll(&ctx) {
             if let Some(reply) = self.capture_reply.take() {
                 let _ = reply.send(match result {
@@ -275,6 +351,21 @@ impl Window {
         } else {
             ui.label("Loading chooser…");
         }
+        if framed {
+            let reserved = self
+                .view
+                .as_ref()
+                .and_then(|v| v.allocated_region("gold-captions"));
+            self.frame.finish_captions(ui, reserved);
+            self.frame.edges(ui);
+            if let Some(view) = &mut self.view {
+                view.geometry.extend(self.frame.geometry.clone());
+            }
+            if self.frame.close_requested && !self.closed {
+                self.closed = true;
+                self.effect = Some(json!({"command":"cancel","body":{"request":self.id}}));
+            }
+        }
         if let Some(view) = &mut self.view {
             if let Some(error) = view.take_focus_error() {
                 self.error = error.clone();
@@ -297,7 +388,7 @@ impl Window {
             && !self.view.as_ref().is_some_and(|v| v.text_input_active())
         {
             let keys:Vec<_>=ctx.input(|input|input.events.iter().filter_map(|event|{
-                if let egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=event{Some(json!({"command":"key","key":viu::input::key_name(*key),"ctrl":modifiers.ctrl,"shift":modifiers.shift,"alt":modifiers.alt}))}else{None}
+                if let egui::Event::Key{key,pressed:true,repeat:false,modifiers,..}=event{Some(json!({"command":"key","key":crate::input::key_name(*key),"ctrl":modifiers.ctrl,"shift":modifiers.shift,"alt":modifiers.alt}))}else{None}
             }).collect());
             for key in keys {
                 self.call(key);
@@ -361,13 +452,17 @@ struct Shell {
     topic: String,
     home: Value,
     bus: Endpoint,
-    service: viu::chooser::Service,
+    service: crate::chooser::Service,
     engine: Runtime,
     pending: BTreeMap<u64, Pending>,
     delivery: BTreeMap<String, Arc<AtomicU8>>,
     windows: Windows,
     quitting: Option<Reply>,
     error: String,
+    session: crate::session::Session,
+    file_theme: toolkit::Theme,
+    last_ui: settings::model::CommonUi,
+    app: String,
 }
 impl Shell {
     fn engine_call(
@@ -488,6 +583,27 @@ impl eframe::App for Shell {
         }
     }
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        while let Ok(notice) = self.bus.notices.try_recv() {
+            self.session.hint(&notice.command, &notice.args);
+        }
+        if let Some(snapshot) = self.session.poll() {
+            match crate::appearance::install_session(
+                ctx,
+                &snapshot,
+                &self.app,
+                &self.file_theme,
+                &self.last_ui,
+            ) {
+                Ok(ui) => self.last_ui = ui,
+                Err(error) => self.error = error,
+            }
+            ctx.request_repaint();
+        }
+        if let Some(deadline) = self.session.deadline() {
+            ctx.request_repaint_after(
+                deadline.saturating_duration_since(std::time::Instant::now()),
+            );
+        }
         while let Ok(request) = self.bus.requests.try_recv() {
             self.request(request, ctx);
         }
@@ -607,6 +723,12 @@ impl eframe::App for Shell {
             }
             let window = self.windows.lock().unwrap().get(&id).cloned().unwrap();
             let mut window = window.lock().unwrap();
+            window.session_snapshot = self.session.snapshot.clone();
+            let values = &self.session.snapshot["state"]["values"];
+            if values.is_object() && window.session_values != *values {
+                window.session_values = values.clone();
+                ctx.request_repaint_of(viewport(&id));
+            }
             if window.ready != open.ready {
                 window.ready = open.ready;
                 ctx.request_repaint_of(viewport(&id));
@@ -662,14 +784,36 @@ impl eframe::App for Shell {
             .map(|(id, w)| (id.clone(), w.clone()))
             .collect();
         for (id, window) in windows {
-            let title = window.lock().unwrap().title.clone();
+            let locked = window.lock().unwrap();
+            if locked.view.is_none() {
+                continue;
+            }
+            let title = locked.title.clone();
+            let viewport_model = &locked.model["viewport"];
+            let dimensions = |key: &str, default: [f32; 2]| -> [f32; 2] {
+                viewport_model[key]
+                    .as_array()
+                    .filter(|v| v.len() == 2)
+                    .and_then(|v| Some([v[0].as_f64()? as f32, v[1].as_f64()? as f32]))
+                    .filter(|v| {
+                        v.iter()
+                            .all(|n| n.is_finite() && (160.0..=8000.0).contains(n))
+                    })
+                    .unwrap_or(default)
+            };
+            let size = dimensions("size", [640.0, 480.0]);
+            let minimum = dimensions("minimum", [320.0, 240.0]);
+            let app_id = viewport_model["app_id"]
+                .as_str()
+                .unwrap_or("viu.files")
+                .to_owned();
+            drop(locked);
             ui.ctx().show_viewport_deferred(
                 viewport(&id),
-                egui::ViewportBuilder::default()
-                    .with_title(title)
-                    .with_inner_size([760.0, 560.0])
-                    .with_min_inner_size([480.0, 320.0])
-                    .with_app_id("mixviu.files"),
+                toolkit::titlebar::viewport(&app_id, &title)
+                    .with_inner_size(size)
+                    .with_min_inner_size(minimum)
+                    .with_app_id(app_id),
                 move |ui, _| window.lock().unwrap().show(ui),
             );
         }
@@ -702,19 +846,26 @@ fn commands() -> Vec<String> {
     .map(str::to_owned)
     .collect()
 }
-pub fn run(app_dir: PathBuf, profile: PathBuf, service_name: String) -> eframe::Result {
+pub fn run(
+    app_dir: PathBuf,
+    profile: PathBuf,
+    service_name: String,
+    bus_url: String,
+) -> eframe::Result {
     let topic = format!("{service_name}.chosen");
     eframe::run_native(
         "Viu file chooser",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
+                .with_transparent(true)
                 .with_visible(false)
                 .with_app_id(&service_name),
             ..Default::default()
         },
         Box::new(move |cc| {
-            viu::decorations::initialise(cc);
-            viu::appearance::install(&cc.egui_ctx);
+            crate::decorations::initialise(cc);
+            toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
+            crate::appearance::install(&cc.egui_ctx);
             cc.egui_ctx.set_embed_viewports(false);
             cc.egui_ctx
                 .send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
@@ -722,8 +873,7 @@ pub fn run(app_dir: PathBuf, profile: PathBuf, service_name: String) -> eframe::
             let wake: Wake = Arc::new(move || context.request_repaint_of(egui::ViewportId::ROOT));
             let bus = Endpoint::start(
                 service_name,
-                std::env::var("MIXOS_NODED_URL")
-                    .unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
+                bus_url,
                 commands()
                     .into_iter()
                     .map(|name| {
@@ -740,6 +890,21 @@ pub fn run(app_dir: PathBuf, profile: PathBuf, service_name: String) -> eframe::
                 "files.quit".into(),
                 wake.clone(),
             );
+            let app = app_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("files")
+                .to_owned();
+            let file_theme = toolkit::Theme::load();
+            crate::appearance::install_theme(&cc.egui_ctx, &file_theme)
+                .map_err(std::io::Error::other)?;
+            let session = crate::session::Session::embedded(
+                &app,
+                &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_| "default".into()),
+                wake.clone(),
+                bus.backend(),
+            )
+            .map_err(std::io::Error::other)?;
             let home = std::env::var_os("HOME")
                 .map(PathBuf::from)
                 .filter(|p| p.is_absolute())
@@ -749,7 +914,7 @@ pub fn run(app_dir: PathBuf, profile: PathBuf, service_name: String) -> eframe::
                 .unwrap_or_default()
                 .as_nanos() as u64
                 ^ std::process::id() as u64;
-            let service = viu::chooser::Service::new(
+            let service = crate::chooser::Service::new(
                 nonce,
                 home.as_os_str().as_encoded_bytes().to_vec(),
                 wake.clone(),
@@ -786,6 +951,10 @@ pub fn run(app_dir: PathBuf, profile: PathBuf, service_name: String) -> eframe::
                 windows: Arc::default(),
                 quitting: None,
                 error: String::new(),
+                session,
+                file_theme,
+                last_ui: Default::default(),
+                app,
             }))
         }),
     )

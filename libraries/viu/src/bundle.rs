@@ -61,6 +61,8 @@ pub struct Manifest {
     pub allow_native_overrides: bool,
     pub launch_variants: std::collections::BTreeMap<String, String>,
     pub saved_version: Option<u32>,
+    pub launch_model: bool,
+
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -111,6 +113,8 @@ impl Default for Manifest {
             allow_native_overrides: true,
             launch_variants: Default::default(),
             saved_version: None,
+            launch_model: false,
+
         }
     }
 }
@@ -134,6 +138,8 @@ pub struct Bundle {
     pub scene: String,
     pub program: crate::runtime::Program,
     pub launch: serde_json::Value,
+    pub launch_plan: serde_json::Value,
+
 }
 impl Bundle {
     pub fn load(root: &Path, args: &[String]) -> Result<Self, String> {
@@ -310,6 +316,8 @@ impl Bundle {
             scene,
             program,
             launch: serde_json::json!({}),
+            launch_plan: serde_json::json!({}),
+
         })
     }
 }

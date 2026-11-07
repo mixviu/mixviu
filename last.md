@@ -208,3 +208,10 @@ Email scoped check r1 found the merged Dock has eight ports rather than the decl
 
 
 Email scoped preparation gold-eight-email-prepare-r2-a1 PASS at 1d6cf722: formatter and locked Viu/engine check pass; full log read and returned formatting patch applied exactly. This is not release acceptance. Dopus merge is next; all eight release suites remain pending.
+
+
+## Dopus integration checkpoint
+
+Merged accepted Dopus branch c66fe3c after Email scoped preparation passed. Reconciled shared frame, host, native Bus, launch, schema, widgets and tests, retaining both branches: function-return launch policy for existing bundles and explicit model-publish launch policy for Dopus; singleton activation operations share the same native path. Both native text submission and multi-frame Tab focus regression tests are retained. Dopus uses generic viu; its per-app Rust host is removed by the accepted branch. Combined source remains UNVALIDATED pending scoped preparation and full eight-app release acceptance.
+
+Branch lab/gold-parity; head Dopus merge checkpoint (CBC source is containing commit); six-app admission e2c3541a ACCEPTED, Email scoped check PASS, merged Email/Dopus release revalidation PENDING; successor artifacts/all-five-hashes PENDING; prior accepted cbc2:/build/es-artifacts/e2c3541a498011f549f7c4d60e3d2811851d50c2/ SHA256SUMS=7245799c3031343c07c6dac6dadf7474df2a076eba4e950e2df2647f1093d2da; CBC gold-eight-email-prepare-r2-a1 PASS, combined scoped preparation next; NOT TREE FINAL.

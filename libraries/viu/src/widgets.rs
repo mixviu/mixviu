@@ -23,6 +23,9 @@ pub const KINDS: &[&str] = &[
     "cell-grid",
     "history-lines",
     "network-map",
+    "navigation-list",
+    "command-palette",
+
     "widget-row",
     "divider",
     "time-series",
@@ -277,6 +280,26 @@ impl Widget {
             );
         }
         self.validate_model(model)?;
+        if self.kind == "navigation-list" {
+            let font = egui::TextStyle::Body.resolve(ui.style());
+            return Ok(self.value(model)["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    ui.painter()
+                        .layout_no_wrap(
+                            row["cells"][0].as_str().unwrap().into(),
+                            font.clone(),
+                            ui.visuals().text_color(),
+                        )
+                        .size()
+                        .x
+                })
+                .fold(0.0_f32, f32::max)
+                + 2.0 * ui.ctx().global_style().spacing.interact_size.x
+                + 2.0 * ui.ctx().global_style().spacing.item_spacing.x);
+        }
         if self.kind == "menubar" && self.properties["style"] == "gold" {
             let chrome = toolkit::chrome::Chrome::of(ui.ctx());
             if toolkit::menu::effective(ui.ctx()) != design::MenuStyle::Bar {
@@ -399,6 +422,9 @@ impl Widget {
             return crate::data_panels::validate(&self.kind, value);
         }
         if crate::rich::KINDS.contains(&self.kind.as_str()) {
+            if self.kind == "property-grid" && !self.properties["preview"].is_null() {
+                crate::image_view::validate(&self.properties["preview"])?;
+            }
             if self.kind == "menubar" && self.properties["style"] == "gold" {
                 crate::native_menu::validate(value)?;
             }
@@ -462,6 +488,8 @@ impl Widget {
             "divider" => value.is_null(),
             "dashboard" => return crate::dashboard::validate(value),
             "time-series" => return crate::time_series::validate(value),
+            "navigation-list" => return crate::navigation_list::validate(value),
+            "command-palette" => return crate::command_palette::validate(value),
             "status-line" => {
                 value["left"].is_string()
                     && value["right"]
@@ -902,6 +930,7 @@ impl Intent {
 
 #[derive(Default)]
 pub struct Widgets {
+    edits: BTreeMap<String, (String, std::collections::VecDeque<String>)>,
     native_menu: crate::native_menu::NativeMenu,
     gold_menus: bool,
     pub geometry: BTreeMap<String, Rect>,
@@ -1155,6 +1184,8 @@ impl Widgets {
                 ui.response()
             }
             "dashboard" => crate::dashboard::draw(ui, id, value, events),
+            "navigation-list" => crate::navigation_list::draw(ui, id, &widget.label, value, events),
+            "command-palette" => crate::command_palette::draw(ui, id, value, events),
             "time-series" => crate::time_series::draw(ui, id, value),
             "status-line" => {
                 ui.spacing_mut().item_spacing.x = ui.ctx().global_style().spacing.item_spacing.x;
@@ -1307,7 +1338,7 @@ impl Widgets {
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" | "settings-browser" => {
-                crate::rich::draw(ui, widget, value, &mut self.geometry, events)
+                crate::rich::draw(ui, widget, value, &mut self.geometry, events, &mut self.images)
             }
             "label" => {
                 if widget.properties["role"] == "section" {
@@ -1371,6 +1402,7 @@ impl Widgets {
                             value.as_str().unwrap_or_default(),
                         )
                     });
+
                     return self.remember(ui, id, &response);
                 }
                 let text = label_text(ui, widget, value);
@@ -1508,7 +1540,24 @@ impl Widgets {
                 response
             }
             "field" | "multiline" | "editor" => {
-                let mut text = value.as_str().unwrap_or_default().to_owned();
+                let owner = value.as_str().unwrap_or_default().to_owned();
+                if let Some((base, pending)) = self.edits.get_mut(id) {
+                    if let Some(at) = pending.iter().position(|text| text == &owner) {
+                        pending.drain(..=at);
+                        *base = owner.clone();
+                    } else if *base != owner {
+                        pending.clear();
+                    }
+                    if pending.is_empty() {
+                        self.edits.remove(id);
+                    }
+                }
+                let mut text = self
+                    .edits
+                    .get(id)
+                    .and_then(|(_, pending)| pending.back())
+                    .cloned()
+                    .unwrap_or_else(|| owner.clone());
                 if self.focus.as_deref() == Some(id) {
                     if let Some(range) = &mut self.focus_selection {
                         let len = text.chars().count();
@@ -1528,7 +1577,12 @@ impl Widgets {
                     toolkit::field::text(ui, &mut text, widget.text("placeholder"), width)
                 } else {
                     let edit = if widget.kind == "field" {
-                        egui::TextEdit::singleline(&mut text)
+                        let edit = egui::TextEdit::singleline(&mut text);
+                        if widget.properties["weak"] == true {
+                            edit.text_color(ui.visuals().weak_text_color())
+                        } else {
+                            edit
+                        }
                     } else if widget.kind == "editor" {
                         let edit = egui::TextEdit::multiline(&mut text)
                             .desired_rows(rows)
@@ -1554,12 +1608,25 @@ impl Widgets {
                     )
                 };
                 // The key which ends editing belongs to the field this frame.
+                let r = if let Some(name) = widget.properties["accessible_name"].as_str() {
+                    r.accessible_name(name)
+                } else {
+                    r
+                };
                 self.text_input_active |= r.has_focus()
                     || (r.lost_focus()
                         && ui.input(|i| {
                             i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)
                         }));
                 if r.changed() {
+                    let (_, pending) = self
+                        .edits
+                        .entry(id.clone())
+                        .or_insert_with(|| (owner, Default::default()));
+                    pending.push_back(text.clone());
+                    if pending.len() > 256 {
+                        pending.pop_front();
+                    }
                     // Preserve native edit-before-submit/cancel ordering when
                     // a single input pass contains both text and a key.
                     events.push(Intent::set(id, json!(text)));
@@ -2161,7 +2228,8 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     if widget.properties["role"] == "heading" {
         text = text.heading();
     }
-    if widget.properties["role"] == "status" {
+    if widget.properties["role"] == "status" || widget.properties["small"] == true {
+
         text = text.small();
     }
     if widget.properties["small"] == true {

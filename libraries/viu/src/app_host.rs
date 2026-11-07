@@ -10,6 +10,7 @@ use eframe::egui;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -44,6 +45,7 @@ struct Host {
     paste_deadline: Option<Instant>,
     platform_results: std::collections::VecDeque<Value>,
     calls: crate::calls::Calls,
+    close_replies: BTreeMap<String, Value>,
     timers: crate::timers::Timers,
     timer_results: std::collections::VecDeque<Value>,
     documents: crate::documents::Documents,
@@ -174,6 +176,13 @@ impl Host {
             projected["window_close"] = model["window_close"].clone();
             projected["__viu_root_key"] = model["native_root"]["key"].clone();
         }
+        let style = ctx.global_style();
+        projected["__viu_metrics"] = json!({
+            "item_spacing_x":style.spacing.item_spacing.x,
+            "item_spacing_y":style.spacing.item_spacing.y,
+            "control_row_height":toolkit::button::icon_button_of(ctx).max(style.spacing.interact_size.y + 4.0)
+        });
+
         if self.framed {
             projected["__viu_window_client"] = json!(crate::window_frame::is_client(
                 &self.window_settings(&projected)
@@ -256,9 +265,17 @@ impl Host {
         self.wire_deliveries.push(r.delivery.clone());
         r.headers.insert("viu_input".into(), "bus".into());
         r.headers.insert("from".into(), r.from.clone());
+        let mut close_reply = None;
+
         if self.native_drive {
             if r.command == format!("{}.window", self.app) && r.args["action"] == "close" {
-                r.command = "app.quit".into();
+                close_reply =
+                    toolkit::drive::request(ctx, 0, "window.state", &json!({})).map(|answer| {
+                        let mut body = answer.body;
+                        body["requested"] = json!("close");
+                        body
+                    });
+                r.command = format!("{}.quit", self.app);
             }
         }
         if r.command.starts_with("viu.") {
@@ -274,6 +291,14 @@ impl Host {
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
+        if r.command == format!("{}.quit", self.app)
+            || (r.command == format!("{}.execute", self.app)
+                && matches!(r.args["id"].as_str(), Some("file.quit" | "app.quit")))
+        {
+            r.close_after_reply
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
@@ -392,6 +417,9 @@ impl Host {
             }
             _ => match self.calls.begin(r.reply, r.close_after_reply) {
                 Ok(token) => {
+                    if let Some(body) = close_reply {
+                        self.close_replies.insert(token.clone(), body);
+                    }
                     let mut headers = r.headers;
                     headers.insert("viu-request-caller".into(), r.from);
                     let before = self.runtime.sequence();
@@ -919,7 +947,12 @@ impl Host {
                 } else {
                     (0, self.state())
                 };
-                self.calls.complete(&reply, answer.0, answer.1);
+                let body = self
+                    .close_replies
+                    .remove(&reply)
+                    .filter(|_| answer.0 == 0)
+                    .unwrap_or(answer.1);
+                self.calls.complete(&reply, answer.0, body);
             }
             if !done.behaviour_available {
                 self.retained.clear();
@@ -1315,6 +1348,7 @@ impl Host {
             }
             if !self.native_drive
                 && self.facilities.macros.is_some()
+
                 && toolkit::macros::show_app(ui.ctx(), &self.app, self.model["macros_open"] == true)
             {
                 self.dispatch(
@@ -1328,7 +1362,11 @@ impl Host {
                 && self.model["native_focus"]["id"].is_string()
             {
                 if let Some(id) = self.model["native_focus"]["id"].as_str() {
-                    let _ = self.view.request_focus(id);
+                    let mut target = json!({"id":id});
+                    if self.model["native_focus"]["selection"].is_array() {
+                        target["selection"] = self.model["native_focus"]["selection"].clone();
+                    }
+                    let _ = self.view.request_focus_value(&target);
                 }
                 self.focus_serial = self.model["native_focus"]["serial"].clone();
                 ui.ctx().request_repaint();
@@ -1372,7 +1410,11 @@ impl Host {
                                 .as_deref()
                                 .is_some_and(|id| a.iter().any(|v| v == id))
                         });
-                        if ui.ctx().memory(|m| m.focused().is_some()) && !editor_focus && !allowed {
+                        if (self.view.text_input_active()
+                            || ui.ctx().memory(|m| m.focused().is_some()))
+                            && !editor_focus
+                            && !allowed
+                        {
                             continue;
                         }
                         if binding["enabled"] == false {
@@ -1659,6 +1701,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         paste_deadline: None,
         platform_results: Default::default(),
         calls,
+        close_replies: Default::default(),
         timers,
         timer_results: Default::default(),
         documents,
@@ -1778,6 +1821,34 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         std::process::exit(2);
     }
     let root = std::path::Path::new(&args[1]);
+    if args[2..].iter().any(|arg| arg == "--choose-service") {
+        let chooser_args = args[2..]
+            .iter()
+            .filter(|arg| arg.as_str() != "--choose-service")
+            .cloned()
+            .collect::<Vec<_>>();
+        let options = crate::launch::parse(&chooser_args)
+            .map_err(|error| eframe::Error::AppCreation(Box::new(std::io::Error::other(error))))?;
+        let profile = options.args.first().map(PathBuf::from).unwrap_or_else(|| {
+            std::env::var_os("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config")
+                })
+                .join("files")
+        });
+        let root = root
+            .canonicalize()
+            .map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
+        return crate::chooser_host::run(
+            root,
+            profile,
+            options.service.unwrap_or_else(|| "files".into()),
+            options
+                .url
+                .unwrap_or_else(bus::client_helpers::resolve_noded_url),
+        );
+    }
     let preview = Bundle::load(root, &[]).unwrap_or_else(|e| {
         eprintln!("viu: {e}");
         std::process::exit(2)
@@ -1818,10 +1889,16 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         );
         return Ok(());
     }
-    let bundle = crate::launch::load(root, &logging_args[3..]).unwrap_or_else(|e| {
+    let mut bundle = crate::launch::load(root, &logging_args[3..]).unwrap_or_else(|e| {
         eprintln!("viu: {e}");
         std::process::exit(i32::from(preview.manifest.argument_error_exit))
     });
+    if let Some(output) = bundle.launch_plan["stdout"].as_str() {
+        print!("{output}");
+    }
+    if bundle.launch_plan["exit"] == true {
+        return Ok(());
+    }
     if bundle.launch["headless"] == true {
         return run_headless(bundle);
     }
@@ -1861,6 +1938,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             }
             let _ = rx.recv_timeout(Duration::from_millis(100));
         }
+
         return Ok(());
     }
     if bundle.manifest.surface == "background" {
@@ -1879,12 +1957,26 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         }
         return Ok(());
     }
-    if let Some(command) = &bundle.manifest.activation {
-        let fallback = vec![json!({"command":command,"body":{}})];
-        let plan = bundle.launch["activation"].as_array().unwrap_or(&fallback);
-        match crate::native_bus::activate_existing_plan(
-            &std::env::var("VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
-            plan,
+    let activation = bundle.launch_plan["activation"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| (row["command"].as_str().unwrap(), row["body"].clone()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| {
+            bundle
+                .manifest
+                .activation
+                .as_ref()
+                .map(|command| vec![(command.as_str(), json!({}))])
+                .unwrap_or_default()
+        });
+    if !activation.is_empty() && bundle.launch_plan["headless"] != true {
+        match crate::native_bus::activate_existing_commands(
+            &std::env::var("VIU_SERVICE").unwrap_or_else(|_|bundle.manifest.service.clone()),
+            &activation,
+
             &bundle.manifest.bus_url(),
         ) {
             Ok(true) => return Ok(()),
@@ -1894,6 +1986,58 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
                 std::process::exit(1);
             }
         }
+    }
+    if bundle.launch_plan["headless"] == true {
+        bundle.manifest.native_ui = false;
+        bundle.manifest.native_drive = false;
+        bundle.manifest.frame = None;
+        let prefix = format!("{}.", bundle.manifest.app());
+        if let Some(commands) = bundle
+            .manifest
+            .bus_surface
+            .as_mut()
+            .and_then(|surface| surface["commands"].as_array_mut())
+        {
+            commands.retain(|row| {
+                row["name"]
+                    .as_str()
+                    .and_then(|name| name.strip_prefix(&prefix))
+                    .is_none_or(|suffix| !toolkit::drive::COMMANDS.contains(&suffix))
+            });
+        }
+        let thread = std::thread::current();
+        let mut host = create(bundle, Arc::new(move || thread.unpark()));
+        let context = egui::Context::default();
+        crate::appearance::install(&context);
+        loop {
+            host.pump(&context);
+            if let Some(error) = host
+                .bus
+                .startup_error
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone()
+            {
+                return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                    error,
+                ))));
+            }
+            if !host.error.is_empty() {
+                return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                    host.error.clone(),
+                ))));
+            }
+            if host.model["window_close"] == true
+                || host
+                    .bus
+                    .close_requested
+                    .load(std::sync::atomic::Ordering::Acquire)
+            {
+                break;
+            }
+            std::thread::park_timeout(Duration::from_millis(20));
+        }
+        return Ok(());
     }
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;

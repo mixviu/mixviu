@@ -11,6 +11,9 @@ pub mod chooser;
 pub mod clipboard;
 pub mod composition;
 mod cuboids;
+pub mod chooser_host;
+pub mod command_palette;
+
 pub mod debug;
 mod debug_recent;
 mod design_style;
@@ -25,7 +28,7 @@ pub mod http;
 pub mod icons;
 pub mod image_view;
 pub mod jobs;
-mod launch;
+pub mod launch;
 mod local_ui;
 pub mod macro_host;
 pub mod native_bus;
@@ -37,6 +40,8 @@ pub mod raster;
 pub mod raster_decode;
 pub mod raster_fill;
 pub mod raster_fit;
+pub mod navigation_list;
+
 pub mod rich;
 pub mod runtime;
 pub mod session;
