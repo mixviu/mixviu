@@ -13,3 +13,7 @@ Branch lab/gold-parity; head is this reconciliation checkpoint; final per-app re
 CBC source-pair repair: the first full gate found a stale sibling mixd on its worker (5990e13) retaining MIX_ENGINE_HANDOFF. Rebuilding the service engine at the tested source makes the unchanged seven lifecycle tests pass: CBC 20261107-102349-faeedebf-a1. The full gate now builds that companion before shell process tests. Final release evidence remains pending.
 
 Branch lab/gold-parity; head is this gate-recipe checkpoint; per-app final release revalidation and four-engine artifacts PENDING; CBC lifecycle 20261107-102349-faeedebf-a1 PASS; final full CBC PENDING.
+
+Native reply deadlines reconciled explicitly: generic/Ced 180 seconds, Prefs 95 seconds, Screenshot 10 seconds plus its retained-reply flag. The retained-reply witness keeps its original 10-second transport deadline and waits 22 seconds. Final merged release gates and captures remain PENDING.
+
+Branch lab/gold-parity; head this deadline checkpoint; per-app final release revalidation PENDING; artifact set PENDING; CBC final PENDING.

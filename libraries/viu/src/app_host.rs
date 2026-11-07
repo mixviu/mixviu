@@ -1231,7 +1231,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let mut command_names = BTreeSet::new();
     commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
-    let bus = Endpoint::start_described(
+    let bus = Endpoint::start_policy(
         std::env::var("VIU_SERVICE").unwrap_or(service),
         bundle.manifest.bus_url(),
         {
@@ -1280,8 +1280,11 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         },
         "viu.quit".into(),
         wake.clone(),
-        facilities.surface.as_ref().map(|s| s["commands"].clone()),
-        bundle.manifest.owner_help,
+        crate::native_bus::RequestPolicy {
+            help: facilities.surface.as_ref().map(|s| s["commands"].clone()),
+            owner_help: bundle.manifest.owner_help,
+            timeout: Duration::from_secs(bundle.manifest.reply_timeout_secs),
+        },
     );
     let documents = crate::documents::Documents::default();
     let timers = crate::timers::Timers::default();

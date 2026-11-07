@@ -138,6 +138,17 @@ pub struct Endpoint {
     stop: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
 }
+/// Bundle-authored compatibility for native HELP and ordinary reply deadlines.
+pub struct RequestPolicy {
+    pub help: Option<Value>,
+    pub owner_help: bool,
+    pub timeout: Duration,
+}
+impl Default for RequestPolicy {
+    fn default() -> Self {
+        Self { help: None, owner_help: false, timeout: Duration::from_secs(180) }
+    }
+}
 impl Endpoint {
     pub fn start(
         name: String,
@@ -157,6 +168,19 @@ impl Endpoint {
         help: Option<Value>,
         owner_help: bool,
     ) -> Self {
+        Self::start_policy(name, url, commands, quit_command, wake, RequestPolicy {
+            help, owner_help, ..Default::default()
+        })
+    }
+    pub fn start_policy(
+        name: String,
+        url: String,
+        commands: Vec<CommandDescriptor>,
+        quit_command: String,
+        wake: crate::runtime::Wake,
+        policy: RequestPolicy,
+    ) -> Self {
+        let RequestPolicy { help, owner_help, timeout } = policy;
         let (tx, requests) = mpsc::sync_channel(32);
         let (notice_tx, notices) = mpsc::sync_channel(32);
         let close_requested = Arc::new(AtomicBool::new(false));
@@ -210,7 +234,7 @@ impl Endpoint {
                     responses.spawn(async move{
                         let ack=Delivery{state:delivery,wake:wake.clone()};
                         let mut response=response;
-                        let answer=if admitted{match tokio::time::timeout(Duration::from_secs(10),&mut response).await{Ok(Ok(value))=>value,Err(_) if deferred.load(Ordering::Acquire)=>response.await.unwrap_or((20,json!({"error_code":"OWNER_CLOSED"}))),_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
+                        let answer=if admitted{match tokio::time::timeout(timeout,&mut response).await{Ok(Ok(value))=>value,Err(_) if deferred.load(Ordering::Acquire)=>response.await.unwrap_or((20,json!({"error_code":"OWNER_CLOSED"}))),_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
                         toolkit::debug::answered(&service,&command.command,answer.0);
                         let sent=matches!(tokio::time::timeout(Duration::from_secs(2),native.respond(&command,answer.0,&answer.1.to_string())).await,Ok(Ok(())));
                         ack.state.store(if sent{1}else{2},Ordering::Release);wake();

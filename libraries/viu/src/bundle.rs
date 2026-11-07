@@ -26,6 +26,8 @@ pub struct Manifest {
     pub command_metadata: Vec<serde_json::Value>,
     /// Keep HELP dispatch in Mix when the bundle supplies its own handler.
     pub owner_help: bool,
+    /// Ordinary Bus reply deadline; retained replies keep their own lifetime.
+    pub reply_timeout_secs: u64,
     /// App-authored compatibility surface; native facilities append descriptors.
     pub bus_surface: Option<serde_json::Value>,
     pub native_ui: bool,
@@ -58,6 +60,7 @@ impl Default for Manifest {
             job_limit: 4,
             command_metadata: vec![],
             owner_help: false,
+            reply_timeout_secs: 180,
             bus_surface: None,
             native_ui: false,
             native_macros: false,
@@ -161,6 +164,7 @@ impl Bundle {
                         .all(|b| b.is_ascii_alphanumeric() || b".-_".contains(&b))
             })
             || manifest.command_metadata.len() > 256
+            || !(1..=180).contains(&manifest.reply_timeout_secs)
             || manifest.command_metadata.iter().any(|entry| {
                 entry["name"]
                     .as_str()
@@ -252,6 +256,8 @@ mod tests {
             serde_json::json!({"behaviour":"../app.mix"}),
             serde_json::json!({"tick_ms":1}),
             serde_json::json!({"size":[0,100]}),
+            serde_json::json!({"reply_timeout_secs":0}),
+            serde_json::json!({"reply_timeout_secs":181}),
         ] {
             std::fs::write(
                 dir.path().join("contract.json"),
