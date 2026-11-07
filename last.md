@@ -759,3 +759,38 @@ sealed Mix shell, full Bus/IME/search/zoom/About/all Prefs/release gate.
 No Fable question, installs or VT changes.
 
 branch: lab/parity-term; head SHA: 27c71218f895f016917498fceb47cd391997ce78 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — blink native validation, remaining clipboard/session/Bus/Prefs/input/search and release acceptance open; CBC job ids: term-clipboard-catalogue-b2a7b8aa-a1 (green exact source and scoped native witness), term-cursor-blink-27c71218 (next await).
+
+## Blink mechanics pass; terminal-only Prefs follower repaired
+
+term-cursor-blink-27c71218-a1 passed: 138 terminal tests/five ignores,
+seven input tests, two bundle tests, five Mix suites, command-search/
+dialog/foreign and host build. Complete saved log read (including the
+separately re-read truncated middle); fmt-only patch applied in152a7dfe.
+Matching artifact SHA256
+2e4cd45271fb78dba0da5700723c6e02793503a00453e8ceeaea338bd9b048a6.
+
+Native.yijAlb found terminal-only settings updates absent from model.
+Shared follower subscribes to look/keymaps only. 21e53cc7 adds gold's
+terminal/email/ced settings namespaces to subscriptions and native hints.
+About provenance still pending; this live-Prefs defect took precedence.
+
+Native.g5bXp4 passes actual two cursor pixel phases plus steady blink-off
+on one PID, normal close, using explicit appearance co-changes to make
+the old follower read. This is diagnostic, NOT evidence of subscription
+repair. Native.SXo6yj failed PNG file-hash check because ImageMagick added
+date metadata; raw RGBA hashes show exactly two pixel states. Corrected
+private harness strips metadata. Failed runs/closures retained.
+
+Next CBC term-terminal-prefs-21e53cc7 at
+21e53cc7f8c6f4767d59a2f49901acd5144898b0. Read full log/apply any patch
+and repeat exact source if changed. Fetch matching artifact and bundle;
+derive new blink script from blink-27c71218.mix (original terminal-only
+changes, now with -strip crops), update artifact path, and run. Do NOT
+use appearance-diagnostic variant to attest terminal-only updates. Verify
+blink on/off/model revisions/unchanged PID/cleanup, then other terminal
+Prefs: font size/family/weight, cursor shape, padding, scrollback, TERM,
+focus ring, copy-on-select and OSC52. Continue session/control/sealed
+shell, full Bus/mouse/IME/search/zoom/About and release acceptance.
+No Fable question, install, merge or VT work.
+
+branch: lab/parity-term; head SHA: 21e53cc7f8c6f4767d59a2f49901acd5144898b0 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — terminal-only live Prefs validation, remaining clipboard/session/Bus/input/search and release acceptance open; CBC job ids: term-cursor-blink-27c71218-a1 (green, fmt applied), term-terminal-prefs-21e53cc7 (next await).

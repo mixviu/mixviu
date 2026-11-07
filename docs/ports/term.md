@@ -487,3 +487,31 @@ unfocused, disabled or program-hidden cursors schedule no blink repaint.
 Tests cover phase edges, focus recovery, activity and no-wake cases. CBC
 `term-cursor-blink-27c71218` and native live-Prefs phase evidence pending.
 Overall **NOT ACCEPTED**.
+
+### Live terminal settings follower repair
+
+`term-cursor-blink-27c71218-a1` passed: 138 terminal tests/five existing
+ignores, seven input tests, both bundle tests, five Mix suites,
+command-search/dialog/foreign and debug build. Complete saved log read;
+formatting-only patch applied as 152a7dfe. Fetched artifact SHA256
+`2e4cd45271fb78dba0da5700723c6e02793503a00453e8ceeaea338bd9b048a6`.
+
+Native `native.yijAlb` exposed a shared follower defect: terminal-only
+settings changes were not subscribed to and never reached the model.
+The follower listened only to look and keymaps. Commit `21e53cc7` adds
+gold's terminal/email/ced application settings namespaces to subscriptions
+and native refresh hints. This repairs app-pref updates without requiring
+an unrelated appearance change. Exact-source runtime repeat pending.
+
+Diagnostic `native.g5bXp4` at the old 27c71218 executable uses an explicit
+appearance co-change to trigger its existing follower. It passes two
+pixel-distinct cursor phases and a steady cursor after disabling blink,
+on an unchanged PID, with normal close. This verifies blink mechanics,
+not the new terminal-only subscription. Earlier diagnostic `native.SXo6yj`
+compared cropped PNG file hashes including ImageMagick date metadata;
+raw RGBA hashes prove exactly two pixel states. The corrected harness
+strips crop metadata. Failed runs are retained. About provenance remains
+open; the live-Prefs defect took precedence.
+
+Next gate `term-terminal-prefs-21e53cc7`, source
+`21e53cc7f8c6f4767d59a2f49901acd5144898b0`. **NOT ACCEPTED**.
