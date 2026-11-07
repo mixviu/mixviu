@@ -318,3 +318,26 @@ cancelled before execution. Owned follow-ons retain the exact release suite,
 matched chooser/budget repeat and regional figures for final inspection.
 
 branch lab/parity-dopus; head SHA 4bccf5913312900b504054fc3c2d277078071c4a (implementation; receipt-only commit follows); OPEN: final exact-source release gate/native suite and inspection; CBC 20261107-165508-fcc5458e PASS scoped debug, dopus-r4-accept-settled cancelled before execution, dopus-r4-accept-framing QUEUED detached.
+
+### Round four release queue handoff
+
+Chooser layout/behaviour and native frame diagnostics are closed at the
+implementation above. Header, navigation, pane and form regions are exact
+for save, replacement, options and short-window pairs; only truthful caller
+text differs. All seventeen live chooser Prefs states passed on the same
+request after the frame repair. The real 65,537-name refusal preserves its
+folder, complete rows and serial and leaves the request open. Both diagnostic
+cleanup receipts confirm every owned process exited. The port document now
+records the source, debug hash, region metrics and remaining release boundary.
+
+The final heavy gate remains queued behind shared cutover work. It has not
+run or failed. Source `4bccf5913312900b504054fc3c2d277078071c4a` and the
+complete recipe remain frozen as `accept-4bccf5913312-final`. Owned detached
+follow-ons retain the release-byte hash verification, twelve native groups,
+matched chooser/budget repeat, structured reply comparison and regional audit.
+After those finish, read the complete CBC log, inspect the final figures,
+record the 2,000-row and refusal numbers and write the final verdict. The
+private `round4-handoff.md` identifies the runners, files and inspection steps.
+No final-release acceptance, installation or Fable deviation is claimed.
+
+branch lab/parity-dopus; head SHA 4bccf5913312900b504054fc3c2d277078071c4a (frozen implementation; subsequent commits are receipts only); OPEN: exact-source release gate/native suite and final inspection/acceptance; CBC 20261107-165508-fcc5458e PASS scoped checks/debug with no worker diff, dopus-r4-native-final-a1 PASS prior source, dopus-r4-accept-framing QUEUED detached.
