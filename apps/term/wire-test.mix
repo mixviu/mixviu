@@ -51,4 +51,8 @@ $history=$wire.remember_fields([],"term.type",$a,{pane:{kind:"u64",text:"1"}},0,
 check($wire.replay_fields($history,"term.type",$a,{pane:$float}).rc==10,"integer and float retry identities conflict before validation")
 check($wire.replay_fields($history,"term.type",$a,{pane:{kind:"u64",text:"1"}}).body=="once","same typed numeric retry replays")
 check($wire.replay_fields($history,"term.type",{pane:["json-number","u64","1"],text:"",request_id:"numeric"},{}).rc==10,"caller-shaped tags cannot collide with numeric retry metadata")
+check($wire.unknown("term.nope",repeat(" ",8191).."{}")=="request exceeds 8192 bytes","own unknown body limit precedes command lookup")
+check($wire.unknown("NOPE",repeat("中",2731))=="request exceeds 8192 bytes","bare unknown applies original UTF-8 byte budget")
+check($wire.unknown("other.nope",repeat(" ",8191).."{}")=="unknown command; use HELP","foreign namespace refusal precedes body budget")
+check($wire.unknown("term.nope","malformed")=="unknown command; use HELP","own unknown name precedes JSON parsing")
 print("term wire: selector and replay checks passed")

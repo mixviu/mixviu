@@ -560,6 +560,7 @@
     "preserve_request_body": true,
     "title": "Terminal",
     "unknown_reply": "unknown command; use HELP",
+    "unknown_handler": "term.unknown.request",
     "window_app_id": "dev.mixos.term"
   }
 }

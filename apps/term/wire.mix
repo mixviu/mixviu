@@ -9,6 +9,10 @@ end
 fn mutates($command)
   return starts_with($command,"term.tab.") or starts_with($command,"term.pane.") or contains(["term.type","term.scroll"],$command)
 end
+fn unknown($command,$body)
+  if (starts_with($command,"term.") or not contains($command,".")) and byte_length($body)>8192 then return "request exceeds 8192 bytes" end
+  return "unknown command; use HELP"
+end
 -- Match gold's original UTF-8 envelope budget before parsing or replay. Empty
 -- bodies are objects only for commands without a required argument. The
 -- shared Mix JSON parser uses the same serde errors and last-key-wins rule.

@@ -73,6 +73,7 @@ struct Host {
     title: String,
     unknown_command: Option<String>,
     unknown_reply: Option<Value>,
+    unknown_handler: Option<String>,
     window_frame: crate::window_frame::WindowFrame,
     jobs: crate::jobs::Jobs,
     job_results: std::collections::VecDeque<Value>,
@@ -224,16 +225,24 @@ impl Host {
                 .store(true, std::sync::atomic::Ordering::Release);
         }
         if !self.commands.contains(&r.command) {
-            let _ = r.reply.send((
-                10,
-                self.unknown_reply.clone().unwrap_or_else(|| {
-                    self.unknown_command.as_ref().map_or_else(
-                        || json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
-                        |message| json!({"error_code":"UNKNOWN_COMMAND","message":message}),
-                    )
-                }),
-            ));
-            return;
+            if let Some(handler) = &self.unknown_handler {
+                // Application-owned refusal policy. The original canonical
+                // command is host supplied, never a caller-selected header.
+                r.headers
+                    .insert("viu-unknown-command".into(), r.command.clone());
+                r.command = handler.clone();
+            } else {
+                let _ = r.reply.send((
+                    10,
+                    self.unknown_reply.clone().unwrap_or_else(|| {
+                        self.unknown_command.as_ref().map_or_else(
+                            || json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
+                            |message| json!({"error_code":"UNKNOWN_COMMAND","message":message}),
+                        )
+                    }),
+                ));
+                return;
+            }
         }
         match r.command.as_str() {
             "viu.state" | "viu.ui.tree" => {
@@ -1100,6 +1109,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         title: bundle.manifest.title.clone(),
         unknown_command: bundle.manifest.unknown_command.clone(),
         unknown_reply: bundle.manifest.unknown_reply.clone(),
+        unknown_handler: bundle.manifest.unknown_handler.clone(),
         window_frame: crate::window_frame::WindowFrame::default(),
         clipboard: crate::thumbnail::Decoder::with_decoder(
             "viu-clipboard-decode",

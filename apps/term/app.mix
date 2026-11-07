@@ -109,6 +109,9 @@ publish_term($state)
 on term.ping
   reply(0,json_encode({schema:"term.v1",version:$ctx.version}))
 end
+on term.unknown.request
+  reply(10,$wire.unknown($event.headers["viu-unknown-command"] ?? "",$event.body))
+end
 on HELP
   reply(0,json_encode($discovery.help_entries($state.service ?? "term",true)))
 end
