@@ -213,9 +213,6 @@ impl Windows {
             c.pending = c.pending.saturating_sub(1);
         }
     }
-    pub(crate) fn state(&self, key: &str) -> Option<Value> {
-        self.children.get(key).map(|c| c.lock().unwrap().state())
-    }
     pub(crate) fn request(&mut self, key: &str, request: Request, ctx: &egui::Context) {
         if let Some(child) = self.children.get(key) {
             let mut child = child.lock().unwrap();

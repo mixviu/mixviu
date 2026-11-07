@@ -88,12 +88,6 @@ impl Images {
             ..Self::default()
         }
     }
-    pub fn surface_with_capacity(capacity: usize) -> Self {
-        Self {
-            capacity: capacity.clamp(1, 128),
-            ..Self::surface()
-        }
-    }
     pub fn states(&self) -> Value {
         if !self.fills.is_empty() {
             return serde_json::json!(

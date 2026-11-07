@@ -417,10 +417,11 @@ impl Host {
                     }
                 }
             }
-            _ => match self
-                .calls
-                .begin_with_retention(r.reply, r.close_after_reply, r.deferred.clone())
-            {
+            _ => match self.calls.begin_with_retention(
+                r.reply,
+                r.close_after_reply,
+                r.deferred.clone(),
+            ) {
                 Ok(token) => {
                     if let Some(body) = close_reply {
                         self.close_replies.insert(token.clone(), body);

@@ -117,7 +117,8 @@ pub fn pressed(ctx: &egui::Context, actions: &serde_json::Value) -> Vec<serde_js
     });
     fired
 }
-pub fn take(ctx: &egui::Context, chord: &egui::KeyboardShortcut) -> bool {
+#[cfg(test)]
+fn take(ctx: &egui::Context, chord: &egui::KeyboardShortcut) -> bool {
     let clipboard = !ctx.egui_wants_keyboard_input();
     ctx.input_mut(|input| {
         let found = input.events.iter().position(|event| {

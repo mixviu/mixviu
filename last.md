@@ -224,3 +224,8 @@ Combined preparation r2 PASS at 68cfdfa9; full log read and formatting applied. 
 
 
 Scoped tests r1 caught an Arc ownership error in new retention wiring before tests ran; cloned the shared native retention flag so both receipt systems retain the same flag. Complete 4,948-byte log read; formatting applied exactly. Repaired-source tests queued next, no assertion changed.
+
+
+Merged scoped tests r2 PASS at 3f19c3a0: 117 library tests, Calls 2, deferred replies 4, generic Dopus bundle 3, Runtime 10 and text input 9. Complete saved log read; exact formatter patch applied. Removed unused private helpers left by reconciliation. The native Calls witness now holds for its original 22 seconds against a one-second ordinary endpoint deadline, preserving all completion/cancellation assertions. Full eight-app gate and all release-byte suites remain pending.
+
+Branch lab/gold-parity; head is this source checkpoint; six-app admission e2c3541a ACCEPTED; merged Monitor/Ced/Prefs/Screenshot/Backdrop/Workshop/Email/Dopus release revalidation PENDING; merged artifacts/all-five-hashes PENDING; CBC gold-eight-scoped-tests-r2-a1 PASS145 tests, gold-eight-combined-prepare-r2-a1 PASS; NOT TREE FINAL.
