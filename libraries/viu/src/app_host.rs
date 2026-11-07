@@ -1194,6 +1194,9 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         crate::appearance::install(&context);
         loop {
             host.pump(&context);
+            if let Some(error) = host.bus.startup_error.lock().unwrap_or_else(|e|e.into_inner()).clone() {
+                return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(error))));
+            }
             if !host.error.is_empty() {
                 return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
                     host.error.clone(),
