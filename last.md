@@ -1,11 +1,21 @@
-# Integration round 4: detached gate queued
+# Integration round 4: full gate passed
 
-Mark authorised requeueing the rc 143 session-closure cancellation. The replacement full gate is submitted with --detach, job 20261107-125735-43beb330, pinned to cbc2 at runtime source 1804bb98a5ab305111bd35412bf6f3902bc24013. It is queued behind an existing worker job; no duplicate submitted. Full gates and release builds use --detach from this checkpoint onward. Scoped checks use --light.
 
-The full gate includes formatting, clippy, all tests, Monitor policy tests, bulk primitives, four release engines, P2 furniture and Track A. Four-app release-byte suites (including deferred-reply deadlines), the same-worker 2,000-row comparison and final hashes follow its completion. No final release acceptance is claimed yet.
+## Detached full-gate pass at 1804bb9
 
-All 22 inherited import-hash mismatches are explained, with files, original/current hashes and first divergence, in docs/ports/import-hash-debt.md. This remains production-derivation provenance debt. The previous interrupted gate and historical artifacts are recorded in docs/ports/desk4-integration.md.
+CBC `20261107-125735-43beb330-a1`, cbc2, runtime source `1804bb98a5ab305111bd35412bf6f3902bc24013`: **PASS (rc 0)**. The complete saved log was read: 1109729 bytes, 19266 lines, SHA256 `0c7da20c8e8abe20b5a9711ce86d3aa97b667f69e0fc633471fc4174e6a39ec5`. All 614 reported test-result batches are green. The gate includes exact formatting, workspace Clippy and tests, Monitor parity policy, bulk primitive tests, P2 furniture and Track A (`SMOKE_FAILS=0`). The worker diff is empty. Existing warnings and ignored tests remain visible in the log.
 
-After this close-out, merge Backdrop 250f87d and Workshop 493ae42, reconcile shared facilities, wire Workshop's New macro editor to Ced's shared widget, and repeat all six release suites as required by the follow-on brief. No install or VT work.
+The four engines are saved together on **cbc2** at `/build/es-artifacts/1804bb98a5ab305111bd35412bf6f3902bc24013/`. `SHA256SUMS` SHA256: `afd278113a2a7be85e047ab5a72cbbae1a8832b041d7a0616c429454ca1e2801`.
 
-Branch lab/gold-parity; runtime head 1804bb98a5ab305111bd35412bf6f3902bc24013 (receipt commit follows); artifacts PENDING, final gates QUEUED; CBC 20261107-125735-43beb330 DETACHED cbc2, previous 20261107-123118-5c7ba675-a1 CANCELLED rc143.
+| Engine | SHA256 |
+|---|---|
+| mix | `5faf85a042c9547cbe042d4d0aa4bd5987109cd81c75b23fae5f9a0b5dd22f5e` |
+| mixd | `ad1e4f8f86ac1cb58294831fd21055b69b7281966117fdd45a9e97402d9a38ff` |
+| viud | `c9994a0567d3f5fd262c8eaa13aab3f6126b1bb97eb2596c68b519d40d85b2a6` |
+| viu | `6a995927feba6d70dfb028fc43e972e964f0b9009dfe4fdff7968f9142389299` |
+
+Four-app release-byte revalidation and the same-worker comparison are in progress. This gate receipt alone does not grant final integration acceptance. All 22 inherited provenance mismatches remain explained in [import-hash-debt.md](import-hash-debt.md); they predate this integration and must be reconciled before production derivation.
+
+Ced's 11 native suites and Monitor's quick suite have passed on the saved release bytes; deferred reply witnesses pass. Prefs and Screenshot suites and final figures/acceptance remain in progress. Same-worker comparison is CBC 20261107-144123-01357bfa on cbc2. Backdrop and Workshop merge follows this close-out.
+
+Branch lab/gold-parity; runtime head 1804bb98a5ab305111bd35412bf6f3902bc24013 (receipt commit follows); artifacts cbc2:/build/es-artifacts/1804bb98a5ab305111bd35412bf6f3902bc24013 SHA256SUMS=afd278113a2a7be85e047ab5a72cbbae1a8832b041d7a0616c429454ca1e2801; full CBC/P2/Track A PASS, native acceptance IN PROGRESS; CBC 20261107-125735-43beb330-a1 PASS, 20261107-144123-01357bfa comparison RUNNING.
