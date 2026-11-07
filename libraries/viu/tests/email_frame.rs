@@ -90,6 +90,15 @@ on test.pim
   $wire_data.a.open_event="event-1"
   surface_mode("calendar");publish_email();reply(0,"{}")
 end
+on test.footer
+  $composers["compose-1"].reply_quote="On today, Example wrote:\n> Hello"
+  $composers["compose-1"].reply_signature=""
+  $composers["compose-1"].reply_position="above"
+  $composers["compose-1"].body="Typed\n\nOn today, Example wrote:\n> Hello\n"
+  $composers["compose-1"].stale={account:"a",generation:0,address:"new@example.test"}
+  $composers["compose-1"].error="The server is unavailable"
+  publish_email();reply(0,"{}")
+end
 "#);
     let (_root, mut runtime, rx) = isolated_runtime();
     runtime.load(program).unwrap();
@@ -185,6 +194,21 @@ end
     .drop_without_applying_deltas();
     assert!(view.geometry.contains_key("compose-body"));
     assert!(view.geometry.contains_key("compose-headers"));
+    runtime.event("test.footer".into(), json!({})).unwrap();
+    let model = complete(&runtime, &rx).model.unwrap();
+    let child = &model["native_windows"][0];
+    let mut view = viu::gold_frame::mount(child["scene"].as_str().unwrap(), child["model"].clone()).unwrap();
+    for _ in 0..4 {
+        ctx.run_ui(egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0))),
+            ..Default::default()
+        }, |ui| { view.show(ui); }).drop_without_applying_deltas();
+    }
+    assert!(view.geometry.contains_key("compose-position"));
+    assert!(view.geometry.contains_key("compose-new-from"));
+    assert!(view.geometry.contains_key("compose-error"));
+    assert!(view.geometry["compose-body"].bottom() <= view.geometry["compose-footer"].top() + 1.0);
+    assert!(view.geometry["compose-error"].bottom() < 701.0);
 }
 
 #[test]

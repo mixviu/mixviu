@@ -5,10 +5,18 @@ citizen: email
 ---
 ```mix
 {
-root:{widget:"column",native_spacing:true,padding:8,children:["compose-headers","compose-content"]},
+root:{widget:"column",native_spacing:true,padding:8,children:["compose-layout"]},
+"compose-layout":{widget:"dock",children:["compose-headers","compose-footer","compose-content"],placements:{"compose-headers":{edge:"top",size:"content"},"compose-footer":{edge:"bottom",size:"content"},"compose-content":{edge:"fill"}}},
 "compose-headers":{widget:"control",definition:"= $model.headers",on_intent:"email.compose.intent"},
 "compose-content":{widget:"column",native_spacing:true,padding_top:4,children:["compose-surface"]},
 "compose-surface":{widget:"content",surface:"editor",settings:"= $model.reader_content",scroll:false,children:["compose-body"]},
-"compose-body":{widget:"control",definition:"= $model.body_editor",on_intent:"email.compose.intent"}
+"compose-body":{widget:"control",definition:"= $model.body_editor",on_intent:"email.compose.intent"},
+"compose-footer":{widget:"column",native_spacing:true,hidden:"= !$model.footer_visible",children:["compose-position","compose-stale","compose-error","compose-busy"]},
+"compose-position":{widget:"control",definition:"= $model.reply_toggle",on_intent:"email.compose.intent",hidden:"= !$model.reply_visible"},
+"compose-stale":{widget:"row",native_spacing:true,wrap:true,children:["compose-stale-text","compose-new-from"],hidden:"= !$model.stale_visible"},
+"compose-stale-text":{widget:"control",definition:{id:"compose-stale-text",kind:"label",label:"",initial:"",properties:{role:"warning",wrap:true}}},
+"compose-new-from":{widget:"control",definition:{id:"compose-new-from",kind:"button",label:"",initial:"",properties:{text:"Use New Address",style:"secondary"}},on_intent:"email.compose.intent"},
+"compose-error":{widget:"control",definition:{id:"compose-error",kind:"label",label:"",initial:"",properties:{role:"error",wrap:true}},hidden:"= !$model.error_visible"},
+"compose-busy":{widget:"control",definition:{id:"compose-busy",kind:"label",label:"",initial:"Sending…",properties:{weak:true}},hidden:"= !$model.busy"}
 }
 ```

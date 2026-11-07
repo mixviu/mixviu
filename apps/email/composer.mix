@@ -10,7 +10,7 @@ fn composer_info($c)
   return {account:$c.account,from:$c.from,to:$c.to,cc:$c.cc,bcc:$c.bcc,subject:$c.subject,body:$c.body,attachments:$c.files,attachment_size:$c.attachment_size,attachment_error:$c.attachment_error,attachments_over_limit:$c.attachments_over_limit,sendable:composer_sendable($c),send_origin:$c.send_origin,in_reply_to:$c.in_reply_to,stale:$c.stale,busy:$c.busy,error:$c.error}
 end
 fn composer_sendable($c)
-  return not $c.busy and $c.attachment_error==nil and wire_entry($c.account)!=nil and trim($c.to)!="" and trim($c.subject)!=""
+  return not $c.busy and $c.stale==nil and $c.attachment_error==nil and wire_entry($c.account)!=nil and trim($c.to)!="" and trim($c.subject)!=""
 end
 fn composer_size($bytes)
   if $bytes==nil then return "unknown size" end
@@ -151,6 +151,15 @@ fn composer_intent($a)
   if $c==nil then return wire_refuse("NOT_FOUND","No compose is open") end
   if $c.busy then return wire_refuse("BUSY","Sending…") end
   if $a.id=="compose-identities" then return composer_identity_intent($key,$a) end
+  if $a.id=="compose-position" then
+    $position=if $a.value then "below" else "above" end
+    $body=$compose_quoting.moved($c.body,$c.reply_quote,$c.reply_signature,$position)
+    if $body!=nil then $composers[$key].body=$body;$composers[$key].reply_position=$position;$composers[$key].revision=$c.revision+1;viu_timer("draft:"..$key,500,{kind:"draft",window:$key}) end
+    return {rc:0,body:{}}
+  end
+  if $a.id=="compose-new-from" then
+    composer_use_new_from($key);return {rc:0,body:{}}
+  end
   if $a.id=="compose-confirm" then return composer_close($key,$a.value.choice ?? $a.value) end
   if $a.id=="compose-replace" then
     $doc=$c.pending_document;$composers[$key].pending_document=nil
@@ -261,6 +270,11 @@ fn composer_models($m)
     if $c.document_mode!=nil then $headers.initial.chooser=merge($headers.initial.chooser,{mode:$c.document_mode,instance:$c.chooser_instance,title:if $c.document_mode=="open" then "Open mail document" else "Save mail document as" end,confirm:if $c.document_mode=="open" then "Open" else "Save" end}) end
     $body={id:"compose-body",kind:"editor",label:"Body",initial:$c.body,properties:{native_document:true,prose:true,document:$c.draft_id,language:"text",soft_wrap:true,line_numbers:false,remote_carets:false,read_only:$c.busy,command:{serial:$c.edit_serial ?? 0,name:$c.edit_command ?? ""}}}
     $child={values:{},headers:$headers,body_editor:$body,reader_content:$mail_settings.composer ?? {},native_overlays:[],shortcuts:[],window_close:false}
+    $child.reply_visible=$c.reply_quote!=nil;$child.stale_visible=$c.stale!=nil;$child.error_visible=$c.error!=nil;$child.busy=$c.busy
+    $child.footer_visible=$child.reply_visible or $child.stale_visible or $child.error_visible or $c.busy
+    $child.reply_toggle={id:"compose-position",kind:"toggle",label:"",initial:$c.reply_position=="below",properties:{text:"Reply below the quote",style:"gold",enabled:not $c.busy and $compose_quoting.moved($c.body,$c.reply_quote,$c.reply_signature,$c.reply_position)!=nil}}
+    $child.values["compose-error"]="Not sent: "..($c.error ?? "")
+    $child.values["compose-stale-text"]="From was "..$c.from.."; the account now signs in as "..($c.stale.address ?? "")
     if $c.confirm then $child.native_overlays=[{command:"email.compose.intent",definition:{id:"compose-confirm",kind:"dialog-form",label:"",initial:{open:true,instance:$c.draft_id,title:if $compose_quitting then "Quit with an unsent message?" else "Close this message?" end,body:"Your draft is kept on this computer and offered again when Email starts. Discard deletes it.",choices:[{id:"keep",label:"Keep Draft",enabled:true,default:true},{id:"discard",label:"Discard",enabled:true},{id:"cancel",label:"Keep Editing",enabled:true,cancel:true}]},properties:{style:"gold"}}}] end
     if $c.pending_document!=nil then $child.native_overlays=push($child.native_overlays,{command:"email.compose.intent",definition:{id:"compose-replace",kind:"dialog-form",label:"",initial:{open:true,instance:$c.draft_id,title:"Replace message?",body:"Replace the message in this composer with the mail document?",choices:[{id:"replace",label:"Replace",enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]},properties:{style:"gold"}}}) end
     $identity_model=composer_identity_model($key,$c)
@@ -348,7 +362,11 @@ fn composer_load_drafts()
       push($compose_restore,$d)
     catch $unreadable nil end
   end
-  $compose_restore=sort_by($compose_restore,fn($d)=[$d.saved_at,$d.id]);$compose_restore=reverse($compose_restore)
+  $ordered=[]
+  for $stamp in reverse(sort_by(unique(map($compose_restore,fn($d)=$d.saved_at)),fn($v)=$v))
+    for $draft in sort_by(filter($compose_restore,fn($d)=$d.saved_at==$stamp),fn($d)=$d.id) push($ordered,$draft) end
+  end
+  $compose_restore=$ordered
 end
 fn composer_restore_answer($choice)
   global $compose_restore,$composers,$compose_serial,$compose_focused

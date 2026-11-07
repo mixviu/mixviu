@@ -45,6 +45,16 @@ fn arrange($typed,$quote,$signature,$position)
   if $position=="below" then return $quote.."\n\n"..$typed..(if $signature=="" then "\n" else "\n\n"..$signature.."\n" end) end
   return $typed.."\n\n"..(if $signature=="" then "" else $signature.."\n\n" end)..$quote.."\n"
 end
+fn moved($body,$quote,$signature,$position)
+  if $quote==nil or $quote=="" or not contains($body,$quote) then return nil end
+  $at=index_of($body,$quote);$typed=substr($body,0,$at)..substr($body,$at+len($quote))
+  $signature=trim($signature ?? "","\n")
+  if $signature!="" then
+    if not contains($typed,$signature) then return nil end
+    $at=index_of($typed,$signature);$typed=substr($typed,0,$at)..substr($typed,$at+len($signature))
+  end
+  return arrange(trim($typed,"\n"),$quote,$signature,$position)
+end
 fn make($command,$entry,$email,$args,$options)
   $sender=$send.senders($entry)[0];$signature=signature($sender.signature ?? "")
   $to=($email.from ?? []);$to=if len($to)>0 then [$to[0]] else [] end;$cc=[]

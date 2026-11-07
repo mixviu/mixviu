@@ -685,7 +685,11 @@ impl SceneView {
                                     }
                                 };
                                 if node.family == "row" {
-                                    ui.horizontal(|ui| draw(ui));
+                                    if node.ports.get("wrap") == Some(&Value::Bool(true)) {
+                                        ui.horizontal_wrapped(|ui| draw(ui));
+                                    } else {
+                                        ui.horizontal(|ui| draw(ui));
+                                    }
                                 } else if node.ports.get("scroll")==Some(&Value::Bool(true)) {
                                     egui::ScrollArea::vertical().id_salt((&key,"scroll")).auto_shrink(false).show(ui,|ui|draw(ui));
                                 } else {
@@ -1011,6 +1015,25 @@ impl SceneView {
                 continue;
             }
             let horizontal = ["left", "right"].contains(&edge);
+            if edge == "bottom" && placement["size"] == "content" {
+                // Reserve the last measured height, then repaint at the new
+                // height when live text or typography changes the footer.
+                let marker = egui::Id::unique((ui.ctx().viewport_id(), key, child, "dock-height"));
+                let height = ui.ctx().data(|d| d.get_temp::<f32>(marker)).unwrap_or(0.0);
+                let mut rect = remaining;
+                rect.min.y = (rect.max.y - height).max(rect.min.y);
+                let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)));
+                child_ui.set_clip_rect(remaining.intersect(ui.clip_rect()));
+                self.node(&mut child_ui, child, nodes, route, depth + 1, events);
+                let measured = child_ui.min_rect().height().min(remaining.height());
+                if (measured - height).abs() > 0.1 {
+                    ui.ctx().data_mut(|d| d.insert_temp(marker, measured));
+                    ui.ctx().request_repaint();
+                }
+                remaining.max.y = rect.min.y;
+                continue;
+            }
             // A top strip may follow its intrinsic content height. This keeps
             // forms and search rows correct when live typography changes.
             if edge == "top" && placement["size"] == "content" {
@@ -1284,7 +1307,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                         "max_fraction",
                     ] {
                         if let Some(v) = p.get(key) {
-                            if key == "size" && v == "content" && edge == "top" {
+                            if key == "size" && v == "content" && matches!(edge, "top" | "bottom") {
                                 continue;
                             }
                             if key == "size" && design_length(v, None).is_some() {

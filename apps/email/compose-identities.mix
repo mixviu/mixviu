@@ -65,3 +65,16 @@ fn composer_reconcile()
     if ($c.connection!=nil and not deep_eq($c.connection,$connection)) or $c.from!=$sender.address then $composers[$key].stale={account:$entry.id,generation:$wire_generations[$entry.id] ?? 0,address:$sender.address} end
   end
 end
+fn composer_use_new_from($key)
+  global $composers
+  $c=$composers[$key];$entry=wire_entry($c.account)
+  if $c.stale==nil or $entry==nil then return end
+  $generation=$wire_generations[$entry.id] ?? 0
+  if $c.stale.account==$entry.id and $c.stale.generation==$generation then
+    $senders=$compose_sending.senders($entry);$sender=filter($senders,fn($s)=$s.id==$c.identity)[0] ?? $senders[0]
+    composer_choose_sender($key,$entry,$sender)
+    $composers[$key].revision=$c.revision+1;viu_timer("draft:"..$key,500,{kind:"draft",window:$key})
+  else
+    $composers[$key].stale={account:$entry.id,generation:$generation,address:$entry.email}
+  end
+end

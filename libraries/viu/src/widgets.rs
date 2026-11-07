@@ -928,6 +928,15 @@ impl Widgets {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
             "label" => {
+                if matches!(widget.properties["role"].as_str(), Some("warning" | "error")) {
+                    let colour = if widget.properties["role"] == "warning" {
+                        ui.visuals().warn_fg_color
+                    } else {
+                        ui.visuals().error_fg_color
+                    };
+                    let response = ui.add(egui::Label::new(egui::RichText::new(value.as_str().unwrap_or_default()).color(colour)).wrap());
+                    return self.remember(ui, id, &response);
+                }
                 if widget.properties["role"] == "section" {
                     let response =
                         toolkit::panel::section_label(ui, value.as_str().unwrap_or_default());
@@ -1159,7 +1168,9 @@ impl Widgets {
                 let r = if widget.kind == "checkbox" {
                     ui.checkbox(&mut checked, widget.text("text"))
                 } else {
-                    if widget.properties["style"] == "selectable" {
+                    if widget.properties["style"] == "gold" {
+                        ui.add_enabled(widget.properties["enabled"] != false, toolkit::toggle::Toggle::new(&mut checked, widget.text("text")))
+                    } else if widget.properties["style"] == "selectable" {
                         let response = toolkit::selectable(ui, checked, widget.text("text"));
                         if response.clicked() {
                             checked = !checked;

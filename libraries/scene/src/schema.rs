@@ -147,8 +147,9 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("children", "list", true, None),
         p("wrap", "bool", false, Some("false")),
     ];
-    static ROW: [Port; 11] = [
+    static ROW: [Port; 12] = [
         p("children", "list", true, None),
+        p("wrap", "bool", false, Some("false")),
         pnd("gap", "0", None),
         pnd("padding", "0", None),
         p("fill", "bool", false, Some("false")),
