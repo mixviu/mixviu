@@ -856,3 +856,39 @@ layout explicitly, and keep Rust free of app tab/pane policy. Adapt the
 remaining pinned actor/enforcement/Mix bootstrap tests and drive real
 sessions through native Bus. All other inventory and exact release visual
 acceptance remain open. NOT ACCEPTED; no Fable deviation requested.
+
+### Lazy host session ownership checkpoint
+
+`term-session-actor-652c704e-a1` passed: 151 terminal tests including all
+five new actor/broker cases, five existing ignores, seven input tests,
+two bundle tests, six Mix suites, search/dialog, foreign gate and debug
+build. Complete saved log read in three chunks. Applied worker formatting
+and Cargo.lock's own test-broker dependency in the next code checkpoint.
+
+4a76a9b6 connects the generic host's terminal collection to one lazily
+started Supervisor. First terminal creation runs its one bounded startup
+wait on the behaviour thread; shared ownership retains the actor through
+PTY cleanup. Non-terminal applications do not start an actor. Queryable
+term.session diagnostics are registered in both the Mix handler and host
+contract; new-tab replies use actual granted/graphics-only/unavailable
+binding status. Physical key/pointer/wheel paths refresh presence; direct
+diagnostic type does not. Application layout remains entirely Mix-owned.
+
+Mix supplies pane_id explicitly, independent of native vt-N handle
+allocation. Native state reserves/rejects duplicate IDs through launch,
+releases reservations on failure/close, and exposes native_id/binding for
+the future protected adapter. Added real installed-Mix sealed-handoff/
+enrolment/close and independent pane-ID tests; these are pending CBC.
+They do not replace the original exact-current-shell enforcement suite.
+All six local Mix suites pass, including session diagnostic dispatch.
+
+Next gate `term-session-owner-4a76a9b6` at
+`4a76a9b6ca4e03adb527f4aa6007c25cb4e7f5a1`, term_gate --prepare. Read full
+log, apply fmt/lock and repeat exact source if changed. Fetch exact bundle
+and executable for isolated real host term.session/enrolment/tab/split/
+exit/cleanup checks and unchanged matched output. The actor now has a
+host lifetime, but ControlLane is not installed: protected requests still
+refuse uniformly. Next implement typed protected admission plus in-process
+Mix policy dispatch, adapt remaining gold control/bootstrap/reconnect
+tests, then complete all Bus/input/clipboard/IME/Prefs/release acceptance.
+Overall NOT ACCEPTED. No Fable deviation or desktop changes.
