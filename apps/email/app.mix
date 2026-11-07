@@ -105,6 +105,10 @@ on email.send
 end
 on email.fixture
   if not $fixture then raise("FIXTURE","Explicit --fixture launch required; this is not maild data") end
+  if $event.args.modern==true then
+    $began=monotonic();$projected=gold_rows($event.args.messages)
+    reply(0,json_encode({rows:len($projected),first:$projected[0],milliseconds:(monotonic()-$began)*1000}));return
+  end
   $candidate=$c.rows($event.args.messages,$event.args.bulk ?? true)
   $rows=$candidate;$selected=nil;$revision=$revision+1
   $account="Synthetic account · user@example.test";$mailbox="Synthetic Inbox"
