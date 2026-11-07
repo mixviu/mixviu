@@ -188,12 +188,14 @@ impl Window {
     fn show(&mut self, ui: &mut egui::Ui) {
         self.mapped = true;
         let ctx = ui.ctx().clone();
-        ui.painter().rect_filled(
-            ui.max_rect(),
-            0.0,
-            crate::appearance::colour(&ctx, "dock").unwrap_or(ui.visuals().panel_fill),
-        );
         let framed = self.model["frame"].is_object();
+        if !framed {
+            ui.painter().rect_filled(
+                ui.max_rect(),
+                0.0,
+                crate::appearance::colour(&ctx, "dock").unwrap_or(ui.visuals().panel_fill),
+            );
+        }
         if framed {
             let mut settings = self.session_values.clone();
             if let Some(values) = self.model["window_settings"].as_object() {
