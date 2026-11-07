@@ -911,11 +911,9 @@ impl SceneView {
                 continue;
             }
             let horizontal = ["left", "right"].contains(&edge);
-            let dimension = if horizontal {
-                area.width()
-            } else {
-                area.height()
-            };
+            let dimension = placement["reference_extent"].as_f64().map(|n| n as f32).unwrap_or_else(|| {
+                if horizontal { area.width() } else { area.height() }
+            });
             let requested = placement["size"]
                 .as_f64()
                 .map(|v| v as f32)
