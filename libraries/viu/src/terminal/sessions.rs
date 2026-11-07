@@ -136,8 +136,13 @@ impl Sessions {
     pub fn call(&self, op: &str, handle: &str, a: Value) -> Result<Value, String> {
         if op == "font-size" {
             let base = a["base"].as_f64().ok_or("font base required")? as f32;
-            if !super::config::valid_font(base) { return Err("invalid font base".into()); }
-            let steps = a["steps"].as_f64().filter(|n| n.is_finite() && n.fract()==0.0 && n.abs()<=128.0).ok_or("bounded whole font steps required")? as i32;
+            if !super::config::valid_font(base) {
+                return Err("invalid font base".into());
+            }
+            let steps = a["steps"]
+                .as_f64()
+                .filter(|n| n.is_finite() && n.fract() == 0.0 && n.abs() <= 128.0)
+                .ok_or("bounded whole font steps required")? as i32;
             let mut font = super::font::FontSize::new(base);
             font.step_by(steps);
             return Ok(json!(font.current()));
@@ -318,9 +323,18 @@ mod tests {
         let sessions = Sessions::default();
         let mut font = super::super::font::FontSize::new(14.667);
         font.increase();
-        assert_eq!(sessions.call("font-size","",json!({"base":14.667,"steps":1})).unwrap(),json!(font.current()));
-        for args in [json!({"base":5,"steps":1}),json!({"base":14,"steps":0.5}),json!({"base":14,"steps":1000})] {
-            assert!(sessions.call("font-size","",args).is_err());
+        assert_eq!(
+            sessions
+                .call("font-size", "", json!({"base":14.667,"steps":1}))
+                .unwrap(),
+            json!(font.current())
+        );
+        for args in [
+            json!({"base":5,"steps":1}),
+            json!({"base":14,"steps":0.5}),
+            json!({"base":14,"steps":1000}),
+        ] {
+            assert!(sessions.call("font-size", "", args).is_err());
         }
     }
 
