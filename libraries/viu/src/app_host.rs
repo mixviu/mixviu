@@ -10,6 +10,7 @@ use eframe::egui;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -1052,6 +1053,16 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         std::process::exit(2);
     }
     let root = std::path::Path::new(&args[1]);
+    if args[2..].iter().any(|arg| arg == "--choose-service") {
+        let chooser_args = args[2..].iter().filter(|arg| arg.as_str() != "--choose-service").cloned().collect::<Vec<_>>();
+        let options = crate::launch::parse(&chooser_args).map_err(std::io::Error::other)?;
+        let profile = options.args.first().map(PathBuf::from).unwrap_or_else(|| {
+            std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"))
+                .join("files")
+        });
+        return crate::chooser_host::run(root.canonicalize()?, profile, options.service.unwrap_or_else(|| "files".into()), options.url.unwrap_or_else(bus::client_helpers::resolve_noded_url));
+    }
     let preview = Bundle::load(root, &[]).unwrap_or_else(|e| {
         eprintln!("viu: {e}");
         std::process::exit(2)

@@ -6,6 +6,7 @@ pub mod appearance;
 pub mod bundle;
 pub mod capture;
 pub mod chooser;
+pub mod chooser_host;
 pub mod debug;
 mod debug_recent;
 mod design_style;
