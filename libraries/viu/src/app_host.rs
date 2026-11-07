@@ -854,6 +854,9 @@ impl Host {
             }
         }
         while !self.held_requests.is_empty() {
+            if !self.runtime.has_capacity() {
+                break;
+            }
             if self.ready && !self.headless && !self.view.current_revision_drawn() {
                 ctx.request_repaint();
                 break;
@@ -869,6 +872,9 @@ impl Host {
             self.request(request, ctx);
         }
         for _ in 0..32 {
+            if !self.runtime.has_capacity() {
+                break;
+            }
             match self.bus.notices.try_recv() {
                 Ok(n) => {
                     if let Some(saved) = &self.saved {

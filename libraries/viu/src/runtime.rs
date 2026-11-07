@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     mpsc,
 };
 use std::thread::JoinHandle;
@@ -161,6 +161,8 @@ pub enum Refusal {
 /// One bounded, ordered mailbox of semantic operations. No operation is coalesced.
 /// `Full` means the caller must keep/retry that operation or show a refusal.
 pub struct Runtime {
+    queued: Arc<AtomicUsize>,
+    capacity: usize,
     tx: Option<mpsc::SyncSender<Request>>,
     rx: Option<mpsc::Receiver<Completion>>,
     thread: Option<JoinHandle<()>>,
@@ -194,6 +196,8 @@ impl Runtime {
     ) -> Self {
         assert!(capacity > 0);
         let (tx, commands) = mpsc::sync_channel(capacity);
+        let queued = Arc::new(AtomicUsize::new(0));
+        let worker_queued = queued.clone();
         // At most capacity queued requests, one in flight and one initial load.
         let (results, rx) = mpsc::sync_channel(capacity + 2);
         let interrupt = Arc::new(AtomicBool::new(false));
@@ -207,6 +211,7 @@ impl Runtime {
             let backend = backend.map(|make| make());
             let mut current: Option<(u64, Evaluator, Rc<Local>, SharedBuf, SharedBuf)> = None;
             while let Ok(request) = commands.recv() {
+                worker_queued.fetch_sub(1, Ordering::AcqRel);
                 worker_interrupt.store(false, Ordering::Release);
                 if worker_stop.load(Ordering::Acquire) { break; }
                 let start = Instant::now();
@@ -339,6 +344,8 @@ impl Runtime {
             if let Some((_, mut eval, ..)) = current { eval.close_native_events(); }
         }).expect("start Mix worker");
         Self {
+            queued,
+            capacity,
             tx: Some(tx),
             rx: Some(rx),
             thread: Some(thread),
@@ -408,15 +415,23 @@ impl Runtime {
         Ok(sequence)
     }
 
+    /// The host is the sole producer. Check before removing an operation from
+    /// its bounded native input queue; the worker can only free more space.
+    pub fn has_capacity(&self) -> bool {
+        self.tx.is_some() && self.queued.load(Ordering::Acquire) < self.capacity
+    }
+
     fn enqueue(&self, request: Request) -> Result<(), Refusal> {
-        self.tx
-            .as_ref()
-            .ok_or(Refusal::Closed)?
-            .try_send(request)
-            .map_err(|e| match e {
+        let tx = self.tx.as_ref().ok_or(Refusal::Closed)?;
+        // Reserve before sending: the worker may receive immediately.
+        self.queued.fetch_add(1, Ordering::AcqRel);
+        tx.try_send(request).map_err(|e| {
+            self.queued.fetch_sub(1, Ordering::AcqRel);
+            match e {
                 mpsc::TrySendError::Full(_) => Refusal::Full,
                 mpsc::TrySendError::Disconnected(_) => Refusal::Closed,
-            })
+            }
+        })
     }
 
     pub fn generation(&self) -> u64 {

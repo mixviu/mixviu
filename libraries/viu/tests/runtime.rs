@@ -288,12 +288,20 @@ fn delayed_async_callback_bounds_mailbox_and_stale_generation() {
     runtime.load(program(INIT)).unwrap();
     assert_eq!(runtime.event("bump".into(), json!({})), Err(Refusal::Full));
     assert!(
+        !runtime.has_capacity(),
+        "do not dequeue native requests into a full mailbox"
+    );
+    assert!(
         t.elapsed() < Duration::from_millis(40),
         "enqueue must not wait for behaviour"
     );
     let old = next(&runtime, &wakes);
     assert!(!runtime.accepts(&old));
     assert!(runtime.accepts(&next(&runtime, &wakes)));
+    assert!(
+        runtime.has_capacity(),
+        "worker receive restores admission credit"
+    );
 }
 
 #[test]
