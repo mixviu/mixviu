@@ -1,7 +1,7 @@
 # Four engines, compd -> viud, mixos -> mix: cut-over branch
 
 Branch `cutover/four-engines`, from `lab/gold-parity` 4755e9e, with
-origin/lab/gold-parity merged in four times (through 9bcfeee; merges only, no
+origin/lab/gold-parity merged in four times (through 9bcfeee, not yet f1c5b71; merges only, no
 rebase or force push). Move commits are separate from edit commits (7404a61,
 eaf228c, 2fdb84c). Full package/path mapping and file renames:
 `provenance/four-engine-layout.md`. Variable registry: `etc/env.conf.mix`.
@@ -129,7 +129,7 @@ libs/paths and libs/config; portald's unit reads the session env file):
 |---|---|---|
 | `/etc/mixos` (incl. `session/<vt>.env`, `node.conf.mix`) | `/etc/mix` | yes: copy config; gold keeps reading `/etc/mixos` |
 | `/var/lib/mixos/<desk>` and `/var/lib/mixos/<svc>` (settings stores, noded, editd recovery, maild/jmap, webd, indexd, dnsd, dlnad, blobd) | `/var/lib/mix/...` | yes: move the stores |
-| `/run/mixos`, `/tmp/mixos-run`, `$XDG_RUNTIME_DIR/mixos` | `/run/mix`, `/tmp/mix-run`, `$XDG_RUNTIME_DIR/mix` | no (runtime) |
+| `/run/mixos`, `/tmp/mix-run`, `$XDG_RUNTIME_DIR/mixos` | `/run/mix`, `/tmp/mix-run`, `$XDG_RUNTIME_DIR/mix` | no (runtime) |
 | `/var/cache/mixos`, `~/.cache/mixos` | `/var/cache/mix`, `~/.cache/mix` | no |
 | `~/.config/mixos` (node.conf.mix, `<service>.conf.mix`, scenes, macros) | `~/.config/mix` | yes |
 | `~/.local/share/mixos` (apps data, scenes lib, assets) | `~/.local/share/mix` | yes |
@@ -166,8 +166,13 @@ libs/paths and libs/config; portald's unit reads the session env file):
    mixos.nexus and mixos.au, and every mixos.dev URL and the mc@mixos.dev
    address (copyright lines; the manual's links: mixos.dev/, /mix/, /maild/,
    /dlnad/, /indexd/, /webd/, /compd/ and the per-page manual URLs).
-   Not renamed yet, cosmetic: local identifiers (`mixos` field in mix-shell),
-   test temp-dir names `/tmp/mixos-*` in Mix test scripts.
+4. Not renamed, outside the three categories (about 280 hits): lowercase
+   mentions of the `mixos` theme in comments and test names (the theme value
+   itself is category 2), a few local identifiers (`mixos` field in
+   mix-shell, `mixos_dbkey_test`). Cosmetic; a follow-up can take them.
+   `rg -i compd` outside provenance, vendor, tools and docs/ports: only the
+   gold oracle (`COMPD_INPROC_TEST_BINARY`), the `provenance/compd-oracle`
+   include paths and the viud README naming gold compd.
 
 Other decisions for Mark:
 - Fable rule 5 suggests engine runtime variables be `MIX_VIUD_*`; Mark's compd
@@ -179,4 +184,19 @@ Other decisions for Mark:
   oracle; lab scripts pass the old `COMPD_NATIVE_TEST_BINARY`, now
   `VIUD_NATIVE_TEST_BINARY` in the test.
 
-FINAL_LINE_PLACEHOLDER
+## Gate status
+
+No full gate yet on the renamed tree at head: the coordinator holds cbc2/cbc3
+for the parity jobs and will call one full cutover gate on the final
+integrated tree. Latest full run, cutover-gate-2d7e1c7 (cbc2, before the last
+rustfmt and indexd commits): 10,514 passed, 3 failed, 90 ignored; clippy
+clean; viud egui lines 0; release sizes mix 20,518,680, mixd 65,895,968,
+viu 56,745,544, viud 32,489,056 (viu grew with the merged Workshop/Backdrop
+work). Failures: indexd native_contract (the Bus script got MIX_* env but
+ran the host gold mix; fixed in c027612, passes on cachyos); the two
+workshop_frame tests, which fail identically at lab head 9bcfeee (light job
+20261107-171825-83bb29fb), so they come with the merge. rustfmt is clean at
+c027612 (cachyos 20261107-173952-9448392a). The test count rose from 10,484
+because the merges added the six-app work.
+
+Branch cutover/four-engines; head is this last.md commit (source c027612); gate: full run pending (last full 2d7e1c7: 10,514/3/90, 2 failures inherited from lab 9bcfeee, 1 fixed); CBC cutover-gate-5d1ec61, cutover-gate-43de632, cutover-gate-2d7e1c7, cutover-removed-4755e9e, 20261107-111516-437fd7b1.
