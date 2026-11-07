@@ -74,7 +74,7 @@ fn font_received($s,$done)
   return font_event($s,{kind:"write-settled",reply:$reply})
 end
 fn command($s,$name,$args)
-  $out=$bus.dispatch_raw($s,$event.command,$name,$event.body,$native)
+  $out=$bus.dispatch_inspected($s,$event.command,$name,$event.body,$native,fn($body)=viu_json_numbers($body))
   $out.state=pump_events($out.state);publish_term($out.state);reply($out.rc,$out.body)
   return $out.state
 end

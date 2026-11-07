@@ -14,6 +14,28 @@ use std::{
 mod clipboard_requests;
 pub(crate) use clipboard_requests::{PaneClipboardReply, WindowClipboardRequest};
 
+// Exact decimal text is the in-process bridge for integers outside Mix's f64
+// range. The application's wire policy still rejects JSON string arguments.
+fn scroll_integer(value: &Value) -> Option<i64> {
+    value.as_i64().or_else(|| {
+        let text = value.as_str()?;
+        let n = text.parse::<i64>().ok()?;
+        (n.to_string() == text).then_some(n)
+    }).or_else(|| value.as_f64().filter(|n| n.is_finite() && n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0).map(|n| n as i64))
+}
+
+#[cfg(test)]
+#[test]
+fn exact_scroll_bridge_keeps_i64_limits_and_refuses_noncanonical_text() {
+    assert_eq!(scroll_integer(&json!("9223372036854775807")),Some(i64::MAX));
+    assert_eq!(scroll_integer(&json!("-9223372036854775808")),Some(i64::MIN));
+    for text in ["9223372036854775808","-9223372036854775809","1.0","+1","01","-0"] {
+        assert_eq!(scroll_integer(&json!(text)),None);
+    }
+    assert_eq!(scroll_integer(&json!(1)),Some(1));
+    assert_eq!(scroll_integer(&json!(1.5)),None);
+}
+
 #[derive(Clone, Copy, PartialEq)]
 struct Placement {
     rect: [f32; 4],
@@ -466,26 +488,9 @@ impl Sessions {
                     Some("bottom") => ScrollRequest::Bottom,
                     Some("page-up") => ScrollRequest::PageUp,
                     Some("page-down") => ScrollRequest::PageDown,
-                    _ if a["page"].is_number() => ScrollRequest::Pages(
-                        a["page"]
-                            .as_f64()
-                            .filter(|n| {
-                                n.is_finite()
-                                    && n.fract() == 0.0
-                                    && n.abs() <= 9_007_199_254_740_991.0
-                            })
-                            .ok_or("whole scroll pages required")? as i64,
-                    ),
+                    _ if a.get("page").is_some() => ScrollRequest::Pages(scroll_integer(&a["page"]).ok_or("whole scroll pages required")?),
                     _ => {
-                        let n = a["lines"]
-                            .as_f64()
-                            .filter(|n| {
-                                n.is_finite()
-                                    && n.fract() == 0.0
-                                    && n.abs() <= 9_007_199_254_740_991.0
-                            })
-                            .ok_or("whole scroll lines required")?;
-                        ScrollRequest::Lines(n as i64)
+                        ScrollRequest::Lines(scroll_integer(&a["lines"]).ok_or("whole scroll lines required")?)
                     }
                 };
                 let (offset, history, changed) = t.scroll_view_state(request);

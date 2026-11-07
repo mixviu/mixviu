@@ -29,6 +29,21 @@ fn arguments($command,$a)
   return parsed_arguments($command,$a)
 end
 fn parsed_arguments($command,$a)
+  return field_arguments($command,$a,{})
+end
+fn unsigned_field($a,$key,$numbers)
+  return if $numbers[$key]!=nil then $numbers[$key].kind=="u64" else whole_id($a[$key]) end
+end
+fn signed_field($a,$key,$numbers)
+  return if $numbers[$key]!=nil then $numbers[$key].signed else signed_whole($a[$key]) end
+end
+fn materialise($a,$numbers)
+  for $key in ["id","pane","tab","instance","lines","page"]
+    if $numbers[$key]!=nil and not $numbers[$key].safe and contains(["u64","i64"],$numbers[$key].kind) then $a[$key]=$numbers[$key].text end
+  end
+  return $a
+end
+fn field_arguments($command,$a,$numbers)
   if type($a)!="map" then return "body must be a JSON object" end
   $allowed={"term.tabs":[],"term.panes":["tab"],"term.tab.new":["cwd","title"],"term.tab.select":["id"],"term.tab.close":["id"],"term.tab.title":["id","title"],"term.tab.move":["id","index"],"term.pane.split":["dir"],"term.pane.close":[],"term.pane.select":["id"],"term.snapshot":["pane","tab","contents","scrollback_lines"],"term.type":["pane","tab","instance","text"],"term.scroll":["pane","lines","page","to"],"term.props.watch":[],"term.session":[],"term.info":[]}
   if $allowed[$command]==nil then return "unknown command; use HELP" end
@@ -36,32 +51,33 @@ fn parsed_arguments($command,$a)
     if $key!="request_id" and not contains($allowed[$command],$key) then return "unexpected argument for "..$command end
   end
   if contains(keys($a),"request_id") and type($a.request_id)!="string" then return "request_id must be a string" end
-  if $command=="term.type" and $a.pane==nil and $a.tab==nil then return json_encode({error_code:"INVALID_ARGUMENT",message:"term.type requires pane or tab"}) end
-  for $key in ["pane","tab","instance","scrollback_lines"]
-    if contains(keys($a),$key) and not whole_id($a[$key]) then
-      $message=$key.." must be a non-negative integer (u64)"
-      return if $key=="instance" then json_encode({error_code:"INVALID_ARGUMENT",message:$message}) else "invalid-argument: "..$message end
+  if $command=="term.type" and not contains(keys($a),"pane") and not contains(keys($a),"tab") then return json_encode({error_code:"INVALID_ARGUMENT",message:"term.type requires pane or tab"}) end
+  if contains(keys($a),"instance") and not unsigned_field($a,"instance",$numbers) then return json_encode({error_code:"INVALID_ARGUMENT",message:"instance must be a non-negative integer (u64)"}) end
+  if $command=="term.scroll" then
+    if len(filter(["lines","page","to"],fn($key)=contains(keys($a),$key)))!=1 then return "invalid-argument: exactly one of lines, page or to is required" end
+    for $key in ["lines","page"]
+      if contains(keys($a),$key) and not signed_field($a,$key,$numbers) then return "invalid-argument: "..$key.." must be a signed integer (i64)" end
     end
+    if contains(keys($a),"to") and not contains(["top","bottom"],$a.to) then return "invalid-argument: to must be top or bottom" end
   end
-  if $a.scrollback_lines!=nil and $a.scrollback_lines>10000 then return "invalid-argument: scrollback_lines must be 0..=10000" end
-  if contains(keys($a),"contents") and type($a.contents)!="bool" then return "invalid-argument: contents must be a boolean" end
-  if contains(["term.tab.select","term.tab.close","term.tab.title","term.tab.move","term.pane.select"],$command) and not whole_id($a.id) then return "id must be a non-negative integer (u64)" end
-  for $key in ["cwd","title"]
-    if contains(keys($a),$key) and type($a[$key])!="string" then return "invalid-argument: "..$key.." must be a string" end
-  end
-  if $command=="term.tab.title" and type($a.title)!="string" then return "invalid-argument: title must be a string" end
-  if $command=="term.tab.move" and not signed_whole($a.index) then return "invalid-argument: index must be an integer" end
+  if $command=="term.type" and type($a.text)!="string" then return "text must be a string" end
+  if contains(["term.tab.select","term.tab.close","term.tab.title","term.tab.move","term.pane.select"],$command) and not unsigned_field($a,"id",$numbers) then return "id must be a non-negative integer (u64)" end
   if $command=="term.pane.split" then
     if type($a.dir)!="string" then return "dir must be a string" end
     if not contains(["h","horizontal","v","vertical"],$a.dir) then return "dir must be h|horizontal|v|vertical" end
   end
-  if $command=="term.type" and type($a.text)!="string" then return "text must be a string" end
-  if $command=="term.scroll" then
-    if len(filter(["lines","page","to"],fn($key)=contains(keys($a),$key)))!=1 then return "invalid-argument: exactly one of lines, page or to is required" end
-    for $key in ["lines","page"]
-      if contains(keys($a),$key) and not signed_whole($a[$key]) then return "invalid-argument: "..$key.." must be a signed integer (i64)" end
-    end
-    if contains(keys($a),"to") and not contains(["top","bottom"],$a.to) then return "invalid-argument: to must be top or bottom" end
+  for $key in ["pane","tab","scrollback_lines"]
+    if contains(keys($a),$key) and not unsigned_field($a,$key,$numbers) then return "invalid-argument: "..$key.." must be a non-negative integer (u64)" end
+  end
+  if $a.scrollback_lines!=nil and $a.scrollback_lines>10000 then return "invalid-argument: scrollback_lines must be 0..=10000" end
+  if contains(keys($a),"contents") and type($a.contents)!="bool" then return "invalid-argument: contents must be a boolean" end
+  for $key in ["cwd","title"]
+    if contains(keys($a),$key) and type($a[$key])!="string" then return "invalid-argument: "..$key.." must be a string" end
+  end
+  if $command=="term.tab.title" and type($a.title)!="string" then return "invalid-argument: title must be a string" end
+  if $command=="term.tab.move" then
+    $integer=if $numbers.index!=nil then contains(["u64","i64"],$numbers.index.kind) else signed_whole($a.index) end
+    if not $integer then return "invalid-argument: index must be an integer" end
   end
   return nil
 end
@@ -80,18 +96,27 @@ fn type_args($a)
   return nil
 end
 fn request_digest($command,$a)
+  return request_digest_fields($command,$a,{})
+end
+fn request_digest_fields($command,$a,$numbers)
   $payload={}
   for $key in keys($a)
     if $key!="request_id" then $payload[$key]=$a[$key] end
   end
   -- Map iteration order must not make semantically equal requests conflict.
   $ordered=[]
-  for $key in sort(keys($payload)) push($ordered,[$key,$payload[$key]]) end
+  for $key in sort(keys($payload))
+    $value=if $numbers[$key]!=nil then ["json-number",$numbers[$key].kind,$numbers[$key].text] else ["json-value",$payload[$key]] end
+    push($ordered,[$key,$value])
+  end
   return $command..":"..json_encode($ordered)
 end
 fn replay($history,$command,$a)
+  return replay_fields($history,$command,$a,{})
+end
+fn replay_fields($history,$command,$a,$numbers)
   if $a.request_id==nil then return nil end
-  $digest=request_digest($command,$a)
+  $digest=request_digest_fields($command,$a,$numbers)
   for $entry in $history
     if $entry.id==$a.request_id then
       if $entry.digest!=$digest then return {rc:10,body:"request_id already used by a different request; retries must resend the identical command and body"} end
@@ -101,8 +126,11 @@ fn replay($history,$command,$a)
   return nil
 end
 fn remember($history,$command,$a,$rc,$body)
+  return remember_fields($history,$command,$a,{},$rc,$body)
+end
+fn remember_fields($history,$command,$a,$numbers,$rc,$body)
   if $a.request_id==nil then return $history end
   if len($history)>=128 then $history=slice($history,1) end
-  push($history,{id:$a.request_id,digest:request_digest($command,$a),rc:$rc,body:$body})
+  push($history,{id:$a.request_id,digest:request_digest_fields($command,$a,$numbers),rc:$rc,body:$body})
   return $history
 end

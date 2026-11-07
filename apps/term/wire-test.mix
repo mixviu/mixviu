@@ -36,4 +36,19 @@ $boundary=repeat(" ",8190).."{}"
 check($wire.decode("term.tabs",$boundary).error==nil,"8192 original bytes accepted")
 check($wire.decode("term.tabs"," "..$boundary).error=="request exceeds 8192 bytes","8193 whitespace bytes refused before parsing")
 check($wire.decode("term.type",repeat("中",2731)).error=="request exceeds 8192 bytes","original multibyte budget precedes parse")
+check($wire.field_arguments("term.type",{pane:nil,text:3},{})=="text must be a string","required field validation precedes optional target type")
+check($wire.field_arguments("term.type",{pane:nil,text:""},{})=="invalid-argument: pane must be a non-negative integer (u64)","null target is present and mistyped, not missing")
+$float={kind:"float",text:"1.0",safe:false,signed:false}
+$huge={kind:"u64",text:"18446744073709551615",safe:false,signed:false}
+check($wire.field_arguments("term.tab.select",{id:1},{id:$float})=="id must be a non-negative integer (u64)","JSON floating integer stays a float")
+check($wire.field_arguments("term.tab.select",{id:json_parse($huge.text)},{id:$huge})==nil,"unsigned maximum is valid before state lookup")
+check($wire.field_arguments("term.tab.move",{id:1,index:json_parse($huge.text)},{index:$huge})==nil,"gold index accepts unsigned maximum")
+check($wire.materialise({id:json_parse($huge.text)},{id:$huge}).id=="18446744073709551615","large selector keeps exact decimal text")
+check($wire.field_arguments("term.scroll",{lines:1},{lines:$float})=="invalid-argument: lines must be a signed integer (i64)","scroll refuses JSON float")
+check($wire.field_arguments("term.scroll",{lines:json_parse($huge.text)},{lines:$huge})=="invalid-argument: lines must be a signed integer (i64)","scroll refuses unsigned value beyond i64")
+$a={pane:1,text:"",request_id:"numeric"}
+$history=$wire.remember_fields([],"term.type",$a,{pane:{kind:"u64",text:"1"}},0,"once")
+check($wire.replay_fields($history,"term.type",$a,{pane:$float}).rc==10,"integer and float retry identities conflict before validation")
+check($wire.replay_fields($history,"term.type",$a,{pane:{kind:"u64",text:"1"}}).body=="once","same typed numeric retry replays")
+check($wire.replay_fields($history,"term.type",{pane:["json-number","u64","1"],text:"",request_id:"numeric"},{}).rc==10,"caller-shaped tags cannot collide with numeric retry metadata")
 print("term wire: selector and replay checks passed")

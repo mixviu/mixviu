@@ -39,15 +39,26 @@ fn dispatch_raw($s,$wire_command,$command,$body,$native)
   if $decoded.error!=nil then return {state:$s,rc:10,body:$decoded.error} end
   return dispatch_parsed($s,$command,$decoded.args,$native)
 end
+fn dispatch_inspected($s,$wire_command,$command,$body,$native,$inspect)
+  $decoded=$wire.decode($wire_command,$body)
+  if $decoded.error!=nil then return {state:$s,rc:10,body:$decoded.error} end
+  $numbers=if starts_with($wire_command,"term.") then $inspect(if $body=="" then "{}" else $body end) else {} end
+  return dispatch_fields($s,$command,$decoded.args,$native,$numbers)
+end
 fn dispatch_parsed($s,$command,$a,$native)
+  return dispatch_fields($s,$command,$a,$native,{})
+end
+fn dispatch_fields($s,$command,$a,$native,$numbers)
   if type($a)!="map" then return {state:$s,rc:10,body:"body must be a JSON object"} end
   $mutates=$wire.mutates($command)
   if $mutates and type($a.request_id)=="string" then
-    $cached=$wire.replay($s.replies,$command,$a)
+    $cached=$wire.replay_fields($s.replies,$command,$a,$numbers)
     if $cached!=nil then return {state:$s,rc:$cached.rc,body:$cached.body} end
   end
-  $invalid=$wire.parsed_arguments($command,$a)
+  $invalid=$wire.field_arguments($command,$a,$numbers)
   if $invalid!=nil then return {state:$s,rc:10,body:$invalid} end
+  $original=$a
+  $a=$wire.materialise($a,$numbers)
   if $command=="term.type" and $a.instance!=nil and $a.instance!=$s.identity.instance then
     return {state:$s,rc:10,body:json_encode({error_code:"INVALID_ARGUMENT",message:"instance "..to_string($a.instance).." is not this term process (instance="..to_string($s.identity.instance).."); re-read term.panes"})}
   end
@@ -125,7 +136,7 @@ fn dispatch_parsed($s,$command,$a,$native)
     $rc=10;$body=$message
   end
   if $mutates and not starts_with($body,"invalid-argument:") and not starts_with($body,"{\"error_code\":\"INVALID_ARGUMENT\"") then
-    $s.replies=$wire.remember($s.replies,$command,$a,$rc,$body)
+    $s.replies=$wire.remember_fields($s.replies,$command,$original,$numbers,$rc,$body)
   end
   return {state:$s,rc:$rc,body:$body}
 end

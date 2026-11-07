@@ -7,6 +7,33 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+/// Numeric metadata for flat JSON envelopes. Mix owns validation and policy;
+/// this keeps serde's integer/float distinction and full decimal precision
+/// alongside the evaluator's ordinary f64 values.
+pub(crate) fn json_numbers() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let fail = |msg: String| MixError::RuntimeError { msg, span: None };
+        let [Value::String(text)] = args.as_slice() else {
+            return Err(fail("viu_json_numbers expects JSON object text".into()));
+        };
+        if text.len() > 1_048_576 {
+            return Err(fail("JSON metadata exceeds evaluator string budget".into()));
+        }
+        let value: serde_json::Value = serde_json::from_str(text).map_err(|e| fail(e.to_string()))?;
+        let object = value.as_object().ok_or_else(|| fail("JSON object required".into()))?;
+        let mut fields = serde_json::Map::new();
+        for (key, value) in object {
+            if let serde_json::Value::Number(n) = value {
+                let kind = if n.is_u64() { "u64" } else if n.is_i64() { "i64" } else { "float" };
+                let safe = n.as_u64().is_some_and(|n| n <= 9_007_199_254_740_991)
+                    || n.as_i64().is_some_and(|n| n.unsigned_abs() <= 9_007_199_254_740_991);
+                fields.insert(key.clone(), serde_json::json!({"kind":kind,"text":n.to_string(),"signed":n.as_i64().is_some(),"safe":safe}));
+            }
+        }
+        crate::runtime::from_json(serde_json::Value::Object(fields))
+    })
+}
+
 /// Pure resolution through the shared native application-root contract.
 pub(crate) fn app_dirs() -> mix::evaluator::ExtFn {
     mix::sync_ext(|args| {

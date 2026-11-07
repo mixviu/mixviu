@@ -77,6 +77,30 @@ end
 }
 
 #[test]
+fn json_numeric_metadata_keeps_kind_boundaries_and_duplicate_last_value() {
+    let (mut runtime, wakes) = runtime(4);
+    runtime.load(program(r#"
+on inspect
+  reply(0,json_encode(viu_json_numbers($event.body)))
+end
+"#)).unwrap();
+    assert!(next(&runtime, &wakes).error.is_none());
+    runtime.event_with_body("inspect".into(), r#"{"small":1,"float":1.0,"exponent":1e0,"negative":-1,"max":18446744073709551615,"min":-9223372036854775808,"outside":18446744073709551616,"duplicate":1.0,"duplicate":2,"string":"1","nil":null}"#.into(),Default::default()).unwrap();
+    let done = next(&runtime, &wakes);
+    assert!(done.error.is_none(),"{:?}",done.error);
+    let value = done.reply.unwrap().body;
+    assert_eq!(value["small"],json!({"kind":"u64","text":"1","safe":true,"signed":true}));
+    assert_eq!(value["negative"],json!({"kind":"i64","text":"-1","safe":true,"signed":true}));
+    assert_eq!(value["max"],json!({"kind":"u64","text":"18446744073709551615","safe":false,"signed":false}));
+    assert_eq!(value["min"],json!({"kind":"i64","text":"-9223372036854775808","safe":false,"signed":true}));
+    for key in ["float","exponent","outside"] { assert_eq!(value[key]["kind"],"float"); }
+    assert_eq!(value["duplicate"]["kind"],"u64");
+    assert_eq!(value["duplicate"]["text"],"2");
+    assert!(value.get("string").is_none());
+    assert!(value.get("nil").is_none());
+}
+
+#[test]
 fn embedded_workers_refuse_global_environment_and_directory_mutation_but_keep_argv() {
     let (mut runtime, wakes) = runtime(4);
     runtime.load(program(r#"
