@@ -1,7 +1,12 @@
--- Pinned wallpapers: the bundle step copies them from an asset store and refuses
--- any byte that does not match. Credits beside them in */CREDITS.md.
+-- Pinned wallpapers, published as the GitHub release below (asset name = path
+-- with / as --). The bundle step downloads them and refuses any byte that does
+-- not match. Credits beside them in */CREDITS.md.
 {
   "schema": 1,
+  "release": {
+    "tag": "assets-wallpapers-2026-10-14",
+    "base_url": "https://github.com/mixviu/mixviu/releases/download/assets-wallpapers-2026-10-14"
+  },
   "files": [
     {
       "path": "photos/etang-de-thau.jpg",
