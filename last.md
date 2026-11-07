@@ -1719,3 +1719,13 @@ CBC term-pointer-order-0bffd1a7-a1 failed before tests with E0027: the new Mouse
 Next CBC term-pointer-fields-dd61895f runs term_gate --prepare on that exact code. Read its full saved log, repair any failures and apply returned diffs before an exact-source repeat. Native pointer/selection captures, remaining full functional/Bus/Prefs/conformance checks and the release visual gate remain open. NOT ACCEPTED; gold and desks remain untouched.
 
 branch: lab/parity-term; head SHA: dd61895fb832f36b39769134f371da7072e00673 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — pointer compile repair gate and native mouse proof pending, remaining full parity/release acceptance open; CBC job ids: term-pointer-order-0bffd1a7-a1 (E0027; full log read; fmt applied), term-pointer-fields-dd61895f (next await).
+
+### Ordered focus surrender repair
+
+CBC term-pointer-fields-dd61895f-a1 compiled and passed both bundle tests, 13 runtime/call/timer tests and seven Mix suites. Terminal results: 186 passed, one failed, five existing ignores. All seven new pointer controller tests passed, as did existing wheel, Tab, clipboard and live font view tests. Read the complete 30426-byte saved log in two chunks; no worker diff. The real-widget same-frame test failed because bytes preceding a click were lost: egui surrendered the old pane focus while registering its response from the frame-wide pointer state, before the ordered input loop ran.
+
+Code f6c849a24dfffbd1caa7f22234804d1243b41e3a suppresses that automatic surrender only during terminal response registration, immediately restores the shared option, and handles outside/blocked pointer presses in event order. Existing before/after-click assertions remain; a new outside-click case requires preceding text to reach the old pane and subsequent text to reach neither pane. Warm-up explicitly asserts the original pane owns focus. No test expectation was relaxed.
+
+Next CBC term-focus-order-f6c849a2 runs term_gate --prepare at that code. Its tests, any formatting return and exact repeat are pending. Then fetch verified bytes for native mouse/selection/primary/copy-on-select/reporting/cancellation captures. Full functional, Bus, Prefs, conformance and release visual acceptance remain open. NOT ACCEPTED; no Fable deviation or desk/gold change.
+
+branch: lab/parity-term; head SHA: f6c849a24dfffbd1caa7f22234804d1243b41e3a (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — ordered focus gate/native pointer captures and remaining full parity/release checks open; CBC job ids: term-pointer-fields-dd61895f-a1 (186 passed, one focus regression failed, five ignores; no diff), term-focus-order-f6c849a2 (next await).
