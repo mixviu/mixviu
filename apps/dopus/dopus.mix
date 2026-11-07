@@ -29,7 +29,8 @@ end
 fn dp_framed($s,$contract,$cache)
   $model=$projection.dp_project($s,$contract,$cache)
   $model.layout=delete(delete($model.layout,"topbar"),"status-pane")
-  $model=$frame.apply($model,{icon:"folder",title:$core.dp_display($s.panes[$s.active].path),native_title:"Dopus",menus:$model.values.menu,toolbar:$model.values.toolbar,status:$s.info,appearance:$s.appearance,window:$model.window_settings})
+  $title=$core.dp_display($s.panes[$s.active].path).." — MixOS DOpus"
+  $model=$frame.apply($model,{icon:"folder",title:$title,native_title:$title,menus:$model.values.menu,toolbar:$model.values.toolbar,status:$s.info,appearance:$s.appearance,window:$model.window_settings})
   $model.macros_open=$s.macros_open ?? false
   $model.native_focus=if $s.focus==nil then nil else {id:$s.focus.id,serial:$s.serial} end
   $model.shortcuts=if $s.form.open then [] else $s.bindings ?? [] end
@@ -69,8 +70,15 @@ fn dp_request($request)
       elif $name=="dopus.intent" then $candidate=$app.dp_intent($candidate,$contract,$a)
       elif $name=="dopus.open" then
         $paths=$a.paths ?? []
-        if type($paths)!="list" or len($paths)==0 or any($paths,fn($path)=type($path)!="string" or $path=="") then raise("INVALID_ARGUMENT","paths must contain non-empty text") end
-        for $i=0 to min(1,len($paths)-1) $candidate=$app.dp_go($candidate,$i,$paths[$i]) end
+        if type($paths)!="list" or any($paths,fn($path)=type($path)!="string") then raise("INVALID_ARGUMENT","paths must contain text") end
+        if $a.pane!=nil then
+          if len($paths)!=1 or not contains(["left","right","active",0,1],$a.pane) then raise("INVALID_ARGUMENT","pane-targeted open requires exactly one path and a valid pane") end
+          $i=if contains(["left",0],$a.pane) then 0 elif contains(["right",1],$a.pane) then 1 else $candidate.active end
+          $active=$candidate.active;$candidate=$app.dp_go($candidate,$i,$paths[0]);$candidate.active=$active
+        else
+          for $i=0 to min(1,len($paths)-1) $candidate=$app.dp_go($candidate,$i,$paths[$i]) end
+        end
+        $candidate.reply={accepted:len($paths),opened:len($paths)>0}
       elif $name=="dopus.theme.set" then
         if $a.mode!=nil then
           if not contains(["dark","light"],$a.mode) then raise("INVALID_ARGUMENT","Unknown theme mode") end

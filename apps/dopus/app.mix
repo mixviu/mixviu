@@ -19,6 +19,7 @@ on viu.frame.close
   $state=$app.dp_persist($state)
   $model=dp_framed($state,$contract,$row_cache);$model.window_close=true
   send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$model}
+  if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
 end
 on viu.session
   $state.window=$event.args.state.values ?? {}
@@ -32,4 +33,56 @@ end
 on viu.macros.changed
   $state.macros_open=$event.args.open
   $row_cache=dp_publish($state,$contract,$row_cache)
+end
+on viu.keymap.changed
+  $defaults=map($contract.actions,fn($a)={id:$a.id,shortcut:$state.default_keys[$a.id][0]})
+  send "viu-local" "native.bindings" body={defaults:$defaults,overrides:$event.args}
+  if $rc==0 then
+    $state.bindings=[]
+    for $i=0 to len($contract.actions)-1
+      $id=$contract.actions[$i].id
+      $contract.actions[$i].keys=$reply.bindings[$id].keys
+      for $chord in $reply.bindings[$id].keys $state.bindings=push($state.bindings,{id:$id,chord:$chord}) end
+    end
+  end
+  $row_cache=dp_publish($state,$contract,$row_cache)
+end
+on dopus.open
+  dp_request({command:"dopus.open",args:$event.args})
+end
+on dopus.theme.set
+  dp_request({command:"dopus.theme.set",args:$event.args})
+  send "viu-local" "native.theme" body=$state.appearance_choice
+  if $rc!=0 then raise("THEME",to_string($result)) end
+end
+on dopus.quit
+  dp_request({command:"dopus.quit",args:$event.args})
+end
+on dopus.dialog
+  dp_request({command:"dopus.dialog",args:$event.args})
+end
+on dopus.dialog.answer
+  dp_request({command:"dopus.dialog.answer",args:$event.args})
+end
+on dopus.ping
+  $ctx=viu_context()
+  reply(0,json_encode({pong:true,service:$ctx.name,schema:"dopus.v1",pid:$ctx.pid,headless:false}))
+end
+on dopus.actions
+  reply(0,json_encode({actions:map($contract.actions,fn($a)={id:$a.id,label:$a.label,keys:$a.keys,enabled:$projection.dp_enabled($state,$a.id)})}))
+end
+fn dp_wire_panes($s)
+  $out=[]
+  for $i=0 to 1
+    $p=$s.panes[$i]
+    push($out,{pane:$i,path:$core.dp_display($p.path),active:$s.active==$i,show_hidden:$p.show_hidden,previews:$p.previews,preview:if $s.preview_slots[$i].value.phase=="ready" then $s.preview_slots[$i].value.path else nil end,sort:$p.sort,ascending:$p.ascending,selected:$p.selected,selected_paths:$p.selected_paths,rows:len($p.entries),status:$core.dp_display($p.path),summary:$p.summary})
+  end
+  return $out
+end
+on dopus.state
+  reply(0,json_encode({places:{open:$state.places_open,width:$state.places_width},properties:{open:$state.properties_open,width:$state.properties_width},panes:dp_wire_panes($state),theme_scheme:$state.appearance.scheme,theme_mode:$state.appearance.mode,appearance:{icons:"lucide",asset_set:nil,font_ui:"Inter",font_mono:"JetBrains Mono",font_ui_weight:400,icon_weight:nil}}))
+end
+on dopus.info
+  $ctx=viu_context()
+  reply(0,json_encode({version:$ctx.version,git_sha:$ctx.git_sha,build_time:$ctx.build_time,headless:false,panes:2,pane_states:dp_wire_panes($state),config_path:$state.config_path}))
 end
