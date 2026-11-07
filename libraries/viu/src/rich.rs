@@ -931,15 +931,13 @@ mod tests {
         let mut widgets = crate::widgets::Widgets::default();
         let ctx = egui::Context::default();
         for _ in 0..3 {
-            let _ = ctx.run(egui::RawInput {
+            ctx.run_ui(egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0,560.0))),
                 ..Default::default()
-            }, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    widgets.begin_frame();
-                    assert!(widgets.widget(ui, &widget, &json!({})).is_empty());
-                });
-            });
+            }, |ui| {
+                widgets.begin_frame();
+                assert!(widgets.widget(ui, &widget, &json!({})).is_empty());
+            }).drop_without_applying_deltas();
         }
         assert!(widgets.geometry["keys"].height() > 400.0, "shortcut rows must contribute to the dialog body");
         widget.initial["grid"][0]["keys"] = json!(42);
