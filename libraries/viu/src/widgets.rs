@@ -781,7 +781,6 @@ impl Widget {
         if self.properties["enabled"] == false
             || (self.kind == "swatches" && self.properties["read_only"] == true)
         {
-
             return Err("DISABLED".into());
         }
         if [
@@ -1373,7 +1372,6 @@ impl Widgets {
                         )
                     });
                     return self.remember(ui, id, &response);
-
                 }
                 let text = label_text(ui, widget, value);
                 if widget.properties["role"] == "title" {
@@ -1442,7 +1440,6 @@ impl Widgets {
                         .tooltip(&widget.label),
                     )
                 } else if widget.properties["style"] == "primary" {
-
                     ui.add(toolkit::button::PushButton::primary(widget.text("text")))
                 } else if widget.properties["style"] == "secondary" {
                     ui.add(toolkit::button::PushButton::secondary(widget.text("text")))

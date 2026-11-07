@@ -269,7 +269,6 @@ impl Host {
                     self.windows.request(&key, r, ctx);
                     return;
                 }
-
             }
         }
         let Some(r) = self.facilities.request(r, ctx) else {
@@ -536,14 +535,15 @@ impl Host {
             }
         }
         while self.runtime.has_capacity() {
-            let Some((key, event)) = self.windows.take_one() else { break; };
+            let Some((key, event)) = self.windows.take_one() else {
+                break;
+            };
             match self.runtime.event(event.command, event.body) {
                 Ok(sequence) => {
                     self.inflight.insert(sequence);
                     self.windows.submitted(sequence, key);
                 }
                 Err(_) => self.windows.rejected(&key),
-
             }
         }
         self.facilities.prepare(ctx, &self.bus);
@@ -852,8 +852,9 @@ impl Host {
                             }
                             ctx.request_repaint();
                             if let Some(saved) = &mut self.saved {
-                                if saved.announced { saved.apply(&self.model); }
-
+                                if saved.announced {
+                                    saved.apply(&self.model);
+                                }
                             }
                         }
                         Err(e) => self.error = e,
@@ -1784,11 +1785,15 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let mut logging_args = std::iter::once("viu".to_owned())
         .chain(args.iter().cloned())
         .collect::<Vec<_>>();
-    let _logging = toolkit::debug::init(preview.manifest.app(), preview.manifest.log_filter.as_deref().unwrap_or("warn"), &mut logging_args)
-        .unwrap_or_else(|e| {
-            eprintln!("viu logging: {e}");
-            std::process::exit(2)
-        });
+    let _logging = toolkit::debug::init(
+        preview.manifest.app(),
+        preview.manifest.log_filter.as_deref().unwrap_or("warn"),
+        &mut logging_args,
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("viu logging: {e}");
+        std::process::exit(2)
+    });
     if logging_args
         .iter()
         .skip(3)

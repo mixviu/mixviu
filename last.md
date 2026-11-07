@@ -205,3 +205,6 @@ Branch lab/gold-parity; head Email merge checkpoint (CBC source is containing co
 
 
 Email scoped check r1 found the merged Dock has eight ports rather than the declared seven (clip plus passthrough/focus retained); corrected the array bound. Fmt check returned formatting differences only. Full logs read; no test assertion changed. Further scoped check/preparation pending; NOT TREE FINAL.
+
+
+Email scoped preparation gold-eight-email-prepare-r2-a1 PASS at 1d6cf722: formatter and locked Viu/engine check pass; full log read and returned formatting patch applied exactly. This is not release acceptance. Dopus merge is next; all eight release suites remain pending.

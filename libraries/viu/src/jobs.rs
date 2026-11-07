@@ -133,7 +133,6 @@ impl Jobs {
                 self.native_backend.as_ref().map(|f| f()),
                 self.services.clone(),
                 std::time::Duration::from_secs(timeout),
-
             );
             let program = Program {
                 path: PathBuf::from(path.unwrap()),

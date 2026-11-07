@@ -528,7 +528,6 @@ pub(crate) fn private_directory() -> mix::evaluator::ExtFn {
             }
         })?;
         Ok(Value::Nil)
-
     })
 }
 
@@ -543,10 +542,14 @@ pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
             ));
         };
         let budget = options.first().map(crate::runtime::to_json).transpose()?;
-        let limit = if let Some(value) = budget.as_ref().filter(|v|v.is_number()) {
-            crate::widgets::whole(value).filter(|n|*n>0 && *n<=32*1024*1024).ok_or_else(||fail("read limit must be 1..32 MiB".into()))? as usize
-        } else {1024*1024};
-        let tail = if options.is_empty() || budget.as_ref().is_some_and(|v|v.is_number()) {
+        let limit = if let Some(value) = budget.as_ref().filter(|v| v.is_number()) {
+            crate::widgets::whole(value)
+                .filter(|n| *n > 0 && *n <= 32 * 1024 * 1024)
+                .ok_or_else(|| fail("read limit must be 1..32 MiB".into()))? as usize
+        } else {
+            1024 * 1024
+        };
+        let tail = if options.is_empty() || budget.as_ref().is_some_and(|v| v.is_number()) {
             None
         } else if options.len() == 1 {
             let option = crate::runtime::to_json(&options[0])?;
@@ -559,7 +562,6 @@ pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
             )
         } else {
             return Err(fail("too many read options".into()));
-
         };
         let path = std::path::Path::new(path);
         if !path.is_absolute() {
@@ -587,7 +589,6 @@ pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
                     limit,
                 )
             }
-
         };
         let value = match read() {
             Ok(bytes) => {

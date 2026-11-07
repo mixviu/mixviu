@@ -646,8 +646,6 @@ pub(crate) fn draw(
         && widget.properties["presentation"] != "form"
         && !value["grid"].is_array()
     {
-
-
         return gold_dialog(ui, widget, value, geometry, events);
     }
     match widget.kind.as_str() {

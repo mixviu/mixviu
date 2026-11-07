@@ -1067,7 +1067,6 @@ fn outline_rows(
             });
         }
     }
-
 }
 
 fn draw_counted_outline(

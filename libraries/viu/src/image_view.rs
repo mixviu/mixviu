@@ -419,7 +419,6 @@ impl Images {
                     },
                 );
             }
-
         }
         if value["natural"] == true && self.slots.get(id).is_some_and(|s| !s.answered) {
             self.decoder.ask(

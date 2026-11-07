@@ -61,9 +61,8 @@ pub mod file_previews;
 pub mod file_tiles;
 pub mod header_controls;
 mod media_gallery;
-pub mod settings_browser;
 pub mod media_preview;
-
+pub mod settings_browser;
 
 pub mod process;
 

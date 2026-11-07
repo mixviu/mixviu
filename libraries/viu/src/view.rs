@@ -1288,7 +1288,6 @@ impl SceneView {
                 self.node(ui, visible[0], nodes, route, depth + 1, events);
                 return;
             }
-
         }
         for child in children(node) {
             if nodes

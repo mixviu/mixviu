@@ -120,7 +120,6 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("scroll", "bool", false, Some("false")),
     ];
     static SECTION: [Port; 7] = [
-
         p("children", "list", true, None),
         p("titles", "list", true, None),
         pe("frame", "\"plain\"", &["plain", "dock"]),
@@ -255,7 +254,6 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pnd("min_column_width", "0", None),
     ];
     static DOCK: [Port; 8] = [
-
         p("children", "list", true, None),
         p("placements", "object", true, None),
         p("clip", "bool", false, None),
@@ -379,7 +377,6 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             p("scroll_key", "string", false, None),
             p("scroll_ready", "bool", false, None),
             p("reserve_panel_after", "bool", false, None),
-
             pn("row_gap", false, None),
             pn("column_gap", false, None),
             pn("padding_top", false, None),
