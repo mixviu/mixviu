@@ -76,12 +76,26 @@ fn session_notice_reports_mode_axis_instead_of_chrome_luminance() {
         "appearance.scheme":"pro", "appearance.style":"pro"
     }},"appearance":{"mode":"light"}});
     viu::appearance::install_session_choice(
-        &ctx, &snapshot, "dopus", &toolkit::Theme::embedded(),
-        &Default::default(), &json!({}),
-    ).unwrap();
-    assert_eq!(viu::appearance::session_theme(&ctx).mode(), design::Mode::Light);
-    assert!(ctx.global_style().visuals.dark_mode, "Pro uses dark chrome in light mode");
-    assert_eq!(viu::appearance::session_update(&ctx, &snapshot)["appearance"]["mode"], "light");
+        &ctx,
+        &snapshot,
+        "dopus",
+        &toolkit::Theme::embedded(),
+        &Default::default(),
+        &json!({}),
+    )
+    .unwrap();
+    assert_eq!(
+        viu::appearance::session_theme(&ctx).mode(),
+        design::Mode::Light
+    );
+    assert!(
+        ctx.global_style().visuals.dark_mode,
+        "Pro uses dark chrome in light mode"
+    );
+    assert_eq!(
+        viu::appearance::session_update(&ctx, &snapshot)["appearance"]["mode"],
+        "light"
+    );
 }
 
 #[test]
