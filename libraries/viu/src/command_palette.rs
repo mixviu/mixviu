@@ -4,11 +4,27 @@ use serde_json::{Value, json};
 use std::sync::OnceLock;
 
 pub fn validate(value: &Value) -> Result<(), String> {
+    let mut ids = std::collections::BTreeSet::new();
     if value["open"].is_boolean() && value["commands"].as_array().is_some_and(|rows| {
-        rows.len() <= 256 && rows.iter().all(|row| row["id"].is_string()
+        rows.len() <= 256 && rows.iter().all(|row| row["id"].as_str().is_some_and(|id| !id.is_empty() && id.len() <= 128 && ids.insert(id))
             && row["label"].as_str().is_some_and(|label| label.len() <= 4096 && !label.chars().any(char::is_control))
             && row["enabled"].is_boolean())
     }) { Ok(()) } else { Err("invalid command palette".into()) }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn labels_remain_literal_and_duplicate_ids_refuse_before_drawing() {
+        let value = serde_json::json!({"open":true,"commands":[{"id":"test","label":"Quotes \" braces { } and \\ — literal","enabled":true}]});
+        assert!(super::validate(&value).is_ok());
+        let context = egui::Context::default();
+        crate::appearance::install(&context);
+        context.run_ui(egui::RawInput::default(), |ui| { super::draw(ui, "palette", &value, &mut Vec::new()); }).drop_without_applying_deltas();
+        let mut duplicate = value.clone();
+        duplicate["commands"].as_array_mut().unwrap().push(value["commands"][0].clone());
+        assert!(super::validate(&duplicate).is_err());
+    }
 }
 
 pub fn draw(ui: &mut egui::Ui, id: &str, value: &Value, events: &mut Vec<crate::widgets::Intent>) -> egui::Response {
