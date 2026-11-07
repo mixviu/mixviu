@@ -8,7 +8,7 @@ publish = false
 build = "build.rs"
 
 [package.metadata.mixos]
-component = "compd"
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"

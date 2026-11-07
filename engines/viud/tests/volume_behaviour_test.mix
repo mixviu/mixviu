@@ -12,7 +12,7 @@
 -- Every wait is bounded. Bus callers (cli.mix) are not the host: every
 -- write commands must accept them.
 --
---   mix services/compd/tests/volume_behaviour_test.mix
+--   mix engines/viud/tests/volume_behaviour_test.mix
 --
 -- Needs a fresh mix and noded: MIXOS_TEST_MIX and MIXOS_TEST_NODED when set,
 -- else <prefix>/bin/mix and <prefix>/bin/noded.
@@ -149,7 +149,7 @@ fn write_fixtures()
   mkdir($tmp .. "/bin", {parents: true})
   mkdir($tmp .. "/out", {parents: true})
   mkdir($tmp .. "/home", {parents: true})
-  $fixture = json_parse(read_file($root .. "/services/compd/tests/fixtures/scenes/volume-pactl.json"))
+  $fixture = json_parse(read_file($root .. "/engines/viud/tests/fixtures/scenes/volume-pactl.json"))
   write_file($tmp .. "/pactl/state.json", json_encode($fixture))
   write_file($tmp .. "/bin/pactl", $PACTL)
   chmod($tmp .. "/bin/pactl", 0o755)
@@ -262,7 +262,7 @@ end
 -- output_2, the named sources (input_1, input_2, "monitor" for the
 -- fixture's monitor), the fixture's streams, and the two default names.
 fn set_case($sink, $source, $sources)
-  $fx = json_parse(read_file($root .. "/services/compd/tests/fixtures/scenes/volume-pactl.json"))
+  $fx = json_parse(read_file($root .. "/engines/viud/tests/fixtures/scenes/volume-pactl.json"))
   $s = json_parse(read_file($tmp .. "/pactl/state.json"))
   $s.sinks = [merge($fx.sinks[0], {index: 301, name: "output_1", description: "Output 1"}),
     merge($fx.sinks[0], {index: 302, name: "output_2", description: "Output 2"})]

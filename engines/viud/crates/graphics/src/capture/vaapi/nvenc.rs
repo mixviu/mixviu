@@ -61,7 +61,7 @@ impl NvencEncoder {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let temp = std::env::temp_dir().join(format!("compd-capture-{nanos}.mp4"));
+        let temp = std::env::temp_dir().join(format!("viud-capture-{nanos}.mp4"));
 
         match unsafe { Self::init(w, h, fps, cq, &temp) } {
             Ok((codec_ctx, frame, mux)) => Some(NvencEncoder {

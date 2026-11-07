@@ -1266,10 +1266,10 @@ impl UiRegistry {
     }
 
     /// Run the passes queued input or messages owe, outside a frame. While
-    /// compd is parked (its VT in the background) no frame runs
+    /// viud is parked (its VT in the background) no frame runs
     /// `process_frame`, yet input from the Bus (an agent's click on a panel)
     /// must still take effect. Only input and messages run a pass here, never
-    /// a repaint request, so an animating UI cannot spin a parked compd. A
+    /// a repaint request, so an animating UI cannot spin a parked viud. A
     /// pass that holds the rest of its input back (a click's release,
     /// `UiRuntime::take_events`) is followed by another until the input is
     /// drained; every pass takes at least one event, and the cap only guards

@@ -916,7 +916,7 @@ fn typed_leaf_selection_size_is_independent_of_surface_count() {
 
 #[test]
 fn output_keys_obey_the_public_slug_encoding() {
-    assert_eq!(output_key("compd-nested-0"), "o_compd_nested_0");
+    assert_eq!(output_key("viud-nested-0"), "o_viud_nested_0");
     assert_eq!(output_key("DP-1"), "o_dp_1");
 }
 

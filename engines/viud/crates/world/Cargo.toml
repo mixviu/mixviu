@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [package.metadata.mixos]
-component = "compd"
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"
@@ -41,7 +41,7 @@ config = { workspace = true }
 notify = { workspace = true }
 # The compositor's own UIs (capture overlays and dialogs, notifications,
 # the frame-rate overlay) are egui programs on the MixOS look; strings come
-# from services/compd/i18n.
+# from engines/viud/i18n.
 smithay = { workspace = true }
 uuid = { workspace = true }
 xcursor = { workspace = true }

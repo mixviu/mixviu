@@ -8,12 +8,12 @@ use std::collections::BTreeSet;
 
 const REGISTRY: &str = include_str!("../../../../../docs/docs/spec/bus/commands.conf.mix");
 
-/// The registry's `comp.*` names owned by compd, from its one-entry-per-line
+/// The registry's `comp.*` names owned by viud, from its one-entry-per-line
 /// form.
 fn registered() -> BTreeSet<String> {
     REGISTRY
         .lines()
-        .filter(|line| line.contains("owner:\"compd\""))
+        .filter(|line| line.contains("owner:\"viud\""))
         .filter_map(|line| line.split("name:\"").nth(1)?.split('"').next())
         .filter(|name| name.starts_with("comp."))
         .map(str::to_owned)

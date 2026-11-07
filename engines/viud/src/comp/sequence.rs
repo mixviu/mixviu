@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `comp.input.sequence` on the compd host.
+//! `comp.input.sequence` on the viud host.
 //!
 //! policy's `SequenceRun` is the run model (steps, delays, replies); this
 //! drives it on the loop:

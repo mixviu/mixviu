@@ -196,7 +196,7 @@ pub fn is_drawn(window: &Window) -> bool {
 }
 
 /// The comp policy's workspace / minimise suppression as it last stamped it on
-/// this window (compd integration E5). Lives on the `Window`, not its surface,
+/// this window (viud integration E5). Lives on the `Window`, not its surface,
 /// so it survives an X11 unmap/remap.
 struct HiddenMarker(std::sync::atomic::AtomicBool);
 

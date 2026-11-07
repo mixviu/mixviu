@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! screencopy: wlr-screencopy (`zwlr_screencopy_manager_v1`, version 3) for
-//! compd.
+//! viud.
 //!
 //! Two halves:
 //!
 //! - **Protocol** ([`create_global`]): the manager and frame objects, running on
-//!   compd's real `Dispatch` through smithay's `Dispatch2` blanket (so no handler
+//!   viud's real `Dispatch` through smithay's `Dispatch2` blanket (so no handler
 //!   impl in dispatcher is needed). A frame advertises one shm layout —
 //!   `XRGB8888`, the capture region's physical size, tight stride — then
 //!   `buffer_done` (v3). No `linux_dmabuf` is advertised yet: shm only.

@@ -189,7 +189,7 @@ fn fetch_windows()
 end
 
 -- comp.workspaces.list: count, current and one {index, windows, name} row per
--- workspace. A compd without it (unknown_command) answers the same object from
+-- workspace. A viud without it (unknown_command) answers the same object from
 -- the props tree, with no names.
 fn read_workspaces()
   $ws = $r.call($COMP, "comp.workspaces.list", {})

@@ -3,7 +3,7 @@
 //! The session lock's policy.
 //!
 //! The protocol lifecycle is dispatcher's (`wayland::sessionlock`); this
-//! module is what the lock does to the rest of compd:
+//! module is what the lock does to the rest of viud:
 //! - [`service`], once per loop iteration: on entry the seat is torn down
 //!   (grabs, focus, the region run, an interactive grab, hot corners), on
 //!   exit the keyboard focus is restored; while locked the keyboard stays on
@@ -66,7 +66,7 @@ pub fn entering(lp: &Loop) -> bool {
     active(lp) && !lp.inner.comp.lock.seen.active()
 }
 
-/// One loop pass (compd's loop closure): transitions, the keyboard's place,
+/// One loop pass (viud's loop closure): transitions, the keyboard's place,
 /// the `locked` confirmation.
 pub fn service(lp: &mut Loop) {
     let now = phase(lp);

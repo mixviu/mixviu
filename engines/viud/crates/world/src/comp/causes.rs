@@ -2,9 +2,9 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `props.changed` cause per source.
 //!
-//! Whatever changes compd state notes a cause against the props subtree it
+//! Whatever changes viud state notes a cause against the props subtree it
 //! touched; the edge pass gives each changed path the cause of the most
-//! specific noted prefix, and compd's generic `compd.state` only when nothing
+//! specific noted prefix, and viud's generic `viud.state` only when nothing
 //! was noted. The notes are cleared once the pass that diffs them has run.
 //! The vocabulary: `wayland.map`, `wayland.unmap`, `wayland.focus`,
 //! `comp.window`, `props.set`, `workspace.switch`, `layer.arrange`,

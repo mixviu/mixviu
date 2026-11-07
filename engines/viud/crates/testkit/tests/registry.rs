@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The comp registry follows real clients through compd's real engine.
+//! The comp registry follows real clients through viud's real engine.
 
 use surfaces::SurfaceRole;
 use testkit::Harness;

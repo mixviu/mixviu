@@ -63,7 +63,7 @@ pub fn wrap_gles_texture(
     };
 
     let hal_desc = HalTextureDescriptor {
-        label: Some("compd_gl_wrapped"),
+        label: Some("viud_gl_wrapped"),
         size,
         mip_level_count: 1,
         sample_count: 1,
@@ -90,7 +90,7 @@ pub fn wrap_gles_texture(
     };
 
     let wgpu_desc = wgpu::TextureDescriptor {
-        label: Some("compd_gl_wrapped"),
+        label: Some("viud_gl_wrapped"),
         size,
         mip_level_count: 1,
         sample_count: 1,

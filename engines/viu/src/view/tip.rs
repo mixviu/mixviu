@@ -109,7 +109,7 @@ impl Thumbnail {
     /// `{id, generation, w, h, decorated?}`: whole non-negative ids, a
     /// positive content size. `decorated: true` (server-side chrome) grows the
     /// size by the installed theme's chrome, so the box has the frame's
-    /// aspect, which is what compd fits into it.
+    /// aspect, which is what viud fits into it.
     fn from_port(value: &Value) -> Option<Thumbnail> {
         let id = value.get("id")?.as_f64()?;
         let generation = value.get("generation")?.as_f64()?;

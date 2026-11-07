@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The compositor's own UI: egui programs drawn by compd itself (capture
+//! The compositor's own UI: egui programs drawn by viud itself (capture
 //! overlays and dialogs, notifications, the frame-rate overlay, the shell).
 //!
 //! Each instance is an [`engine::UiRuntime`] painting into a GL texture the
-//! compositor owns, through egui-wgpu on the wgpu device that shares compd's
+//! compositor owns, through egui-wgpu on the wgpu device that shares viud's
 //! EGL context. The compositor composites that texture like any other
 //! element, so an idle UI costs nothing and a visible one one texture sample.
 //!

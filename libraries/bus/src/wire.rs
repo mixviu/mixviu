@@ -429,11 +429,11 @@ mod tests {
         let msg = BusMessage::new()
             .with_header("to", "noded")
             .with_header("command", "topic.publish")
-            .with_header("from", "compd")
+            .with_header("from", "viud")
             .with_body("{\"a\":1}");
         assert_eq!(
             msg.to_wire(),
-            "---\ncommand: topic.publish\nfrom: compd\nto: noded\n---\n{\"a\":1}\n"
+            "---\ncommand: topic.publish\nfrom: viud\nto: noded\n---\n{\"a\":1}\n"
         );
         // A body that already ends in a newline gains nothing.
         let msg = BusMessage::new().with_body("x\n");

@@ -22,10 +22,10 @@ RuntimeDirectoryMode=0700
 # The session bus is found at $XDG_RUNTIME_DIR/bus by anything started without
 # DBUS_SESSION_BUS_ADDRESS (apps@ unsets it). The bus socket lives in its own
 # runtime directory, so link it into this one; systemd removes the link with
-# the directory when compd stops. Dangling until the session bus starts.
+# the directory when viud stops. Dangling until the session bus starts.
 # Non-fatal (-): a missing link must never keep the compositor down.
 ExecStartPre=-/usr/bin/ln -sfn @{run}/session/%i/dbus/bus @{run}/session/%i/desktop/bus
-ExecStart=@{prefix}/bin/compd kms-live --socket ${WAYLAND_DISPLAY} --scale ${MIXOS_OUTPUT_SCALE} --config-file ${MIXOS_COMPD_CONFIG} --bus-service comp --scene-service shell
+ExecStart=@{prefix}/bin/viud kms-live --socket ${WAYLAND_DISPLAY} --scale ${MIXOS_OUTPUT_SCALE} --config-file ${MIXOS_VIUD_CONFIG} --bus-service comp --scene-service shell
 TTYPath=/dev/tty%i
 StandardInput=tty
 StandardOutput=journal

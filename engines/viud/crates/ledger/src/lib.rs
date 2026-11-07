@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! ledger: compd's frame, presentation and redraw-reason ledgers.
+//! ledger: viud's frame, presentation and redraw-reason ledgers.
 //!
 //! Engine-neutral cores; they later merge into `frames`:
 //!

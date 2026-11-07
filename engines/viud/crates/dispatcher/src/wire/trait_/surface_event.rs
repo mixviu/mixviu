@@ -151,7 +151,7 @@ pub enum InteractiveOp {
 pub enum WindowRequest {
     Maximize(bool),
     Minimize,
-    /// The window's own close control was used (compd's server-side chrome):
+    /// The window's own close control was used (viud's server-side chrome):
     /// the host answers it with the polite close.
     Close,
     /// X11 `WM_CHANGE_STATE` NormalState: restore a minimised window

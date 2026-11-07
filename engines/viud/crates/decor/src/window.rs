@@ -3,7 +3,7 @@
 //! Which windows get chrome, and how much room it takes.
 //!
 //! The installed theme is per compositor thread, like every other piece of
-//! compd frame state: the backend installs it once at startup
+//! viud frame state: the backend installs it once at startup
 //! ([`install`]); a later reinstall (a theme change over the Bus) bumps the
 //! generation, which repaints every chrome once.
 
@@ -259,7 +259,7 @@ pub fn ssd_enabled() -> bool {
     model::environment::preference::base::decorations_ssd()
 }
 
-/// Whether compd draws `window`'s chrome, with a theme installed:
+/// Whether viud draws `window`'s chrome, with a theme installed:
 /// - an xdg toplevel that acked server-side decorations and still has its
 ///   decoration object, not fullscreen (fullscreen owns its whole output);
 /// - an X11 window by `policy::x11::decoration_mode`: not

@@ -267,7 +267,7 @@ on monitor.show
   send $comp "comp.windows.list" body={}
   if $rc!=0 then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
   $windows=filter($reply.windows ?? [],fn($w)=$w.app_id=="dev.mixos.monitor" and $w.pid==$ctx.pid)
-  if len($windows)==0 then reply(10,json_encode({error_code:"ACTIVATION",message:"window not known to compd"}));return end
+  if len($windows)==0 then reply(10,json_encode({error_code:"ACTIVATION",message:"window not known to viud"}));return end
   $w=$windows[0];$target={id:$w.id,generation:$w.generation}
   send $comp "comp.window.restore" body=$target
   if $rc!=0 or $reply.minimized!=false then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end

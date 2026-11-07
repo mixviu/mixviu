@@ -20,8 +20,8 @@ impl Drop for Process {
     fn drop(&mut self) {
         if thread::panicking() {
             eprintln!(
-                "compd log: {}",
-                fs::read_to_string(self.root.join("compd.log")).unwrap_or_default()
+                "viud log: {}",
+                fs::read_to_string(self.root.join("viud.log")).unwrap_or_default()
             );
         }
         let _ = self.stop.send(());
@@ -84,7 +84,7 @@ fn spawn_options(
     service: Option<&str>,
     trace: bool,
 ) -> Process {
-    let binary = std::env::var_os("COMPD_TEST_BINARY")
+    let binary = std::env::var_os("VIUD_TEST_BINARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             std::env::current_exe()
@@ -100,11 +100,11 @@ fn spawn_options(
         "build viud with backend-headless before this test: {}",
         binary.display()
     );
-    let root = std::env::temp_dir().join(format!("compd-headless-{}-{label}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("viud-headless-{}-{label}", std::process::id()));
     fs::create_dir(&root).unwrap();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
     let node =
-        std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     let mut config = model::environment::config::base::default_settings();
     // Default priority is realtime: headless must override the startup policy.
     assert_eq!(config.priority, "realtime");
@@ -115,7 +115,7 @@ fn spawn_options(
     };
     let settings = root.join("settings.json");
     fs::write(&settings, serde_json::to_vec(&config).unwrap()).unwrap();
-    let log = root.join("compd.log");
+    let log = root.join("viud.log");
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
     command
@@ -138,16 +138,16 @@ fn spawn_options(
         .env("MIXOS_VAR", root.join("var"))
         .env("MIXOS_RUN", root.join("run"))
         .env("MIXOS_NODED_URL", bus.unwrap_or("ws://127.0.0.1:1"))
-        .env("COMPD_HEADLESS_REFRESH_HZ", refresh)
-        .env("COMPD_FRAME_TRACE", if trace { "1" } else { "0" })
-        .env("COMPD_FRAME_TRACE_FILE", root.join("frames.log"))
-        .env("COMPD_FRAME_TRACE_LIMIT", "0")
+        .env("VIUD_HEADLESS_REFRESH_HZ", refresh)
+        .env("VIUD_FRAME_TRACE", if trace { "1" } else { "0" })
+        .env("VIUD_FRAME_TRACE_FILE", root.join("frames.log"))
+        .env("VIUD_FRAME_TRACE_LIMIT", "0")
         // Fixed built-in 24px arrow: no host theme or cursor animation.
         .env("XCURSOR_PATH", root.join("cursors"))
         .env("XCURSOR_THEME", "headless-test")
         .env("XCURSOR_SIZE", "24")
         // Deliberately request XWayland: --headless must keep it off.
-        .env("COMPD_XWAYLAND", "1")
+        .env("VIUD_XWAYLAND", "1")
         .env_remove("NOTIFY_SOCKET")
         .env_remove("MIXOS_VT")
         .stdout(Stdio::from(stderr.try_clone().unwrap()))
@@ -161,7 +161,7 @@ fn spawn_options(
     if let Some(service) = service {
         command.args(["--bus-service", service]);
     }
-    let child = command.spawn().expect("start compd");
+    let child = command.spawn().expect("start viud");
     let pid = child.id();
     let (stop, stopped) = mpsc::channel();
     let watchdog = thread::spawn(move || {

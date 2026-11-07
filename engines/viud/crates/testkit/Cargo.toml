@@ -1,6 +1,6 @@
 [package]
 name = "testkit"
-description = "Headless test harness for compd: the real protocol engine and comp registry, in-process Wayland clients, no GPU and no backend"
+description = "Headless test harness for viud: the real protocol engine and comp registry, in-process Wayland clients, no GPU and no backend"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 
 [package.metadata.mixos]
-component = "compd"
+component = "viud"
 kind = "test"
 layer = "desktop"
 contract = "none"
@@ -20,7 +20,7 @@ warnings = "allow"
 [lints.clippy]
 mod_module_files = "deny"
 
-# Dev-only: nothing in compd depends on this crate. It exists to be used from
+# Dev-only: nothing in viud depends on this crate. It exists to be used from
 # its own tests/ (and later from other crates' dev-dependencies).
 [dependencies]
 policy.workspace = true

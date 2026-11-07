@@ -654,7 +654,7 @@ pub fn relative<I: InputBackend>(
 
 /// Whether a shader warp applies to this event.
 ///
-/// compd: never. The pointer warp corrected for a user shader bundle's
+/// viud: never. The pointer warp corrected for a user shader bundle's
 /// displacement (compositor.pipeline), which is cut, along with `pointer.warp`.
 fn warp_active(_state: &Loop) -> bool {
     false
@@ -700,7 +700,7 @@ fn warp_screen(
     ctx: &world::camera::transform::translate::transform::Context,
     p: Point<f64, Physical>,
 ) -> Point<f64, Physical> {
-    // compd: no shader warp exists (see `warp_active`), so the corrected
+    // viud: no shader warp exists (see `warp_active`), so the corrected
     // position is the position.
     let _ = (state, ctx);
     world::seat::pointer::publish::set_true_screen(None);

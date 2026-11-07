@@ -10,7 +10,7 @@
 //!   everything alive from the scheme accent, in the same Oklch hues the
 //!   design system uses, so chrome and widgets agree.
 //!
-//! In compd these colours are the starting point only: `crate::theme` swaps
+//! In viud these colours are the starting point only: `crate::theme` swaps
 //! every drawn slot for a design token and keeps the preset's alpha.
 
 use super::deco::{
@@ -22,7 +22,7 @@ use super::geom::{Srgba, oklch};
 
 /// The title face every preset asks for. Chrome typography is a property of
 /// the desktop, not of the chrome style: a window that looks Windows-ish is
-/// still lettered like everything else on the machine. compd replaces these
+/// still lettered like everything else on the machine. viud replaces these
 /// defaults with the design's `ui_display` typography role.
 const DEFAULT_TITLE_FONT_FAMILY: &str = "SF Pro Display";
 /// Point size for [`DEFAULT_TITLE_FONT_FAMILY`] (converted to logical px at

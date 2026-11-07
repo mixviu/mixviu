@@ -145,7 +145,7 @@ pub enum WindowOp {
     },
     /// `comp.workspaces.set_count`: the `workspaces.count` set (shrinking
     /// strands windows onto the last workspace); `persist` (default true)
-    /// also saves it as the count compd starts with.
+    /// also saves it as the count viud starts with.
     SetWorkspaceCount {
         count: u32,
         persist: bool,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `workspaces.*`: compd's workspaces and overview.
+//! `workspaces.*`: viud's workspaces and overview.
 use super::{Reader, View};
 
 #[derive(Clone, Debug, PartialEq)]

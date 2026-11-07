@@ -68,7 +68,7 @@ pub fn apply() -> std::io::Result<()> {
         // (3) Drop the compositor's `priority` boost (settings.json `priority`).
         // `priority.arm` arms SCHED_RESET_ON_FORK, but that attribute is
         // per-THREAD and covers only tasks the ARMING thread goes on to create:
-        // a fork from any thread that predates the arm — the `compd-launch` worker
+        // a fork from any thread that predates the arm — the `viud-launch` worker
         // among them — still handed the raw boost down, so apps came up
         // SCHED_RR (top: PR -3, NI 0) under priority=realtime and nice -10
         // under priority=auto, competing with input dispatch and breaking

@@ -69,7 +69,7 @@ try
   write_file($tmp .. "/observer.mix","subscribe(\"scenes.changed\")\n$count=0\non scenes.changed\n  $count=$count+1\nend\non observer.count\n  reply(0,json_encode({count:$count}))\nend\n")
   start("observer",$tmp .. "/observer.mix",{})
   mkdir($tmp .. "/scenes")
-  start("scenes",$repo .. "/services/compd/scripts/scenes.mix",{SCENES_DIR:$tmp .. "/scenes",SCENES_TEMPLATES:$repo .. "/share/scenes",SCENE_HOST:"fakeshell",SCENES_LEGACY_SERVICE:"none",SCENES_FIRST_RUN:"0"})
+  start("scenes",$repo .. "/engines/viud/scripts/scenes.mix",{SCENES_DIR:$tmp .. "/scenes",SCENES_TEMPLATES:$repo .. "/share/scenes",SCENE_HOST:"fakeshell",SCENES_LEGACY_SERVICE:"none",SCENES_FIRST_RUN:"0"})
   $selection={view:"gallery",template:"notes"}
   $snap=snapshot($selection)
   check($snap.schema=="scene-editor.snapshot.v1","versioned frontend snapshot")

@@ -113,7 +113,7 @@ pub fn set_comp_service(name: &str) {
 /// queued (`--capture region|screen|window`, with the window focused at the
 /// press). A screenshot window already running takes the request from the
 /// new process over the Bus, so a press never opens a second window. The
-/// program is `screenshot` beside this compd (MixOS installs every binary
+/// program is `screenshot` beside this viud (MixOS installs every binary
 /// into one directory), else the first on `PATH`.
 pub fn launch_screenshots(state: &mut world::state::Loop) {
     use std::sync::atomic::{AtomicU64, Ordering};

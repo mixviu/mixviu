@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Real agent input and service isolation on a private broker. Build compd,
+//! Real agent input and service isolation on a private broker. Build viud,
 //! noded and testkit-input-probe before running the ignored render-node tests.
 #[path = "support/bus.rs"]
 mod bus;
@@ -40,7 +40,7 @@ impl Probe {
     fn start(process: &mut process::Process, app: &str) -> Self {
         let deadline = Instant::now() + Duration::from_secs(20);
         while !process.root.join("wayland-headless-test").exists() {
-            assert!(process.child.try_wait().unwrap().is_none(), "compd exited");
+            assert!(process.child.try_wait().unwrap().is_none(), "viud exited");
             assert!(Instant::now() < deadline, "socket timeout");
             thread::sleep(Duration::from_millis(10));
         }
@@ -147,7 +147,7 @@ fn backend_authority_and_coordinate_bounds_preserve_session_rules() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
+#[ignore = "needs a GPU render node and built viud, noded and testkit-input-probe"]
 fn agent_sequence_types_into_a_probe_window() {
     let bus = Bus::start("input");
     let mut process = process::spawn(1, None, "input", Some(&bus.url));
@@ -226,7 +226,7 @@ fn agent_sequence_types_into_a_probe_window() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
+#[ignore = "needs a GPU render node and built viud, noded and testkit-input-probe"]
 fn agent_runs_survive_without_a_vt() {
     let bus = Bus::start("yield");
     let mut process = process::spawn(1, None, "yield", Some(&bus.url));
@@ -263,7 +263,7 @@ fn agent_runs_survive_without_a_vt() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built compd, noded and testkit clients"]
+#[ignore = "needs a GPU render node and built viud, noded and testkit clients"]
 fn lock_clears_agent_input() {
     let bus = Bus::start("lock");
     let mut process = process::spawn(1, None, "lock", Some(&bus.url));
@@ -338,7 +338,7 @@ fn lock_clears_agent_input() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
+#[ignore = "needs a GPU render node and built viud, noded and testkit-input-probe"]
 fn scale_two_centres_clamps_and_delivers_logical_coordinates() {
     let bus = Bus::start("scale-two");
     let mut process = process::spawn(2, None, "scale-two", Some(&bus.url));
@@ -388,7 +388,7 @@ fn scale_two_centres_clamps_and_delivers_logical_coordinates() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
+#[ignore = "needs a GPU render node and built viud, noded and testkit-input-probe"]
 fn two_instances_register_distinct_services() {
     let bus = Bus::start("two");
     let mut first = process::spawn(1, None, "two-a", Some(&bus.url));
@@ -482,7 +482,7 @@ fn two_instances_register_distinct_services() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
+#[ignore = "needs a GPU render node and built viud, noded and testkit-input-probe"]
 fn human_seat_has_no_sources() {
     let bus = Bus::start("human");
     let mut process = process::spawn(1, None, "human", Some(&bus.url));
@@ -532,6 +532,6 @@ fn human_seat_has_no_sources() {
     assert!(process.child.try_wait().unwrap().is_none());
     bus.call(SERVICE, "comp.windows.list", json!({}));
     println!(
-        "seat0: keyboard (focus) only; agent: both; five human commands refused seat_unavailable and compd stayed up"
+        "seat0: keyboard (focus) only; agent: both; five human commands refused seat_unavailable and viud stayed up"
     );
 }

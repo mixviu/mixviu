@@ -15,7 +15,7 @@
 -- broken-behaviour refusal and the launched behaviour's marker file are what
 -- prove the calls ran on this Mix, not on the replacement or a PATH fallback.
 --
--- Run from the checkout root: mix services/compd/tests/scenes_io_test.mix
+-- Run from the checkout root: mix engines/viud/tests/scenes_io_test.mix
 -- Needs cp, mv and a noded binary (MIXOS_TEST_NODED, else <prefix>/bin/noded).
 
 $repo = dirname(dirname(dirname(dirname(realpath($0)))))
@@ -62,7 +62,7 @@ fn inner_source($tmp)
     "-- Loader stand-in: a copied Mix that replaces its own executable, then",
     "-- drives the real scenes_io adapter exactly as scenes.mix does.",
     "$tmp = " .. json_encode($tmp),
-    "$io = require(" .. json_encode($repo .. "/services/compd/scripts/lib/scenes_io.mix") .. ")",
+    "$io = require(" .. json_encode($repo .. "/engines/viud/scripts/lib/scenes_io.mix") .. ")",
     "fn fail($why)",
     "  print(\"INNER-FAILED: \" .. $why)",
     "  exit(1)",

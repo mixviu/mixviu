@@ -512,7 +512,7 @@ fn process_vblank_inner(
     // `scanout.timing/timing.sequence` for why 0 is the tell and what it costs clients.
     let sequence =
         kms::scanout::timing::sequence::resolve(ctx.drm_fd.as_fd(), crtc.into(), sequence);
-    // compd (integration batch D): the output whose queued frame this vblank completes.
+    // viud (integration batch D): the output whose queued frame this vblank completes.
     let presented_output = pending_feedback
         .as_ref()
         .map(|_| ctx.outputs[idx].output.clone());
@@ -540,7 +540,7 @@ fn process_vblank_inner(
             frames::draw::present::callbacks::hw_flip_kind(tore),
         );
     }
-    // compd (integration batch D): that frame reached the screen.
+    // viud (integration batch D): that frame reached the screen.
     if let Some(output) = presented_output {
         world::comp::presentation::presented(
             state,

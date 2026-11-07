@@ -5,7 +5,7 @@
 //! A bare `FormatSet` does not say which question it answers, and the tree had
 //! six different answers in flight at once — what the composite can SAMPLE, what
 //! it can COLOUR-ATTACH, what the scanout device's EGL can render into, what the
-//! wgpu adapter can import (compd: gone, wgpu now shares the GL context), what
+//! wgpu adapter can import (viud: gone, wgpu now shares the GL context), what
 //! GLES can sample, and what the primary plane will actually scan out. Two of those were published into separate globals from two
 //! separate points in one function and fed two separate intersections that were
 //! never reconciled.

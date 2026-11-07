@@ -2,11 +2,11 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `xwayland.enabled`: the persisted startup switch.
 //!
-//! Startup-read: compd decides once whether to start Xwayland
-//! ([`startup`], called by compd's `xwayland::register`). A props set
+//! Startup-read: viud decides once whether to start Xwayland
+//! ([`startup`], called by viud's `xwayland::register`). A props set
 //! changes the CONFIGURED value that get/describe read and writes it to the
 //! per-socket file for the next start; the running lifecycle is untouched.
-//! Precedence: `COMPD_XWAYLAND` (env veto, works when the
+//! Precedence: `VIUD_XWAYLAND` (env veto, works when the
 //! file or the props surface is the problem) > the persisted file > `true`.
 //!
 //! The file is `<etc>/comp/xwayland-enabled.<socket>`, `<etc>` being the
@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The env override.
-pub const ENV: &str = "COMPD_XWAYLAND";
+pub const ENV: &str = "VIUD_XWAYLAND";
 
 struct Switch {
     path: PathBuf,
@@ -30,7 +30,7 @@ struct Switch {
 
 static SWITCH: OnceLock<Switch> = OnceLock::new();
 
-/// The startup decision, as compd's `register` logs it.
+/// The startup decision, as viud's `register` logs it.
 pub struct Startup {
     pub enabled: bool,
     pub path: &'static Path,
@@ -38,7 +38,7 @@ pub struct Startup {
 }
 
 /// Resolve (once) and report the startup value. Reads `WAYLAND_DISPLAY`
-/// for the socket name, so call it after compd exports its own socket.
+/// for the socket name, so call it after viud exports its own socket.
 pub fn startup() -> Startup {
     let switch = switch();
     Startup {
@@ -134,7 +134,7 @@ fn resolve(env: Option<&str>, file: Option<&str>) -> (bool, Option<&'static str>
     if let Some(value) = env {
         match parse_env(value) {
             Some(enabled) => return (enabled, None),
-            None => note = Some("unrecognised COMPD_XWAYLAND; fell through to the persisted file"),
+            None => note = Some("unrecognised VIUD_XWAYLAND; fell through to the persisted file"),
         }
     }
     if let Some(text) = file {
@@ -153,7 +153,7 @@ fn resolve(env: Option<&str>, file: Option<&str>) -> (bool, Option<&'static str>
 
 // ── The running server's lifecycle ──
 
-/// `xwayland.state`: where the X server is in its life. compd's loader
+/// `xwayland.state`: where the X server is in its life. viud's loader
 /// writes it; the Bus reads it beside `xwayland.display` (null unless
 /// `ready`) and `xwayland.failures`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,7 +166,7 @@ pub enum ServerState {
     Ready,
     /// It died; the one retry is armed (`XWAYLAND_RETRY_DELAY_SECS`).
     Retrying,
-    /// It died with no retry left: X11 is down until compd restarts.
+    /// It died with no retry left: X11 is down until viud restarts.
     Failed,
 }
 
@@ -235,7 +235,7 @@ pub fn generation() -> u64 {
 
 // ── The per-socket DISPLAY descriptor ──
 //
-// compd publishes `$XDG_RUNTIME_DIR/compd/<socket>.xwayland.env`
+// viud publishes `$XDG_RUNTIME_DIR/viud/<socket>.xwayland.env`
 // (`DISPLAY=:N`, `GENERATION=G`, mode 0600, written atomically) when a
 // generation's window manager is up, and removes it when the generation
 // ends. Launchers read it once and hand `DISPLAY` to each X client; nothing
@@ -244,12 +244,12 @@ pub fn generation() -> u64 {
 /// The descriptor's path under `runtime_dir` for Wayland socket `socket`.
 pub fn descriptor_path_in(runtime_dir: &Path, socket: &str) -> PathBuf {
     runtime_dir
-        .join("compd")
+        .join("viud")
         .join(format!("{socket}.xwayland.env"))
 }
 
 /// This compositor's descriptor path: `XDG_RUNTIME_DIR` and the socket
-/// compd exported as `WAYLAND_DISPLAY`. `None` without either.
+/// viud exported as `WAYLAND_DISPLAY`. `None` without either.
 pub fn descriptor_path() -> Option<PathBuf> {
     let dir = std::env::var_os("XDG_RUNTIME_DIR").filter(|dir| !dir.is_empty())?;
     let socket = std::env::var("WAYLAND_DISPLAY")
@@ -342,7 +342,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("policy-host-xdesc-{}", std::process::id()));
         let path = descriptor_path_in(&dir, "wayland-9");
-        assert!(path.ends_with("compd/wayland-9.xwayland.env"));
+        assert!(path.ends_with("viud/wayland-9.xwayland.env"));
         publish_descriptor_at(&path, 3, 2).unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),

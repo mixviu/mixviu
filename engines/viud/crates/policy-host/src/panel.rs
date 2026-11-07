@@ -803,7 +803,7 @@ pub fn edge_counts(lp: &Loop) -> (EdgeCounts, EdgeCounts) {
     (enforced, held)
 }
 
-/// `compd.truth`'s `panels`: each edge's holder state.
+/// `viud.truth`'s `panels`: each edge's holder state.
 pub fn truth(lp: &Loop) -> Value {
     lp.inner
         .comp

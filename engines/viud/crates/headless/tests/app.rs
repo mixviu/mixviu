@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Build compd (backend-headless), noded, editd, testkit bins and
+//! Build viud (backend-headless), noded, editd, testkit bins and
 //! `cargo build -p ced --example ced-headless-probe` before this GPU target.
 #[path = "support/bus.rs"]
 mod bus;
@@ -150,7 +150,7 @@ wl_surface#3.attach(wl_buffer#8, 0, 0)\n";
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built compd, noded, editd, testkit bins and ced-headless-probe"]
+#[ignore = "needs a GPU render node and built viud, noded, editd, testkit bins and ced-headless-probe"]
 fn ced_wgpu_agent_typing_and_idle_ssim() {
     let bus = Bus::start("app");
     let mut compositor = process::spawn(1, None, "app", Some(&bus.url));
@@ -217,7 +217,7 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     assert_eq!(record["row"]["window_x"], 80.0);
     assert_eq!(record["row"]["window_y"], 60.0);
     let target = &record["window"];
-    if let Some(reference) = std::env::var_os("COMPD_TEST_APP_REFERENCE") {
+    if let Some(reference) = std::env::var_os("VIUD_TEST_APP_REFERENCE") {
         assert!(compare(Path::new(&reference), &reference_frame, IDLE_MIN, true) >= IDLE_MIN);
     } else {
         println!("CONSOLE_REFERENCE not supplied; cross-backend SSIM not run");

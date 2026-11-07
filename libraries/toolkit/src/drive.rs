@@ -366,7 +366,7 @@ pub fn input_mixed(ctx: &Context) -> bool {
 pub const INPUT_QUIET_PERIOD: Duration = Duration::from_secs(1);
 
 /// Refuse a queued capture without a UI pass, or an emitted screenshot without
-/// a GPU submission receipt, after this long. Stay above compd's one-second
+/// a GPU submission receipt, after this long. Stay above viud's one-second
 /// parked/occluded callback trickle with margin. Submitted readback retains its
 /// absolute capture deadline. This is independent of eframe's logic-wake grace.
 pub const CAPTURE_QUIET_PERIOD: Duration = Duration::from_millis(1500);
@@ -1163,10 +1163,10 @@ impl Drive {
                 ViewportCommand::Maximized(false),
             ],
             "close" => vec![ViewportCommand::Close],
-            // compd raises and focuses a window only on its own authority:
+            // viud raises and focuses a window only on its own authority:
             // a client's focus request is ignored, so it is refused here
             // rather than answered focused:false. The app's `show` command
-            // goes through compd and does it.
+            // goes through viud and does it.
             "focus" => {
                 let message = format!(
                     "the compositor ignores a window's own focus request: call {}.show, \

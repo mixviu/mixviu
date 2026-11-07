@@ -281,7 +281,7 @@ pub fn take_deferred_focus(window: &smithay::xwayland::X11Surface) -> bool {
 }
 
 /// A tearing-target verdict reached before the window had a surface to carry it.
-/// Carries WHOSE verdict it was — `COMPD_TEARING` and the Steam guess land in different
+/// Carries WHOSE verdict it was — `VIUD_TEARING` and the Steam guess land in different
 /// halves of the tag and rank differently against the client's own hint.
 #[derive(Debug)]
 struct PendingTearingTarget(bool);
@@ -332,7 +332,7 @@ fn stamp_tearing_target(
     // `set_hint` and the two never touch, which is what keeps a hint from erasing this
     // verdict — the bug from when both shared one flag.
     //
-    // `forced` (`COMPD_TEARING`) is a separate field from the guess rather than the same
+    // `forced` (`VIUD_TEARING`) is a separate field from the guess rather than the same
     // one set harder, because they rank on opposite sides of the client's hint.
     use crate::tearing::pacer::TearingTag;
     smithay::wayland::compositor::with_states(surface, |states| {

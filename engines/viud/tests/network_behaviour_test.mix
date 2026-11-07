@@ -11,7 +11,7 @@
 -- bounded. Bus callers (cli.mix) are not the host: their events carry their
 -- own name, and every write and editor command accepts them.
 --
---   mix services/compd/tests/network_behaviour_test.mix
+--   mix engines/viud/tests/network_behaviour_test.mix
 --
 -- Needs a fresh mix and noded: MIXOS_TEST_MIX and MIXOS_TEST_NODED when set,
 -- else <prefix>/bin/mix and <prefix>/bin/noded.

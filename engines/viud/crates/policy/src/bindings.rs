@@ -715,9 +715,9 @@ impl BindingState {
     /// Add the opt-in F9 Bus key.
     ///
     /// Bare F9 is a user key (§6.0: the user's keys belong to the user), so
-    /// this row breaks the rule. In compd it is dead: the user-key layer
+    /// this row breaks the rule. In viud it is dead: the user-key layer
     /// ([`crate::user_keys`]) runs before this table and takes every bare
-    /// F-key, so F9 never reaches it. Nothing in compd enables it; it is
+    /// F-key, so F9 never reaches it. Nothing in viud enables it; it is
     /// kept only until its tests move.
     pub fn with_bus_key(mut self, enabled: bool) -> Self {
         if enabled {

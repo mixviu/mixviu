@@ -25,7 +25,7 @@
 //!   at its own deadline;
 //! - an off-thread publish in flight. Its only producer is UI, whose
 //!   `wants_frame` already keeps the loop going while a publish is pending — a
-//!   second hold for the same thing, attributed to a `Background` compd does not
+//!   second hold for the same thing, attributed to a `Background` viud does not
 //!   have, bought nothing.
 
 use std::time::{Duration, Instant};

@@ -11,7 +11,7 @@
 //!
 //! Each frame asks for presentation feedback; in burst mode the first and
 //! the last commit of each burst ask, so superseded commits are exercised
-//! too. Prints one `COMPD_PRESENTATION_PROBE` summary line and exits
+//! too. Prints one `VIUD_PRESENTATION_PROBE` summary line and exits
 //! non-zero when an assertion fails.
 //!
 //! By default the nested contract is asserted (flags, seq and refresh all
@@ -70,7 +70,7 @@ use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_ba
 const NAME: &str = "testkit-presentation-probe";
 
 /// The prefix of the summary lines the gates parse.
-const SUMMARY: &str = "COMPD_PRESENTATION_PROBE";
+const SUMMARY: &str = "VIUD_PRESENTATION_PROBE";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Outcome {

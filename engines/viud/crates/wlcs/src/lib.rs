@@ -2,11 +2,11 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 // Callback structure informed by Smithay 0.7 wlcs_anvil (MIT),
 // Copyright (c) 2017 Victor Berger, Victoria Brekenfeld and contributors.
-// Client/surface lookup in the compd adapter follows that reference. The C ABI
-// shim and owned-child lifecycle are implemented for compd; fixed-point /256
+// Client/surface lookup in the viud adapter follows that reference. The C ABI
+// shim and owned-child lifecycle are implemented for viud; fixed-point /256
 // follows Wayland's 24.8 ABI. touch_destroy's auto-up is local handling.
 // Reference and licence: vendor/smithay/wlcs_anvil, vendor/smithay/LICENSE.txt.
-//! wlcs runs the real compd binary as an owned child. This isolates its global
+//! wlcs runs the real viud binary as an owned child. This isolates its global
 //! configuration, logging and GPU lifetime between tests, unlike Anvil's thread.
 //! Each callback waits for the compositor-loop acknowledgement. The only test
 //! channel is inherited at exec; normal clients still use native Wayland.
@@ -135,23 +135,23 @@ impl Process {
             .map(PathBuf::from)
             .unwrap_or_else(std::env::temp_dir);
         let root = base.join(format!(
-            "compd-wlcs-{}-{}",
+            "viud-wlcs-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&root)?;
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         let mut settings = model::environment::config::base::default_settings();
-        settings.render_node = std::env::var("COMPD_TEST_RENDER_NODE")
+        settings.render_node = std::env::var("VIUD_TEST_RENDER_NODE")
             .unwrap_or_else(|_| "/dev/dri/renderD128".into());
         fs::write(root.join("settings.json"), serde_json::to_vec(&settings)?)?;
         let (parent, child_socket) = UnixDatagram::pair()?;
         parent.set_read_timeout(Some(Duration::from_secs(10)))?;
         parent.set_write_timeout(Some(Duration::from_secs(10)))?;
         let fd = child_socket.as_raw_fd();
-        let log = fs::File::create(root.join("compd.log"))?;
+        let log = fs::File::create(root.join("viud.log"))?;
         let mut command = Command::new(
-            std::env::var_os("COMPD_WLCS_BINARY").unwrap_or_else(|| "target/debug/viud".into()),
+            std::env::var_os("VIUD_WLCS_BINARY").unwrap_or_else(|| "target/debug/viud".into()),
         );
         command
             .args([
@@ -163,7 +163,7 @@ impl Process {
                 "--config-file",
             ])
             .arg(root.join("settings.json"))
-            .env("COMPD_WLCS_FD", fd.to_string())
+            .env("VIUD_WLCS_FD", fd.to_string())
             .env("XDG_RUNTIME_DIR", &root)
             .env("HOME", &root)
             .env("XDG_CONFIG_HOME", root.join("config"))
@@ -199,7 +199,7 @@ impl Process {
             child,
             control: Control(
                 Arc::new(Mutex::new(parent)),
-                Arc::new(root.join("compd.log")),
+                Arc::new(root.join("viud.log")),
             ),
             root,
         };
@@ -219,7 +219,7 @@ impl Drop for Process {
         if std::env::var_os("WLCS_KEEP_LOGS").is_some() {
             eprintln!(
                 "wlcs compositor log: {}",
-                self.root.join("compd.log").display()
+                self.root.join("viud.log").display()
             );
         } else {
             let _ = fs::remove_dir_all(&self.root);
@@ -476,7 +476,7 @@ unsafe extern "C" fn touch_destroy(t: *mut abi::Touch) {
 #[cfg(test)]
 mod tests {
     #[test]
-    #[ignore = "needs COMPD_WLCS_BINARY (absolute path) and a render node"]
+    #[ignore = "needs VIUD_WLCS_BINARY (absolute path) and a render node"]
     fn descriptor_after_stop_is_cached() {
         unsafe {
             let api = super::create(0, std::ptr::null());

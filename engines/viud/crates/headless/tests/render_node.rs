@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Phase 0 spike for the headless backend: can compd render a client's shm
+//! Phase 0 spike for the headless backend: can viud render a client's shm
 //! buffer offscreen on a render node with no DRM master, and read it back?
 //!
 //! Two display paths are tried and reported separately:
@@ -14,7 +14,7 @@
 //! Needs a GPU render node, so ignored by default:
 //!
 //! ```text
-//! COMPD_TEST_RENDER_NODE=/dev/dri/renderD128 \
+//! VIUD_TEST_RENDER_NODE=/dev/dri/renderD128 \
 //!     cargo test -p headless --test render_node -- --ignored --nocapture
 //! ```
 
@@ -39,7 +39,7 @@ const BLUE: [u8; 4] = [0, 0, 255, 255];
 const WHITE: [u8; 4] = [255, 255, 255, 255];
 
 fn node_path() -> String {
-    std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into())
+    std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into())
 }
 
 /// A client buffer in memory order R, G, B, A (Abgr8888): four quadrants,

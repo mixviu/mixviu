@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Geometry after the compile: the roundness and density axes laid over a
 //! resolved style (the theming ADR's R5 step 2a). One function, [`apply`],
-//! shared by the toolkit and compd's decor, so both draw the same lengths.
+//! shared by the toolkit and viud's decor, so both draw the same lengths.
 //!
 //! **Roundness** (A4) sets the six COSMIC radius tokens from [`RADIUS_MAP`]
 //! and overrides the legacy radii from them ([`round`]); `square`

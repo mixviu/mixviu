@@ -202,7 +202,7 @@ fn compile(source: &str) -> Option<UnstampedResolvedDesign> {
     // file. Resolve that selection against the embedded design, without
     // changing its legacy crosswalk (which the compiler validates separately).
     let (document, selection) =
-        match design::parse_design_source(SourceIdentity::new("compd:chrome"), source) {
+        match design::parse_design_source(SourceIdentity::new("viud:chrome"), source) {
             Ok(document) => {
                 let selection = document.legacy.clone();
                 (document, selection)
@@ -220,7 +220,7 @@ fn compile(source: &str) -> Option<UnstampedResolvedDesign> {
                     return None;
                 }
                 let document = design::parse_design_source(
-                    SourceIdentity::new("compd:chrome:selection"),
+                    SourceIdentity::new("viud:chrome:selection"),
                     design::EMBEDDED_DEFAULT_SOURCE,
                 )
                 .ok()?;

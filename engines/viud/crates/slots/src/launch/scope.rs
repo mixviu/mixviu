@@ -31,8 +31,8 @@ use crate::library::process::child::spawn as child_spawn;
 /// [`stop_session_slice`] stops it at shutdown, with the process exiting in between.
 ///
 /// UNDER `app.slice`, which is what the leading `app-` means: a dash is systemd's slice
-/// hierarchy separator, so this resolves to `app.slice` -> `app-compd.slice` ->
-/// `app-compd-<pid>.slice`, and the intermediate is created along with it. Staying inside
+/// hierarchy separator, so this resolves to `app.slice` -> `app-viud.slice` ->
+/// `app-viud-<pid>.slice`, and the intermediate is created along with it. Staying inside
 /// `app.slice` is the point of the prefix rather than decoration. That slice is where a
 /// desktop's applications are expected to live — systemd ships it for the user manager
 /// with `CPUWeight=100`, against `background.slice` at 30 — and it is the subtree that
@@ -51,7 +51,7 @@ use crate::library::process::child::spawn as child_spawn;
 /// exactly how `systemd-run --slice=` accepts an arbitrary name. Nothing creates it up
 /// front, so there is no startup step that can fail and no state to keep in sync.
 pub fn session_slice() -> String {
-    format!("app-compd-{}.slice", std::process::id())
+    format!("app-viud-{}.slice", std::process::id())
 }
 
 /// Stop this session's slice, and with it every app the session launched.

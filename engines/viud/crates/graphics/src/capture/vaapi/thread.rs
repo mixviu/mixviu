@@ -55,7 +55,7 @@ impl EncoderThread {
         let (tx, rx) = channel::<EncMsg>();
         let (init_tx, init_rx) = channel::<bool>();
         let join = std::thread::Builder::new()
-            .name("compd-nvenc-encode".into())
+            .name("viud-nvenc-encode".into())
             .spawn(move || worker(width, height, fps, cq, rx, init_tx))
             .ok()?;
         match init_rx.recv() {

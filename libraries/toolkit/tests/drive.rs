@@ -664,7 +664,7 @@ fn window_commands_send_viewport_commands() {
     assert_eq!(maximized["requested"], "maximize");
     assert!(maximized["pixels_per_point"].is_number());
     ok(&mut h, "window", json!({"action":"restore"}));
-    // compd ignores a client focus request: refused, naming the way that works.
+    // viud ignores a client focus request: refused, naming the way that works.
     let focus = call(&mut h, "window", json!({"action":"focus"}));
     assert_eq!(focus.rc, 10);
     assert_eq!(focus.body["error_code"], "UNSUPPORTED");

@@ -11,7 +11,7 @@ pub struct Keymaps {
     /// shape); an empty list unbinds. An action not listed keeps the app's
     /// own binding.
     pub apps: crate::keymap::Keymaps,
-    /// `keymaps.comp.spawn.<name>`: commands compd runs on a chord.
+    /// `keymaps.comp.spawn.<name>`: commands viud runs on a chord.
     pub spawn: BTreeMap<String, Spawn>,
 }
 

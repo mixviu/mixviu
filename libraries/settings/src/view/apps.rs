@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `apps_default.*`, `apps_startup.*` (xdg-export) and `xwayland.*` (compd).
+//! `apps_default.*`, `apps_startup.*` (xdg-export) and `xwayland.*` (viud).
 use super::{Reader, View};
 use crate::registry::CATEGORIES;
 use std::collections::BTreeMap;

@@ -86,7 +86,7 @@ for callers being migrated.
 
 Run `cargo test -p toolkit -p files` on CBC for the private noded/D-Bus,
 viewport, stall and fallback UI tests. The optional real DOpus acceptance
-test needs CBC's headless weston host, fresh `mix`, `noded`, `compd` and
+test needs CBC's headless weston host, fresh `mix`, `noded`, `viud` and
 `dopus` binaries and toolkit's `choose_probe` example:
 `MIXOS_TEST_BIN=<bin> mix libs/toolkit/tests/choose_bus_test.mix`.
 It is deliberately excluded from `tools/mix_tests.mix`.

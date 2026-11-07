@@ -2561,11 +2561,11 @@ async fn graceful_shutdown_closes_within_budget_when_deregister_hangs() {
     assert_eq!(closed.load(Ordering::Acquire), 1);
 }
 
-/// `compd.truth` is routed before `classify` (which would answer it
+/// `viud.truth` is routed before `classify` (which would answer it
 /// `unknown_command`), admitted as an ordered control, and answered with the
 /// engine's body; a near-miss name stays `unknown_command`.
 #[tokio::test]
-async fn compd_truth_is_admitted_as_a_control_and_near_misses_stay_unknown() {
+async fn viud_truth_is_admitted_as_a_control_and_near_misses_stay_unknown() {
     let (ingress, source, _) = test_ingress();
     let mut responders = JoinSet::new();
     let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
@@ -2581,7 +2581,7 @@ async fn compd_truth_is_admitted_as_a_control_and_near_misses_stay_unknown() {
         command(TRUTH_COMMAND, 1),
     );
     let Ok(PortCommand::Truth(request)) = source.try_recv() else {
-        panic!("compd.truth was not admitted as a truth control");
+        panic!("viud.truth was not admitted as a truth control");
     };
     let _ = request
         .reply

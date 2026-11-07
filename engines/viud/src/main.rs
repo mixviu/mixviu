@@ -26,7 +26,7 @@ use world::state::{Loader, Orchestrator as State};
 // wiring is encapsulated behind `install`.
 use crate::execution::driver::executor::install as launch_executor;
 
-/// compd's semver (the package version). The full provenance line — sha, dirty
+/// viud's semver (the package version). The full provenance line — sha, dirty
 /// bit, build time — comes from `buildinfo::build_info!()`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     comp_service::chrome::enable();
     world::comp::corners::enable_panel_input();
     // Answer `--version`/`-V` (and `--version --json`) as
-    // `compd <semver> (<sha12>, built <ts>)` BEFORE any side effect, then exit 0.
+    // `viud <semver> (<sha12>, built <ts>)` BEFORE any side effect, then exit 0.
     buildinfo::exit_on_version!();
 
     // Parse before config or any thread can start, so backend environment
@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if backend == cli::Backend::Headless {
         // SAFETY: before logging or any other threads are started. Also makes
         // the configured XWayland props agree with this backend's policy.
-        unsafe { std::env::set_var("COMPD_XWAYLAND", "0") };
+        unsafe { std::env::set_var("VIUD_XWAYLAND", "0") };
     }
     // Capture and remove $NOTIFY_SOCKET while still single-threaded.
     slots::sdnotify::init();
@@ -84,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let environment = world::environment::type_::base::get();
     let mut log_args: Vec<String> = std::env::args().collect();
-    let _logging = logging::debug::init("compd", "warn,compd=info", &mut log_args)?;
+    let _logging = logging::debug::init("viud", "warn,viud=info", &mut log_args)?;
 
     // Start the separate developer logging process (fan-in buffer + stderr drain).
     // Levels come from COMPOSITOR_LOG_LEVEL.
@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     for var in cli::UNSUPPORTED_ENV {
         if std::env::var_os(var).is_some() {
-            warn!("{var} is set but compd does not implement it; ignored");
+            warn!("{var} is set but viud does not implement it; ignored");
         }
     }
 

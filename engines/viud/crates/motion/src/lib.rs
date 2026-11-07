@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Motion maths for compd (plan `_plan/2026-10-13-motion.md`, phase 1).
+//! Motion maths for viud (plan `_plan/2026-10-13-motion.md`, phase 1).
 //!
 //! Everything here is a pure function of time or distance. Nothing reads a
 //! clock, a display or a GPU, so every rule can be pinned by a test. The

@@ -4,7 +4,7 @@
 //!
 //! smithay's `IdleNotifierState` keeps the notifications, one list per
 //! `wl_seat`, and arms each one's timeout as a one-shot calloop timer on the
-//! compositor's loop (vendor patch: `IdleTimerLoop`, since compd's loop data
+//! compositor's loop (vendor patch: `IdleTimerLoop`, since viud's loop data
 //! is `Wire`, not this `Dispatch`). Nothing here polls: a timer is armed when
 //! a notification is created or activity resets it, and fires once.
 //!
@@ -35,7 +35,7 @@ pub fn note_human_activity(dispatch: &mut Dispatch) {
 }
 
 /// Hold (or release) idle for notifications that honour inhibitors. Nothing
-/// inhibits yet (compd serves no idle-inhibit protocol); kept for when one does.
+/// inhibits yet (viud serves no idle-inhibit protocol); kept for when one does.
 pub fn set_inhibited(dispatch: &mut Dispatch, inhibited: bool) {
     dispatch.idle_notifier.set_is_inhibited(inhibited);
 }

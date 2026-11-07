@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The egui engine: one `UiRuntime<P>` per compositor-owned UI, each with its
 //! own egui context and egui-wgpu painter, all on the wgpu device that shares
-//! compd's GL context (`graphics::surface::WgpuGlContext`).
+//! viud's GL context (`graphics::surface::WgpuGlContext`).
 //!
 //! ```text
 //! program.rs   UiProgram    — what a compositor UI implements

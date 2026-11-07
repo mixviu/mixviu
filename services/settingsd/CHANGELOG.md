@@ -60,7 +60,7 @@ The 0.8.0 transition is gone: the format-4 topics
 `settings.appearance.get`. `settings.get` defaults to `view: values`, and
 every view answers `publication_pending`, `recovering` and
 `restored_from_backup`. Followers (the toolkit apps, Prefs) read `values` on
-the look and app-domain topics, the native shells (compd) the schema 3
+the look and app-domain topics, the native shells (viud) the schema 3
 snapshot, and portald `values` plus `settings.palette`.
 
 `settings.get` 0.7.0 includes `ui` in summary reads: text scale, density and

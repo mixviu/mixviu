@@ -1,6 +1,6 @@
 [package]
 name = "screencopy"
-description = "wlr-screencopy v3 for compd: protocol state on the real Dispatch, damage-driven copies serviced by the backends after they render"
+description = "wlr-screencopy v3 for viud: protocol state on the real Dispatch, damage-driven copies serviced by the backends after they render"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 
 [package.metadata.mixos]
-component = "compd"
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"

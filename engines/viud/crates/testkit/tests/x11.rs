@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! X11's side of the workspace policy, offline: an `X11Surface` over a dead
 //! connection (no Xwayland). Every
-//! property write fails, and the surface's own mirror is what compd's
+//! property write fails, and the surface's own mirror is what viud's
 //! `policy_host::x11` reads back to stay idempotent, so the mirror
 //! semantics are the seam pinned here. The policy decision itself (D15,
 //! `x11_suspended`) is pinned by policy's workspace tests.
@@ -278,7 +278,7 @@ fn off_world_unmap_remap_keeps_the_readmitted_draw_order_entry() {
 }
 
 /// `_NET_WM_DESKTOP`: the write fails with no server, and the mirror holds
-/// the value anyway, so compd's compare-before-write skips a repeat.
+/// the value anyway, so viud's compare-before-write skips a repeat.
 #[test]
 fn the_desktop_mirror_holds_what_was_written() {
     let window = window(7);
@@ -437,7 +437,7 @@ fn x11_requests_queue_for_the_policy() {
 }
 
 /// The two-sided Motif pin.
-/// compd decides X11 decoration from smithay's `X11Surface::is_decorated()`;
+/// viud decides X11 decoration from smithay's `X11Surface::is_decorated()`;
 /// policy keeps its own reading of the hints. Driving the real
 /// smithay path with the vendored offline hints setter and asserting the two
 /// agree is what turns an inversion in a smithay bump into a red test.

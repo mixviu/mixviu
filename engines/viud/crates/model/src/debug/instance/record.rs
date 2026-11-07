@@ -32,12 +32,12 @@ macro_rules! instance {
 #[macro_export]
 macro_rules! function {
     () => {{
-        fn __compd_f() {}
+        fn __viud_f() {}
         fn type_name_of<T>(_: T) -> &'static str {
             ::core::any::type_name::<T>()
         }
-        let name = type_name_of(__compd_f);
-        // strip the trailing "::__compd_f"
+        let name = type_name_of(__viud_f);
+        // strip the trailing "::__viud_f"
         &name[..name.len() - 8]
     }};
 }

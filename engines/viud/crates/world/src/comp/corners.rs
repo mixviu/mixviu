@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Hot corners on the compd host.
+//! Hot corners on the viud host.
 //!
 //! [`Corners`] is the engine-free half: policy's detector and press
 //! ownership on one output at a time, in output-local logical coordinates,
@@ -52,7 +52,7 @@ pub fn panel_input_enabled() -> bool {
     PANEL_INPUT.load(std::sync::atomic::Ordering::Acquire)
 }
 
-/// The corner state of the compd host.
+/// The corner state of the viud host.
 #[derive(Debug)]
 pub struct Corners {
     config: CornerConfig,
@@ -66,7 +66,7 @@ pub struct Corners {
     clock: Instant,
     topics: Vec<CornerTopic>,
     /// Bumped when the configuration changes (a set, or the first entry
-    /// ending discovery): the edge pass and `compd.truth` must see it.
+    /// ending discovery): the edge pass and `viud.truth` must see it.
     changes: u64,
     /// An injected move with `corners: false` is running: sampling resets
     /// instead (an engaged or dwelling corner is still left).

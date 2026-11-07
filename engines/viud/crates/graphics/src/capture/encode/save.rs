@@ -41,12 +41,12 @@ pub fn default_dir(video: bool) -> PathBuf {
     PathBuf::from(home).join(if video { "Videos" } else { "Pictures" })
 }
 
-/// Timestamped default save path, e.g. `~/Pictures/compd-capture-1718000000.png`.
+/// Timestamped default save path, e.g. `~/Pictures/viud-capture-1718000000.png`.
 pub fn default_path(video: bool) -> PathBuf {
     let ext = if video { "mp4" } else { "png" };
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    default_dir(video).join(format!("compd-capture-{ts}.{ext}"))
+    default_dir(video).join(format!("viud-capture-{ts}.{ext}"))
 }

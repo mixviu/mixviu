@@ -16,7 +16,7 @@ use world::state::Loop;
 
 /// No output is live. While dark the per-frame world
 /// dispatch does not run, so a world-channel event from an emitter that does not
-/// also request a redraw would sit undelivered; compd's per-iteration idle hook
+/// also request a redraw would sit undelivered; viud's per-iteration idle hook
 /// now dispatches the worlds on every pass, dark or lit. Set on `WentDark`,
 /// cleared on `Recovered`.
 static DARK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

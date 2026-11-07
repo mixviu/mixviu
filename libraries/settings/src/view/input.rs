@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `input.*`: the keyboard (inputd, xkb), pointers and tablets (compd).
+//! `input.*`: the keyboard (inputd, xkb), pointers and tablets (viud).
 use super::{Reader, View, family};
 use std::collections::BTreeMap;
 

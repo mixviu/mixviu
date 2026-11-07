@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Quoin's panel holders on the compd host.
+//! Quoin's panel holders on the viud host.
 //!
 //! policy `panel` is the per-edge state machine; this is what the host
 //! keeps around it between passes, plus the CONCEAL marker the engine reads.

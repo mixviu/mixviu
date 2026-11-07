@@ -214,7 +214,7 @@ fn worker(
                     reply_value(rc, &body)
                 }
             };
-            // Probe once. A desktop without compd must not generate catalogue
+            // Probe once. A desktop without viud must not generate catalogue
             // requests on every editor repaint or portable save.
             if !tokio::time::timeout(Duration::from_millis(700), call("comp.windows.list", serde_json::json!({}))).await.ok().flatten().is_some_and(|v| v["windows"].is_array()) { return; }
             let Some(state) = state.upgrade() else { return; };
@@ -549,7 +549,7 @@ mod tests {
         assert_eq!(
             calls.len(),
             1,
-            "absent compd allows only the catalogue probe"
+            "absent viud allows only the catalogue probe"
         );
     }
 }

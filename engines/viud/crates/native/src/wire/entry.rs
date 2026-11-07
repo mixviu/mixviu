@@ -106,7 +106,7 @@ pub fn wire(
     //      after `Registrar::expect` has been armed and every role has landed. So
     //      this no longer has to run before that call to be correct — it has to
     //      run before the loader advertises, which the manifest now enforces.
-    // compd: GLES composes and scans out (Vulkan is not carried). Producers
+    // viud: GLES composes and scans out (Vulkan is not carried). Producers
     // keep their GLES-path resources (per-surface GlesTexture).
     let env = model::environment::config::base::get();
     model::stats::registry::base::set_compositor_prefers_dmabuf(false);
@@ -142,7 +142,7 @@ pub fn wire(
     // leaving the client on 8-bit sRGB is the honest answer. Computed here rather
     // than with the HDR block below because the dmabuf feedback is built in
     // `lifecycle::initialize`, which is next.
-    // compd: only the Vulkan composite took a per-surface transfer (HDR); GLES is SDR.
+    // viud: only the Vulkan composite took a per-surface transfer (HDR); GLES is SDR.
     let hdr_active = env.hdr && display.hdr.hdr_capable() && false;
     _loop
         .inner

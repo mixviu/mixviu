@@ -149,12 +149,12 @@ impl TestClient {
     /// Read whatever the server has sent so far and run the handlers.
     pub fn read(&mut self) {
         if let Err(e) = self.try_read() {
-            panic!("client read failed (protocol error from compd?): {e}");
+            panic!("client read failed (protocol error from viud?): {e}");
         }
     }
 
     /// [`Self::read`] that hands back the connection's failure instead of
-    /// panicking — for tests that expect compd to post a protocol error.
+    /// panicking — for tests that expect viud to post a protocol error.
     pub fn try_read(&mut self) -> Result<(), WaylandError> {
         self.queue
             .dispatch_pending(&mut self.state)
@@ -172,7 +172,7 @@ impl TestClient {
         Ok(())
     }
 
-    /// The protocol error compd posted on this connection, if any.
+    /// The protocol error viud posted on this connection, if any.
     pub fn protocol_error(&self) -> Option<wayland_client::backend::protocol::ProtocolError> {
         self.conn.protocol_error()
     }
@@ -186,7 +186,7 @@ impl TestClient {
     }
 
     /// Bind the globals the tests use (after the first roundtrip delivered
-    /// them). Panics if compd did not advertise one.
+    /// them). Panics if viud did not advertise one.
     pub fn bind_globals(&mut self) {
         let find = |interface: &str| {
             self.state
@@ -194,7 +194,7 @@ impl TestClient {
                 .iter()
                 .find(|(_, name, _)| name == interface)
                 .map(|(name, _, version)| (*name, *version))
-                .unwrap_or_else(|| panic!("compd advertised no {interface}"))
+                .unwrap_or_else(|| panic!("viud advertised no {interface}"))
         };
         let (name, version) = find("wl_compositor");
         self.compositor = Some(self.registry.bind(name, version.min(6), &self.qh, ()));
@@ -219,7 +219,7 @@ impl TestClient {
             let pointer = seat.get_pointer(&self.qh, self.seats.len());
             self.seats.push((seat, pointer));
         }
-        assert!(!self.seats.is_empty(), "compd advertised no wl_seat");
+        assert!(!self.seats.is_empty(), "viud advertised no wl_seat");
         let (name, version) = find_in(&self.state.globals, "wl_output");
         self.output = Some(self.registry.bind(name, version.min(4), &self.qh, ()));
         let (name, version) = find_in(&self.state.globals, "zwlr_screencopy_manager_v1");
@@ -416,7 +416,7 @@ pub(crate) fn find_in(globals: &[(u32, String, u32)], interface: &str) -> (u32, 
         .iter()
         .find(|(_, name, _)| name == interface)
         .map(|(name, _, version)| (*name, *version))
-        .unwrap_or_else(|| panic!("compd advertised no {interface}"))
+        .unwrap_or_else(|| panic!("viud advertised no {interface}"))
 }
 
 fn dispatch_error(e: wayland_client::DispatchError) -> WaylandError {

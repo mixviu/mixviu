@@ -101,7 +101,7 @@ impl FullTreeCache {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CompSnapshot {
-    /// Query-only session state, supplied by the compd Bus adapter.
+    /// Query-only session state, supplied by the viud Bus adapter.
     #[serde(skip)]
     pub session: Option<SessionSnapshot>,
     pub occlusion: OcclusionSnapshot,
@@ -2051,7 +2051,7 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
             Bool,
             "Whether this compositor spawns XWayland; read at startup, a write persists \
              for the NEXT startup (no live toggle; the Set reply's `persisted` field \
-             reports write durability). COMPD_XWAYLAND overrides at launch",
+             reports write durability). VIUD_XWAYLAND overrides at launch",
             mutable
         )
     },

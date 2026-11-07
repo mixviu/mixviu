@@ -1,6 +1,6 @@
 [package]
 name = "policy-host"
-description = "compd's comp policy host: projects the engine into the comp.* props tree, executes policy effects and detects observation edges"
+description = "viud's comp policy host: projects the engine into the comp.* props tree, executes policy effects and detects observation edges"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,7 @@ repository.workspace = true
 publish = false
 
 [package.metadata.mixos]
-component = "compd"
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"

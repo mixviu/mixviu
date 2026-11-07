@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 // The trace event it emits uses the frame_trace record format.
 
-//! Why compd drew a frame. Every redraw request names a [`RedrawReason`];
+//! Why viud drew a frame. Every redraw request names a [`RedrawReason`];
 //! the [`FrameLedger`] counts requests per reason and attributes each
 //! rendered frame to the reasons that were pending on that pipe when it
 //! rendered. A frame nobody asked for is *unattributed*: on a static screen
@@ -289,7 +289,7 @@ impl FrameLedger {
         });
     }
 
-    /// A redraw request for ONE pipe (compd: `Schedule::request_pipe_silent`):
+    /// A redraw request for ONE pipe (viud: `Schedule::request_pipe_silent`):
     /// counted like any request, but owed only by `pipe`.
     pub fn note_pipe_request(&mut self, pipe: &str, reason: RedrawReason, kind: RequestKind) {
         let counts = &mut self.counts[reason.index()];

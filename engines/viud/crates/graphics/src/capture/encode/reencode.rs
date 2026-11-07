@@ -204,7 +204,7 @@ impl ReencodeJob {
     }
 }
 
-/// In-progress filename for `target`: `<stem>.compd-encoding.tmp`. The real media
+/// In-progress filename for `target`: `<stem>.viud-encoding.tmp`. The real media
 /// extension is withheld until the encode finishes (the file is renamed to
 /// `target` on success), so a half-written file never looks like a playable one.
 /// Because the name has no media extension, the muxer is forced with `-f`
@@ -214,7 +214,7 @@ pub fn partial_path(target: &Path) -> PathBuf {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("capture");
-    target.with_file_name(format!("{stem}.compd-encoding.tmp"))
+    target.with_file_name(format!("{stem}.viud-encoding.tmp"))
 }
 
 /// The ffmpeg muxer name to force for `target`'s extension (since the partial
@@ -227,7 +227,7 @@ pub fn ffmpeg_format(target: &Path) -> &'static str {
 }
 
 /// Auto-mode (`background_encoder="ffmpeg"`) background re-encode, fire-and-forget.
-/// Encodes `temp` → a `.compd-encoding` partial next to `target`, then renames it to
+/// Encodes `temp` → a `.viud-encoding` partial next to `target`, then renames it to
 /// `target` on success. On any failure, falls back to saving the lossless `temp`
 /// as `target` (a recording is never lost). Returns immediately; runs on its own
 /// thread, so no progress bar / state-machine polling is involved.

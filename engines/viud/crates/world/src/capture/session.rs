@@ -67,7 +67,7 @@ pub struct ActiveState {
     /// the parallax/UI backdrop and emits transparent where no window is.
     pub no_background: bool,
     /// Hardware video encoder (video only): NVENC (readback-fed) or VAAPI
-    /// (zero-copy dmabuf), selected by `COMPD_CAPTURE_ENCODER`. `None` if init
+    /// (zero-copy dmabuf), selected by `VIUD_CAPTURE_ENCODER`. `None` if init
     /// failed (no software fallback).
     pub encoder: Option<CaptureEncoder>,
     /// GPU→CPU readback feeding the NVENC encoder (`None` for the VAAPI path,

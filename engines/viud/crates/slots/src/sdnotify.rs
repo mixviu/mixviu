@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn datagram_reaches_a_path_socket() {
-        let dir = std::env::temp_dir().join(format!("compd-sdnotify-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("viud-sdnotify-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("notify.sock");
         let _ = std::fs::remove_file(&path);
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn datagram_reaches_an_abstract_socket() {
         use std::os::linux::net::SocketAddrExt;
-        let name = format!("compd-sdnotify-test-{}", std::process::id());
+        let name = format!("viud-sdnotify-test-{}", std::process::id());
         let addr = std::os::unix::net::SocketAddr::from_abstract_name(name.as_bytes()).unwrap();
         let rx = UnixDatagram::bind_addr(&addr).unwrap();
         send_to(&format!("@{name}"), "STATUS=abstract").unwrap();

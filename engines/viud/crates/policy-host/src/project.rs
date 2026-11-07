@@ -51,7 +51,7 @@ use smithay::wayland::compositor::{SubsurfaceCachedState, with_states};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, KeyboardInteractivity, Layer};
 
 /// What only the transport knows: the port's identity and its counters. The
-/// compd adapter fills it from comp-service's `PortContext`, so this crate never
+/// viud adapter fills it from comp-service's `PortContext`, so this crate never
 /// depends on the transport.
 #[derive(Clone, Debug)]
 pub struct Identity {
@@ -107,7 +107,7 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
             )
         })
         .collect();
-    // compd's own scene surfaces: layer rows, as Quoin's are.
+    // viud's own scene surfaces: layer rows, as Quoin's are.
     for row in &lp.inner.comp.scenes.rows {
         surfaces.insert(surface_key(row.id.0), project_scene_surface(lp, row));
     }
@@ -197,7 +197,7 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
         surfaces,
         windows,
         workspaces,
-        // Content sources: compd's own UI surfaces, volatile,
+        // Content sources: viud's own UI surfaces, volatile,
         // projected only for a read that can reach them.
         sources: if scopes.wants("sources") {
             lp.inner
@@ -318,7 +318,7 @@ fn project_dmabuf(lp: &Loop) -> DmabufLedgerSnapshot {
 }
 
 /// `input.corners`: the live configuration, `holders` (the holder plane is
-/// served: compd sends `panel.command` and enforces conceals) and the
+/// served: viud sends `panel.command` and enforces conceals) and the
 /// volatile per-edge `enforced` / `held` counts.
 fn corners(lp: &Loop) -> CornersSnapshot {
     let (enforced, held) = crate::panel::edge_counts(lp);
@@ -537,7 +537,7 @@ impl Placements {
                     _ => "unbound",
                 },
             ),
-            // An X11 window negotiates no xdg-decoration: compd's own policy
+            // An X11 window negotiates no xdg-decoration: viud's own policy
             // decides whether it draws the frame, so that is its mode.
             None if window.x11_surface().is_some() => Some(if decor::window::decorated(window) {
                 "server"
@@ -797,7 +797,7 @@ pub(crate) fn project_focus(lp: &Loop) -> FocusSnapshot {
     }
 }
 
-/// One compd scene surface as a `surfaces.s<id>` layer row: what the props
+/// One viud scene surface as a `surfaces.s<id>` layer row: what the props
 /// tree shows for the Quoin layer surface it stands for. No client, so no title,
 /// app id, decoration or foreign id; hidden under a session lock as every
 /// ordinary surface is.
@@ -867,7 +867,7 @@ fn project_stack(lp: &Loop, placements: &Placements) -> Vec<u64> {
         .filter_map(|uuid| registry.id_for_uuid(uuid))
         .filter(|id| mapped_root(*id))
         .map(|id| id.0);
-    // compd's scene surfaces over the Wayland layers of their stratum.
+    // viud's scene surfaces over the Wayland layers of their stratum.
     let scenes = |stratum: &str| {
         lp.inner
             .comp
@@ -966,8 +966,8 @@ fn exclusive_zone_value(zone: ExclusiveZone) -> i32 {
 }
 
 /// The `decoration` a surface row carries. A managed window reports the mode
-/// compd draws it with: an xdg toplevel its negotiated one, a managed X11
-/// window compd's own policy (`place_window`). Every other role, including
+/// viud draws it with: an xdg toplevel its negotiated one, a managed X11
+/// window viud's own policy (`place_window`). Every other role, including
 /// override-redirect X11, carries none.
 fn row_decoration(role: SurfaceRole, placed: Option<&'static str>) -> Option<&'static str> {
     matches!(

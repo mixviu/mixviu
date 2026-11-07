@@ -77,7 +77,7 @@ fn preview_snapshot(h: &Harness, label: &str) {
         let p = pixels[y as usize * stride + x as usize];
         image::Rgba([(p >> 16) as u8, (p >> 8) as u8, p as u8, 255])
     });
-    let dir = std::env::temp_dir().join("compd-tiling-stage4");
+    let dir = std::env::temp_dir().join("viud-tiling-stage4");
     std::fs::create_dir_all(&dir).unwrap();
     png.save(dir.join(format!("{label}.png"))).unwrap();
 }

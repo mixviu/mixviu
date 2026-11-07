@@ -3,7 +3,7 @@
 //! `comp.motion.run`: one tick of a motion. The timing lives in the `motion`
 //! crate; this module moves the agent pointer or the window to where the
 //! motion is, and reports whether it has arrived. The engine
-//! (`services/compd/src/comp.rs`) owns the runs and their replies, and calls
+//! (`engines/viud/src/comp.rs`) owns the runs and their replies, and calls
 //! these once per tick.
 
 use comp_model::ControlReply;

@@ -16,7 +16,7 @@ thread_local! {
 
 pub struct Frame(Option<ledger::frame_trace::Span>);
 
-/// Covers layout/tick and rasterisation of every compd-owned UI surface.
+/// Covers layout/tick and rasterisation of every viud-owned UI surface.
 /// detail = surfaces rasterised, aux = clean surfaces reused without drawing.
 pub fn frame(subject: u64) -> Frame {
     if !ledger::frame_trace::enabled() {

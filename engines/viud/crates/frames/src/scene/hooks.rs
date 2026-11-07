@@ -21,7 +21,7 @@ pub struct Ticked {
 pub type FrameHook = fn(&mut Loop, &mut GlesRenderer, Size<i32, Physical>);
 
 thread_local! {
-    /// Installed by compd main (the Mix Scenes host, scene-host, layer 5),
+    /// Installed by viud main (the Mix Scenes host, scene-host, layer 5),
     /// which frames (layer 4) cannot name.
     static FRAME_HOOKS: std::cell::RefCell<Vec<FrameHook>> = const { std::cell::RefCell::new(Vec::new()) };
 }
@@ -45,7 +45,7 @@ pub fn hooks(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, Phys
     world::bus::legacy::drain(state, |l| &mut l.inner.bus);
     let ticked = world_tick(state, renderer, size);
 
-    // compd: the finger-glide cursor re-seat and the absolute edge-pan tick
+    // viud: the finger-glide cursor re-seat and the absolute edge-pan tick
     // served camera controls, which are cut with the camera pinned to identity.
 
     // Frame-end persistence commit — PATH 2 (rim catch-all): a mutation outside

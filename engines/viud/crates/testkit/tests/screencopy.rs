@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! wlr-screencopy v3 through compd's real Dispatch, serviced the way a backend
+//! wlr-screencopy v3 through viud's real Dispatch, serviced the way a backend
 //! services it after a frame (`Harness::service_screencopy`, a top-down pixman
 //! framebuffer standing in for the renderer).
 

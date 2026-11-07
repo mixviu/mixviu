@@ -17,7 +17,7 @@
 -- defaults are the system install. SE_E2E_KEEP=1 keeps the temp dir (logs).
 $here = dirname(realpath($0))
 $repo = realpath($here .. "/../../..")
-$scripts = $repo .. "/services/compd/scripts"
+$scripts = $repo .. "/engines/viud/scripts"
 $mix = env("MIXOS_TEST_MIX", "")
 if $mix == "" then $mix = (mixos_path("prefix") .. "/bin/mix") end
 $noded = env("MIXOS_TEST_NODED", "")

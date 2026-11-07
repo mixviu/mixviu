@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Bus-injected input state on the compd host.
+//! Bus-injected input state on the viud host.
 //!
 //! The commands themselves are policy-host `input`; this is what they keep
 //! between calls:
@@ -20,8 +20,8 @@
 //!
 //! Human input does NOT clear the agent seat: the seats are
 //! independent, and the agent is cleared only when input authority is lost
-//! (a session lock, a VT switch). The compd host does that from the session
-//! pause (`compd` `Bus::service`).
+//! (a session lock, a VT switch). The viud host does that from the session
+//! pause (`viud` `Bus::service`).
 
 use std::collections::BTreeSet;
 

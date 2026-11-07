@@ -66,7 +66,7 @@ fn sync_rehydrate_edit_dismiss_move() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let tmp = std::env::temp_dir().join(format!("compd-doc-{}-{nanos}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("viud-doc-{}-{nanos}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     unsafe { std::env::set_var("XDG_STATE_HOME", &tmp) };
 

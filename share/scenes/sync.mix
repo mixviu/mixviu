@@ -87,7 +87,7 @@ if not $lib_changed then
   exit(0)
 end
 
-$cli = realpath($here .. "/../../services/compd/scripts/scenes_cli.mix")
+$cli = realpath($here .. "/../../engines/viud/scripts/scenes_cli.mix")
 $listed = run_argv([(mixos_path("prefix") .. "/bin/mix"), $cli, "list", "--json"], {env: $envmap})
 if $listed["exit_code"] != 0 then
   raise("SCENES_LIST", "could not list scenes", {stderr: $listed["stderr"]})

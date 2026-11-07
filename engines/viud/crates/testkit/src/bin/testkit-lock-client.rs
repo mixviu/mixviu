@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! testkit-lock-client: a minimal ext-session-lock-v1 client, for compd's session
+//! testkit-lock-client: a minimal ext-session-lock-v1 client, for viud's session
 //! lock gate.
 //!
 //!   testkit-lock-client [--hold SECONDS]
 //!
 //! Connects to `$WAYLAND_DISPLAY`, locks the session, and gives every
 //! `wl_output` a lock surface filled with an opaque 0x182438 (the lock-probe
-//! colour, so a screencopy can tell the lock surface from compd's black
+//! colour, so a screencopy can tell the lock surface from viud's black
 //! blank). It answers every configure with `ack_configure` and a buffer of the
 //! configured size, binds every seat's keyboard and logs each key it receives.
 //! It unlocks on SIGUSR1, or after `--hold` seconds (default 60).
@@ -210,7 +210,7 @@ fn main() {
         bind("ext_session_lock_manager_v1"),
     ) {
         (Some(compositor), Some(shm), Some(manager)) => (compositor, shm, manager),
-        _ => fail("compd advertised no wl_compositor / wl_shm / ext_session_lock_manager_v1"),
+        _ => fail("viud advertised no wl_compositor / wl_shm / ext_session_lock_manager_v1"),
     };
     let compositor: WlCompositor = registry.bind(compositor.0, compositor.1.min(4), &qh, ());
     let shm: WlShm = registry.bind(shm.0, 1, &qh, ());
@@ -241,7 +241,7 @@ fn main() {
     }
 
     let lock = manager.lock(&qh, ());
-    // Learn a refusal before asking for surfaces: compd treats lock surfaces
+    // Learn a refusal before asking for surfaces: viud treats lock surfaces
     // from a lock object it did not accept as a protocol error.
     queue
         .roundtrip(&mut state)

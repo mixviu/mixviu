@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The menu group, title, Action Bar and captions share the design title band
 //! layout with SSD. The mark stays with the menu. Registered SSD apps may
-//! expose their Action Bar through the drive for compd to host.
+//! expose their Action Bar through the drive for viud to host.
 
 use crate::action::{Origin, Registry};
 use crate::button::{IconButton, Link};

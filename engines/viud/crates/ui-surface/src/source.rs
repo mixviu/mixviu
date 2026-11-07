@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Content sources: compositor-owned content measured like a window.
 //!
-//! compd's sources are its own UI surfaces (the Mix Scenes host registers
+//! viud's sources are its own UI surfaces (the Mix Scenes host registers
 //! each scene surface as `scene_<name>`). A producer registers an id, bumps
 //! its revision when its
 //! content changes, and marks it shown on the outputs that drew it. The

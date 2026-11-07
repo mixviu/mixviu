@@ -227,7 +227,7 @@ mod tests {
 
     /// The card's first passes draw a bold (heading-family) title. egui binds
     /// fonts from the pass AFTER an install, so the card must install before
-    /// its first pass; drawing first panicked compd on VT4 (2026-10-12).
+    /// its first pass; drawing first panicked viud on VT4 (2026-10-12).
     #[test]
     fn the_card_draws_its_first_passes_and_a_new_look_without_panicking() {
         let tip = Tip {

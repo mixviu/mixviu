@@ -199,13 +199,13 @@ fn capture_pen_key(
     true // swallow every key while capturing (no forward, no shortcuts)
 }
 
-/// `COMPD_KEY_TRACE=1` prints one `key-trace` line per key edge that reaches
+/// `VIUD_KEY_TRACE=1` prints one `key-trace` line per key edge that reaches
 /// the seat, with its keycode, state, keysyms and whether it went to the
 /// focused client. Read once per process; lines go to stderr, which the
 /// session unit sends to the journal. Off by default: it logs every key.
 fn key_trace_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("COMPD_KEY_TRACE").is_some_and(|v| v == "1"))
+    *ON.get_or_init(|| std::env::var_os("VIUD_KEY_TRACE").is_some_and(|v| v == "1"))
 }
 
 pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut Loop) {
@@ -446,7 +446,7 @@ fn should_forward<I: InputBackend>(
     // per-key re-switch once it holds focus (windows can't steal it — see press.rs guard).
     exclusive_keyboard_grab(_loop);
 
-    // compd: a compositor UI surface holding the keyboard (a scene dialog
+    // viud: a compositor UI surface holding the keyboard (a scene dialog
     // takes it on show, without moving the seat's wayland focus; a click on
     // UI takes it too) gets the key ahead of the focused client. Only an
     // Exclusive layer, which just took the seat's focus above, outranks it.

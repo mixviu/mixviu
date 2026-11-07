@@ -29,7 +29,7 @@ impl Session {
         if self.announced && self.snapshot.active == active {
             return None;
         }
-        // The first record may be a later edge (a compd started on a VT in
+        // The first record may be a later edge (a viud started on a VT in
         // the background is first serviced when the VT activates): its time
         // is that edge's, never the process start.
         self.snapshot.since_ms = now_ms;

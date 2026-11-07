@@ -21,7 +21,7 @@ use smithay::backend::renderer::{Bind, Color32F, Frame, ImportAll, ImportMem, Re
 use smithay::desktop::Window;
 use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
 
-// compd: the parallax backdrop behind captured windows went with
+// viud: the parallax backdrop behind captured windows went with
 // compositor.background; a window capture is always the windows on transparent.
 use graphics::capture::registry::EntryId;
 use world::capture::session::{CapturePhase, CaptureTarget};

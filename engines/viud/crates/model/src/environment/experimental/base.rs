@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Experimental GPU/dmabuf-bridge flags, read once from a JSON **array of strings**
-//! at `~/.config/compd/experimental.json`. Each `gpu_*` string maps to one
+//! at `~/.config/viud/experimental.json`. Each `gpu_*` string maps to one
 //! independent bit in [`GpuFlags`]; the flags COMPOSE. Lenient: a missing/invalid
 //! file yields no flags (experiments must never crash startup). No logging dep
 //! (init runs first); unrecognized flags go to [`unknown`] to warn.

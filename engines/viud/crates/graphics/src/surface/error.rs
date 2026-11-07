@@ -29,7 +29,7 @@ pub enum AllocError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum WgpuContextError {
-    /// compd: wgpu's GL backend could not wrap the compositor's EGL context.
+    /// viud: wgpu's GL backend could not wrap the compositor's EGL context.
     #[error("wgpu GL backend could not create an adapter over the compositor's EGL context")]
     NoAdapter,
 
@@ -39,7 +39,7 @@ pub enum WgpuContextError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum WgpuImportError {
-    /// compd: the context is GL-only now; anything else is a wiring mistake.
+    /// viud: the context is GL-only now; anything else is a wiring mistake.
     #[error("wgpu device isn't on the GL backend")]
     NotGlBackend,
 
@@ -56,7 +56,7 @@ pub enum GlesImportError {
 /// Aggregate error for `UiSurface` operations (GL texture + its wgpu wrap).
 #[derive(Debug, thiserror::Error)]
 pub enum SurfaceError {
-    /// compd: the GL texture UI renders into could not be allocated.
+    /// viud: the GL texture UI renders into could not be allocated.
     #[error("gles texture allocation: {0}")]
     GlesTexture(smithay::backend::renderer::gles::GlesError),
 

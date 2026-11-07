@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Real compd process, render node and Wayland registry. Build compd with
-//! backend-headless first; COMPD_TEST_BINARY may select an explicit binary.
+//! Real viud process, render node and Wayland registry. Build viud with
+//! backend-headless first; VIUD_TEST_BINARY may select an explicit binary.
 
 use std::{
     fs,
@@ -78,7 +78,7 @@ use process::spawn;
 
 fn boot(scale: i32, explicit_node: bool) {
     let node =
-        std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     let mut process = spawn(
         scale,
         explicit_node.then_some(node.as_str()),
@@ -86,12 +86,12 @@ fn boot(scale: i32, explicit_node: bool) {
         None,
     );
     let pid = process.child.id();
-    let log = process.root.join("compd.log");
+    let log = process.root.join("viud.log");
     let deadline = Instant::now() + Duration::from_secs(30);
     let stream = loop {
         if let Some(status) = process.child.try_wait().unwrap() {
             panic!(
-                "compd exited {status}: {}",
+                "viud exited {status}: {}",
                 fs::read_to_string(&log).unwrap()
             );
         }
@@ -126,7 +126,7 @@ fn boot(scale: i32, explicit_node: bool) {
         );
         assert!(
             process.child.try_wait().unwrap().is_none(),
-            "compd died before first frame"
+            "viud died before first frame"
         );
         thread::sleep(Duration::from_millis(20));
     }
@@ -142,7 +142,7 @@ fn boot(scale: i32, explicit_node: bool) {
     assert!(
         !process
             .root
-            .join("compd/wayland-headless-test.xwayland.env")
+            .join("viud/wayland-headless-test.xwayland.env")
             .exists()
     );
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
@@ -171,19 +171,19 @@ fn boot(scale: i32, explicit_node: bool) {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and a built compd with backend-headless"]
+#[ignore = "needs a GPU render node and a built viud with backend-headless"]
 fn boot_mode_scale_and_scheduling() {
     boot(2, true);
 }
 
 #[test]
-#[ignore = "needs a GPU render node and a built compd with backend-headless"]
+#[ignore = "needs a GPU render node and a built viud with backend-headless"]
 fn boot_config_render_node_and_default_scale() {
     boot(1, false);
 }
 
 #[test]
-#[ignore = "needs a GPU render node and a built compd with backend-headless"]
+#[ignore = "needs a GPU render node and a built viud with backend-headless"]
 fn lower_refresh_sets_the_virtual_mode() {
     let mut process = process::spawn_at_refresh("30");
     let deadline = Instant::now() + Duration::from_secs(25);
@@ -191,7 +191,7 @@ fn lower_refresh_sets_the_virtual_mode() {
         if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {
             break stream;
         }
-        assert!(process.child.try_wait().unwrap().is_none(), "compd exited");
+        assert!(process.child.try_wait().unwrap().is_none(), "viud exited");
         assert!(Instant::now() < deadline, "startup timed out");
         thread::sleep(Duration::from_millis(10));
     };
@@ -237,7 +237,7 @@ fn refuses_node(node: &str, label: &str, reason: &str) {
         );
         thread::sleep(Duration::from_millis(20));
     };
-    let output = fs::read_to_string(process.root.join("compd.log")).unwrap();
+    let output = fs::read_to_string(process.root.join("viud.log")).unwrap();
     assert!(
         !status.success(),
         "invalid render node was accepted: {output}"
@@ -247,7 +247,7 @@ fn refuses_node(node: &str, label: &str, reason: &str) {
 }
 
 #[test]
-#[ignore = "needs a built compd with backend-headless"]
+#[ignore = "needs a built viud with backend-headless"]
 fn render_node_nonexistent_is_refused() {
     refuses_node(
         "/dev/dri/nonexistent-render-node",
@@ -257,7 +257,7 @@ fn render_node_nonexistent_is_refused() {
 }
 
 #[test]
-#[ignore = "needs a built compd with backend-headless"]
+#[ignore = "needs a built viud with backend-headless"]
 fn render_node_primary_or_non_render_is_refused() {
     let card = fs::read_dir("/dev/dri")
         .ok()

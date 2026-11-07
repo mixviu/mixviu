@@ -275,7 +275,7 @@ impl Orchestrator {
         // token, not as Orchestrator fields.
         kernel_data.insert(
             &drivers::audio::base::AUDIO,
-            AudioController::new("compd").ok(),
+            AudioController::new("viud").ok(),
         );
         kernel_data.insert(&drivers::audio::base::MEDIA, Some(MediaController::new()));
         // GPU driver: DRM binding slot, populated post-init by the backend.

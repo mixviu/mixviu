@@ -61,7 +61,7 @@ fn tmp_sibling(path: &Path) -> PathBuf {
 /// (the frame thread already coalesces per key) and reports each result back.
 pub fn spawn_worker(jobs: Receiver<WriteJob>, done: Sender<WriteDone>) -> JoinHandle<()> {
     std::thread::Builder::new()
-        .name("compd-persist".to_string())
+        .name("viud-persist".to_string())
         .spawn(move || {
             while let Ok(job) = jobs.recv() {
                 let ok = match atomic_write(&job.path, &job.bytes) {
@@ -88,5 +88,5 @@ pub fn spawn_worker(jobs: Receiver<WriteJob>, done: Sender<WriteDone>) -> JoinHa
                 }
             }
         })
-        .expect("spawn compd-persist worker thread")
+        .expect("spawn viud-persist worker thread")
 }

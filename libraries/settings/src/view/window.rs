@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `window.*`: compd's chrome and behaviour, and the framing the toolkit and
-//! compd decor share.
+//! `window.*`: viud's chrome and behaviour, and the framing the toolkit and
+//! viud decor share.
 use super::{Reader, View};
 
 #[derive(Clone, Debug, PartialEq)]

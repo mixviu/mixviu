@@ -13,10 +13,10 @@
 -- is a Mix script that records its argv and exits; no real app launches.
 -- Needs a fresh mix and noded: MIXOS_TEST_MIX and MIXOS_TEST_NODED when set,
 -- else /opt/mixos/bin/mix and /opt/mixos/bin/noded.
---   mix services/compd/tests/apps_bus_test.mix      (MIXOS overrides the root)
+--   mix engines/viud/tests/apps_bus_test.mix      (MIXOS overrides the root)
 $root = env("MIXOS") != "" ? env("MIXOS") : realpath(dirname(realpath($0)) .. "/../../..")
 $pb = require("../../../tests/lib/private_bus.mix")
-$scripts = $root .. "/services/compd/scripts"
+$scripts = $root .. "/engines/viud/scripts"
 $mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : "/opt/mixos/bin/mix"
 $noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : "/opt/mixos/bin/noded"
 $icons_install = $root .. "/share/icons/install.mix"

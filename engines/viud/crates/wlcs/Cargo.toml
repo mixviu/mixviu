@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [package]
 name = "wlcs"
-description = "wlcs C ABI adapter for an owned headless compd"
+description = "wlcs C ABI adapter for an owned headless viud"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,13 +9,13 @@ license.workspace = true
 publish = false
 
 [package.metadata.mixos]
-component = "compd"
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"
 
 [lib]
-name = "compd_wlcs"
+name = "viud_wlcs"
 crate-type = ["cdylib"]
 
 [dependencies]

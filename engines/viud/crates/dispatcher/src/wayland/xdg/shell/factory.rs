@@ -33,7 +33,7 @@ where
     // two lists say the same thing. The one asymmetry is CLOSE, which appears there and
     // has no entry here: `xdg_toplevel.close` is unconditional, so there is nothing to
     // advertise. Move and resize have no entry in the enum: `xdg_toplevel.move`/`.resize`
-    // are always available, and compd answers them with the interactive grab
+    // are always available, and viud answers them with the interactive grab
     // (`XdgShellHandler::move_request` / `resize_request`).
     let xdg_shell_state = XdgShellState::new_with_capabilities::<I>(
         display_handle,

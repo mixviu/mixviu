@@ -21,9 +21,9 @@ impl Drop for Client {
 }
 
 #[test]
-#[ignore = "needs a GPU render node, weston-simple-egl, compd and testkit-screenshot"]
+#[ignore = "needs a GPU render node, weston-simple-egl, viud and testkit-screenshot"]
 fn egl_client_buffer_type_and_rendered_frame() {
-    let binary = std::env::var_os("COMPD_TEST_EGL_CLIENT")
+    let binary = std::env::var_os("VIUD_TEST_EGL_CLIENT")
         .map(PathBuf::from)
         .unwrap_or_else(|| "/usr/bin/weston-simple-egl".into());
     assert!(
@@ -37,7 +37,7 @@ fn egl_client_buffer_type_and_rendered_frame() {
         if UnixStream::connect(process.root.join("wayland-headless-test")).is_ok() {
             break;
         }
-        assert!(process.child.try_wait().unwrap().is_none(), "compd exited");
+        assert!(process.child.try_wait().unwrap().is_none(), "viud exited");
         assert!(Instant::now() < deadline, "headless socket timed out");
         thread::sleep(Duration::from_millis(10));
     }

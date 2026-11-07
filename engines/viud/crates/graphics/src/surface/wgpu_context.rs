@@ -218,7 +218,7 @@ pub fn create_wgpu_gl_context(
 
     let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor {
         experimental_features: ExperimentalFeatures::disabled(),
-        label: Some("compd_ui_gl_device"),
+        label: Some("viud_ui_gl_device"),
         required_features: wgpu::Features::empty(),
         required_limits: limits,
         memory_hints: wgpu::MemoryHints::MemoryUsage,

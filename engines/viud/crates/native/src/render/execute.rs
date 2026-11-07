@@ -317,7 +317,7 @@ fn capture_windows_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &
 /// powered down, no live output) without ticking the UI registry. A producer
 /// that re-requests a frame until one drains it must not request while this
 /// holds: the skipped frame drains nothing and the request pings the loop
-/// straight back here. compd pinned two cores this way after a VT switch away
+/// straight back here. viud pinned two cores this way after a VT switch away
 /// with input still queued for a scene surface. Resume, DPMS-on and output
 /// recovery each request their own frame, which drains what waited.
 pub fn frames_parked(state: &Loop) -> bool {
@@ -1602,7 +1602,7 @@ fn present(
         }
     }
 
-    // compd (integration batch D): this frame was handed to the display.
+    // viud (integration batch D): this frame was handed to the display.
     world::comp::presentation::frame_queued(state, &current_output, &window_visible);
     frames::draw::present::callbacks::send_window_frames(state, &current_output, &window_visible);
     frames::draw::present::callbacks::send_layer_frames(state, &current_output);

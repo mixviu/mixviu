@@ -18,7 +18,7 @@ elif $a[0] == "ready" then
     if $rc == 0 then exit(0) end
     sleep(0.1)
   end
-  raise("COMPD_READY", "headless Bus port did not register")
+  raise("VIUD_READY", "headless Bus port did not register")
 else
   $command = $a[2]
   $body = $a[3]

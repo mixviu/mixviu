@@ -3,7 +3,7 @@
 use std::sync::OnceLock;
 
 /// The compositor's complete runtime configuration, read from a JSON file
-/// (`~/.config/compd/settings.json`, override with `--config-file=<path>`).
+/// (`~/.config/viud/settings.json`, override with `--config-file=<path>`).
 /// Every field is REQUIRED — no optionals, no defaults; startup panics otherwise.
 /// This is the ONE place the compositor reads its own configuration.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -72,7 +72,7 @@ pub struct Environment {
     /// Optional post-capture **software** re-encode (much smaller): `""` = off
     /// (offer it as an "Optimized encoding" checkbox in the save dialog);
     /// `"ffmpeg"` = run it automatically in the background after every recording
-    /// (no checkbox; writes a `.compd-encoding.tmp` file renamed to the target on done).
+    /// (no checkbox; writes a `.viud-encoding.tmp` file renamed to the target on done).
     pub capture_background_encoder: String,
     /// `false` (default) = a failed NVENC zero-copy start aborts the capture with
     /// an error dialog. `true` = fall back to the slower GPU→CPU readback encoder
@@ -260,8 +260,8 @@ pub fn override_scanout_node(path: String) {
 }
 
 /// Resolve the settings-file path: `--config-file=<path>`/`--config-file <path>`
-/// from process args if present, else `$XDG_CONFIG_HOME/compd/settings.json`,
-/// else `$HOME/.config/compd/settings.json`. Shared with the companion tool.
+/// from process args if present, else `$XDG_CONFIG_HOME/viud/settings.json`,
+/// else `$HOME/.config/viud/settings.json`. Shared with the companion tool.
 pub fn resolve_path() -> std::path::PathBuf {
     if let Some(p) = config_file_arg(std::env::args()) {
         return std::path::PathBuf::from(p);
@@ -275,7 +275,7 @@ pub fn resolve_path() -> std::path::PathBuf {
                 .expect("neither XDG_CONFIG_HOME nor HOME set; cannot locate settings.json");
             home.join(".config")
         });
-    base.join("compd").join("settings.json")
+    base.join("viud").join("settings.json")
 }
 
 /// Extract a `--config-file` value from an argument iterator (split out for testing).
@@ -328,7 +328,7 @@ pub fn init() {
 /// Install an already-built environment instead of reading the settings file:
 /// the headless harness (testkit) passes [`default_settings`]. First call
 /// wins and later ones are ignored, so every test in one process may call it;
-/// returns the environment in force. compd's `main` never calls this — it uses
+/// returns the environment in force. viud's `main` never calls this — it uses
 /// [`init`], which still refuses to start without a complete file.
 pub fn init_with(environment: Environment) -> &'static Environment {
     ENV.get_or_init(|| environment)
@@ -344,7 +344,7 @@ pub fn get() -> &'static Environment {
 pub fn late_latch_enabled() -> bool {
     static DISABLED: OnceLock<bool> = OnceLock::new();
     get().late_latch
-        && !*DISABLED.get_or_init(|| std::env::var_os("COMPD_DISABLE_LATE_LATCH").is_some())
+        && !*DISABLED.get_or_init(|| std::env::var_os("VIUD_DISABLE_LATE_LATCH").is_some())
 }
 
 /// Canonical complete starting settings — the single source of default values shared by

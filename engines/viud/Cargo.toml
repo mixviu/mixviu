@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "The MixViu compositor: the compd compositor without the in-process egui widget toolkit"
+description = "The MixViu compositor: the viud compositor without the in-process egui widget toolkit"
 build = "build.rs"
 
 [package.metadata.mixos]

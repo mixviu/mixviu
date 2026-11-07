@@ -105,10 +105,10 @@ impl Dispatch<ZwpLinuxDmabufFeedbackV1, ()> for Feedback {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built compd with backend-headless"]
+#[ignore = "needs a GPU render node and built viud with backend-headless"]
 fn default_feedback_names_render_device_and_offers_formats() {
     let node =
-        std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     // Exercise explicit selection too: the process helper deliberately writes
     // an invalid configured node when an explicit node is supplied.
     let mut process = process::spawn(1, Some(&node), "feedback", None);
@@ -117,15 +117,15 @@ fn default_feedback_names_render_device_and_offers_formats() {
         if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {
             break stream;
         }
-        assert!(process.child.try_wait().unwrap().is_none(), "compd exited");
+        assert!(process.child.try_wait().unwrap().is_none(), "viud exited");
         assert!(Instant::now() < deadline, "headless socket timed out");
         thread::sleep(Duration::from_millis(10));
     };
-    // The expectation is the node compd SELECTED (its EGL device), read from
+    // The expectation is the node viud SELECTED (its EGL device), read from
     // its log, not the one requested: on a multi-GPU host they may differ.
     // The socket can exist before the backend has logged; wait for the line.
     let selected = loop {
-        let found = fs::read_to_string(process.root.join("compd.log"))
+        let found = fs::read_to_string(process.root.join("viud.log"))
             .unwrap_or_default()
             .lines()
             .find_map(|line| {
@@ -139,7 +139,7 @@ fn default_feedback_names_render_device_and_offers_formats() {
         }
         assert!(
             Instant::now() < deadline,
-            "compd never logged its EGL device"
+            "viud never logged its EGL device"
         );
         thread::sleep(Duration::from_millis(10));
     };
@@ -171,7 +171,7 @@ fn default_feedback_names_render_device_and_offers_formats() {
         indices.len(),
         state.table.len() / 16
     );
-    let log = fs::read_to_string(process.root.join("compd.log")).unwrap();
+    let log = fs::read_to_string(process.root.join("viud.log")).unwrap();
     let selection = log
         .lines()
         .find(|line| line.contains("dmabuf global with default feedback"))

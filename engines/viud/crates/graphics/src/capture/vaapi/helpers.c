@@ -3,10 +3,10 @@
  * the real layout, so these are ABI-safe. */
 #include <libavformat/avformat.h>
 
-void compd_avfmt_set_pb(AVFormatContext *ctx, AVIOContext *pb) {
+void viud_avfmt_set_pb(AVFormatContext *ctx, AVIOContext *pb) {
     ctx->pb = pb;
 }
 
-AVIOContext *compd_avfmt_get_pb(AVFormatContext *ctx) {
+AVIOContext *viud_avfmt_get_pb(AVFormatContext *ctx) {
     return ctx->pb;
 }

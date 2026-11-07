@@ -21,9 +21,9 @@
 //!
 //! Every request names a [`RedrawReason`] and
 //! every frame a backend puts out is reported through [`Schedule::frame`], so the
-//! [`FrameLedger`] can say why each frame was drawn. With `COMPD_FRAME_TRACE=1`
+//! [`FrameLedger`] can say why each frame was drawn. With `VIUD_FRAME_TRACE=1`
 //! the ledger writes `comp_redraw_request` and `comp_frame_reasons` records to
-//! the frame-trace sink (`COMPD_FRAME_TRACE_FILE`), which is what the idle probe
+//! the frame-trace sink (`VIUD_FRAME_TRACE_FILE`), which is what the idle probe
 //! counts. The reason-less entry points stay for call sites not migrated yet and
 //! record [`RedrawReason::Unattributed`].
 

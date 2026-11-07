@@ -34,7 +34,7 @@ use crate::state::{Dispatch, RedrawReason};
 use crate::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
 
 /// `focus.session_lock` (the wire values; `unlocking` is a KMS-gate phase
-/// with no compd counterpart yet).
+/// with no viud counterpart yet).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Phase {
     #[default]

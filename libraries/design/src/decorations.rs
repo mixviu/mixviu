@@ -46,7 +46,7 @@ pub fn automatic_with_actions(facts: &SessionFacts, actions: ActionsPlace) -> Re
         // X11 has no window menu or shadow request for an app-drawn bar.
         (Decorations::Server, "rule1")
     } else if actions == ActionsPlace::Titlebar && !host_desktop {
-        // Only compd can host the app's Action Bar in a server title bar.
+        // Only viud can host the app's Action Bar in a server title bar.
         (Decorations::Client, "rule3b")
     } else if host_desktop {
         (Decorations::Client, "rule2")
@@ -122,7 +122,7 @@ impl Resolver {
             RequestedDecorations::Auto => {
                 return automatic_with_actions(self.facts(), actions);
             }
-            // A profile's `ssd` with title-bar actions asks for compd's hosted
+            // A profile's `ssd` with title-bar actions asks for viud's hosted
             // bar. A desktop that cannot host them (KWin) gets the app's own
             // bar instead of a server frame over a separate action row. Only
             // the environment override forces a server frame there.
@@ -342,7 +342,7 @@ mod tests {
             }
         );
         // `ssd` with title-bar actions cannot be hosted by KWin: the app
-        // draws its own bar. In a row, or on compd, `ssd` stands.
+        // draws its own bar. In a row, or on viud, `ssd` stands.
         for session in [Auto, Server] {
             assert_eq!(
                 r.resolve_with_actions(Some(Server), session, ActionsPlace::Titlebar),

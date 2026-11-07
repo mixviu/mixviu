@@ -2,8 +2,8 @@
 
 ## Unreleased — 2026-10-27
 
-- `compd --backends` prints the backends compiled in (`native winit headless`)
-  and exits, so an install can refuse a compd built without `native` (KMS).
+- `viud --backends` prints the backends compiled in (`native winit headless`)
+  and exits, so an install can refuse a viud built without `native` (KMS).
 - Animate drag tile previews with cubic ease-out and continuous retargeting.
   Add a clock testkit can advance and a demand-driven one-shot timer: no
   preview work at idle. Shared edges dwell before arming; preview delay gates
@@ -68,7 +68,7 @@
   survives, and focus and workspace stay unchanged. Unknown outputs refuse
   before effects. Toolkit uses this to restore saved maximised frames.
 
-- The user keys belong to the user. compd enforces the rule itself, ahead
+- The user keys belong to the user. viud enforces the rule itself, ahead
   of its own bindings, because on a MixOS VT it reads the keyboard itself.
   The user keys are bare F1–F12 and Right Ctrl, Right Alt or Right Shift with
   an arrow, matched side-exact with inputd's classifier and press-latched
@@ -84,7 +84,7 @@
     its service fire-and-forget, with the row's args as the body.
     `repeat: allow` rows repeat at the seat's rate while held.
   - `bindings.user` lists the rows.
-  - compd ships no user-key binding. The opt-in bare-F9 Bus key can no
+  - viud ships no user-key binding. The opt-in bare-F9 Bus key can no
     longer fire.
 - `comp.region.select` 0.2.0: a click (under 4 logical px of travel, with
   no drag on the way) and Enter or keypad Enter now select the whole output
@@ -110,16 +110,16 @@
 - Workspaces: `comp.workspaces.list`, `comp.workspaces.set_count {count,
   persist}` and `comp.workspace.rename {index, name, persist}`, and the
   `comp.workspace.changed` topic. The count and names persist in
-  `preferences.json` (`workspaces_count`, `workspace_names`) and compd
+  `preferences.json` (`workspaces_count`, `workspace_names`) and viud
   starts with them. `workspaces.list` rows carry `name`.
 - The pointer moves at the same logical speed at every output scale: a
   relative delta is multiplied by the output scale as well as
   `cursor_sensitivity`, so a scale-2.5 output no longer needs a sensitivity
   of 2.5.
 
-- compd's own UI is egui: capture overlays and dialogs, the frame-rate
+- viud's own UI is egui: capture overlays and dialogs, the frame-rate
   overlay, notifications and the Mix Scenes shell are egui programs painted
-  with egui-wgpu into textures on compd's own EGL context, on the same MixOS
+  with egui-wgpu into textures on viud's own EGL context, on the same MixOS
   look the apps draw with (`toolkit`).
 - Mix Scenes are laid out as flexbox with taffy, as Quoin lays them out;
   `shell.scene.layout` reports the rectangles each node was drawn and

@@ -236,7 +236,7 @@ fn make_copy_snapshot(
     let mut encoder = wgpu_ctx
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("compd-snapshot-copy"),
+            label: Some("viud-snapshot-copy"),
         });
     encoder.copy_texture_to_texture(
         src_wgpu.as_image_copy(),

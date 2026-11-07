@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! [`Harness`]: one compd engine and its clients, pumped in one thread.
+//! [`Harness`]: one viud engine and its clients, pumped in one thread.
 
 use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Once};
@@ -29,7 +29,7 @@ pub struct Harness {
     pub clock: world::comp::clock::ManualClock,
     event_loop: EventLoop<'static, Wire<TestHost>>,
     display: Display<Dispatch>,
-    /// compd's engine: the real `Dispatch` in `wire.state`, the test host in
+    /// viud's engine: the real `Dispatch` in `wire.state`, the test host in
     /// `wire.inner`.
     pub wire: Wire<TestHost>,
     /// The client as the server sees it.
@@ -130,7 +130,7 @@ impl Harness {
         self.event_loop.handle()
     }
 
-    /// One loop iteration as compd's `main` runs it: client writes land, the
+    /// One loop iteration as viud's `main` runs it: client writes land, the
     /// display dispatches them, the protocol outboxes drain, replies go out,
     /// the client reads them.
     pub fn pump(&mut self) {
@@ -190,7 +190,7 @@ impl Harness {
 
     /// Pump until everything the client sent so far has been handled and
     /// answered (a `wl_display.sync` round trip). Panics if it never is.
-    /// Pump until compd posts a protocol error on the client, and return it.
+    /// Pump until viud posts a protocol error on the client, and return it.
     /// Panics if the round trip completes without one.
     pub fn roundtrip_expecting_error(
         &mut self,
@@ -515,7 +515,7 @@ impl Harness {
     }
 
     /// Give the AGENT seat's keyboard to `surface` (the main client) — what an
-    /// agent input lane would do. Nothing in compd routes this seat yet.
+    /// agent input lane would do. Nothing in viud routes this seat yet.
     pub fn focus_agent_keyboard(&mut self, surface: &WlSurface) {
         use smithay::utils::SERIAL_COUNTER;
         let server: ServerSurface = self
@@ -528,7 +528,7 @@ impl Harness {
             .seat
             .agent
             .as_ref()
-            .expect("compd has an agent seat")
+            .expect("viud has an agent seat")
             .get_keyboard()
             .expect("the agent seat has a keyboard");
         keyboard.set_focus(
@@ -562,12 +562,12 @@ impl Harness {
     }
 
     /// One human key edge (`keycode` in xkb space, evdev + 8) through the
-    /// primary seat's keyboard as compd's seat path runs it: xkb first
+    /// primary seat's keyboard as viud's seat path runs it: xkb first
     /// (`input_intercept`), then the user-key layer
     /// (`world::comp::bindings::user_key`, the same call `bindings::key`
     /// makes), then, if the layer did not take it, the focused client
     /// (`input_forward`). With a binding profile enabled, the native table
-    /// also runs and queues its actions, as compd's control pass does.
+    /// also runs and queues its actions, as viud's control pass does.
     /// Returns whether either layer took the edge.
     pub fn key(&mut self, keycode: u32, pressed: bool, locked: bool) -> bool {
         use smithay::backend::input::KeyState;
@@ -689,7 +689,7 @@ impl Default for Harness {
 
 /// Point the config dir (settings.json, preferences.json) at an empty
 /// per-process directory, once, before anything reads it, and install the
-/// default settings in place of the file compd's `main` would read. `Wire::new`
+/// default settings in place of the file viud's `main` would read. `Wire::new`
 /// needs them: it asks `config::base::get().hdr` whether to advertise the
 /// color-management global (`dispatcher::wire::color::create_global`).
 fn isolate_config() {

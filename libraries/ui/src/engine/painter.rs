@@ -7,7 +7,7 @@
 //! renderer shared between contexts would mix their textures up.
 //!
 //! The target is the wrapped GL texture of a `graphics::surface::UiSurface`
-//! on compd's own context. egui-wgpu wants a non-sRGB target and writes
+//! on viud's own context. egui-wgpu wants a non-sRGB target and writes
 //! premultiplied alpha, which is what smithay's GLES renderer samples. The
 //! caller makes the context current and holds the wgpu GL state (see
 //! `graphics::surface::WgpuGlContext`) around the call.
@@ -15,13 +15,13 @@
 use egui::epaint::{ClippedPrimitive, textures::TexturesDelta};
 
 /// The colour each frame is cleared to before egui draws: transparent, or
-/// opaque red when `COMPD_UI_DEBUG_CLEAR` is set (read once). A diagnosis
+/// opaque red when `VIUD_UI_DEBUG_CLEAR` is set (read once). A diagnosis
 /// switch: a surface that shows red has its clear reach the texture the
 /// compositor samples while egui's meshes do not; one that stays black never
 /// reaches that texture at all.
 fn clear_colour() -> wgpu::Color {
     static DEBUG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if *DEBUG.get_or_init(|| std::env::var_os("COMPD_UI_DEBUG_CLEAR").is_some()) {
+    if *DEBUG.get_or_init(|| std::env::var_os("VIUD_UI_DEBUG_CLEAR").is_some()) {
         wgpu::Color::RED
     } else {
         wgpu::Color::TRANSPARENT
@@ -101,14 +101,14 @@ impl Painter {
             pixels_per_point,
         };
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("compd_ui_egui"),
+            label: Some("viud_ui_egui"),
         });
         let mut buffers =
             self.renderer
                 .update_buffers(device, queue, &mut encoder, primitives, &screen);
         {
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("compd_ui_egui_pass"),
+                label: Some("viud_ui_egui_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
                     depth_slice: None,

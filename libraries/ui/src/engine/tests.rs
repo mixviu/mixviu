@@ -209,7 +209,7 @@ impl crate::UiProgram for Spinner {
     fn setup(&mut self, _ctx: &egui::Context) {}
 }
 
-/// Outside a frame (compd parked) queued input still runs: a click queued
+/// Outside a frame (viud parked) queued input still runs: a click queued
 /// whole is drained by offscreen ticks and clicks once.
 #[test]
 fn offscreen_ticks_drain_a_queued_click() {
@@ -240,7 +240,7 @@ fn offscreen_ticks_drain_a_queued_click() {
 }
 
 /// A repaint request alone runs no offscreen pass, so an animating UI
-/// cannot keep a parked compd busy.
+/// cannot keep a parked viud busy.
 #[test]
 fn an_animation_runs_no_offscreen_pass() {
     let mut rt = UiRuntime::build(

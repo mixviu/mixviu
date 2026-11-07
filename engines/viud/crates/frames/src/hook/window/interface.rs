@@ -65,7 +65,7 @@ fn activate_window(_loop: &mut Loop, window: Window) {
     // associates one, which can still be pending when a dock activates a window that
     // has only just mapped (and, by timing, at map itself). Such a window is focused
     // when Xwayland associates its surface instead: the latch below is taken in
-    // dispatcher `surface_associated` (compd, nested_smoke 14q).
+    // dispatcher `surface_associated` (viud, nested_smoke 14q).
     let surface = ident::surface(&window);
     // No surface yet (an X11 window Xwayland has not associated): the focus
     // lands at `surface_associated` instead (dispatcher), if this window is

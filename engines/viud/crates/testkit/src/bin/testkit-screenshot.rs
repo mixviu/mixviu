@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! testkit-screenshot: a minimal wlr-screencopy client, for compd's pixel gates.
+//! testkit-screenshot: a minimal wlr-screencopy client, for viud's pixel gates.
 //!
 //!   testkit-screenshot OUT.ppm [--region X,Y,W,H] [--with-damage] [--cursor]
 //!
 //! Connects to `$WAYLAND_DISPLAY`, captures the first `wl_output` (or a region
 //! of it, output-local logical coordinates) through `zwlr_screencopy_manager_v1`,
 //! and writes a binary PPM (P6). `--with-damage` uses `copy_with_damage` and
-//! prints the damage boxes compd reported, one `damage x y w h` line each.
+//! prints the damage boxes viud reported, one `damage x y w h` line each.
 //! `--cursor` asks for the cursor in the copy (`overlay_cursor = 1`); without
 //! it the copy excludes the cursor, as grim's default does.
 //!
-//! Exit codes: 0 written, 1 compd answered `failed`, 2 setup or protocol error.
+//! Exit codes: 0 written, 1 viud answered `failed`, 2 setup or protocol error.
 //! Stands in for `grim` where grim is not installed; same protocol, no options
 //! beyond what the gates use.
 
@@ -196,7 +196,7 @@ fn main() {
             .unwrap_or_else(|e| die(2, &format!("dispatch: {e}")));
     }
     if state.failed {
-        die(1, "compd answered failed (no buffer)");
+        die(1, "viud answered failed (no buffer)");
     }
     let (format, width, height, stride) = state.buffer.expect("checked above");
     if format != wl_shm::Format::Xrgb8888 as u32 && format != wl_shm::Format::Argb8888 as u32 {
@@ -239,7 +239,7 @@ fn main() {
             .unwrap_or_else(|e| die(2, &format!("dispatch: {e}")));
     }
     if state.failed {
-        die(1, "compd answered failed");
+        die(1, "viud answered failed");
     }
     let mut bytes = vec![0u8; size];
     file.read_exact_at(&mut bytes, 0)

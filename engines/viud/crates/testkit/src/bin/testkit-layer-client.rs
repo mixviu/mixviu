@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! testkit-layer-client: a minimal wlr-layer-shell client, for compd's panel-holder
+//! testkit-layer-client: a minimal wlr-layer-shell client, for viud's panel-holder
 //! gates.
 //!
 //!   testkit-layer-client --namespace TOKEN [--edge top|bottom|left|right]
@@ -16,7 +16,7 @@
 //! with `--keyboard` interactivity (default none).
 //! It answers every configure with `ack_configure` (a live client: the panel
 //! liveness probe is a re-sent configure), and commits a frame for every
-//! frame callback it receives, so compd's per-surface commit count is a
+//! frame callback it receives, so viud's per-surface commit count is a
 //! frame-callback oracle: it stops growing while the layer is concealed.
 //!
 //! Prints `mapped` once the first buffer is committed. Exits 0 on
@@ -25,7 +25,7 @@
 //! `--conceal-on-usr1` makes it a panel OWNER that conceals itself, as Quoin
 //! does on a `panel.command` reveal:false: on SIGUSR1 it attaches a null
 //! buffer (the layer unmaps), stops committing frames and prints `concealed`.
-//! compd must then see an owner-applied conceal and enforce nothing.
+//! viud must then see an owner-applied conceal and enforce nothing.
 
 use std::fs::File;
 use std::os::fd::{AsFd, FromRawFd};
@@ -228,7 +228,7 @@ fn main() {
         bind("zwlr_layer_shell_v1"),
     ) {
         (Some(compositor), Some(shm), Some(shell)) => (compositor, shm, shell),
-        _ => fail("compd advertised no wl_compositor / wl_shm / zwlr_layer_shell_v1"),
+        _ => fail("viud advertised no wl_compositor / wl_shm / zwlr_layer_shell_v1"),
     };
     let compositor: WlCompositor = registry.bind(compositor.0, compositor.1.min(4), &qh, ());
     let shm: WlShm = registry.bind(shm.0, 1, &qh, ());

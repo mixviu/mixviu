@@ -503,7 +503,7 @@ fn port_snapshot_reads_the_shared_counters() {
     );
 }
 
-/// `compd.truth` is a control: answered from `CompEngine::truth` after the
+/// `viud.truth` is a control: answered from `CompEngine::truth` after the
 /// mutations admitted before it in the same pass (the revision it reports
 /// counts them).
 #[tokio::test]

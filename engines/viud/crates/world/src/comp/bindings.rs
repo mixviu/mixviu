@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Compositor key bindings on compd's human keyboard.
+//! Compositor key bindings on viud's human keyboard.
 //!
 //! The filter ([`policy::bindings`]) runs in seat's keyboard path,
 //! after xkb has processed the key and before the engine's own shortcut routing and
@@ -41,7 +41,7 @@ use crate::state::Loop;
 /// Overrides the user keymap's path (tests, a second session).
 pub const USER_KEYMAP_ENV: &str = "MIXOS_USER_KEYMAP";
 
-/// The user keys' auto-repeat, which compd runs itself for a row with
+/// The user keys' auto-repeat, which viud runs itself for a row with
 /// `repeat: allow` (the client never sees the key to repeat it). The same
 /// delay and rate the seat advertises (`dispatcher` seat factory: 600 ms,
 /// 25 per second).
@@ -69,9 +69,9 @@ pub struct Bindings {
     state: Option<BindingState>,
     /// Window/workspace actions waiting for the Bus pass.
     pending: Vec<BindingAction>,
-    /// Print Screen presses waiting for the launcher (compd's executor).
+    /// Print Screen presses waiting for the launcher (viud's executor).
     launches: Vec<ScreenshotLaunch>,
-    /// Actions fired since start, and the last one (`compd.truth`).
+    /// Actions fired since start, and the last one (`viud.truth`).
     pub fired: u64,
     pub last: Option<&'static str>,
     /// The last human key edge [`key`] saw (the `key_handled` inputs for
@@ -346,7 +346,7 @@ fn arm_repeat(lp: &mut Loop, token: u64) {
 
 /// One human key edge, after xkb. `keysym` is the layout-agnostic symbol
 /// (`raw_latin_sym_or_raw_current_sym`); `modifiers` the shortcut view
-/// (nested: Right Ctrl stands in for Super). Returns whether compd took the
+/// (nested: Right Ctrl stands in for Super). Returns whether viud took the
 /// key (the client must not see it).
 pub fn key(
     lp: &mut Loop,
@@ -434,7 +434,7 @@ pub fn key(
             info!("exit-nested-compositor binding: stopping the loop");
             lp.inner.loader.loop_signal.stop();
         }
-        // The F9 Bus key is opt-in by configuration; compd's table never
+        // The F9 Bus key is opt-in by configuration; viud's table never
         // carries it, and bare F9 is a user key the layer above takes first.
         BindingAction::SendBusKey => {}
         // Print Screen: the window holding the keyboard is read here, at the

@@ -14,7 +14,7 @@
 //! screen position over the output's scale).
 //!
 //! The command, its timers and its reply are the host's (policy-host `region`,
-//! compd). The overlay is [`overlay`]: plain solids (the dim and the
+//! viud). The overlay is [`overlay`]: plain solids (the dim and the
 //! selection's outline) and one CPU-rasterised hint, drawn only while a
 //! selection runs on the output being drawn, plus the clean-frame record the
 //! selected reply waits for (a selection is never claimed without a frame

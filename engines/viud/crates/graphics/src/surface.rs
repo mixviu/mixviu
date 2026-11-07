@@ -257,7 +257,7 @@ impl UiSurface {
             r.begin()
                 .wgpu_texture
                 .create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("compd_ui_render_view"),
+                    label: Some("viud_ui_render_view"),
                     ..Default::default()
                 })
         })
@@ -267,7 +267,7 @@ impl UiSurface {
 impl Backing {
     /// One slot: a GL texture on the renderer's context, wrapped for wgpu.
     /// `_render_node` is unused since the slot is no longer a gbm buffer; it stays
-    /// in the signature chain for the ui move (compd: drop it there).
+    /// in the signature chain for the ui move (viud: drop it there).
     fn allocate(
         _render_node: &str,
         wgpu_ctx: &WgpuGlContext,

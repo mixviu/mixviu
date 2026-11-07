@@ -1,6 +1,6 @@
 [package]
 name = "motion"
-description = "Pure motion maths for compd: timing curves, springs, waypoint routes, Fitts durations and retarget segments (no display, no clock)"
+description = "Pure motion maths for viud: timing curves, springs, waypoint routes, Fitts durations and retarget segments (no display, no clock)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 
 [package.metadata.mixos]
-component = "compd"
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"
