@@ -1,5 +1,63 @@
 # Email gold parity
 
+## Round 3 native composer/PIM checkpoint, 2026-11-07: IN PROGRESS
+
+Exact tested code `1a14f1c499c83df1398b58a2629d4b962faf8b82`, CBC
+`20261107-111024-53ca9556` (permitted light-worker override), passed byte
+primitives, frame/native input, connected PIM and composer mounting, five wire
+tests, the legacy list measurement and debug build, with no worker diff. Full
+saved log read. Debug SHA256:
+`3d0e4da2391b6e80cbdc696ae9df3ce51e08ea23d755d72e69fd77502c494ef2`.
+
+Private `email-parity-20261107/round2/native.k2W4lA` passes 72 real native
+requests against an owned mixd maild personality. Event/contact create, get,
+update, filtered list and delete pass; native pointer selection opens both
+PIM readers. Direct MIME upload, draft creation, submission, Sent filing and
+delivery/body readback pass. Attachment save twice preserves exact SHA256
+bytes and chooses distinct names. Two composers create separate native
+surfaces under the same PID; native typing reaches only its draft; keeping
+one and discarding the other preserves ownership. All five owned PIDs stopped.
+Calendar, contacts and composer captures inspected. The server reports the
+ASCII filename fallback for the Unicode attachment; the pinned gold MIME
+writer supplies the same fallback and extended filename. This remains an
+inference from source until the matched gold send witness.
+
+The generic host now accepts scene-authored child viewports. Models are
+validated, callbacks queue local intents, and one interpreter owns application
+state and jobs. There is no intra-app Bus transport. Composer headers, body,
+attachments, private schema-1 draft writes, send attempts and close questions
+are authored in Mix. Full restore/debounce, identity editing, reply/forward,
+document workflows and owner/quit gates remain required. Current composer
+menus, header rows, body surface and status differ from gold.
+
+Matched diagnostic `round2/pair.l8Wdn3` uses the same canonical identity,
+1040×680, scale 1 and settings recipe as round 2. The inbox, dark reader and
+light reader all have **zero SSIM/RMSE distortion** in header, places, list and
+reader regions. Whole-image SSIM/RMSE distortions are respectively
+`0.0000151023/0.000255193`, `0.0000307483/0.000360898`, and
+`0.0000302703/0.000355387`. The remaining difference is two short pane-border
+extensions in the status region. Dark/light originals, montage and diff
+figures inspected. Matched PIM and composer originals now exist in
+`round2/pair.7N9x3b`; regional comparisons and inspection are in progress.
+All owned processes in these completed runs stopped.
+
+CBC `20261107-111753-9a7b5c65` at `0433f98f9999dd66976d406ab8870ccab2907962`
+passes the focused checks/debug build for pane clipping and view actions;
+full saved log read, formatting patch applied. Binary SHA256
+`7d32f9f85be4997d9012272849e826bb3ba021e6cf82b38151fbda5218122678`.
+The subsequent `round2/pair.Fndyun` inbox, dark reader and light reader are pixel-exact across whole image and every region, including status (SSIM/RMSE 0/0). Originals, montages and diffs inspected; all owned processes stopped. Later header-form changes are unverified.
+Release diagnostic CBC `20261107-111355-394fcb63` at
+`27738f785b1e1ac5dfe3997b32c1d4fbb3017d27` is running on cbc2. The explicit
+fixture-only benchmark now calls the modern projection on actual host bytes;
+no release timing or release acceptance is claimed yet. Debug observations
+range about 95–106 ms and are not substituted for release evidence.
+
+Overall **INCOMPLETE**. Full inventory, Bus/refusal/stale cases, live Prefs
+matrix/authority recovery, narrow/overflow/forms/attachments/composer states,
+release-byte measurement and final exact-source gate/acceptance remain open.
+No deviation from gold is proposed and no Fable question is pending.
+
+
 ## Round 2 checkpoint, 2026-11-07: IN PROGRESS
 
 Tested source `05aabb63c7332f84e9651decee790f16a0970c11`, branch
