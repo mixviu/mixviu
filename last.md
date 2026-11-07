@@ -1094,3 +1094,40 @@ native measured f32, reset cancellation and owned cleanup. Prepared is
 not executed evidence. Continue broader wheel/native input, all remaining
 session/Bus/clipboard/IME/Prefs and exact release acceptance. NOT ACCEPTED.
 branch: lab/parity-term; head SHA: 60212c48ad022d4610838c44b697d4117d63aeb9 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — wheel owner native gate and remaining full parity/release acceptance open; CBC job ids: term-wheel-d6b0c7bc-a1 (compile failure repaired), term-wheel-owner-60212c48 (next await).
+### Exact Ctrl+wheel witness; lease cleanup ordering checkpoint
+
+`term-wheel-owner-60212c48-a1` passed with no worker diff. Complete log
+read in two chunks: 144 terminal tests, five existing ignores, seven input
+tests, two bundle tests, six Mix suites, search/dialog, foreign gate and
+debug build. Matching artifact/source verified:
+`60212c48ad022d4610838c44b697d4117d63aeb9`, SHA256
+`1a2e024fa6131bce50991180a13913e7250065e025e3f910048a84e09fd9c4c4`.
+Native `native.1qSr40` passes actual Ctrl+wheel, exact persisted/rendered
+f32 15.333666801452637, reset cancellation, normal close and all tracked
+PIDs stopped. The driver contract is viu.ui.scroll with ctrl:true, not
+the modifier list accepted by term.ui.key. Earlier native.JkQJgC and
+native.80Cjsw passed the wrong argument shape and therefore delivered
+plain scroll; they are retained harness failures with clean shutdown.
+No widget change was made for those failures. Broader gesture and matched
+zoom capture coverage remain pending; this is debug evidence only.
+
+785b342e fixes the native session callback seam to invalidate local pane
+authority before the cleanup callback can wait or release the PTY. Gold
+term-core/native_session.rs invalidates live before requesting remote
+Close, and Drop repeats idempotent revocation. The previous seam called
+cleanup before Drop's revocation. Added tests asserting cleanup sees
+revoked authority and failed launch reports only after revocation.
+This repairs ordering in the reusable seam; it does NOT implement the
+missing verified issuer/supervisor or grant/control attachment.
+
+Next gate `term-lease-order-785b342e` at
+`785b342eff93919bfae7aff3513791bc8aeaa8e1`, term_gate --prepare. Read full
+log, apply any fmt and repeat exact source if changed. Continue the full
+native session work: pinned term-core/native_session.rs contains the
+verified identity actor, grant renewal/reconnect and prepared sealed-fd
+handoff, but its Control is coupled to Rust TabSet. Port the actor as a
+reusable native facility while adapting protected policy/layout requests
+to existing in-process Mix ownership; do not import Rust app tab policy.
+Current Host still supplies no issuer. Full session/Bus/clipboard/mouse/
+IME/Prefs and release captures remain open. Overall NOT ACCEPTED.
+branch: lab/parity-term; head SHA: 785b342eff93919bfae7aff3513791bc8aeaa8e1 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — lease ordering gate, verified issuer/control and remaining full parity/release acceptance open; CBC job ids: term-wheel-owner-60212c48-a1 (green exact source/native Ctrl+wheel), term-lease-order-785b342e (next await).
