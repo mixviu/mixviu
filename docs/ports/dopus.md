@@ -1,8 +1,173 @@
 # Dopus gold parity
 
-Oracle: MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`.
-Method: [parity-method.md](parity-method.md). Overall verdict: **OPEN**.
-The generic-host migration is a lab specimen, not an accepted replacement.
+Overall verdict: **ACCEPTED** at the tested source below.
+
+## Acceptance: 2026-11-07 round five
+
+Verdict: **ACCEPTED**, following [parity-method.md](parity-method.md).
+Tested implementation: `4bccf5913312900b504054fc3c2d277078071c4a` on
+`lab/parity-dopus`. Subsequent commits contain receipts only. Gold is MixOS
+`8779f33284b7d3f1178c3d57a699efb9b0867b22`, binary SHA256
+`590cfad14856518ba668154e987d0282f85963f5c708bfd53c202e5d48a9e359`.
+The exact CBC release Viu executable has SHA256
+`9e34bf227d469fc858be297e7a6a6af4f0f31c169f15a978cdeed9e7ae5c1689`.
+Its source/profile/hash receipt and executable are saved under
+`/build/es-artifacts/4bccf5913312900b504054fc3c2d277078071c4a/`.
+Run that executable with the tested bundle through `viu run apps/dopus`.
+No per-app Rust host remains; `viu-dopus` and its comparator are retired.
+Nothing was installed or merged by this acceptance round.
+
+### Gate diagnosis and repeat
+
+The round-four command log ending after the empty DOPUS_PATCH block was
+complete, not a failed build. Its own cbc2 worker receipt
+`/build/.cbc-logs/dopus-r4-accept-framing-a1.result` records stage done,
+rc/exit_code 0, exact head/commit, no timeout, no signal and untruncated
+output. The native build service independently records rc 0. CBC's saved
+file contains command output; its queue-runner path deliberately suppresses
+the outer `BUILD_RC` print. No application or gate repair was warranted.
+Both worker receipts are retained privately. The private follow-on wrapper
+now supplies explicit long deadlines rather than a short default deadline.
+
+The requested detached repeat, **`dopus-r5-accept-a1` on cbc2**, passed
+`/opt/mixos/bin/mix apps/dopus/gate.mix` at the exact source above:
+72 scene tests, 22 focused tests, 66 library tests, one release bulk profile,
+format check, all-target checks, Clippy and release build. There was no
+worker diff. The complete 2,553-line saved log was read:
+`20261107-175255-cbc2-4bccf5913312-dopus-r5-accept-a1-16988546.log`.
+Existing Clippy warnings remain warnings. The worker result again proves
+rc 0 with no timeout or signal. Round-four `dopus-r4-accept-framing-a1`
+also passed; neither job needed an rc 75/143 requeue.
+
+### Features, Bus and live Prefs
+
+The fetched release hash was verified before repeating all twelve isolated
+native groups: full visual/Bus/Prefs, features, input, preview, chooser,
+hosting, authority recovery, launch, drag, service edges, window close and
+release performance/refusal. Each group passed and every owned PID exited.
+The private archive is `parity-dopus/accept-4bccf5913312-final`;
+`final-summary.json`, `audit-index.json`, result files, fixture/script hashes,
+native requests/replies, complete logs, original captures, figures and
+cleanup receipts identify the exact evidence. Earlier round-four results
+are preserved with the `r4-` prefix. Native service binary hashes are retained.
+
+| Gold inventory | Release-native closure |
+| --- | --- |
+| Shared frame, panes, sidebars, status | Gold frame, split/width restore, active outline, location fields and pane summaries; matched baseline and narrow captures |
+| Tree and navigation | Expansion/collapse, native location submission, keyboard and range selection, context menus, directory-first sort, Places/bookmarks and pane targets |
+| Metadata and previews | Gold formatting and wrapping, raw names/symlinks, native image preview and scroll, asynchronous completion fences |
+| Files and dialogs | Native open, mkdir/rename/delete, copy/move bytes, drag copy/move/cancel, pinned modal Enter/Escape and Tab focus |
+| Mail and launch | Email success/BUSY attachment fallback/DENIED, native launch receipts, singleton path activation, headless and offline mapped windows |
+| Furniture and persistence | Search, shortcuts/scrollbar, About, macro CRUD/run/output/stop, config validation/atomic persistence and reply-fenced close/quit |
+| Chooser | Gold frame, Places/tree, save stem, filters/choices/extensions, replacement, save-files ordering, independent windows, stale/ambiguous refusal and idempotent cancel; no file writes |
+
+Coverage is **44/44 gold command descriptors and 33/33 core actions**,
+including real invocation, refusals, all twelve macro commands and native
+executed/titlebar/macro-completion topics. The audit additionally records
+one diagnostic command and seven UI actions; these do not replace the gold
+inventory. Ninety paired request records match in rc and stable reply fields;
+differences are truthful PID/build stamps and native UI tree hierarchy,
+whose native labels/input/geometry are exercised separately. Headless
+typed operations and window overrides retain the pinned gold contract.
+
+All **17 main Prefs states** pass on one unchanged PID, and all **17 chooser
+states** pass on one continuing request: modes, schemes/styles, accent,
+density/roundness, font families/weight/size, mono font, scale, icon stroke,
+app overrides, daylight, tunables, decorations, caption/menu/action/title
+alignment. Live keymap changes, invalid-setting refusal, authority loss and
+restart/recovery pass. Gold's chooser ignores live Prefs; the port follows
+them under Mark's standing mandate.
+
+### Visual inspection
+
+Both clients use owned native Bus/compositor/settingsd instances, identical
+filesystem fixtures, scale 1 and matched effective settings. Main clients
+are 1040×680; chooser clients are 820×600 and 600×300 inside 1100×800
+compositor captures. PNGs are never rescaled. ImageMagick 7.1.2-35 reports
+normalised **distortion**, zero identical. Originals, side-by-side/difference
+figures and region crops were inspected. No arbitrary threshold is used.
+
+Baseline gold and candidate PNG SHA256 are identical:
+`b7915c3afe67b25af3cd8c65462eaae075706e9b971c2db2cf85a89ada9f820e`.
+
+| Baseline region | x,y,w,h | SSIM / RMSE distortion |
+| --- | --- | --- |
+| Full | 0,0,1040,680 | 0 / 0 |
+| Header | 0,0,1040,38 | 0 / 0 |
+| Panes | 147,38,677,612 | 0 / 0 |
+| Places | 0,38,147,612 | 0 / 0 |
+| Properties | 824,38,216,612 | 0 / 0 |
+| Status | 0,650,1040,30 | 0 / 0 |
+
+The main audit retains 61 raw comparison sets. Two input/preview setup
+baselines contain fixtures created between clients and are explicitly
+excluded; their actual expanded/narrow/preview state pairs match. Four
+untuned chooser pairs are retained but superseded by matched effective
+legacy radii in the chooser add-on below. Other inspected differences:
+
+- Compact-square and fonts-scale: whole SSIM 0.000177575/0.000170964,
+  header 0.00317766/0.00305935; content regions zero. Native bounds differ
+  by less than 0.1 logical pixel, leaving fractional rasterisation only.
+- About: whole SSIM 0.00094159, RMSE 0.0102443; truthful source stamp only.
+- Hosted mode result: whole SSIM 0.339583, RMSE 0.752958. Gold publishes
+  `view.mode` but refuses its execution; the port fixes that broken function
+  under standing Fable C1. Both replies/captures are retained. Ordinary
+  hosted client/whole, native pointer mode-toggle and macro-popup pairs match.
+- Menus, search, shortcuts, light-mode icon, selection, file dialogs and the
+  remaining matched live Prefs geometry have zero distortion.
+
+Final chooser receipt:
+`matched-chooser-4bccf5913312-r7/round2.gRt1V3`. Both clients receive the
+same effective legacy radii described in the historical checkpoint. Six
+comparison sets retain focused and passive captures; no images are masked.
+All header/navigation/pane/form crops have **SSIM 0 and RMSE 0**. The only
+non-zero pixels are truthful caller connection text at the same position:
+
+| Chooser state | Whole SSIM | Whole RMSE |
+| --- | ---: | ---: |
+| Save | 0.000274071 | 0.00721406 |
+| Replacement | 0.000251181 | 0.00876238 |
+| Options, focused and passive | 0.000262402 | 0.00894236 |
+| Short, focused and passive | 0.000236446 | 0.00867926 |
+
+Earlier caret-phase and capture-harness failures remain retained. The final
+focused and passive pairs close that ambiguity. No unresolved visual
+deviation or deferred capability remains; no new Fable ruling is needed.
+
+### Release performance and atomic scan refusal
+
+Bulk primitives and row-cache paths are retained. These are 21 measured
+samples after three warmups, actual 2,000-file directories; milliseconds:
+
+| Action / stage | Median | p95 | p99 |
+| --- | ---: | ---: | ---: |
+| Sort callback | 67.138 | 68.418 | 70.425 |
+| Refresh callback | 67.651 | 68.971 | 69.841 |
+| Sort native Bus acknowledgement | 111.892 | 129.111 | 129.673 |
+| Refresh native Bus acknowledgement | 113.293 | 129.114 | 130.187 |
+| Sort acknowledgement + applied-model readback | 128.478 | 146.233 | 147.279 |
+| Refresh acknowledgement + applied-model readback | 129.898 | 146.307 | 147.273 |
+
+Fresh shared-frame adapter medians are 15.164/15.037 ms and cold draw
+10.596/10.587 ms (sort/refresh). Callback work meets the standing ~100 ms
+bulk target. Native Bus/readback measurements include transport and host
+application; they do not measure physical presentation. Release probes ran
+alone, before image comparisons.
+
+The pane scan explicitly budgets **65,536 total enumerated names and depth
+64**, including hidden/filtered names, child counts and expanded subtrees;
+links are not followed. A real 65,537-name two-pane open returns rc 10 and
+`SCAN_BUDGET`, preserves the complete prior state of both panes and keeps
+model serial **56 → 56**. The chooser repeats the real 65,537-name refusal,
+preserving folder, complete rows and serial **0 → 0**, with its request
+still open. Enumeration/depth regression tests and the two-pane copied
+candidate test pass. There is no successful truncated result or partial
+state. This closes the 2026-11-06 scan-budget defect.
+
+## Historical migration records
+
+The checkpoints below describe earlier states. Their OPEN/pending statements
+are superseded by the exact release acceptance above.
 
 ## Current acceptance checkpoint: 2026-11-07 round four
 

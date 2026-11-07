@@ -341,3 +341,49 @@ private `round4-handoff.md` identifies the runners, files and inspection steps.
 No final-release acceptance, installation or Fable deviation is claimed.
 
 branch lab/parity-dopus; head SHA 4bccf5913312900b504054fc3c2d277078071c4a (frozen implementation; subsequent commits are receipts only); OPEN: exact-source release gate/native suite and final inspection/acceptance; CBC 20261107-165508-fcc5458e PASS scoped checks/debug with no worker diff, dopus-r4-native-final-a1 PASS prior source, dopus-r4-accept-framing QUEUED detached.
+
+## Dopus round five — ACCEPTED
+
+The missing BUILD_RC line did not indicate a failed gate. The round-four
+worker's own result proves done/rc 0 at exact head 4bccf59, no signal or
+timeout and complete output. CBC's command log does not contain the outer
+wrapper result, and the queue-runner path deliberately suppresses that print.
+No application/gate change was required. The requested detached repeat
+`dopus-r5-accept-a1` passed on cbc2, with 161 tests, format/check/Clippy,
+release build and empty worker diff. Its full 2,553-line log was read and
+its own worker result verified. Private follow-ons use explicit long
+deadlines. No rc 75/143 requeue was necessary for either successful gate.
+
+Tested implementation remains `4bccf5913312900b504054fc3c2d277078071c4a`.
+Release SHA256 is
+`9e34bf227d469fc858be297e7a6a6af4f0f31c169f15a978cdeed9e7ae5c1689`.
+All twelve native groups passed again on those fetched/verified bytes:
+features, full Bus, input, preview, chooser, hosting, authority recovery,
+launch, drag, service edges, window close and release probes. Coverage is
+44/44 descriptors and 33/33 core actions; 90 paired reply records retain
+only truthful runtime fields and native UI hierarchy differences. All 17
+main Prefs states retain one PID; all 17 chooser states retain one request.
+
+The 1040x680 main baseline is pixel-identical in full/header/Places/panes/
+Properties/status. Search, shortcuts, light icon and matched hosted chrome
+are closed. Inspected font/scale header residue is fractional rasterisation;
+About/caller fields are truthful data. The recorded hosted UI command repair
+is standing Fable C1. Six matched chooser comparisons retain focused and
+passive pairs: header/navigation/pane/form SSIM and RMSE are zero, leaving
+only caller identities. No remaining deviation needs a Fable question.
+
+Release 2,000-row callback medians/p95/p99: sort 67.138/68.418/70.425 ms,
+refresh 67.651/68.971/69.841 ms. Native acknowledgement plus applied-model
+readback medians are 128.478/129.898 ms. A real 65,537-name pane request
+refuses SCAN_BUDGET/rc10 with both panes unchanged and serial 56 -> 56;
+the chooser repeats refusal with folder/rows unchanged, serial 0 -> 0 and
+the request open. Depth 64, hidden/filtered enumeration and shared count
+work are covered. Bulk primitives remain in use; viu-dopus stays retired.
+
+`docs/ports/dopus.md` records the acceptance, exact hashes, figures, region
+metrics, performance stages, refusals and CBC diagnosis. The private frozen
+archive and final-summary.json retain all twelve runs, 61 raw figure sets,
+six matched chooser sets, structured replies and all-stopped receipts.
+Nothing was installed, merged or restarted. This commit is receipt only.
+
+branch lab/parity-dopus; head SHA 4bccf5913312900b504054fc3c2d277078071c4a (tested implementation; receipt-only commit contains this record); ACCEPTED; parity: full features, Bus 44/44 descriptors + 33/33 actions, Prefs 17 main + 17 chooser, baseline SSIM/RMSE 0 in all six regions, chooser layout regions 0 with truthful caller data, inspected fractional rasterisation/C1 residues; CBC dopus-r4-accept-framing-a1 PASS rc0, dopus-r5-accept-a1 PASS rc0, 20261107-165508-fcc5458e PASS scoped debug.
