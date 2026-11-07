@@ -132,14 +132,26 @@ fn sgr_truecolour_inverse_bold_and_reset_reach_captured_cells() {
         b"D\x1b[38;2;12;34;56;48;2;78;90;123mA\x1b[7mB\x1b[27;1mC\x1b[0mE",
     );
     let s = t.screen(false);
-    assert_eq!((s.cells[1].fg, s.cells[1].bg), ([12, 34, 56], [78, 90, 123]));
-    assert_eq!((s.cells[2].fg, s.cells[2].bg), ([78, 90, 123], [12, 34, 56]));
+    assert_eq!(
+        (s.cells[1].fg, s.cells[1].bg),
+        ([12, 34, 56], [78, 90, 123])
+    );
+    assert_eq!(
+        (s.cells[2].fg, s.cells[2].bg),
+        ([78, 90, 123], [12, 34, 56])
+    );
     // Gold brightens bold foregrounds by 40, even for truecolour, rather
     // than synthesising a heavier face. Keep that captured-cell contract.
     assert!(s.cells[3].bold);
-    assert_eq!((s.cells[3].fg, s.cells[3].bg), ([52, 74, 96], [78, 90, 123]));
+    assert_eq!(
+        (s.cells[3].fg, s.cells[3].bg),
+        ([52, 74, 96], [78, 90, 123])
+    );
     assert!(!s.cells[4].bold);
-    assert_eq!((s.cells[4].fg, s.cells[4].bg), (s.cells[0].fg, s.cells[0].bg));
+    assert_eq!(
+        (s.cells[4].fg, s.cells[4].bg),
+        (s.cells[0].fg, s.cells[0].bg)
+    );
     assert_eq!(s.cursor, (5, 0));
 }
 
