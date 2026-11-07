@@ -9,3 +9,7 @@ The generic host settles AccessKit click geometry across matching layout passes.
 Final full CBC, four release-byte acceptance reruns, Track A, P2 furniture, same-worker 2,000-row comparison and four-engine hashes remain pending. No installation, desktop or VT work.
 
 Branch lab/gold-parity; head is this reconciliation checkpoint; final per-app release revalidation PENDING; artifacts PENDING; CBC repair 20261107-094429-bcd953fb-a1, 20261107-095334-81fb50bb-a1, 20261107-100003-d1362cb1-a1 PASS; final CBC PENDING.
+
+CBC source-pair repair: the first full gate found a stale sibling mixd on its worker (5990e13) retaining MIX_ENGINE_HANDOFF. Rebuilding the service engine at the tested source makes the unchanged seven lifecycle tests pass: CBC 20261107-102349-faeedebf-a1. The full gate now builds that companion before shell process tests. Final release evidence remains pending.
+
+Branch lab/gold-parity; head is this gate-recipe checkpoint; per-app final release revalidation and four-engine artifacts PENDING; CBC lifecycle 20261107-102349-faeedebf-a1 PASS; final full CBC PENDING.
