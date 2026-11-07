@@ -618,11 +618,22 @@ impl Widgets {
         let value = model["values"]
             .get(&definition.id)
             .unwrap_or(&definition.initial);
-        ui.add_enabled(definition.properties["enabled"] != false, |ui: &mut egui::Ui| {
-            self.draw(ui, definition, value, model, &mut intents);
-            let rect = self.geometry.get(&definition.id).copied().unwrap_or(egui::Rect::NOTHING);
-            ui.interact(rect, egui::Id::unique(("inline-control", &definition.id)), egui::Sense::hover())
-        });
+        ui.add_enabled(
+            definition.properties["enabled"] != false,
+            |ui: &mut egui::Ui| {
+                self.draw(ui, definition, value, model, &mut intents);
+                let rect = self
+                    .geometry
+                    .get(&definition.id)
+                    .copied()
+                    .unwrap_or(egui::Rect::NOTHING);
+                ui.interact(
+                    rect,
+                    egui::Id::unique(("inline-control", &definition.id)),
+                    egui::Sense::hover(),
+                )
+            },
+        );
         intents
     }
     /// Call once after drawing an application frame (including individual
