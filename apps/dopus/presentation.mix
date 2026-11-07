@@ -66,7 +66,7 @@ fn dp_command($state,$contract,$id)
   $p=$state.panes[$state.active]
   if $id=="nav.back" then $a.enabled=len($p.back)>0
   elif $id=="nav.forward" then $a.enabled=len($p.forward)>0 end
-  if $state.form.open and not starts_with($id,"theme.") and $id!="view.search" then $a.enabled=false end
+  if $state.form.open and $state.reservation.kind!="search" and not starts_with($id,"theme.") and $id!="view.search" then $a.enabled=false end
   $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open elif contains(["theme.scheme-session","theme.mode-session","theme.style-session"],$id) then $state.appearance_choice[replace(slice($id,len("theme.")),"-session","")]==nil elif starts_with($id,"theme.decorations-") then ($state.window_choice["window.decorations"] ?? "auto")==slice($id,len("theme.decorations-")) elif starts_with($id,"theme.captions-") then ($state.window_choice["window.caption_side"] ?? "auto")==slice($id,len("theme.captions-")) elif starts_with($id,"theme.scheme-") then $state.appearance_choice.scheme==slice($id,13) elif starts_with($id,"theme.style-") then $state.appearance_choice.style==slice($id,12) elif starts_with($id,"theme.mode-") then $state.appearance_choice.mode==slice($id,11) else nil end
   return $a
 end
@@ -148,7 +148,7 @@ fn dp_project($state,$contract,$cache)
   if $window["viu.hosted-menu"] ?? false then $header_groups.menu.preferred=0;$header_groups.menu.minimum=0 end
   if $window["viu.hosted-actions"] ?? false then $header_groups.toolbar.preferred=0;$header_groups.toolbar.minimum=0 end
   $caption_control={id:"caption-title",kind:"label",label:"",initial:"",properties:{align:$title_align,emphasis:true,truncate:true}}
-  $context=map(["file.open","file.mail","file.copy-other-pane","file.move-other-pane","file.rename","file.delete","file.new-folder","view.refresh","view.toggle-hidden"],fn($id)=dp_command($state,$contract,$id))
+  $context=map($contract.context,fn($id)=dp_command($state,$contract,$id))
   $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
   $values={"caption-title":$dp.dp_display($state.panes[$state.active].path),menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
   $values.window={side:$caption_side,enabled:true}

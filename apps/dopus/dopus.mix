@@ -49,7 +49,7 @@ fn dp_framed($s,$contract,$cache)
     end
   end
   $search=$s.form.open and $s.reservation.kind=="search"
-  $model.values.palette={open:$search,commands:map(filter($contract.actions,fn($a)=$a.id!="view.search"),fn($a)={id:$a.id,label:$contract.ui_labels[$a.id] ?? $a.label,enabled:$projection.dp_enabled($s,$a.id)})}
+  $model.values.palette={open:$search,commands:map($contract.registry_order,fn($id)={id:$id,label:$contract.ui_labels[$id] ?? filter($contract.actions,fn($a)=$a.id==$id)[0].label,enabled:$projection.dp_command($s,$contract,$id).enabled})}
   $model.native_overlays=[{definition:{id:"palette",kind:"command-palette",label:"",initial:{open:false,commands:[]}},command:"dopus.palette"}]
   if $search then $model.values.form.open=false end
   $model.local_theme={theme:$s.appearance_choice.scheme,mode:$s.appearance_choice.mode,style:$s.appearance_choice.style,decorations:$s.window_choice["window.decorations"],captions:$s.window_choice["window.caption_side"]}
