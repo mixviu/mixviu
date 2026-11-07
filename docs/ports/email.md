@@ -1,6 +1,6 @@
 # Email gold parity
 
-## Round 6 acceptance record, 2026-11-07: OPEN pending exact-source gate
+## Round 6 acceptance record, 2026-11-07: ACCEPTED
 
 Tested application source: `d80c067ca5f602f90a63828e7cb0406606869c7f`.
 Gold: `8779f33284b7d3f1178c3d57a699efb9b0867b22`, executable SHA256
@@ -8,8 +8,16 @@ Gold: `8779f33284b7d3f1178c3d57a699efb9b0867b22`, executable SHA256
 Verified release host from CBC `email-r5-final-64a9e95dee75-a1`:
 `be31ad4b8dea2788d0d6000885a57bca7058ee3a8a27d9f89089c9e40cf018cb`.
 This host was tested with an exact archive of the application source above.
-The later exact-source gate `email-r6-d80c067ca5f6` must finish and its
-artifact must be verified before the overall verdict changes to ACCEPTED.
+Exact-source gate `email-r6-d80c067ca5f6-a1` passed on cbc2. Its saved
+3,274-line log was read in full: fmt, locked all-target check, all Viu/engine
+tests, clippy, debug and release builds passed with no worker diff. Existing
+warnings and declared GPU-only ignored tests remain visible in that log.
+Command: `mix tools/gold_parity_gate.mix`. Saved log basename:
+`20261107-152057-cbc2-d80c067ca5f6-email-r6-d80c067ca5f6-a1-015f9fcb.log`.
+The fetched `/build/es-artifacts/d80c067ca5f602f90a63828e7cb0406606869c7f/viu`
+and `viu.json` verify source, release profile and the SHA256 above. These
+bytes are identical to the executable used by every release suite below;
+`final-release-receipt.json` records the equality proof.
 The intervening gate `email-r5-final-ab0d62feb7e7` predates the Prefs-launch repair.
 No installation, desktop restart or production change is part of this record.
 
@@ -89,10 +97,22 @@ source `27738f785b1e1ac5dfe3997b32c1d4fbb3017d27`, CBC
 13.075858 ms, p95 16.384905 ms, p99 19.675764 ms. Both use the bulk path and
 fixture SHA256 `1ca642d313c13d9a6eb58c086f51336650076ed2897d2a18f0e94b43e36cd780`.
 Acknowledgement timings are recorded separately from projection timings.
+The final exact-source receipt repeat `native.nDqPNY` records median
+13.056324 ms, p95 16.967374 ms and p99 17.903102 ms on the same verified
+release hash, with the same warm-ups/sample count and fixture hash.
 
-Overall **OPEN** until the final exact-source gate, artifact verification and
-any required repeat on different final bytes finish. No proposed deviation
-or Fable question is pending.
+Private `acceptance-index.json` indexes 13 completed runs and all 44 matched
+comparison sets, hashes the receipts and complete gate log, and verifies
+every owned PID stopped. Index SHA256:
+`b1aede7ec80e60b89aa4618fe300f3a7f9a9eed3cf84d2e6aa615384961a57e0`.
+The source and executable equality proof makes the release captures evidence
+for the final exact-source artifact, rather than debug or earlier bytes.
+
+Overall **ACCEPTED**: feature inventory, compatible Bus surface, inspected
+visual gate and live Prefs response pass, with the standing C1 repair and
+AA/runtime-data classifications above. No open item or Fable question remains.
+Following commits which only update this record are receipt-only commits;
+the tested code SHA remains the one stated above.
 
 ## Round 5 acceptance work, 2026-11-07: OPEN
 
