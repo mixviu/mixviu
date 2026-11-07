@@ -2,7 +2,12 @@
 -- Gold tab/pane policy expressed as a pure Mix reducer. Native session
 -- handles are supplied by the caller; this module never spawns or draws.
 fn initial()
-  return {tabs:[],active:0,panes:{},next_tab:1,next_pane:1,revision:0,focus_serial:0,closing:false}
+  return {tabs:[],active:0,panes:{},next_tab:1,next_pane:1,revision:0,focus_serial:0,closing:false,event_revision:0,events:[],watching:false}
+end
+fn changed($s,$topic,$tab,$pane,$kind)
+  $s.event_revision=$s.event_revision+1
+  if $s.watching and len($s.events)<256 then $s.events=push($s.events,{topic:"term."..$topic,body:{tab:$tab,pane:$pane,kind:$kind,revision:$s.event_revision}}) end
+  return $s
 end
 fn leaves($tree)
   if $tree==nil then return [] end
@@ -71,7 +76,12 @@ fn refresh_titles($s)
   for $i=0 to len($s.tabs)-1
     $tab=$s.tabs[$i]
     $title=$s.panes[to_string($tab.active_pane)].title
-    $s.tabs[$i].title=$tab.user_title ?? (if $title=="" then "mix" else $title end)
+    $title=$tab.user_title ?? (if $title=="" then "mix" else $title end)
+    if $tab.title!=$title then
+      $s.tabs[$i].title=$title
+      $s=changed($s,"tabs.changed",$tab.id,$tab.active_pane,"retitled")
+      $s=changed($s,"title.changed",$tab.id,$tab.active_pane,"retitled")
+    end
   end
   return $s
 end
@@ -96,10 +106,16 @@ fn open_tab($s,$session,$title)
   $id=$s.next_tab;$s.next_tab=$id+1;$s.revision=$s.revision+1
   $s.tabs=push($s.tabs,{id:$id,title:"mix",user_title:if $title==nil or sanitise_title($title)=="" then nil else sanitise_title($title) end,active_pane:$pane,tree:{kind:"leaf",pane:$pane},revision:$s.revision})
   $s.active=len($s.tabs)-1;$s.focus_serial=$s.focus_serial+1
+  for $event in [["tabs.changed","added"],["pane.changed","added"],["tabs.changed","selected"],["pane.changed","selected"]] $s=changed($s,$event[0],$id,$pane,$event[1]) end
   return refresh_titles($s)
 end
 fn select_tab($s,$id)
-  $s.active=tab_index($s,$id);$s.focus_serial=$s.focus_serial+1
+  $index=tab_index($s,$id)
+  if $s.active!=$index then
+    $pane=$s.tabs[$index].active_pane
+    $s=changed($s,"tabs.changed",$id,$pane,"selected");$s=changed($s,"pane.changed",$id,$pane,"selected")
+  end
+  $s.active=$index;$s.focus_serial=$s.focus_serial+1
   return $s
 end
 fn split_pane($s,$dir,$session)
@@ -112,10 +128,12 @@ fn split_pane($s,$dir,$session)
   $s.tabs[$s.active].tree=replace_leaf($tab.tree,$old,{kind:"split",dir:$dir,ratio:0.5,first:{kind:"leaf",pane:$old},second:{kind:"leaf",pane:$pane}})
   $s.tabs[$s.active].active_pane=$pane;$s.tabs[$s.active].revision=$s.revision
   $s.focus_serial=$s.focus_serial+1
+  $s=changed($s,"pane.changed",$tab.id,$pane,"added");$s=changed($s,"pane.changed",$tab.id,$pane,"selected")
   return refresh_titles($s)
 end
 fn select_pane($s,$id)
   if len($s.tabs)==0 or not contains(leaves($s.tabs[$s.active].tree),$id) then raise("NOT_FOUND","not-found: pane in active tab id="..to_string($id)) end
+  if $s.tabs[$s.active].active_pane!=$id then $s=changed($s,"pane.changed",$s.tabs[$s.active].id,$id,"selected") end
   $s.tabs[$s.active].active_pane=$id;$s.focus_serial=$s.focus_serial+1
   return refresh_titles($s)
 end
@@ -128,11 +146,17 @@ fn map_without($m,$remove)
 end
 fn close_tab($s,$id)
   $index=tab_index($s,$id);$ids=leaves($s.tabs[$index].tree);$removed=[]
+  $was_active=$index==$s.active;$old_pane=$s.tabs[$index].active_pane
   for $pane in $ids push($removed,$s.panes[to_string($pane)].handle) end
   $s.panes=map_without($s.panes,map($ids,fn($id)=to_string($id)))
   $s.tabs=concat(slice($s.tabs,0,$index),slice($s.tabs,$index+1))
   if $index<$s.active or $s.active>=len($s.tabs) then $s.active=max(0,$s.active-1) end
   $s.revision=$s.revision+1;$s.focus_serial=$s.focus_serial+1
+  for $pane in $ids $s=changed($s,"pane.changed",$id,$pane,"removed") end
+  $s=changed($s,"tabs.changed",$id,$old_pane,"removed")
+  if $was_active and len($s.tabs)>0 then
+    $tab=$s.tabs[$s.active];$s=changed($s,"tabs.changed",$tab.id,$tab.active_pane,"selected");$s=changed($s,"pane.changed",$tab.id,$tab.active_pane,"selected")
+  end
   if len($s.tabs)==0 then $s.closing=true end
   return {state:$s,removed:$removed}
 end
@@ -140,16 +164,19 @@ fn close_pane($s,$id)
   $tab=tab_of($s,$id);$index=tab_index($s,$tab);$tree=$s.tabs[$index].tree
   if len(leaves($tree))==1 then return close_tab($s,$tab) end
   $removed=[$s.panes[to_string($id)].handle]
+  $focus_changed=$s.tabs[$index].active_pane==$id
   $s.panes=map_without($s.panes,[to_string($id)])
   $s.tabs[$index].tree=without_leaf($tree,$id)
   if $s.tabs[$index].active_pane==$id then $s.tabs[$index].active_pane=sibling_focus($tree,$id) end
   $s.revision=$s.revision+1;$s.tabs[$index].revision=$s.revision;$s.focus_serial=$s.focus_serial+1
+  $s=changed($s,"pane.changed",$tab,$id,"removed")
+  if $focus_changed then $s=changed($s,"pane.changed",$tab,$s.tabs[$index].active_pane,"selected") end
   return {state:refresh_titles($s),removed:$removed}
 end
 fn move_tab($s,$id,$index)
   $from=tab_index($s,$id);$tab=$s.tabs[$from];$active=$s.tabs[$s.active].id
   $rest=concat(slice($s.tabs,0,$from),slice($s.tabs,$from+1));$to=max(0,min(len($rest),$index))
   $s.tabs=concat(slice($rest,0,$to),[$tab],slice($rest,$to));$s.active=tab_index($s,$active)
-  if $from!=$to then $s.revision=$s.revision+1;$s.tabs[$to].revision=$s.revision end
+  if $from!=$to then $s.revision=$s.revision+1;$s.tabs[$to].revision=$s.revision;$s=changed($s,"tabs.changed",$id,$tab.active_pane,"moved") end
   return $s
 end

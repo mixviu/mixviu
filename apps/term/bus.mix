@@ -11,6 +11,7 @@ fn refresh($s,$native)
   for $key in keys($s.layout.panes)
     $p=$s.layout.panes[$key];$n=$native("state",$p.handle,{})
     $s.layout.panes[$key]=merge($p,$n)
+    if $p.cols!=$n.cols or $p.rows!=$n.rows then $s.layout=$model.changed($s.layout,"pane.changed",$model.tab_of($s.layout,$p.id),$p.id,"resized") end
   end
   $s.layout=$model.refresh_titles($s.layout)
   return $s
@@ -101,9 +102,10 @@ fn dispatch($s,$command,$a,$native)
         $r=$native("type",$handle,$a);$body="DIAGNOSTIC synthetic keys queued; inspect input_written for actual writes "..identity($s,$t)
       else
         $r=$native("scroll",$handle,$a);$body=json_encode({pane:$t.pane,display_offset:$r.display_offset,history_lines:$r.history_size})
+        if $r.changed then $s.layout=$model.changed($s.layout,"pane.changed",$t.tab,$t.pane,"scrolled") end
       end
     elif $command=="term.props.watch" then
-      $s.watching=true;$body=json_encode({topics:["term.tabs.changed","term.pane.changed","term.title.changed"],revision:$s.event_revision})
+      $s.layout.watching=true;$body=json_encode({topics:["term.tabs.changed","term.pane.changed","term.title.changed"],revision:$s.layout.event_revision})
     else raise("UNKNOWN","unknown command; use HELP") end
   catch $message
     $rc=10;$body=$message

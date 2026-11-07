@@ -6,12 +6,22 @@ $native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
 $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,replies:[],watching:false,event_revision:0,zoom:0}
 $state.layout=$model.open_tab($model.initial(),$native("create","",{}),nil)
 $state.identity=$native("identity","",{})
+$state.publishing=false;$state.event_job=0
+fn pump_events($s)
+  if $s.publishing or len($s.layout.events)==0 then return $s end
+  $s.event_job=$s.event_job+1
+  $path=path_join(dirname(script_path()),"event-job.mix")
+  send "viu-local" "jobs.start" body={id:"terminal-events-"..to_string($s.event_job),owner:{kind:"terminal-events"},path:$path,source:read_file($path),command:"events.publish",args:{events:$s.layout.events}}
+  if $rc==0 then $s.publishing=true;$s.layout.events=[]
+  else viu_timer("terminal-events-retry",500,{kind:"terminal-events"}) end
+  return $s
+end
 fn publish_term($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
 fn command($s,$name,$args)
   $out=$bus.dispatch($s,$name,$args,$native)
-  publish_term($out.state);reply($out.rc,$out.body)
+  $out.state=pump_events($out.state);publish_term($out.state);reply($out.rc,$out.body)
   return $out.state
 end
 publish_term($state)
@@ -29,7 +39,13 @@ on viu.terminal.changed
   $exited=[]
   for $p in values($state.layout.panes) if $p.exited then push($exited,$p.id) end end
   for $id in $exited $state=$bus.close_removed($state,$model.close_pane($state.layout,$id),$native) end
-  if not deep_eq($old,$state.layout) then publish_term($state) end
+  if not deep_eq($old,$state.layout) then $state=pump_events($state);publish_term($state) end
+end
+on viu.job.completed
+  if $event.args.tag.owner.kind=="terminal-events" then $state.publishing=false;$state=pump_events($state) end
+end
+on viu.timer
+  if $event.args.value.kind=="terminal-events" then $state=pump_events($state) end
 end
 on viu.frame.close
   $state=$bus.shut($state,$native);publish_term($state)
@@ -48,7 +64,7 @@ on term.intent
     $state=command($state,$name,{id:to_number($a.value)})
   elif $a.id=="terminal" and $a.action=="focus" then
     for $p in values($state.layout.panes)
-      if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$model.select_pane($state.layout,$p.id);publish_term($state) end
+      if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$model.select_pane($state.layout,$p.id);$state=pump_events($state);publish_term($state) end
     end
   end
 end
