@@ -412,12 +412,16 @@ pub(crate) fn draw(
                 let colour=if is_selected{ui.visuals().selection.stroke.color}else{ui.visuals().text_color()};
                 let painter=ui.painter_at(rect);
                 if is_selected||response.hovered(){painter.rect_filled(rect,2.0,if is_selected{ui.visuals().selection.bg_fill}else{ui.visuals().widgets.hovered.weak_bg_fill});}
+                if row["branch"]==true && response.dnd_hover_payload::<DragRows>().is_some_and(|drag|drag.source!=*id) {
+                    painter.rect_stroke(rect.shrink(1.0),2.0,egui::Stroke::new(1.5,ui.visuals().selection.stroke.color),egui::StrokeKind::Inside);
+                }
                 if focused(value,row)&&value["active"]==true{painter.rect_stroke(rect.shrink(0.5),2.0,egui::Stroke::new(1.0,ui.visuals().selection.stroke.color.gamma_multiply(0.6)),egui::StrokeKind::Inside);}
                 let mut tx=rect.left()+4.0+number(row,"depth",0.0)*14.0;
                 let chevron=Rect::from_center_size(pos2(tx+8.0,rect.center().y),vec2(16.0,16.0));
                 let mut toggled=false;
                 if row["branch"]==true {
                     let toggle=ui.interact(chevron,Id::unique((ui.ctx().viewport_id(),id,key,"expand")),Sense::click());
+                    toggle.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,true,format!("{} {}",if row["expanded"]==true{"Collapse"}else{"Expand"},row["cells"][0].as_str().unwrap_or(""))));
                     geometry.insert(format!("{id}.expand.{index}"),chevron);
                     icon(ui,if row["expanded"]==true{"chevron-down"}else{"chevron-right"},chevron.shrink(2.0),ui.visuals().weak_text_color());
                     if toggle.clicked(){emit(events,id,"expand",json!({"key":key}));toggled=true;}

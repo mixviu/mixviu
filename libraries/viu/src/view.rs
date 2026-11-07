@@ -478,6 +478,7 @@ impl SceneView {
             return;
         }
         let allocated = ui.available_rect_before_wrap();
+        if node.family=="dock" { paint_outline(ui,node,allocated); }
         let key = route.map_or_else(
             || id.to_owned(),
             |(_, _, item)| format!("{}#{id}", item["id"].as_str().unwrap_or("")),
@@ -653,20 +654,16 @@ impl SceneView {
                 }
             })
             .response;
-        if let Some(outline) = color(text(node, "outline")).or_else(|| {
-            text(node, "outline")
-                .strip_prefix("design.")
-                .and_then(|name| crate::appearance::colour(ui.ctx(), name))
-        }) {
-            ui.painter().rect_stroke(
-                (if node.family=="dock" { allocated } else { response.rect }).shrink(0.5),
-                2.0,
-                egui::Stroke::new(num(node, "outline_width").unwrap_or(1.0), outline),
-                egui::StrokeKind::Inside,
-            );
-        }
+        if node.family!="dock" { paint_outline(ui,node,response.rect); }
         if node.family != "control" {
-            self.geometry.insert(key, if node.family=="dock" { allocated } else { response.rect });
+            self.geometry.insert(
+                key,
+                if node.family == "dock" {
+                    allocated
+                } else {
+                    response.rect
+                },
+            );
         }
     }
 
@@ -1352,4 +1349,10 @@ fn color(s: &str) -> Option<Color32> {
 
 fn node_padding(node: &Node, side: &str) -> f32 {
     num(node, side).or(num(node, "padding")).unwrap_or(0.0)
+}
+
+fn paint_outline(ui: &egui::Ui, node: &Node, rect: egui::Rect) {
+    if let Some(outline)=color(text(node,"outline")).or_else(||text(node,"outline").strip_prefix("design.").and_then(|name|crate::appearance::colour(ui.ctx(),name))) {
+        ui.painter().rect_stroke(rect.shrink(0.5),2.0,egui::Stroke::new(num(node,"outline_width").unwrap_or(1.0),outline),egui::StrokeKind::Inside);
+    }
 }

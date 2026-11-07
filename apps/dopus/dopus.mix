@@ -35,7 +35,7 @@ fn dp_framed($s,$contract,$cache)
   $model.location_controls={}
   for $i=0 to 1
     $side=if $i==0 then "left" else "right" end
-    $model.location_controls[$side]={id:$side.."-location",kind:"field",label:"",initial:"",properties:{cancel_on_escape:true,fill:true,notify_blur:true,placeholder:"Location",weak:$s.active!=$i}}
+    $model.location_controls[$side]={id:$side.."-location",kind:"field",label:"",initial:"",properties:{accessible_name:"Path",cancel_on_escape:true,fill:true,notify_blur:true,placeholder:"",weak:$s.active!=$i}}
   end
   if $s.form.open then
     if contains(["mkdir","rename"],$s.reservation.kind) then
