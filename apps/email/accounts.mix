@@ -29,10 +29,19 @@ fn save_password($id,$password)
 end
 fn settings_call($command,$body)
   send "settingsd" $command body=$body timeout=10
-  if $rc!=0 then raise("SETTINGS",json_encode({command:$command,rc:$rc,reply:$reply,result:$result})) end
+  if $rc!=0 then raise(if $reply.status=="conflict" then "CONFLICT" elif $reply.status=="outcome_unknown" then "OUTCOME_UNKNOWN" else "SETTINGS" end,$reply.message ?? json_encode($reply)) end
   return $reply
 end
 fn update($command,$a,$binding)
+  $new_id=if $command=="email.account.set" and $a.id==nil then "acct-"..substr(replace($identity.mint(),"-",""),0,16) else nil end
+  for $attempt=0 to 3
+    try return update_once($command,$a,$binding,$new_id)
+    catch $message,$error
+      if $error.code!="CONFLICT" or $attempt==3 then raise($error.code,$message) end
+    end
+  end
+end
+fn update_once($command,$a,$binding,$new_id)
   if type($a)!="map" then raise("INVALID_ARGUMENT","arguments must be an object") end
   if contains(keys($a),"password") and type($a.password)!="string" then raise("INVALID_ARGUMENT","password must be a string") end
   if $command=="email.account.password.set" then
@@ -47,7 +56,8 @@ fn update($command,$a,$binding)
   $entries=$view.values["email.accounts"] ?? [];$default=$view.values["email.default_account"]
   $id=$a.id;$changes={};$removed=false
   if $command=="email.account.set" then
-    if $id==nil then $id="acct-"..substr(replace($identity.mint(),"-",""),0,16) end
+    if $a.id==nil and len($entries)>=64 then raise("INVALID_ARGUMENT","At most 64 accounts are allowed") end
+    if $id==nil then $id=$new_id end
     $found=filter($entries,fn($e)=$e.id==$id)
     if $a.id!=nil and len($found)==0 then raise("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
     $entry=if len($found)>0 then $found[0] else {id:$id,name:"",url:"",email:"",ca_path:nil,enabled:true,signature:"",identities:[]} end
@@ -60,6 +70,7 @@ fn update($command,$a,$binding)
       if $entry[$key]=="" then raise("INVALID_ARGUMENT",$key.." is required") end
     end
     $entry.url=rtrim($entry.url,"/")
+    validate_entry($entry)
     if $entry.ca_path!=nil then
       if type($entry.ca_path)!="string" then raise("INVALID_ARGUMENT","ca_path must be a string or null") end
       $entry.ca_path=if trim($entry.ca_path)=="" then nil else trim($entry.ca_path) end
@@ -79,6 +90,23 @@ fn update($command,$a,$binding)
     save_password($id,$a.password)
   elif $removed then save_password($id,"") end
   return {id:$id}
+end
+fn validate_entry($entry)
+  if byte_length($entry.name)>128 or byte_length($entry.url)>2048 or byte_length($entry.email)>254 then raise("INVALID_ARGUMENT","Account text exceeds its size limit") end
+  if type($entry.enabled)!="bool" then raise("INVALID_ARGUMENT","enabled must be true or false") end
+  if type($entry.signature)!="string" or len($entry.signature)>4096 then raise("INVALID_ARGUMENT","signature exceeds its limit") end
+  try $url=url_parse($entry.url) catch $bad raise("INVALID_ARGUMENT","url must be an HTTPS URL") end
+  $authority=re_split(split($entry.url,"://")[1] ?? "","[/?#]")[0]
+  if $url.scheme!="https" or $url.host==nil or $url.host=="" or contains($authority,"@") or $url.fragment!=nil then raise("INVALID_ARGUMENT","url must be HTTPS without credentials or fragment") end
+  if $entry.ca_path!=nil and (type($entry.ca_path)!="string" or byte_length($entry.ca_path)>4096 or (trim($entry.ca_path)!="" and not starts_with(trim($entry.ca_path),"/"))) then raise("INVALID_ARGUMENT","ca_path must be an absolute path or null") end
+  if type($entry.identities)!="list" or len($entry.identities)>16 then raise("INVALID_ARGUMENT","identities must hold at most 16 identities") end
+  $seen=[]
+  for $id in $entry.identities
+    if type($id)!="map" or type($id.id)!="string" or not re_match($id.id,"^[a-z0-9-]{1,64}$") or contains($seen,$id.id) then raise("INVALID_ARGUMENT","Invalid or duplicate identity id") end
+    push($seen,$id.id)
+    if any(keys($id),fn($key)=not contains(["id","name","address","signature","reply_to"],$key)) then raise("INVALID_ARGUMENT","Unknown identity field") end
+    if type($id.name)!="string" or byte_length($id.name)>128 or type($id.address)!="string" or byte_length($id.address)>254 or type($id.signature ?? "")!="string" or len($id.signature ?? "")>4096 then raise("INVALID_ARGUMENT","Invalid identity text") end
+  end
 end
 fn entry($value)
   -- The compatibility fields keep the measured list and legacy wire tests.

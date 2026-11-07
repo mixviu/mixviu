@@ -32,7 +32,7 @@ on job.run
     else raise("UNKNOWN_COMMAND","Unknown Email command") end
     reply(0,json_encode({rc:0,body:$answer,session:$s}))
   catch $message,$error
-    $code=if contains(["UNKNOWN_ACCOUNT","NO_PASSWORD","NOT_FOUND","INVALID_ARGUMENT","SETTINGS","SECRETS","REFUSED","UNAVAILABLE"],$error.code) then $error.code else "SERVER" end
+    $code=if contains(["UNKNOWN_ACCOUNT","NO_PASSWORD","NOT_FOUND","INVALID_ARGUMENT","SETTINGS","SECRETS","REFUSED","UNAVAILABLE","CONFLICT","OUTCOME_UNKNOWN"],$error.code) then $error.code else "SERVER" end
     reply(0,json_encode({rc:10,body:{error_code:$code,message:$message}}))
   end
 end

@@ -360,7 +360,13 @@ impl Widget {
                 {
                     return Err("editor light must be bool".into());
                 }
-                for key in ["native_document", "soft_wrap", "line_numbers", "find_bar", "prose"] {
+                for key in [
+                    "native_document",
+                    "soft_wrap",
+                    "line_numbers",
+                    "find_bar",
+                    "prose",
+                ] {
                     if self.properties.get(key).is_some_and(|v| !v.is_boolean()) {
                         return Err(format!("editor {key} requires bool"));
                     }

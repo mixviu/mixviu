@@ -126,6 +126,16 @@ end
 }
 
 #[test]
+fn account_urls_refuse_credentials_before_reaching_settings_and_keep_path_at_signs() {
+    for (url,accepted) in [("https://example.test/",true),("https://example.test/path@name",true),("http://example.test/",false),("https://user:secret@example.test/",false),("https://user@example.test/",false),("https://example.test/#fragment",false)] {
+        let entry=json!({"name":"Example","url":url,"email":"user@example.test","enabled":true,"signature":"","identities":[],"ca_path":null});
+        let (rc,body)=probe_module(vec![],&format!("$m.validate_entry({entry})"),"accounts.mix",vec![]);
+        assert_eq!(rc==0,accepted,"{url}: {body}");
+        if !accepted {assert_eq!(body["code"],"INVALID_ARGUMENT");}
+    }
+}
+
+#[test]
 fn gold_writes_accept_missing_error_maps_and_preserve_partial_failures() {
     let session = r#"{account:"1",api:$e.url,token:nil,using:[]}"#;
     let (rc, body) = probe_module(
