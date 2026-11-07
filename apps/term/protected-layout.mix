@@ -1,0 +1,46 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Protected layout policy. Native callback scope owns admission, generations,
+-- leases and retained outcomes; Mix owns the affected set and tab mutations.
+$model=require("model.mix")
+$bus=require("bus.mix")
+fn refused($s,$code) return {state:$s,rc:10,body:{error_code:$code}} end
+fn apply($s,$request,$native)
+  $operation=$request.operation;$pane=$request.pane
+  $affected=$model.control_affected($s.layout,$pane,$operation)
+  if len($affected)==0 then return refused($s,"FORBIDDEN") end
+  -- This native-only call checks every supplied target and reserves the id.
+  -- Nothing before it changes focus, creates a child or closes a session.
+  $begin=$native("control.begin","",{affected:$affected})
+  if $begin.rc!=0 then return {state:$s,rc:$begin.rc,body:$begin.body} end
+  $tab=$model.tab_of($s.layout,$pane)
+  try
+    if $operation=="term.tab.new" or $operation=="term.pane.split" then
+      if $operation=="term.pane.split" then
+        if not contains(["h","horizontal","v","vertical"],$request.dir) then return refused($s,"INVALID_ARGUMENT") end
+        $s.layout=$model.select_pane($model.select_tab($s.layout,$tab),$pane)
+      end
+      $model.ensure_slot($s.layout)
+      -- Protected gold open/split use the profile defaults, not request cwd.
+      $session=$native("create","",{pane_id:$s.layout.next_pane,scrollback:$s.look.values["terminal.scrollback.lines"] ?? 1000,term:$s.look.values["terminal.env.term"] ?? "xterm-256color"})
+      if $operation=="term.tab.new" then
+        $s.layout=$model.open_tab($s.layout,$session,nil)
+        return {state:$s,rc:0,body:{tab_id:$s.layout.tabs[$s.layout.active].id}}
+      end
+      $s.layout=$model.split_pane($s.layout,if starts_with($request.dir,"h") then "h" else "v" end,$session)
+      return {state:$s,rc:0,body:{pane_id:$s.layout.tabs[$s.layout.active].active_pane}}
+    elif $operation=="term.tab.select" or $operation=="term.pane.select" then
+      $s.layout=$model.select_pane($model.select_tab($s.layout,$tab),$pane)
+      return {state:$s,rc:0,body:{selected:$request.target}}
+    elif $operation=="term.tab.close" then
+      $s=$bus.close_removed($s,$model.close_tab($s.layout,$tab),$native)
+      return {state:$s,rc:0,body:{closed:$request.target}}
+    elif $operation=="term.pane.close" then
+      $s.layout=$model.select_pane($model.select_tab($s.layout,$tab),$pane)
+      $s=$bus.close_removed($s,$model.close_pane($s.layout,$pane),$native)
+      return {state:$s,rc:0,body:{closed:$request.target}}
+    end
+    return refused($s,"UNSUPPORTED")
+  catch $message
+    return refused($s,"RESOURCE_LIMIT")
+  end
+end

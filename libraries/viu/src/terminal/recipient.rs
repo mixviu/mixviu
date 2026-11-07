@@ -27,6 +27,8 @@ use std::time::{Duration, Instant};
 mod forwarding;
 #[path = "recipient_metadata.rs"]
 mod metadata_reader;
+#[path = "recipient_layout.rs"]
+mod layout;
 
 type PaneLookup = Arc<dyn Fn(u64) -> Option<Arc<Mutex<Terminal>>> + Send + Sync>;
 type MetadataLookup = Arc<dyn Fn() -> Option<Metadata> + Send + Sync>;
@@ -45,7 +47,8 @@ pub(crate) struct Recipient {
     native: NativeSession,
     pane: PaneLookup,
     metadata: MetadataLookup,
-    replay: Mutex<Replay>,
+    replay: Arc<Mutex<Replay>>,
+    layout: super::layout_control::Bridge,
     permits: Mutex<Vec<Weak<Permit>>>,
     notice_tx: tokio::sync::mpsc::Sender<InputNotice>,
     notice_rx: Mutex<tokio::sync::mpsc::Receiver<InputNotice>>,
@@ -61,13 +64,14 @@ impl Drop for SingleFlight<'_> {
 }
 
 impl Recipient {
-    pub fn new(native: NativeSession, pane: PaneLookup, metadata: MetadataLookup) -> Self {
+    pub fn new(native: NativeSession, pane: PaneLookup, metadata: MetadataLookup, layout: super::layout_control::Bridge) -> Self {
         let (notice_tx, notice_rx) = tokio::sync::mpsc::channel(256);
         Self {
             native,
             pane,
             metadata,
-            replay: Mutex::default(),
+            replay: Arc::default(),
+            layout,
             permits: Mutex::default(),
             notice_tx,
             notice_rx: Mutex::new(notice_rx),
@@ -135,6 +139,9 @@ impl Recipient {
             admitted.operation.as_str(),
             "term.session" | "term.list" | "term.tabs" | "term.panes"
         );
+        if matches!(admitted.capability, Capability::ManageLayout | Capability::Terminate) {
+            return self.layout(connection, parent, own, admitted).await;
+        }
         if !metadata_read && !matches!(admitted.operation.as_str(), "term.snapshot" | "term.type") {
             return Reply::error("UNSUPPORTED");
         }

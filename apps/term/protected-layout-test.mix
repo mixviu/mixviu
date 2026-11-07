@@ -1,0 +1,59 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix");$p=require("protected-layout.mix")
+fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+fn session($id) return {handle:"vt-"..to_string($id),pid:1000+$id} end
+fn layout()
+  $s=$m.open_tab($m.initial(),session(1),nil)
+  $s=$m.split_pane($s,"v",session(2))
+  $s=$m.open_tab($s,session(3),nil)
+  $s=$m.open_tab($s,session(4),nil)
+  return {layout:$s,look:{values:{}},closed:false}
+end
+$s=layout()
+check(deep_eq($m.control_affected($s.layout,1,"term.tab.close"),[1,2]),"inactive tab close leaves current tab alone")
+check(deep_eq($m.control_affected($s.layout,3,"term.tab.select"),[3,4]),"select requires source and destination tabs")
+check(deep_eq($m.control_affected($s.layout,1,"term.pane.split"),[1,2,4]),"split affects target siblings and former active tab")
+check(deep_eq($m.control_affected($s.layout,3,"term.pane.close"),[3,4]),"inactive final pane close needs its replacement")
+check(deep_eq($m.control_affected($s.layout,4,"term.tab.close"),[3,4]),"last tab replacement is previous tab")
+$s.layout=$m.select_tab($s.layout,2)
+check(deep_eq($m.control_affected($s.layout,3,"term.tab.close"),[3,4]),"middle tab replacement is following tab")
+check(deep_eq($m.control_affected($s.layout,99,"term.tab.select"),[]),"missing target never falls back to active pane")
+$s.layout=$m.select_tab($s.layout,1)
+check(deep_eq($m.control_affected($s.layout,3,"term.pane.close"),[1,2,3,4]),"closing inactive singleton needs source, target and following replacement")
+-- Denial happens before child creation, cleanup or local focus changes.
+fn denied($op,$handle,$args)
+  check($op=="control.begin","denial must have no native side effects")
+  check(deep_eq($args.affected,[1,2,4]),"callback derives actual affected panes")
+  return {rc:10,body:{error_code:"FORBIDDEN"}}
+end
+$s=layout();$target={pane_id:"1",pane_generation:"9",instance_id:repeat("a",32),incarnation:repeat("b",32)}
+$out=$p.apply($s,{operation:"term.pane.split",pane:1,dir:"v",target:$target},fn($op,$handle,$args)=denied($op,$handle,$args))
+check($out.rc==10 and deep_eq($out.state,$s),"denied split preserves complete state")
+fn native($op,$handle,$args)
+  if $op=="control.begin" then return {rc:0,body:{begun:true}} end
+  if $op=="create" then
+    check($args.pane_id==5 and $args.cwd==nil,"new child uses explicit logical identity and profile cwd")
+    return session(5)
+  end
+  if $op=="close" then check($handle=="vt-3" or $handle=="vt-1" or $handle=="vt-2","cleanup owns removed pane only");return {} end
+  raise("TEST","unexpected native operation")
+end
+$out=$p.apply($s,{operation:"term.tab.select",pane:1,target:$target},fn($op,$handle,$args)=native($op,$handle,$args))
+check($out.rc==0 and $out.state.layout.active==0 and $out.state.layout.tabs[0].active_pane==1 and deep_eq($out.body,{selected:$target}),"protected tab selection also focuses explicit pane")
+$out=$p.apply($s,{operation:"term.pane.split",pane:1,dir:"horizontal",target:$target},fn($op,$handle,$args)=native($op,$handle,$args))
+check($out.rc==0 and $out.body.pane_id==5 and deep_eq($m.leaves($out.state.layout.tabs[0].tree),[1,5,2]),"split acts on explicit inactive target")
+$out=$p.apply($s,{operation:"term.pane.split",pane:1,dir:"invalid",target:$target},fn($op,$handle,$args)=native($op,$handle,$args))
+check($out.rc==10 and $out.body.error_code=="INVALID_ARGUMENT" and deep_eq($out.state,$s),"invalid split direction cannot steal focus")
+$out=$p.apply($s,{operation:"term.tab.new",pane:1,target:$target,cwd:"/ignored"},fn($op,$handle,$args)=native($op,$handle,$args))
+check($out.rc==0 and $out.body.tab_id==4 and $out.state.layout.tabs[$out.state.layout.active].active_pane==5,"new tab selects new pane")
+$out=$p.apply($s,{operation:"term.pane.close",pane:3,target:$target},fn($op,$handle,$args)=native($op,$handle,$args))
+check($out.rc==0 and $out.state.layout.tabs[$out.state.layout.active].id==3 and deep_eq($out.body,{closed:$target}),"inactive singleton close selects following replacement")
+$out=$p.apply($s,{operation:"term.tab.close",pane:1,target:$target},fn($op,$handle,$args)=native($op,$handle,$args))
+check($out.rc==0 and $out.state.layout.tabs[$out.state.layout.active].id==3 and len(keys($out.state.layout.panes))==2,"inactive tab close preserves active tab and removes all its panes")
+fn failed($op,$handle,$args)
+  if $op=="control.begin" then return {rc:0,body:{}} end
+  raise("SPAWN","child refused")
+end
+$out=$p.apply($s,{operation:"term.pane.split",pane:1,dir:"v",target:$target},fn($op,$handle,$args)=failed($op,$handle,$args))
+check($out.rc==10 and $out.body.error_code=="RESOURCE_LIMIT" and $out.state.layout.active==0 and $out.state.layout.tabs[0].active_pane==1 and len(keys($out.state.layout.panes))==4,"spawn failure retains gold focus change without inventing a child")
+print("term protected layout: affected authority sets, explicit targets, denial, mutation and spawn failure checked")

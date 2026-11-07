@@ -34,6 +34,27 @@ fn tab_of($s,$pane)
   end
   raise("NOT_FOUND","not-found: pane id="..to_string($pane))
 end
+-- Gold TabSet::control_affected: source, destination and replacement tabs
+-- can all lose focus or geometry. Return leaves in tab/tree order.
+fn control_affected($s,$pane,$command)
+  $target=nil
+  for $i=0 to len($s.tabs)-1
+    if contains(leaves($s.tabs[$i].tree),$pane) then $target=$i;break end
+  end
+  if $target==nil then return [] end
+  $closes=$command=="term.tab.close" or ($command=="term.pane.close" and len(leaves($s.tabs[$target].tree))==1)
+  $replacement=nil
+  if $closes and ($command=="term.pane.close" or $target==$s.active) and len($s.tabs)>1 then
+    $replacement=if $target+1<len($s.tabs) then $target+1 else $target-1 end
+  end
+  $out=[]
+  for $i=0 to len($s.tabs)-1
+    if $i==$target or $i==$replacement or ($command!="term.tab.close" and $i==$s.active) then
+      $out=concat($out,leaves($s.tabs[$i].tree))
+    end
+  end
+  return $out
+end
 fn resolve($s,$pane,$tab)
   if $tab!=nil then $index=tab_index($s,$tab) end
   if $pane!=nil then

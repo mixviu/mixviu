@@ -7,6 +7,7 @@ $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,r
 $state.layout=$model.open_tab($model.initial(),$native("create","",{pane_id:1}),nil)
 $state.identity=$native("identity","",{})
 $actions=require("actions.mix");$controls=require("controls.mix")
+$protected_layout=require("protected-layout.mix")
 $font=require("font-persistence.mix");$state.font=$font.initial();$state.font_job=0
 $settings=require("../../libraries/viu/mix/session.mix")
 $state.version=$ctx.version;$state.build_line=$ctx.build_line;$state.choice={};$state.bindings={};$state.effective={};$state.pastes={}
@@ -130,6 +131,12 @@ on viu.terminal.changed
   for $p in values($state.layout.panes) if $p.exited then push($exited,$p.id) end end
   for $id in $exited $state=$bus.close_removed($state,$model.close_pane($state.layout,$id),$native) end
   if not deep_eq($old,$state.layout) then $state=pump_events($state);publish_term($state) end
+end
+on viu.terminal.control
+  $request=$native("control.inspect","",{})
+  $out=$protected_layout.apply($state,$request,$native)
+  $state=pump_events($out.state);publish_term($state)
+  $finished=$native("control.finish","",{rc:$out.rc,body:$out.body})
 end
 on viu.job.completed
   if $event.args.tag.owner.kind=="terminal-events" then $state.publishing=false;$state=pump_events($state);if $state.closed then publish_term($state) end end

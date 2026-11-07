@@ -133,7 +133,7 @@ impl Sessions {
                 let metadata =
                     Arc::new(move || Some(state.upgrade()?.lock().ok()?.metadata.clone()));
                 let control: Arc<dyn super::session_actor::ControlLane> = Arc::new(
-                    super::recipient::Recipient::new(handle.clone(), pane, metadata),
+                    super::recipient::Recipient::new(handle.clone(), pane, metadata, self.layout.clone()),
                 );
                 handle.install_control(&control);
                 native.control = Some(control);
@@ -778,6 +778,54 @@ mod tests {
                 assert_eq!(invoke(command,json!({"target":target,"operation_id":operation})).await.1["error_code"],"UNKNOWN_OUTCOME");
             }
             assert!(sessions.call("state","vt-1",json!({})).is_ok());
+            // Exercise the real verified recipient -> native mailbox scope ->
+            // authored Mix reducer -> retained reply path. The fixture owns
+            // only the pump; layout policy is loaded from the real app module.
+            let stopped=Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop=stopped.clone();let owned=sessions.clone();
+            let pump=std::thread::spawn(move || {
+                let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
+                let source=r#"$m=require(MODEL)
+$policy=require(POLICY)
+$native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
+$s={layout:$m.open_tab($m.initial(),{handle:"vt-1",pid:1},nil),look:{values:{}},closed:false}
+on viu.terminal.control
+  $request=$native("control.inspect","",{})
+  $out=$policy.apply($s,$request,$native);$s=$out.state
+  $published=$native("metadata","",$m.metadata($s.layout))
+  $finished=$native("control.finish","",{rc:$out.rc,body:$out.body})
+end
+"#.replace("MODEL",&serde_json::to_string(&root.join("model.mix")).unwrap())
+    .replace("POLICY",&serde_json::to_string(&root.join("protected-layout.mix")).unwrap());
+                let bridge=owned.layout_bridge();
+                let mut app=crate::runtime::Runtime::with_services(8,Arc::new(||{}),None,crate::runtime::Services {terminals:Some(owned),..Default::default()});
+                app.load(crate::runtime::Program {path:root.join("protected-test.mix"),source,scene:"test".into(),citizen:"term".into()}).unwrap();
+                while !stop.load(Ordering::Acquire) {
+                    while let Some(done)=app.try_completion() {assert!(done.error.is_none(),"{:?}",done.error);}
+                    while let Some(job)=bridge.take() {app.native_event("viu.terminal.control".into(),json!({}),job.context()).unwrap();}
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+            });
+            let selection=json!({"target":target,"request_id":"6","request_epoch":epoch});
+            let selected=invoke("term.tab.select",selection.clone()).await;
+            assert_eq!(selected,(0,json!({"selected":target,"operation_id":"6"})));
+            assert_eq!(invoke("term.tab.select",selection).await,selected);
+            let invalid=json!({"target":target,"request_id":"7","request_epoch":epoch,"dir":"invalid"});
+            assert_eq!(invoke("term.pane.split",invalid.clone()).await.1["error_code"],"INVALID_ARGUMENT");
+            assert_eq!(invoke("term.pane.split",invalid).await.1["error_code"],"INVALID_ARGUMENT");
+            let split=json!({"target":target,"request_id":"8","request_epoch":epoch,"dir":"v"});
+            let split_reply=invoke("term.pane.split",split.clone()).await;
+            assert_eq!(split_reply,(0,json!({"pane_id":2,"operation_id":"8"})));
+            assert_eq!(invoke("term.pane.split",split).await,split_reply);
+            // A sibling now changes geometry too. Omitted authority refuses
+            // before reservation and a stale sibling generation also refuses.
+            let denied=json!({"target":target,"request_id":"9","request_epoch":epoch});
+            assert_eq!(invoke("term.tab.select",denied.clone()).await.1["error_code"],"FORBIDDEN");
+            let mut denied_stale=denied;denied_stale["affected"]=json!([{"instance_id":parent.instance_id,"incarnation":parent.incarnation,"pane_id":"2","pane_generation":"0"}]);
+            assert_eq!(invoke("term.tab.select",denied_stale).await.1["error_code"],"FORBIDDEN");
+            assert_eq!(invoke("term.session",json!({"target":target})).await.1["request_high_water"],"8");
+            stopped.store(true,Ordering::Release);pump.join().unwrap();
+            sessions.call("close","vt-2",json!({})).unwrap();
             caller.client().close().await;
         });
     }
