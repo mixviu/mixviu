@@ -338,7 +338,8 @@ fn reader_preview_ownership_follows_installed_reads_and_retires_stale_outputs() 
     let bundle = Bundle::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
         &["--fixture".into()],
-    ).unwrap();
+    )
+    .unwrap();
     let mut program = bundle.program;
     program.source.push_str(r#"
 on test.preview.fence
@@ -347,6 +348,7 @@ on test.preview.fence
   $attachments_inline=true;$mode="mail";$message={id:"current",attachments:[]}
   $preview_owner={account:"a",generation:2,email:"current",ticket:"installed"};$preview_epoch=2
   $preview_entries={current:{state:"shown",path:"current.png"}}
+  viu_private_directory(viu_app_dirs("email").state)
   $path=path_join(viu_app_dirs("email").state,"stale-preview.png");viu_atomic_replace($path,"old output")
   $preview_jobs={old:{ticket:"old",epoch:1,blob:"previous",destination:$path}}
   preview_completed({account:"a",generation:1,entry:$entries[0],args:{ticket:"old"}},{rc:0,body:{}})
@@ -357,9 +359,14 @@ end
     let (_root, mut runtime, rx) = isolated_runtime();
     runtime.load(program).unwrap();
     complete(&runtime, &rx);
-    runtime.event("test.preview.fence".into(), json!({})).unwrap();
+    runtime
+        .event("test.preview.fence".into(), json!({}))
+        .unwrap();
     let reply = complete(&runtime, &rx).reply.unwrap();
-    assert_eq!(reply.body, json!({"epoch":2,"current":"shown","jobs":0,"removed":true}));
+    assert_eq!(
+        reply.body,
+        json!({"epoch":2,"current":"shown","jobs":0,"removed":true})
+    );
 }
 
 #[test]
