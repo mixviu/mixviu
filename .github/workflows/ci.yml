@@ -19,6 +19,11 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   RUST_BACKTRACE: "1"
+  # Hosted runners have ~14 GB free; full debug info for the whole workspace
+  # overflows it (the linker dies with SIGBUS). Line tables keep file:line in
+  # backtraces at a fraction of the size.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
 jobs:
   changes:
@@ -116,6 +121,8 @@ jobs:
       - run: cargo build --locked -p mix --bin mix
       - run: target/debug/mix tools/ci.mix clippy
       - run: target/debug/mix tools/ci.mix test
+      - if: always()
+        run: df -h / /__w
 
   ci-ok:
     if: always()
