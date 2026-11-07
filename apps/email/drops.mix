@@ -21,7 +21,7 @@ fn mail_drop($a)
   for $path in $documents
     if len(keys($drop_pending))>=8 then $status="A message is being opened";break end
     $drop_serial=$drop_serial+1;$ticket=to_string($drop_serial)
-    $tag={ticket:$ticket,account:$account,generation:$wire_generations[$account] ?? 0,attachments:if $first then $files else [] end};$first=false
+    $tag={ticket:$ticket,account:$account,generation:$wire_generations[$account] ?? 0,path:$path,attachments:if $first then $files else [] end};$first=false
     $worker=path_join(dirname(script_path()),"document-job.mix")
     send "viu-local" "jobs.start" id="drop-"..$ticket owner={drop:$tag} path=$worker source=read_file($worker) command="job.run" args={operation:"read",path:$path}
     if $rc==0 then $drop_pending[$ticket]=$tag else $status="Mail worker unavailable" end
@@ -32,7 +32,11 @@ fn mail_drop_completed($tag,$rc,$body)
   if $drop_pending[$tag.ticket]==nil then return end
   $drop_pending=delete($drop_pending,$tag.ticket)
   if wire_entry($tag.account)==nil or $tag.generation!=($wire_generations[$tag.account] ?? 0) then $status="The account reconnected while this was pending; try again";return end
-  if $rc!=0 then $status=$body.message;return end
+  if $rc!=0 then
+    $opened=composer_open({account:$tag.account,attachments:concat([$tag.path],$tag.attachments)})
+    if $opened.rc!=0 then $status=$opened.body.message end
+    return
+  end
   $opened=composer_open(merge($body.document,{account:$tag.account}))
   if $opened.rc!=0 then $status=$opened.body.message;return end
   if len($tag.attachments)>0 then composer_attachments("email.compose.attachment.add",{window:$opened.body.window,paths:$tag.attachments}) end

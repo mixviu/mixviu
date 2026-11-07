@@ -112,12 +112,17 @@ fn composer_save($key)
 end
 $compose_owner_closing=false;$compose_root=nil
 fn composer_launch()
-  global $compose_launch_pending,$compose_root,$status
+  global $compose_launch_pending,$compose_root,$status,$compose_restore,$composers
   if not $compose_launch_pending then return end
   if len($entries)==0 then return end
   $compose_launch_pending=false
   $a={};if $compose_launch_document!=nil then $a.document=if starts_with($compose_launch_document,"/") then $compose_launch_document else path_join(viu_context().cwd,$compose_launch_document) end end
+  if $compose_launch_document!=nil then $compose_restore=[] end
   $opened=composer_open($a)
+  if $opened.rc!=0 and $compose_launch_document!=nil then
+    $error=$opened.body.message;$opened=composer_open({})
+    if $opened.rc==0 then $composers[$opened.body.window].error=$error end
+  end
   if $opened.rc==0 then $compose_root=$opened.body.window else $status=$opened.body.message end
 end
 fn composer_owner_close()
@@ -389,13 +394,14 @@ fn composer_document_completed($tag,$rc,$body)
   else composer_document_apply($tag.key,$body.document) end
 end
 fn composer_document_apply($key,$doc)
-  global $composers,$compose_focused
+  global $composers,$compose_focused,$compose_mru
   $old=$composers[$key];$opened=composer_open(merge($doc,{account:$old.account}))
   if $opened.rc!=0 then $composers[$key].error=$opened.body.message;return $opened end
   $next=$composers[$opened.body.window];$next.body=$doc.body
   $path=path_join(viu_app_dirs("email").state,"drafts/"..$old.draft_id..".json")
   if exists($path) then viu_files("remove",{path:$path}) end
-  $composers=delete($composers,$opened.body.window);$composers[$key]=$next;$compose_focused=$key
+  $composers=delete($composers,$opened.body.window);$composers[$key]=$next
+  $compose_mru=filter($compose_mru,fn($k)=$k!=$opened.body.window);composer_focus($key)
   return {rc:0,body:{}}
 end
 fn composer_load_drafts()
