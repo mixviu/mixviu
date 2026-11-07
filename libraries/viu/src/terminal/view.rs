@@ -212,7 +212,14 @@ mod tests {
                 },
                 0,
             ),
-            (vec![egui::Event::Copy, egui::Event::ModifiersChanged(egui::Modifiers::NONE)], shifted, 1),
+            (
+                vec![
+                    egui::Event::Copy,
+                    egui::Event::ModifiersChanged(egui::Modifiers::NONE),
+                ],
+                shifted,
+                1,
+            ),
         ] {
             let mut events = Vec::new();
             input_events.insert(0, egui::Event::ModifiersChanged(modifiers));
@@ -495,10 +502,7 @@ impl Views {
                     egui::Event::Text(text)
                         if !self.composition.has_owner() && !self.composition.stale() =>
                     {
-                        terminal.keys(
-                            &input::typed(&text, self.modifiers),
-                            Instant::now(),
-                        )
+                        terminal.keys(&input::typed(&text, self.modifiers), Instant::now())
                     }
                     egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
                         if self.composition.preedit(&text, pane_id) {
