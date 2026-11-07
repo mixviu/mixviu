@@ -183,18 +183,18 @@ on backdrop.view.set
       $alerts=$snapshot.alerts;$snapshot=$train.fresh($candidate.hours);$snapshot.alerts=$alerts;$train_generation=$train_generation+1
     end
     $live=$candidate;$s.view=$event.args.view
-    $result={view:$s.view}
-    publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.set","bus",$event.args,$result)))
+    $view_reply={view:$s.view}
+    publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.set","bus",$event.args,$view_reply)))
     $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
-    show_state($s);reply(0,json_encode($result))
+    show_state($s);reply(0,json_encode($view_reply))
   catch $message reply(10,json_encode({error_code:"ARGUMENT",message:"bad parameters for command \""..$event.command.."\": "..$message})) end
 end
 on backdrop.view.cycle
   try
-    $s.view=$views.cycle($s.view,$event.args);$result={view:$s.view}
-    publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.cycle","bus",$event.args,$result)))
+    $s.view=$views.cycle($s.view,$event.args);$view_reply={view:$s.view}
+    publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.cycle","bus",$event.args,$view_reply)))
     $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
-    show_state($s);reply(0,json_encode($result))
+    show_state($s);reply(0,json_encode($view_reply))
   catch $message reply(10,json_encode({error_code:"ARGUMENT",message:"bad parameters for command \""..$event.command.."\": "..$message})) end
 end
 on viu.job.completed

@@ -206,6 +206,13 @@ impl App {
     }
 }
 #[test]
+fn view_reply_survives_native_model_and_job_sends() {
+    let mut app = App::new();
+    assert_eq!(app.call("backdrop.view.set", json!({"view":"wallpaper"})), (0, json!({"view":"wallpaper"})));
+    assert_eq!(app.call("backdrop.view.cycle", json!({"dir":"next"})), (0, json!({"view":"train"})));
+    assert_eq!(app.call("backdrop.view.cycle", json!({"dir":"prev"})), (0, json!({"view":"wallpaper"})));
+}
+#[test]
 fn backdrop_colours_modes_outputs_and_refusals_use_mix() {
     let mut app = App::new();
     let image = app.png("fixture.png", [23, 45, 67, 255]);
