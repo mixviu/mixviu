@@ -34,7 +34,7 @@ impl Profile {
         binding.validate().map_err(|e| anyhow::anyhow!(e.message))?;
         let root = self.root.unwrap_or_else(|| {
             config::path(config::Dir::Etc)
-                .join("settings")
+                .join("settingsd")
                 .join(&binding.profile)
         });
         Ok((root, binding))
