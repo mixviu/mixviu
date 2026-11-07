@@ -263,7 +263,8 @@ impl Host {
                 }
                 self.drive_serial += 1;
                 let id = self.drive_serial;
-                if let Some(answer) = toolkit::drive::request(ctx, id, suffix, &r.args) {
+                if let Some(mut answer) = toolkit::drive::request(ctx, id, suffix, &r.args) {
+                    crate::app_facilities::remap(ctx, &mut answer.body);
                     let _ = r.reply.send((answer.rc, answer.body));
                 } else {
                     self.drive_replies.insert(id, r.reply);
@@ -409,8 +410,9 @@ impl Host {
             self.drive_answers.extend(toolkit::drive::logic(ctx));
         }
         if self.inflight.is_empty() && self.view.current_revision_drawn() {
-            while let Some(answer) = self.drive_answers.pop_front() {
+            while let Some(mut answer) = self.drive_answers.pop_front() {
                 if let Some(reply) = self.drive_replies.remove(&answer.id) {
+                    crate::app_facilities::remap(ctx, &mut answer.body);
                     let _ = reply.send((answer.rc, answer.body));
                 }
             }

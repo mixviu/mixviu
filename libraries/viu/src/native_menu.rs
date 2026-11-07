@@ -218,11 +218,21 @@ mod tests {
     fn hosted_tail_commands_keep_their_owned_identity_across_menu_frames() {
         let ctx = egui::Context::default();
         crate::appearance::install(&ctx);
+        toolkit::drive::install(&ctx, "menu-identity-probe");
         let menus = serde_json::json!([{"label":"File","children":[{"id":"file.refresh","label":"Refresh","enabled":true}]}]);
         let mut tail = None;
         for _ in 0..3 {
             ctx.run_ui(egui::RawInput::default(), |ui| {
                 super::draw(ui, &menus, false, Some("monitor"));
+                let mut answer = toolkit::drive::request(
+                    ui.ctx(),
+                    1,
+                    "ui.menu.list",
+                    &serde_json::json!({}),
+                )
+                .expect("menu list answers from the drawn native model");
+                crate::app_facilities::remap(ui.ctx(), &mut answer.body);
+                assert_eq!(answer.body["menus"][0]["rows"][0]["id"], "file.refresh");
                 let current = super::native_id(ui.ctx(), "view.search").unwrap();
                 if let Some(previous) = tail {
                     assert_eq!(current, previous);
