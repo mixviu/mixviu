@@ -1,0 +1,19 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC heavy worker only. Diagnostic release bytes, not final acceptance.
+$rc=0
+try
+  for $argv in [["cargo","fmt","-p","viu"],["cargo","test","--locked","--release","-p","viu","--test","email_frame","--","--nocapture"],["cargo","build","--locked","--release","-p","viu-engine","--bin","viu"]]
+    $result=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6",TMPDIR:"/dev/shm"}});print($result)
+    if not $result.ok then $rc=$result.exit_code ?? 124;break end
+  end
+  if $rc==0 then
+    $sha=trim(run_argv_must(["git","rev-parse","HEAD"]));$out="/build/email-release-artifacts/"..$sha;mkdir($out,{parents:true})
+    copy("target/release/viu",$out.."/viu")
+    $receipt={source:$sha,profile:"release",sha256:hash_file($out.."/viu","sha256"),artifact:$out.."/viu"}
+    write_file($out.."/viu.json",json_encode($receipt));print($receipt)
+  end
+finally
+  print("EMAIL_FRAME_PATCH_BEGIN");print(run_argv_must(["git","diff","--binary"]));print("EMAIL_FRAME_PATCH_END")
+  run_argv_must(["git","checkout","-q","--","."])
+end
+exit($rc)
