@@ -235,3 +235,56 @@ edge integration, search and all terminal Prefs; release/native acceptance
 and matched real-session capture/diff/inspection. No install or VT changes.
 
 branch: lab/parity-term; head SHA: 1d498ca1d92eea7ccb188ae8bc023689850e6670 (code; receipt HEAD contains this checkpoint); open items: new widget validation, full Mix app/Bus/Prefs and verified sessions, release and visual acceptance; CBC job ids: term-native-r2-3ef3907-a1 (129 pass, one new-test failure), term-native-r2-repair-a1 (130 pass; foreign policy failure), term-widget-r2-1d498ca (next await).
+
+
+## Term widget continuation — extraction green, first app load under diagnosis
+
+Native checkpoint source `f8b976e2cea7cc664c849982c98632759ec464b5`.
+CBC `term-widget-r2-view-repair-a1` returned 0 on cbc2: 133 native tests
+passed, five original ignores, Mix frame and selector/replay tests passed,
+foreign dependency trees clean under D2/D6, generic debug host built, no
+worker diff. Complete saved log read:
+`20261107-123109-cbc2-f8b976e2cea7-term-widget-r2-view-repair-a1-20d3c64b.log`.
+Debug artifact SHA256
+`a75082e700d5e6a051bc4bd99537efd072ed5ffac56d8cc69037623482d3ff10`;
+source/byte receipt fetched and verified from /build/term-artifacts on CBC.
+This is not a release receipt or full app acceptance.
+
+Applied the earlier complete CBC fmt patch. Fixed pinned egui API use
+(run_ui and structured Preedit) and the headless harness texture-delta
+ownership. Original native tests and assertions retained. Synthetic type
+now refuses missing pane/tab selectors and foreign process tokens, and
+Mix retains a 128-entry mutation replay FIFO. Full Bus validation remains
+open. The process instance uses gold OS-random safe-integer semantics.
+
+Latest code `78b984ae8eae` adds the pure Mix tab/pane lifecycle reducer,
+selector agreement and tree composition tests, bounded generic native split
+rendering, and an actual-bundle load regression probe. Model tests and lint
+pass. The reducer is not yet wired to full tabs/panes/menu/Bus commands.
+
+Private archive `term-parity-20261107` contains isolated native scripts and
+failed runs with readbacks and closure receipts. Pinned installed gold
+reports 8779f33284b7. Gold real-session output and 900×560 native capture
+succeeded in native.t5YeUT and native.gWIe4o. The latter normal Quit returned
+success but exceeded the harness 8-second exit bound; finally stopped the
+recorded owned processes. No C1 closure claim yet. Earlier --comp launch
+argument was a harness error: pinned Term takes the compositor via environment.
+
+Candidate first behaviour load remains unavailable, so there is NO matched
+image pair or SSIM result. Corrected the independently found icon mismatch
+to gold FileTerminal (file-terminal). Artifact relocation also requires an
+explicit native prefix in the isolated harness. Neither correction alone
+resolved loading. Later host callbacks mask the original error. A private
+diagnostic bundle catch variant is retained separately and is never used
+as parity evidence. New term_bundle integration test isolates first load
+and will report the original cause without those callbacks.
+
+CBC `term-widget-r2-bundle-probe` at exact code `78b984ae8eae` is queued; both
+workers are occupied by integration jobs. Registering automatic agentd
+resumption on this existing job. Next: read full log, repair the first-load
+cause, apply fmt diff and repeat exact source; retake native witness, then
+wire the tested Mix reducer and complete all remaining inventory/Bus/Prefs,
+verified supervisor and native input/clipboard/search, release captures.
+No Fable question, no install, no VT changes. NOT ACCEPTED.
+
+branch: lab/parity-term; head SHA: 78b984ae8eae (code; receipt HEAD contains this checkpoint); open items: first bundle load, app/Bus/Prefs and verified session completion, release and matched visual acceptance; CBC job ids: term-widget-r2-1d498ca-a1 (compile failure), term-widget-r2-api-repair-a1 (132 pass, harness delta failure), term-widget-r2-view-repair-a1 (133 pass, host build and foreign gate green), term-widget-r2-bundle-probe (queued).

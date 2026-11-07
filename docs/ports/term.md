@@ -58,3 +58,27 @@ Added conformance witnesses cover cursor address/insert/erase/alternate screen,
 all UTF-8 and escape chunk boundaries in a representative stream, scrollback
 and selection, and real Mix PTY input/resize/exit/reaping. Gold's GPU/CPU parity
 and IME tests are included in the native gate. Results remain pending.
+
+## Native widget checkpoint: tested extraction, app load open
+
+At `f8b976e2cea7cc664c849982c98632759ec464b5`, CBC
+`term-widget-r2-view-repair-a1` passed 133 tests (five original ignores),
+Mix frame and wire tests, the foreign dependency closure gate and generic
+host debug build, with no worker diff. The complete saved log was read.
+This is native extraction evidence, not app or release acceptance.
+
+Native sessions and the terminal widget are wired through generic Services
+and SceneView. Mix has explicit selector validation and bounded replay for
+synthetic input. A pure Mix tab/pane reducer now has checked tree traversal,
+sibling focus, selector agreement, reorder revisions and the 32-slot cap.
+It is not yet connected to the full app Bus/menu surface. Mix-authored split
+composition is supported by the compound widget; its latest source is queued
+for validation.
+
+A private headless run captured pinned gold at 900×560 after deterministic
+real Mix command output. The candidate failed initial behaviour loading, so
+no matched pair or visual metric exists. Gold FileTerminal is now correctly
+named `file-terminal`. The remaining first load error is obscured by later
+callbacks; a new isolated actual-bundle test retains it for diagnosis.
+The debug artifact and diagnostic bundle variants are not accepted bytes.
+All recorded run processes were stopped; failed runs remain private.
