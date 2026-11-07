@@ -28,8 +28,8 @@ fn viu_app_call($id,$command,$body,$wait_seconds,$call_seconds=10)
   while monotonic()<$deadline
     sleep(min(0.25,$deadline-monotonic()))
     if monotonic()>=$deadline then break end
-    $reply=viu_app_raw($service,$command,$body,$call_seconds)
-    if not viu_app_absent($reply,$service) then return $reply end
+    $attempt=viu_app_raw($service,$command,$body,$call_seconds)
+    if not viu_app_absent($attempt,$service) then return $attempt end
   end
   return {rc:10,stage:"wait",body:{error_code:"NOT_RUNNING",message:"Application did not register before the wait limit"}}
 end
