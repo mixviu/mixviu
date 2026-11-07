@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=Viu widget gallery (Mix on generic viu) for session %i
+Requires=viud@%i.service
+After=viud@%i.service
+PartOf=session@%i.target
+
+[Service]
+User=mix
+EnvironmentFile=@{etc}/session/%i.env
+ExecStart=@{prefix}/bin/viu run @{share}/mixviu/apps/gallery
+Restart=no
