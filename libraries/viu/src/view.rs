@@ -921,7 +921,7 @@ impl SceneView {
                         self.layout_change(
                             node,
                             key,
-                            json!({"child":child,"fraction":fraction}),
+                            json!({"child":child,"fraction":serde_json::from_str::<Value>(&fraction.to_string()).expect("finite panel fraction")}),
                             events,
                         );
                     }

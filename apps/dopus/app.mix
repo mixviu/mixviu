@@ -61,8 +61,6 @@ on dopus.open
 end
 on dopus.theme.set
   dp_request({command:"dopus.theme.set",args:$event.args})
-  send "viu-local" "native.theme" body=$state.appearance_choice
-  if $rc!=0 then raise("THEME",to_string($result)) end
 end
 on dopus.quit
   dp_request({command:"dopus.quit",args:$event.args})

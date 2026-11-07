@@ -105,21 +105,16 @@ fn dp_request($request)
         $candidate.reply={accepted:len($paths),opened:len($paths)>0}
       elif $name=="dopus.theme.set" then
         if $candidate.headless ?? false then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
-        if $a.mode!=nil then
-          if not contains(["dark","light"],$a.mode) then raise("INVALID_ARGUMENT","Unknown theme mode") end
-          $candidate.appearance.mode=$a.mode
-        end
+        $invalid=nil
         if $a.scheme!=nil then
-          if $contract.schemes[$a.scheme]==nil then raise("INVALID_ARGUMENT","Unknown colour scheme") end
-          $candidate.appearance.scheme=$a.scheme
+          if type($a.scheme)!="string" or $contract.schemes[$a.scheme]==nil then $invalid="unknown scheme "..json_encode($a.scheme)
+          else $candidate.appearance.scheme=$a.scheme;$candidate.appearance_choice.scheme=$a.scheme end
         end
-        if $a.style!=nil then
-          if not contains($contract.styles,$a.style) then raise("INVALID_ARGUMENT","Unknown widget style") end
-          $candidate.appearance.style=$a.style
+        if $a.mode!=nil then
+          if not contains(["dark","light"],$a.mode) then $invalid="unknown mode "..json_encode($a.mode)
+          else $candidate.appearance.mode=$a.mode;$candidate.appearance_choice.mode=$a.mode end
         end
-        $candidate.reply={scheme:$candidate.appearance.scheme,mode:$candidate.appearance.mode}
-        if $a.style!=nil then $candidate.reply.style=$candidate.appearance.style end
-        for $key in ["mode","scheme","style"] if $a[$key]!=nil then $candidate.appearance_choice[$key]=$a[$key] end end
+        $candidate.reply=if $invalid!=nil then {error_code:"INVALID_ARGUMENT",message:$invalid,reason:nil} else {scheme:$candidate.appearance.scheme,mode:$candidate.appearance.mode} end
       elif $name=="dopus.session" then
         $candidate.window=$a.window ?? {}
         $appearance={mode:"dark",scheme:"studio",style:"default"}
@@ -151,6 +146,10 @@ fn dp_request($request)
       $profile_reduced=if $dopus_profile then monotonic() else 0 end
       $save=(viu_context().native_facilities ?? true) and $candidate.save_allowed and not deep_eq($app.dp_config($state),$app.dp_config($candidate))
       $state=$app.dp_update_previews($candidate)
+      if (viu_context().native_facilities ?? true) and ($name=="dopus.theme.set" or ($name=="dopus.execute" and any(["theme.","view.theme.","view.mode.","view.style.","view.decorations.","view.captions."],fn($prefix)=starts_with($a.id,$prefix)))) then
+        send "viu-local" "native.theme" body={scheme:$state.appearance_choice.scheme,mode:$state.appearance_choice.mode,style:$state.appearance_choice.style,decorations:$state.window_choice["window.decorations"],caption_side:$state.window_choice["window.caption_side"]}
+        if $rc!=0 then raise("THEME",to_string($result)) end
+      end
       $profile_prepared=if $dopus_profile then monotonic() else 0 end
       $row_cache=dp_publish($state,$contract,$row_cache)
       if $save then viu_timer("config-save",350,{}) end
