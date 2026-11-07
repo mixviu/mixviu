@@ -39,7 +39,7 @@ fn native_descriptor_order_preserves_both_compatibility_contracts() {
     for after_ui in [false, true] {
         let manifest = Facilities::descriptor_order_test_manifest(after_ui);
         let facilities = Facilities::new(&manifest, Arc::new(|| {}));
-        let surface = facilities.surface.unwrap();
+        let surface = facilities.surface.as_ref().unwrap();
         let commands = surface["commands"].as_array().unwrap();
         let position = |name: &str| commands.iter().position(|c| c["name"] == name).unwrap();
         let ui = position("fixture.ui.tree");
