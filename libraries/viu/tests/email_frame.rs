@@ -118,8 +118,12 @@ end
 
 #[test]
 fn compose_launch_keeps_one_fixed_root_and_owner_close_waits_for_children() {
-    let bundle=Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),&["--compose".into()]).unwrap();
-    let mut program=bundle.program;
+    let bundle = Bundle::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
+        &["--compose".into()],
+    )
+    .unwrap();
+    let mut program = bundle.program;
     program.source.push_str(r#"
 on test.root
   $entries=[{id:"a",name:"Fixture",label:"Fixture",user:"user@example.test",email:"user@example.test",enabled:true,signature:"",identities:[]}];$active="a"
@@ -136,16 +140,30 @@ on test.root.cancel
   composer_close($compose_root,"cancel");publish_email();reply(0,json_encode({alive:$composers[$compose_root]!=nil,closing:$compose_owner_closing}))
 end
 "#);
-    let (_root,mut runtime,rx)=isolated_runtime();runtime.load(program).unwrap();complete(&runtime,&rx);
-    runtime.event("test.root".into(),json!({})).unwrap();let done=complete(&runtime,&rx);let reply=done.reply.unwrap();
-    assert_eq!(reply.body["held"],true);assert_eq!(reply.body["info"]["compose_windows"][0]["root"],true);
-    let model=done.model.unwrap();assert_eq!(model["native_windows"].as_array().unwrap().len(),1);
-    let root=&model["native_root"];assert_eq!(root["key"],reply.body["root"]);
-    viu::gold_frame::mount(root["scene"].as_str().unwrap(),root["model"].clone()).unwrap();
-    runtime.event("test.root.child.close".into(),json!({"window":reply.body["child"]})).unwrap();
-    assert_eq!(complete(&runtime,&rx).reply.unwrap().body["waiting"],true);
-    runtime.event("test.root.cancel".into(),json!({})).unwrap();let reply=complete(&runtime,&rx).reply.unwrap();
-    assert_eq!(reply.body["alive"],true);assert_eq!(reply.body["closing"],false);
+    let (_root, mut runtime, rx) = isolated_runtime();
+    runtime.load(program).unwrap();
+    complete(&runtime, &rx);
+    runtime.event("test.root".into(), json!({})).unwrap();
+    let done = complete(&runtime, &rx);
+    let reply = done.reply.unwrap();
+    assert_eq!(reply.body["held"], true);
+    assert_eq!(reply.body["info"]["compose_windows"][0]["root"], true);
+    let model = done.model.unwrap();
+    assert_eq!(model["native_windows"].as_array().unwrap().len(), 1);
+    let root = &model["native_root"];
+    assert_eq!(root["key"], reply.body["root"]);
+    viu::gold_frame::mount(root["scene"].as_str().unwrap(), root["model"].clone()).unwrap();
+    runtime
+        .event(
+            "test.root.child.close".into(),
+            json!({"window":reply.body["child"]}),
+        )
+        .unwrap();
+    assert_eq!(complete(&runtime, &rx).reply.unwrap().body["waiting"], true);
+    runtime.event("test.root.cancel".into(), json!({})).unwrap();
+    let reply = complete(&runtime, &rx).reply.unwrap();
+    assert_eq!(reply.body["alive"], true);
+    assert_eq!(reply.body["closing"], false);
 }
 
 #[test]

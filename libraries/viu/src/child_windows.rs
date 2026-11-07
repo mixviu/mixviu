@@ -306,8 +306,16 @@ impl Child {
     }
     fn show(&mut self, ui: &mut egui::Ui, app: &str) {
         let ctx = ui.ctx().clone();
-        let dropped=ctx.input(|i|i.raw.dropped_files.iter().filter_map(|f|f.path.as_ref().map(|p|p.to_string_lossy().into_owned())).collect::<Vec<_>>());
-        if !dropped.is_empty(){self.emit("viu.files.dropped".into(),json!({"paths":dropped}),&ctx);}
+        let dropped = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        });
+        if !dropped.is_empty() {
+            self.emit("viu.files.dropped".into(), json!({"paths":dropped}), &ctx);
+        }
         toolkit::chrome::client_side(&ctx);
         toolkit::drive::register_viewport(&ctx, ViewportId::ROOT, &self.key, self.viewport);
         if self.persist {
