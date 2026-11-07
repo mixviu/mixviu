@@ -7,6 +7,7 @@ use rio_vt::crosswords::{
     grid::Dimensions,
     pos::{Column, Direction, Line, Pos, Side},
     search::RegexSearch,
+    square::Wide,
 };
 use serde::{Deserialize, Serialize};
 
@@ -98,22 +99,37 @@ impl Terminal {
             if backwards { Side::Right } else { Side::Left },
             Some(max_lines),
         );
-        let wrapped = found.as_ref().is_some_and(|range| {
-            if backwards {
-                *range.end() > position
-            } else {
-                *range.start() < position
-            }
-        });
         let point = |p: &Pos| SearchPoint {
             row: p.row.0,
             col: p.col.0,
         };
-        Ok(SearchOutcome {
-            matched: found.map(|range| SearchRange {
-                start: point(range.start()),
+        let matched = found.map(|range| {
+            let mut start = *range.start();
+            // Rio's search iterator can anchor a wrapped wide glyph at the
+            // preceding row's LeadingSpacer. Report its actual glyph lead so
+            // a caller can navigate/highlight without selecting a blank cell.
+            if term.grid[start].wide() == Wide::LeadingSpacer
+                && start.row < term.grid.bottommost_line()
+            {
+                let next = Pos::new(start.row + 1i32, Column(0));
+                if term.grid[next].wide() == Wide::Wide {
+                    start = next;
+                }
+            }
+            SearchRange {
+                start: point(&start),
                 end: point(range.end()),
-            }),
+            }
+        });
+        let wrapped = matched.as_ref().is_some_and(|range| {
+            if backwards {
+                (range.end.row, range.end.col) > (origin.row, origin.col)
+            } else {
+                (range.start.row, range.start.col) < (origin.row, origin.col)
+            }
+        });
+        Ok(SearchOutcome {
+            matched,
             wrapped,
             limited: max_lines < term.grid.total_lines(),
         })
@@ -203,6 +219,14 @@ mod tests {
         assert_eq!(t.selection_text(), selected);
         assert!(t.search(&mut pattern, None, false, 1).unwrap().limited);
         let wide = Terminal::from_test_vt(5, 3, "abcd中z".as_bytes());
+        assert_eq!(
+            wide.grid.lock().grid[Pos::new(Line(0), Column(4))].wide(),
+            Wide::LeadingSpacer
+        );
+        assert_eq!(
+            wide.grid.lock().grid[Pos::new(Line(1), Column(0))].wide(),
+            Wide::Wide
+        );
         let mut pattern = SearchPattern::new("中z", false, true).unwrap();
         let result = wide.search(&mut pattern, None, false, 10000).unwrap();
         assert_eq!(
