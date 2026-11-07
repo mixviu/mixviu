@@ -111,9 +111,13 @@ fn surface_model($m)
   return pim_model($m)
 end
 fn surface_account($id)
-  global $active,$boxes,$box,$rows,$total,$offset,$message,$connected,$revision,$mail_selection,$mail_focus
+  global $active,$boxes,$box,$rows,$total,$offset,$message,$connected,$revision,$mail_selection,$mail_focus,$mail_emails,$mail_sort,$mail_widths,$mail_hidden_columns,$mail_density,$wire_data
   if not any($entries,fn($e)=$e.id==$id) then return wire_refuse("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
+  if $active!="" and $wire_data[$active]!=nil then $wire_data[$active].table={selection:$mail_selection,focus:$mail_focus,sort:$mail_sort,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density} end
+  $table=($wire_data[$id] ?? {}).table ?? {}
+  $mail_sort=$table.sort ?? {column:"date",order:"descending"};$mail_widths=$table.widths ?? {};$mail_hidden_columns=$table.hidden ?? [];$mail_density=$table.density ?? "compact"
   $active=$id;$d=$wire_data[$id] ?? {};$boxes=$d.boxes ?? [];$box=$d.box ?? "";$mail_emails=$d.emails ?? [];$rows=gold_rows($mail_emails);$total=$d.total ?? 0;$offset=$d.offset ?? 0;$message=$d.message;$mail_selection=[];$mail_focus=nil;$connected=($wire_views[$id] ?? {}).state=="ready";$revision=$revision+1
+  $mail_selection=$table.selection ?? [];$mail_focus=$table.focus
   return {rc:0,body:{id:$id}}
 end
 fn surface_mailbox($account,$id)

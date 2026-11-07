@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
-fn validate_overlays(model: &Value) -> Result<(), String> {
+pub(crate) fn validate_overlays(model: &Value) -> Result<(), String> {
     if let Some(overlays) = model.get("native_overlays") {
         let overlays = overlays
             .as_array()
@@ -35,6 +35,7 @@ fn validate_overlays(model: &Value) -> Result<(), String> {
     Ok(())
 }
 struct Host {
+    windows:crate::child_windows::Windows,
     platform: crate::platform::Platform,
     paste_waits: std::collections::VecDeque<String>,
     paste_deadline: Option<Instant>,
@@ -187,6 +188,11 @@ impl Host {
         }
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
+        if r.command.starts_with("viu.") {
+            if let Some(key)=r.args["window"].as_str().map(str::to_owned) {
+                self.windows.request(&key,r,ctx);return;
+            }
+        }
         if self.native_drive {
             if r.command == format!("{}.window", self.app) && r.args["action"] == "close" {
                 r.command = "app.quit".into();
@@ -195,12 +201,6 @@ impl Host {
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
-        if r.command == format!("{}.quit", self.app)
-            || (r.command == format!("{}.execute", self.app) && r.args["id"] == "file.quit")
-        {
-            r.close_after_reply
-                .store(true, std::sync::atomic::Ordering::Release);
-        }
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
@@ -279,6 +279,7 @@ impl eframe::App for Host {
         self.pump(ctx);
     }
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
+        if self.windows.raw_input(raw){return;}
         if self.paste_deadline.is_some() {
             raw.events.retain(|event| {
                 if let egui::Event::Paste(text) = event {
@@ -315,6 +316,12 @@ impl eframe::App for Host {
 }
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
+        for (key,event) in self.windows.take(){
+            match self.runtime.event(event.command,event.body){
+                Ok(sequence)=>{self.inflight.insert(sequence);self.windows.submitted(sequence,key);}
+                Err(_)=>self.windows.rejected(&key),
+            }
+        }
         self.facilities.prepare(ctx, &self.bus);
         for request in self.platform.take() {
             if request["kind"] == "copy" {
@@ -470,6 +477,7 @@ impl Host {
                     };
                     let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
                         validate_overlays(&projected)?;
+                        self.windows.validate(&model)?;
                         if self.loaded {
                             self.view.apply_model(projected)
                         } else {
@@ -492,12 +500,14 @@ impl Host {
                                 crate::appearance::install_style(ctx, &model["appearance"], style);
                             }
                             self.ready = true;
+                            self.windows.sync(ctx,&self.app,&model,&self.documents,self.native_drive);
                             self.model = model;
                         }
                         Err(e) => self.error = e,
                     }
                 }
             }
+            self.windows.completed(done.sequence);
             if let Some(reply) = self.pending.remove(&done.sequence) {
                 let answer = if !self.error.is_empty() {
                     (10, json!({"error":self.error}))
@@ -850,6 +860,7 @@ impl Host {
                 }
             }
         }
+        self.windows.show(ui,&self.app);
         self.ui_state.set(
             ui.ctx().content_rect(),
             &self.view.geometry,
@@ -976,6 +987,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        windows:Default::default(),
         platform,
         paste_waits: Default::default(),
         paste_deadline: None,

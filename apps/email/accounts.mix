@@ -37,6 +37,7 @@ fn update($command,$a,$binding)
   if contains(keys($a),"password") and type($a.password)!="string" then raise("INVALID_ARGUMENT","password must be a string") end
   if $command=="email.account.password.set" then
     if type($a.id)!="string" or type($a.password)!="string" then raise("INVALID_ARGUMENT","id and password must be strings") end
+    if not re_match($a.id,"^[a-z0-9-]{1,64}$") then raise("INVALID_ARGUMENT","id is not an account id") end
     if $a.password=="" then return {forgotten:save_password($a.id,"")} end
     $view=settings_call("settings.get",{binding:$binding,view:"values"})
     if not any($view.values["email.accounts"] ?? [],fn($e)=$e.id==$a.id) then raise("UNKNOWN_ACCOUNT","No account "..$a.id) end

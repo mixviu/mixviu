@@ -29,6 +29,7 @@ fn wire_schedule($command,$args,$event,$purpose)
   if type($args)!="map" then return wire_refuse("INVALID_ARGUMENT","arguments must be an object") end
   $settings=contains(["email.account.set","email.account.remove","email.account.default","email.account.password.set"],$command)
   if $settings then $purpose="settings" end
+  if $command=="email.send" and $purpose!="compose-send" then $args=delete($args,"attempt") end
   $id=$argument_policy.text($args,"account") ?? $active;$entry=wire_entry($id)
   if $command=="email.account.connect" then $id=$argument_policy.required($args,"id");$entry=wire_entry($id) end
   if not $settings then
@@ -63,6 +64,7 @@ fn wire_pump()
   global $wire_waiting,$wire_running,$wire_pending
   while len(keys($wire_running))<4 and len($wire_waiting)>0
     $id=$wire_waiting[0];$job=$wire_pending[$id]
+    if $job.purpose=="settings" and any(keys($wire_running),fn($id)=($wire_pending[$id] ?? {}).purpose=="settings") then return end
     if not wire_current($job) then
       $wire_waiting=slice($wire_waiting,1);$wire_pending=delete($wire_pending,$id)
       if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"}}) end
