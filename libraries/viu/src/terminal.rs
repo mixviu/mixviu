@@ -12,6 +12,7 @@ pub mod ime;
 pub mod input;
 pub mod metrics;
 pub mod model;
+pub mod protocol;
 pub mod native_session;
 pub mod raster;
 pub mod session_actor;

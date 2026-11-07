@@ -469,7 +469,7 @@ mod tests {
             // noded account. Isolate its configuration in a subprocess; neither
             // the test runner nor the real PTY launcher changes global env.
             for mode in ["close", "exit"] {
-            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
                     "terminal::sessions::tests::lazy_owner_issues_the_first_real_mix_shell_and_revokes_on_close",
@@ -496,12 +496,12 @@ mod tests {
                 .env("MIX_EDITOR", "owned")
                 .output()
                 .unwrap();
-            assert!(
-                output.status.success(),
-                "isolated owner {mode} test failed:\n{}\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
+                assert!(
+                    output.status.success(),
+                    "isolated owner {mode} test failed:\n{}\n{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
             return;
         }
@@ -535,14 +535,19 @@ mod tests {
         assert!(sessions.native.lock().unwrap().attempted);
         let natural_exit = std::env::var(CHILD).unwrap() == "exit";
         if natural_exit {
-            sessions.call("type", handle, json!({"text":"exit\n"})).unwrap();
+            sessions
+                .call("type", handle, json!({"text":"exit\n"}))
+                .unwrap();
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
             loop {
                 let state = sessions.call("state", handle, json!({})).unwrap();
                 if state["exited"] == true && native.pane_generation(1).is_none() {
                     break;
                 }
-                assert!(std::time::Instant::now() < deadline, "real Mix exit did not invalidate its still-owned terminal");
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "real Mix exit did not invalidate its still-owned terminal"
+                );
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
         } else {
@@ -551,20 +556,33 @@ mod tests {
         assert!(native.pane_generation(1).is_none());
         // Observe the real broker before dropping/closing a naturally exited
         // Terminal. Otherwise explicit close could make this proof vacuous.
-        let (options, url) = bus::client_helpers::BrokerEnvironment::capture().resolve().unwrap();
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let (options, url) = bus::client_helpers::BrokerEnvironment::capture()
+            .resolve()
+            .unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         runtime.block_on(async {
             use bus::native_client::{NodedClient, UnixConnectOutcome};
-            let UnixConnectOutcome::VerifiedUnix(observer) = NodedClient::connect_unix("", &url, &options, None).await.unwrap() else {
+            let UnixConnectOutcome::VerifiedUnix(observer) =
+                NodedClient::connect_unix("", &url, &options, None)
+                    .await
+                    .unwrap()
+            else {
                 panic!("verified native observer required");
             };
             tokio::time::timeout(std::time::Duration::from_secs(15), async {
                 loop {
                     let record = observer.session_self(bound.record_id).await.unwrap().record;
-                    if record.state == bus::native_session::BindingState::Revoked {break;}
+                    if record.state == bus::native_session::BindingState::Revoked {
+                        break;
+                    }
                     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                 }
-            }).await.expect("real shell close/exit must revoke at the broker");
+            })
+            .await
+            .expect("real shell close/exit must revoke at the broker");
             observer.client().close().await;
         });
         if natural_exit {
