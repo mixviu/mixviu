@@ -1074,3 +1074,23 @@ Held-key native repeat, full alternate-screen sessions, session issuer/
 control/sealed Mix handoff, full Bus/mouse/primary/OSC52/IME/Prefs and
 release acceptance remain. Overall NOT ACCEPTED. No Fable question.
 branch: lab/parity-term; head SHA: d6b0c7bc34db17d4614ddded8d8f1c66bde2f404 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — wheel native gate and remaining full parity/release acceptance open; CBC job ids: term-focus-ready-bd978a23-a1 (green exact source/native Tab), term-wheel-d6b0c7bc (next await).
+### Wheel owner compile repair
+
+`term-wheel-d6b0c7bc-a1` failed compilation before native tests/artifact
+build; all six Mix suites passed. Complete saved log read. The wheel
+state field was accidentally inserted into shortcut() parameters instead
+of Views, producing the missing-field/missing-argument errors. 60212c48
+moves it to Views and applies the worker's formatting patch. Gesture and
+widget regression assertions are unchanged. No native wheel evidence yet.
+
+Next gate `term-wheel-owner-60212c48` at
+`60212c48ad022d4610838c44b697d4117d63aeb9`, term_gate --prepare. Read full
+log, apply any fmt and repeat exact source if changed. Fetch and verify
+artifact/source, then replace WHEEL_ARTIFACT_PENDING in the private
+wheel-prepared.mix (lint passed). It derives from the exact-font-size
+zoom witness, replacing only the first zoom with native viu.ui.scroll:
+x100/y150/delta40/modifiers ctrl. Verify one real wheel step persists the
+native measured f32, reset cancellation and owned cleanup. Prepared is
+not executed evidence. Continue broader wheel/native input, all remaining
+session/Bus/clipboard/IME/Prefs and exact release acceptance. NOT ACCEPTED.
+branch: lab/parity-term; head SHA: 60212c48ad022d4610838c44b697d4117d63aeb9 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — wheel owner native gate and remaining full parity/release acceptance open; CBC job ids: term-wheel-d6b0c7bc-a1 (compile failure repaired), term-wheel-owner-60212c48 (next await).

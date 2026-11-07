@@ -760,3 +760,23 @@ plain wheel and hovered inactive pane, then matched gold zoom captures.
 Held-key native repeat, full alternate-screen sessions, session issuer/
 control/sealed Mix handoff, full Bus/mouse/primary/OSC52/IME/Prefs and
 release acceptance remain. Overall NOT ACCEPTED. No Fable question.
+
+### Wheel owner compile repair
+
+`term-wheel-d6b0c7bc-a1` failed compilation before native tests/artifact
+build; all six Mix suites passed. Complete saved log read. The wheel
+state field was accidentally inserted into shortcut() parameters instead
+of Views, producing the missing-field/missing-argument errors. 60212c48
+moves it to Views and applies the worker's formatting patch. Gesture and
+widget regression assertions are unchanged. No native wheel evidence yet.
+
+Next gate `term-wheel-owner-60212c48` at
+`60212c48ad022d4610838c44b697d4117d63aeb9`, term_gate --prepare. Read full
+log, apply any fmt and repeat exact source if changed. Fetch and verify
+artifact/source, then replace WHEEL_ARTIFACT_PENDING in the private
+wheel-prepared.mix (lint passed). It derives from the exact-font-size
+zoom witness, replacing only the first zoom with native viu.ui.scroll:
+x100/y150/delta40/modifiers ctrl. Verify one real wheel step persists the
+native measured f32, reset cancellation and owned cleanup. Prepared is
+not executed evidence. Continue broader wheel/native input, all remaining
+session/Bus/clipboard/IME/Prefs and exact release acceptance. NOT ACCEPTED.
