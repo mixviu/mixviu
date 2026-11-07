@@ -392,3 +392,34 @@ Next exact-source repeat: `term-seamless-e945bd9` at
 `e945bd9815fadde1296715fa288db8b4129cdd5a`. Fetch its matching executable
 and bundle and repeat these witnesses. **NOT ACCEPTED**: debug checkpoints
 do not replace the full feature/Bus/Prefs inventory or release evidence.
+
+### Exact frame checkpoint and platform clipboard repair
+
+`term-seamless-e945bd9-a1` passed with no worker diff; complete saved log
+read. Matching debug executable/bundle at e945bd9 verified, SHA256
+`44770e2417b1347dc0bd4ecf1b521ab87203f92457daed3b887f85e098712dfe`.
+Exact-source run `native.GDMFZD` repeats real Mix output, keys dialog,
+measured cell/grid text-scale update on one PID, live F2 rebinding and
+normal close; all recorded PIDs stop. Both real-session and keys PNG
+hashes equal gold's hashes above. `session-e945-exact` and
+`keys-e945-exact` retain inspected figures: all whole/region SSIM/RMSE
+distortions 0/0. This is a passing bounded debug frame witness, not final
+release or app acceptance.
+
+Next code `327ab521c783643a6c7430c09e9c4641ef1b5382` restores gold
+platform clipboard-event classification: without Shift, Copy/Cut/Paste
+send shell control codes; Alt prefixes ESC; Shift requests the clipboard
+operation, while image-paste remains Ctrl-V. A held clipboard chord fires
+once until release/modifier reset. Reusable widget intents carry the
+originating native handle and already-read paste text; Mix retains app
+actions and avoids a second clipboard read or redirect to another pane.
+Stale closed targets are ignored; stale Cut cannot close the new focus.
+Menu paste retains asynchronous native clipboard read. Added control-byte,
+Meta/Shift/release/image tests, a native widget event/owner test and Mix
+supplied-paste effect tests. Five Mix suites pass; Rust/native runtime
+validation awaits CBC `term-clipboard-327ab52`.
+
+Remaining clipboard work includes primary selection, middle/right mouse,
+copy-on-select, OSC52 window integration and full native clipboard-owner
+tests. Verified session/control/shell, full Bus, IME/search/Prefs and final
+release acceptance remain open. Overall **NOT ACCEPTED**.

@@ -623,3 +623,36 @@ clipboard/input/IME/search, zoom persistence/About/all live Prefs and exact
 release visual acceptance. No Fable question, install or VT changes.
 
 branch: lab/parity-term; head SHA: e945bd9815fadde1296715fa288db8b4129cdd5a (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — exact-source frame repeat, full Bus/Prefs/session/input/clipboard/search and release acceptance open; CBC job ids: term-dialog-metrics-9ea52c7-a1 (green, fmt applied), term-seamless-e945bd9 (next await).
+
+## Term exact frame verified; clipboard classification checkpoint
+
+`term-seamless-e945bd9-a1` green, no worker diff, complete log read.
+Fetched verified exact-source debug artifact and matching bundle. SHA256
+44770e2417b1347dc0bd4ecf1b521ab87203f92457daed3b887f85e098712dfe.
+Native.GDMFZD passes real Mix output, shortcuts dialog, unchanged-PID
+text-scale metrics and live F2 rebinding, normal close, recorded PIDs all
+stopped. Both session and keys PNGs byte-identical to gold; all whole and
+region SSIM/RMSE distortion 0/0. Inspected figures retained privately in
+session-e945-exact and keys-e945-exact. Debug frame checkpoint only.
+
+Code 327ab52 restores gold platform clipboard classification, held-chord
+release/modifier suppression, Meta control codes and image behavior.
+Native widget emits captured-owner clipboard intents; Mix performs
+actions and already-read paste without another clipboard read. Closed
+owners ignored and stale Cut cannot close a new focus. Menu paste still
+uses native asynchronous clipboard read. Five Mix suites pass. New native
+classifier/widget tests await CBC. Primary/OSC52/mouse clipboard remains
+open; no full clipboard acceptance claim.
+
+Next CBC term-clipboard-327ab52 at
+327ab521c783643a6c7430c09e9c4641ef1b5382, term_gate --prepare. Read full
+log and apply any fmt patch; exact-source repeat if changed. Fetch matching
+artifact and drive actual platform clipboard events (Ctrl-C interrupts
+Mix, Ctrl-Shift-C copies, Ctrl-V control vs Ctrl-Shift-V supplied paste,
+Cut, repeats, Unicode/brackets and closed-owner refusal). Repeat native
+menu/lifecycle/topics where affected. Continue full standing brief:
+verified session/control/sealed Mix shell, full Bus, mouse/clipboard/IME,
+search, zoom persistence/About/all Prefs, release gate and acceptance.
+No Fable question, installs, merges or VT changes.
+
+branch: lab/parity-term; head SHA: 327ab521c783643a6c7430c09e9c4641ef1b5382 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — clipboard native gate, full Bus/Prefs/session/input/search and release acceptance open; CBC job ids: term-seamless-e945bd9-a1 (green exact source), term-clipboard-327ab52 (next await).
