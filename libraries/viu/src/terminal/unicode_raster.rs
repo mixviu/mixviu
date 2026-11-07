@@ -993,8 +993,10 @@ mod tests {
 
     #[test]
     fn fallback_fonts_are_lazy_and_shared_between_rasters() {
-        let mut first = crate::terminal::raster::tests::raster_with(crate::terminal::config::Cursor::Block);
-        let mut second = crate::terminal::raster::tests::raster_with(crate::terminal::config::Cursor::Block);
+        let mut first =
+            crate::terminal::raster::tests::raster_with(crate::terminal::config::Cursor::Block);
+        let mut second =
+            crate::terminal::raster::tests::raster_with(crate::terminal::config::Cursor::Block);
         assert!(first.unicode.fonts.fallbacks.get().is_none());
         assert!(second.unicode.fonts.fallbacks.get().is_none());
         first.render(&crate::terminal::raster::tests::screen(8, 2, 'M'));
@@ -1085,7 +1087,8 @@ mod tests {
 
     #[test]
     fn font_identity_survives_resize_and_cache_ignores_background_and_foreground() {
-        let raster = crate::terminal::raster::tests::raster_with(crate::terminal::config::Cursor::Block);
+        let raster =
+            crate::terminal::raster::tests::raster_with(crate::terminal::config::Cursor::Block);
         let mut resized = raster.resized(1.25, 13.0).unwrap();
         assert!(Arc::ptr_eq(&raster.unicode.fonts, &resized.unicode.fonts));
         assert_eq!(

@@ -8,13 +8,13 @@
 //! float with round-to-nearest, so a blended channel may differ by one; any
 //! pixel off by more, and any fully covered or background pixel off at all,
 //! is a renderer bug.
+use super::gpu::Pane;
+use crate::terminal::config::Cursor;
+use crate::terminal::model::{Screen, Terminal};
+use crate::terminal::raster::Raster;
 use egui_kittest::Harness;
 use egui_kittest::wgpu::{WgpuTestRenderer, create_render_state, default_wgpu_setup};
 use std::sync::{Arc, Mutex};
-use crate::terminal::config::Cursor;
-use crate::terminal::raster::Raster;
-use crate::terminal::model::{Screen, Terminal};
-use super::gpu::Pane;
 
 const TEXT: &str = "Ag|_ q\u{e9}\u{2500}\u{253c}\u{2588} \u{1f469}\u{200d}\u{1f4bb}x\r\n\
                     \u{c911}a \u{1f44d}\u{1f3fd} e\u{301}!\r\n\u{1f1eb}\u{1f1f7} ~ $ ls -la";

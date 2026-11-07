@@ -406,7 +406,11 @@ pub struct Raster {
     baseline: i32,
 }
 impl Raster {
-    pub fn new(scale: f32, logical_px: f32, cursor: crate::terminal::config::Cursor) -> Result<Self, String> {
+    pub fn new(
+        scale: f32,
+        logical_px: f32,
+        cursor: crate::terminal::config::Cursor,
+    ) -> Result<Self, String> {
         Self::with_face(scale, logical_px, cursor, None, DEFAULT_WEIGHT)
     }
 
@@ -1142,7 +1146,8 @@ impl Raster {
                                 *channel = 255 - *channel;
                             }
                         }
-                        crate::terminal::config::Cursor::Underline | crate::terminal::config::Cursor::Bar => {
+                        crate::terminal::config::Cursor::Underline
+                        | crate::terminal::config::Cursor::Bar => {
                             rgba[offset..offset + 4]
                                 .copy_from_slice(&destination_pixel([220, 220, 220]));
                         }
@@ -1292,7 +1297,8 @@ impl Raster {
                                 *channel = 255 - *channel;
                             }
                         }
-                        crate::terminal::config::Cursor::Underline | crate::terminal::config::Cursor::Bar => {
+                        crate::terminal::config::Cursor::Underline
+                        | crate::terminal::config::Cursor::Bar => {
                             rgba[offset..offset + 4].copy_from_slice(&[220, 220, 220, 255]);
                         }
                     }
@@ -1474,8 +1480,12 @@ impl Raster {
         let (width, height) = (self.width as usize, self.height as usize);
         let (left, bottom) = (cx * width, (cy + 1) * height);
         match self.cursor {
-            crate::terminal::config::Cursor::Block => (cy * height..bottom, left..left + span * width),
-            crate::terminal::config::Cursor::Underline => (bottom - 1..bottom, left..left + span * width),
+            crate::terminal::config::Cursor::Block => {
+                (cy * height..bottom, left..left + span * width)
+            }
+            crate::terminal::config::Cursor::Underline => {
+                (bottom - 1..bottom, left..left + span * width)
+            }
             crate::terminal::config::Cursor::Bar => {
                 (cy * height..bottom, left..left + self.bar_width() as usize)
             }

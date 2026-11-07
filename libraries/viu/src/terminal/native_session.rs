@@ -25,7 +25,12 @@ impl PaneSession {
         cleanup: Arc<dyn Fn() + Send + Sync>,
         rejected: Arc<dyn Fn(&str) + Send + Sync>,
     ) -> Self {
-        Self { exited, revoke, cleanup, rejected }
+        Self {
+            exited,
+            revoke,
+            cleanup,
+            rejected,
+        }
     }
 
     pub fn exit_notifier(&self) -> impl Fn() + Send + Sync + use<> {

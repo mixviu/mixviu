@@ -29,11 +29,11 @@
 #[path = "gpu/atlas.rs"]
 mod atlas;
 
+use crate::terminal::config::Cursor;
+use crate::terminal::model::Screen;
+use crate::terminal::raster::{GlyphKey, Raster};
 use atlas::{Atlas, Slot};
 use std::sync::{Arc, Mutex};
-use crate::terminal::config::Cursor;
-use crate::terminal::raster::{GlyphKey, Raster};
-use crate::terminal::model::Screen;
 
 /// What the callback needs to know about the frame it is drawn in.
 const UNIFORM_SIZE: u64 = 32;

@@ -1045,7 +1045,8 @@ impl Terminal {
                 24,
                 800,
                 480,
-                fd.as_ref().map(crate::terminal::session_fd::LaunchFd::mapping),
+                fd.as_ref()
+                    .map(crate::terminal::session_fd::LaunchFd::mapping),
             )
         };
         // Search access can change after the probe. A spawn/chdir error gets

@@ -129,7 +129,11 @@ mod tests {
     #[test]
     fn probe_timeout_selects_fallback_and_reaps() {
         let mut child = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "terminal::config::tests::stalled_probe_child", "--ignored"])
+            .args([
+                "--exact",
+                "terminal::config::tests::stalled_probe_child",
+                "--ignored",
+            ])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

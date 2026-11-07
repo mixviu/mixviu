@@ -4,7 +4,12 @@ use super::*;
 
 fn row(t: &Terminal, n: usize) -> String {
     let s = t.screen(false);
-    s.cells[n * s.cols..(n + 1) * s.cols].iter().map(|c| c.c).collect()
+    s.cells[n * s.cols..(n + 1) * s.cols]
+        .iter()
+        // Rio stores untouched cells as NUL. Match gold's text snapshot and
+        // raster convention while retaining exact raw-cell assertions below.
+        .map(|c| if c.c == '\0' { ' ' } else { c.c })
+        .collect()
 }
 
 #[test]
@@ -17,7 +22,11 @@ fn cursor_address_erase_insert_and_alternate_screen() {
     assert!(!t.alternate_screen());
     assert_eq!(&row(&t, 0)[..4], "main");
     parser.advance(&mut *t.grid.lock(), b"\x1b[2J\x1b[H");
-    assert!(t.screen(false).cells.iter().all(|c| c.c == ' '));
+    assert!(t.screen(false).cells.iter().all(|c| c.c == '\0'));
+    assert!(!t.snapshot().contains('\0'));
+    for n in 0..4 {
+        assert_eq!(row(&t, n), " ".repeat(12));
+    }
 }
 
 #[test]
@@ -32,8 +41,16 @@ fn parser_retains_every_utf8_and_escape_chunk_boundary() {
         let actual = t.screen(false);
         assert_eq!(actual.cursor, expected.cursor, "split {split}");
         for (a, b) in actual.cells.iter().zip(&expected.cells) {
-            assert_eq!((a.c, a.width, a.fg, a.bg, a.bold), (b.c, b.width, b.fg, b.bg, b.bold), "split {split}");
-            assert_eq!(actual.clusters.get(a.extra), expected.clusters.get(b.extra), "split {split}");
+            assert_eq!(
+                (a.c, a.width, a.fg, a.bg, a.bold),
+                (b.c, b.width, b.fg, b.bg, b.bold),
+                "split {split}"
+            );
+            assert_eq!(
+                actual.clusters.get(a.extra),
+                expected.clusters.get(b.extra),
+                "split {split}"
+            );
         }
     }
 }
@@ -56,7 +73,15 @@ fn scrollback_pages_and_selection_use_the_native_grid() {
 fn real_mix_login_input_resize_exit_and_reap() {
     struct Unbound;
     impl crate::terminal::native_session::SessionIssuer for Unbound {
-        fn prepare(&self, _: u64) -> Option<(crate::terminal::native_session::PaneSession, crate::terminal::session_fd::LaunchFd)> { None }
+        fn prepare(
+            &self,
+            _: u64,
+        ) -> Option<(
+            crate::terminal::native_session::PaneSession,
+            crate::terminal::session_fd::LaunchFd,
+        )> {
+            None
+        }
     }
     let home = tempfile::tempdir().unwrap();
     let settings = crate::terminal::config::Settings {
@@ -64,16 +89,31 @@ fn real_mix_login_input_resize_exit_and_reap() {
         term: "xterm-256color".into(),
     };
     let mut t = Terminal::start_session_e2e(
-        settings, &Unbound, "/opt/mixos/bin/mix", home.path().to_str().unwrap().into(),
-        vec![("HOME".into(), home.path().to_str().unwrap().into()),
-             ("MIXOS_BUS_SOCKET".into(), home.path().join("absent.sock").to_str().unwrap().into())],
-    ).unwrap();
+        settings,
+        &Unbound,
+        "/opt/mixos/bin/mix",
+        home.path().to_str().unwrap().into(),
+        vec![
+            ("HOME".into(), home.path().to_str().unwrap().into()),
+            (
+                "MIXOS_BUS_SOCKET".into(),
+                home.path().join("absent.sock").to_str().unwrap().into(),
+            ),
+        ],
+    )
+    .unwrap();
     let pid = t.pid;
     t.resize(120, 40, 1200, 800);
-    t.listener.type_text("print(\"VT_\" .. \"WIDGET_PTY_OK\")\n").unwrap();
+    t.listener
+        .type_text("print(\"VT_\" .. \"WIDGET_PTY_OK\")\n")
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     while !t.snapshot().contains("VT_WIDGET_PTY_OK") {
-        assert!(Instant::now() < deadline, "Mix PTY did not produce output: {}", t.snapshot());
+        assert!(
+            Instant::now() < deadline,
+            "Mix PTY did not produce output: {}",
+            t.snapshot()
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
     let s = t.screen(false);
@@ -84,6 +124,12 @@ fn real_mix_login_input_resize_exit_and_reap() {
         std::thread::sleep(Duration::from_millis(10));
     }
     t.shutdown();
-    assert_eq!(unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) }, -1);
-    assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
+    assert_eq!(
+        unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) },
+        -1
+    );
+    assert_eq!(
+        io::Error::last_os_error().raw_os_error(),
+        Some(libc::ECHILD)
+    );
 }

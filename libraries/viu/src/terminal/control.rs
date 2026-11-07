@@ -2,7 +2,10 @@
 //! Write-boundary permit mechanism extracted from gold. Admission is the
 //! verified session owner's responsibility. A JSON request cannot mint one.
 use bus::native_client::session::{Deadline, Hello};
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+};
 use std::time::Instant;
 
 pub struct Permit {

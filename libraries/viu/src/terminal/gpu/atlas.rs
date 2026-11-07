@@ -7,9 +7,9 @@
 //! premultiplied RGBA. The atlas is valid for one raster identity (font, size
 //! and scale). A change of identity, or running out of room, empties it and
 //! bumps [`Atlas::generation`], and every pane rebuilds its instances.
+use crate::terminal::raster::{GlyphKey, Raster};
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::terminal::raster::{GlyphKey, Raster};
 
 /// One packed layer: where it sits in the atlas and in its cell span.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
