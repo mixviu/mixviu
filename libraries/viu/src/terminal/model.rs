@@ -1201,6 +1201,10 @@ impl Terminal {
             .collect()
     }
 
+    pub(crate) fn take_clipboard_request(&self) -> Option<ClipboardRequest> {
+        self.listener.clipboard.requests.lock().unwrap().pop_front()
+    }
+
     /// Allow (or refuse) OSC 52 clipboard queries: the
     /// `terminal.clipboard.osc52_read` setting. Writes are always allowed.
     pub fn set_osc52_read(&self, allowed: bool) {

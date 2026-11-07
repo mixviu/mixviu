@@ -10,6 +10,9 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex, atomic::Ordering},
 };
+#[path = "clipboard_requests.rs"]
+mod clipboard_requests;
+pub(crate) use clipboard_requests::{PaneClipboardReply, WindowClipboardRequest};
 
 #[derive(Clone, Copy, PartialEq)]
 struct Placement {
@@ -25,6 +28,7 @@ struct State {
     placements: BTreeMap<String, Placement>,
     pane_ids: BTreeMap<String, u64>,
     metadata: super::metadata::Metadata,
+    clipboard_cursor: usize,
 }
 
 #[derive(Default)]
@@ -44,6 +48,7 @@ pub struct Sessions {
     native_enabled: bool,
     native: Arc<Mutex<NativeOwner>>,
     layout: super::layout_control::Bridge,
+    osc52_read: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Default for Sessions {
@@ -78,8 +83,10 @@ impl Sessions {
                 placements: BTreeMap::new(),
                 pane_ids: BTreeMap::new(),
                 metadata: super::metadata::Metadata::default(),
+                clipboard_cursor: 0,
             })),
             layout: super::layout_control::Bridge::new(wake.clone()),
+            osc52_read: Arc::default(),
             wake,
             issuer,
             changed: Arc::default(),
@@ -219,6 +226,10 @@ impl Sessions {
     }
 
     pub fn call(&self, op: &str, handle: &str, a: Value) -> Result<Value, String> {
+        if op == "clipboard.configure" {
+            self.configure_clipboard(a["read_allowed"].as_bool().ok_or("read_allowed must be boolean")?);
+            return Ok(json!({"configured":true}));
+        }
         if op.starts_with("control.") {
             return self.layout.call(op, a);
         }
@@ -349,11 +360,9 @@ impl Sessions {
                 }
             });
             let answer = json!({"handle":handle,"pid":t.pid,"binding":binding,"native_id":pane_id});
-            self.state
-                .lock()
-                .map_err(|_| "terminal owner poisoned")?
-                .sessions
-                .insert(handle, Arc::new(Mutex::new(t)));
+            let mut state=self.state.lock().map_err(|_| "terminal owner poisoned")?;
+            t.set_osc52_read(self.osc52_read.load(Ordering::Acquire));
+            state.sessions.insert(handle, Arc::new(Mutex::new(t)));
             return Ok(answer);
         }
         if op == "close" {

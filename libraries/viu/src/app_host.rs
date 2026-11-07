@@ -14,6 +14,10 @@ use std::{
     time::{Duration, Instant},
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
+enum SelectionWait {
+    Platform(String),
+    Osc52(crate::terminal::sessions::PaneClipboardReply),
+}
 fn validate_overlays(model: &Value) -> Result<(), String> {
     if let Some(overlays) = model.get("native_overlays") {
         let overlays = overlays
@@ -38,7 +42,7 @@ struct Host {
     platform: crate::platform::Platform,
     selection: crate::terminal::clipboard::Clipboard,
     selection_sequence: u64,
-    selection_waits: BTreeMap<u64, String>,
+    selection_waits: BTreeMap<u64, SelectionWait>,
     platform_results: std::collections::VecDeque<Value>,
     calls: crate::calls::Calls,
     timers: crate::timers::Timers,
@@ -337,18 +341,35 @@ impl Host {
                     .expect("selection id exhausted");
                 self.selection_waits.insert(
                     self.selection_sequence,
-                    request["id"].as_str().unwrap_or("").into(),
+                    SelectionWait::Platform(request["id"].as_str().unwrap_or("").into()),
                 );
                 self.selection
                     .read(self.selection_sequence, request["body"]["primary"] == true);
             }
         }
+        for request in self.terminals.take_clipboard_requests() {
+            use crate::terminal::sessions::WindowClipboardRequest;
+            match request {
+                WindowClipboardRequest::Write {primary,text}=>self.selection.write(ctx,text,primary),
+                WindowClipboardRequest::Read {primary,reply}=> {
+                    self.selection_sequence=self.selection_sequence.checked_add(1).expect("selection id exhausted");
+                    self.selection_waits.insert(self.selection_sequence,SelectionWait::Osc52(reply));
+                    self.selection.read(self.selection_sequence,primary);
+                }
+            }
+        }
         for (sequence, result) in self.selection.take() {
-            if let Some(id) = self.selection_waits.remove(&sequence) {
-                self.platform_results.push_back(match result {
-                    Ok(text) => json!({"id":id,"text":text}),
-                    Err(reason) => json!({"id":id,"text":"","reason":format!("{reason:?}")}),
-                });
+            if let Some(owner) = self.selection_waits.remove(&sequence) {
+                match owner {
+                    SelectionWait::Platform(id)=>self.platform_results.push_back(match result {
+                        Ok(text)=>json!({"id":id,"text":text}),
+                        Err(reason)=>json!({"id":id,"text":"","reason":format!("{reason:?}")}),
+                    }),
+                    SelectionWait::Osc52(reply)=>match result {
+                        Ok(text)=>if let Err(error)=reply.answer(&text) {eprintln!("viu: OSC 52 reply: {error}");},
+                        Err(reason)=>eprintln!("viu: OSC 52 read refused: {reason:?}"),
+                    },
+                }
             } else if let Err(reason) = result {
                 eprintln!("viu: clipboard write refused: {reason:?}");
             }
