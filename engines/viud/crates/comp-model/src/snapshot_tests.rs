@@ -319,7 +319,7 @@ fn fixture() -> CompSnapshot {
         #[cfg(feature = "xwayland")]
         xwayland: XwaylandSnapshot {
             enabled: true,
-            persist_path: Arc::from("/tmp/fixture/etc/comp/xwayland-enabled.comp-nested"),
+            persist_path: Arc::from("/tmp/fixture/etc/viud/xwayland-enabled.comp-nested"),
             display: Some(Arc::from(":3")),
             state: "ready",
             failures: 1,

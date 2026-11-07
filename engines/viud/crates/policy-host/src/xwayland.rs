@@ -9,7 +9,7 @@
 //! Precedence: `MIX_VIUD_XWAYLAND` (env veto, works when the
 //! file or the props surface is the problem) > the persisted file > `true`.
 //!
-//! The file is `<etc>/comp/xwayland-enabled.<socket>`, `<etc>` being the
+//! The file is `<etc>/viud/xwayland-enabled.<socket>`, `<etc>` being the
 //! MixViu etc dir (`config::path(Dir::Etc)`): `$MIX_ETC`, else
 //! `$MIX_ROOT/etc`, else `/etc/mix` for root, else `$XDG_CONFIG_HOME/mix`
 //! or `$HOME/.config/mix`.
@@ -77,7 +77,7 @@ fn switch() -> &'static Switch {
             .filter(|name| !name.is_empty())
             .unwrap_or("wayland-0");
         let path = config::path(config::Dir::Etc)
-            .join("comp")
+            .join("viud")
             .join(format!("xwayland-enabled.{socket}"));
         let (file, read_note) = match std::fs::read_to_string(&path) {
             Ok(text) => (Some(text), None),
@@ -390,7 +390,7 @@ mod tests {
     #[test]
     fn the_write_round_trips_through_the_parser() {
         let dir = std::env::temp_dir().join(format!("policy-host-xwayland-{}", std::process::id()));
-        let path = dir.join("comp").join("xwayland-enabled.wayland-test");
+        let path = dir.join("viud").join("xwayland-enabled.wayland-test");
         write(&path, false).unwrap();
         assert_eq!(
             parse_file(&std::fs::read_to_string(&path).unwrap()),
