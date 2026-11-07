@@ -13,8 +13,8 @@ yanked = "warn"
 # shrinks: each fix PR removes its lines. A NEW advisory fails CI.
 ignore = [
   { id = "RUSTSEC-2023-0071", reason = "rsa 0.9 Marvin timing (no fixed release); inherited debt" },
-  { id = "RUSTSEC-2026-0118", reason = "hickory-proto NSEC3 loop (dnsd, Tier 2); inherited debt" },
-  { id = "RUSTSEC-2026-0119", reason = "hickory-proto name compression CPU (dnsd, Tier 2); inherited debt" },
+  { id = "RUSTSEC-2026-0118", reason = "hickory-proto NSEC3 loop (dnsd, Tier 2); migration: fix/security-hickory" },
+  { id = "RUSTSEC-2026-0119", reason = "hickory-proto name compression CPU (dnsd, Tier 2); migration: fix/security-hickory" },
   { id = "RUSTSEC-2026-0367", reason = "zip SUID preservation on extract; inherited debt" },
   { id = "RUSTSEC-2026-0368", reason = "zip symlink escape on extract; inherited debt" },
   { id = "RUSTSEC-2026-0369", reason = "zip permissions through symlinks; inherited debt" },
