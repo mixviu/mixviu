@@ -142,8 +142,8 @@ impl Process {
         fs::create_dir(&root)?;
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         let mut settings = model::environment::config::base::default_settings();
-        settings.render_node = std::env::var("VIUD_TEST_RENDER_NODE")
-            .unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        settings.render_node =
+            std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
         fs::write(root.join("settings.json"), serde_json::to_vec(&settings)?)?;
         let (parent, child_socket) = UnixDatagram::pair()?;
         parent.set_read_timeout(Some(Duration::from_secs(10)))?;
@@ -170,13 +170,13 @@ impl Process {
             .env("XDG_STATE_HOME", root.join("state"))
             .env("XDG_DATA_HOME", root.join("data"))
             .env("XDG_CACHE_HOME", root.join("cache"))
-            .env("MIXOS_ETC", root.join("etc"))
-            .env("MIXOS_VAR", root.join("var"))
-            .env("MIXOS_RUN", root.join("run"))
-            .env("MIXOS_NODED_URL", "ws://127.0.0.1:1")
+            .env("MIX_ETC", root.join("etc"))
+            .env("MIX_VAR", root.join("var"))
+            .env("MIX_RUN", root.join("run"))
+            .env("MIX_NODED_URL", "ws://127.0.0.1:1")
             .env("XCURSOR_PATH", root.join("cursors"))
             .env_remove("NOTIFY_SOCKET")
-            .env_remove("MIXOS_VT")
+            .env_remove("MIX_VT")
             .stdout(Stdio::from(log.try_clone()?))
             .stderr(log);
         // SAFETY: only fcntl is called between fork and exec. The parent retains
