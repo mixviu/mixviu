@@ -92,6 +92,20 @@ fn term_bundle_child() {
     );
     let model = done.model.expect("initial model");
     viu::gold_frame::mount(&scene, model).expect("native frame and terminal model validate");
+    let help = invoke(&mut runtime, &rx, "HELP", json!({})).reply.unwrap();
+    assert_eq!(help.rc, 0);
+    let help: serde_json::Value = serde_json::from_str(help.body.as_str().unwrap()).unwrap();
+    assert!(help.as_array().unwrap().iter().any(|entry| {
+        entry["name"] == "term.show" && entry["read_only"] == false
+    }));
+    let described = invoke(&mut runtime, &rx, "app.describe", json!({})).reply.unwrap();
+    assert_eq!(described.rc, 0);
+    let described: serde_json::Value = serde_json::from_str(described.body.as_str().unwrap()).unwrap();
+    assert_eq!(described["schema"], "term.v1");
+    assert_eq!(described["app_id"], "dev.mixos.term");
+    let info = invoke(&mut runtime, &rx, "INFO", json!({})).reply.unwrap();
+    assert_eq!(info.rc, 0);
+    assert!(info.body.as_str().unwrap().ends_with(&format!(" pid={}", std::process::id())));
     let split = invoke(
         &mut runtime,
         &rx,

@@ -2,6 +2,7 @@
 -- Global command policy. The supplied native function owns PTYs, never tabs.
 $model=require("model.mix")
 $wire=require("wire.mix")
+$discovery=require("discovery.mix")
 fn change_topic($service,$topic)
   return if starts_with($topic,"term.") then $service.."."..strip_prefix($topic,"term.") else $topic end
 end
@@ -56,7 +57,8 @@ fn dispatch($s,$command,$a,$native)
   $rc=0;$body=""
   try
     $s=refresh($s,$native)
-    if $command=="term.session" then $body=json_encode($native("session","",{}))
+    if $command=="term.info" then $body=$discovery.info($s.service ?? "term",$s.identity)
+    elif $command=="term.session" then $body=json_encode($native("session","",{}))
     elif $command=="term.tabs" then
       $lines=[]
       for $i=0 to len($s.layout.tabs)-1

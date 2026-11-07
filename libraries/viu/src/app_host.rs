@@ -994,7 +994,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         },
         "viu.quit".into(),
         wake.clone(),
-        facilities.surface.as_ref().map(|s| s["commands"].clone()),
+        facilities.surface.as_ref().map(|s| s["commands"].clone())
+            .or_else(|| bundle.manifest.authored_discovery.then(|| json!([]))),
         bundle.manifest.registration_pid_fallback,
     );
     let documents = crate::documents::Documents::default();

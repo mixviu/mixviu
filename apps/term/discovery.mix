@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pinned gold metadata; live identity is supplied by this process.
+$catalogue=json_parse(read_file(path_join(dirname(script_path()),"bus-contract.json")))
+fn named($service,$name)
+  return if starts_with($name,"term.") then $service.."."..strip_prefix($name,"term.") else $name end
+end
+fn entries($service,$items)
+  $out=[]
+  for $entry in $items
+    $entry.name=named($service,$entry.name)
+    push($out,$entry)
+  end
+  return $out
+end
+fn help_entries($service,$window)
+  return entries($service,if $window then $catalogue.help else $catalogue.core_help end)
+end
+fn describe($service)
+  $out=$catalogue.describe
+  $out.commands=entries($service,$out.commands)
+  return $out
+end
+fn info($service,$identity)
+  $text=replace(replace($catalogue.info,"term.",$service.."."),"term:",$service..":")
+  return $text.."\n"..$service..".session {}: native identity and per-pane binding diagnostics (not live authority)\ninstance="..to_string($identity.instance).." pid="..to_string($identity.pid)
+end

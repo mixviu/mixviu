@@ -46,6 +46,9 @@ pub fn parse(args: &[String]) -> Result<Options, String> {
     Ok(out)
 }
 pub fn app_id(bundle: &Bundle) -> String {
+    if let Some(app_id) = &bundle.manifest.window_app_id {
+        return app_id.clone();
+    }
     bundle
         .manifest
         .bus_surface
@@ -133,8 +136,10 @@ mod tests {
     fn explicit_window_app_id_survives_service_override() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
         let mut bundle = super::load(&root, &["--service".into(), "term.other".into()]).unwrap();
+        assert_eq!(super::app_id(&bundle), "dev.mixos.term");
+        assert!(bundle.program.source.contains("dev.mixos.term"));
+        bundle.manifest.window_app_id = None;
         assert_eq!(super::app_id(&bundle), "mixviu.term.other");
-        assert!(bundle.program.source.contains("mixviu.term.other"));
         bundle.manifest.bus_surface = Some(serde_json::json!({"app_id":"example.terminal"}));
         assert_eq!(super::app_id(&bundle), "example.terminal");
         bundle.manifest.service = "term.third".into();

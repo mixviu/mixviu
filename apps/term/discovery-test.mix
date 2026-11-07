@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$d=require("discovery.mix")
+fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+$base=$d.help_entries("term",true)
+$suffix=$d.help_entries("term-42",true)
+check(len($base)==56 and len($suffix)==56,"full gold HELP inventory")
+check(len($d.help_entries("term-42",false))==36,"lowercase help preserves core-only gold inventory")
+for $i=0 to len($base)-1
+  $original=$base[$i];$actual=$suffix[$i]
+  check($actual.name==$d.named("term-42",$original.name),"every descriptor uses the selected service")
+  $actual.name=$original.name
+  check(deep_eq($actual,$original),"namespace changes preserve argument order, flags and descriptions")
+end
+$surface=$d.describe("term-42")
+check($surface.schema=="term.v1" and $surface.app_id=="dev.mixos.term" and len($surface.commands)==53,"gold app describe schema and inventory")
+check(all($surface.commands,fn($c)=not starts_with($c.name,"term.")),"describe contains no canonical command prefix for another instance")
+check($d.named("term-42","terminal.show")=="terminal.show" and $d.named("term-42","app.describe")=="app.describe","only the exact canonical dot namespace is rewritten")
+$text=$d.info("term-42",{instance:123,pid:456})
+check(starts_with($text,"term-42: tabbed Wayland Mix terminal\n"),"diagnostic usage identifies the selected service")
+check(not contains($text,"term.") and not contains($text,"term:"),"usage renames every canonical command occurrence")
+check(ends_with($text,"instance=123 pid=456"),"diagnostics use supplied live identity")
+check(contains($text,"term-42.session {}: native identity and per-pane binding diagnostics (not live authority)"),"diagnostic caveat matches gold")
+print("term discovery: exact inventories, namespace, argument flags, descriptions and live diagnostics checked")

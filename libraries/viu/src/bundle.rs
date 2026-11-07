@@ -25,6 +25,9 @@ pub struct Manifest {
     pub native_macros: bool,
     pub native_debug: bool,
     pub activation: Option<String>,
+    /// Discovery replies are owned by the authored behaviour instead of the SDK.
+    pub authored_discovery: bool,
+    pub window_app_id: Option<String>,
     /// Retry a refused initial registration once as service-PID.
     pub registration_pid_fallback: bool,
     pub unknown_command: Option<String>,
@@ -52,6 +55,8 @@ impl Default for Manifest {
             native_macros: false,
             native_debug: false,
             activation: None,
+            authored_discovery: false,
+            window_app_id: None,
             registration_pid_fallback: false,
             unknown_command: None,
             app: None,
