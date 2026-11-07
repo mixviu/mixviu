@@ -8,15 +8,16 @@ use std::sync::{
 };
 
 /// Pure resolution through the shared native application-root contract.
-pub(crate) fn app_dirs() -> mix::evaluator::ExtFn {
-    mix::sync_ext(|args| {
+pub(crate) fn app_dirs(application_roots:Option<std::path::PathBuf>) -> mix::evaluator::ExtFn {
+    mix::sync_ext(move |args| {
         let [Value::String(component)] = args.as_slice() else {
             return Err(MixError::RuntimeError {
                 msg: "viu_app_dirs expects an application slug".into(),
                 span: None,
             });
         };
-        crate::runtime::from_json(match config::AppDirs::resolve(component) {
+        let dirs=if let Some(root)=&application_roots {config::AppDirs::resolve_with(component,|key|(key=="MIXOS_APPS_HOME").then(||root.clone()))} else {config::AppDirs::resolve(component)};
+        crate::runtime::from_json(match dirs {
             Some(d) => {
                 serde_json::json!({"root":d.root(),"config":d.config(),"state":d.state(),"cache":d.cache()})
             }

@@ -104,7 +104,12 @@ pub fn admit(current: &Value, action: &str, payload: &Value) -> Result<(), Strin
                                 .all(|p| p.as_str().is_some_and(|s| s.len() <= 65536))
                     })
             }
-            "saved" => current["chooser"]["open"]==true && current["chooser"]["mode"]=="save" && payload["path"].as_str().is_some_and(|p|p.starts_with('/')) && payload["replace"].is_boolean(),
+            "saved" => {
+                current["chooser"]["open"] == true
+                    && current["chooser"]["mode"] == "save"
+                    && payload["path"].as_str().is_some_and(|p| p.starts_with('/'))
+                    && payload["replace"].is_boolean()
+            }
             "cancel" => current["chooser"]["open"] == true && payload.is_null(),
             _ => false,
         };
@@ -444,8 +449,18 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
     if v["chooser"]["open"] == true {
         let chooser = ui.ctx().data_mut(|d| {
             d.get_temp_mut_or_insert_with(chooser_id, || {
-                let start=v["chooser"]["directory"].as_str().unwrap();let title=v["chooser"]["title"].as_str().unwrap();let confirm=v["chooser"]["confirm"].as_str().unwrap_or(v["attach_label"].as_str().unwrap());
-                Arc::new(Mutex::new(match v["chooser"]["mode"].as_str(){Some("save")=>toolkit::file_chooser::FileChooser::save(start,title,confirm),Some("open")=>toolkit::file_chooser::FileChooser::single(start,title,confirm),_=>toolkit::file_chooser::FileChooser::new(start,title,confirm)}))
+                let start = v["chooser"]["directory"].as_str().unwrap();
+                let title = v["chooser"]["title"].as_str().unwrap();
+                let confirm = v["chooser"]["confirm"]
+                    .as_str()
+                    .unwrap_or(v["attach_label"].as_str().unwrap());
+                Arc::new(Mutex::new(match v["chooser"]["mode"].as_str() {
+                    Some("save") => toolkit::file_chooser::FileChooser::save(start, title, confirm),
+                    Some("open") => {
+                        toolkit::file_chooser::FileChooser::single(start, title, confirm)
+                    }
+                    _ => toolkit::file_chooser::FileChooser::new(start, title, confirm),
+                }))
             })
             .clone()
         });
@@ -455,7 +470,9 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                 toolkit::file_chooser::Outcome::Picked(paths) => {
                     emit(events, "picked", json!(paths))
                 }
-                toolkit::file_chooser::Outcome::Save{path,replace}=>emit(events,"saved",json!({"path":path,"replace":replace})),
+                toolkit::file_chooser::Outcome::Save { path, replace } => {
+                    emit(events, "saved", json!({"path":path,"replace":replace}))
+                }
                 _ => emit(events, "cancel", Value::Null),
             }
             ui.ctx().data_mut(|d| {

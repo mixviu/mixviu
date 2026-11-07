@@ -23,6 +23,9 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 /// Supplying one does not create a Bus citizen, broker or global registry.
 #[derive(Clone, Default)]
 pub struct Services {
+    /// A caller-owned applications parent, chiefly for isolated embedded runs.
+    /// None uses the native environment contract; it never mutates the process.
+    pub application_roots: Option<std::path::PathBuf>,
     pub max_string_bytes: Option<usize>,
     pub platform: Option<crate::platform::Platform>,
     pub ui_state: Option<crate::ui_state::UiState>,
@@ -209,7 +212,7 @@ impl Runtime {
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
                         eval.register("viu_private_directory",crate::native_primitives::private_directory());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
-                        eval.register("viu_app_dirs",crate::native_primitives::app_dirs());
+                        eval.register("viu_app_dirs",crate::native_primitives::app_dirs(services.application_roots.clone()));
                         eval.register("viu_maildoc",crate::native_primitives::mail_document());
                         eval.register("viu_editor_write",crate::native_primitives::editor_write());
                         eval.register("viu_digest",crate::native_primitives::digest());

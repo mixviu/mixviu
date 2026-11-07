@@ -94,7 +94,7 @@ fn wire_accounts()
   if $default==nil or not any($entries,fn($e)=$e.id==$default and $e.enabled!=false) then
     $enabled=filter($entries,fn($e)=$e.enabled!=false);$default=if len($enabled)>0 then $enabled[0].id else nil end
   end
-  return map($entries,fn($e)=merge({id:$e.id,name:$e.label,url:$e.url,email:$e.user,ca_path:$e.ca_file,enabled:$e.enabled ?? true,signature:$e.signature ?? "",identities:$e.identities ?? [],default:$e.id==$default,has_password:false,state:if $e.enabled==false then "disabled" else "connecting" end,error:nil,session:nil,unread:0,migrating:false},$wire_views[$e.id] ?? {}))
+  return map($entries,fn($e)=merge({id:$e.id,name:$e.label,url:$e.url,email:$e.user,ca_path:$e.ca_file,enabled:$e.enabled ?? true,signature:$e.signature ?? "",identities:$e.identities ?? [],default:$e.id==$default,has_password:false,state:if $e.enabled==false then "disabled" else "connecting" end,error:nil,session:nil,unread:0,migrating:$config_migration!=nil},$wire_views[$e.id] ?? {}))
 end
 fn wire_session($update)
   global $entries,$active,$mail_settings,$wire_sessions,$wire_views,$wire_data,$wire_generations,$connected,$box,$boxes,$rows,$total,$offset,$message,$mail_emails,$mail_selection,$mail_focus
