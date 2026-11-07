@@ -553,3 +553,40 @@ session/control/shell/input/clipboard/IME/search/live Prefs/release visual
 acceptance. NOT ACCEPTED; no Fable question, gold/install/VT changes.
 
 branch: lab/parity-term; head SHA: 2b580ce99bd8ea85049bebc444bcb38abeef22da (code; receipt HEAD contains this checkpoint); open items: menu callback gate/native repeat, shortcut dialog renderer, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release acceptance; CBC job ids: term-actions-d855604-a1 (green with fmt patch), term-menu-intents-2b580ce (next await).
+
+## Term menu witness and dialog/metrics checkpoint — NOT ACCEPTED
+
+Read the complete saved log for `term-menu-intents-2b580ce-a1`: rc 0,
+no TERM_PATCH diff. Five Mix suites, two bundle tests, 135 terminal tests
+(five existing ignores), command-search admission, foreign gate and debug
+host build pass. Verified fetched artifact SHA256
+`b311f41117755b0ec08ab59c0faa4dcf48ae2431b17407ebb351136312fa3f56`.
+Native `native.h5uA6t` passes the actual File → New Tab callback plus
+targeted close, keyboard/search actions, mode, zoom/reset and normal close.
+All recorded PIDs stopped. Earlier header differences still unaccepted.
+
+Blank shortcuts body reproduced after two seconds. The grid code was in
+an unreachable branch below gold_dialog's early return. Moved it into
+the active reusable renderer, removed the dead branch, bounded/validated
+grid rows and added a native widget geometry regression. Gold capture
+`native.Dae992` shows the expected rows; recorded PIDs stopped.
+
+Native session placement now supplies measured logical cell, device scale
+and unscaled font size. Mix action state now includes gold's visible pane
+geometry/grid/focus data. Text-scale Prefs rebuild the existing raster;
+owning test checks observed values and retained session handles. Live
+keymaps use the existing native gold resolver and update terminal chords,
+menus and help, including multiple bindings and explicit unbinding.
+Five local Mix suites pass. Native tests/captures of these changes pending.
+
+Next CBC: `term-dialog-metrics-9ea52c7`, exact code
+`9ea52c727cd2d7f4f602fc485e152664eb84edf1`, term_gate --prepare. On
+result read full saved log, apply any fmt/lock patch and repeat exact
+source if changed. Fetch matching artifact/source; repeat native menu
+suite and compare settled keys capture with gold, then exercise live
+text scale/keymap/metrics on one unchanged PID. Continue full standing
+brief: verified session/control/sealed shell integration, complete Bus,
+clipboard/input/IME/search, zoom persistence/About, all live Prefs and
+release visual acceptance. No Fable question, install or VT changes.
+
+branch: lab/parity-term; head SHA: 9ea52c727cd2d7f4f602fc485e152664eb84edf1 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — native dialog/metrics/keymap witnesses, full Bus/Prefs/session/input/clipboard/search and release visual acceptance open; CBC job ids: term-menu-intents-2b580ce-a1 (green exact source), term-dialog-metrics-9ea52c7 (next await).

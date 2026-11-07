@@ -319,3 +319,42 @@ Renderer diagnosis remains open, alongside About text, action-state
 metrics, binding reload, zoom persistence and the broader inventory.
 Next exact-source gate: term-menu-intents-2b580ce at
 `2b580ce99bd8ea85049bebc444bcb38abeef22da`.
+
+### Menu callback verified; dialog and observed-state repair checkpoint
+
+`term-menu-intents-2b580ce-a1` passed at that exact source with no worker
+diff: five Mix suites, two bundle tests, 135 terminal tests (five existing
+environment/benchmark ignores), command-search admission, foreign gate and
+debug host build. Fetched debug executable SHA256:
+`b311f41117755b0ec08ab59c0faa4dcf48ae2431b17407ebb351136312fa3f56`.
+Private run `native.h5uA6t` passed the actual File → New Tab callback,
+targeted close, keyboard New Tab, command-search selection, dialog commands,
+local mode, zoom/reset and normal close. Recorded processes all stopped.
+This closes the menu payload defect; it does not grant visual acceptance.
+
+The two-second settled shortcuts capture remained blank. Diagnosis found
+the earlier grid renderer was unreachable: gold dialogs return through
+`gold_dialog` before reaching it. Commit `301080a` moves the bounded grid
+renderer into the active path and removes the dead branch. The new native
+widget regression checks that 23 rows contribute to dialog height; gate
+execution and matched candidate capture are pending. Gold's corresponding
+capture is retained in private run `native.Dae992`, with stopped-process
+receipt. Gold shows the scrollable shortcut rows.
+
+Commit `598e6bd` reports actual logical cell size, device scale and unscaled
+font size from the raster/session placement. Mix now supplies gold's
+`term.actions.state.panes` tree order, focused flags, grid sizes and outer
+rectangles. Unknown pre-draw metrics stay null. Terminal text scale now
+rebuilds the raster without replacing its session. The owning native test
+checks handle retention and observed metrics across font/scale changes;
+these Rust changes await CBC. Commit `aaabb6e` routes live keymap updates
+through the existing gold conflict resolver, refreshes native terminal
+chords, menus and help, and follows native effective-theme notifications.
+Pure tests cover multiple bindings, explicit unbinding and measured reply
+composition. Native live-Prefs evidence remains required.
+
+Next source: `9ea52c727cd2d7f4f602fc485e152664eb84edf1`, CBC job
+`term-dialog-metrics-9ea52c7`. Overall **NOT ACCEPTED**: final native
+dialog/metrics/keymap/Prefs witnesses, complete verified session/control
+and shell handoff, full Bus/error/envelope parity, clipboard/input/IME,
+search, zoom persistence, About provenance and release visual gate remain.
