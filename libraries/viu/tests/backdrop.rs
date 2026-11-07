@@ -28,7 +28,10 @@ impl BusHandler for Fixture {
         Box::pin(async move {
             match command {
                 "topic.publish" => Ok((0, viu::runtime::from_json(json!({}))?)),
-                "train.queue" | "train.history" | "train.gate" | "buildd.queue" => Ok((10, viu::runtime::from_json(json!({"error":"fixture service unavailable"}))?)),
+                "train.queue" | "train.history" | "train.gate" | "buildd.queue" => Ok((
+                    10,
+                    viu::runtime::from_json(json!({"error":"fixture service unavailable"}))?,
+                )),
                 _ => panic!("unexpected inter-process effect: {command}"),
             }
         })
