@@ -79,7 +79,14 @@ impl Sessions {
         (self.wake)();
     }
 
-    pub(crate) fn placed(&self, handle: &str, rect: egui::Rect, cell: (u32, u32), scale: f32, font_px: f32) {
+    pub(crate) fn placed(
+        &self,
+        handle: &str,
+        rect: egui::Rect,
+        cell: (u32, u32),
+        scale: f32,
+        font_px: f32,
+    ) {
         let placement = Placement {
             rect: [rect.min.x, rect.min.y, rect.width(), rect.height()],
             cell: [cell.0 as f32 / scale, cell.1 as f32 / scale],

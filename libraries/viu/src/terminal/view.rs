@@ -136,7 +136,13 @@ mod tests {
         crate::fonts::install(&ctx, 400, 600);
         let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
         let mut previous_height = None;
-        for (size, text_scale) in [(14.667, 1.0), (14.667, 1.0), (18.0, 1.0), (18.0, 1.5), (18.0, 1.5)] {
+        for (size, text_scale) in [
+            (14.667, 1.0),
+            (14.667, 1.0),
+            (18.0, 1.0),
+            (18.0, 1.5),
+            (18.0, 1.5),
+        ] {
             widget.properties = json!({"font_size":size,"text_scale":text_scale});
             let mut output = ctx.run_ui(
                 egui::RawInput {
@@ -247,7 +253,11 @@ impl Views {
         let p = &widget.properties;
         let scale = ui.ctx().pixels_per_point();
         let font_px = p["font_size"].as_f64().unwrap_or(14.667) as f32;
-        let text_scale = p["text_scale"].as_f64().filter(|n| n.is_finite()).unwrap_or(1.0).clamp(0.5, 3.0) as f32;
+        let text_scale = p["text_scale"]
+            .as_f64()
+            .filter(|n| n.is_finite())
+            .unwrap_or(1.0)
+            .clamp(0.5, 3.0) as f32;
         let size = font_px * text_scale;
         let family = p["font_family"].as_str().unwrap_or("");
         let weight = crate::widgets::whole(&p["font_weight"]).unwrap_or(400) as u16;
