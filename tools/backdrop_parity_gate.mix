@@ -1,8 +1,12 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- CBC only. Contract checkpoint, not full app or visual acceptance.
 if contains(args(),"--prepare") then
-  print(run_argv(["cargo","fmt","-p","viu"]))
+  print(run_argv(["cargo","fmt","-p","lib-viu"]))
   print("==LOCKDIFF==")
   print(run_argv_must(["git","diff","--binary"]))
   print("==ENDLOCKDIFF==")
@@ -24,7 +28,7 @@ if contains(args(),"--artifact") then
   $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
   $artifact="/build/es-artifacts/"..$sha;mkdir($artifact,{parents:true})
   for $profile in ["debug","release"]
-    $argv=["cargo","build","--locked","-p","viu-engine","--bin","viu"]
+    $argv=["cargo","build","--locked","-p","viu","--bin","viu"]
     if $profile=="release" then push($argv,"--release") end
     $result=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"4"}});print($result)
     if not $result.ok then exit($result.exit_code ?? 124) end
@@ -34,7 +38,7 @@ if contains(args(),"--artifact") then
     write_file($artifact.."/"..$name..".json",json_encode($receipt));print({artifact:$artifact,receipt:$receipt})
   end
 end
-for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--lib","raster"],["cargo","test","--locked","-p","viu","--test","app_ports","--test","backdrop","--test","session"],["cargo","clippy","--locked","-p","viu","--all-targets"]]
+for $argv in [["cargo","fmt","-p","lib-viu","--","--check"],["cargo","test","--locked","-p","lib-viu","--lib","raster"],["cargo","test","--locked","-p","lib-viu","--test","app_ports","--test","backdrop","--test","session"],["cargo","clippy","--locked","-p","lib-viu","--all-targets"]]
   if contains(args(),"--prepare") and $argv[1]=="fmt" then continue end
   $result=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"4"}})
   print($result)

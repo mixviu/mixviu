@@ -4,7 +4,7 @@ fn check($v,$why) if not $v then raise("VIEW_TEST",$why) end end
 $s=$m.initial();$p=$view.project($s)
 check($p.show_command and not $p.show_macro and not $p.show_agents,"initial inspector")
 $s.catalogues={global:{macros:[{id:"example",title:"Example",tier:"user-global",targets:["echo"]}]},echo:{macros:[],running:true}}
-$s.macro_selected=["global","example"];$s.document={id:"example",text:"print(1)",tier:"user-global",path:"/home/user/.config/mixos/macros/example.mix"}
+$s.macro_selected=["global","example"];$s.document={id:"example",text:"print(1)",tier:"user-global",path:"/home/user/.config/mix/macros/example.mix"}
 $p=$view.project($s);check($p.show_macro and $p.macro_target_visible and not $p.macro_dirty,"macro projection")
 $s.macro_draft="print(2)";$p=$view.project($s);check($p.macro_dirty and $p.macro_editor.properties.native_document,"native editor and dirty state")
 $s.macro_selected=nil;$s.row_key="agents:new:local";$p=$view.project($s)

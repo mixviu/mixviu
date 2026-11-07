@@ -1,7 +1,11 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- CBC only. Exact source gate and artifact handoff, never an installation.
-for $argv in [["/opt/mixos/bin/mix","tools/backdrop_parity_gate.mix","--artifact"],["cargo","test","--locked","-p","viu","-p","viu-engine"],["git","diff","--exit-code"]]
+for $argv in [["/opt/mixos/bin/mix","tools/backdrop_parity_gate.mix","--artifact"],["cargo","test","--locked","-p","lib-viu","-p","viu"],["git","diff","--exit-code"]]
   print({argv:$argv})
   $result=run_argv($argv,{timeout:3600,max_output:24000000,env:{CARGO_BUILD_JOBS:"4"}})
   print($result)

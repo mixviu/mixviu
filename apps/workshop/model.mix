@@ -9,7 +9,7 @@ fn initial()
   $s.mesh_inspected=nil
   $s.reveal_serial=0;$s.reveal_key=nil
   $s.saved=$saved.envelope();$s.saved_ready=false;$s.saved_preserve_app=false;$s.saved_restore={done:false,shown:false,row_key:nil,selected:nil,expanded:nil,seen:[]}
-  $s.comp=env("MIXOS_COMP_SERVICE","comp")
+  $s.comp=env("MIX_COMP_SERVICE","comp")
   $s.catalogues={};$s.discovery=nil;$s.jobs={};$s.queue=[];$s.generation=0;$s.call=nil;$s.activations=[]
   $s.traffic=[];$s.traffic_bytes=0;$s.dropped=0;$s.ignored_observations=0;$s.observe="";$s.subscription=nil;$s.traffic_paused=false;$s.traffic_filter=""
   $s.macro_selected=nil;$s.document=nil;$s.macro_draft=nil;$s.macro_saved_text=nil;$s.macro_message="";$s.macro_target="";$s.macro_destination="";$s.macro_new_title="";$s.macro_confirm_delete=false;$s.macro_pending=0;$s.macro_next_ticket=0;$s.macro_latest_open=0;$s.macro_latest_catalogues=0

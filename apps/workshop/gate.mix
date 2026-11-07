@@ -2,14 +2,14 @@
 -- Run only under CBC. Return worker changes before clearing our own diff.
 $code=0
 try
-  if contains(args(),"--prepare") then print(run_argv_must(["cargo","fmt","-p","viu","-p","scene"])) end
-  for $argv in [["cargo","fmt","-p","viu","-p","scene","--","--check"],["cargo","test","--locked","-p","viu","--test","workshop_frame","--test","ports_round4"],["cargo","test","--locked","-p","viu","--lib","native_bus::tests"],["cargo","test","--locked","-p","viu","--lib","launch::tests"],["cargo","test","--locked","-p","scene"]]
+  if contains(args(),"--prepare") then print(run_argv_must(["cargo","fmt","-p","lib-viu","-p","scene"])) end
+  for $argv in [["cargo","fmt","-p","lib-viu","-p","scene","--","--check"],["cargo","test","--locked","-p","lib-viu","--test","workshop_frame","--test","ports_round4"],["cargo","test","--locked","-p","lib-viu","--lib","native_bus::tests"],["cargo","test","--locked","-p","lib-viu","--lib","launch::tests"],["cargo","test","--locked","-p","scene"]]
     print({argv:$argv})
     $r=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}});print($r)
     if not $r.ok then $code=$r.exit_code ?? 124;break end
   end
   if $code==0 and contains(args(),"--binary") then
-    $r=run_argv(["cargo","build","--locked","-p","viu-engine","--bin","viu"],{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}});print($r)
+    $r=run_argv(["cargo","build","--locked","-p","viu","--bin","viu"],{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}});print($r)
     if not $r.ok then $code=$r.exit_code ?? 124
     else
       $sha=trim(run_argv_must(["git","rev-parse","HEAD"]));$dir="/build/workshop-artifacts/"..$sha;mkdir($dir,{parents:true});copy("target/debug/viu",$dir.."/viu")

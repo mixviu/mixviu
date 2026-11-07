@@ -141,7 +141,7 @@ fn macro_library_binding_keeps_disk_work_inside_the_owned_session_roots() {
         builtin: dir.path().join("builtin"),
         user: dir.path().join("user"),
         home: dir.path().join("home"),
-        mix: "/opt/mixos/bin/mix".into(),
+        mix: "/opt/mix/bin/mix".into(),
     };
     let session = macros::Session::with_roots("workshop", Some(roots.clone()));
     let (tx, rx) = mpsc::channel();

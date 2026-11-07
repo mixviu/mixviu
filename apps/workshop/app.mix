@@ -7,7 +7,7 @@ $actions=require("actions.mix");$macros=require("macro.mix")
 $agent_ui=require("agent-ui.mix")
 $state=$model.initial();$ctx=viu_context();$state.mesh.observer=$ctx.citizen
 try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$launcher.plan($app_args) end
-$state.comp=$launch.comp ?? env("MIXOS_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
+$state.comp=$launch.comp ?? env("MIX_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
 fn publish_workshop($s)
   $s=$saved.reconcile($s)
   $s.busy=$model.busy($s)

@@ -8,7 +8,7 @@ on job.run
     send $a.comp "comp.windows.list" body={}
     if $rc!=0 then raise("ACTIVATION",to_string($result)) end
     $windows=filter($reply.windows ?? [],fn($w)=$w.app_id=="dev.mixos.workshop" and $w.pid==$a.pid)
-    if len($windows)==0 then raise("ACTIVATION","window not known to compd") end
+    if len($windows)==0 then raise("ACTIVATION","window not known to viud") end
     $window=$windows[0];$target={id:$window.id,generation:$window.generation}
     send $a.comp "comp.window.restore" body=$target
     if $rc!=0 or $reply.minimized!=false then raise("ACTIVATION",to_string($result)) end
