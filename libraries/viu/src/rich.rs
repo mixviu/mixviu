@@ -1121,7 +1121,11 @@ fn gold_dialog(
     let mut accept = false;
     let shown=Dialog::new(key,text(value,"title")).buttons(choices.iter().map(|c|Choice::new(text(c,"label"),if c["default"]==true {Role::Default}else if c["cancel"]==true{Role::Cancel}else{Role::Other}).enabled(c["enabled"]==true)).collect()).show(ui.ctx(),|ui|{
         if let Some(field)=field.as_mut(){
-            let response=toolkit::field::text(ui,field,text(value,"body"),420.0);
+            let response=if value["field_style"]=="title" {
+                ui.add(egui::TextEdit::singleline(field).hint_text(text(value,"placeholder")))
+            } else {
+                toolkit::field::text(ui,field,text(value,"body"),420.0)
+            };
             geometry.insert(format!("{id}.field"),response.rect);
             if response.lost_focus() && ui.input(|i|i.key_pressed(egui::Key::Enter)){accept=true;}
             else if !response.has_focus() && !response.lost_focus(){response.request_focus();}

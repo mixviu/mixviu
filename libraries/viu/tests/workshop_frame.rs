@@ -53,6 +53,11 @@ fn workshop_mounts_gold_frame_and_routes_dialogs_without_bus_transport() {
     let large = viu::widgets::Widget::new("reply", "editor", "", json!("🦀".repeat(250_000)))
         .with_properties(json!({"read_only":true,"max_bytes":1_000_100}));
     assert!(large.validate(&large.initial).is_ok());
+    assert!(large.validate(&json!("🦀".repeat(250_026))).is_err());
+    let editable = large
+        .clone()
+        .with_properties(json!({"read_only":false,"max_bytes":1_000_100}));
+    assert!(editable.validate(&editable.initial).is_err());
     runtime
         .event("workshop.dialog".into(), json!({"open":"about"}))
         .unwrap();
@@ -174,11 +179,12 @@ send "viu-local" "scenes.model" body={generation:viu_context().generation,value:
     assert_eq!(model["global"]["rc"], 0);
     assert_eq!(model["app"]["rc"], 0);
     assert_eq!(model["own"]["rc"], 0);
-    assert!(
-        std::path::Path::new(model["own"]["body"]["path"].as_str().unwrap())
-            .starts_with(roots.user.join("workshop")),
-        "the application's own macro endpoint must not use the global store"
+    // Gold reserves Workshop's own endpoint for the global catalogue.
+    assert_eq!(
+        model["own"]["body"]["path"],
+        json!(roots.user.join("own-example.mix"))
     );
+    assert!(!roots.user.join("workshop").exists());
     assert!(
         std::path::Path::new(model["global"]["body"]["path"].as_str().unwrap())
             .starts_with(&roots.user)
