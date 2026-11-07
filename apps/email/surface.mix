@@ -125,6 +125,8 @@ fn surface_model($m)
   return pim_model($m)
 end
 fn surface_account($id)
+  if $id==nil or $id=="" then return wire_refuse("INVALID_ARGUMENT","id is required") end
+  if type($id)!="string" then return wire_refuse("INVALID_ARGUMENT","id must be a string") end
   global $active,$boxes,$box,$rows,$total,$offset,$message,$connected,$revision,$mail_selection,$mail_focus,$mail_emails,$mail_sort,$mail_widths,$mail_hidden_columns,$mail_density,$wire_data
   if not any($entries,fn($e)=$e.id==$id) then return wire_refuse("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
   if $active!="" and $wire_data[$active]!=nil then $wire_data[$active].table={selection:$mail_selection,focus:$mail_focus,sort:$mail_sort,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density} end
@@ -135,6 +137,8 @@ fn surface_account($id)
   return {rc:0,body:{id:$id}}
 end
 fn surface_mailbox($account,$id)
+  if $id==nil or $id=="" then return wire_refuse("INVALID_ARGUMENT","id is required") end
+  if type($id)!="string" then return wire_refuse("INVALID_ARGUMENT","id must be a string") end
   global $box,$rows,$message,$mail_selection,$mail_focus,$revision,$wire_data,$mode,$total,$offset
   $r=surface_account($account)
   if $r.rc!=0 then return $r end

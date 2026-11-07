@@ -176,6 +176,26 @@ fn reply_quotes_strip_signatures_preserve_nesting_and_skip_active_html() {
 }
 
 #[test]
+fn request_refusals_keep_gold_validation_order_without_server_effects() {
+    for (command, args, expected) in [
+        ("email.get", json!({}), "id is required"),
+        ("email.mark", json!({}), "read or flagged is required"),
+        ("email.junk", json!({}), "junk must be true or false"),
+        ("email.send", json!({}), "to is required"),
+        ("email.account.password.set", json!({}), "password is required"),
+        ("email.event.create", json!({"calendar":"c"}), "start is required"),
+        ("email.event.update", json!({}), "nothing to change"),
+        ("email.contact.update", json!({}), "nothing to change"),
+    ] {
+        let call = format!("$m.validate({},json_parse({}))",json!(command),json!(args.to_string()));
+        let (rc, body) = probe_module(vec![], &call, "request.mix", vec![]);
+        assert_ne!(rc,0,"{command}: {body}");
+        assert_eq!(body["code"],"INVALID_ARGUMENT","{command}: {body}");
+        assert_eq!(body["message"],expected,"{command}: {body}");
+    }
+}
+
+#[test]
 fn gold_writes_accept_missing_error_maps_and_preserve_partial_failures() {
     let session = r#"{account:"1",api:$e.url,token:nil,using:[]}"#;
     let (rc, body) = probe_module(

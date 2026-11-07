@@ -24,6 +24,8 @@ fn event_range($e)
 end
 fn surface_mode($name)
   global $mode
+  if $name==nil or $name=="" then return wire_refuse("INVALID_ARGUMENT","name is required") end
+  if type($name)!="string" then return wire_refuse("INVALID_ARGUMENT","name must be a string") end
   if not contains(["mail","calendar","contacts"],$name) then return wire_refuse("INVALID_ARGUMENT","name must be mail, calendar or contacts") end
   $mode=$name;$d=$wire_data[$active] ?? {}
   if ($wire_views[$active] ?? {}).state=="ready" then
@@ -36,6 +38,8 @@ fn surface_parent($account,$id,$is_event)
   global $wire_data
   $r=surface_account($account)
   if $r.rc!=0 then return $r end
+  if $id==nil or $id=="" then return wire_refuse("INVALID_ARGUMENT","id is required") end
+  if type($id)!="string" then return wire_refuse("INVALID_ARGUMENT","id must be a string") end
   $d=$wire_data[$account] ?? {};$kind=if $is_event then "calendars" else "books" end
   if not any($d[$kind] ?? [],fn($p)=$p.id==$id) then return wire_refuse("NOT_FOUND","No such "..to_string($id)) end
   $wire_data[$account][if $is_event then "calendar" else "book" end]=$id
