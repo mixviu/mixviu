@@ -873,6 +873,12 @@ impl SceneView {
         let area = ui.available_rect_before_wrap();
         let mut remaining = area;
         let placements = &node.ports["placements"];
+        if placements
+            .as_object()
+            .is_some_and(|p| p.values().any(|p| p["native_panel"] == true))
+        {
+            ui.set_clip_rect(ui.clip_rect().intersect(area));
+        }
         for child in children(node) {
             if nodes
                 .get(child)
