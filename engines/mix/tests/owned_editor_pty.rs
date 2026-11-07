@@ -8,12 +8,12 @@
 //! still needs to allow setup plus the real editor fixture durations.
 #![cfg(target_os = "linux")]
 #[allow(dead_code)]
-#[path = "../../mix-shell/src/editor.rs"]
+#[path = "../../../libraries/mix-shell/src/editor.rs"]
 mod editor;
 #[path = "support/pty.rs"]
 mod pty;
 #[allow(dead_code)]
-#[path = "../../mix-shell/src/session_state.rs"]
+#[path = "../../../libraries/mix-shell/src/session_state.rs"]
 mod session_state;
 
 use editor::runtime::{CompletionSnapshot, Line, OwnedEditor};

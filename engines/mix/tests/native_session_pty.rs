@@ -855,7 +855,7 @@ fn enrolled_exec_restart_revokes_and_replacement_stays_unbound() {
 #[test]
 fn bootstrap_source_boundary_and_builtin_inventory_exclude_seed_state() {
     let _fixture = fixture_guard();
-    let owner = include_str!("../../mix-shell/src/native_session.rs");
+    let owner = include_str!("../../../libraries/mix-shell/src/native_session.rs");
     // Load-bearing boundary: the secret owner never imports the evaluator lib.
     assert!(!owner.contains("mix::"));
     for forbidden in [
@@ -867,7 +867,7 @@ fn bootstrap_source_boundary_and_builtin_inventory_exclude_seed_state() {
     ] {
         assert!(!owner.contains(forbidden), "owner exposes {forbidden}");
     }
-    let source = include_str!("../../mix-shell/src/lib.rs");
+    let source = include_str!("../../../libraries/mix-shell/src/lib.rs");
     let main = source
         .split("pub fn main() -> process::ExitCode {")
         .nth(1)
@@ -1232,9 +1232,9 @@ fn status_open_scenarios(editor: &str) {
 #[test]
 fn status_commands_are_absent_from_legacy_surfaces() {
     for source in [
-        include_str!("../../mix-shell/src/bus.rs"),
-        include_str!("../../mix-shell/src/serve_runtime.rs"),
-        include_str!("../../mix-shell/src/meta.rs"),
+        include_str!("../../../libraries/mix-shell/src/bus.rs"),
+        include_str!("../../../libraries/mix-shell/src/serve_runtime.rs"),
+        include_str!("../../../libraries/mix-shell/src/meta.rs"),
         include_str!("../../../libraries/mix/src/builtins.rs"),
     ] {
         for command_name in [
