@@ -43,7 +43,7 @@ fn publish_email()
   $m=$frame.apply($m,$look)
   if $chrome.search==true then
     $choices=map($actions.registry(action_context()),fn($a)={id:$a.id,label:$a.label,enabled:$a.enabled and $a.id!="view.search"})
-    $choices=push($choices,{id:"cancel",label:"Cancel",enabled:true,cancel:true})
+    push($choices,{id:"cancel",label:"Cancel",enabled:true,cancel:true})
     $m.native_overlays=push($m.native_overlays,{command:"email.search.intent",definition:{id:"email-search",kind:"dialog-form",label:"",initial:{open:true,instance:$chrome.search_serial,title:"Search menus",body:"",choices:$choices},properties:{style:"command-search"}}})
   end
   if not $fixture then $m=composer_restore_model(form_model(composer_models($m))) end
