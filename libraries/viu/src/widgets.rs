@@ -1251,7 +1251,7 @@ impl Widgets {
                     .get_or_insert_with(crate::image_view::Images::surface);
                 images.set_rasters(self.rasters.clone());
                 images.draw_fill(ui, id, value)
-            },
+            }
             "network-map" => {
                 crate::network_map::draw(ui, widget, value, &mut self.geometry, events)
             }

@@ -941,7 +941,11 @@ pub(crate) fn draw(
                             egui::TextEdit::singleline(path)
                                 .id(dialog_id.with("field"))
                                 .hint_text(text(value, "placeholder"))
-                                .desired_width(if title_field { ui.spacing().text_edit_width } else { f32::INFINITY }),
+                                .desired_width(if title_field {
+                                    ui.spacing().text_edit_width
+                                } else {
+                                    f32::INFINITY
+                                }),
                         );
                         geometry.insert(format!("{id}.field"), response.rect);
                         submitted =

@@ -216,7 +216,6 @@ impl Bundle {
                 .notice_command
                 .as_ref()
                 .is_some_and(|s| s.is_empty() || s.len() > 128)
-
             || manifest
                 .frame
                 .as_deref()

@@ -764,7 +764,8 @@ impl Host {
             self.retained.remove(&done.sequence);
             if !self.error.is_empty() {
                 if let Some(token) = self.deferred.remove(&done.sequence) {
-                    self.calls.finish(&token, 10, json!({"error":self.error}), false);
+                    self.calls
+                        .finish(&token, 10, json!({"error":self.error}), false);
                 }
             }
             if let Some(reply) = self.pending.remove(&done.sequence) {
@@ -1057,7 +1058,10 @@ impl Host {
         if let Some(error) = self.view.take_focus_error() {
             self.error = error;
         }
-        if self.inflight.is_empty() && self.ui_inflight.is_empty() && self.view.current_revision_drawn() {
+        if self.inflight.is_empty()
+            && self.ui_inflight.is_empty()
+            && self.view.current_revision_drawn()
+        {
             self.facilities.settle_answers();
         }
         if self.input.now.is_empty()
@@ -1675,7 +1679,9 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         eprintln!("viu: {e}");
         std::process::exit(i32::from(preview.manifest.argument_error_exit))
     });
-    if bundle.launch["headless"] == true { return run_headless(bundle); }
+    if bundle.launch["headless"] == true {
+        return run_headless(bundle);
+    }
     if bundle.manifest.surface == "headless" {
         let ctx = egui::Context::default();
         crate::appearance::install(&ctx);
