@@ -1306,7 +1306,10 @@ impl crate::layer::LayerProgram for LayerHost {
         host.frame(ui);
         if let Some(state) = host.outputs.get_mut(host.output.as_ref().unwrap()) {
             let raster = host.view.raster_states();
-            if raster["root"].is_object() {
+            if let Some(shows) = host.model["layer"]["content"].as_str() {
+                state["shows"] = json!(shows);
+                state["error"] = Value::Null;
+            } else if raster["root"].is_object() {
                 for key in ["shows", "error", "fit"] {
                     state[key] = raster["root"][key].clone();
                 }
@@ -1337,6 +1340,10 @@ impl crate::layer::LayerProgram for LayerHost {
                 let _=host.runtime.notify("viu.layer.presented".into(),json!({"output":output,"width":surface.width,"height":surface.height,"scale":surface.scale}));
             }
             if let Some(state) = host.outputs.get_mut(&output) {
+                state["presented_view_frames"] = json!(if state["_presented_shows"] == state["shows"] {
+                    state["presented_view_frames"].as_u64().unwrap_or(0) + 1
+                } else { 1 });
+                state["_presented_shows"] = state["shows"].clone();
                 state["presented_frames"] =
                     json!(state["presented_frames"].as_u64().unwrap_or(0) + 1);
                 state["presented_revision"] = json!(

@@ -53,6 +53,7 @@ fn show_state($s)
   else $model.root={id:"root",kind:"image-fill",label:"",initial:{phase:"none",colour:[0,0,0],fit:"fill"}} end
   for $key in keys($model.surfaces) $model.surfaces[$key].root=$model.root end
   $model.layer={strict_callbacks:$s.view=="train",frame_ms:if $s.view=="train" then 100 else 0 end}
+  if $s.view=="train" and visible() then $model.layer.content="train" end
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
 end
 fn answer($owed,$rc,$body)
@@ -106,7 +107,7 @@ fn commit($s)
   for $handle in handles($s.images) viu_raster("detach",$handle) end
   viu_raster("close",$p.scope);release_obsolete($old,$s)
   if contains(["set","next"],$p.owed.op) then
-    publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop."..$p.owed.op,"bus",{},nil)))
+    publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop."..$p.owed.op,"bus",nil,nil)))
   end
   $change={requested:$s.requested,active:$s.active,config_file:$store}
   if $p.owed.op=="next" then answer($p.owed,0,snapshot($s))
@@ -186,7 +187,7 @@ on backdrop.view.set
     publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.set","bus",$event.args,$result)))
     $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
     show_state($s);reply(0,json_encode($result))
-  catch $message reply(10,json_encode({error_code:"ARGUMENT",message:$message})) end
+  catch $message reply(10,json_encode({error_code:"ARGUMENT",message:"bad parameters for command \""..$event.command.."\": "..$message})) end
 end
 on backdrop.view.cycle
   try
@@ -194,7 +195,7 @@ on backdrop.view.cycle
     publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.cycle","bus",$event.args,$result)))
     $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
     show_state($s);reply(0,json_encode($result))
-  catch $message reply(10,json_encode({error_code:"ARGUMENT",message:$message})) end
+  catch $message reply(10,json_encode({error_code:"ARGUMENT",message:"bad parameters for command \""..$event.command.."\": "..$message})) end
 end
 on viu.job.completed
   $d=$event.args

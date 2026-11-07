@@ -5,11 +5,14 @@ fn fresh()
   return {train_service:"train",buildd_service:"buildd",hours:24,renderer:"3d"}
 end
 fn choose_view($state,$body)
-  $document.shape($body,["view","args"],"view")
+  if type($body)!="map" then raise("ARGUMENT","expected an object") end
+  if any(keys($body),fn($k)=not contains(["view","args"],$k)) then raise("ARGUMENT","unknown field") end
+  if type($body.view)!="string" then raise("ARGUMENT","view is required") end
   if not contains(["wallpaper","train"],$body.view) then raise("ARGUMENT","unknown view") end
   $train="train";$buildd="buildd";$hours=$state.hours;$renderer=$state.renderer
   if contains(keys($body),"args") then
-    $a=$body.args;$document.shape($a,["train_service","buildd_service","renderer","zoom"],"args")
+    $a=$body.args
+    if type($a)!="map" then raise("ARGUMENT","args must be an object") end
     for $key in keys($a)
       $value=$a[$key]
       if $key=="zoom" then
@@ -20,6 +23,7 @@ fn choose_view($state,$body)
         $renderer=$value
       else
         if type($value)!="string" or byte_length($value)==0 or byte_length($value)>256 then raise("ARGUMENT","invalid service name") end
+        if not contains(["train_service","buildd_service"],$key) then raise("ARGUMENT","unknown view argument") end
         if $key=="train_service" then $train=$value else $buildd=$value end
       end
     end
@@ -28,6 +32,7 @@ fn choose_view($state,$body)
   return $state
 end
 fn cycle($selected,$body)
+  if type($body)!="map" then raise("ARGUMENT","expected an object") end
   if type($body)!="map" or len(keys($body))!=1 or not contains(["next","prev"],$body.dir) then raise("ARGUMENT","dir must be next or prev") end
   return if $selected=="train" then "wallpaper" else "train" end
 end
