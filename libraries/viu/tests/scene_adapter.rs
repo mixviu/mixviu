@@ -10,6 +10,42 @@ fn scene(nodes: serde_json::Value) -> String {
 }
 
 #[test]
+fn bottom_panel_reserves_space_before_the_fill_sibling() {
+    let source = scene(json!({
+        "root":{"widget":"dock","children":["footer","body"],"placements":{
+            "footer":{"edge":"bottom","panel":true,"size":140,"resizable":true,"max_fraction":0.3},
+            "body":{"edge":"fill"}
+        }},
+        "footer":{"widget":"column","children":["footer-label"]},
+        "footer-label":{"widget":"control","definition":{"id":"footer-label","kind":"label","label":"","initial":"No problems."}},
+        "body":{"widget":"control","definition":{"id":"body","kind":"label","label":"","initial":"Document body"}}
+    }));
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = egui::Context::default();
+    toolkit::install(&ctx, &toolkit::Theme::embedded());
+    for _ in 0..3 {
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1000.0, 720.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        )
+        .drop_without_applying_deltas();
+    }
+    let footer = view.geometry["footer-label"];
+    let body = view.geometry["body"];
+    assert!(footer.top() > 500.0, "footer painted over the body: {footer:?}");
+    assert!(body.bottom() <= footer.top(), "fill overlaps footer: {body:?} {footer:?}");
+    assert!(footer.bottom() <= 720.0);
+}
+
+#[test]
 fn hosted_menu_popup_survives_a_hidden_client_band_and_returns_to_the_row() {
     let source = scene(
         json!({"root":{"widget":"column","children":["band"]},"band":{"widget":"column","hidden":"= $model.hidden","children":["menu"]},"menu":{"widget":"control","definition":{"id":"menu","kind":"menubar","label":"","initial":[]},"on_intent":"menu.intent"}}),

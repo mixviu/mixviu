@@ -358,7 +358,9 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
-                                        ui.spacing_mut().item_spacing.x = 2.0;
+                                        if v["native_spacing"] == true {
+                                            ui.spacing_mut().item_spacing.x = 2.0;
+                                        }
                                         for a in r["actions"].as_array().unwrap().iter().rev() {
                                             let response = if let Some(icon) = a["icon"]
                                                 .as_str()
@@ -379,13 +381,17 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                                                 emit(events, "command", a["id"].clone());
                                             }
                                         }
-                                        ui.add_space(form::GAP - 2.0);
-                                        ui.with_layout(
-                                            egui::Layout::left_to_right(egui::Align::Center),
-                                            |ui| {
-                                                field(ui);
-                                            },
-                                        );
+                                        if v["native_spacing"] == true {
+                                            ui.add_space(form::GAP - 2.0);
+                                            ui.with_layout(
+                                                egui::Layout::left_to_right(egui::Align::Center),
+                                                |ui| {
+                                                    field(ui);
+                                                },
+                                            );
+                                        } else {
+                                            field(ui);
+                                        }
                                     },
                                 );
                             }
