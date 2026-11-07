@@ -147,7 +147,12 @@ end
 fn stage_mix_lint_baseline($mix)
   ensure_mix($mix)
   mkdir("tools/ci")
-  write_file($baseline_path, json_encode(lint_counts($mix)) + "\n")
+  $json = json_encode(lint_counts($mix)) + "\n"
+  write_file($baseline_path, $json)
+  -- Printed between markers so a CBC run can hand the file back.
+  print("MIX_LINT_BASELINE_BEGIN")
+  print($json)
+  print("MIX_LINT_BASELINE_END")
   print("wrote " + $baseline_path)
 end
 
