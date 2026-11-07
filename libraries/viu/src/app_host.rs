@@ -35,6 +35,7 @@ fn validate_overlays(model: &Value) -> Result<(), String> {
     Ok(())
 }
 struct Host {
+    require_bus: bool,
     forward_output: bool,
     platform: crate::platform::Platform,
     paste_waits: std::collections::VecDeque<String>,
@@ -458,7 +459,9 @@ impl Host {
         }
         while let Some(done) = self.runtime.try_completion() {
             if let Some((code, message)) = self.ui_state.take_exit() {
-                if !message.is_empty() { eprintln!("{}: {message}", self.app); }
+                if !message.is_empty() {
+                    eprintln!("{}: {message}", self.app);
+                }
                 std::process::exit(i32::from(code));
             }
             if self.forward_output {
@@ -998,6 +1001,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        require_bus: bundle.manifest.require_bus,
         forward_output: bundle.manifest.forward_output,
         platform,
         paste_waits: Default::default(),
@@ -1087,10 +1091,11 @@ pub fn run(args: Vec<String>) -> eframe::Result {
             eprintln!("viu logging: {e}");
             std::process::exit(2)
         });
-    if matches!(
-        logging_args.get(3).map(String::as_str),
-        Some("--help" | "-h")
-    ) {
+    if logging_args.iter().skip(3).any(|a| matches!(a.as_str(), "--help" | "-h")) {
+        if let Some(help) = &preview.manifest.help {
+            print!("{help}");
+            return Ok(());
+        }
         println!(
             "Usage: viu run APP_DIR [--service NAME] [--comp NAME] [--noded-url URL] [APP_ARGS]"
         );
@@ -1214,6 +1219,7 @@ impl crate::layer::LayerProgram for LayerHost {
         }
     }
     fn should_close(&self) -> bool {
+        if self.host.as_ref().is_some_and(|h| h.require_bus && h.bus.registration_failed.load(std::sync::atomic::Ordering::Acquire)) { std::process::exit(1); }
         self.host.as_ref().is_some_and(|h| {
             h.bus
                 .close_requested

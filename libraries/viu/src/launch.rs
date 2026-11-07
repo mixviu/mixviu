@@ -58,6 +58,11 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     if let Some(service) = options.service {
         bundle.manifest.service = service;
     }
+    if let Some(pattern) = &bundle.manifest.service_pattern {
+        if !regex::Regex::new(pattern).map_err(|e| e.to_string())?.is_match(&bundle.manifest.service) {
+            return Err("invalid service name".into());
+        }
+    }
     bundle.manifest.bus_url = options.url;
     let comp = options
         .comp

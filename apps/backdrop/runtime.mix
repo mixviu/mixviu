@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- lint: globals app_args
-$engine=require("engine.mix");$projection=require("projection.mix");$launch=require("launch.mix");$schedule=require("schedule.mix")
+$wire=require("wire.mix");$engine=require("engine.mix");$projection=require("projection.mix");$launch=require("launch.mix");$schedule=require("schedule.mix")
 $ctx=viu_context();$options=$launch.options($app_args,cwd())
 $startup_code=1
 if $options.probe then raise("PROBE_RUNTIME","Probe rendering is not yet ported") end
@@ -155,7 +155,7 @@ on backdrop.state
 end
 on backdrop.set
   try
-    $wire=require("wire.mix");$wire.check($event.args)
+    $wire.check($event.args)
     $checked=$launch.override($event.args,{colour:nil,image:nil})
     $s=stage($s,$checked,owed("set"));$p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
     reply(0,json_encode({requested:$s.requested,active:$s.active,config_file:$store}))
