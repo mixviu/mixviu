@@ -31,6 +31,17 @@ for $args in [{contents:1},{scrollback_lines:10001},{pane:nil}]
 end
 check($w.arguments("term.scroll",{page:1})==nil and $w.arguments("term.scroll",{to:"top",lines:1})!=nil,"one scroll mode required")
 check($w.arguments("term.type",{pane:1,text:repeat("𝐀",2100)})!=nil,"envelope bound uses UTF-8 bytes")
+$before_raw=$s
+for $body in ['{"pane":1,"text":,"request_id":"raw-retry"}',repeat(" ",8193),"[]"]
+  $refused=$b.dispatch_raw($s,"term.type","term.type",$body,$n)
+  check($refused.rc==10 and deep_eq($refused.state,$s),"raw parse and budget refusals leave state and replay untouched")
+end
+$raw=$b.dispatch_raw($s,"term.type","term.type",'{"pane":99,"pane":1,"text":"","request_id":"raw-retry"}',$n)
+check($raw.rc==0 and len($raw.state.replies)==len($s.replies)+1,"corrected raw request executes with last duplicate key")
+$raw_replay=$b.dispatch_raw($raw.state,"term.type","term.type",'{"request_id":"raw-retry","text":"","pane":1}',$n)
+check($raw_replay.rc==0 and $raw_replay.body==$raw.body and deep_eq($raw_replay.state,$raw.state),"raw retry compares parsed arguments without duplicate mutation")
+$raw=$b.dispatch_raw($s,"term.tabs","term.tabs",repeat(" ",8190).."{}",$n)
+check($raw.rc==0 and deep_eq($s,$before_raw),"full original envelope budget is accepted without mutating caller state")
 $out=$b.dispatch($s,"term.props.watch",{},$n)
 check($out.rc==0 and $out.state.layout.watching and json_parse($out.body).revision==$out.state.layout.event_revision,"watch returns the current event sequence")
 $alternate=$s;$alternate.service="term-42"

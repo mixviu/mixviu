@@ -39,6 +39,29 @@ fn next(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> Completion {
 const INIT: &str = "$ctx = viu_context(); $n = 0; on bump; $n = $n + 1; send \"viu-local\" \"scenes.model\" body=json_encode({generation: $ctx.generation, value: {n:$n}}); reply(0, \"{}\"); end";
 
 #[test]
+fn native_envelopes_reach_mix_without_reserialising_or_losing_parser_failures() {
+    let (mut runtime, wakes) = runtime(4);
+    runtime.load(program(r#"
+on inspect
+  reply(0,json_encode({body:$event.body,args:$event.args,caller:$event.headers.from}))
+end
+"#)).unwrap();
+    assert!(next(&runtime, &wakes).error.is_none());
+    for (body, args) in [
+        ("", json!(null)),
+        (" \n{\"x\":99,\"x\":1,\"text\":\"中\"}\t", json!({"x":1,"text":"中"})),
+        ("{\"x\":}", json!(null)),
+        (" ", json!(null)),
+    ] {
+        runtime.event_with_body("inspect".into(), body.into(),
+            std::collections::BTreeMap::from([("from".into(),"native-caller".into())])).unwrap();
+        let done=next(&runtime,&wakes);
+        assert!(done.error.is_none(),"{:?}",done.error);
+        assert_eq!(done.reply.unwrap().body,json!({"body":body,"args":args,"caller":"native-caller"}));
+    }
+}
+
+#[test]
 fn embedded_workers_refuse_global_environment_and_directory_mutation_but_keep_argv() {
     let (mut runtime, wakes) = runtime(4);
     runtime.load(program(r#"

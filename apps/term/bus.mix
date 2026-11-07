@@ -31,14 +31,22 @@ fn close_removed($s,$out,$native)
   return $s
 end
 fn dispatch($s,$command,$a,$native)
-  if type($a)!="map" then return {state:$s,rc:10,body:"body must be a JSON object"} end
   if byte_length(json_encode($a))>8192 then return {state:$s,rc:10,body:"request exceeds 8192 bytes"} end
+  return dispatch_parsed($s,$command,$a,$native)
+end
+fn dispatch_raw($s,$wire_command,$command,$body,$native)
+  $decoded=$wire.decode($wire_command,$body)
+  if $decoded.error!=nil then return {state:$s,rc:10,body:$decoded.error} end
+  return dispatch_parsed($s,$command,$decoded.args,$native)
+end
+fn dispatch_parsed($s,$command,$a,$native)
+  if type($a)!="map" then return {state:$s,rc:10,body:"body must be a JSON object"} end
   $mutates=$wire.mutates($command)
   if $mutates and type($a.request_id)=="string" then
     $cached=$wire.replay($s.replies,$command,$a)
     if $cached!=nil then return {state:$s,rc:$cached.rc,body:$cached.body} end
   end
-  $invalid=$wire.arguments($command,$a)
+  $invalid=$wire.parsed_arguments($command,$a)
   if $invalid!=nil then return {state:$s,rc:10,body:$invalid} end
   if $command=="term.type" and $a.instance!=nil and $a.instance!=$s.identity.instance then
     return {state:$s,rc:10,body:json_encode({error_code:"INVALID_ARGUMENT",message:"instance "..to_string($a.instance).." is not this term process (instance="..to_string($s.identity.instance).."); re-read term.panes"})}

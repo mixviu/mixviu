@@ -21,6 +21,7 @@ pub struct Request {
     pub from: String,
     pub command: String,
     pub args: Value,
+    pub body: String,
     pub headers: BTreeMap<String, String>,
     pub reply: oneshot::Sender<(u8, Value)>,
     /// An application can request close for this reply. The owner acts only
@@ -245,7 +246,7 @@ impl Endpoint {
                     let (reply,response)=oneshot::channel();
                     let close_after_reply=Arc::new(AtomicBool::new(false));
                     let delivery=Arc::new(AtomicU8::new(0));
-                    let request=Request{from:command.from.clone(),command:routed,args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
+                    let request=Request{from:command.from.clone(),command:routed,args:command.args.clone(),body:command.body.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone()};
                     let admitted=tx.try_send(request).is_ok();
                     if admitted{wake();}
                     let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;
@@ -574,6 +575,53 @@ fn reply_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_transport_preserves_original_envelopes_and_plain_text_reply_bytes() {
+        use ::bus::native_client::{NodedClient, UnixConnectOutcome};
+        let broker = test_broker::Broker::start();
+        let endpoint = Endpoint::start_described_policy(
+            "wire-example".into(), broker.url.clone(), Vec::new(), "app.quit".into(),
+            Arc::new(|| {}), Some(json!([])),
+            Policy { namespace: Some("example".into()), text_replies: true,
+                unknown_reply: Some(json!("unknown command; use HELP")), ..Default::default() },
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async {
+            let UnixConnectOutcome::VerifiedUnix(caller) = NodedClient::connect_unix("", &broker.url, &broker.options(), None).await.unwrap() else { panic!("native observer required") };
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while endpoint.client().is_none() { tokio::time::sleep(Duration::from_millis(5)).await; }
+            }).await.unwrap();
+            let headers = BTreeMap::new();
+            for (original, answer, expected) in [
+                (" \n{\"x\":99,\"x\":1,\"text\":\"中\"}", json!("line one\nquote: \"中\""), "line one\nquote: \"中\"".to_owned()),
+                ("{\"x\":}", json!({"error_code":"INVALID_ARGUMENT"}), json!({"error_code":"INVALID_ARGUMENT"}).to_string()),
+            ] {
+                let call = caller.client().call_with_headers_raw_within(
+                    "wire-example", "wire-example.inspect", &headers, original, Duration::from_secs(5));
+                let respond = async {
+                    let request = loop {
+                        match endpoint.requests.try_recv() {
+                            Ok(request) => break request,
+                            Err(mpsc::TryRecvError::Empty) => tokio::time::sleep(Duration::from_millis(5)).await,
+                            Err(error) => panic!("native owner closed: {error}"),
+                        }
+                    };
+                    assert_eq!(request.command, "example.inspect");
+                    assert_eq!(request.body, original);
+                    request.reply.send((10, answer)).unwrap();
+                };
+                let (result, ()) = tokio::time::timeout(Duration::from_secs(6), async { tokio::join!(call, respond) }).await.unwrap();
+                let (rc, body, _) = result.unwrap();
+                assert_eq!(rc, 10);
+                assert_eq!(body.as_bytes(), expected.as_bytes());
+            }
+            let (rc, body, _) = caller.client().call_with_headers_raw_within(
+                "wire-example", "example.inspect", &headers, "{}", Duration::from_secs(5)).await.unwrap();
+            assert_eq!((rc,body), (10,"unknown command; use HELP".into()));
+            assert!(endpoint.requests.try_recv().is_err(), "foreign namespace reached reducer");
+            caller.client().close().await;
+        });
+    }
     #[test]
     fn selected_namespace_refuses_other_instances_but_keeps_host_controls() {
         assert_eq!(

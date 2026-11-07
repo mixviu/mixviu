@@ -30,6 +30,7 @@ pub struct Manifest {
     pub window_app_id: Option<String>,
     pub command_namespace: Option<String>,
     pub text_replies: bool,
+    pub preserve_request_body: bool,
     pub unknown_reply: Option<serde_json::Value>,
     /// Retry a refused initial registration once as service-PID.
     pub registration_pid_fallback: bool,
@@ -62,6 +63,7 @@ impl Default for Manifest {
             window_app_id: None,
             command_namespace: None,
             text_replies: false,
+            preserve_request_body: false,
             unknown_reply: None,
             registration_pid_fallback: false,
             unknown_command: None,

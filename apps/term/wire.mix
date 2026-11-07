@@ -9,9 +9,27 @@ end
 fn mutates($command)
   return starts_with($command,"term.tab.") or starts_with($command,"term.pane.") or contains(["term.type","term.scroll"],$command)
 end
+-- Match gold's original UTF-8 envelope budget before parsing or replay. Empty
+-- bodies are objects only for commands without a required argument. The
+-- shared Mix JSON parser uses the same serde errors and last-key-wins rule.
+fn decode($command,$body)
+  if byte_length($body)>8192 then return {error:"request exceeds 8192 bytes"} end
+  if not starts_with($command,"term.") then return {args:{}} end
+  $required=contains(["term.type","term.tab.select","term.tab.close","term.pane.select","term.tab.title","term.tab.move","term.pane.split"],$command)
+  try
+    $a=json_parse(if $body=="" and not $required then "{}" else $body end)
+  catch $message
+    return {error:"body must be a JSON object: "..strip_prefix($message,"json_parse: ")}
+  end
+  if type($a)!="map" then return {error:"body must be a JSON object"} end
+  return {args:$a}
+end
 fn arguments($command,$a)
-  if type($a)!="map" then return "body must be a JSON object" end
   if byte_length(json_encode($a))>8192 then return "request exceeds 8192 bytes" end
+  return parsed_arguments($command,$a)
+end
+fn parsed_arguments($command,$a)
+  if type($a)!="map" then return "body must be a JSON object" end
   $allowed={"term.tabs":[],"term.panes":["tab"],"term.tab.new":["cwd","title"],"term.tab.select":["id"],"term.tab.close":["id"],"term.tab.title":["id","title"],"term.tab.move":["id","index"],"term.pane.split":["dir"],"term.pane.close":[],"term.pane.select":["id"],"term.snapshot":["pane","tab","contents","scrollback_lines"],"term.type":["pane","tab","instance","text"],"term.scroll":["pane","lines","page","to"],"term.props.watch":[],"term.session":[],"term.info":[]}
   if $allowed[$command]==nil then return "unknown command; use HELP" end
   for $key in keys($a)

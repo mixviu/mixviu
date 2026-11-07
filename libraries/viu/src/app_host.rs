@@ -53,6 +53,7 @@ struct Host {
     measurements: crate::ui_state::Measurements,
     input_at: Option<Instant>,
     native_drive: bool,
+    preserve_request_body: bool,
     service: String,
     settings_reload: u64,
     session_update: Option<Value>,
@@ -153,6 +154,16 @@ impl Host {
         &mut self,
         command: String,
         body: Value,
+        headers: BTreeMap<String, String>,
+        reply: Option<Reply>,
+    ) {
+        self.dispatch_body(command, body, None, headers, reply);
+    }
+    fn dispatch_body(
+        &mut self,
+        command: String,
+        body: Value,
+        raw: Option<String>,
         mut headers: BTreeMap<String, String>,
         reply: Option<Reply>,
     ) {
@@ -174,7 +185,11 @@ impl Host {
         if let Some(token) = &token {
             headers.insert("viu-call".into(), token.clone());
         }
-        match self.runtime.event_with_headers(command, body, headers) {
+        let submitted = match raw {
+            Some(raw) => self.runtime.event_with_body(command, raw, headers),
+            None => self.runtime.event_with_headers(command, body, headers),
+        };
+        match submitted {
             Ok(seq) => {
                 self.inflight.insert(seq);
                 if let Some(token) = token {
@@ -274,7 +289,8 @@ impl Host {
                 Ok(token) => {
                     let mut headers = r.headers;
                     headers.insert("viu-call".into(), token);
-                    self.dispatch(r.command, r.args, headers, None);
+                    let raw = self.preserve_request_body.then_some(r.body);
+                    self.dispatch_body(r.command, r.args, raw, headers, None);
                 }
                 Err(reply) => {
                     let _ = reply.send((10, json!({"error_code":"BUSY"})));
@@ -1056,6 +1072,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         measurements: Default::default(),
         input_at: None,
         native_drive: bundle.manifest.native_drive,
+        preserve_request_body: bundle.manifest.preserve_request_body,
         service: bundle.manifest.service.clone(),
         settings_reload: 0,
         session_update: None,

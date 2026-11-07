@@ -140,7 +140,7 @@ enum Request {
         u64,
         u64,
         String,
-        Json,
+        String,
         bool,
         BTreeMap<String, String>,
         Option<NativeContext>,
@@ -249,14 +249,14 @@ impl Runtime {
                         current = Some((generation, eval, local, stdout, stderr));
                         (generation, 0, outcome.map(|_| ()))
                     }
-                    Request::Event(generation, sequence, command, args, is_request, mut headers, native) => {
+                    Request::Event(generation, sequence, command, body, is_request, mut headers, native) => {
                         let _native_scope = native.map(|enter| enter());
                         let outcome = match current.as_mut() {
                             Some((active, eval, ..)) if *active == generation => {
                                 headers.entry("from".into()).or_insert_with(||"viu-client".into());
                                 headers.insert("type".into(),if is_request{"request"}else{"event"}.into());
                                 headers.insert("id".into(),sequence.to_string());
-                                let event = IncomingEvent { generation, command, headers, body: args.to_string() };
+                                let event = IncomingEvent { generation, command, headers, body };
                                 let tasks = tokio::task::LocalSet::new();
                                 rt.block_on(bounded(&worker_stop, deadline, async {
                                     tasks.run_until(eval.dispatch_event(event)).await?;
@@ -330,6 +330,18 @@ impl Runtime {
         self.submit_event(command, args, true, headers, None)
     }
 
+    /// Preserve the original native envelope for application-owned parsing and
+    /// byte budgets. Structured `$event.args` still comes from the evaluator's
+    /// ordinary parser; `$event.body` retains whitespace and duplicate keys.
+    pub fn event_with_body(
+        &mut self,
+        command: String,
+        body: String,
+        headers: BTreeMap<String, String>,
+    ) -> Result<u64, Refusal> {
+        self.submit_body(command, body, true, headers, None)
+    }
+
     /// Native Bus topic delivery has no reply obligation. It uses the same
     /// ordered mailbox and generation fences as UI requests.
     pub fn notify(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
@@ -352,12 +364,23 @@ impl Runtime {
         headers: BTreeMap<String, String>,
         native: Option<NativeContext>,
     ) -> Result<u64, Refusal> {
+        self.submit_body(command, args.to_string(), is_request, headers, native)
+    }
+
+    fn submit_body(
+        &mut self,
+        command: String,
+        body: String,
+        is_request: bool,
+        headers: BTreeMap<String, String>,
+        native: Option<NativeContext>,
+    ) -> Result<u64, Refusal> {
         let sequence = self.sequence.checked_add(1).expect("sequence overflow");
         self.enqueue(Request::Event(
             self.generation,
             sequence,
             command,
-            args,
+            body,
             is_request,
             headers,
             native,

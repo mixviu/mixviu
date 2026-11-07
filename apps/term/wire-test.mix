@@ -19,4 +19,18 @@ for $i=2 to 129
 end
 check(len($history)==128,"replay budget")
 check($wire.replay($history,"term.type",$a)==nil,"FIFO eviction")
+check(deep_eq($wire.decode("term.tabs","").args,{}),"empty no-argument envelope")
+check($wire.decode("term.type","").error=="body must be a JSON object: EOF while parsing a value at line 1 column 0","empty required envelope parser error")
+check($wire.decode("term.tabs"," ").error=="body must be a JSON object: EOF while parsing a value at line 1 column 1","whitespace is not empty")
+for $body in ["null","[]","42","true",'"text"']
+  check($wire.decode("term.tabs",$body).error=="body must be a JSON object","non-object JSON refused")
+end
+check($wire.decode("term.tabs",'{"x":}').error=="body must be a JSON object: expected value at line 1 column 6","malformed JSON location preserved")
+check($wire.decode("term.type",'{"pane":99,"pane":1,"text":""}').args.pane==1,"duplicate keys follow gold last value")
+check(deep_eq($wire.decode("INFO","malformed").args,{}),"bare diagnostics ignore body like gold")
+check($wire.decode("term.info","malformed").error!=nil,"namespaced diagnostics validate body")
+$boundary=repeat(" ",8190).."{}"
+check($wire.decode("term.tabs",$boundary).error==nil,"8192 original bytes accepted")
+check($wire.decode("term.tabs"," "..$boundary).error=="request exceeds 8192 bytes","8193 whitespace bytes refused before parsing")
+check($wire.decode("term.type",repeat("中",2731)).error=="request exceeds 8192 bytes","original multibyte budget precedes parse")
 print("term wire: selector and replay checks passed")
