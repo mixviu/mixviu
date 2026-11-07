@@ -1144,7 +1144,11 @@ pub fn run(args: Vec<String>) -> eframe::Result {
             toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             crate::appearance::install(&cc.egui_ctx);
             if let Some(state) = cc.wgpu_render_state.as_ref() {
-                state.renderer.write().callback_resources.insert(state.target_format);
+                state
+                    .renderer
+                    .write()
+                    .callback_resources
+                    .insert(state.target_format);
             }
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(

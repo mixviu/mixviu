@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Reusable terminal surface. Mix supplies session handles, focus requests,
 //! appearance and shortcut bindings; native output stays in native storage.
-use std::{collections::BTreeMap, sync::{Arc, Mutex}, time::Instant};
+use super::{
+    config::Cursor,
+    gpu::Pane,
+    ime::Composition,
+    input,
+    model::{MouseModifiers, SelectionSide, SelectionType},
+    raster::Raster,
+    sessions::Sessions,
+};
+use crate::widgets::{Intent, Widget};
 use egui::{Color32, Rect, Response, Sense, Ui};
 use serde_json::{Value, json};
-use crate::widgets::{Intent, Widget};
-use super::{config::Cursor, gpu::Pane, ime::Composition, input, model::{Key, MouseModifiers, SelectionSide, SelectionType}, raster::Raster, sessions::Sessions};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 struct Surface {
     raster: Arc<Mutex<Raster>>,
@@ -31,11 +43,18 @@ mod tests {
         let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
         for size in [14.667, 14.667, 18.0, 18.0] {
             widget.properties = json!({"font_size":size});
-            let output = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 560.0))), ..Default::default() }, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 560.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
                     views.draw(ui, &widget, &json!("vt-1"), &sessions, &mut Vec::new());
-                });
-            });
+                },
+            );
             drop(output);
             assert!(Arc::ptr_eq(&owner, &sessions.get("vt-1").unwrap()));
             let t = owner.lock().unwrap();
@@ -53,9 +72,17 @@ pub struct Views {
 }
 
 impl Views {
-    pub fn draw(&mut self, ui: &mut Ui, widget: &Widget, value: &Value, sessions: &Sessions, events: &mut Vec<Intent>) -> Response {
+    pub fn draw(
+        &mut self,
+        ui: &mut Ui,
+        widget: &Widget,
+        value: &Value,
+        sessions: &Sessions,
+        events: &mut Vec<Intent>,
+    ) -> Response {
         let handle = value.as_str().unwrap_or_default();
-        self.surfaces.retain(|handle, _| sessions.get(handle).is_ok());
+        self.surfaces
+            .retain(|handle, _| sessions.get(handle).is_ok());
         let owner = match sessions.get(handle) {
             Ok(t) => t,
             Err(e) => return ui.colored_label(Color32::RED, e),
@@ -67,27 +94,74 @@ impl Views {
         let family = p["font_family"].as_str().unwrap_or("");
         let weight = crate::widgets::whole(&p["font_weight"]).unwrap_or(400) as u16;
         let look = (scale, size, family.to_owned(), weight);
-        let cursor = match p["cursor"].as_str() { Some("block") => Cursor::Block, Some("bar") => Cursor::Bar, _ => Cursor::Underline };
+        let cursor = match p["cursor"].as_str() {
+            Some("block") => Cursor::Block,
+            Some("bar") => Cursor::Bar,
+            _ => Cursor::Underline,
+        };
         if !self.surfaces.contains_key(handle) || self.surfaces[handle].look != look {
-            let raster = match Raster::with_face(scale, size, cursor, if family.is_empty() { None } else { Some(family) }, weight) {
+            let raster = match Raster::with_face(
+                scale,
+                size,
+                cursor,
+                if family.is_empty() {
+                    None
+                } else {
+                    Some(family)
+                },
+                weight,
+            ) {
                 Ok(r) => r,
                 Err(e) => return ui.colored_label(Color32::RED, e),
             };
-            self.surfaces.insert(handle.into(), Surface { raster: Arc::new(Mutex::new(raster)), pane: Pane::new(), look, focus: 0, wheel: 0.0, preedit: String::new(), grid_size: (0, 0, 0, 0) });
+            self.surfaces.insert(
+                handle.into(),
+                Surface {
+                    raster: Arc::new(Mutex::new(raster)),
+                    pane: Pane::new(),
+                    look,
+                    focus: 0,
+                    wheel: 0.0,
+                    preedit: String::new(),
+                    grid_size: (0, 0, 0, 0),
+                },
+            );
         }
         let surface = self.surfaces.get_mut(handle).unwrap();
-        let cell = { let mut r = surface.raster.lock().unwrap(); r.set_cursor(cursor); r.cell() };
+        let cell = {
+            let mut r = surface.raster.lock().unwrap();
+            r.set_cursor(cursor);
+            r.cell()
+        };
         let padding = p["padding"].as_f64().unwrap_or(4.0).max(0.0) as f32;
         let available = ui.available_size().max(egui::vec2(1.0, 1.0));
         let (area, _) = ui.allocate_exact_size(available, Sense::hover());
         let id = ui.make_persistent_id((&widget.id, handle));
         let response = ui.interact(area, id, Sense::click_and_drag());
         let inner = area.shrink(padding);
-        let origin = egui::pos2((inner.min.x * scale).ceil() / scale, (inner.min.y * scale).ceil() / scale);
-        let cols = ((inner.max.x - origin.x) * scale / cell.0 as f32).floor().clamp(1.0, 240.0) as u16;
-        let rows = ((inner.max.y - origin.y) * scale / cell.1 as f32).floor().clamp(1.0, 100.0) as u16;
-        let grid = Rect::from_min_size(origin, egui::vec2(cols as f32 * cell.0 as f32 / scale, rows as f32 * cell.1 as f32 / scale));
-        let grid_size = (cols, rows, cols.saturating_mul(cell.0 as u16), rows.saturating_mul(cell.1 as u16));
+        let origin = egui::pos2(
+            (inner.min.x * scale).ceil() / scale,
+            (inner.min.y * scale).ceil() / scale,
+        );
+        let cols = ((inner.max.x - origin.x) * scale / cell.0 as f32)
+            .floor()
+            .clamp(1.0, 240.0) as u16;
+        let rows = ((inner.max.y - origin.y) * scale / cell.1 as f32)
+            .floor()
+            .clamp(1.0, 100.0) as u16;
+        let grid = Rect::from_min_size(
+            origin,
+            egui::vec2(
+                cols as f32 * cell.0 as f32 / scale,
+                rows as f32 * cell.1 as f32 / scale,
+            ),
+        );
+        let grid_size = (
+            cols,
+            rows,
+            cols.saturating_mul(cell.0 as u16),
+            rows.saturating_mul(cell.1 as u16),
+        );
         if grid_size != surface.grid_size {
             terminal.resize(grid_size.0, grid_size.1, grid_size.2, grid_size.3);
             surface.grid_size = grid_size;
@@ -96,9 +170,15 @@ impl Views {
         if response.clicked() || (serial > surface.focus) {
             surface.focus = serial;
             response.request_focus();
-            events.push(Intent { id: widget.id.clone(), action: "focus".into(), value: json!(handle) });
+            events.push(Intent {
+                id: widget.id.clone(),
+                action: "focus".into(),
+                value: json!(handle),
+            });
         }
-        let pane_id = handle.strip_prefix("vt-").and_then(|s| s.parse::<u64>().ok());
+        let pane_id = handle
+            .strip_prefix("vt-")
+            .and_then(|s| s.parse::<u64>().ok());
         if !response.has_focus() && self.focused.as_deref() == Some(handle) {
             self.composition.focus(None);
             self.focused = None;
@@ -110,75 +190,170 @@ impl Views {
             let input_events = ui.input(|i| i.events.clone());
             for event in input_events {
                 let result = match event {
-                    egui::Event::Key { key, pressed: true, modifiers, .. } => {
-                        let command = p["shortcuts"].as_array().and_then(|a| a.iter().find(|s| {
-                            s["key"].as_str() == Some(key.name()) && (s["ctrl"] == true) == modifiers.ctrl && (s["shift"] == true) == modifiers.shift && (s["alt"] == true) == modifiers.alt
-                        }));
+                    egui::Event::Key {
+                        key,
+                        pressed: true,
+                        modifiers,
+                        ..
+                    } => {
+                        let command = p["shortcuts"].as_array().and_then(|a| {
+                            a.iter().find(|s| {
+                                s["key"].as_str() == Some(key.name())
+                                    && (s["ctrl"] == true) == modifiers.ctrl
+                                    && (s["shift"] == true) == modifiers.shift
+                                    && (s["alt"] == true) == modifiers.alt
+                            })
+                        });
                         if let Some(command) = command {
-                            events.push(Intent { id: widget.id.clone(), action: "command".into(), value: command["command"].clone() });
+                            events.push(Intent {
+                                id: widget.id.clone(),
+                                action: "command".into(),
+                                value: command["command"].clone(),
+                            });
                             Ok(())
-                        } else { terminal.keys(&input::keys_for(key, modifiers), Instant::now()) }
-                    },
-                    egui::Event::Text(text) if !self.composition.has_owner() && !self.composition.stale() => terminal.keys(&input::typed(&text, ui.input(|i| i.modifiers)), Instant::now()),
+                        } else {
+                            terminal.keys(&input::keys_for(key, modifiers), Instant::now())
+                        }
+                    }
+                    egui::Event::Text(text)
+                        if !self.composition.has_owner() && !self.composition.stale() =>
+                    {
+                        terminal.keys(
+                            &input::typed(&text, ui.input(|i| i.modifiers)),
+                            Instant::now(),
+                        )
+                    }
                     egui::Event::Paste(text) => terminal.paste(&text),
                     egui::Event::Copy => {
-                        if let Some(text) = terminal.selection_text() { ui.ctx().copy_text(text); }
+                        if let Some(text) = terminal.selection_text() {
+                            ui.ctx().copy_text(text);
+                        }
                         Ok(())
-                    },
-                    egui::Event::Ime(egui::ImeEvent::Preedit(text)) => {
-                        if self.composition.preedit(&text, pane_id) { surface.preedit = text; } else { surface.preedit.clear(); }
+                    }
+                    egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
+                        if self.composition.preedit(&text, pane_id) {
+                            surface.preedit = text;
+                        } else {
+                            surface.preedit.clear();
+                        }
                         Ok(())
-                    },
+                    }
                     egui::Event::Ime(egui::ImeEvent::Commit(text)) => {
                         surface.preedit.clear();
-                        if self.composition.commit(pane_id) { terminal.keys(&input::text_keys(&text), Instant::now()) } else { Ok(()) }
-                    },
+                        if self.composition.commit(pane_id) {
+                            terminal.keys(&input::text_keys(&text), Instant::now())
+                        } else {
+                            Ok(())
+                        }
+                    }
                     _ => Ok(()),
                 };
-                if let Err(error) = result { events.push(Intent { id: widget.id.clone(), action: "error".into(), value: json!(error) }); }
+                if let Err(error) = result {
+                    events.push(Intent {
+                        id: widget.id.clone(),
+                        action: "error".into(),
+                        value: json!(error),
+                    });
+                }
             }
         }
         if response.hovered() || response.dragged() {
             if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
                 let relative = pos - grid.min;
-                let (col, row) = input::pointer_cell(egui::pos2(relative.x, relative.y), 0.0, (cell.0 as f32 / scale, cell.1 as f32 / scale), (cols, rows));
+                let (col, row) = input::pointer_cell(
+                    egui::pos2(relative.x, relative.y),
+                    0.0,
+                    (cell.0 as f32 / scale, cell.1 as f32 / scale),
+                    (cols, rows),
+                );
                 let modifiers = ui.input(|i| i.modifiers);
-                let mods = MouseModifiers { shift: modifiers.shift, alt: modifiers.alt, ctrl: modifiers.ctrl };
+                let mods = MouseModifiers {
+                    shift: modifiers.shift,
+                    alt: modifiers.alt,
+                    ctrl: modifiers.ctrl,
+                };
                 let local = modifiers.shift || !terminal.mouse_reporting();
                 if response.drag_started() || response.clicked() {
                     if local {
-                        let ty = if response.triple_clicked() { SelectionType::Lines } else if response.double_clicked() { SelectionType::Semantic } else if modifiers.ctrl { SelectionType::Block } else { SelectionType::Simple };
+                        let ty = if response.triple_clicked() {
+                            SelectionType::Lines
+                        } else if response.double_clicked() {
+                            SelectionType::Semantic
+                        } else if modifiers.ctrl {
+                            SelectionType::Block
+                        } else {
+                            SelectionType::Simple
+                        };
                         terminal.selection_start(col, row, SelectionSide::Left, ty);
-                    } else { terminal.mouse_button(col, row, 0, true, mods); }
+                    } else {
+                        terminal.mouse_button(col, row, 0, true, mods);
+                    }
                 }
                 if response.dragged() {
-                    if local { terminal.selection_update(col, row, SelectionSide::Right); }
-                    else { terminal.mouse_motion(col, row, 0, mods); }
+                    if local {
+                        terminal.selection_update(col, row, SelectionSide::Right);
+                    } else {
+                        terminal.mouse_motion(col, row, 0, mods);
+                    }
                 }
                 if response.drag_stopped() || response.clicked() {
-                    if local { terminal.selection_finish(); }
-                    else { terminal.mouse_button(col, row, 0, false, mods); }
+                    if local {
+                        terminal.selection_finish();
+                    } else {
+                        terminal.mouse_button(col, row, 0, false, mods);
+                    }
                 }
                 for event in ui.input(|i| i.events.clone()) {
                     if let egui::Event::MouseWheel { unit, delta, .. } = event {
-                        let lines = input::scroll_steps(&mut surface.wheel, input::Wheel::of(unit, delta), cell.1 as f32 / scale, p["scroll_speed"].as_f64().unwrap_or(40.0) as f32);
-                        if !terminal.mouse_scroll(col, row, lines, mods) { terminal.scroll_wheel(lines, mods); }
+                        let lines = input::scroll_steps(
+                            &mut surface.wheel,
+                            input::Wheel::of(unit, delta),
+                            cell.1 as f32 / scale,
+                            p["scroll_speed"].as_f64().unwrap_or(40.0) as f32,
+                        );
+                        if !terminal.mouse_scroll(col, row, lines, mods) {
+                            terminal.scroll_wheel(lines, mods);
+                        }
                     }
                 }
             }
         }
         let mut snapshot = terminal.grid_snapshot();
-        if p["cursor_visible"] == false { snapshot.screen.cursor_visible = false; }
-        let caret = Rect::from_min_size(grid.min + egui::vec2(snapshot.screen.cursor.0 as f32 * cell.0 as f32 / scale, snapshot.screen.cursor.1 as f32 * cell.1 as f32 / scale), egui::vec2(cell.0 as f32 / scale, cell.1 as f32 / scale));
+        if p["cursor_visible"] == false {
+            snapshot.screen.cursor_visible = false;
+        }
+        let caret = Rect::from_min_size(
+            grid.min
+                + egui::vec2(
+                    snapshot.screen.cursor.0 as f32 * cell.0 as f32 / scale,
+                    snapshot.screen.cursor.1 as f32 * cell.1 as f32 / scale,
+                ),
+            egui::vec2(cell.0 as f32 / scale, cell.1 as f32 / scale),
+        );
         let interrupt = self.composition.take_interrupt();
         if response.has_focus() || interrupt {
-            ui.ctx().output_mut(|o| o.ime = Some(egui::output::IMEOutput { purpose: egui::IMEPurpose::Terminal, rect: area, cursor_rect: caret, should_interrupt_composition: interrupt }));
+            ui.ctx().output_mut(|o| {
+                o.ime = Some(egui::output::IMEOutput {
+                    purpose: egui::IMEPurpose::Terminal,
+                    rect: area,
+                    cursor_rect: caret,
+                    should_interrupt_composition: interrupt,
+                })
+            });
         }
         ui.painter().rect_filled(area, 0.0, Color32::BLACK);
         surface.pane.update(snapshot.screen, snapshot.dirty_rows);
-        ui.painter().with_clip_rect(inner).add(surface.pane.callback(grid, surface.raster.clone()));
+        ui.painter()
+            .with_clip_rect(inner)
+            .add(surface.pane.callback(grid, surface.raster.clone()));
         if !surface.preedit.is_empty() && response.has_focus() {
-            ui.painter().text(caret.min, egui::Align2::LEFT_TOP, &surface.preedit, egui::FontId::monospace(size), Color32::WHITE);
+            ui.painter().text(
+                caret.min,
+                egui::Align2::LEFT_TOP,
+                &surface.preedit,
+                egui::FontId::monospace(size),
+                Color32::WHITE,
+            );
         }
         response
     }

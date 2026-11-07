@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Gold terminal key, pointer and wheel encoders; app commands remain Mix.
-use egui::{Key, Modifiers, MouseWheelUnit};
 use super::model::Key as TerminalKey;
+use egui::{Key, Modifiers, MouseWheelUnit};
 
 pub fn meta(keys: Vec<TerminalKey>) -> Vec<TerminalKey> {
     if keys.is_empty() {
@@ -214,4 +214,3 @@ fn named_key(key: Key) -> Option<TerminalKey> {
         _ => return None,
     })
 }
-

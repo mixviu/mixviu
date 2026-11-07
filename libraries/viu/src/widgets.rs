@@ -1006,7 +1006,9 @@ impl Widgets {
                 r
             }
             "terminal" => {
-                let response = self.terminal_views.draw(ui, widget, value, &self.terminals, events);
+                let response = self
+                    .terminal_views
+                    .draw(ui, widget, value, &self.terminals, events);
                 self.text_input_active |= response.has_focus();
                 response
             }
