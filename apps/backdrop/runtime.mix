@@ -51,6 +51,12 @@ fn show_state($s)
   if $s.view=="train" and visible() then
     $value=$train.model($snapshot,$live.renderer,$train_generation)
     $model.values.root=$value;$model.surfaces={};$model.root={id:"root",kind:"composition",label:"",initial:{nodes:[]}}
+    -- Gold's train presents a view over the last drawn wallpaper revision.
+    -- A hidden wallpaper slideshow may advance without presenting its pixels.
+    $native=viu_ui_state().outputs ?? {}
+    for $name in keys($native)
+      $model.surfaces[$name]={serial:$native[$name].presented_revision ?? $s.active,values:$model.values,root:$model.root}
+    end
   else $model.root={id:"root",kind:"image-fill",label:"",initial:{phase:"none",colour:[0,0,0],fit:"fill"}} end
   for $key in keys($model.surfaces) $model.surfaces[$key].root=$model.root end
   $model.layer={strict_callbacks:$s.view=="train",frame_ms:if $s.view=="train" then 100 else 0 end}
