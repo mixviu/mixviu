@@ -1,0 +1,14 @@
+#!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Shipped implementation of mix layout apply. --root is a staging sysroot.
+$g = getopt(args(), {root: {arg: true}, "dry-run": {}, image: {}, help: {short: "h"}})
+if len($g.errors) != 0 or len($g.rest) != 0 then raise("LAYOUT_ARGS", "layout apply [--root DIR] [--dry-run] [--image]") end
+if $g.opts.help then print("mix layout apply [--root DIR] [--dry-run] [--image]"); exit(0) end
+if $g.opts.image and $g.opts.root == nil then raise("LAYOUT_ARGS", "--image requires --root") end
+$roots = {}
+for $name in ["prefix", "share", "etc", "var", "run", "cache"] $roots[$name] = mixos_path($name) end
+$here = dirname(realpath($0))
+$files = require($here .. "/files.mix")
+$pending = $files.application($here, $roots, $g.opts)
+$files.apply($pending, $g.opts["dry-run"] == true)
