@@ -145,3 +145,44 @@ matched real-session captures and region inspection. No Fable question,
 no acceptance, no install, no VT work or merge.
 
 branch: lab/parity-term; head SHA: 65de543 (code; receipt HEAD contains this checkpoint); parity evidence: frame model 6 checks, features/Bus/Prefs/SSIM/regions pending; CBC job ids: 20261107-114140-d9b68b01 (queued).
+
+
+## Term round 2 — native extraction awaiting CBC
+
+Code head `3ef390712cdbfdf551bd4ab4a3921bf6d94b5bd1`; branch `lab/parity-term`.
+Fable D6 authorises simdutf as Viu debt. The previous entry claiming it
+could not be imported is superseded. Added foreign policy and gate; Viu,
+Rio and simdutf are forbidden to strict Mix/system/mix-shell/mixd trees.
+Pinned gold semantics are retained rather than claiming scalar fallback
+equivalence on malformed UTF-8/base64.
+
+Extracted native gold VT/grid/PTY Machine, scrollback/damage, selection,
+mouse reporting, bracketed paste and clipboard request mechanism, font and
+Unicode glyph raster, GPU atlas/grid, and pane-owned IME cancellation.
+Retained gold unit and GPU/CPU parity tests. Added chunk-boundary, VT
+cursor/erase/insert/alternate-screen, scrollback/selection and real Mix
+PTY input/resize/exit/reaping witnesses. Original files and hashes are
+listed in provenance/terminal-native.json. No Rust tab/pane app policy
+was imported. Native lifecycle uses issuer/lease and write-permit seams;
+these are not a claim that verified supervisor attachment is complete.
+
+Mix frame tests (6) and gate-script lint pass. No Rust tests have yet
+passed for this source. The previous round job has no completed receipt;
+superseded queued jobs 20261107-114717-a7c8ecb3 and
+20261107-114739-08a14bc1 were cancelled before execution.
+
+CBC job `term-native-r2-3ef3907` is submitted at the exact code SHA with
+`--await` through buildd; await id
+`1b020bda-3c88-4d1f-a49a-96806c7385d9`. Agentd registered automatic
+resumption on the result and explicitly directed ending this turn without
+polling. On resumption: read the complete saved log, apply the returned
+lock/fmt patch, repair failures and repeat at exact source before native
+widget/host integration. No user decision is requested.
+
+Open: wire reusable widget into host; verified session supervisor and
+stale generations/reconnect; Mix tabs/panes/profiles/menus/actions and
+full Bus contract; native clipboard/IME/input/search integration and live
+terminal Prefs; release gate and matched real-session whole/region
+captures and acceptance record. NOT ACCEPTED. No install or VT changes.
+
+branch: lab/parity-term; head SHA: 3ef390712cdbfdf551bd4ab4a3921bf6d94b5bd1 (code; receipt HEAD contains this checkpoint); open items: native CBC validation, widget/host and verified session integration, full Mix app/Bus/Prefs, conformance and visual acceptance; CBC job ids: term-native-r2-3ef3907 (await registered).
