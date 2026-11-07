@@ -234,6 +234,9 @@ impl Window {
                     settings[key] = value.clone();
                 }
             }
+            if self.model["window_settings"]["window.decorations"] == "csd" {
+                toolkit::chrome::client_side(&ctx);
+            }
             crate::rich::configure_menu(&ctx, &settings, None);
             self.frame
                 .show_with_chrome(ui, &self.title, &settings, true, true);
@@ -861,6 +864,7 @@ pub fn run(
         },
         Box::new(move |cc| {
             crate::decorations::initialise(cc);
+            toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             crate::appearance::install(&cc.egui_ctx);
             cc.egui_ctx.set_embed_viewports(false);
             cc.egui_ctx
