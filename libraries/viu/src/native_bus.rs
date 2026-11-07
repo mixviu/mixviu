@@ -146,7 +146,11 @@ pub struct RequestPolicy {
 }
 impl Default for RequestPolicy {
     fn default() -> Self {
-        Self { help: None, owner_help: false, timeout: Duration::from_secs(180) }
+        Self {
+            help: None,
+            owner_help: false,
+            timeout: Duration::from_secs(180),
+        }
     }
 }
 impl Endpoint {
@@ -168,9 +172,18 @@ impl Endpoint {
         help: Option<Value>,
         owner_help: bool,
     ) -> Self {
-        Self::start_policy(name, url, commands, quit_command, wake, RequestPolicy {
-            help, owner_help, ..Default::default()
-        })
+        Self::start_policy(
+            name,
+            url,
+            commands,
+            quit_command,
+            wake,
+            RequestPolicy {
+                help,
+                owner_help,
+                ..Default::default()
+            },
+        )
     }
     pub fn start_policy(
         name: String,
@@ -180,7 +193,11 @@ impl Endpoint {
         wake: crate::runtime::Wake,
         policy: RequestPolicy,
     ) -> Self {
-        let RequestPolicy { help, owner_help, timeout } = policy;
+        let RequestPolicy {
+            help,
+            owner_help,
+            timeout,
+        } = policy;
         let (tx, requests) = mpsc::sync_channel(32);
         let (notice_tx, notices) = mpsc::sync_channel(32);
         let close_requested = Arc::new(AtomicBool::new(false));

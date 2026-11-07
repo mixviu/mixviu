@@ -34,3 +34,17 @@ correlation and drops orphan replies, as it does for gold applications.
 There is no second connection, broker or application service. The existing
 native endpoint bounds the total number of outstanding replies. Applications
 must not use retained replies as an unbounded work queue.
+
+The host also preserves the existing in-process reply contracts: named
+`viu-local requests.defer` / `requests.reply` tokens, and
+`viu_reply("hold", native_token, {})` / `viu_reply("finish", native_token,
+{rc, body, close})` receipts. Their tokens are distinct from `keep` handles;
+the host delivers every form on its original native request. Broker origin
+headers remain unchanged when a separate opaque caller handle is attached.
+
+`contract.json.host.reply_timeout_secs` selects the ordinary native response
+deadline, from 1 to 180 seconds. Its default is 180 seconds, preserving the
+generic host and Ced contract. Prefs selects 95 seconds, covering its bounded
+90-second named deferrals. Screenshot selects 10 seconds; `keep` explicitly
+retains its response past that deadline. Callback execution limits and the
+applications' own operation deadlines still apply independently.

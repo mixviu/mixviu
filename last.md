@@ -17,3 +17,7 @@ Branch lab/gold-parity; head is this gate-recipe checkpoint; per-app final relea
 Native reply deadlines reconciled explicitly: generic/Ced 180 seconds, Prefs 95 seconds, Screenshot 10 seconds plus its retained-reply flag. The retained-reply witness keeps its original 10-second transport deadline and waits 22 seconds. Final merged release gates and captures remain PENDING.
 
 Branch lab/gold-parity; head this deadline checkpoint; per-app final release revalidation PENDING; artifact set PENDING; CBC final PENDING.
+
+Applied cbc3 rustfmt output from 20261107-104049-3211425a-a1. That preparation was interrupted by the user turn during its final palette unit test; 81 preceding unit cases had passed. Repeating preparation and the full release gate on the frozen source. Import audit: all 22 hash mismatches are inherited unchanged from 4f2c0fd; per-file history is being recorded.
+
+Branch lab/gold-parity; head this source-freeze checkpoint; per-app release revalidation PENDING; four-engine artifact set PENDING; CBC preparation 20261107-104049-3211425a-a1 interrupted; final CBC PENDING.
