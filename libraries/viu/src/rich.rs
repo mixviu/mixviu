@@ -172,6 +172,9 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             }
         }
         "dialog-form" => {
+            if let Some(commands) = value.get("shortcuts") {
+                crate::command_palette::validate(&json!({"open":false,"commands":commands}))?;
+            }
             if !value["open"].is_boolean()
                 || !value["title"].is_string()
                 || !value["body"].is_string()
@@ -890,12 +893,15 @@ fn gold_dialog(
     let mut accept = false;
     let shown=Dialog::new(key,text(value,"title")).buttons(choices.iter().map(|c|Choice::new(text(c,"label"),if c["default"]==true {Role::Default}else if c["cancel"]==true{Role::Cancel}else{Role::Other}).enabled(c["enabled"]==true)).collect()).show(ui.ctx(),|ui|{
         if let Some(field)=field.as_mut(){
-            let response=toolkit::field::text(ui,field,text(value,"body"),420.0);
+            let response=if value["field_fill"]==true {
+                ui.add(egui::TextEdit::singleline(field).id(key.with("field")).desired_width(f32::INFINITY)).accessible_name(value["field_label"].as_str().unwrap_or(""))
+            } else { toolkit::field::text(ui,field,text(value,"body"),420.0) };
             geometry.insert(format!("{id}.field"),response.rect);
             if response.lost_focus() && ui.input(|i|i.key_pressed(egui::Key::Enter)){accept=true;}
             else if !response.has_focus() && !response.lost_focus(){response.request_focus();}
             if response.changed(){emit(events,id,"edit",json!(field));}
-        }else if !text(value,"body").is_empty(){ui.label(text(value,"body"));}
+        }else if !text(value,"body").is_empty(){ui.add(egui::Label::new(text(value,"body")).wrap());}
+        if let Some(commands)=value.get("shortcuts"){crate::command_palette::shortcuts(ui,commands);}
         if let Some(footer)=value["footer"].as_str(){ui.weak(footer);}
         if let Some(items)=value["items"].as_array(){
           if value["row_layout"]=="inline" {

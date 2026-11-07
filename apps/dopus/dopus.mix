@@ -32,6 +32,21 @@ fn dp_framed($s,$contract,$cache)
   $title=$core.dp_display($s.panes[$s.active].path).." — MixOS DOpus"
   $model=$frame.apply($model,{icon:"folder",title:$title,native_title:$title,menus:$model.values.menu,toolbar:$model.values.toolbar,status:{left:$s.info,right:[],icon:nil},appearance:$s.appearance,window:$model.window_settings})
   $model.macros_open=$s.macros_open ?? false
+  $model.location_controls={}
+  for $i=0 to 1
+    $side=if $i==0 then "left" else "right" end
+    $model.location_controls[$side]={id:$side.."-location",kind:"field",label:"",initial:"",properties:{cancel_on_escape:true,fill:true,notify_blur:true,placeholder:"Location",weak:$s.active!=$i}}
+  end
+  if $s.form.open then
+    if contains(["mkdir","rename"],$s.reservation.kind) then
+      $model.values.form.field_fill=true;$model.values.form.field_label="Name"
+    elif $s.reservation.operation.legacy_kind=="shortcuts" then
+      $model.values.form.body=""
+      $model.values.form.shortcuts=map($contract.actions,fn($a)={id:$a.id,label:$contract.ui_labels[$a.id] ?? $a.label,keys:$a.keys,enabled:true})
+    elif $s.reservation.operation.legacy_kind=="about" then
+      $model.values.form.footer=viu_context().version.." ("..viu_context().git_sha..")"
+    end
+  end
   $search=$s.form.open and $s.reservation.kind=="search"
   $model.values.palette={open:$search,commands:map(filter($contract.actions,fn($a)=$a.id!="search"),fn($a)={id:$a.id,label:$contract.ui_labels[$a.id] ?? $a.label,enabled:$projection.dp_enabled($s,$a.id)})}
   $model.native_overlays=[{definition:{id:"palette",kind:"command-palette",label:"",initial:{open:false,commands:[]}},command:"dopus.palette"}]
@@ -133,9 +148,14 @@ fn dp_request($request)
       $profile_prepared=if $dopus_profile then monotonic() else 0 end
       $row_cache=dp_publish($state,$contract,$row_cache)
       if $dopus_profile then print(json_encode({profile:"dopus",phase:"callback",serial:$state.serial,command:$name,action:$a.id,reduce_us:($profile_reduced-$profile_start)*1000000,preview_us:($profile_prepared-$profile_reduced)*1000000})) end
+      if $name=="dopus.execute" and $state.reply.error_code==nil then
+        send "viu-local" "native.executed" body={id:$a.id,origin:$request.origin ?? "bus",params:nil,result:nil}
+      elif $name=="dopus.intent" and $a.action=="command" and $state.reply.error_code==nil then
+        send "viu-local" "native.executed" body={id:$a.value.command,origin:"menu",params:nil,result:nil}
+      end
       reply(if $state.reply.error_code!=nil then 10 else 0 end,json_encode($state.reply))
     catch $message,$error
-      reply(10,json_encode({error_code:if $error.code=="UNKNOWN_ACTION" then "INVALID_ARGUMENT" else $error.code end,message:$message,reason:nil}))
+      reply(10,json_encode({error_code:if $error.code=="UNKNOWN_ACTION" then "INVALID_ARGUMENT" else $error.code end,message:$message,reason:if $error.code=="UNAVAILABLE" then "not_offered" else nil end}))
     end
   end
 end
@@ -185,6 +205,9 @@ on dopus.execute
     reply(10,json_encode({error_code:if $a.id=="place.open" then "UNAVAILABLE" else "INVALID_ARGUMENT" end,message:$a.id..if $a.id=="place.open" then " is not implemented by dopus" else " is not a dopus action" end,reason:if $a.id=="place.open" then "not_implemented" else nil end}));return
   end
   $raw=$a.params ?? {}
+  if has_key($raw,"pane") and not contains(["left","right","active",0,1],$raw.pane) then
+    reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:if type($raw.pane)=="string" then "params: pane must be left, right, active, 0 or 1" elif type($raw.pane)=="number" and $raw.pane==floor($raw.pane) and $raw.pane>=0 and $raw.pane<=255 then "params: pane index must be 0 or 1" else "params: data did not match any variant of untagged enum Target" end,reason:nil}));return
+  end
   $params=if $raw.pane==nil then {} else {pane:$raw.pane} end
   dp_request({command:"dopus.execute",args:{id:$a.id,params:$params}})
 end

@@ -10,14 +10,14 @@ for $action in $contract.actions
 end
 $row_cache=dp_publish($state,$contract,$row_cache)
 on viu.frame.intent
-  dp_request({command:"dopus.execute",args:{id:$event.args.value.command,params:{}}})
+  dp_request({command:"dopus.execute",origin:$event.args.value.origin ?? "menu",args:{id:$event.args.value.command,params:{}}})
 end
 on dopus.shortcut
-  dp_request({command:"dopus.execute",args:$event.args})
+  dp_request({command:"dopus.execute",origin:"shortcut",args:$event.args})
 end
 on dopus.palette
   $state.form=$app.dp_closed_form();$state.reservation=nil
-  if $event.args.value!=nil then dp_request({command:"dopus.execute",args:{id:$event.args.value.command,params:{}}})
+  if $event.args.value!=nil then dp_request({command:"dopus.execute",origin:"palette",args:{id:$event.args.value.command,params:{}}})
   else $row_cache=dp_publish($state,$contract,$row_cache) end
 end
 on viu.frame.close

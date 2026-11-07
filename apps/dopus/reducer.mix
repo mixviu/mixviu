@@ -198,8 +198,15 @@ fn dp_action($s,$contract,$id,$params)
   end
   if $id=="place.open" then return dp_go($s,$i,$params.path) end
   if not any($contract.actions,fn($a)=$a.id==$id) then raise("UNKNOWN_ACTION",to_string($id)) end
-  if not $view.dp_enabled($s,$id) then raise("UNAVAILABLE","Action is unavailable") end
   $p=$s.panes[$i]
+  $n=len($p.selected_paths)
+  if $id=="file.mail" then
+    if not $view.dp_enabled($s,$id) then raise("UNAVAILABLE","Select one or more regular files to mail") end
+  elif contains(["file.open","file.rename","file.copy-other-pane","file.move-other-pane","file.delete"],$id) and $n==0 then raise("UNAVAILABLE","Nothing is selected")
+  end
+  if $id=="file.rename" and $n!=1 then raise("UNAVAILABLE","Select one item to rename") end
+  if contains(["file.new-folder","file.rename","file.copy-other-pane","file.move-other-pane","file.delete"],$id) and $s.busy then raise("UNAVAILABLE","A file operation is still running") end
+  if contains(["file.new-folder","file.rename"],$id) and $s.form.open and contains(["mkdir","rename"],$s.reservation.kind) then raise("UNAVAILABLE","A name edit is already pending") end
   if $id=="nav.switch-pane" then $s.active=1-$i
   elif $id=="nav.back" or $id=="nav.forward" then $s.panes[$i]=$dp.dp_history($p,$id=="nav.back");$s.locations[$i]=$s.panes[$i].path
   elif $id=="nav.parent" then return dp_go($s,$i,$dp.dp_parent($p.path))
@@ -211,13 +218,15 @@ fn dp_action($s,$contract,$id,$params)
   elif $id=="view.toggle-hidden" then $p.show_hidden=not $p.show_hidden;$s.panes[$i]=$dp.dp_relist($p)
   elif $id=="view.toggle-previews" then $s.panes[$i].previews=not $p.previews
   elif starts_with($id,"view.sort-") then
-    $key=slice($id,len("view.sort-"));$p.ascending=if $p.sort==$key then not $p.ascending else true end;$p.sort=$key;$s.panes[$i]=$dp.dp_refresh($p)
+    $key=slice($id,len("view.sort-"));$p.ascending=true;$p.sort=$key;$s.panes[$i]=$dp.dp_refresh($p)
   elif starts_with($id,"selection.") then
     $keys={next:"ArrowDown",previous:"ArrowUp",first:"Home",last:"End"}
     $s.panes[$i]=$dp.dp_select_key($p,$keys[slice($id,10)],$params.ctrl ?? false,$params.shift ?? false)
-  elif $id=="file.new-folder" then return dp_form($s,"mkdir","New folder","", "New Folder",{kind:"mkdir",destination:$p.path})
+  elif $id=="file.new-folder" then return dp_form($s,"mkdir","New Folder","", "New Folder",{kind:"mkdir",destination:$p.path})
   elif $id=="file.rename" then return dp_form($s,"rename","Rename","",$dp.dp_leaf_text($p.selected),{kind:"rename",source:$p.selected})
-  elif $id=="file.delete" then return dp_form($s,"delete","Delete permanently","Permanently delete the selected items?\n\n"..join(map($dp.dp_sources($p),fn($path)=$dp.dp_display($path)),"\n").."\n\nThis cannot be undone.",nil,{kind:"delete",sources:$dp.dp_sources($p)})
+  elif $id=="file.delete" then
+    $sources=$dp.dp_sources($p)
+    return dp_form($s,"delete","Confirm","Permanently delete "..if len($sources)==1 then "this item" else "these "..to_string(len($sources)).." items" end.."?\n\n"..join(map($sources,fn($path)=$dp.dp_display($path)),"\n").."\n\nThis cannot be undone.",nil,{kind:"delete",sources:$sources})
   elif $id=="file.copy-other-pane" or $id=="file.move-other-pane" then return dp_start_operation($s,{kind:if $id=="file.copy-other-pane" then "copy" else "move" end,sources:$dp.dp_sources($p),destination:$s.panes[1-$i].path})
   elif $id=="file.open" then
     $entry=filter($p.entries,fn($r)=$r.path==$p.selected)[0]
@@ -237,8 +246,8 @@ fn dp_action($s,$contract,$id,$params)
   elif starts_with($id,"theme.style-") then $s.appearance.style=slice($id,len("theme.style-"))
   elif starts_with($id,"theme.scheme-") then $s.appearance.scheme=slice($id,len("theme.scheme-"))
   elif $id=="help.macros" then $s.reply={panel:"macros"}
-  elif $id=="help.shortcuts" then return dp_form($s,"message","Keyboard shortcuts",join(map($contract.actions,fn($a)=join($a.keys,", ").."  "..$a.label),"\n"),nil,{legacy_kind:"shortcuts"})
-  elif $id=="help.about" then return dp_form($s,"message","About Dopus","Dopus — Mix behaviour with shared native Viu widgets.\nLab comparison implementation.",nil,{legacy_kind:"about"})
+  elif $id=="help.shortcuts" then return dp_form($s,"message","Keyboard Shortcuts","",nil,{legacy_kind:"shortcuts"})
+  elif $id=="help.about" then return dp_form($s,"message","About DOpus","DOpus, the MixOS twin-pane file manager.",nil,{legacy_kind:"about"})
   elif $id=="search" then
     if $s.form.open then raise("BUSY","Answer the current dialog first") end
     $s=dp_form($s,"search","Search commands","","",{})
@@ -285,7 +294,8 @@ fn dp_intent($s,$contract,$a)
       $row=filter($s.panes[$i].entries,fn($row)=$row.path==$value.key)[0]
       if $row!=nil and $row.dir then $s.panes[$i]=$dp.dp_expand($s.panes[$i],$value.key)
       else return dp_action($s,$contract,"file.open",{}) end
-    elif $action=="sort" then return dp_action($s,$contract,"view.sort-"..$value.column,{})
+    elif $action=="sort" then
+      $p=$s.panes[$i];$p.ascending=if $p.sort==$value.column then not $p.ascending else true end;$p.sort=$value.column;$s.panes[$i]=$dp.dp_refresh($p)
     elif $action=="command" then
       if $value.key!=nil and not contains($s.panes[$i].selected_paths,$value.key) then $s.panes[$i]=$dp.dp_pick($s.panes[$i],$value.key,false,false) end
       return dp_action($s,$contract,$value.command,{})
@@ -302,8 +312,8 @@ fn dp_intent($s,$contract,$a)
       if not dp_drop_allowed($sources,$value.destination,$s.busy) then raise("UNAVAILABLE","This destination cannot receive the dragged items") end
       if ($value.ctrl ?? false) or ($value.shift ?? false) then return dp_start_operation($s,{kind:if $value.ctrl ?? false then "copy" else "move" end,sources:$sources,destination:$value.destination}) end
       if $s.form.open then raise("BUSY","Answer the current dialog first") end
-      $s=dp_form($s,"drop","Transfer items","Move or copy the dragged items?",nil,{sources:$sources,destination:$value.destination})
-      $s.form.choices=[{id:"cancel",label:"Cancel",enabled:true,cancel:true},{id:"move",label:"Move",enabled:true},{id:"copy",label:"Copy",enabled:true}]
+      $s=dp_form($s,"drop",$dp.dp_leaf_text($value.destination),"Move or copy "..to_string(len($sources)).." item(s) here?",nil,{sources:$sources,destination:$value.destination})
+      $s.form.choices=[{id:"move",label:"Move Here",enabled:true,default:true},{id:"copy",label:"Copy Here",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]
     elif $action!="activate-pane" then raise("INVALID_ARGUMENT","Unknown tree action") end
     return $s
   end

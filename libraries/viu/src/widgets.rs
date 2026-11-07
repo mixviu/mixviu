@@ -1066,7 +1066,8 @@ impl Widgets {
                     toolkit::field::search(ui, &mut text, widget.text("placeholder"), width)
                 } else {
                     let edit = if widget.kind == "field" {
-                        egui::TextEdit::singleline(&mut text)
+                        let edit = egui::TextEdit::singleline(&mut text);
+                        if widget.properties["weak"] == true { edit.text_color(ui.visuals().weak_text_color()) } else { edit }
                     } else if widget.kind == "editor" {
                         egui::TextEdit::multiline(&mut text)
                             .code_editor()
@@ -1593,7 +1594,7 @@ fn icon_button(ui: &mut egui::Ui, name: &str, text: &str, selected: bool) -> egu
 
 fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
-    if widget.properties["role"] == "status" {
+    if widget.properties["role"] == "status" || widget.properties["small"] == true {
         text = text.small();
     }
     if widget.properties["role"] == "title" {

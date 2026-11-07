@@ -35,6 +35,25 @@ fn wait(
         std::thread::sleep(Duration::from_millis(2));
     }
 }
+
+#[test]
+fn retained_mix_filesystem_config_form_and_effect_checks_use_native_primitives() {
+    let dir = tempfile::tempdir_in("/dev/shm").unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/dopus");
+    for name in ["core-test.mix", "config-test.mix", "forms-test.mix", "effect-test.mix"] {
+        let path = root.join(name);
+        let source = std::fs::read_to_string(&path).unwrap().replace(
+            "args()[0]",
+            &json!(dir.path().join("filesystem").to_str().unwrap()).to_string(),
+        );
+        let wake: viu::runtime::Wake = Arc::new(|| {});
+        let mut runtime = Runtime::new(8, wake.clone(), None);
+        let mut jobs = Jobs::new(1, wake);
+        runtime.load(Program { source, path, scene: "dopus-check".into(), citizen: "dopus-check".into() }).unwrap();
+        let result = wait(&runtime, &mut jobs, 0).0;
+        assert!(result.stdout.contains("passed") || result.stdout.contains("\"ok\":true"), "{name}: {}", result.stdout);
+    }
+}
 #[test]
 fn mix_chooser_renders_filters_choices_and_pins_replace_acceptance() {
     let dir = tempfile::tempdir().unwrap();

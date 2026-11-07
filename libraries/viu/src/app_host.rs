@@ -118,6 +118,12 @@ impl Host {
             .and_then(|output| model["surfaces"].get(output))
             .unwrap_or(model)
             .clone();
+        let style = ctx.style();
+        projected["__viu_metrics"] = json!({
+            "item_spacing_x":style.spacing.item_spacing.x,
+            "item_spacing_y":style.spacing.item_spacing.y,
+            "control_row_height":toolkit::button::icon_button_of(ctx).max(style.spacing.interact_size.y + 4.0)
+        });
         if self.framed {
             projected["__viu_window_client"] =
                 json!(crate::window_frame::is_client(&self.window_settings(model)));

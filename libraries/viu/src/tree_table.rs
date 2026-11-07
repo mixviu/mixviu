@@ -264,7 +264,7 @@ fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale: f32) -> Vec<f32> {
                 );
             }
         }
-        widths.push(width.max(number(column, "min_width", 40.0)));
+        widths.push(((width - 12.0).ceil() + 12.0).max(number(column, "min_width", 40.0)));
     }
     ui.data_mut(|d| {
         d.insert_temp(
@@ -359,7 +359,10 @@ pub(crate) fn draw(
         visible -= 1;
     }
     measured[0] = (available - measured[1..visible].iter().sum::<f32>()).max(20.0);
-    let height = number(&widget.properties, "height", ui.available_height()).max(32.0);
+    let reserve = if widget.properties["reserve_bottom_style"] == "small" {
+        ui.text_style_height(&TextStyle::Small) + number(&widget.properties, "reserve_bottom_padding", 0.0)
+    } else { 0.0 };
+    let height = number(&widget.properties, "height", ui.available_height() - reserve).max(32.0);
     let row_h = number(
         &widget.properties,
         "row_height",
