@@ -2670,3 +2670,14 @@ New code `fe66f620485a141b361f46ab4a6922798cf4944c` adds two reusable-widget con
 Remaining full parity work includes Bus/action/topic/broker faults, issuer expiry/revoke, paired platform IME and remaining input/search/show faults, settings incarnation/tune, wider conformance/performance and final release acceptance. No Fable question, install, desk/VT or merge work. Overall NOT ACCEPTED.
 
 branch: lab/parity-term; head SHA:fe66f620485a141b361f46ab4a6922798cf4944c (new conformance tests; receipt HEAD contains checkpoint); NOT ACCEPTED — new CBC validation and remaining Bus/authority/input/settings/conformance/final acceptance open; CBC job ids:term-vt-query-fe66f620 (next scoped), term-mode-pro-release-fa201ea1-a1 (green exact release485 tests), term-mode-pro-fa201ea1-a1 (green exact scoped/foreign).
+
+
+### VT query scoped gate: tests pass, formatting applied
+
+CBC `term-vt-query-fe66f620-a1` passed on cbc3: 217 terminal tests, five existing ignores, eleven standalone Term Mix suites, two bundle tests, fifteen runtime/call/timer tests, 23 scoped host tests, foreign gate and debug host build. Both new query conformance tests passed. All 17 foreign crates are listed; strict Mix/system/mix-shell/mixd closures remain clean. Existing warnings remain. The complete 64,075-byte saved log was read and archived privately as term-vt-query-fe66f620-a1.log.
+
+The worker returned one rustfmt-only hunk collapsing the query helper signature. Applied it exactly, committed and pushed `7a886e4fccbf4fa6bc772570bf5d201030f4d9dd`. No assertion or product behaviour changed. The fe66f620 artifact is not used for exact-source acceptance because its worker source was formatted. Next CBC `term-query-exact-7a886e4f` repeats term_gate --prepare at the formatted SHA; require an empty worker diff. Then gate the exact release, fetch verified source/profile/bytes and repeat the native query witness before advancing release evidence.
+
+The last exact release evidence remains fa201ea1 (485 tests; inspected native macro/input/selection/wheel/query receipts above). Full remaining Bus/authority/input/settings/conformance/performance and final visual acceptance work stays open. No Fable question, install, desk/VT or merge work. Overall NOT ACCEPTED.
+
+branch: lab/parity-term; head SHA:7a886e4fccbf4fa6bc772570bf5d201030f4d9dd (formatted query tests; receipt HEAD contains checkpoint); NOT ACCEPTED — exact scoped/release validation and remaining full parity acceptance open; CBC job ids:term-query-exact-7a886e4f (next exact scoped), term-vt-query-fe66f620-a1 (green, formatting applied), term-mode-pro-release-fa201ea1-a1 (previous exact release green485 tests).

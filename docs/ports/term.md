@@ -2219,3 +2219,12 @@ Escape diagnostics native.aBNNZh (one capture phase), native.GAewO8 (original fo
 New code `fe66f620485a141b361f46ab4a6922798cf4944c` adds two reusable-widget conformance tests: ordered CPR/DSR/DA1 replies across every escape split, unchanged visible grid, and alternate/main saved cursor reports. These tests do not change product behaviour. No Rust command ran locally; compilation/test/format validation is pending CBC `term-vt-query-fe66f620`, term_gate --prepare at that exact SHA. Read its complete saved log, apply any returned fmt/lock diff and repeat at exact source before advancing. The last green scoped/foreign and full release gates remain at fa201ea1.
 
 Remaining full parity work includes Bus/action/topic/broker faults, issuer expiry/revoke, paired platform IME and remaining input/search/show faults, settings incarnation/tune, wider conformance/performance and final release acceptance. No Fable question, install, desk/VT or merge work. Overall NOT ACCEPTED.
+
+
+### VT query scoped gate: tests pass, formatting applied
+
+CBC `term-vt-query-fe66f620-a1` passed on cbc3: 217 terminal tests, five existing ignores, eleven standalone Term Mix suites, two bundle tests, fifteen runtime/call/timer tests, 23 scoped host tests, foreign gate and debug host build. Both new query conformance tests passed. All 17 foreign crates are listed; strict Mix/system/mix-shell/mixd closures remain clean. Existing warnings remain. The complete 64,075-byte saved log was read and archived privately as term-vt-query-fe66f620-a1.log.
+
+The worker returned one rustfmt-only hunk collapsing the query helper signature. Applied it exactly, committed and pushed `7a886e4fccbf4fa6bc772570bf5d201030f4d9dd`. No assertion or product behaviour changed. The fe66f620 artifact is not used for exact-source acceptance because its worker source was formatted. Next CBC `term-query-exact-7a886e4f` repeats term_gate --prepare at the formatted SHA; require an empty worker diff. Then gate the exact release, fetch verified source/profile/bytes and repeat the native query witness before advancing release evidence.
+
+The last exact release evidence remains fa201ea1 (485 tests; inspected native macro/input/selection/wheel/query receipts above). Full remaining Bus/authority/input/settings/conformance/performance and final visual acceptance work stays open. No Fable question, install, desk/VT or merge work. Overall NOT ACCEPTED.
