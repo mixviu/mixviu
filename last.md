@@ -178,3 +178,28 @@ heavy job `dopus-r2-final-3b53be1` was cancelled while queued, before execution.
 No installation or desktop action. No Fable deviation is proposed.
 
 branch lab/parity-dopus; head SHA 89db78f397c5c976bff2cea06aed67709eb41180 (implementation; receipt HEAD is the commit containing this checkpoint); OPEN: final features/44-descriptor and 33-action Bus/Prefs/release visual acceptance; CBC 20261107-124448-c8da34aa PASS diagnostic, 20261107-124952-1908ef48 PASS debug, 20261107-130315-f559f07f and 20261107-131012-f398b6e1 PASS checks with formatting returned, dopus-r2-final-3b53be1 cancelled before execution.
+
+## Dopus round three validation checkpoint
+
+Baseline and broad native captures now match gold for header, Places, panes,
+Properties and status; menus, shortcuts, selection and most live Prefs states
+are pixel-identical. The narrowed Places/font transition drift is closed.
+The compact menu now follows its effective form and its focused pair is exact.
+Truthful About source stamps, cursor blink and debug-only layout markers are
+recorded; final release figures remain required.
+
+Native file operations, Email success/BUSY/DENIED, macro run/output/stop/CRUD,
+executed/completion topics, ten chooser lifecycle cases, offline mapped windows
+and duplicate headless refusals passed. Settings loss and restart follow gold
+on unchanged PIDs. A real 65,537-name release probe refuses SCAN_BUDGET without
+changing either pane or model serial. Prior-source release callbacks are
+64.208/64.861 ms median (sort/refresh); native Bus acknowledgement plus applied
+model readback measured 126.922/128.603 ms median in that separate run.
+
+Native input exposed a stale model echo before Enter and a submit-key leak
+into file-open. Shared text retention, selection-range delivery and shortcut
+fencing are under scoped regression/native validation. Do not mark accepted
+until this and the final exact-source release repeat pass. No Fable question
+or production action.
+
+branch lab/parity-dopus; head SHA 680bdad (implementation before this receipt); OPEN: native input regression, final release-byte full inventory/Bus/Prefs/visual repeat and acceptance; CBC dopus-r2-final-ad30f4a-a1 PASS cbc3 prior source, 20261107-134258-f578434e PASS debug, 20261107-134533-fff897f4 and 20261107-134817-ff89f5f2 PASS checks with formatting applied, 20261107-135257-c3507e31 PASS debug, dopus-r3-final-21829a5 RUNNING detached, dopus-r3-final-643da24 QUEUED detached.
