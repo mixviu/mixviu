@@ -30,6 +30,88 @@ fn cursor_address_erase_insert_and_alternate_screen() {
 }
 
 #[test]
+fn scrolling_region_and_origin_mode_leave_outer_rows_untouched() {
+    let t = Terminal::from_test_vt(
+        8,
+        5,
+        b"1111\x1b[2;1H2222\x1b[3;1H3333\x1b[4;1H4444\x1b[5;1H5555\
+          \x1b[2;4r\x1b[?6h\x1b[3;1HZ\n",
+    );
+    assert_eq!(row(&t, 0), "1111    ");
+    assert_eq!(row(&t, 1), "3333    ");
+    assert_eq!(row(&t, 2), "Z444    ");
+    assert_eq!(row(&t, 3), "        ");
+    assert_eq!(row(&t, 4), "5555    ");
+    let mut parser = rio_vt::performer::handler::Processor::default();
+    parser.advance(&mut *t.grid.lock(), b"\x1b[?6l\x1b[5;1HX");
+    assert_eq!(row(&t, 4), "X555    ");
+}
+
+#[test]
+fn character_delete_insert_and_erase_keep_columns() {
+    let t = Terminal::from_test_vt(8, 2, b"abcdef\x1b[1;3H\x1b[2P");
+    assert_eq!(row(&t, 0), "abef    ");
+    let mut parser = rio_vt::performer::handler::Processor::default();
+    parser.advance(&mut *t.grid.lock(), b"\x1b[2@XY");
+    assert_eq!(row(&t, 0), "abXYef  ");
+    parser.advance(&mut *t.grid.lock(), b"\x1b[2X");
+    assert_eq!(row(&t, 0), "abXY    ");
+}
+
+#[test]
+fn line_insert_delete_and_reverse_index_obey_region_edges() {
+    let t = Terminal::from_test_vt(
+        8,
+        5,
+        b"AAAA\x1b[2;1HBBBB\x1b[3;1HCCCC\x1b[4;1HDDDD\x1b[5;1HEEEE\
+          \x1b[2;4r\x1b[2;1H\x1b[L",
+    );
+    assert_eq!(row(&t, 0), "AAAA    ");
+    assert_eq!(row(&t, 1), "        ");
+    assert_eq!(row(&t, 2), "BBBB    ");
+    assert_eq!(row(&t, 3), "CCCC    ");
+    assert_eq!(row(&t, 4), "EEEE    ");
+    let mut parser = rio_vt::performer::handler::Processor::default();
+    parser.advance(&mut *t.grid.lock(), b"\x1b[M");
+    assert_eq!(row(&t, 1), "BBBB    ");
+    assert_eq!(row(&t, 2), "CCCC    ");
+    assert_eq!(row(&t, 3), "        ");
+    parser.advance(&mut *t.grid.lock(), b"\x1bM");
+    assert_eq!(row(&t, 1), "        ");
+    assert_eq!(row(&t, 2), "BBBB    ");
+    assert_eq!(row(&t, 3), "CCCC    ");
+    assert_eq!(row(&t, 4), "EEEE    ");
+}
+
+#[test]
+fn delayed_wrap_and_wrap_disabled_overwrite_the_last_column() {
+    let t = Terminal::from_test_vt(8, 3, b"12345678");
+    assert_eq!(row(&t, 0), "12345678");
+    assert_eq!(row(&t, 1), "        ");
+    let mut parser = rio_vt::performer::handler::Processor::default();
+    parser.advance(&mut *t.grid.lock(), b"X");
+    assert_eq!(row(&t, 1), "X       ");
+    parser.advance(&mut *t.grid.lock(), b"\x1b[?7l\x1b[1;8Hyz");
+    assert_eq!(row(&t, 0), "1234567z");
+    assert_eq!(row(&t, 1), "X       ");
+}
+
+#[test]
+fn dec_cursor_save_restore_and_explicit_tab_stops() {
+    let t = Terminal::from_test_vt(24, 3, b"abc\x1b7\x1b[2;5HZZ\x1b8!");
+    assert_eq!(&row(&t, 0)[..8], "abc!    ");
+    assert_eq!(&row(&t, 1)[..8], "    ZZ  ");
+    let mut parser = rio_vt::performer::handler::Processor::default();
+    parser.advance(&mut *t.grid.lock(), b"\x1b[3;1HA\tB");
+    assert_eq!(&row(&t, 2)[..10], "A       B ");
+    parser.advance(
+        &mut *t.grid.lock(),
+        b"\x1b[3g\x1b[3;4H\x1bH\x1b[3;1H\tX",
+    );
+    assert_eq!(&row(&t, 2)[..10], "A  X    B ");
+}
+
+#[test]
 fn parser_retains_every_utf8_and_escape_chunk_boundary() {
     let bytes = "aé中e\u{301}\r\n\x1b[38;2;12;34;56mcolour\x1b[0m\x1b[2;8H!".as_bytes();
     let expected = Terminal::from_test_vt(20, 4, bytes).screen(false);
