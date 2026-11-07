@@ -40,6 +40,9 @@ impl Facilities {
     pub fn native_ui(&self) -> bool {
         self.ui
     }
+    pub fn owns_macro_command(&self, command: &str) -> bool {
+        self.app_commands.contains(command)
+    }
     pub fn new(manifest: &Manifest, wake: crate::runtime::Wake) -> Self {
         let app = manifest.app().to_owned();
         let mut surface = manifest.bus_surface.clone();
@@ -96,7 +99,11 @@ impl Facilities {
             service: std::env::var("VIU_SERVICE").unwrap_or_else(|_| manifest.service.clone()),
             ui: manifest.native_ui || manifest.native_drive,
             debug: manifest.native_debug || manifest.native_drive,
-            app_commands: manifest.commands.iter().cloned().collect(),
+            app_commands: if manifest.macro_workflow {
+                manifest.commands.iter().cloned().collect()
+            } else {
+                Default::default()
+            },
             installed: false,
             context: None,
             surface,

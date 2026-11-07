@@ -298,7 +298,10 @@ impl Host {
                 }
                 return;
             }
-            if let Some(command) = suffix.strip_prefix("macros.") {
+            if let Some(command) = suffix
+                .strip_prefix("macros.")
+                .filter(|_| !self.facilities.owns_macro_command(&r.command))
+            {
                 match macros::commands::handle(&self.macros, command, &r.args) {
                     macros::commands::Reply::Immediate(answer) => {
                         let _ = r.reply.send(macro_answer(answer));

@@ -3,6 +3,7 @@
 -- lint: globals app_launch app_args
 $controller=require("controller.mix");$model=require("model.mix");$frame=require("frame.mix");$presentation=require("presentation.mix");$discovery=require("discovery.mix");$work=require("work.mix");$counter=require("counter.mix")
 $saved=require("saved.mix")
+$actions=require("actions.mix");$macros=require("macro.mix")
 $agent_ui=require("agent-ui.mix")
 $state=$model.initial();$ctx=viu_context();$state.mesh.observer=$ctx.citizen
 try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$launcher.plan($app_args) end
@@ -105,7 +106,7 @@ on workshop.dialog.intent
   if $state.dialog=="new_macro" and $a.action=="edit" then $state.macro_new_title=$a.value
   elif $a.value.instance==$state.dialog then
     if $state.dialog=="new_macro" and $a.value.choice=="create" and trim($state.macro_new_title)!="" then
-      $macros=require("macro.mix");$state=$macros.enqueue($state,"macros.new",{app:$macros.app($state),title:$state.macro_new_title},nil)
+      $state=$macros.enqueue($state,"macros.new",{app:$macros.app($state),title:$state.macro_new_title},nil)
     end
     $state.dialog=nil
   end
@@ -145,8 +146,8 @@ on workshop.intent
   elif $a.id=="macro-destination" then $state.macro_destination=if $a.value=="Move to app" then "" else $a.value end
   elif $a.id=="macro-new" then $out=$controller.execute($state,"macro.new","ui");$state=$out.state
   elif $a.id=="macro-delete-cancel" then $state.macro_confirm_delete=false
-  elif $a.id=="macro-delete-confirm" then $macros=require("macro.mix");$state.macro_confirm_delete=false;$state=$macros.invoke($state,"macros.remove",{},nil)
-  elif starts_with($a.id,"macro-") then $macros=require("macro.mix");$state=$macros.ui_command($state,"macros."..strip_prefix($a.id,"macro-"))
+  elif $a.id=="macro-delete-confirm" then $state.macro_confirm_delete=false;$state=$macros.invoke($state,"macros.remove",{},nil)
+  elif starts_with($a.id,"macro-") then $state=$macros.ui_command($state,"macros."..strip_prefix($a.id,"macro-"))
   elif $a.id=="body" then
     if $state.call==nil and byte_length($a.value)<=65536 then $state.body=$a.value end
   elif $a.id=="services-tree" then
@@ -169,7 +170,6 @@ on viu.macros.changed
   $state.macros_open=$event.args.open;$state=publish_workshop($state)
 end
 on viu.keymap.changed
-  $actions=require("actions.mix")
   send "viu-local" "native.bindings" body={defaults:$actions.defaults(),overrides:$event.args}
   if $rc==0 then $state.bindings=$reply.bindings;$state=publish_workshop($state) end
 end

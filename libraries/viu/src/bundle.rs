@@ -36,6 +36,8 @@ pub struct Manifest {
     pub bus_surface: Option<serde_json::Value>,
     pub native_ui: bool,
     pub native_macros: bool,
+    /// Let the bundle implement its declared macro workflows.
+    pub macro_workflow: bool,
     pub native_debug: bool,
     pub activation: Option<String>,
     pub unknown_command: Option<String>,
@@ -80,6 +82,7 @@ impl Default for Manifest {
             bus_surface: None,
             native_ui: false,
             native_macros: false,
+            macro_workflow: false,
             native_debug: false,
             activation: None,
             unknown_command: None,

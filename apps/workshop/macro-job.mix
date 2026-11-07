@@ -13,6 +13,10 @@ end
 on job.run
   $a=$event.args;$args=$a.args;$running=$a.running
   try
+    if $a.native_only then
+      $answer=viu_macros(strip_prefix($a.op,"macros."),$args)
+      reply($answer.rc,json_encode($answer.body));return
+    end
     if $a.op=="catalogues" then
       $catalogues=viu_macro_library()
       for $app in sort(keys($running))

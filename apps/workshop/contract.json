@@ -377,6 +377,7 @@
     "help": "workshop — native ABP service and command browser\nUsage: workshop [--debug[=LEVEL]] [--headless] [--noded-url URL] [--service NAME] [--comp NAME]\nLevels: off|error|warn|info|debug|trace (default warn; --debug means debug)",
     "job_limit": 16,
     "launch": "launch.mix",
+    "macro_workflow": true,
     "max_string_bytes": 16777216,
     "native_debug": true,
     "native_macros": true,

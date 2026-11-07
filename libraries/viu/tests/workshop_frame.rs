@@ -154,6 +154,7 @@ fn macro_library_binding_keeps_disk_work_inside_the_owned_session_roots() {
         viu::runtime::Services {
             macros: Some(session),
             chooser: None,
+            ..Default::default()
         },
     );
     runtime.load(viu::runtime::Program {
@@ -161,8 +162,9 @@ fn macro_library_binding_keeps_disk_work_inside_the_owned_session_roots() {
         source:r#"
 $global=viu_macro_storage("global","new",{title:"Global example"})
 $app=viu_macro_storage("email","new",{title:"App example"})
+$own=viu_macros("new",{title:"Own example"})
 $catalogues=viu_macro_library()
-send "viu-local" "scenes.model" body={generation:viu_context().generation,value:{global:$global,app:$app,catalogues:$catalogues}}
+send "viu-local" "scenes.model" body={generation:viu_context().generation,value:{global:$global,app:$app,own:$own,catalogues:$catalogues}}
 "#.into(),scene:"library-test".into(),citizen:"library-test".into(),
     }).unwrap();
     rx.recv_timeout(Duration::from_secs(20)).unwrap();
@@ -171,6 +173,12 @@ send "viu-local" "scenes.model" body={generation:viu_context().generation,value:
     let model = done.model.unwrap();
     assert_eq!(model["global"]["rc"], 0);
     assert_eq!(model["app"]["rc"], 0);
+    assert_eq!(model["own"]["rc"], 0);
+    assert!(
+        std::path::Path::new(model["own"]["body"]["path"].as_str().unwrap())
+            .starts_with(roots.user.join("workshop")),
+        "the application's own macro endpoint must not use the global store"
+    );
     assert!(
         std::path::Path::new(model["global"]["body"]["path"].as_str().unwrap())
             .starts_with(&roots.user)
