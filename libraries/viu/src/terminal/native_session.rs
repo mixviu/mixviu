@@ -45,6 +45,10 @@ impl PaneSession {
     }
 
     pub fn revoke_before_cleanup(self) {
+        // Local authority must be invalid before the cleanup callback can
+        // wait for remote acknowledgement or release the PTY. Drop repeats
+        // invalidation, so issuer revocation remains idempotent as in gold.
+        (self.revoke)();
         (self.cleanup)();
     }
 }
@@ -54,5 +58,50 @@ impl Drop for PaneSession {
         // Covers failed PTY launches as well as ordinary close. As in gold,
         // issuer invalidation must be idempotent.
         (self.revoke)();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn local_authority_is_revoked_before_cleanup_waits() {
+        let live = Arc::new(AtomicBool::new(true));
+        let revoked = live.clone();
+        let cleaned = live.clone();
+        let cleanup_seen = Arc::new(AtomicBool::new(false));
+        let observed = cleanup_seen.clone();
+        let pane = PaneSession::new(
+            Arc::new(|| {}),
+            Arc::new(move || { revoked.store(false, Ordering::Release); }),
+            Arc::new(move || {
+                assert!(!cleaned.load(Ordering::Acquire), "cleanup observed live pane authority");
+                observed.store(true, Ordering::Release);
+            }),
+            Arc::new(|_| {}),
+        );
+        pane.revoke_before_cleanup();
+        assert!(!live.load(Ordering::Acquire));
+        assert!(cleanup_seen.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn rejected_launch_revokes_before_reporting_failure() {
+        let live = Arc::new(AtomicBool::new(true));
+        let revoked = live.clone();
+        let rejected = live.clone();
+        let pane = PaneSession::new(
+            Arc::new(|| {}),
+            Arc::new(move || { revoked.store(false, Ordering::Release); }),
+            Arc::new(|| panic!("failed launch must not wait for PTY cleanup")),
+            Arc::new(move |reason| {
+                assert_eq!(reason, "spawn refused");
+                assert!(!rejected.load(Ordering::Acquire));
+            }),
+        );
+        pane.reject_launch("spawn refused");
+        assert!(!live.load(Ordering::Acquire));
     }
 }
