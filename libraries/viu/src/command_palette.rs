@@ -12,6 +12,10 @@ pub fn validate(value: &Value) -> Result<(), String> {
 }
 
 pub fn draw(ui: &mut egui::Ui, id: &str, value: &Value, events: &mut Vec<crate::widgets::Intent>) -> egui::Response {
+    if value["open"] != true {
+        let _ = toolkit::search::show(ui.ctx(), &toolkit::Registry::<()>::new(), &(), &toolkit::Strings::new(""), false);
+        return ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover());
+    }
     static LABELS: OnceLock<Vec<&'static str>> = OnceLock::new();
     let labels = LABELS.get_or_init(|| (0..256).map(|i| &*Box::leak(format!("viu-palette-label-{i}").into_boxed_str())).collect());
     let mut registry = toolkit::Registry::<()>::new();
