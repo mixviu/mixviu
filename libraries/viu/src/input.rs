@@ -38,8 +38,11 @@ impl Input {
                     Some("copy") => egui::Event::Copy,
                     Some("cut") => egui::Event::Cut,
                     Some("paste") => egui::Event::Paste(
-                        a["text"].as_str().filter(|s| s.len() <= 65_536)
-                            .ok_or("Clipboard text limit is 65536 bytes")?.into()
+                        a["text"]
+                            .as_str()
+                            .filter(|s| s.len() <= 65_536)
+                            .ok_or("Clipboard text limit is 65536 bytes")?
+                            .into(),
                     ),
                     _ => return Err("Clipboard kind must be copy, cut or paste".into()),
                 };
@@ -49,9 +52,16 @@ impl Input {
                     Some("cut") => egui::Key::X,
                     _ => egui::Key::V,
                 };
-                self.later.push_back(vec![egui::Event::Key {
-                    key, physical_key:None,pressed:false,repeat:false,modifiers,
-                },egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
+                self.later.push_back(vec![
+                    egui::Event::Key {
+                        key,
+                        physical_key: None,
+                        pressed: false,
+                        repeat: false,
+                        modifiers,
+                    },
+                    egui::Event::ModifiersChanged(egui::Modifiers::NONE),
+                ]);
             }
             "ime" => {
                 let text = a["text"].as_str().unwrap_or("");
@@ -310,14 +320,25 @@ mod tests {
     fn clipboard_driver_queues_platform_events_and_releases_modifiers() {
         let mut view=SceneView::new("---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{root:{widget:\"text\",text:\"Input\"}}\n```\n").unwrap();
         let mut input = Input::default();
-        for args in [json!({"kind":"unknown"}),json!({"kind":"paste","text":"x".repeat(65537)})] {
-            assert!(input.queue("clipboard",&args,&mut view).is_err());
+        for args in [
+            json!({"kind":"unknown"}),
+            json!({"kind":"paste","text":"x".repeat(65537)}),
+        ] {
+            assert!(input.queue("clipboard", &args, &mut view).is_err());
             assert!(input.now.is_empty() && input.later.is_empty());
         }
-        input.queue("clipboard",&json!({"kind":"paste","text":"中\n","ctrl":true,"shift":true}),&mut view).unwrap();
+        input
+            .queue(
+                "clipboard",
+                &json!({"kind":"paste","text":"中\n","ctrl":true,"shift":true}),
+                &mut view,
+            )
+            .unwrap();
         assert!(matches!(&input.now[0],egui::Event::ModifiersChanged(m) if m.ctrl && m.shift));
         assert!(matches!(&input.now[1],egui::Event::Paste(text) if text=="中\n"));
-        assert!(matches!(&input.later[0][1],egui::Event::ModifiersChanged(m) if *m==egui::Modifiers::NONE));
+        assert!(
+            matches!(&input.later[0][1],egui::Event::ModifiersChanged(m) if *m==egui::Modifiers::NONE)
+        );
     }
 }
 /// Application-authored shortcuts use native key consumption before widgets.
