@@ -39,7 +39,9 @@ pub fn validate(value: &Value) -> Result<(), String> {
         }
         value.is_object()
             && matches!(value["dir"].as_str(), Some("h" | "v"))
-            && value["ratio"].as_f64().is_some_and(|r| r.is_finite() && (0.0..=1.0).contains(&r))
+            && value["ratio"]
+                .as_f64()
+                .is_some_and(|r| r.is_finite() && (0.0..=1.0).contains(&r))
             && node(&value["first"], depth + 1, handles)
             && node(&value["second"], depth + 1, handles)
     }
@@ -57,7 +59,11 @@ mod tests {
     #[test]
     fn malformed_and_aliased_layouts_are_refused() {
         assert!(validate(&json!({"dir":"v","ratio":0.5,"first":"vt-1","second":"vt-2"})).is_ok());
-        for value in [json!({"dir":"v","ratio":0.5,"first":"vt-1","second":"vt-1"}), json!({"dir":"x","ratio":0.5,"first":"vt-1","second":"vt-2"}), json!({"dir":"h","ratio":2,"first":"vt-1","second":"vt-2"})] {
+        for value in [
+            json!({"dir":"v","ratio":0.5,"first":"vt-1","second":"vt-1"}),
+            json!({"dir":"x","ratio":0.5,"first":"vt-1","second":"vt-2"}),
+            json!({"dir":"h","ratio":2,"first":"vt-1","second":"vt-2"}),
+        ] {
             assert!(validate(&value).is_err());
         }
     }
@@ -132,9 +138,20 @@ impl Views {
             return ui.colored_label(Color32::RED, "terminal layout requires h/v direction");
         }
         for (part, rect) in [("first", first), ("second", second)] {
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
             child.set_clip_rect(ui.clip_rect().intersect(rect));
-            response = response.union(self.tree(&mut child, widget, &value[part], sessions, events, depth + 1));
+            response = response.union(self.tree(
+                &mut child,
+                widget,
+                &value[part],
+                sessions,
+                events,
+                depth + 1,
+            ));
         }
         response
     }
@@ -237,7 +254,9 @@ impl Views {
             surface.grid_size = grid_size;
         }
         let serial = crate::widgets::whole(&p["focus_serial"]).unwrap_or(0);
-        let focus_target = p["focused_handle"].as_str().is_none_or(|wanted| wanted == handle);
+        let focus_target = p["focused_handle"]
+            .as_str()
+            .is_none_or(|wanted| wanted == handle);
         if response.clicked() || (focus_target && serial > surface.focus) {
             surface.focus = serial;
             response.request_focus();
