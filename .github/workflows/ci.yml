@@ -61,10 +61,15 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
+    # Every job that compiles runs on the target distro (see `test`).
+    container:
+      image: archlinux:base-devel@sha256:2de80105abb49f813a85393c6758a4334deb6bcec4a2411bd2f059c0bee6ee4c
     permissions:
       contents: read
     timeout-minutes: 60
     steps:
+      - name: System libraries
+        run: pacman -Syu --noconfirm --needed git rustup clang pkgconf
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
