@@ -17,6 +17,8 @@ fn registry($s)
     if $a.id=="calendar.new_event" then $a.enabled=$s.connected and ($s.calendars ?? 0)>0 and $s.dialog==nil and $s.form==nil end
     if $a.id=="contacts.new_contact" then $a.enabled=$s.connected and ($s.books ?? 0)>0 and $s.dialog==nil and $s.form==nil end
     if starts_with($a.id,"mail.reply") or $a.id=="mail.forward" then $a.enabled=$s.reading==true and $s.dialog==nil end
+    if $a.id=="mail.attachments" then $a.enabled=$s.reading==true and $s.has_attachments==true and $s.dialog==nil;$a.checked=$s.attachments_expanded==true end
+    if $a.id=="mail.save_attachments" then $a.enabled=$s.reading==true and $s.save_attachments==true and $s.dialog==nil end
     if $a.id=="mail.print" then $a.enabled=$s.reading==true and $s.dialog==nil end
     if contains(["view.next_account","view.previous_account"],$a.id) then $a.enabled=($s.accounts ?? 0)>1 and $s.dialog==nil end
     if $a.id=="view.reader.markdown" then $a.enabled=$s.reading==true and $s.dialog==nil;$a.checked=$s.markdown==true end

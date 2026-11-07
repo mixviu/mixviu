@@ -1,0 +1,63 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- The reader owns transfer state; file tiles are a reusable native renderer.
+$reader_transfers={}
+fn human_size($bytes)
+  if $bytes<1024 then return to_string($bytes).." B" end
+  $n=$bytes/1024;$i=0;$units=["KB","MB","GB","TB"]
+  while $n>=1024 and $i<3 $n=$n/1024;$i=$i+1 end
+  return fmt(if $n<10 then "%.1f" else "%.0f" end,$n).." "..$units[$i]
+end
+fn attachment_icon($mime)
+  $mime=lower($mime ?? "")
+  if starts_with($mime,"image/") then return "file-image" end
+  if starts_with($mime,"audio/") then return "file-music" end
+  if starts_with($mime,"video/") then return "file-video-camera" end
+  if starts_with($mime,"text/csv") or contains($mime,"spreadsheet") or contains($mime,"excel") then return "file-spreadsheet" end
+  if starts_with($mime,"text/") or contains($mime,"pdf") or contains($mime,"document") or contains($mime,"word") then return "file-text" end
+  if contains($mime,"zip") or contains($mime,"tar") or contains($mime,"compressed") then return "file-archive" end
+  return "file"
+end
+fn reader_attachments($account,$email)
+  return map($attachment_policy.metadata($email),fn($p)=merge($p,{transfer:(($reader_transfers[$account] ?? {})[$email.id] ?? {})[$p.part]}))
+end
+fn reader_files_model($m)
+  $parts=if $message==nil then [] else reader_attachments($active,$message) end
+  $m.has_attachments=len($parts)>0;$items=[];$size=0
+  for $p in $parts
+    $size=$size+$p.size;$t=$p.transfer;$note=nil
+    if $t!=nil then
+      $note=if $t.state=="saving" then "Saving the attachment…" elif $t.state=="opening" then "Opening the attachment…" elif $t.state=="saved" then "Saved "..$t.detail elif $t.state=="opened" then "Opened "..$t.detail else "Not saved: "..$t.detail end
+    end
+    push($items,{key:$p.part,name:$p.name,size:human_size($p.size),label:$p.name.." ("..human_size($p.size)..")",icon:attachment_icon($p.type),enabled:not $p.undecodable,save_only:$p.save_only,note:$note})
+  end
+  $m.attachment_tiles={id:"reader-files",kind:"file-tiles",label:"",initial:{expanded:$attachments_expanded,items:$items,title:"Attachments",count:to_string(len($parts))..(if len($parts)==1 then " attachment" else " attachments" end),size:human_size($size),actions:"Attachment actions",save_all:"Save all",open_all:"Open all",save:"Save",open:"Open",save_only:"Programs and scripts are never opened from mail: save it and check it first",undecodable:"This attachment could not be decoded"},properties:{}}
+  return $m
+end
+fn reader_transfer($part,$open)
+  global $reader_transfers,$status
+  if $message==nil then return wire_refuse("NOT_FOUND","No email is open") end
+  $p=filter(reader_attachments($active,$message),fn($p)=$p.part==$part)[0]
+  if $p==nil then return wire_refuse("NOT_FOUND","No such attachment") end
+  if $p.undecodable then $status="This attachment could not be decoded";return {rc:0,body:{}} end
+  if $open and $p.save_only then $status="Programs and scripts are never opened from mail: save it and check it first";return {rc:0,body:{}} end
+  $reader_transfers[$active]=$reader_transfers[$active] ?? {};$reader_transfers[$active][$message.id]=$reader_transfers[$active][$message.id] ?? {}
+  $reader_transfers[$active][$message.id][$part]={state:if $open then "opening" else "saving" end}
+  $status=if $open then "Opening the attachment…" else "Saving the attachment…" end
+  return wire_start(if $open then "email.attachment.open" else "email.attachment.save" end,{id:$message.id,part:$part},nil,"reader-transfer")
+end
+fn reader_files_intent($a)
+  global $attachments_expanded
+  if $a.action=="toggle" then $attachments_expanded=not $attachments_expanded;return {rc:0,body:{}} end
+  if contains(["save-all","open-all"],$a.action) then
+    for $p in reader_attachments($active,$message) if not $p.undecodable and ($a.action=="save-all" or not $p.save_only) then reader_transfer($p.part,$a.action=="open-all") end end
+    return {rc:0,body:{}}
+  end
+  return reader_transfer($a.value,$a.action=="open")
+end
+fn reader_transfer_completed($job,$answer)
+  global $reader_transfers,$status
+  $t=if $answer.rc==0 then {state:if $job.command=="email.attachment.open" then "opened" else "saved" end,detail:$answer.body.path} else {state:"failed",detail:$answer.body.message} end
+  $reader_transfers[$job.account]=$reader_transfers[$job.account] ?? {};$reader_transfers[$job.account][$job.args.id]=$reader_transfers[$job.account][$job.args.id] ?? {}
+  $reader_transfers[$job.account][$job.args.id][$job.args.part]=$t
+  $status=if $answer.rc!=0 then $t.detail elif $t.state=="opened" then "Opened "..$t.detail else "Saved "..$t.detail end
+end

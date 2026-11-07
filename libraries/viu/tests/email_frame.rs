@@ -71,7 +71,8 @@ fn folder_selection_pages_before_writing_and_cancel_cap_and_mailbox_fence_stop_l
     let bundle = Bundle::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
         &[],
-    ).unwrap();
+    )
+    .unwrap();
     let mut program = bundle.program;
     program.source.push_str(r#"
 on test.selection
@@ -102,7 +103,15 @@ end
     runtime.event("test.selection".into(), json!({})).unwrap();
     let reply = complete(&runtime, &rx).reply.unwrap();
     assert_eq!(reply.rc, 0, "{}", reply.body);
-    for key in ["deferred", "cancelled", "capped", "page2", "page3", "done", "fenced"] {
+    for key in [
+        "deferred",
+        "cancelled",
+        "capped",
+        "page2",
+        "page3",
+        "done",
+        "fenced",
+    ] {
         assert_eq!(reply.body[key], true, "{key}: {}", reply.body);
     }
 }

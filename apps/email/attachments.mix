@@ -44,6 +44,12 @@ fn save($e,$s,$a)
   if $p.undecodable or $p.blobId==nil or $p.blobId=="" then raise("REFUSED","This attachment could not be decoded") end
   $index=index_of(map($email.attachments,fn($p)=$p.partId),$part)+1;$name=file_name($p.name,$index,$p.type)
   $dir=$arguments.text($a,"dir")
+  if $a._open==true then
+    if refuses_open($name,$p.type) then raise("REFUSED","Programs and scripts are never opened from mail: save it and check it first") end
+    $runtime=env("XDG_RUNTIME_DIR")
+    if $runtime==nil or $runtime=="" then raise("UNAVAILABLE","No runtime directory for the attachment") end
+    $dir=path_join($runtime,"email-attach");viu_private_directory($dir)
+  end
   if $dir!=nil and not starts_with($dir,"/") then raise("INVALID_ARGUMENT","The directory must be an absolute path") end
   if $dir==nil then
     $dir=viu_files("user-directory",{key:"XDG_DOWNLOAD_DIR"}) ?? path_join(env("HOME"),"Downloads")
@@ -64,7 +70,10 @@ fn save($e,$s,$a)
         else $candidate=$name.." ("..to_string($n)..")" end
       end
       $path=path_join($dir,$candidate)
-      if viu_files("link-new",{source:$partial,target:$path}) then return {path:$path} end
+      if viu_files("link-new",{source:$partial,target:$path}) then
+        if $a._open==true then $pid=spawn(["xdg-open",$path],{detach:true}) end
+        return {path:$path}
+      end
     end
     raise("UNAVAILABLE","No unused attachment name")
   finally

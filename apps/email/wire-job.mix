@@ -31,7 +31,8 @@ on job.run
     elif $command=="email.contacts.suggest" then $answer=$suggest.contacts($e,$s,$p)
     elif $command=="email.attachments" then
       $email=$protocol.get($e,$s,$p.id);$answer={id:$email.id,attachments:$attachments.metadata($email)}
-    elif $command=="email.attachment.save" then $answer=$attachments.save($e,$s,$p)
+    elif $command=="email.attachment.save" or $command=="email.attachment.open" then
+      $p._open=$command=="email.attachment.open";$answer=$attachments.save($e,$s,$p)
     elif contains(["email.mark","email.move","email.junk","email.delete"],$command) then $answer=$protocol.batch($e,$s,$command,$p)
     elif contains(["email.mailbox.create","email.mailbox.rename","email.mailbox.delete"],$command) then $answer=$protocol.mailbox_write($e,$s,$command,$p)
     elif contains(["email.calendars","email.events","email.event.get","email.event.create","email.event.update","email.event.delete","email.books","email.contacts","email.contact.get","email.contact.create","email.contact.update","email.contact.delete"],$command) then $answer=$pim.dispatch($e,$s,$command,$p)

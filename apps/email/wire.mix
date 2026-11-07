@@ -171,6 +171,7 @@ fn wire_completed($d)
     return
   end
   if $job.purpose=="bulk-ids" then selection_completed($job,$answer);return end
+  if $job.purpose=="reader-transfer" then reader_transfer_completed($job,$answer) end
   if $job.purpose=="compose-send" then composer_sent($job.args.window,$answer) end
   if $job.purpose=="compose-suggest" then composer_suggest_completed($job.args,$answer) end
   if $job.purpose=="form" and $mail_form!=nil then

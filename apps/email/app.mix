@@ -75,6 +75,7 @@ end
 include "wire.mix"
 include "surface.mix"
 include "selection.mix"
+include "reader-files.mix"
 include "composer.mix"
 include "compose-identities.mix"
 include "forms.mix"
@@ -185,7 +186,7 @@ fn execute_email($id,$origin)
   return $r
 end
 fn apply_email($id,$origin)
-  global $chrome,$view,$serial,$busy,$pending,$status,$reader_markdown,$reader_auto,$attachments_inline
+  global $chrome,$view,$serial,$busy,$pending,$status,$reader_markdown,$reader_auto,$attachments_inline,$attachments_expanded
   $s=action_context()
   $found=filter($actions.registry($s),fn($a)=$a.id==$id)
   if len($found)==0 then return {rc:10,body:{error_code:"UNKNOWN_ACTION",message:"No such command"}} end
@@ -226,6 +227,8 @@ fn apply_email($id,$origin)
     if ends_with($id,"_unquoted") then $args.quote=false elif ends_with($id,"_quoted") then $args.quote=true end
     wire_start(if $id=="mail.forward" then "email.forward" else "email.reply" end,$args,nil,"compose-open")
   elif $id=="view.reader.markdown" then $reader_markdown=not $reader_markdown;$reader_auto=false
+  elif $id=="mail.attachments" then $attachments_expanded=not $attachments_expanded
+  elif $id=="mail.save_attachments" then reader_files_intent({action:"save-all"})
   elif $id=="view.attachments_inline" then $attachments_inline=not $attachments_inline
   elif contains(["view.next_account","view.previous_account"],$id) then
     $at=index_of(map($entries,fn($e)=$e.id),$active);$at=($at+len($entries)+(if $id=="view.next_account" then 1 else -1 end))%len($entries);surface_account($entries[$at].id)

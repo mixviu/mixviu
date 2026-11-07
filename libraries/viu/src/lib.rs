@@ -50,6 +50,7 @@ pub mod ui_state;
 
 pub mod editor_controls;
 pub mod header_controls;
+pub mod file_tiles;
 
 pub mod process;
 

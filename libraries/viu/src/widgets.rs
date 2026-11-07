@@ -14,6 +14,7 @@ pub const KINDS: &[&str] = &[
     "search-bar",
     "form-fields",
     "header-form",
+    "file-tiles",
     "status-line",
     "widget-row",
     "divider",
@@ -304,6 +305,7 @@ impl Widget {
                     && value["enabled"].is_boolean()
             }
             "image-view" => return crate::image_view::validate(value),
+            "file-tiles" => return crate::file_tiles::validate(value),
             "image-fill" => return crate::image_view::validate_fill(value),
             "tree-table" => return crate::tree_table::validate(value),
             "icon" => {
@@ -420,6 +422,7 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind == "file-tiles" { return vec!["toggle", "open", "save", "open-all", "save-all"]; }
         if self.kind == "macro-menu" {
             return vec!["close"];
         }
@@ -536,6 +539,9 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
+        if self.kind == "file-tiles" {
+            return if crate::file_tiles::intent(self.value(model), action, value) { Ok(()) } else { Err("invalid file tile action".into()) };
+        }
         if self.properties["enabled"] == false {
             return Err("DISABLED".into());
         }
@@ -918,6 +924,7 @@ impl Widgets {
                 response
             }
             "image-view" => self.images.draw(ui, id, value),
+            "file-tiles" => crate::file_tiles::draw(ui,id,value,events),
             "image-fill" => self
                 .surfaces
                 .get_or_insert_with(crate::image_view::Images::surface)

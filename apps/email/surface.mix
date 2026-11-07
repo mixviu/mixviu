@@ -9,7 +9,7 @@ fn surface_info()
   $accounts=[]
   for $a in wire_accounts()
     $d=$wire_data[$a.id] ?? {};$open=$d.message ?? {}; $emails=$d.emails ?? []
-    $a.mail={mailboxes:$d.boxes ?? [],selected:$d.box,emails:map($emails,fn($m)={id:$m.id,subject:$m.subject,from:address_display(($m.from ?? [])[0]),date:$m.date ?? $m.receivedAt,read:($m.keywords ?? {})["$seen"]==true,flagged:($m.keywords ?? {})["$flagged"]==true}),total:$d.total ?? 0,open:$open.id,reader:if $open.id==nil then nil else {format:if $reader_markdown then "markdown" else "plain" end,auto:$reader_auto,attachments_expanded:$attachments_expanded,attachments_inline:$attachments_inline,attachments:map($open.attachments ?? [],fn($p)={part:$p.partId,preview:{state:"none"}})} end,attachments:if $open.id==nil then nil else $attachment_policy.metadata($open) end,busy:any(values($wire_pending),fn($p)=$p.account==$a.id and contains(["list","refresh-list"],$p.purpose)),selection:{ids:if $a.id==$active then $mail_selection else [] end,count:if $a.id==$active then selection_count() else 0 end,all:$a.id==$active and $mail_everything},sort:$mail_sort.column,order:if $mail_sort.order=="ascending" then "asc" else "desc" end,page:floor(($d.offset ?? 0)/$mail_settings.page_size),page_size:$mail_settings.page_size}
+    $a.mail={mailboxes:$d.boxes ?? [],selected:$d.box,emails:map($emails,fn($m)={id:$m.id,subject:$m.subject,from:address_display(($m.from ?? [])[0]),date:$m.date ?? $m.receivedAt,read:($m.keywords ?? {})["$seen"]==true,flagged:($m.keywords ?? {})["$flagged"]==true}),total:$d.total ?? 0,open:$open.id,reader:if $open.id==nil then nil else {format:if $reader_markdown then "markdown" else "plain" end,auto:$reader_auto,attachments_expanded:$attachments_expanded,attachments_inline:$attachments_inline,attachments:map($open.attachments ?? [],fn($p)={part:$p.partId,preview:{state:"none"}})} end,attachments:if $open.id==nil then nil else reader_attachments($a.id,$open) end,busy:any(values($wire_pending),fn($p)=$p.account==$a.id and contains(["list","refresh-list"],$p.purpose)),selection:{ids:if $a.id==$active then $mail_selection else [] end,count:if $a.id==$active then selection_count() else 0 end,all:$a.id==$active and $mail_everything},sort:$mail_sort.column,order:if $mail_sort.order=="ascending" then "asc" else "desc" end,page:floor(($d.offset ?? 0)/$mail_settings.page_size),page_size:$mail_settings.page_size}
     $a.calendar={calendars:$d.calendars ?? [],selected:$d.calendar,events:map($d.events ?? [],fn($e)={id:$e.id,title:$e.title ?? ($e.data ?? {}).title ?? "",start:$e.start,end:$e.end}),open:$d.open_event,busy:pim_busy($a.id,"events")}
     $a.contacts={books:$d.books ?? [],selected:$d.book,filter:$d.contact_filter ?? "",contacts:map($d.contacts ?? [],fn($c)={id:$c.id,name:contact_name($c),email:contact_email($c)}),open:$d.open_contact,busy:pim_busy($a.id,"contacts")}
     push($accounts,$a)
@@ -23,7 +23,7 @@ fn address_display($a)
 end
 fn action_context()
   $d=$wire_data[$active] ?? {}
-  return merge($chrome,{connected:$connected,reading:$mode=="mail" and $message!=nil,targeted:$mode=="mail" and (selection_count()>0 or $message!=nil) and $bulk_fetches[$active]==nil,calendars:len($d.calendars ?? []),books:len($d.books ?? []),form:$mail_form,accounts:len($entries),markdown:$reader_markdown,attachments_inline:$attachments_inline})
+  return merge($chrome,{connected:$connected,reading:$mode=="mail" and $message!=nil,targeted:$mode=="mail" and (selection_count()>0 or $message!=nil) and $bulk_fetches[$active]==nil,calendars:len($d.calendars ?? []),books:len($d.books ?? []),form:$mail_form,accounts:len($entries),markdown:$reader_markdown,attachments_inline:$attachments_inline,has_attachments:len(($message ?? {}).attachments ?? [])>0,attachments_expanded:$attachments_expanded,save_attachments:any(($message ?? {}).attachments ?? [],fn($p)=not $p.undecodable and $p.blobId!=nil and $p.blobId!="")})
 end
 fn surface_toggle_target($flag)
   $ids=if len($mail_selection)>0 then $mail_selection elif $message!=nil then [$message.id] else [] end
@@ -123,7 +123,7 @@ fn surface_model($m)
   $m.account_state=if $state.state=="no_password" then "No password is saved for this account. Open Email Settings to set one." elif $state.state=="failed" then $state.error ?? "Connection failed" elif $state.state=="disabled" then "This account is disabled." else "Connecting…" end
   $m.values["connection-state"]=$m.account_state;$m.values["message-subject"]=$m.message_subject;$m.values["message-from"]=$m.message_from;$m.values["message-to"]=$m.message_to
   $m.values["search-mail"]=$search_text
-  return pim_model($m)
+  return reader_files_model(pim_model($m))
 end
 fn surface_account($id)
   if $id==nil or $id=="" then return wire_refuse("INVALID_ARGUMENT","id is required") end
@@ -186,6 +186,7 @@ fn surface_intent($a)
     elif $kind=="density" then $mail_density=$p.density
     end
     $pane="list"
+  elif $a.id=="reader-files" then return reader_files_intent($a)
   elif $a.id=="pim-list" then
     $wire_data[$active][if $mode=="calendar" then "open_event" else "open_contact" end]=$a.value.key;$pane="list"
   elif $a.id=="contact-filter" then
