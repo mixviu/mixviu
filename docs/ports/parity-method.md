@@ -203,3 +203,18 @@ identity fence and corrects the old inventory's UID/confirmation claim.
 Five live Prefs variants plus settings authority loss/recovery and Mix-owned
 close passed on one candidate PID; that separate frame test does not grant
 Monitor visual, functional or ABP acceptance. Overall verdict: **FAIL**.
+
+## Native caret phases
+
+Keep the first captures when a text caret blinks differently. Take additional
+read-only captures in both lanes without changing focus, selection or text.
+Compare the same native caret phase; retain every sample and record the chosen
+pair. Decoded pixel hashes can establish an exact match for the affected form
+before comparing all its regions. This closes a capture-state mismatch; a small
+SSIM score alone never grants a caret waiver. Keep functional input assertions
+and request deadlines unchanged, and never retry a refused input request.
+
+Fractional layouts also need inspection at their actual width. Use the row's
+final rectangle inside the native scroll area when checking metadata placement;
+the parent's available width can differ after pixel rounding. A one-pixel text
+shift is a layout defect when it comes from that measurement error.
