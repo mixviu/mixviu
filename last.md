@@ -1040,3 +1040,37 @@ matching artifact and repeat keyboard-65fafcd5.mix with its artifact path
 updated. Native Tab/Shift+Tab must pass before closing the focus defect.
 All remaining full-parity work listed above remains open; NOT ACCEPTED.
 branch: lab/parity-term; head SHA: bd978a239b87164b81d34860c0c5d533d8a1da4c (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — focus regression/native validation and remaining full parity/release acceptance open; CBC job ids: term-focus-bee01878-a1 (regression fixture failed), term-focus-ready-bd978a23 (next await).
+### Exact native Tab passes; Ctrl+wheel checkpoint
+
+`term-focus-ready-bd978a23-a1` passed with no worker diff: 142 terminal
+tests, five existing ignores, seven input tests, two bundle tests, six
+Mix suites, search/dialog, foreign gate and debug build. Complete saved
+log read in two chunks. Matching executable/source receipt verified:
+`bd978a239b87164b81d34860c0c5d533d8a1da4c`, SHA256
+`e91f8546a4e3c7f201e2e3f9be67c0802dadc34cf8d2f802422ab8b62c05a54d`.
+Native `native.c6qNxS` passes real split Tab/Shift+Tab: focused pane
+2 → 1 → 2, with unchanged grid metrics; all tracked PIDs stopped.
+Initial command-output PNG remains byte-identical to gold e31900b2f10ca55d792ca7556b5f19da05f151dcbb4ba000d334f9834a994865.
+This closes the bounded native focus defect, not final release acceptance.
+
+Gold app.rs wheel/modifiers_changed routes Ctrl+wheel to zoom actions,
+retains fractional travel across panes, clears it when Ctrl is released,
+and resets scroll travel when modifiers or target pane change. The new
+reusable Wheels state follows those rules; ordinary wheel still uses VT
+mouse reporting or local scroll. Mix supplies increase/decrease command
+IDs through terminal properties, keeping zoom/persistence policy in Mix.
+Added gesture-state and widget-to-command regressions. Six Mix suites
+pass. New native wheel tests and live wheel evidence remain pending.
+
+Next gate `term-wheel-d6b0c7bc` at
+`d6b0c7bc34db17d4614ddded8d8f1c66bde2f404`, term_gate --prepare. Read
+the complete log; apply fmt and repeat exact source if changed. Fetch and
+verify matching artifact/bundle. Derive live wheel witness from the zoom
+harness: native viu.ui.scroll at x=100,y=150,delta=40 with ctrl modifier
+is one point-unit zoom step (driver uses Point and Unknown source).
+Verify saved f32 and raster size, partial/reversed travel, Ctrl release,
+plain wheel and hovered inactive pane, then matched gold zoom captures.
+Held-key native repeat, full alternate-screen sessions, session issuer/
+control/sealed Mix handoff, full Bus/mouse/primary/OSC52/IME/Prefs and
+release acceptance remain. Overall NOT ACCEPTED. No Fable question.
+branch: lab/parity-term; head SHA: d6b0c7bc34db17d4614ddded8d8f1c66bde2f404 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — wheel native gate and remaining full parity/release acceptance open; CBC job ids: term-focus-ready-bd978a23-a1 (green exact source/native Tab), term-wheel-d6b0c7bc (next await).
