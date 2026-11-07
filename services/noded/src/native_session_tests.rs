@@ -44,8 +44,7 @@ impl Broker {
         let listen = listener.local_addr().unwrap().to_string();
         listener.set_nonblocking(true).unwrap();
         let listener = tokio::net::TcpListener::from_std(listener).unwrap();
-        let root =
-            std::env::temp_dir().join(format!("mix-native-{:032x}", rand::random::<u128>()));
+        let root = std::env::temp_dir().join(format!("mix-native-{:032x}", rand::random::<u128>()));
         if unavailable {
             use std::os::unix::fs::PermissionsExt;
             std::fs::create_dir(&root).unwrap();
