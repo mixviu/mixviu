@@ -175,7 +175,9 @@ mod tests {
         crate::fonts::install(&ctx, 400, 600);
         let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
         widget.properties = json!({"focus_serial":1,"shortcuts":[{"key":"Tab","command":"next"}]});
-        for pressed in [false, true] {
+        // egui's filter requires had_focus_last_frame as well as has_focus.
+        // Establish focus, install the filter, then deliver the real Tab.
+        for pressed in [false, false, true] {
             let mut events = Vec::new();
             let input = if pressed {
                 vec![egui::Event::Key {
@@ -204,7 +206,11 @@ mod tests {
             )
             .drop_without_applying_deltas();
             if pressed {
-                assert!(events.iter().any(|e| e.action == "command" && e.value == "next"));
+                assert!(
+                    events
+                        .iter()
+                        .any(|e| e.action == "command" && e.value == "next")
+                );
             }
         }
     }
