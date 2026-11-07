@@ -200,6 +200,24 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             }
             let mut ids = BTreeSet::new();
             entries(&value["choices"], 0, &mut ids)?;
+            if let Some(rows) = value.get("grid") {
+                let rows = rows.as_array().filter(|r| r.len() <= 1024)
+                    .ok_or("bounded dialog grid required")?;
+                for row in rows {
+                    if !row["label"].is_string()
+                        || row.get("keys").is_some_and(|keys| {
+                            keys.as_array().is_none_or(|keys| keys.len() > 16 || keys.iter().any(|k| !k.is_string()))
+                        })
+                    {
+                        return Err("dialog grid requires labels and shortcut strings".into());
+                    }
+                }
+                for flag in ["grid_striped", "grid_monospace"] {
+                    if value.get(flag).is_some_and(|v| !v.is_boolean()) {
+                        return Err("dialog grid flags must be boolean".into());
+                    }
+                }
+            }
             if let Some(items) = value.get("items") {
                 let items = items
                     .as_array()
@@ -684,91 +702,6 @@ pub(crate) fn draw(
             .response
         }
         "dialog-form" => {
-            if widget.properties["style"] == "gold" {
-                let dialog_id = egui::Id::unique((
-                    ui.ctx().viewport_id(),
-                    id,
-                    "gold-dialog",
-                    text(value, "instance"),
-                ));
-                let choices: Vec<_> = value["choices"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|c| {
-                        toolkit::dialog::Choice::new(
-                            text(c, "label"),
-                            if c["default"] == true {
-                                toolkit::dialog::Role::Default
-                            } else if c["cancel"] == true {
-                                toolkit::dialog::Role::Cancel
-                            } else {
-                                toolkit::dialog::Role::Other
-                            },
-                        )
-                        .enabled(c["enabled"] == true)
-                    })
-                    .collect();
-                let shown = toolkit::dialog::Dialog::new(dialog_id, text(value, "title"))
-                    .buttons(choices)
-                    .show(ui.ctx(), |ui| {
-                        if let Some(rows) = value["grid"].as_array() {
-                            egui::ScrollArea::vertical()
-                                .max_height(360.0)
-                                .show(ui, |ui| {
-                                    egui::Grid::new((id, "shortcuts"))
-                                        .striped(value["grid_striped"] == true)
-                                        .show(ui, |ui| {
-                                            for row in rows {
-                                                ui.label(text(row, "label"));
-                                                let keys = row["keys"]
-                                                    .as_array()
-                                                    .map(|keys| {
-                                                        keys.iter()
-                                                            .filter_map(Value::as_str)
-                                                            .filter_map(
-                                                                toolkit::keymap::parse_chord,
-                                                            )
-                                                            .map(|s| ui.ctx().format_shortcut(&s))
-                                                            .collect::<Vec<_>>()
-                                                            .join(", ")
-                                                    })
-                                                    .unwrap_or_else(|| {
-                                                        text(row, "shortcut").into()
-                                                    });
-                                                if value["grid_monospace"] == true {
-                                                    ui.monospace(keys);
-                                                } else {
-                                                    ui.weak(keys);
-                                                }
-                                                ui.end_row();
-                                            }
-                                        });
-                                });
-                        } else {
-                            ui.add(egui::Label::new(text(value, "body")).wrap());
-                        }
-                    });
-                if let Some(index) = shown.chosen {
-                    let choice = &value["choices"][index];
-                    emit(
-                        events,
-                        id,
-                        "answer",
-                        json!({"choice":choice["id"],"instance":value["instance"]}),
-                    );
-                    toolkit::dialog::Dialog::reset(ui.ctx(), dialog_id);
-                } else if shown.dismissed {
-                    emit(
-                        events,
-                        id,
-                        "answer",
-                        json!({"choice":"close","instance":value["instance"]}),
-                    );
-                    toolkit::dialog::Dialog::reset(ui.ctx(), dialog_id);
-                }
-                return ui.interact(shown.rect, dialog_id.with("receipt"), egui::Sense::hover());
-            }
             let mut field = value["field"].as_str().map(str::to_owned);
             let modal = egui::Modal::new(egui::Id::unique((ui.ctx().viewport_id(), id, "modal")))
                 .show(ui.ctx(), |ui| {
@@ -906,6 +839,26 @@ fn gold_dialog(
             else if !response.has_focus() && !response.lost_focus(){response.request_focus();}
             if response.changed(){emit(events,id,"edit",json!(field));}
         }else if !text(value,"body").is_empty(){ui.label(text(value,"body"));}
+        if let Some(rows) = value["grid"].as_array() {
+            egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                egui::Grid::new((id, "shortcuts"))
+                    .striped(value["grid_striped"] == true)
+                    .show(ui, |ui| {
+                        for row in rows {
+                            ui.label(text(row, "label"));
+                            let keys = row["keys"].as_array().map(|keys| {
+                                keys.iter().filter_map(Value::as_str)
+                                    .filter_map(toolkit::keymap::parse_chord)
+                                    .map(|s| ui.ctx().format_shortcut(&s))
+                                    .collect::<Vec<_>>().join(", ")
+                            }).unwrap_or_else(|| text(row, "shortcut").into());
+                            if value["grid_monospace"] == true { ui.monospace(keys); }
+                            else { ui.weak(keys); }
+                            ui.end_row();
+                        }
+                    });
+            });
+        }
         if let Some(footer)=value["footer"].as_str(){ui.weak(footer);}
         if let Some(items)=value["items"].as_array(){
           if value["row_layout"]=="inline" {
@@ -958,4 +911,38 @@ fn gold_dialog(
         Dialog::reset(ui.ctx(), key);
     }
     ui.allocate_rect(shown.rect, egui::Sense::hover())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gold_shortcut_grid_reaches_the_live_widget_renderer() {
+        let rows: Vec<_> = (0..23).map(|i| json!({
+            "label":format!("Command {i}"), "keys":["Ctrl+Shift+T"]
+        })).collect();
+        let mut widget = Widget::new("keys", "dialog-form", "Keys", json!({
+            "open":true, "title":"Keyboard Shortcuts", "body":"", "instance":"keys",
+            "grid":rows,"grid_striped":true,"grid_monospace":true,
+            "choices":[{"id":"done","label":"Close","enabled":true,"default":true}]
+        }));
+        widget.properties = json!({"style":"gold"});
+        let mut widgets = crate::widgets::Widgets::default();
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            let _ = ctx.run(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0,560.0))),
+                ..Default::default()
+            }, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    widgets.begin_frame();
+                    assert!(widgets.widget(ui, &widget, &json!({})).is_empty());
+                });
+            });
+        }
+        assert!(widgets.geometry["keys"].height() > 400.0, "shortcut rows must contribute to the dialog body");
+        widget.initial["grid"][0]["keys"] = json!(42);
+        assert!(validate("dialog-form", &widget.initial).is_err());
+    }
 }
