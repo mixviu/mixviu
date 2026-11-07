@@ -75,9 +75,14 @@ mod tests {
         let observed = cleanup_seen.clone();
         let pane = PaneSession::new(
             Arc::new(|| {}),
-            Arc::new(move || { revoked.store(false, Ordering::Release); }),
             Arc::new(move || {
-                assert!(!cleaned.load(Ordering::Acquire), "cleanup observed live pane authority");
+                revoked.store(false, Ordering::Release);
+            }),
+            Arc::new(move || {
+                assert!(
+                    !cleaned.load(Ordering::Acquire),
+                    "cleanup observed live pane authority"
+                );
                 observed.store(true, Ordering::Release);
             }),
             Arc::new(|_| {}),
@@ -94,7 +99,9 @@ mod tests {
         let rejected = live.clone();
         let pane = PaneSession::new(
             Arc::new(|| {}),
-            Arc::new(move || { revoked.store(false, Ordering::Release); }),
+            Arc::new(move || {
+                revoked.store(false, Ordering::Release);
+            }),
             Arc::new(|| panic!("failed launch must not wait for PTY cleanup")),
             Arc::new(move |reason| {
                 assert_eq!(reason, "spawn refused");

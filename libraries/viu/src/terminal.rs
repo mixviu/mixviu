@@ -13,6 +13,7 @@ pub mod input;
 pub mod metrics;
 pub mod model;
 pub mod native_session;
+pub mod session_actor;
 pub mod raster;
 pub mod session_fd;
 pub mod sessions;
