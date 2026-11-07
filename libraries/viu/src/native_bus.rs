@@ -580,29 +580,65 @@ mod tests {
         use ::bus::native_client::{NodedClient, UnixConnectOutcome};
         let broker = test_broker::Broker::start();
         let endpoint = Endpoint::start_described_policy(
-            "wire-example".into(), broker.url.clone(), Vec::new(), "app.quit".into(),
-            Arc::new(|| {}), Some(json!([])),
-            Policy { namespace: Some("example".into()), text_replies: true,
-                unknown_reply: Some(json!("unknown command; use HELP")), ..Default::default() },
+            "wire-example".into(),
+            broker.url.clone(),
+            Vec::new(),
+            "app.quit".into(),
+            Arc::new(|| {}),
+            Some(json!([])),
+            Policy {
+                namespace: Some("example".into()),
+                text_replies: true,
+                unknown_reply: Some(json!("unknown command; use HELP")),
+                ..Default::default()
+            },
         );
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         runtime.block_on(async {
-            let UnixConnectOutcome::VerifiedUnix(caller) = NodedClient::connect_unix("", &broker.url, &broker.options(), None).await.unwrap() else { panic!("native observer required") };
+            let UnixConnectOutcome::VerifiedUnix(caller) =
+                NodedClient::connect_unix("", &broker.url, &broker.options(), None)
+                    .await
+                    .unwrap()
+            else {
+                panic!("native observer required")
+            };
             tokio::time::timeout(Duration::from_secs(5), async {
-                while endpoint.client().is_none() { tokio::time::sleep(Duration::from_millis(5)).await; }
-            }).await.unwrap();
+                while endpoint.client().is_none() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
             let headers = BTreeMap::new();
             for (original, answer, expected) in [
-                (" \n{\"x\":99,\"x\":1,\"text\":\"中\"}", json!("line one\nquote: \"中\""), "line one\nquote: \"中\"".to_owned()),
-                ("{\"x\":}", json!({"error_code":"INVALID_ARGUMENT"}), json!({"error_code":"INVALID_ARGUMENT"}).to_string()),
+                (
+                    " \n{\"x\":99,\"x\":1,\"text\":\"中\"}",
+                    json!("line one\nquote: \"中\""),
+                    "line one\nquote: \"中\"".to_owned(),
+                ),
+                (
+                    "{\"x\":}",
+                    json!({"error_code":"INVALID_ARGUMENT"}),
+                    json!({"error_code":"INVALID_ARGUMENT"}).to_string(),
+                ),
             ] {
                 let call = caller.client().call_with_headers_raw_within(
-                    "wire-example", "wire-example.inspect", &headers, original, Duration::from_secs(5));
+                    "wire-example",
+                    "wire-example.inspect",
+                    &headers,
+                    original,
+                    Duration::from_secs(5),
+                );
                 let respond = async {
                     let request = loop {
                         match endpoint.requests.try_recv() {
                             Ok(request) => break request,
-                            Err(mpsc::TryRecvError::Empty) => tokio::time::sleep(Duration::from_millis(5)).await,
+                            Err(mpsc::TryRecvError::Empty) => {
+                                tokio::time::sleep(Duration::from_millis(5)).await
+                            }
                             Err(error) => panic!("native owner closed: {error}"),
                         }
                     };
@@ -610,15 +646,31 @@ mod tests {
                     assert_eq!(request.body, original);
                     request.reply.send((10, answer)).unwrap();
                 };
-                let (result, ()) = tokio::time::timeout(Duration::from_secs(6), async { tokio::join!(call, respond) }).await.unwrap();
+                let (result, ()) = tokio::time::timeout(Duration::from_secs(6), async {
+                    tokio::join!(call, respond)
+                })
+                .await
+                .unwrap();
                 let (rc, body, _) = result.unwrap();
                 assert_eq!(rc, 10);
                 assert_eq!(body.as_bytes(), expected.as_bytes());
             }
-            let (rc, body, _) = caller.client().call_with_headers_raw_within(
-                "wire-example", "example.inspect", &headers, "{}", Duration::from_secs(5)).await.unwrap();
-            assert_eq!((rc,body), (10,"unknown command; use HELP".into()));
-            assert!(endpoint.requests.try_recv().is_err(), "foreign namespace reached reducer");
+            let (rc, body, _) = caller
+                .client()
+                .call_with_headers_raw_within(
+                    "wire-example",
+                    "example.inspect",
+                    &headers,
+                    "{}",
+                    Duration::from_secs(5),
+                )
+                .await
+                .unwrap();
+            assert_eq!((rc, body), (10, "unknown command; use HELP".into()));
+            assert!(
+                endpoint.requests.try_recv().is_err(),
+                "foreign namespace reached reducer"
+            );
             caller.client().close().await;
         });
     }
