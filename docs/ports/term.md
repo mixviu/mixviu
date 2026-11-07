@@ -1448,3 +1448,11 @@ CBC term-show-fixture-afe888d6-a1 passed all nine Mix suites, including the work
 Code 27f1a82644f433424985bd30ab77e8a2d54fc72e adds the required empty args array for the no-argument term.show descriptor. Confirmed the exact descriptor schema in libraries/bus/src/protocol.rs. Local show tests and diff check pass; no assertion changed. Remaining gate stages and native activation checks have not passed yet.
 
 Next CBC term-show-descriptor-27f1a826 runs term_gate --prepare at that exact code. Read complete log, repair failures/apply returned changes and require an exact repeat. Then fetch verified bytes and exercise term.show, minimized restore, service/compositor overrides, refusals/cancellation and second-launch PID/session invariance against gold. All earlier full parity/release open items remain. NOT ACCEPTED; no gold, install or desk changes.
+
+### Activation launcher regression repair
+
+CBC term-show-descriptor-27f1a826-a1 passed all nine Mix suites, both real bundle-load checks, thirteen runtime/call/timer checks and 188 terminal tests (five existing ignores). The launch suite then failed an incorrect new assertion: Monitor explicitly declares dev.mixos.monitor, so its service override must preserve that window app-id. Read the complete 35080-byte saved log in two chunks; no worker diff. No debug artifact was emitted by this failed gate.
+
+Code 06ff3077e731c4bcafe3b67e7107cc1c3720e757 corrects the declared-id assertion and checks the service-derived default separately against the Term bundle before applying an explicit override. The production resolution policy is unchanged: explicit window identity wins, otherwise use mixviu plus the resolved service. This retains checks on the injected Mix launch context as well as native app-id resolution. Diff check passes; Rust tests remain CBC-only.
+
+Next CBC term-show-launch-06ff3077 runs term_gate --prepare at that exact code. Read the complete saved log, repair any failures and apply returned changes, requiring an exact repeat when necessary. Then fetch verified bytes for native term.show/minimized restore, compositor/service targeting, refusal/cancellation and second-launch host/session invariance against gold. Earlier full input/Bus/Prefs/enforcement/conformance and final release visual acceptance items remain open. NOT ACCEPTED; no Fable deviation, install, gold or desk changes.
