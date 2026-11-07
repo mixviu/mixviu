@@ -4,7 +4,8 @@
 -- PR (on CBC: cbc-build.mix --repo mixviu --commit SHA -- mix tools/ci.mix all).
 --
 --   mix tools/ci.mix STAGE [--mix PATH]
---   STAGE: fmt | env | mix-hygiene | clippy | viud | test | mix-lint | mix-lint-baseline | all
+--   STAGE: fmt | env | mix-hygiene | clippy | viud | test | mix-lint | mix-lint-baseline | release-mix | all
+--   release-mix (not in all): release build of mix, refused if it links the test hooks.
 --
 -- MixViu has four engines: mix, mixd, viu, viud. The `mix` package is built and tested apart from the
 -- rest of the workspace: the workspace build would unify features and ship
@@ -16,7 +17,7 @@
 
 $o = getopt(args(), {mix: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
-  eprint("usage: mix tools/ci.mix fmt|env|mix-hygiene|clippy|viud|test|mix-lint|mix-lint-baseline|all [--mix PATH]")
+  eprint("usage: mix tools/ci.mix fmt|env|mix-hygiene|clippy|viud|test|mix-lint|mix-lint-baseline|release-mix|all [--mix PATH]")
   exit(64)
 end
 $stage = $o.rest[0]
@@ -111,6 +112,37 @@ fn stage_mix_hygiene()
     eprint("::error::release test-hooks build did not fail at the profile guard")
     exit(1)
   end
+  -- The artefact marker is present exactly when the hooks are linked. The
+  -- hook-free build comes last, so later stages get an ordinary binary.
+  run_step(["cargo", "build", "--locked", "-p", "mix", "--bin", "mix", "--features", "test-hooks"])
+  require_hooks_marker("target/debug/mix", true)
+  run_step(["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"])
+  require_hooks_marker("target/debug/mix", false)
+end
+
+-- Must match MARKER in libraries/mix-shell/src/test_hooks.rs.
+$hooks_marker = "mixviu-test-hooks-linked"
+
+fn require_hooks_marker($bin, $want)
+  $r = run_argv(["grep", "-a", "-F", "-q", $hooks_marker, $bin])
+  if $r.exit_code != 0 and $r.exit_code != 1 then
+    eprint("::error::cannot scan " + $bin + " for the test-hooks marker: " + $r.stderr)
+    exit(1)
+  end
+  $found = $r.exit_code == 0
+  if $found != $want then
+    eprint("::error::" + $bin + ($want ? " lacks" : " carries") + " the test-hooks marker")
+    exit(1)
+  end
+  print($bin + ": test-hooks marker " + ($found ? "present" : "absent") + " (expected)")
+end
+
+-- The shipped artefact: a release `mix` must not carry the test hooks.
+-- Release recipes run this stage (or require_hooks_marker on their own
+-- output) before installing a binary.
+fn stage_release_mix()
+  run_step(["cargo", "build", "--locked", "--release", "-p", "mix", "--bin", "mix"])
+  require_hooks_marker("target/release/mix", false)
 end
 
 -- The MIX_* registry (Fable ruling, 2026-11-07): every MIX_* name in the tree
@@ -267,6 +299,8 @@ elif $stage == "test" then
   stage_test($mix)
 elif $stage == "mix-hygiene" then
   stage_mix_hygiene()
+elif $stage == "release-mix" then
+  stage_release_mix()
 elif $stage == "viud" then
   stage_viud_egui_free()
 elif $stage == "env" then

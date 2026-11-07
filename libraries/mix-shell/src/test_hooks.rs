@@ -1,7 +1,18 @@
 //! Fault injection is opt-in at build time, never a runtime production switch.
+//!
+//! A binary that links the hooks also carries `MARKER`, so the artefact itself
+//! can be checked (`mix tools/ci.mix release-mix` refuses a release `mix`
+//! that contains it). The build-script and `compile_error!` guards stop the
+//! feature at build time; the marker catches any route around them.
+#[cfg(feature = "test-hooks")]
+static MARKER: &[u8] = b"mixviu-test-hooks-linked";
+
 pub(crate) fn var(name: &str) -> Option<std::ffi::OsString> {
     #[cfg(feature = "test-hooks")]
     {
+        // Kept live by every hook lookup, so the linker cannot drop it while
+        // the hooks themselves are linked.
+        std::hint::black_box(MARKER);
         std::env::var_os(name)
     }
     #[cfg(not(feature = "test-hooks"))]

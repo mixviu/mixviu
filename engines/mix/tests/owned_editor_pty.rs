@@ -15,6 +15,11 @@ mod pty;
 #[allow(dead_code)]
 #[path = "../../../libraries/mix-shell/src/session_state.rs"]
 mod session_state;
+// editor/runtime.rs reads its delay hooks through `crate::test_hooks`; the
+// same source follows this package's `test-hooks` feature, which forwards to
+// mix-shell's, so the hooks here are on exactly when the engine's are.
+#[path = "../../../libraries/mix-shell/src/test_hooks.rs"]
+mod test_hooks;
 
 use editor::runtime::{CompletionSnapshot, Line, OwnedEditor};
 use editor::{Generation, PromptProfile, Reply};
