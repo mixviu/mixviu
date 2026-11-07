@@ -1404,3 +1404,48 @@ source if changed. Remaining complete Bus/input/clipboard/IME/search/Prefs,
 full gold enforcement suite and exact release acceptance remain open.
 NOT ACCEPTED. No Fable deviation or gold/desktop changes.
 branch: lab/parity-term; head SHA: a778efc597a39a5093bc3bf00dd97dc05ecd4cff (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — replay gate, production protected handler/Mix adapter and remaining full parity/release acceptance open; CBC job ids: term-control-admission-18dd4d9c-a1 (green; fmt applied), term-control-replay-a778efc5 (next await).
+
+### Replay gate passes; first protected native recipient installed
+
+`term-control-replay-a778efc5-a1` passed: 166 terminal tests including all
+six replay cases, five existing ignores, seven input tests, two bundle
+tests, six Mix suites, search/dialog, foreign gate and debug build. Full
+62938-byte saved log read in five chunks. Worker formatting applied in
+7474c477. No new capture/release claim is made from that artifact.
+
+7474c4777cbf8cd8eb5303d7b9b33fa290ae7cae installs the first native
+protected recipient with the lazy host supervisor. It implements typed
+snapshot/contents, input and retained-operation queries. Admission and
+retained replies precede pane liveness; new input rechecks the recipient
+lease, native pane generation and foreground generation, reserves its ID
+before execution, and uses the existing final PTY write permit. The handler
+retains no tabs/layout policy. Pane lookup holds weak session state, avoiding
+a handler/native-owner ownership cycle. It releases retained-state locks
+before waiting on a pane so close's bounded actor cleanup cannot wait on
+the reverse lock order. Dispatch remains single-flight.
+
+Input revocation retains gold's bounded notice queue (256), 16 notices per
+turn, 200ms total and 100ms send budgets; private delivery is stamped with
+the original broker epoch/caller connection. PTY byte counts settle the
+retained outcome separately from the original acknowledgement. Direct
+mutations now allocate instance operation IDs through the retained store.
+
+Expanded the existing isolated real-Mix close/exit regression to call the
+actual protected service before teardown: metadata snapshot, generation-
+bound input executing an assembled marker in the real shell, exact retry,
+conflicting retry, stale pane and foreground refusals, then retained PTY
+byte-count completion and unchanged replay acknowledgement. These new
+cases await CBC compilation/runtime and are not claimed as passed yet.
+
+This is a partial handler: protected session/list metadata, layout operations
+through the in-process Mix adapter and child execute/task forwarding remain
+open, as do full original enforcement/reconnect tests, all remaining app
+inventory and exact release acceptance. No Fable deviation is proposed.
+NOT ACCEPTED; no gold/desktop changes.
+
+Next CBC `term-protected-input-7474c477`, exact code above,
+term_gate --prepare. Read complete log; fix failures, apply formatting/lock
+and repeat exact source. Fetch verified artifact for isolated protected
+input/snapshot/notice and unchanged matched-session captures, then continue
+the Mix policy adapter and child forwarding.
+branch: lab/parity-term; head SHA: 7474c4777cbf8cd8eb5303d7b9b33fa290ae7cae (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — protected input gate, Mix layout/session adapter and child forwarding, remaining full parity/release acceptance open; CBC job ids: term-control-replay-a778efc5-a1 (green; fmt applied), term-protected-input-7474c477 (next await).
