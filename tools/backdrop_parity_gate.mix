@@ -34,7 +34,7 @@ if contains(args(),"--artifact") then
     write_file($artifact.."/"..$name..".json",json_encode($receipt));print({artifact:$artifact,receipt:$receipt})
   end
 end
-for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--lib","raster"],["cargo","test","--locked","-p","viu","--test","app_ports","--test","backdrop"],["cargo","clippy","--locked","-p","viu","--all-targets"]]
+for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--lib","raster"],["cargo","test","--locked","-p","viu","--test","app_ports","--test","backdrop","--test","session"],["cargo","clippy","--locked","-p","viu","--all-targets"]]
   if contains(args(),"--prepare") and $argv[1]=="fmt" then continue end
   $result=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"4"}})
   print($result)
