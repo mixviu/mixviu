@@ -124,7 +124,10 @@ fn scrolling_form_fits_inside_a_short_bottom_panel() {
         let field = view.geometry["name"];
         let button = view.geometry["accept"];
         let body = view.geometry["body"];
-        assert!(body.bottom() <= field.top(), "fill paints over the short form: {body:?} {field:?}");
+        assert!(
+            body.bottom() <= field.top(),
+            "fill paints over the short form: {body:?} {field:?}"
+        );
         assert!(
             field.bottom() <= button.top(),
             "field clipped behind footer: {field:?} {button:?}"
