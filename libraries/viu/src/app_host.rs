@@ -54,6 +54,8 @@ struct Host {
     drive_replies: BTreeMap<u64, Reply>,
     drive_answers: std::collections::VecDeque<toolkit::drive::Answer>,
     drive_serial: u64,
+    drive_geometry: Option<(u64, BTreeMap<String, egui::Rect>)>,
+    drive_geometry_stable: bool,
     macros: macros::Session,
     macro_ui: toolkit::macros::State,
     macro_pending: Vec<(std::sync::mpsc::Receiver<macros::commands::Answer>, Reply)>,
@@ -107,6 +109,12 @@ struct Host {
     next_tick: Instant,
 }
 impl Host {
+    fn queued_drive_input(&self) -> bool {
+        self.held_requests.front().is_some_and(|request| {
+            request.command.strip_prefix(&format!("{}.", self.app))
+                .is_some_and(toolkit::drive::queues)
+        })
+    }
     fn window_settings(&self, model: &Value) -> Value {
         let mut settings = if self.native_drive && model["window_settings"].is_object() {
             model["window_settings"].clone()
@@ -733,7 +741,13 @@ impl Host {
             if toolkit::drive::pending(ctx) || !self.drive_answers.is_empty() {
                 break;
             }
+            if self.queued_drive_input() && !self.drive_geometry_stable {
+                ctx.request_repaint();
+                break;
+            }
             let request = self.held_requests.pop_front().unwrap();
+            self.drive_geometry = None;
+            self.drive_geometry_stable = false;
             self.request(request, ctx);
         }
         for _ in 0..32 {
@@ -1137,6 +1151,20 @@ impl Host {
             &self.view.geometry,
             self.measurements.snapshot(),
         );
+        // A model's first layout can still use egui's previous grid sizes.
+        // Resolve native input only after two matching control passes, so its
+        // AccessKit target cannot move between resolution and the press pass.
+        if self.queued_drive_input() {
+            let geometry = (self.view.revision, self.view.geometry.clone());
+            self.drive_geometry_stable = self.drive_geometry.as_ref() == Some(&geometry);
+            self.drive_geometry = Some(geometry);
+            if !self.drive_geometry_stable {
+                ui.ctx().request_repaint();
+            }
+        } else {
+            self.drive_geometry = None;
+            self.drive_geometry_stable = false;
+        }
         self.settle(ui.ctx());
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
@@ -1323,6 +1351,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         drive_replies: BTreeMap::new(),
         drive_answers: Default::default(),
         drive_serial: 0,
+        drive_geometry: None,
+        drive_geometry_stable: false,
         macro_ui: toolkit::macros::State::for_session(&bundle.manifest.service, macros.clone()),
         macros,
         macro_pending: Vec::new(),
