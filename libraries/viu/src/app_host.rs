@@ -1518,7 +1518,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let capture_root = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
-        .join("viu-captures");
+        .join("mix/viu/captures");
     Host {
         require_bus: bundle.manifest.require_bus,
         forward_output: bundle.manifest.forward_output,
