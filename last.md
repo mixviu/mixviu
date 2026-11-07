@@ -186,3 +186,52 @@ terminal Prefs; release gate and matched real-session whole/region
 captures and acceptance record. NOT ACCEPTED. No install or VT changes.
 
 branch: lab/parity-term; head SHA: 3ef390712cdbfdf551bd4ab4a3921bf6d94b5bd1 (code; receipt HEAD contains this checkpoint); open items: native CBC validation, widget/host and verified session integration, full Mix app/Bus/Prefs, conformance and visual acceptance; CBC job ids: term-native-r2-3ef3907 (await registered).
+
+
+## Term round 2 continuation — native tests pass, surface integration pending
+
+Exact extraction test source: `35c0fce38096`; code checkpoint now
+`1d498ca1d92eea7ccb188ae8bc023689850e6670`. Not accepted.
+
+Read both complete saved CBC logs. First source compiled with 129 passing
+tests and one new-test failure: untouched Rio cells contain NUL, whereas
+gold snapshots/raster treat them as visible spaces. Corrected the visible
+row helper to gold semantics and kept an exact raw-NUL erase assertion plus
+text assertions. Returned CBC lock and fmt patch applied locally. No gold
+test was removed or relaxed.
+
+`term-native-r2-repair-a1` on cbc3 ran 130 tests successfully, five original
+fixture/environment/benchmark ignores, six Mix checks, no worker diff.
+Includes real Mix PTY input/resize/exit/reap, sealed descriptor delivery and
+CLOEXEC isolation, VT chunks/history/selection/mouse/paste, Unicode glyphs,
+GPU/CPU frames at all scales and pane IME cancellation. Saved logs:
+`20261107-121451-cbc3-3ef390712cdb-term-native-r2-3ef3907-a1-2483ba81.log`
+and `20261107-121815-cbc3-35c0fce38096-term-native-r2-repair-a1-4d8827bb.log`
+under the private CBC cache.
+
+The repair job returned 1 because my imported foreign policy incorrectly
+put mixd under the login shell static-C rule. Fable D2/D3 explicitly admits
+existing vendored static C, with no new DT_NEEDED library. Recorded its
+four existing static dependencies as D2 exceptions; Viu/Rio/simdutf remain
+forbidden to every strict dependency tree. No ELF receipt yet. No Fable
+question or new permission is needed to implement that existing ruling.
+
+New source wires native sessions into generic runtime Services, SceneView
+and Widgets, with a reusable GPU surface and `viu_terminal` in-process
+binding. Mix chooses create/close; handles never reuse a closed ID, close
+serializes input/teardown, PTY damage wakes the UI, and bytes remain native.
+GPU resources initialise lazily on either host target. The provisional
+single-pane Mix specimen now opens a real PTY and draws it. New native
+checks cover stale input after close, refused geometry, retained sessions
+through live font change and idle damage. Mix model checks and lint pass;
+new Rust source and host build await validation.
+
+Next CBC job `term-widget-r2-1d498ca` will prepare/check the native suite,
+foreign closure and generic host build at the exact new code source.
+Resume from its complete log, apply fmt changes, repair and repeat exact
+source. Open: gold Mix tab/pane/profile/menu/action policy and full Bus;
+verified supervisor attachment/generations/reconnect; clipboard and input
+edge integration, search and all terminal Prefs; release/native acceptance
+and matched real-session capture/diff/inspection. No install or VT changes.
+
+branch: lab/parity-term; head SHA: 1d498ca1d92eea7ccb188ae8bc023689850e6670 (code; receipt HEAD contains this checkpoint); open items: new widget validation, full Mix app/Bus/Prefs and verified sessions, release and visual acceptance; CBC job ids: term-native-r2-3ef3907-a1 (129 pass, one new-test failure), term-native-r2-repair-a1 (130 pass; foreign policy failure), term-widget-r2-1d498ca (next await).
