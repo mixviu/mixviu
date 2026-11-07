@@ -954,7 +954,10 @@ fn gold_dialog(
         }
     });
     for (index, rect) in &shown.buttons {
-        geometry.insert(format!("{id}.choice.{}",text(&choices[*index],"id")),*rect);
+        geometry.insert(
+            format!("{id}.choice.{}", text(&choices[*index], "id")),
+            *rect,
+        );
     }
     let chosen = shown.chosen.or_else(|| {
         if shown.dismissed {
