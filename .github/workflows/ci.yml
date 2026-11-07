@@ -89,7 +89,7 @@ jobs:
         with:
           persist-credentials: false
       - name: System libraries
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config clang libudev-dev libinput-dev libgbm-dev libseat-dev libxkbcommon-dev libwayland-dev libdrm-dev libegl-dev libgles-dev libegl1-mesa-dev libpixman-1-dev libsystemd-dev libdbus-1-dev libfontconfig-dev libfreetype-dev libpipewire-0.3-dev libasound2-dev libxcb1-dev mesa-vulkan-drivers libvulkan1 fonts-dejavu-core
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config clang libudev-dev libinput-dev libgbm-dev libseat-dev libxkbcommon-dev libwayland-dev libdrm-dev libegl-dev libgles-dev libegl1-mesa-dev libpixman-1-dev libsystemd-dev libdbus-1-dev libfontconfig-dev libfreetype-dev libpipewire-0.3-dev libpulse-dev libasound2-dev libxcb1-dev mesa-vulkan-drivers libvulkan1 fonts-dejavu-core
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: workspace
