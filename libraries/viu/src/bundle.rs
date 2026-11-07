@@ -9,6 +9,8 @@ pub struct Manifest {
     pub behaviour: String,
     pub service: String,
     pub title: String,
+    pub help: Option<String>,
+    pub service_pattern: Option<String>,
     pub size: [f32; 2],
     pub commands: Vec<String>,
     pub command_descriptors: Vec<bus::CommandDescriptor>,
@@ -34,11 +36,22 @@ pub struct Manifest {
     pub bus_surface: Option<serde_json::Value>,
     pub native_ui: bool,
     pub native_macros: bool,
+    /// Let the bundle implement its declared macro workflows.
+    pub macro_workflow: bool,
     pub native_debug: bool,
     pub activation: Option<String>,
     pub unknown_command: Option<String>,
+    pub notice_command: Option<String>,
+    pub launch: Option<String>,
+    pub argument_error_exit: u8,
     pub app: Option<String>,
     pub bus_url: Option<String>,
+    pub bus: bool,
+    pub require_bus: bool,
+    pub forward_output: bool,
+    pub allow_native_overrides: bool,
+    pub launch_variants: std::collections::BTreeMap<String, String>,
+    pub saved_version: Option<u32>,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -46,6 +59,8 @@ impl Default for Manifest {
             behaviour: "app.mix".into(),
             service: "viu-app".into(),
             title: "Viu".into(),
+            help: None,
+            service_pattern: None,
             size: [800.0, 600.0],
             commands: vec![],
             command_descriptors: vec![],
@@ -67,11 +82,21 @@ impl Default for Manifest {
             bus_surface: None,
             native_ui: false,
             native_macros: false,
+            macro_workflow: false,
             native_debug: false,
             activation: None,
             unknown_command: None,
+            notice_command: None,
+            launch: None,
+            argument_error_exit: 2,
             app: None,
             bus_url: None,
+            bus: true,
+            require_bus: false,
+            forward_output: false,
+            allow_native_overrides: true,
+            launch_variants: Default::default(),
+            saved_version: None,
         }
     }
 }
@@ -94,6 +119,7 @@ pub struct Bundle {
     pub manifest: Manifest,
     pub scene: String,
     pub program: crate::runtime::Program,
+    pub launch: serde_json::Value,
 }
 impl Bundle {
     pub fn load(root: &Path, args: &[String]) -> Result<Self, String> {
@@ -128,6 +154,19 @@ impl Bundle {
         } else {
             Manifest::default()
         };
+        if let Some(variant) = args.iter().find_map(|a| manifest.launch_variants.get(a)) {
+            let path = root
+                .join(variant)
+                .canonicalize()
+                .map_err(|e| e.to_string())?;
+            if !path.starts_with(&root) {
+                return Err("launch variant escapes bundle".into());
+            }
+            let value: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(path).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            manifest = serde_json::from_value(value["host"].clone()).map_err(|e| e.to_string())?;
+        }
         manifest.app = Some(manifest.app().to_owned());
         if let Some(service) = options.service {
             manifest.service = service;
@@ -176,6 +215,10 @@ impl Bundle {
                     || !entry["read_only"].is_boolean()
             })
             || !["window", "background", "headless"].contains(&manifest.surface.as_str())
+            || manifest
+                .notice_command
+                .as_ref()
+                .is_some_and(|s| s.is_empty() || s.len() > 128)
             || manifest
                 .frame
                 .as_deref()
@@ -236,6 +279,7 @@ impl Bundle {
             manifest,
             scene,
             program,
+            launch: serde_json::json!({}),
         })
     }
 }

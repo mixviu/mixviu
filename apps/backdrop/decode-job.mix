@@ -1,0 +1,28 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+$schedule=require("schedule.mix")
+on job.run
+  $a=$event.args;$job=$a.job
+  try
+    if $job.kind=="load" then
+      $image=viu_raster("load",$job.path,$a.scope)
+      reply(0,json_encode({kind:"load",path:$job.path,image:$image}))
+    else
+      $slides=$job.fill.slideshow
+      $files=if $slides.folder!=nil then viu_raster("folder",$slides.folder) else $slides.images end
+      $s=$schedule.schedule($files,$slides.interval_s,$slides.shuffle,monotonic())
+      $image=nil;$first_error=nil
+      for $i=1 to len($s.files)
+        try $image=viu_raster("load",$schedule.current($s),$a.scope);break
+        catch $message
+          if $first_error==nil then $first_error=$message end
+          $s=$schedule.advance($s,monotonic())
+        end
+      end
+      if $image==nil then raise("IMAGE","no slideshow image could be decoded: "..$first_error) end
+      reply(0,json_encode({kind:"resolve",key:$job.key,path:$schedule.current($s),image:$image,schedule:$s}))
+    end
+  catch $message
+    reply(10,json_encode({error_code:"IMAGE",message:$message,path:$job.path}))
+  end
+end

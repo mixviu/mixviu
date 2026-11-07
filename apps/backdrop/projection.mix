@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+$d=require("document.mix");$engine=require("engine.mix")
+fn value($fill,$images)
+  $theme=$fill==nil or ($fill.colour==nil and $fill.fallback==nil)
+  $value={retained:true,theme:$theme,phase:"none",colour:if $theme then [0,0,0] else $d.rgb($fill.colour ?? $fill.fallback) end,fit:if $fill==nil then "fill" else $fill.fit ?? "fill" end}
+  if $fill!=nil and $fill.image!=nil and $images[$fill.image]!=nil then
+    $value.phase="ready";$value.handle=$images[$fill.image].handle
+  end
+  return $value
+end
+fn model($state,$now)
+  $fills=$engine.fills($state.display)
+  $model={serial:$state.active,values:{root:value($fills[""],$state.images)},surfaces:{}}
+  for $key in keys($fills)
+    $v=value($fills[$key],$state.images)
+    if $state.fade!=nil then $v.transition={id:$state.active,elapsed_ms:floor(max(0,$now-$state.fade)*1000)} end
+    if $key=="" then $model.values.root=$v
+    else $model.surfaces[$key]={serial:$state.active,values:{root:$v}} end
+  end
+  return $model
+end

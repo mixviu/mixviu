@@ -1,0 +1,41 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$model=require("model.mix");$tree=require("tree.mix");$macro_view=require("macro-view.mix");$agent_view=require("agent-view.mix");$mesh_view=require("mesh-view.mix");$traffic_view=require("traffic-view.mix")
+fn description($s)
+  $c=$model.command($s,$s.selection)
+  if $c!=nil then
+    return $s.selection.service.."  "..$c.name.."\nArguments: "..(if $c.args=="" then "Not specified" else $c.args end).."\nRead only: "..(if $c.read_only==true then "Yes" elif $c.read_only==false then "No" else "Unknown (legacy service)" end).."\n\n"..(if $c.description=="" then "Description unavailable on this service" else $c.description end)
+  end
+  $r=$tree.find_row($s,$s.row_key)
+  if $r!=nil then
+    if $r.kind=="error" then return $r.error
+    elif $r.kind=="service" then return json_encode($r.identity,true)
+    elif $r.kind=="node" then
+      for $n in $s.snapshot.nodes if $r.key=="node:"..$n.name then return json_encode($n.info,true) end end
+    end
+  end
+  return "Select a service and command to inspect its signature."
+end
+fn project($s)
+  $rows=[]
+  for $r in $tree.rows($s)
+    $label=$r.label
+    if $r.kind=="agent_session" and ($r.badge ?? "")!="" then $label=$label.."  · "..$r.badge
+    elif $r.kind=="agents_node" then $n=$s.agents.nodes[$r.node] ?? {}; $label=$label.."  · "..to_string(len(filter($n.sessions ?? [],fn($r)=$r.status!="ended"))) end
+    push($rows,{key:$r.key,cells:[$label],bold:$r.badge=="question",toggle_label:(if $r.expanded then "Collapse " else "Expand " end)..$r.label,depth:$r.depth,branch:$r.children>0,selected:$r.selected,focused:false,expanded:$r.expanded,icon:if $r.kind=="service" then "server" else nil end,mono:$r.kind=="command",weak:contains(["agents_down","no_peers","agents_ended"],$r.kind),error:$r.kind=="error",tooltip:$r.error ?? $r.label})
+  end
+  $side=$model.effective_dock($s)
+  $placement=if $s.dock_open then {edge:$side,native_panel:true,name:if $side=="right" then "traffic-right" else "traffic-bottom" end,fraction:if $side=="right" then $s.dock_width else $s.dock_height end,reference_extent:if $side!="right" and $s.window_width>=640 then $s.window_height else nil end,resizable:true,minimum:if $side=="right" then 0.2 else 0.12 end,maximum:0.5} else {edge:"bottom",native_panel:true,name:"traffic-collapsed",size:"design.collapsed_dock"} end
+  $values={body:$s.body,reply:$s.answer,filter:$s.filter,description:description($s),"traffic-state":$s.observe.." · "..to_string($s.dropped).." dropped","traffic-pause":$s.traffic_paused,"traffic-filter":$s.traffic_filter}
+  $extra=$macro_view.project($s);$agents=$agent_view.project($s);$mesh=$mesh_view.project($s);$traffic=$traffic_view.project($s)
+  for $key in keys($mesh) $extra[$key]=$mesh[$key] end
+  for $key in keys($traffic) $extra[$key]=$traffic[$key] end
+  for $key in keys($agents) $extra[$key]=$agents[$key] end
+  $extra.show_macro=$s.macro_selected!=nil;$extra.show_mesh=$s.row_key=="nodes:mesh";$extra.show_agents=$s.row_key!=nil and ($s.row_key=="agents" or starts_with($s.row_key,"agent:") or starts_with($s.row_key,"agents:"));$extra.show_command=not $extra.show_macro and not $extra.show_mesh and not $extra.show_agents
+  $values["macro-title"]=$extra.macro_title;$values["macro-meta"]=$extra.macro_meta;$values["macro-message"]=$extra.macro_message
+  $values["agent-error"]=$extra.agent_error;$values["agent-title"]=$extra.agent_title;$values["agent-cap"]=$extra.agent_cap
+  $values["agent-new-error"]=$extra.agent_error;$values["agent-session-error"]=$extra.agent_error
+  for $key in ["age","loss","observe_error","nodes_error","inspector_title","local_text","ping_text"] $values["mesh-"..replace($key,"_","-")]=$extra["mesh_"..$key] end
+  $out={details_key:$s.row_key ?? "",values:$values,split:$s.split,axis:if $s.window_width<640 then "vertical" else "horizontal" end,placements:{traffic:$placement,inspector:{edge:"fill",passthrough:true}},inspector_placements:{services:{edge:if $s.window_width<640 then "top" else "left" end,native_panel:true,name:"services",fraction:$s.split,resizable:true,minimum:0.1,maximum:0.8},details:{edge:"fill",native_panel:true}},tree:{id:"services-tree",kind:"tree-table",label:"Nodes and services",initial:{key:"services",rows:$rows,columns:[{id:"name",label:"",min_width:0}]},properties:{style:"outline",saved_scroll:"services",scroll_ready:$s.saved_restore.done or $s.saved_restore.shown,reveal_row:$s.reveal_key,reveal_serial:$s.reveal_serial}},body_editor:{id:"body",kind:"editor",label:"JSON body (optional)",initial:$s.body,properties:{rows:7,placeholder:"JSON body (optional)",interactive:$s.call==nil and $s.dialog==nil}},call_button:{id:"call",kind:"button",label:"Call command",initial:"",properties:{text:"Call command",style:"primary",enabled:not $model.busy($s) and $s.connected and $s.dialog==nil and $model.command($s,$s.selection)!=nil}},clear_button:{id:"clear",kind:"button",label:"Clear body",initial:"",properties:{text:"Clear body",style:"secondary",enabled:not $model.busy($s) and $s.dialog==nil}},traffic_hidden:not $s.dock_open}
+  for $k in keys($extra) $out[$k]=$extra[$k] end
+  return $out
+end

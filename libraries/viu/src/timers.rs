@@ -22,16 +22,18 @@ impl Timers {
             None => {
                 timers.remove(id);
             }
-            Some(ms) if ms.is_finite() && (0.0..=90_000.0).contains(&ms) => {
+            Some(ms) if ms.is_finite() && ms >= 0.0 => {
                 if timers.len() >= 128 && !timers.contains_key(id) {
                     return Err("timer capacity exceeded".into());
                 }
-                timers.insert(
-                    id.into(),
-                    (Instant::now() + Duration::from_secs_f64(ms / 1000.0), value),
-                );
+                let duration = Duration::try_from_secs_f64(ms / 1000.0)
+                    .map_err(|_| "timer duration overflows")?;
+                let deadline = Instant::now()
+                    .checked_add(duration)
+                    .ok_or("timer deadline overflows")?;
+                timers.insert(id.into(), (deadline, value));
             }
-            _ => return Err("timer delay must be 0..90000 milliseconds".into()),
+            _ => return Err("timer delay must be finite nonnegative milliseconds".into()),
         }
         Ok(())
     }

@@ -1,0 +1,38 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+$document=require("document.mix")
+fn fresh()
+  return {train_service:"train",buildd_service:"buildd",hours:24,renderer:"3d"}
+end
+fn choose_view($state,$body)
+  if type($body)!="map" then raise("ARGUMENT","expected an object") end
+  if any(keys($body),fn($k)=not contains(["view","args"],$k)) then raise("ARGUMENT","unknown field") end
+  if type($body.view)!="string" then raise("ARGUMENT","view is required") end
+  if not contains(["wallpaper","train"],$body.view) then raise("ARGUMENT","unknown view") end
+  $train="train";$buildd="buildd";$hours=$state.hours;$renderer=$state.renderer
+  if contains(keys($body),"args") then
+    $a=$body.args
+    if type($a)!="map" then raise("ARGUMENT","args must be an object") end
+    for $key in keys($a)
+      $value=$a[$key]
+      if $key=="zoom" then
+        if not contains(["1h","24h","7d"],$value) then raise("ARGUMENT","zoom must be 1h, 24h or 7d") end
+        $hours={"1h":1,"24h":24,"7d":168}[$value]
+      elif $key=="renderer" then
+        if not contains(["2d","3d"],$value) then raise("ARGUMENT","renderer must be 2d or 3d") end
+        $renderer=$value
+      else
+        if type($value)!="string" or byte_length($value)==0 or byte_length($value)>256 then raise("ARGUMENT","invalid service name") end
+        if not contains(["train_service","buildd_service"],$key) then raise("ARGUMENT","unknown view argument") end
+        if $key=="train_service" then $train=$value else $buildd=$value end
+      end
+    end
+  end
+  $state.train_service=$train;$state.buildd_service=$buildd;$state.hours=$hours;$state.renderer=$renderer
+  return $state
+end
+fn cycle($selected,$body)
+  if type($body)!="map" then raise("ARGUMENT","expected an object") end
+  if type($body)!="map" or len(keys($body))!=1 or not contains(["next","prev"],$body.dir) then raise("ARGUMENT","dir must be next or prev") end
+  return if $selected=="train" then "wallpaper" else "train" end
+end

@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+on job.run
+  $a=$event.args
+  try
+    if $a.op=="mesh.ping" then
+      $start=monotonic();$code=nil
+      try
+        send ("noded."..$a.node..".bus") "noded.ping" body="" timeout=2 reply_mode="raw"
+        if $reply.transport_error==nil then $code=$reply.rc end
+      catch $why $code=nil end
+      reply(0,json_encode({ok:$code!=nil and $code<10,rc:$code,ms:floor((monotonic()-$start)*1000),at:floor(time()*1000)}))
+    else
+      $data={}
+      for $item in [["info","noded.info"],["peers","noded.peers"]]
+        send "noded" $item[1] body="" timeout=3 reply_mode="raw"
+        if $reply.transport_error!=nil then raise("UNAVAILABLE",$reply.transport_error) end
+        if $reply.rc>=10 then raise("UNAVAILABLE",$item[1]..": "..to_string($reply.rc).." "..$reply.body) end
+        $data[$item[0]]=json_parse($reply.body)
+      end
+      reply(0,json_encode($data))
+    end
+  catch $message reply(10,json_encode({error_code:"UNAVAILABLE",message:$message})) end
+end

@@ -24,6 +24,9 @@ fn round_two_bundles_publish_and_draw_through_the_real_embedded_interpreter() {
                 scratch.path().join("saved").to_string_lossy().into(),
                 scratch.path().join("raw").to_string_lossy().into(),
             ]
+        } else if name == "workshop" {
+            // Gold Workshop accepts only named launch options.
+            vec![]
         } else {
             vec!["example".into()]
         };

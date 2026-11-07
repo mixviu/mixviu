@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix");$tree=require("tree.mix");$s=$m.initial()
+fn check($v,$why) if not $v then raise("TREE_TEST",$why) end end
+$rows=$tree.rows($s)
+check(len($rows)==3 and $rows[0].key=="nodes" and $rows[1].key=="nodes:mesh" and $rows[2].key=="agents","initial branches")
+$s.snapshot.nodes=[{name:"example-node",local:true,services:["echo"],info:{name:"example-node"},error:nil}]
+$s.snapshot.identities.echo={name:"echo",version:"1.2.3",git_sha:"1234567890"}
+$s.snapshot.services.echo={Ok:$m.catalogue([{name:"echo",args:{text:"string"},description:"Echo",read_only:true},"ping"])}
+$s.expanded=push($s.expanded,"node:example-node")
+$rows=$tree.rows($s)
+check($rows[3].label=="echo  1.2.3 · 12345678","identity label")
+$s=$m.select_target($s,{service:"echo",command:"ping"});$rows=$tree.rows($s)
+check(any($rows,fn($r)=$r.selected and $r.key=="command:example-node:echo:ping"),"select target opens service")
+$s.filter="Echo";$rows=$tree.rows($s)
+check(any($rows,fn($r)=$r.key=="command:example-node:echo:echo"),"command/description search")
+check(not $tree.find_row($s,"nodes:mesh").expanded,"search never expands the Mesh leaf")
+$s.catalogues={global:{macros:[]}}
+check($tree.find_row($s,"macros:global").expanded,"search keeps an empty macro group expanded")
+check($m.command($s,{service:"echo",command:"echo"}).read_only,"read only metadata")
+$s.filter="";$s.catalogues={global:{macros:[{id:"test",title:"Test",tier:"user-global"}]}}
+check($tree.find_row($s,"macro:global:test").macro_id=="test","hidden macro rows remain selectable")
+check($m.info($s,{pid:1,version:"test"}).schema=="workshop.v1","gold state schema")
+print("Workshop tree contracts PASS")

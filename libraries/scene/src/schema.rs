@@ -118,7 +118,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("radius", false, None),
         p("background", "string", false, None),
     ];
-    static ROW: [Port; 11] = [
+    static ROW: [Port; 12] = [
         p("children", "list", true, None),
         pnd("gap", "0", None),
         pnd("padding", "0", None),
@@ -138,6 +138,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("on_click", "string", false, None),
         // A secondary (right) click: the `context` event kind.
         p("on_context", "string", false, None),
+        p("wrap", "bool", false, None),
     ];
     static TEXT: [Port; 12] = [
         p("text", "string", true, None),
@@ -215,9 +216,10 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pnd("row_gap", "3", None),
         pnd("min_column_width", "0", None),
     ];
-    static DOCK: [Port; 5] = [
+    static DOCK: [Port; 6] = [
         p("children", "list", true, None),
         p("placements", "object", true, None),
+        p("clip", "bool", false, None),
         p("on_change", "string", false, None),
         p("outline", "string", false, None),
         pn("outline_width", false, Some(0.0)),
@@ -301,6 +303,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             pn("max_width", false, None),
             pn("min_height", false, None),
             pn("max_height", false, None),
+            pn("reserve_height", false, None),
         ]);
         ports
             .iter_mut()
@@ -322,6 +325,15 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             p("bar", "string", false, None),
             p("padding_x", "length", false, None),
             p("padding_y", "length", false, None),
+            p("native_spacing", "bool", false, None),
+            p("native_frame", "bool", false, None),
+            p("group_frame", "bool", false, None),
+            p("group_title", "string", false, None),
+            p("scroll", "bool", false, None),
+            p("group_key", "string", false, None),
+            p("scroll_key", "string", false, None),
+            p("scroll_ready", "bool", false, None),
+            p("reserve_panel_after", "bool", false, None),
             pn("row_gap", false, None),
             pn("column_gap", false, None),
             pn("padding_top", false, None),

@@ -1,0 +1,96 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$work=require("work.mix")
+fn running($s)
+  $out={}
+  for $service in sort(keys($s.snapshot.services))
+    $r=$s.snapshot.services[$service]
+    for $c in $r.Ok ?? []
+      if ends_with($c.name,".macros.list") then
+        $app=strip_suffix($c.name,".macros.list")
+        if $app!="workshop" then $out[$app]=$service end
+        break
+      end
+    end
+  end
+  return $out
+end
+fn enqueue($s,$op,$args,$reply)
+  $native_only=starts_with($op,"macros.") and not has_key($args,"app") and not contains(["macros.open","macros.new","macros.ced","macros.dopus"],$op)
+  if not $native_only then $s.macro_next_ticket=$s.macro_next_ticket+1 end
+  $ticket=$s.macro_next_ticket
+  if contains(["macros.open","macros.new"],$op) then $s.macro_latest_open=$ticket end
+  if $op=="catalogues" then $s.macro_latest_catalogues=$ticket end
+  if not $native_only then $s.macro_pending=$s.macro_pending+1 end
+  $s=$work.enqueue($s,{owner:"macros",op:$op,args:$args,reply:$reply,ticket:$ticket,running:running($s),lane:"macros",job:"macro-job.mix",native_only:$native_only})
+  return $work.launch($s)
+end
+fn app($s)
+  if $s.macro_selected!=nil then return $s.macro_selected[0] end
+  if $s.row_key!=nil and starts_with($s.row_key,"macros:") then return strip_prefix($s.row_key,"macros:") end
+  return nil
+end
+fn can_new($s)
+  $m=require("model.mix")
+  return app($s)!=nil and not $m.busy($s) and not $s.quitting and $s.dialog==nil
+end
+fn open_document($s,$app,$doc)
+  $s.selection=nil;$s.macro_selected=[$app,$doc.id];$s.row_key="macro:"..$app..":"..$doc.id
+  if not contains($s.expanded,"macros:"..$app) then $s.expanded=push($s.expanded,"macros:"..$app) end
+  if $doc.catalogue!=nil then $s.catalogues[$app]=$doc.catalogue end
+  $s.document=$doc;$s.macro_draft=$s.macro_drafts[$app..":"..$doc.id];$s.macro_saved_text=nil
+  $s.focus_id="macro-source";$s.focus_serial=$s.focus_serial+1;$s.macro_confirm_delete=false
+  return $s
+end
+fn received($s,$task,$d)
+  if $task.native_only then $work.answer($task.reply,$d.rc,$d.body);return $s end
+  $s.macro_pending=max(0,$s.macro_pending-1)
+  if (contains(["macros.open","macros.new"],$task.op) and $task.ticket!=$s.macro_latest_open) or ($task.op=="catalogues" and $task.ticket!=$s.macro_latest_catalogues) then
+    $work.answer($task.reply,10,{error_code:"BUSY",message:"superseded by a newer selection"});return $s
+  end
+  $body=$d.body;$failed=$d.rc!=0 or $body.error_code!=nil
+  if $task.op=="catalogues" and not $failed then
+    $s.catalogues=$body;$topics=[viu_context().citizen..".macros.finished"]
+    for $service in values($task.running)
+      push($topics,$service..".action.executed");push($topics,$service..".macros.finished")
+    end
+    $topics=unique($topics)
+    for $topic in $s.watched_topics if not contains($topics,$topic) then unsubscribe($topic) end end
+    for $topic in $topics if not contains($s.watched_topics,$topic) then subscribe($topic) end end
+    $s.watched_topics=$topics
+  elif contains(["macros.open","macros.new"],$task.op) and not $failed then
+    $app=$task.args.app ?? "global"
+    if $body.branch!=nil then
+      $s.selection=nil;$s.macro_selected=nil;$s.row_key="macros:"..$app
+      if not contains($s.expanded,$s.row_key) then $s.expanded=push($s.expanded,$s.row_key) end
+    else $s=open_document($s,$app,$body) end
+    if $task.op=="macros.new" then $s=enqueue($s,"catalogues",{},nil) end
+  else
+    $s.macro_message=json_encode($body)
+    if $task.op=="macros.put" and not $failed and $s.macro_selected!=nil and $s.macro_selected[0]==($task.args.app ?? "global") and $s.macro_selected[1]==$task.args.id then
+      $s.macro_saved_text=$task.args.text;$s.document.text=$task.args.text
+      if $s.macro_draft==$s.macro_saved_text then $s.macro_draft=nil end
+      $s.macro_drafts=delete($s.macro_drafts,$s.macro_selected[0]..":"..$s.macro_selected[1])
+    end
+    if not $failed and contains(["macros.put","macros.move","macros.remove","macros.copy"],$task.op) then $s=enqueue($s,"catalogues",{},nil) end
+  end
+  $work.answer($task.reply,if $failed then 10 else 0 end,$body)
+  return $s
+end
+fn invoke($s,$op,$args,$reply)
+  if $s.macro_selected!=nil then
+    if not has_key($args,"app") then $args.app=$s.macro_selected[0] end
+    if not contains(["macros.stop","macros.status","macros.output","macros.reload","macros.list","macros.new"],$op) and not has_key($args,"id") then $args.id=$s.macro_selected[1] end
+  end
+  return enqueue($s,$op,$args,$reply)
+end
+fn ui_command($s,$op)
+  $args={}
+  if $op=="macros.run" and $s.macro_draft!=nil and $s.macro_draft!=($s.macro_saved_text ?? $s.document.text ?? "") then $s.macro_message="Save changes before running this macro.";return $s end
+  if $op=="macros.remove" then $s.macro_confirm_delete=true;return $s end
+  if $op=="macros.put" then $args.text=$s.macro_draft ?? $s.document.text ?? "" end
+  if $op=="macros.move" then
+    if $s.macro_selected[0]=="global" then $args.tier="user-app";$args.destination=$s.macro_destination else $args.tier="user-global" end
+  end
+  if $op=="macros.run" and $s.macro_target!="" then $args.target=$s.macro_target end
+  return invoke($s,$op,$args,nil)
+end

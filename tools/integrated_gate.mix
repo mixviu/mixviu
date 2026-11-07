@@ -1,7 +1,3 @@
--- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
--- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
--- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
--- compd package no longer exists here (viud is its successor).
 $rc=0
 fn checked_step($argv)
   print({argv:$argv})
@@ -11,18 +7,24 @@ fn checked_step($argv)
 end
 try
   if contains(args(),"--prepare") then checked_step(["cargo","fmt","--all"]) else checked_step(["cargo","fmt","--all","--","--check"]) end
-  checked_step(["cargo","clippy","--locked","--workspace","--exclude","mix","--all-targets"])
-  checked_step(["cargo","clippy","--locked","-p","mix","--all-targets"])
+  checked_step(["cargo","clippy","--locked","--workspace","--exclude","system","--all-targets"])
+  checked_step(["cargo","clippy","--locked","-p","system","--all-targets"])
   -- Shell process tests hand --serve to the sibling service engine.
   checked_step(["cargo","build","--locked","-p","mixd"])
-  checked_step(["cargo","test","--locked","-p","mix","--no-fail-fast"])
-  checked_step(["cargo","test","--locked","--workspace","--exclude","mix","--no-fail-fast"])
+  checked_step(["cargo","test","--locked","-p","system","--no-fail-fast"])
+  checked_step(["cargo","test","--locked","--workspace","--exclude","system","--no-fail-fast"])
   for $case in ["core-test.mix","history-test.mix","wire-test.mix","fetch-test.mix"] checked_step(["/opt/mixos/bin/mix","apps/monitor/"..$case]) end
   -- Prefs policy scripts use native Viu settings admission and registry APIs.
-  checked_step(["cargo","test","--locked","-p","lib-viu","--test","prefs_parity"])
+  checked_step(["cargo","test","--locked","-p","viu","--test","prefs_parity"])
   checked_step(["/opt/mixos/bin/mix","apps/screenshot/policy-test.mix"])
-  checked_step(["cargo","test","--locked","-p","viu","--no-default-features","--test","shell_profile"])
-  checked_step(["cargo","test","--locked","-p","lib-viu","--test","bulk_profile","--test","ports_round5","--","--nocapture"])
+  for $case in ["core","document","schedule","launch","engine","train","wire"]
+    checked_step(["/opt/mixos/bin/mix","apps/backdrop/"..$case.."-test.mix"])
+  end
+  for $file in glob("apps/workshop/*-test.mix")
+    checked_step(["/opt/mixos/bin/mix",$file])
+  end
+  checked_step(["cargo","test","--locked","-p","viu-engine","--no-default-features","--test","shell_profile"])
+  checked_step(["cargo","test","--locked","-p","viu","--test","bulk_profile","--test","ports_round5","--","--nocapture"])
   checked_step(["/opt/mixos/bin/mix","tools/p2_gate.mix","build"])
   checked_step(["/opt/mixos/bin/mix","tools/p2_gate.mix","furniture"])
   $sha=trim(run_argv_must(["git","rev-parse","HEAD"]));$art="/build/es-artifacts/"..$sha

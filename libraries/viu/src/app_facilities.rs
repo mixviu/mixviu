@@ -13,6 +13,7 @@ type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 pub struct Facilities {
     app: String,
     service: String,
+    app_commands: std::collections::BTreeSet<String>,
     ui: bool,
     debug: bool,
     installed: bool,
@@ -21,6 +22,8 @@ pub struct Facilities {
     pub macros: Option<macros::Session>,
     next: u64,
     pending: BTreeMap<u64, Reply>,
+    ready_answers: Vec<(Reply, u8, Value)>,
+    input_headers: BTreeMap<u64, BTreeMap<String, String>>,
     completed: mpsc::Receiver<(Reply, macros::commands::Answer)>,
     complete: mpsc::Sender<(Reply, macros::commands::Answer)>,
     finished: mpsc::Receiver<Value>,
@@ -37,6 +40,9 @@ impl Facilities {
     pub fn native_ui(&self) -> bool {
         self.ui
     }
+    pub fn owns_macro_command(&self, command: &str) -> bool {
+        self.app_commands.contains(command)
+    }
     pub fn new(manifest: &Manifest, wake: crate::runtime::Wake) -> Self {
         let app = manifest.app().to_owned();
         let mut surface = manifest.bus_surface.clone();
@@ -44,15 +50,37 @@ impl Facilities {
             let commands = surface["commands"]
                 .as_array_mut()
                 .expect("validated Bus surface");
+            let mut native = Vec::new();
             if manifest.native_ui {
-                commands.extend(toolkit::drive::describe(&app));
-            }
-            if manifest.native_macros {
-                commands.extend(macros::commands::describe(&app));
+                native.extend(toolkit::drive::describe(&app));
             }
             if manifest.native_debug {
-                commands.extend(toolkit::debug::describe(&app));
+                for descriptor in toolkit::debug::describe(&app) {
+                    if !commands
+                        .iter()
+                        .any(|existing| existing["name"] == descriptor["name"])
+                    {
+                        commands.push(descriptor);
+                    }
+                }
             }
+            if manifest.native_macros {
+                native.extend(macros::commands::describe(&app));
+            }
+            let overrides: std::collections::BTreeMap<_, _> = commands
+                .iter()
+                .filter(|c| native.iter().any(|n| n["name"] == c["name"]))
+                .map(|c| (c["name"].as_str().unwrap().to_owned(), c.clone()))
+                .collect();
+            commands.retain(|c| !overrides.contains_key(c["name"].as_str().unwrap()));
+            commands.extend(native.into_iter().map(|c| {
+                overrides
+                    .get(c["name"].as_str().unwrap())
+                    .cloned()
+                    .unwrap_or(c)
+            }));
+            let mut names = std::collections::BTreeSet::new();
+            commands.retain(|c| names.insert(c["name"].as_str().unwrap_or_default().to_owned()));
         }
         let macros = manifest
             .native_macros
@@ -71,12 +99,19 @@ impl Facilities {
             service: std::env::var("VIU_SERVICE").unwrap_or_else(|_| manifest.service.clone()),
             ui: manifest.native_ui || manifest.native_drive,
             debug: manifest.native_debug || manifest.native_drive,
+            app_commands: if manifest.macro_workflow {
+                manifest.commands.iter().cloned().collect()
+            } else {
+                Default::default()
+            },
             installed: false,
             context: None,
             surface,
             macros,
             next: 0,
             pending: BTreeMap::new(),
+            ready_answers: Vec::new(),
+            input_headers: BTreeMap::new(),
             completed,
             complete,
             finished,
@@ -113,7 +148,7 @@ impl Facilities {
         }
         while let Ok(body) = self.finished.try_recv() {
             self.events
-                .push(format!("{}.macros.finished", self.app), body, 0);
+                .push(format!("{}.macros.finished", self.service), body, 0);
         }
         if self.publishing.is_none() {
             if let Some((topic, body)) = self.events.front() {
@@ -146,6 +181,15 @@ impl Facilities {
             .record(id, origin, args["params"].clone(), args["result"].clone());
         Ok(json!({"recorded":true}))
     }
+    pub fn input_headers(&self, ctx: &egui::Context) -> BTreeMap<String, String> {
+        if let Some(id) = toolkit::drive::input_request(ctx) {
+            let mut headers = self.input_headers.get(&id).cloned().unwrap_or_default();
+            headers.insert("viu_input".into(), "bus".into());
+            headers
+        } else {
+            BTreeMap::from([("viu_input".into(), "physical".into())])
+        }
+    }
     pub fn notice(&mut self, command: &str, args: &Value) {
         if command == "bus.hint.completed"
             && self
@@ -162,13 +206,52 @@ impl Facilities {
     }
     fn answers(&mut self, ctx: &egui::Context, answers: Vec<toolkit::drive::Answer>) {
         for mut answer in answers {
+            let input = self.input_headers.remove(&answer.id).is_some();
             if let Some(reply) = self.pending.remove(&answer.id) {
                 remap(ctx, &mut answer.body);
-                let _ = reply.send((answer.rc, answer.body));
+                if input && answer.rc == 0 {
+                    self.ready_answers.push((reply, answer.rc, answer.body));
+                } else {
+                    let _ = reply.send((answer.rc, answer.body));
+                }
             }
         }
     }
+    /// A completed gesture also waits for its in-process application callback
+    /// and the resulting scene revision, just like the native Rust shells.
+    pub fn settle_answers(&mut self) {
+        for (reply, rc, body) in self.ready_answers.drain(..) {
+            let _ = reply.send((rc, body));
+        }
+    }
     pub fn request(&mut self, mut r: Request, ctx: &egui::Context) -> Option<Request> {
+        if self
+            .surface
+            .as_ref()
+            .is_some_and(|s| s["arguments_any"] != true)
+            && !r.command.starts_with(&format!("{}.macros.", self.app))
+            && !r.args.is_object()
+        {
+            let _ = r.reply.send((
+                10,
+                json!({"error_code":"ARGUMENT","message":"arguments must be a JSON object"}),
+            ));
+            return None;
+        }
+        // Empty native bodies are normalised by the transport adapter.
+        if r.command == "app.describe" || r.command == "HELP" {
+            if let Some(surface) = &self.surface {
+                let _ = r.reply.send((
+                    0,
+                    if r.command == "HELP" {
+                        surface["commands"].clone()
+                    } else {
+                        surface.clone()
+                    },
+                ));
+                return None;
+            }
+        }
         if self.surface.is_some()
             && !r.command.starts_with(&format!("{}.macros.", self.app))
             && !r.args.is_object()
@@ -191,7 +274,7 @@ impl Facilities {
             if let Some(surface) = &self.surface {
                 let _ = r.reply.send((
                     0,
-                    if r.command == "HELP" {
+                    if r.command == "HELP" || surface["describe_list"] == true {
                         surface["commands"].clone()
                     } else {
                         surface.clone()
@@ -206,12 +289,18 @@ impl Facilities {
                 self.next += 1;
                 let id = self.next;
                 self.pending.insert(id, r.reply);
+                self.input_headers.insert(id, r.headers.clone());
                 if let Some(answer) = toolkit::drive::request(ctx, id, suffix, &r.args) {
                     self.answers(ctx, vec![answer]);
                 }
                 return None;
             }
             if let Some(suffix) = suffix.strip_prefix("macros.") {
+                // An explicitly declared application workflow owns its command;
+                // otherwise the reusable native macro surface handles it.
+                if self.app_commands.contains(&r.command) {
+                    return Some(r);
+                }
                 if let Some(session) = &self.macros {
                     match macros::commands::handle(session, suffix, &r.args) {
                         macros::commands::Reply::Immediate(answer) => {

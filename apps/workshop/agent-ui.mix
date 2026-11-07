@@ -1,0 +1,44 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$agents=require("agents.mix");$view=require("agent-view.mix");$work=require("work.mix")
+fn act($s,$node,$op,$args)
+  $selected=$s.agents.selected ?? {}
+  try $payload=$agents.request_payload($op,$args,$selected.session)
+  catch $why $s.agents.error=$why;return $s end
+  $r=$agents.enqueue($s,$node,$payload.command,$payload.body,nil,true)
+  return $work.launch($r.state)
+end
+fn intent($s,$a,$headers)
+  if $a.id=="agent-composer" and $a.action!="submit" then $s.agents.draft=$a.value;return $s end
+  if $a.id=="agent-newform" then
+    if $a.value.field=="new-agent" then $s.agents.new_agent=$a.value.value
+    elif $a.value.field=="new-cwd" then $s.agents.new_cwd=$a.value.value end
+    return $s
+  end
+  if $a.id=="agent-permissions" and $headers.viu_input!="physical" then
+    $s.agents.error="HUMAN_ONLY: a permission is answered by a person at the window, not over the Bus";return $s
+  end
+  $caller=$agents.caller_session($headers)
+  if $caller!=nil then $s.agents.error="USE_AGENT: agent session "..$caller.." drove this window; it calls agent.* directly";return $s end
+  if $a.id=="agent-start" then
+    $p=$view.project($s)
+    if $p.agent_start.properties.enabled then return act($s,$view.form_node($s),"new",{agent:trim($s.agents.new_agent),cwd:trim($s.agents.new_cwd)}) end
+    return $s
+  end
+  if $s.agents.selected==nil then return $s end
+  $p=$s.agents.selected;$row=$view.selected_row($s)
+  if $a.id=="agent-send" or ($a.id=="agent-composer" and $a.action=="submit") then
+    $text=trim($s.agents.draft)
+    if $text=="" or not $view.can_send($s) then return $s end
+    $s.agents.draft="";$s.agents.prompting=true
+    return act($s,$p.node,"prompt",{text:$text})
+  elif $a.id=="agent-permissions" then return act($s,$p.node,"answer",$a.value.value)
+  elif $a.id=="agent-header" then
+    if $row==nil or $row.status=="ended" then return $s end
+    $v=$a.value
+    if $v.field=="mode" then return act($s,$p.node,"set",{mode:$v.value})
+    elif starts_with($v.field,"option:") then return act($s,$p.node,"set",{option:strip_prefix($v.field,"option:"),value:$v.value}) end
+  elif contains(["agent-cancel","agent-close","agent-resume"],$a.id) then
+    return act($s,$p.node,strip_prefix($a.id,"agent-"),{})
+  end
+  return $s
+end

@@ -45,6 +45,13 @@ struct Hint {
 type HintFuture = std::pin::Pin<Box<dyn std::future::Future<Output = (String, bool, bool)> + Send>>;
 /// Launch-time activation uses the existing native SDK and compositor path.
 pub fn activate_existing(service: &str, command: &str, url: &str) -> Result<bool, String> {
+    activate_existing_plan(service, &[json!({"command":command,"body":{}})], url)
+}
+pub fn activate_existing_plan(
+    service: &str,
+    operations: &[Value],
+    url: &str,
+) -> Result<bool, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -65,21 +72,24 @@ pub fn activate_existing(service: &str, command: &str, url: &str) -> Result<bool
             if !services.iter().any(|s| s == service) {
                 return Ok(false);
             }
-            let (rc, body, error) = client
-                .call_with_headers_raw_within(
-                    service,
-                    command,
-                    &BTreeMap::new(),
-                    "{}",
-                    Duration::from_secs(10),
-                )
-                .await
-                .map_err(|e| e.to_string())?;
-            if rc == 0 {
-                Ok(true)
-            } else {
-                Err(error.unwrap_or(body))
+            for operation in operations {
+                let (rc, body, error) = client
+                    .call_with_headers_raw_within(
+                        service,
+                        operation["command"]
+                            .as_str()
+                            .ok_or("activation command required")?,
+                        &BTreeMap::new(),
+                        &operation["body"].to_string(),
+                        Duration::from_secs(10),
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if rc != 0 {
+                    return Err(error.unwrap_or(body));
+                }
             }
+            Ok(true)
         }
         .await;
         client.close().await;
@@ -129,9 +139,11 @@ async fn send_hint(native: Arc<SupervisedClient>, hint: Hint) -> (String, bool, 
 
 pub struct Endpoint {
     name: String,
+    pub registration_failed: Arc<AtomicBool>,
     pub requests: mpsc::Receiver<Request>,
     pub notices: mpsc::Receiver<Notice>,
     pub close_requested: Arc<AtomicBool>,
+    pub startup_error: Arc<Mutex<Option<String>>>,
     pub dropped_notices: Arc<AtomicU64>,
     client: SharedClient,
     hints: tokio::sync::mpsc::Sender<Hint>,
@@ -154,6 +166,24 @@ impl Default for RequestPolicy {
     }
 }
 impl Endpoint {
+    pub fn offline() -> Self {
+        let (_, requests) = mpsc::sync_channel(1);
+        let (_, notices) = mpsc::sync_channel(1);
+        let (hints, _) = tokio::sync::mpsc::channel(1);
+        Self {
+            name: String::new(),
+            startup_error: Arc::new(Mutex::new(None)),
+            registration_failed: Arc::new(AtomicBool::new(false)),
+            requests,
+            notices,
+            close_requested: Arc::new(AtomicBool::new(false)),
+            dropped_notices: Arc::new(AtomicU64::new(0)),
+            client: Arc::new(Mutex::new(None)),
+            hints,
+            stop: None,
+            thread: None,
+        }
+    }
     pub fn start(
         name: String,
         url: String,
@@ -201,7 +231,11 @@ impl Endpoint {
         let (tx, requests) = mpsc::sync_channel(32);
         let (notice_tx, notices) = mpsc::sync_channel(32);
         let close_requested = Arc::new(AtomicBool::new(false));
+        let registration_failed = Arc::new(AtomicBool::new(false));
+        let failed = registration_failed.clone();
         let close = close_requested.clone();
+        let startup_error = Arc::new(Mutex::new(None));
+        let startup_failed = startup_error.clone();
         let dropped_notices = Arc::new(AtomicU64::new(0));
         let dropped = dropped_notices.clone();
         let client: SharedClient = Arc::new(Mutex::new(None));
@@ -214,7 +248,7 @@ impl Endpoint {
             rt.block_on(async move{
                 let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
                 let options=if help.is_none() && !owner_help{options.with_commands(commands)}else{options};
-                let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");close.store(true,Ordering::Release);wake();return;}}};
+                let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");failed.store(true,Ordering::Release);*startup_failed.lock().unwrap_or_else(|e|e.into_inner())=Some(e.to_string());close.store(true,Ordering::Release);wake();return;}}};
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=Some(native.clone());
                 let mut state=native.subscribe_state();
@@ -235,7 +269,7 @@ impl Endpoint {
                         BoundedIncomingEvent::Overflow{dropped:count}=>{dropped.fetch_add(count,Ordering::Relaxed);post(Notice{command:"bus.overflow".into(),args:json!({"dropped":count}),headers:BTreeMap::new()});continue;},
                         BoundedIncomingEvent::Command(command)=>command
                     };
-                    if command.id.is_none(){post(Notice{command:command.topic().unwrap_or(&command.command).to_owned(),args:command.args,headers:command.headers});continue;}
+                    if command.id.is_none(){let mut headers=command.headers.clone();headers.insert("type".into(),"event".into());headers.insert("from".into(),command.from.clone());post(Notice{command:command.topic().unwrap_or(&command.command).to_owned(),args:command.args,headers});continue;}
                     toolkit::debug::received(&name,&command.command);
                     if command.command=="HELP" && command.args.is_object() {if let Some(help)=&help {let _=native.respond(&command,0,&help.to_string()).await;continue;}}
                     if close.load(Ordering::Acquire){let _=native.respond(&command,10,&json!({"error_code":"CLOSING"}).to_string()).await;continue;}
@@ -244,7 +278,7 @@ impl Endpoint {
                     let close_after_reply=Arc::new(AtomicBool::new(false));
                     let delivery=Arc::new(AtomicU8::new(0));
                     let deferred=Arc::new(AtomicBool::new(false));
-                    let request=Request{from:command.from.clone(),command:command.command.clone(),args:command.args.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone(),deferred:deferred.clone()};
+                    let request=Request{from:command.from.clone(),command:command.command.clone(),args:if command.body.is_empty(){json!({})}else{command.args.clone()},headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone(),deferred:deferred.clone()};
                     let admitted=tx.try_send(request).is_ok();
                     if admitted{wake();}
                     let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;let service=name.clone();
@@ -269,6 +303,8 @@ impl Endpoint {
             requests,
             notices,
             close_requested,
+            registration_failed,
+            startup_error,
             dropped_notices,
             client,
             hints,
@@ -404,7 +440,8 @@ impl Bridge {
         let body = if header_route {
             if let Some(map) = args.as_object() {
                 for (key, value) in map {
-                    if key != "body" && key != "timeout" && !value.is_null() {
+                    if key != "body" && key != "timeout" && key != "reply_mode" && !value.is_null()
+                    {
                         headers.insert(
                             key.clone(),
                             value
@@ -433,7 +470,12 @@ impl Bridge {
         command: &str,
         args: &MixValue,
     ) -> MixResult<(i32, MixValue, MixValue)> {
-        let native = self.native()?;
+        let raw = crate::runtime::to_json(args)?["reply_mode"] == "raw";
+        let native = match self.native() {
+            Ok(native) => native,
+            Err(error) if raw => return raw_transport_parts(error.to_string(), false),
+            Err(error) => return Err(error),
+        };
         let timeout = crate::runtime::to_json(args)?["timeout"]
             .as_f64()
             .unwrap_or(10.0);
@@ -441,7 +483,7 @@ impl Bridge {
             return Err(failure("native timeout must be 0.1..86400 seconds"));
         }
         let (headers, body, header_route) = Self::payload(command, args)?;
-        let (rc, body, error) = native
+        let received = native
             .call_with_headers_raw_within(
                 target,
                 command,
@@ -449,8 +491,22 @@ impl Bridge {
                 &body,
                 Duration::from_secs_f64(timeout),
             )
-            .await
-            .map_err(failure)?;
+            .await;
+        let (rc, body, error) = match received {
+            Ok(reply) => reply,
+            Err(error) if raw => {
+                let unknown = !matches!(
+                    error,
+                    ::bus::client::SupervisedError::Disconnected
+                        | ::bus::client::SupervisedError::ShuttingDown
+                );
+                return raw_transport_parts(error.to_string(), unknown);
+            }
+            Err(error) => return Err(failure(error)),
+        };
+        if raw {
+            return raw_reply_parts(rc, body, error);
+        }
         reply_parts(rc, body, error, header_route)
     }
 }
@@ -520,6 +576,25 @@ impl BusHandler for Bridge {
 // Keep Mix's established result/reply distinction and exact peer rc. Header
 // routing preserves structured refusals; JSON-body RPC preserves its message
 // result. Both retain every parsed field in $reply, including JSON strings.
+fn raw_reply_parts(
+    rc: u8,
+    body: String,
+    error: Option<String>,
+) -> MixResult<(i32, MixValue, MixValue)> {
+    let envelope = crate::runtime::from_json(json!({"rc":rc,"body":body,"error":error}))?;
+    Ok((i32::from(rc), envelope.clone(), envelope))
+}
+
+fn raw_transport_parts(
+    message: String,
+    outcome_unknown: bool,
+) -> MixResult<(i32, MixValue, MixValue)> {
+    let envelope = crate::runtime::from_json(
+        json!({"rc":-1,"body":"","error":message,"transport_error":message,"outcome_unknown":outcome_unknown,"retried":false}),
+    )?;
+    Ok((-1, envelope.clone(), envelope))
+}
+
 fn reply_parts(
     rc: u8,
     body: String,
@@ -579,6 +654,35 @@ fn reply_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn raw_transport_failure_keeps_delivery_uncertainty_and_never_claims_retry() {
+        for unknown in [false, true] {
+            let (rc, _, reply) = raw_transport_parts("transport fault".into(), unknown).unwrap();
+            assert_eq!(rc, -1);
+            let reply = crate::runtime::to_json(&reply).unwrap();
+            assert_eq!(reply["outcome_unknown"], unknown);
+            assert_eq!(reply["retried"], false);
+            assert_eq!(reply["transport_error"], "transport fault");
+        }
+    }
+    #[test]
+    fn raw_reply_envelope_preserves_whitespace_and_error_separately() {
+        for body in [" { \"x\" : 1 } \n", "permission denied\n", "", "\"text\""] {
+            let (rc, result, reply) =
+                raw_reply_parts(17, body.into(), Some("refused".into())).unwrap();
+            assert_eq!(rc, 17);
+            let value = crate::runtime::to_json(&reply).unwrap();
+            assert_eq!(value, json!({"rc":17,"body":body,"error":"refused"}));
+            assert_eq!(crate::runtime::to_json(&result).unwrap(), value);
+        }
+        let args = crate::runtime::from_json(json!({"body":"{}","reply_mode":"raw","timeout":30}))
+            .unwrap();
+        let (headers, body, route) = Bridge::payload("echo", &args).unwrap();
+        assert!(route);
+        assert_eq!(body, "{}");
+        assert!(!headers.contains_key("reply_mode"));
+        assert!(!headers.contains_key("timeout"));
+    }
     #[test]
     fn native_reply_routes_preserve_structured_refusals_and_scalar_bodies() {
         let body = json!({"error_code":"INVALID_NAME","message":"try another name","retry":true})

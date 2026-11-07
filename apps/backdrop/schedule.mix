@@ -1,0 +1,52 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Pure slideshow traversal. The caller owns decoding, clocks and timers.
+-- Failed proposals consume traversal but never replace the visible selection.
+fn defer($state,$now)
+  $state.due=if len($state.files)>1 then $now+$state.interval_s else nil end
+  return $state
+end
+fn permute($state,$last)
+  for $i=len($state.order)-1 to 1 step -1
+    $j=random(0,$i)
+    $swap=$state.order[$i];$state.order[$i]=$state.order[$j];$state.order[$j]=$swap
+  end
+  if len($state.order)>1 and $state.order[0]==$last then
+    $swap=$state.order[0];$state.order[0]=$state.order[1];$state.order[1]=$swap
+  end
+  return $state
+end
+fn schedule($files,$interval,$shuffle,$now)
+  if type($files)!="list" or len($files)==0 or len($files)>4096 or type($interval)!="number" or $interval<5 or floor($interval)!=$interval or type($shuffle)!="bool" then raise("SCHEDULE","expected bounded non-empty files, integer interval >=5 and boolean shuffle") end
+  $unique=[];$seen={}
+  for $file in $files
+    if type($file)!="string" then raise("SCHEDULE","expected file paths") end
+    if $seen[$file]!=true then push($unique,$file);$seen[$file]=true end
+  end
+  $order=[]
+  for $i=0 to len($unique)-1 push($order,$i) end
+  $state={files:$unique,order:$order,position:0,index:0,interval_s:$interval,shuffle:$shuffle,due:nil}
+  if $shuffle then $state=permute($state,nil) end
+  $state.index=$state.order[0]
+  return defer($state,$now)
+end
+fn current($state)
+  return $state.files[$state.index]
+end
+fn advance($state,$now)
+  $state.position=$state.position+1
+  if $state.position==len($state.order) then
+    $state.position=0
+    if $state.shuffle then $state=permute($state,$state.index) end
+  end
+  $state.index=$state.order[$state.position]
+  return defer($state,$now)
+end
+fn skip_failed($state,$attempted,$now)
+  if not deep_eq($state.files,$attempted.files) then raise("SCHEDULE","proposal must use the same source") end
+  $state.order=$attempted.order;$state.position=$attempted.position
+  return defer($state,$now)
+end
+fn due($state,$now)
+  return $state.due!=nil and $state.due<=$now
+end

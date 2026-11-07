@@ -230,3 +230,7 @@ The fresh 35 matched 1000×720 pairs were inspected with whole/region figures: *
 The candidate Replace PNG is byte-identical to the prior accepted candidate. Comparing the two gold captures isolates the changed score to 22 pixels of the gold caret blink; both originals and that amplified difference are retained. This introduces no new design deviation. Problems/Output separator and enlarged Prefs Search/status edges remain the same inspected raster differences. C1 is still the sole approved Ced design difference; there are no open items.
 
 Private archive: `gold-parity-20261107/editor-integration/4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0`, containing executed harnesses, native receipts, captures, region metrics, inspection, service/script hashes, exact release bytes and CBC log. Four-engine handoff and the Monitor quick recheck are in [desk4-integration.md](desk4-integration.md).
+
+## Four-app release integration at 1804bb9
+
+Release-byte revalidation **PASS**. Exact four-engine hashes, complete native/visual results, all residual figures, deferred-reply witnesses, two same-worker timing comparisons and provenance debt are in [four-app-integration-acceptance.md](four-app-integration-acceptance.md). The runtime source is `1804bb98a5ab305111bd35412bf6f3902bc24013`; following commits are documentation receipts.

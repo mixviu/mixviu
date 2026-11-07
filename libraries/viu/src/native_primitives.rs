@@ -251,6 +251,82 @@ pub(crate) fn macro_commands(session: macros::Session) -> mix::evaluator::ExtFn 
     })
 }
 
+/// Disk catalogue access for library browsers. Routing to a running app and
+/// workflow decisions remain in the calling Mix program.
+pub(crate) fn macro_library(session: macros::Session) -> mix::evaluator::ExtFn {
+    mix::sync_ext(move |args| {
+        if !args.is_empty() {
+            return Err(MixError::RuntimeError {
+                msg: "viu_macro_library expects no arguments".into(),
+                span: None,
+            });
+        }
+        let roots = session.roots().ok_or_else(|| MixError::RuntimeError {
+            msg: "macro roots unavailable".into(),
+            span: None,
+        })?;
+        let library = macros::Library::scan(&roots).map_err(|e| MixError::RuntimeError {
+            msg: e.to_string(),
+            span: None,
+        })?;
+        let mut out = serde_json::Map::new();
+        let global = macros::commands::handle(&session, "reload", &serde_json::json!({}))
+            .wait()
+            .map_err(|e| MixError::RuntimeError {
+                msg: e.to_string(),
+                span: None,
+            })?;
+        out.insert("global".into(), global);
+        for (app, catalogue) in library.apps {
+            if !macros::valid_destination(&app) {
+                continue;
+            }
+            let local = macros::Session::with_roots(&app, Some(roots.clone()));
+            local.replace_catalogue(catalogue);
+            let mut list = macros::commands::handle(&local, "list", &serde_json::json!({}))
+                .wait()
+                .map_err(|e| MixError::RuntimeError {
+                    msg: e.to_string(),
+                    span: None,
+                })?;
+            list["running"] = serde_json::json!(false);
+            out.insert(app, list);
+        }
+        crate::runtime::from_json(serde_json::Value::Object(out))
+    })
+}
+
+pub(crate) fn macro_storage(session: macros::Session) -> mix::evaluator::ExtFn {
+    mix::sync_ext(move |args| {
+        let fail = || MixError::RuntimeError {
+            msg: "viu_macro_storage expects app, suffix and body".into(),
+            span: None,
+        };
+        let [Value::String(app), Value::String(suffix), body] = args.as_slice() else {
+            return Err(fail());
+        };
+        if (app != "global" && !macros::valid_destination(app))
+            || !macros::commands::SUFFIXES.contains(&suffix.as_str())
+        {
+            return Err(fail());
+        }
+        let owner = if app == "global" {
+            session.clone()
+        } else {
+            macros::Session::with_roots(app, session.roots())
+        };
+        let body = crate::runtime::to_json(body)?;
+        crate::runtime::from_json(
+            match macros::commands::handle(&owner, suffix, &body).wait() {
+                Ok(body) => serde_json::json!({"rc":0,"body":body}),
+                Err(e) => {
+                    serde_json::json!({"rc":10,"body":{"error_code":e.code,"message":e.message}})
+                }
+            },
+        )
+    })
+}
+
 /// The existing descriptor-relative, durable replacement primitive. Unlike
 /// Mix's path-following write_atomic this refuses a symlink destination.
 /// The caller owns serialization and decides whether saving is allowed.
@@ -280,6 +356,38 @@ pub(crate) fn atomic_replace() -> mix::evaluator::ExtFn {
         config::atomic::replace(std::path::Path::new(path), text.as_bytes())
             .map_err(|e| error(e.to_string()))?;
         Ok(Value::Nil)
+    })
+}
+
+/// Durable replacement with a structured post-rename uncertainty receipt.
+/// The caller supplies serialised text and owns the decision to apply it.
+pub(crate) fn store() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let fail = |msg: &str| MixError::RuntimeError {
+            msg: msg.into(),
+            span: None,
+        };
+        let [Value::String(path), Value::String(text)] = args.as_slice() else {
+            return Err(fail("viu_store expects absolute path and text"));
+        };
+        let path = std::path::Path::new(path);
+        if !path.is_absolute() || text.len() > 1024 * 1024 {
+            return Err(fail("store requires an absolute path and at most 1 MiB"));
+        }
+        let result = match config::atomic::create_directory(
+            path.parent().ok_or_else(|| fail("missing parent"))?,
+        ) {
+            Err(e) => {
+                serde_json::json!({"stored":false,"unconfirmed":false,"message":e.to_string()})
+            }
+            Ok(_) => match config::atomic::replace(path, text.as_bytes()) {
+                Ok(()) => serde_json::json!({"stored":true,"unconfirmed":false,"message":null}),
+                Err(e) => {
+                    serde_json::json!({"stored":e.may_have_replaced,"unconfirmed":e.may_have_replaced,"message":e.to_string()})
+                }
+            },
+        };
+        crate::runtime::from_json(result)
     })
 }
 

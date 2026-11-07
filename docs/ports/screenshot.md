@@ -259,3 +259,7 @@ gate pending a provenance policy; this ruling resolves that policy and closes
 S2. Evidence is the unaltered About pair and its full/region figures above.
 No acceptance items remain open. This documentation-only update reuses the
 exact-source release gate and native evidence recorded above.
+
+## Four-app release integration at 1804bb9
+
+Release-byte revalidation **PASS**. Exact four-engine hashes, complete native/visual results, all residual figures, deferred-reply witnesses, two same-worker timing comparisons and provenance debt are in [four-app-integration-acceptance.md](four-app-integration-acceptance.md). The runtime source is `1804bb98a5ab305111bd35412bf6f3902bc24013`; following commits are documentation receipts.
