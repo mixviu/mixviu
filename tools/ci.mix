@@ -127,9 +127,13 @@ fn stage_env()
   end
   $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path]
   $used = {}
+  $prefix_used = {}
   for $tok in split(git_grep(concat(["-o", "-h", "-w", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
-    -- A token ending in _ is a prefix code matches against, not a name.
-    if $tok != "" and not ends_with($tok, "_") then
+    -- A token ending in _ is a prefix code matches against, not a name;
+    -- it must be one of the registry's listed prefixes.
+    if $tok != "" and ends_with($tok, "_") then
+      $prefix_used[$tok] = true
+    elif $tok != "" then
       $used[$tok] = true
     end
   end
@@ -142,6 +146,12 @@ fn stage_env()
   for $n in sort(keys($listed))
     if not has_key($used, $n) then
       push($bad, "registered but unused " + $n)
+    end
+  end
+  $prefixes = $reg.prefixes ?? []
+  for $n in sort(keys($prefix_used))
+    if not contains($prefixes, $n) then
+      push($bad, "unlisted prefix " + $n)
     end
   end
   for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path])), "\n")
