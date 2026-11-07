@@ -53,7 +53,8 @@ fn dispatch($s,$command,$a,$native)
   $rc=0;$body=""
   try
     $s=refresh($s,$native)
-    if $command=="term.tabs" then
+    if $command=="term.session" then $body=json_encode($native("session","",{}))
+    elif $command=="term.tabs" then
       $lines=[]
       for $i=0 to len($s.layout.tabs)-1
         $t=$s.layout.tabs[$i];$p=$s.layout.panes[to_string($t.active_pane)]
@@ -69,10 +70,10 @@ fn dispatch($s,$command,$a,$native)
       $body=join($lines,"\n")
     elif $command=="term.tab.new" or $command=="term.pane.split" then
       $model.ensure_slot($s.layout)
-      $session=$native("create","",{cwd:$a.cwd,scrollback:$s.look.values["terminal.scrollback.lines"] ?? 1000,term:$s.look.values["terminal.env.term"] ?? "xterm-256color"})
+      $session=$native("create","",{pane_id:$s.layout.next_pane,cwd:$a.cwd,scrollback:$s.look.values["terminal.scrollback.lines"] ?? 1000,term:$s.look.values["terminal.env.term"] ?? "xterm-256color"})
       if $command=="term.tab.new" then
         $s.layout=$model.open_tab($s.layout,$session,$a.title);$t=active($s)
-        $body="opened id="..to_string($t.tab).." "..identity($s,$t).." binding=unavailable"
+        $body="opened id="..to_string($t.tab).." "..identity($s,$t).." binding="..($session.binding ?? "unavailable")
       else
         $dir=if starts_with($a.dir,"h") then "h" else "v" end
         $s.layout=$model.split_pane($s.layout,$dir,$session);$t=active($s)

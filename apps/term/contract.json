@@ -1,5 +1,6 @@
 {
   "commands": [
+    "term.session",
     "term.tabs",
     "term.panes",
     "term.tab.new",
@@ -22,6 +23,7 @@
   ],
   "host": {
     "commands": [
+      "term.session",
       "term.tabs",
       "term.panes",
       "term.tab.new",

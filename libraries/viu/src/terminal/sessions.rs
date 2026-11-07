@@ -23,6 +23,14 @@ struct State {
     next: u64,
     sessions: BTreeMap<String, Arc<Mutex<Terminal>>>,
     placements: BTreeMap<String, Placement>,
+    pane_ids: BTreeMap<String, u64>,
+}
+
+#[derive(Default)]
+struct NativeOwner {
+    supervisor: Option<super::session_actor::Supervisor>,
+    attempted: bool,
+    error: Option<String>,
 }
 
 #[derive(Clone)]
@@ -31,6 +39,8 @@ pub struct Sessions {
     wake: crate::runtime::Wake,
     issuer: Option<Arc<dyn super::native_session::SessionIssuer>>,
     changed: Arc<Mutex<BTreeSet<String>>>,
+    native_enabled: bool,
+    native: Arc<Mutex<NativeOwner>>,
 }
 
 impl Default for Sessions {
@@ -63,10 +73,50 @@ impl Sessions {
                 next: 0,
                 sessions: BTreeMap::new(),
                 placements: BTreeMap::new(),
+                pane_ids: BTreeMap::new(),
             })),
             wake,
             issuer,
             changed: Arc::default(),
+            native_enabled: false,
+            native: Arc::default(),
+        }
+    }
+
+    /// Lazy verified sessions for a host. Only the first terminal creation
+    /// starts the actor, on the behaviour thread, with gold's one startup wait.
+    pub fn with_native(wake: crate::runtime::Wake) -> Self {
+        let mut sessions = Self::new(wake, None);
+        sessions.native_enabled = true;
+        sessions
+    }
+
+    fn native_handle(&self) -> Option<super::session_actor::NativeSession> {
+        if !self.native_enabled {
+            return None;
+        }
+        let mut native = self.native.lock().unwrap();
+        if !native.attempted {
+            native.attempted = true;
+            if native.supervisor.is_none() {
+                match super::session_actor::Supervisor::start() {
+                    Ok(supervisor) => native.supervisor = Some(supervisor),
+                    Err(error) => {
+                        eprintln!("terminal native session: {error}");
+                        native.error = Some(error);
+                    }
+                }
+            }
+            if let Some(supervisor) = native.supervisor.as_mut() {
+                supervisor.wait_startup();
+            }
+        }
+        native.supervisor.as_ref().map(|s| s.handle.clone())
+    }
+
+    pub(crate) fn activity(&self) {
+        if let Some(supervisor) = &self.native.lock().unwrap().supervisor {
+            supervisor.handle.activity();
         }
     }
 
@@ -134,6 +184,12 @@ impl Sessions {
     }
 
     pub fn call(&self, op: &str, handle: &str, a: Value) -> Result<Value, String> {
+        if op == "session" {
+            return Ok(self.native.lock().unwrap().supervisor.as_ref().map_or_else(
+                || json!({"diagnostic":"native identity unavailable; panes are graphics-only"}),
+                |s| s.handle.status(),
+            ));
+        }
         if op == "font-size" {
             let base = a["base"].as_f64().ok_or("font base required")? as f32;
             if !super::config::valid_font(base) {
@@ -176,15 +232,25 @@ impl Sessions {
             } else {
                 Some(a["cwd"].as_str().ok_or("cwd must be text")?.to_owned())
             };
-            let id = {
+            let (id, pane_id) = {
                 let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
-                state.next = state
+                let id = state
                     .next
                     .checked_add(1)
                     .ok_or("terminal handle space exhausted")?;
-                state.next
+                let pane_id = if a["pane_id"].is_null() {id} else {
+                    crate::widgets::whole(&a["pane_id"]).filter(|id| *id>0).ok_or("positive native pane id required")?
+                };
+                if state.pane_ids.values().any(|existing| *existing==pane_id) {
+                    return Err("native pane id already in use".into());
+                }
+                state.next = id;
+                state.pane_ids.insert(format!("vt-{id}"),pane_id);
+                (id,pane_id)
             };
-            let t = Terminal::start_session_in(
+            let native = self.native_handle();
+            let issuer = self.issuer.as_deref().or_else(|| native.as_ref().map(|h| h as &dyn super::native_session::SessionIssuer));
+            let started = Terminal::start_session_in(
                 Settings {
                     config: Config {
                         scrollback,
@@ -192,10 +258,17 @@ impl Sessions {
                     },
                     term: term.into(),
                 },
-                self.issuer.as_deref(),
-                id,
+                issuer,
+                pane_id,
                 cwd,
-            )?;
+            );
+            let t = match started {
+                Ok(t) => t,
+                Err(error) => {
+                    self.state.lock().unwrap().pane_ids.remove(&format!("vt-{id}"));
+                    return Err(error);
+                }
+            };
             let handle = format!("vt-{id}");
             let changed = self.changed.clone();
             let wake = self.wake.clone();
@@ -204,7 +277,8 @@ impl Sessions {
                 changed.lock().unwrap().insert(owner.clone());
                 wake();
             }));
-            let answer = json!({"handle":handle,"pid":t.pid});
+            let binding = native.as_ref().map_or("unavailable", |n| if n.launched(pane_id) {"granted"} else {"graphics-only"});
+            let answer = json!({"handle":handle,"pid":t.pid,"binding":binding,"native_id":pane_id});
             self.state
                 .lock()
                 .map_err(|_| "terminal owner poisoned")?
@@ -220,6 +294,7 @@ impl Sessions {
                     .remove(handle)
                     .ok_or("stale terminal handle")?;
                 state.placements.remove(handle);
+                state.pane_ids.remove(handle);
                 t
             };
             // Serialize with native input before any teardown. Removal makes
@@ -235,19 +310,19 @@ impl Sessions {
         match op {
             "state" => {
                 let (cols, rows) = t.dimensions();
-                let placement = self
-                    .state
-                    .lock()
-                    .map_err(|_| "terminal owner poisoned")?
-                    .placements
-                    .get(handle)
-                    .copied();
+                let (placement, pane_id) = {
+                    let state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
+                    (state.placements.get(handle).copied(),state.pane_ids.get(handle).copied())
+                };
+                let binding = self.native.lock().unwrap().supervisor.as_ref().map_or("unavailable", |s| {
+                    if pane_id.is_some_and(|id|s.handle.launched(id)) {"granted"} else {"graphics-only"}
+                });
                 let g = placement.map_or([0.0; 4], |p| p.rect);
                 Ok(
                     json!({"pid":t.pid,"title":t.listener.title(),"cols":cols,"rows":rows,
                     "geometry":{"x":g[0],"y":g[1],"w":g[2],"h":g[3]},
                     "cell":placement.map(|p|p.cell),"scale":placement.map(|p|p.scale),"font_px":placement.map(|p|p.font_px),
-                    "exited":t.listener.quit.load(Ordering::Acquire),"display_offset":t.display_offset(),"alternate":t.alternate_screen()}),
+                    "exited":t.listener.quit.load(Ordering::Acquire),"display_offset":t.display_offset(),"alternate":t.alternate_screen(),"binding":binding,"native_id":pane_id}),
                 )
             }
             "snapshot" => Ok(json!(t.snapshot_with(
@@ -317,6 +392,49 @@ impl Sessions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lazy_owner_issues_the_first_real_mix_shell_and_revokes_on_close() {
+        let broker = test_broker::Broker::start();
+        let supervisor = super::super::session_actor::Supervisor::with_options(broker.options(),broker.url.clone()).unwrap();
+        let sessions = Sessions::with_native(Arc::new(|| {}));
+        sessions.native.lock().unwrap().supervisor = Some(supervisor);
+        assert!(!sessions.native.lock().unwrap().attempted);
+        let home = tempfile::tempdir().unwrap();
+        let created = sessions.call("create","",json!({"pane_id":1,"cwd":home.path()})).unwrap();
+        assert_eq!(created["binding"],"granted");
+        let native = sessions.native_handle().unwrap();
+        let deadline = std::time::Instant::now()+std::time::Duration::from_secs(15);
+        loop {
+            if let Some(generation) = native.pane_generation(1) {
+                if native.child_binding(1,generation).is_some() {break;}
+            }
+            assert!(std::time::Instant::now()<deadline,"Mix did not enrol from sealed handoff: {}",native.status());
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(sessions.native.lock().unwrap().attempted);
+        let handle = created["handle"].as_str().unwrap();
+        sessions.call("close",handle,json!({})).unwrap();
+        assert!(native.pane_generation(1).is_none());
+        let pid = created["pid"].as_i64().unwrap() as libc::pid_t;
+        while unsafe {libc::kill(pid,0)}==0 {
+            assert!(std::time::Instant::now()<deadline,"closed PTY child remained alive");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn explicit_pane_identity_is_independent_of_native_handle_counter() {
+        let sessions = Sessions::default();
+        let home = tempfile::tempdir().unwrap();
+        let created = sessions.call("create","",json!({"pane_id":41,"cwd":home.path()})).unwrap();
+        assert_eq!(created["handle"],"vt-1");
+        assert_eq!(created["native_id"],41);
+        assert!(sessions.call("create","",json!({"pane_id":41})).is_err());
+        assert_eq!(sessions.call("state","vt-1",json!({})).unwrap()["native_id"],41);
+        sessions.call("close","vt-1",json!({})).unwrap();
+        assert!(sessions.state.lock().unwrap().pane_ids.is_empty());
+    }
 
     #[test]
     fn font_steps_use_gold_f32_arithmetic_for_settings_round_trips() {

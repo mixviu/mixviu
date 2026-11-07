@@ -662,7 +662,12 @@ fn forbidden(error: &SessionFailure) -> bool {
 
 impl Actor {
     fn control(&self) -> Option<Arc<dyn ControlLane>> {
-        self.shared.lock().unwrap().control.as_ref().and_then(std::sync::Weak::upgrade)
+        self.shared
+            .lock()
+            .unwrap()
+            .control
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
     }
     /// The one place a protected request is refused without being served.
     /// Reached from three saturation points — the lane dropped it, Term's own
@@ -996,9 +1001,7 @@ impl Actor {
             }
             return;
         };
-        connection
-            .client()
-            .set_commands(command_manifest());
+        connection.client().set_commands(command_manifest());
         let public_key = HexBytes(self.key.verifying_key().to_bytes());
         let hello = match bounded(connection.session_hello()).await {
             Ok(hello) => hello,
@@ -1625,7 +1628,6 @@ impl Actor {
     }
 }
 
-
 /// A verified command and its attachment stay typed across the owner boundary.
 /// Implementations own policy and must recheck this authority before mutation.
 pub type LaneFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
@@ -1651,7 +1653,10 @@ pub struct ControlReply {
 impl ControlReply {
     fn error(code: &'static str) -> Self {
         debug_assert!(matches!(code, "FORBIDDEN" | "RESOURCE_LIMIT"));
-        Self { rc: 10, body: serde_json::json!({"error_code":code}).to_string() }
+        Self {
+            rc: 10,
+            body: serde_json::json!({"error_code":code}).to_string(),
+        }
     }
 }
 pub(crate) fn command_manifest() -> Vec<::bus::CommandDescriptor> {
@@ -1767,7 +1772,6 @@ pub(crate) fn command_manifest() -> Vec<::bus::CommandDescriptor> {
     command_names
 }
 
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1778,7 +1782,8 @@ pub(crate) mod tests {
         let broker = Broker::start();
         let supervisor = Supervisor::with_options(broker.options(), broker.url.clone()).unwrap();
         wait_ready(&supervisor.handle, 1);
-        let (lease, fd) = super::super::native_session::SessionIssuer::prepare(&supervisor.handle, 1).unwrap();
+        let (lease, fd) =
+            super::super::native_session::SessionIssuer::prepare(&supervisor.handle, 1).unwrap();
         assert_eq!(fd.endpoint(), Some(broker.endpoint.as_path()));
         assert!(supervisor.handle.launched(1));
         drop(fd);
@@ -1929,5 +1934,4 @@ pub(crate) mod tests {
         drop(paused);
         drop(pane);
     }
-
 }

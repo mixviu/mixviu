@@ -5,6 +5,7 @@ fn native($op,$handle,$a)
   if $op=="state" then return {pid:42,title:"osc",cols:80,rows:24,exited:false,geometry:{x:0,y:0,w:100,h:80}} end
   if $op=="create" then return {handle:"vt-9",pid:43} end
   if $op=="snapshot" then return "cols=80 rows=24" end
+  if $op=="session" then return {diagnostic:"native identity unavailable; panes are graphics-only"} end
   return {}
 end
 $n=fn($op,$handle,$a)=native($op,$handle,$a)
@@ -39,10 +40,13 @@ $replay=$b.dispatch($out.state,"term.pane.split",{dir:"v",request_id:"event-spli
 check(len($replay.state.layout.events)==len($out.state.layout.events),"replay never duplicates change events")
 $closing=$b.shut($watched,$n)
 check($closing.closed and len($closing.layout.tabs)==0 and any($closing.layout.events,fn($e)=$e.topic=="term.tabs.changed" and $e.body.kind=="removed"),"quit retains final removal records for bounded drain")
+$status=$b.dispatch($s,"term.session",{},$n)
+check($status.rc==0 and json_parse($status.body).diagnostic=="native identity unavailable; panes are graphics-only","session diagnostics retain gold's unavailable reply")
 -- Gold keeps TERM and history capacity on existing shells; new sessions use
 -- the latest terminal profile for both tab and split creation.
 fn profile_native($op,$handle,$a)
   if $op=="create" then
+    check(type($a.pane_id)=="number" and $a.pane_id>0,"Mix forwards its logical pane identity to the native issuer")
     check($a.term=="vt100" and $a.scrollback==17 and contains([nil,"/tmp"],$a.cwd),"new PTY receives current terminal profile and requested cwd")
     return {handle:"vt-profile",pid:44}
   end

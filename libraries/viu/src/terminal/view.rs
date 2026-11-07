@@ -597,6 +597,9 @@ impl Views {
             .as_str()
             .is_none_or(|wanted| wanted == handle);
         if response.clicked() || (focus_target && serial > surface.focus) {
+            if response.clicked() {
+                sessions.activity();
+            }
             surface.focus = serial;
             response.request_focus();
             events.push(Intent {
@@ -631,6 +634,9 @@ impl Views {
             self.composition.focus(pane_id);
             let input_events = ui.input(|i| i.events.clone());
             for event in input_events {
+                if matches!(&event, egui::Event::Key {pressed:true,..} | egui::Event::Text(_) | egui::Event::Ime(egui::ImeEvent::Commit(_))) {
+                    sessions.activity();
+                }
                 if let egui::Event::ModifiersChanged(modifiers) = &event {
                     self.modifiers = *modifiers;
                     self.wheels.modifiers_changed(*modifiers);
@@ -785,6 +791,7 @@ impl Views {
                         ..
                     } = event
                     {
+                        sessions.activity();
                         let (zoom, lines) = self.wheels.event(
                             handle,
                             input::Wheel::of(unit, delta),

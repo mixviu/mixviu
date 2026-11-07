@@ -960,7 +960,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         facilities.surface.as_ref().map(|s| s["commands"].clone()),
     );
     let documents = crate::documents::Documents::default();
-    let terminals = crate::terminal::sessions::Sessions::new(wake.clone(), None);
+    let terminals = crate::terminal::sessions::Sessions::with_native(wake.clone());
     let timers = crate::timers::Timers::default();
     let calls = crate::calls::Calls::default();
     let ui_state = crate::ui_state::UiState::default();
