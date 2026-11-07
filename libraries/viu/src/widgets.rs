@@ -289,10 +289,11 @@ impl Widget {
                     && value["right"]
                         .as_array()
                         .is_some_and(|a| a.len() <= 16 && a.iter().all(Value::is_string))
-                    && (value["icon"].is_null() || value["icon"]
-                        .as_str()
-                        .and_then(crate::icons::Icon::from_name)
-                        .is_some())
+                    && (value["icon"].is_null()
+                        || value["icon"]
+                            .as_str()
+                            .and_then(crate::icons::Icon::from_name)
+                            .is_some())
             }
             "mark" => value
                 .as_str()
@@ -823,7 +824,10 @@ impl Widgets {
                     } else {
                         ui.visuals().weak_text_color()
                     };
-                    if let Some(icon) = value["icon"].as_str().and_then(crate::icons::Icon::from_name) {
+                    if let Some(icon) = value["icon"]
+                        .as_str()
+                        .and_then(crate::icons::Icon::from_name)
+                    {
                         ui.add(crate::icons::image_of(ui.ctx(), icon, 14.0, colour));
                     }
                     ui.small(value["left"].as_str().unwrap());

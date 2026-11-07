@@ -49,9 +49,15 @@ pub fn resolve(args: &serde_json::Value) -> Result<serde_json::Value, String> {
                 return Err("too many default chords".into());
             }
             let id = item["id"].as_str().unwrap();
-            let extra = keys.iter().skip(1).map(|key| {
-                key.as_str().and_then(toolkit::keymap::parse_chord).ok_or("invalid default chord")
-            }).collect::<Result<Vec<_>, _>>()?;
+            let extra = keys
+                .iter()
+                .skip(1)
+                .map(|key| {
+                    key.as_str()
+                        .and_then(toolkit::keymap::parse_chord)
+                        .ok_or("invalid default chord")
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             registry.add_shortcuts(ids[id], extra);
         }
     }
@@ -144,11 +150,22 @@ mod tests {
     #[test]
     fn secondary_defaults_survive_profile_changes_and_restore() {
         let defaults = serde_json::json!([{"id":"parent","shortcut":"Backspace","keys":["Backspace","Alt+ArrowUp"]}]);
-        let original = super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{}})).unwrap();
-        assert_eq!(original["bindings"]["parent"]["keys"], serde_json::json!(["Backspace","Alt+ArrowUp"]));
-        let changed = super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{"parent":["Ctrl+U"]}})).unwrap();
-        assert_eq!(changed["bindings"]["parent"]["keys"], serde_json::json!(["Ctrl+U"]));
-        let restored = super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{}})).unwrap();
+        let original =
+            super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{}})).unwrap();
+        assert_eq!(
+            original["bindings"]["parent"]["keys"],
+            serde_json::json!(["Backspace", "Alt+ArrowUp"])
+        );
+        let changed = super::resolve(
+            &serde_json::json!({"defaults":defaults,"overrides":{"parent":["Ctrl+U"]}}),
+        )
+        .unwrap();
+        assert_eq!(
+            changed["bindings"]["parent"]["keys"],
+            serde_json::json!(["Ctrl+U"])
+        );
+        let restored =
+            super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{}})).unwrap();
         assert_eq!(restored["bindings"], original["bindings"]);
     }
     #[test]

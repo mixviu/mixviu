@@ -3,6 +3,11 @@
 //! imported files engine runs on an existing Viu evaluator worker.
 use crate::input::Input;
 type Reply = tokio::sync::oneshot::Sender<(u8, serde_json::Value)>;
+use crate::{
+    native_bus::{Endpoint, Request},
+    runtime::{Program, Runtime, Services, Wake},
+    view::SceneView,
+};
 use eframe::egui;
 use serde_json::{Value, json};
 use std::{
@@ -12,11 +17,6 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicU8, Ordering},
     },
-};
-use crate::{
-    native_bus::{Endpoint, Request},
-    runtime::{Program, Runtime, Services, Wake},
-    view::SceneView,
 };
 fn viewport(id: &str) -> egui::ViewportId {
     egui::ViewportId::from_hash_of(("viu-files", id))
@@ -703,7 +703,12 @@ fn commands() -> Vec<String> {
     .map(str::to_owned)
     .collect()
 }
-pub fn run(app_dir: PathBuf, profile: PathBuf, service_name: String, bus_url: String) -> eframe::Result {
+pub fn run(
+    app_dir: PathBuf,
+    profile: PathBuf,
+    service_name: String,
+    bus_url: String,
+) -> eframe::Result {
     let topic = format!("{service_name}.chosen");
     eframe::run_native(
         "Viu file chooser",

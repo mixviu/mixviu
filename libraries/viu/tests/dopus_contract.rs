@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Existing Mix chooser/raw-name tests moved off the retired app host.
 use serde_json::json;
-use std::{path::PathBuf, sync::Arc, time::{Duration, Instant}};
-use viu::{jobs::Jobs, runtime::{Program, Runtime}, view::SceneView};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use viu::{
+    jobs::Jobs,
+    runtime::{Program, Runtime},
+    view::SceneView,
+};
 fn wait(
     runtime: &Runtime,
     jobs: &mut Jobs,
@@ -174,7 +182,9 @@ use std::os::unix::ffi::OsStrExt;
 
 #[test]
 fn mix_controller_selects_and_copies_a_non_utf8_name_without_replacing_its_bytes() {
-    let dir = tempfile::tempdir().unwrap();
+    // The host ZFS dataset may enforce utf8only. This fixture needs a
+    // byte-preserving filesystem so it can test the runtime, not that policy.
+    let dir = tempfile::tempdir_in("/dev/shm").unwrap();
     let left = dir.path().join("left");
     let right = dir.path().join("right");
     std::fs::create_dir(&left).unwrap();
@@ -206,10 +216,7 @@ fn mix_controller_selects_and_copies_a_non_utf8_name_without_replacing_its_bytes
             json!({"profile":dir.path(),"app_dir":app_dir}),
         )
         .unwrap();
-    let initial = wait(&runtime, &mut jobs, seq)
-        .0
-        .model
-        .unwrap();
+    let initial = wait(&runtime, &mut jobs, seq).0.model.unwrap();
     let key = initial["values"]["left-tree"]["rows"][0]["key"]
         .as_str()
         .unwrap();
@@ -221,10 +228,7 @@ fn mix_controller_selects_and_copies_a_non_utf8_name_without_replacing_its_bytes
             json!({"command":"dopus.execute","args":{"id":"selection.last"}}),
         )
         .unwrap();
-    let selected = wait(&runtime, &mut jobs, seq)
-        .0
-        .model
-        .unwrap();
+    let selected = wait(&runtime, &mut jobs, seq).0.model.unwrap();
     assert_eq!(selected["panes"][0]["selected"], key);
     let seq = runtime
         .event(
@@ -250,4 +254,3 @@ fn mix_controller_selects_and_copies_a_non_utf8_name_without_replacing_its_bytes
     );
     assert!(!right.join("raw�.txt").exists());
 }
-
