@@ -394,6 +394,7 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                     v["attachment_label"].as_str().unwrap(),
                     column,
                     |ui, _| {
+                        ui.vertical(|ui| {
                         ui.horizontal_wrapped(|ui| {
                             let attach = if let Some(icon) = v["attach_icon"]
                                 .as_str()
@@ -425,6 +426,7 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                                     emit(events, "remove", json!(i));
                                 }
                             }
+                        });
                         });
                     },
                 );
