@@ -85,7 +85,7 @@ fn stage_test($mix)
   -- platform's crates in the cache.
   ensure_mix($mix)
   $abs = realpath($mix)
-  $test_env = {MIXOS_E2E_MIX_BIN: $abs, MIXOS_TEST_MIX: $abs}
+  $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--no-fail-fast"], $test_env)
   run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
@@ -125,10 +125,11 @@ fn stage_env()
     end
     $listed[$v.name] = true
   end
-  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!" + $reg_path]
+  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path]
   $used = {}
-  for $tok in split(git_grep(concat(["-o", "-h", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
-    if $tok != "" then
+  for $tok in split(git_grep(concat(["-o", "-h", "-w", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
+    -- A token ending in _ is a prefix code matches against, not a name.
+    if $tok != "" and not ends_with($tok, "_") then
       $used[$tok] = true
     end
   end
@@ -143,7 +144,7 @@ fn stage_env()
       push($bad, "registered but unused " + $n)
     end
   end
-  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock"])), "\n")
+  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path])), "\n")
     if $f != "" then
       $ok = false
       for $re in $reg.mixos_allowed ?? []
@@ -225,9 +226,9 @@ fn stage_mix_lint_baseline($mix)
   $json = json_encode(lint_counts($mix)) + "\n"
   write_file($baseline_path, $json)
   -- Printed between markers so a CBC run can hand the file back.
-  print("MIX_LINT_BASELINE_BEGIN")
+  print("== mix-lint baseline begin ==")
   print($json)
-  print("MIX_LINT_BASELINE_END")
+  print("== mix-lint baseline end ==")
   print("wrote " + $baseline_path)
 end
 

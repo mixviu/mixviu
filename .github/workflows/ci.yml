@@ -90,6 +90,7 @@ jobs:
           shared-key: mix
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --locked -p mix --bin mix
+      - run: target/debug/mix tools/ci.mix env
       - run: target/debug/mix tools/ci.mix viud
       - run: target/debug/mix tools/ci.mix mix-lint
 
