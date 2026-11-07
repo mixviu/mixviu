@@ -77,6 +77,7 @@ include "surface.mix"
 include "composer.mix"
 include "compose-identities.mix"
 include "forms.mix"
+include "dialog.mix"
 include "persistence.mix"
 if not $fixture then config_load() end
 if not $fixture then composer_load_drafts() end
@@ -85,6 +86,8 @@ on email.ping
   reply(0,json_encode({pong:true,schema:"email.v1",version:$ctx.version,pid:$ctx.pid}))
 end
 on email.info
+  $target=composer_target($event.args)
+  if $target.rc!=0 then reply($target.rc,json_encode($target.body));return end
   if not $fixture then reply(0,json_encode(composer_snapshot(surface_info(),$event.args.window)));return end
   reply(0,json_encode({fixture:$fixture,connected:$connected,busy:$busy,status:$status,accounts:map($entries,fn($e)={id:$e.id,label:$e.label,user:$e.user}),active:$active,server_accounts:if $session!=nil then $session.accounts else [] end,mailboxes:$boxes,mailbox:$box,rows:len($rows),total:$total,offset:$offset,selected:$selected,revision:$revision,draft:$draft,operation_id:if $submission!=nil then $submission.operation_id else nil end,receipt:$last_receipt}))
 end
@@ -254,6 +257,12 @@ on email.actions
   reply(0,json_encode({actions:$actions.registry(action_context())}))
 end
 on email.execute
+  if $event.args.id!=nil and type($event.args.id)!="string" then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"id must be a string"}));return end
+  if type($event.args.id)!="string" or trim($event.args.id)=="" then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"id is required"}));return end
+  if $event.args.id!="compose.new" then
+    $target=composer_target($event.args)
+    if $target.rc!=0 then reply($target.rc,json_encode($target.body));return end
+  end
   if $event.args.id!="compose.new" and ($event.args.window!=nil or (starts_with($event.args.id ?? "","compose.") and $composers[$compose_focused]!=nil) or ($event.args.id=="mail.send" and $composers[$compose_focused]!=nil)) then
     $window=$event.args.window ?? $compose_focused
     if $composers[$window]==nil then reply(10,json_encode({error_code:"NOT_FOUND",message:"No compose is open"}));return end
@@ -338,25 +347,11 @@ on email.quit
   $out=composer_quit();publish_email();reply($out.rc,json_encode($out.body))
 end
 on email.dialog
-  if len($compose_restore)>0 and len(keys($composers))==0 and $mail_form==nil then
-    if $event.args.answer!=nil then $out=composer_restore_answer($event.args.answer);publish_email();reply($out.rc,json_encode($out.body))
-    else reply(0,json_encode({dialog:"restore_draft"})) end
-    return
-  end
-  $window=$event.args.window ?? $compose_focused
-  if $composers[$window]!=nil and $composers[$window].confirm then
-    if $event.args.answer!=nil then $out=composer_close($window,$event.args.answer);publish_email();reply($out.rc,json_encode($out.body))
-    else reply(0,json_encode({dialog:if $compose_quitting then "quit" else "close_compose" end})) end
-    return
-  end
-  if contains(keys($event.args),"open") then
-    if $event.args.open!=nil and not contains(["about","shortcuts"],$event.args.open) then reply(10,json_encode({error_code:"ARGUMENT",message:"Unknown dialog"}));return end
-    $chrome.dialog=$event.args.open
-  elif $event.args.answer!=nil then $chrome.dialog=nil end
-  publish_email();reply(0,json_encode({dialog:$chrome.dialog}))
+  $out=dialog_command($event.args);publish_email();reply($out.rc,json_encode($out.body))
 end
 on email.dialog.intent
-  $chrome.dialog=nil;publish_email();reply(0,"{}")
+  if $event.args.window!=nil and $composers[$event.args.window]!=nil then $composers[$event.args.window].dialog=nil else $chrome.dialog=nil end
+  publish_email();reply(0,"{}")
 end
 on viu.job.completed
   $d=$event.args

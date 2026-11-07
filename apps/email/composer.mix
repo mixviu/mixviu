@@ -53,8 +53,15 @@ end
 fn composer_snapshot($info,$window=nil)
   $info.compose_windows=map(keys($composers),fn($key)={window:$key,root:false,compose:composer_info($composers[$key])})
   $key=$window ?? $compose_focused;$c=$composers[$key]
-  if $c!=nil then $info.window=$key;$info.compose=composer_info($c);$info.confirm=if $c.confirm then "close_compose" else nil end end
+  if $c!=nil then $info.window=$key;$info.compose=composer_info($c);$info.confirm=if $c.confirm then (if $compose_quitting then "quit" else "close_compose" end) else nil end end
   return $info
+end
+fn composer_target($args)
+  if contains(keys($args),"window") then
+    if type($args.window)!="string" then return wire_refuse("INVALID_ARGUMENT","window must be a string") end
+    if $composers[$args.window]==nil then return wire_refuse("NOT_FOUND","No compose is open") end
+  end
+  return {rc:0,body:{window:$args.window ?? $compose_focused}}
 end
 fn composer_open($a,$raw_to=nil)
   global $composers,$compose_serial,$compose_focused
@@ -132,6 +139,8 @@ end
 fn composer_attachments($command,$a)
   global $composers
   try
+    $target=composer_target($a)
+    if $target.rc!=0 then return $target end
     $key=$a.window ?? $compose_focused;$c=$composers[$key]
     if $command=="email.compose.attachment.add" then
       if type($a.paths)!="list" or not all($a.paths,fn($p)=type($p)=="string") then raise("INVALID_ARGUMENT","paths must be a list of absolute file paths") end
@@ -282,6 +291,10 @@ fn composer_models($m)
     $menus=[{id:"File",label:"File",enabled:true,children:[{id:"compose.new",label:"New",enabled:true,shortcut:"Ctrl+N"},{id:"compose.open",label:"Open…",enabled:not $c.busy,shortcut:"Ctrl+O"},{id:"compose.save_as",label:"Save As…",enabled:not $c.busy,shortcut:"Ctrl+Shift+S"},{id:"mail.send",label:"Send",enabled:composer_sendable($c),shortcut:"Ctrl+Enter"},{separator:true},{id:"compose.close",label:"Close",enabled:true,shortcut:"Ctrl+W"},{id:"file.quit",label:"Quit",enabled:true,shortcut:"Ctrl+Q"}]},{id:"Edit",label:"Edit",enabled:true,children:map([["undo","Undo"],["redo","Redo"],["cut","Cut"],["copy","Copy"],["paste","Paste"]],fn($v)={id:"compose."..$v[0],label:$v[1],enabled:not $c.busy})},{id:"Attachments",label:"Attachments",enabled:true,children:[{id:"compose.attach",label:"Attach files…",enabled:not $c.busy,shortcut:"Ctrl+Shift+A"},{separator:true},{id:"compose.attachments.clear",label:"Remove all attachments",enabled:not $c.busy and len($c.attachments)>0}]},{id:"View",label:"View",enabled:true,children:composer_theme()}]
     $child=$compose_frame.apply($child,{icon:"square-pen",title:"Compose",menus:$menus,toolbar:[{id:"mail.send",label:"Send",icon:"send",enabled:composer_sendable($c)},{id:"view.mode",label:"Toggle light/dark",icon:if $chrome.theme_effective.mode=="dark" then "sun" else "moon" end,enabled:true}],status:$c.error ?? "",window:{"window.decorations":"csd"}})
     $child.frame.status_visible=false
+    if $c.dialog!=nil then
+      $help=$frame.apply({values:{}},merge(action_context(),{dialog:$c.dialog}))
+      for $overlay in $help.native_overlays ?? [] $child.native_overlays=push($child.native_overlays,$overlay) end
+    end
     $m.native_windows=push($m.native_windows,{key:$key,title:"Compose",size:[900,700],persist:true,scene:$compose_scene,model:$child})
   end
   return $m

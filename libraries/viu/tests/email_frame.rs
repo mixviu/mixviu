@@ -197,12 +197,22 @@ end
     runtime.event("test.footer".into(), json!({})).unwrap();
     let model = complete(&runtime, &rx).model.unwrap();
     let child = &model["native_windows"][0];
-    let mut view = viu::gold_frame::mount(child["scene"].as_str().unwrap(), child["model"].clone()).unwrap();
+    let mut view =
+        viu::gold_frame::mount(child["scene"].as_str().unwrap(), child["model"].clone()).unwrap();
     for _ in 0..4 {
-        ctx.run_ui(egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0))),
-            ..Default::default()
-        }, |ui| { view.show(ui); }).drop_without_applying_deltas();
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900.0, 700.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        )
+        .drop_without_applying_deltas();
     }
     assert!(view.geometry.contains_key("compose-position"));
     assert!(view.geometry.contains_key("compose-new-from"));

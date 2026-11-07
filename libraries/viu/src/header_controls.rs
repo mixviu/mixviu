@@ -237,13 +237,13 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                                     });
                                 }
                                 let mut text_field = |ui: &mut Ui| {
-                                        form::text(
-                                            ui,
-                                            field_id,
-                                            labelled,
-                                            &mut text,
-                                            ui.available_width(),
-                                        )
+                                    form::text(
+                                        ui,
+                                        field_id,
+                                        labelled,
+                                        &mut text,
+                                        ui.available_width(),
+                                    )
                                 };
                                 let response = if r["read_only"] == true {
                                     ui.add_enabled_ui(false, text_field).inner
