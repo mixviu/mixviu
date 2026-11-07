@@ -248,7 +248,11 @@ impl Runtime {
                         let handles=mix::sync_ext(move |args| replies.reply_handle(args));
                         let owner=services.calls.clone().map(|c|c.binding()).unwrap_or_else(||mix::sync_ext(|_|Err(failure("owner receipt facility unavailable"))));
                         eval.register("viu_reply",Rc::new(move|args|if args.len()==3 {owner(args)}else{handles(args)}));
-                        if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
+                        if let Some(session)=services.macros.clone(){
+                            eval.register("viu_macros",crate::native_primitives::macro_commands(session.clone()));
+                            eval.register("viu_macro_library",crate::native_primitives::macro_library(session.clone()));
+                            eval.register("viu_macro_storage",crate::native_primitives::macro_storage(session));
+                        }
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
                         eval.register("viu_settings",crate::native_primitives::settings_values());
                         eval.register("viu_token",crate::native_primitives::token());
@@ -269,6 +273,7 @@ impl Runtime {
                             "git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"), "loader": "viu-local", "host": "viu-local", "options":options,
                             "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
                             "build":serde_json::from_str::<serde_json::Value>(&buildinfo::build_info!().json()).expect("build provenance JSON"),
+                            "executable":std::env::current_exe().ok(),
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));

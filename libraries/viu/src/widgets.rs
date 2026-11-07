@@ -15,6 +15,12 @@ pub const KINDS: &[&str] = &[
     "form-fields",
     "header-form",
     "status-line",
+    "block-list",
+    "label-run",
+    "form-grid",
+    "cell-grid",
+    "history-lines",
+    "network-map",
     "widget-row",
     "divider",
     "time-series",
@@ -298,6 +304,19 @@ impl Widget {
             return Ok(n as f32 * chrome.style.icon_button as f32
                 + n.saturating_sub(1) as f32 * chrome.style.title_control_spacing as f32);
         }
+        if self.kind == "button" && ["primary", "secondary"].contains(&self.text("style")) {
+            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+            let font = toolkit::fonts::bound(
+                ui.ctx(),
+                toolkit::fonts::medium(chrome.style.push_label_size as f32),
+            );
+            return Ok(ui
+                .painter()
+                .layout_no_wrap(self.text("text").into(), font, Color32::PLACEHOLDER)
+                .size()
+                .x
+                + chrome.style.button_push_padding as f32);
+        }
         if self.kind != "label" {
             return Err("intrinsic text width requires a label".into());
         }
@@ -371,6 +390,12 @@ impl Widget {
         self.properties[key].as_str().unwrap_or("")
     }
     pub fn validate(&self, value: &Value) -> Result<(), String> {
+        if self.kind == "network-map" {
+            return crate::network_map::validate(value);
+        }
+        if crate::data_panels::KINDS.contains(&self.kind.as_str()) {
+            return crate::data_panels::validate(&self.kind, value);
+        }
         if crate::rich::KINDS.contains(&self.kind.as_str()) {
             if self.kind == "menubar" && self.properties["style"] == "gold" {
                 crate::native_menu::validate(value)?;
@@ -557,6 +582,19 @@ impl Widget {
                         || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
                     && (self.properties["read_only"].is_null()
                         || self.properties["read_only"].is_boolean())
+                    && (self.properties["max_bytes"].is_null()
+                        || whole(&self.properties["max_bytes"])
+                            .is_some_and(|n| (1..=8_388_608).contains(&n)))
+            }
+            "label" => {
+                value.as_str().is_some_and(|v| {
+                    v.len()
+                        <= whole(&self.properties["max_bytes"])
+                            .unwrap_or(4096)
+                            .min(8_388_608) as usize
+                }) && (self.properties["max_bytes"].is_null()
+                    || whole(&self.properties["max_bytes"])
+                        .is_some_and(|n| (1..=8_388_608).contains(&n)))
             }
             _ => value.as_str().is_some_and(|v| v.len() <= 4096),
         };
@@ -599,6 +637,15 @@ impl Widget {
         }
         if self.kind == "image-canvas" {
             return vec!["pan", "zoom", "pick", "gesture", "viewport"];
+        }
+        if self.kind == "network-map" {
+            return vec!["set", "node", "edge", "inspect"];
+        }
+        if self.kind == "block-list" {
+            return vec!["set", "choose"];
+        }
+        if self.kind == "form-grid" {
+            return vec!["set", "edit"];
         }
         if self.properties["read_only"] == true && self.kind == "tree-table" {
             return vec![];
@@ -730,6 +777,12 @@ impl Widget {
             return crate::dashboard::admit(self.value(model), action, value);
         }
         self.validate_action(action, value)?;
+        if self.kind == "network-map" {
+            return crate::network_map::admit(self.value(model), action, value);
+        }
+        if crate::data_panels::KINDS.contains(&self.kind.as_str()) {
+            return crate::data_panels::admit(&self.kind, self.value(model), action, value);
+        }
         if self.kind == "window-controls" && self.value(model)["enabled"] != true {
             return Err("DISABLED".into());
         }
@@ -901,6 +954,44 @@ impl Widgets {
         });
         intents
     }
+    /// Draw directly in the parent's native wrapping flow. A child Ui scope
+    /// wraps its contents independently and can split a button or field at
+    /// the remaining line width instead of moving it to the next line.
+    pub(crate) fn widget_inline(
+        &mut self,
+        ui: &mut egui::Ui,
+        definition: &Widget,
+        model: &Value,
+    ) -> Vec<Intent> {
+        if definition.properties["frame"] == "dock" {
+            return self.widget(ui, definition, model);
+        }
+        let mut intents = Vec::new();
+        if let Err(error) = definition.validate_model(model) {
+            ui.colored_label(Color32::RED, error);
+            return intents;
+        }
+        let value = model["values"]
+            .get(&definition.id)
+            .unwrap_or(&definition.initial);
+        ui.add_enabled(
+            definition.properties["enabled"] != false,
+            |ui: &mut egui::Ui| {
+                self.draw(ui, definition, value, model, &mut intents);
+                let rect = self
+                    .geometry
+                    .get(&definition.id)
+                    .copied()
+                    .unwrap_or(egui::Rect::NOTHING);
+                ui.interact(
+                    rect,
+                    egui::Id::unique(("inline-control", &definition.id)),
+                    egui::Sense::hover(),
+                )
+            },
+        );
+        intents
+    }
     /// Call once after drawing an application frame (including individual
     /// `widget` calls). A disappeared target must not latch future replies.
     pub fn finish_frame(&mut self) -> Result<(), String> {
@@ -1015,6 +1106,15 @@ impl Widgets {
                 }
             }
             "divider" => {
+                if widget.properties["style"] == "native" {
+                    let r = ui.separator();
+                    return self.remember(ui, id, &r);
+                }
+                if widget.properties["axis"] == "horizontal" {
+                    let rect = toolkit::bars::hairline(ui);
+                    let r = ui.interact(rect, ui.make_persistent_id(id), Sense::hover());
+                    return self.remember(ui, id, &r);
+                }
                 toolkit::bars::divider(ui, ui.available_height().min(18.0));
                 ui.response()
             }
@@ -1151,6 +1251,12 @@ impl Widgets {
                     .get_or_insert_with(crate::image_view::Images::surface);
                 images.set_rasters(self.rasters.clone());
                 images.draw_fill(ui, id, value)
+            },
+            "network-map" => {
+                crate::network_map::draw(ui, widget, value, &mut self.geometry, events)
+            }
+            "block-list" | "form-grid" | "cell-grid" | "history-lines" | "label-run" => {
+                crate::data_panels::draw(ui, widget, value, &mut self.geometry, events)
             }
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
@@ -1158,6 +1264,23 @@ impl Widgets {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
             "label" => {
+                if widget.properties["role"] == "section" {
+                    let r = toolkit::panel::section_label(ui, value.as_str().unwrap_or(""));
+                    return self.remember(ui, id, &r);
+                }
+                if let Some(lines) = widget.properties["scroll_lines"].as_f64() {
+                    let height =
+                        ui.text_style_height(&egui::TextStyle::Body) * lines.clamp(1., 100.) as f32;
+                    let r = egui::ScrollArea::vertical()
+                        .id_salt((id, "text-scroll"))
+                        .max_height(height)
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.add(egui::Label::new(label_text(ui, widget, value)).wrap())
+                        })
+                        .inner;
+                    return self.remember(ui, id, &r);
+                }
                 let text = label_text(ui, widget, value);
                 if widget.properties["role"] == "title" {
                     let (rect, response) =
@@ -1214,7 +1337,17 @@ impl Widgets {
                 }
             }
             "button" => {
-                let r = if widget.properties["style"] == "secondary" {
+                let r = if widget.properties["style"] == "icon" {
+                    ui.add(
+                        toolkit::button::IconButton::new(
+                            crate::icons::Icon::from_name(widget.text("icon"))
+                                .expect("validated icon"),
+                        )
+                        .tooltip(&widget.label),
+                    )
+                } else if widget.properties["style"] == "primary" {
+                    ui.add(toolkit::button::PushButton::primary(widget.text("text")))
+                } else if widget.properties["style"] == "secondary" {
                     ui.add(toolkit::button::PushButton::secondary(widget.text("text")))
                 } else {
                     icon_button(ui, widget.text("icon"), widget.text("text"), false)
@@ -1258,7 +1391,11 @@ impl Widgets {
                 // cannot generate edits, even through keyboard/paste input.
                 let mut text = value.as_str().unwrap_or_default();
                 let rows = whole(&widget.properties["rows"]).unwrap_or(24) as f32;
-                let height = rows * ui.text_style_height(&egui::TextStyle::Monospace) + 8.0;
+                let height = if widget.properties["fill_height"] == true {
+                    ui.available_height()
+                } else {
+                    rows * ui.text_style_height(&egui::TextStyle::Monospace) + 8.0
+                };
                 let output = egui::ScrollArea::vertical()
                     .id_salt((id, "read-only"))
                     .max_height(height)
@@ -1299,18 +1436,27 @@ impl Widgets {
                     let edit = if widget.kind == "field" {
                         egui::TextEdit::singleline(&mut text)
                     } else if widget.kind == "editor" {
-                        egui::TextEdit::multiline(&mut text)
-                            .code_editor()
+                        let edit = egui::TextEdit::multiline(&mut text)
                             .desired_rows(rows)
-                            .char_limit(16384)
+                            .char_limit(65536);
+                        if widget.properties["plain"] == true {
+                            edit
+                        } else {
+                            edit.code_editor()
+                        }
                     } else {
                         egui::TextEdit::multiline(&mut text).desired_rows(1)
                     };
                     ui.add(
-                        edit.desired_width(ui.available_width())
-                            .hint_text(widget.text("placeholder"))
-                            .password(widget.properties["password"] == true)
-                            .id_salt(id),
+                        edit.desired_width(
+                            widget.properties["width"]
+                                .as_f64()
+                                .map_or(ui.available_width(), |w| w as f32),
+                        )
+                        .hint_text(widget.text("placeholder"))
+                        .interactive(widget.properties["interactive"] != false)
+                        .password(widget.properties["password"] == true)
+                        .id_salt(id),
                     )
                 };
                 // The key which ends editing belongs to the field this frame.
@@ -1334,7 +1480,11 @@ impl Widgets {
                         action: "cancel".into(),
                         value: Value::Null,
                     });
-                } else if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                } else if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                    || (r.has_focus()
+                        && widget.properties["submit_chord"] == "Ctrl+Enter"
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command))
+                {
                     events.push(Intent {
                         id: id.clone(),
                         action: "submit".into(),
@@ -1905,6 +2055,12 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     if widget.properties["role"] == "status" {
         text = text.small();
     }
+    if widget.properties["small"] == true {
+        text = text.small();
+    }
+    if widget.properties["role"] == "heading" {
+        text = text.text_style(egui::TextStyle::Heading);
+    }
     if widget.properties["role"] == "title" {
         text = text.font(crate::fonts::emphasis(
             ui.ctx(),
@@ -1926,6 +2082,16 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     }
     if widget.properties["tone"] == "warning" {
         text = text.color(ui.visuals().warn_fg_color);
+    }
+    let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
+    match widget.properties["tone"].as_str() {
+        Some("accent") => text = text.color(palette.accent),
+        Some("danger") => text = text.color(palette.danger),
+        Some("dim") => text = text.color(palette.text_dim),
+        _ => {}
+    }
+    if widget.properties["error"] == true {
+        text = text.color(ui.visuals().error_fg_color);
     }
     if widget.properties["mono"] == true {
         text = text.monospace();

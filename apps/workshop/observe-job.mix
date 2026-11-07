@@ -1,0 +1,32 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+fn call($command,$body)
+  send "noded" $command body=$body timeout=30 reply_mode="raw"
+  return $reply
+end
+on job.run
+  $args=$event.args.args
+  try
+    $invalid=type($args.on)!="bool" or any(keys($args),fn($k)=not contains(["on","filter","body","subscription_id"],$k)) or (has_key($args,"body") and type($args.body)!="string") or (has_key($args,"filter") and type($args.filter)!="map")
+    $body=$args.body ?? "redacted"
+    if $invalid or not contains(["none","redacted"],$body) then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"expected on, optional filter object and body none or redacted"}));return end
+    if $args.on then
+      $r=call("noded.observe.start",{filter:$args.filter ?? {},body:$body,capacity:1024})
+      if $r.rc!=0 then reply(10,json_encode({error_code:"UNAVAILABLE",message:($r.error ?? "").." "..$r.body}));return end
+      $started=json_parse($r.body)
+    else $started={stopped:true} end
+    if type($args.subscription_id)=="string" then
+      $failure=nil
+      try $r=call("noded.observe.stop",{subscription_id:$args.subscription_id});if $r.rc!=0 then $failure=$r.body end catch $why $failure=$why end
+      if $failure!=nil then
+        if $args.on then
+          $clean=false
+          try $r=call("noded.observe.stop",{subscription_id:$started.subscription_id});$clean=$r.rc==0 catch $why $clean=false end
+          if not $clean then $started.warning="observe stop and replacement cleanup failed: "..$failure;reply(0,json_encode($started));return end
+        end
+        reply(10,json_encode({error_code:"UNAVAILABLE",message:$failure}));return
+      end
+    end
+    reply(0,json_encode($started))
+  catch $message reply(10,json_encode({error_code:"UNAVAILABLE",message:$message})) end
+end

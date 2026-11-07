@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 fn initial()
-  return {services:[],commands:[],service:"",command:"",body:"{}",filter:"",busy:false,serial:0,pending:nil,status:"Refresh to discover local Bus services",answer:"No calls yet",history:[]}
+  return {services:[],commands:[],service:"",command:"",body:"{}",filter:"",busy:false,serial:0,pending:nil,status:"Connecting to the Bus…",answer:"",history:[],last_reply:nil,connected:false,bindings:{},theme_choice:{},theme_effective:{},macros_open:false,dialog:nil,quitting:false,window_close:false,focus_serial:0,dock_side:"auto",dock_open:true}
 end
 fn text($v,$limit)
   if type($v)!="string" or byte_length($v)>$limit then raise("TEXT","Text exceeds byte limit "..to_string($limit)) end

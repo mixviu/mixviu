@@ -1,0 +1,65 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+fn request_macro($app,$suffix,$args,$running)
+  if $app!="global" and $running[$app]!=nil then
+    $service=$running[$app]
+    $command=$app..".macros."..$suffix
+    send $service $command body=$args timeout=30
+    return $reply
+  end
+  if $app!="global" and contains(["run","stop","output","status"],$suffix) then return {error_code:"UNAVAILABLE",message:$app.." is not running"} end
+  return viu_macro_storage($app,$suffix,$args).body
+end
+on job.run
+  $a=$event.args;$args=$a.args;$running=$a.running
+  try
+    if $a.op=="catalogues" then
+      $catalogues=viu_macro_library()
+      for $app in sort(keys($running))
+        if not re_match($app,"^[a-z][a-z0-9-]*$") then continue end
+        $service=$running[$app];$command=$app..".macros.list"
+        send $service $command body={} timeout=30
+        if $rc==0 then $list=$reply;$list.running=true;$catalogues[$app]=$list
+        else $catalogues[$app]={running:true,macros:[],error:to_string($result)} end
+      end
+      reply(0,json_encode($catalogues));return
+    end
+    $app=$args.app ?? "global"
+    if type($app)!="string" then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"app must be a component name or global"}));return end
+    if $app!="global" and not re_match($app,"^[a-z][a-z0-9-]*$") then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"invalid app"}));return end
+    $suffix=strip_prefix($a.op,"macros.")
+    if $suffix=="open" then
+      if type($args.app)!="string" or any(keys($args),fn($k)=not contains(["app","id"],$k)) then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"expected app and optional macro id"}));return end
+      if $args.id==nil then reply(0,json_encode({branch:$app}));return end
+    end
+    $args=delete($args,"app")
+    if contains(["ced","dopus"],$suffix) then
+      $doc=request_macro($app,"get",{id:$args.id},$running)
+      if $doc.error_code!=nil then reply(10,json_encode($doc));return end
+      $target=$doc.path
+      if $suffix=="dopus" then $target=dirname($target) end
+      $root=dirname(dirname(script_path()))
+      $child=spawn([viu_context().executable,"run",path_join($root,$suffix),$target],{detach:true})
+      reply(0,json_encode({opened:true}));return
+    end
+    if contains(["open","new"],$suffix) then
+      if $suffix=="new" then
+        $created=request_macro($app,"new",$args,$running)
+        if $created.error_code!=nil then reply(10,json_encode($created));return end
+        $args={id:$created.id}
+      end
+      $doc=request_macro($app,"get",$args,$running)
+      if $doc.error_code==nil then
+        $doc.app=$app;$doc.catalogue=request_macro($app,"list",{},$running);$doc.catalogue.running=$running[$app]!=nil
+      end
+      reply(if $doc.error_code!=nil then 10 else 0 end,json_encode($doc));return
+    end
+    $destination=if $suffix=="move" then (if $args.tier=="user-global" then "global" else $args.destination end) else nil end
+    $out=request_macro($app,$suffix,$args,$running)
+    if $out.error_code==nil and $destination!=nil then
+      $refreshed=request_macro($destination,"reload",{},$running)
+      if $refreshed.error_code!=nil then $out=$refreshed end
+    end
+    reply(if $out.error_code!=nil then 10 else 0 end,json_encode($out))
+  catch $message reply(10,json_encode({error_code:"UNAVAILABLE",message:$message})) end
+end

@@ -1,0 +1,20 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+on job.run
+  $a=$event.args
+  try
+    send $a.comp "comp.window.wait" body={match:{app_id:"dev.mixos.workshop"},until:"mapped",timeout_ms:10000} timeout=12
+    if $rc!=0 then raise("ACTIVATION",to_string($result)) end
+    send $a.comp "comp.windows.list" body={}
+    if $rc!=0 then raise("ACTIVATION",to_string($result)) end
+    $windows=filter($reply.windows ?? [],fn($w)=$w.app_id=="dev.mixos.workshop" and $w.pid==$a.pid)
+    if len($windows)==0 then raise("ACTIVATION","window not known to compd") end
+    $window=$windows[0];$target={id:$window.id,generation:$window.generation}
+    send $a.comp "comp.window.restore" body=$target
+    if $rc!=0 or $reply.minimized!=false then raise("ACTIVATION",to_string($result)) end
+    $target.raise=true
+    send $a.comp "comp.window.focus" body=$target
+    if $rc!=0 or $reply.focused!=true then raise("ACTIVATION",to_string($result)) end
+    reply(0,json_encode($reply))
+  catch $message reply(10,json_encode({error_code:"ACTIVATION",message:$message})) end
+end

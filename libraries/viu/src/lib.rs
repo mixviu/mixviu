@@ -65,3 +65,6 @@ pub mod process;
 pub mod time_series;
 
 pub mod dashboard;
+pub mod data_panels;
+pub mod network_map;
+pub mod saved_state;

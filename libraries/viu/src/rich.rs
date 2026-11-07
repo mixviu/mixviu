@@ -878,6 +878,7 @@ pub(crate) fn draw(
                     text(value, "title"),
                 ));
                 let mut field = value["field"].as_str().map(str::to_owned);
+                let title_field = value["field_style"] == "title";
                 let mut submitted = false;
                 let choices: Vec<_> = value["choices"]
                     .as_array()
@@ -899,7 +900,7 @@ pub(crate) fn draw(
                     .collect();
                 let mut dialog =
                     toolkit::dialog::Dialog::new(dialog_id, text(value, "title")).buttons(choices);
-                if field.is_some() {
+                if field.is_some() && !title_field {
                     dialog = dialog.width(egui::Rangef::new(480.0, 600.0));
                 }
                 let shown = dialog.show(ui.ctx(), |ui| {
@@ -933,11 +934,14 @@ pub(crate) fn draw(
                         ui.weak(text(value, "note"));
                     }
                     if let Some(path) = field.as_mut() {
-                        ui.label(value["field_label"].as_str().unwrap_or("Path"));
+                        if !title_field {
+                            ui.label(value["field_label"].as_str().unwrap_or("Path"));
+                        }
                         let response = ui.add(
                             egui::TextEdit::singleline(path)
                                 .id(dialog_id.with("field"))
-                                .desired_width(f32::INFINITY),
+                                .hint_text(text(value, "placeholder"))
+                                .desired_width(if title_field { ui.spacing().text_edit_width } else { f32::INFINITY }),
                         );
                         geometry.insert(format!("{id}.field"), response.rect);
                         submitted =
@@ -948,7 +952,9 @@ pub(crate) fn draw(
                         if response.changed() {
                             emit(events, id, "edit", json!(path));
                         }
-                        ui.label(egui::RichText::new(text(value, "status")).small().weak());
+                        if !title_field {
+                            ui.label(egui::RichText::new(text(value, "status")).small().weak());
+                        }
                     }
                 });
                 if let Some(index) = shown.chosen.or_else(|| {

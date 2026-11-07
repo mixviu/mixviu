@@ -1,0 +1,20 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix");$saved=require("saved.mix")
+fn check($v,$why) if not $v then raise("SAVED_TEST",$why) end end
+$s=$m.initial();$state=$saved.envelope();$state.app.value.expanded=["service:alpha:echo","service:gone"];$state.app.value.nodes_layout=false;$state.app.value.row_key="command:alpha:echo:echo";$state.app.value.selected={service:"echo",command:"echo"}
+$s=$saved.load($s,{state:$state,app_loaded:true})
+check(contains($s.expanded,"nodes") and $s.selection==nil and $s.row_key==nil,"legacy root migration and passive deferred selection")
+check($saved.capture($s).row_key==$state.app.value.row_key,"pending selection survives an early save")
+$s.snapshot.nodes=[{name:"alpha",local:true,services:["echo"],info:nil,error:nil}];$s.snapshot.identities.echo={name:"echo"};$s.snapshot.services.echo={Ok:[{name:"echo",args:"",description:"",read_only:true}]};$s.expanded=push($s.expanded,"node:alpha")
+$s=$saved.reconcile($s)
+check($s.selection.command=="echo" and $s.row_key==$state.app.value.row_key,"selection restores after live rows arrive")
+check(len($s.queue)==0 and $s.call==nil,"restoration never calls or opens a macro")
+$s.snapshot.progress={finished:true};$s=$saved.reconcile($s)
+check(not contains($s.expanded,"service:gone") and $s.saved_restore.done,"missing expansion keys pruned after complete discovery")
+$s=$m.initial();$state=$saved.envelope();$state.app.value.expanded=["nodes"];$s=$saved.load($s,{state:$state,app_loaded:true});$s.snapshot.nodes=[{name:"alpha",local:true,services:[],error:nil,info:nil}];$s.expanded=push($s.expanded,"node:alpha");$s=$saved.reconcile($s)
+check(not contains($s.expanded,"node:alpha"),"intentional saved local-node collapse wins")
+$s.expanded=push($s.expanded,"node:alpha");$s=$saved.reconcile($s);check(contains($s.expanded,"node:alpha"),"later user expansion wins")
+$state.app.value=false;$s=$saved.load($m.initial(),{state:$state,app_loaded:true});check($s.saved_preserve_app and not has_key($saved.project($s),"saved_app"),"unreadable app section retained")
+$s.body="secret unsaved text";$s.dialog="about";$a=$saved.capture($s)
+check(not has_key($a,"body") and not has_key($a,"dialog") and not has_key($a,"reply"),"only passive arrangement fields persist")
+print("Workshop saved arrangement contracts PASS")

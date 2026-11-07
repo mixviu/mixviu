@@ -23,6 +23,16 @@ struct State {
 #[derive(Clone, Default)]
 pub struct Calls(Arc<Mutex<State>>);
 impl Calls {
+    pub fn contains(&self, token: &str) -> bool {
+        self.0.lock().unwrap().entries.get(token).is_some_and(|e| !e.reply.is_closed())
+    }
+    pub fn hold(&self, token: &str) -> bool {
+        let mut state = self.0.lock().unwrap();
+        if let Some(entry) = state.entries.get_mut(token) {
+            entry.held = true;
+            true
+        } else { false }
+    }
     pub fn begin(&self, reply: Reply, close: Arc<AtomicBool>) -> Result<String, Reply> {
         let mut state = self.0.lock().unwrap();
         state.entries.retain(|_, e| !e.reply.is_closed());

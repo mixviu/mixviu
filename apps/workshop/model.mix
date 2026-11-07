@@ -1,0 +1,69 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$legacy=require("core.mix");$mesh=require("mesh.mix");$saved=require("saved.mix")
+fn initial()
+  $s=$legacy.initial();$s.body="";$s.snapshot={progress:nil,nodes:[],identities:{},services:{},peers:[],peer_error:nil,error:nil}
+  $s.selection=nil;$s.row_key=nil;$s.expanded=["nodes"];$s.split=0.34;$s.dock_width=0.3;$s.dock_height=0.28;$s.window_width=1100
+  $s.watched_topics=[];$s.refetch=false
+  $s.mesh=$mesh.initial("local","workshop",$mesh.now_ms());$s.activation_next=0
+  $s.window_height=760;$s.focus_id="filter";$s.macro_drafts={}
+  $s.mesh_inspected=nil
+  $s.reveal_serial=0;$s.reveal_key=nil
+  $s.saved=$saved.envelope();$s.saved_ready=false;$s.saved_preserve_app=false;$s.saved_restore={done:false,shown:false,row_key:nil,selected:nil,expanded:nil,seen:[]}
+  $s.comp=env("MIXOS_COMP_SERVICE","comp")
+  $s.catalogues={};$s.discovery=nil;$s.jobs={};$s.queue=[];$s.generation=0;$s.call=nil;$s.activations=[]
+  $s.traffic=[];$s.traffic_bytes=0;$s.dropped=0;$s.ignored_observations=0;$s.observe="";$s.subscription=nil;$s.traffic_paused=false;$s.traffic_filter=""
+  $s.macro_selected=nil;$s.document=nil;$s.macro_draft=nil;$s.macro_saved_text=nil;$s.macro_message="";$s.macro_target="";$s.macro_destination="";$s.macro_new_title="";$s.macro_confirm_delete=false;$s.macro_pending=0;$s.macro_next_ticket=0;$s.macro_latest_open=0;$s.macro_latest_catalogues=0
+  $s.agents={local:"local",nodes:{},selected:nil,filter:{node:nil,agent:nil},transcript:{session:"",events:[],items:[],seq:0,bytes:0,seen:0,evicted:false,gap:false,filling:false},draft:"",error:nil,config_options:nil,modes:nil,new_agent:"",new_cwd:"",read_ticket:nil,next_ticket:0,prompting:false}
+  $s.split=share($s.split);$s.dock_width=share($s.dock_width);$s.dock_height=share($s.dock_height)
+  return $s
+end
+fn share($v)
+  if $v==0 then return 0 end
+  $scale=pow(2,23-floor(log2(abs($v))));$x=abs($v)*$scale;$lo=floor($x)
+  $n=if $x-$lo==0.5 and $lo%2==0 then $lo else floor($x+0.5) end
+  return sign($v)*$n/$scale
+end
+fn busy($s) return $s.discovery!=nil or $s.call!=nil or $s.macro_pending>0 or len($s.activations)>0 end
+fn effective_dock($s) return if $s.dock_side=="auto" then (if $s.window_width>=1280 then "right" else "bottom" end) else $s.dock_side end end
+fn ui($s)
+  $side=effective_dock($s)
+  return {dock_side:$s.dock_side,dock_width:$s.dock_width,dock_height:$s.dock_height,dock_effective:$side,dock_size:round((if $side=="right" then $s.dock_width else $s.dock_height end)*1000)/1000,macros_open:$s.macros_open,selected:$s.selection,row_key:$s.row_key,filter:$s.filter,expanded:sort($s.expanded),body:$s.body,split:round($s.split*1000)/1000,dialog:$s.dialog,theme_scheme:$s.theme_choice.scheme,theme_mode:$s.theme_choice.mode,theme_style:$s.theme_choice.style,theme_decorations:$s.theme_choice.decorations,theme_captions:$s.theme_choice.caption_side}
+end
+fn info($s,$ctx)
+  return {saved:$saved.describe($s),schema:"workshop.v1",app_id:"dev.mixos.workshop",version:$ctx.version,pid:$ctx.pid,connected:$s.connected,busy:busy($s),discovering:$s.discovery!=nil,calling:$s.call!=nil,selection:$s.selection,body:$s.body,reply:$s.last_reply,status:$s.status,snapshot:$s.snapshot,ui:ui($s),workshop:{new_title:$s.macro_new_title,focus_editor:false,destination:$s.macro_destination,next_ticket:$s.macro_next_ticket,latest_open:$s.macro_latest_open,latest_catalogues:$s.macro_latest_catalogues,target:$s.macro_target,confirm_delete:$s.macro_confirm_delete,arguments:nil,draft:$s.macro_draft,saved_text:$s.macro_saved_text,pending:$s.macro_pending,catalogues:$s.catalogues,selected:$s.macro_selected,document:$s.document,message:$s.macro_message,bytes:$s.traffic_bytes,dropped:$s.dropped,ignored_observations:$s.ignored_observations,observe:$s.observe,subscription:$s.subscription,dock_open:$s.dock_open,paused:$s.traffic_paused,filter:$s.traffic_filter,mesh:delete(delete($s.mesh,"reads"),"ever_connected")},agents:{nodes:len(filter(values($s.agents.nodes),fn($n)=$n.available==true)),selected:$s.agents.selected,sessions:reduce(values($s.agents.nodes),0,fn($n,$node)=$n+len($node.sessions))}}
+end
+fn command($s,$target)
+  if $target==nil then return nil end
+  $result=$s.snapshot.services[$target.service] ?? {}
+  $found=filter($result.Ok ?? [],fn($c)=$c.name==$target.command)
+  return if len($found)>0 then $found[0] else nil end
+end
+fn catalogue($v)
+  $entries=if type($v)=="list" then $v else $v.commands end
+  if type($entries)!="list" then raise("DESCRIPTION","Expected a HELP array or app.describe commands array") end
+  $out=[];$seen=[]
+  for $entry in $entries
+    $name=if type($entry)=="string" then $entry else $entry.name end
+    if type($name)!="string" or $name=="" then raise("DESCRIPTION","Command has no name") end
+    if not contains($seen,$name) then
+      $m=if type($entry)=="map" then $entry else {} end
+      $args=$m.args ?? "";if type($args)!="string" then $args=json_encode($args) end
+      push($out,{name:$name,args:$args,description:if type($m.description)=="string" then $m.description else "" end,read_only:if type($m.read_only)=="bool" then $m.read_only else nil end});push($seen,$name)
+    end
+  end
+  return sort_by($out,fn($c)=$c.name)
+end
+fn select_target($s,$target)
+  if command($s,$target)==nil then raise("ARGUMENT","Select an advertised command before calling") end
+  $s.selection=$target;$s.service=$target.service;$s.command=$target.command
+  for $node in $s.snapshot.nodes
+    if contains($node.services,$target.service) then
+      $identity=$s.snapshot.identities[$target.service] ?? {}; $name=$identity.name ?? $target.service
+      $s.row_key="command:"..$node.name..":"..$name..":"..$target.command
+      if not contains($s.expanded,"node:"..$node.name) then $s.expanded=push($s.expanded,"node:"..$node.name) end
+      return $s
+    end
+  end
+  $s.row_key="command:"..$target.service..":"..$target.command
+  return $s
+end
