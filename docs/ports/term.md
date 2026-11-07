@@ -112,3 +112,35 @@ These are unfinished implementation items, not approved deviations. All
 tracked candidate-run PIDs were stopped. The capture succeeded before the
 generic close request exposed the missing app.quit handler; that handler
 is now added and still requires the next gate/native-close witness.
+
+## Exact widget and live tab/pane checkpoint
+
+At exact code `b095d72222c3c6b018f59edf2d2be2eac483401a`, CBC3
+`term-widget-r2-node-fixed-a1` passed 134 native tests, five retained ignores,
+two actual-bundle tests, all three Mix suites, the foreign dependency gate
+and generic host debug build. No worker diff. Debug SHA256:
+`08375b79ec45e965bd258a1660080f572d3ec9dbf2b75ad27db545abae3b5990`.
+Private `term-parity-20261107/native.uqPes6` used that executable and the
+same archived source, executed the matched real Mix command output, captured
+900×560 and passed normal close. All tracked PIDs were stopped. This closes
+the first-load/quit defects; it does not change the visual FAIL verdict.
+
+Code `39e1208653a54e0f0bc1b0a040713abc112fa721` connects the Mix reducer
+to real session creation/close, tab selection/title/reorder, pane splits and
+focus, explicit snapshot/type targets, and scroll commands. Native metadata
+and output/title/exit changes reach Mix in process. The reusable document
+strip now supports canvas attachment and leading status markers; Term uses
+it above its compound surface. The shared frame supports omitting the status
+footer, with the existing default preserved for other apps.
+
+Four local Mix suites pass, including real selector disagreement, retryable
+validation, request-key ordering, original-outcome replay and UTF-8 byte
+bounds. The actual-bundle test now exercises native tab/split sessions,
+inactive-pane input without focus movement, retry after close and final
+shutdown. CBC `term-live-tabs-39e1208` is queued for this source; native
+compile/runtime and new captures remain unverified until its result.
+
+This is partial Bus implementation. Topic publication after props.watch,
+the full action/menu/dialog/macro surface, raw-envelope validation and exact
+large integer handling remain open, alongside verified native authority,
+complete input/clipboard/search/Prefs and release visual acceptance.

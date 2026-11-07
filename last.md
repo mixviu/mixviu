@@ -349,4 +349,32 @@ Continuing live Mix tab/pane reducer integration and its Bus surface. Full
 verified session supervisor, input/clipboard/search, Prefs and release visual
 acceptance remain open. Gold unchanged. No Fable question.
 
-branch: lab/parity-term; head SHA: b095d72222c3c6b018f59edf2d2be2eac483401a (tested code; receipt HEAD contains this checkpoint); open items: full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-widget-r2-view-repair-a1, term-widget-r2-bundle-probe-a1 (failed then repaired), term-widget-r2-node-fixed-a1 (green).
+## Live Mix lifecycle checkpoint — gate queued
+
+Code `39e1208653a54e0f0bc1b0a040713abc112fa721` wires live tabs, title
+pins, ordering, native pane splits, focus and close; shared document tabs
+and the terminal split tree form the actual scene. Generic frame option
+removes Term's extra footer. Mix owns selectors and replay; explicit input
+targets preserve focus. Native metadata (dimensions, title, PID, geometry)
+and change notifications stay in process. Shell exit removes its pane.
+
+Four local Mix suites pass. Title sanitation uses gold's 256 UTF-8 byte
+limit, strips controls and line separators. Replay follows gold's lookup
+before argument validation once a request ID has a recorded result.
+Expanded actual-bundle test exercises real PTY split/tab sessions, replay,
+inactive targets, no-target refusal, stale handles and final close.
+
+CBC `term-live-tabs-39e1208` submitted detached at exact code above:
+`mix tools/term_gate.mix --prepare`. Await its native compile/runtime result,
+read the complete saved log and apply worker fmt diff before an exact-source
+repeat. Then fetch the matching artifact and run live tab/split/input/exit
+cases plus new matched captures. The earlier exact b095d72 debug witness
+and normal close are green; current live lifecycle is not yet native-tested.
+
+Open: props.watch publication; remaining action/menu/dialog/macro/Bus surface;
+raw envelope and large integer handling; verified session issuer/control
+supervisor and shell integration; input/clipboard/IME/search completeness;
+live full Prefs; exact release and visual acceptance. NOT ACCEPTED. No
+Fable question, install, merge, gold or VT changes.
+
+branch: lab/parity-term; head SHA: 39e1208653a54e0f0bc1b0a040713abc112fa721 (code; receipt HEAD contains this checkpoint); open items: lifecycle gate, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-widget-r2-node-fixed-a1 (green), term-live-tabs-39e1208 (queued; awaiting).
