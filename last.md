@@ -947,3 +947,43 @@ the diagnostic receipt with actual source/profile data. Then continue
 the full inventory; do not rerun old failed builds or install gold.
 
 branch: lab/parity-term; head SHA: e1278485b79544767f9b9416630c4a80968f0eca (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — exact zoom-recovery/profile gate, remaining session/Bus/input/Prefs and release acceptance open; CBC job ids: term-zoom-persist-f0d36085-a1 (green, fmt applied), term-zoom-recovery-e1278485 (next await).
+### Exact zoom recovery passes; keyboard ownership checkpoint
+
+`term-zoom-recovery-e1278485-a1` passed on CBC2 with no worker diff;
+complete saved log read in two chunks. Six Mix suites, 139 terminal tests
+(five existing ignores), seven input tests, two bundle tests, search,
+dialog, foreign gate and debug host build pass. Matching executable and
+bundle fetched and receipt verified: source
+`e1278485b79544767f9b9416630c4a80968f0eca`, SHA256
+`5ef0e856a13afc37e3c793959cfc47573cf7f2e3473d17d7f5fab90e184affc5`.
+Exact debug witness `native.MZX2kE` passes f32 save/reset, settingsd
+loss/return preserving local zoom on the same app PID, new shell TERM
+vt100, 17 history lines, and all tracked PIDs stopped. Initial real-Mix
+session PNG remains gold's identical e31900b2f10ca55d792ca7556b5f19da05f151dcbb4ba000d334f9834a994865.
+This closes the bounded recovery/new-session diagnostic at exact source;
+it is not final release acceptance or full font-race coverage.
+
+65fafcd5 ports gold keyboard ownership rules. Mix supplies repeat and
+normal-screen-only metadata for its bindings. Native widget consumes held
+non-repeating commands without forwarding control bytes; zoom and scroll
+commands may repeat. Alternate-screen programs receive scrollback chord
+keys through the existing VT encoder. Plain Tab/Shift+Tab cycles split
+panes without repeat, while single-pane Tab remains shell input. Existing
+live binding overrides stay in Mix. Added Mix policy checks and native
+widget/encoder regressions; all six local Mix suites pass. Rust and live
+keyboard coverage are pending the next gate.
+
+Next CBC `term-keyboard-65fafcd5` at
+`65fafcd5c50134fd3cddef13ad4452c64c1e5493`, term_gate --prepare.
+Read full log, apply returned fmt patch and repeat exact source if changed.
+Fetch matching executable/bundle and test native split Tab/Shift+Tab,
+held command consumption, zoom repeats and alternate-screen scroll keys.
+Native driver key currently always emits repeat=false; extend the generic
+driver if a native held-event witness needs it, rather than claiming a
+repeated direct execute proves keyboard handling. Gold input.rs Action
+repeats includes font reset, and app.rs intercepts plain split Tab before
+shell encoding. Continue the full remaining verified session issuer/
+control/sealed login-shell handoff, Bus/clipboard/primary/OSC52/mouse/IME,
+all Prefs, conformance and exact release visual acceptance. Overall
+**NOT ACCEPTED**. No Fable deviation, installs, merges or VT changes.
+branch: lab/parity-term; head SHA: 65fafcd5c50134fd3cddef13ad4452c64c1e5493 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — keyboard native gate and remaining session/Bus/input/Prefs/release acceptance open; CBC job ids: term-zoom-recovery-e1278485-a1 (green exact source/native recovery and new-session Prefs), term-keyboard-65fafcd5 (next await).
