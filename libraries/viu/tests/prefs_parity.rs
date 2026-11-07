@@ -211,7 +211,7 @@ fn email_uses_native_registry_admission_and_redacts_credentials() {
 }
 
 #[test]
-fn settings_fences_and_appearance_receipts_use_the_embedded_native_path() {
+fn settings_fences_appearance_and_navigation_use_the_embedded_native_path() {
     for (name, source) in [
         (
             "core-test.mix",
@@ -220,6 +220,10 @@ fn settings_fences_and_appearance_receipts_use_the_embedded_native_path() {
         (
             "look-test.mix",
             include_str!("../../../apps/prefs/look-test.mix"),
+        ),
+        (
+            "navigation-test.mix",
+            include_str!("../../../apps/prefs/navigation-test.mix"),
         ),
     ] {
         let (tx, rx) = mpsc::channel();

@@ -12,7 +12,8 @@ try
   checked_step(["cargo","test","--locked","-p","system","--no-fail-fast"])
   checked_step(["cargo","test","--locked","--workspace","--exclude","system","--no-fail-fast"])
   for $case in ["core-test.mix","history-test.mix","wire-test.mix","fetch-test.mix"] checked_step(["/opt/mixos/bin/mix","apps/monitor/"..$case]) end
-  for $case in ["core-test.mix","email-test.mix","look-test.mix","navigation-test.mix"] checked_step(["/opt/mixos/bin/mix","apps/prefs/"..$case]) end
+  -- Prefs policy scripts use native Viu settings admission and registry APIs.
+  checked_step(["cargo","test","--locked","-p","viu","--test","prefs_parity"])
   checked_step(["/opt/mixos/bin/mix","apps/screenshot/policy-test.mix"])
   checked_step(["cargo","test","--locked","-p","viu-engine","--no-default-features","--test","shell_profile"])
   checked_step(["cargo","test","--locked","-p","viu","--test","bulk_profile","--test","ports_round5","--","--nocapture"])

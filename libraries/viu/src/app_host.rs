@@ -54,7 +54,7 @@ struct Host {
     drive_replies: BTreeMap<u64, Reply>,
     drive_answers: std::collections::VecDeque<toolkit::drive::Answer>,
     drive_serial: u64,
-    drive_geometry: Option<(u64, BTreeMap<String, egui::Rect>)>,
+    drive_geometry: Option<BTreeMap<String, egui::Rect>>,
     drive_geometry_stable: bool,
     macros: macros::Session,
     macro_ui: toolkit::macros::State,
@@ -111,7 +111,9 @@ struct Host {
 impl Host {
     fn queued_drive_input(&self) -> bool {
         self.held_requests.front().is_some_and(|request| {
-            request.command.strip_prefix(&format!("{}.", self.app))
+            request
+                .command
+                .strip_prefix(&format!("{}.", self.app))
                 .is_some_and(toolkit::drive::queues)
         })
     }
@@ -1155,7 +1157,7 @@ impl Host {
         // Resolve native input only after two matching control passes, so its
         // AccessKit target cannot move between resolution and the press pass.
         if self.queued_drive_input() {
-            let geometry = (self.view.revision, self.view.geometry.clone());
+            let geometry = self.view.geometry.clone();
             self.drive_geometry_stable = self.drive_geometry.as_ref() == Some(&geometry);
             self.drive_geometry = Some(geometry);
             if !self.drive_geometry_stable {
