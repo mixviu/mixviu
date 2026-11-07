@@ -31,7 +31,8 @@ mix lint [--json | --data] [--deny-warnings] [--require-version] [--fix]
 ## The rules (v1)
 
 A leading `-- host: viu` header enables the widget host's registered builtin
-names and its injected `$app_args`. The vocabulary is generated from viu's
+names. Bundle entries declare injected arguments separately with the pragma
+`-- lint: globals app_args`. The vocabulary is generated from viu's
 registration sites at build time; this does not link GUI code into Mix or
 make those functions callable in the shell. Missing, unknown, `mix` and
 `mixd` headers do not enable viu names. Each file declares its own host,

@@ -28,7 +28,7 @@ fn host_vocabulary_is_opt_in_and_keeps_unknown_names_visible() {
     let codes =
         diagnostics("-- host: viu\nviu_context()\nviu_typo()\nprint($app_args)\nprint($unknown)\n");
     assert_eq!(codes.iter().filter(|c| *c == "MIX-E1102").count(), 1);
-    assert_eq!(codes.iter().filter(|c| *c == "MIX-E1101").count(), 1);
+    assert_eq!(codes.iter().filter(|c| *c == "MIX-E1101").count(), 2);
 }
 
 #[test]

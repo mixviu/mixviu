@@ -82,14 +82,14 @@ impl App {
         .unwrap();
         bundle.program.source.push_str(
             "\n$state.tabs=[viu_document(\"state\",\"1\",{})]\n$state.next_tab=1
-$state.classified={\"1\":true}\npublish_ced($state)\n",
+$state.classified={\"1\":true}\n$ced_core.publish_ced($state)\n",
         );
         bundle.program.source.push_str(
             r#"
 on test.mail
   $state.mail["1"]=$event.args
   $state.session_loaded=true;$state.session_path="/tmp/ced-test-session.json"
-  $state.session_seen=session_value($state);$state.session_dirty=false
+  $state.session_seen=$ced_session.session_value($state);$state.session_dirty=false
 end
 "#,
         );

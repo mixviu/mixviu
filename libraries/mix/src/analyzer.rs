@@ -579,7 +579,6 @@ pub fn analyze(stmts: &[Stmt], file: Option<&str>, cfg: &AnalyzerConfig) -> Anal
     {
         cfg.extensions
             .extend(VIU_EXTENSIONS.iter().map(|name| (*name).to_owned()));
-        cfg.allow_globals.push("app_args".to_owned());
     }
     let cfg = &cfg;
     // `-- lint:` pragmas live in comments, so they need the source text. A
@@ -5342,9 +5341,12 @@ fn analyse_remote_body(
         // strict-data bindings, so callable checks keep running.
         suppress_name_checks: false,
         // ssh_mix runs Mix, not the local viu widget host.
-        extensions: cfg.extensions.iter()
+        extensions: cfg
+            .extensions
+            .iter()
             .filter(|name| !VIU_EXTENSIONS.contains(&name.as_str()))
-            .cloned().collect(),
+            .cloned()
+            .collect(),
         // The BODY's own text, never the enclosing file's — the spelling
         // rules must read the source they are reporting lines against.
         // Lint is the only gate this remote program ever passes through.
