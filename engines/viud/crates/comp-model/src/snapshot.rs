@@ -2051,7 +2051,7 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
             Bool,
             "Whether this compositor spawns XWayland; read at startup, a write persists \
              for the NEXT startup (no live toggle; the Set reply's `persisted` field \
-             reports write durability). VIUD_XWAYLAND overrides at launch",
+             reports write durability). MIX_VIUD_XWAYLAND overrides at launch",
             mutable
         )
     },

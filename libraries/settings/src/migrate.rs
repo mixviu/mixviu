@@ -31,7 +31,7 @@ pub use reverse::{Reversed, reverse};
 pub const RETIRED: &str = "retired";
 pub const NO_V2_KEY: &str = "no_v2_key";
 pub const UNKNOWN_PANEL: &str = "unknown_panel";
-pub const VIUD_KEYMAPS: &str = "viud_keymaps";
+pub const MIX_VIUD_KEYMAPS: &str = "viud_keymaps";
 pub const OFF_STEP: &str = "off_step";
 pub const SNAPPED: &str = "snapped";
 pub const SHARED_EDGE: &str = "shared_edge";
@@ -399,7 +399,7 @@ fn keymaps(b: &mut Builder, keymaps: &crate::keymap::Keymaps) {
             b.dropped(
                 "keymaps.comp",
                 json!(actions),
-                VIUD_KEYMAPS,
+                MIX_VIUD_KEYMAPS,
                 "compositor bindings move in stage 4 (§4.1); inputd keeps them until then",
             );
             continue;

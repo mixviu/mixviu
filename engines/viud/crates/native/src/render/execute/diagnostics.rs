@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Opt-in KMS evidence: VIUD_KMS_DIAG_DIR, three frames per activation/output.
+//! Opt-in KMS evidence: MIX_VIUD_KMS_DIAG_DIR, three frames per activation/output.
 
 use scenegraph::scene::element::SceneElement;
 use smithay::backend::allocator::Fourcc;
@@ -25,7 +25,7 @@ thread_local! {
     // unchanged count must not be logged again just because the session resumed.
     static UI_COUNTS: RefCell<HashMap<String, usize>> = RefCell::new(HashMap::new());
     static DIAG: RefCell<Option<Diagnostics>> = RefCell::new(
-        std::env::var_os("VIUD_KMS_DIAG_DIR").map(|dir| Diagnostics {
+        std::env::var_os("MIX_VIUD_KMS_DIAG_DIR").map(|dir| Diagnostics {
             dir: dir.into(),
             frames: HashMap::new(),
             ids: HashMap::new(),

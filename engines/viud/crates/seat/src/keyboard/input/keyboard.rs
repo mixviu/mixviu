@@ -199,13 +199,13 @@ fn capture_pen_key(
     true // swallow every key while capturing (no forward, no shortcuts)
 }
 
-/// `VIUD_KEY_TRACE=1` prints one `key-trace` line per key edge that reaches
+/// `MIX_VIUD_KEY_TRACE=1` prints one `key-trace` line per key edge that reaches
 /// the seat, with its keycode, state, keysyms and whether it went to the
 /// focused client. Read once per process; lines go to stderr, which the
 /// session unit sends to the journal. Off by default: it logs every key.
 fn key_trace_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("VIUD_KEY_TRACE").is_some_and(|v| v == "1"))
+    *ON.get_or_init(|| std::env::var_os("MIX_VIUD_KEY_TRACE").is_some_and(|v| v == "1"))
 }
 
 pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut Loop) {

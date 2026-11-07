@@ -6,7 +6,7 @@
 //! ([`startup`], called by viud's `xwayland::register`). A props set
 //! changes the CONFIGURED value that get/describe read and writes it to the
 //! per-socket file for the next start; the running lifecycle is untouched.
-//! Precedence: `VIUD_XWAYLAND` (env veto, works when the
+//! Precedence: `MIX_VIUD_XWAYLAND` (env veto, works when the
 //! file or the props surface is the problem) > the persisted file > `true`.
 //!
 //! The file is `<etc>/comp/xwayland-enabled.<socket>`, `<etc>` being the
@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The env override.
-pub const ENV: &str = "VIUD_XWAYLAND";
+pub const ENV: &str = "MIX_VIUD_XWAYLAND";
 
 struct Switch {
     path: PathBuf,
@@ -134,7 +134,7 @@ fn resolve(env: Option<&str>, file: Option<&str>) -> (bool, Option<&'static str>
     if let Some(value) = env {
         match parse_env(value) {
             Some(enabled) => return (enabled, None),
-            None => note = Some("unrecognised VIUD_XWAYLAND; fell through to the persisted file"),
+            None => note = Some("unrecognised MIX_VIUD_XWAYLAND; fell through to the persisted file"),
         }
     }
     if let Some(text) = file {

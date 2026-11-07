@@ -98,9 +98,9 @@ fn spawn(root: &Path, binary: &Path, old: bool, url: &str, parent: Option<&Path>
         .env("MIX_RUN", root.join("run"))
         .env("MIX_VAR", root.join("var"))
         .env("MIX_NODED_URL", url)
-        .env("VIUD_FRAME_TRACE", "1")
-        .env("VIUD_FRAME_TRACE_LIMIT", "0")
-        .env("VIUD_FRAME_TRACE_FILE", root.join("frames.log"))
+        .env("MIX_VIUD_FRAME_TRACE", "1")
+        .env("MIX_VIUD_FRAME_TRACE_LIMIT", "0")
+        .env("MIX_VIUD_FRAME_TRACE_FILE", root.join("frames.log"))
         .env_remove("NOTIFY_SOCKET")
         .env_remove("MIX_VT")
         .stdout(file.try_clone().unwrap())
@@ -136,7 +136,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
         std::env::var(if old {
             "COMPD_INPROC_TEST_BINARY"
         } else {
-            "VIUD_NATIVE_TEST_BINARY"
+            "MIX_TEST_VIUD_NATIVE_EXE"
         })
         .expect("build gate supplies exact binaries"),
     );
@@ -466,7 +466,7 @@ async fn native_client_maps_reserves_pings_receives_corners_and_measures_idle_cp
     // parent, preserving the existing headless seat refusal contract.
     let broker = test_broker::Broker::start();
     let root = tempfile::tempdir().unwrap();
-    let binary = PathBuf::from(std::env::var("VIUD_NATIVE_TEST_BINARY").unwrap());
+    let binary = PathBuf::from(std::env::var("MIX_TEST_VIUD_NATIVE_EXE").unwrap());
     let _parent = spawn(root.path(), &binary, false, &broker.url, None);
     let until = Instant::now() + Duration::from_secs(15);
     while !root.path().join("wayland-furniture-test").exists() {

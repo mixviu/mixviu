@@ -42,7 +42,7 @@ pub struct Tagging {
     pub steam: bool,
 }
 
-/// `VIUD_TEARING=1` is deliberately NOT a toggle: it is the user saying so on a
+/// `MIX_VIUD_TEARING=1` is deliberately NOT a toggle: it is the user saying so on a
 /// specific process, and there is nothing to second-guess.
 impl Default for Tagging {
     fn default() -> Self {

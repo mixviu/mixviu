@@ -29,7 +29,7 @@ const VSYNC: u8 = 2;
 /// exactly one caller, so no writer can clobber another's answer.
 #[derive(Debug, Default)]
 pub struct TearingTag {
-    /// The USER, via `VIUD_TEARING=1` on the process or an ancestor. Not a guess.
+    /// The USER, via `MIX_VIUD_TEARING=1` on the process or an ancestor. Not a guess.
     forced: AtomicBool,
     /// The COMPOSITOR's guess (Steam attribution), from `outputs::tearing`.
     /// Resolved once at map — it walks `/proc`, far too heavy for the commit path that
@@ -89,7 +89,7 @@ impl Verdict {
     }
 
     /// The single definition of "is this a target", and the whole precedence ladder:
-    /// `VIUD_TEARING` (the user, about this exact process) beats `wp_tearing_control_v1`
+    /// `MIX_VIUD_TEARING` (the user, about this exact process) beats `wp_tearing_control_v1`
     /// (the client, about its own flips) beats the Steam guess, which answers only the
     /// silence. Above all three sits a configured `Selector::Always`, which never
     /// consults this at all.

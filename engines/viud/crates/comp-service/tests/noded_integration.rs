@@ -6,7 +6,7 @@
 //   cargo test -p comp-service --test noded_integration -- --ignored --nocapture
 //
 // `MIX_NODED_URL` picks the broker (default ws://127.0.0.1:4200/ws) and
-// `VIUD_ITEST_SERVICE` the registered name (default `viud-itest`, so a
+// `MIX_TEST_VIUD_ITEST_SERVICE` the registered name (default `viud-itest`, so a
 // live comp / comp-nested is never displaced). Commands stay literal `comp.*`
 // whatever the service is registered as.
 
@@ -143,7 +143,7 @@ where
 #[tokio::test]
 #[ignore = "needs a running noded with a broker"]
 async fn comp_port_registers_answers_and_publishes_through_noded() {
-    let service = std::env::var("VIUD_ITEST_SERVICE").unwrap_or_else(|_| "viud-itest".into());
+    let service = std::env::var("MIX_TEST_VIUD_ITEST_SERVICE").unwrap_or_else(|_| "viud-itest".into());
     let url = default_noded_url();
 
     // Engine thread: services the port only when the waker fires.

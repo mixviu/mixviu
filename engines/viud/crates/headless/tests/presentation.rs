@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Independent-rate probe against an owned render-node viud. Run with
 //! --nocapture to retain the baseline and positive-control summary lines.
-//! For timing, select an optimised viud through VIUD_TEST_BINARY. The
+//! For timing, select an optimised viud through MIX_TEST_VIUD_EXE. The
 //! harness and probe need not be optimised; buffer preparation precedes the
 //! timer deadline. A debug compositor's render time counts towards misses.
 use std::{

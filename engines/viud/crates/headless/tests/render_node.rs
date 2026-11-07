@@ -14,7 +14,7 @@
 //! Needs a GPU render node, so ignored by default:
 //!
 //! ```text
-//! VIUD_TEST_RENDER_NODE=/dev/dri/renderD128 \
+//! MIX_TEST_VIUD_RENDER_NODE=/dev/dri/renderD128 \
 //!     cargo test -p headless --test render_node -- --ignored --nocapture
 //! ```
 
@@ -39,7 +39,7 @@ const BLUE: [u8; 4] = [0, 0, 255, 255];
 const WHITE: [u8; 4] = [255, 255, 255, 255];
 
 fn node_path() -> String {
-    std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into())
+    std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into())
 }
 
 /// A client buffer in memory order R, G, B, A (Abgr8888): four quadrants,

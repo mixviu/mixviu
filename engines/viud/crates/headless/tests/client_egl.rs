@@ -23,7 +23,7 @@ impl Drop for Client {
 #[test]
 #[ignore = "needs a GPU render node, weston-simple-egl, viud and testkit-screenshot"]
 fn egl_client_buffer_type_and_rendered_frame() {
-    let binary = std::env::var_os("VIUD_TEST_EGL_CLIENT")
+    let binary = std::env::var_os("MIX_TEST_VIUD_EGL_CLIENT")
         .map(PathBuf::from)
         .unwrap_or_else(|| "/usr/bin/weston-simple-egl".into());
     assert!(

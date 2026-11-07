@@ -344,7 +344,7 @@ pub fn get() -> &'static Environment {
 pub fn late_latch_enabled() -> bool {
     static DISABLED: OnceLock<bool> = OnceLock::new();
     get().late_latch
-        && !*DISABLED.get_or_init(|| std::env::var_os("VIUD_DISABLE_LATE_LATCH").is_some())
+        && !*DISABLED.get_or_init(|| std::env::var_os("MIX_VIUD_DISABLE_LATE_LATCH").is_some())
 }
 
 /// Canonical complete starting settings — the single source of default values shared by
