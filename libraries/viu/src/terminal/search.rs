@@ -66,7 +66,11 @@ pub struct SearchRequest {
 
 impl Default for SearchRequest {
     fn default() -> Self {
-        Self { origin: None, backwards: false, max_lines: 10000 }
+        Self {
+            origin: None,
+            backwards: false,
+            max_lines: 10000,
+        }
     }
 }
 
@@ -79,8 +83,7 @@ pub struct SearchColors {
 
 impl SearchRange {
     pub(super) fn contains(&self, row: i32, col: usize) -> bool {
-        (self.start.row, self.start.col) <= (row, col)
-            && (row, col) <= (self.end.row, self.end.col)
+        (self.start.row, self.start.col) <= (row, col) && (row, col) <= (self.end.row, self.end.col)
     }
 }
 
@@ -181,33 +184,58 @@ mod tests {
     #[test]
     fn highlight_moves_clears_and_rethemes_without_changing_selection() {
         let t = Terminal::from_test_vt(12, 3, b"hit\r\nmiss\r\nhit");
-        t.selection_start(0, 1, super::super::SelectionSide::Left, super::super::SelectionType::Simple);
+        t.selection_start(
+            0,
+            1,
+            super::super::SelectionSide::Left,
+            super::super::SelectionType::Simple,
+        );
         t.selection_update(3, 1, super::super::SelectionSide::Right);
         let selected = t.selection_text();
         let plain = t.grid_snapshot().screen;
-        let colors = SearchColors { foreground: [10, 20, 30], background: [200, 100, 50] };
+        let colors = SearchColors {
+            foreground: [10, 20, 30],
+            background: [200, 100, 50],
+        };
         let mut pattern = SearchPattern::new("hit", false, true).unwrap();
-        let (first, outcome) = t.grid_snapshot_with_search(&mut pattern, SearchRequest::default(), colors).unwrap();
+        let (first, outcome) = t
+            .grid_snapshot_with_search(&mut pattern, SearchRequest::default(), colors)
+            .unwrap();
         assert_eq!(outcome.matched.unwrap().start.row, 0);
         assert_eq!(first.dirty_rows, [true, false, false]);
         assert_eq!(first.screen.cells[0].bg, colors.background);
         assert_eq!(first.screen.cells[0].fg, colors.foreground);
         assert_eq!(first.screen.cells[3].bg, plain.cells[3].bg);
-        let (idle, _) = t.grid_snapshot_with_search(&mut pattern, SearchRequest::default(), colors).unwrap();
+        let (idle, _) = t
+            .grid_snapshot_with_search(&mut pattern, SearchRequest::default(), colors)
+            .unwrap();
         assert!(idle.dirty_rows.iter().all(|dirty| !dirty));
-        let request = SearchRequest { origin: Some(SearchPoint { row: 2, col: 0 }), ..Default::default() };
-        let (moved, _) = t.grid_snapshot_with_search(&mut pattern, request, colors).unwrap();
+        let request = SearchRequest {
+            origin: Some(SearchPoint { row: 2, col: 0 }),
+            ..Default::default()
+        };
+        let (moved, _) = t
+            .grid_snapshot_with_search(&mut pattern, request, colors)
+            .unwrap();
         assert_eq!(moved.dirty_rows, [true, false, true]);
         assert_eq!(moved.screen.cells[0].bg, plain.cells[0].bg);
         assert_eq!(moved.screen.cells[24].bg, colors.background);
-        let changed = SearchColors { background: [30, 40, 50], ..colors };
-        let (rethemed, _) = t.grid_snapshot_with_search(&mut pattern, request, changed).unwrap();
+        let changed = SearchColors {
+            background: [30, 40, 50],
+            ..colors
+        };
+        let (rethemed, _) = t
+            .grid_snapshot_with_search(&mut pattern, request, changed)
+            .unwrap();
         assert_eq!(rethemed.dirty_rows, [false, false, true]);
         assert_eq!(rethemed.screen.cells[24].bg, changed.background);
         let cleared = t.grid_snapshot();
         assert_eq!(cleared.dirty_rows, [false, false, true]);
         for (actual, expected) in cleared.screen.cells.iter().zip(&plain.cells) {
-            assert_eq!((actual.c, actual.fg, actual.bg), (expected.c, expected.fg, expected.bg));
+            assert_eq!(
+                (actual.c, actual.fg, actual.bg),
+                (expected.c, expected.fg, expected.bg)
+            );
         }
         assert_eq!(t.selection_text(), selected);
         assert_eq!(t.display_offset(), 0);
@@ -217,9 +245,14 @@ mod tests {
     fn highlight_covers_both_wide_halves_but_not_the_leading_spacer() {
         let t = Terminal::from_test_vt(5, 3, "abcd中z".as_bytes());
         let plain = t.grid_snapshot().screen;
-        let colors = SearchColors { foreground: [10, 20, 30], background: [200, 100, 50] };
+        let colors = SearchColors {
+            foreground: [10, 20, 30],
+            background: [200, 100, 50],
+        };
         let mut pattern = SearchPattern::new("中", false, true).unwrap();
-        let (frame, _) = t.grid_snapshot_with_search(&mut pattern, SearchRequest::default(), colors).unwrap();
+        let (frame, _) = t
+            .grid_snapshot_with_search(&mut pattern, SearchRequest::default(), colors)
+            .unwrap();
         assert_eq!(frame.screen.cells[4].bg, plain.cells[4].bg);
         for index in [5, 6] {
             assert_eq!(frame.screen.cells[index].bg, colors.background);

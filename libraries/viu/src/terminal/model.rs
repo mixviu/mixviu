@@ -21,7 +21,9 @@ use rio_vt::{
     teletypewriter::{self, ChildEvent, EventedPty, ProcessReadWrite, WinsizeBuilder},
 };
 pub use rio_vt::{crosswords::pos::Side as SelectionSide, selection::SelectionType};
-pub use search::{SearchColors, SearchOutcome, SearchPattern, SearchPoint, SearchRange, SearchRequest};
+pub use search::{
+    SearchColors, SearchOutcome, SearchPattern, SearchPoint, SearchRange, SearchRequest,
+};
 use std::{
     borrow::Cow,
     collections::VecDeque,
@@ -1253,7 +1255,8 @@ impl Terminal {
     }
     fn capture(&self, consume: bool, dirty: Option<&mut Vec<bool>>) -> Screen {
         self.capture_frame(consume, dirty, None)
-            .expect("capture without a search request cannot fail").0
+            .expect("capture without a search request cannot fail")
+            .0
     }
     /// Match and paint from the same grid lock. The range is an observation of
     /// this frame only, and never becomes the clipboard selection.
@@ -1264,8 +1267,15 @@ impl Terminal {
         colors: SearchColors,
     ) -> Result<(GridSnapshot, SearchOutcome), String> {
         let mut dirty_rows = Vec::new();
-        let (screen, outcome) = self.capture_frame(true, Some(&mut dirty_rows), Some((pattern, request, colors)))?;
-        Ok((GridSnapshot { screen, dirty_rows }, outcome.expect("search request has an outcome")))
+        let (screen, outcome) = self.capture_frame(
+            true,
+            Some(&mut dirty_rows),
+            Some((pattern, request, colors)),
+        )?;
+        Ok((
+            GridSnapshot { screen, dirty_rows },
+            outcome.expect("search request has an outcome"),
+        ))
     }
     fn capture_frame(
         &self,
@@ -1280,12 +1290,20 @@ impl Terminal {
         let mut term = self.grid.lock();
         let (search_outcome, search_colors) = match search {
             Some((pattern, request, colors)) => (
-                Some(pattern.find_grid(&term, request.origin, request.backwards, request.max_lines)?),
+                Some(pattern.find_grid(
+                    &term,
+                    request.origin,
+                    request.backwards,
+                    request.max_lines,
+                )?),
                 Some(colors),
             ),
             None => (None, None),
         };
-        let highlight = search_outcome.as_ref().and_then(|outcome| outcome.matched).zip(search_colors);
+        let highlight = search_outcome
+            .as_ref()
+            .and_then(|outcome| outcome.matched)
+            .zip(search_colors);
         let palette = List::from(&Colors::default());
         let colour = |c: AnsiColor| -> [u8; 3] {
             let index = match c {
@@ -1351,7 +1369,8 @@ impl Terminal {
                             || (matches!(square.wide(), rio_vt::crosswords::square::Wide::Wide)
                                 && range.contains(line, x + 1))
                             || (matches!(square.wide(), rio_vt::crosswords::square::Wide::Spacer)
-                                && x > 0 && range.contains(line, x - 1));
+                                && x > 0
+                                && range.contains(line, x - 1));
                         if inside {
                             fg = colors.foreground;
                             bg = colors.background;
@@ -1466,16 +1485,19 @@ impl Terminal {
             .unwrap()
             .vt_updated
             .unwrap_or_else(Instant::now);
-        Ok((Screen {
-            clusters: clusters.snapshot.clone(),
-            cols,
-            rows,
-            display_offset: offset,
-            cursor,
-            cursor_visible,
-            cells,
-            updated,
-        }, search_outcome))
+        Ok((
+            Screen {
+                clusters: clusters.snapshot.clone(),
+                cols,
+                rows,
+                display_offset: offset,
+                cursor,
+                cursor_visible,
+                cells,
+                updated,
+            },
+            search_outcome,
+        ))
     }
     pub fn snapshot(&self) -> String {
         self.snapshot_with(true, 0)
@@ -1895,7 +1917,7 @@ mod tests {
                 damage: Mutex::new(rx),
                 captured_cursor: Mutex::new(None),
                 captured_selection: Mutex::new(None),
-            captured_search: Mutex::new(None),
+                captured_search: Mutex::new(None),
                 clusters: Mutex::new(ClusterInterner::default()),
                 pid: 0,
                 thread: None,
