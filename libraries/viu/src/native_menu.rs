@@ -224,13 +224,9 @@ mod tests {
         for _ in 0..3 {
             ctx.run_ui(egui::RawInput::default(), |ui| {
                 super::draw(ui, &menus, false, Some("monitor"));
-                let mut answer = toolkit::drive::request(
-                    ui.ctx(),
-                    1,
-                    "ui.menu.list",
-                    &serde_json::json!({}),
-                )
-                .expect("menu list answers from the drawn native model");
+                let mut answer =
+                    toolkit::drive::request(ui.ctx(), 1, "ui.menu.list", &serde_json::json!({}))
+                        .expect("menu list answers from the drawn native model");
                 crate::app_facilities::remap(ui.ctx(), &mut answer.body);
                 assert_eq!(answer.body["menus"][0]["rows"][0]["id"], "file.refresh");
                 let current = super::native_id(ui.ctx(), "view.search").unwrap();

@@ -48,3 +48,10 @@ generic host and Ced contract. Prefs selects 95 seconds, covering its bounded
 90-second named deferrals. Screenshot selects 10 seconds; `keep` explicitly
 retains its response past that deadline. Callback execution limits and the
 applications' own operation deadlines still apply independently.
+
+Window settings have an independent `retain_window_on_loss` contract
+(default `true`). A bundle selecting `false` uses the authority's empty
+window map during loss, so automatic decoration fallback remains native.
+Appearance palette retention is unchanged. Screenshot selects this policy
+to preserve its accepted gold behaviour; the other accepted bundles retain
+their last window choices.
