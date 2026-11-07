@@ -111,3 +111,37 @@ Frozen first source: 9643f9235819d33fc8e398ea0abfcc29d84192cf. Four release engi
 Merged accepted Ced d4e19db5259e448190f3e877a0021f735195635a; only last.md conflicted. No source conflict. Ced release-byte acceptance, Monitor quick check and the second four-engine set remain pending.
 
 Branch lab/gold-parity; head is the merge containing this receipt; first source 9643f9235819d33fc8e398ea0abfcc29d84192cf, CBC2 /build/es-artifacts/9643f9235819d33fc8e398ea0abfcc29d84192cf; final gates and second artifacts pending; CBC 20261107-064343-f05d5cfb-a1, 20261107-075258-c6071acd, 20261107-075542-24a1c263-a1, 20261107-075901-fe888f44.
+
+
+## Term initial checkpoint — NOT ACCEPTED
+
+Branch `lab/parity-term`, based on `4f2c0fd`. Frame/model source
+`65de543`; native descriptor extraction source `dc635f1`. Shared frame
+adopted at gold initial 900×560, using native session settings and
+Mix-owned close. Six model checks and Mix lint pass. The scene is empty;
+there is no terminal replacement or parity claim.
+
+Imported pinned teletypewriter child-only mapping, its MIT licence,
+patch record and mutation guards, plus gold sealed descriptor ownership
+into libraries/viu. Gold wire constants and session bytes remain unchanged.
+The self-exec test name is adapted to the Viu module path. No session
+supervisor, tabs/panes policy or per-app Rust host was imported.
+
+CBC repair job `20261107-114140-d9b68b01` is queued for cbc2/cbc3 at
+`dc635f1`; result, lock patch and exact-source repeat remain pending.
+Both workers were occupied by integration work when submitted. No Rust
+command ran locally.
+
+The pinned rio-vt dependency includes C++ simdutf, which cannot be copied
+under the current foreign-code rule. Its scalar parser/validation/base64
+paths need a bounded pure-Rust adaptation with preserved invalid UTF-8
+and base64 behaviour, dependency/licence inspection and conformance tests
+before import. This is implementation work, not a proposed gold deviation.
+
+Remaining: VT/grid/render widget, PTY/session supervisor extraction and
+generation checks, full Mix tab/pane/profile/actions/Bus policy, native
+clipboard/IME/input and search, live terminal Prefs, exact release gate,
+matched real-session captures and region inspection. No Fable question,
+no acceptance, no install, no VT work or merge.
+
+branch: lab/parity-term; head SHA: 65de543 (code; receipt HEAD contains this checkpoint); parity evidence: frame model 6 checks, features/Bus/Prefs/SSIM/regions pending; CBC job ids: 20261107-114140-d9b68b01 (queued).
