@@ -284,3 +284,88 @@ govern acceptance. Values are normalised SSIM / RMSE; absent regions are 0.
 | workshop / repair-native-final/traffic-bottom | 0.0187066 / 0.0714922 | details 0.0230481 / 0.078323; details_static 0.0235985 / 0.0792527; traffic 0.0730904 / 0.142283; tree 0.00507232 / 0.0405392 |
 | workshop / repair-native-final/traffic-narrow | 0.00615238 / 0.0385136 | details 0.0110799 / 0.0517947; details_static 0.0111894 / 0.0523546 |
 | workshop / repair-native-final/traffic-right | 0.00606559 / 0.0378831 | details 0.0109229 / 0.0509468; details_static 0.0111441 / 0.0515413 |
+
+
+## Admission repair revalidation — 2026-11-08: ACCEPTED
+
+Exact runtime `e2c3541a498011f549f7c4d60e3d2811851d50c2`. The shared host now retains original native requests/notices in bounded queues until evaluator capacity is available. It does not resend refused requests or enlarge the mailbox. Full detached CBC `gold-six-admission-full-r1-a1` passes fmt, both Clippy profiles, shell/workspace tests (611 result batches), app policies, furniture, Track A (`SMOKE_FAILS=0`), four release builds and empty diff. Complete saved log: 1,120,752 bytes / 19,532 lines, SHA256 `89927054bbcaff20468a5ebac35c260b3b170fbc2b692cf8febc8acf516ed4f8`.
+
+All 16 release-native groups pass with unchanged assertions/deadlines. Ced large passes. Workshop editor runs concurrently with the other fourteen groups and passes New/title/Tab, Unicode editing, undo/redo, Save, integrated Ced Bus/text/window and native Dopus directory/window. No refused request is retried; all 13 owned editor processes exit. CBC `gold-six-native-admission-audit-r1` confirms counts, exact identity and closure. Earlier BUSY/Full and diagnostic failures remain retained.
+
+| App | Pairs | Raw exact | Functional revalidation |
+| --- | ---: | ---: | --- |
+| monitor | 10 | 10 | 46/46 Bus |
+| ced | 35 | 31 | 11 suites |
+| prefs | 91 | 88 | 69 checks including 40 functional and 42 pages |
+| screenshot | 47 | 42 | 55/55 Bus; 11 suites |
+| backdrop | 44 | 35 | 4 native groups; scale 1/1.5; settled states |
+| workshop | 66 | 37 | 99/99 protocol; 25/25 macros; editor, panels, live Prefs and persistence |
+
+All 293 paired sets, 40 contact sheets and the 50 non-zero difference images were inspected. No threshold waiver or new deviation. Monitor whole and every region are 0. Screenshot Open-dialog is 0. Workshop Tabbed New, restored/raw70, authority loss and both empty Traffic docks are 0. Help phase 5 is exact; the other blink phases remain diagnostics. Populated Traffic bottom whole/data SSIM is 0.0187951/0.0840832; right 0.00597892/0.02519; header/static content/controls/status are 0. Backdrop settled pipeline-clear/train pairs close the temporal diagnostic.
+
+Every raw non-zero set follows; region figures are normalised SSIM/RMSE distortion, zero identical. Nonce directory components are removed from public labels.
+
+| App / state | Non-zero regions: SSIM / RMSE | Disposition |
+| --- | --- | --- |
+| ced / accepted-integrated/prefs-light-large-compact | actions 0.0147586 / 0.0436787; status 0.00355067 / 0.00564538; full 0.000301469 / 0.00405315 | Existing separator/font-glyph raster edges |
+| ced / accepted-integrated/search-replace | content 0.0120445 / 0.0356656; gutter 0.027558 / 0.0410017; tabs_search 0.0138192 / 0.0083526; full 0.0111743 / 0.0324682 | Existing Fable C1 Replace repair; canonical whole 0.0111743 |
+| ced / accepted-integrated/view-output | content 0.00000257402 / 0.00060235; gutter 0.00000343203 / 0.000695534; full 0.00000215932 / 0.000551697 | Existing separator/font-glyph raster edges |
+| ced / accepted-integrated/view-problems | content 0.00000257402 / 0.00060235; gutter 0.00000343203 / 0.000695534; full 0.00000215932 / 0.000551697 | Existing separator/font-glyph raster edges |
+| prefs / release-diff-authority-recovered | header 0.00166035 / 0.012979; full 0.0000927844 / 0.00306816 | Existing Macros glyph raster edges in header |
+| prefs / release-diff-search-edited | header 0.00191192 / 0.0139276; full 0.0000927844 / 0.00306816 | Existing Macros glyph raster edges in header |
+| prefs / release-diff-variant-compact | header 0.00191192 / 0.0139276; full 0.0000927844 / 0.00306816 | Existing Macros glyph raster edges in header |
+| screenshot / diff-prefs-fonts | header 0.00194938 / 0.019484; full 0.0000917354 / 0.00422666 | Header glyph rasterisation |
+| screenshot / diff-prefs-orange-compact-square | header 0.00191681 / 0.0149276; full 0.000090203 / 0.00323826 | Header glyph rasterisation |
+| screenshot / diff-about-dark | canvas 0.000857397 / 0.0102486; full 0.000684147 / 0.0091548 | S2 own source stamp only |
+| screenshot / diff-guide-dark | canvas 0.00000000223216 / 0.0000082542; full 0.00000000178112 / 0.00000737325 | Guide-edge rasterisation |
+| screenshot / overlay-diff-about-dark | overlay 0.00528382 / 0.0254418; full 0.000684147 / 0.0091548 | S2 own source stamp only |
+| backdrop / round3-final-recipe/compare-native-2d | history 0.000125605 / 0.00427167; full 0.0000350956 / 0.00225798 | S2 native history readings; scene geometry matches |
+| backdrop / round3-final-recipe/compare-native-3d | history 0.000125605 / 0.00427167; full 0.0000350956 / 0.00225798 | S2 native history readings; scene geometry matches |
+| backdrop / round3-final-recipe/compare-pipeline-alert | history 0.0000017812 / 0.000137427; legend 0.0000372845 / 0.000628751; full 0.000000497689 / 0.000072643 | History/legend glyph and trace rasterisation |
+| backdrop / round3-final-recipe/compare-pipeline-alerts | history 0.0000017812 / 0.000137427; legend 0.0000372845 / 0.000628751; full 0.000000497689 / 0.000072643 | History/legend glyph and trace rasterisation |
+| backdrop / round3-final-recipe/compare-pipeline-clear | history 0.0000017812 / 0.000137427; legend 0.0000372845 / 0.000628751; scene 0.00589802 / 0.0235063; full 0.00197807 / 0.0136114 | Temporal diagnostic; settled pipeline-clear is whole/all-regions 0 |
+| backdrop / round3-final-recipe/compare-populated-2d | history 0.0000017812 / 0.000137427; legend 0.0000372845 / 0.000628751; full 0.000000497689 / 0.000072643 | History/legend glyph and trace rasterisation |
+| backdrop / round3-final-recipe/compare-populated-3d | history 0.0000017812 / 0.000137427; legend 0.0000372845 / 0.000628751; full 0.000000497689 / 0.000072643 | History/legend glyph and trace rasterisation |
+| backdrop / round3-final-recipe/compare-train-2d | history 0.0000017812 / 0.000137427; legend 0.0000372845 / 0.000628751; full 0.000000497689 / 0.000072643 | History/legend glyph and trace rasterisation |
+| backdrop / round3-final-recipe/compare-train-3d | history 0.0000017812 / 0.000137427; legend 0.0000372845 / 0.000628751; full 0.000000497689 / 0.000072643 | History/legend glyph and trace rasterisation |
+| workshop / integration-figures-macro-open | details 0.0000896649 / 0.00425608; details_static 0.0000918062 / 0.0043066; full 0.0000495769 / 0.00316474 | Destination-combo chevron rasterisation |
+| workshop / integration-figures-macro-saved | details 0.0000896649 / 0.00425608; details_static 0.0000918062 / 0.0043066; full 0.0000495769 / 0.00316474 | Destination-combo chevron rasterisation |
+| workshop / integration-figures-macro-typed | details 0.0000897161 / 0.00425684; details_static 0.0000918586 / 0.00430737; full 0.0000496052 / 0.00316531 | Destination-combo chevron rasterisation |
+| workshop / integration-figures-new-empty | dialog 0.00104317 / 0.0170049; title_field 0.0106866 / 0.0548226; tree 0.000293388 / 0.00901815; full 0.0000837101 / 0.00481709 | Focused caret phase diagnostic; matched Tabbed New is whole/all-regions 0 |
+| workshop / integration-figures-size-1 | details 0.0221106 / 0.0801355; details_static 0.0226053 / 0.0810818; traffic 0.0756468 / 0.137377; tree 0.00254801 / 0.0315713; full 0.0176261 / 0.0707155 | Startup/data diagnostic; not a matched acceptance state |
+| workshop / integration-figures-before-save | details 0.00646709 / 0.0432936; details_static 0.00610397 / 0.0426676; traffic 0.0194121 / 0.0410391; tree 0.108665 / 0.143029; full 0.0360088 / 0.0835302 | Smooth-scroll diagnostic; matched restored and raw70 are whole/all-regions 0 |
+| workshop / integration-figures-size-1 | details 0.0221034 / 0.0802376; details_static 0.0226312 / 0.08119; traffic 0.073943 / 0.135505; tree 0.00419018 / 0.0372061; full 0.0179839 / 0.0713355 | Startup/data diagnostic; not a matched acceptance state |
+| workshop / integration-figures-help-1 | header 0.000354783 / 0.00478142; tree 0.000166452 / 0.00832929; full 0.0000588537 / 0.00459047 | Search caret phase diagnostic; matched Help phase 5 is whole/all-regions 0 |
+| workshop / integration-figures-help-2 | header 0.000354783 / 0.00478142; tree 0.000166452 / 0.00832929; full 0.0000588537 / 0.00459047 | Search caret phase diagnostic; matched Help phase 5 is whole/all-regions 0 |
+| workshop / integration-figures-help-3 | header 0.000354783 / 0.00478142; tree 0.000166452 / 0.00832929; full 0.0000588537 / 0.00459047 | Search caret phase diagnostic; matched Help phase 5 is whole/all-regions 0 |
+| workshop / integration-figures-help-4 | header 0.000354783 / 0.00478142; tree 0.000166452 / 0.00832929; full 0.0000588537 / 0.00459047 | Search caret phase diagnostic; matched Help phase 5 is whole/all-regions 0 |
+| workshop / integration-figures-help-6 | header 0.000354783 / 0.00478142; tree 0.000166452 / 0.00832929; full 0.0000588537 / 0.00459047 | Search caret phase diagnostic; matched Help phase 5 is whole/all-regions 0 |
+| workshop / integration-figures-size-1 | details 0.0211521 / 0.0782967; details_static 0.021587 / 0.0791838; traffic 0.074973 / 0.144238; tree 0.00301119 / 0.0335459; full 0.0171851 / 0.0706798 | Startup/data diagnostic; not a matched acceptance state |
+| workshop / integration-figures-menu-help | header 0.000354783 / 0.00478142; tree 0.000166452 / 0.00832929; full 0.0000588537 / 0.00459047 | Search caret phase diagnostic; matched Help phase 5 is whole/all-regions 0 |
+| workshop / integration-figures-size-1 | details 0.0219753 / 0.0802021; details_static 0.0224667 / 0.0811493; traffic 0.0750169 / 0.136313; tree 0.00254733 / 0.0297663; full 0.0175122 / 0.0704061 | Startup/data diagnostic; not a matched acceptance state |
+| workshop / integration-figures-traffic-bottom | details 0.0228549 / 0.0779829; details_static 0.0234007 / 0.0789085; traffic 0.0721861 / 0.140722; tree 0.00517967 / 0.0409366; full 0.0185746 / 0.0711596 | S2 truthful traffic rows only; expanded header/static/controls/status 0 and empty docks whole/all-regions 0 |
+| workshop / integration-figures-traffic-narrow | details 0.010781 / 0.050223; details_static 0.0108833 / 0.0507625; full 0.00598378 / 0.0373449 | S2 truthful traffic rows only; expanded header/static/controls/status 0 and empty docks whole/all-regions 0 |
+| workshop / integration-figures-traffic-right | details 0.0106243 / 0.0493504; details_static 0.0108384 / 0.0499256; full 0.00589715 / 0.036696 | S2 truthful traffic rows only; expanded header/static/controls/status 0 and empty docks whole/all-regions 0 |
+| workshop / integration-figures-mesh | details 0.000285207 / 0.00680472; full 0.000157695 / 0.00505986 | S2 mesh scrollbar; static details 0 |
+| workshop / integration-figures-size-1 | details 0.0221501 / 0.0802173; details_static 0.0226088 / 0.0811282; traffic 0.0744015 / 0.135324; tree 0.00067092 / 0.0148776; full 0.0170339 / 0.0689356 | Startup/data diagnostic; not a matched acceptance state |
+| workshop / integration-figures-macro | details 0.0000896649 / 0.00425608; details_static 0.0000918062 / 0.0043066; full 0.0000495769 / 0.00316474 | Destination-combo chevron rasterisation |
+| workshop / integration-figures-size-1 | details 0.0219183 / 0.0801029; details_static 0.0224417 / 0.0810537; traffic 0.0760812 / 0.137633; tree 0.00267335 / 0.0316663; full 0.0175824 / 0.070738 | Startup/data diagnostic; not a matched acceptance state |
+| workshop / integration-figures-prefs-fonts-scale | details 0.0000456998 / 0.000657549; details_static 0.0000467911 / 0.000665354; header 0.0017061 / 0.0160148; full 0.000120609 / 0.00381725 | Header glyph and field-edge rasterisation |
+| workshop / integration-figures-prefs-light-compact | header 0.00161165 / 0.0188775; full 0.0000900625 / 0.00446253 | Header glyph and field-edge rasterisation |
+| workshop / integration-figures-size-1 | details 0.0219687 / 0.0800553; details_static 0.0224599 / 0.0810007; traffic 0.075264 / 0.13684; tree 0.00272144 / 0.0308195; full 0.0175735 / 0.070506 | Startup/data diagnostic; not a matched acceptance state |
+| workshop / integration-figures-size-1 | details 0.0211711 / 0.0784068; details_static 0.0216064 / 0.0792952; traffic 0.0743491 / 0.143705; tree 0.00283758 / 0.0308991; full 0.0171076 / 0.070335 | Startup/data diagnostic; not a matched acceptance state |
+| workshop / integration-figures-traffic-bottom | details 0.0230452 / 0.0784526; details_static 0.0235955 / 0.0793838; traffic 0.072602 / 0.141623; tree 0.00549359 / 0.0423478; full 0.0187951 / 0.0717884 | S2 truthful traffic rows only; expanded header/static/controls/status 0 and empty docks whole/all-regions 0 |
+| workshop / integration-figures-traffic-narrow | details 0.0109406 / 0.0509248; details_static 0.0110468 / 0.0514735; full 0.00606555 / 0.0378667 | S2 truthful traffic rows only; expanded header/static/controls/status 0 and empty docks whole/all-regions 0 |
+| workshop / integration-figures-traffic-right | details 0.010784 / 0.0500637; details_static 0.0110019 / 0.0506475; full 0.00597892 / 0.0372264 | S2 truthful traffic rows only; expanded header/static/controls/status 0 and empty docks whole/all-regions 0 |
+
+Same-worker `gold-six-perf-e2c3541a4980-a1` passes 510 samples against 4c1d715. ACK median before→after (ms): sort-size 115.6507→114.7186, sort-name 109.1179→108.1466, refresh 98.7981→103.6125, first 62.0501→65.3504, last 64.4634→65.1937, Email 113.3090→117.6564; Email p95 133.7858→141.8773. These are observed shifts, not identical timings or a new tolerance. Final process audit confirms all seven performance processes exited.
+
+Four-engine snapshot under `/build/es-artifacts/e2c3541a498011f549f7c4d60e3d2811851d50c2/` on the CBC artifact worker:
+
+- mix: `90591e8aa9aae722374e353c610656cd9c10154e5f02cca6d0d98862debbe9b2`
+- mixd: `dd3ba0f81f73ffb51c00239fe26782bb2128b8c163b6504b8bf78b0379c8cad8`
+- viud: `ab4ee7beeb1741c9d153ce84d2fea0feccbe662f3027899c8dd2eba1763167ab`
+- viu: `b0a8dc502713de4ebc55fe13983d861cbfb974b052b7496a8b0d53cb4019ac40`
+- SHA256SUMS: `7245799c3031343c07c6dac6dadf7474df2a076eba4e950e2df2647f1093d2da`
+
+The [22 inherited import-hash mismatches](import-hash-debt.md) remain open before production derivation. This closes the six-app admission prerequisite; the subsequent Email/Dopus merge and eight-app final validation are separate and still pending. No install or cut-over bundle was made.

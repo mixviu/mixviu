@@ -1,3 +1,5 @@
+Latest six-app admission checkpoint: runtime `e2c3541a498011f549f7c4d60e3d2811851d50c2` ACCEPTED with concurrent strict Workshop/Ced witness, all release suites and inspected figures. See [six-app admission revalidation](six-app-integration-acceptance.md#admission-repair-revalidation--2026-11-08-accepted). Subsequent Email/Dopus integration remains pending; this is not the final cut-over tree.
+
 # Desk4 integration receipts
 
 ## Current six-app handoff — accepted 2026-11-08
