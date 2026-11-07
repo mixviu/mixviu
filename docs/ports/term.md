@@ -515,3 +515,27 @@ open; the live-Prefs defect took precedence.
 
 Next gate `term-terminal-prefs-21e53cc7`, source
 `21e53cc7f8c6f4767d59a2f49901acd5144898b0`. **NOT ACCEPTED**.
+
+### Terminal-only live Prefs verified; About provenance checkpoint
+
+`term-terminal-prefs-21e53cc7-a1` passed with no worker diff. Complete
+saved log read in two bounded chunks; matching debug executable/bundle
+fetched and verified, SHA256
+`d6c3a997fe7a811d8f063beca525ace271df15913add3dced2529abda95725d2`.
+Native `native.lrkN8M` changes only `terminal.cursor.blink`, with no look
+co-change. Two cursor pixel phases appear; disabling blink produces four
+identical whole PNGs. PID 3933235 remains unchanged, native settings and
+Mix model both read back false afterwards, normal close and all tracked
+PIDs stopped. Steady PNG equals gold's real-session PNG hash
+`e31900b2f10ca55d792ca7556b5f19da05f151dcbb4ba000d334f9834a994865`.
+
+Code `43dcbf58` completes About content with actual compiled host
+provenance, description, licence and live settings-source text. The
+generic runtime context now uses the repository's buildinfo helper and
+consumer build script rather than unrelated environment names that
+returned unknown. It reports its own Viu version/SHA/build time; gold's
+values are never copied. The actual-bundle test checks rendered About
+model provenance and absent-authority text; pure tests cover line order
+and connected/disconnected labels. Five Mix suites pass. Rust gate,
+returned lock/fmt handling and matched About visual witness pending:
+`term-about-provenance-43dcbf58`. Full parity remains **NOT ACCEPTED**.

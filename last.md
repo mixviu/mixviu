@@ -794,3 +794,34 @@ shell, full Bus/mouse/IME/search/zoom/About and release acceptance.
 No Fable question, install, merge or VT work.
 
 branch: lab/parity-term; head SHA: 21e53cc7f8c6f4767d59a2f49901acd5144898b0 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — terminal-only live Prefs validation, remaining clipboard/session/Bus/input/search and release acceptance open; CBC job ids: term-cursor-blink-27c71218-a1 (green, fmt applied), term-terminal-prefs-21e53cc7 (next await).
+
+## Terminal-only blink Prefs pass; About provenance checkpoint
+
+term-terminal-prefs-21e53cc7-a1 green, no worker diff. Full log read in
+two chunks; matching artifact/bundle verified SHA256
+d6c3a997fe7a811d8f063beca525ace271df15913add3dced2529abda95725d2.
+Native.lrkN8M uses terminal-only blink changes: two cursor pixel phases,
+then four steady identical whole PNGs, unchanged PID 3933235, model and
+settings readback false, normal close and tracked PIDs stopped. Steady
+PNG hash equals gold e31900b2f10ca55d792ca7556b5f19da05f151dcbb4ba000d334f9834a994865.
+This closes the bounded terminal-only settings follower defect.
+
+43dcbf58 adds actual compiled host provenance to reusable runtime context
+via own buildinfo helper/build.rs, replacing unrelated environment names
+that yielded unknown. Term About now has gold's description/licence/live
+settings-source lines and own Viu version/SHA/build time. Pure tests cover
+line order/source labels; actual bundle test checks About host build
+line and absent authority. Five Mix suites pass; Rust/native About pending.
+
+Next CBC term-about-provenance-43dcbf58 at
+43dcbf5820c98359827c1362bc48351812e8f54c, term_gate --prepare. Read full
+log, apply Cargo.lock/fmt patch and exact-source repeat if changed. Fetch
+matching artifact/bundle. Private gold-about.mix launched/prepared using
+gold; get its saved run/closure then derive matched candidate About test.
+Read own provenance and settings source, capture data-region differences
+truthfully; no fabricated gold build values. Repeat authority loss/recovery
+as needed. Continue all remaining clipboard/primary/OSC52/mouse, verified
+session/control/sealed shell, full Bus/IME/search/zoom/all Prefs and release
+acceptance. No Fable question, installs, merges or VT changes.
+
+branch: lab/parity-term; head SHA: 43dcbf5820c98359827c1362bc48351812e8f54c (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — About native gate, remaining clipboard/session/Bus/Prefs/input/search and release acceptance open; CBC job ids: term-terminal-prefs-21e53cc7-a1 (green exact source and native terminal-only witness), term-about-provenance-43dcbf58 (next await).
