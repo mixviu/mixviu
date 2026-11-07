@@ -42,7 +42,10 @@ end
 fn toolbar($s)
   $all=registry($s);$out=[]
   for $pair in [["help.macros","scroll-text"],["view.search","search"],["help.keys","keyboard"],["view.mode",if ($s.effective.mode ?? $s.look.appearance.mode)=="light" then "moon" else "sun" end]]
-    $a=filter($all,fn($a)=$a.id==$pair[0])[0];$a.icon=$pair[1];$a.icon_only=true;push($out,$a)
+    $a=filter($all,fn($a)=$a.id==$pair[0])[0];$a.icon=$pair[1];$a.icon_only=true
+    -- Gold titlebar::icon_bar leaves the mode button untoggled in both modes.
+    if $a.id=="view.mode" then $a.checked=false end
+    push($out,$a)
   end
   return $out
 end
