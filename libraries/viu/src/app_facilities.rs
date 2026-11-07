@@ -33,7 +33,42 @@ pub struct Facilities {
     events: crate::native_events::Events,
     publishing: Option<(String, Value)>,
 }
+#[cfg(test)]
+#[test]
+fn native_descriptor_order_preserves_both_compatibility_contracts() {
+    for after_ui in [false, true] {
+        let manifest = Facilities::descriptor_order_test_manifest(after_ui);
+        let facilities = Facilities::new(&manifest, Arc::new(|| {}));
+        let surface = facilities.surface.as_ref().unwrap();
+        let commands = surface["commands"].as_array().unwrap();
+        let position = |name: &str| commands.iter().position(|c| c["name"] == name).unwrap();
+        let ui = position("fixture.ui.tree");
+        let debug = position("fixture.debug");
+        let macros = position("fixture.macros.list");
+        assert_eq!(ui < debug, after_ui);
+        assert!(macros > ui && macros > debug);
+        let names: std::collections::BTreeSet<_> = commands
+            .iter()
+            .map(|c| c["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names.len(), commands.len());
+    }
+}
+
 impl Facilities {
+    #[cfg(test)]
+    fn descriptor_order_test_manifest(after_ui: bool) -> Manifest {
+        Manifest {
+            service: "fixture".into(),
+            native_ui: true,
+            native_debug: true,
+            native_macros: true,
+            native_debug_after_ui: after_ui,
+            bus_surface: Some(json!({"commands":[]})),
+            ..Default::default()
+        }
+    }
+
     pub(crate) fn event(&mut self, topic: String, body: Value) {
         self.events.push(topic, body, 0);
     }
@@ -60,7 +95,11 @@ impl Facilities {
                         .iter()
                         .any(|existing| existing["name"] == descriptor["name"])
                     {
-                        commands.push(descriptor);
+                        if manifest.native_debug_after_ui {
+                            native.push(descriptor);
+                        } else {
+                            commands.push(descriptor);
+                        }
                     }
                 }
             }
@@ -229,30 +268,6 @@ impl Facilities {
             .surface
             .as_ref()
             .is_some_and(|s| s["arguments_any"] != true)
-            && !r.command.starts_with(&format!("{}.macros.", self.app))
-            && !r.args.is_object()
-        {
-            let _ = r.reply.send((
-                10,
-                json!({"error_code":"ARGUMENT","message":"arguments must be a JSON object"}),
-            ));
-            return None;
-        }
-        // Empty native bodies are normalised by the transport adapter.
-        if r.command == "app.describe" || r.command == "HELP" {
-            if let Some(surface) = &self.surface {
-                let _ = r.reply.send((
-                    0,
-                    if r.command == "HELP" {
-                        surface["commands"].clone()
-                    } else {
-                        surface.clone()
-                    },
-                ));
-                return None;
-            }
-        }
-        if self.surface.is_some()
             && !r.command.starts_with(&format!("{}.macros.", self.app))
             && !r.args.is_object()
         {

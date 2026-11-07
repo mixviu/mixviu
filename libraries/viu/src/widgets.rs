@@ -574,6 +574,10 @@ impl Widget {
                         v.len()
                             <= if self.properties["native_document"] == true {
                                 64 * 1024 * 1024
+                            } else if self.properties["read_only"] == true {
+                                whole(&self.properties["max_bytes"])
+                                    .unwrap_or(65536)
+                                    .min(8_388_608) as usize
                             } else {
                                 65536
                             }

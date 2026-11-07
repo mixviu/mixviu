@@ -380,6 +380,7 @@
     "macro_workflow": true,
     "max_string_bytes": 16777216,
     "native_debug": true,
+    "native_debug_after_ui": true,
     "native_macros": true,
     "native_ui": true,
     "notice_command": "workshop.notice",

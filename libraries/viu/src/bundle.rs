@@ -39,6 +39,8 @@ pub struct Manifest {
     /// Let the bundle implement its declared macro workflows.
     pub macro_workflow: bool,
     pub native_debug: bool,
+    /// Preserve applications whose gold HELP puts UI before debug commands.
+    pub native_debug_after_ui: bool,
     pub activation: Option<String>,
     pub unknown_command: Option<String>,
     pub notice_command: Option<String>,
@@ -84,6 +86,7 @@ impl Default for Manifest {
             native_macros: false,
             macro_workflow: false,
             native_debug: false,
+            native_debug_after_ui: false,
             activation: None,
             unknown_command: None,
             notice_command: None,
