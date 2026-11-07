@@ -2,10 +2,10 @@
 //! Lab client scene runtime. The evaluator is created and retained on its worker.
 pub mod app_facilities;
 pub mod app_host;
-mod child_windows;
 pub mod appearance;
 pub mod bundle;
 pub mod capture;
+mod child_windows;
 pub mod chooser;
 pub mod debug;
 mod debug_recent;

@@ -150,6 +150,7 @@ fn wire_completed($d)
   wire_pump()
   $entry=wire_entry($job.account)
   $answer=if $d.rc==0 then $d.body else {rc:10,body:{error_code:"SERVER",message:"Mail worker failed"}} end
+  if $job.purpose=="compose-send" then composer_sent($job.args.window,$answer) end
   if not wire_current($job) then
     if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"}}) end
     return

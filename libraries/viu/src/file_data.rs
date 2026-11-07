@@ -5,10 +5,10 @@ use files::chooser::{Filter, file_uri, location, name};
 use serde_json::{Value, json};
 use std::{
     ffi::OsStr,
-    io::{Read,Write},
+    io::{Read, Write},
     os::unix::{
         ffi::OsStrExt,
-        fs::{MetadataExt, PermissionsExt, OpenOptionsExt},
+        fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     },
     path::{Path, PathBuf},
     sync::OnceLock,
@@ -64,85 +64,152 @@ fn metadata(path: &Path, follow: bool) -> Result<Value, String> {
         json!({"is_file":m.is_file(),"is_dir":m.is_dir(),"is_symlink":link.file_type().is_symlink(),"size":m.len(),"perm":m.mode()&0o7777,"uid":m.uid(),"gid":m.gid(),"dev":m.dev().to_string(),"ino":m.ino().to_string(),"mtime":m.mtime(),"atime":m.atime(),"btime":m.created().ok().and_then(|t|t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t|t.as_secs())}),
     )
 }
-fn regular_file(path:&Path)->Result<std::fs::File,String>{
-    let file=std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK|libc::O_NOCTTY|libc::O_CLOEXEC).open(path).map_err(|e|e.to_string())?;
-    if !file.metadata().map_err(|e|e.to_string())?.is_file(){return Err("Expected a regular file".into());}
+fn regular_file(path: &Path) -> Result<std::fs::File, String> {
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY | libc::O_CLOEXEC)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    if !file.metadata().map_err(|e| e.to_string())?.is_file() {
+        return Err("Expected a regular file".into());
+    }
     Ok(file)
 }
-fn write_segments(args:&Value)->Result<Value,String>{
+fn write_segments(args: &Value) -> Result<Value, String> {
     use base64::Engine;
-    let destination=path(&args["path"])?;
-    let limit=crate::widgets::whole(&args["limit"]).filter(|n|*n>0 && *n<=64*1024*1024).ok_or("Segment byte limit must be 1..64 MiB")?;
-    let segments=args["segments"].as_array().filter(|a|a.len()<=1024).ok_or("At most 1024 segments required")?;
-    let mut output=std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&destination).map_err(|e|e.to_string())?;
-    let result=(||{
-        let mut bytes=0;
-        let mut append=|chunk:&[u8]|->Result<(),String>{
-            bytes+=chunk.len() as u64;
-            if bytes>limit {return Err("Segment byte limit exceeded".into());}
-            output.write_all(chunk).map_err(|e|e.to_string())
+    let destination = path(&args["path"])?;
+    let limit = crate::widgets::whole(&args["limit"])
+        .filter(|n| *n > 0 && *n <= 64 * 1024 * 1024)
+        .ok_or("Segment byte limit must be 1..64 MiB")?;
+    let segments = args["segments"]
+        .as_array()
+        .filter(|a| a.len() <= 1024)
+        .ok_or("At most 1024 segments required")?;
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&destination)
+        .map_err(|e| e.to_string())?;
+    let result = (|| {
+        let mut bytes = 0;
+        let mut append = |chunk: &[u8]| -> Result<(), String> {
+            bytes += chunk.len() as u64;
+            if bytes > limit {
+                return Err("Segment byte limit exceeded".into());
+            }
+            output.write_all(chunk).map_err(|e| e.to_string())
         };
         for segment in segments {
-            if let Some(text)=segment["text"].as_str(){
-                if !segment["file"].is_null(){return Err("Text and file segments exclude one another".into());}
+            if let Some(text) = segment["text"].as_str() {
+                if !segment["file"].is_null() {
+                    return Err("Text and file segments exclude one another".into());
+                }
                 append(text.as_bytes())?;
-            }else{
-                let source=path(&segment["file"])?;
-                let mut input=regular_file(&source)?;
-                if input.metadata().map_err(|e|e.to_string())?.len()>limit {return Err("Source exceeds segment byte limit".into());}
+            } else {
+                let source = path(&segment["file"])?;
+                let mut input = regular_file(&source)?;
+                if input.metadata().map_err(|e| e.to_string())?.len() > limit {
+                    return Err("Source exceeds segment byte limit".into());
+                }
                 match segment["encoding"].as_str().unwrap_or("raw") {
-                    "base64"=>{
-                        let mut chunk=[0;57];
+                    "base64" => {
+                        let mut chunk = [0; 57];
                         loop {
-                            let mut len=0;
-                            while len<chunk.len(){let n=input.read(&mut chunk[len..]).map_err(|e|e.to_string())?;if n==0{break;}len+=n;}
-                            if len==0{break;}
-                            append(base64::engine::general_purpose::STANDARD.encode(&chunk[..len]).as_bytes())?;
+                            let mut len = 0;
+                            while len < chunk.len() {
+                                let n = input.read(&mut chunk[len..]).map_err(|e| e.to_string())?;
+                                if n == 0 {
+                                    break;
+                                }
+                                len += n;
+                            }
+                            if len == 0 {
+                                break;
+                            }
+                            append(
+                                base64::engine::general_purpose::STANDARD
+                                    .encode(&chunk[..len])
+                                    .as_bytes(),
+                            )?;
                             append(b"\r\n")?;
                         }
                     }
-                    "raw"=>{
-                        let mut chunk=[0;8192];
-                        loop {let len=input.read(&mut chunk).map_err(|e|e.to_string())?;if len==0{break;}append(&chunk[..len])?;}
+                    "raw" => {
+                        let mut chunk = [0; 8192];
+                        loop {
+                            let len = input.read(&mut chunk).map_err(|e| e.to_string())?;
+                            if len == 0 {
+                                break;
+                            }
+                            append(&chunk[..len])?;
+                        }
                     }
-                    _=>return Err("Unknown segment encoding".into()),
+                    _ => return Err("Unknown segment encoding".into()),
                 }
             }
         }
-        output.sync_all().map_err(|e|e.to_string())?;
+        output.sync_all().map_err(|e| e.to_string())?;
         Ok(json!({"bytes":bytes,"path":token(&destination)?}))
     })();
-    if result.is_err(){let _=std::fs::remove_file(&destination);}
+    if result.is_err() {
+        let _ = std::fs::remove_file(&destination);
+    }
     result
 }
 pub fn command(command: &str, args: &Value) -> Result<Value, String> {
     match command {
-        "read-text"=>{
-            let file=regular_file(&path(&args["path"])?)?;
-            let limit=crate::widgets::whole(&args["limit"]).filter(|n|*n>0 && *n<=32*1024*1024).ok_or("Text byte limit must be 1..32 MiB")?;
-            if file.metadata().map_err(|e|e.to_string())?.len()>limit{return Err("Text file exceeds its byte limit".into());}
-            let mut bytes=Vec::new();file.take(limit+1).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
-            if bytes.len() as u64>limit{return Err("Text file exceeds its byte limit".into());}
-            Ok(json!(String::from_utf8(bytes).map_err(|e|e.to_string())?))
+        "read-text" => {
+            let file = regular_file(&path(&args["path"])?)?;
+            let limit = crate::widgets::whole(&args["limit"])
+                .filter(|n| *n > 0 && *n <= 32 * 1024 * 1024)
+                .ok_or("Text byte limit must be 1..32 MiB")?;
+            if file.metadata().map_err(|e| e.to_string())?.len() > limit {
+                return Err("Text file exceeds its byte limit".into());
+            }
+            let mut bytes = Vec::new();
+            file.take(limit + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|e| e.to_string())?;
+            if bytes.len() as u64 > limit {
+                return Err("Text file exceeds its byte limit".into());
+            }
+            Ok(json!(String::from_utf8(bytes).map_err(|e| e.to_string())?))
         }
-        "digest"=>{
+        "digest" => {
             use sha2::Digest;
-            let mut file=regular_file(&path(&args["path"])?)?;
-            let limit=crate::widgets::whole(&args["limit"]).filter(|n|*n>0 && *n<=64*1024*1024).ok_or("Digest byte limit must be 1..64 MiB")?;
-            let mut hasher=sha2::Sha256::new();let mut bytes=0;let mut chunk=[0;8192];
-            loop {let len=file.read(&mut chunk).map_err(|e|e.to_string())?;if len==0{break;}bytes+=len as u64;if bytes>limit{return Err("Digest byte limit exceeded".into());}hasher.update(&chunk[..len]);}
-            Ok(json!(format!("{:x}",hasher.finalize())))
+            let mut file = regular_file(&path(&args["path"])?)?;
+            let limit = crate::widgets::whole(&args["limit"])
+                .filter(|n| *n > 0 && *n <= 64 * 1024 * 1024)
+                .ok_or("Digest byte limit must be 1..64 MiB")?;
+            let mut hasher = sha2::Sha256::new();
+            let mut bytes = 0;
+            let mut chunk = [0; 8192];
+            loop {
+                let len = file.read(&mut chunk).map_err(|e| e.to_string())?;
+                if len == 0 {
+                    break;
+                }
+                bytes += len as u64;
+                if bytes > limit {
+                    return Err("Digest byte limit exceeded".into());
+                }
+                hasher.update(&chunk[..len]);
+            }
+            Ok(json!(format!("{:x}", hasher.finalize())))
         }
-        "write-segments"=>write_segments(args),
-        "inspect"=>{
-            let source=path(&args["path"])?;
-            let mut file=regular_file(&source)?;
-            static MIME:OnceLock<mimedb::Database>=OnceLock::new();
-            let db=MIME.get_or_init(mimedb::Database::load);
-            let mut bytes=vec![0;db.sniff_len()];
-            let len=file.read(&mut bytes).map_err(|e|e.to_string())?;
-            let name=source.file_name().unwrap_or_default().to_string_lossy();
-            Ok(json!({"name":name,"size":file.metadata().map_err(|e|e.to_string())?.len(),"type":db.guess(Some(&name),Some(&bytes[..len])).mime}))
+        "write-segments" => write_segments(args),
+        "inspect" => {
+            let source = path(&args["path"])?;
+            let mut file = regular_file(&source)?;
+            static MIME: OnceLock<mimedb::Database> = OnceLock::new();
+            let db = MIME.get_or_init(mimedb::Database::load);
+            let mut bytes = vec![0; db.sniff_len()];
+            let len = file.read(&mut bytes).map_err(|e| e.to_string())?;
+            let name = source.file_name().unwrap_or_default().to_string_lossy();
+            Ok(
+                json!({"name":name,"size":file.metadata().map_err(|e|e.to_string())?.len(),"type":db.guess(Some(&name),Some(&bytes[..len])).mime}),
+            )
         }
         "token" => token(&path(&args["path"])?),
         "stat" => metadata(&path(&args["path"])?, args["follow"] != false),
@@ -376,19 +443,39 @@ mod tests {
     #[test]
     fn segment_writer_wraps_binary_without_replacing_or_leaving_failed_outputs() {
         use base64::Engine;
-        let dir=tempfile::tempdir().unwrap();let source=dir.path().join("source");let target=dir.path().join("target");
-        let bytes=(0..255).collect::<Vec<u8>>();std::fs::write(&source,&bytes).unwrap();
-        let segments=json!([{"text":"before\r\n"},{"file":source,"encoding":"base64"},{"text":"after"}]);
-        let args=json!({"path":target,"limit":1000,"segments":segments});
-        command("write-segments",&args).unwrap();
-        let output=std::fs::read_to_string(&target).unwrap();
-        let body=output.strip_prefix("before\r\n").unwrap().strip_suffix("after").unwrap();
-        assert!(body.split("\r\n").all(|line|line.len()<=76));
-        assert_eq!(base64::engine::general_purpose::STANDARD.decode(body.replace("\r\n","")).unwrap(),bytes);
-        assert!(command("write-segments",&args).is_err());
-        let limited=dir.path().join("limited");
-        assert!(command("write-segments",&json!({"path":limited,"limit":100,"segments":segments})).is_err());
-        assert!(!limited.exists());assert_eq!(std::fs::read_to_string(target).unwrap(),output);
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        let bytes = (0..255).collect::<Vec<u8>>();
+        std::fs::write(&source, &bytes).unwrap();
+        let segments =
+            json!([{"text":"before\r\n"},{"file":source,"encoding":"base64"},{"text":"after"}]);
+        let args = json!({"path":target,"limit":1000,"segments":segments});
+        command("write-segments", &args).unwrap();
+        let output = std::fs::read_to_string(&target).unwrap();
+        let body = output
+            .strip_prefix("before\r\n")
+            .unwrap()
+            .strip_suffix("after")
+            .unwrap();
+        assert!(body.split("\r\n").all(|line| line.len() <= 76));
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(body.replace("\r\n", ""))
+                .unwrap(),
+            bytes
+        );
+        assert!(command("write-segments", &args).is_err());
+        let limited = dir.path().join("limited");
+        assert!(
+            command(
+                "write-segments",
+                &json!({"path":limited,"limit":100,"segments":segments})
+            )
+            .is_err()
+        );
+        assert!(!limited.exists());
+        assert_eq!(std::fs::read_to_string(target).unwrap(), output);
     }
     #[test]
     fn link_new_never_replaces_a_file_and_keeps_private_bytes() {

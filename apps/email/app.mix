@@ -36,6 +36,7 @@ fn publish_email()
     if $mail_settings.source=="missing" then $look.status=$look.status.." — Settings service not running: showing the saved accounts, read-only" end
   end
   $m=$frame.apply($m,$look)
+  if not $fixture then $m=composer_models($m) end
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$m}
 end
 fn begin_mail($op,$data)
@@ -67,6 +68,7 @@ fn send_request()
 end
 include "wire.mix"
 include "surface.mix"
+include "composer.mix"
 publish_email()
 on email.ping
   reply(0,json_encode({pong:true,schema:"email.v1",version:$ctx.version,pid:$ctx.pid}))
@@ -175,7 +177,8 @@ fn execute_email($id,$origin)
   elif $id=="help.macros" then $chrome.macros_open=not $chrome.macros_open
   elif $id=="view.search" then
     return {rc:10,body:{error_code:"DISABLED",message:"Command search is awaiting the shared palette port"}}
-  elif $id=="mail.compose" then $view="Compose"
+  elif $id=="mail.compose" then
+    if not $fixture then $opened=composer_open({});publish_email();return $opened else $view="Compose" end
   elif $id=="file.refresh" then
     if len($entries)>0 then begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting" end
   elif starts_with($id,"view.theme.") or starts_with($id,"view.mode") or starts_with($id,"view.style.") or starts_with($id,"view.decorations.") or starts_with($id,"view.captions.") then
@@ -224,8 +227,21 @@ on viu.keymap.changed
   if $rc==0 then $chrome.bindings=$reply.bindings;publish_email() end
 end
 on viu.frame.intent
+  if $event.args.window!=nil then $out=composer_command($event.args.window,$event.args.value.command);publish_email();reply($out.rc,json_encode($out.body));return end
   $out=execute_email($event.args.value.command,$event.args.value.origin ?? "menu")
   reply($out.rc,json_encode($out.body))
+end
+on email.compose
+  $out=composer_open($event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.compose.intent
+  $out=composer_intent($event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on viu.window.focused
+  $compose_focused=$event.args.window
+end
+on viu.window.close
+  composer_close($event.args.window);publish_email()
 end
 on viu.frame.close
   $chrome.window_close=true;publish_email()

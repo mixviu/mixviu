@@ -132,12 +132,27 @@ end
         reply.body["accounts"][0]["mail"]["emails"][0]["read"],
         false
     );
-    runtime.event("test.pim".into(),json!({})).unwrap();
-    let model=complete(&runtime,&rx).model.unwrap();
-    assert_eq!(model["pim_table"]["initial"]["rows"][0]["cells"][0],"A real event");
-    assert_eq!(model["values"]["pim-body"],"Details");
-    let mut view=viu::gold_frame::mount(&bundle.scene,model).unwrap();
-    ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1040.0,680.0))),..Default::default()},|ui|{view.show(ui);}).drop_without_applying_deltas();
+    runtime.event("test.pim".into(), json!({})).unwrap();
+    let model = complete(&runtime, &rx).model.unwrap();
+    assert_eq!(
+        model["pim_table"]["initial"]["rows"][0]["cells"][0],
+        "A real event"
+    );
+    assert_eq!(model["values"]["pim-body"], "Details");
+    let mut view = viu::gold_frame::mount(&bundle.scene, model).unwrap();
+    ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1040.0, 680.0),
+            )),
+            ..Default::default()
+        },
+        |ui| {
+            view.show(ui);
+        },
+    )
+    .drop_without_applying_deltas();
     assert!(view.geometry.contains_key("pim-list.key.event-1"));
 }
 

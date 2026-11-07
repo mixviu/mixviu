@@ -35,7 +35,7 @@ pub(crate) fn validate_overlays(model: &Value) -> Result<(), String> {
     Ok(())
 }
 struct Host {
-    windows:crate::child_windows::Windows,
+    windows: crate::child_windows::Windows,
     platform: crate::platform::Platform,
     paste_waits: std::collections::VecDeque<String>,
     paste_deadline: Option<Instant>,
@@ -189,8 +189,9 @@ impl Host {
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         if r.command.starts_with("viu.") {
-            if let Some(key)=r.args["window"].as_str().map(str::to_owned) {
-                self.windows.request(&key,r,ctx);return;
+            if let Some(key) = r.args["window"].as_str().map(str::to_owned) {
+                self.windows.request(&key, r, ctx);
+                return;
             }
         }
         if self.native_drive {
@@ -279,7 +280,9 @@ impl eframe::App for Host {
         self.pump(ctx);
     }
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
-        if self.windows.raw_input(raw){return;}
+        if self.windows.raw_input(raw) {
+            return;
+        }
         if self.paste_deadline.is_some() {
             raw.events.retain(|event| {
                 if let egui::Event::Paste(text) = event {
@@ -316,10 +319,13 @@ impl eframe::App for Host {
 }
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
-        for (key,event) in self.windows.take(){
-            match self.runtime.event(event.command,event.body){
-                Ok(sequence)=>{self.inflight.insert(sequence);self.windows.submitted(sequence,key);}
-                Err(_)=>self.windows.rejected(&key),
+        for (key, event) in self.windows.take() {
+            match self.runtime.event(event.command, event.body) {
+                Ok(sequence) => {
+                    self.inflight.insert(sequence);
+                    self.windows.submitted(sequence, key);
+                }
+                Err(_) => self.windows.rejected(&key),
             }
         }
         self.facilities.prepare(ctx, &self.bus);
@@ -500,7 +506,13 @@ impl Host {
                                 crate::appearance::install_style(ctx, &model["appearance"], style);
                             }
                             self.ready = true;
-                            self.windows.sync(ctx,&self.app,&model,&self.documents,self.native_drive);
+                            self.windows.sync(
+                                ctx,
+                                &self.app,
+                                &model,
+                                &self.documents,
+                                self.native_drive,
+                            );
                             self.model = model;
                         }
                         Err(e) => self.error = e,
@@ -860,7 +872,7 @@ impl Host {
                 }
             }
         }
-        self.windows.show(ui,&self.app);
+        self.windows.show(ui, &self.app);
         self.ui_state.set(
             ui.ctx().content_rect(),
             &self.view.geometry,
@@ -987,7 +999,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
-        windows:Default::default(),
+        windows: Default::default(),
         platform,
         paste_waits: Default::default(),
         paste_deadline: None,

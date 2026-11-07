@@ -1,0 +1,13 @@
+---
+scene: 1
+name: email-compose
+citizen: email
+---
+```mix
+{
+root:{widget:"column",native_spacing:true,padding:8,children:["compose-headers","compose-content"]},
+"compose-headers":{widget:"control",definition:"= $model.headers",on_intent:"email.compose.intent"},
+"compose-content":{widget:"content",settings:"= $model.reader_content",scroll:false,children:["compose-body"]},
+"compose-body":{widget:"control",definition:"= $model.body_editor",on_intent:"email.compose.intent"}
+}
+```
