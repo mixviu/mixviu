@@ -254,7 +254,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pnd("row_gap", "3", None),
         pnd("min_column_width", "0", None),
     ];
-    static DOCK: [Port; 7] = [
+    static DOCK: [Port; 8] = [
 
         p("children", "list", true, None),
         p("placements", "object", true, None),
