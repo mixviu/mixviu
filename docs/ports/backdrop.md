@@ -1,8 +1,8 @@
 # Backdrop port inventory
 
 Oracle: MixOS `8779f3328`, `apps/backdrop/{src,crates/wallpaper}`, its README
-and `docs/backdrop/README.md`. **Overall: NOT ACCEPTED.** The round-two
-record below supersedes the historical implementation statuses.
+and `docs/backdrop/README.md`. The latest acceptance record is at the end of
+this file; earlier checkpoints are retained as historical evidence.
 
 | Original capability | Round 1 status |
 |---|---|
@@ -121,11 +121,12 @@ raster tests and returned formatting; `20261107-085920-7963d5d5-a1`
 passed formatting/tests/Clippy; `20261107-090016-dbccaea6-a1` refused
 formatting of the new renderer witness (fixed without changing assertions).
 
-## Round two — 2026-11-07: Fable decision required
+## Round two — 2026-11-07: historical, superseded
 
-**NOT ACCEPTED.** Retaining live Prefs is a proposed deviation from the
-pinned gold application. The options and evidence are in `last.md`; no
-answer or waiver is assumed. Further functional acceptance remains open.
+This checkpoint was **NOT ACCEPTED**. Its live-Prefs question is now resolved
+by Mark's standing mandate, “Live Prefs beats gold”: retain the live follower
+as a Mark-mandated improvement and compare pixels at matched settings.
+Round three below replaces the open acceptance findings in this section.
 
 Tested source: `d34633db087f1e6d6f3281d5f5e207a65057af99`, branch
 `lab/parity-backdrop`. This section and `last.md` are a receipt-only
@@ -261,3 +262,193 @@ in `f956b3b`, then the exact-source gate was queued. Earlier repair jobs
 test route, plot borrowing and held-callback NO_REPLY respectively. Those
 failures were repaired without weakening assertions; returned formatting
 was applied.
+
+## Acceptance — 2026-11-07, round three
+
+**ACCEPTED against the pinned oracle, with its single-output capture limit
+recorded below as requested.** No outstanding implementation item or Fable
+question remains. Simultaneous physical outputs/hotplug is not claimed as a
+native compositor pass.
+
+Mark resolved the round-two Prefs question in the standing brief: **Live Prefs
+beats gold**. The follower remains a Mark-mandated improvement. The pinned
+app loads `Theme::load()` once; the port accepts live settings revisions.
+Visual comparisons therefore use matched resolved settings, including a
+fresh-start gold light capture. This is not an outstanding Fable decision.
+
+### Repairs and current feature inventory
+
+| Capability | Implementation and acceptance path |
+|---|---|
+| Frame and chooser | Gold has background and standalone probe layers only. There is no chooser/settings window or client frame to port; Prefs owns selection. |
+| Wallpaper and document | Mix retains the complete source document; shared gold-derived decoder retains PNG/JPEG/WebP, all five image fits, alpha/fallback compositing, 3840 retained-side and 512 MiB CPU/GPU budgets. Strict schema, four-source accounting, folder discovery and 4096 slides remain covered. |
+| Transactional set | Jobs decode before commit, held replies settle once, store precedes application, scope closure fences superseded work, same-path replacement rereads bytes. Decode/store refusals preserve active revision and pixels. |
+| Slideshow | Independent schedules, folder/list discovery, deterministic traversal policy, shuffle cycles, singleton sleep, failed entries, manual next, half-second outgoing-image ownership and timed advancement are wired into the Mix controller. |
+| Train | Mix owns the complete header, queues/rejections, 2D/3D scene, worker data, bounded history, gate stage/failure, zoom/render/service selection and alerts. Cheap queue/worker/history reads continue behind wallpaper; gate reads require a visible train. Stale replies are fenced by the selected service/history key. |
+| Presented state | Native output readbacks report train content and consecutive view-frame counts. Train retains the last presented wallpaper revision while hidden slideshow revisions advance. Counts remain truthful native readings. |
+| Probe and launch | Offline probe uses native configure/presentation/input; app-authored help, service validation, startup syntax/semantic exit codes and mandatory Bus registration live on the generic host. |
+| Bus and topics | All twelve gold descriptors and command names, successful/refused replies, debug controls/paging and v2 action-executed events. View replies survive nested native sends; nullary set/next events carry null params/result. No gold app properties or macro commands were found; the earlier inventory's macro claim was too broad. |
+| Live Prefs | Same-process settings follower covers the toolkit inputs and app overrides. Accepted appearance is retained separately on authority loss; active key/input values still clear. Recovery accepts the new authority snapshot. |
+| Outputs and resources | Per-output overrides/default fallback, shared retained handles, native removal hooks, fractional scale and budget release/wake tests. The exact compositor limit below constrains simultaneous-output capture. |
+
+The history legend's round-two corner difference was a settings mismatch:
+gold's startup theme resolves the large radius to 12. The matched session
+sets `tune.style.radius_lg=12`; there is no Backdrop radius constant or pixel
+patch. Train rendering continues to use reusable native composition,
+plot and cuboid widgets. All app policy remains in-process Mix.
+
+### Exact source, bytes and native evidence
+
+Exact code is `407e4617d0f0dad682e8111b580e7358f7a84e63` on
+`lab/parity-backdrop`. The commit containing this record is receipt-only;
+it does not change the tested code. Gold is
+`8779f33284b7d3f1178c3d57a699efb9b0867b22`, backdrop SHA256
+`3501c2d6d867689d873758b84284e777fa5f68a4db094c5fae36bfba83c01bac`.
+Candidate release `/build/es-artifacts/407e4617d0f0dad682e8111b580e7358f7a84e63/viu`
+has SHA256
+`bf8d2387b2d1f43efedb5d0149a2cd714274b2c920491eb0cc321e519c1e712f`.
+The fetched source/profile/hash receipt was verified before the native runs.
+The extracted Mix source archive SHA256 is
+`334fe175a57a98118c9e7c361fe5208c160ce9545ff15e692b22427c234c1df0`.
+
+Private archive paths below are relative to the private hub's
+`_var/backdrop-parity-20261107/`. Each run has owned native noded/compd/settingsd,
+separate home/config/data/cache/runtime/settings/auth, canonical `backdrop`
+used sequentially, source archive, Bus requests/replies, PNGs, dimensions and
+hash receipts. No desktop identity, install or VT restart was used.
+
+- `round3-final-recipe/pair.O2JKhK`: full native feature/Bus/Prefs run,
+  1040×680 logical/physical, scale 1, Studio dark/comfortable, matched large
+  radius 12; 30 comparison sets, five inspection sheets, native probe input,
+  real service readbacks, 17 Prefs captures, authority recovery and CLI cases.
+- `round3-scale-final/pair.0WiSou`: 1040×680 logical, 1560×1020 physical,
+  scale 1.5; eleven matched wallpaper/theme/train/probe comparison sets.
+- `round3-settled-recipe/pair.TCi63W`: three further scale-1 populated train
+  captures. Both apps ran within the same minute (recorded epoch values,
+  minute 29900234), and alert clear settled for one second. No clock or
+  application data was overridden. These close the in-flight animation and
+  minute-dependent graph differences in the first run.
+
+Every comparison retains `regions-*.json`, raw metrics/tool version,
+gold/candidate crops, side-by-side and difference figures. Originals and
+figures were inspected; presentation sheets are made only after metrics.
+The reusable driver refuses unequal dimensions. ImageMagick 7.1.2-35 reports
+**normalised SSIM distortion**: zero is identical, lower is better.
+
+### Whole-image and region findings
+
+| Capture group / region | SSIM distortion | RMSE distortion | Finding |
+|---|---:|---:|---|
+| Scale-1 colour, five image fits, dark theme, output override/default fallback, JPEG/WebP, five slideshow states, before/after store refusal, probe before/after input, matched light: 21 full pairs | 0 | 0 | Exact pixels. |
+| Scale-1 populated train 2D/3D and settled alert clear: three full pairs and every header/queue/scene/history/legend crop | 0 | 0 | Exact, including large-radius legend corners and all 3D geometry. |
+| Scale-1.5: all eleven full pairs and every region | 0 | 0 | Exact six wallpaper modes, default theme, unavailable train 2D/3D, probe and click. |
+| First run's six populated/retained/stale-alert train pairs, full | 0.0000002125 | 0.0000708241 | Only the minute-dependent zero-history endpoint; header/queues/scene are exact. |
+| Those pairs, history / legend crop | 0.000000760527 / 0.0000159195 | 0.000133986 / 0.000613008 | Endpoint enters the crop below the legend. Same-minute repeat is exact; no remaining corner mismatch. |
+| First alert-clear scene / full | 0.00588948 / 0.00197492 | 0.0234844 / 0.0135987 | Captured before the 600 ms scene animation settled. One-second settled repeat is exact. Original figures retained. |
+| Real service train 2D/3D, full / history | 0.0000398855 / 0.000142748 | 0.00227034 / 0.00429505 | Actual time-relative history readings. Header/queue/scene/legend are exact; timestamps remain truthful under the standing rule. |
+
+Fixture train regions are header `[0,0,1040,185]`, queues
+`[0,185,1040,77]`, scene `[0,262,1040,228]`, history
+`[0,490,1040,190]`, legend `[880,521,160,59]`. Cleared-alert header is
+161 high. Real-service header is 107 high, queues end at 160, scene ends
+at 490. Fractional-scale unavailable-state crops and all wallpaper/probe
+rectangles are retained in their own region maps. No score threshold or
+unexplained visual difference was waived.
+
+### Functional, Bus, topics and Prefs results
+
+`audit-result.json` records **48/48 compatible requests across all twelve
+commands**, including invalid view arguments, nullary shapes, document
+refusals, debug toggles, invalid limits and recent-event paging. Structured
+replies match after explicitly accounting for native frame counts, actual
+debug events/cursors and the port's ten additional real logging targets.
+These are truthful runtime data, not copied gold values. HELP/app.describe
+descriptors match. Successful set/next/view operations and held failure
+replies are additionally exercised by the feature sequence.
+
+All seven consumed topics were driven: `train.landed`, `train.rejected`,
+`buildd.started`, `buildd.done`, `pipeline.alert`, `pipeline.clear`,
+`pipeline.alerts`. Retained replay, stale alert rejection and clear are
+visible in captures. The sole gold publication is
+`backdrop.action.executed`; 61 distinct observed v2 events cover all four
+action IDs in both apps, nullary params/result, view params/result,
+per-run ordering, bus origin and zero drops. Gold uses two registry run IDs;
+the port uses one. Duplicate observations from two independent subscribers
+are deduplicated by run/sequence. There are no gold app properties to port.
+
+The twelve CLI cases include exact help, invalid service/flags/missing
+values/fit/probe combinations, semantic failures, missing config and occupied
+service registration. Both apps return the required 0/1/2 exit codes without
+timeouts. Agent-seat pointer move/press/release changes the offline probe's
+native click counter and output at both scales, with exact captured pixels.
+
+Slideshow captures cover first/manual/timed advancement, half-second fading
+ownership, bad-middle refusal with unchanged applied state followed by skip,
+and bad-first startup skipping. Hidden slideshow advancement preserves
+train's last wallpaper presentation revision and increments native view
+frames. A forced atomic-store refusal returns STORE and preserves pixels,
+source document and active revision. Shared Runtime tests additionally drive
+same-path replacement and held decode refusal; Mix suites cover supersession,
+independent/shuffled schedules and bounded/stale train history/read deadlines.
+
+Real daemon testing runs unmodified native `train.mix` and `buildd.mix`
+against seeded private SQLite state, paused train and zero configured workers.
+No production jobs are submitted. Script SHA256s are respectively
+`32158ea65c0854b6a95170a6351f15a61df9ef46309ef3ceb8dfa15bd0d2e5c6`
+and `b1a4b56ded5aa2e357348cd79d289cd5eed0d617fd131d5b0b26aa077ad26c84`.
+Both apps read queue/history/gate/workers and draw queued/landed/rejected
+data in both renderers. Deterministic fixtures separately populate busy gate
+and worker states; their executed service source/hash is retained.
+
+Candidate PID **3129696** accepts all seventeen live changes without restart:
+light/dark, scheme, style, high contrast/app contrast, accent, density,
+roundness, font family/size/weight, mono family, accessibility text scale,
+icon stroke, app text scale/mode, auto override and tune radius. Every capture
+waits for the accepted settings revision. Images were inspected for geometry,
+typography and clipping. Invalid density refuses. Lost-authority and recovered
+readbacks are observed; all three before/lost/recovered PNG hashes equal
+`b0711c35545482312ba416b02b102083d0476518af8caf755f0f7ea7a4333418`.
+Fresh-start gold light and candidate live light are pixel-identical.
+
+### Reference limit and cleanup
+
+The pinned headless backend has one `headless-0`; nested has one `winit`.
+Neither has an output-count or output-hotplug test path (source locations in
+the round-two limit survey above). The actual native witnesses are one output
+at scales 1 and 1.5, actual-name override and absent-name default fallback.
+This is the exact limit requested by the brief, not a claim that simultaneous
+physical outputs or hotplug were exercised. Native retained-store/removal,
+fractional fit, scope cancellation and resource-lease tests pass. One output
+cannot exhaust the 512 MiB wallpaper texture budget with its two retained
+3840² RGBA textures (112.5 MiB); budget overflow/release and renderer removal
+are tested at the reusable native boundary rather than by lowering gold's cap.
+
+`cleanup.json` confirms all 19 main-run PIDs and all seven fractional-run
+PIDs exited, including broker; `managed-children.jsonl` verifies owned service
+children stop as well. The settled run has its own cleanup receipt. All
+earlier failed/debug runs remain historical evidence, never release attestation.
+
+### CBC receipts and repair history
+
+Final exact-source job **20261107-110154-76f0252d-a1**, cbc2:
+**BUILD_RC=0**, 554 seconds, `mix tools/backdrop_accept_gate.mix`, no worker
+diff. Saved **2734-line complete log read**, including preserved warnings:
+`20261107-110154-cbc2-407e4617d0f0-20261107-110154-76f0252d-a1-c0b158d8.log`
+in the CBC client cache. Seven Mix suites, app lint, exact rustfmt check,
+debug/release artifact handoff, 23 raster tests, four controller tests,
+two app-port tests, five session tests, normal Clippy and complete Viu/engine
+tests pass. Viu unit tests: 85 passed; engine library: 98 passed, five ignored.
+The separate native GPU process gate is also ignored. Those six existing
+icon/offscreen/GPU requirements are not counted as passed.
+
+Prepare **20261107-105350-b68c6ffc-a1** returned the test-fixture formatting
+applied in the tested commit; its complete saved log was read. Earlier green
+round-three full gates include `20261107-100151-171edf00-a1`,
+`20261107-101948-4d96792b-a1`, `20261107-103724-d48be212-a1` and
+`20261107-104949-61bad727-a1`. They are repair witnesses, not this release's
+attestation. Failed CBC repairs `20261107-101322-a874fc60-a1` (callback-local
+include resolution), `20261107-101613-7cde2bdc-a1` (duplicate existing regex
+dependency) and `20261107-102804-cc529125-a1` (egui test API) were corrected.
+The first appearance-retention repair passed unit tests but failed native
+authority loss (`round3-recipe-5/pair.E01BON`); separate accepted appearance
+state fixes that actual clearing behaviour. No assertion was weakened.
