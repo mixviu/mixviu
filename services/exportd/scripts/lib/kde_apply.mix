@@ -37,7 +37,7 @@ fn new_context()
   return {
     config_home: $config,
     data_home: $data,
-    state_dir: env("MIX_EXPORTD_KDE_STATE", $state .. "/mix/kde-export"),
+    state_dir: env("MIX_EXPORTD_KDE_STATE", $state .. "/mix/exportd/kde"),
     reconfigure: env("MIX_EXPORTD_KDE_RECONFIGURE", "1") == "1",
     kwrite: tool("MIX_EXPORTD_KDE_KWRITECONFIG", ["kwriteconfig6"]),
     busctl: tool("MIX_EXPORTD_KDE_BUSCTL", ["busctl"])

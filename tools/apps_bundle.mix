@@ -81,9 +81,18 @@ for $svc in ["clipd", "notifyd", "exportd", "dlnad"]
   $base = "services/" .. $svc .. "/scripts/"
   for $f in tracked($base) place($stage, $f, "lib/" .. $svc .. "/" .. substr($f, len($base))) end
 end
--- Unit templates for the session and the Mix services.
-for $dir in ["engines/viud/units", "services/clipd/units", "services/notifyd/units", "services/exportd/units", "services/dlnad/units"]
-  for $f in tracked($dir) place($stage, $f, "share/mixviu/units/" .. basename($f)) end
+-- Every unit template the engines, their personalities and the Mix services
+-- carry (desk-specific drop-ins and session targets are the desk image's).
+-- sysusers/tmpfiles snippets are prefixed with their owner when not already.
+for $f in tracked(".")
+  $unit = re_match($f, "\\.(service|socket|target|slice|timer|path)$")
+  $snippet = contains($f, "/units/") and ends_with($f, ".conf")
+  if ($unit or $snippet) and (starts_with($f, "engines/") or starts_with($f, "services/")) and not contains($f, "/tests/") then
+    $owner = split($f, "/")[1]
+    $name = basename($f)
+    if $snippet and not starts_with($name, $owner .. ".") then $name = $owner .. "." .. $name end
+    place($stage, $f, "share/mixviu/units/" .. $name)
+  end
 end
 for $dir in ["share/layout", "share/daylight"]
   for $f in tracked($dir) place($stage, $f, $f) end

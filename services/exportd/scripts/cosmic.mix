@@ -21,6 +21,8 @@
 --   MIX_EXPORTD_STATE  undo and pause state (default
 --       $XDG_STATE_HOME/mix/exportd/cosmic)
 --   MIX_EXPORTD_DRY_RUN=1  plan only: report what would change, write nothing
+--   MIX_EXPORTD_COSMIC_HOME=1  allow writing the home directory's own
+--       .config/cosmic (otherwise that default is a dry run)
 --
 -- Commands (bodies are JSON):
 --   exportd.cosmic.status              -> {binding, revision, paused, dry_run, last}
@@ -42,6 +44,14 @@ $XDG_STATE = env("XDG_STATE_HOME", env("HOME") .. "/.local/state")
 $ROOT = env("MIX_EXPORTD_COSMIC_ROOT", $XDG_CONFIG .. "/cosmic")
 $STATE_DIR = env("MIX_EXPORTD_STATE", $XDG_STATE .. "/mix/exportd/cosmic")
 $DRY = env("MIX_EXPORTD_DRY_RUN", "") == "1"
+-- A nested or shared desk can bind the host user's home: never write into the
+-- home directory's own .config/cosmic unless MIX_EXPORTD_COSMIC_HOME=1 (an
+-- explicit MIX_EXPORTD_COSMIC_ROOT or XDG_CONFIG_HOME elsewhere is fine).
+$HOME_GUARD = nil
+if env("MIX_EXPORTD_COSMIC_ROOT", "") == "" and env("MIX_EXPORTD_COSMIC_HOME", "") != "1" and (env("XDG_CONFIG_HOME", "") == "" or env("XDG_CONFIG_HOME", "") == env("HOME", "") .. "/.config") then
+  $HOME_GUARD = "the COSMIC tree is the home directory's own .config: set MIX_EXPORTD_COSMIC_HOME=1 to export there"
+  $DRY = true
+end
 $PAUSED = $STATE_DIR .. "/paused"
 
 -- Topics are hints, never pieces of a snapshot. Only a whole, fenced read
@@ -151,7 +161,7 @@ end
 
 on exportd.cosmic.status desc "the binding, the last export and whether exporting is paused"
   answer({binding: $BINDING, root: $ROOT, revision: ($S.last ?? {}).revision ?? nil,
-    paused: is_file($PAUSED), dry_run: $DRY, last: $S.last})
+    paused: is_file($PAUSED), dry_run: $DRY, home_guard: $HOME_GUARD, last: $S.last})
 end
 
 on exportd.cosmic.plan desc "the key files the next export would write {changed, unchanged}; writes nothing"
