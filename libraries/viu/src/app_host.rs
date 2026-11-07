@@ -215,7 +215,7 @@ impl Host {
                 r.command = "app.quit".into();
             }
         }
-        let Some(r) = self.facilities.request(r, ctx) else {
+        let Some(mut r) = self.facilities.request(r, ctx) else {
             return;
         };
         if r.command == format!("{}.quit", self.app)
