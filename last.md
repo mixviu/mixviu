@@ -1497,3 +1497,27 @@ term_gate --prepare. Read full log; fix failures, apply fmt/lock and repeat
 exact source if changed. Continue the Mix-owned metadata/layout adapter and
 native acceptance; do not treat these debug witnesses as final release.
 branch: lab/parity-term; head SHA: dd1a5ac59f9081038302de3d900d7eb9d01d346c (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — child forwarding gate, Mix metadata/layout adapter and remaining full parity/release acceptance open; CBC job ids: term-protected-input-7474c477-a1 (green; fmt applied), term-child-forward-dd1a5ac5 (next await).
+
+### Child task fixture correction
+
+`term-child-forward-dd1a5ac5-a1` compiled and passed six Mix suites, two
+bundle tests and 165 terminal tests; the real-owner regression failed after
+its protected input and forwarded evaluation checks had passed. Its first
+task submission correctly returned INVALID_ARGUMENT because the fixture
+omitted cwd. Gold's session_execute::task_submit explicitly requires BOTH
+cwd and timeout_ms; the relay must not invent a default. Full 32530-byte
+saved log read in two chunks; worker formatting applied in 50b1e98f.
+
+50b1e98f99d76bec4b5cdda9e8451b685b9f1aca keeps the missing-cwd request
+as an asserted INVALID_ARGUMENT case and adds a new valid submission ID
+with cwd set to the isolated HOME. Typed task result, retry and cross-family
+assertions remain unchanged. This is a fixture correction, with no relaxed
+assertion or production-policy change. The full close/exit variants and
+remaining gate checks still need to complete; no task success is claimed.
+
+Next CBC `term-task-cwd-50b1e98f`, exact code above, term_gate --prepare.
+Read complete log; fix failures, apply fmt/lock and repeat exact source.
+Then continue Mix-owned session metadata/layout adapter, remaining native
+enforcement coverage, full app inventory and exact release acceptance.
+NOT ACCEPTED. No Fable deviation or gold/desktop changes.
+branch: lab/parity-term; head SHA: 50b1e98f99d76bec4b5cdda9e8451b685b9f1aca (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — child task fixture repeat, Mix metadata/layout adapter and remaining full parity/release acceptance open; CBC job ids: term-child-forward-dd1a5ac5-a1 (failed at missing-cwd fixture; fmt applied), term-task-cwd-50b1e98f (next await).
