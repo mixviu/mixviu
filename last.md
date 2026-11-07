@@ -252,3 +252,23 @@ and real scan-refusal probes. Results still require full log and image review.
 No deployment, VT action or Fable question.
 
 branch lab/parity-dopus; head SHA 5570cea13a11ea912ed32c56102e64b6fa15caeb (implementation; this receipt-only commit follows); OPEN: compact chooser capture inspection, exact-source release suite, final whole/region inspection and acceptance record; CBC 20261107-153835-e12ca0e3 and 20261107-154200-5b579676 PASS checks with formatting returned, 20261107-154310-d23200a4 and 20261107-154537-cf8475d9 PASS checks with formatting applied, 20261107-154803-66891247 PASS checks with formatting applied, dopus-r4-final QUEUED detached.
+
+
+### Chooser native validation complete; release evidence running
+
+The shared transparent viewport recipe and gold minimum width are now restored.
+Native save, replacement clicks, filtered extension, options, independent
+windows and 600x300 browsing pass. The chooser follows all 17 live Prefs
+variants without restart. Latest diagnostic whole-image SSIM distortions:
+save 0.000473757, replacement 0.000376057, options 0.000381545, short window
+0.000272413. Inspected differences are caller connection text and debug raster
+marks; only exact release captures can settle the final visual verdict.
+
+Source `d95a5a3966fd6c7d3493917c382b5feafd6b0b19` and its recipe are frozen
+as `accept-d95a5a3966fd-final`. CBC `dopus-r4-release-frame` is running on
+cbc3. The owned follow-on verifies the release executable/hash and runs the
+complete native evidence suite; its results still require inspection.
+Superseded own jobs were cancelled using their explicit native interest
+tokens; no other session job was touched. No acceptance or install claimed.
+
+branch lab/parity-dopus; head SHA d95a5a3966fd6c7d3493917c382b5feafd6b0b19 (implementation; receipt-only commit follows); OPEN: exact-source release gate/suite, final regional inspection and acceptance record; CBC 20261107-155151-c9e6be4a PASS scoped checks/debug build with no worker diff, dopus-r4-accept-chooser-a1 cancelled as superseded, dopus-r4-final cancelled before execution, dopus-r4-release-frame RUNNING detached.
