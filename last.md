@@ -73,7 +73,7 @@ test-only ones the test word first (MIX_TEST_VIUD_RENDER_NODE), and likewise
 viu (MIX_VIU_SERVICE, VIU_BIN -> MIX_VIU_EXE), noded (MIX_NODED_SERVICE),
 dlnad, hostd, indexd and maild. Labels and error codes that only share a
 spelling (VIUD_READY, VIUD_PRESENTATION_PROBE) are not variables and stay.
-`etc/env.conf.mix`: 198 names, loads with load_data, matches every
+`etc/env.conf.mix`: 200 names, loads with load_data, matches every
 `MIX_[A-Z0-9_]+` token outside vendor/, provenance/ and Cargo.lock (a few
 entries are Rust constants or a file name sharing the spelling; said so).
 
@@ -260,18 +260,48 @@ The migration's `extract_bundle` still expects the old repo-relative layout
 tar root): it needs to unpack this tar at `/opt/mix` instead, and it can drop
 its `copy_tree` of gold `icons`, `wallpapers`, `brand` and `assets`.
 
-Asset store: `tools/apps_bundle.mix` rebuilds it from the pins. A missing
-font set is downloaded by `share/assets/install.mix` from each pinned upstream
-URL at its revision and checked by BLAKE3 and SHA-256 before it is stored.
-The wallpapers are not byte-reproducible from upstream (the photos are
-3840x2160 crops re-encoded at JPEG quality 92; the generated ones are
-ImageMagick plasma fields whose seeds were not recorded), so a missing one is
-copied read-only from the gold install and stored only when size and SHA-256
-match its pin. Gold is the last resort for fonts. Anything else is refused.
-The gate uses `/build/mixviu-assets`. Proof: cachyos job
-20261107-212900-1e453cb7 at b37f0d3 packed apps.tar from an empty scratch
-store: 17 font files downloaded and verified, 12 wallpapers from gold,
-360 entries.
+Asset store: `tools/apps_bundle.mix` rebuilds it from the pins. Fonts are
+downloaded by `share/assets/install.mix` from each pinned upstream URL at its
+revision, checked by BLAKE3 and SHA-256. Wallpapers download from the pinned
+GitHub release `assets-wallpapers-2026-10-14` (recorded in
+`share/wallpapers/manifest.conf.mix`; asset name = path with `/` as `--`),
+following at most three redirects and stored only when size and SHA-256 match
+the pin; the URL is never trusted. The gold install, read only, is the last
+resort for both. Proof at aa1ee08, empty scratch store (cachyos
+20261107-213836-eb7e5600): 17 fonts downloaded, 12 wallpapers from the
+release, none from gold.
+
+Current apps.tar at aa1ee08: 387 entries, 45,809,153 bytes of files, tar
+46,213,120 bytes; share/mixviu 221 (apps, Viu Mix library, 39 unit templates
+and snippets, licences, manifest), share/icons 49, share/scenes 45,
+share/assets 22, share/wallpapers 15, lib/exportd 10, share/viud 7,
+lib/dlnad 5, lib/clipd 4, share/layout 4, lib/notifyd 2, share/daylight 2.
+
+Unit templates: apps.tar carries every unit under engines/ and services/
+(viud@, viud-headless@, viu-host@, apps@, scenes@, mix-headless.slice, noded,
+noded@, settingsd@, editd@, monitord, dnsd, blobd, hostd + socket, mixtrayd,
+maild + sockets, webd, indexd, dlnad, clipd, clipd@, notifyd@, exportd-*) and
+the sysusers/tmpfiles snippets, owner-prefixed. Desk-specific drop-ins and
+session@/seatd@/session-dbus@ (written by the desk image) are not in it.
+viud@ and viud-headless@ no longer pass `--scene-service shell`: viud parses
+the flag (name check only) and its scene stub ignores it, because the shell
+furniture now runs in viu-host@ (`viu --host`), a new template in
+engines/viu/units.
+
+quoin: `apps/quoin` is not an app bundle: the runnable app is
+`apps/quoin/volume` (contract.json with behaviour viu.mix, scene.mix). It
+needs no launch arguments or host initialise. The migration's generated
+launcher `viu run /opt/mix/share/mixviu/apps/quoin` must become
+`viu run /opt/mix/share/mixviu/apps/quoin/volume`.
+
+exportd and real homes: GTK/Qt already refused to write when XDG_CONFIG_HOME
+is (or defaults to) the home's own .config unless MIX_EXPORTD_GTKQT_HOME=1.
+COSMIC and KDE wrote there by default; now they run dry and report
+`home_guard` unless MIX_EXPORTD_COSMIC_HOME=1 / MIX_EXPORTD_KDE_HOME=1 (an
+explicit MIX_EXPORTD_COSMIC_ROOT or XDG_CONFIG_HOME elsewhere is allowed). KDE
+state moved to ~/.local/state/mix/exportd/kde. Lint with this tree's mix: 0
+errors (cachyos 20261107-213810-b6eb81ec); unit tests pass
+(20261107-213742-29994673). Registry: 200 names.
 
 ## Ported Mix services
 
