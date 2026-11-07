@@ -19,9 +19,18 @@
     "app.quit",
     "term.execute",
     "term.actions",
-    "term.dialog"
+    "term.dialog",
+    "term.show"
   ],
   "host": {
+    "activation": "term.show",
+    "command_descriptors": [
+      {
+        "description": "Restore and focus the existing window",
+        "name": "term.show",
+        "read_only": false
+      }
+    ],
     "commands": [
       "term.session",
       "term.tabs",
@@ -42,7 +51,8 @@
       "app.quit",
       "term.execute",
       "term.actions",
-      "term.dialog"
+      "term.dialog",
+      "term.show"
     ],
     "follow_settings": true,
     "frame": "gold",

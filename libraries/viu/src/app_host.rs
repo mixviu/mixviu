@@ -1171,14 +1171,7 @@ pub fn run(args: Vec<String>) -> eframe::Result {
     }
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;
-    let service = bundle.manifest.service.clone();
-    let app_id = bundle
-        .manifest
-        .bus_surface
-        .as_ref()
-        .and_then(|s| s["app_id"].as_str())
-        .map(str::to_owned)
-        .unwrap_or_else(|| format!("mixviu.{service}"));
+    let app_id = crate::launch::app_id(&bundle);
     eframe::run_native(
         &title,
         eframe::NativeOptions {

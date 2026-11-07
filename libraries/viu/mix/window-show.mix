@@ -1,0 +1,39 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Gold citizen::show_with at 8779f33. Mix owns this window command policy.
+fn failure($message)
+  return {rc:10,body:{error_code:"ACTIVATION",message:$message,reason:"show_failed"}}
+end
+fn raw_body($body)
+  return if type($body)=="string" then $body else json_encode($body) end
+end
+fn value($body)
+  return if type($body)=="string" then json_parse($body) else $body end
+end
+fn perform($app_id,$pid,$call)
+  try
+    $answer=$call("comp.window.wait",{match:{app_id:$app_id},until:"mapped",timeout_ms:10000})
+    if $answer.rc!=0 then return failure(raw_body($answer.body)) end
+    $answer=$call("comp.windows.list",{})
+    if $answer.rc!=0 then return failure(raw_body($answer.body)) end
+    $list=value($answer.body)
+    $windows=if type($list)=="map" and type($list.windows)=="list" then $list.windows else [] end
+    $owned=filter($windows,fn($w)=type($w)=="map" and $w.app_id==$app_id and $w.pid==$pid)
+    if len($owned)==0 then return failure("window not known to compd") end
+    $target={id:$owned[0].id,generation:$owned[0].generation}
+    $answer=$call("comp.window.restore",$target)
+    $restored=value($answer.body)
+    if $answer.rc!=0 or type($restored)!="map" or $restored.minimized!=false then return failure(raw_body($answer.body)) end
+    $answer=$call("comp.window.focus",merge($target,{raise:true}))
+    $focused=value($answer.body)
+    if $answer.rc!=0 or type($focused)!="map" or $focused.focused!=true then return failure(raw_body($answer.body)) end
+    return {rc:0,body:{shown:true,target:$focused}}
+  catch $message return failure($message) end
+end
+fn completion($done)
+  try
+    $body=value($done.body)
+    if $done.rc==0 or ($done.rc==10 and $body.error_code=="ACTIVATION") then return {rc:$done.rc,body:$body} end
+    return failure(raw_body($done.body))
+  catch $message return failure($message) end
+end

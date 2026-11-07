@@ -45,6 +45,9 @@ pub fn parse(args: &[String]) -> Result<Options, String> {
     }
     Ok(out)
 }
+pub fn app_id(bundle: &Bundle) -> String {
+    bundle.manifest.bus_surface.as_ref().and_then(|s| s["app_id"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("mixviu.{}", bundle.manifest.service))
+}
 pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     let options = parse(args)?;
     let mut bundle = Bundle::load(root, &options.args)?;
@@ -57,7 +60,7 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     let comp = options
         .comp
         .unwrap_or_else(|| std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()));
-    let launch = serde_json::to_string(&serde_json::json!({"comp":comp})).unwrap();
+    let launch = serde_json::to_string(&serde_json::json!({"comp":comp,"app_id":app_id(&bundle)})).unwrap();
     bundle.program.source = format!(
         "$app_launch = json_parse({})\n{}",
         serde_json::to_string(&launch)
@@ -114,7 +117,18 @@ mod tests {
         assert_eq!(bundle.manifest.app(), "monitor");
         assert_eq!(bundle.manifest.service, "monitor.test");
         assert!(bundle.program.source.contains("comp-test"));
+        assert_eq!(super::app_id(&bundle), "mixviu.monitor.test");
+        assert!(bundle.program.source.contains("mixviu.monitor.test"));
         assert!(bundle.program.source.contains("peer"));
         assert!(!bundle.program.source.contains("\\\"--service\\\""));
+    }
+    #[test]
+    fn explicit_window_app_id_survives_service_override() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
+        let mut bundle = super::load(&root, &["--service".into(), "term.other".into()]).unwrap();
+        bundle.manifest.bus_surface = Some(serde_json::json!({"app_id":"example.terminal"}));
+        assert_eq!(super::app_id(&bundle), "example.terminal");
+        bundle.manifest.service = "term.third".into();
+        assert_eq!(super::app_id(&bundle), "example.terminal");
     }
 }

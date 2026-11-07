@@ -19,7 +19,9 @@ try
   if not $font_tests.ok then exit($font_tests.exit_code ?? 1) end
   $clipboard_tests=run_argv(["/opt/mixos/bin/mix","apps/term/clipboard-test.mix"]);print($clipboard_tests)
   if not $clipboard_tests.ok then exit($clipboard_tests.exit_code ?? 1) end
-  for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--test","term_bundle"],["cargo","test","--locked","-p","viu","--test","runtime","--test","calls","--test","timers"],["cargo","test","--locked","-p","viu","--lib","terminal::"],["cargo","test","--locked","-p","viu","--lib","input::tests::"],["cargo","test","--locked","-p","viu","--lib","editor_controls::"],["cargo","test","--locked","-p","viu","--lib","rich::tests::"]]
+  $show_tests=run_argv(["/opt/mixos/bin/mix","apps/term/show-test.mix"]);print($show_tests)
+  if not $show_tests.ok then exit($show_tests.exit_code ?? 1) end
+  for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--test","term_bundle"],["cargo","test","--locked","-p","viu","--test","runtime","--test","calls","--test","timers"],["cargo","test","--locked","-p","viu","--lib","terminal::"],["cargo","test","--locked","-p","viu","--lib","launch::"],["cargo","test","--locked","-p","viu","--lib","input::tests::"],["cargo","test","--locked","-p","viu","--lib","editor_controls::"],["cargo","test","--locked","-p","viu","--lib","rich::tests::"]]
     if $prepare and $argv[1]=="fmt" then $argv=["cargo","fmt","-p","viu"] end
     if $prepare and $argv[1]=="test" then $argv=filter($argv,fn($v)=$v!="--locked") end
     $r=run_argv($argv,{timeout:1800,max_output:16000000});print($r)

@@ -1,0 +1,12 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$show=require("../../libraries/viu/mix/window-show.mix")
+fn compositor($service,$command,$args)
+  send $service $command body=$args timeout=15
+  return {rc:$rc,body:$result}
+end
+on window.show
+  $launch=$event.args
+  $out=$show.perform($launch.app_id,$launch.pid,fn($command,$args)=compositor($launch.comp,$command,$args))
+  reply($out.rc,json_encode($out.body))
+end

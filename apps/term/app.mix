@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
--- lint: globals app_args
+-- lint: globals app_args app_launch
 $ctx=viu_context();$core=require("core.mix");$wire=require("wire.mix");$model=require("model.mix");$bus=require("bus.mix")
 $native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
 $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,replies:[],watching:false,event_revision:0,zoom:0}
@@ -9,6 +9,7 @@ $state.identity=$native("identity","",{})
 $actions=require("actions.mix");$controls=require("controls.mix")
 $protected_layout=require("protected-layout.mix")
 $clipboard=require("clipboard.mix")
+$window_show=require("../../libraries/viu/mix/window-show.mix");$state.shows={};$state.show_seq=0
 $font=require("font-persistence.mix");$state.font=$font.initial();$state.font_job=0
 $settings=require("../../libraries/viu/mix/session.mix")
 $state.version=$ctx.version;$state.build_line=$ctx.build_line;$state.choice={};$state.bindings={};$state.effective={};$state.pastes={}
@@ -148,8 +149,33 @@ on viu.terminal.control
   $finished=$native("control.finish","",{rc:$out.rc,body:$out.body})
 end
 on viu.job.completed
+  if $event.args.tag.owner.kind=="terminal-show" then
+    $token=$event.args.tag.owner.token
+    if $state.shows[$token]==$event.args.tag.id then
+      $state.shows=delete($state.shows,$token)
+      $out=$window_show.completion($event.args)
+      $finished=viu_reply("finish",$token,{rc:$out.rc,body:$out.body})
+    end
+  end
   if $event.args.tag.owner.kind=="terminal-events" then $state.publishing=false;$state=pump_events($state);if $state.closed then publish_term($state) end end
   if $event.args.tag.owner.kind=="terminal-font" then $state=font_received($state,$event.args);publish_term($state) end
+end
+on term.show
+  $token=$event.headers["viu-call"]
+  if $token==nil or not viu_reply("hold",$token,{}) then raise("CALL","Native receipt is unavailable") end
+  $state.show_seq=$state.show_seq+1
+  $id="terminal-show-"..to_string($state.show_seq)
+  $path=path_join(dirname(script_path()),"show-job.mix")
+  send "viu-local" "jobs.start" id=$id owner={kind:"terminal-show",token:$token} path=$path source=read_file($path) command="window.show" args={comp:$app_launch.comp,app_id:$app_launch.app_id,pid:$ctx.pid}
+  if $rc==0 then $state.shows[$token]=$id
+  else
+    $out=$window_show.failure("show job was refused")
+    $finished=viu_reply("finish",$token,{rc:$out.rc,body:$out.body})
+  end
+  reply(0,"{}")
+end
+on viu.call.cancelled
+  $state.shows=delete($state.shows,$event.args.token)
 end
 on viu.timer
   if $event.args.value.kind=="terminal-font" then $state=font_event($state,{kind:"timer"});publish_term($state) end
