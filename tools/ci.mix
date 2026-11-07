@@ -101,6 +101,8 @@ end
 fn stage_mix_hygiene()
   run_step(["cargo", "test", "--locked", "-p", "mix", "--test", "mix_hygiene"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--test", "mix_hygiene"])
+  run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--test", "native_session_pty", "stage_d_"])
+  run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--test", "native_session_pty", "p4_termination_is_hard_and_the_outcome_names_the_policy"])
   run_step(["cargo", "test", "--locked", "-p", "mix-shell", "--lib", "test_hooks::tests"])
   run_step(["cargo", "test", "--locked", "-p", "mix-shell", "--features", "test-hooks", "--lib", "test_hooks::tests"])
   $r = run_argv(["cargo", "check", "--locked", "-p", "mix", "--release", "--features", "test-hooks"], {timeout: 1800, max_output: 4000000})

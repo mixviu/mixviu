@@ -43,6 +43,23 @@ fn update_refuses_local_cargo() {
 }
 
 #[test]
+fn help_describes_the_disabled_shortcuts() {
+    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
+        .arg("help")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let text = String::from_utf8_lossy(&output.stdout);
+    for command in ["build", "clean", "update", "test"] {
+        let line = text
+            .lines()
+            .find(|line| line.trim_start().starts_with(&format!("mix {command} ")))
+            .unwrap_or_else(|| panic!("missing {command}: {text}"));
+        assert!(line.contains("Disabled"), "{line}");
+    }
+}
+
+#[test]
 fn result_fault_hook_follows_the_binary_feature() {
     let (mut reader, writer) = std::os::unix::net::UnixStream::pair().unwrap();
     let fd = writer.as_raw_fd();
