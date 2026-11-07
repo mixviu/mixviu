@@ -1,0 +1,36 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$actions=require("actions.mix")
+fn overlays($s,$version)
+  $out=[{definition:{id:"term-macros",kind:"macro-menu",label:"Macros",initial:{app:"term",open:$s.macros_open ?? false},properties:{}},command:"term.overlay"},{definition:{id:"term-search",kind:"command-search",label:"Search menus",initial:{open:$s.search_open ?? false,items:$actions.registry($s)},properties:{}},command:"term.overlay"}]
+  if $s.dialog!=nil then
+    $dialog={open:true,instance:$s.dialog,title:if $s.dialog=="keys" then "Keyboard Shortcuts" else "About Terminal" end,body:if $s.dialog=="keys" then "" else "Terminal\n"..$version.."\nMIT OR Apache-2.0" end,choices:[{id:"done",label:"Close",enabled:true,default:true}]}
+    if $s.dialog=="keys" then
+      $grid=[]
+      for $a in $actions.registry($s)
+        $binding=$s.bindings[$a.id] ?? {}; $a.keys=$binding.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+        if len($a.keys)>0 then push($grid,$a) end
+      end
+      $dialog.grid=$grid
+      $dialog.grid_striped=true;$dialog.grid_monospace=true
+    end
+    push($out,{definition:{id:"term-dialog",kind:"dialog-form",label:$dialog.title,initial:$dialog,properties:{style:"gold"}},command:"term.overlay"})
+  end
+  return $out
+end
+fn dialog($s,$args)
+  $error=nil;$code="ARGUMENT"
+  if type($args)!="map" then $error="expected an object"
+  elif len(keys($args))>1 or any(keys($args),fn($k)=not contains(["open","answer"],$k)) then $error="expected open or answer"
+  elif contains(keys($args),"open") then
+    if $args.open==nil then $s.dialog=nil
+    elif not contains(["keys","about"],$args.open) then $error="open must be keys, about or null"
+    elif $s.dialog!=nil then $error="close the open dialog first";$code="DIALOG_OPEN"
+    else $s.dialog=$args.open end
+  elif contains(keys($args),"answer") then
+    if $s.dialog==nil then $error="no dialog is open";$code="NO_DIALOG"
+    elif $args.answer!="done" then $error="the dialog has only done"
+    else $s.dialog=nil end
+  end
+  if $error!=nil then return {state:$s,rc:10,body:{error_code:$code,message:$error}} end
+  return {state:$s,rc:0,body:{dialog:if $s.dialog==nil then nil else {kind:$s.dialog,title:if $s.dialog=="keys" then "Keyboard Shortcuts" else "About Terminal" end,buttons:[{id:"done",label:"Close",role:"default"}]} end}}
+end

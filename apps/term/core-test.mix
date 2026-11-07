@@ -4,7 +4,7 @@ $layout=require("model.mix")
 fn assert($ok,$message)
   if not $ok then raise("TEST",$message) end
 end
-$s={look:{appearance:{scheme:"studio",mode:"dark"},values:{"window.decorations":"csd"}},closed:false,layout:$layout.open_tab($layout.initial(),{handle:"vt-test",pid:1},nil)}
+$s={look:{appearance:{scheme:"studio",mode:"dark"},values:{"window.decorations":"csd"}},choice:{},bindings:{},effective:{},closed:false,layout:$layout.open_tab($layout.initial(),{handle:"vt-test",pid:1},nil)}
 $v=$core.framed($s)
 assert($v.window_title=="Terminal","gold native title")
 assert($v.frame.icon=="icon:file-terminal","gold FileTerminal frame icon")
@@ -20,4 +20,5 @@ assert($v.window_settings["window.decorations"]=="ssd","live decoration")
 assert($v.window_close,"Mix owns close")
 $s.drain_close=true;$v=$core.framed($s)
 assert(not $v.window_close and $v.layout_hidden,"bounded final-event drain hides removed sessions before host exit")
-print("term frame model: 8 checks passed")
+assert(len($v.values["gold-menu"])==6 and len($v.values["gold-toolbar"])==4,"gold menus and standard tail")
+print("term frame model: 10 checks passed")

@@ -1,6 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $frame=require("../../libraries/viu/mix/gold-frame.mix")
 $layout=require("model.mix")
+$actions=require("actions.mix")
+$controls=require("controls.mix")
 fn framed($s)
   $model={window_close:$s.closed and not ($s.drain_close ?? false),layout_hidden:$s.closed,values:{}};$look=$s.look.values
   $tabs=$s.layout.tabs;$active=$tabs[$s.layout.active]
@@ -10,5 +12,7 @@ fn framed($s)
   $handle=if $active==nil then "closed" else $s.layout.panes[to_string($active.active_pane)].handle end
   $tree=if $active==nil then "closed" else $layout.surface_tree($s.layout,$active.tree) end
   $model.terminal={id:"terminal",kind:"terminal",label:"Terminal",initial:$tree,properties:{focus_serial:$s.layout.focus_serial,focused_handle:$handle,font_family:$look["terminal.font.family"] ?? $look["appearance.mono_family"],font_size:($look["terminal.font.size"] ?? 14.667)+($s.zoom ?? 0),font_weight:$look["terminal.font.weight"] ?? 400,padding:$look["terminal.padding"] ?? 8,border_width:$look["terminal.border.width"] ?? 1,show_focus:$active!=nil and len($layout.leaves($active.tree))>1,focus_ring:$look["terminal.focus.ring"] ?? "neutral",focus_strength:$look["terminal.focus.strength"] ?? 0.25,cursor:$look["terminal.cursor.shape"] ?? "underline",scroll_speed:$look["terminal.scroll.speed"] ?? 40}}
-  return $frame.apply($model,{icon:"file-terminal",title:"Terminal",native_title:"Terminal",menus:[],toolbar:[],status:"",status_visible:false,appearance:$s.look.appearance,window:$s.look.values})
+  $model.terminal.properties.shortcuts=$actions.terminal_shortcuts($s)
+  $model.native_overlays=$controls.overlays($s,$s.version ?? "")
+  return $frame.apply($model,{icon:"file-terminal",title:"Terminal",native_title:"Terminal",menus:$actions.menus($s),toolbar:$actions.toolbar($s),status:"",status_visible:false,appearance:$s.look.appearance,window:$s.look.values})
 end

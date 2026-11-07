@@ -6,6 +6,8 @@ $native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
 $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,replies:[],watching:false,event_revision:0,zoom:0}
 $state.layout=$model.open_tab($model.initial(),$native("create","",{}),nil)
 $state.identity=$native("identity","",{})
+$actions=require("actions.mix");$controls=require("controls.mix")
+$state.version=$ctx.version;$state.choice={};$state.bindings={};$state.effective={};$state.pastes={}
 $state.publishing=false;$state.event_job=0
 fn pump_events($s)
   if $s.closed and not ($s.drain_expired ?? false) and ($s.publishing or len($s.layout.events)>0) then
@@ -27,6 +29,25 @@ fn command($s,$name,$args)
   $out=$bus.dispatch($s,$name,$args,$native)
   $out.state=pump_events($out.state);publish_term($out.state);reply($out.rc,$out.body)
   return $out.state
+end
+fn act($s,$id,$args,$origin)
+  $out=$actions.invoke($bus.refresh($s,$native),$id,$args,$native);$s=$out.state
+  for $effect in $out.effects
+    if $effect.kind=="theme" then
+      send "viu-local" "native.theme" body=$effect.choice
+      if $rc==0 then $s.effective=$result end
+    elif $effect.kind=="copy" and $effect.text!=nil then viu_platform("copy","terminal-copy",{text:$effect.text})
+    elif $effect.kind=="paste" then
+      $token=uuid();$s.pastes[$token]=$effect.handle;viu_platform("paste",$token,{})
+    elif $effect.kind=="font" then $s.font_unsaved=true end
+  end
+  if $out.rc==0 then
+    $note={topic:"term.action.executed",body:viu_action_event($id,$origin,nil,nil)}
+    if len($s.layout.events)>=256 then $s.layout.events=slice($s.layout.events,1) end
+    $s.layout.events=push($s.layout.events,$note)
+  end
+  $s=pump_events($s);publish_term($s)
+  return {state:$s,rc:$out.rc,body:$out.body}
 end
 publish_term($state)
 on term.ping
@@ -59,8 +80,8 @@ on app.quit
   $state=pump_events($bus.shut($state,$native));publish_term($state);reply(0,"{}")
 end
 on viu.frame.intent
-  if $event.args.value.command=="close" then $state=pump_events($bus.shut($state,$native));publish_term($state) end
-  reply(0,"{}")
+  $id=if $event.args.value.command=="close" then "app.quit" else $event.args.value.command end
+  $out=act($state,$id,{},if $event.args.id=="gold-menu" then "menu" else "ui" end);$state=$out.state;reply($out.rc,json_encode($out.body))
 end
 on term.intent
   $a=$event.args
@@ -70,6 +91,39 @@ on term.intent
   elif $a.id=="terminal" and $a.action=="focus" then
     for $p in values($state.layout.panes)
       if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$model.select_pane($state.layout,$p.id);$state=pump_events($state);publish_term($state) end
+    end
+  elif $a.id=="terminal" and $a.action=="command" then $out=act($state,$a.value,{},"shortcut");$state=$out.state
+  end
+end
+on term.execute
+  if type($event.args)!="map" or type($event.args.id)!="string" then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"term.execute needs {\"id\": <command id>}"}));return end
+  $params={}
+  for $key in ["tab","pane"] if $wire.whole_id($event.args[$key]) then $params[$key]=$event.args[$key] end end
+  $out=act($state,$event.args.id,$params,"bus");$state=$out.state;reply($out.rc,json_encode($out.body))
+end
+on term.actions
+  $state=$bus.refresh($state,$native)
+  reply(0,json_encode({actions:$actions.registry($state),state:{tabs:map($state.layout.tabs,fn($t)={id:$t.id,title:$t.title,active:$t.id==$state.layout.tabs[$state.layout.active].id}),font_px:($state.look.values["terminal.font.size"] ?? 14.667)+$state.zoom,cell:nil,scale:nil,paste_notice:$state.notice}}))
+end
+on term.dialog
+  $out=$controls.dialog($state,$event.args);$state=$out.state;publish_term($state);reply($out.rc,json_encode($out.body))
+end
+on term.overlay
+  $a=$event.args
+  if $a.id=="term-macros" then $state.macros_open=false
+  elif $a.id=="term-dialog" then $state.dialog=nil;$state.layout.focus_serial=$state.layout.focus_serial+1
+  elif $a.id=="term-search" then
+    $state.search_open=false
+    if $a.action=="command" then $out=act($state,$a.value.command,{},"palette");$state=$out.state end
+  end
+  publish_term($state)
+end
+on viu.platform.completed
+  $handle=$state.pastes[$event.args.id]
+  if $handle!=nil then
+    $state.pastes=delete($state.pastes,$event.args.id)
+    if any(values($state.layout.panes),fn($p)=$p.handle==$handle) then
+      try $result=viu_terminal("paste",$handle,{text:$event.args.text}) catch $message $state.notice=$message end
     end
   end
 end

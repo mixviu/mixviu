@@ -10,7 +10,8 @@ pub const KINDS: &[&str] = &[
     "macro-menu",
     "notice-bar",
     "diagnostic-list",
-    "document-tabs",
+    "command-search",
+            "document-tabs",
     "search-bar",
     "form-fields",
     "header-form",
@@ -251,6 +252,7 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         if [
+            "command-search",
             "document-tabs",
             "search-bar",
             "form-fields",
@@ -422,6 +424,7 @@ impl Widget {
         if self.kind == "diagnostic-list" {
             return vec!["goto"];
         }
+        if self.kind == "command-search" { return vec!["command","close"]; }
         if self.kind == "document-tabs" {
             return vec!["select", "close"];
         }
@@ -533,6 +536,7 @@ impl Widget {
             return Err("DISABLED".into());
         }
         if [
+            "command-search",
             "document-tabs",
             "search-bar",
             "form-fields",
@@ -757,7 +761,7 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
-            "document-tabs" | "search-bar" | "form-fields" | "header-form" | "macro-menu"
+            "command-search" | "document-tabs" | "search-bar" | "form-fields" | "header-form" | "macro-menu"
             | "diagnostic-list" | "notice-bar" => {
                 crate::editor_controls::draw(ui, id, &widget.kind, value, events)
             }

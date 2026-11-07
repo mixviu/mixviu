@@ -1,0 +1,32 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$a=require("actions.mix");$m=require("model.mix")
+$controls=require("controls.mix")
+fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+fn native($op,$handle,$args)
+  if $op=="create" then return {handle:"vt-2",pid:12} end
+  if $op=="state" then return {title:"",pid:11,cols:80,rows:24,geometry:{x:0,y:0,w:0,h:0}} end
+  return nil
+end
+$n=fn($op,$handle,$args)=native($op,$handle,$args)
+$s={layout:$m.open_tab($m.initial(),{handle:"vt-1",pid:11},nil),closed:false,look:{values:{},appearance:{mode:"dark"}},choice:{},bindings:{},effective:{},zoom:0,replies:[]}
+check(len($a.registry($s))==61,"complete pinned registry")
+check(any($a.terminal_shortcuts($s),fn($key)=$key.command=="tab.new" and $key.ctrl and $key.shift and $key.key=="T"),"terminal widget receives default command chords")
+check(deep_eq(map($a.menus($s),fn($v)=$v.label),["File","Edit","View","Pane","Tabs","Help"]),"gold menu order")
+check($a.invoke($s,"pane.next",{},$n).body.error_code=="DISABLED","pane cycling requires a split")
+$out=$a.invoke($s,"pane.split_right",{},$n);$s=$out.state
+check(len($m.leaves($s.layout.tabs[0].tree))==2,"action follows real pane split path")
+$out=$a.invoke($s,"pane.focus_left",{},$n);$s=$out.state
+check($s.layout.tabs[0].active_pane==1,"directional focus before first layout uses tree geometry")
+$out=$a.invoke($s,"view.zoom_in",{},$n);$s=$out.state
+check(abs($s.zoom-2/3)<0.000001,"gold half-point zoom step")
+$out=$a.invoke($s,"view.zoom_out",{},$n)
+check($out.state.zoom==0,"zoom roundtrip exact")
+$out=$a.invoke($s,"view.theme.ocean",{},$n)
+check($out.state.choice.scheme=="ocean" and $out.effects[0].kind=="theme","local theme effect")
+check($a.invoke($s,"absent",{},$n).body.error_code=="UNKNOWN_ACTION","unknown action refuses")
+check($a.toolbar($s)[0].id=="help.macros" and len($a.toolbar($s))==4,"gold standard action tail")
+$out=$controls.dialog($s,{open:"keys"});check($out.rc==0 and $out.body.dialog.kind=="keys","Bus opens keyboard dialog")
+check($controls.dialog($out.state,{open:"about"}).body.error_code=="DIALOG_OPEN","second dialog refuses")
+$out=$controls.dialog($out.state,{answer:"done"});check($out.state.dialog==nil,"dialog answer closes")
+check($controls.dialog($out.state,{answer:"done"}).body.error_code=="NO_DIALOG","closed dialog refuses late answer")
+print("term actions: catalogue, menus, targets, directional focus, theme and zoom checked")

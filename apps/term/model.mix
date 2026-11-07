@@ -180,3 +180,23 @@ fn move_tab($s,$id,$index)
   if $from!=$to then $s.revision=$s.revision+1;$s.tabs[$to].revision=$s.revision;$s=changed($s,"tabs.changed",$id,$tab.active_pane,"moved") end
   return $s
 end
+fn placed_leaves($tree,$g)
+  if $tree.kind=="leaf" then return [{id:$tree.pane,geometry:$g}] end
+  $first=$g;$second=$g
+  if $tree.dir=="v" then $first.w=$g.w*$tree.ratio;$second.x=$g.x+$first.w;$second.w=$g.w-$first.w
+  else $first.h=$g.h*$tree.ratio;$second.y=$g.y+$first.h;$second.h=$g.h-$first.h end
+  return concat(placed_leaves($tree.first,$first),placed_leaves($tree.second,$second))
+end
+fn neighbour($s,$direction)
+  $tab=$s.tabs[$s.active];$leaves=map(leaves($tab.tree),fn($id)={id:$id,geometry:$s.panes[to_string($id)].geometry})
+  if any($leaves,fn($p)=$p.geometry.w==0 or $p.geometry.h==0) then $leaves=placed_leaves($tab.tree,{x:0,y:0,w:1,h:1}) end
+  $g=filter($leaves,fn($p)=$p.id==$tab.active_pane)[0].geometry
+  $best=nil;$distance=nil
+  for $p in $leaves
+    $dx=$p.geometry.x+$p.geometry.w/2-($g.x+$g.w/2);$dy=$p.geometry.y+$p.geometry.h/2-($g.y+$g.h/2)
+    $eligible=if $direction=="left" then $dx<0 elif $direction=="right" then $dx>0 elif $direction=="up" then $dy<0 else $dy>0 end
+    $score=$dx*$dx+$dy*$dy
+    if $eligible and ($distance==nil or $score<$distance) then $best=$p.id;$distance=$score end
+  end
+  return $best
+end

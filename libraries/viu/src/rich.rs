@@ -716,7 +716,7 @@ pub(crate) fn draw(
                             egui::ScrollArea::vertical()
                                 .max_height(360.0)
                                 .show(ui, |ui| {
-                                    egui::Grid::new((id, "shortcuts")).show(ui, |ui| {
+                                    egui::Grid::new((id, "shortcuts")).striped(value["grid_striped"] == true).show(ui, |ui| {
                                         for row in rows {
                                             ui.label(text(row, "label"));
                                             let keys = row["keys"]
@@ -730,7 +730,7 @@ pub(crate) fn draw(
                                                         .join(", ")
                                                 })
                                                 .unwrap_or_else(|| text(row, "shortcut").into());
-                                            ui.weak(keys);
+                                            if value["grid_monospace"] == true { ui.monospace(keys); } else { ui.weak(keys); }
                                             ui.end_row();
                                         }
                                     });

@@ -15,7 +15,10 @@
     "term.scroll",
     "term.props.watch",
     "term.ping",
-    "app.quit"
+    "app.quit",
+    "term.execute",
+    "term.actions",
+    "term.dialog"
   ],
   "host": {
     "commands": [
@@ -34,11 +37,16 @@
       "term.scroll",
       "term.props.watch",
       "term.ping",
-      "app.quit"
+      "app.quit",
+      "term.execute",
+      "term.actions",
+      "term.dialog"
     ],
     "follow_settings": true,
     "frame": "gold",
+    "macros": true,
     "native_drive": true,
+    "native_macros": true,
     "service": "term",
     "size": [
       900,
