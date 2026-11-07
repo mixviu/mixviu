@@ -298,7 +298,7 @@ fn dp_intent($s,$contract,$a)
   end
   $i=if starts_with($id,"left-") then 0 elif starts_with($id,"right-") then 1 else -1 end
   if $i<0 then raise("NOT_FOUND","Unknown widget") end
-  $s.active=$i
+  if $action!="drop" then $s.active=$i end
   if ends_with($id,"-location") then
     if contains(["cancel","blur"],$action) then $s.locations[$i]=$s.panes[$i].path;return $s end
     if type($value)!="string" or len($value)>4096 then raise("INVALID_ARGUMENT","Location must be text") end
