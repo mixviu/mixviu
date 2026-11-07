@@ -1,0 +1,158 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold JMAP send recipe. The native host only writes/encodes bounded bytes.
+$p=require("protocol.mix");$arg=require("arguments.mix");$addr=require("addresses.mix");$ids=require("identity.mix")
+fn senders($entry)
+  return if len($entry.identities ?? [])>0 then $entry.identities else [{id:"default",name:$entry.label ?? $entry.name,address:$entry.user ?? $entry.email,signature:$entry.signature ?? "",reply_to:nil}] end
+end
+fn identity($entry,$from)
+  $all=senders($entry)
+  if $from==nil then return $all[0] end
+  $addresses=$addr.decode($from)
+  if len($addresses)==1 then
+    $found=filter($all,fn($i)=lower($i.address)==lower($addresses[0].email))
+    if len($found)>0 then return $found[0] end
+  end
+  raise("IDENTITY_MISMATCH","The From address must belong to this account")
+end
+fn draft($e,$a)
+  if $a.document!=nil then
+    for $key in ["to","cc","bcc","from","reply_to","subject","body","attachments","in_reply_to","references"]
+      if contains(keys($a),$key) then raise("INVALID_ARGUMENT","document excludes inline message fields") end
+    end
+    $path=$arg.required($a,"document")
+    if not starts_with($path,"/") then raise("INVALID_ARGUMENT","document must be an absolute path") end
+    $document=viu_maildoc("parse",viu_files("read-text",{path:$path,limit:8388608}))
+    $a=$document
+  end
+  $sender=identity($e,$arg.text($a,"from"))
+  $references=[]
+  for $v in $arg.list($a,"references") ?? [] $references=concat($references,filter(re_split($v,"\\s+"),fn($s)=$s!="")) end
+  $d={from:$sender.address,from_name:$sender.name,to:$addr.field($a,"to"),cc:$addr.field($a,"cc"),bcc:$addr.field($a,"bcc"),reply_to:$arg.text($a,"reply_to") ?? $sender.reply_to,subject:$arg.required($a,"subject"),body:$arg.text($a,"body") ?? "",in_reply_to:$arg.text($a,"in_reply_to"),references:$references,attachments:$a.attachments ?? []}
+  if len($d.to)==0 then raise("INVALID_ARGUMENT","to is required") end
+  if type($d.attachments)!="list" or not all($d.attachments,fn($v)=type($v)=="string") then raise("INVALID_ARGUMENT","attachments must hold absolute file paths") end
+  for $path in $d.attachments
+    if not starts_with($path,"/") then raise("ATTACHMENT_RELATIVE","Attachment path is not absolute: "..$path) end
+    try $meta=viu_files("stat",{path:$path}) catch $bad raise("ATTACHMENT_NOT_FILE","Attachment is not a regular file: "..$path) end
+    if not $meta.is_file then raise("ATTACHMENT_NOT_FILE","Attachment is not a regular file: "..$path) end
+  end
+  return $d
+end
+fn clean($value)
+  return replace(replace($value,"\r"," "),"\n"," ")
+end
+fn wrap_id($value)
+  return if starts_with($value,"<") and ends_with($value,">") then $value else "<"..$value..">" end
+end
+fn header($name,$value)
+  return if $value==nil or $value=="" then "" else $name..": "..clean($value).."\r\n" end
+end
+fn mime_header($d,$message_id)
+  $out=header("From",$addr.format({name:$d.from_name,email:$d.from}))..header("Reply-To",$d.reply_to)
+  for $key in ["to","cc"] $out=$out..header(if $key=="to" then "To" else "Cc" end,join(map($d[$key],fn($a)=$addr.format($a)),", ")) end
+  $out=$out..header("Subject",$d.subject)..header("Date",date_format(time(),"%a, %d %b %Y %H:%M:%S +0000",{utc:true}))..header("Message-ID",wrap_id($message_id))
+  if $d.in_reply_to!=nil then $out=$out..header("In-Reply-To",wrap_id(clean($d.in_reply_to))) end
+  $references=if len($d.references)>0 then $d.references elif $d.in_reply_to!=nil then [$d.in_reply_to] else [] end
+  $out=$out..header("References",join(map($references,fn($r)=wrap_id(clean($r)))," ")).."MIME-Version: 1.0\r\n"
+  return $out
+end
+fn text_part($body)
+  return "Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n"..replace(replace($body,"\r\n","\n"),"\n","\r\n")
+end
+fn attachment_header($meta)
+  $fallback=re_replace($meta.name,"[^\\x20-\\x7e]","_")
+  $fallback=replace(replace($fallback,"\\","\\\\"),"\"","\\\"")
+  $header="Content-Type: "..$meta.type.."\r\nContent-Transfer-Encoding: base64\r\nContent-Disposition: attachment; filename=\""..$fallback.."\""
+  if not re_match($meta.name,"^[\\x00-\\x7f]*$") then
+    $encoded=url_encode($meta.name)
+    for $entry in [["%21","!"],["%23","#"],["%24","$"],["%26","&"],["%2B","+"],["%5E","^"],["%60","`"],["%7C","|"]]
+      $encoded=replace($encoded,$entry[0],$entry[1])
+    end
+    $header=$header..";\r\n filename*=UTF-8''"..$encoded
+  end
+  return $header.."\r\n\r\n"
+end
+fn prepare($d,$attempt,$limit)
+  $message_id=$attempt.message_id ?? ($ids.mint().."@"..split($d.from,"@")[1])
+  $text=text_part($d.body);$header=mime_header($d,$message_id);$segments=[];$files=[]
+  for $path in $d.attachments
+    try $meta=viu_files("inspect",{path:$path}) catch $message raise("ATTACHMENT_UNREADABLE",$message) end
+    $encoded=4*ceil($meta.size/3);$encoded=$encoded+2*ceil($encoded/76)
+    if $encoded>$limit then raise("MESSAGE_TOO_LARGE","Encoded message exceeds the server upload limit") end
+    $meta.path=$path;$meta.digest=viu_files("digest",{path:$path,limit:max(1,min(67108864,$limit))});push($files,$meta)
+  end
+  if len($files)==0 then push($segments,{text:$header..$text})
+  else
+    $boundary="=_email_"..replace($ids.mint(),"-","")
+    while contains($text,$boundary) $boundary="=_email_"..replace($ids.mint(),"-","") end
+    push($segments,{text:$header.."Content-Type: multipart/mixed; boundary=\""..$boundary.."\"\r\n\r\n--"..$boundary.."\r\n"..$text.."\r\n"})
+    for $file in $files
+      push($segments,{text:"--"..$boundary.."\r\n"..attachment_header($file)})
+      push($segments,{file:$file.path,encoding:"base64"});push($segments,{text:"\r\n"})
+    end
+    push($segments,{text:"--"..$boundary.."--\r\n"})
+  end
+  $dir=path_join(env("XDG_RUNTIME_DIR"),"email-send");viu_private_directory($dir)
+  $path=path_join($dir,$ids.mint()..".mime")
+  try $written=viu_files("write-segments",{path:$path,segments:$segments,limit:max(1,min(67108864,$limit))}) catch $error raise("MESSAGE_TOO_LARGE",$error) end
+  if $written.bytes>$limit then viu_files("remove",{path:$path});raise("MESSAGE_TOO_LARGE","Encoded message exceeds the server upload limit") end
+  return {path:$path,message_id:$message_id,fingerprint:viu_digest("sha256",json_encode({draft:$d,files:map($files,fn($f)={path:$f.path,digest:$f.digest})})),compose_fingerprint:viu_digest("sha256",json_encode($d))}
+end
+fn created($result,$id)
+  $error=($result.notCreated ?? {})[$id]
+  if $error!=nil then raise("SERVER","JMAP "..$error.type..": "..($error.description ?? "")) end
+  $created=($result.created ?? {})[$id]
+  if type($created.id)!="string" then raise("SERVER","Create was not confirmed") end
+  return $created.id
+end
+fn execute($e,$s,$a)
+  $attempt=$a.attempt ?? {};$prepared=nil
+  try
+    $d=draft($e,$a);$fingerprint=viu_digest("sha256",json_encode($d))
+    $boxes=$p.call($e,$s,"Mailbox/get",{}).list
+    $drafts=filter($boxes,fn($b)=$b.role=="drafts")[0];$sent=filter($boxes,fn($b)=$b.role=="sent")[0]
+    if $drafts==nil or $sent==nil then raise("SERVER","Drafts and Sent mailboxes are required") end
+    if $attempt.ambiguous==true and $attempt.email_id!=nil then
+      $found=$p.call($e,$s,"EmailSubmission/query",{filter:{emailIds:[$attempt.email_id]},limit:1}).ids
+      $attempt.ambiguous=false
+      if len($found)>0 then $attempt.submitted=true;$attempt.submission_id=$found[0] end
+    end
+    if $attempt.submitted==true and $attempt.compose_fingerprint!=nil and $attempt.compose_fingerprint!=$fingerprint then raise("SERVER","This message was already sent") end
+    if $attempt.submitted!=true then
+      $limit=($s.raw.capabilities["urn:ietf:params:jmap:core"] ?? {}).maxSizeUpload ?? 26214400
+      $prepared=prepare($d,$attempt,$limit)
+      $identities=$p.call($e,$s,"Identity/get",{}).list;$identity=filter($identities,fn($i)=lower($i.email)==lower($d.from))[0]
+      if $identity==nil then raise("SERVER","No submission identity matches "..$d.from) end
+      if $attempt.email_id!=nil and $attempt.fingerprint!=$prepared.fingerprint then
+        try $p.call($e,$s,"Email/set",{destroy:[$attempt.email_id]}) catch $ignored nil end
+        $attempt.email_id=nil
+      end
+      if $attempt.email_id==nil then
+        $url=replace($s.raw.uploadUrl,"{accountId}",$s.account);$request=$p.request($e,$url,"POST","",$s.token)
+        $request.headers["Content-Type"]="message/rfc822";$request.request_file=$prepared.path;$request.max_request=67108864
+        $uploaded=viu_http($request)
+        if $uploaded.status!=200 and $uploaded.status!=201 then raise("SERVER","Upload HTTP "..to_string($uploaded.status)) end
+        $upload=json_parse($uploaded.body)
+        if type($upload.blobId)!="string" then raise("SERVER","Upload has no blobId") end
+        $membership={};$membership[$drafts.id]=true
+        $attempt.email_id=created($p.call($e,$s,"Email/set",{create:{out1:{blobId:$upload.blobId,mailboxIds:$membership,keywords:{"$draft":true,"$seen":true}}}}),"out1")
+        $attempt.message_id=$prepared.message_id;$attempt.fingerprint=$prepared.fingerprint
+      end
+      $attempt.compose_fingerprint=$fingerprint
+      $recipients=map(concat($d.to,$d.cc,$d.bcc),fn($r)={email:$r.email})
+      $attempt.ambiguous=true
+      $submitted=$p.call($e,$s,"EmailSubmission/set",{create:{sub1:{emailId:$attempt.email_id,identityId:$identity.id,envelope:{mailFrom:{email:$d.from},rcptTo:$recipients}}}})
+      $attempt.submission_id=created($submitted,"sub1");$attempt.submitted=true;$attempt.ambiguous=false
+    end
+    $filed=false
+    try
+      $membership={};$membership[$sent.id]=true;$updates={};$updates[$attempt.email_id]={mailboxIds:$membership,keywords:{"$seen":true}}
+      $result=$p.call($e,$s,"Email/set",{update:$updates})
+      $filed=contains(keys($result.updated ?? {}),$attempt.email_id) and ($result.notUpdated ?? {})[$attempt.email_id]==nil
+    catch $filing_error nil end
+    return {rc:0,body:{sent:true,filed:$filed},attempt:$attempt}
+  catch $message,$error
+    return {rc:10,body:{error_code:if contains(["INVALID_ARGUMENT","IDENTITY_MISMATCH","ATTACHMENT_RELATIVE","ATTACHMENT_NOT_FILE","ATTACHMENT_UNREADABLE","MESSAGE_TOO_LARGE"],$error.code) then $error.code else "SERVER" end,message:$message},attempt:$attempt}
+  finally
+    if $prepared!=nil and exists($prepared.path) then viu_files("remove",{path:$prepared.path}) end
+  end
+end

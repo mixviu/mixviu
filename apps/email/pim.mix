@@ -10,8 +10,8 @@ end
 fn events($rows)
   return jq($rows,'map({id,calendarId,uid:(.uid // null),data:(.data // null),title:(.title // null),start:(.start // null),end:(.end // null),updated:(.updated // null)})')
 end
-fn starts_at($event)
-  try return date_parse($event.start) catch $invalid return -62135596800 end
+fn starts_at($is_event)
+  try return date_parse($is_event.start) catch $invalid return -62135596800 end
 end
 fn contacts($rows)
   return jq($rows,'map({id,addressBookId,uid:(.uid // null),data:(.data // null),full_name:(.full_name // null),email:(.email // null),company:(.company // null),phone:(.phone // null),updated:(.updated // null)})')
@@ -79,10 +79,10 @@ end
 fn dispatch($e,$s,$command,$a)
   if $command=="email.calendars" then return {calendars:calendars($p.call($e,$s,"Calendar/get",{}).list)} end
   if $command=="email.books" then return {books:books($p.call($e,$s,"AddressBook/get",{}).list)} end
-  $event=starts_with($command,"email.event") or $command=="email.events";$kind=if $event then "CalendarEvent" else "Contact" end
+  $is_event=starts_with($command,"email.event") or $command=="email.events";$kind=if $is_event then "CalendarEvent" else "Contact" end
   if $command=="email.events" or $command=="email.contacts" then
     $filter={};$query={filter:$filter,limit:500}
-    if $event then
+    if $is_event then
       $query.filter.calendarId=$arg.required($a,"calendar")
       if $arg.text($a,"from")!=nil then $query.filter.after=$arg.instant($a.from) end
       if $arg.text($a,"to")!=nil then $query.filter.before=$arg.instant($a.to) end
@@ -92,26 +92,26 @@ fn dispatch($e,$s,$command,$a)
       $query.sort=[{property:"fullName",isAscending:true}]
     end
     $list=$p.chained($e,$s,$kind,$query).get.list
-    if $event then return {events:reverse(sort_by(events($list),fn($e)=starts_at($e)))} end
+    if $is_event then return {events:reverse(sort_by(events($list),fn($e)=starts_at($e)))} end
     return {contacts:contacts($list)}
   end
   if ends_with($command,".get") then
     $id=$arg.required($a,"id");$list=$p.call($e,$s,$kind.."/get",{ids:[$id]}).list
-    if len($list)==0 then raise("NOT_FOUND",(if $event then "event " else "contact " end)..json_encode($id).." is gone") end
-    return if $event then events($list)[0] else contacts($list)[0] end
+    if len($list)==0 then raise("NOT_FOUND",(if $is_event then "event " else "contact " end)..json_encode($id).." is gone") end
+    return if $is_event then events($list)[0] else contacts($list)[0] end
   end
   $create=ends_with($command,".create");$destroy=ends_with($command,".delete");$id=if $create then "c0" else $arg.required($a,"id") end
   if $create then
-    $parent=$arg.required($a,if $event then "calendar" else "book" end)
+    $parent=$arg.required($a,if $is_event then "calendar" else "book" end)
     if not re_match($parent,"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$") then raise("SERVER","The parent must be a UUID") end
   end
   $request={}
   if $destroy then $request.destroy=[$id]
   else
-    $patch=if $event then event_patch($a,$create) else contact_patch($a,$create) end
+    $patch=if $is_event then event_patch($a,$create) else contact_patch($a,$create) end
     if not $create and len(keys($patch))==0 then raise("INVALID_ARGUMENT","nothing to change") end
     if $create then
-      $patch["@type"]=if $event then "Event" else "Card" end;$patch.uid=$identity.mint();$patch[if $event then "calendarId" else "addressBookId" end]=$parent;$request.create={c0:$patch}
+      $patch["@type"]=if $is_event then "Event" else "Card" end;$patch.uid=$identity.mint();$patch[if $is_event then "calendarId" else "addressBookId" end]=$parent;$request.create={c0:$patch}
     else $request.update={};$request.update[$id]=$patch end
   end
   $r=$p.call($e,$s,$kind.."/set",$request)

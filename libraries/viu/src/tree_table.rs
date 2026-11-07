@@ -431,26 +431,62 @@ pub(crate) fn draw(
         return draw_outline(ui, widget, value, geometry, events);
     }
     if widget.properties["style"] == "sides" {
-        return ui.scope(|ui| {
-            if value["busy"]==true {ui.weak(value["loading"].as_str().unwrap_or("Loading…"));}
-            egui::ScrollArea::vertical().id_salt((&widget.id,"sides")).auto_shrink(false).show(ui,|ui| {
-                let rows=value["rows"].as_array().expect("validated rows");
-                if rows.is_empty() && value["busy"]!=true {ui.weak(value["empty"].as_str().unwrap_or("No items"));}
-                for row in rows {
-                    egui::Sides::new().show(ui,|ui| {
-                        if let Some(icon)=crate::icons::Icon::from_name(text(row,"icon")) {
-                            ui.add(crate::icons::image_of(ui.ctx(),icon,12.0,ui.visuals().weak_text_color()));
-                        }
-                        let chosen=selected(value,row);
-                        let mut label=egui::RichText::new(row["cells"][0].as_str().unwrap_or_default());
-                        if chosen {label=label.strong();}
-                        let response=toolkit::selectable(ui,chosen,label);
-                        geometry.insert(format!("{}.key.{}",widget.id,text(row,"key")),response.rect);
-                        if response.clicked(){emit(events,&widget.id,"select",json!({"key":text(row,"key")}));}
-                    },|ui| {ui.weak(row["cells"][1].as_str().unwrap_or_default());});
+        return ui
+            .scope(|ui| {
+                if value["busy"] == true {
+                    ui.weak(value["loading"].as_str().unwrap_or("Loading…"));
                 }
-            });
-        }).response;
+                egui::ScrollArea::vertical()
+                    .id_salt((&widget.id, "sides"))
+                    .auto_shrink(false)
+                    .show(ui, |ui| {
+                        let rows = value["rows"].as_array().expect("validated rows");
+                        if rows.is_empty() && value["busy"] != true {
+                            ui.weak(value["empty"].as_str().unwrap_or("No items"));
+                        }
+                        for row in rows {
+                            egui::Sides::new().show(
+                                ui,
+                                |ui| {
+                                    if let Some(icon) =
+                                        crate::icons::Icon::from_name(text(row, "icon"))
+                                    {
+                                        ui.add(crate::icons::image_of(
+                                            ui.ctx(),
+                                            icon,
+                                            12.0,
+                                            ui.visuals().weak_text_color(),
+                                        ));
+                                    }
+                                    let chosen = selected(value, row);
+                                    let mut label = egui::RichText::new(
+                                        row["cells"][0].as_str().unwrap_or_default(),
+                                    );
+                                    if chosen {
+                                        label = label.strong();
+                                    }
+                                    let response = toolkit::selectable(ui, chosen, label);
+                                    geometry.insert(
+                                        format!("{}.key.{}", widget.id, text(row, "key")),
+                                        response.rect,
+                                    );
+                                    if response.clicked() {
+                                        emit(
+                                            events,
+                                            &widget.id,
+                                            "select",
+                                            json!({"key":text(row,"key")}),
+                                        );
+                                    }
+                                },
+                                |ui| {
+                                    ui.weak(row["cells"][1].as_str().unwrap_or_default());
+                                },
+                            );
+                        }
+                    });
+            })
+            .response;
     }
     if widget.properties["style"] == "grid" {
         return draw_grid(ui, widget, value, geometry, events);

@@ -920,8 +920,9 @@ impl Widgets {
             }
             "label" => {
                 if widget.properties["role"] == "section" {
-                    let response = toolkit::panel::section_label(ui, value.as_str().unwrap_or_default());
-                    return self.remember(ui,id,&response);
+                    let response =
+                        toolkit::panel::section_label(ui, value.as_str().unwrap_or_default());
+                    return self.remember(ui, id, &response);
                 }
                 if widget.properties["role"] == "panel-header" {
                     let chrome = toolkit::chrome::Chrome::of(ui.ctx());

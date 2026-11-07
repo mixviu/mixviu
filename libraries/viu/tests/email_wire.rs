@@ -155,7 +155,7 @@ fn gold_writes_accept_missing_error_maps_and_preserve_partial_failures() {
 }
 #[test]
 fn gold_token_session_and_query_preserve_bearer_auth_and_query_order() {
-    let session = json!({"apiUrl":"ORIGIN/api/mail","accounts":{"1":{"name":"One"}},"primaryAccounts":{"urn:ietf:params:jmap:mail":"1"},"capabilities":{"urn:ietf:params:jmap:core":{},"urn:ietf:params:jmap:mail":{}}});
+    let session = json!({"apiUrl":"ORIGIN/api/mail","uploadUrl":"ORIGIN/blob/upload/{accountId}","downloadUrl":"ORIGIN/blob/{blobId}","accounts":{"1":{"name":"One"}},"primaryAccounts":{"urn:ietf:params:jmap:mail":"1"},"capabilities":{"urn:ietf:params:jmap:core":{},"urn:ietf:params:jmap:mail":{}}});
     let (rc, body) = probe_module(
         vec![
             json!({"token":"test-token","accountId":"1"}),

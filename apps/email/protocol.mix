@@ -35,11 +35,13 @@ fn connect($e)
   $r=http($e,$base.."/.well-known/jmap","GET","",$token)
   if $r.status!=200 then raise("SERVER","Session HTTP "..to_string($r.status)) end
   $s=json_parse($r.body)
-  endpoint($e,$s.apiUrl)
+  for $key in ["apiUrl","uploadUrl","downloadUrl"]
+    if type($s[$key])!="string" or $s[$key]=="" then raise("SERVER","Session has no "..$key) end
+    endpoint($e,$s[$key])
+  end
   if type($s.accounts)!="map" or type($s.capabilities)!="map" then raise("SERVER","Invalid JMAP session") end
   $account=$s.primaryAccounts["urn:ietf:params:jmap:mail"]
-  if $account==nil then $account=keys($s.accounts)[0] end
-  if type($account)!="string" or $s.accounts[$account]==nil then raise("SERVER","No mail account in session") end
+  if type($account)!="string" then raise("SERVER","Session has no mail primaryAccount") end
   return {account:$account,token:$token,api:$s.apiUrl,using:keys($s.capabilities),raw:$s}
 end
 fn call($e,$s,$method,$args)
@@ -102,9 +104,9 @@ fn get($e,$s,$id)
   return $m
 end
 fn batch($e,$s,$command,$a)
-  $ids=if type($a.ids)=="string" then [$a.ids] else $a.ids end
-  if type($ids)!="list" or len($ids)==0 or not all($ids,fn($id)=type($id)=="string" and $id!="") then raise("INVALID_ARGUMENT","ids must be an email id or nonempty list") end
-  $ids=unique($ids);$patch={};$done=[];$failed=[];$destroy=$command=="email.delete" and ($a.destroy ?? false)
+  $ids=$arguments.list($a,"ids") ?? $arguments.list($a,"id")
+  if $ids==nil or len($ids)==0 then raise("INVALID_ARGUMENT","ids is required") end
+  $patch={};$done=[];$failed=[];$destroy=$command=="email.delete" and ($arguments.flag($a,"destroy") ?? false)
   if $command=="email.mark" then
     if not contains(keys($a),"read") and not contains(keys($a),"flagged") then raise("INVALID_ARGUMENT","read or flagged is required") end
     for $pair in [["read","keywords/$seen"],["flagged","keywords/$flagged"]]
@@ -135,7 +137,10 @@ fn batch($e,$s,$command,$a)
       $r=call($e,$s,"Email/set",$args)
       for $id in $part
         $error=if $destroy then ($r.notDestroyed ?? {})[$id] else ($r.notUpdated ?? {})[$id] end
-        if $error!=nil then push($failed,{id:$id,reason:to_string($error.type)..(if $error.description!=nil then ": "..$error.description else "" end)}) else push($done,$id) end
+        $confirmed=if $destroy then contains($r.destroyed ?? [],$id) else contains(keys($r.updated ?? {}),$id) end
+        if $error!=nil then push($failed,{id:$id,reason:to_string($error.type)..(if $error.description!=nil then ": "..$error.description else "" end)})
+        elif not $confirmed then push($failed,{id:$id,reason:"serverFail: server did not confirm "..json_encode($id).." as "..(if $destroy then "destroyed" else "updated" end)})
+        else push($done,$id) end
       end
     catch $message
       for $id in $part push($failed,{id:$id,reason:$message}) end
@@ -149,13 +154,13 @@ fn batch($e,$s,$command,$a)
 end
 fn mailbox_write($e,$s,$command,$a)
   if $command=="email.mailbox.create" then
-    $r=call($e,$s,"Mailbox/set",{create:{c0:{name:$a.name,parentId:$a.parent}}})
+    $r=call($e,$s,"Mailbox/set",{create:{c0:{name:$arguments.required($a,"name"),parentId:$arguments.text($a,"parent")}}})
     if $r.created.c0.id==nil then raise("SERVER","Mailbox create was not confirmed") end
     return {id:$r.created.c0.id}
   end
-  if type($a.id)!="string" then raise("INVALID_ARGUMENT","Mailbox id required") end
+  $id=$arguments.required($a,"id")
   $args={onDestroyRemoveEmails:false}
-  if $command=="email.mailbox.rename" then $args.update={};$args.update[$a.id]={name:$a.name}
+  if $command=="email.mailbox.rename" then $args.update={};$args.update[$a.id]={name:$arguments.required($a,"name")}
   else $args.destroy=[$a.id] end
   $r=call($e,$s,"Mailbox/set",$args)
   $error=if $command=="email.mailbox.rename" then ($r.notUpdated ?? {})[$a.id] else ($r.notDestroyed ?? {})[$a.id] end

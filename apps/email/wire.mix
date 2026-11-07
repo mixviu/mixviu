@@ -232,7 +232,7 @@ fn wire_completed($d)
   end
   if $answer.rc==0 and $job.account==$active and ($answer.body.calendars!=nil or $answer.body.books!=nil) then surface_mode($mode) end
   if $answer.rc==0 and contains(["email.event.create","email.event.update","email.event.delete","email.contact.create","email.contact.update","email.contact.delete"],$job.command) then
-    $event=starts_with($job.command,"email.event.")
-    wire_start(if $event then "email.events" else "email.contacts" end,{account:$job.account},nil,if $event then "events" else "contacts" end)
+    $is_event=starts_with($job.command,"email.event.")
+    wire_start(if $is_event then "email.events" else "email.contacts" end,{account:$job.account},nil,if $is_event then "events" else "contacts" end)
   end
 end

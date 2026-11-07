@@ -98,6 +98,7 @@ on email.read
   begin_mail("read",{id:$event.args.id});$serial=$serial+1;$busy=true;$pending={op:"read"};$status="Reading message";publish_email();reply(0,"{}")
 end
 on email.send
+  if not $fixture then $r=wire_start("email.send",$event.args,$event);reply($r.rc,json_encode($r.body));return end
   $request=send_request();begin_mail("send",{request:$request});$submission=$request;$serial=$serial+1;$busy=true;$pending={op:"send"};$status="Submitting · awaiting receipt";publish_email();reply(0,json_encode({accepted:true,operation_id:$submission.operation_id}))
 end
 on email.fixture

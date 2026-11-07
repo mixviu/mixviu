@@ -73,6 +73,13 @@ on test.ready
   $wire_data.a={boxes:$boxes,emails:$mail_emails};$box="inbox";$rows=gold_rows($mail_emails);$total=1
   publish_email();reply(0,"{}")
 end
+on test.pim
+  $wire_data.a.calendars=[{id:"calendar-1",name:"Personal"}]
+  $wire_data.a.calendar="calendar-1"
+  $wire_data.a.events=[{id:"event-1",title:"A real event",start:"2026-11-07T08:00:00Z",end:"2026-11-07T09:00:00Z",calendarId:"calendar-1",data:{description:"Details"}}]
+  $wire_data.a.open_event="event-1"
+  surface_mode("calendar");publish_email();reply(0,"{}")
+end
 "#);
     let (tx, rx) = mpsc::channel();
     let mut runtime = Runtime::new(
@@ -125,6 +132,13 @@ end
         reply.body["accounts"][0]["mail"]["emails"][0]["read"],
         false
     );
+    runtime.event("test.pim".into(),json!({})).unwrap();
+    let model=complete(&runtime,&rx).model.unwrap();
+    assert_eq!(model["pim_table"]["initial"]["rows"][0]["cells"][0],"A real event");
+    assert_eq!(model["values"]["pim-body"],"Details");
+    let mut view=viu::gold_frame::mount(&bundle.scene,model).unwrap();
+    ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1040.0,680.0))),..Default::default()},|ui|{view.show(ui);}).drop_without_applying_deltas();
+    assert!(view.geometry.contains_key("pim-list.key.event-1"));
 }
 
 #[test]

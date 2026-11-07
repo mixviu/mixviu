@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
-$protocol=require("protocol.mix");$accounts=require("accounts.mix");$pim=require("pim.mix");$attachments=require("attachments.mix")
+$arg=require("arguments.mix");$protocol=require("protocol.mix");$accounts=require("accounts.mix");$pim=require("pim.mix");$attachments=require("attachments.mix");$sending=require("sending.mix")
 on job.run
   $a=$event.args
   try
@@ -13,10 +13,14 @@ on job.run
     if $e.password_file==nil and $accounts.password($e.id)=="" then raise("NO_PASSWORD","No password is saved for "..$e.user) end
     $s=$a.session ?? $protocol.connect($e)
     $command=$a.command;$p=$a.args
+    if $command=="email.send" then
+      $sent=$sending.execute($e,$s,$p);reply(0,json_encode(merge($sent,{session:$s})));return
+    end
     if $command=="email.mailboxes" or $command=="email.account.connect" then
       $answer={mailboxes:$protocol.boxes($protocol.call($e,$s,"Mailbox/get",{}).list)}
     elif $command=="email.list" or $command=="email.search" then
-      if $command=="email.search" then $p.query=$p.text end
+      if $command=="email.search" then $p.query=$arg.required($p,"text")
+      else $p.mailbox=$arg.required($p,"mailbox") end
       $answer=$protocol.list($e,$s,$p)
     elif $command=="email.get" or $command=="email.open" then $answer=$protocol.get($e,$s,$p.id)
     elif $command=="email.attachments" then

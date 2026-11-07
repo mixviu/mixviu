@@ -32,36 +32,36 @@ fn surface_mode($name)
   end
   return {rc:0,body:{mode:$mode}}
 end
-fn surface_parent($account,$id,$event)
+fn surface_parent($account,$id,$is_event)
   global $wire_data
   $r=surface_account($account)
   if $r.rc!=0 then return $r end
-  $d=$wire_data[$account] ?? {};$kind=if $event then "calendars" else "books" end
+  $d=$wire_data[$account] ?? {};$kind=if $is_event then "calendars" else "books" end
   if not any($d[$kind] ?? [],fn($p)=$p.id==$id) then return wire_refuse("NOT_FOUND","No such "..to_string($id)) end
-  $wire_data[$account][if $event then "calendar" else "book" end]=$id
-  $wire_data[$account][if $event then "open_event" else "open_contact" end]=nil
-  $wire_data[$account][if $event then "events" else "contacts" end]=[]
-  surface_mode(if $event then "calendar" else "contacts" end)
-  wire_start(if $event then "email.events" else "email.contacts" end,{},nil,if $event then "events" else "contacts" end)
+  $wire_data[$account][if $is_event then "calendar" else "book" end]=$id
+  $wire_data[$account][if $is_event then "open_event" else "open_contact" end]=nil
+  $wire_data[$account][if $is_event then "events" else "contacts" end]=[]
+  surface_mode(if $is_event then "calendar" else "contacts" end)
+  wire_start(if $is_event then "email.events" else "email.contacts" end,{},nil,if $is_event then "events" else "contacts" end)
   return {rc:0,body:{account:$account,id:$id}}
 end
 fn pim_busy($account,$kind)
   return any(values($wire_pending),fn($p)=$p.account==$account and $p.purpose==$kind)
 end
 fn pim_model($m)
-  $d=$wire_data[$active] ?? {};$event=$mode=="calendar";$items=$d[if $event then "events" else "contacts" end] ?? []
-  $open=$d[if $event then "open_event" else "open_contact" end]
-  $parents=$d[if $event then "calendars" else "books" end] ?? [];$parent=$d[if $event then "calendar" else "book" end]
-  $found=filter($parents,fn($p)=$p.id==$parent);$m.pim_titles=[if len($found)>0 then $found[0].name elif $event then "Calendar" else "Contacts" end]
+  $d=$wire_data[$active] ?? {};$is_event=$mode=="calendar";$items=$d[if $is_event then "events" else "contacts" end] ?? []
+  $open=$d[if $is_event then "open_event" else "open_contact" end]
+  $parents=$d[if $is_event then "calendars" else "books" end] ?? [];$parent=$d[if $is_event then "calendar" else "book" end]
+  $found=filter($parents,fn($p)=$p.id==$parent);$m.pim_titles=[if len($found)>0 then $found[0].name elif $is_event then "Calendar" else "Contacts" end]
   $m.mail_mode=$mode=="mail";$m.pim_mode=$mode!="mail";$m.contacts_mode=$mode=="contacts"
   $m.values["contact-filter"]=$d.contact_filter ?? ""
-  $m.pim_table={id:"pim-list",kind:"tree-table",label:"",initial:{key:if $event then "events" else "contacts" end,rows:map($items,fn($item)=merge(outline_row($item.id,0,if $event then event_title($item) else contact_name($item) end,if $event then "calendar" else "contact" end),{cells:[if $event then event_title($item) else contact_name($item) end,if $event then event_range($item) else contact_email($item) end]})),columns:[{id:"name",label:""},{id:"detail",label:""}],selected_keys:if $open==nil then [] else [$open] end,busy:pim_busy($active,if $event then "events" else "contacts" end),empty:"No items",loading:"Loading…"},properties:{style:"sides"}}
+  $m.pim_table={id:"pim-list",kind:"tree-table",label:"",initial:{key:if $is_event then "events" else "contacts" end,rows:map($items,fn($item)=merge(outline_row($item.id,0,if $is_event then event_title($item) else contact_name($item) end,if $is_event then "calendar" else "contact" end),{cells:[if $is_event then event_title($item) else contact_name($item) end,if $is_event then event_range($item) else contact_email($item) end]})),columns:[{id:"name",label:""},{id:"detail",label:""}],selected_keys:if $open==nil then [] else [$open] end,busy:pim_busy($active,if $is_event then "events" else "contacts" end),empty:"No items",loading:"Loading…"},properties:{style:"sides"}}
   $found=filter($items,fn($p)=$p.id==$open);$item=$found[0];$m.pim_open=$item!=nil
-  $m.values["pim-empty"]=if $event then "Select an event to see its details." else "Select a contact to see their details." end
+  $m.values["pim-empty"]=if $is_event then "Select an event to see its details." else "Select a contact to see their details." end
   $lines=[];$body=[]
   if $item!=nil then
-    $m.values["pim-title"]=if $event then event_title($item) else contact_name($item) end
-    if $event then
+    $m.values["pim-title"]=if $is_event then event_title($item) else contact_name($item) end
+    if $is_event then
       push($lines,"When: "..event_range($item))
       $found=filter($parents,fn($p)=$p.id==$item.calendarId)
       if len($found)>0 then push($lines,"Calendar: "..$found[0].name) end
