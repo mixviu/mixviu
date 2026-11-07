@@ -19,7 +19,7 @@ including a disposable filesystem root for Dopus's argument-driven tests.
 
 Newly exposed defect fixed: Workshop's open-in-Dopus job used the removed
 `mixos_path()` builtin. It now resolves the installed executable with
-`which("dopus")`, returning `UNAVAILABLE` if it is absent.
+`mix_path("prefix", "bin/dopus")`, returning `UNAVAILABLE` if it is absent.
 
 Existing diagnostics outside
 the app migration, including the webd examples/widgets and intentional
@@ -57,9 +57,9 @@ are unchanged. No baseline entry increases.
   deliberately injects nil. Tests require a model before the bundle's first
   command and readiness after the comparison-host event. Only one version
   header remains.
-- Workshop executable lookup: the removed `mixos_path()` call was initially
-  replaced with `which()`. Review tightened this to the existing
-  `mix_path("prefix", "bin/dopus")` contract, independent of session PATH.
+- Workshop executable lookup: replace the removed `mixos_path()` call with
+  the existing `mix_path("prefix", "bin/dopus")` contract. The reviewed
+  `which()` lookup is gone; launch does not depend on session PATH.
 - Baseline regeneration: CBC's own Mix generated 527 diagnostics versus 828
   originally; no entry grows. The 30 app scripts now each run in their own
   native test process, so write-once script argv cannot leak to another test.
@@ -111,5 +111,6 @@ installation or external data migration is involved.
 ## Authorship and review
 
 Author: OpenAI Codex, committed and pushed through the mixviu-agent bot.
-GLM-5.3 and DeepSeek approved with nits. This follow-up addresses their seven items; re-review of the new diff and human approval remain pending. No PR has been opened,
-as required by the pre-cut-over brief.
+GLM-5.3 and DeepSeek approved with nits. This follow-up addresses their seven
+items; re-review of the new diff and human approval remain pending. No PR has
+been opened, as required by the pre-cut-over brief.

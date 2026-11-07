@@ -11,7 +11,9 @@ fn main() {
     } else {
         // A standalone lib-mix build has no widget host. Keep the shell
         // buildable, but do not pretend to know that host's vocabulary.
-        println!("cargo:warning=viu sources absent; host: viu lint vocabulary unavailable in this standalone build");
+        println!(
+            "cargo:warning=viu sources absent; host: viu lint vocabulary unavailable in this standalone build"
+        );
         String::new()
     };
     let mut names = std::collections::BTreeSet::new();

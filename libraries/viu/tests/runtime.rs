@@ -41,18 +41,43 @@ const INIT: &str = "$ctx = viu_context(); $n = 0; on bump; $n = $n + 1; send \"v
 #[test]
 fn ced_worker_opens_and_answers_the_extracted_macro_policy() {
     let dir = tempfile::tempdir().unwrap();
-    let session = macros::Session::with_roots("ced", Some(macros::Roots {
-        builtin: dir.path().join("builtin"), user: dir.path().join("user"),
-        home: dir.path().into(), mix: dir.path().join("unused-mix"),
-    }));
+    let session = macros::Session::with_roots(
+        "ced",
+        Some(macros::Roots {
+            builtin: dir.path().join("builtin"),
+            user: dir.path().join("user"),
+            home: dir.path().into(),
+            mix: dir.path().join("unused-mix"),
+        }),
+    );
     let (tx, rx) = mpsc::channel();
-    let mut worker = Runtime::with_services(8, Arc::new(move || { let _ = tx.send(()); }), None,
-        viu::runtime::Services { macros: Some(session), ..Default::default() });
+    let mut worker = Runtime::with_services(
+        8,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+        viu::runtime::Services {
+            macros: Some(session),
+            ..Default::default()
+        },
+    );
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/ced/job.mix");
-    worker.load(Program { source: std::fs::read_to_string(&path).unwrap(), path, scene: "ced-job".into(), citizen: "ced".into() }).unwrap();
+    worker
+        .load(Program {
+            source: std::fs::read_to_string(&path).unwrap(),
+            path,
+            scene: "ced-job".into(),
+            citizen: "ced".into(),
+        })
+        .unwrap();
     assert!(next(&worker, &rx).error.is_none());
     let mut panel = json!({"epoch":7,"serial":0,"filter":"","page":"closed","form":{}});
-    for (action, value, page) in [("open", json!(null), "catalogue"), ("answer", json!({"field":null,"choice":"new"}), "new"), ("answer", json!({"field":null,"choice":"close"}), "closed")] {
+    for (action, value, page) in [
+        ("open", json!(null), "catalogue"),
+        ("answer", json!({"field":null,"choice":"new"}), "new"),
+        ("answer", json!({"field":null,"choice":"close"}), "closed"),
+    ] {
         worker.event("job.run".into(), json!({"kind":"macro-panel","payload":{"action":action,"panel":panel,"value":value}})).unwrap();
         let done = next(&worker, &rx);
         assert!(done.error.is_none(), "{:?}\n{}", done.error, done.stderr);
@@ -61,8 +86,18 @@ fn ced_worker_opens_and_answers_the_extracted_macro_policy() {
         panel = reply.body;
         assert_eq!(panel["page"], page);
         assert_eq!(panel["form"]["open"], page != "closed");
-        if page == "catalogue" { assert!(panel["form"]["choices"].as_array().unwrap().iter().any(|choice| choice["id"] == "new")); }
-        if page == "new" { assert_eq!(panel["form"]["title"], "New macro"); }
+        if page == "catalogue" {
+            assert!(
+                panel["form"]["choices"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|choice| choice["id"] == "new")
+            );
+        }
+        if page == "new" {
+            assert_eq!(panel["form"]["title"], "New macro");
+        }
     }
 }
 

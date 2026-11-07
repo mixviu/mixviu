@@ -36,10 +36,10 @@ pub mod raster;
 pub mod raster_decode;
 pub mod raster_fill;
 pub mod raster_fit;
-pub mod rich;
-pub mod runtime;
 #[cfg(test)]
 mod registry_tests;
+pub mod rich;
+pub mod runtime;
 pub mod session;
 mod shortcuts;
 pub mod templates;
