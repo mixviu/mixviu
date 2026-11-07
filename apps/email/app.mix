@@ -315,6 +315,15 @@ end
 on email.attachments
   $r=wire_start("email.attachments",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
+on email.mode
+  $r=surface_mode($event.args.name);publish_email();reply($r.rc,json_encode($r.body))
+end
+on email.calendar.select
+  $r=surface_parent($event.args.account ?? $active,$event.args.id,true);publish_email();reply($r.rc,json_encode($r.body))
+end
+on email.book.select
+  $r=surface_parent($event.args.account ?? $active,$event.args.id,false);publish_email();reply($r.rc,json_encode($r.body))
+end
 on email.attachment.save
   $r=wire_start("email.attachment.save",$event.args,$event);reply($r.rc,json_encode($r.body))
 end

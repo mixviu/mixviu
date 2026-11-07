@@ -1,4 +1,71 @@
-# Email inventory, core port and list measurement
+# Email gold parity
+
+## Round 2 checkpoint, 2026-11-07: IN PROGRESS
+
+Tested source `05aabb63c7332f84e9651decee790f16a0970c11`, branch
+`lab/parity-email`, pinned gold `8779f33284b7d3f1178c3d57a699efb9b0867b22`.
+Gold executable SHA256 `79f18fb67c44a32e3f1aff7672c409bfec7d458b6f1b35f081f1d0bd0ff328fe`;
+CBC debug executable SHA256 `0004999eb22692eac4e10f7bc703ba6422106456ac961a9bae8ef662e3bd41ed`.
+The acceptance recipe's final release gate has not run for this checkpoint.
+
+Round 2 implements settings-backed account mutations, private secrets, token
+exchange and advertised API routing, mailbox hierarchy and role counts, native
+three-column paged/sortable multi-selection tables, asynchronous reads and
+triage/folder writes, plaintext/Markdown/escaped HTML reader, attachment
+metadata, and calendar/contact JMAP CRUD policy. Held Bus receipts survive
+worker callbacks; account generations, removal and newer reader targets fence
+late completions. Four workers serve a bounded logical request queue.
+Calendar/book discovery runs independently of the mail connection. Live Email
+settings now arrive through the shared settings follower as well as appearance.
+The `rows_project` primitive remains the list projection path.
+
+Private diagnostic archive `email-parity-20261107/round2/pair.GvbPD8` uses
+the exact CBC debug bytes, a real isolated **mixd maild personality**, private
+broker/settingsd/headless compd, separate app directories, sequential canonical
+`email` identity, 1040×680, scale 1, Studio/CSD/bar/right captions/row actions,
+Inter 400/14.667. Seven structured query replies match gold: accounts,
+mailboxes, list, search, get, calendars and books. Reader `email.info` agrees
+apart from pane proportions. All six owned processes stopped. The earlier
+real native mutation witness covered mark/read/flag, folder CRUD, move/readback
+and partial failure; it must be repeated on final source with the full matrix.
+
+ImageMagick 7.1.2-35 SSIM/RMSE **distortions**, zero identical:
+
+| State | Full SSIM / RMSE | Header | Places | List | Reader SSIM / RMSE |
+|---|---:|---:|---:|---:|---:|
+| Inbox | 0.0000151023 / 0.000255193 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| Reader dark | 0.0158136 / 0.0532791 | 0 / 0 | 0 / 0 | 0 / 0 | 0.0473011 / 0.0931529 |
+| Reader light | 0.0143698 / 0.0462838 | 0 / 0 | 0 / 0 | 0 / 0 | 0.0434135 / 0.0809219 |
+
+Regions: header `[0,0,1040,38]`, places `[0,38,226,612]`, list
+`[226,38,436,612]`, reader `[662,38,378,612]`, status `[0,650,1040,30]`.
+Reader originals, full montage and difference inspected: reader width and
+header wrapping differ; status contains a small panel-border difference.
+Further images remain to be inspected. This is **not** an AA-only acceptance.
+
+CBC `20261107-103429-36f6485a-a1` passed focused HTTP, frame/native input,
+JMAP and list tests plus debug build; full saved log read, returned fmt patch
+applied. The modern 2,000-distinct-date projection measured 201.99 ms in debug,
+so its date stage is being repaired and remeasured. Earlier passing round-2
+repair jobs: `20261107-095720-dd05ebd9-a1`,
+`20261107-100448-29db146f-a1`, `20261107-101645-1f3e98ef-a1`.
+
+Required work remains: account cache/migration/conflict recovery; attachment
+transfers/previews; full native composers, MIME send, identities, quoting,
+suggestions, drafts/documents and close gates; PIM views/forms; remaining UI
+actions, search, narrow layouts and saved state; complete Bus/refusal/staleness
+suite; full live Prefs matrix and authority recovery; all main-state matched
+captures, exact-source release gate and acceptance record. No omission has
+approval; overall parity is **INCOMPLETE**.
+
+Inventory corrections from pinned gold: HTML is shown as escaped source when
+plaintext is absent; gold has no conversation-thread view or desktop
+notification implementation. Reply threading is Message-ID/References policy,
+and connection/operation notices use the status UI. Direct `email.send` uses
+JMAP MIME upload, Email/set, EmailSubmission/set and Sent filing. The historical
+bounded `maild.submit` implementation below is not the gold send contract.
+Historical “deferred” entries below are prior specimen limits, not approved
+parity exclusions.
 
 ## Gold parity frame checkpoint, 2026-11-07: IN PROGRESS
 

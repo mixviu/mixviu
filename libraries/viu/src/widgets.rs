@@ -919,6 +919,10 @@ impl Widgets {
                 crate::rich::draw(ui, widget, value, &mut self.geometry, events)
             }
             "label" => {
+                if widget.properties["role"] == "section" {
+                    let response = toolkit::panel::section_label(ui, value.as_str().unwrap_or_default());
+                    return self.remember(ui,id,&response);
+                }
                 if widget.properties["role"] == "panel-header" {
                     let chrome = toolkit::chrome::Chrome::of(ui.ctx());
                     let (rect, response) = ui.allocate_exact_size(

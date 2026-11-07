@@ -3,6 +3,7 @@
 $frame=require("../../libraries/viu/mix/gold-frame.mix")
 $actions=require("actions.mix")
 fn apply($model,$s)
+  $model=merge({pim_titles:["Calendar"],mail_mode:true,pim_mode:false,contacts_mode:false,pim_open:false,pim_line_0:false,pim_line_1:false,pim_line_2:false,pim_line_3:false,pim_table:{id:"pim-list",kind:"tree-table",label:"",initial:{key:"events",rows:[],columns:[{id:"name",label:""},{id:"detail",label:""}]},properties:{style:"sides"}}},$model)
   $model=merge({fixture:$s.fixture,places_ratio:0.18,list_ratio:0.58,reader_fraction:0.42,pane_focus:"center",pane:"list",ready:false,navigation:{id:"account-tree",kind:"tree-table",label:"Accounts",initial:{key:"accounts",rows:[],columns:[{id:"name",label:""}]},properties:{style:"outline"}},native_table:{id:"emails",kind:"tree-table",label:"emails",initial:{key:"emails",rows:[],columns:[{id:"subject",label:"Subject"}]},properties:{style:"gold"}},reader_content:{},message_body:{id:"message-body",kind:"label",label:"",initial:"",properties:{wrap:true}},list_titles:["Mail"],reader_actions:[],no_message:true,html_source:false,markdown:false},$model)
   $model.no_accounts=not $s.fixture and $s.accounts==0
   $model.has_accounts=not $model.no_accounts

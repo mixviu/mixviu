@@ -118,17 +118,35 @@ pub(crate) fn markdown_detect() -> mix::evaluator::ExtFn {
 pub(crate) fn instants() -> mix::evaluator::ExtFn {
     mix::sync_ext(|args| {
         use chrono::Datelike;
-        let fail = || MixError::RuntimeError { msg: "viu_instants expects at most 65536 timestamp strings".into(), span: None };
-        let [Value::List(values)] = args.as_slice() else { return Err(fail()); };
-        if values.len() > 65536 { return Err(fail()); }
-        let coordinates = |date:chrono::DateTime<chrono::Local>| serde_json::json!({"unix":date.timestamp_millis() as f64 / 1000.0,"day":date.date_naive().num_days_from_ce(),"year":date.year()});
+        let fail = || MixError::RuntimeError {
+            msg: "viu_instants expects at most 65536 timestamp strings".into(),
+            span: None,
+        };
+        let [Value::List(values)] = args.as_slice() else {
+            return Err(fail());
+        };
+        if values.len() > 65536 {
+            return Err(fail());
+        }
+        let coordinates = |date: chrono::DateTime<chrono::Local>| serde_json::json!({"unix":date.timestamp_millis() as f64 / 1000.0,"day":date.date_naive().num_days_from_ce(),"year":date.year()});
         let mut parsed = serde_json::Map::new();
         for value in values.iter() {
-            let Value::String(value) = value else { return Err(fail()); };
-            if value.len() > 256 { return Err(fail()); }
-            parsed.entry(value.clone()).or_insert_with(||chrono::DateTime::parse_from_rfc3339(value).ok().map(|date|coordinates(date.with_timezone(&chrono::Local))).unwrap_or(serde_json::Value::Null));
+            let Value::String(value) = value else {
+                return Err(fail());
+            };
+            if value.len() > 256 {
+                return Err(fail());
+            }
+            parsed.entry(value.clone()).or_insert_with(|| {
+                chrono::DateTime::parse_from_rfc3339(value)
+                    .ok()
+                    .map(|date| coordinates(date.with_timezone(&chrono::Local)))
+                    .unwrap_or(serde_json::Value::Null)
+            });
         }
-        crate::runtime::from_json(serde_json::json!({"now":coordinates(chrono::Local::now()),"values":parsed}))
+        crate::runtime::from_json(
+            serde_json::json!({"now":coordinates(chrono::Local::now()),"values":parsed}),
+        )
     })
 }
 

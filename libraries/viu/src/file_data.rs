@@ -129,24 +129,40 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
                 .map_err(|e| e.to_string())?;
             Ok(Value::Null)
         }
-        "link-new" => {
-            match std::fs::hard_link(path(&args["source"])?, path(&args["target"])?) {
-                Ok(()) => Ok(json!(true)),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(json!(false)),
-                Err(error) => Err(error.to_string()),
-            }
-        }
+        "link-new" => match std::fs::hard_link(path(&args["source"])?, path(&args["target"])?) {
+            Ok(()) => Ok(json!(true)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(json!(false)),
+            Err(error) => Err(error.to_string()),
+        },
         "user-directory" => {
             let key = args["key"].as_str().ok_or("User directory key required")?;
-            if !matches!(key, "XDG_DOWNLOAD_DIR" | "XDG_DOCUMENTS_DIR" | "XDG_PICTURES_DIR" | "XDG_DESKTOP_DIR" | "XDG_MUSIC_DIR" | "XDG_VIDEOS_DIR") {
+            if !matches!(
+                key,
+                "XDG_DOWNLOAD_DIR"
+                    | "XDG_DOCUMENTS_DIR"
+                    | "XDG_PICTURES_DIR"
+                    | "XDG_DESKTOP_DIR"
+                    | "XDG_MUSIC_DIR"
+                    | "XDG_VIDEOS_DIR"
+            ) {
                 return Err("Unknown user directory key".into());
             }
-            let home = std::env::var_os("HOME").filter(|v| !v.is_empty()).ok_or("No home directory")?;
+            let home = std::env::var_os("HOME")
+                .filter(|v| !v.is_empty())
+                .ok_or("No home directory")?;
             let home = PathBuf::from(home);
-            let config = std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(||home.join(".config"));
+            let config = std::env::var_os("XDG_CONFIG_HOME")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join(".config"));
             let source = std::fs::read_to_string(config.join("user-dirs.dirs")).ok();
             let value = std::env::var(key).ok();
-            match toolkit::file_chooser::user_directory(value.as_deref(), source.as_deref(), key, &home) {
+            match toolkit::file_chooser::user_directory(
+                value.as_deref(),
+                source.as_deref(),
+                key,
+                &home,
+            ) {
                 Some(path) => token(&path),
                 None => Ok(Value::Null),
             }
@@ -283,14 +299,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("partial");
         let target = dir.path().join("saved");
-        std::fs::write(&source,[0,255,42]).unwrap();
-        std::fs::set_permissions(&source,std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::fs::write(&source, [0, 255, 42]).unwrap();
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o600)).unwrap();
         let args = json!({"source":source,"target":target});
-        assert_eq!(command("link-new",&args).unwrap(),true);
-        assert_eq!(command("link-new",&args).unwrap(),false);
+        assert_eq!(command("link-new", &args).unwrap(), true);
+        assert_eq!(command("link-new", &args).unwrap(), false);
         std::fs::remove_file(source).unwrap();
-        assert_eq!(std::fs::read(&target).unwrap(),[0,255,42]);
-        assert_eq!(std::fs::metadata(target).unwrap().mode()&0o777,0o600);
+        assert_eq!(std::fs::read(&target).unwrap(), [0, 255, 42]);
+        assert_eq!(std::fs::metadata(target).unwrap().mode() & 0o777, 0o600);
     }
     #[test]
     fn directory_admission_stops_at_the_callers_remaining_work_budget() {

@@ -4,17 +4,18 @@ $mail_emails=[];$mail_selection=[];$mail_focus=nil;$mail_sort={column:"date",ord
 $pane="list";$places_ratio=0.18;$list_ratio=0.58;$tree_closed=[];$search_text="";$reader_markdown=false;$attachments_inline=true
 $mode="mail";$attachment_policy=require("attachments.mix")
 $reader_detected=false;$reader_auto=true
+include "pim-surface.mix"
 fn surface_info()
   $accounts=[]
   for $a in wire_accounts()
     $d=$wire_data[$a.id] ?? {};$open=$d.message ?? {}; $emails=$d.emails ?? []
     $a.mail={mailboxes:$d.boxes ?? [],selected:$d.box,emails:map($emails,fn($m)={id:$m.id,subject:$m.subject,from:address_display(($m.from ?? [])[0]),date:$m.date ?? $m.receivedAt,read:($m.keywords ?? {})["$seen"]==true,flagged:($m.keywords ?? {})["$flagged"]==true}),total:$d.total ?? 0,open:$open.id,reader:if $open.id==nil then nil else {format:if $reader_markdown then "markdown" else "plain" end,auto:$reader_auto,attachments_expanded:false,attachments_inline:$attachments_inline,attachments:map($open.attachments ?? [],fn($p)={part:$p.partId,preview:{state:"none"}})} end,attachments:if $open.id==nil then nil else $attachment_policy.metadata($open) end,busy:any(values($wire_pending),fn($p)=$p.account==$a.id and contains(["list","refresh-list"],$p.purpose)),selection:{ids:if $a.id==$active then $mail_selection else [] end,count:if $a.id==$active then len($mail_selection) else 0 end,all:false},sort:$mail_sort.column,order:if $mail_sort.order=="ascending" then "asc" else "desc" end,page:floor(($d.offset ?? 0)/$mail_settings.page_size),page_size:$mail_settings.page_size}
-    $a.calendar={calendars:$d.calendars ?? [],selected:$d.calendar,events:map($d.events ?? [],fn($e)={id:$e.id,title:$e.title ?? ($e.data ?? {}).title ?? "",start:$e.start,end:$e.end}),open:$d.open_event,busy:false}
-    $a.contacts={books:$d.books ?? [],selected:$d.book,filter:$d.contact_filter ?? "",contacts:map($d.contacts ?? [],fn($c)={id:$c.id,name:$c.full_name ?? (($c.data ?? {}).name ?? {}).full ?? "",email:$c.email ?? ""}),open:$d.open_contact,busy:false}
+    $a.calendar={calendars:$d.calendars ?? [],selected:$d.calendar,events:map($d.events ?? [],fn($e)={id:$e.id,title:$e.title ?? ($e.data ?? {}).title ?? "",start:$e.start,end:$e.end}),open:$d.open_event,busy:pim_busy($a.id,"events")}
+    $a.contacts={books:$d.books ?? [],selected:$d.book,filter:$d.contact_filter ?? "",contacts:map($d.contacts ?? [],fn($c)={id:$c.id,name:contact_name($c),email:contact_email($c)}),open:$d.open_contact,busy:pim_busy($a.id,"contacts")}
     push($accounts,$a)
   end
   $expanded={};for $key in $tree_closed $expanded[$key]=false end
-  $selected_node=if $box!="" then $active.."/mailbox/"..$box else $active end
+  $selected_node=navigation_selected()
   return {schema:"email.v1",version:$ctx.version,selected:if $active=="" then nil else $active end,mode:$mode,source:$mail_settings.source,status:$status,default_account:$mail_settings.default_account,mail_options:{page_size:$mail_settings.page_size,mark_read_on_open:$mail_settings.mark_read_on_open,confirm_delete:$mail_settings.confirm_delete,quote_on_reply:$mail_settings.quote_on_reply,reply_position:$mail_settings.reply_position},accounts:$accounts,tree:map(navigation_rows(),fn($r)={key:$r.key,depth:$r.depth,label:$r.cells[0],unread:$r.count,expandable:$r.branch,expanded:$r.expanded,selected:$r.key==$selected_node}),compose:nil,compose_windows:[],confirm:nil,drafts_offered:0,form:nil,dialog:$chrome.dialog,ui:{places:$places_ratio,reader:1-$list_ratio,cursor:nil,expanded:$expanded,theme_mode:$chrome.theme_choice.mode},migrating:false,exiting:$chrome.window_close,window:nil,owner_closing:false,quitting:$chrome.window_close}
 end
 fn address_display($a)
@@ -74,11 +75,17 @@ fn navigation_rows()
   end
   return $out
 end
+fn navigation_selected()
+  $d=$wire_data[$active] ?? {}
+  if $mode=="calendar" and $d.calendar!=nil then return $active.."/calendar/"..$d.calendar end
+  if $mode=="contacts" and $d.book!=nil then return $active.."/book/"..$d.book end
+  return if $mode=="mail" and $box!="" then $active.."/mailbox/"..$box else $active end
+end
 fn surface_model($m)
   $data=$wire_data[$active] ?? {};$state=$wire_views[$active] ?? {};$opened=$message ?? {}
   $m.places_ratio=$places_ratio;$m.list_ratio=$list_ratio;$m.pane=$pane;$m.ready=$state.state=="ready"
   $m.reader_fraction=1-$list_ratio;$m.pane_focus=if $pane=="tree" then "left" elif $pane=="reader" then "right" else "center" end
-  $tree_selected=if $box!="" then $active.."/mailbox/"..$box else $active end
+  $tree_selected=navigation_selected()
   $nav=navigation_rows()
   $m.navigation={id:"account-tree",kind:"tree-table",label:"Accounts",initial:{key:"accounts",revision:$revision,rows:$nav,columns:[{id:"name",label:""}],selected_keys:if any($nav,fn($r)=$r.key==$tree_selected) then [$tree_selected] else [] end,focused_key:nil},properties:{style:"outline"}}
   $found=filter($boxes,fn($b)=$b.id==$box);$name=if len($found)>0 then $found[0].name else "Mail" end
@@ -101,7 +108,7 @@ fn surface_model($m)
   $m.account_state=if $state.state=="no_password" then "No password is saved for this account. Open Email Settings to set one." elif $state.state=="failed" then $state.error ?? "Connection failed" elif $state.state=="disabled" then "This account is disabled." else "Connecting…" end
   $m.values["connection-state"]=$m.account_state;$m.values["message-subject"]=$m.message_subject;$m.values["message-from"]=$m.message_from;$m.values["message-to"]=$m.message_to
   $m.values["search-mail"]=$search_text
-  return $m
+  return pim_model($m)
 end
 fn surface_account($id)
   global $active,$boxes,$box,$rows,$total,$offset,$message,$connected,$revision,$mail_selection,$mail_focus
@@ -120,7 +127,7 @@ fn surface_mailbox($account,$id)
   return {rc:0,body:{account:$account,id:$id}}
 end
 fn surface_intent($a)
-  global $pane,$places_ratio,$list_ratio,$tree_closed,$mail_selection,$mail_focus,$mail_sort,$mail_widths,$mail_hidden_columns,$mail_density,$search_text
+  global $pane,$places_ratio,$list_ratio,$tree_closed,$mail_selection,$mail_focus,$mail_sort,$mail_widths,$mail_hidden_columns,$mail_density,$search_text,$wire_data
   if $a.id=="workspace" then $places_ratio=$a.value.left;$list_ratio=1-$a.value.right
   elif $a.id=="places-split" then $places_ratio=$a.value
   elif $a.id=="reader-split" then $list_ratio=$a.value
@@ -130,7 +137,11 @@ fn surface_intent($a)
     else
       $parts=split($key,"/")
       if len($parts)==1 then surface_account($parts[0])
-      elif $parts[1]=="mailbox" then surface_mailbox($parts[0],$parts[2]) end
+      elif $parts[1]=="mailbox" then surface_mailbox($parts[0],$parts[2])
+      elif $parts[1]=="calendar" then surface_parent($parts[0],$parts[2],true)
+      elif $parts[1]=="book" then surface_parent($parts[0],$parts[2],false)
+      elif $parts[1]=="calendars" then surface_account($parts[0]);surface_mode("calendar")
+      elif $parts[1]=="books" then surface_account($parts[0]);surface_mode("contacts") end
       $pane="tree"
     end
   elif $a.id=="emails" then
@@ -149,6 +160,11 @@ fn surface_intent($a)
     elif $kind=="density" then $mail_density=$p.density
     end
     $pane="list"
+  elif $a.id=="pim-list" then
+    $wire_data[$active][if $mode=="calendar" then "open_event" else "open_contact" end]=$a.value.key;$pane="list"
+  elif $a.id=="contact-filter" then
+    $wire_data[$active].contact_filter=$a.value
+    wire_start("email.contacts",{filter:$a.value},nil,"contacts")
   elif $a.id=="search-mail" then
     $search_text=$a.value
     if $a.action=="submit" then wire_start("email.list",{mailbox:$box,query:$search_text,limit:$mail_settings.page_size},nil,"list") end

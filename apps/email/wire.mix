@@ -175,11 +175,16 @@ fn wire_completed($d)
       if $answer.body[$kind]!=nil then
         $wire_data[$job.account][$kind]=$answer.body[$kind]
         $first=$answer.body[$kind][0]
-        if $first!=nil then $wire_data[$job.account][if $kind=="calendars" then "calendar" else "book" end]=$first.id end
+        $selected_key=if $kind=="calendars" then "calendar" else "book" end
+        if $first!=nil and not any($answer.body[$kind],fn($p)=$p.id==$wire_data[$job.account][$selected_key]) then $wire_data[$job.account][$selected_key]=$first.id end
       end
     end
     for $kind in ["events","contacts"]
-      if $job.purpose==$kind then $wire_data[$job.account][$kind]=$answer.body[$kind] end
+      $parent_key=if $kind=="events" then "calendar" else "book" end
+      if $job.purpose==$kind and $job.args[$parent_key]==$wire_data[$job.account][$parent_key] then
+        $wire_data[$job.account][$kind]=$answer.body[$kind]
+        $wire_data[$job.account][if $kind=="events" then "open_event" else "open_contact" end]=nil
+      end
     end
   end
   if $job.command=="email.account.connect" then
@@ -224,5 +229,10 @@ fn wire_completed($d)
   if $answer.rc==0 and contains(["email.mark","email.move","email.junk","email.delete","email.mailbox.create","email.mailbox.rename","email.mailbox.delete"],$job.command) then
     wire_start("email.mailboxes",{account:$job.account},nil,"boxes")
     if $job.account==$active and $box!="" then wire_start("email.list",{account:$job.account,mailbox:$box,offset:$offset,limit:$mail_settings.page_size},nil,"refresh-list") end
+  end
+  if $answer.rc==0 and $job.account==$active and ($answer.body.calendars!=nil or $answer.body.books!=nil) then surface_mode($mode) end
+  if $answer.rc==0 and contains(["email.event.create","email.event.update","email.event.delete","email.contact.create","email.contact.update","email.contact.delete"],$job.command) then
+    $event=starts_with($job.command,"email.event.")
+    wire_start(if $event then "email.events" else "email.contacts" end,{account:$job.account},nil,if $event then "events" else "contacts" end)
   end
 end

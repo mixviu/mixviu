@@ -486,7 +486,9 @@ impl SceneView {
                 if let Some(width) = num(node, "width").or(num(node, "min_width")) {
                     ui.set_width(width);
                 }
-                if node.family!="control" {
+                if matches!(node.family.as_str(),"panes"|"content"|"section"|"sides") || node.ports.get("native_spacing")==Some(&Value::Bool(true)) {
+                    ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
+                } else if node.family!="control" {
                     ui.spacing_mut().item_spacing=Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0));
                 }
                 match node.family.as_str() {

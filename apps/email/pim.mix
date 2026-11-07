@@ -10,6 +10,9 @@ end
 fn events($rows)
   return jq($rows,'map({id,calendarId,uid:(.uid // null),data:(.data // null),title:(.title // null),start:(.start // null),end:(.end // null),updated:(.updated // null)})')
 end
+fn starts_at($event)
+  try return date_parse($event.start) catch $invalid return -62135596800 end
+end
 fn contacts($rows)
   return jq($rows,'map({id,addressBookId,uid:(.uid // null),data:(.data // null),full_name:(.full_name // null),email:(.email // null),company:(.company // null),phone:(.phone // null),updated:(.updated // null)})')
 end
@@ -89,7 +92,7 @@ fn dispatch($e,$s,$command,$a)
       $query.sort=[{property:"fullName",isAscending:true}]
     end
     $list=$p.chained($e,$s,$kind,$query).get.list
-    if $event then return {events:reverse(sort_by(events($list),fn($e)=if $e.start!=nil then date_parse($e.start) else 0 end))} end
+    if $event then return {events:reverse(sort_by(events($list),fn($e)=starts_at($e)))} end
     return {contacts:contacts($list)}
   end
   if ends_with($command,".get") then
