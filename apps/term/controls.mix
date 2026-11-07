@@ -1,9 +1,12 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $actions=require("actions.mix")
+fn about_text($s,$version)
+  return "Terminal\n"..($s.build_line ?? $version).."\nThe MixOS terminal.\nMIT OR Apache-2.0\nSettings source: settingsd "..(if $s.settings_connected then "connected" else "not connected" end)
+end
 fn overlays($s,$version)
   $out=[{definition:{id:"term-macros",kind:"macro-menu",label:"Macros",initial:{app:"term",open:$s.macros_open ?? false},properties:{}},command:"term.overlay"},{definition:{id:"term-search",kind:"command-search",label:"Search menus",initial:{open:$s.search_open ?? false,items:$actions.registry($s)},properties:{}},command:"term.overlay"}]
   if $s.dialog!=nil then
-    $dialog={open:true,instance:$s.dialog,title:if $s.dialog=="keys" then "Keyboard Shortcuts" else "About Terminal" end,body:if $s.dialog=="keys" then "" else "Terminal\n"..$version.."\nMIT OR Apache-2.0" end,choices:[{id:"done",label:"Close",enabled:true,default:true}]}
+    $dialog={open:true,instance:$s.dialog,title:if $s.dialog=="keys" then "Keyboard Shortcuts" else "About Terminal" end,body:if $s.dialog=="keys" then "" else about_text($s,$version) end,choices:[{id:"done",label:"Close",enabled:true,default:true}]}
     if $s.dialog=="keys" then
       $grid=[]
       for $a in $actions.registry($s)

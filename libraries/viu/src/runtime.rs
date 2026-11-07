@@ -229,8 +229,9 @@ impl Runtime {
                         if let Some(platform)=services.platform.clone(){eval.register("viu_platform",platform.binding());}
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
-                            "version":env!("CARGO_PKG_VERSION"),"git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"),
-                            "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
+                            "version":env!("CARGO_PKG_VERSION"),"git_sha":buildinfo::build_info!().git_sha,"build_time":buildinfo::build_info!().build_time,
+                            "build_line":buildinfo::build_info!().line(),"git_sha_full":buildinfo::build_info!().git_sha_full,
+                            "pid":std::process::id(),
                             "loader": "viu-local", "host": "viu-local"
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));

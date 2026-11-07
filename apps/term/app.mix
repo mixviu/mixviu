@@ -7,7 +7,7 @@ $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,r
 $state.layout=$model.open_tab($model.initial(),$native("create","",{}),nil)
 $state.identity=$native("identity","",{})
 $actions=require("actions.mix");$controls=require("controls.mix")
-$state.version=$ctx.version;$state.choice={};$state.bindings={};$state.effective={};$state.pastes={}
+$state.version=$ctx.version;$state.build_line=$ctx.build_line;$state.choice={};$state.bindings={};$state.effective={};$state.pastes={}
 $state.publishing=false;$state.event_job=0
 fn pump_events($s)
   if $s.closed and not ($s.drain_expired ?? false) and ($s.publishing or len($s.layout.events)>0) then
@@ -56,6 +56,7 @@ on term.ping
 end
 on viu.session
   $state.look.appearance=$event.args.appearance
+  $state.settings_connected=not $event.args.state.lost and $event.args.state.incarnation!=nil and $event.args.state.error==nil
   if not $event.args.state.lost then $state.look.values=$event.args.state.values end
   publish_term($state)
 end

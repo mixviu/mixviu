@@ -43,4 +43,8 @@ check(len($overlays[len($overlays)-1].definition.initial.grid)>0,"keyboard dialo
 check($controls.dialog($out.state,{open:"about"}).body.error_code=="DIALOG_OPEN","second dialog refuses")
 $out=$controls.dialog($out.state,{answer:"done"});check($out.state.dialog==nil,"dialog answer closes")
 check($controls.dialog($out.state,{answer:"done"}).body.error_code=="NO_DIALOG","closed dialog refuses late answer")
+$about=$s;$about.build_line="viu 0.1.2 (example-sha, built example-time)";$about.settings_connected=true
+check($controls.about_text($about,"fallback")=="Terminal\nviu 0.1.2 (example-sha, built example-time)\nThe MixOS terminal.\nMIT OR Apache-2.0\nSettings source: settingsd connected","About preserves own build provenance and gold line order")
+$about.settings_connected=false
+check(ends_with($controls.about_text($about,"fallback"),"settingsd not connected"),"About follows settings source loss")
 print("term actions: catalogue, menus, targets, directional focus, theme and zoom checked")
