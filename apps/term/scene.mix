@@ -4,5 +4,5 @@ name: term
 citizen: term
 ---
 ```mix
-{root:{widget:"column",children:[],padding:0,gap:0}}
+{root:{widget:"control",definition:"= $model.terminal",on_intent:"term.intent"}}
 ```

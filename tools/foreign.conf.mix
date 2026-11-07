@@ -56,7 +56,14 @@ foreign: {
   --   libmimalloc-sys: the multi-call binary global allocator (daemon speed);
   --     exit: measure the system allocator, or mimalloc only in daemon builds.
   --   zstd-sys: zip archives in libs/mix; exit: a pure-Rust zstd (ruzstd).
-  strict_exceptions: {"system": ["libmimalloc-sys", "zstd-sys"]},
+  -- Fable D2/D3 admits mixd's existing vendored static C; its admission
+  -- boundary is no new DT_NEEDED library. These four are the pinned service
+  -- personalities' existing closure, not permission for Viu/Rio in mixd.
+  -- The strict_forbid package check and --elf check still apply to mixd.
+  strict_exceptions: {
+    "system": ["libmimalloc-sys", "zstd-sys"],
+    "mixd": ["libmimalloc-sys", "onig_sys", "sqlite-vec", "zstd-sys"]
+  },
   -- Tier 2: desktop-only crates the shell must never reach, pure Rust or not.
   -- A trailing * matches a prefix.
   strict_forbid: ["viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",

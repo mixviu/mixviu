@@ -15,6 +15,10 @@ try
     $foreign=run_argv(["/opt/mixos/bin/mix","tools/foreign_gate.mix","--locked"],{timeout:1800,max_output:16000000});print($foreign)
     if not $foreign.ok then $rc=$foreign.exit_code ?? 124 end
   end
+  if $rc==0 then
+    $host=run_argv(["cargo","build","--locked","-p","viu-engine","--bin","viu"],{timeout:1800,max_output:16000000});print($host)
+    if not $host.ok then $rc=$host.exit_code ?? 124 end
+  end
 finally
   print("TERM_PATCH_BEGIN")
   print(run_argv_must(["git","diff","--binary"]))

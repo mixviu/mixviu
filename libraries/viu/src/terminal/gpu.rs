@@ -697,12 +697,17 @@ impl PaneCallback {
 impl egui_wgpu::CallbackTrait for PaneCallback {
     fn prepare(
         &self,
-        _device: &wgpu::Device,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         screen: &egui_wgpu::ScreenDescriptor,
         _encoder: &mut wgpu::CommandEncoder,
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
+        if resources.get::<GridRenderer>().is_none() {
+            if let Some(format) = resources.get::<wgpu::TextureFormat>().copied() {
+                resources.insert(GridRenderer::new(device, format));
+            }
+        }
         let Some(renderer) = resources.get_mut::<GridRenderer>() else {
             return Vec::new();
         };

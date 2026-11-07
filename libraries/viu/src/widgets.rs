@@ -24,6 +24,7 @@ pub const KINDS: &[&str] = &[
     "field",
     "multiline",
     "editor",
+    "terminal",
     "markdown",
     "checkbox",
     "toggle",
@@ -644,8 +645,13 @@ pub struct Widgets {
     surfaces: Option<crate::image_view::Images>,
     editors: crate::editor::Editors,
     documents: crate::documents::Documents,
+    terminals: crate::terminal::sessions::Sessions,
+    terminal_views: crate::terminal::view::Views,
 }
 impl Widgets {
+    pub fn set_terminals(&mut self, terminals: crate::terminal::sessions::Sessions) {
+        self.terminals = terminals;
+    }
     pub fn set_native_menus(&mut self, enabled: bool) {
         self.gold_menus = enabled;
     }
@@ -998,6 +1004,11 @@ impl Widgets {
                     });
                 }
                 r
+            }
+            "terminal" => {
+                let response = self.terminal_views.draw(ui, widget, value, &self.terminals, events);
+                self.text_input_active |= response.has_focus();
+                response
             }
             "markdown" => self.documents.show_preview(ui, widget, value),
             "editor" if widget.properties["native_document"] == true => {

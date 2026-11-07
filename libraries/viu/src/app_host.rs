@@ -43,6 +43,7 @@ struct Host {
     timers: crate::timers::Timers,
     timer_results: std::collections::VecDeque<Value>,
     documents: crate::documents::Documents,
+    terminals: crate::terminal::sessions::Sessions,
     ui_state: crate::ui_state::UiState,
     measurements: crate::ui_state::Measurements,
     input_at: Option<Instant>,
@@ -481,6 +482,7 @@ impl Host {
                             .map(|view| {
                                 self.view = view;
                                 self.view.set_documents(self.documents.clone());
+                                self.view.set_terminals(self.terminals.clone());
                                 self.view.set_native_menus(self.native_drive);
                                 self.loaded = true;
                             })
@@ -946,6 +948,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         facilities.surface.as_ref().map(|s| s["commands"].clone()),
     );
     let documents = crate::documents::Documents::default();
+    let terminals = crate::terminal::sessions::Sessions::new(wake.clone(), None);
     let timers = crate::timers::Timers::default();
     let calls = crate::calls::Calls::default();
     let ui_state = crate::ui_state::UiState::default();
@@ -958,6 +961,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         calls: Some(calls.clone()),
         timers: Some(timers.clone()),
         documents: Some(documents.clone()),
+        terminals: Some(terminals.clone()),
         ..Default::default()
     };
     let mut jobs = crate::jobs::Jobs::new(4, wake.clone());
@@ -984,6 +988,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         timers,
         timer_results: Default::default(),
         documents,
+        terminals,
         ui_state,
         measurements: Default::default(),
         input_at: None,
@@ -1138,6 +1143,9 @@ pub fn run(args: Vec<String>) -> eframe::Result {
             toolkit::decorations::initialise(cc);
             toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             crate::appearance::install(&cc.egui_ctx);
+            if let Some(state) = cc.wgpu_render_state.as_ref() {
+                state.renderer.write().callback_resources.insert(state.target_format);
+            }
             let ctx = cc.egui_ctx.clone();
             Ok(Box::new(create(
                 bundle,

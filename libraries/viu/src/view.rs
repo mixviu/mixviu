@@ -44,6 +44,12 @@ pub struct SceneView {
 }
 
 impl SceneView {
+    pub fn set_terminals(&mut self, terminals: crate::terminal::sessions::Sessions) {
+        self.widgets.set_terminals(terminals.clone());
+        if let Some(frame) = self.frame.as_mut() {
+            frame.set_terminals(terminals);
+        }
+    }
     pub fn set_native_menus(&mut self, enabled: bool) {
         self.widgets.set_native_menus(enabled);
         if let Some(frame) = self.frame.as_mut() {

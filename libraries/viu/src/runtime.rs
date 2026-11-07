@@ -29,6 +29,7 @@ pub struct Services {
     pub calls: Option<crate::calls::Calls>,
     pub timers: Option<crate::timers::Timers>,
     pub documents: Option<crate::documents::Documents>,
+    pub terminals: Option<crate::terminal::sessions::Sessions>,
     pub macros: Option<macros::Session>,
     pub chooser: Option<crate::chooser::Service>,
 }
@@ -221,6 +222,7 @@ impl Runtime {
                         if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
                         if let Some(documents)=services.documents.clone(){eval.register("viu_document",documents.binding());}
+                        if let Some(terminals)=services.terminals.clone(){eval.register("viu_terminal",terminals.binding());}
                         if let Some(timers)=services.timers.clone(){eval.register("viu_timer",timers.binding());}
                         if let Some(calls)=services.calls.clone(){eval.register("viu_reply",calls.binding());}
                         if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());}

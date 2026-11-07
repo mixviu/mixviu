@@ -3,5 +3,7 @@
 $frame=require("../../libraries/viu/mix/gold-frame.mix")
 fn framed($s)
   $model={window_close:$s.closed,values:{}}
+  $look=$s.look.values
+  $model.terminal={id:"terminal",kind:"terminal",label:"Terminal",initial:$s.session.handle ?? "",properties:{focus_serial:1,font_family:$look["terminal.font.family"] ?? $look["appearance.mono_family"],font_size:$look["terminal.font.size"] ?? 14.667,font_weight:$look["terminal.font.weight"] ?? 400,padding:$look["terminal.padding"] ?? 4,cursor:$look["terminal.cursor.shape"] ?? "underline",scroll_speed:$look["terminal.scroll.speed"] ?? 40}}
   return $frame.apply($model,{icon:"terminal",title:"Terminal",native_title:"Terminal",menus:[],toolbar:[],status:"",appearance:$s.look.appearance,window:$s.look.values})
 end

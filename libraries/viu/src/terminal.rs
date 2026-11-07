@@ -8,11 +8,14 @@ pub mod control;
 pub mod font;
 pub mod gpu;
 pub mod ime;
+pub mod input;
 pub mod metrics;
 pub mod model;
 pub mod native_session;
 pub mod raster;
 pub mod session_fd;
+pub mod sessions;
+pub mod view;
 pub use model::{Key, Screen, ScrollRequest, Terminal};
 
 #[cfg(test)]

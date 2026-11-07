@@ -4,6 +4,7 @@
 $ctx=viu_context()
 $core=require("core.mix")
 $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false}
+$state.session=viu_terminal("create","",{})
 fn publish_term($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
@@ -17,13 +18,29 @@ on viu.session
   publish_term($state)
 end
 on viu.frame.close
+  $closed=viu_terminal("close",$state.session.handle,{})
   $state.closed=true
   publish_term($state)
 end
 on viu.frame.intent
   if $event.args.value.command=="close" then
+    $closed=viu_terminal("close",$state.session.handle,{})
     $state.closed=true
     publish_term($state)
   end
+  reply(0,"{}")
+end
+on term.snapshot
+  reply(0,viu_terminal("snapshot",$state.session.handle,$event.args))
+end
+on term.type
+  try
+    $written=viu_terminal("type",$state.session.handle,$event.args)
+    reply(0,json_encode($written))
+  catch $message
+    reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:$message}))
+  end
+end
+on term.intent
   reply(0,"{}")
 end
