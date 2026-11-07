@@ -420,4 +420,29 @@ actions/menu/dialogs/macros, verified native issuer/control and Mix shell
 integration, input/clipboard/IME/search, full live Prefs and release visual
 acceptance. Gold unchanged. NOT ACCEPTED. No Fable question.
 
-branch: lab/parity-term; head SHA: 0a34c03037ca0e3bdda34f2b87208c93868b5bec (code; receipt HEAD contains this checkpoint); open items: pane paint gate, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-live-tabs-dock-849b2ae-a1 (green), term-pane-paint-0a34c03 (next await).
+## Pane gate green; change publication checkpoint
+
+Read full `term-pane-paint-0a34c03-a1` log: four Mix suites, two actual-
+bundle tests, 135 native tests/five ignores, dependency gate and debug
+host build passed. Returned formatting-only terminal view patch applied.
+No new pane capture yet; next exact-source check includes this patch.
+
+Code `9b53f0d9f50eda3b337d05ed4be636bf2b5d4fdb` implements ordered
+gold tab/pane/title change sequences and props.watch publication using
+the existing Viu background job facility. Mix retains policy; a bounded
+256-event queue drops new deliveries on overflow and retains sequence
+gaps. No per-PTY-byte Bus traffic. Local tests pass for event order,
+retitle without layout revision, unfocused/focused close, watch sequence,
+no duplicate replay events and overflow. Actual broker delivery/reconnect
+and last-close flushing remain to be checked; partial Bus parity only.
+
+Next CBC `term-change-events-9b53f0d` at that exact source, same prepare
+recipe. Read complete log; apply any patch and repeat exact source if
+changed. Then fetch verified matching artifact/source; run isolated
+native lifecycle plus actual topic observer; retake pane-paint matched
+captures and inspect regions. Continue the rest of full action/menu/
+dialog/macro/Bus contracts, verified session issuer/control and shell
+integration, input/clipboard/IME/search, full live Prefs and release
+acceptance. No Fable question; no install/VT/gold changes. NOT ACCEPTED.
+
+branch: lab/parity-term; head SHA: 9b53f0d9f50eda3b337d05ed4be636bf2b5d4fdb (code; receipt HEAD contains this checkpoint); open items: exact change-events gate, native topic delivery and pane captures, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-live-tabs-dock-849b2ae-a1 (green), term-pane-paint-0a34c03-a1 (green with fmt patch), term-change-events-9b53f0d (next await).

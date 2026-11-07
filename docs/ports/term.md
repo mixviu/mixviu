@@ -187,3 +187,26 @@ live border/focus settings, and applies gold's physical-pixel grid fit,
 texture ceiling and minimum dimensions. Representative fractional-scale,
 small-pane and texture-limit cases are retained as tests. Native validation
 and new captures are pending `term-pane-paint-0a34c03`. NOT ACCEPTED.
+
+## Pane arithmetic gate and change topics
+
+`term-pane-paint-0a34c03-a1` passed four Mix suites, both actual-bundle
+tests, 135 native tests (five retained ignores), the dependency gate and
+generic debug build. Complete log read. It returned a formatting-only patch
+for the terminal view; this patch is applied in the next code checkpoint.
+No new pane-paint capture or exact-source acceptance is claimed yet.
+
+Code `9b53f0d9f50eda3b337d05ed4be636bf2b5d4fdb` adds gold's separate
+monotonic change sequence and ordered tab/pane/title changes. Unwatched
+changes advance the sequence without accumulating. After props.watch,
+the queue holds at most 256 events; overflow drops new deliveries while
+sequence gaps remain detectable. Existing Viu background jobs publish
+bounded batches, so terminal mutations do not wait on broker delivery.
+Tests cover order, unchanged layout revision on retitle, focused versus
+unfocused close, watch revision, replay without duplicate events and queue
+bounds. All local Mix suites pass. Native delivery/reconnect tests are
+still required; this remains partial Bus parity.
+
+Next exact-source gate: `term-change-events-9b53f0d`. After its complete
+receipt and any returned patch are handled, fetch its matching artifact,
+retake the pane painting captures and exercise actual topic delivery.
