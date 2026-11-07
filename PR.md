@@ -14,6 +14,9 @@ entries because `require` deliberately refuses handler-owning modules.
 Dopus's comparison harness loads the same entry with automatic startup
 disabled, then sends its existing initialise event.
 
+A native test harness runs every app `*-test.mix` with real viu bindings,
+including a disposable filesystem root for Dopus's argument-driven tests.
+
 Newly exposed defect fixed: Workshop's open-in-Dopus job used the removed
 `mixos_path()` builtin. It now resolves the installed executable with
 `which("dopus")`, returning `UNAVAILABLE` if it is absent.
@@ -45,13 +48,24 @@ main behavioural risk; the native Ced, Backdrop and Dopus tests exercise it.
 - Run: CBC Mix build, all 142 lint regression tests, complete `lib-viu` and
   `viu` test suites, and a fresh Workshop suite after its launcher fix.
   `tools/ci.mix fmt`, `env`, `mix-lint` and `mix-lint-baseline` pass with the
-  tree's own interpreter. App Mix script receipt is pending.
+  tree's own interpreter. All 30 app Mix scripts pass in the native harness.
 - Observed: native Ced editing/Bus/dialog/session tests, Backdrop transitions,
   Dopus row projection and the 2,000-row runtime specimen all pass. The lint
   ratchet reports zero regressions; the env registry reports zero problems.
 - Not tested: legacy Dopus Rust comparison executable (not a workspace
   member), interactive desktop, VT acceptance or production installation.
   Existing GPU/installed-icon tests remain ignored by their owning suites.
+
+CBC receipts:
+
+- `20261107-210610-69bf2c56-a1` at `2b7e776a`: 142 lint tests and both complete
+  viu suites passed. The wrapper then returned 101 for an extra, invalid
+  `viu-dopus` package invocation; that non-workspace step has been removed.
+- `20261107-210932-d3432f56-a1` at `300a5459`: Workshop tests, fmt, env, lint
+  ratchet and baseline generation passed, rc 0.
+- `20261107-212208-6c41a2f5-a1` at `956a468b`: all 30 app Mix scripts passed
+  with actual native bindings and filesystem operations, rc 0. CBC's
+  rustfmt patch was applied locally.
 
 ## How to undo
 
