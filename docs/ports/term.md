@@ -1440,3 +1440,11 @@ CBC term-window-show-bdf9de1a-a1 failed before Rust checks: eight existing Mix s
 Code afe888d652bb97f95a24054330a3165ebad2d480 replaces that test-only global mutation with an owned mktemp fixture recording ordered compositor requests and remaining replies. The same success, ownership, exact stage ordering, stale-generation, refusal and completion assertions remain. Cleanup runs in finally. Local lint and the full show test pass. No application, host, transport or expected outcome changed; no worker software upgrade was attempted.
 
 Next CBC term-show-fixture-afe888d6 runs term_gate --prepare at that exact code. Read the complete log; repair failures and apply returned changes, then require an exact repeat before native activation acceptance. Existing exact notice evidence remains valid at 7b97f073; new window-show/activation, runtime, native targeting/second-launch proof and all previously recorded full parity/release cases remain open. NOT ACCEPTED; gold/desks unchanged.
+
+### Activation descriptor repair
+
+CBC term-show-fixture-afe888d6-a1 passed all nine Mix suites, including the worker-compatible ordered show fixture, and compiled Viu. The real bundle-load test then refused the new show descriptor because CommandDescriptor requires args. Read the complete 9972-byte saved log; applied its launch/native-bus formatting return.
+
+Code 27f1a82644f433424985bd30ab77e8a2d54fc72e adds the required empty args array for the no-argument term.show descriptor. Confirmed the exact descriptor schema in libraries/bus/src/protocol.rs. Local show tests and diff check pass; no assertion changed. Remaining gate stages and native activation checks have not passed yet.
+
+Next CBC term-show-descriptor-27f1a826 runs term_gate --prepare at that exact code. Read complete log, repair failures/apply returned changes and require an exact repeat. Then fetch verified bytes and exercise term.show, minimized restore, service/compositor overrides, refusals/cancellation and second-launch PID/session invariance against gold. All earlier full parity/release open items remain. NOT ACCEPTED; no gold, install or desk changes.
