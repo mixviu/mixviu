@@ -3,15 +3,15 @@
 
 //! Shared broker discovery for native ABP clients. Explicit socket, node
 //! config and environment runtime precede TCP ping discovery. A run root from
-//! MIXOS_RUN, MIXOS or layout.mx places the process in an environment and
+//! MIX_RUN, MIX_ROOT or layout.mx places the process in an environment and
 //! excludes the host runtime candidate. A uid tier default includes the system
 //! runtime candidate after its own, deduplicated when they coincide as root.
 //! An override equal to the tier default still counts as default.
 //! Account configuration is independent of socket ownership.
 //! A server-PID pin uses its endpoint alone. A launch handoff uses only the
-//! verified issuing endpoint its parent stamped into MIXOS_BUS_SOCKET: no node
+//! verified issuing endpoint its parent stamped into MIX_BUS_SOCKET: no node
 //! socket configuration, defaults or ping. A missing stamp is refused.
-//! MIXOS_BUS_SOCKET is a pin under MIXOS_SESSION_FD and a skippable override
+//! MIX_BUS_SOCKET is a pin under MIX_SESSION_FD and a skippable override
 //! without it. Skipping never crosses from a session or desk to the host broker.
 
 use crate::native_client::ConnectError;
@@ -107,7 +107,7 @@ pub fn unix_connect_options(account: BrokerAccount) -> anyhow::Result<UnixConnec
 /// Resolve the trusted account: environment, node.conf `noded.account`, noded.
 /// NSS errors name both the account and the configuration source.
 pub fn resolve_broker_account() -> anyhow::Result<BrokerAccount> {
-    let environment = std::env::var_os("MIXOS_BROKER_ACCOUNT");
+    let environment = std::env::var_os("MIX_BROKER_ACCOUNT");
     resolve_account_from(
         environment.as_deref(),
         &config::node::NodeConfigSearch::capture(),
@@ -138,7 +138,7 @@ fn account_selection<'a>(
     match (environment, configured) {
         (Some(name), _) => AccountSelection {
             name,
-            source: "MIXOS_BROKER_ACCOUNT",
+            source: "MIX_BROKER_ACCOUNT",
         },
         (_, Some(name)) => AccountSelection {
             name,
@@ -236,17 +236,17 @@ impl BrokerEnvironment {
         let directories = config::Environment::current();
         Self {
             search: config::node::NodeConfigSearch::from_environment(
-                std::env::var_os("MIXOS_NODE_CONFIG")
+                std::env::var_os("MIX_NODE_CONFIG")
                     .filter(|path| !path.is_empty())
                     .map(PathBuf::from),
                 directories.clone(),
             ),
             directories,
-            endpoint: std::env::var_os("MIXOS_BUS_SOCKET")
+            endpoint: std::env::var_os("MIX_BUS_SOCKET")
                 .filter(|path| !path.is_empty())
                 .map(PathBuf::from),
-            account: std::env::var_os("MIXOS_BROKER_ACCOUNT"),
-            url: std::env::var("MIXOS_NODED_URL")
+            account: std::env::var_os("MIX_BROKER_ACCOUNT"),
+            url: std::env::var("MIX_NODED_URL")
                 .ok()
                 .filter(|url| !url.trim().is_empty()),
         }
@@ -329,7 +329,7 @@ fn environment_account(account: Option<&std::ffi::OsStr>) -> anyhow::Result<Opti
     account
         .map(|account| {
             account.to_str().with_context(|| {
-                format!("broker account {account:?} from MIXOS_BROKER_ACCOUNT is not valid Unicode")
+                format!("broker account {account:?} from MIX_BROKER_ACCOUNT is not valid Unicode")
             })
         })
         .transpose()
@@ -572,7 +572,7 @@ pub(crate) mod tests {
         for (directories, expected, pings) in [
             (
                 user.clone(),
-                vec![dir.0.join("xdg/mixos/noded/bus.sock"), system.clone()],
+                vec![dir.0.join("xdg/mix/noded/bus.sock"), system.clone()],
                 true,
             ),
             (
@@ -702,7 +702,7 @@ pub(crate) mod tests {
             &captured_environment(&dir).search,
         )
         .unwrap_err();
-        assert!(error.to_string().contains("MIXOS_BROKER_ACCOUNT"));
+        assert!(error.to_string().contains("MIX_BROKER_ACCOUNT"));
         assert!(!format!("{error:#}").contains("node.conf"));
         std::fs::write(dir.0.join("node.conf.mix"), "noded: {").unwrap();
         let mut environment = captured_environment(&dir);
@@ -977,7 +977,7 @@ pub(crate) mod tests {
                 Some("env-user"),
                 Some("config-user"),
                 "env-user",
-                "MIXOS_BROKER_ACCOUNT",
+                "MIX_BROKER_ACCOUNT",
             ),
             (
                 None,
@@ -999,12 +999,12 @@ pub(crate) mod tests {
             assert!(error.to_string().contains("invalid\\0account"));
             assert!(error.to_string().contains(source));
             let error = AccountSelection {
-                name: "mixos-no-such-account",
+                name: "mix-no-such-account",
                 source,
             }
             .lookup()
             .unwrap_err();
-            assert!(error.to_string().contains("mixos-no-such-account"));
+            assert!(error.to_string().contains("mix-no-such-account"));
             assert!(error.to_string().contains(source));
         }
     }

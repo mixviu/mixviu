@@ -4,14 +4,14 @@ use serde_json::{Value, json};
 
 #[test]
 fn dependency_records_follow_live_levels() {
-    if std::env::var_os("MIXOS_DEBUG_FACADE_CHILD").is_none() {
+    if std::env::var_os("MIX_TEST_DEBUG_FACADE_CHILD").is_none() {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "dependency_records_follow_live_levels",
                 "--nocapture",
             ])
-            .env("MIXOS_DEBUG_FACADE_CHILD", "1")
+            .env("MIX_TEST_DEBUG_FACADE_CHILD", "1")
             .env_remove("RUST_LOG")
             .output()
             .unwrap();

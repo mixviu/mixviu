@@ -12,7 +12,7 @@
 //!
 //! **Recovery files** ([`recovery`], ced E1 plan §5) keep unsaved text across
 //! a crash, restart or SIGTERM (≤ 1 s loss while healthy). With
-//! `MIXOS_EDIT_RECOVERY=0` — or while recovery is degraded — buffers are
+//! `MIX_EDITD_RECOVERY=0` — or while recovery is degraded — buffers are
 //! volatile, and `edit.info` says so (`volatile: true`).
 //!
 //! In-process use (tests): [`router::Editd::start`] with any

@@ -247,7 +247,7 @@ impl NodedConfig {
     }
 
     /// A broker publishes its resolved endpoint through noded.ping. System
-    /// units pin MIXOS_RUN; development installs retain the common path rules.
+    /// units pin MIX_RUN; development installs retain the common path rules.
     pub fn broker_unix_endpoint(&self) -> std::path::PathBuf {
         self.unix_socket
             .clone()
@@ -264,18 +264,18 @@ pub struct ObserveConfig {
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-const ENV_VAR: &str = "MIXOS_NODE_CONFIG";
+const ENV_VAR: &str = "MIX_NODE_CONFIG";
 
 #[cfg(test)]
 fn has_override(value: Option<std::ffi::OsString>) -> bool {
     value.is_some_and(|value| !value.is_empty())
 }
 
-/// User/layout etc precedes system etc. Explicit MIXOS_ETC or MIXOS isolates
+/// User/layout etc precedes system etc. Explicit MIX_ETC or MIX_ROOT isolates
 /// the search; root's primary system directory deduplicates naturally.
-fn build_search_paths(primary_dir: &Path, mixos_etc_set: bool) -> Vec<PathBuf> {
+fn build_search_paths(primary_dir: &Path, mix_etc_set: bool) -> Vec<PathBuf> {
     let mut dirs = vec![primary_dir.to_path_buf()];
-    if !mixos_etc_set {
+    if !mix_etc_set {
         let system =
             ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default");
         if !dirs.contains(&system) {
@@ -310,9 +310,9 @@ pub fn load_node_config() -> Result<Option<NodeConfig>> {
 
 /// One read-only search for URL, socket and account consumers. Capturing only
 /// environment inputs lets resident clients defer filesystem reads safely.
-/// MIXOS_NODE_CONFIG is authoritative even when missing. Otherwise the
+/// MIX_NODE_CONFIG is authoritative even when missing. Otherwise the
 /// environment/layout etc directory precedes system etc, with system fallback
-/// suppressed by MIXOS_ETC or MIXOS.
+/// suppressed by MIX_ETC or MIX_ROOT.
 pub struct NodeConfigSearch {
     explicit: Option<PathBuf>,
     environment: crate::Environment,
@@ -541,12 +541,12 @@ mod tests {
         assert!(has_override(Some("/sandbox".into())));
         assert_eq!(
             build_search_paths(
-                Path::new("/home/user/.config/mixos"),
+                Path::new("/home/user/.config/mix"),
                 has_override(Some("".into()))
             ),
             vec![
-                PathBuf::from("/home/user/.config/mixos/node.conf.mix"),
-                PathBuf::from("/etc/mixos/node.conf.mix")
+                PathBuf::from("/home/user/.config/mix/node.conf.mix"),
+                PathBuf::from("/etc/mix/node.conf.mix")
             ]
         );
         assert_eq!(
@@ -554,8 +554,8 @@ mod tests {
             vec![PathBuf::from("/sandbox/node.conf.mix")]
         );
         assert_eq!(
-            build_search_paths(Path::new("/etc/mixos"), false),
-            vec![PathBuf::from("/etc/mixos/node.conf.mix")]
+            build_search_paths(Path::new("/etc/mix"), false),
+            vec![PathBuf::from("/etc/mix/node.conf.mix")]
         );
     }
     #[test]
@@ -793,12 +793,12 @@ mod transplanted_tests {
         assert!(defaults.shared_assets_dir.is_none());
         assert!(!defaults.shared_assets_cross_origin);
         let configured: WebdConfig = crate::from_conf_mix_str(
-            r#"{ shared_assets_dir: "/srv/mixos-assets", shared_assets_cross_origin: true }"#,
+            r#"{ shared_assets_dir: "/srv/mix-assets", shared_assets_cross_origin: true }"#,
         )
         .unwrap();
         assert_eq!(
             configured.shared_assets_dir.as_deref(),
-            Some("/srv/mixos-assets")
+            Some("/srv/mix-assets")
         );
         assert!(configured.shared_assets_cross_origin);
     }
@@ -840,35 +840,35 @@ mod transplanted_tests {
 
     // Tests exercise the pure `build_search_paths()` helper with
     // explicit inputs, so they do not depend on (and do not mutate)
-    // the inherited `MIXOS_ETC` env var or the `OnceLock`-cached
+    // the inherited `MIX_ETC` env var or the `OnceLock`-cached
     // path resolver in `paths.rs`. This keeps them hermetic regardless
     // of the test harness's environment.
 
     #[test]
     fn build_search_paths_user_mode_no_env_appends_system_fallback() {
-        let dir = PathBuf::from("/home/alice/.config/mixos");
+        let dir = PathBuf::from("/home/alice/.config/mix");
         let paths = build_search_paths(&dir, false);
         assert_eq!(
             paths,
             vec![
-                PathBuf::from("/home/alice/.config/mixos/node.conf.mix"),
-                PathBuf::from("/etc/mixos/node.conf.mix"),
+                PathBuf::from("/home/alice/.config/mix/node.conf.mix"),
+                PathBuf::from("/etc/mix/node.conf.mix"),
             ],
-            "user-mode (no MIXOS_ETC) must search user dir then /etc/mixos"
+            "user-mode (no MIX_ETC) must search user dir then /etc/mix"
         );
     }
 
     #[test]
     fn build_search_paths_mixos_etc_set_isolates() {
-        // The MIXOS_ETC isolation case — the original Medium finding.
+        // The MIX_ETC isolation case — the original Medium finding.
         // When the caller has explicitly overridden the etc dir, we
         // do NOT silently fall through to the host's <system etc>.
-        let dir = PathBuf::from("/sandbox/etc/mixos");
+        let dir = PathBuf::from("/sandbox/etc/mix");
         let paths = build_search_paths(&dir, true);
         assert_eq!(
             paths,
-            vec![PathBuf::from("/sandbox/etc/mixos/node.conf.mix")],
-            "MIXOS_ETC set must suppress /etc/mixos fallback"
+            vec![PathBuf::from("/sandbox/etc/mix/node.conf.mix")],
+            "MIX_ETC set must suppress /etc/mix fallback"
         );
     }
 
@@ -878,7 +878,7 @@ mod transplanted_tests {
         let paths = build_search_paths(&dir, false);
         assert_eq!(
             paths,
-            vec![PathBuf::from("/etc/mixos/node.conf.mix")],
+            vec![PathBuf::from("/etc/mix/node.conf.mix")],
             "root mode (primary dir already == system) must not duplicate"
         );
     }
@@ -897,8 +897,8 @@ mod transplanted_tests {
               hostname: "alpha.example.org",
               tls: {
                 identity: [
-                  { server_name: "alpha.example.org", cert: "/etc/mixos/maild/tls/lan.crt", key: "/etc/mixos/maild/tls/lan.key", default: true, no_sni_fallback: true },
-                  { server_name: "alpha.bus.example.org", cert: "/etc/mixos/maild/tls/wg.crt", key: "/etc/mixos/maild/tls/wg.key" }
+                  { server_name: "alpha.example.org", cert: "/etc/mix/maild/tls/lan.crt", key: "/etc/mix/maild/tls/lan.key", default: true, no_sni_fallback: true },
+                  { server_name: "alpha.bus.example.org", cert: "/etc/mix/maild/tls/wg.crt", key: "/etc/mix/maild/tls/wg.key" }
                 ]
               }
             }
@@ -930,13 +930,13 @@ mod transplanted_tests {
 
     #[test]
     fn maild_tls_legacy_only_leaves_identity_empty() {
-        let src = "maild: { tls_cert: \"/etc/mixos/maild/tls/legacy.crt\", \
-                   tls_key: \"/etc/mixos/maild/tls/legacy.key\" }\n";
+        let src = "maild: { tls_cert: \"/etc/mix/maild/tls/legacy.crt\", \
+                   tls_key: \"/etc/mix/maild/tls/legacy.key\" }\n";
         let nc: NodeConfig = crate::from_conf_mix_str(src).expect("parse");
         assert!(nc.maild.as_ref().unwrap().tls.identity.is_empty());
         assert_eq!(
             nc.maild.as_ref().unwrap().tls_cert.as_deref(),
-            Some("/etc/mixos/maild/tls/legacy.crt"),
+            Some("/etc/mix/maild/tls/legacy.crt"),
             "legacy pair must still parse unchanged"
         );
     }
@@ -1008,7 +1008,7 @@ mod transplanted_tests {
     fn load_from_reads_conf_mix() {
         // C11: `.conf.mix` is the only format; load_from reads it
         // directly with no upgrade-write.
-        let dir = std::env::temp_dir().join(format!("mixos-node-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mix-node-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let conf_mix_path = dir.join("node.conf.mix");
@@ -1023,7 +1023,7 @@ mod transplanted_tests {
     #[test]
     fn load_from_toml_is_hard_error() {
         // A `.toml` path now fails to parse as strict-data (no fallback).
-        let dir = std::env::temp_dir().join(format!("mixos-node-toml-err-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mix-node-toml-err-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let toml_path = dir.join("node.toml");

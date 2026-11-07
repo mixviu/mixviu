@@ -1,7 +1,7 @@
 {
   "needs_setup": false,
-  "root": "/home/user/.config/mixos/scenes",
-  "templates_root": "/opt/mixos/share/scenes",
+  "root": "/home/user/.config/mix/scenes",
+  "templates_root": "/opt/mix/share/scenes",
   "state_ok": true,
   "revision": 42,
   "diagnostic": null,
@@ -12,21 +12,21 @@
     "visible": false,
     "source": "shipped",
     "safe": false,
-    "fallback": {"error_code": "SCENES_CITIZEN", "message": "document citizen must address its behaviour", "file": "/home/user/.config/mixos/scenes/editor/scene.mix"},
+    "fallback": {"error_code": "SCENES_CITIZEN", "message": "document citizen must address its behaviour", "file": "/home/user/.config/mix/scenes/editor/scene.mix"},
     "behaviour": "running",
     "view": "installed",
     "scene": "panel",
     "first_run": false,
     "request_seq": 3,
     "problems": [
-      {"file": "/opt/mixos/share/scenes/editor/behaviour.mix", "digest": "7d1f9c4e0a6b2d83c5e1f04a9b7c6d2e3f8a0b1c4d5e6f708192a3b4c5d6e7f8", "line": 40, "col": 3, "severity": "warning", "code": "MIX-W2001", "message": "unused variable $x"}
+      {"file": "/opt/mix/share/scenes/editor/behaviour.mix", "digest": "7d1f9c4e0a6b2d83c5e1f04a9b7c6d2e3f8a0b1c4d5e6f708192a3b4c5d6e7f8", "line": 40, "col": 3, "severity": "warning", "code": "MIX-W2001", "message": "unused variable $x"}
     ]
   },
   "scenes": [
     {
       "name": "panel", "installed": true, "enabled": true, "mounted": true, "revision": 18, "generation": 7,
       "behaviour": "running", "ready": true, "template": "panel",
-      "diagnostic": {"error_code": "SCENES_UPSTREAM", "message": "scene host refused request", "context": {"target": "shell", "command": "shell.scene.load", "rc": 10, "upstream": {"diagnostics": [{"line": 12, "code": "binding-policy", "severity": "Error", "message": "${env.HOME} is not a model path"}]}}, "file": "/home/user/.config/mixos/scenes/panel/scene.mix", "attempted_digest": "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e", "last_good_revision": 18},
+      "diagnostic": {"error_code": "SCENES_UPSTREAM", "message": "scene host refused request", "context": {"target": "shell", "command": "shell.scene.load", "rc": 10, "upstream": {"diagnostics": [{"line": 12, "code": "binding-policy", "severity": "Error", "message": "${env.HOME} is not a model path"}]}}, "file": "/home/user/.config/mix/scenes/panel/scene.mix", "attempted_digest": "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e", "last_good_revision": 18},
       "diagnostics": [],
       "exit": null,
       "attempted_digest": "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e",
@@ -35,9 +35,9 @@
       "open": false, "pending": false,
       "title": "Panel", "edge": "bottom", "page": "scene-panel", "kind": "edge",
       "files": {
-        "scene": "/home/user/.config/mixos/scenes/panel/scene.mix",
-        "behaviour": "/home/user/.config/mixos/scenes/panel/behaviour.mix",
-        "metadata": "/home/user/.config/mixos/scenes/panel/template.conf.mix"
+        "scene": "/home/user/.config/mix/scenes/panel/scene.mix",
+        "behaviour": "/home/user/.config/mix/scenes/panel/behaviour.mix",
+        "metadata": "/home/user/.config/mix/scenes/panel/template.conf.mix"
       },
       "digests": {
         "scene": "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e",
@@ -46,7 +46,7 @@
       },
       "forked_from": null,
       "problems": [
-        {"file": "/home/user/.config/mixos/scenes/panel/scene.mix", "digest": "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e", "line": 12, "severity": "error", "code": "binding-policy", "message": "${env.HOME} is not a model path"}
+        {"file": "/home/user/.config/mix/scenes/panel/scene.mix", "digest": "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e", "line": 12, "severity": "error", "code": "binding-policy", "message": "${env.HOME} is not a model path"}
       ]
     },
     {
@@ -61,9 +61,9 @@
       "open": false, "pending": false,
       "title": "Applications", "edge": "left", "page": "scene-launcher-sandbox", "kind": "edge",
       "files": {
-        "scene": "/home/user/.config/mixos/scenes/launcher-sandbox/scene.mix",
-        "behaviour": "/home/user/.config/mixos/scenes/launcher-sandbox/behaviour.mix",
-        "metadata": "/home/user/.config/mixos/scenes/launcher-sandbox/template.conf.mix"
+        "scene": "/home/user/.config/mix/scenes/launcher-sandbox/scene.mix",
+        "behaviour": "/home/user/.config/mix/scenes/launcher-sandbox/behaviour.mix",
+        "metadata": "/home/user/.config/mix/scenes/launcher-sandbox/template.conf.mix"
       },
       "digests": {
         "scene": "9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
@@ -72,7 +72,7 @@
       },
       "forked_from": "launcher",
       "problems": [
-        {"file": "/home/user/.config/mixos/scenes/launcher-sandbox/scene.mix", "digest": "9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b", "line": 1, "severity": "error", "code": "SCENES_REMOUNT_FAILED", "message": "address change failed and the rollback load failed too"}
+        {"file": "/home/user/.config/mix/scenes/launcher-sandbox/scene.mix", "digest": "9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b", "line": 1, "severity": "error", "code": "SCENES_REMOUNT_FAILED", "message": "address change failed and the rollback load failed too"}
       ]
     },
     {
@@ -87,9 +87,9 @@
       "open": false, "pending": false,
       "title": "Notifications", "edge": "right", "page": "scene-notes", "kind": "edge",
       "files": {
-        "scene": "/home/user/.config/mixos/scenes/notes/scene.mix",
-        "behaviour": "/home/user/.config/mixos/scenes/notes/behaviour.mix",
-        "metadata": "/home/user/.config/mixos/scenes/notes/template.conf.mix"
+        "scene": "/home/user/.config/mix/scenes/notes/scene.mix",
+        "behaviour": "/home/user/.config/mix/scenes/notes/behaviour.mix",
+        "metadata": "/home/user/.config/mix/scenes/notes/template.conf.mix"
       },
       "digests": {
         "scene": "3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f",

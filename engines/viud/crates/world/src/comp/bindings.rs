@@ -39,7 +39,7 @@ use smithay::input::keyboard::ModifiersState;
 use crate::state::Loop;
 
 /// Overrides the user keymap's path (tests, a second session).
-pub const USER_KEYMAP_ENV: &str = "MIXOS_USER_KEYMAP";
+pub const USER_KEYMAP_ENV: &str = "MIX_VIUD_USER_KEYMAP";
 
 /// The user keys' auto-repeat, which viud runs itself for a row with
 /// `repeat: allow` (the client never sees the key to repeat it). The same
@@ -227,9 +227,9 @@ impl std::fmt::Debug for UserKeymap {
     }
 }
 
-/// The session user's keymap.v1 file: `$MIXOS_USER_KEYMAP`, else
-/// `inputd/keymap.json` in the MixOS etc dir (for a user,
-/// `$XDG_CONFIG_HOME/mixos/inputd/keymap.json`).
+/// The session user's keymap.v1 file: `$MIX_VIUD_USER_KEYMAP`, else
+/// `inputd/keymap.json` in the MixViu etc dir (for a user,
+/// `$XDG_CONFIG_HOME/mix/inputd/keymap.json`).
 pub fn user_keymap_path() -> PathBuf {
     std::env::var_os(USER_KEYMAP_ENV)
         .filter(|value| !value.is_empty())

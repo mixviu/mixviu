@@ -8,7 +8,7 @@ repository.workspace = true
 publish = false
 description = "Shared editor buffers over the native edit Bus service"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "editd"
 kind = "service"
 layer = "core"

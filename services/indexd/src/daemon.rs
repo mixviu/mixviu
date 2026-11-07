@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("MIXOS_GIT_SHA"), ", built ", env!("MIXOS_BUILD_TIME"), ")"))]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("MIX_GIT_SHA"), ", built ", env!("MIX_BUILD_TIME"), ")"))]
 struct Cli {
     #[arg(short, long, global = true)]
     config: Option<PathBuf>,
@@ -53,14 +53,14 @@ pub fn main() -> Result<()> {
         let node_config = node_config
             .clone()
             .or_else(|| {
-                std::env::var_os("MIXOS_NODE_CONFIG")
+                std::env::var_os("MIX_NODE_CONFIG")
                     .filter(|v| !v.is_empty())
                     .map(PathBuf::from)
             })
             .unwrap_or_else(|| ::paths::root(::paths::Root::Prefix).join("etc/node.conf.mix"));
         return runtime.block_on(async {
             let client = async {
-                let url = match std::env::var("MIXOS_NODED_URL")
+                let url = match std::env::var("MIX_NODED_URL")
                     .ok()
                     .filter(|v| !v.is_empty())
                 {

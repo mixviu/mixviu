@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn info_baseline_allocates_only_while_raised() {
-        const CHILD: &str = "MIXOS_RECENT_BASELINE_TEST";
+        const CHILD: &str = "MIX_TEST_RECENT_BASELINE";
         let Ok(flag) = std::env::var(CHILD) else {
             for flag in ["baseline", "--debug", "--debug=info", "--debug=warn"] {
                 let output = std::process::Command::new(std::env::current_exe().unwrap())

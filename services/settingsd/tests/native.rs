@@ -69,7 +69,7 @@ impl BrokerFixture {
         let root = self.directory.path();
         let log = std::fs::File::create(root.join("broker.log")).unwrap();
         self.daemon = Daemon(Some(
-            Command::new(std::env::var("MIXOS_TEST_NODED").unwrap())
+            Command::new(std::env::var("MIX_TEST_NODED_EXE").unwrap())
                 .args([
                     "serve",
                     "--listen",
@@ -79,10 +79,10 @@ impl BrokerFixture {
                     "--no-monitor",
                     "--no-log",
                 ])
-                .env("MIXOS_NODE_CONFIG", &self.config)
-                .env("MIXOS_ETC", root.join("etc"))
-                .env("MIXOS_RUN", root.join("run"))
-                .env("MIXOS_VAR", root.join("var"))
+                .env("MIX_NODE_CONFIG", &self.config)
+                .env("MIX_ETC", root.join("etc"))
+                .env("MIX_RUN", root.join("run"))
+                .env("MIX_VAR", root.join("var"))
                 .stdout(Stdio::from(log.try_clone().unwrap()))
                 .stderr(Stdio::from(log))
                 .spawn()
@@ -95,10 +95,10 @@ impl BrokerFixture {
             Command::new(env!("CARGO_BIN_EXE_settingsd"))
                 .args(["serve", "--instance", "fixture", "--root"])
                 .arg(root)
-                .env("MIXOS_NODED_URL", &self.url)
-                .env("MIXOS_NODE_CONFIG", &self.config)
-                .env("MIXOS_NODED_URL", &self.url)
-                .env("MIXOS_NODE_CONFIG", &self.config)
+                .env("MIX_NODED_URL", &self.url)
+                .env("MIX_NODE_CONFIG", &self.config)
+                .env("MIX_NODED_URL", &self.url)
+                .env("MIX_NODE_CONFIG", &self.config)
                 .stdout(Stdio::from(log.try_clone().unwrap()))
                 .stderr(Stdio::from(log))
                 .spawn()
@@ -268,7 +268,7 @@ fn real_abp_publication_open_operator_receipts_and_authority_restart() {
         .build()
         .unwrap();
     runtime.block_on(async {
-        let url = std::env::var("MIXOS_NODED_URL").expect("isolated broker URL");
+        let url = std::env::var("MIX_NODED_URL").expect("isolated broker URL");
         let root = tempfile::tempdir().unwrap();
         assert!(Command::new(env!("CARGO_BIN_EXE_settingsd")).args(["init","--instance","fixture","--root"]).arg(root.path()).status().unwrap().success());
         let mut daemon = spawn(root.path());

@@ -374,7 +374,7 @@ without becoming markup.
 
 ## webd integration
 
-In MixOS these builtins exist so a Mix SSR handler running inside the `webd`
+In MixViu these builtins exist so a Mix SSR handler running inside the `webd`
 web daemon can drive a live page over SSE without a client-side framework. The
 shape of a handler is: build event strings, assemble with `ds_sse`, and return
 the body with the right content type:

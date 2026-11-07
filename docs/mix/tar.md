@@ -1,7 +1,7 @@
 # tar — archives in-language: tar_list, tar_unpack, tar_pack
 
 Archives are read and written by the language itself, so a verified artifact
-can be unpacked without an external `tar` or `zstd`. Inside a MixOS machine
+can be unpacked without an external `tar` or `zstd`. Inside a MixViu machine
 there is no such tool at all: `/bin/sh` is mix. On other hosts the same
 builtins avoid depending on a distribution's import tooling. A signed
 manifest pins a digest, `hash_file` compares against it, and `tar_unpack`

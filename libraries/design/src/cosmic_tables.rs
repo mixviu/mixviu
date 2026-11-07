@@ -613,7 +613,7 @@ mod tests {
             assert_eq!(Roundness::from_radii(&roundness.corner_radii()), roundness);
             assert_eq!(roundness.corner_radii().radius_0, [0.0; 4]);
         }
-        // MixOS writes 0 on every token for square; it still reads back.
+        // MixViu writes 0 on every token for square; it still reads back.
         assert_eq!(Roundness::from_radii(&radii([0.0; 6])), Roundness::Square);
         assert_eq!(panel_radius(&round, true, false), 160.0);
         assert_eq!(panel_radius(&round, false, false), 12.0);

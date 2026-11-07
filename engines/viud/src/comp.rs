@@ -344,7 +344,7 @@ impl Bus {
         handle: &LoopHandle<'static, Loop>,
     ) -> Result<Self, String> {
         let session = session::Session::new(
-            std::env::var("MIXOS_VT").ok().as_deref(),
+            std::env::var("MIX_VT").ok().as_deref(),
             session::unix_millis(),
         );
         let (ping, source) = make_ping().map_err(|error| format!("Bus wake source: {error}"))?;

@@ -272,7 +272,7 @@ builtin_table! {
     ("access", CapabilityClass::FsRead,          "io",      "Ask the kernel whether this process can access path using its effective uid/gid: mode is a non-empty, duplicate-free string of r/w/x/f letters (f = existence and is redundant when combined). Follows symlinks. Unlike inspecting stat().perm, this honours POSIX ACLs. Ordinary absence/denial returns false; malformed input or an unexpected syscall failure raises (v0.45.0).", contract!((path: string, mode: string) -> bool; failure[raises])),
     ("is_dir", CapabilityClass::FsRead,          "io",      "Test if path is a directory", contract!((path: string) -> bool)),
     ("is_file", CapabilityClass::FsRead,         "io",      "Test if path is a regular file", contract!((path: string) -> bool)),
-    ("mixos_path", CapabilityClass::FsRead, "io", "Resolve prefix/share/etc/var/run/cache or a logical path. Override > MIXOS > layout.mx > uid/XDG defaults. Optional tier: system or user. Relative paths cannot escape", contract!((root: string, rel?: string, opts?: map) -> string; failure[raises])),
+    ("mix_path", CapabilityClass::FsRead, "io", "Resolve prefix/share/etc/var/run/cache or a logical path. Override > MIX_ROOT > layout.mx > uid/XDG defaults. Optional tier: system or user. Relative paths cannot escape", contract!((root: string, rel?: string, opts?: map) -> string; failure[raises])),
     ("realpath", CapabilityClass::FsRead,        "io",      "Canonicalise a path: resolve every symlink + `.`/`..` to the absolute real path (like `readlink -f` / realpath(3)). The path MUST exist. realpath(path) -> string | nil (nil ONLY when a component is missing; a permission/IO/symlink-loop/non-UTF-8 failure RAISES — v0.103.14). NORMALISATION ONLY, not a race-free authorization primitive: canonicalise-then-use is not atomic, so for an exec/open safety check, exec/open the RETURNED canonical path (which has no symlinks to re-traverse), not the original (v0.31.2)", contract!((path: string) -> any_of(string, nil); failure[raises])),
     ("glob", CapabilityClass::FsRead,            "io",      "List files matching a glob pattern (supports ** globstar in v0.2.1)", contract!((pattern: string) -> list(string); failure[raises])),
     ("ls", CapabilityClass::FsRead,              "io",      "List directory entries", contract!((path?: string) -> list(string); failure[raises])),
@@ -348,12 +348,12 @@ builtin_table! {
     ("shell_quote", CapabilityClass::Pure,     "system",  "Single-quote-wrap a string for safe interpolation into a POSIX shell command", contract!((s: string) -> string)),
     ("sql_quote", CapabilityClass::Pure,       "system",  "Escape a string for SQL string literals: doubles ' and escapes \\ (MySQL/MariaDB-safe — the documented target; also safe for SQLite, where a literal backslash arrives doubled — use sqlexec binds for exact bytes); NUL bytes stripped", contract!((s: string) -> string)),
     ("random_password", CapabilityClass::Pure, "system",  "Generate an alphanumeric password (default len 16, no O/o, guaranteed upper+lower+digit)", contract!((len?: number) -> string)),
-    ("ssh_run", CapabilityClass::Network,         "system",  "Run a command on a remote host via ssh; returns {stdout, stderr, exit_code, ok, duration_ms, host, timed_out, interrupted, utf8_lossy, stdout_truncated, stderr_truncated}; max_output optionally caps local capture bytes per stream (omitted: unbounded; 0 is REJECTED — unlike run_argv, where 0 means unbounded — omit the key instead). A cap that cuts mid-UTF-8-sequence makes the lossy decode insert U+FFFD, so utf8_lossy: true beside stdout_truncated: true may be local truncation damage, not remote garbage. env values ship by default in a Mix driver to the remote mix binary (mix_bin opt, else local env MIX_REMOTE_BIN, else bare mix)", contract!((host: string, cmd: any_of(string, list), opts?: map) -> map("ssh_result", {stdout: string, stderr: string, exit_code: number, ok: bool, duration_ms: number, host: string, timed_out: bool, interrupted: bool, utf8_lossy: bool, stdout_truncated: bool, stderr_truncated: bool}); effects[must_use, blocking]; failure[returns_result])),
+    ("ssh_run", CapabilityClass::Network,         "system",  "Run a command on a remote host via ssh; returns {stdout, stderr, exit_code, ok, duration_ms, host, timed_out, interrupted, utf8_lossy, stdout_truncated, stderr_truncated}; max_output optionally caps local capture bytes per stream (omitted: unbounded; 0 is REJECTED — unlike run_argv, where 0 means unbounded — omit the key instead). A cap that cuts mid-UTF-8-sequence makes the lossy decode insert U+FFFD, so utf8_lossy: true beside stdout_truncated: true may be local truncation damage, not remote garbage. env values ship by default in a Mix driver to the remote mix binary (mix_bin opt, else local env MIX_REMOTE_EXE, else bare mix)", contract!((host: string, cmd: any_of(string, list), opts?: map) -> map("ssh_result", {stdout: string, stderr: string, exit_code: number, ok: bool, duration_ms: number, host: string, timed_out: bool, interrupted: bool, utf8_lossy: bool, stdout_truncated: bool, stderr_truncated: bool}); effects[must_use, blocking]; failure[returns_result])),
     ("ssh_must", CapabilityClass::Network,        "system",  "ssh_run wrapper: returns stdout on success, throws a Mix error otherwise", contract!((host: string, cmd: any_of(string, list), opts?: map) -> string; effects[blocking]; failure[raises])),
-    ("ssh_mix", CapabilityClass::Network,         "system",  "Run Mix source on a remote host: ships the source over ssh stdin into `<mix_bin> -`, bypassing ALL shell quoting. The remote binary is the mix_bin opt, else the local env var MIX_REMOTE_BIN, else bare mix; absolute paths may contain spaces and are quoted for SSH; bare names use only [A-Za-z0-9_./+-] (invalid input raises OPTION_INVALID locally). ssh_mix(host, source, [opts]) -> same map as ssh_run; bindings maps valid Mix identifier names to strict-data-encoded values prepended as `$name` assignments, and decode:\"data\"|\"json\" adds a parsed `.value` from stdout. max_output caps local capture per stream (0 rejected; omit for unbounded); a truncated stdout REFUSES to decode (raises) — a truncated prefix can parse as a smaller, wrong value — so omit decode and inspect stdout/stdout_truncated to work with partial output. Accepts every ssh_run opt except stdin/env_transport. Remote command failure stays in the result value; invalid arguments/options raise locally. (v0.20.4)", contract!((host: string, source: string, opts?: map("ssh_mix_options", {timeout: number, max_output: number, connect_timeout: number, multiplex: bool, batch: bool, strict_host_key: string, env: map, cwd: string, extra_ssh_args: list(string), decode: string, bindings: map, mix_bin: string})) -> map("ssh_result", {stdout: string, stderr: string, exit_code: number, ok: bool, duration_ms: number, host: string, timed_out: bool, interrupted: bool, utf8_lossy: bool, stdout_truncated: bool, stderr_truncated: bool, value: any}); effects[must_use, blocking]; failure[returns_result])),
+    ("ssh_mix", CapabilityClass::Network,         "system",  "Run Mix source on a remote host: ships the source over ssh stdin into `<mix_bin> -`, bypassing ALL shell quoting. The remote binary is the mix_bin opt, else the local env var MIX_REMOTE_EXE, else bare mix; absolute paths may contain spaces and are quoted for SSH; bare names use only [A-Za-z0-9_./+-] (invalid input raises OPTION_INVALID locally). ssh_mix(host, source, [opts]) -> same map as ssh_run; bindings maps valid Mix identifier names to strict-data-encoded values prepended as `$name` assignments, and decode:\"data\"|\"json\" adds a parsed `.value` from stdout. max_output caps local capture per stream (0 rejected; omit for unbounded); a truncated stdout REFUSES to decode (raises) — a truncated prefix can parse as a smaller, wrong value — so omit decode and inspect stdout/stdout_truncated to work with partial output. Accepts every ssh_run opt except stdin/env_transport. Remote command failure stays in the result value; invalid arguments/options raise locally. (v0.20.4)", contract!((host: string, source: string, opts?: map("ssh_mix_options", {timeout: number, max_output: number, connect_timeout: number, multiplex: bool, batch: bool, strict_host_key: string, env: map, cwd: string, extra_ssh_args: list(string), decode: string, bindings: map, mix_bin: string})) -> map("ssh_result", {stdout: string, stderr: string, exit_code: number, ok: bool, duration_ms: number, host: string, timed_out: bool, interrupted: bool, utf8_lossy: bool, stdout_truncated: bool, stderr_truncated: bool, value: any}); effects[must_use, blocking]; failure[returns_result])),
     ("ssh_mix_many", CapabilityClass::Network,    "system",  "ssh_mix on many hosts at once: ssh_mix_many(hosts, source[, opts]) -> map host -> ssh_result, keyed in INPUT order. Every host gets the same source, bindings, env and decode, and each result is EXACTLY ssh_mix's ssh_result map, so per-host handling code ports unchanged. opts = every ssh_mix opt plus max (concurrency, default 8, at most 256 live workers — run_parallel's numbers, its own loop). Options are validated once (even for an empty host list) and every host is checked before any ssh spawns; a wrong argument type raises TYPE_MISMATCH. After that nothing raises — one host's failure is DATA in its own map: unreachable, nonzero exit and timeout arrive as ok:false; a local spawn/pipe failure as ok:false with error_code (`PROCESS_SPAWN`, `PROCESS_STDIO`, …) and error; a decode refusal (truncated or unparseable stdout, where ssh_mix raises) as ok:false, decode_error and no value; a host never started because of Ctrl-C as ok:false, interrupted:true. hosts must be unique strings; timeout:0 is refused (one hung host would park the batch); there is no whole-call deadline", contract!((hosts: list(string), source: string, opts?: map("ssh_mix_many_options", {timeout: number, max_output: number, connect_timeout: number, multiplex: bool, batch: bool, strict_host_key: string, env: map, cwd: string, extra_ssh_args: list(string), decode: string, bindings: map, mix_bin: string, max: number})) -> map; effects[must_use, blocking]; failure[returns_result])),
     ("send_mail", CapabilityClass::Process,       "system",  "Send a plain-text email through the local MTA: send_mail({to, from, subject, body[, headers]}[, {host, sendmail, timeout, mix_bin}]) -> run_argv's process_result + message_id (+ host, only with the host opt). Renders an RFC 5322 message (From, To, Subject, Date, Message-ID, MIME-Version, text/plain utf-8) and pipes it to `sendmail -t -i -f <envelope>` on stdin — never a network SMTP client; ok means the MTA accepted it, not that it was delivered. to is a string or list of strings; Cc/Bcc go in headers. from is exactly one mailbox, addr or Name <addr> (a comment, a second mailbox or <> raises); its address is the envelope sender. Long headers are folded within 78 columns (an unbreakable run over 998 raises); a non-ASCII body or one with a line over 998 bytes goes quoted-printable, else 7bit. A non-ASCII subject is RFC 2047-encoded; every other header value must be ASCII, and CR/LF/NUL in any header raises. headers adds headers or replaces the generated Date/Message-ID/MIME-Version; From/To/Subject there raise (set them in msg), and so do Content-Type/Content-Transfer-Encoding (send_mail encodes the body itself, always text/plain utf-8). sendmail is found on PATH, then /usr/sbin/sendmail, /usr/lib/sendmail, unless the sendmail opt names it. host sends from that host via ssh_exec (remote default /usr/sbin/sendmail); mix_bin (host only) names the remote mix binary, as for ssh_mix. An MTA failure or missing sendmail is DATA (ok:false, exit_code, stderr, error_code); bad input raises before anything runs: OPTION_INVALID (msg fields, options), TYPE_MISMATCH (msg not a map, arity), or ssh_exec's own validation errors with host", contract!((msg: map("send_mail_msg", {to: any_of(string, list), from: string, subject: string, body: string, headers: map}), opts?: any_of(map("send_mail_options", {host: string, sendmail: string, timeout: number, mix_bin: string}), nil)) -> map("process_result", {ok: bool, exit_code: any, stdout: string, stderr: string, timed_out: bool, interrupted: bool, signal: any, duration_ms: number, stdout_truncated: bool, stderr_truncated: bool, utf8_lossy: bool, error_code: any, error: any, message_id: string, host: string}); effects[must_use, blocking]; failure[returns_result]; cond_caps[host: Network])),
-    ("ssh_exec", CapabilityClass::Network,        "system",  "Run an argv list DIRECTLY on a remote host via a strict-data driver and remote run_argv. Remote stdio allowlist: stdin nil|string|{file}|{null:true} (a stdin STRING is always data, as locally — there is no stdin \"inherit\" route on either side); stdout capture|null|{file}; stderr capture|null|stdout|{file}. File paths resolve remotely. stdout/stderr inherit and stream:true raise OPTION_INVALID locally before ssh because they would corrupt or bypass the result envelope. Binary stdin also raises locally. Transport/protocol failures and remote command failure are returned in the process_result plus host; a remote without run_argv returns SSH_REMOTE_UNSUPPORTED without running the command. The remote mix binary is the mix_bin opt (older name remote_mix), else local env MIX_REMOTE_BIN, else bare mix", contract!((host: string, argv: list(string), opts?: any_of(map, nil)) -> map("process_result", {ok: bool, exit_code: any, stdout: string, stderr: string, timed_out: bool, interrupted: bool, signal: any, duration_ms: number, stdout_truncated: bool, stderr_truncated: bool, utf8_lossy: bool, error_code: any, error: any, host: string}); effects[must_use, blocking]; failure[returns_result])),
+    ("ssh_exec", CapabilityClass::Network,        "system",  "Run an argv list DIRECTLY on a remote host via a strict-data driver and remote run_argv. Remote stdio allowlist: stdin nil|string|{file}|{null:true} (a stdin STRING is always data, as locally — there is no stdin \"inherit\" route on either side); stdout capture|null|{file}; stderr capture|null|stdout|{file}. File paths resolve remotely. stdout/stderr inherit and stream:true raise OPTION_INVALID locally before ssh because they would corrupt or bypass the result envelope. Binary stdin also raises locally. Transport/protocol failures and remote command failure are returned in the process_result plus host; a remote without run_argv returns SSH_REMOTE_UNSUPPORTED without running the command. The remote mix binary is the mix_bin opt (older name remote_mix), else local env MIX_REMOTE_EXE, else bare mix", contract!((host: string, argv: list(string), opts?: any_of(map, nil)) -> map("process_result", {ok: bool, exit_code: any, stdout: string, stderr: string, timed_out: bool, interrupted: bool, signal: any, duration_ms: number, stdout_truncated: bool, stderr_truncated: bool, utf8_lossy: bool, error_code: any, error: any, host: string}); effects[must_use, blocking]; failure[returns_result])),
     ("process_alive", CapabilityClass::Process,   "system",  "Test if a process exists (signal 0 check). EPERM counts as alive: existence does not imply permission to signal, including another user's process. pid must be a positive whole NUMBER; no coercion. Nonpositive, bool or string PIDs raise TYPE_MISMATCH. Reaps exited unmanaged children; controller-owned job and registered native-task PIDs use only signal 0 so their sole wait owner retains every status (zombies may briefly report alive).", contract!((pid: number) -> bool)),
     ("net_watch", CapabilityClass::Env, "system", "Subscribe to Linux rtnetlink link/address changes; returns an evaluator-owned opaque handle. Delivers net.changed {watch, changes:[{kind:\"link\"|\"addr\", ifname, index, up, removed, operstate?, loopback?, wireless?, family?, address?, prefix?}], overflow, closed?} via $event.args; bursts coalesce per link/address, repeats that change nothing are dropped, overflow means re-read net_state(). opts {events: [\"link\",\"addr\"]}. No polling fallback", contract!((opts?: map("net_watch_options", {events: list(string)})) -> string; failure[raises])),
     ("net_unwatch", CapabilityClass::Env, "system", "Cancel a net_watch handle and its pending changes", contract!((handle: string) -> nil; failure[raises])),
@@ -657,7 +657,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "is_dir" => builtin_is_dir(args),
         "is_file" => builtin_is_file(args),
         "realpath" => builtin_realpath(args),
-        "mixos_path" => builtin_mixos_path(args),
+        "mix_path" => builtin_mix_path(args),
         "glob" => builtin_glob(args),
         "ls" => builtin_ls(args),
         "mkdir" => builtin_mkdir(args),
@@ -5110,7 +5110,7 @@ unsafe fn raw_fork() -> libc::pid_t {
 /// Elsewhere (other unix, other Linux arches): fall back to `libc::fork`.
 /// The atfork hazard described above REMAINS on these targets — a prepare
 /// handler that waits on another thread can deadlock the intermediate, and
-/// fork is not async-signal-safe here. MixOS targets Linux on the three
+/// fork is not async-signal-safe here. MixViu targets Linux on the three
 /// arches above; this arm is documented exposure, not a fix.
 #[cfg(not(all(
     target_os = "linux",
@@ -8421,7 +8421,7 @@ const STRICT_HOST_KEY_VALUES: &[&str] = &["yes", "no", "accept-new", "ask"];
 /// remote `ps` argv; `"argv"` is the legacy `export K='v'; ` command-string
 /// prefix — visible in `ps` on BOTH ends, kept for compatibility only.
 /// `"mix"` needs mix on the remote at the path [`remote_mix_bin`] resolves
-/// (`mix_bin` opt > `$MIX_REMOTE_BIN` > `mixos:prefix/bin/mix`);
+/// (`mix_bin` opt > `$MIX_REMOTE_EXE` > `mix:prefix/bin/mix`);
 /// `"sh"` is for arbitrary POSIX hosts (and is broken on mix-login-shell
 /// nodes, where `sh -s` misroutes through the Mix classifier).
 const ENV_TRANSPORT_VALUES: &[&str] = &["mix", "sh", "argv"];
@@ -11694,11 +11694,11 @@ const REMOTE_MIX_DEFAULT: &str = "mix";
 
 /// Local process env var that overrides [`REMOTE_MIX_DEFAULT`] for every
 /// remote-mix builtin when the call carries no `mix_bin` option.
-const REMOTE_MIX_ENV: &str = "MIX_REMOTE_BIN";
+const REMOTE_MIX_ENV: &str = "MIX_REMOTE_EXE";
 
 /// Check a remote mix binary path. It is interpolated into the remote
 /// command STRING (OpenSSH has no argv), so only `[A-Za-z0-9_./+-]` is
-/// allowed: an absolute path (`mixos:prefix/bin/mix`) or a bare name the
+/// allowed: an absolute path (`mix:prefix/bin/mix`) or a bare name the
 /// remote PATH resolves (`mix`). Absolute paths may contain spaces, which
 /// are quoted by remote_mix_bin. No controls or shell metacharacters,
 /// no leading `-` (it would read as an option) and no relative path with
@@ -11734,9 +11734,9 @@ fn validate_remote_mix_bin(caller: &str, source: &str, s: &str) -> MixResult<()>
 }
 
 /// Resolve the remote mix binary from explicit inputs: the per-call
-/// `mix_bin` option, else the `MIX_REMOTE_BIN` value, else
+/// `mix_bin` option, else the `MIX_REMOTE_EXE` value, else
 /// [`REMOTE_MIX_DEFAULT`]. Whichever wins is validated. An EMPTY env value
-/// counts as unset (`MIX_REMOTE_BIN=` is how a shell clears it); an empty
+/// counts as unset (`MIX_REMOTE_EXE=` is how a shell clears it); an empty
 /// option is an error. Pure, so the precedence is unit-testable without
 /// touching the process environment.
 fn resolve_remote_mix_bin(caller: &str, opt: Option<&str>, env: Option<&str>) -> MixResult<String> {
@@ -11752,7 +11752,7 @@ fn resolve_remote_mix_bin(caller: &str, opt: Option<&str>, env: Option<&str>) ->
 }
 
 /// THE resolver every remote-mix builtin uses: `mix_bin` option >
-/// `$MIX_REMOTE_BIN` (local process env) > [`REMOTE_MIX_DEFAULT`].
+/// `$MIX_REMOTE_EXE` (local process env) > [`REMOTE_MIX_DEFAULT`].
 fn remote_mix_bin(caller: &str, opt: Option<&str>) -> MixResult<String> {
     let env = match std::env::var(REMOTE_MIX_ENV) {
         Ok(s) => Some(s),
@@ -14127,28 +14127,28 @@ pub(crate) fn canonicalize_path(path: &str) -> Option<String> {
         .and_then(|p| p.into_os_string().into_string().ok())
 }
 
-fn builtin_mixos_path(args: Vec<Value>) -> MixResult<Option<Value>> {
+fn builtin_mix_path(args: Vec<Value>) -> MixResult<Option<Value>> {
     let error = |msg: String| MixError::RuntimeError { span: None, msg };
     if !(1..=3).contains(&args.len()) {
         return Err(error(
-            "mixos_path expects root[, rel[, {tier: system|user}]]".into(),
+            "mix_path expects root[, rel[, {tier: system|user}]]".into(),
         ));
     }
     let Value::String(name) = &args[0] else {
-        return Err(error("mixos_path root must be a string".into()));
+        return Err(error("mix_path root must be a string".into()));
     };
     let layout = match args.get(2) {
         None => paths::Layout::discover(),
         Some(Value::Map(options)) => {
             if options.len() != 1 {
-                return Err(error("mixos_path opts accepts only tier".into()));
+                return Err(error("mix_path opts accepts only tier".into()));
             }
             let Some(Value::String(tier)) = options.get("tier") else {
-                return Err(error("mixos_path tier must be system or user".into()));
+                return Err(error("mix_path tier must be system or user".into()));
             };
             paths::Layout::for_tier(paths::Tier::parse(tier).map_err(error)?)
         }
-        _ => return Err(error("mixos_path opts must be a map".into())),
+        _ => return Err(error("mix_path opts must be a map".into())),
     }
     .map_err(error)?;
     let path = if name.starts_with("mixos:") {
@@ -14165,7 +14165,7 @@ fn builtin_mixos_path(args: Vec<Value>) -> MixResult<Option<Value>> {
         let rel = match args.get(1) {
             None => "",
             Some(Value::String(s)) => s,
-            _ => return Err(error("mixos_path rel must be a string".into())),
+            _ => return Err(error("mix_path rel must be a string".into())),
         };
         layout
             .path(paths::Root::parse(name).map_err(error)?, rel)
@@ -14174,7 +14174,7 @@ fn builtin_mixos_path(args: Vec<Value>) -> MixResult<Option<Value>> {
     Ok(Some(Value::String(
         path.into_os_string()
             .into_string()
-            .map_err(|_| error("MixOS path is not UTF-8".into()))?,
+            .map_err(|_| error("MixViu path is not UTF-8".into()))?,
     )))
 }
 
@@ -17202,7 +17202,7 @@ fn builtin_toml_encode(args: Vec<Value>) -> MixResult<Option<Value>> {
 #[cfg(feature = "toml")]
 fn builtin_project_info(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("project_info", &args, 0)?;
-    let root = std::env::var("MIXOS")
+    let root = std::env::var("MIX_ROOT")
         .ok()
         .or_else(|| {
             std::env::var("HOME")
@@ -30514,7 +30514,7 @@ fn builtin_http_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
 // --- Help ---
 
 fn builtin_help(_args: Vec<Value>) -> MixResult<Option<Value>> {
-    println!("Mix — scripting language and shell for the MixOS stack");
+    println!("Mix — scripting language and shell for the MixViu stack");
     println!();
     println!("String:    length len upper lower left right substr pos lastpos");
     println!("           strip trim replace split join starts_with ends_with");
@@ -31179,7 +31179,7 @@ mod ssh_helpers_tests {
         }
         // A bad env value raises too, naming the variable.
         let e = r("t", None, Some("mix; rm")).unwrap_err().to_string();
-        assert!(e.contains("MIX_REMOTE_BIN"), "{e}");
+        assert!(e.contains("MIX_REMOTE_EXE"), "{e}");
     }
 
     #[test]
@@ -33869,7 +33869,7 @@ mod ssh_helpers_tests {
     fn run_stream_spawn_failure_is_catchable_error() {
         // A nonexistent program → spawn error surfaced as a RuntimeError, not
         // a panic; the message names the program.
-        let err = run_stream(vec!["/nonexistent/mixos/run_stream_probe"]).unwrap_err();
+        let err = run_stream(vec!["/nonexistent/mix/run_stream_probe"]).unwrap_err();
         assert!(format!("{err}").contains("run_stream_probe"), "got: {err}");
     }
 
@@ -33900,22 +33900,22 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_stream_env_reaches_the_child() {
-        let probe = vec!["/bin/sh", "-c", "test \"$MIX_RS_PROBE\" = ok"];
+        let probe = vec!["/bin/sh", "-c", "test \"$MIX_TEST_RS_PROBE\" = ok"];
         assert_eq!(
             run_stream_opts(
                 probe.clone(),
-                vec![("env", env_map(vec![("MIX_RS_PROBE", "ok")]))]
+                vec![("env", env_map(vec![("MIX_TEST_RS_PROBE", "ok")]))]
             )
             .expect("spawn ok"),
             Some(Value::Number(0.0)),
-            "child did not see MIX_RS_PROBE=ok"
+            "child did not see MIX_TEST_RS_PROBE=ok"
         );
         // Falsifier: the same probe without the option must FAIL, or the
         // assertion above would pass on an inherited variable.
         assert_eq!(
             run_stream(probe).expect("spawn ok"),
             Some(Value::Number(1.0)),
-            "MIX_RS_PROBE was already set in the parent — probe is vacuous"
+            "MIX_TEST_RS_PROBE was already set in the parent — probe is vacuous"
         );
     }
 
@@ -33924,16 +33924,16 @@ mod ssh_helpers_tests {
         // The value goes through execve, not a shell: spaces, globs and a
         // literal `$HOME` survive verbatim.
         let raw = "a b * $HOME";
-        let probe = vec!["/bin/sh", "-c", "test \"$MIX_RS_RAW\" = 'a b * $HOME'"];
+        let probe = vec!["/bin/sh", "-c", "test \"$MIX_TEST_RS_RAW\" = 'a b * $HOME'"];
         // Falsifier first: without the option the probe must FAIL, so a green
         // assertion below cannot come from a variable the parent already had.
         assert_eq!(
             run_stream_opts(probe.clone(), vec![]).expect("spawn ok"),
             Some(Value::Number(1.0)),
-            "parent already carries MIX_RS_RAW — the test below would pass vacuously"
+            "parent already carries MIX_TEST_RS_RAW — the test below would pass vacuously"
         );
         assert_eq!(
-            run_stream_opts(probe, vec![("env", env_map(vec![("MIX_RS_RAW", raw)]))])
+            run_stream_opts(probe, vec![("env", env_map(vec![("MIX_TEST_RS_RAW", raw)]))])
                 .expect("spawn ok"),
             Some(Value::Number(0.0))
         );
@@ -33969,11 +33969,11 @@ mod ssh_helpers_tests {
                 vec![
                     "/bin/sh",
                     "-c",
-                    "test \"$MIX_RS_ONLY\" = yes && test -z \"$HOME\""
+                    "test \"$MIX_TEST_RS_ONLY\" = yes && test -z \"$HOME\""
                 ],
                 vec![
                     ("clear_env", Value::Bool(true)),
-                    ("env", env_map(vec![("MIX_RS_ONLY", "yes")])),
+                    ("env", env_map(vec![("MIX_TEST_RS_ONLY", "yes")])),
                 ]
             )
             .expect("spawn ok"),
@@ -35466,10 +35466,10 @@ mod flock_tests {
     use std::sync::Mutex;
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
-    const CHILD_PATH_ENV: &str = "MIXOS_MIX_FLOCK_TEST_PATH";
-    const CHILD_READY_ENV: &str = "MIXOS_MIX_FLOCK_TEST_READY";
-    const CHILD_EXIT_ENV: &str = "MIXOS_MIX_FLOCK_TEST_EXIT";
-    const CHILD_SHARED_ENV: &str = "MIXOS_MIX_FLOCK_TEST_SHARED";
+    const CHILD_PATH_ENV: &str = "MIX_TEST_FLOCK_PATH";
+    const CHILD_READY_ENV: &str = "MIX_TEST_FLOCK_READY";
+    const CHILD_EXIT_ENV: &str = "MIX_TEST_FLOCK_EXIT";
+    const CHILD_SHARED_ENV: &str = "MIX_TEST_FLOCK_SHARED";
 
     fn tmpdir(suffix: &str) -> std::path::PathBuf {
         let nonce = std::time::SystemTime::now()
@@ -39393,7 +39393,7 @@ mod char_aware_tests {
         }
     }
 
-    /// SECURITY (MIXOS-002): `capability_category` FAILS OPEN — any name it
+    /// SECURITY (MIX_ROOT-002): `capability_category` FAILS OPEN — any name it
     /// doesn't explicitly match defaults to `CapabilityClass::Pure`, which a
     /// `CategoryAllowList` (webd handlers, maild filters) always allows. So a
     /// NEW builtin that touches the filesystem / network / a process but is

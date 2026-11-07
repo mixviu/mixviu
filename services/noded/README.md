@@ -38,11 +38,11 @@ candidate that includes the server-PID pin, it also proves that a fresh
 correct-PID query succeeds and a wrong-PID query refuses while TCP is unreachable.
 It does not boot systemd.
 
-Run through native Mix; `MIXOS_TEST_NODED` may select a CBC-built candidate file
+Run through native Mix; `MIX_TEST_NODED_EXE` may select a CBC-built candidate file
 for this fixture only. It is copied and hash-checked, never installed to gold.
 The candidate must include the explicit private witness/lock mode invariant.
-Set `MIXOS_TEST_MIX` to an absolute candidate Mix path plus
-`MIXOS_TEST_MIX_SHA256` and `MIXOS_TEST_NODED_SHA256` to exercise the opt-in
+Set `MIX_TEST_MIX_EXE` to an absolute candidate Mix path plus
+`MIX_TEST_MIX_SHA256` and `MIX_TEST_NODED_SHA256` to exercise the opt-in
 PID-pin proof. The fixture verifies each hash before copying that binary;
 without these variables, `pid_pin_tested` stays false. Both candidates remain
 uninstalled.

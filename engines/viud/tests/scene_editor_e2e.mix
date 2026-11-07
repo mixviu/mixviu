@@ -13,15 +13,15 @@
 -- without a renderer. Nothing reaches the host Bus: private TCP port, private
 -- unix socket, admission off, HOME and state dirs in the temp dir.
 -- Run: mix src/desktop/scripts/tests/scene-editor-e2e.mix
--- MIXOS_TEST_MIX / MIXOS_TEST_NODED point at freshly built binaries;
+-- MIX_TEST_MIX_EXE / MIX_TEST_NODED_EXE point at freshly built binaries;
 -- defaults are the system install. SE_E2E_KEEP=1 keeps the temp dir (logs).
 $here = dirname(realpath($0))
 $repo = realpath($here .. "/../../..")
 $scripts = $repo .. "/engines/viud/scripts"
-$mix = env("MIXOS_TEST_MIX", "")
-if $mix == "" then $mix = (mixos_path("prefix") .. "/bin/mix") end
-$noded = env("MIXOS_TEST_NODED", "")
-if $noded == "" then $noded = (mixos_path("prefix") .. "/bin/noded") end
+$mix = env("MIX_TEST_MIX_EXE", "")
+if $mix == "" then $mix = (mix_path("prefix") .. "/bin/mix") end
+$noded = env("MIX_TEST_NODED_EXE", "")
+if $noded == "" then $noded = (mix_path("prefix") .. "/bin/noded") end
 for each $bin in [$mix, $noded]
   if not exists($bin) then raise("TEST_CONFIG", "missing binary " .. $bin) end
 end
@@ -29,7 +29,7 @@ $tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-se-e2e.XXXXXXXX"]))
 $tag = slice(replace(uuid(), "-", ""), 0, 8)
 $node = $tmp .. "/node.conf.mix"
 $shell_log = $tmp .. "/shell-requests.jsonl"
-$env = {MIXOS_NODE_CONFIG:$node, MIX_STATS:"off", PATH:"/usr/bin:/bin",
+$env = {MIX_NODE_CONFIG:$node, MIX_STATS:"off", PATH:"/usr/bin:/bin",
   HOME:$tmp, XDG_STATE_HOME:$tmp, XDG_RUNTIME_DIR:$tmp, XDG_CONFIG_HOME:$tmp .. "/config"}
 $fx = $here .. "/fixtures/scene-editor"
 $apps_log = $tmp .. "/apps-requests.jsonl"
@@ -307,7 +307,7 @@ try
   -- The mesh refusal table against the real loader, both routes local here
   -- (the attested mesh route runs in the nested gate or live).
   $mt = run_argv([$mix, $here .. "/scenes_mesh_test.mix"], {clear_env:true, timeout:120,
-    env:{MIXOS_NODE_CONFIG:$node, MIX_STATS:"off", PATH:"/usr/bin:/bin", HOME:$tmp, XDG_RUNTIME_DIR:$tmp,
+    env:{MIX_NODE_CONFIG:$node, MIX_STATS:"off", PATH:"/usr/bin:/bin", HOME:$tmp, XDG_RUNTIME_DIR:$tmp,
       SCENES_LOCAL_TARGET:"scenes", SCENES_REMOTE_TARGET:"scenes"}})
   check($mt.ok and contains($mt.stdout, "PASS"), "scenes-mesh-test refusal table: " .. $mt.stdout .. $mt.stderr)
 

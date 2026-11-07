@@ -11,7 +11,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>Mix — overview — MixOS</title>
+    <title>Mix — overview — MixViu</title>
     <link rel="canonical" href="https://mixos.dev/mix/overview/">
     <link rel="alternate" type="text/markdown" href="/mix/overview.md" title="Markdown source">
     <meta name="mixos-build" content="7af43e1ca197">
@@ -90,7 +90,7 @@
 <button class="menu-toggle" data-sidebar="right"><i data-lucide="menu"></i></button>
 
 <nav class="topnav">
-    <h1><a class="brand" href="/">MixOS &middot; <span>Server &amp; Desktop Systems</span></a></h1>
+    <h1><a class="brand" href="/">MixViu &middot; <span>Server &amp; Desktop Systems</span></a></h1>
 </nav>
 
 <!-- ================= LEFT SIDEBAR: documentation panels ================= -->
@@ -109,7 +109,7 @@
         <div class="panel-track">
 
             <div class="panel">
-                <div class="panel-title">MixOS</div>
+                <div class="panel-title">MixViu</div>
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
@@ -340,12 +340,12 @@ parity. Mix now occupies that role exclusively across the mixos stack.</p>
 on the host, the <strong>same binary</strong> becomes mesh-viable on next invocation — no
 reinstall, no recompile, no script edits. A runtime lazy-probe decides
 bare-vs-mesh at execution time.</p>
-<p>MixOS locations use <code>mixos_path(root[, rel[, opts]])</code>, backed by the shared
+<p>MixViu locations use <code>mix_path(root[, rel[, opts]])</code>, backed by the shared
 <a href="/paths/">paths resolver</a>. For example,
-<code>mix -c 'print(mixos_path("prefix"))'</code> prints the current installation prefix.
+<code>mix -c 'print(mix_path("prefix"))'</code> prints the current installation prefix.
 The roots are <code>prefix</code>, <code>share</code>, <code>etc</code>, <code>var</code>, <code>run</code>, <code>cache</code>. Defaults follow
 the process uid. <code>{tier: "system"}</code> or <code>{tier: "user"}</code> selects a tier
-explicitly, for example <code>mixos_path("etc", "node.conf.mix", {tier: "system"})</code>.</p>
+explicitly, for example <code>mix_path("etc", "node.conf.mix", {tier: "system"})</code>.</p>
 <p>Before installation, a staged binary can print target defaults independently
 of its own location: <code>mix layout defaults --tier system --json</code>, with an
 optional <code>--prefix DIR</code>. The <code>user</code> tier requires <code>--prefix</code>. Installers run
@@ -442,7 +442,7 @@ with <code>mix -c '&lt;code&gt;'</code> and trust what it prints. The full topic
 <a href="/mix/">the manual index</a>.</p>
 <h2 id="related-projects">Related projects</h2>
 <ul>
-<li><strong><a href="https://github.com/markc/mixos">bus</a></strong> — the MixOS Agent Bus (the Bus) library family Mix consumes for <code>send</code> / <code>call</code> / topic subscription.</li>
+<li><strong><a href="https://github.com/markc/mixos">bus</a></strong> — the MixViu Agent Bus (the Bus) library family Mix consumes for <code>send</code> / <code>call</code> / topic subscription.</li>
 <li><strong><a href="https://github.com/markc/mixos">cos</a></strong> — the mixos daemon family: ships <code>noded</code> (the broker <code>--serve</code> connects to) plus mail, web, DNS, the knowledge indexer, and the display compositor.</li>
 <li><strong><a href="https://data-star.dev">Datastar</a></strong> — the hypermedia framework the <code>ds_*</code> builtins frame SSE events for (server-side reactive UI from Mix).</li>
 <li><strong><a href="https://en.wikipedia.org/wiki/ARexx">ARexx background</a></strong> — the message-port scripting model Mix descends from.</li>
@@ -467,7 +467,7 @@ mix keywords          list the reserved words
 <a href="/mix/capabilities/">capabilities</a> · <a href="/mix/shell-mode/">shell</a> ·
 <a href="/mix/keywords/">keywords</a> · <a href="/mix/builtins/">builtins index</a></p>
         </article>
-        <p class="doc-source"><a href="/mix/overview.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
+        <p class="doc-source"><a href="/mix/overview.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixViu.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>

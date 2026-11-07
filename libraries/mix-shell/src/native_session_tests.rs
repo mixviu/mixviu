@@ -23,7 +23,7 @@ fn descriptor() -> serde_json::Value {
 fn memfd(descriptor: serde_json::Value, version: u8, seals: i32, extra: bool) -> File {
     let raw = unsafe {
         libc::memfd_create(
-            c"mixos-session-test".as_ptr(),
+            c"mix-session-test".as_ptr(),
             libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING,
         )
     };
@@ -109,7 +109,7 @@ fn marker_never_owns_stdio() {
 
 #[test]
 fn consume_scrub_helper() {
-    let Ok(expected) = std::env::var("MIX_BOOTSTRAP_SCRUB_TEST") else {
+    let Ok(expected) = std::env::var("MIX_TEST_BOOTSTRAP_SCRUB") else {
         return;
     };
     let result = consume();
@@ -141,7 +141,7 @@ fn consume_closes_fd_and_scrubs_marker_on_success_and_failure() {
             ])
             .env(MARKER, marker)
             .env(
-                "MIX_BOOTSTRAP_SCRUB_TEST",
+                "MIX_TEST_BOOTSTRAP_SCRUB",
                 if valid && marker == "64" {
                     "ok"
                 } else {

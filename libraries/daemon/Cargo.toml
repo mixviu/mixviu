@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 description = "Shared infrastructure for mixos daemon services"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "daemon"
 kind = "lib"
 layer = "core"

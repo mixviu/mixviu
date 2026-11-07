@@ -462,7 +462,7 @@ pub struct SeatPointerSnapshot {
 /// compositor startup — not whether a generation is currently running,
 /// which the lifecycle owns), and `xwayland.persist_path` is the resolved
 /// per-socket file that value persists to — read-only, surfaced because
-/// the path depends on the MixOS config root and the socket name, and an
+/// the path depends on the MixViu config root and the socket name, and an
 /// operator must be able to SEE which file governs the next startup
 /// rather than deduce it.
 #[cfg(feature = "xwayland")]

@@ -2,8 +2,8 @@
 -- Copy to the system etc root's indexd/config.conf.mix and set the local snapshot path.
 schema_version: 1
 service: {
-  vectors_db: "/var/lib/mixos/indexd/vectors.db",
-  model_dir: "/var/lib/mixos/indexd/model",
+  vectors_db: "/var/lib/mix/indexd/vectors.db",
+  model_dir: "/var/lib/mix/indexd/model",
   dtype: "f16",
   idle_timeout_secs: 300
 }

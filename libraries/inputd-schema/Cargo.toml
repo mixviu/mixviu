@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 description = "inputd's wire contract: keymap.v1 rows, the input.* commands, and the fixed user-key rule"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "inputd"
 kind = "service"
 layer = "core"

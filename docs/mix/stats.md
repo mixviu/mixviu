@@ -133,7 +133,7 @@ default termination and may lose its in-memory batch. `SIGKILL`, a panic, or
 power loss can also lose the in-memory batch; stats are intentionally
 best-effort.
 
-If legacy history remains under `$MIXOS_SRC/_stats`, report commands print a
+If legacy history remains under `$MIX_SRC/_stats`, report commands print a
 migration or acknowledgement command. History is never moved automatically.
 
 ## Reports and windows

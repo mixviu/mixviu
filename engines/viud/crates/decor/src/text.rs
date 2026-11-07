@@ -188,7 +188,7 @@ mod tests {
         let mut previous = 0;
         for &weight in theme::fonts::INTER_WEIGHTS {
             let mask = title_mask(
-                "MixOS Preferences Hamburgefonts 0123456789",
+                "MixViu Preferences Hamburgefonts 0123456789",
                 &DecoFontFamily::SystemUi,
                 24.0,
                 weight,

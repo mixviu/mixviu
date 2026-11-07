@@ -485,7 +485,7 @@ fn import_rejects_old_format_tag_with_reexport_hint() {
     let err = dst.import_set(&tar_path).unwrap_err();
     let msg = format!("{err}");
     assert!(msg.contains(old_tag), "got {msg}");
-    assert!(msg.contains("re-export with the MixOS build"), "got {msg}");
+    assert!(msg.contains("re-export with the MixViu build"), "got {msg}");
     assert!(dst.list_sets().unwrap().is_empty());
     let target = root.path().join("containers").join(s.0.to_string());
     assert!(!target.exists());

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! mixtrayd: the MixOS tray's data service. It registers on the noded Bus as
+//! mixtrayd: the MixViu tray's data service. It registers on the noded Bus as
 //! `mixtrayd` and answers `mixtrayd.snapshot` with the four popup tabs (COS,
 //! BUS, MIX, SSH), `mixtrayd.wait` with the next snapshot once a COS unit
 //! changes, and `mixtrayd.control` with start, stop or restart for the COS

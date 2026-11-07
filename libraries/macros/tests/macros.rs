@@ -151,7 +151,7 @@ fn real_mix_receives_only_an_explicit_allowed_target() {
     fs::create_dir_all(&roots.user).unwrap();
     fs::write(
         roots.user.join("target.mix"),
-        "-- target: ced, dopus\nprint(env(\"MIXOS_MACRO_TARGET\", \"absent\"))\n",
+        "-- target: ced, dopus\nprint(env(\"MIX_MACRO_TARGET\", \"absent\"))\n",
     )
     .unwrap();
     let entry = Catalogue::scan_globals(&roots).unwrap().entries.remove(0);
@@ -173,27 +173,27 @@ fn roots_are_pure_absolute_and_injectable() {
     let prefix = fixture.path().join("fixture prefix");
     let resolved = Roots::resolve_with(|key| match key {
         "HOME" => Some(home.clone()),
-        "MIXOS_PREFIX" => Some(prefix.clone()),
+        "MIX_PREFIX" => Some(prefix.clone()),
         _ => Some("relative".into()),
     })
     .unwrap();
     assert_eq!(resolved.builtin, prefix.join("share/macros"));
-    assert_eq!(resolved.user, home.join(".config/mixos/macros"));
+    assert_eq!(resolved.user, home.join(".config/mix/macros"));
     assert_eq!(resolved.mix, prefix.join("bin/mix"));
     let resolved = Roots::resolve_with(|key| {
-        if key == "MIXOS_PREFIX" {
+        if key == "MIX_PREFIX" {
             return Some(fixture.path().join("another prefix"));
         }
         Some(PathBuf::from(match key {
             "HOME" => "/home/user",
-            "MIXOS_SHARE" => "/share",
+            "MIX_SHARE" => "/share",
             "XDG_CONFIG_HOME" => "/config",
-            "MIXOS_MIX" => "/bin/custom-mix",
+            "MIX_EXE" => "/bin/custom-mix",
             _ => return None,
         }))
     })
     .unwrap();
-    assert_eq!(resolved.user, Path::new("/config/mixos/macros"));
+    assert_eq!(resolved.user, Path::new("/config/mix/macros"));
     assert_eq!(resolved.builtin, Path::new("/share/macros"));
     assert_eq!(resolved.mix, Path::new("/bin/custom-mix"));
     assert!(Roots::resolve_with(|_| None).is_none());
@@ -473,12 +473,12 @@ fn real_mix_runs_with_context_bounded_output_and_stop() {
     let roots = roots(temp.path());
     if !mix_binary::executable(&roots.mix) {
         eprintln!(
-            "SKIP macro runner: no executable mix on PATH; set MIXOS_E2E_MIX_BIN to select one"
+            "SKIP macro runner: no executable mix on PATH; set MIX_TEST_E2E_EXE to select one"
         );
         return;
     }
     let path = temp.path().join("real.mix");
-    fs::write(&path, "print(env(\"MIXOS_MACRO_APP\"))\nprint(env(\"MIXOS_MACRO_ID\"))\nprint(env(\"MIXOS_MACRO_TIER\"))\nprint(env(\"MIXOS_MACRO_PATH\"))\nprint(run_argv_must([\"pwd\"]))\n").unwrap();
+    fs::write(&path, "print(env(\"MIX_MACRO_APP\"))\nprint(env(\"MIX_MACRO_ID\"))\nprint(env(\"MIX_MACRO_TIER\"))\nprint(env(\"MIX_MACRO_PATH\"))\nprint(run_argv_must([\"pwd\"]))\n").unwrap();
     let entry = Entry {
         id: "real".into(),
         title: "Real".into(),
@@ -533,7 +533,7 @@ fn descendant_fixture(detached: bool) {
     let roots = roots(temp.path());
     if !mix_binary::executable(&roots.mix) {
         eprintln!(
-            "SKIP macro descendants: no executable mix on PATH; set MIXOS_E2E_MIX_BIN to select one"
+            "SKIP macro descendants: no executable mix on PATH; set MIX_TEST_E2E_EXE to select one"
         );
         return;
     }

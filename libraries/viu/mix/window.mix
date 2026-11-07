@@ -4,7 +4,7 @@
 on job.run
   try
     $a=$event.args
-    $comp=env("MIXOS_COMP_SERVICE","comp")
+    $comp=env("MIX_COMP_SERVICE","comp")
     send $comp "comp.window.wait" body={match:{app_id:$a.app_id},until:"mapped",timeout_ms:3000} timeout=5
     if $rc!=0 then raise("ACTIVATION",to_string($result)) end
     send $comp "comp.windows.list" body={} timeout=5

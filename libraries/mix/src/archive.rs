@@ -5,7 +5,7 @@
 //! Archives are read and written in-language so that a signed manifest can
 //! pin a digest, `hash_file` can check it, and the SAME verified file can be
 //! unpacked without an external `tar` or `zstd` binary. That matters inside
-//! MixOS machines, where no such tools exist.
+//! MixViu machines, where no such tools exist.
 //!
 //! Codecs: zstd (structured-zstd, pure Rust, RFC 8878 — both directions),
 //! gzip (flate2's gzip framing over its default Rust backend), none. Pure

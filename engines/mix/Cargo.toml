@@ -9,7 +9,7 @@ publish = false
 description = "The mix engine: the Mix shell profile"
 
 # The service profile and the headless daemons are the mixd engine.
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "mix"
 kind = "cli"
 layer = "core"

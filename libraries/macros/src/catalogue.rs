@@ -164,15 +164,15 @@ impl Roots {
         let home = get("HOME").and_then(absolute)?;
         let layout = paths::Layout::from_lookup(&get).ok()?;
         Some(Self {
-            builtin: get("MIXOS_SHARE")
+            builtin: get("MIX_SHARE")
                 .and_then(absolute)
                 .unwrap_or_else(|| layout.root(paths::Root::Share))
                 .join("macros"),
             user: get("XDG_CONFIG_HOME")
                 .and_then(absolute)
                 .unwrap_or_else(|| home.join(".config"))
-                .join("mixos/macros"),
-            mix: get("MIXOS_MIX")
+                .join("mix/macros"),
+            mix: get("MIX_EXE")
                 .and_then(absolute)
                 .unwrap_or_else(|| layout.root(paths::Root::Prefix).join("bin/mix")),
             home,

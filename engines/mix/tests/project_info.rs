@@ -31,7 +31,7 @@ fn project_info_reports_members_excludes_and_toolchain() {
 
     let out = Command::new(env!("CARGO_BIN_EXE_mix"))
         .args(["-c", "print(json_encode(project_info()))"])
-        .env("MIXOS", &root)
+        .env("MIX_ROOT", &root)
         .env("MIX_STATS", "off")
         .output()
         .expect("run mix");

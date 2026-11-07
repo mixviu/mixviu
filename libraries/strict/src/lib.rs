@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Strict data: the MixOS configuration and data format.
+//! Strict data: the MixViu configuration and data format.
 //!
 //! A `*.conf.mix` or `*.data.mix` file is a JSON-shaped tree written with
 //! a friendlier surface: bare keys, optional top-level braces, `#` and `--`

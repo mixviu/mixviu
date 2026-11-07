@@ -33,7 +33,7 @@
 //!    `format_version == 1`; `manifest.schema_version` must be ≤ the
 //!    importing site's `CURRENT_SCHEMA_VERSION` (older tarballs are
 //!    migrated forward after staging). Archives with an obsolete format
-//!    identifier are rejected and must be re-exported with the MixOS build.
+//!    identifier are rejected and must be re-exported with the MixViu build.
 //!    After staging, we verify `item_count` matches the manifest and
 //!    every distinct `item.blob_hash` is
 //!    present in CAS now.
@@ -527,7 +527,7 @@ fn attach_blobs_db(conn: &Connection, blobs_path: &Path) -> Result<()> {
 fn validate_manifest(m: &Manifest) -> Result<()> {
     if m.format != FORMAT_TAG {
         return Err(Error::Other(format!(
-            "import: manifest.format {:?} is not {FORMAT_TAG:?}; re-export with the MixOS build",
+            "import: manifest.format {:?} is not {FORMAT_TAG:?}; re-export with the MixViu build",
             m.format
         )));
     }

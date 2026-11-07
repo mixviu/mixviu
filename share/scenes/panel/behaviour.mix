@@ -3,7 +3,7 @@
 -- state in; one complete model out through the loader (scenes.model). The
 -- layout is static in scene.mix. Clicks arrive as {scene,node,kind,item?};
 -- repeated rows (workspaces, tasks, tray) carry their complete model row.
-$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mix/scenes/lib")
 $r = require($LIB .. "/runtime.mix")
 $m = require($LIB .. "/models.mix")
 $p = require($LIB .. "/data.mix")

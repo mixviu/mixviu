@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! MixOS directories and configuration files.
+//! MixViu directories and configuration files.
 //!
 //! - [`path`] answers "where is the etc / var / run / share directory" by
-//!   one rule ([`Dir`]): a `MIXOS_<DIR>` override, else `$MIXOS/<dir>`
+//!   one rule ([`Dir`]): a `MIX_<DIR>` override, else `$MIX_ROOT/<dir>`
 //!   when a root is set, else the XDG directory for a user or the system
 //!   directory for root. Code that needs the rule without the process
 //!   environment resolves [`Dirs`] from an explicit [`Environment`].

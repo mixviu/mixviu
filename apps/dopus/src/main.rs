@@ -437,7 +437,7 @@ impl App {
                 if eligible
                     && viu::hosting::Hosting::local_owner(
                         &headers,
-                        &std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()),
+                        &std::env::var("MIX_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()),
                     )
                 {
                     self.hosting.confirmed = true;
@@ -872,8 +872,8 @@ impl App {
             {
                 if suffix == "ui.menu.popup" {
                     if [
-                        std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
-                        std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()),
+                        std::env::var("MIX_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
+                        std::env::var("MIX_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()),
                     ]
                     .iter()
                     .any(|service| viu::hosting::Hosting::local_owner(&notice.headers, service))
@@ -1040,7 +1040,7 @@ impl eframe::App for App {
             ctx,
             &self.bus,
             &format!("dopus-{}", self.mode),
-            &std::env::var("MIXOS_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()),
+            &std::env::var("MIX_SCENE_SERVICE").unwrap_or_else(|_| "shell".into()),
             viu::hosting::Hosting::eligible(&self.window_settings()),
         );
         self.window_frame.show_with_chrome(
@@ -1339,7 +1339,7 @@ fn main() -> eframe::Result {
                 .collect();
             let bus = Endpoint::start(
                 format!("dopus-{mode}"),
-                std::env::var("MIXOS_NODED_URL")
+                std::env::var("MIX_NODED_URL")
                     .unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
                 descriptors,
                 "dopus.quit".into(),

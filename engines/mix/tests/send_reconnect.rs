@@ -5,12 +5,12 @@
 //!
 //! One failed connect used to latch the in-process client "unavailable":
 //! every later `send` answered `-3` until the script called
-//! `bus_reconnect()`, even after `MIXOS_NODED_URL` pointed at a live
+//! `bus_reconnect()`, even after `MIX_NODED_URL` pointed at a live
 //! broker, and a script that outlived a broker restart stayed dead. A
 //! `send` now re-probes (bounded by its `timeout=`) and re-reads the URL.
 //!
 //! The broker is the real embedded noded (`test-broker`). The verified
-//! Unix lane is disabled with a missing `MIXOS_NODE_CONFIG`, so the probe
+//! Unix lane is disabled with a missing `MIX_NODE_CONFIG`, so the probe
 //! takes the URL path these tests steer.
 #![cfg(target_os = "linux")]
 
@@ -31,8 +31,8 @@ fn mix(dir: &Path, script: &str) -> Command {
         .arg(&path)
         .env("HOME", dir)
         .env("MIX_STATS", "off")
-        .env("MIXOS_NODE_CONFIG", dir.join("no-such-node.conf.mix"))
-        .env_remove("MIXOS_NODED_URL")
+        .env("MIX_NODE_CONFIG", dir.join("no-such-node.conf.mix"))
+        .env_remove("MIX_NODED_URL")
         .env_remove("COSMIX_SESSION_FD")
         .stdin(Stdio::null());
     cmd
@@ -60,11 +60,11 @@ fn a_send_after_a_failed_connect_follows_a_new_url() {
     let broker = Broker::start();
     let dir = tempfile::tempdir().unwrap();
     let script = format!(
-        "export MIXOS_NODED_URL=\"{dead}\"\n\
+        "export MIX_NODED_URL=\"{dead}\"\n\
          send zz-no-such-svc ping timeout=2\n\
          print(\"rc=${{rc}}\")\n\
          print(\"result=${{result}}\")\n\
-         export MIXOS_NODED_URL=\"{live}\"\n\
+         export MIX_NODED_URL=\"{live}\"\n\
          send zz-no-such-svc ping timeout=2\n\
          print(\"rc=${{rc}}\")\n",
         dead = closed_url(),
@@ -101,7 +101,7 @@ fn a_send_after_a_broker_restart_reconnects() {
     let sent = dir.path().join("sent");
     let go = dir.path().join("go");
     let script = format!(
-        "export MIXOS_NODED_URL=\"{url}\"\n\
+        "export MIX_NODED_URL=\"{url}\"\n\
          send zz-no-such-svc ping timeout=2\n\
          print(\"rc=${{rc}}\")\n\
          write_file({sent:?}, \"1\")\n\

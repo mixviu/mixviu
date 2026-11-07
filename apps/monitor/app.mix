@@ -261,7 +261,7 @@ on monitor.quit
   $state.quitting=true;$state.window_close=true;publish_monitor($state);reply(0,json_encode({quitting:true}))
 end
 on monitor.show
-  $comp=$app_launch.comp ?? env("MIXOS_COMP_SERVICE","comp")
+  $comp=$app_launch.comp ?? env("MIX_COMP_SERVICE","comp")
   send $comp "comp.window.wait" body={match:{app_id:"dev.mixos.monitor"},until:"mapped",timeout_ms:10000}
   if $rc!=0 then reply(10,json_encode({error_code:"ACTIVATION",message:to_string($result)}));return end
   send $comp "comp.windows.list" body={}

@@ -142,7 +142,7 @@ fn boot(scale: i32, explicit_node: bool) {
     assert!(
         !process
             .root
-            .join("viud/wayland-headless-test.xwayland.env")
+            .join("mix/viud/wayland-headless-test.xwayland.env")
             .exists()
     );
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();

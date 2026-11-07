@@ -24,7 +24,7 @@ fn command(home: &std::path::Path) -> Command {
     cmd.env("HOME", home)
         .env("MIX_STATS", "off")
         .env("MIX_SIGTERM_BACKSTOP_SECS", "1")
-        .env_remove("MIXOS_SESSION_FD")
+        .env_remove("MIX_SESSION_FD")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -341,7 +341,7 @@ fn sigint_during_cpu_only_prelude_exits_with_130_for_command_and_file() {
         .unwrap();
         let stdout_path = dir.path().join("stdout");
         let mut cmd = command(dir.path());
-        cmd.env("MIXOS_ETC", dir.path())
+        cmd.env("MIX_ETC", dir.path())
             .stdout(Stdio::from(std::fs::File::create(&stdout_path).unwrap()));
         match mode {
             "command" => {
@@ -401,7 +401,7 @@ fn assert_framed_startup_sigint(startup: &str) {
     match startup {
         "prelude" => {
             std::fs::write(dir.path().join("prelude.mix"), &body).unwrap();
-            cmd.env("MIXOS_ETC", dir.path());
+            cmd.env("MIX_ETC", dir.path());
         }
         "mixrc" => {
             std::fs::write(dir.path().join(".mixrc"), &body).unwrap();

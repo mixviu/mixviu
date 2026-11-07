@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::ssh::Ssh;
 use crate::units;
 
-/// Where the MixOS mix binary lives in the gold copy.
+/// Where the MixViu mix binary lives in the gold copy.
 fn mix_bin() -> String {
     ::paths::bin("mix").to_string_lossy().into_owned()
 }
@@ -23,7 +23,7 @@ pub async fn build(client: &NodedClient, ssh: &Arc<Ssh>) -> Value {
     json!({ "cos": cos, "bus": bus, "mix": mix, "ssh": ssh })
 }
 
-/// COS: the MixOS units and their systemd state.
+/// COS: the MixViu units and their systemd state.
 async fn tab_cos() -> Value {
     match tokio::task::spawn_blocking(units::probe_all).await {
         Ok(units) => json!({ "units": units }),
@@ -77,7 +77,7 @@ pub fn peer_list(value: Value) -> Value {
 }
 
 /// MIX: the installed mix binary and its version. Scripts, runs and trash are
-/// predecessor hub features with no MixOS source yet, so they are not reported.
+/// predecessor hub features with no MixViu source yet, so they are not reported.
 async fn tab_mix() -> Value {
     let result = tokio::task::spawn_blocking(|| {
         let path = PathBuf::from(mix_bin());

@@ -40,7 +40,7 @@ const FAKE_PACTL: &str = r#"#!/bin/sh
 [ "$LC_ALL" = C ] || exit 65
 [ "$XDG_RUNTIME_DIR" = /nonexistent-mix-audio-runtime ] || exit 66
 printf "Event 'new' on client #9\nEvent 'change' on sink #5\n"
-[ -n "$MIX_FAKE_PACTL_EXIT" ] && exit "$MIX_FAKE_PACTL_EXIT"
+[ -n "$MIX_TEST_FAKE_PACTL_EXIT" ] && exit "$MIX_TEST_FAKE_PACTL_EXIT"
 exec sleep 3600
 "#;
 
@@ -98,7 +98,7 @@ async fn audio_watch_owns_a_subscription_child_and_reports_its_exit() {
     exec(&mut e, "audio_unwatch($h)").await.unwrap();
 
     // A stream that ends by itself is reported once, as closed.
-    unsafe { std::env::set_var("MIX_FAKE_PACTL_EXIT", "3") };
+    unsafe { std::env::set_var("MIX_TEST_FAKE_PACTL_EXIT", "3") };
     exec(
         &mut e,
         "$h = audio_watch({runtime_dir: \"/nonexistent-mix-audio-runtime\"})",

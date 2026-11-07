@@ -55,7 +55,7 @@
 //! copies cannot *silently* diverge there. They do not exhaustively
 //! exercise every response branch (EDNS/TC/NOTIMP/FORMERR); those rely
 //! on the verbatim-copy discipline, not the tests. The observer is a
-//! pure closure (no MixOS-internal dep), so core stays pure logic and
+//! pure closure (no MixViu-internal dep), so core stays pure logic and
 //! the P1/P2 split still lives only on the `dnsd` binary.
 
 use crate::resolver::resolve;
@@ -74,7 +74,7 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 /// not that codec-failure edge — correct for the §7/§8 REFUSED canary
 /// (a zone-load signal), see `dnsd`'s `stats` module doc. It is
 /// a pure closure (`Arc<dyn Fn>` so the per-connection TCP spawn can
-/// cheaply clone it) — no MixOS-internal Bus/mesh/config type crosses this
+/// cheaply clone it) — no MixViu-internal Bus/mesh/config type crosses this
 /// boundary, so `dns-core` stays pure-logic core and the P1/P2
 /// citizen split still lives only on the `dnsd` binary. The
 /// observer MUST NOT mutate the response (it is `&`-borrowed) and MUST

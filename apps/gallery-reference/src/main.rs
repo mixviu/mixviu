@@ -448,7 +448,7 @@ fn main() -> eframe::Result {
             let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || ctx.request_repaint());
             let bus = NativeBus::start(
                 service,
-                std::env::var("MIXOS_NODED_URL")
+                std::env::var("MIX_NODED_URL")
                     .unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
                 wake.clone(),
             );

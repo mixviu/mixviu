@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The drive layer: the same UI-level Bus commands for every MixOS app, so an
+//! The drive layer: the same UI-level Bus commands for every MixViu app, so an
 //! agent can do in the window whatever a person can (agentic first).
 //!
 //! [`install`] registers [`Drive`] as an egui plugin. It turns AccessKit on,

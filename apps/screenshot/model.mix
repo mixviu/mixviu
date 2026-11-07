@@ -17,7 +17,7 @@ fn dialog_form($s)
     $form.field_label="File";$form.field=$s.ui.path;$form.status=$s.status;$form.error=$s.dialog_error ?? "";$form.width=520
     $form.choices=[{id:if $save then "save" else "open" end,label:if $save then "Save" else "Open" end,enabled:not $s.busy,default:true},{id:"cancel",label:"Cancel",enabled:not $s.busy,cancel:true}]
   elif $kind=="about" then
-    $form.title="About Screenshot";$form.body="Native screenshots and editable annotations for MixOS. Shots are saved to Pictures/Screenshots, and agents find them with screenshot.recent."
+    $form.title="About Screenshot";$form.body="Native screenshots and editable annotations for MixViu. Shots are saved to Pictures/Screenshots, and agents find them with screenshot.recent."
     $form.choices=[{id:"done",label:"Done",enabled:true,default:true,cancel:true}]
     $form.note="0.1.2 ("..($s.build.git_sha ?? "unknown")..")"
   else

@@ -119,7 +119,7 @@ tracing = "0.1"
 # feature-gated: the pump is unconditional core, and a panicking handler
 # must not abort a `mix --serve` citizen regardless of build features.
 # `--no-default-features` stays clean — futures-util is an external
-# crate (like indexmap/libc/rand), not a MixOS-internal dependency.
+# crate (like indexmap/libc/rand), not a MixViu-internal dependency.
 futures-util = { workspace = true }
 base64 = { version = "0.22", optional = true }
 ring = { version = "0.17", optional = true }
@@ -210,7 +210,7 @@ mix = { path = ".", package = "lib-mix", features = ["json", "regex", "toml", "d
 # hub). Test-only; never linked into the shipped library.
 proptest = "1"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "mix"
 kind = "lib"
 layer = "mix"

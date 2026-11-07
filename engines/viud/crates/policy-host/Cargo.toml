@@ -12,7 +12,7 @@ repository.workspace = true
 # `warnings = "allow"`.
 publish = false
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "viud"
 kind = "service"
 layer = "desktop"
@@ -23,7 +23,7 @@ wlcs = []
 
 [dependencies]
 ui-surface.workspace = true
-# The MixOS etc dir rule.
+# The MixViu etc dir rule.
 config = { workspace = true }
 comp-model.workspace = true
 motion.workspace = true

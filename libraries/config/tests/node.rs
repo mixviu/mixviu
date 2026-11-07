@@ -98,8 +98,8 @@ fn maild_tls_identities_parse_multi() {
               hostname: "alpha.example.org",
               tls: {
                 identity: [
-                  { server_name: "alpha.example.org", cert: "/etc/mixos/maild/tls/lan.crt", key: "/etc/mixos/maild/tls/lan.key", default: true, no_sni_fallback: true },
-                  { server_name: "alpha.bus.example.org", cert: "/etc/mixos/maild/tls/wg.crt", key: "/etc/mixos/maild/tls/wg.key" }
+                  { server_name: "alpha.example.org", cert: "/etc/mix/maild/tls/lan.crt", key: "/etc/mix/maild/tls/lan.key", default: true, no_sni_fallback: true },
+                  { server_name: "alpha.bus.example.org", cert: "/etc/mix/maild/tls/wg.crt", key: "/etc/mix/maild/tls/wg.key" }
                 ]
               }
             }
@@ -131,13 +131,13 @@ fn maild_tls_strict_sni_toggle() {
 
 #[test]
 fn maild_tls_legacy_only_leaves_identity_empty() {
-    let src = "maild: { tls_cert: \"/etc/mixos/maild/tls/legacy.crt\", \
-                   tls_key: \"/etc/mixos/maild/tls/legacy.key\" }\n";
+    let src = "maild: { tls_cert: \"/etc/mix/maild/tls/legacy.crt\", \
+                   tls_key: \"/etc/mix/maild/tls/legacy.key\" }\n";
     let nc: NodeConfig = from_conf_mix_str(src).expect("parse");
     assert!(nc.maild.as_ref().unwrap().tls.identity.is_empty());
     assert_eq!(
         nc.maild.as_ref().unwrap().tls_cert.as_deref(),
-        Some("/etc/mixos/maild/tls/legacy.crt"),
+        Some("/etc/mix/maild/tls/legacy.crt"),
         "legacy pair must still parse unchanged"
     );
 }

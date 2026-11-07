@@ -77,7 +77,7 @@ mod call_port_typed_tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = dir.join(format!("mixos-cpt-{}-{}.sock", std::process::id(), nanos));
+        let path = dir.join(format!("mix-cpt-{}-{}.sock", std::process::id(), nanos));
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path).unwrap();
         let (rc, body) = (rc.to_string(), body.to_string());
@@ -132,7 +132,7 @@ mod call_port_typed_tests {
     #[tokio::test]
     async fn typed_connect_refused_is_transport_err() {
         // No socket at this path → a pure transport failure → Err.
-        let path = std::env::temp_dir().join("mixos-cpt-nonexistent.sock");
+        let path = std::env::temp_dir().join("mix-cpt-nonexistent.sock");
         let _ = std::fs::remove_file(&path);
         let r = call_port_typed(path.to_str().unwrap(), "x", serde_json::Value::Null).await;
         assert!(r.is_err(), "a missing socket must be a transport Err");

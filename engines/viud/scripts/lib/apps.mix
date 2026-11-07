@@ -186,7 +186,7 @@ fn default_theme()
   -- The self-contained image supplies its own default; explicit preferences
   -- above still win when the registry runs beside an existing desktop.
   for each $directory in icon_dirs()
-    if is_file($directory .. "/mixos/index.theme") then return "mixos" end
+    if is_file($directory .. "/mix/index.theme") then return "mixos" end
   end
   if is_dir("/usr/share/icons/breeze") then return "breeze" end
   return "hicolor"
@@ -454,7 +454,7 @@ end
 
 -- ── launch environment (XWayland DISPLAY) ───────────────────────────────
 -- comp never sets DISPLAY globally. Once its XWM is ready it publishes
--- $XDG_RUNTIME_DIR/mixos-comp/<WAYLAND_DISPLAY>.xwayland.env holding
+-- $XDG_RUNTIME_DIR/mix/viud/<WAYLAND_DISPLAY>.xwayland.env holding
 -- "DISPLAY=:N\nGENERATION=G\n", and removes it when XWayland dies. The
 -- launcher reads it at EVERY launch (never cached): a restarted XWayland may
 -- take a different display number.
@@ -472,7 +472,7 @@ fn xwayland_descriptor_path($runtime_dir, $wayland_display)
   if $runtime_dir == "" or $wayland_display == "" or contains($wayland_display, "/") then
     return ""
   end
-  return $runtime_dir .. "/mixos-comp/" .. $wayland_display .. ".xwayland.env"
+  return $runtime_dir .. "/mix/viud/" .. $wayland_display .. ".xwayland.env"
 end
 
 fn parse_xwayland_descriptor($text)
@@ -517,7 +517,7 @@ fn resolve_exec($cmd, $cwd)
   -- the launch cwd. Checked up front because the env(1) -u wrapper would
   -- otherwise spawn successfully and fail only after apps.launch replied.
   if type($cmd) != "string" or $cmd == "" then return nil end
-  if starts_with($cmd, "mixos:") then $cmd = mixos_path($cmd) end
+  if starts_with($cmd, "mixos:") then $cmd = mix_path($cmd) end
   if not contains($cmd, "/") then return which($cmd) end
   $path = $cmd
   if not starts_with($path, "/") and $cwd != "" then $path = $cwd .. "/" .. $path end

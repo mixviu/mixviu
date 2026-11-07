@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Compile-time build provenance for MixOS binaries.
+//! Compile-time build provenance for MixViu binaries.
 //!
 //! A crate's semver alone is too weak a "what build is this?" signal: a
 //! forgotten bump hides a real change. The truthful fingerprint is the git
@@ -123,7 +123,7 @@ fn provenance_json(
 //                        "git_sha_full":…,"git_dirty":…,"build_time":…}
 //
 // That is the JSON `--version --json` prints, rendered from the same build
-// script run. `emit` puts it in `MIXOS_BUILDINFO_MARKER`; `build_info!` pins
+// script run. `emit` puts it in `MIX_BUILDINFO_MARKER`; `build_info!` pins
 // that string into the binary through a `#[used]` static it also references,
 // so neither dead-code elimination, LTO nor `strip` (which drops symbols, not
 // data) removes it. A reader finds the prefix and takes the flat JSON object
@@ -138,7 +138,7 @@ fn provenance_json(
 /// prefix is immediately followed by `{`, and keeps only JSON naming the
 /// right crate.
 pub fn marker_prefix() -> String {
-    format!("{}{}", "MIXOS-BUILD", "INFO:1:")
+    format!("{}{}", "MIX_ROOT-BUILD", "INFO:1:")
 }
 
 /// Every well-formed marker JSON object in `bytes` (a binary's contents), in
@@ -187,7 +187,7 @@ fn json_str(s: &str) -> String {
 
 /// Construct a [`BuildInfo`] for the **calling** crate.
 ///
-/// `env!("CARGO_PKG_*")` and `option_env!("MIXOS_*")` resolve at the
+/// `env!("CARGO_PKG_*")` and `option_env!("MIX_*")` resolve at the
 /// expansion site, so the values describe the crate that invokes the macro,
 /// not this one. `option_env!` (not `env!`) is used for the build.rs-set
 /// variables so a crate without [`emit`] in its `build.rs` still compiles;
@@ -201,16 +201,16 @@ macro_rules! build_info {
         // past the linker's section GC, so the marker lands in every binary
         // that expands this macro in a crate whose build.rs ran `emit()`.
         #[used]
-        static MIXOS_BUILDINFO_MARKER: ::core::option::Option<&str> =
-            option_env!("MIXOS_BUILDINFO_MARKER");
-        let _ = ::core::hint::black_box(&MIXOS_BUILDINFO_MARKER);
+        static MIX_BUILDINFO_MARKER: ::core::option::Option<&str> =
+            option_env!("MIX_BUILDINFO_MARKER");
+        let _ = ::core::hint::black_box(&MIX_BUILDINFO_MARKER);
         $crate::BuildInfo {
             pkg: env!("CARGO_PKG_NAME"),
             version: env!("CARGO_PKG_VERSION"),
-            git_sha: option_env!("MIXOS_GIT_SHA").unwrap_or("unknown"),
-            git_sha_full: option_env!("MIXOS_GIT_SHA_FULL").unwrap_or("unknown"),
-            git_dirty: matches!(option_env!("MIXOS_GIT_DIRTY"), Some("1") | Some("true")),
-            build_time: option_env!("MIXOS_BUILD_TIME").unwrap_or("unknown"),
+            git_sha: option_env!("MIX_GIT_SHA").unwrap_or("unknown"),
+            git_sha_full: option_env!("MIX_GIT_SHA_FULL").unwrap_or("unknown"),
+            git_dirty: matches!(option_env!("MIX_GIT_DIRTY"), Some("1") | Some("true")),
+            build_time: option_env!("MIX_BUILD_TIME").unwrap_or("unknown"),
         }
     }};
 }
@@ -219,7 +219,7 @@ macro_rules! build_info {
 
 /// Where in argv a version flag is honoured.
 ///
-/// Every MixOS binary answers `--version`/`-V`; the only difference is how
+/// Every MixViu binary answers `--version`/`-V`; the only difference is how
 /// far into argv it looks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VersionScope {
@@ -301,7 +301,7 @@ pub fn exit_on_version(info: BuildInfo, scope: VersionScope) {
     }
 }
 
-/// `main`'s first line in every MixOS binary: answer `--version`/`-V` and
+/// `main`'s first line in every MixViu binary: answer `--version`/`-V` and
 /// exit 0, or fall through. Expands [`build_info!`] here, in the binary's
 /// crate, so the reported sha is the binary's.
 ///
@@ -320,7 +320,7 @@ macro_rules! exit_on_version {
 
 // ── build.rs helper ──
 
-/// Emit `cargo:rustc-env=MIXOS_{GIT_SHA,GIT_SHA_FULL,GIT_DIRTY,BUILD_TIME,
+/// Emit `cargo:rustc-env=MIX_{GIT_SHA,GIT_SHA_FULL,GIT_DIRTY,BUILD_TIME,
 /// BUILDINFO_MARKER}` for the consumer crate. Call from the consumer's
 /// `build.rs` `main()`.
 ///
@@ -346,20 +346,20 @@ pub fn emit() {
         .map(|s| !s.trim().is_empty())
         .unwrap_or(false);
 
-    println!("cargo:rustc-env=MIXOS_GIT_SHA={sha}");
-    println!("cargo:rustc-env=MIXOS_GIT_SHA_FULL={sha_full}");
+    println!("cargo:rustc-env=MIX_GIT_SHA={sha}");
+    println!("cargo:rustc-env=MIX_GIT_SHA_FULL={sha_full}");
     println!(
-        "cargo:rustc-env=MIXOS_GIT_DIRTY={}",
+        "cargo:rustc-env=MIX_GIT_DIRTY={}",
         if dirty { 1 } else { 0 }
     );
     let built = build_time();
-    println!("cargo:rustc-env=MIXOS_BUILD_TIME={built}");
+    println!("cargo:rustc-env=MIX_BUILD_TIME={built}");
     // The embedded marker: the JSON `--version --json` prints, from the same
     // values, for byte-level readers that must not execute the binary.
     let pkg = std::env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "unknown".to_string());
     let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "unknown".to_string());
     println!(
-        "cargo:rustc-env=MIXOS_BUILDINFO_MARKER={}{}",
+        "cargo:rustc-env=MIX_BUILDINFO_MARKER={}{}",
         marker_prefix(),
         provenance_json(&pkg, &version, &sha, &sha_full, dirty, &built)
     );
@@ -410,7 +410,7 @@ fn build_time() -> String {
         Ok(_) => {
             println!(
                 "cargo:warning=SOURCE_DATE_EPOCH is set but not a valid integer; \
-                 using epoch 0 for MIXOS_BUILD_TIME (deterministic, not wall-clock)"
+                 using epoch 0 for MIX_BUILD_TIME (deterministic, not wall-clock)"
             );
             0
         }
@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn build_info_macro_expands_in_this_crate() {
-        // Without a build.rs setting MIXOS_*, the macro degrades to
+        // Without a build.rs setting MIX_*, the macro degrades to
         // "unknown"/false but still yields this crate's pkg/version.
         let info = build_info!();
         assert_eq!(info.pkg, "buildinfo");

@@ -99,7 +99,7 @@ on job.run
     end
     reply(0,json_encode({path:$a.request.path,tabs:map($a.documents,fn($d)=to_number($d)),shown:$shown,stale:$stale}));return
   elif $job.kind=="show" then
-    $service=env("MIXOS_COMP_SERVICE") ?? "comp"
+    $service=env("MIX_COMP_SERVICE") ?? "comp"
     send $service "comp.windows.list" body={} timeout=5
     if $rc!=0 then raise("ACTIVATION","Cannot list compositor windows") end
     $windows=filter($reply.windows,fn($w)=$w.pid==pid())

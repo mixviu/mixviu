@@ -311,7 +311,7 @@ async fn stderr_modes_and_shared_environment_validation() {
 #[tokio::test(flavor = "current_thread")]
 async fn cwd_and_environment_reach_direct_child() {
     let mut e = watcher().await;
-    exec(&mut e, r#"$h = process_watch(["/usr/bin/printenv", "MIX_WATCH_TEST"], {clear_env: true, env: {MIX_WATCH_TEST: 42, REMOVE_ME: nil}})"#).await.unwrap();
+    exec(&mut e, r#"$h = process_watch(["/usr/bin/printenv", "MIX_TEST_WATCH"], {clear_env: true, env: {MIX_TEST_WATCH: 42, REMOVE_ME: nil}})"#).await.unwrap();
     pump(&mut e).await;
     let Value::List(ref lines) = e.get_global("lines").unwrap() else {
         panic!()

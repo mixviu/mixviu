@@ -4,12 +4,12 @@
 -- Renderer/Ced/apps fixtures are boundaries; loader I/O and files are real.
 $here=dirname(realpath($0))
 $repo=realpath($here .. "/../../..")
-$mix=env("MIXOS_TEST_MIX",(mixos_path("prefix") .. "/bin/mix"))
-$noded=env("MIXOS_TEST_NODED",(mixos_path("prefix") .. "/bin/noded"))
+$mix=env("MIX_TEST_MIX_EXE",(mix_path("prefix") .. "/bin/mix"))
+$noded=env("MIX_TEST_NODED_EXE",(mix_path("prefix") .. "/bin/noded"))
 $tmp="/tmp/editor-app-bus-" .. uuid()
 mkdir($tmp)
 $node=$tmp .. "/node.conf.mix"
-$env={MIXOS_NODE_CONFIG:$node,MIX_STATS:"off",PATH:"/usr/bin:/bin",HOME:$tmp,XDG_STATE_HOME:$tmp,XDG_RUNTIME_DIR:$tmp,XDG_CONFIG_HOME:$tmp .. "/config"}
+$env={MIX_NODE_CONFIG:$node,MIX_STATS:"off",PATH:"/usr/bin:/bin",HOME:$tmp,XDG_STATE_HOME:$tmp,XDG_RUNTIME_DIR:$tmp,XDG_CONFIG_HOME:$tmp .. "/config"}
 $pids=[]
 $checks={count:0}
 fn check($ok,$message)

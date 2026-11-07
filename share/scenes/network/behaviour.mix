@@ -8,7 +8,7 @@
 -- rtnetlink link and address events (net_watch) re-read the whole snapshot
 -- (events are hints, state is truth); networkd, resolved and the route table
 -- are read with their own tools on each batch. There is no polling fallback.
-$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mix/scenes/lib")
 $r = require($LIB .. "/runtime.mix")
 $m = require($LIB .. "/models.mix")
 $n = require($LIB .. "/network.mix")

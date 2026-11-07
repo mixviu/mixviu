@@ -29,7 +29,7 @@ unsafe impl GlobalAlloc for Counting {
 static ALLOCATOR: Counting = Counting;
 
 fn child(name: &str, ignored: bool) -> bool {
-    if std::env::var_os("MIXOS_DEBUG_COST_CHILD").is_some() {
+    if std::env::var_os("MIX_TEST_DEBUG_COST_CHILD").is_some() {
         return true;
     }
     for initial in if ignored {
@@ -43,7 +43,7 @@ fn child(name: &str, ignored: bool) -> bool {
             command.arg("--ignored");
         }
         let output = command
-            .env("MIXOS_DEBUG_COST_CHILD", initial)
+            .env("MIX_TEST_DEBUG_COST_CHILD", initial)
             .env_remove("RUST_LOG")
             .output()
             .unwrap();
@@ -86,7 +86,7 @@ fn default_resources_and_reload_hints() {
         return;
     }
     let mut args = vec!["fixture".into()];
-    let initial = std::env::var("MIXOS_DEBUG_COST_CHILD").unwrap();
+    let initial = std::env::var("MIX_TEST_DEBUG_COST_CHILD").unwrap();
     if initial != "warn" {
         args.push(format!("--debug={initial}"));
     }

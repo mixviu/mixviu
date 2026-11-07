@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 description = "JMAP, SMTP, IMAP and DAV mail service"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "maild"
 kind = "service"
 layer = "core"

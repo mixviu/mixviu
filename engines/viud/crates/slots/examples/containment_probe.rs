@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Run inside a delegated test service with MIXOS_CONTAIN_CHILDREN=1.
+//! Run inside a delegated test service with MIX_VIUD_CONTAIN_CHILDREN=1.
 //! A double-forked child changes session and process group immediately, then
 //! remains alive until native cgroup cleanup. This catches adoption-after-exec.
 
@@ -35,7 +35,7 @@ fn main() {
 
     assert!(
         containment::enabled(),
-        "set MIXOS_CONTAIN_CHILDREN=1 in a delegated service"
+        "set MIX_VIUD_CONTAIN_CHILDREN=1 in a delegated service"
     );
     let mut command = Command::new(std::env::current_exe().unwrap());
     command.arg("--descendant").stdout(Stdio::piped());

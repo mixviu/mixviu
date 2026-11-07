@@ -1,6 +1,6 @@
 # Preferences parity catalogue
 
-Reference: MixOS commit `8779f33284b7d3f1178c3d57a699efb9b0867b22`.
+Reference: MixViu commit `8779f33284b7d3f1178c3d57a699efb9b0867b22`.
 Original copyright: 2026 Mark Constable, MIT OR Apache-2.0.
 
 `strings.ftl` preserves `apps/prefs/i18n/en/prefs.ftl` at that revision,

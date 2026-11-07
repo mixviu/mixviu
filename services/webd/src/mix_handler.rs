@@ -1344,8 +1344,8 @@ mod tests {
         );
         // Legacy layout: handlers sit under the docroot → unchanged.
         assert_eq!(
-            derive_handler_root(Path::new("/var/lib/mixos/www-markc")),
-            PathBuf::from("/var/lib/mixos/www-markc")
+            derive_handler_root(Path::new("/var/lib/mix/www-markc")),
+            PathBuf::from("/var/lib/mix/www-markc")
         );
         // A bare `public` with no parent falls back to itself.
         assert_eq!(

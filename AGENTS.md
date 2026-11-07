@@ -1,6 +1,6 @@
 # mixviu source guide
 
-mixviu is a Mix-first rebuild informed by measured MixOS experience. Mark's
+mixviu is a Mix-first rebuild informed by measured MixViu experience. Mark's
 latest directions take precedence. This repository owns the eventual mix,
 mixd, viu and viud sources, shared libraries and Mix applications. Earlier
 desktop-only ownership is superseded. Mix/mixd separation is future work.

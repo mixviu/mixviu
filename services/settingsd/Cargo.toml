@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 description = "Native ABP desktop settings authority"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "settingsd"
 kind = "service"
 layer = "core"

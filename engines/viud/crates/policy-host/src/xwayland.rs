@@ -10,9 +10,9 @@
 //! file or the props surface is the problem) > the persisted file > `true`.
 //!
 //! The file is `<etc>/comp/xwayland-enabled.<socket>`, `<etc>` being the
-//! MixOS etc dir (`config::path(Dir::Etc)`): `$MIXOS_ETC`, else
-//! `$MIXOS/etc`, else `/etc/mixos` for root, else `$XDG_CONFIG_HOME/mixos`
-//! or `$HOME/.config/mixos`.
+//! MixViu etc dir (`config::path(Dir::Etc)`): `$MIX_ETC`, else
+//! `$MIX_ROOT/etc`, else `/etc/mix` for root, else `$XDG_CONFIG_HOME/mix`
+//! or `$HOME/.config/mix`.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -235,7 +235,7 @@ pub fn generation() -> u64 {
 
 // ── The per-socket DISPLAY descriptor ──
 //
-// viud publishes `$XDG_RUNTIME_DIR/viud/<socket>.xwayland.env`
+// viud publishes `$XDG_RUNTIME_DIR/mix/viud/<socket>.xwayland.env`
 // (`DISPLAY=:N`, `GENERATION=G`, mode 0600, written atomically) when a
 // generation's window manager is up, and removes it when the generation
 // ends. Launchers read it once and hand `DISPLAY` to each X client; nothing
@@ -244,6 +244,7 @@ pub fn generation() -> u64 {
 /// The descriptor's path under `runtime_dir` for Wayland socket `socket`.
 pub fn descriptor_path_in(runtime_dir: &Path, socket: &str) -> PathBuf {
     runtime_dir
+        .join("mix")
         .join("viud")
         .join(format!("{socket}.xwayland.env"))
 }
@@ -342,7 +343,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("policy-host-xdesc-{}", std::process::id()));
         let path = descriptor_path_in(&dir, "wayland-9");
-        assert!(path.ends_with("viud/wayland-9.xwayland.env"));
+        assert!(path.ends_with("mix/viud/wayland-9.xwayland.env"));
         publish_descriptor_at(&path, 3, 2).unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),

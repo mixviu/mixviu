@@ -22,7 +22,7 @@ fn label(key: &str) -> String {
     crate::strings::own(key)
 }
 
-/// An undecorated window for a MixOS app: the title bar is drawn by [`show`].
+/// An undecorated window for a MixViu app: the title bar is drawn by [`show`].
 pub fn viewport(app_id: &str, title: &str) -> ViewportBuilder {
     // eframe does not copy its native root builder into egui's root state.
     // Keep the first (application) id for services called from that context.

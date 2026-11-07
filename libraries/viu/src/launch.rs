@@ -56,7 +56,7 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     bundle.manifest.bus_url = options.url;
     let comp = options
         .comp
-        .unwrap_or_else(|| std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()));
+        .unwrap_or_else(|| std::env::var("MIX_COMP_SERVICE").unwrap_or_else(|_| "comp".into()));
     let launch = serde_json::to_string(&serde_json::json!({"comp":comp})).unwrap();
     bundle.program.source = format!(
         "$app_launch = json_parse({})\n{}",

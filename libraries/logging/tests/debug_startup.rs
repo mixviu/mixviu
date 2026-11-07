@@ -2,7 +2,7 @@
 //! A malformed environment filter must leave live diagnostics usable.
 #[test]
 fn informational_requests_install_nothing() {
-    const CHILD: &str = "MIXOS_DEBUG_INFO_TEST";
+    const CHILD: &str = "MIX_TEST_DEBUG_INFO";
     if let Ok(flag) = std::env::var(CHILD) {
         let mut args = vec!["fixture".into(), "--debug=trace".into(), flag];
         let guard = logging::debug::init("fixture", "warn", &mut args).unwrap();
@@ -36,7 +36,7 @@ fn informational_requests_install_nothing() {
 
 #[test]
 fn malformed_environment_uses_a_valid_baseline_and_keeps_live_control() {
-    const CHILD: &str = "MIXOS_DEBUG_INVALID_ENV_TEST";
+    const CHILD: &str = "MIX_TEST_DEBUG_INVALID_ENV";
     if std::env::var_os(CHILD).is_none() {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([

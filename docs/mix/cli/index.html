@@ -11,7 +11,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>cli — the mix meta-command — MixOS</title>
+    <title>cli — the mix meta-command — MixViu</title>
     <link rel="canonical" href="https://mixos.dev/mix/cli/">
     <link rel="alternate" type="text/markdown" href="/mix/cli.md" title="Markdown source">
     <meta name="mixos-build" content="7af43e1ca197">
@@ -90,7 +90,7 @@
 <button class="menu-toggle" data-sidebar="right"><i data-lucide="menu"></i></button>
 
 <nav class="topnav">
-    <h1><a class="brand" href="/">MixOS &middot; <span>Server &amp; Desktop Systems</span></a></h1>
+    <h1><a class="brand" href="/">MixViu &middot; <span>Server &amp; Desktop Systems</span></a></h1>
 </nav>
 
 <!-- ================= LEFT SIDEBAR: documentation panels ================= -->
@@ -109,7 +109,7 @@
         <div class="panel-track">
 
             <div class="panel">
-                <div class="panel-title">MixOS</div>
+                <div class="panel-title">MixViu</div>
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
@@ -433,12 +433,12 @@ megabyte), so a binary copied alone to a new machine, with no checkout and no
 network, still has its whole manual. The built-in copy is also the one that
 documents exactly the binary you are running: a checkout or the online site may
 be ahead of it or behind it.</p>
-<p>Lookup order, with no <code>MIXOS_MAN_*</code> variable set:</p>
+<p>Lookup order, with neither <code>MIX_MAN_SOURCE</code> nor <code>MIX_MAN_URL</code> set:</p>
 <ol>
 <li><strong>The built-in manual.</strong></li>
 <li><strong>Files on disk</strong>, for a page this binary does not carry: the installed
 share tree (<code>&lt;prefix&gt;/share/mix/man</code>), then a checkout's <code>docs/mix</code>
-(<code>$MIXOS_SRC</code>, else the root found above the running binary, else
+(<code>$MIX_SRC</code>, else the root found above the running binary, else
 <code>~/Projects/mixos</code>).</li>
 <li><strong>The online copy</strong>, as in <code>auto</code> mode below.</li>
 </ol>
@@ -450,11 +450,11 @@ mix man nope        -- "no manual page for 'nope'" + available topics
 </code></pre>
 <p><strong>Environment controls:</strong></p>
 <ul>
-<li><code>MIXOS_MAN_SOURCE=local</code> — never use the network. Files on disk win (the
+<li><code>MIX_MAN_SOURCE=local</code> — never use the network. Files on disk win (the
 share tree, then the checkout), then the built-in manual, then the cache.
 Use it while editing pages in a checkout, so your edits show before the
 binary is rebuilt.</li>
-<li><code>MIXOS_MAN_SOURCE=auto</code> or <code>MIXOS_MAN_URL=&lt;base&gt;</code> — the online contract: a
+<li><code>MIX_MAN_SOURCE=auto</code> or <code>MIX_MAN_URL=&lt;base&gt;</code> — the online contract: a
 copy fetched within the last 24 h, else a fetch from <code>mixos.dev/mix</code> (or
 <code>&lt;base&gt;</code>; 2 s wall-clock budget, HTTPS-only, cached under your XDG cache
 dir), else files on disk, else the built-in manual, else a stale cached copy.</li>
@@ -483,9 +483,9 @@ for i in 1 2 3; do                 for each $i in [1, 2, 3]
 ...
 </code></pre>
 <h2 id="build--rebuild-the-interpreter-from-itself">Build — rebuild the interpreter from itself</h2>
-<p>The build family wraps <code>cargo</code> against the Mix source tree (<code>$MIXOS_SRC</code>,
+<p>The build family wraps <code>cargo</code> against the Mix source tree (<code>$MIX_SRC</code>,
 default the discovered source checkout) so the REPL can rebuild and re-exec into a fresh binary —
-the self-reconstruction surface. Point <code>$MIXOS_SRC</code> at the directory holding
+the self-reconstruction surface. Point <code>$MIX_SRC</code> at the directory holding
 the workspace <code>Cargo.toml</code> (in a clone of the public repo that is <code>mix/src</code>).</p>
 <pre><code>mix build       cargo build --release, then install target/release/mix → &lt;prefix&gt;/bin/mix
 mix clean       cargo clean (removes the target/ tree)
@@ -745,10 +745,10 @@ nope: not found
 <p>When no broker is running the same commands degrade to a clean one-line message
 (<code>No mesh — local noded not reachable (...)</code>) rather than an error.</p>
 <p>There is also a small <strong>orchestration</strong> group: <code>mix deploy SVC</code>
-(<code>systemctl --user restart mixos-SVC</code>), <code>mix health [SVC]</code> (probe Bus unix
+(<code>systemctl --user restart mix-SVC</code>), <code>mix health [SVC]</code> (probe Bus unix
 sockets in <code>/run/bus</code>, falling back to <code>/tmp/bus</code>), and <code>mix logs SVC [-f]</code>
-(<code>journalctl --user -u mixos-SVC</code>, last 50 lines; <code>-f</code>/<code>--follow</code> to stream).
-These assume a systemd-user-managed MixOS install.</p>
+(<code>journalctl --user -u mix-SVC</code>, last 50 lines; <code>-f</code>/<code>--follow</code> to stream).
+These assume a systemd-user-managed MixViu install.</p>
 <h2 id="ai-powered--agent-driven-workflows">AI-powered — agent-driven workflows</h2>
 <p>The AI family shells out to the Claude Code CLI (<code>claude -p "&lt;prompt&gt;"</code>); each
 constructs a task prompt pointed at the Mix source tree. If <code>claude</code> is not on
@@ -784,8 +784,8 @@ machine-readable companion to <code>mix all</code>:</p>
 </code></pre>
 <p>Finally, <code>mix claude-start</code> / <code>mix claude-stop</code> / <code>mix claude-status</code> manage
 the <code>mixos-claude</code> Bus port daemon (socket
-<code>/run/user/&lt;uid&gt;/mixos/ports/claude.sock</code>): <code>start</code> spawns the binary
-(searched in <code>$MIXOS_SRC/target/{release,debug}/</code>, then <code>$PATH</code>), <code>stop</code>
+<code>/run/user/&lt;uid&gt;/mix/ports/claude.sock</code>): <code>start</code> spawns the binary
+(searched in <code>$MIX_SRC/target/{release,debug}/</code>, then <code>$PATH</code>), <code>stop</code>
 removes the socket, <code>status</code> probes it and flags a stale socket.</p>
 <h2 id="notes">Notes</h2>
 <h3 id="native-pane-shell-status-stage-a">Native pane-shell status (stage A)</h3>
@@ -1001,8 +1001,8 @@ minutes. There is no stdin in v1: the task gets <code>/dev/null</code>, and a
 stdin-feeding task is a named future field rather than a silent absence.</p>
 <p><strong>The environment is enumerated, not inherited.</strong> A task starts from exactly:</p>
 <pre><code>HOME  USER  PATH  LANG  TERM=dumb
-MIXOS_PREFIX  MIXOS_ETC  MIXOS_VAR  MIXOS_CACHE  MIXOS_RUN  MIXOS_SRC
-MIXOS_NODE_CONFIG  MIXOS_BROKER_ACCOUNT
+MIX_PREFIX  MIX_ETC  MIX_VAR  MIX_CACHE  MIX_RUN  MIX_SRC
+MIX_NODE_CONFIG  MIX_BROKER_ACCOUNT
 </code></pre>
 <p>plus the caller's <code>env</code> overlay, which WINS on a name collision. Those values
 are snapshotted when the shell STARTS, so a task sees the shell's startup PATH
@@ -1156,7 +1156,7 @@ back.</p>
 <li><code>mix</code> is intercepted by the shell, so it never sees <code>$</code>-sigil arguments — write <code>mix what round</code>, not <code>mix what $name</code>.</li>
 <li>The introspection family (<code>vars</code>/<code>aliases</code>/<code>functions</code>/<code>all</code>/<code>context</code>) is most useful <strong>inside a REPL</strong>, where the session has accumulated state; from a one-shot OS-shell invocation it reports only the freshly-loaded prelude.</li>
 <li>The diagnostics family (<code>time</code>/<code>trace</code>/<code>history</code>/<code>reload</code>/<code>diagnose</code>) is REPL-only — those names are not on the OS-shell allowlist, so <code>mix trace on</code> there is read as a script filename. The one exception is <code>mix stats</code>, which has a dedicated one-shot OS-shell path against the same on-disk data.</li>
-<li>Paths follow the MixOS layout: source at <code>$MIXOS_SRC</code> (default the discovered source checkout), installed binaries at <code>&lt;prefix&gt;/bin</code> (derived from the binary's prefix).</li>
+<li>Paths follow the MixViu layout: source at <code>$MIX_SRC</code> (default the discovered source checkout), installed binaries at <code>&lt;prefix&gt;/bin</code> (derived from the binary's prefix).</li>
 </ul>
 <h2 id="see-also">See also</h2>
 <ul>
@@ -1175,7 +1175,7 @@ mix what NAME     one-line description of any builtin or keyword
 mix man TOPIC     read a full manual page (mix man with no arg = the index)
 </code></pre>
         </article>
-        <p class="doc-source"><a href="/mix/cli.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
+        <p class="doc-source"><a href="/mix/cli.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixViu.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>

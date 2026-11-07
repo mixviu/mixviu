@@ -1383,7 +1383,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         session: bundle.manifest.frame.as_ref().map(|_| {
             crate::session::Session::embedded(
                 bundle.manifest.app(),
-                &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_| "default".into()),
+                &std::env::var("MIX_INSTANCE").unwrap_or_else(|_| "default".into()),
                 wake.clone(),
                 bus.backend(),
             )

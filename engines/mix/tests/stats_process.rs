@@ -318,7 +318,7 @@ fn reports_legacy_store_migration_advisory() {
     std::fs::create_dir_all(source.join("_stats")).unwrap();
     std::fs::write(source.join("_stats/current.json"), "{}").unwrap();
     let output = command(&state)
-        .env("MIXOS_SRC", &source)
+        .env("MIX_SRC", &source)
         .arg("stats")
         .output()
         .unwrap();

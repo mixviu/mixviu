@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The shell's look, prepared on the Bus worker from an accepted settings
-//! snapshot and activated as one value after the session fence: the MixOS
+//! snapshot and activated as one value after the session fence: the MixViu
 //! theme the desktop profile describes (`toolkit::theme::Theme`, the one the
 //! apps draw with), its text scale, the panel preferences, and the
 //! server-side decoration themes `decor` draws window frames with.

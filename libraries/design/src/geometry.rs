@@ -43,7 +43,7 @@ impl Roundness {
         Self::ALL.into_iter().find(|r| r.name() == name)
     }
 
-    /// The six radius tokens MixOS draws for this preset, by [`RADIUS_MAP`]:
+    /// The six radius tokens MixViu draws for this preset, by [`RADIUS_MAP`]:
     /// `[radius_0, radius_xs, radius_s, radius_m, radius_l, radius_xl]`.
     pub const fn radii(self) -> [u8; 6] {
         let column = self as usize;
@@ -331,7 +331,7 @@ mod tests {
         assert_eq!(R::SlightlyRound.radii(), [0, 2, 8, 8, 8, 8]);
         assert_eq!(R::Square.radii(), [0; 6]);
         // Round and slightly round are the reference's presets; square is
-        // MixOS's 0 where the reference ships 2.
+        // MixViu's 0 where the reference ships 2.
         for preset in [R::Round, R::SlightlyRound] {
             let reference = preset.corner_radii();
             let ours = preset.radii().map(f64::from);

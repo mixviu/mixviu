@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
-Description=MixOS inbound SMTP socket example for %i
+Description=MixViu inbound SMTP socket example for %i
 Documentation=https://mixos.dev/maild/
 
 [Socket]

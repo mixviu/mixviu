@@ -266,7 +266,7 @@ fn start<'l>(dh: DisplayHandle, handle: LoopHandle<'l, Loop>) {
                             publishes_shared_env(state),
                             &[("DISPLAY", &value)],
                         );
-                        // The per-socket descriptor (`viud/<socket>.xwayland.env`,
+                        // The per-socket descriptor (`mix/viud/<socket>.xwayland.env`,
                         // DISPLAY + GENERATION, 0600): what launchers read to hand `DISPLAY`
                         // to an X client without any global being set.
                         if let Err(err) = policy_host::xwayland::publish_descriptor(display_number) {

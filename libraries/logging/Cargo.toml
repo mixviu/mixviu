@@ -91,7 +91,7 @@ tempfile = "3"
 rusqlite.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "logging"
 kind = "lib"
 layer = "core"

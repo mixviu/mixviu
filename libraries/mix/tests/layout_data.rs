@@ -39,7 +39,7 @@ async fn layout_reader_and_load_data_share_a_grammar() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
-    const CHILD: &str = "MIXOS_LAYOUT_FRONT_DOOR_TEST";
+    const CHILD: &str = "MIX_TEST_LAYOUT_FRONT_DOOR";
     const TEST: &str = "mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names";
     if std::env::var_os(CHILD).is_none() {
         struct Scratch(std::path::PathBuf);
@@ -49,23 +49,23 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
             }
         }
         let root =
-            Scratch(std::env::temp_dir().join(format!("mixos-front-door-{}", std::process::id())));
+            Scratch(std::env::temp_dir().join(format!("mix-front-door-{}", std::process::id())));
         std::fs::create_dir(&root.0).unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", TEST, "--nocapture"])
             .env(CHILD, "1")
-            .env("MIXOS_PREFIX", &root.0)
+            .env("MIX_PREFIX", &root.0)
             .env("HOME", root.0.join("home"))
             .env("XDG_CONFIG_HOME", root.0.join("config"))
             .env("XDG_DATA_HOME", root.0.join("data"))
             .env("XDG_RUNTIME_DIR", root.0.join("runtime"))
             .env("XDG_CACHE_HOME", root.0.join("cache"))
-            .env_remove("MIXOS")
-            .env_remove("MIXOS_ETC")
-            .env_remove("MIXOS_VAR")
-            .env_remove("MIXOS_RUN")
-            .env_remove("MIXOS_SHARE")
-            .env_remove("MIXOS_CACHE")
+            .env_remove("MIX_ROOT")
+            .env_remove("MIX_ETC")
+            .env_remove("MIX_VAR")
+            .env_remove("MIX_RUN")
+            .env_remove("MIX_SHARE")
+            .env_remove("MIX_CACHE")
             .output()
             .unwrap();
         assert!(
@@ -80,7 +80,7 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
     // Self-location is never used: the child received every path input before
     // the process-global resolver was first called.
     let prefix =
-        std::env::var_os("MIXOS_PREFIX").expect("front-door test needs an explicit prefix");
+        std::env::var_os("MIX_PREFIX").expect("front-door test needs an explicit prefix");
     for (tier, uid) in [("system", 0), ("user", 1000)] {
         let inputs = paths::Environment {
             uid,
@@ -93,7 +93,7 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
         );
         for root in paths::Root::ALL {
             let source = format!(
-                "mixos_path(\"{}\", \"sentinel\", {{tier: \"{tier}\"}})",
+                "mix_path(\"{}\", \"sentinel\", {{tier: \"{tier}\"}})",
                 root.name()
             );
             let value = mix::run(&source).await.unwrap();
@@ -109,7 +109,7 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
     }
     for root in ["config", "state", "runtime", "bin", "lib"] {
         assert!(
-            mix::run(&format!("mixos_path(\"{root}\")")).await.is_err(),
+            mix::run(&format!("mix_path(\"{root}\")")).await.is_err(),
             "old/unknown root accepted: {root}"
         );
     }
@@ -119,7 +119,7 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
         "'system'",
     ] {
         assert!(
-            mix::run(&format!("mixos_path('etc', '', {options})"))
+            mix::run(&format!("mix_path('etc', '', {options})"))
                 .await
                 .is_err()
         );

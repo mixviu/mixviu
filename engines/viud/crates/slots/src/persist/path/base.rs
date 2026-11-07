@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 /// The root of all persisted state: the general XDG state dir `$XDG_STATE_HOME/viud`,
-/// falling back to `$HOME/.local/state/viud`, then `/tmp/viud`. Never panics.
+/// falling back to `$HOME/.local/state/mix/viud`, then `/tmp/mix/viud`. Never panics.
 pub fn state_dir() -> PathBuf {
     let base = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
@@ -16,11 +16,11 @@ pub fn state_dir() -> PathBuf {
                 .map(|home| home.join(".local").join("state"))
         })
         .unwrap_or_else(|| PathBuf::from("/tmp"));
-    base.join("viud")
+    base.join("mix").join("viud")
 }
 
 /// The root for user-supplied data assets (e.g. background shaders): the XDG data
-/// dir `$XDG_DATA_HOME/viud`, falling back to `$HOME/.local/share/viud`, then `/tmp/viud`.
+/// dir `$XDG_DATA_HOME/mix/viud`, falling back to `$HOME/.local/share/mix/viud`, then `/tmp/mix/viud`.
 /// Never panics. Distinct from `state_dir()` (which is `~/.local/state`).
 pub fn data_dir() -> PathBuf {
     let base = std::env::var_os("XDG_DATA_HOME")
@@ -33,7 +33,7 @@ pub fn data_dir() -> PathBuf {
                 .map(|home| home.join(".local").join("share"))
         })
         .unwrap_or_else(|| PathBuf::from("/tmp"));
-    base.join("viud")
+    base.join("mix").join("viud")
 }
 
 /// A table directory `<state>/<table>` for the document store (e.g. `"world"`,

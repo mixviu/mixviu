@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Private Bus helper. MIXOS_TEST_MIX overrides mixos:prefix/bin/mix when
+//! Private Bus helper. MIX_TEST_MIX_EXE overrides mix:prefix/bin/mix when
 //! testing with another native Mix binary on the build worker.
 use serde_json::Value;
 use std::{
@@ -31,13 +31,13 @@ impl Bus {
             .arg("--serve")
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/observer.mix"))
             .args(["--name", "headless-observer"])
-            .env("MIXOS_NODED_URL", &self.url)
-            .env("MIXOS_RUN", self.root.join("run"))
-            .env("MIXOS_ETC", self.root.join("etc"))
-            .env("MIXOS_VAR", self.root.join("var"))
-            .env("MIXOS_NODE_CONFIG", self.root.join("etc/node.conf.mix"))
+            .env("MIX_NODED_URL", &self.url)
+            .env("MIX_RUN", self.root.join("run"))
+            .env("MIX_ETC", self.root.join("etc"))
+            .env("MIX_VAR", self.root.join("var"))
+            .env("MIX_NODE_CONFIG", self.root.join("etc/node.conf.mix"))
             .spawn()
-            .expect("start topic observer with native Mix (MIXOS_TEST_MIX)");
+            .expect("start topic observer with native Mix (MIX_TEST_MIX_EXE)");
         let observer = Observer(child);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         loop {
@@ -135,15 +135,15 @@ fn helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output
         .arg(action)
         .arg(root)
         .args(rest)
-        .env("MIXOS_NODED_URL", url.unwrap_or("ws://127.0.0.1:1"))
-        .env("MIXOS_RUN", root.join("run"))
-        .env("MIXOS_ETC", root.join("etc"))
-        .env("MIXOS_VAR", root.join("var"))
-        .env("MIXOS_NODE_CONFIG", root.join("etc/node.conf.mix"))
+        .env("MIX_NODED_URL", url.unwrap_or("ws://127.0.0.1:1"))
+        .env("MIX_RUN", root.join("run"))
+        .env("MIX_ETC", root.join("etc"))
+        .env("MIX_VAR", root.join("var"))
+        .env("MIX_NODE_CONFIG", root.join("etc/node.conf.mix"))
         .output()
-        .expect("cannot start native Mix; set MIXOS_TEST_MIX to its binary path (default /opt/mixos/bin/mix)")
+        .expect("cannot start native Mix; set MIX_TEST_MIX_EXE to its binary path (default /opt/mix/bin/mix)")
 }
 
 fn mix_binary() -> std::ffi::OsString {
-    std::env::var_os("MIXOS_TEST_MIX").unwrap_or_else(|| "/opt/mixos/bin/mix".into())
+    std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into())
 }

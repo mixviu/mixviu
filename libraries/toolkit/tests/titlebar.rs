@@ -394,7 +394,7 @@ fn the_icon_bar_skips_unknown_and_duplicate_standard_actions() {
 
 #[test]
 fn compact_menu_titlebars() {
-    on_mixos(compact_menu_titlebars_on_host);
+    on_mix(compact_menu_titlebars_on_host);
 }
 
 fn compact_menu_titlebars_on_host() {
@@ -479,7 +479,7 @@ fn titlebar_without_a_drive_keeps_an_app_menu_button() {
 
 #[test]
 fn title_band_layouts_and_hosted_actions() {
-    on_mixos(title_band_layouts_and_hosted_actions_on_host);
+    on_mix(title_band_layouts_and_hosted_actions_on_host);
 }
 
 fn title_band_layouts_and_hosted_actions_on_host() {
@@ -566,7 +566,7 @@ fn title_band_layouts_and_hosted_actions_on_host() {
     }
 }
 
-fn on_mixos(operation: impl FnOnce()) {
+fn on_mix(operation: impl FnOnce()) {
     design::decorations::with_resolver(
         std::sync::Arc::new(design::decorations::Resolver::new(
             || design::decorations::SessionFacts {

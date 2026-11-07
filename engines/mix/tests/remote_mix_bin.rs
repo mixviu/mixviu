@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The remote mix binary every remote-mix builtin drives: the `mix_bin`
-//! option, else the local `MIX_REMOTE_BIN`, else bare `mix` on PATH.
+//! option, else the local `MIX_REMOTE_EXE`, else bare `mix` on PATH.
 //!
 //! A fake `ssh` sits first on PATH. It records its argv (the last word is
 //! the remote command string carrying the binary) and runs the shipped
@@ -17,7 +17,7 @@ use std::process::Command;
 
 const FAKE_SSH: &str = r#"#!/bin/sh
 printf '%s\n' "$0" "$@" > "$CAPTURE"
-exec "$MIX_UNDER_TEST" -
+exec "$MIX_TEST_ACTIVE" -
 "#;
 
 struct Bed {
@@ -37,18 +37,18 @@ impl Bed {
         self.dir.path().join("ssh-argv")
     }
 
-    /// Run `program` with MIX_REMOTE_BIN set to `env` (or removed).
+    /// Run `program` with MIX_REMOTE_EXE set to `env` (or removed).
     fn run(&self, program: &str, env: Option<&str>) -> (String, String, bool) {
         let path = format!("{}:/usr/bin:/bin", self.dir.path().display());
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_mix"));
         cmd.arg("-c")
             .arg(program)
             .env("PATH", path)
-            .env("MIX_UNDER_TEST", env!("CARGO_BIN_EXE_mix"))
+            .env("MIX_TEST_ACTIVE", env!("CARGO_BIN_EXE_mix"))
             .env("CAPTURE", self.capture());
         match env {
-            Some(v) => cmd.env("MIX_REMOTE_BIN", v),
-            None => cmd.env_remove("MIX_REMOTE_BIN"),
+            Some(v) => cmd.env("MIX_REMOTE_EXE", v),
+            None => cmd.env_remove("MIX_REMOTE_EXE"),
         };
         let out = cmd.output().expect("spawn mix");
         (
@@ -133,8 +133,8 @@ fn a_bad_value_raises_locally_and_never_reaches_ssh() {
 
     let (out, err, ok) = bed.run(&ssh_mix(""), Some("mix; rm"));
     assert!(!ok, "stdout={out} stderr={err}");
-    assert!(err.contains("MIX_REMOTE_BIN"), "{err}");
-    assert!(!bed.ssh_ran(), "ssh must not run on a bad MIX_REMOTE_BIN");
+    assert!(err.contains("MIX_REMOTE_EXE"), "{err}");
+    assert!(!bed.ssh_ran(), "ssh must not run on a bad MIX_REMOTE_EXE");
 }
 
 #[test]

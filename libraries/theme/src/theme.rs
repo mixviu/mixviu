@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! A compiled MixOS theme: the resolved design for one scheme, style, mode
+//! A compiled MixViu theme: the resolved design for one scheme, style, mode
 //! and contrast, together with the context it was compiled for, and how its
 //! windows are framed (decorations and caption side, which change no token).
 //!
@@ -24,12 +24,12 @@ use design::{
     ResolvedStyle, ResolvedTypography, Scheme, SourceIdentity, UnstampedResolvedDesign,
 };
 
-/// The shared theme file, `theme.conf.mix`, in the MixOS etc directory.
+/// The shared theme file, `theme.conf.mix`, in the MixViu etc directory.
 pub const THEME_FILE: &str = "theme.conf.mix";
 
 /// Where [`Theme::load`] reads the shared theme: `theme.conf.mix` under
-/// `config::path(Dir::Etc)` (`$MIXOS_ETC`, else `$MIXOS/etc`, else
-/// `/etc/mixos` for root, else `$XDG_CONFIG_HOME/mixos`).
+/// `config::path(Dir::Etc)` (`$MIX_ETC`, else `$MIX_ROOT/etc`, else
+/// `/etc/mix` for root, else `$XDG_CONFIG_HOME/mix`).
 pub fn theme_path() -> PathBuf {
     config::path(config::Dir::Etc).join(THEME_FILE)
 }

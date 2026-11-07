@@ -490,7 +490,7 @@ const HINT_PAD: (f64, f64) = (16.0, 8.0);
 const HINT_RADIUS: f64 = 10.0;
 const HINT_TOP: f64 = 24.0;
 
-/// The overlay's colours, straight-alpha sRGB, from the session's MixOS
+/// The overlay's colours, straight-alpha sRGB, from the session's MixViu
 /// theme through `toolkit::style` (the embedded theme until the shell
 /// delivers one, as for `capture::style`): the outline is the theme's focus ring (held to 3:1
 /// against its surfaces; its accent if it has none), the hint its popover

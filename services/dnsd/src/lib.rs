@@ -8,7 +8,7 @@
 // Excluded entirely under `--no-default-features`; its serve path
 // stays the committed P1 source verbatim (surviving invariant, see
 // the module doc above).
-#[cfg(feature = "mixos")]
+#[cfg(feature = "mix")]
 mod citizen;
 
 // P2-C read-only Bus surface + the rcode counters it reads — citizen
@@ -16,9 +16,9 @@ mod citizen;
 // unchanged core `serve_udp`/`serve_tcp` (NOT the `_observed`
 // siblings), so its serve path stays the committed P1 source verbatim
 // (plan §1 surviving invariant; the P2-B cfg-split precedent).
-#[cfg(feature = "mixos")]
+#[cfg(feature = "mix")]
 mod bus;
-#[cfg(feature = "mixos")]
+#[cfg(feature = "mix")]
 mod stats;
 
 // P2-D WG-up-before-bind (plan §6) — citizen build only. Excluded
@@ -26,7 +26,7 @@ mod stats;
 // is the committed P1 source verbatim (plain `bind`, no retry), so its
 // serve path stays the committed P1 source verbatim (surviving
 // invariant; §6 "Standalone P1 stays clear of this entirely").
-#[cfg(feature = "mixos")]
+#[cfg(feature = "mix")]
 mod bind_retry {
     //! Bounded retry of the `WG-IP:53` bind on `AddrNotAvailable`.
     //!
@@ -122,7 +122,7 @@ use std::sync::Arc;
 // warning under the default/citizen build). Source-irrelevant to the
 // invariant: a `use` declaration is not in the serve path, and the
 // standalone bind/serve statements it supports are P1-verbatim.
-#[cfg(not(feature = "mixos"))]
+#[cfg(not(feature = "mix"))]
 use tokio::net::{TcpListener, UdpSocket};
 
 struct Args {
@@ -216,11 +216,11 @@ pub fn main() -> ExitCode {
     // stdout, exit 0, ahead of logging init so there's no log noise and
     // the hand-rolled `parse_args` never sees the flag as an "unknown
     // argument".
-    #[cfg(feature = "mixos")]
+    #[cfg(feature = "mix")]
     {
         buildinfo::exit_on_version!();
     }
-    #[cfg(not(feature = "mixos"))]
+    #[cfg(not(feature = "mix"))]
     if let Some(text) = standalone_version_request() {
         println!("{text}");
         return ExitCode::SUCCESS;
@@ -237,7 +237,7 @@ pub fn main() -> ExitCode {
 /// answers with the same line and JSON shapes as `buildinfo`.
 /// Values are compile-time crate metadata (name, semver, hex sha, RFC 3339
 /// time), none of which can contain a character JSON would need escaped.
-#[cfg(not(feature = "mixos"))]
+#[cfg(not(feature = "mix"))]
 fn standalone_version_request() -> Option<String> {
     let args: Vec<String> = std::env::args().skip(1).take_while(|a| a != "--").collect();
     if !args.iter().any(|a| a == "--version" || a == "-V") {
@@ -245,10 +245,10 @@ fn standalone_version_request() -> Option<String> {
     }
     let pkg = env!("CARGO_PKG_NAME");
     let version = env!("CARGO_PKG_VERSION");
-    let sha = option_env!("MIXOS_GIT_SHA").unwrap_or("unknown");
-    let sha_full = option_env!("MIXOS_GIT_SHA_FULL").unwrap_or("unknown");
-    let dirty = matches!(option_env!("MIXOS_GIT_DIRTY"), Some("1" | "true"));
-    let built = option_env!("MIXOS_BUILD_TIME").unwrap_or("unknown");
+    let sha = option_env!("MIX_GIT_SHA").unwrap_or("unknown");
+    let sha_full = option_env!("MIX_GIT_SHA_FULL").unwrap_or("unknown");
+    let dirty = matches!(option_env!("MIX_GIT_DIRTY"), Some("1" | "true"));
+    let built = option_env!("MIX_BUILD_TIME").unwrap_or("unknown");
     Some(if args.iter().any(|a| a == "--json") {
         format!(
             "{{\"component\":\"{pkg}\",\"version\":\"{version}\",\"git_sha\":\"{sha}\",\
@@ -275,7 +275,7 @@ async fn async_main() -> ExitCode {
     // still matches (the RUST_LOG/target-name trap recorded as
     // feedback_tracing_envfilter_crate_target). Mirrors the other
     // daemons' `logging::init(...).daemon("<name>")`.
-    #[cfg(not(feature = "mixos"))]
+    #[cfg(not(feature = "mix"))]
     tracing_subscriber::fmt()
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
         .with_env_filter(
@@ -283,7 +283,7 @@ async fn async_main() -> ExitCode {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
-    #[cfg(feature = "mixos")]
+    #[cfg(feature = "mix")]
     let _log_guard = logging::init(
         &logging::LogOpts::default(),
         &logging::StatsOpts::default(),
@@ -307,14 +307,14 @@ async fn async_main() -> ExitCode {
     // the plan §6 WG-vs-LAN posture
     // on top, reading `node.conf.mix` for this node's WG mesh IP (see
     // `citizen.rs`); it never loosens the P1 rules.
-    #[cfg(not(feature = "mixos"))]
+    #[cfg(not(feature = "mix"))]
     for sa in &args.listen {
         if let Err(e) = check_bind(sa, args.allow_non_loopback) {
             tracing::error!("{e}");
             return ExitCode::from(2);
         }
     }
-    #[cfg(feature = "mixos")]
+    #[cfg(feature = "mix")]
     {
         let wg_ip = citizen::configured_wg_ip();
         for sa in &args.listen {
@@ -330,7 +330,7 @@ async fn async_main() -> ExitCode {
     // changes no serving behaviour. The `--no-default-features`
     // standalone build skips this entirely; its serve path stays the
     // committed P1 source verbatim (surviving invariant).
-    #[cfg(feature = "mixos")]
+    #[cfg(feature = "mix")]
     citizen::report_spec10_identity();
 
     // State file: a corrupt/unreadable file at boot is availability-first
@@ -366,7 +366,7 @@ async fn async_main() -> ExitCode {
     // serve task and read by the `dnsd.stats` Bus action. Excluded
     // entirely under `--no-default-features` — the standalone P1 server
     // holds no stats state (plan §1; see `stats.rs`).
-    #[cfg(feature = "mixos")]
+    #[cfg(feature = "mix")]
     let stats = Arc::new(stats::DnsStats::new());
 
     for sa in &args.listen {
@@ -388,7 +388,7 @@ async fn async_main() -> ExitCode {
         // source. The citizen arm adds the
         // plan §6 bounded WG-up bind-retry (`bind_retry`); a
         // non-`AddrNotAvailable` error still fails fast exactly as P1.
-        #[cfg(not(feature = "mixos"))]
+        #[cfg(not(feature = "mix"))]
         let udp = match UdpSocket::bind(sa).await {
             Ok(s) => s,
             Err(e) => {
@@ -396,7 +396,7 @@ async fn async_main() -> ExitCode {
                 return ExitCode::from(1);
             }
         };
-        #[cfg(not(feature = "mixos"))]
+        #[cfg(not(feature = "mix"))]
         let tcp = match TcpListener::bind(sa).await {
             Ok(s) => s,
             Err(e) => {
@@ -404,7 +404,7 @@ async fn async_main() -> ExitCode {
                 return ExitCode::from(1);
             }
         };
-        #[cfg(feature = "mixos")]
+        #[cfg(feature = "mix")]
         let (udp, tcp) = match bind_retry::bind_pair(sa).await {
             Ok(pair) => pair,
             Err(e) => {
@@ -431,23 +431,23 @@ async fn async_main() -> ExitCode {
         // `observed_matches_unobserved_wire`) with a pure closure that
         // bumps the shared rcode counter — zero core *logic* change,
         // plan §1/§7.
-        #[cfg(not(feature = "mixos"))]
+        #[cfg(not(feature = "mix"))]
         let s1 = Arc::clone(&store_dyn);
-        #[cfg(not(feature = "mixos"))]
+        #[cfg(not(feature = "mix"))]
         let s2 = Arc::clone(&store_dyn);
-        #[cfg(not(feature = "mixos"))]
+        #[cfg(not(feature = "mix"))]
         tasks.push(tokio::spawn(async move {
             if let Err(e) = serve::serve_udp(udp, s1).await {
                 tracing::error!(%e, "serve_udp exited (fatal socket error)");
             }
         }));
-        #[cfg(not(feature = "mixos"))]
+        #[cfg(not(feature = "mix"))]
         tasks.push(tokio::spawn(async move {
             if let Err(e) = serve::serve_tcp(tcp, s2).await {
                 tracing::error!(%e, "serve_tcp exited (fatal listener error)");
             }
         }));
-        #[cfg(feature = "mixos")]
+        #[cfg(feature = "mix")]
         {
             let s1 = Arc::clone(&store_dyn);
             let s2 = Arc::clone(&store_dyn);
@@ -498,7 +498,7 @@ async fn async_main() -> ExitCode {
     // (those are not the `AddrNotAvailable` WG-up case it retries), so
     // the unprivileged path WARNs promptly rather than spinning the
     // bounded retry window.
-    #[cfg(feature = "mixos")]
+    #[cfg(feature = "mix")]
     {
         let loopback = SocketAddr::from(([127, 0, 0, 1], 53));
         if args.listen.contains(&loopback) {
@@ -551,7 +551,7 @@ async fn async_main() -> ExitCode {
     // is aborted on Ctrl-C via the `t.abort()` sweep below. Excluded
     // under `--no-default-features` (committed P1 source-verbatim
     // standalone serve path; surviving invariant).
-    #[cfg(feature = "mixos")]
+    #[cfg(feature = "mix")]
     tasks.push(tokio::spawn(bus::run(
         Arc::clone(&store_dyn),
         Arc::clone(&stats),

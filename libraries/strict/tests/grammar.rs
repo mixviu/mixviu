@@ -429,7 +429,7 @@ fn encode_quotes_strings_that_look_like_keywords() {
 
 #[test]
 fn encode_escapes_leading_tilde_only_where_it_would_expand() {
-    for s in ["~", "~/", "~/foo", "~/.config/mixos"] {
+    for s in ["~", "~/", "~/foo", "~/.config/mix"] {
         let v = Value::String(s.to_string());
         let emitted = v.encode().unwrap();
         assert!(emitted.starts_with("\"\\~"), "{s:?} -> {emitted}");

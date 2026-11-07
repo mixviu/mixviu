@@ -7,7 +7,7 @@
 -- then the toast hides (it stays on the Notifications page).
 -- A button answers through notify.action; × dismisses a question
 -- (notify.dismiss, never an answer) and only hides a passive one.
-$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mix/scenes/lib")
 $r = require($LIB .. "/runtime.mix")
 $ctx = $r.scene_context("toast")
 $NOTIFY = env("NOTIFY_SERVICE", "notify")

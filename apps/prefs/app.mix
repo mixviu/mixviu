@@ -10,9 +10,9 @@ $email=require("email.mix")
 $software=require("software.mix")
 $gallery=require("gallery.mix")
 $bus_surface=json_parse(read_file(path_join(dirname(script_path()),"bus.json")))
-$state=$core.initial($app_args[0] ?? env("MIXOS_INSTANCE","desktop"))
+$state=$core.initial($app_args[0] ?? env("MIX_INSTANCE","desktop"))
 if $app_args[0]=="--page" then
-  $state=$core.initial(env("MIXOS_INSTANCE","desktop"))
+  $state=$core.initial(env("MIX_INSTANCE","desktop"))
   $parts=split($app_args[1],"/")
   try $state=$pages.open_page($state,$parts[0],$parts[1]) catch $ignored $state.nav=$nav.initial_nav() end
 end
@@ -297,7 +297,7 @@ on prefs.show
     if $state.quitting then raise("BUSY",$nav.text_for("busy")) end
     $token=viu_token();$state.show_tokens=concat($state.show_tokens ?? [],[$token])
     $path=path_join(dirname(script_path()),"show-job.mix")
-    send "viu-local" "jobs.start" id="prefs-show-"..$token owner=$token path=$path source=read_file($path) command="job.run" args={comp:env("MIXOS_COMP_SERVICE","comp")}
+    send "viu-local" "jobs.start" id="prefs-show-"..$token owner=$token path=$path source=read_file($path) command="job.run" args={comp:env("MIX_COMP_SERVICE","comp")}
     if $rc!=0 then raise("SHOW","Window activation could not start") end
     send "viu-local" "requests.defer" token=$token
     publish_prefs($state)

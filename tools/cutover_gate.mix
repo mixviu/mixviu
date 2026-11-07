@@ -1,5 +1,5 @@
 -- Four-engine gate (mix, mixd, viu, viud). Run on CBC only, through
--- ~/.mix/_bin/cbc-build.mix --repo mixviu --commit SHA -- /opt/mixos/bin/mix tools/cutover_gate.mix [gate|lock]
+-- ~/.mix/_bin/cbc-build.mix --repo mixviu --commit SHA -- /opt/mix/bin/mix tools/cutover_gate.mix [gate|lock]
 --   gate: fmt, clippy, tests per engine boundary, the viud egui check and a
 --         release build of each engine with its size. Every step runs; the
 --         gate fails if any did. The tree must stay clean.

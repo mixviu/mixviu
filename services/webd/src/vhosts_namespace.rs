@@ -1677,11 +1677,11 @@ mod tests {
         b.insert("www_dir".into(), PropValue::String("/srv/www/x".into()));
         b.insert(
             "tls_cert_path".into(),
-            PropValue::String("/etc/mixos/webd/certs/x.crt".into()),
+            PropValue::String("/etc/mix/webd/certs/x.crt".into()),
         );
         b.insert(
             "tls_key_path".into(),
-            PropValue::String("/etc/mixos/webd/keys/x.key".into()),
+            PropValue::String("/etc/mix/webd/keys/x.key".into()),
         );
         b
     }
@@ -1850,11 +1850,11 @@ mod tests {
         let mut body = minimal_acme_body("example.com");
         body.insert(
             "tls_cert_path".into(),
-            PropValue::String("/etc/mixos/webd/certs/x.crt".into()),
+            PropValue::String("/etc/mix/webd/certs/x.crt".into()),
         );
         body.insert(
             "tls_key_path".into(),
-            PropValue::String("/etc/mixos/webd/keys/x.key".into()),
+            PropValue::String("/etc/mix/webd/keys/x.key".into()),
         );
         let ctx = hook_ctx_caller_replace("example.com", body);
         let err = h
@@ -2050,11 +2050,11 @@ mod tests {
         let mut patch = BTreeMap::new();
         patch.insert(
             "tls_cert_path".into(),
-            PropValue::String("/etc/mixos/webd/certs/x.crt".into()),
+            PropValue::String("/etc/mix/webd/certs/x.crt".into()),
         );
         patch.insert(
             "tls_key_path".into(),
-            PropValue::String("/etc/mixos/webd/keys/x.key".into()),
+            PropValue::String("/etc/mix/webd/keys/x.key".into()),
         );
         let ctx = HookCtx {
             key: RecordKey::collection(namespace_name(), "example.com".to_string()),

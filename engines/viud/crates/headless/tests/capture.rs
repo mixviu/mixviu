@@ -103,18 +103,18 @@ impl Drop for Bus {
 }
 fn helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output {
     let mut command = Command::new(
-        std::env::var_os("MIXOS_TEST_MIX").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+        std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
     );
     command
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/bus.mix"))
         .arg(action)
         .arg(root)
         .args(rest)
-        .env("MIXOS_NODED_URL", url.unwrap_or("ws://127.0.0.1:1"))
-        .env("MIXOS_RUN", root.join("run"))
-        .env("MIXOS_ETC", root.join("etc"))
-        .env("MIXOS_VAR", root.join("var"))
-        .env("MIXOS_NODE_CONFIG", root.join("etc/node.conf.mix"));
+        .env("MIX_NODED_URL", url.unwrap_or("ws://127.0.0.1:1"))
+        .env("MIX_RUN", root.join("run"))
+        .env("MIX_ETC", root.join("etc"))
+        .env("MIX_VAR", root.join("var"))
+        .env("MIX_NODE_CONFIG", root.join("etc/node.conf.mix"));
     command.output().unwrap()
 }
 fn connect(process: &mut process::Process) -> UnixStream {

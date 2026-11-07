@@ -722,7 +722,7 @@ pub fn run(app_dir: PathBuf, profile: PathBuf, service_name: String) -> eframe::
             let wake: Wake = Arc::new(move || context.request_repaint_of(egui::ViewportId::ROOT));
             let bus = Endpoint::start(
                 service_name,
-                std::env::var("MIXOS_NODED_URL")
+                std::env::var("MIX_NODED_URL")
                     .unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
                 commands()
                     .into_iter()

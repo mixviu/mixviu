@@ -69,8 +69,8 @@ fn ced_ui_model($s,$model)
   $model.values["open-dialog"].title="Open";$model.values["open-dialog"].body="Path to a file, optionally :line[:col]"
   $model.values["save-dialog"]=ui_form($s.save_dialog,"Save As","Path to save to",$s.save_path ?? ($t.path ?? ""),$s.dialog_instance ?? 0)
   $model.values["goto-dialog"]=ui_form($s.goto_dialog,"Go to Line","line or line:col",$s.goto_text ?? "",$s.dialog_instance ?? 0)
-  $body=if $s.help=="keys" then "" elif $s.help=="about" then "The MixOS Editor edits buffers shared through the edit service: other people and agents can edit the same document at the same time." else "" end
-  $model.values["help-dialog"]=ui_form(contains(["keys","about"],$s.help),if $s.help=="keys" then "Keyboard Shortcuts" else "About MixOS Editor" end,$body)
+  $body=if $s.help=="keys" then "" elif $s.help=="about" then "The MixViu Editor edits buffers shared through the edit service: other people and agents can edit the same document at the same time." else "" end
+  $model.values["help-dialog"]=ui_form(contains(["keys","about"],$s.help),if $s.help=="keys" then "Keyboard Shortcuts" else "About MixViu Editor" end,$body)
   $model.values["help-dialog"].choices=[{id:"ok",label:"Close",enabled:true,default:true,cancel:true}]
   if $s.help=="about" then $model.values["help-dialog"].footer="Version "..($ctx.version ?? "0.1.2") end
   if $s.help=="keys" then

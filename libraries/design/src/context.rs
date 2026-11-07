@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-/// The MixOS colour schemes: six hues, five chrome schemes whose
+/// The MixViu colour schemes: six hues, five chrome schemes whose
 /// light and dark modes step the brightness (`pro`: Pro and Pro Medium Gray;
 /// `studio`: Studio and Studio Light; `classic`: Classic in both; Breeze and
 /// Adwaita each have light and dark palettes), and `mixos`, the one derived

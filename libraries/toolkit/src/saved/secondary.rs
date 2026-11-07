@@ -198,7 +198,7 @@ fn worker(
             let url = ::bus::client_helpers::resolve_noded_url();
             let options = ::bus::native_client::SupervisedClient::connect_options(&service, &url).fatal_on_registration_rejection(true);
             let Ok(Ok(client)) = tokio::time::timeout(Duration::from_millis(700), options.connect()).await else { return; };
-            let comp = std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into());
+            let comp = std::env::var("MIX_COMP_SERVICE").unwrap_or_else(|_| "comp".into());
             let topic = format!("{comp}.props.changed");
             let _ = tokio::time::timeout(Duration::from_millis(700), client.subscribe_topic(&topic)).await;
             let incoming = tokio::sync::Mutex::new(client.incoming());

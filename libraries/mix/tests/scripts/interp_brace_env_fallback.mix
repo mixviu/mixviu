@@ -43,12 +43,12 @@ print "scope beats env: " .. ("${PATH}" == "from_scope_override")
 -- into a fallback value instead of erroring.
 $missing_errs = false
 try
-    $probe = "${MIX_INTERP_NOT_SET_PROBE_XYZ}"
+    $probe = "${MIX_TEST_INTERP_NOT_SET_PROBE_XYZ}"
 catch $e
     $missing_errs = true
 end
 print "missing both errors: " .. $missing_errs
-print "missing default fallback: " .. ("${MIX_INTERP_NOT_SET_PROBE_XYZ ?? "sentinel"}" == "sentinel")
+print "missing default fallback: " .. ("${MIX_TEST_INTERP_NOT_SET_PROBE_XYZ ?? "sentinel"}" == "sentinel")
 
 -- 5. Heredoc interpolation walks the same evaluator code path as
 -- double-strings, so env-fallback fires identically. Use ${HOME}

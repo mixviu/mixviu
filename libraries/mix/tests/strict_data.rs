@@ -366,7 +366,7 @@ fn write_mix_data_escapes_leading_tilde_for_round_trip() {
     // letter, a dot, end of the string-payload chars before the closing
     // quote of something more complex) are NOT lexer-expanded and need
     // no escape.
-    for s in &["~", "~/", "~/foo", "~/.config/mixos"] {
+    for s in &["~", "~/", "~/foo", "~/.config/mix"] {
         let v = Value::String((*s).to_string());
         let emitted = v.to_mix_data_string().expect("serialize");
         let wrapped = format!("[{}]", emitted);

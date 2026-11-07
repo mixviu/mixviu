@@ -1,4 +1,4 @@
-# MixOS workspace. Every package is a component or a component's private
+# MixViu workspace. Every package is a component or a component's private
 # crate (AGENTS.md §1–§2); vendor/ holds patched upstreams, several with their
 # own [workspace].
 
@@ -225,9 +225,9 @@ eframe = { path = "vendor/eframe" }
 egui-wgpu = { path = "vendor/egui-wgpu" }
 calloop = { path = "vendor/calloop" }
 input = { path = "vendor/input" }
-# dirs-sys without option-ext (MixOS vendor/README.md).
+# dirs-sys without option-ext (MixViu vendor/README.md).
 dirs-sys = { path = "vendor/dirs-sys" }
-# maild's parser nesting safeguard (MixOS vendor/mail-parser/PATCHES.md).
+# maild's parser nesting safeguard (MixViu vendor/mail-parser/PATCHES.md).
 mail-parser = { path = "vendor/mail-parser" }
 
 [profile.release]

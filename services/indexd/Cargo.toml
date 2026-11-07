@@ -8,9 +8,9 @@ publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Semantic index daemon: local embeddings (nomic-embed-text-v1.5) and vector search over the MixOS Bus"
+description = "Semantic index daemon: local embeddings (nomic-embed-text-v1.5) and vector search over the MixViu Bus"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "indexd"
 kind = "service"
 layer = "core"

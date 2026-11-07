@@ -302,7 +302,7 @@ async fn bytes_within_cap_pass() {
 
 #[tokio::test]
 async fn export_denied_without_process_capability() {
-    let err = run("export MIX_EVAL_SAFETY_TEST = \"x\"\n", |e| {
+    let err = run("export MIX_TEST_EVAL_SAFETY = \"x\"\n", |e| {
         e.set_capability_policy(Rc::new(CategoryAllowList::new(&[CapabilityClass::FsRead])))
     })
     .await
@@ -312,7 +312,7 @@ async fn export_denied_without_process_capability() {
         "got: {err}"
     );
     assert!(
-        std::env::var("MIX_EVAL_SAFETY_TEST").is_err(),
+        std::env::var("MIX_TEST_EVAL_SAFETY").is_err(),
         "denied export must not have touched the environment"
     );
 }
@@ -320,7 +320,7 @@ async fn export_denied_without_process_capability() {
 #[tokio::test]
 async fn export_allowed_with_process_capability() {
     let out = run(
-        "export MIX_EVAL_SAFETY_TEST_OK = \"yes\"\nprint(env(\"MIX_EVAL_SAFETY_TEST_OK\"))\n",
+        "export MIX_TEST_EVAL_SAFETY_OK = \"yes\"\nprint(env(\"MIX_TEST_EVAL_SAFETY_OK\"))\n",
         |e| {
             e.set_capability_policy(Rc::new(CategoryAllowList::new(&[
                 CapabilityClass::Process,

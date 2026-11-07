@@ -2,7 +2,7 @@
 # One per host, not per session. Unprivileged: monitord only reads, and
 # reads what any user may (docs/docs/decisions/2026-10-16-monitord-and-monitor.md).
 [Unit]
-Description=MixOS system monitor
+Description=MixViu system monitor
 After=local-fs.target
 
 [Service]

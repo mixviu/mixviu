@@ -5,7 +5,7 @@
 //
 //   cargo test -p comp-service --test noded_integration -- --ignored --nocapture
 //
-// `MIXOS_NODED_URL` picks the broker (default ws://127.0.0.1:4200/ws) and
+// `MIX_NODED_URL` picks the broker (default ws://127.0.0.1:4200/ws) and
 // `VIUD_ITEST_SERVICE` the registered name (default `viud-itest`, so a
 // live comp / comp-nested is never displaced). Commands stay literal `comp.*`
 // whatever the service is registered as.

@@ -180,7 +180,7 @@ async fn fire_loop<C: WorkerClient>(client: Arc<C>, mut fires: FireReceiver) {
     }
 }
 
-/// The broker URL when the caller names none: `MIXOS_NODED_URL`, else the
+/// The broker URL when the caller names none: `MIX_NODED_URL`, else the
 /// node config (`node.conf.mix`), else the loopback broker.
 pub fn default_noded_url() -> String {
     bus::noded_url()

@@ -300,8 +300,8 @@ impl Pty {
         cmd.args(args)
             .env("HOME", home.path())
             .env("TERM", "xterm-256color")
-            .env("MIXOS", home.path())
-            .env("MIXOS_SRC", home.path())
+            .env("MIX_ROOT", home.path())
+            .env("MIX_SRC", home.path())
             .env("MIX_STATS", "off")
             .stdin(if redirected {
                 Stdio::null()

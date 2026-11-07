@@ -621,8 +621,8 @@ impl OwnedEditor {
                 .and_then(|value| value.parse::<u64>().ok())
                 .map_or(std::time::Duration::ZERO, std::time::Duration::from_millis)
         };
-        let admit_delay = delay("MIX_ADMIT_DELAY_MS");
-        let claim_delay = delay("MIX_CLAIM_DELAY_MS");
+        let admit_delay = delay("MIX_TEST_ADMIT_DELAY_MS");
+        let claim_delay = delay("MIX_TEST_CLAIM_DELAY_MS");
         let worker = std::thread::Builder::new()
             .name("mix-editor".into())
             .spawn(move || {

@@ -5,7 +5,7 @@
 use crate::{Binding, Diagnostic};
 
 pub fn binding() -> Result<Binding, Diagnostic> {
-    let instance = match std::env::var("MIXOS_SETTINGS_INSTANCE") {
+    let instance = match std::env::var("MIX_SETTINGS_INSTANCE") {
         Ok(value) => value,
         Err(std::env::VarError::NotPresent) => std::fs::read_to_string("/proc/sys/kernel/hostname")
             .map_err(|error| {
@@ -16,18 +16,18 @@ pub fn binding() -> Result<Binding, Diagnostic> {
         Err(error) => {
             return Err(Diagnostic::new(
                 "invalid_session_binding",
-                "MIXOS_SETTINGS_INSTANCE",
+                "MIX_SETTINGS_INSTANCE",
                 error.to_string(),
             ));
         }
     };
-    let profile = match std::env::var("MIXOS_SETTINGS_PROFILE") {
+    let profile = match std::env::var("MIX_SETTINGS_PROFILE") {
         Ok(value) => value,
         Err(std::env::VarError::NotPresent) => "default".to_owned(),
         Err(error) => {
             return Err(Diagnostic::new(
                 "invalid_session_binding",
-                "MIXOS_SETTINGS_PROFILE",
+                "MIX_SETTINGS_PROFILE",
                 error.to_string(),
             ));
         }

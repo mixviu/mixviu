@@ -7,7 +7,7 @@ $binary = realpath(args()[0])
 if $binary == nil then raise("MISSING_BINARY", args()[0]) end
 $mix_bin = realpath("/proc/self/exe")
 $version = toml_parse(read_file($root .. "/Cargo.toml")).workspace.package.version
-$case_dir = $root .. "/target/mixos/maild-package-" .. uuid()
+$case_dir = $root .. "/target/mix/maild-package-" .. uuid()
 mkdir($case_dir .. "/bin", {parents:true})
 try
   copy($binary, $case_dir .. "/bin/maild")

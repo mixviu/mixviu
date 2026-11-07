@@ -7,13 +7,13 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 /// `--version` line with git sha + build time (version-discovery
-/// contract). `MIXOS_*` set by build.rs → `buildinfo::emit()`.
+/// contract). `MIX_*` set by build.rs → `buildinfo::emit()`.
 const VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " (",
-    env!("MIXOS_GIT_SHA"),
+    env!("MIX_GIT_SHA"),
     ", built ",
-    env!("MIXOS_BUILD_TIME"),
+    env!("MIX_BUILD_TIME"),
     ")"
 );
 
@@ -2300,7 +2300,7 @@ async fn async_main(inherited: crate::activation::InheritedSockets) -> Result<()
     let cli = Cli::parse();
 
     // Tracing: daemon (`serve`) gets the rolling file appender that
-    // wants a writable `$HOME/.local/log/mixos`; one-shot CLI
+    // wants a writable `$HOME/.local/log/mix`; one-shot CLI
     // subcommands (`account`, `migrate`, `queue`) write only to
     // stderr. This is what lets `markc` run `maild account
     // list` without `sudo` or a `HOME=…` override — the file
@@ -2331,7 +2331,7 @@ async fn async_main(inherited: crate::activation::InheritedSockets) -> Result<()
 
     // Config search order (first match wins):
     //   1. `--config <path>` from the command line
-    //   2. `mixos:etc/maild/config.conf.mix` — the system-wide config
+    //   2. `mix:etc/maild/config.conf.mix` — the system-wide config
     //      the systemd unit reads. Putting this *ahead* of the XDG user
     //      path means a non-root caller (e.g. `markc` running
     //      `maild account list`) resolves to the daemon's actual
@@ -2339,7 +2339,7 @@ async fn async_main(inherited: crate::activation::InheritedSockets) -> Result<()
     //      falls through; permission-denied / IO error / parse error all
     //      hard-fail with a clear message so a typo or wrong perms can't
     //      silently re-route the caller to a different DB.
-    //   3. XDG user path (`$HOME/.config/mixos/jmap.conf.mix`) — per-user
+    //   3. XDG user path (`$HOME/.config/mix/jmap.conf.mix`) — per-user
     //      / dev installs.
     //   4. node-config-derived defaults (mesh-aware config).
     //   5. compile-time defaults.

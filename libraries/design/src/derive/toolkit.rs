@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! What the GTK and Qt exporters write, from one derived theme (clean-room
-//! daemon spec §2.2 and §2.3, as §6.3 and §6.4 apply them to MixOS desks):
+//! daemon spec §2.2 and §2.3, as §6.3 and §6.4 apply them to MixViu desks):
 //! libadwaita's named colours, and the three qt5ct/qt6ct palette groups of
 //! 21 opaque colours each in Qt's role order. The exporters only format
 //! these (the decision's ruling 1).
@@ -117,7 +117,7 @@ fn gtk(t: &DerivedTheme) -> BTreeMap<&'static str, SrgbColour> {
     put("headerbar_bg_color", bg.base);
     put("headerbar_fg_color", bg.on);
     // The reference writes this name with "_color" doubled, which no
-    // libadwaita stylesheet reads; MixOS writes the name libadwaita uses.
+    // libadwaita stylesheet reads; MixViu writes the name libadwaita uses.
     put("headerbar_border_color", bg.divider);
     put("headerbar_backdrop_color", bg.base);
     for (prefix, container) in [("sidebar", &t.primary), ("secondary_sidebar", &t.secondary)] {

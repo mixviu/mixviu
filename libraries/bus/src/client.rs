@@ -15,7 +15,7 @@
 //! it reports `Connected` again. Services that must stay registered for the
 //! life of a session use it.
 //!
-//! [`noded_url`] finds the broker: `MIXOS_NODED_URL`, else the node
+//! [`noded_url`] finds the broker: `MIX_NODED_URL`, else the node
 //! configuration file, else the loopback broker.
 
 mod connection;

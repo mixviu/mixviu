@@ -20,14 +20,14 @@
 //!   hashes; [`Lookup::select`] does the same without hashing the
 //!   payload, for a reader that trusts the installer's verification.
 #![cfg_attr(
-    feature = "mixos",
-    doc = "- [`mixos`] (the default `mixos` feature) is the MixOS search path:"
+    feature = "mix",
+    doc = "- [`mix`] (the default `mix` feature) is the MixViu search path:"
 )]
 #![cfg_attr(
-    feature = "mixos",
-    doc = "  `mixos/assets` under the XDG data directories, then `assets` under the"
+    feature = "mix",
+    doc = "  `mix/assets` under the XDG data directories, then `assets` under the"
 )]
-#![cfg_attr(feature = "mixos", doc = "  share directory `config` resolves.")]
+#![cfg_attr(feature = "mix", doc = "  share directory `config` resolves.")]
 #![cfg_attr(
     feature = "verified",
     doc = "- [`AssetSet::read_verified`] (the `verified` feature) re-reads the"
@@ -71,8 +71,8 @@ mod set;
 #[cfg(feature = "verified")]
 mod verified;
 
-#[cfg(feature = "mixos")]
-pub mod mixos;
+#[cfg(feature = "mix")]
+pub mod mix;
 
 pub use error::{Error, Result};
 pub use lookup::{Lookup, XdgData};

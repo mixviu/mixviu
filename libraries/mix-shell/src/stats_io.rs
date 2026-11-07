@@ -125,7 +125,7 @@ fn legacy_advisory() {
     if marker.exists() {
         return;
     }
-    let legacy_dir = crate::paths::mixos_src().join("_stats");
+    let legacy_dir = crate::paths::mix_src().join("_stats");
     if legacy_dir == new_dir {
         return;
     }

@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 description = "Headless desktop settings contracts, resolution and shared consumer"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "settings"
 kind = "lib"
 layer = "core"

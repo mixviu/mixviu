@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! editor: the shared plain-text editor for MixOS egui applications
+//! editor: the shared plain-text editor for MixViu egui applications
 //! (AGENTS.md §4.1).
 //!
 //! A monospace, cell-grid view over the headless editing model

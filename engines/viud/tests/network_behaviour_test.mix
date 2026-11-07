@@ -13,13 +13,13 @@
 --
 --   mix engines/viud/tests/network_behaviour_test.mix
 --
--- Needs a fresh mix and noded: MIXOS_TEST_MIX and MIXOS_TEST_NODED when set,
+-- Needs a fresh mix and noded: MIX_TEST_MIX_EXE and MIX_TEST_NODED_EXE when set,
 -- else <prefix>/bin/mix and <prefix>/bin/noded.
 
-$root = env("MIXOS") != "" ? env("MIXOS") : realpath(dirname(realpath($0)) .. "/../../..")
+$root = env("MIX_ROOT") != "" ? env("MIX_ROOT") : realpath(dirname(realpath($0)) .. "/../../..")
 $pb = require("../../../tests/lib/private_bus.mix")
-$mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : (mixos_path("prefix") .. "/bin/mix")
-$noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : (mixos_path("prefix") .. "/bin/noded")
+$mix = env("MIX_TEST_MIX_EXE") != "" ? env("MIX_TEST_MIX_EXE") : (mix_path("prefix") .. "/bin/mix")
+$noded = env("MIX_TEST_NODED_EXE") != "" ? env("MIX_TEST_NODED_EXE") : (mix_path("prefix") .. "/bin/noded")
 $behaviour = $root .. "/share/scenes/network/behaviour.mix"
 -- Task/watch/lifecycle events are internal; Bus commands below stay open.
 for $handler in ["net.changed async", "net.retry async", "net.scan async", "net.write async", "net.pass.release async", "bus.connected"]

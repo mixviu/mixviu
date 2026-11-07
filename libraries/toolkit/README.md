@@ -1,6 +1,6 @@
 # toolkit
 
-The shared shell for MixOS egui applications: theme, fonts, Lucide icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive commands.
+The shared shell for MixViu egui applications: theme, fonts, Lucide icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive commands.
 
 Documentation: <https://mixos.dev/toolkit/> — source [`docs/toolkit/README.md`](../../docs/toolkit/README.md).
 
@@ -88,5 +88,5 @@ Run `cargo test -p toolkit -p files` on CBC for the private noded/D-Bus,
 viewport, stall and fallback UI tests. The optional real DOpus acceptance
 test needs CBC's headless weston host, fresh `mix`, `noded`, `viud` and
 `dopus` binaries and toolkit's `choose_probe` example:
-`MIXOS_TEST_BIN=<bin> mix libs/toolkit/tests/choose_bus_test.mix`.
+`MIX_TEST_BIN=<bin> mix libs/toolkit/tests/choose_bus_test.mix`.
 It is deliberately excluded from `tools/mix_tests.mix`.

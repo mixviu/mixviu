@@ -139,7 +139,7 @@ The steps it runs, for reference:
 
 1. Copy each changed file from `share/scenes/lib/` into the catalogue.
    `install.mix` copies everything but is not the right tool here: its
-   default destination is `$XDG_DATA_HOME/mixos/scenes`, not the VT4
+   default destination is `$XDG_DATA_HOME/mix/scenes`, not the VT4
    catalogue, and it does not report what changed.
 2. Reload each enabled scene:
    `mix engines/viud/scripts/scenes_cli.mix reload panel`.

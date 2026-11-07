@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "viud"
 kind = "service"
 layer = "desktop"
@@ -30,7 +30,7 @@ graphics = { workspace = true }
 model = { workspace = true }
 smithay = { workspace = true }
 thiserror = { workspace = true }
-# The MixOS look (fonts, style, chrome), the same one the apps install.
+# The MixViu look (fonts, style, chrome), the same one the apps install.
 toolkit = { workspace = true }
 wgpu = { workspace = true }
 

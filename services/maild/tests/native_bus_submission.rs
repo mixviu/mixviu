@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Isolated actual noded → maild ABP submission. Never contacts an external MX.
-//! Run ignored with MIXOS_NATIVE_MAIL_NODED and MIXOS_NATIVE_MAIL_FIXTURE_DIR.
+//! Run ignored with MIX_TEST_NATIVE_MAIL_NODED and MIX_TEST_NATIVE_MAIL_FIXTURE_DIR.
 
 use std::fs::File;
 use std::path::Path;
@@ -27,15 +27,15 @@ impl Drop for Broker {
 #[test]
 #[ignore = "requires an exact built native broker and persistent fixture directory"]
 fn native_bus_submission_replays_across_actors_without_duplicate_mail() -> Result<()> {
-    if std::env::var("MIXOS_NATIVE_MAIL_CHILD").as_deref() == Ok("1") {
+    if std::env::var("MIX_TEST_NATIVE_MAIL_CHILD").as_deref() == Ok("1") {
         return tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()?
             .block_on(run_child());
     }
-    let binary = std::env::var("MIXOS_NATIVE_MAIL_NODED")?;
-    let artifact_dir = std::env::var("MIXOS_NATIVE_MAIL_FIXTURE_DIR")?;
+    let binary = std::env::var("MIX_TEST_NATIVE_MAIL_NODED")?;
+    let artifact_dir = std::env::var("MIX_TEST_NATIVE_MAIL_FIXTURE_DIR")?;
     std::fs::create_dir_all(&artifact_dir)?;
     // Retain failures as well as successes; worker collection owns cleanup.
     let root = tempfile::tempdir_in(&artifact_dir)?.keep();
@@ -53,7 +53,7 @@ fn native_bus_submission_replays_across_actors_without_duplicate_mail() -> Resul
     let _broker = Broker(
         Command::new(binary)
             .args(["serve", "--no-monitor", "--no-log"])
-            .env("MIXOS_NODE_CONFIG", &node_config)
+            .env("MIX_NODE_CONFIG", &node_config)
             .stdout(Stdio::from(broker_log.try_clone()?))
             .stderr(Stdio::from(broker_log))
             .spawn()?,
@@ -65,10 +65,10 @@ fn native_bus_submission_replays_across_actors_without_duplicate_mail() -> Resul
             "--ignored",
             "--nocapture",
         ])
-        .env("MIXOS_NODE_CONFIG", &node_config)
-        .env("MIXOS_NATIVE_MAIL_CHILD", "1")
-        .env("MIXOS_NATIVE_MAIL_ROOT", &root)
-        .env("MIXOS_NATIVE_MAIL_URL", format!("ws://127.0.0.1:{port}/ws"))
+        .env("MIX_NODE_CONFIG", &node_config)
+        .env("MIX_TEST_NATIVE_MAIL_CHILD", "1")
+        .env("MIX_TEST_NATIVE_MAIL_ROOT", &root)
+        .env("MIX_TEST_NATIVE_MAIL_URL", format!("ws://127.0.0.1:{port}/ws"))
         .output()?;
     std::fs::write(root.join("maild-test.stdout"), &output.stdout)?;
     std::fs::write(root.join("maild-test.stderr"), &output.stderr)?;
@@ -108,12 +108,12 @@ async fn call(
 
 async fn cli(args: &[&str]) -> Result<String> {
     let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
-    let socket = Path::new(&std::env::var("MIXOS_NATIVE_MAIL_ROOT")?).join("broker.sock");
+    let socket = Path::new(&std::env::var("MIX_TEST_NATIVE_MAIL_ROOT")?).join("broker.sock");
     tokio::task::spawn_blocking(move || {
         let output = Command::new(env!("CARGO_BIN_EXE_maild"))
             .args(args)
-            .env("MIXOS_BUS_SOCKET", socket)
-            .env_remove("MIXOS_SESSION_FD")
+            .env("MIX_BUS_SOCKET", socket)
+            .env_remove("MIX_SESSION_FD")
             .output()?;
         ensure!(
             output.status.success(),
@@ -127,9 +127,9 @@ async fn cli(args: &[&str]) -> Result<String> {
 
 async fn run_child() -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let root = std::env::var("MIXOS_NATIVE_MAIL_ROOT")?;
+    let root = std::env::var("MIX_TEST_NATIVE_MAIL_ROOT")?;
     let root = Path::new(&root);
-    let url = std::env::var("MIXOS_NATIVE_MAIL_URL")?;
+    let url = std::env::var("MIX_TEST_NATIVE_MAIL_URL")?;
     let config = Config {
         listen: "127.0.0.1:0".into(),
         base_url: "http://127.0.0.1".into(),

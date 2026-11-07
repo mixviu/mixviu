@@ -6,7 +6,7 @@
 -- through viud (comp.workspace.rename, saved as the name viud starts
 -- with); Cancel or Esc closes it. Once its dialog is hidden the scene
 -- disables itself, so it holds the single dialog seat only while it shows.
-$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mix/scenes/lib")
 $r = require($LIB .. "/runtime.mix")
 $m = require($LIB .. "/models.mix")
 $ctx = $r.scene_context("workspace-rename")

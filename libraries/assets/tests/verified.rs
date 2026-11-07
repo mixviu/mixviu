@@ -16,7 +16,7 @@ use assets::{
 };
 use sha2::Digest;
 
-#[cfg(feature = "mixos")]
+#[cfg(feature = "mix")]
 #[test]
 fn bundled_mono_faces_have_pinned_hashes_and_nearest_weights() {
     for (weight, name, digest) in [
@@ -36,7 +36,7 @@ fn bundled_mono_faces_have_pinned_hashes_and_nearest_weights() {
             "31c92d01a8a08528b718a43addf0ad3df0af2ca4b7b3290a452f70f358e14d3d",
         ),
     ] {
-        let (actual, bytes) = assets::mixos::mono_face(weight);
+        let (actual, bytes) = assets::mix::mono_face(weight);
         assert_eq!(actual, name);
         assert_eq!(&bytes[..4], b"\0\x01\0\0");
         assert_eq!(hex::encode(sha2::Sha256::digest(bytes)), digest);
@@ -52,8 +52,8 @@ fn bundled_mono_faces_have_pinned_hashes_and_nearest_weights() {
         (900, 500),
     ] {
         assert_eq!(
-            assets::mixos::mono_face(requested),
-            assets::mixos::mono_face(nearest)
+            assets::mix::mono_face(requested),
+            assets::mix::mono_face(nearest)
         );
     }
 }

@@ -45,7 +45,7 @@ impl Broker {
         listener.set_nonblocking(true).unwrap();
         let listener = tokio::net::TcpListener::from_std(listener).unwrap();
         let root =
-            std::env::temp_dir().join(format!("mixos-native-{:032x}", rand::random::<u128>()));
+            std::env::temp_dir().join(format!("mix-native-{:032x}", rand::random::<u128>()));
         if unavailable {
             use std::os::unix::fs::PermissionsExt;
             std::fs::create_dir(&root).unwrap();
@@ -689,23 +689,23 @@ async fn session_interest_and_challenge_quotas_are_independent() {
 // This helper is invoked in a separate OS process by the fixtures below.
 // It is ignored in ordinary runs, never counted as a skipped privileged pass.
 #[tokio::test]
-#[ignore = "fixture subprocess only; requires MIXOS_SESSION_FIXTURE_ENDPOINT"]
+#[ignore = "fixture subprocess only; requires MIX_TEST_SESSION_FIXTURE_ENDPOINT"]
 async fn session_process_fixture() {
-    let endpoint = std::env::var("MIXOS_SESSION_FIXTURE_ENDPOINT")
+    let endpoint = std::env::var("MIX_TEST_SESSION_FIXTURE_ENDPOINT")
         .expect("SKIPPED: fixture endpoint not supplied; run the parent fixture");
     let stream = tokio::net::UnixStream::connect(endpoint).await.unwrap();
     let mut socket = tokio_tungstenite::client_async("ws://localhost/ws", stream)
         .await
         .unwrap()
         .0;
-    let name = std::env::var("MIXOS_SESSION_FIXTURE_NAME").unwrap();
+    let name = std::env::var("MIX_TEST_SESSION_FIXTURE_NAME").unwrap();
     send(
         &mut socket,
         &request("noded.register", "noded", "preclaim").with_header("from", &name),
     )
     .await;
     assert_eq!(receive(&mut socket).await.get("rc"), Some("10"));
-    if let Ok(selector) = std::env::var("MIXOS_SESSION_FIXTURE_SELECTOR") {
+    if let Ok(selector) = std::env::var("MIX_TEST_SESSION_FIXTURE_SELECTOR") {
         let reply = session_call(
             &mut socket,
             "challenge",
@@ -726,7 +726,7 @@ async fn session_process_fixture() {
         let list: serde_json::Value =
             serde_json::from_str(&receive(&mut socket).await.body).unwrap();
         assert!(list.as_array().unwrap().contains(&serde_json::json!(name)));
-        if let Ok(proof) = std::env::var("MIXOS_SESSION_FIXTURE_PROOF") {
+        if let Ok(proof) = std::env::var("MIX_TEST_SESSION_FIXTURE_PROOF") {
             let reply = session_call(
                 &mut socket,
                 "prove",
@@ -749,10 +749,10 @@ fn fixture_process(broker: &Broker, name: &str) -> std::process::Command {
             "--nocapture",
         ])
         .env(
-            "MIXOS_SESSION_FIXTURE_ENDPOINT",
+            "MIX_TEST_SESSION_FIXTURE_ENDPOINT",
             broker.root.join("bus.sock"),
         )
-        .env("MIXOS_SESSION_FIXTURE_NAME", name);
+        .env("MIX_TEST_SESSION_FIXTURE_NAME", name);
     command
 }
 
@@ -790,14 +790,14 @@ async fn p0i_02_competing_process_preclaim_preserves_allocated_route() {
 }
 
 #[tokio::test]
-#[ignore = "SKIPPED privileged multi-UID fixture: requires root and MIXOS_SESSION_TEST_UID; run explicitly with --ignored"]
+#[ignore = "SKIPPED privileged multi-UID fixture: requires root and MIX_TEST_SESSION_UID; run explicitly with --ignored"]
 async fn p0i_03_privileged_other_uid_cannot_lookup_or_consume_grant() {
     use bus::native_session::*;
     use ed25519_dalek::Signer;
     use std::os::unix::process::CommandExt;
     // No missing-prerequisite return path may be reported as a pass.
-    let uid: u32 = std::env::var("MIXOS_SESSION_TEST_UID")
-        .expect("SKIPPED: MIXOS_SESSION_TEST_UID is required")
+    let uid: u32 = std::env::var("MIX_TEST_SESSION_UID")
+        .expect("SKIPPED: MIX_TEST_SESSION_UID is required")
         .parse()
         .unwrap();
     assert_eq!(unsafe { libc::geteuid() }, 0, "SKIPPED: requires root");
@@ -840,11 +840,11 @@ async fn p0i_03_privileged_other_uid_cannot_lookup_or_consume_grant() {
         ),
     };
     command.env(
-        "MIXOS_SESSION_FIXTURE_PROOF",
+        "MIX_TEST_SESSION_FIXTURE_PROOF",
         serde_json::to_string(&proof).unwrap(),
     );
     command.uid(uid).gid(uid).env(
-        "MIXOS_SESSION_FIXTURE_SELECTOR",
+        "MIX_TEST_SESSION_FIXTURE_SELECTOR",
         serde_json::json!({"public_key":public_key,"purpose":"enrol"}).to_string(),
     );
     let mut process = command.spawn().unwrap();

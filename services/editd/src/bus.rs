@@ -184,7 +184,7 @@ pub async fn serve() -> anyhow::Result<()> {
         }
         _ => {
             tracing::warn!(
-                "editd: recovery files disabled (MIXOS_EDIT_RECOVERY=0 or no state directory); buffers are volatile"
+                "editd: recovery files disabled (MIX_EDITD_RECOVERY=0 or no state directory); buffers are volatile"
             );
             None
         }

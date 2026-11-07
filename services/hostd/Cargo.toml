@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 description = "Host information and privileged host actions through closed, typed commands"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "hostd"
 kind = "service"
 layer = "core"

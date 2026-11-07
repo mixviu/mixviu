@@ -54,7 +54,7 @@ pub enum TriState {
     Never,
 }
 
-/// CLI flags every MixOS binary inherits via `#[command(flatten)]`.
+/// CLI flags every MixViu binary inherits via `#[command(flatten)]`.
 ///
 /// Every field is `Option<T>` — `None` means "no CLI override given,"
 /// and the binary's `LogDefaults` supplies the fallback. This keeps

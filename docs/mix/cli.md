@@ -238,12 +238,12 @@ network, still has its whole manual. The built-in copy is also the one that
 documents exactly the binary you are running: a checkout or the online site may
 be ahead of it or behind it.
 
-Lookup order, with no `MIXOS_MAN_*` variable set:
+Lookup order, with neither `MIX_MAN_SOURCE` nor `MIX_MAN_URL` set:
 
 1. **The built-in manual.**
 2. **Files on disk**, for a page this binary does not carry: the installed
    share tree (`<prefix>/share/mix/man`), then a checkout's `docs/mix`
-   (`$MIXOS_SRC`, else the root found above the running binary, else
+   (`$MIX_SRC`, else the root found above the running binary, else
    `~/Projects/mixos`).
 3. **The online copy**, as in `auto` mode below.
 
@@ -258,11 +258,11 @@ mix man nope        -- "no manual page for 'nope'" + available topics
 
 **Environment controls:**
 
-- `MIXOS_MAN_SOURCE=local` — never use the network. Files on disk win (the
+- `MIX_MAN_SOURCE=local` — never use the network. Files on disk win (the
   share tree, then the checkout), then the built-in manual, then the cache.
   Use it while editing pages in a checkout, so your edits show before the
   binary is rebuilt.
-- `MIXOS_MAN_SOURCE=auto` or `MIXOS_MAN_URL=<base>` — the online contract: a
+- `MIX_MAN_SOURCE=auto` or `MIX_MAN_URL=<base>` — the online contract: a
   copy fetched within the last 24 h, else a fetch from `mixos.dev/mix` (or
   `<base>`; 2 s wall-clock budget, HTTPS-only, cached under your XDG cache
   dir), else files on disk, else the built-in manual, else a stale cached copy.
@@ -299,9 +299,9 @@ for i in 1 2 3; do                 for each $i in [1, 2, 3]
 
 ## Build — rebuild the interpreter from itself
 
-The build family wraps `cargo` against the Mix source tree (`$MIXOS_SRC`,
+The build family wraps `cargo` against the Mix source tree (`$MIX_SRC`,
 default the discovered source checkout) so the REPL can rebuild and re-exec into a fresh binary —
-the self-reconstruction surface. Point `$MIXOS_SRC` at the directory holding
+the self-reconstruction surface. Point `$MIX_SRC` at the directory holding
 the workspace `Cargo.toml` (in a clone of the public repo that is `mix/src`).
 
 ```
@@ -649,10 +649,10 @@ When no broker is running the same commands degrade to a clean one-line message
 (`No mesh — local noded not reachable (...)`) rather than an error.
 
 There is also a small **orchestration** group: `mix deploy SVC`
-(`systemctl --user restart mixos-SVC`), `mix health [SVC]` (probe Bus unix
+(`systemctl --user restart mix-SVC`), `mix health [SVC]` (probe Bus unix
 sockets in `/run/bus`, falling back to `/tmp/bus`), and `mix logs SVC [-f]`
-(`journalctl --user -u mixos-SVC`, last 50 lines; `-f`/`--follow` to stream).
-These assume a systemd-user-managed MixOS install.
+(`journalctl --user -u mix-SVC`, last 50 lines; `-f`/`--follow` to stream).
+These assume a systemd-user-managed MixViu install.
 
 ## AI-powered — agent-driven workflows
 
@@ -698,8 +698,8 @@ mix context
 
 Finally, `mix claude-start` / `mix claude-stop` / `mix claude-status` manage
 the `mixos-claude` Bus port daemon (socket
-`/run/user/<uid>/mixos/ports/claude.sock`): `start` spawns the binary
-(searched in `$MIXOS_SRC/target/{release,debug}/`, then `$PATH`), `stop`
+`/run/user/<uid>/mix/ports/claude.sock`): `start` spawns the binary
+(searched in `$MIX_SRC/target/{release,debug}/`, then `$PATH`), `stop`
 removes the socket, `status` probes it and flags a stale socket.
 
 ## Notes
@@ -952,8 +952,8 @@ stdin-feeding task is a named future field rather than a silent absence.
 **The environment is enumerated, not inherited.** A task starts from exactly:
 
     HOME  USER  PATH  LANG  TERM=dumb
-    MIXOS_PREFIX  MIXOS_ETC  MIXOS_VAR  MIXOS_CACHE  MIXOS_RUN  MIXOS_SRC
-    MIXOS_NODE_CONFIG  MIXOS_BROKER_ACCOUNT
+    MIX_PREFIX  MIX_ETC  MIX_VAR  MIX_CACHE  MIX_RUN  MIX_SRC
+    MIX_NODE_CONFIG  MIX_BROKER_ACCOUNT
 
 plus the caller's `env` overlay, which WINS on a name collision. Those values
 are snapshotted when the shell STARTS, so a task sees the shell's startup PATH
@@ -1131,7 +1131,7 @@ back.
 - `mix` is intercepted by the shell, so it never sees `$`-sigil arguments — write `mix what round`, not `mix what $name`.
 - The introspection family (`vars`/`aliases`/`functions`/`all`/`context`) is most useful **inside a REPL**, where the session has accumulated state; from a one-shot OS-shell invocation it reports only the freshly-loaded prelude.
 - The diagnostics family (`time`/`trace`/`history`/`reload`/`diagnose`) is REPL-only — those names are not on the OS-shell allowlist, so `mix trace on` there is read as a script filename. The one exception is `mix stats`, which has a dedicated one-shot OS-shell path against the same on-disk data.
-- Paths follow the MixOS layout: source at `$MIXOS_SRC` (default the discovered source checkout), installed binaries at `<prefix>/bin` (derived from the binary's prefix).
+- Paths follow the MixViu layout: source at `$MIX_SRC` (default the discovered source checkout), installed binaries at `<prefix>/bin` (derived from the binary's prefix).
 
 ## See also
 

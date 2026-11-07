@@ -3,7 +3,7 @@
 //! Contract 1.0.0 on real brokers (key space v2 §5.1, §5.4): change-only
 //! per-prefix topics on one broker, then an authority and a mirror on a
 //! private broker pair. Gated like the other broker tests: run with
-//! `MIXOS_TEST_NODED` naming an exact-revision noded and `--ignored`.
+//! `MIX_TEST_NODED_EXE` naming an exact-revision noded and `--ignored`.
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use bus::native_client::{IncomingCommand, NodedClient};
 use ed25519_dalek::{Signer as _, SigningKey};
@@ -88,15 +88,15 @@ impl Broker {
             .open(root.join("noded.log"))
             .unwrap();
         self.process = Process(Some(
-            Command::new(std::env::var("MIXOS_TEST_NODED").expect("MIXOS_TEST_NODED"))
+            Command::new(std::env::var("MIX_TEST_NODED_EXE").expect("MIX_TEST_NODED_EXE"))
                 .args(["serve", "--no-monitor", "--no-log"])
                 .env_clear()
                 .env("PATH", "/usr/bin:/bin")
                 .env("HOME", root.join("home"))
-                .env("MIXOS_ETC", root.join("etc"))
-                .env("MIXOS_VAR", root.join("var"))
-                .env("MIXOS_RUN", root.join("run"))
-                .env("MIXOS_NODE_CONFIG", root.join("etc/node.conf.mix"))
+                .env("MIX_ETC", root.join("etc"))
+                .env("MIX_VAR", root.join("var"))
+                .env("MIX_RUN", root.join("run"))
+                .env("MIX_NODE_CONFIG", root.join("etc/node.conf.mix"))
                 .env("RUST_LOG", "info")
                 .stdout(Stdio::from(log.try_clone().unwrap()))
                 .stderr(Stdio::from(log))
@@ -114,8 +114,8 @@ impl Broker {
         Process(Some(
             Command::new(env!("CARGO_BIN_EXE_settingsd"))
                 .args(args)
-                .env("MIXOS_NODED_URL", self.url())
-                .env("MIXOS_NODE_CONFIG", self.root.join("etc/node.conf.mix"))
+                .env("MIX_NODED_URL", self.url())
+                .env("MIX_NODE_CONFIG", self.root.join("etc/node.conf.mix"))
                 .env("RUST_LOG", "settingsd=info")
                 .stdout(Stdio::from(log.try_clone().unwrap()))
                 .stderr(Stdio::from(log))
@@ -422,7 +422,7 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 #[test]
-#[ignore = "requires exact-revision noded (MIXOS_TEST_NODED)"]
+#[ignore = "requires exact-revision noded (MIX_TEST_NODED_EXE)"]
 fn a_batch_publishes_exactly_its_prefixes_and_a_reconnect_republishes_every_topic() {
     runtime().block_on(async {
         let mut fixture = Fixture::new(&["alpha"]);
@@ -576,7 +576,7 @@ fn a_batch_publishes_exactly_its_prefixes_and_a_reconnect_republishes_every_topi
 }
 
 #[test]
-#[ignore = "requires exact-revision noded (MIXOS_TEST_NODED)"]
+#[ignore = "requires exact-revision noded (MIX_TEST_NODED_EXE)"]
 fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up() {
     runtime().block_on(async {
         let mut fixture = Fixture::new(&["alpha", "beta"]);

@@ -161,8 +161,8 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     let mut edit = Service(
         Command::new(binary("editd"))
             .arg("serve")
-            .env("MIXOS_NODED_URL", &bus.url)
-            .env("MIXOS_EDIT_RECOVERY", "0")
+            .env("MIX_NODED_URL", &bus.url)
+            .env("MIX_EDITD_RECOVERY", "0")
             .env("HOME", root)
             .env("XDG_STATE_HOME", root.join("edit-state"))
             .stdout(Stdio::from(log.try_clone().unwrap()))
@@ -184,13 +184,13 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     let reference_frame = root.join("reference.png");
     let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testkit/scripts/app_reference.mix");
     let output = Command::new(
-        std::env::var_os("MIXOS_TEST_MIX").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+        std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
     )
     .arg(helper)
     .arg(&reference_frame)
     .args(["--comp", COMP, "--output", "headless-0", "--keep", "--app"])
     .arg(binary("examples/ced-headless-probe"))
-    .env("MIXOS_NODED_URL", &bus.url)
+    .env("MIX_NODED_URL", &bus.url)
     .env("XDG_RUNTIME_DIR", root)
     .env("WAYLAND_DISPLAY", "wayland-headless-test")
     .output()

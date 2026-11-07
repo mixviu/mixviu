@@ -125,7 +125,7 @@ pub struct Config {
     /// `maild.domains.tls_identity_name = "<name>"` rows to PEM paths
     /// at `<tls_key_root>/<name>.cert.pem` +
     /// `<tls_key_root>/<name>.key.pem`. Unset = default
-    /// (`mixos:var/maild/tls`). `[[tls.identity]]` config rows
+    /// (`mix:var/maild/tls`). `[[tls.identity]]` config rows
     /// ignore this and read their `cert` / `key` paths directly.
     pub tls_key_root: Option<PathBuf>,
 
@@ -224,7 +224,7 @@ pub struct DkimSubsection {
     /// Filesystem root for substrate-managed signer PEMs. The Phase 4
     /// commands (`maild.dkim.{generate,rotate,retire}`) write keys here
     /// as `<key_root>/<domain>/<selector>.pem`. Unset = default
-    /// (`mixos:var/maild/dkim`). Operator-managed
+    /// (`mix:var/maild/dkim`). Operator-managed
     /// `[[dkim.domain]]` rows ignore this and read their `key_path`
     /// directly.
     pub key_root: Option<PathBuf>,
@@ -567,12 +567,12 @@ impl Config {
         Ok(Some(config.resolve_paths()?))
     }
 
-    /// XDG user config path: `~/.config/mixos/jmap.conf.mix`.
+    /// XDG user config path: `~/.config/mix/jmap.conf.mix`.
     pub fn config_path() -> PathBuf {
         ::config::path(::config::Dir::Etc).join("jmap.conf.mix")
     }
 
-    /// System-wide config path: `mixos:etc/maild/config.conf.mix`.
+    /// System-wide config path: `mix:etc/maild/config.conf.mix`.
     ///
     /// This is the location the systemd unit reads from on a real
     /// deployment. Searched ahead of the XDG user path so a non-root
@@ -881,8 +881,8 @@ hostname: "mail.example.test"
             hostname: "alpha.example.org"
             tls: {
               identity: [
-                { server_name: "alpha.example.org", cert: "/etc/mixos/maild/tls/lan.crt", key: "/etc/mixos/maild/tls/lan.key", default: true, no_sni_fallback: true },
-                { server_name: "alpha.bus.example.org", cert: "/etc/mixos/maild/tls/wg.crt", key: "/etc/mixos/maild/tls/wg.key" }
+                { server_name: "alpha.example.org", cert: "/etc/mix/maild/tls/lan.crt", key: "/etc/mix/maild/tls/lan.key", default: true, no_sni_fallback: true },
+                { server_name: "alpha.bus.example.org", cert: "/etc/mix/maild/tls/wg.crt", key: "/etc/mix/maild/tls/wg.key" }
               ]
             }
         "#;

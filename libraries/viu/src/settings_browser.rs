@@ -80,7 +80,7 @@ impl Look {
         let space = density.spacing();
         let radii = match values["appearance.roundness"].as_str() {
             Some("slightly_round") => Roundness::SlightlyRound.corner_radii(),
-            // MixOS's Square is 0 on every token (key space F2).
+            // MixViu's Square is 0 on every token (key space F2).
             Some("square") => {
                 let mut r = Roundness::Square.corner_radii();
                 for token in [

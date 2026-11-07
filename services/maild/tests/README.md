@@ -23,7 +23,7 @@ The inherited native-broker test remains opt-in:
 
 - `native_bus_submission_replays_across_actors_without_duplicate_mail` needs
   an exact built native noded binary and a persistent fixture directory. Set
-  `MIXOS_NATIVE_MAIL_NODED` and `MIXOS_NATIVE_MAIL_FIXTURE_DIR`, then run
+  `MIX_TEST_NATIVE_MAIL_NODED` and `MIX_TEST_NATIVE_MAIL_FIXTURE_DIR`, then run
   `cargo test -p maild --test native_bus_submission -- --ignored` on the worker.
   This starts an isolated broker and never contacts an external MX.
 

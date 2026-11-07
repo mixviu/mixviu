@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
-Description=MixOS shared editor service for session %i
+Description=MixViu shared editor service for session %i
 # The session target chooses the broker (noded@%i or the system noded.service);
 # this unit only orders after both. Never Wants= or Requires= a broker: on a desk
 # with the system broker noded@%i is masked.
@@ -10,7 +10,7 @@ PartOf=session@%i.target
 
 [Service]
 Type=simple
-User=mixos
+User=mix
 EnvironmentFile=@{etc}/session/%i.env
 UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
 ExecStart=@{prefix}/bin/editd serve

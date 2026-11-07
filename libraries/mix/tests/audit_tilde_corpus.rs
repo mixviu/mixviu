@@ -13,8 +13,8 @@
 //!   -- --ignored --nocapture
 //! ```
 //!
-//! Roots are configured by `MIXOS_AUDIT_ROOTS` (colon-separated);
-//! defaults to the current MixOS checkout; private and historical trees are not scanned.
+//! Roots are configured by `MIX_TEST_AUDIT_ROOTS` (colon-separated);
+//! defaults to the current MixViu checkout; private and historical trees are not scanned.
 //!
 //! ## Source-text scan, not token walk
 //!
@@ -101,7 +101,7 @@ fn audit_tilde_corpus() {
 }
 
 fn audit_roots() -> Vec<PathBuf> {
-    let raw = std::env::var("MIXOS_AUDIT_ROOTS").unwrap_or_else(|_| {
+    let raw = std::env::var("MIX_TEST_AUDIT_ROOTS").unwrap_or_else(|_| {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .display()

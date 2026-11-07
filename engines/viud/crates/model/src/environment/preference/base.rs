@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Live user **preferences** — the inline-reloaded counterpart to the read-once
 //! `environment.config` (settings.json). Stored in
-//! `~/.config/viud/preferences.json` (same dir). Loaded fresh ([`load`])
+//! `~/.config/mix/viud/preferences.json` (same dir). Loaded fresh ([`load`])
 //! rather than cached in a startup `OnceLock`: startup seeds the runtime cells,
 //! the settings window re-reads on open (so terminal edits show) and writes back
 //! with [`save`]; applied live, no reboot.
@@ -289,7 +289,7 @@ pub struct Preference {
     /// as before — libxkbcommon reads the `XKB_DEFAULT_*` environment.
     pub keyboard: KeyboardLayout,
     /// Default background shader for new worlds: a bundle folder name under
-    /// `~/.local/share/viud/background/shader/`, or an absolute path. A world may
+    /// `~/.local/share/mix/viud/background/shader/`, or an absolute path. A world may
     /// override it in its own record; unset = the built-in parallax.
     pub background_shader: Option<String>,
     /// Anti-aliasing / graphics config for the pannable world (edited in the

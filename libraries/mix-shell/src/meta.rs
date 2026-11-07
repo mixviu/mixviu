@@ -16,8 +16,8 @@ use mix::builtins_hof::HOFS;
 use mix::evaluator::Evaluator;
 use mix::value::Value;
 
-fn mixos_src_str() -> String {
-    crate::paths::mixos_src().to_string_lossy().into_owned()
+fn mix_src_str() -> String {
+    crate::paths::mix_src().to_string_lossy().into_owned()
 }
 
 /// Process start time, initialized on first access.
@@ -414,7 +414,7 @@ fn builtin_detail_string(name: &str) -> Option<String> {
 pub fn help_overview_string(version: &str) -> String {
     format!(
         "\
-# mix {version} — scripting language & shell for the MixOS stack
+# mix {version} — scripting language & shell for the MixViu stack
 
 Run `mix builtins` for the full remit of all {count} built-in functions
 (`mix builtins --json` machine-readable · `mix builtins <name>` one function ·
@@ -852,7 +852,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
                     &format!(
                         "Fix this issue in the Mix language project at {}/crates/mix/: {}. \
                      Read the relevant source, write a fix and test, then run cargo test.",
-                        mixos_src_str(),
+                        mix_src_str(),
                         desc
                     ),
                 );
@@ -868,7 +868,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
                     &format!(
                         "Implement this feature in the Mix language at {}/crates/mix/: {}. \
                      Write tests first, then implement. Run cargo test when done.",
-                        mixos_src_str(),
+                        mix_src_str(),
                         desc
                     ),
                 );
@@ -879,7 +879,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             &format!(
                 "Review recent changes in {}. Run git log --oneline -10 and \
              git diff HEAD~1 to see what changed. Provide a code review.",
-                mixos_src_str()
+                mix_src_str()
             ),
         ),
         "explain" => {
@@ -895,7 +895,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
                         "Explain how the '{}' builtin works in the Mix language. \
                      Read {}/crates/mix/src/builtins.rs and evaluator.rs.",
                         args[1],
-                        mixos_src_str()
+                        mix_src_str()
                     ),
                 );
             }
@@ -905,7 +905,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             &format!(
                 "Read {}/MIX_TODO.md. Pick the highest-value uncompleted item. \
              Implement it with tests. Run cargo test.",
-                mixos_src_str()
+                mix_src_str()
             ),
         ),
         "dogfood" => cmd_ai(
@@ -913,7 +913,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             &format!(
                 "Write 5 practical Mix scripts that test real-world usage patterns. \
              Run them in {}/ and report any awkward syntax or missing features.",
-                mixos_src_str()
+                mix_src_str()
             ),
         ),
         "fuzz" => cmd_ai(
@@ -921,7 +921,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             &format!(
                 "Generate random Mix code to fuzz-test the parser and evaluator. \
              Try edge cases. Report any crashes or panics found. Work in {}/.",
-                mixos_src_str()
+                mix_src_str()
             ),
         ),
         "teach" => cmd_ai(
@@ -929,8 +929,8 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             &format!(
                 "Read recent git history in {}. Create a tutorial .mix script \
              demonstrating the newest features. Save it to {}/examples/.",
-                mixos_src_str(),
-                mixos_src_str()
+                mix_src_str(),
+                mix_src_str()
             ),
         ),
 
@@ -1114,8 +1114,8 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
             "  ⚠ prelude    not loaded (this session ran with --no-prelude; the prelude is fine)"
         );
     }
-    // B14: a mixos:prefix binary whose prelude resolved OUTSIDE the install
-    // tier is a mixed-tier installation (an exported MIXOS pointing at a
+    // B14: a mix:prefix binary whose prelude resolved OUTSIDE the install
+    // tier is a mixed-tier installation (an exported MIX_ROOT pointing at a
     // dev checkout shadows the shipped prelude). Warn, never fail — a dev
     // box doing this deliberately is a choice, not a fault.
     if let Ok(exe) = std::env::current_exe() {
@@ -1125,14 +1125,14 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
                 .to_string_lossy()
                 .to_string(),
         ) {
-            let prelude_src = mixos_src_str();
+            let prelude_src = mix_src_str();
             if !prelude_src.starts_with(
                 &::paths::root(::paths::Root::Prefix)
                     .to_string_lossy()
                     .to_string(),
             ) {
                 println!(
-                    "  ⚠ prelude    resolved outside the install tier: {prelude_src} (binary is {exe_path}) — MIXOS points the /opt binary at a dev checkout"
+                    "  ⚠ prelude    resolved outside the install tier: {prelude_src} (binary is {exe_path}) — MIX_ROOT points the /opt binary at a dev checkout"
                 );
             }
         }
@@ -1414,7 +1414,7 @@ fn cmd_config(version: &str) {
         Some(h) => println!("home:     {}", h),
         None => println!("home:     <unavailable: HOME unset>"),
     }
-    println!("prelude:  {}/crates/mix/std/prelude.mix", mixos_src_str());
+    println!("prelude:  {}/crates/mix/std/prelude.mix", mix_src_str());
     match &home {
         Some(h) => {
             let rc = format!("{}/.mixrc", h);
@@ -1437,7 +1437,7 @@ fn cmd_config(version: &str) {
     // so beats printing a knob that does not exist.
     let argv0 = crate::process_args().into_iter().next().unwrap_or_default();
     // A login shell is signalled by a '-' prefix on the basename
-    // (`-mix`); a full path like mixos:prefix/bin/-mix still ends in the
+    // (`-mix`); a full path like mix:prefix/bin/-mix still ends in the
     // prefixed name, so check the file name, not the whole argv[0].
     let login = Path::new(&argv0)
         .file_name()
@@ -1459,11 +1459,11 @@ fn cmd_config(version: &str) {
     );
 }
 
-/// `mix build`: cargo build --release, strip, install to MIXOS_BIN, otherwise the derived prefix/bin/
+/// `mix build`: cargo build --release, strip, install to MIX_BIN, otherwise the derived prefix/bin/
 /// Returns Some(path) if the REPL should save history and exec into the new binary.
 fn cmd_build() -> Option<String> {
-    let mix_dir = mixos_src_str();
-    let bin_dir = crate::paths::mixos_path(crate::paths::Dir::Bin)
+    let mix_dir = mix_src_str();
+    let bin_dir = crate::paths::mix_path(crate::paths::Dir::Bin)
         .to_string_lossy()
         .into_owned();
 
@@ -1496,7 +1496,7 @@ fn cmd_build() -> Option<String> {
     let dst = format!("{}/mix", bin_dir);
 
     println!("Installing {} -> {}", src, dst);
-    // Direct fs calls — no `sh -c` string, so a MIXOS_BIN/MIXOS_SRC path
+    // Direct fs calls — no `sh -c` string, so a MIX_BIN/MIX_SRC path
     // containing spaces or shell metacharacters can't be re-interpreted.
     // Remove-then-copy (never write in place) per the ETXTBSY note above;
     // a missing destination is the normal first-install case, not an error.
@@ -1519,9 +1519,9 @@ fn cmd_build() -> Option<String> {
     }
 }
 
-/// `mix clean`: cargo clean to remove build artifacts ($MIXOS_SRC/src/target/)
+/// `mix clean`: cargo clean to remove build artifacts ($MIX_SRC/src/target/)
 fn cmd_clean() {
-    let mix_dir = mixos_src_str();
+    let mix_dir = mix_src_str();
 
     println!("Cleaning build artifacts...");
     match std::process::Command::new("cargo")
@@ -1540,7 +1540,7 @@ fn cmd_clean() {
 
 /// `mix update`: git pull then build
 fn cmd_update() -> Option<String> {
-    let mix_home = mixos_src_str();
+    let mix_home = mix_src_str();
 
     println!("Updating from git...");
     let status = std::process::Command::new("git")
@@ -1565,7 +1565,7 @@ fn cmd_update() -> Option<String> {
 
 /// `mix test`: run cargo test, streaming output
 fn cmd_test() {
-    let mix_dir = mixos_src_str();
+    let mix_dir = mix_src_str();
 
     let status = std::process::Command::new("cargo")
         .args(["test"])
@@ -1603,7 +1603,7 @@ fn cmd_self_check() {
         None => eprintln!("{}: skipped (HOME unset)", mixrc_label),
     }
     let prelude_label = "std/prelude.mix";
-    let prelude_path = format!("{}/crates/mix/std/prelude.mix", mixos_src_str());
+    let prelude_path = format!("{}/crates/mix/std/prelude.mix", mix_src_str());
     check_pure_mix(&prelude_path, prelude_label);
 }
 
@@ -1957,7 +1957,7 @@ fn cmd_help_overview() {
     println!("  mix watch P CMD  Watch files matching pattern P, run CMD on changes");
     println!();
     println!("Mesh orchestration:");
-    println!("  mix deploy SVC      Restart a MixOS service (systemctl --user restart)");
+    println!("  mix deploy SVC      Restart a MixViu service (systemctl --user restart)");
     println!("  mix health [SVC]    Check Bus service health (socket connectivity)");
     println!("  mix logs SVC [-f]   Show service logs (journalctl, -f to follow)");
     println!();
@@ -2207,11 +2207,11 @@ fn cmd_chat(eval: &Evaluator) {
     let context = build_context_summary(eval);
     let system_prompt = format!(
         "You are a Mix shell assistant embedded in an interactive Mix REPL session. \
-         Mix is a pure-Rust ARexx-inspired scripting language for the MixOS sovereign stack. \
+         Mix is a pure-Rust ARexx-inspired scripting language for the MixViu sovereign stack. \
          Key features: everything-is-a-string, PARSE instruction, Bus IPC (send/address/emit), \
          function scope isolation, $sigil variables, keyword-driven syntax (no braces). \
          Session: {}. \
-         Help the user with Mix scripting, debugging, and MixOS operations.",
+         Help the user with Mix scripting, debugging, and MixViu operations.",
         context
     );
 
@@ -2229,13 +2229,13 @@ fn cmd_chat(eval: &Evaluator) {
     }
 }
 
-/// `mix deploy SERVICE`: restart a MixOS service
+/// `mix deploy SERVICE`: restart a MixViu service
 fn cmd_deploy(service: &str) {
     println!("Deploying {}...", service);
 
     // Try systemd user service first
     let status = std::process::Command::new("systemctl")
-        .args(["--user", "restart", &format!("mixos-{}", service)])
+        .args(["--user", "restart", &format!("mix-{}", service)])
         .status();
 
     match status {
@@ -2246,7 +2246,7 @@ fn cmd_deploy(service: &str) {
                 .args([
                     "--user",
                     "status",
-                    &format!("mixos-{}", service),
+                    &format!("mix-{}", service),
                     "--no-pager",
                     "-l",
                 ])
@@ -2327,7 +2327,7 @@ fn check_service_health(dir: &std::path::Path, service: &str) {
 
 /// `mix logs SERVICE [--follow]`: show service logs
 fn cmd_logs(service: &str, follow: bool) {
-    let unit = format!("mixos-{}", service);
+    let unit = format!("mix-{}", service);
 
     let mut cmd_args = vec!["--user", "-u", &unit, "--no-pager"];
     if follow {
@@ -2356,7 +2356,7 @@ fn cmd_logs(service: &str, follow: bool) {
 /// `mix claude-start|stop|status`: manage the Claude Bus port daemon
 fn cmd_claude_port(action: &str) {
     let uid = crate::paths::current_uid();
-    let sock_path = format!("/run/user/{}/mixos/ports/claude.sock", uid);
+    let sock_path = format!("/run/user/{}/mix/ports/claude.sock", uid);
 
     match action {
         "start" => {
@@ -2368,8 +2368,8 @@ fn cmd_claude_port(action: &str) {
 
             // Find mixos-claude binary
             let candidates = [
-                format!("{}/target/release/mixos-claude", mixos_src_str()),
-                format!("{}/target/debug/mixos-claude", mixos_src_str()),
+                format!("{}/target/release/mixos-claude", mix_src_str()),
+                format!("{}/target/debug/mixos-claude", mix_src_str()),
                 "mixos-claude".to_string(),
             ];
 
@@ -2402,7 +2402,7 @@ fn cmd_claude_port(action: &str) {
                     eprintln!("mixos-claude binary not found");
                     eprintln!(
                         "Build it: cd {} && cargo build -p mixos-claude --release",
-                        mixos_src_str()
+                        mix_src_str()
                     );
                 }
             }
@@ -2705,7 +2705,7 @@ fn parse_man_source(value: Option<&str>) -> Result<ManSource, String> {
         Some(value) if value.eq_ignore_ascii_case("auto") => Ok(ManSource::Auto),
         Some(value) if value.eq_ignore_ascii_case("local") => Ok(ManSource::Local),
         Some(value) => Err(format!(
-            "invalid MIXOS_MAN_SOURCE '{value}' (expected auto or local)"
+            "invalid MIX_MAN_SOURCE '{value}' (expected auto or local)"
         )),
     }
 }
@@ -2739,7 +2739,7 @@ fn man_page_url(base_url: &str, filename: &str) -> String {
 }
 
 /// The manual's source of truth lives in the checkout at
-/// `$MIXOS/docs/mix` (also what mixos.dev/mix/ serves). With a known
+/// `$MIX_ROOT/docs/mix` (also what mixos.dev/mix/ serves). With a known
 /// root that is the only candidate; without one, the documented default
 /// clone location is tried.
 fn man_dir_candidates(home: Option<&Path>, root: Option<&Path>) -> Vec<PathBuf> {
@@ -2752,7 +2752,7 @@ fn man_dir_candidates(home: Option<&Path>, root: Option<&Path>) -> Vec<PathBuf> 
 
 fn local_man_dirs() -> Vec<PathBuf> {
     let home = dirs::home_dir();
-    let root = crate::paths::mixos_root();
+    let root = crate::paths::mix_root();
     let mut candidates = vec![config::path(config::Dir::Share).join("mix/man")];
     candidates.extend(man_dir_candidates(home.as_deref(), root.as_deref()));
     candidates
@@ -2783,7 +2783,7 @@ fn man_cache_root(xdg_cache_home: Option<&Path>, home: Option<&Path>) -> Option<
         .filter(|path| path.is_absolute())
         .map(Path::to_path_buf)
         .or_else(|| home.map(|home| home.join(".cache")))
-        .map(|root| root.join("mixos/man"))
+        .map(|root| root.join("mix/man"))
 }
 
 fn man_url_fingerprint(value: &str) -> u64 {
@@ -2970,9 +2970,9 @@ fn print_man_not_found(topic: Option<&str>, base_url: &str) {
     topics.dedup();
     if topics.is_empty() {
         eprintln!("Browse the manual at {base_url}/");
-        eprintln!("Local fallback looked in $MIXOS/docs/mix (default root ~/Projects/mixos).");
+        eprintln!("Local fallback looked in $MIX_ROOT/docs/mix (default root ~/Projects/mixos).");
         eprintln!(
-            "Use MIXOS_MAN_SOURCE=local, or clone: git clone https://github.com/markc/mixos ~/Projects/mixos"
+            "Use MIX_MAN_SOURCE=local, or clone: git clone https://github.com/markc/mixos ~/Projects/mixos"
         );
     } else {
         eprintln!("Available topics: {}", topics.join(", "));
@@ -2981,7 +2981,7 @@ fn print_man_not_found(topic: Option<&str>, base_url: &str) {
 
 /// `mix man [TOPIC]`: print a manual page; the built-in manual by default.
 fn cmd_man(topic: Option<&str>) {
-    let source = match parse_man_source(env::var("MIXOS_MAN_SOURCE").ok().as_deref()) {
+    let source = match parse_man_source(env::var("MIX_MAN_SOURCE").ok().as_deref()) {
         Ok(source) => source,
         Err(error) => {
             eprintln!("mix man: {error}");
@@ -2995,20 +2995,20 @@ fn cmd_man(topic: Option<&str>) {
             return;
         }
     };
-    let base_url = man_base_url(env::var("MIXOS_MAN_URL").ok().as_deref());
+    let base_url = man_base_url(env::var("MIX_MAN_URL").ok().as_deref());
     let cache_path = configured_man_cache_path(&base_url, &filename);
 
     // Lookup order (docs/mix/README.md, "Where the pages come from"):
     // - default: the manual built into this binary, which documents exactly
     //   this binary; then files on disk; then the online fetch below, for a
     //   page this binary does not carry.
-    // - MIXOS_MAN_SOURCE=local: files on disk first (a checkout's working
+    // - MIX_MAN_SOURCE=local: files on disk first (a checkout's working
     //   copy, for whoever is editing the manual), then the built-in manual,
     //   then the cache. Never the network.
-    // - MIXOS_MAN_SOURCE=auto or MIXOS_MAN_URL: the online contract — fresh
+    // - MIX_MAN_SOURCE=auto or MIX_MAN_URL: the online contract — fresh
     //   cache, fetch, files on disk, built-in, stale cache.
-    if env::var_os("MIXOS_MAN_SOURCE").is_none()
-        && env::var_os("MIXOS_MAN_URL").is_none()
+    if env::var_os("MIX_MAN_SOURCE").is_none()
+        && env::var_os("MIX_MAN_URL").is_none()
         && let Some(content) = crate::manual::page(&filename)
             .map(str::to_string)
             .or_else(|| read_local_man_page(&filename))
@@ -3231,9 +3231,9 @@ fn cmd_apropos(term: &str) {
     // 3. Manual section headings — match each page's `#` headings, taking
     //    each topic from where `mix man` would: the manual built into the
     //    binary, then the checkout docs dir, then the `mix man` cache
-    //    (`~/.cache/mixos/man`, default-URL layout). With
-    //    MIXOS_MAN_SOURCE=local the checkout comes first, as for `mix man`.
-    let local = env::var("MIXOS_MAN_SOURCE")
+    //    (`~/.cache/mix/man`, default-URL layout). With
+    //    MIX_MAN_SOURCE=local the checkout comes first, as for `mix man`.
+    let local = env::var("MIX_MAN_SOURCE")
         .ok()
         .is_some_and(|value| parse_man_source(Some(&value)) == Ok(ManSource::Local));
     let dir_pages = |dir: &Path| -> Vec<(String, String)> {
@@ -3515,9 +3515,9 @@ mod man_resolver_tests {
         assert_eq!(
             man_dir_candidates(
                 Some(Path::new("/home/tester")),
-                Some(Path::new("/srv/mixos"))
+                Some(Path::new("/srv/mix"))
             ),
-            vec![PathBuf::from("/srv/mixos/docs/mix")]
+            vec![PathBuf::from("/srv/mix/docs/mix")]
         );
         // no root: the documented default clone location
         assert_eq!(
@@ -3534,31 +3534,31 @@ mod man_resolver_tests {
                 Some(Path::new("/var/cache/tester")),
                 Some(Path::new("/home/tester"))
             ),
-            Some(PathBuf::from("/var/cache/tester/mixos/man"))
+            Some(PathBuf::from("/var/cache/tester/mix/man"))
         );
         assert_eq!(
             man_cache_root(None, Some(Path::new("/home/tester"))),
-            Some(PathBuf::from("/home/tester/.cache/mixos/man"))
+            Some(PathBuf::from("/home/tester/.cache/mix/man"))
         );
         assert_eq!(
             man_cache_root(
                 Some(Path::new("relative/cache")),
                 Some(Path::new("/home/tester"))
             ),
-            Some(PathBuf::from("/home/tester/.cache/mixos/man"))
+            Some(PathBuf::from("/home/tester/.cache/mix/man"))
         );
         assert_eq!(man_cache_root(None, None), None);
     }
 
     #[test]
     fn url_override_has_an_isolated_cache_namespace() {
-        let root = Path::new("/cache/mixos/man");
+        let root = Path::new("/cache/mix/man");
         assert_eq!(
             man_cache_path(root, DEFAULT_MAN_URL, "syntax.md"),
-            PathBuf::from("/cache/mixos/man/syntax.md")
+            PathBuf::from("/cache/mix/man/syntax.md")
         );
         let override_path = man_cache_path(root, "http://127.0.0.1:8080/mix", "syntax.md");
-        assert!(override_path.starts_with("/cache/mixos/man/sources"));
+        assert!(override_path.starts_with("/cache/mix/man/sources"));
         assert!(override_path.ends_with("syntax.md"));
         assert_ne!(
             override_path,

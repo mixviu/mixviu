@@ -2,7 +2,7 @@
 //! belong to the user.
 //!
 //! The user keys are bare F1–F12 and Right Ctrl, Right Alt or Right Shift
-//! with an arrow ([`inputd_schema::is_user_key`]). On a MixOS VT viud reads
+//! with an arrow ([`inputd_schema::is_user_key`]). On a MixViu VT viud reads
 //! the keyboard itself, so it enforces the rule itself, ahead of its own
 //! binding table ([`crate::bindings`]):
 //!

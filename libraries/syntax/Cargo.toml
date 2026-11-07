@@ -8,7 +8,7 @@ repository.workspace = true
 publish = false
 description = "Deterministic syntax highlighting over Microsoft Edit's lsh definitions"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "syntax"
 kind = "lib"
 layer = "core"

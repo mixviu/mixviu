@@ -32,7 +32,7 @@ pub fn begin_spawn() -> Result<SpawnPermit, String> {
 }
 
 pub fn enabled() -> bool {
-    std::env::var_os("MIXOS_CONTAIN_CHILDREN").is_some_and(|value| value == "1")
+    std::env::var_os("MIX_VIUD_CONTAIN_CHILDREN").is_some_and(|value| value == "1")
 }
 
 fn relative_cgroup(source: &str) -> Result<PathBuf, String> {

@@ -63,13 +63,13 @@ use tracing::info;
 // ---------------------------------------------------------------------------
 
 /// `--version` line with git sha + build time (version-discovery
-/// contract). `MIXOS_*` set by build.rs → `buildinfo::emit()`.
+/// contract). `MIX_*` set by build.rs → `buildinfo::emit()`.
 const VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " (",
-    env!("MIXOS_GIT_SHA"),
+    env!("MIX_GIT_SHA"),
     ", built ",
-    env!("MIXOS_BUILD_TIME"),
+    env!("MIX_BUILD_TIME"),
     ")"
 );
 
@@ -111,11 +111,11 @@ enum Command {
         #[arg(long)]
         http_listen: Option<String>,
 
-        /// Directory containing WASM apps (default: from node.conf.mix or /var/lib/mixos/www)
+        /// Directory containing WASM apps (default: from node.conf.mix or /var/lib/mix/www)
         #[arg(long)]
         www_dir: Option<PathBuf>,
 
-        /// Path to the SQLite database (default: $MIXOS_VAR/web.db)
+        /// Path to the SQLite database (default: $MIX_VAR/web.db)
         #[arg(long)]
         db_path: Option<PathBuf>,
 
@@ -166,7 +166,7 @@ enum Command {
     },
     /// Initialise the SQLite database
     Init {
-        /// Path to the SQLite database (default: $MIXOS_VAR/web.db)
+        /// Path to the SQLite database (default: $MIX_VAR/web.db)
         #[arg(long)]
         db_path: Option<PathBuf>,
     },
@@ -886,7 +886,7 @@ struct NodeState {
     /// cookies. The `/auth/login` handler seals a maild bearer token into
     /// the `mixos_session` cookie; `serve_static`'s `jmap()` seam
     /// unseals it to authorise SSR page navigations. Loaded (or
-    /// generated) from `/var/lib/mixos/webd/session.key` on the serving
+    /// generated) from `/var/lib/mix/webd/session.key` on the serving
     /// node; an ephemeral key on the bootstrap / test fixtures (which
     /// never serve login traffic). See [`session`].
     session: Arc<session::SessionSealer>,
@@ -3793,7 +3793,7 @@ fn served_domain_from_host(headers: &HeaderMap, allow: &HashSet<String>) -> Opti
     allow.contains(&domain).then_some(domain)
 }
 
-/// Render the NS 3.0 `clientConfig` v1.1 body, MixOS-rebranded
+/// Render the NS 3.0 `clientConfig` v1.1 body, MixViu-rebranded
 /// (`displayName`/`displayShortName`/`<documentation>`) and with every
 /// interpolated value XML-escaped. Structure and the
 /// port/socket/auth/`%EMAILADDRESS%` constants are verbatim from
@@ -3807,8 +3807,8 @@ fn render_autoconfig_xml(domain: &str, mhost: &str) -> String {
 <clientConfig version="1.1">
   <emailProvider id="{d}">
     <domain>{d}</domain>
-    <displayName>MixOS Mail</displayName>
-    <displayShortName>MixOS</displayShortName>
+    <displayName>MixViu Mail</displayName>
+    <displayShortName>MixViu</displayShortName>
     <incomingServer type="imap">
       <hostname>{m}</hostname>
       <port>993</port>
@@ -3824,7 +3824,7 @@ fn render_autoconfig_xml(domain: &str, mhost: &str) -> String {
       <username>%EMAILADDRESS%</username>
     </outgoingServer>
     <documentation url="https://{d}/docs/">
-      <descr lang="en">MixOS Mail client setup</descr>
+      <descr lang="en">MixViu Mail client setup</descr>
     </documentation>
   </emailProvider>
 </clientConfig>"#
@@ -4489,11 +4489,11 @@ async fn serve_static(
 // ---------------------------------------------------------------------------
 
 /// Path to the per-node session sealing key. Overridable via
-/// `MIXOS_WEBD_SESSION_KEY_PATH` (dev/test); otherwise it lives under the
-/// var directory (`$MIXOS_VAR`, default `/var/lib/mixos`) as `webd/session.key`
+/// `MIX_WEBD_SESSION_KEY_PATH` (dev/test); otherwise it lives under the
+/// var directory (`$MIX_VAR`, default `/var/lib/mix`) as `webd/session.key`
 /// (D2.6).
 fn session_key_path() -> PathBuf {
-    std::env::var_os("MIXOS_WEBD_SESSION_KEY_PATH")
+    std::env::var_os("MIX_WEBD_SESSION_KEY_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| session_key_path_in(&config::path(config::Dir::Var)))
 }
@@ -4519,8 +4519,8 @@ mod session_key_path_tests {
     #[test]
     fn the_stock_var_directory_gives_the_canonical_path() {
         assert_eq!(
-            session_key_path_in(StdPath::new("/var/lib/mixos")),
-            PathBuf::from("/var/lib/mixos/webd/session.key")
+            session_key_path_in(StdPath::new("/var/lib/mix")),
+            PathBuf::from("/var/lib/mix/webd/session.key")
         );
     }
 }
@@ -8568,8 +8568,8 @@ mod autoconfig_tests {
         assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"));
         assert!(xml.contains("<emailProvider id=\"example.org\">"));
         assert!(xml.contains("<domain>example.org</domain>"));
-        assert!(xml.contains("<displayName>MixOS Mail</displayName>"));
-        assert!(xml.contains("<displayShortName>MixOS</displayShortName>"));
+        assert!(xml.contains("<displayName>MixViu Mail</displayName>"));
+        assert!(xml.contains("<displayShortName>MixViu</displayShortName>"));
         assert!(xml.contains("<hostname>mail.example.org</hostname>"));
         assert!(xml.contains("<port>993</port>"));
         assert!(xml.contains("<port>465</port>"));
@@ -8837,7 +8837,7 @@ mod vhost_tests {
 vhost: [
   {
     host: "site-a.example",
-    www_dir: "/var/lib/mixos/www/site-a",
+    www_dir: "/var/lib/mix/www/site-a",
     tls_cert: "/etc/letsencrypt/live/site-a.example/fullchain.pem",
     tls_key: "/etc/letsencrypt/live/site-a.example/privkey.pem"
   }
@@ -8849,7 +8849,7 @@ vhost: [
         let v = &cfg.vhost[0];
         assert_eq!(v.host, "site-a.example");
         assert!(v.aliases.is_empty());
-        assert_eq!(v.www_dir, "/var/lib/mixos/www/site-a");
+        assert_eq!(v.www_dir, "/var/lib/mix/www/site-a");
         assert!(v.tls_cert.is_some());
         assert!(v.tls_key.is_some());
         assert!(v.acme.is_none());
@@ -10150,9 +10150,9 @@ mod cli_parser_tests {
             "example.com",
             "/srv/www/example.com",
             "--tls-cert-path",
-            "/etc/mixos/webd/example.com.crt",
+            "/etc/mix/webd/example.com.crt",
             "--tls-key-path",
-            "/etc/mixos/webd/example.com.key",
+            "/etc/mix/webd/example.com.key",
             "--disabled",
         ])
         .expect("vhost add with manual TLS + --disabled should parse");
@@ -10168,11 +10168,11 @@ mod cli_parser_tests {
             } => {
                 assert_eq!(
                     tls_cert_path.as_deref(),
-                    Some("/etc/mixos/webd/example.com.crt")
+                    Some("/etc/mix/webd/example.com.crt")
                 );
                 assert_eq!(
                     tls_key_path.as_deref(),
-                    Some("/etc/mixos/webd/example.com.key")
+                    Some("/etc/mix/webd/example.com.key")
                 );
                 assert!(disabled);
             }

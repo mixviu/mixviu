@@ -272,10 +272,10 @@ mod tests {
             serve_client(engine, client.clone(), &mut stop_rx).await;
             client.close().await;
         });
-        let mix = std::env::var("MIXOS_TEST_MIX").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
+        let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mix/bin/mix".into());
         let output = tokio::process::Command::new(mix)
             .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/bus_test.mix"))
-            .env("MIXOS_NODED_URL", &broker.url)
+            .env("MIX_NODED_URL", &broker.url)
             .env("INDEXD_TEST_BROKER", "1")
             .output()
             .await

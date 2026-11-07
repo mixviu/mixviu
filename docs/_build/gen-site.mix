@@ -51,7 +51,7 @@ $GH_TREE = "https://github.com/markc/mixos/tree/main/"
 $PAGE_KINDS = ["app", "service", "cli", "lib"]       -- kinds that must have a page
 $SHIP_KINDS = ["app", "service", "cli"]              -- kinds that declare install profiles
 $RESERVED = ["docs", "v"]                            -- never a component name
-$MAIN_NOTE = "This page describes the current `main` branch of MixOS."
+$MAIN_NOTE = "This page describes the current `main` branch of MixViu."
 $HOOK_MARK = "-- mixos site gate"
 $GEN_ICONS = ["file-text"]      -- icons this script itself emits
 
@@ -381,8 +381,8 @@ end
 
 -- /docs/components/: every component, then every package.
 $t = ["# Components", "",
-  "Every MixOS component, generated from the component metadata: each principal",
-  "package's `[package.metadata.mixos]`, or a Mix component's `component.mx`, read by",
+  "Every MixViu component, generated from the component metadata: each principal",
+  "package's `[package.metadata.mixviu]`, or a Mix component's `component.mx`, read by",
   "`tools/component_index.mix`. Install profiles come only from a declared `profiles`",
   "list; a shipping component that has not declared one yet is unclassified. By",
   "profile: [desktop](desktop.md) and [server](server.md). " .. $MAIN_NOTE, "",
@@ -406,7 +406,7 @@ for each $e in $packages
     $e.layer .. " | " .. $e.contract .. " | " .. $e.version .. " |")
 end
 push($gen_docs, {doc: "docs/components.md", src: gen_front("Components",
-  "Every MixOS component with its kind, install profiles, source and page, generated from the component metadata.",
+  "Every MixViu component with its kind, install profiles, source and page, generated from the component metadata.",
   "tools/component_index.mix --json") .. join($t, "\n") .. "\n"})
 
 -- /docs/desktop/ and /docs/server/: by declared install profile. base
@@ -436,11 +436,11 @@ for each $prof in ["desktop", "server"]
   $Prof = upper(substr($prof, 0, 1)) .. substr($prof, 1)
   $other = if $prof == "desktop" then "server" else "desktop" end
   $t = ["# " .. $Prof .. " components", "",
-    "The components a MixOS " .. $prof .. " installs, generated from each component's declared",
+    "The components a MixViu " .. $prof .. " installs, generated from each component's declared",
     "install profiles. A component in more than one profile is listed on each page. Every",
     "component, with its kind and source, is in the [component index](components.md); see also",
     "the [" .. $other .. "](" .. $other .. ".md) list. " .. $MAIN_NOTE, "",
-    "## Core components", "", "On every MixOS system.", ""]
+    "## Core components", "", "On every MixViu system.", ""]
   $t = concat($t, profile_lines("base"))
   $t = concat($t, ["", "## " .. $Prof .. " components", ""])
   $t = concat($t, profile_lines($prof))
@@ -449,7 +449,7 @@ for each $prof in ["desktop", "server"]
     "yet. They are listed on both this page and the " .. $other .. " page until they do.", ""])
   $t = concat($t, profile_lines("unclassified"))
   push($gen_docs, {doc: "docs/" .. $prof .. ".md", src: gen_front($Prof .. " components",
-    "The MixOS components in the " .. $prof .. " install profile, generated from their declared profiles.",
+    "The MixViu components in the " .. $prof .. " install profile, generated from their declared profiles.",
     "tools/component_index.mix --json") .. join($t, "\n") .. "\n"})
 end
 
@@ -491,7 +491,7 @@ end
 -- hb-subset version. woff2_compress (Brotli q11, one core) is the slow step,
 -- and on a hit both it and hb-subset are skipped: a rebuild with no font
 -- change costs one hash per source. Delete the cache dir to force a re-cut.
-$FONT_CACHE = env("XDG_CACHE_HOME", env("HOME") .. "/.cache") .. "/mixos/site-fonts"
+$FONT_CACHE = env("XDG_CACHE_HOME", env("HOME") .. "/.cache") .. "/mix/site-fonts"
 
 fn cut_font($role, $src, $unicodes, $instance, $code)
   $out = $tmp .. "/" .. $role .. ".woff2"
@@ -520,7 +520,7 @@ fn cut_font($role, $src, $unicodes, $instance, $code)
 end
 
 -- ---------------------------------------------------------------- icons
--- Lucide: the checked-in SVG set the MixOS desktop draws from. Each icon the
+-- Lucide: the checked-in SVG set the MixViu desktop draws from. Each icon the
 -- site uses is verified by sha256, restyled to the desktop's stroke width,
 -- written to _web/icons/<file>.svg, and shown as a CSS mask on its data-lucide
 -- name. A mask follows the attribute, so base.js's runtime swaps need no JS.
@@ -659,7 +659,7 @@ for each $role in $fc.preload
   end
 end
 $fonts_css = "/* " .. $MARKER .. "\n" ..
-     "   Web fonts cut from asset set " .. basename($fc.asset_set) .. " - the files the MixOS\n" ..
+     "   Web fonts cut from asset set " .. basename($fc.asset_set) .. " - the files the MixViu\n" ..
      "   desktop renders - by hb-subset + woff2_compress. All OFL-1.1:\n" ..
      join($face_notes, "\n") .. "\n" ..
      "   Coverage is declared per face as unicode-range. */\n" ..
@@ -671,7 +671,7 @@ for each $name in sort(keys($licence_out))
 end
 
 -- ---------------------------------------------------------------- brand
--- share/brand is the one source for MixOS brand art; the site never keeps a
+-- share/brand is the one source for MixViu brand art; the site never keeps a
 -- second original. The favicon is the Alien Cyclops, transparent, with a thin
 -- black outline under the white ring so it reads on light and dark browser
 -- chrome: logos/alien-cyclops-favicon.svg, copied to _web/favicon.svg, with its
@@ -939,7 +939,7 @@ push($emits, {path: "404.html", from: "the 404 page", body: fill({
   main: "    <div id=\"doc-view\" class=\"content-section\">\n" ..
        "        <article id=\"content-doc\" class=\"prose\">\n" ..
        "<h1 id=\"page-not-found\">Page not found</h1>\n" ..
-       "<p>There is no page at this address. Try the <a href=\"/\">MixOS home page</a>, or <a href=\"/llms.txt\">the index of every page</a>.</p>\n" ..
+       "<p>There is no page at this address. Try the <a href=\"/\">MixViu home page</a>, or <a href=\"/llms.txt\">the index of every page</a>.</p>\n" ..
        "        </article>\n" ..
        "    </div>"
 })})

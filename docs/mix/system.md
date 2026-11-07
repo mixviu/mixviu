@@ -736,7 +736,7 @@ end
   sendmail run is remote, with `/usr/sbin/sendmail` as the default there. The
   result carries `host` as `ssh_exec`'s does, and only then. **`mix_bin`**
   (with `host` only) names the remote mix binary the hop runs, resolved as
-  for [`ssh_mix`](remote.md): `mix_bin`, else local `MIX_REMOTE_BIN`, else
+  for [`ssh_mix`](remote.md): `mix_bin`, else local `MIX_REMOTE_EXE`, else
   `<prefix>/bin/mix`.
 - **The result is `run_argv`'s `process_result` plus `message_id`**. `ok`
   means the MTA accepted the message for submission, not that it was
@@ -1826,7 +1826,7 @@ opens a path). This is the factory's "name every release artifact + its
 digest, then sign the manifest" primitive.
 
 ```mix
-print(hash_file("/srv/mixos-factory/releases/2026-07-06-001/rootfs.tar.gz"))
+print(hash_file("/srv/mix-factory/releases/2026-07-06-001/rootfs.tar.gz"))
 print(hash_file("./image.raw", "blake3"))
 ```
 

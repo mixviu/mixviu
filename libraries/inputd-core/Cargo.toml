@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 description = "inputd's pure core: keymap resolution, the user-key rule, rebind admission and press-latched key disposition"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "inputd"
 kind = "service"
 layer = "core"

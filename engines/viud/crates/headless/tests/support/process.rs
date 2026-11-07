@@ -134,10 +134,10 @@ fn spawn_options(
         .env("XDG_DATA_HOME", root.join("data"))
         .env("XDG_CACHE_HOME", root.join("cache"))
         .env("HOME", &root)
-        .env("MIXOS_ETC", root.join("etc"))
-        .env("MIXOS_VAR", root.join("var"))
-        .env("MIXOS_RUN", root.join("run"))
-        .env("MIXOS_NODED_URL", bus.unwrap_or("ws://127.0.0.1:1"))
+        .env("MIX_ETC", root.join("etc"))
+        .env("MIX_VAR", root.join("var"))
+        .env("MIX_RUN", root.join("run"))
+        .env("MIX_NODED_URL", bus.unwrap_or("ws://127.0.0.1:1"))
         .env("VIUD_HEADLESS_REFRESH_HZ", refresh)
         .env("VIUD_FRAME_TRACE", if trace { "1" } else { "0" })
         .env("VIUD_FRAME_TRACE_FILE", root.join("frames.log"))
@@ -149,7 +149,7 @@ fn spawn_options(
         // Deliberately request XWayland: --headless must keep it off.
         .env("VIUD_XWAYLAND", "1")
         .env_remove("NOTIFY_SOCKET")
-        .env_remove("MIXOS_VT")
+        .env_remove("MIX_VT")
         .stdout(Stdio::from(stderr.try_clone().unwrap()))
         .stderr(stderr);
     if let Some(node) = explicit_node {

@@ -3,7 +3,7 @@
 use std::sync::OnceLock;
 
 /// The compositor's complete runtime configuration, read from a JSON file
-/// (`~/.config/viud/settings.json`, override with `--config-file=<path>`).
+/// (`~/.config/mix/viud/settings.json`, override with `--config-file=<path>`).
 /// Every field is REQUIRED — no optionals, no defaults; startup panics otherwise.
 /// This is the ONE place the compositor reads its own configuration.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -53,7 +53,7 @@ pub struct Environment {
     /// `GpuManager` is still paired with the scanout device's GBM — a pairing
     /// that is only correct while the two are the same device.
     pub scanout_node: String,
-    /// XDG desktop name advertised to clients, e.g. `MixOS`.
+    /// XDG desktop name advertised to clients, e.g. `MixViu`.
     pub desktop_name: String,
     /// Developer-log level spec, e.g. `"info,warn,error"`.
     pub log_level: String,
@@ -260,8 +260,8 @@ pub fn override_scanout_node(path: String) {
 }
 
 /// Resolve the settings-file path: `--config-file=<path>`/`--config-file <path>`
-/// from process args if present, else `$XDG_CONFIG_HOME/viud/settings.json`,
-/// else `$HOME/.config/viud/settings.json`. Shared with the companion tool.
+/// from process args if present, else `$XDG_CONFIG_HOME/mix/viud/settings.json`,
+/// else `$HOME/.config/mix/viud/settings.json`. Shared with the companion tool.
 pub fn resolve_path() -> std::path::PathBuf {
     if let Some(p) = config_file_arg(std::env::args()) {
         return std::path::PathBuf::from(p);
@@ -275,7 +275,7 @@ pub fn resolve_path() -> std::path::PathBuf {
                 .expect("neither XDG_CONFIG_HOME nor HOME set; cannot locate settings.json");
             home.join(".config")
         });
-    base.join("viud").join("settings.json")
+    base.join("mix").join("viud").join("settings.json")
 }
 
 /// Extract a `--config-file` value from an argument iterator (split out for testing).

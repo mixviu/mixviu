@@ -11,7 +11,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>Serving as a Bus citizen — MixOS</title>
+    <title>Serving as a Bus citizen — MixViu</title>
     <link rel="canonical" href="https://mixos.dev/mix/serve/">
     <link rel="alternate" type="text/markdown" href="/mix/serve.md" title="Markdown source">
     <meta name="mixos-build" content="7af43e1ca197">
@@ -90,7 +90,7 @@
 <button class="menu-toggle" data-sidebar="right"><i data-lucide="menu"></i></button>
 
 <nav class="topnav">
-    <h1><a class="brand" href="/">MixOS &middot; <span>Server &amp; Desktop Systems</span></a></h1>
+    <h1><a class="brand" href="/">MixViu &middot; <span>Server &amp; Desktop Systems</span></a></h1>
 </nav>
 
 <!-- ================= LEFT SIDEBAR: documentation panels ================= -->
@@ -109,7 +109,7 @@
         <div class="panel-track">
 
             <div class="panel">
-                <div class="panel-title">MixOS</div>
+                <div class="panel-title">MixViu</div>
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
@@ -210,7 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#native-events-and-generation-lifetime">Native events and generation lifetime</a>
                         <a href="#first-substrate">First, &quot;substrate&quot;</a>
-                        <a href="#what-citizen-means-in-mixos">What &quot;citizen&quot; means in MixOS</a>
+                        <a href="#what-citizen-means-in-mixos">What &quot;citizen&quot; means in MixViu</a>
                         <a href="#what-mix---serve-does">What mix --serve does</a>
                         <a href="#one-handler-is-a-whole-service">One handler is a whole service</a>
                         <a href="#service-name-derivation">Service-name derivation</a>
@@ -333,15 +333,15 @@ generations, independent of script reload generations.</p>
 <a href="/mix/system/#desktop-status-events--net_watch-audio_watch">network and audio events</a>, and
 <a href="/mix/bus/#connection-events">connection events</a>.</p>
 <h2 id="first-substrate">First, "substrate"</h2>
-<p><strong>The substrate is MixOS itself</strong> — the agent-operable computing environment,
+<p><strong>The substrate is MixViu itself</strong> — the agent-operable computing environment,
 not any one app on it: the message Bus (the broker <code>noded</code>), the services
 running on it, and the WireGuard mesh that joins nodes into one fabric. The word
 is chosen over "OS" or "desktop" on purpose — it is meant to be <em>legible,
 modifiable, and reconstructible</em> by an AI agent, the ground the system is built
 on rather than a feature bolted onto one. <strong>Citizens (below) are the live
 services the substrate is made of.</strong></p>
-<h2 id="what-citizen-means-in-mixos">What "citizen" means in MixOS</h2>
-<p>A <strong>citizen</strong> is a process that is a first-class, named member of the MixOS
+<h2 id="what-citizen-means-in-mixos">What "citizen" means in MixViu</h2>
+<p>A <strong>citizen</strong> is a process that is a first-class, named member of the MixViu
 substrate — not a throwaway script but a resident participant on the Bus. A plain
 <code>mix script.mix</code> run is anonymous and one-shot: nothing can address it and it
 exits when the script ends. Turning it into a citizen (<code>mix --serve</code>) gives it a
@@ -364,7 +364,7 @@ introspectable and controllable by the same commands.</li>
 <li><strong>Provenance</strong> — its binary (<code>mix-shell</code>) and version show in <code>noded.list</code>, so
 a fleet of agents can see exactly what is running and where.</li>
 </ul>
-<p>In short: a citizen is the MixOS substrate's unit of <strong>live, addressable,
+<p>In short: a citizen is the MixViu substrate's unit of <strong>live, addressable,
 agent-operable service</strong>. The rest of this page is how you make one and how it
 behaves.</p>
 <blockquote>
@@ -435,11 +435,11 @@ others <code>send</code> to. It comes from <code>--name</code>, falling back to 
 stem</strong>:</p>
 <pre><code class="language-text">mix --serve worker.mix                 # service name = "worker"  (stem)
 mix --serve worker.mix --name probe    # service name = "probe"   (--name wins)
-mix --serve /usr/local/lib/mixos/statecache.mix   # → "statecache"
+mix --serve /usr/local/lib/mix/statecache.mix   # → "statecache"
 </code></pre>
 <p>Two normalization rules apply (from <code>derive_serve_name</code> in <code>main.rs</code>):</p>
 <ul>
-<li><strong>A leading <code>mixos-</code> is stripped</strong> from either source. The system user is <code>mixos-&lt;svc&gt;</code> but the Bus namespace uses the bare <code>&lt;svc&gt;</code> token, so a script (or <code>--name</code>) accidentally named after the POSIX user still yields the canonical Bus identity: <code>mixos-statecache.mix</code> → <code>statecache</code>, <code>--name mixos-foo</code> → <code>foo</code>. Surrounding whitespace is trimmed.</li>
+<li><strong>A leading <code>mixos-</code> is stripped</strong> from either source. The system user is <code>mixos-&lt;svc&gt;</code> but the Bus namespace uses the bare <code>&lt;svc&gt;</code> token, so a script (or <code>--name</code>) accidentally named after the POSIX user still yields the canonical Bus identity: <code>mix-statecache.mix</code> → <code>statecache</code>, <code>--name mixos-foo</code> → <code>foo</code>. Surrounding whitespace is trimmed.</li>
 <li><strong>An anonymous citizen is rejected.</strong> If no name can be derived — an empty path, a root path, a dotfile-only stem (<code>.foo</code>, whose <code>file_stem()</code> is the whole <code>.</code>-led name), or a <code>--name</code> that resolves empty or to a leading dot — <code>--serve</code> is a launch error and exits non-zero. There is no nameless citizen.</li>
 </ul>
 <pre><code class="language-text">$ mix --serve            # no script path
@@ -877,15 +877,15 @@ no terminal, no journal capture) therefore never exits 1 silently.</p>
 <p>A resident citizen is a normal SPEC-10 daemon: a <code>sysusers.d</code> <code>u mixos-&lt;svc&gt;</code>
 entry in the citizen UID band and a unit whose <code>ExecStart</code> runs the script under
 <code>--serve</code>. The shape is identical to <code>mixos-{noded,maild,webd}.service</code>:</p>
-<pre><code class="language-ini"># /etc/systemd/system/mixos-statecache.service  (illustrative)
+<pre><code class="language-ini"># /etc/systemd/system/mix-statecache.service  (illustrative)
 [Unit]
 Description=statecache Mix citizen
 After=noded.service
 
 [Service]
-ExecStart=&lt;prefix&gt;/bin/mix --serve /usr/local/lib/mixos/statecache.mix
-User=mixos-statecache
-Group=mixos-statecache
+ExecStart=&lt;prefix&gt;/bin/mix --serve /usr/local/lib/mix/statecache.mix
+User=mix-statecache
+Group=mix-statecache
 Restart=on-failure
 
 [Install]
@@ -1066,7 +1066,7 @@ delivery. Timers are unavailable in expression mode.</p>
 <li><code>mix help</code> · <code>mix what send</code> · <code>mix what emit</code> · <code>mix what address</code> (<code>mix what</code> covers the Bus keywords; <code>on</code>/<code>reply</code> are handler forms it does not index)</li>
 </ul>
         </article>
-        <p class="doc-source"><a href="/mix/serve.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
+        <p class="doc-source"><a href="/mix/serve.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixViu.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>

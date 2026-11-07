@@ -6,14 +6,14 @@ use crate::*;
 
 // --- In-memory exact search (off the global mutex) ---
 
-/// One-release rollback switch: `MIXOS_INDEXD_SEARCH=sqlite` in the
+/// One-release rollback switch: `MIX_INDEXD_SEARCH=sqlite` in the
 /// unit environment restores the old sqlite-vec KNN path AND bypasses
 /// the in-memory index load/validation at startup — the switch must
 /// work even when the loader itself is what's broken. Remove after the
 /// in-memory path has soaked.
 pub(crate) fn sqlite_search_fallback() -> bool {
     static V: OnceLock<bool> = OnceLock::new();
-    *V.get_or_init(|| std::env::var("MIXOS_INDEXD_SEARCH").as_deref() == Ok("sqlite"))
+    *V.get_or_init(|| std::env::var("MIX_INDEXD_SEARCH").as_deref() == Ok("sqlite"))
 }
 
 /// Hard cap on `SearchRequest.limit` — an unbounded limit performs that

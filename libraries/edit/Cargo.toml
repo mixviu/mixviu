@@ -8,7 +8,7 @@ repository.workspace = true
 publish = false
 description = "Shared headless text buffers for editd and ced: revision CAS, OT, undo and anchors"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "edit"
 kind = "lib"
 layer = "core"

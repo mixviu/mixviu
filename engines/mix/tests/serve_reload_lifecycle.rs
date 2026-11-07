@@ -109,12 +109,12 @@ impl Citizen {
             "--name",
             SVC,
         ])
-        .env("MIXOS_NODE_CONFIG", node_conf)
-        .env("MIXOS_ETC", &dir.0)
+        .env("MIX_NODE_CONFIG", node_conf)
+        .env("MIX_ETC", &dir.0)
         .env("REL_TRACE", dir.0.join("trace"))
         .env("REL_STATE", dir.0.join("state"))
         .env("MIX_STATS", "off")
-        .env_remove("MIXOS_SESSION_FD")
+        .env_remove("MIX_SESSION_FD")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));

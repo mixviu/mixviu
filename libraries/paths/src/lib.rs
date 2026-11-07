@@ -5,11 +5,11 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
 pub type Result<T> = std::result::Result<T, String>;
-pub const ROOT_VAR: &str = "MIXOS";
-pub const DEFAULT_PREFIX: &str = "/opt/mixos";
+pub const ROOT_VAR: &str = "MIX_ROOT";
+pub const DEFAULT_PREFIX: &str = "/opt/mix";
 /// Historical assertion constant; runtime Share derives from the executable.
 #[cfg(test)]
-pub const DEFAULT_SHARE: &str = "/opt/mixos/share";
+pub const DEFAULT_SHARE: &str = "/opt/mix/share";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Root {
@@ -41,19 +41,19 @@ impl Root {
     }
     pub const fn env_var(self) -> &'static str {
         match self {
-            Self::Prefix => "MIXOS_PREFIX",
-            Self::Share => "MIXOS_SHARE",
-            Self::Etc => "MIXOS_ETC",
-            Self::Var => "MIXOS_VAR",
-            Self::Run => "MIXOS_RUN",
-            Self::Cache => "MIXOS_CACHE",
+            Self::Prefix => "MIX_PREFIX",
+            Self::Share => "MIX_SHARE",
+            Self::Etc => "MIX_ETC",
+            Self::Var => "MIX_VAR",
+            Self::Run => "MIX_RUN",
+            Self::Cache => "MIX_CACHE",
         }
     }
     pub fn parse(name: &str) -> Result<Self> {
         Self::ALL
             .into_iter()
             .find(|r| r.name() == name)
-            .ok_or_else(|| format!("unknown MixOS root: {name}"))
+            .ok_or_else(|| format!("unknown MixViu root: {name}"))
     }
 }
 
@@ -130,12 +130,12 @@ impl Environment {
         let var = |key: &str| -> Option<PathBuf> { get(key).filter(|p| !p.as_os_str().is_empty()) };
         Self {
             root: var(ROOT_VAR),
-            etc: var("MIXOS_ETC"),
-            var: var("MIXOS_VAR"),
-            run: var("MIXOS_RUN"),
-            share: var("MIXOS_SHARE"),
-            prefix: var("MIXOS_PREFIX"),
-            cache: var("MIXOS_CACHE"),
+            etc: var("MIX_ETC"),
+            var: var("MIX_VAR"),
+            run: var("MIX_RUN"),
+            share: var("MIX_SHARE"),
+            prefix: var("MIX_PREFIX"),
+            cache: var("MIX_CACHE"),
             xdg_config_home: var("XDG_CONFIG_HOME"),
             xdg_data_home: var("XDG_DATA_HOME"),
             xdg_runtime_dir: var("XDG_RUNTIME_DIR"),
@@ -172,9 +172,9 @@ impl Dirs {
     /// Main's pure API. Invalid new prefix/layout input is a startup error;
     /// fallible consumers should use from_source instead of this expect.
     pub fn resolve(env: &Environment) -> Self {
-        Self::from_source(env, "").expect("invalid MixOS startup layout")
+        Self::from_source(env, "").expect("invalid MixViu startup layout")
     }
-    /// Pure rule: override > MIXOS > layout > uid tier. Share ignores MIXOS
+    /// Pure rule: override > MIX_ROOT > layout > uid tier. Share ignores MIX_ROOT
     /// and accepts only an absolute override, exactly as main did.
     pub fn from_source(env: &Environment, source: &str) -> Result<Self> {
         let settings = parse_layout(source)?;
@@ -191,7 +191,7 @@ impl Dirs {
             base.clone()
                 .filter(|p| p.is_absolute())
                 .unwrap_or_else(|| home.join(default))
-                .join("mixos")
+                .join("mix")
         };
         let choose = |root: Root, direct: &Option<PathBuf>, suffix: &str, fallback: PathBuf| {
             direct
@@ -208,7 +208,7 @@ impl Dirs {
             if user {
                 xdg(&env.xdg_config_home, ".config")
             } else {
-                "/etc/mixos".into()
+                "/etc/mix".into()
             },
         );
         let var = choose(
@@ -218,7 +218,7 @@ impl Dirs {
             if user {
                 xdg(&env.xdg_data_home, ".local/share")
             } else {
-                "/var/lib/mixos".into()
+                "/var/lib/mix".into()
             },
         );
         let run = choose(
@@ -229,10 +229,10 @@ impl Dirs {
                 env.xdg_runtime_dir
                     .clone()
                     .filter(|p| p.is_absolute())
-                    .map(|p| p.join("mixos"))
-                    .unwrap_or_else(|| "/tmp/mixos-run".into())
+                    .map(|p| p.join("mix"))
+                    .unwrap_or_else(|| "/tmp/mix-run".into())
             } else {
-                "/run/mixos".into()
+                "/run/mix".into()
             },
         );
         let cache = choose(
@@ -242,7 +242,7 @@ impl Dirs {
             if user {
                 xdg(&env.xdg_cache_home, ".cache")
             } else {
-                "/var/cache/mixos".into()
+                "/var/cache/mix".into()
             },
         );
         let share = env
@@ -277,7 +277,7 @@ impl Dirs {
             .map_err(|e| e.to_string())?;
         Self::from_environment(&Environment::from_lookup(get, current_uid(), Some(exe)))
     }
-    /// Installer defaults ignore self-location, all MIXOS overrides and files.
+    /// Installer defaults ignore self-location, all MIX_ROOT overrides and files.
     pub fn defaults(tier: &str, prefix: Option<&Path>, inputs: &Environment) -> Result<Self> {
         let uid = Tier::parse(tier)?.uid();
         let prefix = match (prefix, uid) {
@@ -310,7 +310,7 @@ impl Dirs {
     }
     /// Startup convenience, with the same explicit expect contract as path().
     pub fn root(&self, root: Root) -> PathBuf {
-        self.try_root(root).expect("unresolved MixOS startup root")
+        self.try_root(root).expect("unresolved MixViu startup root")
     }
     pub fn path(&self, root: Root, rel: impl AsRef<Path>) -> Result<PathBuf> {
         let mut tail = PathBuf::new();
@@ -319,7 +319,7 @@ impl Dirs {
                 Component::Normal(s) => tail.push(s),
                 Component::CurDir => {}
                 Component::ParentDir if tail.pop() => {}
-                _ => return Err("MixOS relative path escapes its root".into()),
+                _ => return Err("MixViu relative path escapes its root".into()),
             }
         }
         // join("") appends a trailing slash; an empty rel names the root itself.
@@ -331,7 +331,7 @@ impl Dirs {
         })
     }
     pub fn resolve_path(&self, value: &str) -> Result<PathBuf> {
-        if let Some(logical) = value.strip_prefix("mixos:") {
+        if let Some(logical) = value.strip_prefix("mix:") {
             let (root, rel) = logical.split_once('/').unwrap_or((logical, ""));
             self.path(Root::parse(root)?, rel)
         } else {
@@ -346,7 +346,7 @@ pub fn prefix_from_exe(exe: &Path) -> Result<PathBuf> {
     // A binary inside a cargo build tree (`target/<profile>/x` or
     // `target/<profile>/deps/x`, marked by cargo's `.fingerprint`) is not an
     // install: it has no bin/ or share/ of its own. It uses the default
-    // prefix, as every build did before relocation. MIXOS_PREFIX still wins.
+    // prefix, as every build did before relocation. MIX_PREFIX still wins.
     let dir = exe.parent();
     if [dir, dir.and_then(Path::parent)]
         .into_iter()
@@ -373,7 +373,7 @@ fn absolute(path: &Path) -> Result<()> {
             .any(|c| c.is_ascii_control())
     {
         Err(format!(
-            "MixOS root must be an absolute path without '..' or controls: {}",
+            "MixViu root must be an absolute path without '..' or controls: {}",
             path.display()
         ))
     } else {
@@ -405,7 +405,7 @@ static SNAPSHOT: OnceLock<Result<Snapshot>> = OnceLock::new();
 fn snapshot() -> Result<&'static Snapshot> {
     SNAPSHOT
         .get_or_init(|| {
-            // No /proc and no MIXOS_PREFIX: from_source falls back to the
+            // No /proc and no MIX_PREFIX: from_source falls back to the
             // default prefix, as the old resolver did, rather than failing
             // every root.
             let env = Environment::current();
@@ -448,7 +448,7 @@ pub fn try_root(root: Root) -> Result<PathBuf> {
 pub fn try_system(root: Root) -> Result<PathBuf> {
     snapshot()?.system.try_root(root)
 }
-/// True when Run matches the uid tier default, ignoring MIXOS_RUN, MIXOS and layout.mx.
+/// True when Run matches the uid tier default, ignoring MIX_RUN, MIX_ROOT and layout.mx.
 /// An override equal to that default still counts as default.
 pub fn run_root_is_tier_default(env: &Environment, dirs: &Dirs) -> Result<bool> {
     let bare = Environment {
@@ -459,7 +459,7 @@ pub fn run_root_is_tier_default(env: &Environment, dirs: &Dirs) -> Result<bool> 
     Ok(Dirs::from_source(&bare, "")?.try_root(Root::Run)? == dirs.try_root(Root::Run)?)
 }
 /// A historical fixed FHS fallback, explicitly independent of process
-/// overrides. APIs that promised to ignore MIXOS_RUN (native bus fallback)
+/// overrides. APIs that promised to ignore MIX_RUN (native bus fallback)
 /// or kept storage at a fixed system path use this rather than moving data.
 pub fn system_default(root: Root) -> Result<PathBuf> {
     if matches!(root, Root::Prefix | Root::Share) {
@@ -475,11 +475,11 @@ pub fn system_default(root: Root) -> Result<PathBuf> {
 /// Startup convenience. Invalid layout is a startup error; fallible operations
 /// should use try_root/try_system/resolve instead.
 pub fn root(root: Root) -> PathBuf {
-    try_root(root).expect("invalid MixOS startup layout")
+    try_root(root).expect("invalid MixViu startup layout")
 }
-/// Explicit system tier, retaining per-root override/MIXOS/layout precedence.
+/// Explicit system tier, retaining per-root override/MIX_ROOT/layout precedence.
 pub fn system(root: Root) -> PathBuf {
-    try_system(root).expect("invalid MixOS system startup layout")
+    try_system(root).expect("invalid MixViu system startup layout")
 }
 pub fn path(dir: Dir) -> PathBuf {
     root(dir.root())
@@ -487,12 +487,12 @@ pub fn path(dir: Dir) -> PathBuf {
 pub fn bin(rel: impl AsRef<Path>) -> PathBuf {
     snapshot()
         .and_then(|s| s.process.path(Root::Prefix, Path::new("bin").join(rel)))
-        .expect("invalid MixOS startup binary path")
+        .expect("invalid MixViu startup binary path")
 }
 pub fn share(rel: impl AsRef<Path>) -> PathBuf {
     snapshot()
         .and_then(|s| s.process.path(Root::Share, rel))
-        .expect("invalid MixOS startup shared path")
+        .expect("invalid MixViu startup shared path")
 }
 pub fn resolve(value: impl AsRef<str>) -> Result<PathBuf> {
     snapshot()?.process.resolve_path(value.as_ref())
@@ -537,11 +537,11 @@ mod tests {
                     ..user()
                 };
                 let expected = if uid == 0 {
-                    PathBuf::from("/run/mixos")
+                    PathBuf::from("/run/mix")
                 } else {
                     xdg.map_or_else(
-                        || PathBuf::from("/tmp/mixos-run"),
-                        |path| path.join("mixos"),
+                        || PathBuf::from("/tmp/mix-run"),
+                        |path| path.join("mix"),
                     )
                 };
                 let dirs = Dirs::from_source(&env, "").unwrap();
@@ -594,7 +594,7 @@ mod tests {
     #[test]
     fn overrides_win_over_everything() {
         let env = Environment {
-            root: Some(PathBuf::from("/srv/mixos")),
+            root: Some(PathBuf::from("/srv/mix")),
             etc: Some(PathBuf::from("/sandbox/etc")),
             var: Some(PathBuf::from("/sandbox/var")),
             run: Some(PathBuf::from("/sandbox/run")),
@@ -611,11 +611,11 @@ mod tests {
     #[test]
     fn a_root_places_etc_var_and_run_under_it_for_user_and_system() {
         for mut env in [user(), system()] {
-            env.root = Some(PathBuf::from("/srv/mixos"));
+            env.root = Some(PathBuf::from("/srv/mix"));
             let dirs = Dirs::resolve(&env);
-            assert_eq!(dirs.get(Dir::Etc), Path::new("/srv/mixos/etc"));
-            assert_eq!(dirs.get(Dir::Var), Path::new("/srv/mixos/var"));
-            assert_eq!(dirs.get(Dir::Run), Path::new("/srv/mixos/run"));
+            assert_eq!(dirs.get(Dir::Etc), Path::new("/srv/mix/etc"));
+            assert_eq!(dirs.get(Dir::Var), Path::new("/srv/mix/var"));
+            assert_eq!(dirs.get(Dir::Run), Path::new("/srv/mix/run"));
             // Share is installed data, not part of the root.
             assert_eq!(dirs.get(Dir::Share), Path::new(DEFAULT_SHARE));
         }
@@ -624,12 +624,12 @@ mod tests {
     #[test]
     fn a_user_without_a_root_gets_the_xdg_defaults_under_home() {
         let dirs = Dirs::resolve(&user());
-        assert_eq!(dirs.get(Dir::Etc), Path::new("/home/user/.config/mixos"));
+        assert_eq!(dirs.get(Dir::Etc), Path::new("/home/user/.config/mix"));
         assert_eq!(
             dirs.get(Dir::Var),
-            Path::new("/home/user/.local/share/mixos")
+            Path::new("/home/user/.local/share/mix")
         );
-        assert_eq!(dirs.get(Dir::Run), Path::new("/tmp/mixos-run"));
+        assert_eq!(dirs.get(Dir::Run), Path::new("/tmp/mix-run"));
         assert_eq!(dirs.get(Dir::Share), Path::new(DEFAULT_SHARE));
     }
 
@@ -642,9 +642,9 @@ mod tests {
             ..user()
         };
         let dirs = Dirs::resolve(&env);
-        assert_eq!(dirs.get(Dir::Etc), Path::new("/home/user/cfg/mixos"));
-        assert_eq!(dirs.get(Dir::Var), Path::new("/home/user/data/mixos"));
-        assert_eq!(dirs.get(Dir::Run), Path::new("/run/user/1000/mixos"));
+        assert_eq!(dirs.get(Dir::Etc), Path::new("/home/user/cfg/mix"));
+        assert_eq!(dirs.get(Dir::Var), Path::new("/home/user/data/mix"));
+        assert_eq!(dirs.get(Dir::Run), Path::new("/run/user/1000/mix"));
     }
 
     #[test]
@@ -656,27 +656,27 @@ mod tests {
             ..user()
         };
         let dirs = Dirs::resolve(&env);
-        assert_eq!(dirs.get(Dir::Etc), Path::new("/home/user/.config/mixos"));
+        assert_eq!(dirs.get(Dir::Etc), Path::new("/home/user/.config/mix"));
         assert_eq!(
             dirs.get(Dir::Var),
-            Path::new("/home/user/.local/share/mixos")
+            Path::new("/home/user/.local/share/mix")
         );
-        assert_eq!(dirs.get(Dir::Run), Path::new("/tmp/mixos-run"));
+        assert_eq!(dirs.get(Dir::Run), Path::new("/tmp/mix-run"));
     }
 
     #[test]
     fn root_user_without_a_root_gets_the_system_directories() {
         let dirs = Dirs::resolve(&system());
-        assert_eq!(dirs.get(Dir::Etc), Path::new("/etc/mixos"));
-        assert_eq!(dirs.get(Dir::Var), Path::new("/var/lib/mixos"));
-        assert_eq!(dirs.get(Dir::Run), Path::new("/run/mixos"));
+        assert_eq!(dirs.get(Dir::Etc), Path::new("/etc/mix"));
+        assert_eq!(dirs.get(Dir::Var), Path::new("/var/lib/mix"));
+        assert_eq!(dirs.get(Dir::Run), Path::new("/run/mix"));
         assert_eq!(dirs.get(Dir::Share), Path::new(DEFAULT_SHARE));
         // XDG variables do not move root's directories.
         let env = Environment {
             xdg_config_home: Some(PathBuf::from("/root/cfg")),
             ..system()
         };
-        assert_eq!(Dirs::resolve(&env).get(Dir::Etc), Path::new("/etc/mixos"));
+        assert_eq!(Dirs::resolve(&env).get(Dir::Etc), Path::new("/etc/mix"));
     }
 
     #[test]
@@ -687,7 +687,7 @@ mod tests {
         };
         assert_eq!(
             Dirs::resolve(&env).get(Dir::Etc),
-            Path::new("/root/.config/mixos")
+            Path::new("/root/.config/mix")
         );
     }
 
@@ -714,12 +714,12 @@ mod tests {
     #[test]
     fn every_dir_has_its_own_variable() {
         let vars: Vec<&str> = Dir::ALL.iter().map(|d| d.env_var()).collect();
-        assert_eq!(vars, ["MIXOS_ETC", "MIXOS_VAR", "MIXOS_RUN", "MIXOS_SHARE"]);
+        assert_eq!(vars, ["MIX_ETC", "MIX_VAR", "MIX_RUN", "MIX_SHARE"]);
     }
 
     #[test]
     fn path_resolves_from_the_process_and_is_stable() {
-        const CHILD: &str = "MIXOS_PATH_CACHE_TEST";
+        const CHILD: &str = "MIX_TEST_PATH_CACHE";
         if std::env::var_os(CHILD).is_none() {
             struct Scratch(PathBuf);
             impl Drop for Scratch {
@@ -728,7 +728,7 @@ mod tests {
                 }
             }
             let prefix = Scratch(
-                std::env::temp_dir().join(format!("mixos-path-cache-{}", std::process::id())),
+                std::env::temp_dir().join(format!("mix-path-cache-{}", std::process::id())),
             );
             std::fs::create_dir(&prefix.0).unwrap();
             let output = std::process::Command::new(std::env::current_exe().unwrap())
@@ -738,7 +738,7 @@ mod tests {
                     "--nocapture",
                 ])
                 .env(CHILD, "1")
-                .env("MIXOS_PREFIX", &prefix.0)
+                .env("MIX_PREFIX", &prefix.0)
                 .output()
                 .unwrap();
             assert!(
@@ -752,7 +752,7 @@ mod tests {
             return;
         }
         assert!(
-            std::env::var_os("MIXOS_PREFIX").is_some(),
+            std::env::var_os("MIX_PREFIX").is_some(),
             "cache test needs an explicit prefix"
         );
         // Whatever the environment, the cached answer is the rule applied

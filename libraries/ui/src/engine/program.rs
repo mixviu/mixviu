@@ -47,7 +47,7 @@ pub trait UiProgram: Sized + Send + 'static {
         Vec::new()
     }
 
-    /// Prepare the context once, before the first pass. Default: the MixOS
+    /// Prepare the context once, before the first pass. Default: the MixViu
     /// look the apps use (`toolkit::style::apply` with the embedded theme).
     fn setup(&mut self, ctx: &egui::Context) {
         toolkit::style::apply(ctx, &toolkit::theme::Theme::embedded());

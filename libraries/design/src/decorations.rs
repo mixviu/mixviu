@@ -112,7 +112,7 @@ impl Resolver {
             let parsed = RequestedDecorations::from_name(&value.to_ascii_lowercase());
             if parsed.is_none() && !self.warned.swap(true, Ordering::Relaxed) {
                 (self.warn)(&format!(
-                    "Ignoring MIXOS_DECORATIONS={value:?}: expected csd, ssd or auto"
+                    "Ignoring MIX_DECORATIONS={value:?}: expected csd, ssd or auto"
                 ));
             }
             parsed
@@ -447,7 +447,7 @@ mod tests {
         assert_eq!(r.resolve(None, Client).mode, Decorations::Client);
         let warnings = warnings.lock().unwrap();
         assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("MIXOS_DECORATIONS") && warnings[0].contains("bogus"));
+        assert!(warnings[0].contains("MIX_DECORATIONS") && warnings[0].contains("bogus"));
         for value in [None, Some(String::new()), Some("  ".into())] {
             let r = Resolver::new(|| facts(false, "", None), move || value.clone(), |_| {});
             assert_eq!(r.resolve(None, Server).reason, "choice");

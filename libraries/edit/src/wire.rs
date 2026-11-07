@@ -333,7 +333,7 @@ pub struct InfoReply {
 /// `edit.info` `recovery` (ced E1 plan §5.1).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecoveryInfo {
-    /// Recovery is on (`MIXOS_EDIT_RECOVERY` not `0`).
+    /// Recovery is on (`MIX_EDITD_RECOVERY` not `0`).
     pub enabled: bool,
     /// No write failure and no rid needing a repair switch.
     pub ok: bool,

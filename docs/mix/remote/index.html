@@ -11,7 +11,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>Remote execution (SSH) — MixOS</title>
+    <title>Remote execution (SSH) — MixViu</title>
     <link rel="canonical" href="https://mixos.dev/mix/remote/">
     <link rel="alternate" type="text/markdown" href="/mix/remote.md" title="Markdown source">
     <meta name="mixos-build" content="7af43e1ca197">
@@ -90,7 +90,7 @@
 <button class="menu-toggle" data-sidebar="right"><i data-lucide="menu"></i></button>
 
 <nav class="topnav">
-    <h1><a class="brand" href="/">MixOS &middot; <span>Server &amp; Desktop Systems</span></a></h1>
+    <h1><a class="brand" href="/">MixViu &middot; <span>Server &amp; Desktop Systems</span></a></h1>
 </nav>
 
 <!-- ================= LEFT SIDEBAR: documentation panels ================= -->
@@ -109,7 +109,7 @@
         <div class="panel-track">
 
             <div class="panel">
-                <div class="panel-title">MixOS</div>
+                <div class="panel-title">MixViu</div>
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
@@ -514,9 +514,9 @@ $r = ssh_mix("example.com", $source, {
 <p><strong><code>env</code> works and is secret-safe:</strong> the values are translated into hidden <code>export KEY = "value"</code> lines (strict-data-escaped) <em>prepended to the shipped source</em>, so they travel on stdin and never touch <code>ps</code> argv on either end.</p>
 </li>
 <li>
-<p><strong>The remote binary is configurable</strong> (0.116.0). In order: the <strong><code>mix_bin</code></strong> option, else the <strong>local</strong> environment variable <strong><code>MIX_REMOTE_BIN</code></strong> (an empty value counts as unset), else the default <strong><code>&lt;prefix&gt;/bin/mix</code></strong> (the canonical MixOS install dir; it was the legacy <code>&lt;prefix&gt;/bin/mix</code> up to 0.116.0, so pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN</code> for a not-yet-migrated host). The same resolution serves every builtin that drives a remote mix: <code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code> (which also keeps its older name <code>remote_mix</code>), <code>ssh_run</code>'s default <code>env_transport: "mix"</code>, and <code>send_mail</code>'s <code>host</code> hop. The value lands in the remote command string, so it must be an absolute path (<code>&lt;prefix&gt;/bin/mix</code>) or a bare name the remote PATH resolves (<code>mix</code>), using only <code>[A-Za-z0-9_./+-]</code>; anything else (a space, <code>;</code>, <code>$</code>, a leading <code>-</code>, a relative path) raises <code>OPTION_INVALID</code> locally before ssh runs. Prefer a full path: a bare <code>mix</code> is often not on the remote's non-interactive PATH. <code>ssh_mix</code> is for nodes with mix installed, not arbitrary POSIX hosts.</p>
+<p><strong>The remote binary is configurable</strong> (0.116.0). In order: the <strong><code>mix_bin</code></strong> option, else the <strong>local</strong> environment variable <strong><code>MIX_REMOTE_EXE</code></strong> (an empty value counts as unset), else the default <strong><code>&lt;prefix&gt;/bin/mix</code></strong> (the canonical MixViu install dir; it was the legacy <code>&lt;prefix&gt;/bin/mix</code> up to 0.116.0, so pass <code>mix_bin</code> or set <code>MIX_REMOTE_EXE</code> for a not-yet-migrated host). The same resolution serves every builtin that drives a remote mix: <code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code> (which also keeps its older name <code>remote_mix</code>), <code>ssh_run</code>'s default <code>env_transport: "mix"</code>, and <code>send_mail</code>'s <code>host</code> hop. The value lands in the remote command string, so it must be an absolute path (<code>&lt;prefix&gt;/bin/mix</code>) or a bare name the remote PATH resolves (<code>mix</code>), using only <code>[A-Za-z0-9_./+-]</code>; anything else (a space, <code>;</code>, <code>$</code>, a leading <code>-</code>, a relative path) raises <code>OPTION_INVALID</code> locally before ssh runs. Prefer a full path: a bare <code>mix</code> is often not on the remote's non-interactive PATH. <code>ssh_mix</code> is for nodes with mix installed, not arbitrary POSIX hosts.</p>
 <pre><code class="language-mix">$r = ssh_mix("node1", "print(1+1)", {mix_bin: "&lt;prefix&gt;/bin/mix"})
--- or once for the whole script's environment:  MIX_REMOTE_BIN=&lt;prefix&gt;/bin/mix mix script.mix
+-- or once for the whole script's environment:  MIX_REMOTE_EXE=&lt;prefix&gt;/bin/mix mix script.mix
 </code></pre>
 </li>
 <li>
@@ -629,7 +629,7 @@ default 30 s, <code>0</code> = unbounded which also lifts the auto transport cei
 <code>cwd</code>, <code>env</code>, <code>clear_env</code>, <code>max_output</code>, plus the protocol-safe stdio routes
 below — are encoded into the driver and applied to the remote <code>run_argv</code>
 call. <code>env</code>/<code>stdin</code> never appear in argv on either end.</li>
-<li><strong>SSH transport options</strong> — <code>connect_timeout</code>, <code>transport_timeout</code> (the ssh wall-clock deadline, default = remote <code>timeout</code> + <code>connect_timeout</code> + 5 s), <code>batch</code>, <code>strict_host_key</code>, <code>multiplex</code>, <code>extra_ssh_args</code>, and <code>mix_bin</code> (the remote binary path; older name <code>remote_mix</code>, still accepted; resolved and validated exactly as for <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>: <code>mix_bin</code> &gt; local <code>MIX_REMOTE_BIN</code> &gt; <code>&lt;prefix&gt;/bin/mix</code>).</li>
+<li><strong>SSH transport options</strong> — <code>connect_timeout</code>, <code>transport_timeout</code> (the ssh wall-clock deadline, default = remote <code>timeout</code> + <code>connect_timeout</code> + 5 s), <code>batch</code>, <code>strict_host_key</code>, <code>multiplex</code>, <code>extra_ssh_args</code>, and <code>mix_bin</code> (the remote binary path; older name <code>remote_mix</code>, still accepted; resolved and validated exactly as for <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>: <code>mix_bin</code> &gt; local <code>MIX_REMOTE_EXE</code> &gt; <code>&lt;prefix&gt;/bin/mix</code>).</li>
 </ul>
 <p>The remote stdio allowlist is deliberately narrower than local <code>run_argv</code>:</p>
 <ul>
@@ -693,7 +693,7 @@ locally; <code>ssh_mix</code> remains the path for arbitrary multi-step remote M
 <tr><td><code>cwd</code></td><td>string</td><td>—</td><td>Prepends <code>cd '&lt;cwd&gt;' &amp;&amp; </code> to the remote command (quoted for you).</td></tr>
 <tr><td><code>stdin</code></td><td>string</td><td>—</td><td>Fed to the remote command's stdin over the local ssh pipe. May contain NULs (binary payloads). Conflicts with <code>env</code> under the secure transports (§"Remote env").</td></tr>
 <tr><td><code>extra_ssh_args</code></td><td>list of strings</td><td><code>[]</code></td><td>Extra argv inserted before the host: <code>["-p", "2222"]</code>, <code>["-J", "jump"]</code>, <code>["-o", "IdentitiesOnly=yes"]</code>. Always followed by the <code>--</code> host guard.</td></tr>
-<tr><td><code>mix_bin</code></td><td>string</td><td>local <code>MIX_REMOTE_BIN</code>, else <code>&lt;prefix&gt;/bin/mix</code></td><td>The remote mix binary for <code>env_transport: "mix"</code> (and for <code>ssh_mix</code>, which always pipes into it). Absolute path or bare name, <code>[A-Za-z0-9_./+-]</code> only; see <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>. (0.116.0)</td></tr>
+<tr><td><code>mix_bin</code></td><td>string</td><td>local <code>MIX_REMOTE_EXE</code>, else <code>&lt;prefix&gt;/bin/mix</code></td><td>The remote mix binary for <code>env_transport: "mix"</code> (and for <code>ssh_mix</code>, which always pipes into it). Absolute path or bare name, <code>[A-Za-z0-9_./+-]</code> only; see <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>. (0.116.0)</td></tr>
 </tbody></table>
 <p>Omitting <code>max_output</code> preserves unbounded local capture. The truncation flags
 are also true when capture is abandoned at a deadline, even without a limit.
@@ -758,7 +758,7 @@ under 3s? true
 <h2 id="remote-env-without-the-ps-leak-env--env_transport">Remote env without the ps leak (<code>env</code> + <code>env_transport</code>)</h2>
 <p>Naively, remote env means prefixing <code>export K='v'; </code> onto the command string — which makes the value one argv element of the local <code>ssh</code> <em>and</em> of the remote shell, so a secret is visible in <code>ps</code> output <strong>on both ends</strong>. That is now the opt-in legacy path, not the default. <code>env_transport</code> selects how <code>env</code> values travel (it is inert when <code>env</code> is empty):</p>
 <table><thead><tr><th>Transport</th><th>Mechanism</th><th>Visible in <code>ps</code>?</th><th>For</th></tr></thead><tbody>
-<tr><td><code>"mix"</code> (default)</td><td>A generated Mix driver ships over ssh <strong>stdin</strong> into <code>&lt;mix_bin&gt; -</code>: strict-data-escaped <code>export</code> lines, then <code>exit(run_stream(["sh", "-c", &lt;command&gt;]))</code>.</td><td><strong>No</strong> — local <code>ps</code> shows only <code>ssh … &lt;mix_bin&gt; -</code>; remote <code>ps</code> shows <code>sh -c &lt;command&gt;</code> (the command, never the env).</td><td>Every mixos-managed node, regardless of login shell. Requires mix on the remote at the <code>mix_bin</code> option, else local <code>MIX_REMOTE_BIN</code>, else <code>&lt;prefix&gt;/bin/mix</code> (see <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>).</td></tr>
+<tr><td><code>"mix"</code> (default)</td><td>A generated Mix driver ships over ssh <strong>stdin</strong> into <code>&lt;mix_bin&gt; -</code>: strict-data-escaped <code>export</code> lines, then <code>exit(run_stream(["sh", "-c", &lt;command&gt;]))</code>.</td><td><strong>No</strong> — local <code>ps</code> shows only <code>ssh … &lt;mix_bin&gt; -</code>; remote <code>ps</code> shows <code>sh -c &lt;command&gt;</code> (the command, never the env).</td><td>Every mixos-managed node, regardless of login shell. Requires mix on the remote at the <code>mix_bin</code> option, else local <code>MIX_REMOTE_EXE</code>, else <code>&lt;prefix&gt;/bin/mix</code> (see <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>).</td></tr>
 <tr><td><code>"sh"</code></td><td>A POSIX driver (<code>export K='v'</code> lines + the command) ships over stdin into <code>sh -s</code>.</td><td><strong>No</strong> — the script travels on stdin.</td><td>Arbitrary <strong>non-mixos</strong> POSIX hosts. <strong>Broken on mix-login-shell nodes</strong> — the remote <code>sh -s</code> misroutes through the Mix classifier.</td></tr>
 <tr><td><code>"argv"</code></td><td>The legacy <code>export K='v'; </code> command-string prefix.</td><td><strong>Yes, on both ends.</strong></td><td>Compatibility only. Never for secrets.</td></tr>
 </tbody></table>
@@ -914,7 +914,7 @@ end
 <li><code>mix help</code> · <code>mix what ssh_run</code> · <code>mix what ssh_must</code> · <code>mix what ssh_mix</code> — terminal quick reference</li>
 </ul>
         </article>
-        <p class="doc-source"><a href="/mix/remote.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
+        <p class="doc-source"><a href="/mix/remote.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixViu.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>

@@ -619,8 +619,8 @@ mod tests {
             host: host.into(),
             aliases: Vec::new(),
             www_dir: www_dir.into(),
-            tls_cert: Some("/etc/mixos/webd/certs/x.crt".into()),
-            tls_key: Some("/etc/mixos/webd/keys/x.key".into()),
+            tls_cert: Some("/etc/mix/webd/certs/x.crt".into()),
+            tls_key: Some("/etc/mix/webd/keys/x.key".into()),
             acme: None,
             cms_db_path: None,
             aux_dbs: Vec::new(),
@@ -889,11 +889,11 @@ mod tests {
         assert_eq!(row.acme_contact_email, None);
         assert_eq!(
             row.tls_cert_path.as_deref(),
-            Some("/etc/mixos/webd/certs/x.crt")
+            Some("/etc/mix/webd/certs/x.crt")
         );
         assert_eq!(
             row.tls_key_path.as_deref(),
-            Some("/etc/mixos/webd/keys/x.key")
+            Some("/etc/mix/webd/keys/x.key")
         );
         assert!(row.enabled);
     }
@@ -912,11 +912,11 @@ mod tests {
         assert_eq!(row.source.as_deref(), Some(SOURCE_CONFIG_BOOTSTRAP));
         assert_eq!(
             row.tls_cert_path.as_deref(),
-            Some("/etc/mixos/webd/certs/x.crt")
+            Some("/etc/mix/webd/certs/x.crt")
         );
         assert_eq!(
             row.tls_key_path.as_deref(),
-            Some("/etc/mixos/webd/keys/x.key")
+            Some("/etc/mix/webd/keys/x.key")
         );
         assert_eq!(row.acme_provider, None);
         assert!(row.enabled);
@@ -1030,11 +1030,11 @@ mod tests {
         );
         body.insert(
             "tls_cert_path".into(),
-            PropValue::String("/etc/mixos/webd/certs/s.crt".into()),
+            PropValue::String("/etc/mix/webd/certs/s.crt".into()),
         );
         body.insert(
             "tls_key_path".into(),
-            PropValue::String("/etc/mixos/webd/keys/s.key".into()),
+            PropValue::String("/etc/mix/webd/keys/s.key".into()),
         );
         body.insert("enabled".into(), PropValue::Bool(true));
         runtime
@@ -1221,8 +1221,8 @@ mod tests {
         // ACME row that ALSO has both manual-TLS halves set —
         // unambiguous mode conflict.
         let mut both = acme_row("both.example", "/srv/www/both");
-        both.tls_cert = Some("/etc/mixos/webd/certs/x.crt".into());
-        both.tls_key = Some("/etc/mixos/webd/keys/x.key".into());
+        both.tls_cert = Some("/etc/mix/webd/certs/x.crt".into());
+        both.tls_key = Some("/etc/mix/webd/keys/x.key".into());
         let cfg = cfg_with(vec![both]);
         let err = bootstrap_upsert_from_config(&runtime, &cfg, 1_000)
             .await
@@ -1239,7 +1239,7 @@ mod tests {
         // detection: the ACME-vs-manual mutual-exclusion check runs
         // first).
         let mut acme_plus_half = acme_row("acme-half.example", "/srv/www/ah");
-        acme_plus_half.tls_cert = Some("/etc/mixos/webd/certs/x.crt".into());
+        acme_plus_half.tls_cert = Some("/etc/mix/webd/certs/x.crt".into());
         let cfg2 = cfg_with(vec![acme_plus_half]);
         let err2 = bootstrap_upsert_from_config(&runtime, &cfg2, 2_000)
             .await
@@ -1311,11 +1311,11 @@ mod tests {
         );
         body.insert(
             "tls_cert_path".into(),
-            PropValue::String("/etc/mixos/webd/certs/legacy.crt".into()),
+            PropValue::String("/etc/mix/webd/certs/legacy.crt".into()),
         );
         body.insert(
             "tls_key_path".into(),
-            PropValue::String("/etc/mixos/webd/keys/legacy.key".into()),
+            PropValue::String("/etc/mix/webd/keys/legacy.key".into()),
         );
         body.insert("enabled".into(), PropValue::Bool(true));
         runtime

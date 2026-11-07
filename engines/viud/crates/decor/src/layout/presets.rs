@@ -235,7 +235,7 @@ pub fn win11(mode: Mode) -> DecoTheme {
     }
 }
 
-/// The native MixOS chrome. Neutral surfaces follow the mode; the focus
+/// The native MixViu chrome. Neutral surfaces follow the mode; the focus
 /// ring, hover fills and pressed states carry the scheme accent, so switching
 /// schemes desktop-wide re-tints every titlebar in lockstep with the widgets.
 /// Circular buttons on the right, glyphs always visible, and an accent border

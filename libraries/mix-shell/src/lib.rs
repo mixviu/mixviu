@@ -673,7 +673,7 @@ fn print_help() {
     // for the full function remit rather than duplicating it here.
     print!("{}", meta::help_overview_string(VERSION));
     println!(
-        "  --gui [args...]  Launch a fresh Term frontend (MIXOS_TERM_BIN overrides); Bus window reuse deferred until authenticated per-user identity (P0-I)."
+        "  --gui [args...]  Launch a fresh Term frontend (MIX_TERM_EXE overrides); Bus window reuse deferred until authenticated per-user identity (P0-I)."
     );
 }
 
@@ -687,11 +687,11 @@ fn resolve_term(
 ) -> Result<std::path::PathBuf, String> {
     if let Some(path) = override_bin {
         return lookup(Path::new(&path)).ok_or_else(|| {
-            "mix --gui: MIXOS_TERM_BIN must name an executable frontend file".to_string()
+            "mix --gui: MIX_TERM_EXE must name an executable frontend file".to_string()
         });
     }
     // The Term frontend is searched in the development, installed
-    // and PATH tiers. An explicit MIXOS_TERM_BIN still overrides them.
+    // and PATH tiers. An explicit MIX_TERM_EXE still overrides them.
     for name in TERM_FRONTENDS {
         if let Some(root) = &mixos
             && let Some(path) = lookup(&Path::new(root).join("bin").join(name))
@@ -713,7 +713,7 @@ fn resolve_term(
         // changed, which is what a hand-written copy of a list does.
         .ok_or_else(|| {
             format!(
-                "mix --gui: no MixOS terminal frontend is installed (looked for {} in the resolved prefix bin directory and on PATH). Install the desktop package.",
+                "mix --gui: no MixViu terminal frontend is installed (looked for {} in the resolved prefix bin directory and on PATH). Install the desktop package.",
                 TERM_FRONTENDS.join(" then ")
             )
         })
@@ -773,8 +773,8 @@ fn run_gui() -> i32 {
     // instance over Bus is deferred until authenticated per-user identity
     // (P0-I) exists; do not guess an instance or fake a Bus request here.
     let frontend = match resolve_term(
-        env::var_os("MIXOS_TERM_BIN"),
-        env::var_os("MIXOS"),
+        env::var_os("MIX_TERM_EXE"),
+        env::var_os("MIX_ROOT"),
         || ::paths::bin(""),
         term_lookup,
     ) {
@@ -895,7 +895,7 @@ fn run_component_cli(name: &str, component: &str, script: &str, args: &[String])
     match std::process::Command::new(&exe)
         .arg(&script)
         .args(args)
-        .env("MIXOS_AGENT_CLI_MIX", &exe)
+        .env("MIX_AGENT_CLI_EXE", &exe)
         .status()
     {
         Ok(status) => status.code().unwrap_or(1),
@@ -1493,28 +1493,28 @@ fn run_command_line(
     exit_code
 }
 
-/// Strip a leading `mixos-` so a POSIX user name (`mixos-<d>`) never
+/// Strip a leading `mix-` so a POSIX user name (`mix-<d>`) never
 /// leaks into the Bus namespace as a service name. The Bus namespace
-/// uses the bare `<d>` token (SPEC-10 / SPEC 18 §3.1); `mixos-` is the
+/// uses the bare `<d>` token (SPEC-10 / SPEC 18 §3.1); `mix-` is the
 /// system-user prefix only.
-fn strip_mixos_prefix(s: &str) -> String {
-    s.strip_prefix("mixos-").unwrap_or(s).to_string()
+fn strip_mix_prefix(s: &str) -> String {
+    s.strip_prefix("mix-").unwrap_or(s).to_string()
 }
 
 /// Derive the Bus service name for `mix --serve`.
 ///
 /// SPEC 18 §3.1 / SPEC-10: the Bus service name is the `<d>` token (the
-/// POSIX user `mixos-<d>` minus the `mixos-` prefix). `--name` wins;
+/// POSIX user `mix-<d>` minus the `mix-` prefix). `--name` wins;
 /// otherwise the default is the script's file stem — **never** the
-/// `mixos-*` POSIX form (a leading `mixos-` is stripped from either
+/// `mix-*` POSIX form (a leading `mix-` is stripped from either
 /// source so an install that names the script/flag after the system
 /// user still yields the canonical Bus identity:
-/// `/usr/local/lib/mixos/statecache.mix` → `statecache`). An
+/// `/usr/local/lib/mix/statecache.mix` → `statecache`). An
 /// empty derivation is rejected: an anonymous `--serve` is a launch
 /// error (the caller exits non-zero), never a nameless citizen.
 fn derive_serve_name(explicit: Option<&str>, script_path: &str) -> Result<String, String> {
     if let Some(n) = explicit {
-        let n = strip_mixos_prefix(n.trim());
+        let n = strip_mix_prefix(n.trim());
         if !is_valid_bus_name(&n) {
             return Err(format!(
                 "--name resolved to '{n}', which is not a valid Bus service name \
@@ -1528,7 +1528,7 @@ fn derive_serve_name(explicit: Option<&str>, script_path: &str) -> Result<String
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .trim();
-    let name = strip_mixos_prefix(stem);
+    let name = strip_mix_prefix(stem);
     if !is_valid_bus_name(&name) {
         return Err(format!(
             "cannot derive a Bus service name from '{script_path}'; \
@@ -1543,7 +1543,7 @@ fn derive_serve_name(explicit: Option<&str>, script_path: &str) -> Result<String
 /// (`/x/.mix`, `.foo`) has `file_stem()` == the whole `.`-led name, so
 /// the empty check alone would let a non-Bus identity (`.foo`) register
 /// — §3.1 requires the default be the Bus form or a launch error. The
-/// `mixos-` POSIX prefix is stripped by the caller before this check;
+/// `mix-` POSIX prefix is stripped by the caller before this check;
 /// full token-charset validation is the broker's job, not the
 /// launcher's (kept narrow to avoid WS3 scope creep).
 fn is_valid_bus_name(s: &str) -> bool {
@@ -1588,7 +1588,7 @@ enum ServeOutcome {
 /// "stderr captured by systemd" (priority mapping + queryable fields).
 ///
 /// The file sink stays off (serve preset `log_file = None`): a SPEC-10
-/// system citizen (`mixos-statecache`) has no usable `HOME`
+/// system citizen (`mix-statecache`) has no usable `HOME`
 /// (SPEC 18 §3.6 / WS3 consult MAJOR 3), and journald is the durable
 /// channel. Per-service identity is still carried as a structured
 /// `service = <bus-name>` field on every serve/supervisor log line,
@@ -2965,7 +2965,7 @@ mod gui_tests {
             ["/test-root/bin/term", "/test-install/bin/term", "term",]
                 .map(std::path::PathBuf::from)
         );
-        assert!(error.starts_with("mix --gui: no MixOS terminal frontend is installed"));
+        assert!(error.starts_with("mix --gui: no MixViu terminal frontend is installed"));
         assert!(error.ends_with("Install the desktop package."));
         // The message must state the order actually tried. Pinning only the
         // ends let two sibling error strings in other crates go stale the
@@ -3020,40 +3020,40 @@ mod gui_tests {
                 term_lookup,
             )
             .unwrap_err();
-            assert!(error.contains("MIXOS_TERM_BIN must name an executable"));
+            assert!(error.contains("MIX_TERM_EXE must name an executable"));
         }
     }
 }
 
 #[cfg(test)]
 mod serve_name_tests {
-    use super::{derive_serve_name, strip_mixos_prefix};
+    use super::{derive_serve_name, strip_mix_prefix};
 
     #[test]
-    fn strips_only_a_leading_mixos_prefix() {
-        assert_eq!(strip_mixos_prefix("mixos-statecache"), "statecache");
-        assert_eq!(strip_mixos_prefix("statecache"), "statecache");
+    fn strips_only_a_leading_mix_prefix() {
+        assert_eq!(strip_mix_prefix("mix-statecache"), "statecache");
+        assert_eq!(strip_mix_prefix("statecache"), "statecache");
         // Not a prefix match — left intact.
-        assert_eq!(strip_mixos_prefix("my-mixos-thing"), "my-mixos-thing");
-        // Only the FIRST `mixos-` is stripped (single strip_prefix).
-        assert_eq!(strip_mixos_prefix("mixos-mixos-x"), "mixos-x");
-        assert_eq!(strip_mixos_prefix("mixos-"), "");
+        assert_eq!(strip_mix_prefix("my-mix-thing"), "my-mix-thing");
+        // Only the FIRST `mix-` is stripped (single strip_prefix).
+        assert_eq!(strip_mix_prefix("mix-mix-x"), "mix-x");
+        assert_eq!(strip_mix_prefix("mix-"), "");
     }
 
     #[test]
     fn default_name_is_the_script_stem_in_bus_form() {
-        // The reference citizen: POSIX user mixos-statecache,
+        // The reference citizen: POSIX user mix-statecache,
         // Bus service name statecache.
         assert_eq!(
-            derive_serve_name(None, "/usr/local/lib/mixos/statecache.mix").unwrap(),
+            derive_serve_name(None, "/usr/local/lib/mix/statecache.mix").unwrap(),
             "statecache"
         );
         // Bare filename, no directory, no extension.
         assert_eq!(derive_serve_name(None, "worker").unwrap(), "worker");
         // A script accidentally named after the POSIX user still
-        // yields the canonical Bus identity (never `mixos-*`).
+        // yields the canonical Bus identity (never `mix-*`).
         assert_eq!(
-            derive_serve_name(None, "/opt/mixos-statecache.mix").unwrap(),
+            derive_serve_name(None, "/opt/mix-statecache.mix").unwrap(),
             "statecache"
         );
     }
@@ -3064,9 +3064,9 @@ mod serve_name_tests {
             derive_serve_name(Some("probe"), "/x/statecache.mix").unwrap(),
             "probe"
         );
-        // `--name mixos-foo` is still canonicalised to the Bus form.
+        // `--name mix-foo` is still canonicalised to the Bus form.
         assert_eq!(
-            derive_serve_name(Some("mixos-foo"), "/x/statecache.mix").unwrap(),
+            derive_serve_name(Some("mix-foo"), "/x/statecache.mix").unwrap(),
             "foo"
         );
         assert_eq!(
@@ -3139,10 +3139,10 @@ mod serve_name_tests {
 
         // --name wins.
         assert_eq!(probe(Some("probe"), "/x/quoin-panel.mix").await, "probe\n");
-        // Stem fallback, with the `mixos-` prefix normalised away.
+        // Stem fallback, with the `mix-` prefix normalised away.
         assert_eq!(probe(None, "/x/quoin-panel.mix").await, "quoin-panel\n");
         assert_eq!(
-            probe(None, "/opt/mixos-statecache.mix").await,
+            probe(None, "/opt/mix-statecache.mix").await,
             "statecache\n"
         );
     }

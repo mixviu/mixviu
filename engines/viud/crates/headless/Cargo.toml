@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 description = "viud render-node backend with a virtual output and no seat"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "viud"
 kind = "service"
 layer = "desktop"

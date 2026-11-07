@@ -2,7 +2,7 @@
 -- version: 0.1.0
 $core=require("core.mix")
 $session=require("../../libraries/viu/mix/session.mix")
-$settings=$session.session_new(env("MIXOS_INSTANCE","desktop"))
+$settings=$session.session_new(env("MIX_INSTANCE","desktop"))
 $ctx=viu_context();$revision=0;$follow=true;$error=nil
 $doc={schema:1,default:{colour:"#1e1e2e"}}
 if len($app_args)>0 then $doc=load_data($app_args[0]);$follow=false end

@@ -3,7 +3,7 @@
 
 //! Where the broker is.
 //!
-//! Resolution order: `MIXOS_NODED_URL`; the node configuration file
+//! Resolution order: `MIX_NODED_URL`; the node configuration file
 //! (the shared `config::node::NodeConfigSearch`, also used for Unix socket
 //! and account settings); and finally the loopback broker. The
 //! fallback is loopback, never another node's address: an unconfigured node
@@ -16,7 +16,7 @@ use strict::Value;
 /// The broker URL when nothing configures one.
 pub const DEFAULT_NODED_URL: &str = "ws://127.0.0.1:4200/ws";
 
-const URL_VAR: &str = "MIXOS_NODED_URL";
+const URL_VAR: &str = "MIX_NODED_URL";
 const DEFAULT_PORT: u16 = 4200;
 
 /// The broker WebSocket URL for this node.
@@ -64,7 +64,7 @@ pub fn noded_url() -> String {
 }
 
 /// The node configuration file to read, or `None` when no candidate exists.
-/// `MIXOS_NODE_CONFIG` names it outright (whether or not it exists, so a
+/// `MIX_NODE_CONFIG` names it outright (whether or not it exists, so a
 /// misconfiguration is reported rather than silently skipped).
 pub fn node_config_path() -> Option<PathBuf> {
     config::node::NodeConfigSearch::capture()
@@ -76,7 +76,7 @@ pub fn node_config_path() -> Option<PathBuf> {
 }
 
 /// The search order, the user directory ahead of the system one. When
-/// `MIXOS_ETC` is set it is the only candidate: the caller asked for an
+/// `MIX_ETC` is set it is the only candidate: the caller asked for an
 /// isolated tree (a test, a chroot, an alternate install) and must not fall
 /// through to the host's `<system etc>`.
 #[cfg(test)]
@@ -250,8 +250,8 @@ noded: {
         assert_eq!(
             paths,
             vec![
-                PathBuf::from("/home/user/.config/mixos/node.conf.mix"),
-                PathBuf::from("/etc/mixos/node.conf.mix"),
+                PathBuf::from("/home/user/.config/mix/node.conf.mix"),
+                PathBuf::from("/etc/mix/node.conf.mix"),
             ]
         );
         let paths = candidate_paths(
@@ -261,18 +261,18 @@ noded: {
         );
         assert_eq!(
             paths[0],
-            PathBuf::from("/home/user/cfg/mixos/node.conf.mix")
+            PathBuf::from("/home/user/cfg/mix/node.conf.mix")
         );
-        // MIXOS_ETC suppresses the system fallback.
-        let paths = candidate_paths(Some(PathBuf::from("/sandbox/etc/mixos")), None, None);
+        // MIX_ETC suppresses the system fallback.
+        let paths = candidate_paths(Some(PathBuf::from("/sandbox/etc/mix")), None, None);
         assert_eq!(
             paths,
-            vec![PathBuf::from("/sandbox/etc/mixos/node.conf.mix")]
+            vec![PathBuf::from("/sandbox/etc/mix/node.conf.mix")]
         );
         // No home at all still finds the system file.
         assert_eq!(
             candidate_paths(None, None, None),
-            vec![PathBuf::from("/etc/mixos/node.conf.mix")]
+            vec![PathBuf::from("/etc/mix/node.conf.mix")]
         );
     }
 }

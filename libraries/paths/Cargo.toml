@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [package]
 name = "paths"
-description = "Relocatable MixOS roots and logical paths"
+description = "Relocatable MixViu roots and logical paths"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "paths"
 kind = "lib"
 layer = "bus"

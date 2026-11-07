@@ -205,7 +205,7 @@ try
     end
   end
 
-  -- The live MixOS app aliases.
+  -- The live MixViu app aliases.
   for each $app in ["term", "ced", "dopus", "cap", "screenshot", "scene-editor", "workshop", "prefs", "media", "backdrop"]
     $name = "dev.mixos." .. $app .. "-symbolic"
     check(contains($aliases, $name), "the live app " .. $app .. " has no alias in the manifest")
@@ -357,7 +357,7 @@ try
   refuse($fx, "index-context", "ICON_INDEX")
 
   $fx = fixture("index-inherits")
-  put($fx .. "/index.theme", replace(read_file($fx .. "/index.theme"), "Name=MixOS", "Name=MixOS\nInherits=material"))
+  put($fx .. "/index.theme", replace(read_file($fx .. "/index.theme"), "Name=MixViu", "Name=MixViu\nInherits=material"))
   refuse($fx, "index-inherits", "ICON_INDEX")
 
   $fx = fixture("stroke")

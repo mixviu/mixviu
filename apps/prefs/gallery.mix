@@ -2,7 +2,7 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 $colours=["#000000","#262626","#4d4d4d","#808080","#d9d9d9","#1e3a5f","#2f6f9f","#2e7d6b","#4f7d2e","#8a7a2a","#a0522d","#8b2e3c","#6a3d7c","#3d3a7c","gradient:#1e3a5f,#6a3d7c@180","gradient:#2e7d6b,#1e3a5f@180","gradient:#a0522d,#8b2e3c@180","gradient:#262626,#4d4d4d@180","gradient:#8a7a2a,#2e7d6b@180"]
 fn initial()
-  return {category:nil,system:path_join(env("MIXOS_PREFIX","/opt/mixos"),"share/wallpapers"),scanned:nil,scanned_at:nil,images:[],truncated:false,scanning:nil,error:nil,serial:0}
+  return {category:nil,system:path_join(env("MIX_PREFIX","/opt/mix"),"share/wallpapers"),scanned:nil,scanned_at:nil,images:[],truncated:false,scanning:nil,error:nil,serial:0}
 end
 fn value_of($s,$key)
   if contains(keys($s.queue_changes ?? {}),$key) then return $s.queue_changes[$key] ?? viu_settings("default",$key) end

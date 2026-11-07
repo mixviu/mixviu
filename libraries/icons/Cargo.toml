@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "icons"
 kind = "lib"
 layer = "core"

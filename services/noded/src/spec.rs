@@ -8,8 +8,8 @@
 //! as Bus headers; list values and prose body are passed through as
 //! the Bus body.
 //!
-//! Discovery: `--spec-dir` flag → `$MIXOS_SPEC_DIR` env →
-//! `$MIXOS_SRC/_spec` → walk parents of `cwd` looking for `_spec/`.
+//! Discovery: `--spec-dir` flag → `$MIX_NODED_SPEC_DIR` env →
+//! `$MIX_SRC/_spec` → walk parents of `cwd` looking for `_spec/`.
 
 use std::path::{Path, PathBuf};
 
@@ -20,8 +20,8 @@ use serde_json::Value as Json;
 ///
 /// Search order:
 /// 1. Explicit `override` (CLI flag).
-/// 2. `$MIXOS_SPEC_DIR`
-/// 3. `$MIXOS_SRC/_spec`
+/// 2. `$MIX_NODED_SPEC_DIR`
+/// 3. `$MIX_SRC/_spec`
 /// 4. Walk up from cwd looking for a `_spec/` sibling to `Cargo.toml`.
 pub fn locate_spec_dir(override_path: Option<&str>) -> Option<PathBuf> {
     if let Some(p) = override_path {
@@ -30,13 +30,13 @@ pub fn locate_spec_dir(override_path: Option<&str>) -> Option<PathBuf> {
             return Some(pb);
         }
     }
-    if let Ok(p) = std::env::var("MIXOS_SPEC_DIR") {
+    if let Ok(p) = std::env::var("MIX_NODED_SPEC_DIR") {
         let pb = PathBuf::from(p);
         if pb.is_dir() {
             return Some(pb);
         }
     }
-    if let Ok(p) = std::env::var("MIXOS_SRC") {
+    if let Ok(p) = std::env::var("MIX_SRC") {
         let pb = PathBuf::from(p).join("_spec");
         if pb.is_dir() {
             return Some(pb);

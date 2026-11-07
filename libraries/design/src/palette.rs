@@ -17,7 +17,7 @@
 //!   radii of the geometry. Under the derived scheme they are the
 //!   derivation itself (`parity: exact`); under an authored scheme they are
 //!   `derive(seeds_of(roles))`, the closest COSMIC can draw (`closest`);
-//! - `fonts`: the interface and monospace fonts MixOS draws ([`Fonts`]),
+//! - `fonts`: the interface and monospace fonts MixViu draws ([`Fonts`]),
 //!   with the session's font choices over the design's (the caller applies
 //!   them with [`Fonts::with_choices`]);
 //! - `toolkit`: from the same theme as `cosmic`, libadwaita's named colours
@@ -59,7 +59,7 @@ pub struct ModePalette {
     pub accent: SrgbColour,
     pub swatches: BTreeMap<&'static str, SrgbColour>,
     pub cosmic: Cosmic,
-    /// The interface and monospace fonts MixOS draws, so an exporter
+    /// The interface and monospace fonts MixViu draws, so an exporter
     /// writes the same ones.
     pub fonts: Fonts,
     /// What the GTK and Qt exporters write, from `cosmic.theme`.
@@ -157,7 +157,7 @@ pub struct Cosmic {
     pub theme: DerivedTheme,
     /// The density's spacing table.
     pub spacing: SpacingTokens,
-    /// The roundness's radii, as MixOS draws them (`square` is 0).
+    /// The roundness's radii, as MixViu draws them (`square` is 0).
     pub corner_radii: RadiusTokens,
 }
 

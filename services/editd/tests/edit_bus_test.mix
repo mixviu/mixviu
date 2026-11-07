@@ -4,34 +4,34 @@
 -- a subscriber citizen recording the `edit.changed` feed (plan §6.3).
 -- Nothing here can reach the host Bus: private TCP port, private unix
 -- socket, admission off, HOME and runtime dirs inside the temp dir.
--- Recovery files (editd 0.2.0, on by default) go to MIXOS_EDIT_RECOVERY_DIR
+-- Recovery files (editd 0.2.0, on by default) go to MIX_EDITD_RECOVERY_DIR
 -- inside the temp dir too: SIGTERM keeps a dirty buffer, SIGKILL after
 -- `edit.recovery.flush` loses nothing, a restart restores both, a durable
--- save removes the files, and MIXOS_EDIT_RECOVERY=0 is E0's volatile daemon.
+-- save removes the files, and MIX_EDITD_RECOVERY=0 is E0's volatile daemon.
 --
--- Run: MIXOS=<checkout> mix services/editd/tests/edit_bus_test.mix [--bin PATH]
--- Binaries: --bin (or MIXOS_TEST_EDITD) for editd, default
--- $MIXOS/target/release-fast/editd; MIXOS_TEST_MIX / MIXOS_TEST_NODED
+-- Run: MIX_ROOT=<checkout> mix services/editd/tests/edit_bus_test.mix [--bin PATH]
+-- Binaries: --bin (or MIX_TEST_EDITD_EXE) for editd, default
+-- $MIX_ROOT/target/release-fast/editd; MIX_TEST_MIX_EXE / MIX_TEST_NODED_EXE
 -- point at freshly built mix / noded, defaults are the system install.
-$root = env("MIXOS")
-if $root == "" then raise("TEST_CONFIG", "set MIXOS to the checkout root") end
+$root = env("MIX_ROOT")
+if $root == "" then raise("TEST_CONFIG", "set MIX_ROOT to the checkout root") end
 $argv = args()
-$editd = env("MIXOS_TEST_EDITD") ?? ""
+$editd = env("MIX_TEST_EDITD_EXE") ?? ""
 if length($argv) >= 2 and $argv[0] == "--bin" then $editd = $argv[1] end
 if $editd == "" then $editd = $root .. "/target/release-fast/editd" end
-$mix = env("MIXOS_TEST_MIX") ?? ""
-if $mix == "" then $mix = (mixos_path("prefix") .. "/bin/mix") end
-$noded = env("MIXOS_TEST_NODED") ?? ""
-if $noded == "" then $noded = (mixos_path("prefix") .. "/bin/noded") end
+$mix = env("MIX_TEST_MIX_EXE") ?? ""
+if $mix == "" then $mix = (mix_path("prefix") .. "/bin/mix") end
+$noded = env("MIX_TEST_NODED_EXE") ?? ""
+if $noded == "" then $noded = (mix_path("prefix") .. "/bin/noded") end
 for each $bin in [$editd, $mix, $noded]
   if not exists($bin) then raise("TEST_CONFIG", "missing binary " .. $bin) end
 end
 $tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-edit-bus-test.XXXXXXXX"]))
 $tag = uuid()
 $node = $tmp .. "/node.conf.mix"
-$env = {MIXOS_NODE_CONFIG: $node, MIX_STATS: "off", PATH: "/usr/bin:/bin",
+$env = {MIX_NODE_CONFIG: $node, MIX_STATS: "off", PATH: "/usr/bin:/bin",
   HOME: $tmp, XDG_STATE_HOME: $tmp, XDG_RUNTIME_DIR: $tmp, RUST_LOG: "editd=debug",
-  MIXOS_EDIT_RECOVERY_DIR: $tmp .. "/recovery"}
+  MIX_EDITD_RECOVERY_DIR: $tmp .. "/recovery"}
 $recdir = $tmp .. "/recovery"
 $editd_pid = nil
 $obs_pid = nil
@@ -351,9 +351,9 @@ try
   stop_editd($editd_pid, 15)
   $editd_pid = nil
 
-  -- Recovery off (MIXOS_EDIT_RECOVERY=0): E0's volatile daemon. Nothing is
+  -- Recovery off (MIX_EDITD_RECOVERY=0): E0's volatile daemon. Nothing is
   -- restored, flush answers synced:false, and SIGTERM discards (logged).
-  $s4 = start_editd("editd-4.log", {MIXOS_EDIT_RECOVERY: "0"})
+  $s4 = start_editd("editd-4.log", {MIX_EDITD_RECOVERY: "0"})
   $editd_pid = $s4.pid
   $info4 = ok('edit.info', {})
   check($info4.volatile and not $info4.recovery.enabled and $info4.buffers == 0, "recovery-off info: " .. json_encode($info4))

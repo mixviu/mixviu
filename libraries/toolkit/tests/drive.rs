@@ -406,7 +406,7 @@ fn a_shortcut_with_modifiers_runs_its_command() {
 
 #[test]
 fn menu_paths_and_popups_work_in_every_form() {
-    on_mixos(menu_paths_and_popups_work_in_every_form_on_host);
+    on_mix(menu_paths_and_popups_work_in_every_form_on_host);
 }
 
 fn menu_paths_and_popups_work_in_every_form_on_host() {
@@ -512,7 +512,7 @@ fn pointer_press_and_release_follow_the_menu_rules() {
 
 #[test]
 fn titlebar_menus_follow_the_drives_actual_registration() {
-    on_mixos(titlebar_menus_follow_the_drives_actual_registration_on_host);
+    on_mix(titlebar_menus_follow_the_drives_actual_registration_on_host);
 }
 
 fn titlebar_menus_follow_the_drives_actual_registration_on_host() {
@@ -564,7 +564,7 @@ fn titlebar_menus_follow_the_drives_actual_registration_on_host() {
 
 #[test]
 fn first_registration_survives_drive_install_and_theme_reinstallation() {
-    on_mixos(first_registration_survives_drive_install_and_theme_reinstallation_on_host);
+    on_mix(first_registration_survives_drive_install_and_theme_reinstallation_on_host);
 }
 
 fn first_registration_survives_drive_install_and_theme_reinstallation_on_host() {
@@ -1142,7 +1142,7 @@ fn a_capture_ignores_other_screenshots() {
     );
 }
 
-fn on_mixos(operation: impl FnOnce()) {
+fn on_mix(operation: impl FnOnce()) {
     design::decorations::with_resolver(
         std::sync::Arc::new(design::decorations::Resolver::new(
             || design::decorations::SessionFacts {

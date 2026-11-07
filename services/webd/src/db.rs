@@ -270,7 +270,7 @@ mod tests {
         // includes bypass set_file, so relocate only their prefix in this test
         // and use the handler's script-relative include mechanism below.
         let library = include_str!("../vhosts/lib/lib.mix").replace(
-            "include (mixos_path(\"prefix\") .. \"/vhosts/shared/",
+            "include (mix_path(\"prefix\") .. \"/vhosts/shared/",
             "include (\"../",
         );
         let source = format!(

@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 description = "Mail authentication verification, DKIM signing and ARC sealing"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "maild"
 kind = "service"
 layer = "core"

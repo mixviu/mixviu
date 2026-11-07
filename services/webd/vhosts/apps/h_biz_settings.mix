@@ -11,10 +11,10 @@
 -- back into the form (rendered value ""; help shows currently-set / not-set) and are written
 -- ONLY when the posted value is non-empty (blank = keep current). The audit detail records the
 -- comma list of KEYS changed, never any value. Numeric fields reject junk (to_number nil).
-include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
-include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
-include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
-include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
+include (mix_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mix_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mix_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mix_path("prefix") .. "/vhosts/shared/apps/biz.mix")
 
 -- ── validation helpers (POST) ──
 
