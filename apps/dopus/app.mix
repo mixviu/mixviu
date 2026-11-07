@@ -37,7 +37,8 @@ on viu.frame.close
 end
 on viu.session
   $state.window=$event.args.state.values ?? {}
-  $state.appearance_session=$event.args.appearance
+  $state.appearance_session=merge({mode:"dark",scheme:"studio",style:"default"},$event.args.appearance)
+  $state.appearance=merge($state.appearance_session,$state.appearance_choice)
   $row_cache=dp_publish($state,$contract,$row_cache)
 end
 on viu.theme.changed

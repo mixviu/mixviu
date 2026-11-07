@@ -183,6 +183,29 @@ end
     let state = done(&runtime, &rx).reply.unwrap().body;
     assert_eq!(state["panes"][0]["path"], json!(left));
     assert_eq!(state["panes"][1]["path"], json!(right));
+    // The same live-session notice must update the published surface and Bus
+    // state through authority loss and recovery, without replacing the app.
+    for appearance in [
+        json!({"mode":"light","scheme":"ocean"}),
+        json!({}),
+        json!({"mode":"dark","scheme":"pro"}),
+    ] {
+        runtime
+            .event("viu.session".into(), json!({"state":{"values":{}},"appearance":appearance}))
+            .unwrap();
+        let model = done(&runtime, &rx).model.unwrap();
+        let expected = if appearance.as_object().unwrap().is_empty() {
+            json!({"mode":"dark","scheme":"studio"})
+        } else {
+            appearance
+        };
+        assert_eq!(model["appearance"]["mode"], expected["mode"]);
+        assert_eq!(model["appearance"]["scheme"], expected["scheme"]);
+        runtime.event("dopus.state".into(), json!({})).unwrap();
+        let state = done(&runtime, &rx).reply.unwrap().body;
+        assert_eq!(state["theme_mode"], expected["mode"]);
+        assert_eq!(state["theme_scheme"], expected["scheme"]);
+    }
 }
 
 #[test]
