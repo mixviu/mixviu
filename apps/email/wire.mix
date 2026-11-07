@@ -78,6 +78,8 @@ fn wire_pump()
     if $job.purpose=="settings" and any(keys($wire_running),fn($id)=($wire_pending[$id] ?? {}).purpose=="settings") then return end
     if not wire_current($job) then
       $wire_waiting=slice($wire_waiting,1);$wire_pending=delete($wire_pending,$id)
+      if $job.purpose=="bulk-ids" then selection_cancel($job.account) end
+      if $job.purpose=="preview" then preview_completed($job,{rc:10,body:{message:"The account changed"}}) end
       if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"}}) end
       continue
     end
@@ -156,7 +158,7 @@ fn wire_session($update)
   composer_reconcile()
 end
 fn wire_completed($d)
-  global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus,$reader_markdown,$reader_detected,$reader_auto,$wire_running,$mail_form
+  global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus,$reader_markdown,$reader_detected,$reader_auto,$wire_running,$mail_form,$mail_everything
   $id=$d.tag.owner.id;$job=$wire_pending[$id]
   if $job==nil then wire_pump();return end
   $wire_pending=delete($wire_pending,$id)
@@ -246,9 +248,9 @@ fn wire_completed($d)
       end
     end
     $wire_data[$job.account].recent=slice($recent,max(0,len($recent)-500))
-    if $job.purpose=="list" then $mail_selection=[];$mail_focus=nil
+    if $job.purpose=="list" then $mail_selection=[];$mail_focus=nil;$mail_everything=false
     else
-      $mail_selection=filter($mail_selection,fn($id)=any($rows,fn($r)=$r.key==$id))
+      $mail_selection=if $mail_everything then map($rows,fn($r)=$r.key) else filter($mail_selection,fn($id)=any($rows,fn($r)=$r.key==$id)) end
       if $mail_focus!=nil and $mail_focus>=len($rows) then $mail_focus=nil end
     end
     $wire_data[$job.account].emails=$mail_emails;$wire_data[$job.account].total=$total;$wire_data[$job.account].offset=$offset;$wire_data[$job.account].box=$box

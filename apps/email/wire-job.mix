@@ -14,7 +14,7 @@ on job.run
     $s=$a.session ?? $protocol.connect($e)
     $command=$a.command;$p=$a.args
     if $command=="email.send" then
-      $sent=$sending.execute($e,$s,$p);reply(0,json_encode(merge($sent,{session:$s})));return
+      $sent=$sending.execute($e,$s,$p);reply(0,json_encode(merge($sent,{session:$protocol.session($s)})));return
     end
     if $command=="email.preview" then
       try
@@ -47,7 +47,7 @@ on job.run
     elif contains(["email.mailbox.create","email.mailbox.rename","email.mailbox.delete"],$command) then $answer=$protocol.mailbox_write($e,$s,$command,$p)
     elif contains(["email.calendars","email.events","email.event.get","email.event.create","email.event.update","email.event.delete","email.books","email.contacts","email.contact.get","email.contact.create","email.contact.update","email.contact.delete"],$command) then $answer=$pim.dispatch($e,$s,$command,$p)
     else raise("UNKNOWN_COMMAND","Unknown Email command") end
-    reply(0,json_encode({rc:0,body:$answer,session:$s}))
+    reply(0,json_encode({rc:0,body:$answer,session:$protocol.session($s)}))
   catch $message,$error
     $code=if contains(["UNKNOWN_ACCOUNT","NO_PASSWORD","NOT_FOUND","INVALID_ARGUMENT","SETTINGS","SECRETS","REFUSED","UNAVAILABLE","CONFLICT","OUTCOME_UNKNOWN"],$error.code) then $error.code else "SERVER" end
     reply(0,json_encode({rc:10,body:{error_code:$code,message:$message}}))

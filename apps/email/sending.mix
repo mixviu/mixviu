@@ -141,7 +141,11 @@ fn execute($e,$s,$a)
       $attempt.compose_fingerprint=$fingerprint
       $recipients=map(concat($d.to,$d.cc,$d.bcc),fn($r)={email:$r.email})
       $attempt.ambiguous=true
-      $submitted=$p.call($e,$s,"EmailSubmission/set",{create:{sub1:{emailId:$attempt.email_id,identityId:$identity.id,envelope:{mailFrom:{email:$d.from},rcptTo:$recipients}}}})
+      try
+        $submitted=$p.call($e,$s,"EmailSubmission/set",{create:{sub1:{emailId:$attempt.email_id,identityId:$identity.id,envelope:{mailFrom:{email:$d.from},rcptTo:$recipients}}}})
+      catch $message,$error
+        $attempt.ambiguous=$p.ambiguous();raise($error.code,$message)
+      end
       $refused=($submitted.notCreated ?? {}).sub1
       if $refused!=nil then
         $attempt.ambiguous=false

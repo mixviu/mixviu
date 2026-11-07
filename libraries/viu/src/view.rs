@@ -1093,6 +1093,15 @@ impl SceneView {
         let area = ui.available_rect_before_wrap();
         let mut remaining = area;
         let placements = &node.ports["placements"];
+        if node.ports.get("passthrough_single") == Some(&Value::Bool(true)) {
+            let visible = children(node)
+                .filter(|id| nodes.get(*id).is_some_and(|n| n.ports.get("hidden") != Some(&Value::Bool(true))))
+                .collect::<Vec<_>>();
+            if visible.len() == 1 && placements[visible[0]]["edge"] == "fill" {
+                self.node(ui, visible[0], nodes, route, depth + 1, events);
+                return;
+            }
+        }
         for child in children(node) {
             if nodes
                 .get(child)
@@ -1266,7 +1275,13 @@ impl SceneView {
                 }
                 _ => {}
             }
-            self.child_rect(ui, child, rect, nodes, route, depth, events);
+            if placement["clip"] == false {
+                ui.scope_builder(egui::UiBuilder::new().max_rect(rect).id_salt(child), |ui| {
+                    self.node(ui, child, nodes, route, depth + 1, events);
+                });
+            } else {
+                self.child_rect(ui, child, rect, nodes, route, depth, events);
+            }
             if edge == "bottom" && placement["size"] == "design.status_height" {
                 // The native panel rounds its frame and integer margins after
                 // applying live scale. Reserve its painted bounds, rather than

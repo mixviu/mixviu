@@ -24,10 +24,10 @@ fn probe_module(
     let url = format!("http://{}", listener.local_addr().unwrap());
     let bodies: Vec<_> = replies
         .iter()
-        .map(|r| r.to_string().replace("ORIGIN", &url))
+        .map(|r| (r["_status"].as_u64().unwrap_or(200), r.get("_body").unwrap_or(r).to_string().replace("ORIGIN", &url)))
         .collect();
     let server = std::thread::spawn(move || {
-        for (index, body) in bodies.into_iter().enumerate() {
+        for (index, (status, body)) in bodies.into_iter().enumerate() {
             let until = std::time::Instant::now() + Duration::from_secs(10);
             let mut socket = loop {
                 match listener.accept() {
@@ -71,7 +71,7 @@ fn probe_module(
             );
             write!(
                 socket,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                "HTTP/1.1 {status} Reply\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             )
             .unwrap();
@@ -123,6 +123,31 @@ end
     let reply = done.reply.unwrap();
     server.join().unwrap();
     (reply.rc, reply.body)
+}
+
+#[test]
+fn expired_bearer_reexchanges_once_and_explicit_submission_refusal_is_unambiguous() {
+    let call = r#"$m.call($e,{account:"a",api:$e.url,token:"expired",using:[]},"EmailSubmission/set",{})"#;
+    let (rc, body) = probe_module(
+        vec![json!({"_status":401,"_body":{}}), json!({"token":"fresh"}),
+             json!({"methodResponses":[["EmailSubmission/set",{"created":{"x":{"id":"s"}}},"c0"]]})],
+        call, "protocol.mix", vec!["Bearer expired", "Basic dXNlcjpzZWNyZXQ=", "Bearer fresh"],
+    );
+    assert_eq!(rc, 0, "{body}");
+    assert_eq!(body["created"]["x"]["id"], "s");
+    let (rc, body) = probe_module(
+        vec![json!({"methodResponses":[["error",{"type":"forbiddenToSend"},"c0"]]})],
+        &format!("nil\ntry\n{call}\ncatch $message\nnil\nend\n$r=$m.ambiguous()"),
+        "protocol.mix", vec!["Bearer expired"],
+    );
+    assert_eq!(rc, 0, "{body}");
+    assert_eq!(body, false);
+    let (rc, body) = probe_module(
+        vec![json!({"_status":401,"_body":{}}), json!({"token":"fresh"}), json!({"_status":401,"_body":{}})],
+        call, "protocol.mix", vec!["Bearer expired", "Basic dXNlcjpzZWNyZXQ=", "Bearer fresh"],
+    );
+    assert_eq!(rc, 10);
+    assert_eq!(body["code"], "SERVER");
 }
 
 #[test]

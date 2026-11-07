@@ -252,12 +252,13 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pnd("row_gap", "3", None),
         pnd("min_column_width", "0", None),
     ];
-    static DOCK: [Port; 5] = [
+    static DOCK: [Port; 6] = [
         p("children", "list", true, None),
         p("placements", "object", true, None),
         p("on_change", "string", false, None),
         p("outline", "string", false, None),
         pn("outline_width", false, Some(0.0)),
+        p("passthrough_single", "bool", false, Some("false")),
     ];
     static BAND: [Port; 2] = [
         p("children", "list", true, None),
