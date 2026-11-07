@@ -103,12 +103,14 @@ fn dec_cursor_save_restore_and_explicit_tab_stops() {
     assert_eq!(&row(&t, 1)[..8], "    ZZ  ");
     let mut parser = rio_vt::performer::handler::Processor::default();
     parser.advance(&mut *t.grid.lock(), b"\x1b[3;1HA\tB");
-    assert_eq!(&row(&t, 2)[..10], "A       B ");
-    parser.advance(
-        &mut *t.grid.lock(),
-        b"\x1b[3g\x1b[3;4H\x1bH\x1b[3;1H\tX",
-    );
-    assert_eq!(&row(&t, 2)[..10], "A  X    B ");
+    // Rio retains HT in the first untouched skipped cell for text copying.
+    // This is a raw grid witness: preserve that marker as well as the exact
+    // destination column rather than treating it as a printed space.
+    assert_eq!(&row(&t, 2)[..10], "A\t      B ");
+    assert_eq!(t.screen(false).cells[2 * 24 + 8].c, 'B');
+    parser.advance(&mut *t.grid.lock(), b"\x1b[3g\x1b[3;4H\x1bH\x1b[3;1H\tX");
+    assert_eq!(&row(&t, 2)[..10], "A\t X    B ");
+    assert_eq!(t.screen(false).cells[2 * 24 + 3].c, 'X');
 }
 
 #[test]
