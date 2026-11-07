@@ -1,10 +1,13 @@
 -- Four-engine gate (mix, mixd, viu, viud). Run on CBC only, through
--- ~/.mix/_bin/cbc-build.mix --repo mixviu --commit SHA -- /opt/mix/bin/mix tools/cutover_gate.mix [gate|lock]
+-- ~/.mix/_bin/cbc-build.mix --repo mixviu --commit SHA -- /opt/mixos/bin/mix tools/cutover_gate.mix [MODE]
 --   gate: fmt, clippy, tests per engine boundary, the viud egui check and a
---         release build of each engine with its size. Every step runs; the
---         gate fails if any did. The tree must stay clean.
+--         release build of each engine with its size, then the release set
+--         /build/cutover-artifacts/<sha>/{mix,mixd,viu,viud,apps.tar,SHA256SUMS}
+--         (tools/apps_bundle.mix). Every step runs; the gate fails if any did.
+--         The tree must stay clean.
 --   fmt:  run cargo fmt and print the diff to apply locally, then restore.
 --   lint DIR...: build mix and lint every tracked .mix file under DIR.
+--   bundle: build a debug mix and pack apps.tar to /tmp as a light check.
 --   builtins: build mix, regenerate docs/mix/builtins.md, print the diff.
 --   lock: re-resolve the workspace packages only and print the Cargo.lock
 --         diff, then restore the tree (apply the diff locally).
@@ -19,6 +22,11 @@ fn gate_step($argv, $jobs)
   print($r.stderr)
   print("STEP_RC=" .. to_string($r.exit_code ?? 124) .. " " .. join($argv, " "))
   return $r
+end
+
+-- The pinned asset store: a staged copy on the CBC workers, else the gold install.
+fn asset_store()
+  return if is_dir("/build/mixviu-assets/assets") then "/build/mixviu-assets" else "/opt/mixos/share" end
 end
 
 if $mode == "lock" then
@@ -45,6 +53,13 @@ if $mode == "builtins" then
   print("BUILTINS_PATCH_END")
   run_argv_must(["git", "checkout", "-q", "--", "."])
   exit(if $b.ok and $r.ok then 0 else 1 end)
+end
+if $mode == "bundle" then
+  -- Light check of the apps.tar step with a debug mix; prints the summary.
+  $b = gate_step(["cargo", "build", "--locked", "-p", "mix"], "6")
+  if not $b.ok then exit(1) end
+  $r = gate_step(["target/debug/mix", "tools/apps_bundle.mix", "/tmp/cutover-apps-check.tar", "--mix", "target/debug/mix", "--assets", asset_store()], "6")
+  exit(if $r.ok then 0 else 1 end)
 end
 if $mode == "lint" then
   -- Lint the tracked .mix files under the given directories with this tree's mix.
@@ -115,6 +130,24 @@ for $pair in [["mix", "mix"], ["mixd", "mixd"], ["viu", "viu"], ["viud", "viud"]
   end
 end
 print("RELEASE_SIZES " .. json_encode($sizes))
+
+-- The release set the desk migration installs: the four engines and apps.tar,
+-- each named in SHA256SUMS, under /build/cutover-artifacts/<sha>.
+if len(keys($sizes)) == 4 then
+  $sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+  $art = "/build/cutover-artifacts/" .. $sha
+  mkdir($art, {parents: true})
+  for $engine in ["mix", "mixd", "viu", "viud"] copy("target/release/" .. $engine, $art .. "/" .. $engine) end
+  $b = gate_step(["target/release/mix", "tools/apps_bundle.mix", $art .. "/apps.tar", "--mix", "target/release/mix", "--assets", asset_store()], "2")
+  if $b.ok then
+    $sums = ""
+    for $name in ["mix", "mixd", "viud", "viu", "apps.tar"] $sums = $sums .. hash_file($art .. "/" .. $name, "sha256") .. "  " .. $name .. "\n" end
+    write_file($art .. "/SHA256SUMS", $sums)
+    print("ARTIFACTS " .. $art .. "\n" .. $sums)
+  else
+    push($failed, "apps.tar")
+  end
+end
 
 $dirty = run_argv_must(["git", "status", "--porcelain", "--untracked-files=no"])
 if $dirty != "" then
