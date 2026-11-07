@@ -7,6 +7,8 @@ $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,r
 $state.layout=$model.open_tab($model.initial(),$native("create","",{}),nil)
 $state.identity=$native("identity","",{})
 $actions=require("actions.mix");$controls=require("controls.mix")
+$font=require("font-persistence.mix");$state.font=$font.initial();$state.font_job=0
+$settings=require("../../libraries/viu/mix/session.mix")
 $state.version=$ctx.version;$state.build_line=$ctx.build_line;$state.choice={};$state.bindings={};$state.effective={};$state.pastes={}
 $state.publishing=false;$state.event_job=0
 fn pump_events($s)
@@ -25,6 +27,49 @@ end
 fn publish_term($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
+fn font_event($s,$event)
+  if $s.closed then return $s end
+  $out=$font.event($s.font,$event,monotonic()*1000);$s.font=$out.state
+  for $a in $out.actions
+    if $a.kind=="debounce" then viu_timer("terminal-font",400,{kind:"terminal-font"})
+    elif $a.kind=="read" and $s.font_binding==nil then
+      $s=font_event($s,{kind:"read-answered",usable:false,following:false,continued:false})
+    else
+      $s.font_job=$s.font_job+1;$path=path_join(dirname(script_path()),"font-job.mix")
+      $args={kind:$a.kind,binding:$s.font_binding}
+      if $a.kind=="write" then $args.body={binding:$s.font_fence.binding,expected_incarnation:$s.font_fence.incarnation,expected_revision:$s.font_fence.revision,operation_id:uuid(),changes:{"terminal.font.size":$a.size}} end
+      send "viu-local" "jobs.start" id="terminal-font-"..to_string($s.font_job) owner={kind:"terminal-font",operation:$a.kind} path=$path source=read_file($path) command="font.request" args=$args
+      if $rc!=0 then
+        $s=font_event($s,if $a.kind=="read" then {kind:"read-answered",usable:false,following:false,continued:false} else {kind:"write-settled",reply:"failed"} end)
+      end
+    end
+  end
+  return $s
+end
+fn font_received($s,$done)
+  $answer=$done.body
+  if type($answer)=="string" then $answer=json_parse($answer) end
+  if $done.rc!=0 then $answer={rc:20,body:{}} end
+  $body=$answer.body
+  if $done.tag.owner.operation=="read" then
+    if $body.status=="wrong_target" and type($body.binding)=="map" and $body.binding.profile=="default" then
+      $s.font_binding=$body.binding
+      return font_event($s,{kind:"read-answered",usable:false,following:false,continued:true})
+    end
+    $usable=$answer.rc==0 and type($body.values)=="map" and type($body.incarnation)=="string" and type($body.revision)=="string" and type($body.binding)=="map"
+    if $usable then
+      $older=$s.font_fence.incarnation==$body.incarnation and $s.font_fence.revision!=nil and $settings.session_older($body.revision,$s.font_fence.revision)
+      if not $older then
+        $s.font_fence={binding:$body.binding,incarnation:$body.incarnation,revision:$body.revision}
+        $s.font_binding=$body.binding;$s.font_profile=$body.values["terminal.font.size"] ?? 14.667
+      end
+      if $s.font.pending==nil then $s.font_current=$s.font_profile;$s.font_base=$s.font_profile;$s.zoom_steps=0;$s.zoom=0 end
+    end
+    return font_event($s,{kind:"read-answered",usable:$usable,following:$usable,continued:false})
+  end
+  $reply=if contains(["changed","unchanged"],$body.status) then "saved" elif $body.status=="conflict" then "conflict" elif contains(["validation_failed","invalid_request"],$body.status) then "refused" else "failed" end
+  return font_event($s,{kind:"write-settled",reply:$reply})
+end
 fn command($s,$name,$args)
   $out=$bus.dispatch($s,$name,$args,$native)
   $out.state=pump_events($out.state);publish_term($out.state);reply($out.rc,$out.body)
@@ -40,7 +85,7 @@ fn act($s,$id,$args,$origin)
     elif $effect.kind=="paste" then
       if $effect.supplied then $done=$native("paste",$effect.handle,{text:$effect.text})
       else $token=uuid();$s.pastes[$token]=$effect.handle;viu_platform("paste",$token,{}) end
-    elif $effect.kind=="font" then $s.font_unsaved=true end
+    elif $effect.kind=="font" then $s=font_event($s,{kind:if $effect.reset then "reset" else "zoom" end,size:$effect.size}) end
   end
   if $out.rc==0 then
     $note={topic:"term.action.executed",body:viu_action_event($id,$origin,nil,nil)}
@@ -58,7 +103,19 @@ on viu.session
   $state.look.appearance=$event.args.appearance
   $state.settings_connected=not $event.args.state.lost and $event.args.state.incarnation!=nil and $event.args.state.error==nil
   if not $event.args.state.lost then $state.look.values=$event.args.state.values end
+  $state.font_binding=$event.args.state.binding
+  if $state.settings_connected then $state.font_fence={binding:$state.font_binding,incarnation:$event.args.state.incarnation,revision:$event.args.state.revision} end
+  $state.font_profile=$state.look.values["terminal.font.size"] ?? 14.667
+  if $state.font.pending==nil then $state.font_current=$state.font_profile;$state.font_base=$state.font_profile;$state.zoom_steps=0;$state.zoom=0 end
+  $state=font_event($state,{kind:"read-requested"})
   publish_term($state)
+end
+on bus.connected
+  subscribe("settingsd.desktop.keys.default.terminal")
+  $state=font_event($state,{kind:"read-requested"})
+end
+on settingsd.desktop.keys.default.terminal
+  $state=font_event($state,{kind:"read-requested"})
 end
 on viu.keymap.changed
   send "viu-local" "native.bindings" body={defaults:$actions.binding_defaults(),overrides:$event.args}
@@ -77,8 +134,10 @@ on viu.terminal.changed
 end
 on viu.job.completed
   if $event.args.tag.owner.kind=="terminal-events" then $state.publishing=false;$state=pump_events($state);if $state.closed then publish_term($state) end end
+  if $event.args.tag.owner.kind=="terminal-font" then $state=font_received($state,$event.args);publish_term($state) end
 end
 on viu.timer
+  if $event.args.value.kind=="terminal-font" then $state=font_event($state,{kind:"timer"});publish_term($state) end
   if $event.args.value.kind=="terminal-events" then $state=pump_events($state) end
   if $event.args.value.kind=="terminal-events-close" then $state.drain_expired=true;$state.drain_close=false;publish_term($state) end
 end

@@ -1,0 +1,68 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Gold apps/term/src/font.rs at 8779f33, expressed as Mix policy.
+-- Caller supplies monotonic milliseconds and performs returned actions.
+fn initial()
+  return {pending:nil,unsaved:false,sent:nil,fence_ready:false,reading:false,read_again:false,debounce_at:nil}
+end
+fn request_read($out)
+  if $out.state.reading or $out.state.sent!=nil then $out.state.read_again=true
+  else
+    $out.state.read_again=false;$out.state.reading=true
+    $out.actions=push($out.actions,{kind:"read"})
+  end
+  return $out
+end
+fn advance($out)
+  if $out.state.sent!=nil or $out.state.reading then return $out end
+  if $out.state.pending!=nil and $out.state.debounce_at==nil then
+    if $out.state.fence_ready then
+      $out.state.sent=$out.state.pending
+      $out.actions=push($out.actions,{kind:"write",size:$out.state.pending})
+    else $out=request_read($out) end
+  elif $out.state.read_again then $out=request_read($out) end
+  return $out
+end
+fn event($state,$event,$now)
+  $out={state:$state,actions:[]}
+  if $event.kind=="zoom" then
+    $out.state.pending=$event.size;$out.state.debounce_at=$now+400
+    $out.actions=[{kind:"debounce"}]
+  elif $event.kind=="reset" then
+    $out.state.pending=if $state.sent!=nil and $state.sent!=$event.size then $event.size else nil end
+    $out.state.unsaved=false;$out.state.debounce_at=nil;$out=advance($out)
+  elif $event.kind=="write-settled" then
+    if $state.sent==nil then return $out end
+    $out.state.sent=nil
+    if $event.reply=="saved" then
+      $out.state.unsaved=false
+      if $state.pending==$state.sent then $out.state.pending=nil end
+      $out.state.fence_ready=false;$out=request_read($out)
+    elif $event.reply=="conflict" then
+      $out.state.fence_ready=false
+      if $state.pending!=nil then $out=request_read($out) end
+    elif $event.reply=="refused" then
+      $out.state.pending=nil;$out.state.debounce_at=nil;$out.state.unsaved=true
+      $out=request_read($out)
+    elif $event.reply=="failed" then
+      $out.state.unsaved=true;$out.state.fence_ready=false;$out.state.debounce_at=nil
+      if $state.read_again then $out=request_read($out) end
+    else raise("FONT_EVENT","unknown write outcome") end
+  elif $event.kind=="read-requested" then $out=request_read($out)
+  elif $event.kind=="read-answered" then
+    if not $state.reading then return $out end
+    $out.state.fence_ready=$event.usable and $event.following
+    if $event.continued then $out.actions=[{kind:"read"}];return $out end
+    $out.state.reading=false
+    if $event.usable then $out=advance($out)
+    else
+      $out.state.debounce_at=nil;$out.state.unsaved=$state.unsaved or $state.pending!=nil
+      if $state.read_again then $out=request_read($out) end
+    end
+  elif contains(["timer","now"],$event.kind) then
+    if $state.debounce_at!=nil and $now>=$state.debounce_at then
+      $out.state.debounce_at=nil;$out=advance($out)
+    end
+  else raise("FONT_EVENT","unknown persistence event") end
+  return $out
+end
