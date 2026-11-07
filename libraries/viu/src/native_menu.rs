@@ -235,9 +235,13 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
                     egui::Rect::from_min_size(egui::pos2(x, rect.top()), egui::Vec2::ZERO),
                 )
             } else if compact {
+                let strings = toolkit::Strings::new("");
+                let label = toolkit::action::label_text(&strings, "window-menu");
                 let response = ui.add(
-                    toolkit::button::IconButton::new(crate::icons::Icon::from_name("menu").unwrap())
-                        .tooltip(toolkit::strings::own("window-menu")),
+                    toolkit::button::IconButton::new(
+                        crate::icons::Icon::from_name("menu").unwrap(),
+                    )
+                    .tooltip(label),
                 );
                 if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
                     || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary))
