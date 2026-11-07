@@ -238,18 +238,26 @@ impl Sessions {
                     .next
                     .checked_add(1)
                     .ok_or("terminal handle space exhausted")?;
-                let pane_id = if a["pane_id"].is_null() {id} else {
-                    crate::widgets::whole(&a["pane_id"]).filter(|id| *id>0).ok_or("positive native pane id required")?
+                let pane_id = if a["pane_id"].is_null() {
+                    id
+                } else {
+                    crate::widgets::whole(&a["pane_id"])
+                        .filter(|id| *id > 0)
+                        .ok_or("positive native pane id required")?
                 };
-                if state.pane_ids.values().any(|existing| *existing==pane_id) {
+                if state.pane_ids.values().any(|existing| *existing == pane_id) {
                     return Err("native pane id already in use".into());
                 }
                 state.next = id;
-                state.pane_ids.insert(format!("vt-{id}"),pane_id);
-                (id,pane_id)
+                state.pane_ids.insert(format!("vt-{id}"), pane_id);
+                (id, pane_id)
             };
             let native = self.native_handle();
-            let issuer = self.issuer.as_deref().or_else(|| native.as_ref().map(|h| h as &dyn super::native_session::SessionIssuer));
+            let issuer = self.issuer.as_deref().or_else(|| {
+                native
+                    .as_ref()
+                    .map(|h| h as &dyn super::native_session::SessionIssuer)
+            });
             let started = Terminal::start_session_in(
                 Settings {
                     config: Config {
@@ -265,7 +273,11 @@ impl Sessions {
             let t = match started {
                 Ok(t) => t,
                 Err(error) => {
-                    self.state.lock().unwrap().pane_ids.remove(&format!("vt-{id}"));
+                    self.state
+                        .lock()
+                        .unwrap()
+                        .pane_ids
+                        .remove(&format!("vt-{id}"));
                     return Err(error);
                 }
             };
@@ -277,7 +289,13 @@ impl Sessions {
                 changed.lock().unwrap().insert(owner.clone());
                 wake();
             }));
-            let binding = native.as_ref().map_or("unavailable", |n| if n.launched(pane_id) {"granted"} else {"graphics-only"});
+            let binding = native.as_ref().map_or("unavailable", |n| {
+                if n.launched(pane_id) {
+                    "granted"
+                } else {
+                    "graphics-only"
+                }
+            });
             let answer = json!({"handle":handle,"pid":t.pid,"binding":binding,"native_id":pane_id});
             self.state
                 .lock()
@@ -312,11 +330,24 @@ impl Sessions {
                 let (cols, rows) = t.dimensions();
                 let (placement, pane_id) = {
                     let state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
-                    (state.placements.get(handle).copied(),state.pane_ids.get(handle).copied())
+                    (
+                        state.placements.get(handle).copied(),
+                        state.pane_ids.get(handle).copied(),
+                    )
                 };
-                let binding = self.native.lock().unwrap().supervisor.as_ref().map_or("unavailable", |s| {
-                    if pane_id.is_some_and(|id|s.handle.launched(id)) {"granted"} else {"graphics-only"}
-                });
+                let binding =
+                    self.native
+                        .lock()
+                        .unwrap()
+                        .supervisor
+                        .as_ref()
+                        .map_or("unavailable", |s| {
+                            if pane_id.is_some_and(|id| s.handle.launched(id)) {
+                                "granted"
+                            } else {
+                                "graphics-only"
+                            }
+                        });
                 let g = placement.map_or([0.0; 4], |p| p.rect);
                 Ok(
                     json!({"pid":t.pid,"title":t.listener.title(),"cols":cols,"rows":rows,
@@ -395,30 +426,120 @@ mod tests {
 
     #[test]
     fn lazy_owner_issues_the_first_real_mix_shell_and_revokes_on_close() {
-        let broker = test_broker::Broker::start();
-        let supervisor = super::super::session_actor::Supervisor::with_options(broker.options(),broker.url.clone()).unwrap();
+        const CHILD: &str = "VIU_TERM_OWNER_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let broker = test_broker::Broker::start();
+            let home = tempfile::tempdir().unwrap();
+            let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
+            let mut result = std::ptr::null_mut();
+            let mut buffer = vec![0u8; 65536];
+            assert_eq!(
+                unsafe {
+                    libc::getpwuid_r(
+                        libc::geteuid(),
+                        entry.as_mut_ptr(),
+                        buffer.as_mut_ptr().cast(),
+                        buffer.len(),
+                        &mut result,
+                    )
+                },
+                0
+            );
+            assert!(!result.is_null());
+            let entry = unsafe { entry.assume_init() };
+            let account = unsafe { std::ffi::CStr::from_ptr(entry.pw_name) }
+                .to_str()
+                .unwrap();
+            let config = home.path().join("node.conf.mix");
+            std::fs::write(
+                &config,
+                format!(
+                    "noded: {{ unix_socket: {}, account: {} }}\n",
+                    serde_json::to_string(&broker.endpoint).unwrap(),
+                    serde_json::to_string(account).unwrap()
+                ),
+            )
+            .unwrap();
+            std::fs::write(
+                home.path().join(".mixrc"),
+                "fn prompt()\nreturn \"VIU_OWNER> \"\nend\n",
+            )
+            .unwrap();
+            // The embedded broker runs as this test's user, unlike the installed
+            // noded account. Isolate its configuration in a subprocess; neither
+            // the test runner nor the real PTY launcher changes global env.
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "terminal::sessions::tests::lazy_owner_issues_the_first_real_mix_shell_and_revokes_on_close",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env_remove(super::super::session_fd::MARKER)
+                .env("HOME", home.path())
+                .env("MIXOS", home.path())
+                .env("MIXOS_SRC", home.path())
+                .env("MIXOS_PREFIX", "/opt/mixos")
+                .env("MIXOS_NODE_CONFIG", &config)
+                .env("MIXOS_BROKER_ACCOUNT", account)
+                .env("MIXOS_BUS_SOCKET", &broker.endpoint)
+                .env("MIXOS_RUN", home.path().join("run"))
+                .env("MIXOS_ETC", home.path().join("etc"))
+                .env("MIXOS_VAR", home.path().join("data"))
+                .env("MIXOS_CACHE", home.path().join("cache"))
+                .env("XDG_CONFIG_HOME", home.path().join("config"))
+                .env("XDG_DATA_HOME", home.path().join("data"))
+                .env("XDG_CACHE_HOME", home.path().join("cache"))
+                .env("XDG_RUNTIME_DIR", home.path().join("runtime"))
+                .env("MIX_STATS", "off")
+                .env("MIX_EDITOR", "owned")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "isolated owner test failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
         let sessions = Sessions::with_native(Arc::new(|| {}));
-        sessions.native.lock().unwrap().supervisor = Some(supervisor);
         assert!(!sessions.native.lock().unwrap().attempted);
         let home = tempfile::tempdir().unwrap();
-        let created = sessions.call("create","",json!({"pane_id":1,"cwd":home.path()})).unwrap();
-        assert_eq!(created["binding"],"granted");
+        let created = sessions
+            .call("create", "", json!({"pane_id":1,"cwd":home.path()}))
+            .unwrap();
+        assert_eq!(created["binding"], "granted");
         let native = sessions.native_handle().unwrap();
-        let deadline = std::time::Instant::now()+std::time::Duration::from_secs(15);
+        let handle = created["handle"].as_str().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
         loop {
             if let Some(generation) = native.pane_generation(1) {
-                if native.child_binding(1,generation).is_some() {break;}
+                let snapshot = sessions.call("snapshot", handle, json!({})).unwrap();
+                if native.child_binding(1, generation).is_some()
+                    && snapshot.as_str().unwrap().contains("VIU_OWNER>")
+                {
+                    break;
+                }
             }
-            assert!(std::time::Instant::now()<deadline,"Mix did not enrol from sealed handoff: {}",native.status());
+            assert!(
+                std::time::Instant::now() < deadline,
+                "Mix did not enrol from sealed handoff: {}\n{}",
+                native.status(),
+                sessions.call("snapshot", handle, json!({})).unwrap()
+            );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         assert!(sessions.native.lock().unwrap().attempted);
-        let handle = created["handle"].as_str().unwrap();
-        sessions.call("close",handle,json!({})).unwrap();
+        sessions.call("close", handle, json!({})).unwrap();
         assert!(native.pane_generation(1).is_none());
         let pid = created["pid"].as_i64().unwrap() as libc::pid_t;
-        while unsafe {libc::kill(pid,0)}==0 {
-            assert!(std::time::Instant::now()<deadline,"closed PTY child remained alive");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while unsafe { libc::kill(pid, 0) } == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "closed PTY child remained alive"
+            );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
     }
@@ -427,12 +548,17 @@ mod tests {
     fn explicit_pane_identity_is_independent_of_native_handle_counter() {
         let sessions = Sessions::default();
         let home = tempfile::tempdir().unwrap();
-        let created = sessions.call("create","",json!({"pane_id":41,"cwd":home.path()})).unwrap();
-        assert_eq!(created["handle"],"vt-1");
-        assert_eq!(created["native_id"],41);
-        assert!(sessions.call("create","",json!({"pane_id":41})).is_err());
-        assert_eq!(sessions.call("state","vt-1",json!({})).unwrap()["native_id"],41);
-        sessions.call("close","vt-1",json!({})).unwrap();
+        let created = sessions
+            .call("create", "", json!({"pane_id":41,"cwd":home.path()}))
+            .unwrap();
+        assert_eq!(created["handle"], "vt-1");
+        assert_eq!(created["native_id"], 41);
+        assert!(sessions.call("create", "", json!({"pane_id":41})).is_err());
+        assert_eq!(
+            sessions.call("state", "vt-1", json!({})).unwrap()["native_id"],
+            41
+        );
+        sessions.call("close", "vt-1", json!({})).unwrap();
         assert!(sessions.state.lock().unwrap().pane_ids.is_empty());
     }
 

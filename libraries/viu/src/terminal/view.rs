@@ -634,7 +634,12 @@ impl Views {
             self.composition.focus(pane_id);
             let input_events = ui.input(|i| i.events.clone());
             for event in input_events {
-                if matches!(&event, egui::Event::Key {pressed:true,..} | egui::Event::Text(_) | egui::Event::Ime(egui::ImeEvent::Commit(_))) {
+                if matches!(
+                    &event,
+                    egui::Event::Key { pressed: true, .. }
+                        | egui::Event::Text(_)
+                        | egui::Event::Ime(egui::ImeEvent::Commit(_))
+                ) {
                     sessions.activity();
                 }
                 if let egui::Event::ModifiersChanged(modifiers) = &event {
