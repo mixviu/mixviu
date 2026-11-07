@@ -2,7 +2,7 @@
 $code=0
 try
   if contains(args(),"--prepare") then print(run_argv_must(["cargo","fmt","-p","viu"])) end
-  for $argv in [["cargo","fmt","-p","viu","-p","scene","--","--check"],["cargo","test","--locked","-p","scene","--lib"],["cargo","test","--locked","-p","viu","--test","dopus_bundle","--test","dopus_contract","--test","scan_budget","--test","row_projection","--test","gold_frame","--test","text_input"],["cargo","test","--locked","-p","viu","--lib"],["cargo","check","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","clippy","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","test","--locked","--release","-p","viu","--test","bulk_profile","--","--nocapture"],["cargo","build","--locked","--release","-p","viu-engine","--bin","viu"]]
+  for $argv in [["cargo","fmt","-p","viu","-p","scene","--","--check"],["cargo","test","--locked","-p","scene","--lib"],["cargo","test","--locked","-p","viu","--test","dopus_bundle","--test","dopus_contract","--test","scan_budget","--test","row_projection","--test","gold_frame","--test","text_input","--test","app_call"],["cargo","test","--locked","-p","viu","--lib"],["cargo","check","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","clippy","--locked","-p","viu","-p","viu-engine","--all-targets"],["cargo","test","--locked","--release","-p","viu","--test","bulk_profile","--","--nocapture"],["cargo","build","--locked","--release","-p","viu-engine","--bin","viu"]]
     print({argv:$argv})
     $r=run_argv($argv,{timeout:1800,max_output:16000000,env:if $argv[1]=="test" then {TMPDIR:"/dev/shm"} else {} end})
     print($r)
