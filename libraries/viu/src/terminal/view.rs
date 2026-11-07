@@ -499,17 +499,6 @@ impl Views {
         );
         let id = ui.make_persistent_id((&widget.id, handle));
         let response = ui.interact(area, id, Sense::click_and_drag());
-        ui.memory_mut(|m| {
-            m.set_focus_lock_filter(
-                id,
-                egui::EventFilter {
-                    tab: true,
-                    horizontal_arrows: true,
-                    vertical_arrows: true,
-                    escape: true,
-                },
-            )
-        });
         let ((cols, rows), grid, border) = grid_geometry(
             area,
             cell,
@@ -542,6 +531,17 @@ impl Views {
                 value: json!(handle),
             });
         }
+        ui.memory_mut(|m| {
+            m.set_focus_lock_filter(
+                id,
+                egui::EventFilter {
+                    tab: true,
+                    horizontal_arrows: true,
+                    vertical_arrows: true,
+                    escape: true,
+                },
+            )
+        });
         let pane_id = handle
             .strip_prefix("vt-")
             .and_then(|s| s.parse::<u64>().ok());
