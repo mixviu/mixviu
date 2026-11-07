@@ -64,6 +64,28 @@ end
 }
 
 #[test]
+fn settings_authority_loss_keeps_the_accepted_palette_and_geometry() {
+    let file = toolkit::Theme::embedded();
+    let mut snapshot = json!({"state":{"lost":false,"values":{"appearance.mode":"light","appearance.scheme":"mixos","appearance.density":"compact","appearance.roundness":"square","appearance.font_size":18}}});
+    let (accepted, ui) = viu::appearance::session_base(&snapshot, "backdrop", &file, &Default::default()).unwrap();
+    let ctx = egui::Context::default();
+    viu::appearance::install_theme(&ctx, &accepted).unwrap();
+    let before = ctx.style();
+    snapshot["state"]["lost"] = json!(true);
+    let (retained, _) = viu::appearance::session_base(&snapshot, "backdrop", &file, &ui).unwrap();
+    viu::appearance::install_theme(&ctx, &retained).unwrap();
+    let after = ctx.style();
+    assert_eq!(before.visuals.panel_fill, after.visuals.panel_fill);
+    assert_eq!(before.visuals.window_corner_radius, after.visuals.window_corner_radius);
+    assert_eq!(before.spacing.interact_size, after.spacing.interact_size);
+    assert_eq!(before.text_styles, after.text_styles);
+    snapshot["state"]["lost"] = json!(false);
+    snapshot["state"]["values"]["appearance.mode"] = json!("dark");
+    let (recovered, _) = viu::appearance::session_base(&snapshot, "backdrop", &file, &ui).unwrap();
+    viu::appearance::install_theme(&ctx, &recovered).unwrap();
+    assert_ne!(before.visuals.panel_fill, ctx.style().visuals.panel_fill);
+}
+#[test]
 fn shared_design_applies_session_density_roundness_and_text_scale_once() {
     let ordinary = viu::appearance::resolve(&json!({})).unwrap().style;
     let changed = viu::appearance::resolve(

@@ -55,7 +55,9 @@ pub fn session_base(
     let look = settings::view::Look::of(&values);
     let lost = snapshot["state"]["lost"] == true;
     let theme = toolkit::session_look::session_theme(
-        if lost { None } else { Some(&look) },
+        // The session snapshot retains its last accepted values on authority
+        // loss. Keep that look, including on newly created output contexts.
+        Some(&look),
         Some(app),
         look.appearance.source.is_some(),
         file,
