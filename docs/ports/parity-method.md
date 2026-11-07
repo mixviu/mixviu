@@ -39,6 +39,11 @@ Do not use a dirty source checkout as the oracle.
    Seed a full constant 60-sample history when comparing chart geometry;
    startup/tick timing must not accidentally become different chart data.
    Use a separate varied/gapped history to test chart behaviour.
+   For restart/selection-reveal pairs, seed the same initial saved window
+   size before launching both processes. Equal final dimensions do not imply
+   equal reveal geometry if one process centred its selection before the
+   compositor resized its first frame. Retain startup sizing and in-progress
+   scroll captures as diagnostics; compare the settled, matched state.
 7. Stop all owned processes in `finally`; verify that every PID and the
    private broker exited. Keep failed runs and logs. Store private scripts,
    captures and receipts in the private hub, outside this public repository.
@@ -92,6 +97,15 @@ surfaces with the same requests, including refusals and stale replies. Match
 structured replies rather than merely checking rc 0. Test callbacks through
 native input as well as direct Bus calls. Retain daemon-backed behaviour
 tests, representative large datasets and measured row-processing budgets.
+
+Preserve caller identity across operations whose contract depends on it.
+For example, Ced edits and their undo use one persistent native Bus citizen;
+a separate citizen tests cross-origin refusal. Spawning a new anonymous
+client for every request changes the contract under test. Verify the gold
+identity behaviour before changing a fixture, and retain its original
+assertions and deadlines. Run launch/interoperability witnesses without
+unrelated app suites competing for the same machine; retain any concurrent
+admission failures separately from the isolated paired result.
 
 While the candidate remains running, apply settingsd changes for mode, scheme,
 style, accent, density, roundness, font family/weight/size, mono family, text
