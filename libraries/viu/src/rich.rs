@@ -629,10 +629,11 @@ pub(crate) fn draw(
                                     item["checked"] == true,
                                 )
                             } else {
-                                ui.add_enabled(
-                                    item["enabled"] == true,
-                                    egui::Button::new(label(item)),
-                                )
+                                if item["primary"] == true {
+                                    ui.add_enabled(item["enabled"] == true, toolkit::button::PushButton::primary(text(item, "label")))
+                                } else {
+                                    ui.add_enabled(item["enabled"] == true, egui::Button::new(label(item)))
+                                }
                             };
                             let response = response.on_hover_text(text(item, "label"));
                             if item["macro_anchor"] == true {
@@ -910,6 +911,10 @@ fn gold_dialog(
             if !response.has_focus() && ui.memory(|m|m.focused().is_none()){response.request_focus();}
             if response.changed(){emit(events,id,"edit",json!(field));}
         }else if !text(value,"body").is_empty(){ui.add(egui::Label::new(text(value,"body")).wrap());}
+        if let Some(lines)=value["lines"].as_str(){
+            let max_height=ui.ctx().content_rect().height()*toolkit::chrome::Chrome::of(ui.ctx()).style.dialog_resize_max_share as f32/2.0;
+            egui::ScrollArea::vertical().max_height(max_height).show(ui,|ui|{ui.label(lines);});
+        }
         if let Some(commands)=value.get("shortcuts"){crate::command_palette::shortcuts(ui,commands);}
         if let Some(footer)=value["footer"].as_str(){ui.weak(footer);}
         if let Some(items)=value["items"].as_array(){

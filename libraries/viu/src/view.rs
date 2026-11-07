@@ -631,6 +631,8 @@ impl SceneView {
                                     if let Some(height) = num(node, "height") {
                                         ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), height), egui::Layout::left_to_right(egui::Align::Center), |ui| draw(ui));
                                     } else { ui.horizontal(|ui| draw(ui)); }
+                                } else if node.ports.get("scroll") == Some(&Value::Bool(true)) {
+                                    egui::ScrollArea::vertical().id_salt(&key).min_scrolled_height(0.0).max_height(ui.available_height()).show(ui, |ui| { ui.vertical(|ui| draw(ui)); });
                                 } else {
                                     ui.vertical(|ui| draw(ui));
                                 }
@@ -870,8 +872,9 @@ impl SceneView {
             let edge = placement["edge"].as_str().unwrap_or("fill");
             if edge == "fill" && placement["panel"] == true {
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
-                egui::CentralPanel::default()
-                    .frame(toolkit::bars::dock_frame(ui.ctx()))
+                let panel = egui::CentralPanel::default();
+                let panel = if placement["frame"] == "native" {panel} else {panel.frame(toolkit::bars::dock_frame(ui.ctx()))};
+                panel
                     .show(&mut panel_ui, |ui| {
                         self.node(ui, child, nodes, route, depth + 1, events)
                     });
@@ -883,34 +886,37 @@ impl SceneView {
             {
                 continue;
             }
-            if matches!(edge, "bottom" | "left" | "right") && placement["panel"] == true {
-                let horizontal = edge != "bottom";
+            if matches!(edge, "top" | "bottom" | "left" | "right") && placement["panel"] == true {
+                let horizontal = matches!(edge, "left" | "right");
                 let dimension = if horizontal {
                     area.width()
                 } else {
                     area.height()
                 };
-                let default_size =
+                let measured = placement["measure"].as_str().and_then(|id|nodes.get(id)).and_then(|node|Widget::decode(&node.ports["definition"]).ok()).and_then(|widget|widget.intrinsic_width(ui, &self.tree.model).ok());
+                let default_size = measured.unwrap_or_else(||
                     placement["size"]
                         .as_f64()
                         .map(|n| n as f32)
                         .unwrap_or_else(|| {
                             dimension * placement["fraction"].as_f64().unwrap_or(0.2) as f32
-                        });
+                        }));
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(remaining));
                 let id = egui::Id::unique((key, child));
                 let panel = match edge {
                     "left" => egui::Panel::left(id),
                     "right" => egui::Panel::right(id),
+                    "top" => egui::Panel::top(id),
                     _ => egui::Panel::bottom(id),
                 };
+                let panel = panel.resizable(placement["resizable"] == true);
+                let panel = if placement["size"] == "content" && !horizontal {panel} else {panel.default_size(default_size)};
+                let panel = if placement["exact"] == true { panel.exact_size(default_size) } else {panel};
+                let panel = if placement["frame"] == "native" {panel} else {panel.frame(toolkit::bars::dock_frame(ui.ctx()))};
                 let shown = panel
-                    .resizable(placement["resizable"] == true)
-                    .default_size(default_size)
                     .size_range(
                         0.0..=dimension * placement["max_fraction"].as_f64().unwrap_or(0.3) as f32,
                     )
-                    .frame(toolkit::bars::dock_frame(ui.ctx()))
                     .show(&mut panel_ui, |ui| {
                         self.node(ui, child, nodes, route, depth + 1, events)
                     });
@@ -1210,7 +1216,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                         "max_fraction",
                     ] {
                         if let Some(v) = p.get(key) {
-                            if key == "size" && v == "content" && edge == "top" {
+                            if key == "size" && v == "content" && matches!(edge,"top" | "bottom") {
                                 continue;
                             }
                             if key == "size" && design_length(v, None).is_some() {

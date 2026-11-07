@@ -166,12 +166,16 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
                 .map(|c| if c.is_control() { '�' } else { c })
                 .collect::<String>()
         )),
-        "count" => Ok(json!(
-            command_fn("scan", args)?
+        "count" => {
+            let result=command_fn("scan",args)?;
+            if args.get("work_budget").is_some() {
+                Ok(json!({"count":result["rows"].as_array().ok_or("Expected directory rows")?.len(),"work":result["work"]}))
+            } else { Ok(json!(result
                 .as_array()
                 .ok_or("Expected directory rows")?
                 .len()
-        )),
+            )) }
+        },
         "parent" => {
             let p = path(&args["path"])?;
             Ok(json!(uri(p.parent().unwrap_or(Path::new("/")))?))
@@ -184,6 +188,11 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
         "name" => Ok(json!(String::from_utf8_lossy(
             &name(&args["name"]).map_err(|e| e.message)?
         ))),
+        "save-name" => {
+            let raw=name(&args["name"]).map_err(|e|e.message)?;
+            let raw=if args["filter"].is_null() {raw} else {Filter::parse(&args["filter"]).map_err(|e|e.message)?.save_name(&raw)};
+            Ok(link_value(Path::new(OsStr::from_bytes(&raw))))
+        },
         "leaf" => {
             let p = path(&args["path"])?;
             let raw = p.file_name().ok_or("Path has no file name")?.as_bytes();
@@ -203,7 +212,14 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
             };
             static MIME: OnceLock<mimedb::Database> = OnceLock::new();
             let mut rows = Vec::new();
+            let limit=match args.get("work_budget") {
+                None=>100_000,
+                Some(value)=>crate::widgets::whole(value).filter(|n|*n<=65536).ok_or("Invalid directory work budget")? as usize,
+            };
+            let mut work=0;
             for entry in std::fs::read_dir(folder).map_err(|e| e.to_string())? {
+                if work==limit {return Err("SCAN_BUDGET: total directory enumeration budget exceeded".into());}
+                work+=1;
                 let entry = entry.map_err(|e| e.to_string())?;
                 let raw = entry.file_name();
                 if args["hidden"] != true && raw.as_bytes().first() == Some(&b'.') {
@@ -211,6 +227,7 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
                 }
                 let name = raw.to_string_lossy();
                 let meta = entry.metadata().map_err(|e| e.to_string())?;
+                if args["directories_only"]==true && !meta.is_dir() {continue;}
                 if let Some(filter) = &filter {
                     let mime = MIME
                         .get_or_init(mimedb::Database::load)
@@ -229,7 +246,7 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
                     .collect();
                 rows.push(json!({"key":uri(&entry.path())?,"name":display,"dir":meta.is_dir(),"file":meta.is_file(),"size":meta.len(),"modified":meta.modified().ok().and_then(|t|t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t|t.as_secs())}));
             }
-            Ok(json!(rows))
+            if args.get("work_budget").is_some() {Ok(json!({"rows":rows,"work":work}))} else {Ok(json!(rows))}
         }
         _ => Err("Unknown file data primitive".into()),
     }
@@ -237,7 +254,9 @@ pub fn command(command: &str, args: &Value) -> Result<Value, String> {
 pub(crate) fn binding() -> mix::evaluator::ExtFn {
     mix::sync_ext(|args| {
         let fail = |msg: String| {
-            if msg.starts_with("ENUMERATION_BUDGET:") {
+            if msg.starts_with("SCAN_BUDGET:") {
+                mix::MixError::structured("SCAN_BUDGET", msg)
+            } else if msg.starts_with("ENUMERATION_BUDGET:") {
                 mix::MixError::structured("ENUMERATION_BUDGET", msg)
             } else {
                 mix::MixError::RuntimeError { msg, span: None }
@@ -256,6 +275,21 @@ fn command_fn(name: &str, args: &Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn filtered_scans_charge_hidden_and_filtered_entries_before_returning_rows() {
+        let d=tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join(".hidden"),"x").unwrap();
+        std::fs::write(d.path().join("skip.png"),"x").unwrap();
+        std::fs::write(d.path().join("keep.txt"),"x").unwrap();
+        let mut args=json!({"folder":d.path(),"hidden":false,"filter":{"name":"Text","patterns":["*.txt"],"mime_types":[]},"work_budget":2});
+        assert!(command("scan",&args).unwrap_err().starts_with("SCAN_BUDGET:"));
+        args["work_budget"]=json!(3);
+        let scan=command("scan",&args).unwrap();
+        assert_eq!(scan["work"],3);
+        assert_eq!(scan["rows"].as_array().unwrap().len(),1);
+        assert_eq!(command("count",&args).unwrap(),json!({"count":1,"work":3}));
+        assert_eq!(command("save-name",&json!({"name":{"bytes":"%6E%FF"},"filter":args["filter"]})).unwrap(),json!({"bytes":"%6E%FF%2E%74%78%74"}));
+    }
     #[test]
     fn directory_admission_stops_at_the_callers_remaining_work_budget() {
         let d = tempfile::tempdir().unwrap();

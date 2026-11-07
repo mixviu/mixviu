@@ -47,6 +47,8 @@ struct Window {
     mapped: bool,
     applied_focus: Option<Value>,
     fatal: Option<String>,
+    frame: crate::window_frame::WindowFrame,
+    session_values: Value,
 }
 impl Window {
     fn new(
@@ -73,7 +75,7 @@ impl Window {
                 citizen: "files-window".into(),
             })
             .map_err(|e| format!("{e:?}"))?;
-        let sequence=worker.event("chooser.open".into(),json!({"id":id,"request":open.open.request.body().map_err(|e|e.message)?,"home":home,"profile":profile})).map_err(|e|format!("{e:?}"))?;
+        let sequence=worker.event("chooser.open".into(),json!({"id":id,"caller":open.open.caller,"request":open.open.request.body().map_err(|e|e.message)?,"home":home,"profile":profile})).map_err(|e|format!("{e:?}"))?;
         let captures = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_default()
@@ -105,6 +107,8 @@ impl Window {
             mapped: false,
             applied_focus: None,
             fatal: None,
+            frame: Default::default(),
+            session_values: json!({}),
         })
     }
     fn state(&self) -> Value {
@@ -155,13 +159,17 @@ impl Window {
                 }
             }
             if let Some(model) = result.model {
-                let style = (self.model["appearance"] != model["appearance"])
+                let style = (model["frame"].is_null() && self.model["appearance"] != model["appearance"])
                     .then(|| crate::appearance::resolve(&model["appearance"]))
                     .transpose()?;
                 if let Some(view) = &mut self.view {
                     view.apply_model(model.clone())?;
                 } else {
-                    self.view = Some(SceneView::with_model(&self.scene, model.clone())?);
+                    self.view = Some(if model["frame"].is_object() {
+                        crate::gold_frame::mount(&self.scene, model.clone())?
+                    } else {
+                        SceneView::with_model(&self.scene, model.clone())?
+                    });
                 }
                 let serial = model["effect"]["serial"].as_u64().unwrap_or(0);
                 if serial > self.seen_effect {
@@ -184,6 +192,24 @@ impl Window {
             0.0,
             crate::appearance::colour(&ctx, "dock").unwrap_or(ui.visuals().panel_fill),
         );
+        let framed = self.model["frame"].is_object();
+        if framed {
+            let mut settings = self.session_values.clone();
+            if let Some(values) = self.model["window_settings"].as_object() {
+                for (key, value) in values { settings[key] = value.clone(); }
+            }
+            crate::rich::configure_menu(&ctx, &settings, None);
+            self.frame.show_with_chrome(ui, &self.title, &settings, true, true);
+            if let Some(view) = &mut self.view {
+                let slots = self.frame.geometry.get("window.header.content").map(|rect|BTreeMap::from([("window.header.content".into(), *rect)])).unwrap_or_default();
+                if let Err(error) = view.set_slots(slots) { self.error = error; }
+                let style = ctx.global_style();
+                let mut projected = self.model.clone();
+                projected["__viu_window_client"] = json!(crate::window_frame::is_client(&settings));
+                projected["__viu_metrics"] = json!({"item_spacing_x":style.spacing.item_spacing.x,"item_spacing_y":style.spacing.item_spacing.y,"control_row_height":toolkit::button::icon_button_of(&ctx).max(style.spacing.interact_size.y+4.0),"field_height":toolkit::field::height_of(&ctx),"height":ctx.content_rect().height(),"dialog_resize_max_share":toolkit::chrome::Chrome::of(&ctx).style.dialog_resize_max_share});
+                if let Err(error) = view.apply_model(projected) { self.error = error; }
+            }
+        }
         if let Some((_, result)) = self.capture.poll(&ctx) {
             if let Some(reply) = self.capture_reply.take() {
                 let _ = reply.send(match result {
@@ -275,6 +301,16 @@ impl Window {
             }
         } else {
             ui.label("Loading chooser…");
+        }
+        if framed {
+            let reserved = self.view.as_ref().and_then(|v|v.allocated_region("gold-captions"));
+            self.frame.finish_captions(ui, reserved);
+            self.frame.edges(ui);
+            if let Some(view) = &mut self.view { view.geometry.extend(self.frame.geometry.clone()); }
+            if self.frame.close_requested && !self.closed {
+                self.closed = true;
+                self.effect = Some(json!({"command":"cancel","body":{"request":self.id}}));
+            }
         }
         if let Some(view) = &mut self.view {
             if let Some(error) = view.take_focus_error() {
@@ -369,6 +405,10 @@ struct Shell {
     windows: Windows,
     quitting: Option<Reply>,
     error: String,
+    session: crate::session::Session,
+    file_theme: toolkit::Theme,
+    last_ui: settings::model::CommonUi,
+    app: String,
 }
 impl Shell {
     fn engine_call(
@@ -489,6 +529,17 @@ impl eframe::App for Shell {
         }
     }
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        while let Ok(notice) = self.bus.notices.try_recv() {
+            self.session.hint(&notice.command, &notice.args);
+        }
+        if let Some(snapshot) = self.session.poll() {
+            match crate::appearance::install_session(ctx, &snapshot, &self.app, &self.file_theme, &self.last_ui) {
+                Ok(ui) => self.last_ui = ui,
+                Err(error) => self.error = error,
+            }
+            ctx.request_repaint();
+        }
+        if let Some(deadline) = self.session.deadline() { ctx.request_repaint_after(deadline.saturating_duration_since(std::time::Instant::now())); }
         while let Ok(request) = self.bus.requests.try_recv() {
             self.request(request, ctx);
         }
@@ -608,6 +659,11 @@ impl eframe::App for Shell {
             }
             let window = self.windows.lock().unwrap().get(&id).cloned().unwrap();
             let mut window = window.lock().unwrap();
+            let values = &self.session.snapshot["state"]["values"];
+            if values.is_object() && window.session_values != *values {
+                window.session_values = values.clone();
+                ctx.request_repaint_of(viewport(&id));
+            }
             if window.ready != open.ready {
                 window.ready = open.ready;
                 ctx.request_repaint_of(viewport(&id));
@@ -663,14 +719,24 @@ impl eframe::App for Shell {
             .map(|(id, w)| (id.clone(), w.clone()))
             .collect();
         for (id, window) in windows {
-            let title = window.lock().unwrap().title.clone();
+            let locked = window.lock().unwrap();
+            if locked.view.is_none() { continue; }
+            let title = locked.title.clone();
+            let viewport_model = &locked.model["viewport"];
+            let dimensions = |key: &str, default: [f32;2]| -> [f32;2] {
+                viewport_model[key].as_array().filter(|v|v.len()==2).and_then(|v|Some([v[0].as_f64()? as f32,v[1].as_f64()? as f32])).filter(|v|v.iter().all(|n|n.is_finite() && (160.0..=8000.0).contains(n))).unwrap_or(default)
+            };
+            let size = dimensions("size", [640.0,480.0]);
+            let minimum = dimensions("minimum", [320.0,240.0]);
+            let app_id = viewport_model["app_id"].as_str().unwrap_or("viu.files").to_owned();
+            drop(locked);
             ui.ctx().show_viewport_deferred(
                 viewport(&id),
                 egui::ViewportBuilder::default()
                     .with_title(title)
-                    .with_inner_size([760.0, 560.0])
-                    .with_min_inner_size([480.0, 320.0])
-                    .with_app_id("mixviu.files"),
+                    .with_inner_size(size)
+                    .with_min_inner_size(minimum)
+                    .with_app_id(app_id),
                 move |ui, _| window.lock().unwrap().show(ui),
             );
         }
@@ -745,6 +811,10 @@ pub fn run(
                 "files.quit".into(),
                 wake.clone(),
             );
+            let app = app_dir.file_name().and_then(|name|name.to_str()).unwrap_or("files").to_owned();
+            let file_theme = toolkit::Theme::load();
+            crate::appearance::install_theme(&cc.egui_ctx, &file_theme).map_err(std::io::Error::other)?;
+            let session = crate::session::Session::embedded(&app, &std::env::var("MIXOS_INSTANCE").unwrap_or_else(|_|"default".into()), wake.clone(), bus.backend()).map_err(std::io::Error::other)?;
             let home = std::env::var_os("HOME")
                 .map(PathBuf::from)
                 .filter(|p| p.is_absolute())
@@ -791,6 +861,10 @@ pub fn run(
                 windows: Arc::default(),
                 quitting: None,
                 error: String::new(),
+                session,
+                file_theme,
+                last_ui: Default::default(),
+                app,
             }))
         }),
     )

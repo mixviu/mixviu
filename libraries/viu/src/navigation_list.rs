@@ -30,7 +30,11 @@ pub fn draw(
 ) -> egui::Response {
     *ui.spacing_mut() = ui.ctx().global_style().spacing.clone();
     ui.vertical(|ui| {
-        toolkit::panel::section_label(ui, label);
+        if value["heading"] == "heading" {
+            ui.heading(label);
+        } else {
+            toolkit::panel::section_label(ui, label);
+        }
         let font = egui::TextStyle::Body.resolve(ui.style());
         egui::ScrollArea::vertical()
             .auto_shrink(false)
