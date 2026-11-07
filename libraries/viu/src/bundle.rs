@@ -108,7 +108,10 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
-            || manifest.log_filter.as_ref().is_some_and(|filter| filter.len() > 4096)
+            || manifest
+                .log_filter
+                .as_ref()
+                .is_some_and(|filter| filter.len() > 4096)
             || manifest.argument_error_overrides.len() > 256
             || manifest
                 .argument_error

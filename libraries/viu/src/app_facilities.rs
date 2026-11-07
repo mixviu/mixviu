@@ -172,7 +172,9 @@ impl Facilities {
     pub fn request(&mut self, mut r: Request, ctx: &egui::Context) -> Option<Request> {
         if self.surface.is_some()
             && !r.command.starts_with(&format!("{}.macros.", self.app))
-            && !(self.debug && (r.command == format!("{}.debug", self.app) || r.command.starts_with(&format!("{}.debug.", self.app))))
+            && !(self.debug
+                && (r.command == format!("{}.debug", self.app)
+                    || r.command.starts_with(&format!("{}.debug.", self.app))))
             && !r.args.is_object()
         {
             let _ = r.reply.send((
