@@ -143,12 +143,11 @@ fn mix_launch_plan_preserves_literal_paths_and_print_config_stays_before_the_hos
     assert!(viu::launch::load(&root, &["--unknown".into()]).is_err());
     // Mix expands tildes in double-quoted strings. Matching a literal tilde
     // must never mistake an absolute child of HOME for the shorthand.
-    let home_child = std::path::PathBuf::from(std::env::var_os("HOME").unwrap())
-        .join("activation-fixture");
-    let absolute = viu::launch::load(
-        &root,
-        &[home_child.to_string_lossy().into_owned()],
-    )
-    .unwrap();
-    assert_eq!(absolute.launch_plan["activation"][0]["body"]["paths"][0], json!(home_child));
+    let home_child =
+        std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join("activation-fixture");
+    let absolute = viu::launch::load(&root, &[home_child.to_string_lossy().into_owned()]).unwrap();
+    assert_eq!(
+        absolute.launch_plan["activation"][0]["body"]["paths"][0],
+        json!(home_child)
+    );
 }
