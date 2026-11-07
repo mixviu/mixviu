@@ -705,3 +705,27 @@ zoom persistence/About/live Prefs and release acceptance. No Fable
 question, install, VT change or merge.
 
 branch: lab/parity-term; head SHA: 06f6f251e4d31d1184529a09f1ebe490b7278583 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — native platform clipboard witness, full Bus/Prefs/session/input/search and release acceptance open; CBC job ids: term-clipboard-order-cf75bd9-a1 (green, fmt applied), term-platform-clipboard-06f6f251 (next await).
+
+## Platform driver host catalogue repair
+
+Read complete term-platform-clipboard-06f6f251-a1 log: green. 137 terminal
+tests/five existing ignores, seven input tests, two bundle tests, five Mix
+suites, command-search/dialog/foreign/build pass. Applied returned fmt-only
+patch in 7dd0022d. Matching fetched debug executable SHA256
+3511432b2aa848cf0cffe656f663e5b37c79bd26c7533ae5998a0f643f4a7db7.
+
+Ran prepared native platform-clipboard-06f6f251.mix; native.JxY16p fails
+at first viu.ui.clipboard call with UNKNOWN_COMMAND. Generic host's
+allowlisted command catalogue omitted the new operation. No clipboard
+event was delivered, no PTY classification conclusion. All tracked PIDs
+stopped. b2a7b8aa registers it in the existing host catalogue.
+
+Next CBC term-clipboard-catalogue-b2a7b8aa at
+b2a7b8aaf8ce3c97467af5febc8393d3febedc2a. Read full log/apply any patch,
+repeat exact source if needed. Fetch artifact and matching bundle; derive
+platform-clipboard-b2a7b8aa.mix from prepared script replacing artifact
+path. Run Ctrl-C/Shift-paste/plain-paste/Shift-Cut witness; inspect native
+replies, snapshots and cleanup. Continue all remaining parity work as
+above. No Fable question, installs or VT changes.
+
+branch: lab/parity-term; head SHA: b2a7b8aaf8ce3c97467af5febc8393d3febedc2a (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — platform clipboard runtime witness, full Bus/Prefs/session/input/search and release acceptance open; CBC job ids: term-platform-clipboard-06f6f251-a1 (green, fmt applied; runtime catalogue defect), term-clipboard-catalogue-b2a7b8aa (next await).

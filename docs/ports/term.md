@@ -450,3 +450,14 @@ without partial input, Unicode text, modifiers and release. A private
 native harness is prepared to verify actual shell Ctrl-C, Shift-paste,
 plain-paste control-code refusal and Shift-Cut closing a split.
 Next CBC `term-platform-clipboard-06f6f251`; runtime witness pending.
+
+`term-platform-clipboard-06f6f251-a1` passed (137 terminal tests, seven
+input tests, two bundle tests, five Mix suites, command-search/dialog,
+foreign and debug build). Complete log read; fmt-only diff applied as
+7dd0022d. Matching debug executable SHA256
+`3511432b2aa848cf0cffe656f663e5b37c79bd26c7533ae5998a0f643f4a7db7`.
+Native run `native.JxY16p` exposed missing host catalogue registration:
+`viu.ui.clipboard` returned UNKNOWN_COMMAND before any platform event.
+All recorded PIDs stopped. Commit b2a7b8aa adds the driver to the existing
+generic host catalogue. Repeat gate/native witness required; unit tests
+alone did not cover that host registration. Overall **NOT ACCEPTED**.
