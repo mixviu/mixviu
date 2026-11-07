@@ -2,6 +2,8 @@
 
 ## Round 4 checkpoint, 2026-11-07: OPEN
 
+Latest formatted code: 9077408a8d7687143bc832faf6b45ded1e8931a8. CBC 20261107-131332-aa236b2f passed the attachment-row repair. Its final visual repeat remains open. The queued old-source release job was superseded by detached email-r4-9077408a8d76 at this code SHA. No release acceptance is claimed.
+
 Settled-state capture now waits for Calendar details in the rendered widget tree. Private round2/pair.g0x2Wa at fa565275e521870f258daec8703bee8a45584e7e has zero SSIM/RMSE distortion for all six baseline states and every region: inbox, dark/light reader, calendar, contacts and composer. Calendar originals, montage and difference were inspected. The previous premature calendar capture is superseded, not discarded. All eight owned processes stopped.
 
 The live Prefs run keeps both PIDs and draft contents. Every main-window variant is exact. Composer light, scheme, style/accent, compact density/roundness, app overrides, auto-night/day and own-surface settings are exact. Font/scale and mono/icon/tune variants retain a paperclip alignment difference (full SSIM distortion 0.000153700, RMSE 0.00393402; header 0.00000000111203 / 0.0000113206). The inspected diff isolates the attachment control. Native stacked-row layout is now ported; its capture repeat is pending. No unexplained difference is accepted.
