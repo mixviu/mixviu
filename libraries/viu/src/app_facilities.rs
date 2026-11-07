@@ -238,30 +238,6 @@ impl Facilities {
             ));
             return None;
         }
-        // Empty native bodies are normalised by the transport adapter.
-        if r.command == "app.describe" || r.command == "HELP" {
-            if let Some(surface) = &self.surface {
-                let _ = r.reply.send((
-                    0,
-                    if r.command == "HELP" {
-                        surface["commands"].clone()
-                    } else {
-                        surface.clone()
-                    },
-                ));
-                return None;
-            }
-        }
-        if self.surface.is_some()
-            && !r.command.starts_with(&format!("{}.macros.", self.app))
-            && !r.args.is_object()
-        {
-            let _ = r.reply.send((
-                10,
-                json!({"error_code":"ARGUMENT","message":"arguments must be a JSON object"}),
-            ));
-            return None;
-        }
         if r.command == format!("{}.execute", self.app) {
             if let Some(id) = r.args["id"]
                 .as_str()
