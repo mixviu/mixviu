@@ -288,3 +288,43 @@ verified supervisor and native input/clipboard/search, release captures.
 No Fable question, no install, no VT changes. NOT ACCEPTED.
 
 branch: lab/parity-term; head SHA: 78b984ae8eae (code; receipt HEAD contains this checkpoint); open items: first bundle load, app/Bus/Prefs and verified session completion, release and matched visual acceptance; CBC job ids: term-widget-r2-1d498ca-a1 (compile failure), term-widget-r2-api-repair-a1 (132 pass, harness delta failure), term-widget-r2-view-repair-a1 (133 pass, host build and foreign gate green), term-widget-r2-bundle-probe (queued).
+
+
+## Term first host capture — NOT ACCEPTED
+
+Latest code `b095d72222c3c6b018f59edf2d2be2eac483401a`. Applied complete
+CBC fmt patch from term-widget-r2-bundle-probe-a1. Its failed isolated
+bundle test found the actual scene/control ID mismatch (root versus
+terminal); repaired at 2765100. The probe completed with rc101; its result
+and complete saved log are already consumed. Attempting to attach CBC
+--await to its retained ID returned a UNIQUE jobs.job error, without
+resubmitting work; the provisional await had already fired with the same
+completed result. Do not repeat that old job as unresolved work.
+
+Using the verified f8b976e debug artifact plus repaired Mix files, the
+candidate now starts, executes the same Mix command output as gold, and
+captures at 900×560 scale 1. Private native.iceFXQ retains snapshot, calls,
+capture, effective menu/titlebar/window forms and all-tracked-PIDs-stopped
+closure receipt. Its normal close request exposed missing app.quit; fixed
+at b095d72, pending exact gate/native-close recheck. Diagnostic bundle
+variants are separate, unaccepted repair witnesses.
+
+Compared against gold native.gWIe4o, inspected originals/side-by-side/diff.
+Private first-diagnostic-diff and first-diagnostic-regions retain raw
+ImageMagick 7.1.2-35 metrics, crops, figures and inspection record. Full
+SSIM distortion 0.0483143 / RMSE 0.055971. Regional SSIM distortions:
+header 0.0749878; tabs 0.167079; content 0.0388236; bottom 0.0798319.
+FAIL: missing menus/actions/tab strip, content 32px too high, extra inset/
+lower band and status bar. Visible command text/colours agree. No rescaling
+or threshold acceptance; these are open work, not Fable deviations.
+Full diagnostic hashes, rectangles and limitations are in docs/ports/term.md.
+
+Next exact-source gate job term-widget-r2-node-fixed at b095d72 will test
+actual bundle load, native suite, Mix policy tests, foreign closure and
+host build. Register automatic resumption on this fresh job only. After
+its log/repair/exact-source check, wire Mix reducer into the live tab/pane
+UI and Bus, then complete inventory and verified session/clipboard/IME/
+search/live Prefs/release matched acceptance. No Fable question, install,
+merge or VT change.
+
+branch: lab/parity-term; head SHA: b095d72222c3c6b018f59edf2d2be2eac483401a (code; receipt HEAD contains this checkpoint); open items: exact repaired gate/close, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-widget-r2-view-repair-a1 (133 pass, host/foreign green), term-widget-r2-bundle-probe-a1 (scene mismatch identified, consumed), term-widget-r2-node-fixed (next await).

@@ -82,3 +82,33 @@ named `file-terminal`. The remaining first load error is obscured by later
 callbacks; a new isolated actual-bundle test retains it for diagnosis.
 The debug artifact and diagnostic bundle variants are not accepted bytes.
 All recorded run processes were stopped; failed runs remain private.
+
+## First native diagnostic pair (FAIL)
+
+The actual-bundle test identified a scene/control ID mismatch: root was
+a control whose definition ID was terminal. The scene now contains a
+matching terminal node. A real candidate host then produced the same Mix
+command output as pinned gold and a 900×560 capture at scale 1. The
+candidate used the verified f8b976e debug executable plus the repaired Mix
+bundle; this mixed-source repair witness cannot attest release bytes.
+
+Both originals, full side-by-side and diff were inspected. Private receipt:
+`term-parity-20261107/first-diagnostic-regions`. Gold run native.gWIe4o,
+candidate native.iceFXQ; capture/readback/command and cleanup receipts retained.
+Gold PNG SHA256 e31900b2f10ca55d792ca7556b5f19da05f151dcbb4ba000d334f9834a994865;
+candidate b7aa2953967f204666e64843cb61d47c5c804befcba05b5bf53db81a34f508f0.
+
+ImageMagick 7.1.2-35 normalised **distortions** (zero identical):
+
+| Region | x,y,w,h | SSIM | RMSE | Open difference |
+| --- | --- | ---: | ---: | --- |
+| Full | 0,0,900,560 | 0.0483143 | 0.055971 | Incomplete app furniture |
+| Header | 0,0,900,38 | 0.0749878 | 0.0752184 | Menus and actions missing |
+| Tabs | 0,38,900,32 | 0.167079 | 0.0876784 | Tab strip missing |
+| Content | 0,70,900,460 | 0.0388236 | 0.0536959 | Grid shifted up 32px; surrounding inset/band |
+| Bottom | 0,530,900,30 | 0.0798319 | 0.0308504 | Extra status bar/plug icon |
+
+These are unfinished implementation items, not approved deviations. All
+tracked candidate-run PIDs were stopped. The capture succeeded before the
+generic close request exposed the missing app.quit handler; that handler
+is now added and still requires the next gate/native-close witness.
