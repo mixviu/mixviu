@@ -114,6 +114,49 @@ fn dec_cursor_save_restore_and_explicit_tab_stops() {
 }
 
 #[test]
+fn erase_line_modes_include_the_cursor_without_moving_it() {
+    for (mode, expected) in [(0, "abc     "), (1, "    efgh"), (2, "        ")] {
+        let t = Terminal::from_test_vt(8, 2, b"abcdefgh\x1b[1;4H");
+        t.advance_test_vt(format!("\x1b[{mode}K").as_bytes());
+        assert_eq!(row(&t, 0), expected, "EL {mode}");
+        assert_eq!(t.screen(false).cursor, (3, 0), "EL {mode}");
+        assert_eq!(row(&t, 1), "        ");
+    }
+}
+
+#[test]
+fn sgr_truecolour_inverse_bold_and_reset_reach_captured_cells() {
+    let t = Terminal::from_test_vt(
+        12,
+        2,
+        b"D\x1b[38;2;12;34;56;48;2;78;90;123mA\x1b[7mB\x1b[27;1mC\x1b[0mE",
+    );
+    let s = t.screen(false);
+    assert_eq!((s.cells[1].fg, s.cells[1].bg), ([12, 34, 56], [78, 90, 123]));
+    assert_eq!((s.cells[2].fg, s.cells[2].bg), ([78, 90, 123], [12, 34, 56]));
+    // Gold brightens bold foregrounds by 40, even for truecolour, rather
+    // than synthesising a heavier face. Keep that captured-cell contract.
+    assert!(s.cells[3].bold);
+    assert_eq!((s.cells[3].fg, s.cells[3].bg), ([52, 74, 96], [78, 90, 123]));
+    assert!(!s.cells[4].bold);
+    assert_eq!((s.cells[4].fg, s.cells[4].bg), (s.cells[0].fg, s.cells[0].bg));
+    assert_eq!(s.cursor, (5, 0));
+}
+
+#[test]
+fn insert_mode_and_carriage_return_line_feed_remain_independent() {
+    let t = Terminal::from_test_vt(8, 3, b"abcdef\x1b[1;3H\x1b[4hXY\x1b[4lZ");
+    assert_eq!(row(&t, 0), "abXYZdef");
+    t.advance_test_vt(b"\rQ\nR");
+    assert_eq!(row(&t, 0), "QbXYZdef");
+    assert_eq!(row(&t, 1), " R      ");
+    assert_eq!(t.screen(false).cursor, (2, 1));
+    t.advance_test_vt(b"\r\nS");
+    assert_eq!(row(&t, 2), "S       ");
+    assert_eq!(t.screen(false).cursor, (1, 2));
+}
+
+#[test]
 fn parser_retains_every_utf8_and_escape_chunk_boundary() {
     let bytes = "aé中e\u{301}\r\n\x1b[38;2;12;34;56mcolour\x1b[0m\x1b[2;8H!".as_bytes();
     let expected = Terminal::from_test_vt(20, 4, bytes).screen(false);
