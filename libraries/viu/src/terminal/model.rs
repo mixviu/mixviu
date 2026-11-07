@@ -7,11 +7,10 @@ use crate::terminal::metrics::Metrics;
 #[path = "mouse.rs"]
 mod mouse;
 pub use mouse::MouseModifiers;
-#[path = "selection.rs"]
-mod selection;
 #[path = "search.rs"]
 mod search;
-pub use search::{SearchOutcome, SearchPattern, SearchPoint, SearchRange};
+#[path = "selection.rs"]
+mod selection;
 use rio_vt::selection::SelectionRange;
 use rio_vt::{
     ansi::CursorShape,
@@ -22,6 +21,7 @@ use rio_vt::{
     teletypewriter::{self, ChildEvent, EventedPty, ProcessReadWrite, WinsizeBuilder},
 };
 pub use rio_vt::{crosswords::pos::Side as SelectionSide, selection::SelectionType};
+pub use search::{SearchOutcome, SearchPattern, SearchPoint, SearchRange};
 use std::{
     borrow::Cow,
     collections::VecDeque,
