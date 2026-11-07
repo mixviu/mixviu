@@ -228,9 +228,7 @@ impl MxResolver {
             Ok(Err(e)) => return Err(classify(&e)),
             Ok(Ok(mx)) => mx,
         };
-        let records: Vec<(u16, String)> = mx
-            .iter()
-            .map(|r| (r.preference(), r.exchange().to_ascii()))
+        let records: Vec<(u16, String)> = mx.answers().iter().filter_map(|record| match &record.data { hickory_resolver::proto::rr::RData::MX(mx) => Some((mx.preference, mx.exchange.to_ascii())), _ => None })
             .collect();
         // Empty RRset or all targets malformed → definitive 404.
         select_mx(&records).ok_or(MxError::NoMx)

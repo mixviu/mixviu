@@ -37,10 +37,7 @@ fn serialize(msg: &Message) -> Result<Vec<u8>, ProtoError> {
 /// (should not happen for well-formed responses; never panic on the
 /// serve path). Preserves id + question so the client can correlate.
 fn servfail_bytes(msg: &Message) -> Vec<u8> {
-    let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
-    m.metadata.id = msg.metadata.id;
-    m.metadata.message_type = hickory_proto::op::MessageType::Response;
-    m.metadata.op_code = msg.metadata.op_code;
+    let mut m = Message::response(msg.metadata.id, msg.metadata.op_code);
     m.metadata.response_code = ResponseCode::ServFail;
     for q in msg.queries.as_slice() {
         m.add_query(q.clone());

@@ -138,8 +138,8 @@ pub fn query_msg_class(
 /// (answer or authority section).
 pub fn soa_serial(records: &[hickory_proto::rr::Record]) -> Option<u32> {
     use hickory_proto::rr::RData as HRData;
-    records.iter().find_map(|r| match r.data() {
-        HRData::SOA(soa) => Some(soa.serial()),
+    records.iter().find_map(|r| match (&r.data) {
+        HRData::SOA(soa) => Some(soa.serial),
         _ => None,
     })
 }

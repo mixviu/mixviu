@@ -277,7 +277,7 @@ fn tcp(port: u16, m: &Message) -> Message {
 fn a_of(m: &Message) -> Vec<Ipv4Addr> {
     m.answers.as_slice()
         .iter()
-        .filter_map(|r| match r.data() {
+        .filter_map(|r| match (&r.data) {
             HRData::A(a) => Some(a.0),
             _ => None,
         })
@@ -285,7 +285,7 @@ fn a_of(m: &Message) -> Vec<Ipv4Addr> {
 }
 
 fn has_soa(recs: &[hickory_proto::rr::Record]) -> bool {
-    recs.iter().any(|r| matches!(r.data(), HRData::SOA(_)))
+    recs.iter().any(|r| matches!((&r.data), HRData::SOA(_)))
 }
 
 // ── the §8 Layer-2 deterministic query set, end-to-end ───────────────
@@ -323,8 +323,8 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     let mx = r
         .answers.as_slice()
         .iter()
-        .find_map(|r| match r.data() {
-            HRData::MX(mx) => Some((mx.preference(), mx.exchange().to_ascii())),
+        .find_map(|r| match (&r.data) {
+            HRData::MX(mx) => Some((mx.preference, mx.exchange.to_ascii())),
             _ => None,
         })
         .expect("MX answer");
@@ -332,7 +332,7 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     assert_eq!(mx.1, "alpha.bus.", "MX exch self");
     assert!(
         r.additionals.as_slice().iter().any(|x| matches!(
-            x.data(),
+            (&x.data),
             HRData::A(a) if a.0 == Ipv4Addr::new(192, 0, 2, 5)
         )),
         "in-zone MX target → A glue in ADDITIONAL"
@@ -344,8 +344,8 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     let srv = r
         .answers.as_slice()
         .iter()
-        .find_map(|r| match r.data() {
-            HRData::SRV(s) => Some((s.priority(), s.weight(), s.port(), s.target().to_ascii())),
+        .find_map(|r| match (&r.data) {
+            HRData::SRV(s) => Some((s.priority, s.weight, s.port, s.target.to_ascii())),
             _ => None,
         })
         .expect("SRV answer");
@@ -356,7 +356,7 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     );
     assert!(
         r.additionals.as_slice().iter().any(|x| matches!(
-            x.data(),
+            (&x.data),
             HRData::A(a) if a.0 == Ipv4Addr::new(192, 0, 2, 5)
         )),
         "in-zone SRV target → A glue"
@@ -364,7 +364,7 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     let r = udp(p, &q("_submissions._tcp.alpha.bus", HRT::SRV));
     assert!(
         r.answers.as_slice().iter().any(|x| matches!(
-            x.data(), HRData::SRV(s) if s.port() == 465
+            (&x.data), HRData::SRV(s) if s.port == 465
         )),
         "submissions SRV 465 present"
     );
@@ -416,7 +416,7 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
         let got = r
             .answers.as_slice()
             .iter()
-            .find_map(|x| match x.data() {
+            .find_map(|x| match (&x.data) {
                 HRData::PTR(n) => Some(n.0.to_ascii()),
                 _ => None,
             })
@@ -454,7 +454,7 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
         assert!(
             r.answers.as_slice()
                 .iter()
-                .any(|x| matches!(x.data(), HRData::NS(_))),
+                .any(|x| matches!((&x.data), HRData::NS(_))),
             "{zone} apex NS in ANSWER"
         );
     }

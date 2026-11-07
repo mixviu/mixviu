@@ -25,17 +25,14 @@ use std::collections::HashSet;
 const RESPONSE_EDNS_PAYLOAD: u16 = 1232;
 
 pub fn resolve(snap: &ZoneSnapshot, req: &Message) -> Message {
-    let mut resp = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
-    resp.metadata.id = req.metadata.id;
-    resp.metadata.message_type = MessageType::Response;
-    resp.metadata.op_code = req.metadata.op_code;
+    let mut resp = Message::response(req.metadata.id, req.metadata.op_code);
     resp.metadata.recursion_desired = req.metadata.recursion_desired;
     resp.metadata.recursion_available = false;
 
     // Echo an OPT advertising our payload when the query had one. The
     // resolver never *uses* the size (it cannot truncate); the serve
     // loop computes `max_payload` independently for `wire::encode_udp`.
-    if req.edns.as_ref().is_some() {
+    if req.edns.is_some() {
         let mut edns = Edns::new();
         edns.set_version(0);
         edns.set_max_payload(RESPONSE_EDNS_PAYLOAD);

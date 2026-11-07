@@ -161,7 +161,7 @@ pub async fn resolve(ip: IpAddr) -> Option<String> {
     }
     let resolved = match resolver() {
         Some(r) => match tokio::time::timeout(LOOKUP_TIMEOUT, r.reverse_lookup(ip)).await {
-            Ok(Ok(ptr)) => ptr.iter().next().map(|p| {
+            Ok(Ok(ptr)) => ptr.answers().iter().find_map(|record| match &record.data { hickory_resolver::proto::rr::RData::PTR(ptr) => Some(ptr), _ => None }).map(|p| {
                 let mut name = p.0.to_utf8();
                 if name.ends_with('.') {
                     name.pop();

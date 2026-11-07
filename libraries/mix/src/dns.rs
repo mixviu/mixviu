@@ -147,13 +147,13 @@ fn rcode_name(code: u16) -> String {
 
 fn record_value(r: &Record) -> Value {
     let mut map = IndexMap::new();
-    map.insert("name".to_string(), Value::String(r.name().to_string()));
+    map.insert("name".to_string(), Value::String(r.name.to_string()));
     map.insert(
         "type".to_string(),
         Value::String(r.record_type().to_string()),
     );
-    map.insert("ttl".to_string(), Value::Number(f64::from(r.ttl())));
-    map.insert("data".to_string(), Value::String(r.data().to_string()));
+    map.insert("ttl".to_string(), Value::Number(f64::from(r.ttl)));
+    map.insert("data".to_string(), Value::String((&r.data).to_string()));
     Value::map(map)
 }
 

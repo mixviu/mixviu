@@ -105,21 +105,21 @@ fn long_txt_chunks_into_255_byte_strings_and_reassembles() {
 
     let out = encode_tcp(&m);
     let back = decode(&out[2..]).expect("decode");
-    let HRData::TXT(txt) = back.answers.as_slice()[0].data() else {
+    let HRData::TXT(txt) = (&back.answers.as_slice()[0].data) else {
         panic!("expected TXT");
     };
     // On the wire it is >=2 character-strings, each <=255 bytes...
     assert!(
-        txt.txt_data().len() >= 2,
+        txt.txt_data.len() >= 2,
         "long TXT split into >=2 character-strings"
     );
     assert!(
-        txt.txt_data().iter().all(|cs| cs.len() <= 255),
+        txt.txt_data.iter().all(|cs| cs.len() <= 255),
         "every character-string is <=255 bytes"
     );
     // ...that reassemble to the exact original operator string.
     let joined: Vec<u8> = txt
-        .txt_data()
+        .txt_data
         .iter()
         .flat_map(|c| c.iter().copied())
         .collect();
@@ -150,9 +150,9 @@ fn with_opt_the_opt_is_echoed_and_negotiated_size_honoured() {
     // Query carrying an OPT advertising 1232.
     let req = query_msg("alpha.bus", HRecordType::A, Some(1232));
     let resp = resolve(&snap, &req);
-    assert!(resp.edns.as_ref().is_some(), "resolver echoes an OPT");
+    assert!(resp.edns.is_some(), "resolver echoes an OPT");
     assert_eq!(
-        resp.edns.as_ref().as_ref().unwrap().max_payload(),
+        resp.edns.as_ref().unwrap().max_payload(),
         1232,
         "advertised payload negotiated"
     );
@@ -161,7 +161,7 @@ fn with_opt_the_opt_is_echoed_and_negotiated_size_honoured() {
     let back = decode(&encode_udp(&resp, 1232)).expect("decode");
     assert!(!back.metadata.truncation);
     assert!(
-        back.edns.as_ref().is_some(),
+        back.edns.is_some(),
         "OPT preserved through encode_udp"
     );
     assert!(!back.answers.as_slice().is_empty());

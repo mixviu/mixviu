@@ -70,8 +70,8 @@ fn wildcard_synthesizes_for_absent_name_with_owner_qname() {
     assert!(r.metadata.authoritative, "AA=1");
     assert_eq!(r.answers.as_slice().len(), 1, "one synthesized A");
     // Owner is the QUERIED name, never the `*` owner (RFC 4592 §3.3.1).
-    assert_eq!(r.answers.as_slice()[0].name().to_string(), "foo.wild.bus.");
-    assert!(matches!(r.answers.as_slice()[0].data(), HRData::A(a) if a.0.to_string() == "192.0.2.99"));
+    assert_eq!(r.answers.as_slice()[0].name.to_string(), "foo.wild.bus.");
+    assert!(matches!((&r.answers.as_slice()[0].data), HRData::A(a) if a.0.to_string() == "192.0.2.99"));
 }
 
 #[test]
@@ -152,8 +152,8 @@ fn wildcard_synthesizes_for_a_multi_label_absent_name() {
     assert_eq!(r.metadata.response_code, ResponseCode::NoError);
     assert!(r.metadata.authoritative, "AA=1");
     assert_eq!(r.answers.as_slice().len(), 1);
-    assert_eq!(r.answers.as_slice()[0].name().to_string(), "a.b.wild.bus.");
-    assert!(matches!(r.answers.as_slice()[0].data(), HRData::A(a) if a.0.to_string() == "192.0.2.99"));
+    assert_eq!(r.answers.as_slice()[0].name.to_string(), "a.b.wild.bus.");
+    assert!(matches!((&r.answers.as_slice()[0].data), HRData::A(a) if a.0.to_string() == "192.0.2.99"));
 }
 
 #[test]
@@ -211,16 +211,16 @@ fn positive_a_aaaa_txt() {
     let r = resolve(&snap, &query_msg("alpha.bus", HRecordType::A, None));
     assert_eq!(r.metadata.response_code, ResponseCode::NoError);
     assert!(r.metadata.authoritative);
-    assert!(matches!(r.answers.as_slice()[0].data(), HRData::A(a) if a.0.to_string() == "192.0.2.5"));
+    assert!(matches!((&r.answers.as_slice()[0].data), HRData::A(a) if a.0.to_string() == "192.0.2.5"));
 
     let r = resolve(&snap, &query_msg("alpha.bus", HRecordType::AAAA, None));
-    assert!(matches!(r.answers.as_slice()[0].data(), HRData::AAAA(a) if a.0.to_string() == "fd00::5"));
+    assert!(matches!((&r.answers.as_slice()[0].data), HRData::AAAA(a) if a.0.to_string() == "fd00::5"));
 
     let r = resolve(&snap, &query_msg("alpha.bus", HRecordType::TXT, None));
-    let HRData::TXT(txt) = r.answers.as_slice()[0].data() else {
+    let HRData::TXT(txt) = (&r.answers.as_slice()[0].data) else {
         panic!("expected TXT");
     };
-    assert_eq!(String::from_utf8_lossy(&txt.txt_data()[0]), "v=spf1 -all");
+    assert_eq!(String::from_utf8_lossy(&txt.txt_data[0]), "v=spf1 -all");
 }
 
 #[test]
@@ -231,8 +231,8 @@ fn multi_mx_same_name_is_one_rrset_two_rdata() {
     let mut prefs: Vec<u16> = r
         .answers.as_slice()
         .iter()
-        .filter_map(|rec| match rec.data() {
-            HRData::MX(mx) => Some(mx.preference()),
+        .filter_map(|rec| match (&rec.data) {
+            HRData::MX(mx) => Some(mx.preference),
             _ => None,
         })
         .collect();
@@ -248,11 +248,11 @@ fn positive_srv_and_ptr() {
         &snap,
         &query_msg("_imaps._tcp.alpha.bus", HRecordType::SRV, None),
     );
-    let HRData::SRV(srv) = r.answers.as_slice()[0].data() else {
+    let HRData::SRV(srv) = (&r.answers.as_slice()[0].data) else {
         panic!("expected SRV");
     };
-    assert_eq!((srv.priority(), srv.weight(), srv.port()), (0, 1, 993));
-    assert_eq!(srv.target().to_ascii(), "alpha.bus.");
+    assert_eq!((srv.priority, srv.weight, srv.port), (0, 1, 993));
+    assert_eq!(srv.target.to_ascii(), "alpha.bus.");
 
     // PTR sweep — all five mesh reverse names.
     for (rev, host) in [
@@ -264,7 +264,7 @@ fn positive_srv_and_ptr() {
     ] {
         let r = resolve(&snap, &query_msg(rev, HRecordType::PTR, None));
         assert_eq!(r.metadata.response_code, ResponseCode::NoError, "{rev}");
-        let HRData::PTR(p) = r.answers.as_slice()[0].data() else {
+        let HRData::PTR(p) = (&r.answers.as_slice()[0].data) else {
             panic!("{rev}: expected PTR");
         };
         assert_eq!(p.0.to_ascii(), host, "{rev}");
@@ -292,7 +292,7 @@ fn positive_apex_soa_and_ns_for_every_zone() {
         assert_eq!(r.metadata.response_code, ResponseCode::NoError, "{zone} NS");
         assert!(
             r.answers.as_slice().iter().any(|rec| matches!(
-                rec.data(),
+                (&rec.data),
                 HRData::NS(ns) if ns.0.to_ascii() == "gw.bus."
             )),
             "{zone} apex NS"
@@ -392,7 +392,7 @@ fn in_zone_mx_glue_present_out_of_zone_absent() {
     let glue_names: Vec<String> = r
         .additionals.as_slice()
         .iter()
-        .map(|rec| rec.name().to_ascii())
+        .map(|rec| rec.name.to_ascii())
         .collect();
     assert!(glue_names.iter().any(|n| n == "alpha.bus."), "self glue");
     assert!(glue_names.iter().any(|n| n == "gamma.bus."), "gamma glue");
@@ -422,12 +422,12 @@ fn zero_x_twenty_question_verbatim_answer_canonical() {
     assert_eq!(r.queries.as_slice()[0].name().to_ascii(), "Alpha.BUS");
     // Answer name is canonical lower-case (built from the snapshot, not
     // echoed) → absolute, dotted.
-    assert_eq!(r.answers.as_slice()[0].name().to_ascii(), "alpha.bus.");
+    assert_eq!(r.answers.as_slice()[0].name.to_ascii(), "alpha.bus.");
     // Alpha.Bus ≡ alpha.bus. — identical rdata.
     let lo = resolve(&snap, &query_msg("alpha.bus", HRecordType::A, None));
     assert_eq!(
-        format!("{:?}", r.answers.as_slice()[0].data()),
-        format!("{:?}", lo.answers.as_slice()[0].data())
+        format!("{:?}", (&r.answers.as_slice()[0].data)),
+        format!("{:?}", (&lo.answers.as_slice()[0].data))
     );
 }
 

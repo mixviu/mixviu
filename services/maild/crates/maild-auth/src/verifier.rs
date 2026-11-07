@@ -215,6 +215,7 @@ impl Verifier for MailAuthVerifier {
         let dmarc_params: DmarcParameters<'_, fn(&str) -> &str> = DmarcParameters {
             message: &parsed,
             dkim_output: &dkim_outputs,
+            dkim2_output: None,
             rfc5321_mail_from_domain: &envelope_domain,
             spf_output: spf_branch.output(),
             domain_suffix_fn: naive_org_domain as fn(&str) -> &str,

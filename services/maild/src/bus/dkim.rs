@@ -142,11 +142,10 @@ async fn check_published(
     pem: &[u8],
 ) -> Result<()> {
     let records = resolver.txt_lookup(name).await?;
-    let records: Vec<String> = records
-        .iter()
+    let records: Vec<String> = records.answers().iter().filter_map(|record| match &record.data { hickory_resolver::proto::rr::RData::TXT(txt) => Some(txt), _ => None })
         .map(|txt| {
             String::from_utf8(
-                txt.txt_data()
+                txt.txt_data
                     .iter()
                     .flat_map(|part| part.iter().copied())
                     .collect(),

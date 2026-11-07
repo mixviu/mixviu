@@ -437,7 +437,7 @@ impl AsyncDnsResolver for HickoryResolver {
 
     async fn lookup_txt(&self, qname: &str) -> Option<String> {
         let lookup = self.inner.txt_lookup(qname).await.ok()?;
-        lookup.iter().next().map(|t| t.to_string())
+        lookup.answers().iter().find_map(|record| match &record.data { hickory_resolver::proto::rr::RData::TXT(txt) => Some(txt.to_string()), _ => None })
     }
 }
 

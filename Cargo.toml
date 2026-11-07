@@ -75,7 +75,7 @@ hickory-resolver = { version = "0.26.1", features = ["tokio", "system-config"] }
 hyper = { version = "1", features = ["server"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
 linkify = "0.10"
-mail-auth = { version = "0.11", default-features = false, features = ["ring", "generate", "arc"] }
+mail-auth = { version = "=0.11.0", default-features = false, features = ["ring", "generate", "arc"] }
 mail-builder = "0.4"
 mail-parser = "=0.11.5"
 quick-xml = "0.41"
