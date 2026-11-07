@@ -22,6 +22,7 @@ struct Surface {
     focus: u64,
     preedit: String,
     grid_size: (u16, u16, u16, u16),
+    search: Option<super::view_search::Search>,
 }
 
 // Gold's pane arithmetic: fit in physical pixels, retain a legal minimum
@@ -94,6 +95,53 @@ pub fn validate(value: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn authored_search_reports_from_the_drawn_owner_and_clears_on_removal() {
+        let sessions = Sessions::fixture();
+        sessions.fixture_pane("vt-2", b"sibling");
+        let owner = sessions.get("vt-1").unwrap();
+        let mut views = Views::default();
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx, 400, 600);
+        let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
+        widget.properties = json!({"search":{"handle":"vt-1","query":"native","request":1}});
+        let mut events = Vec::new();
+        let mut draw = |widget:&Widget, value:&Value, events:&mut Vec<Intent>| {
+            ctx.run_ui(egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0,560.0))),
+                ..Default::default()
+            }, |ui| { views.draw(ui, widget, value, &sessions, events); })
+                .drop_without_applying_deltas();
+        };
+        draw(&widget, &json!("vt-1"), &mut events);
+        assert_eq!(events.iter().filter(|e| e.action=="search").count(), 1);
+        let found = events.iter().find(|e| e.action=="search").unwrap();
+        assert_eq!(found.id, "vt");
+        assert_eq!(found.value["handle"], "vt-1");
+        assert_eq!(found.value["matched"]["start"]["col"], 0);
+        assert_eq!(found.value["matched"]["end"]["col"], 5);
+        events.clear();
+        draw(&widget, &json!("vt-1"), &mut events);
+        assert!(!events.iter().any(|e| e.action=="search"));
+        draw(&widget, &json!("vt-2"), &mut events);
+        assert!(!events.iter().any(|e| e.action=="search"));
+        assert!(sessions.get("vt-2").unwrap().lock().unwrap().selection_text().is_none());
+        widget.properties["search"] = Value::Null;
+        draw(&widget, &json!("vt-1"), &mut events);
+        drop(draw);
+        assert!(views.surfaces["vt-1"].search.is_none());
+        assert!(Arc::ptr_eq(&owner, &sessions.get("vt-1").unwrap()));
+        assert!(owner.lock().unwrap().selection_text().is_none());
+        sessions.call("close", "vt-1", json!({})).unwrap();
+        let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-2"));
+        widget.properties = json!({"search":{"handle":"vt-1","query":"sibling","request":2}});
+        ctx.run_ui(Default::default(), |ui| {
+            views.draw(ui, &widget, &json!("vt-2"), &sessions, &mut events);
+        }).drop_without_applying_deltas();
+        assert!(!views.surfaces.contains_key("vt-1"));
+        assert!(!events.iter().any(|e| e.action=="search"));
+    }
 
     #[test]
     fn alternate_screen_keeps_scroll_keys_but_not_other_commands() {
@@ -1025,6 +1073,7 @@ impl Views {
                     focus: 0,
                     preedit: String::new(),
                     grid_size: (0, 0, 0, 0),
+                    search: None,
                 },
             );
         }
@@ -1109,7 +1158,14 @@ impl Views {
                 },
             )
         });
-        let mut snapshot = terminal.grid_snapshot();
+        let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
+        let mut snapshot = super::view_search::snapshot(
+            &mut surface.search, widget, handle, &terminal,
+            super::model::SearchColors {
+                foreground: [palette.text.r(), palette.text.g(), palette.text.b()],
+                background: [palette.row_selected.r(), palette.row_selected.g(), palette.row_selected.b()],
+            }, events,
+        );
         terminal
             .stats
             .lock()

@@ -881,6 +881,11 @@ impl Terminal {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn advance_test_vt(&self, bytes: &[u8]) {
+        rio_vt::performer::handler::Processor::default().advance(&mut *self.grid.lock(), bytes);
+    }
+
     pub fn start_session(
         settings: crate::terminal::config::Settings,
         native: Option<&dyn crate::terminal::native_session::SessionIssuer>,

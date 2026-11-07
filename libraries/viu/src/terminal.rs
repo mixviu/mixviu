@@ -28,6 +28,7 @@ pub mod session_actor;
 pub mod session_fd;
 pub mod sessions;
 pub mod view;
+mod view_search;
 pub use model::{Key, Screen, ScrollRequest, Terminal};
 
 #[cfg(test)]
