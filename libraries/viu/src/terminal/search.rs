@@ -112,7 +112,7 @@ impl Terminal {
                 && start.row < term.grid.bottommost_line()
             {
                 let next = Pos::new(start.row + 1i32, Column(0));
-                if term.grid[next].wide() == Wide::Wide {
+                if next <= *range.end() && term.grid[next].wide() == Wide::Wide {
                     start = next;
                 }
             }
@@ -262,5 +262,21 @@ mod tests {
                 .is_none()
         );
         assert_eq!(t.snapshot(), before);
+    }
+
+    #[test]
+    fn empty_regex_matches_near_wide_spacers_never_invert_the_range() {
+        let t = Terminal::from_test_vt(5, 3, "abcd中z".as_bytes());
+        for query in ["a*", ".*?"] {
+            let mut pattern = SearchPattern::new(query, true, true).unwrap();
+            for backwards in [false, true] {
+                for col in 0..5 {
+                    let result = t.search(&mut pattern, Some(SearchPoint { row: 0, col }), backwards, 10000).unwrap();
+                    if let Some(range) = result.matched {
+                        assert!((range.start.row, range.start.col) <= (range.end.row, range.end.col));
+                    }
+                }
+            }
+        }
     }
 }
