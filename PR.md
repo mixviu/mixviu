@@ -55,7 +55,8 @@ are unchanged. No baseline entry increases.
 - Dopus entry: the bundle's injected argument list still auto-starts it;
   the legacy comparison host explicitly sends `dopus.initialise` when it
   deliberately injects nil. Tests require a model before the bundle's first
-  command and readiness after the comparison-host event. Only one version
+  command and readiness after calling the production comparison startup
+  helper (`mix_start::initialise`), not a copied test sender. Only one version
   header remains.
 - Workshop executable lookup: replace the removed `mixos_path()` call with
   the existing `mix_path("prefix", "bin/dopus")` contract. The reviewed
@@ -70,7 +71,7 @@ are unchanged. No baseline entry increases.
 | --- | --- |
 | Generic `viu run` / `app_host::run` | `launch::load` calls `Bundle::load`; the latter always injects a list as `$app_args`, even with no arguments. The entry auto-starts. The preview load only reads metadata. |
 | Generic launcher/test tools (`tools/bulk_native.mix`, `tools/p2_rehearsal.mix`) | Invoke `viu run` and inherit the same bundle contract. |
-| Legacy comparison host, Mix mode (`apps/dopus/src/main.rs`) | Deliberately injects nil, loads `app.mix`, then immediately sends `dopus.initialise` with `app_dir` and `profile` before creating its UI. Rust mode owns its own native initialisation. |
+| Legacy comparison host, Mix mode (`apps/dopus/src/main.rs`, `src/mix_start.rs`) | Calls the shared, tested startup helper: inject nil, load `app.mix`, then immediately send `dopus.initialise` with `app_dir` and `profile` before creating the UI. Rust mode owns its own native initialisation. |
 | Installed desktop entries and Workshop | Launch the installed prefix Dopus binary directly; they do not load `app.mix` with nil arguments. Their native entry initialises itself. Workshop now resolves that binary by install prefix. |
 | systemd units | No Dopus launcher unit exists in the tree or the inspected system/user unit roots. No additional deferred Mix startup path was found. |
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 mod chooser;
 mod input;
+mod mix_start;
 mod native;
 mod panel;
 #[cfg(test)]
@@ -18,9 +19,11 @@ use std::{
 use viu::{
     jobs::Jobs,
     native_bus::{Endpoint, Request},
-    runtime::{Program, Runtime},
+    runtime::Runtime,
     view::SceneView,
 };
+#[cfg(test)]
+use viu::runtime::Program;
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 struct App {
     runtime: Option<Runtime>,
@@ -1389,27 +1392,13 @@ fn main() -> eframe::Result {
             let mut runtime = None;
             let mut native = None;
             if mode == "mix" {
-                let path = app_dir.join("app.mix");
                 let mut worker = Runtime::with_services(
                     32,
                     wake.clone(),
                     Some(jobs.backend(Some(bus.backend()))),
                     services,
                 );
-                worker
-                    .load(Program {
-                        source: "$app_args=nil\n".to_owned() + &std::fs::read_to_string(&path).expect("Dopus Mix source"),
-                        path,
-                        scene: "dopus".into(),
-                        citizen: "dopus-mix".into(),
-                    })
-                    .expect("load Dopus");
-                worker
-                    .event(
-                        "dopus.initialise".into(),
-                        json!({"app_dir":app_dir,"profile":profile}),
-                    )
-                    .expect("initialise Dopus");
+                mix_start::initialise(&mut worker, &app_dir, &profile).expect("initialise Dopus");
                 runtime = Some(worker);
             } else {
                 native = Some(native::Native::new(&profile, contract.clone(), wake));
