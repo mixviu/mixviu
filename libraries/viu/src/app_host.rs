@@ -55,6 +55,7 @@ struct Host {
     measurements: crate::ui_state::Measurements,
     input_at: Option<Instant>,
     native_drive: bool,
+    host_macro_popup: bool,
     service: String,
     settings_reload: u64,
     session_update: Option<Value>,
@@ -1129,14 +1130,8 @@ impl Host {
                                 }
                             }
                             self.last_ui = common_ui;
-                            let mut update = snapshot.clone();
-                            update["appearance"]["mode"] =
-                                json!(if ctx.global_style().visuals.dark_mode {
-                                    "dark"
-                                } else {
-                                    "light"
-                                });
-                            self.session_update = Some(update);
+                            self.session_update =
+                                Some(crate::appearance::session_update(ctx, &snapshot));
                             self.session_notice = Some(snapshot.clone());
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
@@ -1359,7 +1354,7 @@ impl Host {
                     self.dispatch("viu.key".into(), key, BTreeMap::new(), None);
                 }
             }
-            if !self.native_drive
+            if self.host_macro_popup
                 && self.facilities.macros.is_some()
                 && toolkit::macros::show_app(ui.ctx(), &self.app, self.model["macros_open"] == true)
             {
@@ -1723,6 +1718,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         measurements: Default::default(),
         input_at: None,
         native_drive: bundle.manifest.native_drive,
+        host_macro_popup: !bundle.manifest.native_drive || bundle.manifest.host_macro_popup,
         service: std::env::var("VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
         settings_reload: 0,
         session_update: None,

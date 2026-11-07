@@ -7,6 +7,13 @@ pub fn session_theme(ctx: &egui::Context) -> toolkit::Theme {
     ctx.data(|d| d.get_temp::<toolkit::Theme>(egui::Id::unique("viu-session-theme")))
         .unwrap_or_else(toolkit::Theme::embedded)
 }
+/// Report the installed mode axis, which can differ from a style's chrome
+/// luminance. For example, Pro chrome can stay dark in light mode.
+pub fn session_update(ctx: &egui::Context, snapshot: &Value) -> Value {
+    let mut update = snapshot.clone();
+    update["appearance"]["mode"] = session_theme(ctx).mode().name().into();
+    update
+}
 #[derive(Clone)]
 pub struct ResolvedAppearance {
     pub style: egui::Style,

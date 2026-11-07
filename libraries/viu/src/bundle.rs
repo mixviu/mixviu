@@ -43,6 +43,9 @@ pub struct Manifest {
     pub argument_error_overrides: std::collections::BTreeMap<String, String>,
     pub native_ui: bool,
     pub native_macros: bool,
+    /// Draw the shared macro popup even when the scene owns native input.
+    /// Leave false when the scene supplies its own macro-window/menu control.
+    pub host_macro_popup: bool,
     /// Let the bundle implement its declared macro workflows.
     pub macro_workflow: bool,
     pub native_debug: bool,
@@ -98,6 +101,7 @@ impl Default for Manifest {
             argument_error_overrides: Default::default(),
             native_ui: false,
             native_macros: false,
+            host_macro_popup: false,
             macro_workflow: false,
             native_debug: false,
             native_debug_after_ui: false,
