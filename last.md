@@ -264,6 +264,16 @@ worker log was read. An earlier base implementation also passed on cbc3, job
 20261107-204601-09d3a4fd-a1. Intermediate rustfmt and help-test findings were
 fixed. Full workspace all gate and independent review remain unrun.
 
+Round 2 (source 53357d4): the full test gate failed only because
+tests/owned_editor_pty.rs compiles editor/runtime.rs by #[path] and lacked the
+new crate::test_hooks module (E0433). The release-profile panic in that log was
+the intended negative check passing. Fix: the test includes test_hooks.rs. The
+hooks now link a marker; mix-hygiene checks the hook build carries it and the
+ordinary build does not, and the new release-mix stage refuses a release mix
+that carries it. Full test gate 20261107-210937-ccb133a8-a1 (cbc3) BUILD_RC=0,
+10,560 passed / 0 failed / 90 ignored; release-mix 20261107-214025-5234a7b5-a1
+(cbc3) BUILD_RC=0, marker absent.
+
 PR.md contains the review draft; no PR opened under the binding brief.
 
-Branch fix/mix-hygiene; head SHA: this evidence commit (tested source 805db4c61b62812999081e9bb7eb39ab677fd7ab); gate: fmt/env/mix-hygiene GREEN; CBC jobs 20261107-204950-4537e2c4 and 20261107-204601-09d3a4fd-a1; Mark: independent review and human approval before merge.
+Branch fix/mix-hygiene; head SHA: this evidence commit (tested source 53357d480966881475a04647498bdf8723b724ce); gate: full test GREEN, release-mix GREEN (earlier fmt/env/mix-hygiene GREEN at 805db4c); CBC jobs 20261107-210937-ccb133a8-a1, 20261107-214025-5234a7b5-a1, 20261107-204950-4537e2c4; Mark: wire release-mix into the gold/release recipe, independent review and human approval before merge.

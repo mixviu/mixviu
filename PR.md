@@ -11,6 +11,14 @@ the feature outside the debug profile, with a second compile guard when debug
 assertions are off. The native PTY test target requires this feature, and the
 CI test stage enables it explicitly. The env registry records the gate.
 
+A linked hook also links an artefact marker. `mix tools/ci.mix mix-hygiene`
+checks a hook-enabled debug `mix` carries it and an ordinary one does not;
+the new `release-mix` stage builds the release `mix` and refuses it if the
+marker is present, so the shipped artefact itself is checked, not only the
+build profile. `tests/owned_editor_pty.rs`, which compiles the editor from
+source by `#[path]`, now includes the same hook module (round 1 left it
+unable to compile under the full test gate).
+
 ## Risk tier
 
 1 — Mix CLI and builtins/runtime. No new dependencies or deployment.
@@ -27,7 +35,15 @@ CI test stage enables it explicitly. The env registry records the gate.
   no git or cargo on PATH. Tests cover both help surfaces, complete versus
   torn binary result frames, all four hook lookups with and without the
   feature, existing native PTY fault paths, and release-feature rejection.
-- Not tested: full workspace `all` gate, desktop sessions or installation.
+- Round 2, source `53357d480966881475a04647498bdf8723b724ce`: full
+  `mix tools/ci.mix test` on cbc3, CBC job `20261107-210937-ccb133a8-a1`,
+  `BUILD_RC=0`: 10,560 passed, 0 failed, 90 ignored; `owned_editor_pty`
+  79/79 with and without `test-hooks`; marker present in the hook build,
+  absent in the ordinary build; release-feature rejection still fires.
+  `release-mix` on cbc3, CBC job `20261107-214025-5234a7b5-a1`,
+  `BUILD_RC=0`: release `target/release/mix` built, marker absent.
+- Not tested: full `all` gate (fmt, clippy, mix-lint stages), desktop
+  sessions or installation.
 
 ## How to undo
 
