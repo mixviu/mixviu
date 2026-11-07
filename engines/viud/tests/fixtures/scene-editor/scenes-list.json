@@ -31,7 +31,7 @@
       "exit": null,
       "attempted_digest": "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e",
       "accepted_digest": "a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819",
-      "journal": "journalctl -u mixos-desk-scenes.service",
+      "journal": "journalctl -u mix-desk-scenes.service",
       "open": false, "pending": false,
       "title": "Panel", "edge": "bottom", "page": "scene-panel", "kind": "edge",
       "files": {
@@ -57,7 +57,7 @@
       "exit": null,
       "attempted_digest": "9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
       "accepted_digest": "8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a",
-      "journal": "journalctl -u mixos-desk-scenes.service",
+      "journal": "journalctl -u mix-desk-scenes.service",
       "open": false, "pending": false,
       "title": "Applications", "edge": "left", "page": "scene-launcher-sandbox", "kind": "edge",
       "files": {
@@ -83,7 +83,7 @@
       "exit": null,
       "attempted_digest": "3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f",
       "accepted_digest": "3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f",
-      "journal": "journalctl -u mixos-desk-scenes.service",
+      "journal": "journalctl -u mix-desk-scenes.service",
       "open": false, "pending": false,
       "title": "Notifications", "edge": "right", "page": "scene-notes", "kind": "edge",
       "files": {
