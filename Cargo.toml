@@ -71,7 +71,7 @@ async-trait = "0.1"
 bcrypt = "0.16"
 directories = "6"
 glob = "0.3"
-hickory-resolver = { version = "0.25", features = ["tokio", "system-config"] }
+hickory-resolver = { version = "0.26.1", features = ["tokio", "system-config"] }
 hyper = { version = "1", features = ["server"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
 linkify = "0.10"

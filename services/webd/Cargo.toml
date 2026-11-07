@@ -88,8 +88,8 @@ pulldown-cmark = { workspace = true, features = ["html"] }
 regex-lite = "0.1"
 # Mail-client autoconfig MX resolution. Same version/features as
 # maild (the sibling crate that already does MX lookups) so the
-# graph keeps a single hickory-resolver 0.25.x.
-hickory-resolver = { version = "0.25", features = ["tokio", "system-config"] }
+# graph keeps a single hickory-resolver 0.26.x.
+hickory-resolver = { version = "0.26.1", features = ["tokio", "system-config"] }
 # Trust roots for the operator-policy implicit-TLS probe (verifies the
 # MX target terminates 993/465 with a valid cert). Same version as
 # maild's delivery TLS path so the graph keeps one webpki-roots.

@@ -23,7 +23,7 @@ mod_module_files = "deny"
 default = []
 
 [dependencies]
-hickory-proto = { version = "0.25", default-features = false }
+hickory-proto = { version = "0.26.1", default-features = false }
 mix.workspace = true
 indexmap = "2"
 tokio = { workspace = true, features = ["net", "rt", "macros", "io-util", "sync", "time"] }
