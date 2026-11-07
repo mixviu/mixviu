@@ -395,38 +395,40 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
                     column,
                     |ui, _| {
                         ui.vertical(|ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            let attach = if let Some(icon) = v["attach_icon"]
-                                .as_str()
-                                .and_then(crate::icons::Icon::from_name)
-                            {
-                                ui.add(
-                                    toolkit::button::IconButton::new(icon)
-                                        .size(toolkit::field::height_of(ui.ctx()))
-                                        .tooltip(v["attach_label"].as_str().unwrap()),
-                                )
-                            } else {
-                                ui.button(v["attach_label"].as_str().unwrap())
-                            };
-                            if attach.clicked() {
-                                emit(events, "command", json!("attach"));
-                            }
-                            for (i, p) in v["attachments"].as_array().unwrap().iter().enumerate() {
-                                let path = p.as_str().or_else(|| p["path"].as_str()).unwrap();
-                                let text = p.as_str().or_else(|| p["text"].as_str()).unwrap();
-                                if form::attachment_chip(
-                                    ui,
-                                    i,
-                                    std::path::Path::new(path),
-                                    text,
-                                    p["bad"] == true,
-                                    toolkit::field::height_of(ui.ctx()),
-                                    v["remove_label"].as_str().unwrap(),
-                                ) {
-                                    emit(events, "remove", json!(i));
+                            ui.horizontal_wrapped(|ui| {
+                                let attach = if let Some(icon) = v["attach_icon"]
+                                    .as_str()
+                                    .and_then(crate::icons::Icon::from_name)
+                                {
+                                    ui.add(
+                                        toolkit::button::IconButton::new(icon)
+                                            .size(toolkit::field::height_of(ui.ctx()))
+                                            .tooltip(v["attach_label"].as_str().unwrap()),
+                                    )
+                                } else {
+                                    ui.button(v["attach_label"].as_str().unwrap())
+                                };
+                                if attach.clicked() {
+                                    emit(events, "command", json!("attach"));
                                 }
-                            }
-                        });
+                                for (i, p) in
+                                    v["attachments"].as_array().unwrap().iter().enumerate()
+                                {
+                                    let path = p.as_str().or_else(|| p["path"].as_str()).unwrap();
+                                    let text = p.as_str().or_else(|| p["text"].as_str()).unwrap();
+                                    if form::attachment_chip(
+                                        ui,
+                                        i,
+                                        std::path::Path::new(path),
+                                        text,
+                                        p["bad"] == true,
+                                        toolkit::field::height_of(ui.ctx()),
+                                        v["remove_label"].as_str().unwrap(),
+                                    ) {
+                                        emit(events, "remove", json!(i));
+                                    }
+                                }
+                            });
                         });
                     },
                 );
