@@ -857,11 +857,17 @@ fn draw_gold(
     };
     let strings = toolkit::Strings::new(&catalogue);
     ui.scope(|ui| {
+        if value["cancel_pending"] == true
+            && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            emit(events, &widget.id, "table", json!({"event":"cancel"}));
+        }
         let mut table=DataTable::new(&widget.id,&columns,&state).strings(&strings).keeps_tab(true)
             .selection(if widget.properties["multi"]==false{SelectionMode::Single}else{SelectionMode::Multi})
             .total(Total::Known(crate::widgets::whole(&value["total"]).unwrap_or(rows.len() as u64)))
             .pager(widget.properties["pager"]!=false).empty_text(value["empty"].as_str().unwrap_or("No items"));
         if let Some(link)=value["select_everything"].as_str(){ table=table.select_everything(Everything{link:link.into(),done:value["everything_done"].as_str().map(Into::into)}); }
+        if let Some(count) = crate::widgets::whole(&value["selected_count"]) { table = table.selected_count(Some(count)); }
         for event in table.show(ui,&rows) {
             let payload=match event {
                 TableEvent::SortChanged(sort)=>json!({"event":"sort","sort":sort.map(|s|json!({"column":original(&s.column),"order":s.order}))}),

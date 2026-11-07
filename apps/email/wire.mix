@@ -164,11 +164,13 @@ fn wire_completed($d)
   $entry=wire_entry($job.account)
   $answer=if $d.rc==0 then $d.body else {rc:10,body:{error_code:"SERVER",message:"Mail worker failed"}} end
   if not wire_current($job) then
+    if $job.purpose=="bulk-ids" then selection_cancel($job.account) end
     if $job.purpose=="form" and $mail_form!=nil then $mail_form.busy=false;$mail_form.error="This account changed while the form was open. Close it and open it again." end
     if $job.purpose=="compose-send" then composer_sent($job.args.window,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"},attempt:$answer.attempt}) end
     if $job.token!=nil then viu_reply("finish",$job.token,{rc:10,body:{error_code:"STALE_CONNECTION",message:"The account reconnected while this was pending; try again"}}) end
     return
   end
+  if $job.purpose=="bulk-ids" then selection_completed($job,$answer);return end
   if $job.purpose=="compose-send" then composer_sent($job.args.window,$answer) end
   if $job.purpose=="compose-suggest" then composer_suggest_completed($job.args,$answer) end
   if $job.purpose=="form" and $mail_form!=nil then

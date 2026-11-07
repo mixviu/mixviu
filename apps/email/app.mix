@@ -74,6 +74,7 @@ fn send_request()
 end
 include "wire.mix"
 include "surface.mix"
+include "selection.mix"
 include "composer.mix"
 include "compose-identities.mix"
 include "forms.mix"
@@ -208,10 +209,10 @@ fn apply_email($id,$origin)
   elif $id=="calendar.new_event" then $out=form_open("event");publish_email();return $out
   elif $id=="contacts.new_contact" then $out=form_open("contact");publish_email();return $out
   elif $id=="mail.print" then return wire_start("email.print",{},nil,"print")
-  elif $id=="mail.delete" then $out=form_open("delete");publish_email();return $out
-  elif $id=="mail.move" then $out=form_open("move");publish_email();return $out
+  elif $id=="mail.delete" then $out=selection_act("delete");publish_email();return $out
+  elif $id=="mail.move" then $out=selection_act("move");publish_email();return $out
   elif contains(["mail.junk","mail.not_junk"],$id) then
-    return wire_start("email.junk",{ids:if len($mail_selection)>0 then $mail_selection else [$message.id] end,junk:$id=="mail.junk"},nil,"mutation")
+    return selection_act(if $id=="mail.junk" then "junk" else "not_junk" end)
   elif $id=="file.refresh" then
     if not $fixture then
       wire_start("email.mailboxes",{},nil,"boxes")
@@ -219,7 +220,7 @@ fn apply_email($id,$origin)
       wire_start("email.calendars",{},nil,"parents");wire_start("email.books",{},nil,"parents")
     elif len($entries)>0 then begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting" end
   elif contains(["view.mail","view.calendar","view.contacts"],$id) then surface_mode(split($id,".")[1])
-  elif contains(["mail.flag","mail.mark_unread"],$id) then surface_toggle_target($id=="mail.flag")
+  elif contains(["mail.flag","mail.mark_unread"],$id) then selection_act(if $id=="mail.flag" then "flag" else "read" end)
   elif starts_with($id,"mail.reply") or $id=="mail.forward" then
     $args={id:$message.id,all:contains($id,"reply_all")}
     if ends_with($id,"_unquoted") then $args.quote=false elif ends_with($id,"_quoted") then $args.quote=true end

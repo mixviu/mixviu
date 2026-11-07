@@ -9,7 +9,7 @@ fn surface_info()
   $accounts=[]
   for $a in wire_accounts()
     $d=$wire_data[$a.id] ?? {};$open=$d.message ?? {}; $emails=$d.emails ?? []
-    $a.mail={mailboxes:$d.boxes ?? [],selected:$d.box,emails:map($emails,fn($m)={id:$m.id,subject:$m.subject,from:address_display(($m.from ?? [])[0]),date:$m.date ?? $m.receivedAt,read:($m.keywords ?? {})["$seen"]==true,flagged:($m.keywords ?? {})["$flagged"]==true}),total:$d.total ?? 0,open:$open.id,reader:if $open.id==nil then nil else {format:if $reader_markdown then "markdown" else "plain" end,auto:$reader_auto,attachments_expanded:false,attachments_inline:$attachments_inline,attachments:map($open.attachments ?? [],fn($p)={part:$p.partId,preview:{state:"none"}})} end,attachments:if $open.id==nil then nil else $attachment_policy.metadata($open) end,busy:any(values($wire_pending),fn($p)=$p.account==$a.id and contains(["list","refresh-list"],$p.purpose)),selection:{ids:if $a.id==$active then $mail_selection else [] end,count:if $a.id==$active then len($mail_selection) else 0 end,all:false},sort:$mail_sort.column,order:if $mail_sort.order=="ascending" then "asc" else "desc" end,page:floor(($d.offset ?? 0)/$mail_settings.page_size),page_size:$mail_settings.page_size}
+    $a.mail={mailboxes:$d.boxes ?? [],selected:$d.box,emails:map($emails,fn($m)={id:$m.id,subject:$m.subject,from:address_display(($m.from ?? [])[0]),date:$m.date ?? $m.receivedAt,read:($m.keywords ?? {})["$seen"]==true,flagged:($m.keywords ?? {})["$flagged"]==true}),total:$d.total ?? 0,open:$open.id,reader:if $open.id==nil then nil else {format:if $reader_markdown then "markdown" else "plain" end,auto:$reader_auto,attachments_expanded:$attachments_expanded,attachments_inline:$attachments_inline,attachments:map($open.attachments ?? [],fn($p)={part:$p.partId,preview:{state:"none"}})} end,attachments:if $open.id==nil then nil else $attachment_policy.metadata($open) end,busy:any(values($wire_pending),fn($p)=$p.account==$a.id and contains(["list","refresh-list"],$p.purpose)),selection:{ids:if $a.id==$active then $mail_selection else [] end,count:if $a.id==$active then selection_count() else 0 end,all:$a.id==$active and $mail_everything},sort:$mail_sort.column,order:if $mail_sort.order=="ascending" then "asc" else "desc" end,page:floor(($d.offset ?? 0)/$mail_settings.page_size),page_size:$mail_settings.page_size}
     $a.calendar={calendars:$d.calendars ?? [],selected:$d.calendar,events:map($d.events ?? [],fn($e)={id:$e.id,title:$e.title ?? ($e.data ?? {}).title ?? "",start:$e.start,end:$e.end}),open:$d.open_event,busy:pim_busy($a.id,"events")}
     $a.contacts={books:$d.books ?? [],selected:$d.book,filter:$d.contact_filter ?? "",contacts:map($d.contacts ?? [],fn($c)={id:$c.id,name:contact_name($c),email:contact_email($c)}),open:$d.open_contact,busy:pim_busy($a.id,"contacts")}
     push($accounts,$a)
@@ -23,7 +23,7 @@ fn address_display($a)
 end
 fn action_context()
   $d=$wire_data[$active] ?? {}
-  return merge($chrome,{connected:$connected,reading:$mode=="mail" and $message!=nil,targeted:$mode=="mail" and (len($mail_selection)>0 or $message!=nil),calendars:len($d.calendars ?? []),books:len($d.books ?? []),form:$mail_form,accounts:len($entries),markdown:$reader_markdown,attachments_inline:$attachments_inline})
+  return merge($chrome,{connected:$connected,reading:$mode=="mail" and $message!=nil,targeted:$mode=="mail" and (selection_count()>0 or $message!=nil) and $bulk_fetches[$active]==nil,calendars:len($d.calendars ?? []),books:len($d.books ?? []),form:$mail_form,accounts:len($entries),markdown:$reader_markdown,attachments_inline:$attachments_inline})
 end
 fn surface_toggle_target($flag)
   $ids=if len($mail_selection)>0 then $mail_selection elif $message!=nil then [$message.id] else [] end
@@ -104,12 +104,13 @@ fn surface_model($m)
   $m.navigation={id:"account-tree",kind:"tree-table",label:"Accounts",initial:{key:"accounts",revision:$revision,rows:$nav,columns:[{id:"name",label:""}],selected_keys:if any($nav,fn($r)=$r.key==$tree_selected) then [$tree_selected] else [] end,focused_key:nil},properties:{style:"outline"}}
   $found=filter($boxes,fn($b)=$b.id==$box);$name=if len($found)>0 then $found[0].name else "Mail" end
   $m.list_titles=concat([$name],if $total>0 then [to_string(len($rows)).." of "..to_string($total)] else [] end)
-  $m.native_table={id:"emails",kind:"tree-table",label:"emails",initial:{key:"emails",revision:$revision,rows:$rows,columns:[{id:"subject",label:"Subject",fraction:0.55,min_width:120},{id:"from",label:"From",remainder:true,min_width:80},{id:"date",label:"Date",samples:["23:58","Wed 23:58","28 May","28/05/2025"],align:"right"}],state:{sort:$mail_sort,page:floor($offset/$mail_settings.page_size),page_size:$mail_settings.page_size,selection:$mail_selection,focus:$mail_focus,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density},total:$total,empty:if any(values($wire_pending),fn($p)=$p.purpose=="list") then "Loading…" else "No emails" end,select_everything:"Select all "..to_string($total).." in folder",selected_keys:$mail_selection,focused_key:if $mail_focus!=nil then $rows[$mail_focus].key else nil end},properties:{style:"gold"}}
+  $m.native_table={id:"emails",kind:"tree-table",label:"emails",initial:{key:"emails",revision:$revision,rows:$rows,columns:[{id:"subject",label:"Subject",fraction:0.55,min_width:120},{id:"from",label:"From",remainder:true,min_width:80},{id:"date",label:"Date",samples:["23:58","Wed 23:58","28 May","28/05/2025"],align:"right"}],state:{sort:$mail_sort,page:floor($offset/$mail_settings.page_size),page_size:$mail_settings.page_size,selection:$mail_selection,focus:$mail_focus,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density},total:$total,empty:if any(values($wire_pending),fn($p)=$p.purpose=="list") then "Loading…" else "No emails" end,select_everything:"Select all "..grouped($total).." in folder",everything_done:if $mail_everything then "All "..grouped($total).." selected" else nil end,selected_count:if $mail_everything then selection_count() else nil end,cancel_pending:$bulk_fetches[$active]!=nil,selected_keys:$mail_selection,focused_key:if $mail_focus!=nil then $rows[$mail_focus].key else nil end},properties:{style:"gold"}}
   if len($mail_selection)==0 and $opened.id!=nil and any($rows,fn($r)=$r.key==$opened.id) then
     $m.native_table.initial.state.selection=[$opened.id];$m.native_table.initial.state.focus=index_of(map($rows,fn($r)=$r.key),$opened.id)
   end
   $m.reader_actions=map([{id:"mail.reply",label:"Reply",icon:"reply"},{id:"mail.reply_all",label:"Reply All",icon:"reply-all"},{id:"mail.forward",label:"Forward",icon:"forward"},{id:"mail.delete",label:"Delete",icon:"trash"}],fn($a)=merge($a,{enabled:$message!=nil}))
   $m.reader_actions=concat(slice($m.reader_actions,0,1),[{id:"reply-options",label:"",icon:"chevron-down",enabled:$message!=nil,children:map([{id:"mail.reply_quoted",label:"Reply with quote"},{id:"mail.reply_unquoted",label:"Reply without quote"},{id:"mail.reply_all_quoted",label:"Reply All with quote"},{id:"mail.reply_all_unquoted",label:"Reply All without quote"}],fn($a)=merge($a,{enabled:$message!=nil}))}],slice($m.reader_actions,1,3),[{separator:true}],slice($m.reader_actions,3))
+  $m.selection_toolbar=selection_count()>1;$m.values["selection-line"]=if $bulk_fetches[$active]!=nil then "Fetching "..grouped($bulk_fetches[$active].expected).."…" else "Applies to "..grouped(selection_count()).." selected" end
   $m.no_message=$message==nil;$m.message_subject=$opened.subject ?? "";$m.message_from="From: "..address_display(($opened.from ?? [])[0]);$m.message_to="To: "..join(map($opened.to ?? [],fn($a)=$a.email),", ")
   $m.values["message-body"]=$opened.text ?? $opened.html ?? "This email has no body.";$m.values["message-markdown"]=$opened.text ?? ""
   $m.html_source=$message!=nil and $opened.text==nil and $opened.html!=nil;$m.markdown=$reader_markdown and $opened.text!=nil
@@ -127,10 +128,10 @@ end
 fn surface_account($id)
   if $id==nil or $id=="" then return wire_refuse("INVALID_ARGUMENT","id is required") end
   if type($id)!="string" then return wire_refuse("INVALID_ARGUMENT","id must be a string") end
-  global $active,$boxes,$box,$rows,$total,$offset,$message,$connected,$revision,$mail_selection,$mail_focus,$mail_emails,$mail_sort,$mail_widths,$mail_hidden_columns,$mail_density,$wire_data
+  global $mail_everything,$active,$boxes,$box,$rows,$total,$offset,$message,$connected,$revision,$mail_selection,$mail_focus,$mail_emails,$mail_sort,$mail_widths,$mail_hidden_columns,$mail_density,$wire_data
   if not any($entries,fn($e)=$e.id==$id) then return wire_refuse("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
-  if $active!="" and $wire_data[$active]!=nil then $wire_data[$active].table={selection:$mail_selection,focus:$mail_focus,sort:$mail_sort,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density} end
-  $table=($wire_data[$id] ?? {}).table ?? {}
+  if $active!="" and $wire_data[$active]!=nil then $wire_data[$active].table={selection:$mail_selection,focus:$mail_focus,sort:$mail_sort,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density,everything:$mail_everything} end
+  $table=($wire_data[$id] ?? {}).table ?? {};selection_cancel($active);$mail_everything=$table.everything ?? false
   $mail_sort=$table.sort ?? {column:"date",order:"descending"};$mail_widths=$table.widths ?? {};$mail_hidden_columns=$table.hidden ?? [];$mail_density=$table.density ?? "compact"
   $active=$id;$d=$wire_data[$id] ?? {};$boxes=$d.boxes ?? [];$box=$d.box ?? "";$mail_emails=$d.emails ?? [];$rows=gold_rows($mail_emails);$total=$d.total ?? 0;$offset=$d.offset ?? 0;$message=$d.message;$mail_selection=[];$mail_focus=nil;$connected=($wire_views[$id] ?? {}).state=="ready";$revision=$revision+1
   $mail_selection=$table.selection ?? [];$mail_focus=$table.focus
@@ -139,17 +140,17 @@ end
 fn surface_mailbox($account,$id)
   if $id==nil or $id=="" then return wire_refuse("INVALID_ARGUMENT","id is required") end
   if type($id)!="string" then return wire_refuse("INVALID_ARGUMENT","id must be a string") end
-  global $box,$rows,$message,$mail_selection,$mail_focus,$revision,$wire_data,$mode,$total,$offset
+  global $mail_everything,$box,$rows,$message,$mail_selection,$mail_focus,$revision,$wire_data,$mode,$total,$offset
   $r=surface_account($account)
   if $r.rc!=0 then return $r end
   if not any($boxes,fn($b)=$b.id==$id) then return wire_refuse("NOT_FOUND","No such mailbox "..to_string($id)) end
-  $box=$id;$rows=[];$message=nil;$mail_selection=[];$mail_focus=nil;$revision=$revision+1;$mode="mail";$total=0;$offset=0
+  $box=$id;$rows=[];$message=nil;$mail_selection=[];$mail_focus=nil;$mail_everything=false;selection_cancel($active);$revision=$revision+1;$mode="mail";$total=0;$offset=0
   $wire_data[$account]=$wire_data[$account] ?? {};$wire_data[$account].box=$id;$wire_data[$account].message=nil;$wire_data[$account].emails=[];$wire_data[$account].total=0;$wire_data[$account].offset=0
   wire_start("email.list",{account:$account,mailbox:$id,limit:$mail_settings.page_size},nil,"list")
   return {rc:0,body:{account:$account,id:$id}}
 end
 fn surface_intent($a)
-  global $pane,$places_ratio,$list_ratio,$tree_closed,$mail_selection,$mail_focus,$mail_sort,$mail_widths,$mail_hidden_columns,$mail_density,$search_text,$wire_data
+  global $mail_everything,$pane,$places_ratio,$list_ratio,$tree_closed,$mail_selection,$mail_focus,$mail_sort,$mail_widths,$mail_hidden_columns,$mail_density,$search_text,$wire_data
   if $a.id=="workspace" then $places_ratio=$a.value.left;$list_ratio=1-$a.value.right
   elif $a.id=="places-split" then $places_ratio=$a.value
   elif $a.id=="reader-split" then $list_ratio=$a.value
@@ -168,11 +169,14 @@ fn surface_intent($a)
     end
   elif $a.id=="emails" then
     $p=$a.value;$kind=$p.event
+    if contains(["select","selection","sort","page"],$kind) then selection_cancel($active);$mail_everything=false end
     if $kind=="select" or $kind=="activate" then
       $mail_focus=index_of(map($rows,fn($r)=$r.key),$p.key)
       if $p.toggle==true then $mail_selection=if contains($mail_selection,$p.key) then filter($mail_selection,fn($k)=$k!=$p.key) else concat($mail_selection,[$p.key]) end
       else $mail_selection=[$p.key];wire_start("email.open",{id:$p.key},nil,"open") end
     elif $kind=="selection" then $mail_selection=$p.keys;$mail_focus=$p.focus
+    elif $kind=="everything" then $mail_selection=map($rows,fn($r)=$r.key);$mail_everything=true
+    elif $kind=="cancel" then selection_cancel($active,true)
     elif $kind=="sort" then
       $mail_sort=$p.sort
       wire_start("email.list",{mailbox:$box,limit:$mail_settings.page_size,sort:if $mail_sort.column=="date" then "receivedAt" else $mail_sort.column end,ascending:$mail_sort.order=="ascending"},nil,"list")

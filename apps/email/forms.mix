@@ -6,10 +6,10 @@ fn form_info()
   $f=delete(delete($mail_form,"generation"),"instance")
   return $f
 end
-fn form_open($kind)
+fn form_open($kind,$ids=nil,$account=nil)
   global $mail_form,$form_serial
-  $d=$wire_data[$active] ?? {};$form_serial=$form_serial+1
-  $f={kind:$kind,account:$active,generation:$wire_generations[$active] ?? 0,instance:$form_serial,busy:false,error:nil}
+  $account=$account ?? $active;$d=$wire_data[$account] ?? {};$form_serial=$form_serial+1
+  $f={kind:$kind,account:$account,generation:$wire_generations[$account] ?? 0,instance:$form_serial,busy:false,error:nil}
   if $kind=="event" then
     $f.calendar=$d.calendar ?? ($d.calendars ?? [])[0].id
     if $f.calendar==nil then return wire_refuse("DISABLED","That command cannot run now") end
@@ -20,7 +20,7 @@ fn form_open($kind)
     if $f.book==nil then return wire_refuse("DISABLED","That command cannot run now") end
     $f.name="";$f.email="";$f.phone="";$f.organization=""
   else
-    $f.ids=if len($mail_selection)>0 then $mail_selection elif $message!=nil then [$message.id] else [] end
+    $f.ids=$ids ?? (if len($mail_selection)>0 then $mail_selection elif $message!=nil then [$message.id] else [] end)
     if len($f.ids)==0 then return wire_refuse("DISABLED","That command cannot run now") end
   end
   $mail_form=$f

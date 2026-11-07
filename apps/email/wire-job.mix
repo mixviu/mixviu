@@ -18,6 +18,10 @@ on job.run
     end
     if $command=="email.mailboxes" or $command=="email.account.connect" then
       $answer={mailboxes:$protocol.boxes($protocol.call($e,$s,"Mailbox/get",{}).list)}
+    elif $command=="email.ids" then
+      $answer=$protocol.call($e,$s,"Email/query",{filter:{inMailbox:$p.mailbox},sort:[{property:$p.sort,isAscending:$p.ascending}],position:$p.offset,limit:500,calculateTotal:true})
+      if type($answer.ids)!="list" or len($answer.ids)>500 or type($answer.total)!="number" or $answer.total<0 or any($answer.ids,fn($id)=type($id)!="string" or $id=="") then raise("SERVER","Invalid query identities") end
+      $answer={ids:$answer.ids,total:$answer.total}
     elif $command=="email.list" or $command=="email.search" then
       if $command=="email.search" then $p.query=$arg.required($p,"text")
       else $p.mailbox=$arg.required($p,"mailbox") end

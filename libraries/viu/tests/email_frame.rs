@@ -67,6 +67,47 @@ end
 }
 
 #[test]
+fn folder_selection_pages_before_writing_and_cancel_cap_and_mailbox_fence_stop_late_pages() {
+    let bundle = Bundle::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
+        &[],
+    ).unwrap();
+    let mut program = bundle.program;
+    program.source.push_str(r#"
+on test.selection
+  $entries=[{id:"a",name:"Fixture",label:"Fixture",user:"user@example.test",enabled:true}];$active="a";$box="inbox";$total=1200
+  $wire_sessions.a={};$wire_generations.a=1;$wire_data.a={box:$box};$mail_selection=["e1","e2"];$mail_everything=true
+  $wire_views.a={state:"ready"};$wire_running={block1:true,block2:true,block3:true,block4:true}
+  selection_act("delete");$first=values($wire_pending)[0]
+  $deferred=$mail_form==nil and len(keys($wire_pending))==1 and $first.command=="email.ids" and $first.args.offset==0
+  selection_cancel("a",true);$wire_pending={};$wire_waiting=[]
+  selection_completed($first,{rc:0,body:{ids:["late"],total:1}})
+  $cancelled=$mail_form==nil and len(keys($wire_pending))==0 and $mail_everything and $status=="Cancelled: nothing was changed."
+  $total=5001;selection_act("delete");$capped=$mail_form==nil and len(keys($wire_pending))==0 and contains($status,"5,001")
+  $total=1200;selection_act("delete");$job=values($wire_pending)[0];$wire_pending={};$wire_waiting=[]
+  selection_completed($job,{rc:0,body:{ids:map(range(0,499),fn($i)="e"..to_string($i)),total:1200}})
+  $second=values($wire_pending)[0];$page2=$mail_form==nil and $second.args.offset==500;$wire_pending={};$wire_waiting=[]
+  selection_completed($second,{rc:0,body:{ids:map(range(500,999),fn($i)="e"..to_string($i)),total:1200}})
+  $third=values($wire_pending)[0];$page3=$mail_form==nil and $third.args.offset==1000;$wire_pending={};$wire_waiting=[]
+  selection_completed($third,{rc:0,body:{ids:map(range(1000,1199),fn($i)="e"..to_string($i)),total:1200}})
+  $done=$mail_form.kind=="delete" and len($mail_form.ids)==1200 and $mail_form.ids[1199]=="e1199" and len(keys($wire_pending))==0
+  $mail_form=nil;selection_act("delete");$job=values($wire_pending)[0];$wire_pending={};$wire_waiting=[];$wire_data.a.box="other"
+  selection_completed($job,{rc:0,body:{ids:["late"],total:1}})
+  reply(0,json_encode({deferred:$deferred,cancelled:$cancelled,capped:$capped,page2:$page2,page3:$page3,done:$done,fenced:$mail_form==nil and len(keys($wire_pending))==0}))
+end
+"#);
+    let (_root, mut runtime, rx) = isolated_runtime();
+    runtime.load(program).unwrap();
+    complete(&runtime, &rx);
+    runtime.event("test.selection".into(), json!({})).unwrap();
+    let reply = complete(&runtime, &rx).reply.unwrap();
+    assert_eq!(reply.rc, 0, "{}", reply.body);
+    for key in ["deferred", "cancelled", "capped", "page2", "page3", "done", "fenced"] {
+        assert_eq!(reply.body[key], true, "{key}: {}", reply.body);
+    }
+}
+
+#[test]
 fn connected_email_model_mounts_all_panes_and_draws_native_rows() {
     let bundle = Bundle::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
