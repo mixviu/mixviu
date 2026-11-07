@@ -3,6 +3,7 @@
 -- lint: globals app_args
 $engine=require("engine.mix");$projection=require("projection.mix");$launch=require("launch.mix");$schedule=require("schedule.mix")
 $ctx=viu_context();$options=$launch.options($app_args,cwd())
+$startup_code=1
 if $options.probe then raise("PROBE_RUNTIME","Probe rendering is not yet ported") end
 $dirs=viu_app_dirs("backdrop")
 $store=$options.config ?? if $dirs!=nil then path_join($dirs.config,"backdrop.mx") else nil end
@@ -154,6 +155,7 @@ on backdrop.state
 end
 on backdrop.set
   try
+    $wire=require("wire.mix");$wire.check($event.args)
     $checked=$launch.override($event.args,{colour:nil,image:nil})
     $s=stage($s,$checked,owed("set"));$p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
     reply(0,json_encode({requested:$s.requested,active:$s.active,config_file:$store}))

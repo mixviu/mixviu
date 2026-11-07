@@ -44,6 +44,7 @@ fn fill($value,$field)
   if $sources!=1 then invalid($field,"name exactly one of colour, image or slideshow") end
   if $value.colour!=nil then
     if $value.fallback!=nil or $value.fit!=nil then invalid($field,"fallback and fit require an image or slideshow") end
+    if type($value.colour)=="string" and not re_match($value.colour,"^#[0-9a-fA-F]{6}$") then invalid($field..".colour",json_encode($value.colour).." is not a colour as #RRGGBB") end
     $checked=rgb($value.colour)
     return {colour:lower($value.colour)}
   end

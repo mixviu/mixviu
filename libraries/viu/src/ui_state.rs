@@ -7,8 +7,19 @@ use std::{
     sync::{Arc, Mutex},
 };
 #[derive(Clone, Default)]
-pub struct UiState(Arc<Mutex<Value>>, Arc<Mutex<Value>>);
+pub struct UiState(Arc<Mutex<Value>>, Arc<Mutex<Value>>, Arc<Mutex<Option<(u8, String)>>>);
 impl UiState {
+    pub fn take_exit(&self) -> Option<(u8, String)> { self.2.lock().unwrap().take() }
+    pub fn exit_binding(&self) -> mix::evaluator::ExtFn {
+        let state = self.clone();
+        mix::sync_ext(move |args| {
+            let fail = || mix::MixError::RuntimeError { msg: "viu_exit expects an integer exit code 0..255 and message".into(), span: None };
+            let [code, mix::value::Value::String(message)] = args.as_slice() else { return Err(fail()); };
+            let code = crate::runtime::to_json(code)?.as_u64().filter(|n| *n <= 255).ok_or_else(fail)?;
+            *state.2.lock().unwrap() = Some((code as u8, message.clone()));
+            Ok(mix::value::Value::Nil)
+        })
+    }
     pub fn set_outputs(&self, outputs: &BTreeMap<String, Value>) {
         *self.1.lock().unwrap() = json!(outputs);
     }

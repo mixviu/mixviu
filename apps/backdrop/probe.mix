@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- lint: globals app_args
-if not deep_eq($app_args,["--probe"]) then raise("ARGUMENT","--probe runs alone") end
+if not deep_eq($app_args,["--probe"]) then viu_exit(2,"--probe runs alone: no wallpaper or service option goes with it");exit(0) end
 $ctx=viu_context();$outputs={};$reported={};$clicks=0;$last=nil;$serial=0
 fn probe_value($surface)
   return {nodes:[{kind:"panel",children:[{kind:"centered",children:[{kind:"space",fraction:1/3},{kind:"heading",text:"backdrop probe"},{kind:"label",text:to_string($surface.width).." × "..to_string($surface.height).." at scale "..fmt("%.2f",$surface.scale)},{kind:"label",text:if $last==nil then "no clicks yet" else to_string($clicks).." clicks, the last at "..fmt("%.0f",$last.x)..", "..fmt("%.0f",$last.y) end}]}]}]}

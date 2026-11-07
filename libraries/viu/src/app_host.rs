@@ -457,6 +457,10 @@ impl Host {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         while let Some(done) = self.runtime.try_completion() {
+            if let Some((code, message)) = self.ui_state.take_exit() {
+                if !message.is_empty() { eprintln!("{}: {message}", self.app); }
+                std::process::exit(i32::from(code));
+            }
             if self.forward_output {
                 use std::io::Write;
                 print!("{}", done.stdout);
