@@ -590,3 +590,36 @@ clipboard/input/IME/search, zoom persistence/About, all live Prefs and
 release visual acceptance. No Fable question, install or VT changes.
 
 branch: lab/parity-term; head SHA: 9ea52c727cd2d7f4f602fc485e152664eb84edf1 (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — native dialog/metrics/keymap witnesses, full Bus/Prefs/session/input/clipboard/search and release visual acceptance open; CBC job ids: term-menu-intents-2b580ce-a1 (green exact source), term-dialog-metrics-9ea52c7 (next await).
+
+## Term dialog, live metrics/keymaps and exact-frame repair
+
+CBC `term-dialog-metrics-9ea52c7-a1` passed, including the live widget
+dialog regression and font/text-scale metric checks. Read complete log;
+formatting-only patch applied in f55e499 and pushed. Debug artifact
+SHA256 `44770e2417b1347dc0bd4ecf1b521ab87203f92457daed3b887f85e098712dfe`.
+
+Native.uIceLC passes: dialog crop exact against gold, measured cell
+9×20→14×30/grid 98×23→63×15 after text scale 1→1.5 on the same
+PID 3815378, settingsd rebind to F2, actual F2 New Tab and normal close.
+All recorded PIDs stopped. Captures/readbacks/harness retained privately.
+
+Gold view.rs calls titlebar::seamless(true). Candidate omitted it; the
+one-pixel rule also shifted caption/action glyph centres. e945bd9 now
+supplies that existing frame setting. Composite native.BvAeFe (9ea52c7
+debug executable, e945bd9 Mix bundle; NOT exact-source acceptance) matches
+both gold real-session and keys captures byte-for-byte. Whole and every
+region SSIM/RMSE distortion 0/0; originals/montages/diffs inspected.
+Live metric/rebinding witness repeats and recorded PIDs all stop.
+
+Next CBC exact-source repeat `term-seamless-e945bd9` at
+e945bd9815fadde1296715fa288db8b4129cdd5a. Read full log, apply any patch
+and repeat if needed; fetch exact matching executable/bundle and repeat
+keys-metrics plus native menu/lifecycle/topics suites. Native golden keys
+run native.Dae992, real output identical to native.gWIe4o. Private harness
+keys-metrics-e945-diagnostic.mix is diagnostic; derive an exact-artifact
+version for the next witness, retaining binary and source receipts.
+Then continue full session/control/sealed Mix shell handoff, full Bus,
+clipboard/input/IME/search, zoom persistence/About/all live Prefs and exact
+release visual acceptance. No Fable question, install or VT changes.
+
+branch: lab/parity-term; head SHA: e945bd9815fadde1296715fa288db8b4129cdd5a (code; receipt HEAD contains this checkpoint); NOT ACCEPTED — exact-source frame repeat, full Bus/Prefs/session/input/clipboard/search and release acceptance open; CBC job ids: term-dialog-metrics-9ea52c7-a1 (green, fmt applied), term-seamless-e945bd9 (next await).

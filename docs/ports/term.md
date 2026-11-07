@@ -358,3 +358,37 @@ Next source: `9ea52c727cd2d7f4f602fc485e152664eb84edf1`, CBC job
 dialog/metrics/keymap/Prefs witnesses, complete verified session/control
 and shell handoff, full Bus/error/envelope parity, clipboard/input/IME,
 search, zoom persistence, About provenance and release visual gate remain.
+
+### Dialog/metrics native witness and seamless-frame diagnosis
+
+`term-dialog-metrics-9ea52c7-a1` passed the five Mix suites, two bundle
+tests, 135 terminal tests (five existing ignores), command-search admission,
+new live-renderer shortcut-grid regression, foreign gate and debug build.
+Read the complete log; formatting-only diff applied as `f55e499`.
+Debug artifact SHA256:
+`44770e2417b1347dc0bd4ecf1b521ab87203f92457daed3b887f85e098712dfe`.
+
+Native `native.uIceLC` shows the repaired shortcuts dialog; its
+454×458 region matches gold exactly (SSIM/RMSE distortion 0/0). Live
+text scale 1→1.5 changes the measured cell 9×20→14×30 and grid
+98×23→63×15 on unchanged PID 3815378. A settingsd keymap update binds
+New Tab to F2; actual native F2 opens the second tab. Native readbacks,
+replies and stopped-process receipt are retained.
+
+Pinned gold view.rs explicitly calls `titlebar::seamless(ctx,true)`.
+The candidate omitted this setting, causing its one-pixel header rule and
+half-pixel action/caption glyph offset. Commit `e945bd9` supplies the same
+setting through the existing shared frame facility. Composite diagnostic
+`native.BvAeFe` uses the above executable with the e945bd9 Mix bundle;
+it is explicitly not exact-source or release acceptance. Its real-session
+and shortcuts images are byte-identical to the matched gold images at
+900×560, Studio Dark, scale 1. All measured regions and whole images have
+SSIM/RMSE distortion 0/0, and original/montage/diff figures were inspected.
+Session PNG SHA256 `e31900b2f10ca55d792ca7556b5f19da05f151dcbb4ba000d334f9834a994865`;
+keys PNG `13f5f56e65ae1e832b737d388ed5bd879daa894ca80c34acd682342bc487df2b`.
+The live metrics/keymap witness repeats successfully; recorded PIDs stop.
+
+Next exact-source repeat: `term-seamless-e945bd9` at
+`e945bd9815fadde1296715fa288db8b4129cdd5a`. Fetch its matching executable
+and bundle and repeat these witnesses. **NOT ACCEPTED**: debug checkpoints
+do not replace the full feature/Bus/Prefs inventory or release evidence.
