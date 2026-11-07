@@ -74,7 +74,7 @@ on email.ping
   reply(0,json_encode({pong:true,schema:"email.v1",version:$ctx.version,pid:$ctx.pid}))
 end
 on email.info
-  if not $fixture then reply(0,json_encode(surface_info()));return end
+  if not $fixture then reply(0,json_encode(composer_snapshot(surface_info(),$event.args.window)));return end
   reply(0,json_encode({fixture:$fixture,connected:$connected,busy:$busy,status:$status,accounts:map($entries,fn($e)={id:$e.id,label:$e.label,user:$e.user}),active:$active,server_accounts:if $session!=nil then $session.accounts else [] end,mailboxes:$boxes,mailbox:$box,rows:len($rows),total:$total,offset:$offset,selected:$selected,revision:$revision,draft:$draft,operation_id:if $submission!=nil then $submission.operation_id else nil end,receipt:$last_receipt}))
 end
 on email.message
@@ -250,6 +250,12 @@ on email.quit
   $chrome.window_close=true;publish_email();reply(0,json_encode({quitting:true}))
 end
 on email.dialog
+  $window=$event.args.window ?? $compose_focused
+  if $composers[$window]!=nil and $composers[$window].confirm then
+    if $event.args.answer!=nil then $out=composer_close($window,$event.args.answer);publish_email();reply($out.rc,json_encode($out.body))
+    else reply(0,json_encode({dialog:"close_compose"})) end
+    return
+  end
   if contains(keys($event.args),"open") then
     if $event.args.open!=nil and not contains(["about","shortcuts"],$event.args.open) then reply(10,json_encode({error_code:"ARGUMENT",message:"Unknown dialog"}));return end
     $chrome.dialog=$event.args.open

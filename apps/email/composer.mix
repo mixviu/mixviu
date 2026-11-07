@@ -7,6 +7,12 @@ $compose_scene=read_file(path_join(dirname(script_path()),"composer-scene.mix"))
 fn composer_info($c)
   return {account:$c.account,from:$c.from,to:$c.to,cc:$c.cc,bcc:$c.bcc,reply_to:$c.reply_to,subject:$c.subject,body:$c.body,attachments:$c.attachments,busy:$c.busy,error:$c.error}
 end
+fn composer_snapshot($info,$window=nil)
+  $info.compose_windows=map(keys($composers),fn($key)={window:$key,root:false,compose:composer_info($composers[$key])})
+  $key=$window ?? $compose_focused;$c=$composers[$key]
+  if $c!=nil then $info.window=$key;$info.compose=composer_info($c);$info.confirm=if $c.confirm then "close_compose" else nil end end
+  return $info
+end
 fn composer_open($a)
   global $composers,$compose_serial,$compose_focused
   try

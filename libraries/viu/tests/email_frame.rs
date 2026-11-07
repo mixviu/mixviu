@@ -154,6 +154,16 @@ end
     )
     .drop_without_applying_deltas();
     assert!(view.geometry.contains_key("pim-list.key.event-1"));
+    runtime.event("email.compose".into(),json!({"to":"user@example.test","subject":"Composer witness","body":"Native body"})).unwrap();
+    let done=complete(&runtime,&rx);
+    assert_eq!(done.reply.unwrap().rc,0);
+    let model=done.model.unwrap();
+    let child=&model["native_windows"][0];
+    assert_eq!(child["key"],"compose-1");
+    let mut view=viu::gold_frame::mount(child["scene"].as_str().unwrap(),child["model"].clone()).unwrap();
+    ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,700.0))),..Default::default()},|ui|{view.show(ui);}).drop_without_applying_deltas();
+    assert!(view.geometry.contains_key("compose-body"));
+    assert!(view.geometry.contains_key("compose-headers"));
 }
 
 #[test]
