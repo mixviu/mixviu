@@ -27,6 +27,6 @@ fn every_registered_host_name_resolves_and_cannot_be_shadowed() {
     assert!(VIU_EXTENSIONS.contains(&"viu_document"));
     for name in VIU_EXTENSIONS {
         assert!(!diagnostics(&format!("-- host: viu\n{name}()\n")).contains(&"MIX-E1102".to_owned()), "{name}");
-        assert!(diagnostics(&format!("-- host: viu\nfn {name}()\nend\n")).iter().any(|code| code == "MIX-E1103" || code == "MIX-E1104"), "{name}");
+        assert!(diagnostics(&format!("-- host: viu\nfn {name}()\nend\n")).contains(&"MIX-W2313".to_owned()), "{name}");
     }
 }
