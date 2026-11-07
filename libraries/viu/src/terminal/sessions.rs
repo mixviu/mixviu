@@ -151,7 +151,9 @@ impl Sessions {
     pub(crate) fn take_changes(&self) -> BTreeSet<String> {
         std::mem::take(&mut *self.changed.lock().unwrap())
     }
-    pub(crate) fn layout_bridge(&self) -> super::layout_control::Bridge {self.layout.clone()}
+    pub(crate) fn layout_bridge(&self) -> super::layout_control::Bridge {
+        self.layout.clone()
+    }
 
     pub(crate) fn retry_changes(&self, handles: BTreeSet<String>) {
         self.changed.lock().unwrap().extend(handles);
@@ -213,7 +215,9 @@ impl Sessions {
     }
 
     pub fn call(&self, op: &str, handle: &str, a: Value) -> Result<Value, String> {
-        if op.starts_with("control.") {return self.layout.call(op,a);}
+        if op.starts_with("control.") {
+            return self.layout.call(op, a);
+        }
         if op == "metadata" {
             let metadata = super::metadata::Metadata::decode(&a)?;
             let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;

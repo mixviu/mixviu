@@ -136,7 +136,15 @@ impl RunFailure {
 
 enum Request {
     Load(u64, Program),
-    Event(u64, u64, String, Json, bool, BTreeMap<String, String>, Option<NativeContext>),
+    Event(
+        u64,
+        u64,
+        String,
+        Json,
+        bool,
+        BTreeMap<String, String>,
+        Option<NativeContext>,
+    ),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -303,7 +311,12 @@ impl Runtime {
     pub fn event(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
         self.submit_event(command, args, true, BTreeMap::new(), None)
     }
-    pub(crate) fn native_event(&mut self, command: String, args: Json, context: NativeContext) -> Result<u64, Refusal> {
+    pub(crate) fn native_event(
+        &mut self,
+        command: String,
+        args: Json,
+        context: NativeContext,
+    ) -> Result<u64, Refusal> {
         self.submit_event(command, args, false, BTreeMap::new(), Some(context))
     }
     /// Preserve broker-stamped caller and topic metadata. Request correlation
